@@ -1,10 +1,10 @@
 # Ubuntu Desktop STT Integration
 
-**Date:** 2026-06-03
-**Status:** Proposed
-**Authors:** Jean-Baptiste Lallement
+* **Date:** 2026-06-03
+* **Status:** Proposed
+* **Authors:** Jean-Baptiste Lallement
 
-## Abstract {#abstract}
+## Abstract
 
 This specification describes the integration of offline speech-to-text dictation into Ubuntu Desktop.
 
@@ -14,7 +14,7 @@ The initial target environment is Ubuntu Desktop on Wayland, with GNOME as the p
 
 The solution must work offline, use local inference through the Canonical Inference Snap, and avoid persisting audio by default.
 
-## Rationale {#rationale}
+## Rationale
 
 Speech-to-text (STT) is an important accessibility and productivity capability for Ubuntu Desktop. It allows users to enter text using their voice, reduces reliance on keyboard input, and improves usability across a wide range of workflows and abilities.
 
@@ -24,7 +24,7 @@ The design prioritizes explicit user control, low-latency interaction, and compa
 
 While the first implementation targets Ubuntu Desktop on Wayland, the architecture is designed to remain portable across desktop environments and input technologies, enabling future evolution without being tied to a specific text input framework.
 
-### **Goals** {#goals}
+### **Goals**
 
 The first iteration delivers a push-to-talk dictation experience for Ubuntu Desktop.
 
@@ -41,7 +41,7 @@ The system must:
 * Operate safely within the Wayland security model and avoid inserting text into unintended targets.  
 * Provide an architecture that can support multiple text input backends in future implementations.
 
-### **Non-goals** {#non-goals}
+### **Non-goals**
 
 The following features are out of scope:
 
@@ -60,9 +60,9 @@ The following features are out of scope:
 
 Dictation into password fields, authentication prompts, and other secure input surfaces is explicitly unsupported and must be blocked where detection is possible.
 
-## User Experience {#user-experience}
+## User Experience
 
-### Basic flow {#basic-flow}
+### Basic flow
 
 The primary user experience is push-to-talk dictation.
 
@@ -76,13 +76,13 @@ The primary user experience is push-to-talk dictation.
 8. The system finalizes the current utterance.  
 9. The microphone capture stops.
 
-### Target selection {#target-selection}
+### Target selection
 
 The text input target is selected when the user presses the hotkey.
 
 If focus changes during an active dictation session, the system must not silently commit dictated text into an unrelated application. The implementation should either continue targeting the original text surface or cancel/finalize the session safely, depending on what the text input backend can guarantee.
 
-### Partial and final text {#partial-and-final-text}
+### Partial and final text
 
 The system must distinguish between provisional and committed text.
 
@@ -134,7 +134,7 @@ Post-processing could happen at several stages to:
 * Formatting e.g. newlines if possible, abbreviations  
 * Safety filtering e.g. detect sensitive contexts
 
-### End of session {#end-of-session}
+### End of session
 
 When the user releases the hotkey, the system must:
 
@@ -145,7 +145,7 @@ When the user releases the hotkey, the system must:
 * Release the microphone.  
 * Discard the in-memory audio buffer.
 
-### Error states {#error-states}
+### Error states
 
 The user must receive clear feedback when dictation cannot start or continue, for example:
 
@@ -157,17 +157,17 @@ The user must receive clear feedback when dictation cannot start or continue, fo
 * No compatible text input target is focused.  
 * Dictation is blocked in a secure field.
 
-## Privacy and Security {#privacy-and-security}
+## Privacy and Security
 
 The system must be explicit and privacy-preserving by design.
 
-### Activation {#activation}
+### Activation
 
 The microphone must only be captured during an active user-initiated dictation session. The default activation model is press-and-hold.
 
 The system must not continuously listen in the background.
 
-### Audio persistence {#audio-persistence}
+### Audio persistence
 
 Audio must not be written to disk by default.
 
@@ -175,13 +175,13 @@ The implementation may use a bounded in-memory rolling buffer for speech recogni
 
 Diagnostic logging must not include raw audio or full transcription content by default.
 
-### Secure input fields {#secure-input-fields}
+### Secure input fields
 
 Dictation must be blocked in password fields and secure prompts where such fields can be detected.
 
 The specification should document residual risks for applications or toolkits that do not expose secure input state reliably.
 
-### Text injection safety {#text-injection-safety}
+### Text injection safety
 
 The system must avoid inserting dictated text into the wrong application. The system should also disallow the injection of potentially unsafe key combinations, e.g. TAB, ALT+TAB, function keys, SUPER, …
 
@@ -198,13 +198,13 @@ Special care is required for:
 * Browser address bars.  
 * Applications using custom text widgets.
 
-## Architecture {#architecture}
+## Architecture
 
 The high level architecture is composed of 4 main layers.
 
 ![][image1]
 
-### Dictation session controller {#dictation-session-controller}
+### Dictation session controller
 
 The session controller owns the lifecycle of a dictation session.
 
@@ -218,7 +218,7 @@ It is responsible for:
 * Handling cancellation and errors.  
 * Enforcing privacy and security rules.
 
-### Audio pipeline {#audio-pipeline}
+### Audio pipeline
 
 The audio pipeline captures microphone input and prepares it for inference.
 
@@ -232,7 +232,7 @@ It is responsible for:
 * Chunking audio for streaming inference.  
 * Stopping capture immediately when the session ends.
 
-### Inference pipeline {#inference-pipeline}
+### Inference pipeline
 
 The inference pipeline sends streamed audio to the Canonical Inference Snap and receives transcription events.
 
@@ -247,7 +247,7 @@ It is responsible for:
 * Reporting confidence and stability information where available.  
 * Handling model or runtime failures.
 
-### Text output pipeline {#text-output-pipeline}
+### Text output pipeline
 
 The text output pipeline converts transcription events into text insertion operations.
 
@@ -262,9 +262,9 @@ It is responsible for:
 
 The first implementation uses an IBus adapter. The architecture must allow future adapters, including a Wayland-native input method backend.
 
-## Text Input Backend Strategy {#text-input-backend-strategy}
+## Text Input Backend Strategy
 
-### IBus backend for the first iteration {#ibus-backend-for-the-first-iteration}
+### IBus backend for the first iteration
 
 The first iteration may use IBus to provide preedit and commit text behavior.
 
@@ -276,7 +276,7 @@ IBus is suitable for the initial implementation because it already provides conc
 
 However, IBus must be treated as an implementation backend, not as the core architecture.
 
-### Backend abstraction {#backend-abstraction}
+### Backend abstraction
 
 The dictation system must define a text output abstraction independent of IBus.
 
@@ -289,7 +289,7 @@ The abstraction should support operations such as:
 * Cancel session.  
 * End session.
 
-### Wayland-native backend {#wayland-native-backend}
+### Wayland-native backend
 
 We should add a Wayland-native input path so that speech-to-text does not permanently depend on IBus.
 
@@ -301,15 +301,15 @@ This is important for:
 * Reduced dependency on an input method framework not originally designed as a complete dictation service.  
 * Portability to other desktop environments.
 
-## Streaming Model {#streaming-model}
+## Streaming Model
 
 The system must be designed around streaming input and streaming output.
 
-### Audio streaming {#audio-streaming}
+### Audio streaming
 
 Audio must be sent to the inference backend incrementally. The system must not wait until the user releases the hotkey before starting speech recognition.
 
-### Transcription streaming {#transcription-streaming}
+### Transcription streaming
 
 The inference backend should produce two kinds of output:
 
@@ -318,7 +318,7 @@ The inference backend should produce two kinds of output:
 
 Partial transcription may change. Final transcription is stable and can be committed to the application.
 
-### Buffering {#buffering}
+### Buffering
 
 A bounded in-memory buffer may be used to provide sufficient context for accurate recognition.
 
@@ -332,9 +332,9 @@ The implementation must define:
 
 The buffer must not be persisted to disk.
 
-## Model and Language Strategy {#model-and-language-strategy}
+## Model and Language Strategy
 
-### Model selection {#model-selection}
+### Model selection
 
 The system should support model profiles so that performance, size, and accuracy can be balanced.
 
@@ -353,7 +353,7 @@ The default model should be selected automatically based on:
 * Installed model packs.  
 * Product defaults.
 
-### Language selection {#language-selection}
+### Language selection
 
 The default dictation language should match the display language when a supported model is available.
 
@@ -361,7 +361,7 @@ The user must be able to change the dictation language independently of the disp
 
 The selected dictation language should persist across sessions.
 
-### Multilingual support {#multilingual-support}
+### Multilingual support
 
 The implementation may use either language-specific models or multilingual models.
 
@@ -374,9 +374,9 @@ The specification should document the trade-offs:
 
 Automatic language detection is out of scope for the first iteration.
 
-## Performance and Quality Requirements {#performance-and-quality-requirements}
+## Performance and Quality Requirements
 
-### Latency {#latency}
+### Latency
 
 The following metrics should be measured on reference hardware:
 
@@ -393,7 +393,7 @@ Suggested initial targets:
 * First partial transcription appears within 500–800 ms on reference hardware.  
 * Final text is committed within 1–2 seconds after key release on reference hardware.
 
-### Accuracy {#accuracy}
+### Accuracy
 
 Accuracy should be measured using word error rate or another agreed metric.
 
@@ -412,7 +412,7 @@ The test matrix should include:
 
 Accuracy targets may vary by language and model profile.
 
-### Resource usage {#resource-usage}
+### Resource usage
 
 The implementation should define limits or reference measurements for:
 
@@ -424,7 +424,7 @@ The implementation should define limits or reference measurements for:
 * Battery impact.  
 * Idle resource usage.
 
-### Offline behavior {#offline-behavior}
+### Offline behavior
 
 The feature must work without network connectivity once the required model and runtime are installed.
 
@@ -432,7 +432,7 @@ If the selected model is not installed, the user should receive a clear message 
 
 The system must not silently fall back to a cloud service.
 
-## Compatibility Matrix {#compatibility-matrix}
+## Compatibility Matrix
 
 The MVP should be validated against a defined application matrix.
 
@@ -459,7 +459,7 @@ Each application should be tested for:
 * Hotkey behavior.  
 * Secure-field handling where applicable.
 
-## Settings and User Controls {#settings-and-user-controls}
+## Settings and User Controls
 
 The user should be able to configure:
 
@@ -472,7 +472,7 @@ The user should be able to configure:
 
 The settings UI should clearly explain that speech recognition runs locally and that audio is not persisted by default.
 
-## Accessibility and Internationalization {#accessibility-and-internationalization}
+## Accessibility and Internationalization
 
 The feature should be designed as both a productivity tool and an accessibility feature.
 
@@ -487,7 +487,7 @@ The specification should consider:
 * Languages with complex input behavior.  
 * Punctuation and capitalization expectations by language.
 
-## Failure Handling {#failure-handling}
+## Failure Handling
 
 The system must fail safely.
 
@@ -499,7 +499,7 @@ Examples:
 * If the input backend cannot display preedit text, either commit only stable text or show a temporary overlay.  
 * If the model is unavailable, do not start recording audio.
 
-## Observability and Diagnostics {#observability-and-diagnostics}
+## Observability and Diagnostics
 
 The system should provide enough diagnostics to debug issues without compromising privacy.
 
@@ -521,7 +521,7 @@ Not allowed by default:
 
 Any diagnostic mode that captures audio or transcription content must require explicit user consent.
 
-## Testing Strategy {#testing-strategy}
+## Testing Strategy
 
 The testing strategy should include:
 
@@ -540,7 +540,7 @@ The testing strategy should include:
 
 Testing must explicitly verify the distinction between provisional and committed text.
 
-## Acceptance Criteria {#acceptance-criteria}
+## Acceptance Criteria
 
 The feature is acceptable for the first iteration when:
 
@@ -556,7 +556,7 @@ The feature is acceptable for the first iteration when:
 * Performance and accuracy meet the agreed reference targets.  
 * Failures are visible, understandable, and safe.
 
-## Risks and Mitigations {#risks-and-mitigations}
+## Risks and Mitigations
 
 | Risk | Mitigation |
 | :---- | :---- |
@@ -567,7 +567,7 @@ The feature is acceptable for the first iteration when:
 | **Privacy concerns** Users may fear that the desktop is always listening. | Use push-to-talk only, show clear active-state indication, and never persist audio by default. |
 | **Hardware variance** Performance may vary significantly across machines. | Define reference hardware tiers and model profiles. |
 
-## Future Work {#future-work}
+## Future Work
 
 Future iterations may include:
 
