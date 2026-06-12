@@ -30,6 +30,12 @@ def test_att_context_size_shows_in_candidate():
     assert cand.model.endswith("-ctx70.0")  # the latency dial is visible in results
 
 
+def test_local_nemo_checkpoint_labelled_by_stem():
+    # snap loads --model $SNAP_COMPONENTS/model-streaming-multi/<file>.nemo
+    cand = NemotronAdapter("/snap/nemotron/components/9/model/foo.nemo").candidate
+    assert cand.model == "foo"  # no path, no .nemo extension
+
+
 def test_parse_att_context_size():
     assert _parse_att_context_size("70,16") == [70, 16]
     assert _parse_att_context_size(None) is None

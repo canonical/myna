@@ -1,0 +1,151 @@
+# Nemotron / FastConformer inference snap (UbuSTT).
+#
+# Sibling of whisper-snap (one snap per model family). Same pattern: modelctl
+# v2 engine/runtime/model manifests; the testbed adapter (myna-server
+# --adapter nemotron) is the server. Differences:
+#   - GPU-only: NVIDIA cache-aware streaming FastConformer-RNNT via NeMo.
+#   - the runtime component is NeMo + torch + CUDA (multi-GB) — much heavier
+#     than whisper's CTranslate2 venv. UNVERIFIED in confinement; build-verify
+#     on a CUDA box and expect to iterate on LD_LIBRARY_PATH (torch bundles its
+#     own CUDA libs).
+#   - model ships as a .nemo checkpoint component (no runtime download).
+name: nemotron
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: NVIDIA Nemotron/FastConformer speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text exposing the UbuSTT session API on a Unix
+  domain socket, served by NVIDIA's cache-aware streaming FastConformer-RNNT
+  via the NeMo toolkit. Natively streaming transducer with a latency/accuracy
+  dial (att-context-size) and native punctuation/capitalisation. English-only.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  nemotron:
+    command: bin/nemotron
+    plugs:
+      - hardware-observe
+      - opengl
+      - network
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - opengl
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+    environment:
+      # NeMo/HF caches under writable $SNAP_COMMON (weights are a component, so
+      # this should stay unused at runtime — kept as a safety net).
+      HF_HOME: $SNAP_COMMON/huggingface
+      NEMO_CACHE_DIR: $SNAP_COMMON/nemo
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      ln --symbolic ./modelctl bin/nemotron
+      craftctl default
+
+  cli-lspci:
+    plugin: nil
+    stage-packages:
+      - pciutils # lspci, used by hardware detection
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  # Model weights as a component: the .nemo checkpoint downloaded by
+  # ./dev/download-models.sh into components/. Routed into its own component.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-streaming-multi/*": (component/model-streaming-multi)/
+    prime:
+      - -*
+
+  # NeMo + torch + CUDA runtime as a component (myna[nemotron] pip tree).
+  # Exposed via PYTHONPATH + LD_LIBRARY_PATH, run by the base python3.
+  # amd64-only; UNVERIFIED — build-verify on a CUDA box (torch in strict
+  # confinement + LD_LIBRARY_PATH is the expected iteration point).
+  nemo-cuda:
+    plugin: nil
+    source: wheels
+    build-packages:
+      - python3
+      - python3-pip
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      pip3 install --target="$target" ./myna-0.0.1-py3-none-any.whl[nemotron]
+      craftctl default
+    organize:
+      "*": (component/nemo-cuda)
+    prime:
+      - -*
+
+components:
+  model-streaming-multi:
+    type: standard
+    summary: FastConformer hybrid large streaming multi (.nemo)
+    description: |
+      NVIDIA stt_en_fastconformer_hybrid_large_streaming_multi checkpoint —
+      cache-aware streaming transducer, English, native punctuation.
+  nemo-cuda:
+    type: standard
+    summary: NeMo + torch CUDA runtime
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + nemo_toolkit[asr]
+      + torch (CUDA). amd64 only; large.
