@@ -8,7 +8,8 @@ validate or resample before inference.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from myna.core.audio import AudioFormat
 
@@ -21,3 +22,13 @@ class SessionConfig:
     prompt: str | None = None
     # "word" | "segment" | None — request timestamped segments on final/done.
     timestamp_granularity: str | None = None
+
+
+def session_config_to_wire(config: SessionConfig) -> dict[str, Any]:
+    return asdict(config)
+
+
+def session_config_from_wire(wire: dict[str, Any]) -> SessionConfig:
+    data = dict(wire)
+    data["audio_format"] = AudioFormat(**data.get("audio_format") or {})
+    return SessionConfig(**data)
