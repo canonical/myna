@@ -38,3 +38,16 @@ def test_wire_shape_matches_ie114_framing():
 def test_unknown_event_rejected():
     with pytest.raises(ValueError):
         event_from_wire({"event": "transcription.replace", "data": {}})
+
+
+def test_session_config_wire_roundtrip():
+    from myna.core import AudioFormat, SessionConfig, session_config_from_wire, session_config_to_wire
+
+    config = SessionConfig(
+        audio_format=AudioFormat(sample_rate_hz=48_000, channels=2),
+        language="en",
+        prompt="dictation",
+        timestamp_granularity="segment",
+    )
+    assert session_config_from_wire(session_config_to_wire(config)) == config
+    assert session_config_from_wire({}) == SessionConfig()

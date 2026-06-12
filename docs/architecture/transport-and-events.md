@@ -29,15 +29,22 @@ protocols; all services (adapters, the future inference snap) implement
 4. service flushes, emits remaining `final`s, then **exactly one terminal
    event** (`done` or `error`), and the event stream ends
 
-Two transports implement this contract:
+Two transports implement this contract today:
 
-- `LoopbackClient` — in-process queues, no serialization. Phase 0 fixture and
-  the reference for session semantics. Permanent.
-- WebSocket-over-UDS client/server — added once IE114 settles; must pass the
-  same contract tests (`tests/test_contract.py`) with only wiring swapped.
+- `LoopbackClient` (`transport.py`) — in-process queues, no serialization.
+  Phase 0 fixture and the reference for session semantics. Permanent.
+- `WsUnixClient`/`serve_unix` (`transport_ws.py`) — WebSocket over UDS, one
+  connection per session: a `session.start` text frame carrying the config,
+  PCM as binary frames, a `session.finish` control frame at end of audio,
+  events as JSON text frames, server closes after the terminal event. The
+  wire protocol is a T16 prototype and remains provisional until written
+  into IE114 (T18).
 
-No code outside `myna/core/transport.py` and the future WS module may mention
-sockets, HTTP, SSE, or WebSocket.
+The contract tests (`tests/test_contract.py`) are parametrized over both
+transports; any future transport joins the same parametrization.
+
+No code outside `myna/core/transport.py` and `myna/core/transport_ws.py` may
+mention sockets, HTTP, SSE, or WebSocket.
 
 ### Events: progress / final / done / error, no retraction
 

@@ -41,7 +41,7 @@ integration work; B and D converge in the end-to-end milestone (T22).
 | T04 | WAV/file audio source for the harness (batch + real-time pacing) | done | Claude/Charles | T02 | `WavFileSource` plays T03 fixtures; chunk size + realtime pacing configurable; covered in `tests/test_sources_and_corpus.py` |
 | T05 | Virtual PipeWire source node feeding fixture audio at real-time rate (Phase 1) | todo | | T04 | Works headless in the Taipei lab; node teardown clean across runs |
 | T06 | Accuracy metrics: WER/CER of `done` transcript vs reference, normalization rules documented | todo | | T03, T04 | Metrics computed from stored ResultRecords, not live runs |
-| T07 | First real adapter, commit-on-finalize (Phase 2): faster-whisper | todo | | T04 | Passes all contract tests; model deps as `uv` extra; `HF_HUB_OFFLINE=1` run verified |
+| T07 | First real adapter, commit-on-finalize (Phase 2): faster-whisper | done | Claude/Charles | T04 | `myna.testbed.whisper.FasterWhisperAdapter`; `whisper` uv extra; integration test skips cleanly without extra/model; `HF_HUB_OFFLINE=1` run verified; CPU default (GPU is explicit, mirroring engine selection) |
 | T08 | Streaming adapter (Phase 3): whisper_streaming/LocalAgreement on faster-whisper, emitting progress/final incrementally | todo | | T07 | Partial-churn observable in ResultRecords; no retraction of finals |
 | T09 | Nemotron adapter via NeMo (native streaming transducer), `att_context_size` sweepable | todo | | T07 | Same contract tests; latency dial exposed as candidate config |
 | T10 | Qwen3-ASR adapter via vLLM (known patching pain — keep inside adapter) | todo | | T07 | Document required patches in the adapter dir; do not leak into harness |
@@ -69,7 +69,7 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
-| T16 | Prototype WebSocket-over-UDS client/server implementing the session contract; PCM binary frames in, JSON events out | todo | | T02 | Passes `tests/test_contract.py` with only wiring swapped (see transport ADR); findings written up for E/T18 |
+| T16 | Prototype WebSocket-over-UDS client/server implementing the session contract; PCM binary frames in, JSON events out | done | Claude/Charles | T02 | `myna/core/transport_ws.py`; contract tests parametrized over loopback + ws-uds; wire protocol documented in module + ADR, feeds T18 |
 | T17 | Access-control spike: socket permissions, snap confinement, client identity (polkit?) per IE114 comments | todo | | T16 | Documented recommendation, not necessarily code |
 
 ## Workstream D — Desktop client (UD129)

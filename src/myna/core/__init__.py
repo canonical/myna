@@ -14,8 +14,9 @@ from myna.core.events import (
     event_from_wire,
     event_to_wire,
 )
-from myna.core.session import SessionConfig
+from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService, SttSession
+from myna.core.transport_ws import WsUnixClient, serve_unix
 
 __all__ = [
     "AudioFormat",
@@ -33,6 +34,10 @@ __all__ = [
     "TranscriptionEvent",
     "TranscriptionFinal",
     "TranscriptionProgress",
+    "WsUnixClient",
     "event_from_wire",
     "event_to_wire",
+    "serve_unix",
+    "session_config_from_wire",
+    "session_config_to_wire",
 ]

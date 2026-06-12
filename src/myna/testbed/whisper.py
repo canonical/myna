@@ -1,0 +1,168 @@
+"""faster-whisper adapter, commit-on-finalize mode (Phase 2, T07).
+
+Wraps faster-whisper (CTranslate2 Whisper) behind ``SttService``. This is the
+simplest honest strategy for an AED model: buffer the pushed audio, decode
+once when the client finishes, emit one ``final`` per Whisper segment, then
+``done``. ``progress`` events (no text) are emitted while audio is being
+received so clients can animate an activity indicator.
+
+Streaming via chunked re-decode (LocalAgreement) is T08 and will be a
+separate strategy on top of this adapter.
+
+Requires the ``whisper`` extra: ``uv sync --extra whisper``. Models are
+fetched from Hugging Face on first use (``Systran/faster-whisper-*``) and
+cached under ``HF_HOME``; pass ``download_root`` to pin a lab cache
+explicitly. Verify offline runs with ``HF_HUB_OFFLINE=1``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+
+from myna.core import (
+    EventSink,
+    PcmChunk,
+    Segment,
+    SessionConfig,
+    TranscriptionDone,
+    TranscriptionError,
+    TranscriptionFinal,
+    TranscriptionProgress,
+)
+from myna.testbed.adapter import Candidate
+
+WHISPER_RATE = 16_000
+_PROGRESS_INTERVAL_SECONDS = 1.0
+
+
+class FasterWhisperAdapter:
+    def __init__(
+        self,
+        model_size: str = "tiny",
+        *,
+        # "cpu" by default: ctranslate2's "auto" picks CUDA whenever a driver
+        # is visible and then hard-fails if the CUDA runtime libs are absent.
+        # GPU is an explicit engine choice, mirroring the inference snaps.
+        device: str = "cpu",
+        compute_type: str = "default",
+        download_root: str | None = None,
+    ) -> None:
+        self._model_size = model_size
+        self._device = device
+        self._compute_type = compute_type
+        self._download_root = download_root
+        self._model = None
+        self._model_lock = asyncio.Lock()
+
+    @property
+    def candidate(self) -> Candidate:
+        return Candidate(
+            model=f"whisper-{self._model_size}",
+            engine=f"faster-whisper-{self._device}",
+            streaming_strategy="commit-on-finalize",
+        )
+
+    async def _load_model(self):
+        async with self._model_lock:
+            if self._model is None:
+                from faster_whisper import WhisperModel
+
+                # blocking download + load: keep it off the event loop
+                self._model = await asyncio.to_thread(
+                    WhisperModel,
+                    self._model_size,
+                    device=self._device,
+                    compute_type=self._compute_type,
+                    download_root=self._download_root,
+                )
+        return self._model
+
+    async def run_session(
+        self,
+        config: SessionConfig,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
+    ) -> None:
+        fmt = config.audio_format
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2:
+            await emit(
+                TranscriptionError(
+                    code="unsupported_audio_format",
+                    message=f"need mono S16LE, got {fmt.channels}ch "
+                    f"{8 * fmt.sample_width_bytes}-bit",
+                )
+            )
+            return
+
+        try:
+            model = await self._load_model()
+
+            buffered = bytearray()
+            seconds_since_progress = 0.0
+            async for chunk in audio:
+                buffered.extend(chunk.data)
+                seconds_since_progress += chunk.duration_seconds
+                if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
+                    seconds_since_progress = 0.0
+                    await emit(TranscriptionProgress())
+
+            if not buffered:
+                await emit(TranscriptionDone(text=""))
+                return
+
+            segments = await asyncio.to_thread(
+                self._transcribe, model, bytes(buffered), fmt.sample_rate_hz, config
+            )
+
+            want_timestamps = config.timestamp_granularity is not None
+            finals: list[str] = []
+            for segment in segments:
+                text = segment.text.strip()
+                if not text:
+                    continue
+                finals.append(text)
+                await emit(
+                    TranscriptionFinal(
+                        text=text,
+                        segments=(
+                            (
+                                Segment(
+                                    start=segment.start,
+                                    end=segment.end,
+                                    text=text,
+                                    score=segment.avg_logprob,
+                                ),
+                            )
+                            if want_timestamps
+                            else ()
+                        ),
+                    )
+                )
+            await emit(TranscriptionDone(text=" ".join(finals)))
+        except Exception as exc:
+            await emit(
+                TranscriptionError(
+                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
+                )
+            )
+
+    def _transcribe(self, model, pcm: bytes, rate: int, config: SessionConfig) -> list:
+        """Blocking decode; runs in a worker thread."""
+        import numpy as np
+
+        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        if rate != WHISPER_RATE:
+            n_out = int(len(samples) * WHISPER_RATE / rate)
+            samples = np.interp(
+                np.linspace(0.0, len(samples) - 1, n_out),
+                np.arange(len(samples)),
+                samples,
+            ).astype(np.float32)
+
+        segments, _info = model.transcribe(
+            samples,
+            language=config.language,
+            initial_prompt=config.prompt,
+        )
+        return list(segments)  # drain the generator while still in the thread
