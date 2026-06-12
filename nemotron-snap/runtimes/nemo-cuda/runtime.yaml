@@ -1,0 +1,19 @@
+# NeMo + torch (CUDA) runtime serving the UbuSTT session API.
+#
+# UNVERIFIED in confinement. The nemo-cuda component is a pip --target tree
+# (myna[nemotron]: nemo_toolkit[asr] + torch). torch bundles its own CUDA libs
+# under site-packages/torch/lib and site-packages/nvidia/*/lib; expose them on
+# LD_LIBRARY_PATH. The python3.12 path tracks the core24 base.
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - PYTHONPATH=$SNAP_COMPONENTS/nemo-cuda/site-packages
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/nemo-cuda/site-packages/torch/lib
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/nemo-cuda/site-packages/nvidia/cublas/lib
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/nemo-cuda/site-packages/nvidia/cudnn/lib
+
+components:
+  - nemo-cuda
