@@ -35,7 +35,7 @@ The system must:
 * Perform speech recognition locally using the Canonical Inference Snap.  
 * Function without network connectivity once the required models are installed.  
 * Stream audio input and transcription output in real time.  
-* Distinguish between provisional and final transcription where supported.  
+* In the initial version, show a visible activity indicator during recording/transcription and insert only committed text into the target application.  
 * Use only bounded in-memory buffering and avoid persisting audio by default.  
 * Support configurable dictation languages, defaulting to the user's display language when available.  
 * Operate safely within the Wayland security model and avoid inserting text into unintended targets.  
@@ -70,8 +70,8 @@ The primary user experience is push-to-talk dictation.
 2. The user presses and holds the configured dictation hotkey.  
 3. The system starts a dictation session.  
 4. The user speaks.  
-5. The system displays provisional transcription as the user speaks.  
-6. Stable text is committed into the focused application.  
+5. The system displays an activity indicator showing that recording and transcription are in progress.  
+6. Committed text is inserted into the focused application when stable output is available.  
 7. The user releases the hotkey.  
 8. The system finalizes the current utterance.  
 9. The microphone capture stops.
@@ -82,57 +82,31 @@ The text input target is selected when the user presses the hotkey.
 
 If focus changes during an active dictation session, the system must not silently commit dictated text into an unrelated application. The implementation should either continue targeting the original text surface or cancel/finalize the session safely, depending on what the text input backend can guarantee.
 
-### Partial and final text
+### Transcription feedback and committed text
 
-The system must distinguish between provisional and committed text.
+For the initial version, the user-facing text model is commit-only.
 
-Partial transcription may be revised as more speech context becomes available. Therefore, partial transcription must not be treated as permanently inserted text unless the input backend supports replacing it safely.
+The Speech Orchestrator may receive unstable or partial hypotheses from the Inference Snap, but those hypotheses are not shown in the target application UI in the first iteration.
 
-Where supported, partial transcription should be displayed using preedit text. Stable transcription should be inserted using commit text.
+Instead, while recording and inference are active, the user sees a clear activity indicator managed by the Text Injection Layer.
 
-This distinction is required to avoid corrupting the user’s document with unstable model output.
+Only committed stable text is inserted into the focused application. Once committed, text should no longer be modified, except by explicit correction features in future iterations.
 
-#### **Provisional Text**
-
-Provisional text is the text produced while the user is still speaking and the model has incomplete acoustic and linguistic context.
-
-It can be visible to the user, but it should visually be distinct from the committed text. For example:
-
-I would like to schedule a meeting with the team *tomorrow after*
-
-The light grey, italic part, would be provisional and it may still change as more audio arrives. It is similar to Japanese or Chinese input methods, or accented characters on non-accented characters keyboards. It allows the system to replace the text without creating a visible “typing and deleting” noise.
-
-Once the model is confident enough, or once the hotkey is released, the provisional segment is converted into final text.
-
-Of course, it could be a commit-only rendering. In this case, the provisional text is not shown at all.  It is simpler, but the experience feels less responsive because the text appears in chunks.
-
-#### **Final Text**
-
-The final text is committed into the target application and should no longer be modified, except perhaps by an explicit correction command or later post-processing right before commit.
-
-#### **Example flow**
-
-1. User says:  
-    Lets meet tomorrow afternoon
-
-2. Provisional output appears progressively:  
-    Lets meet tomorrow *after*
-
-3. More context arrives, the text is updated:  
-    Lets meet tomorrow *afternoon*
-
-4. Finally the phrase is committed as final text:  
-    Lets meet tomorrow afternoon
+Future versions may introduce provisional/preedit text rendering where replacement safety is guaranteed by the backend.
 
 #### **Post-processing**
 
-Post-processing could happen at several stages to:
+The Post-Processing component transforms raw transcription from the Inference Snap into final committed text. It handles:
 
-* Normalize the text e.g. convert spoken forms to written forms where appropriate (twenty two \-\> 22\)  
-* Punctuation  
+* Text normalization e.g. convert spoken forms to written forms where appropriate (twenty two → 22)  
+* Punctuation insertion  
 * Capitalization e.g. sentence starts, proper nouns where possible  
 * Formatting e.g. newlines if possible, abbreviations  
-* Safety filtering e.g. detect sensitive contexts
+* Commands for advanced text manipulation  
+* Application-aware transfer (context-specific transformations)  
+* Optional: Advanced transformations using a Local LLM for complex cases
+
+Post-processing results are passed to the Text Injection Layer for final commit.
 
 ### End of session
 
@@ -141,7 +115,7 @@ When the user releases the hotkey, the system must:
 * Stop accepting new audio input.  
 * Finalize any buffered speech.  
 * Commit the final stable text.  
-* Clear any remaining provisional text.  
+* Clear the activity indicator.  
 * Release the microphone.  
 * Discard the in-memory audio buffer.
 
@@ -200,137 +174,188 @@ Special care is required for:
 
 ## Architecture
 
-The high level architecture is composed of 4 main layers.
+The system is organized into several interconnected components that handle session management, audio capture, inference, post-processing, and text output. These components work together to provide a responsive, real-time push-to-talk dictation experience.
 
-![][image1]
+![image](./UbuSTT%20·%20Architecture.png)
 
-### Dictation session controller
+### Inference Snap
 
-The session controller owns the lifecycle of a dictation session.
+The Inference Snap is a confined snap providing speech recognition models and runtime.
 
 It is responsible for:
 
-* Global hotkey handling.  
+* Hosting pre-trained STT models in multiple sizes (lightweight, default, quality).  
+* Providing model runtimes for various accelerators (NVIDIA GPU, Intel NPU, CPU).  
+* Exposing a Configuration API for capabilities discovery and model negotiation.  
+* Providing a Transcription API (Mistral-like) that accepts raw audio frames and returns text segments.  
+* Managing model lifecycle and resource allocation.  
+* Versioning APIs and model runtimes to ensure compatibility with clients.
+
+### Speech Orchestrator
+
+The Speech Orchestrator owns the session lifecycle and coordinates all other components.
+
+It is responsible for:
+
+* Global hotkey handling and activation.  
 * Starting and stopping dictation sessions.  
 * Tracking the current text input target.  
-* Managing session state.  
+* Managing session state and state transitions.  
 * Coordinating audio capture, inference, and text output.  
-* Handling cancellation and errors.  
-* Enforcing privacy and security rules.
+* Handling cancellation, errors, and focus changes.  
+* Enforcing privacy and security rules.  
+* Communicating with the Inference Snap through Configuration and Transcription APIs.  
+* Streaming audio frames to the inference backend.  
+* Receiving transcription events and routing them to post-processing and text injection.
 
-### Audio pipeline
+### Audio Adapter
 
-The audio pipeline captures microphone input and prepares it for inference.
+The Audio Adapter captures and prepares microphone input for inference.
 
 It is responsible for:
 
 * Selecting the microphone source.  
-* Capturing audio through the desktop audio stack.  
+* Capturing audio through the desktop audio stack and Audio Server.  
+* Applying audio pre-processing: denoising, voice activity detection (VAD).  
 * Resampling audio if required.  
-* Applying voice activity detection where appropriate.  
-* Maintaining a bounded in-memory buffer.  
-* Chunking audio for streaming inference.  
-* Stopping capture immediately when the session ends.
+* Maintaining a bounded in-memory rolling buffer for context and overlap.  
+* Chunking audio into frames for streaming to the Inference Snap.  
+* Stopping capture immediately when the session ends.  
+* Releasing the microphone after session completion.
 
-### Inference pipeline
+### Audio Server
 
-The inference pipeline sends streamed audio to the Canonical Inference Snap and receives transcription events.
+The Audio Server is an external component providing access to audio hardware and desktop audio services.
+
+It handles:
+
+* Audio device enumeration and selection.  
+* Audio format negotiation.  
+* Stream management.  
+* Low-level audio capture.
+
+### State Management
+
+State Management maintains the session state, including:
+
+* Current session state (idle, listening, transcribing, finalizing).  
+* Audio buffer state.  
+* Inference session state.  
+* Text input target state.  
+* Error state.
+
+### Post-Processing
+
+Post-Processing transforms raw transcription into final committed text.
 
 It is responsible for:
 
-* Selecting the appropriate model.  
-* Starting an inference session.  
-* Streaming audio frames.  
-* Receiving partial transcription.  
-* Receiving final transcription.  
-* Applying punctuation and casing where supported.  
-* Reporting confidence and stability information where available.  
-* Handling model or runtime failures.
+* Text normalization (spoken forms to written forms, e.g., "twenty two" → "22").  
+* Capitalization (sentence starts, proper nouns where possible).  
+* Punctuation insertion.  
+* Formatting (newlines, abbreviations).  
+* Commands for advanced text manipulation.  
+* Application-aware transfer (context-specific transformations).  
+* Optional: Advanced transformations using a Local LLM where available.
 
-### Text output pipeline
+Post-processing results should be committed as final stable text.
 
-The text output pipeline converts transcription events into text insertion operations.
+### Text Injection Layer
+
+The Text Injection Layer abstracts the concrete input method backend and inserts committed text.
 
 It is responsible for:
 
-* Displaying provisional text.  
-* Committing stable text.  
-* Replacing or clearing provisional text.  
-* Handling focus changes.  
-* Handling unsupported input targets.  
-* Abstracting the concrete input backend.
+* Managing the dictation activity indicator lifecycle.  
+* Committing stable text to the focused application.  
+* Handling focus changes safely.  
+* Handling unsupported input targets gracefully.  
+* Supporting multiple backends: IBus (current), Wayland input-method protocol (future), xdg text input, and others.  
+* Blocking injection into secure fields (password fields, authentication prompts).  
+* Ensuring text is injected only into the originally selected target.
 
-The first implementation uses an IBus adapter. The architecture must allow future adapters, including a Wayland-native input method backend.
+### Settings UI
+
+The Settings UI allows users to configure:
+
+* Enable or disable speech-to-text.  
+* Dictation hotkey selection.  
+* Dictation language selection.  
+* Microphone source selection.  
+* Model size or quality profile.  
+* Post-processing customization.  
+* Activity indicator preferences.
+
+The Settings UI communicates with the Speech Orchestrator through gRPC or DBus (TBD).
 
 ## Text Input Backend Strategy
 
 ### IBus backend for the first iteration
 
-The first iteration may use IBus to provide preedit and commit text behavior.
+The first iteration uses IBus as the primary text injection backend.
 
-IBus is suitable for the initial implementation because it already provides concepts that match streaming dictation:
+IBus is suitable for the initial implementation because it provides integration with many desktop applications and a practical commit path for text insertion.
 
-* Preedit text for provisional transcription.  
-* Commit text for finalized transcription.  
-* Integration with many desktop applications.
-
-However, IBus must be treated as an implementation backend, not as the core architecture.
+The Text Injection Layer abstracts IBus as an implementation detail, allowing future iterations to introduce additional backends.
 
 ### Backend abstraction
 
-The dictation system must define a text output abstraction independent of IBus.
+The Text Injection Layer defines a text output abstraction independent of any specific backend.
 
-The abstraction should support operations such as:
+The abstraction supports operations such as:
 
-* Start text session.  
-* Update provisional text.  
-* Commit text.  
-* Clear provisional text.  
-* Cancel session.  
-* End session.
+* Start text session (acquire target focus).  
+* Update dictation activity state (show/hide indicator).  
+* Commit text (insert text into target).  
+* Cancel session (abort without text injection).  
+* End session (finalize and release target).
 
 ### Wayland-native backend
 
-We should add a Wayland-native input path so that speech-to-text does not permanently depend on IBus.
+A Wayland-native input path is planned for future iterations so that speech-to-text is not permanently dependent on IBus.
 
 This is important for:
 
-* Better alignment with the Wayland security model.  
-* Better compositor integration.  
-* More predictable focus handling.  
-* Reduced dependency on an input method framework not originally designed as a complete dictation service.  
+* Better alignment with the Wayland security model and input method protocol.  
+* Better compositor integration and focus handling.  
+* More predictable text injection and activity indicator rendering.  
+* Reduced dependency on IBus, which is not originally designed as a complete dictation service.  
 * Portability to other desktop environments.
+
+The Wayland input-method protocol will eventually replace IBus as the preferred text injection backend.
 
 ## Streaming Model
 
-The system must be designed around streaming input and streaming output.
+The system is designed around streaming input and streaming output through the Speech Orchestrator.
 
 ### Audio streaming
 
-Audio must be sent to the inference backend incrementally. The system must not wait until the user releases the hotkey before starting speech recognition.
+The Audio Adapter captures audio frames and streams them incrementally to the Speech Orchestrator, which forwards them to the Inference Snap.
+
+The system does not wait until the user releases the hotkey before starting speech recognition. Instead, recognition begins immediately as audio frames arrive at the Inference Snap.
 
 ### Transcription streaming
 
-The inference backend should produce two kinds of output:
+The Inference Snap produces two kinds of transcription output:
 
-* Partial transcription.  
-* Final transcription.
+* Partial transcription: unstable, changing hypotheses.  
+* Final transcription: stable, committed segments.
 
-Partial transcription may change. Final transcription is stable and can be committed to the application.
+Partial transcription is treated as internal state and routed through State Management in the MVP. Final transcription is routed through Post-Processing and then to the Text Injection Layer for commit.
 
 ### Buffering
 
-A bounded in-memory buffer may be used to provide sufficient context for accurate recognition.
+The Audio Adapter maintains a bounded in-memory rolling buffer to provide sufficient context for accurate recognition.
 
-The implementation must define:
+The implementation defines:
 
-* Maximum rolling buffer duration.  
-* Maximum utterance context duration.  
-* Whether overlapping windows are used.  
-* When buffered audio is discarded.  
-* Whether buffering parameters vary by model.
+* Maximum rolling buffer duration (controlled by Audio Adapter).  
+* Maximum utterance context duration (Inference Snap model parameter).  
+* Whether overlapping windows are used (Inference Snap model parameter).  
+* Buffer discarding strategy (cleared on session end by Audio Adapter).  
+* Whether buffering parameters vary by model (configurable per model profile).
 
-The buffer must not be persisted to disk.
+The buffer must not be persisted to disk. All buffers are cleared when the dictation session ends.
 
 ## Model and Language Strategy
 
@@ -381,8 +406,8 @@ Automatic language detection is out of scope for the first iteration.
 The following metrics should be measured on reference hardware:
 
 * Time from hotkey press to microphone capture.  
-* Time from hotkey press to first partial transcription.  
-* Time from speech input to visible provisional text.  
+* Time from hotkey press to activity indicator visible.  
+* Time from hotkey press to first transcription event (partial or final).  
 * Time from key release to final committed text.  
 * Time to model warm-up when the model is not already loaded.  
 * Time to recover from idle state.
@@ -390,7 +415,8 @@ The following metrics should be measured on reference hardware:
 Suggested initial targets:
 
 * Microphone capture starts within 100 ms.  
-* First partial transcription appears within 500–800 ms on reference hardware.  
+* Activity indicator appears within 100–200 ms on reference hardware.  
+* First transcription event arrives within 500–800 ms on reference hardware.  
 * Final text is committed within 1–2 seconds after key release on reference hardware.
 
 ### Accuracy
@@ -451,7 +477,7 @@ Recommended initial matrix:
 
 Each application should be tested for:
 
-* Partial text behavior.  
+* Activity indicator behavior during recording/transcription.  
 * Final commit behavior.  
 * Focus handling.  
 * Cancellation.  
@@ -489,15 +515,15 @@ The specification should consider:
 
 ## Failure Handling
 
-The system must fail safely.
+The system must fail safely. Different components handle different failure scenarios:
 
-Examples:
+* **Speech Orchestrator**: If inference fails, stop the session and preserve already committed text. If the model is unavailable, prevent recording from starting.  
+* **Audio Adapter**: If the microphone becomes unavailable, stop listening immediately and notify the user through the Speech Orchestrator.  
+* **Text Injection Layer**: If focus is lost during a session, avoid committing text into an unintended target. If the activity indicator cannot be shown in the preferred surface, fall back to a secondary desktop-visible indicator while keeping commit-only insertion behavior.  
+* **Post-Processing**: If transformation fails, pass through the raw transcription or discard the segment, depending on severity.  
+* **Inference Snap**: If a model fails to load or crashes, signal availability through the Configuration API so clients can show appropriate errors.
 
-* If inference fails, stop the session and preserve already committed text.  
-* If the microphone becomes unavailable, stop listening and notify the user.  
-* If focus is lost, avoid committing text into an unintended target.  
-* If the input backend cannot display preedit text, either commit only stable text or show a temporary overlay.  
-* If the model is unavailable, do not start recording audio.
+All failures should provide clear user feedback through error states documented in the User Experience section.
 
 ## Observability and Diagnostics
 
@@ -538,7 +564,7 @@ The testing strategy should include:
 * Resource usage benchmarks.  
 * Regression tests for focus changes and cancellation.
 
-Testing must explicitly verify the distinction between provisional and committed text.
+Testing must explicitly verify commit-only insertion behavior in the MVP and correct activity-indicator lifecycle.
 
 ## Acceptance Criteria
 
@@ -547,7 +573,8 @@ The feature is acceptable for the first iteration when:
 * Dictation can be started and stopped with a hotkey.  
 * Audio is captured only during the active session.  
 * Speech is transcribed locally without network access.  
-* Partial and final transcription are handled separately.  
+* A visible recording/transcription activity indicator is shown during active dictation.  
+* Only committed stable text is inserted into target applications in the initial version.  
 * Final text is inserted into common desktop applications.  
 * IBus is used only through an abstract text output backend.  
 * The selected dictation language can be changed by the user.  
@@ -562,7 +589,7 @@ The feature is acceptable for the first iteration when:
 | :---- | :---- |
 | **Latency and accuracy trade-off** Small models may not be accurate enough, while larger models may be too slow. | Support model profiles and define hardware-specific targets. |
 | **IBus limitations** IBus may not provide reliable behavior across all Wayland applications. | Use IBus only as an initial backend and keep the text output layer abstract. |
-| **Provisional text corruption** Partial transcription may be inserted permanently before it is stable. | Use preedit text where possible and commit only final text. |
+| **Reduced immediacy in commit-only UI** Users may perceive lower responsiveness when text is committed in chunks. | Provide a clear low-latency activity indicator and optimize time to first transcription and final commit. |
 | **Wrong-target insertion** Dictated text may be committed into the wrong application after focus changes. | Capture the target at session start and avoid dynamic retargeting. |
 | **Privacy concerns** Users may fear that the desktop is always listening. | Use push-to-talk only, show clear active-state indication, and never persist audio by default. |
 | **Hardware variance** Performance may vary significantly across machines. | Define reference hardware tiers and model profiles. |
