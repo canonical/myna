@@ -33,3 +33,5 @@ Routine implementation details (adding a field, renaming a variable, choosing a 
 | Topic | Title | Status | Date |
 | --- | --- | --- | --- |
 | [Ubuntu Desktop STT Integration Specification](UD129 - Ubuntu Desktop STT Integration .md) | Initial High Level Specification | In Review | 2026-06-11 |
+| [Repository and Module Layout](repository-layout.md) | Single package, core/testbed/desktop split | Accepted | 2026-06-12 |
+| [Transport Abstraction and Event Vocabulary](transport-and-events.md) | Session contract over in-flux transport | Accepted (details provisional) | 2026-06-12 |
