@@ -43,11 +43,11 @@ integration work; B and D converge in the end-to-end milestone (T22).
 | T06 | Accuracy metrics: WER/CER of `done` transcript vs reference, normalization rules documented | done | Claude/Charles | T03, T04 | `myna.testbed.metrics` (`word_error_rate`/`character_error_rate` with S/D/I breakdown + documented NFKC/casefold/punctuation normalization); pure, scoreable from stored records; `tests/test_metrics.py`. Used by `dev/bench.py` |
 | T07 | First real adapter, commit-on-finalize (Phase 2): faster-whisper | done | Claude/Charles | T04 | `myna.testbed.whisper.FasterWhisperAdapter`; `whisper` uv extra; integration test skips cleanly without extra/model; `HF_HUB_OFFLINE=1` run verified; CPU default (GPU is explicit, mirroring engine selection) |
 | T08 | Streaming adapter (Phase 3): whisper_streaming/LocalAgreement on faster-whisper, emitting progress/final incrementally | todo | | T07 | Partial-churn observable in ResultRecords; no retraction of finals |
-| T09 | Nemotron adapter via NeMo (native streaming transducer), `att_context_size` sweepable | in progress | Claude/Charles | T07 | `myna.testbed.nemotron.NemotronAdapter` (commit-on-finalize first cut, drops into the matrix alongside whisper); `nemotron` extra (`nemo_toolkit[asr]`); `att_context_size` latency dial in the candidate label; `myna-server --adapter nemotron` so `bench.py` can hit it (`myna-server --adapter nemotron --socket /tmp/nemo.sock` → `bench.py --socket /tmp/nemo.sock`). Wiring + metadata tested offline; **NeMo decode UNVERIFIED — needs the GPU box + NeMo install, expect to iterate on the `transcribe`/`set_default_att_context_size` API**. Caveat: the streaming model is **English-only** (will fail `non-english-german`, vs multilingual whisper). Native streaming (frame-at-a-time) is the follow-up, converging with T08 |
+| T09 | Nemotron adapter via NeMo (native streaming transducer), `att_context_size` sweepable | done (commit-on-finalize) | Claude/Charles | T07 | `myna.testbed.nemotron.NemotronAdapter`; `nemotron` extra (`nemo_toolkit[asr]`); `att_context_size` latency dial in the candidate label; `myna-server --adapter nemotron` so `bench.py` measures it over a socket (no snap). **Verified 2026-06-14:** decode works first try (no API iteration needed); real-speech dictation via `dev/dictate.py` is perfect and near-instant. See *Measured findings* — finalize ~0.027s (native transducer wins latency decisively), but synthetic WER is unreliable (espeak is OOD for it). English-only (`non-english-german` 100%). Native frame-at-a-time streaming is the follow-up (converges with T08) |
 | T10 | Qwen3-ASR adapter via vLLM (known patching pain — keep inside adapter) | todo | | T07 | Document required patches in the adapter dir; do not leak into harness |
 | T11 | Matrix runner + result aggregation (Phase 4): sweep candidates × fixtures × configs, aggregate JSONL into comparison tables | done (single-strategy) | Claude/Charles | T06, T08 | `dev/bench.py` sweeps fixtures against a live socket → `results/bench.jsonl`; `dev/aggregate.py` micro-averages WER/CER + finalize percentiles into a cross-`--label` table (overall + by-category), deduped by (label, clip); `dev/run-matrix.sh` drives engine/model switches → bench → aggregate in one command. Covers the model×hardware axis; the **streaming-strategy axis is added when T08 lands** (only commit-on-finalize exists today). Surfaced + fixed the `en-GB` adapter bug |
 | T12 | Hardware tier report from Taipei lab runs | todo | | T11 | Written tiers proposal delivered to IE114/UD129 owners (feeds T19) |
-| T25 | Real recorded-speech corpus tier: redistributable human recordings (e.g. LibriSpeech/Common Voice subsets) added to the manifest, covering accents and noise authentically | todo | | T03 | Synthetic espeak audio is fine for plumbing/latency but not for real-world accuracy claims; licensing recorded per clip |
+| T25 | Real recorded-speech corpus tier: redistributable human recordings (e.g. LibriSpeech/Common Voice subsets) added to the manifest, covering accents and noise authentically | todo (**critical path**) | | T03 | **Promoted by the T09 run:** synthetic espeak audio cannot fairly compare architectures — Nemotron scored 59% WER on it but transcribes real speech perfectly. Blocks any real quality verdict, and therefore T12 (tiers) and T19 (perf contract). Synthetic tier stays valid for plumbing + latency only. Licensing recorded per clip |
 
 ## Workstream B — ASR inference snap
 
@@ -91,6 +91,30 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 | T24 | Capabilities-discovery API sketch (models, languages, punctuation support) | todo | | T18 | Needed before Settings UI work can be scoped |
 
 ---
+
+## Measured findings (synthetic fixture tier, 2026-06-14)
+
+First model×hardware matrix on the synthetic espeak corpus (13 clips, commit-on-finalize).
+Latency is content-independent and **trustworthy**; WER is **directional only** and, as
+point 3 shows, actively misleading across architectures.
+
+| config | WER% | median finalize | cold load | note |
+|---|---|---|---|---|
+| `nvidia-gpu/small` | 11.07 | 0.150s | 0.91s | only config meeting both accuracy + UD129 latency |
+| `cpu/small` | 11.07 | 1.685s | 2.21s | p90 3.4s > UD129 1–2s target — `small` not viable on CPU for live |
+| `cpu/tiny` | 37.27 | 0.295s | 0.51s | fast but inaccurate |
+| `nemotron` (default ctx) | 59.04 | 0.027s | — | native transducer — fastest by far; synthetic WER unreliable (point 3) |
+
+1. **Native transducer wins latency decisively.** Nemotron finalize ~0.027s (each frame
+   processed once, no end-of-utterance re-decode) vs AED Whisper 0.15s (GPU) / 1.7s (CPU).
+2. **Whisper CPU vs GPU WER is identical** (11.07%, bit-for-bit per category): GPU is a pure
+   latency play, not accuracy.
+3. **Synthetic audio cannot fairly compare architectures.** Nemotron scores 59% WER on
+   espeak yet transcribes real human speech perfectly (verified via `dev/dictate.py`). espeak
+   is severely OOD for models trained on real speech; Whisper's web-scale training masks this.
+   → real WER claims need a recorded-speech corpus (**T25, now critical path**); synthetic tier
+   stays valid for plumbing + latency only.
+4. Nemotron is **English-only** (`non-english-german` 100%, as predicted).
 
 ## Milestones
 
