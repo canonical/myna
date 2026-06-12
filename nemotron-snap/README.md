@@ -11,11 +11,16 @@ Why a second snap: NVIDIA's cache-aware streaming FastConformer-RNNT is a
 latency is far lower (~0.03 s in testbed runs), with native punctuation and an
 `att-context-size` latency/accuracy dial. English-only.
 
-**Status:** scaffolded, **UNVERIFIED in confinement.** The adapter and model
-loading are verified on bare metal (great on real speech); the heavy part —
-NeMo + torch + CUDA as a strict-confined snap component — needs build
-verification on a CUDA box. Expect to iterate on the component's
-`LD_LIBRARY_PATH` (torch bundles its own CUDA libs).
+**Status:** verified in strict confinement on hardware (2026-06-14) — NeMo +
+torch + CUDA load, the runtime `LD_LIBRARY_PATH` resolves, and the `.nemo`
+checkpoint restores and serves.
+
+Two startup warnings are **benign, no action needed**:
+- `pydub`/`ffmpeg not found` — the adapter feeds raw PCM (a numpy array)
+  straight to NeMo; it never decodes audio files, so ffmpeg is off the path.
+  Don't stage it (chunky dependency, zero functional gain).
+- `joblib [Errno 13] Permission denied → serial mode` — confinement blocks
+  joblib's shared-memory probe; serial is correct for single-session inference.
 
 ## Build
 
