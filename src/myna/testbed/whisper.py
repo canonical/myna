@@ -24,6 +24,7 @@ import os
 from collections.abc import AsyncIterator
 
 from myna.core import (
+    PHASE_PREPARING,
     EventSink,
     PcmChunk,
     Segment,
@@ -99,15 +100,15 @@ class FasterWhisperAdapter:
         return self._model
 
     async def _load_model_with_heartbeat(self, emit: EventSink):
-        """Load the model, emitting a ``progress`` heartbeat throughout so the
-        client sees liveness during a slow cold load rather than a silent gap.
-        Emits at least once even when the model is already warm."""
+        """Load the model, emitting a ``preparing`` heartbeat throughout so the
+        client shows "loading model…" during a slow cold load rather than a
+        silent gap. Emits at least once even when the model is already warm."""
         load = asyncio.ensure_future(self._load_model())
-        await emit(TranscriptionProgress())  # immediate "session is alive"
+        await emit(TranscriptionProgress(phase=PHASE_PREPARING))  # "loading…"
         while not load.done():
             done, _ = await asyncio.wait({load}, timeout=_LOAD_HEARTBEAT_SECONDS)
             if not done:
-                await emit(TranscriptionProgress())
+                await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         return await load
 
     async def run_session(

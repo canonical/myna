@@ -1,6 +1,8 @@
 import pytest
 
 from myna.core import (
+    PHASE_PREPARING,
+    PHASE_TRANSCRIBING,
     Segment,
     TranscriptionDone,
     TranscriptionError,
@@ -16,6 +18,7 @@ from myna.core import (
     [
         TranscriptionProgress(snippet="he"),
         TranscriptionProgress(),
+        TranscriptionProgress(phase=PHASE_PREPARING),
         TranscriptionFinal(text="hello world"),
         TranscriptionFinal(
             text="hello world",
@@ -33,6 +36,13 @@ def test_wire_shape_matches_ie114_framing():
     wire = event_to_wire(TranscriptionFinal(text="hi"))
     assert wire["event"] == "transcription.final"
     assert wire["data"]["text"] == "hi"
+
+
+def test_progress_phase_defaults_and_crosses_the_wire():
+    assert TranscriptionProgress().phase == PHASE_TRANSCRIBING  # safe default
+    wire = event_to_wire(TranscriptionProgress(phase=PHASE_PREPARING))
+    assert wire["data"]["phase"] == PHASE_PREPARING
+    assert event_from_wire(wire).phase == PHASE_PREPARING
 
 
 def test_unknown_event_rejected():

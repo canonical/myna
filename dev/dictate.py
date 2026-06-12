@@ -24,7 +24,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from myna.core import SessionConfig, WsUnixClient  # noqa: E402
+from myna.core import PHASE_PREPARING, SessionConfig, WsUnixClient  # noqa: E402
 from myna.testbed import Harness, MicSource  # noqa: E402
 from myna.testbed.adapter import Candidate  # noqa: E402
 
@@ -48,7 +48,10 @@ def render_meter(chunk) -> None:
 
 def show(te) -> None:
     e = te.event
-    if e.type == "transcription.error":
+    if e.type == "transcription.progress" and getattr(e, "phase", None) == PHASE_PREPARING:
+        # distinct from transcribing: the model is loading, expect a wait
+        print("\r⏳ loading model…\033[K", end="", flush=True)
+    elif e.type == "transcription.error":
         print(f"\n  [error] {e.code}: {e.message}", flush=True)
 
 

@@ -5,6 +5,8 @@ Nothing in here may import from ``myna.testbed`` or ``myna.desktop``.
 
 from myna.core.audio import AudioFormat, AudioSource, PcmChunk
 from myna.core.events import (
+    PHASE_PREPARING,
+    PHASE_TRANSCRIBING,
     Segment,
     TranscriptionDone,
     TranscriptionError,
@@ -19,6 +21,8 @@ from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService
 from myna.core.transport_ws import WsUnixClient, serve_unix
 
 __all__ = [
+    "PHASE_PREPARING",
+    "PHASE_TRANSCRIBING",
     "AudioFormat",
     "AudioSource",
     "EventSink",
