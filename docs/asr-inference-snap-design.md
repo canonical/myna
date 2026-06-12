@@ -159,6 +159,18 @@ tuning (`compute-type`, `beam-size`, streaming strategy knobs from T08).
    inference-snaps-cli team.
 3. **Capabilities discovery** is CLI-only for now (matches IE114's
    "configuration via CLI initially"); the network API remains open (T24).
+4. **Socket activation is blocked by `modelctl run`** (found T28, 2026-06-14).
+   snapd socket activation passes the listening socket as fd 3 to the daemon
+   (advertised via `LISTEN_FDS`/`LISTEN_PID`), so the daemon can exit on idle
+   and be relaunched on the next connection — full process/VRAM release. But
+   `modelctl run` (`run.go`) launches the server with Go's `exec.Command(...).
+   Run()`, which **forks a child** (so its PID ≠ `LISTEN_PID`) and does **not**
+   set `ExtraFiles` (so fd 3 is never inherited). Either alone breaks the
+   handoff. Until `modelctl run` either `syscall.Exec`s the server or forwards
+   the listening fd + `LISTEN_PID`, the snap uses **in-process idle-unload**
+   (`--idle-action unload`, T27) instead: frees the model weights (the bulk)
+   after `sleep-idle-seconds`, leaving only the runtime process + CUDA context.
+   Raise with the inference-snaps-cli team.
 
 ## 5. Proposed whisper-snap structure
 
