@@ -32,4 +32,4 @@ Routine implementation details (adding a field, renaming a variable, choosing a 
 
 | Topic | Title | Status | Date |
 | --- | --- | --- | --- |
-| [Ubuntu Desktop STT Integration Specification](Spec - Ubuntu Desktop STT Integration .md) | Initial High Level Specification | In Review | 2026-06-11 |
+| [Ubuntu Desktop STT Integration Specification](UD129 - Ubuntu Desktop STT Integration .md) | Initial High Level Specification | In Review | 2026-06-11 |
