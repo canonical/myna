@@ -13,7 +13,8 @@ att_args=()
 
 # Idle-unload (T27): drop the model after idle, keep serving (full process/VRAM
 # release via socket activation is blocked upstream — see whisper-snap notes).
-exec python3 -m myna.server \
+# exec -a sets argv[0] so nvidia-smi / ps show "<snap>-stt", not "python3".
+exec -a "${SNAP_INSTANCE_NAME:-myna}-stt" python3 -m myna.server \
     --adapter nemotron \
     --socket "$socket_path" \
     --model "${MODEL_PATH:?MODEL_PATH unset — is the model component installed? try: nemotron use-model streaming-multi}" \
