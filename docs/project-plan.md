@@ -55,12 +55,15 @@ Reference material: `reference/qwen3-snap` and `reference/gemma4-snap`
 (snapcraft layout, `engines/*/engine.yaml` + `server` scripts, components for
 runtimes/models, install hooks for hardware selection), and
 `reference/inference-snaps-cli` (`modelctl`, IE108 CLI compliance).
+Design note: `docs/asr-inference-snap-design.md` (T13 output).
 
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
-| T13 | Study + design note: how qwen3/gemma4 snaps structure engines/components/hooks, and what an ASR snap does differently (audio-push server instead of llama.cpp server) | todo | | — | Short doc in `docs/`; identifies reusable vs new pieces |
-| T14 | ASR snap skeleton: snapcraft.yaml, one CPU engine, model component, `modelctl` integration (IE108) | todo | | T13, C-track transport choice (T16) | Installs and serves the IE114 session contract on a UDS |
-| T15 | Engine variants + hardware selection (nvidia-gpu, cpu; install-hook scoring like reference snaps) | todo | | T14, T12 | Engine chosen automatically per hardware tier |
+| T13 | Study + design note: how qwen3/gemma4 snaps structure engines/components/hooks, and what an ASR snap does differently (audio-push server instead of llama.cpp server) | done | Claude/Charles | — | `docs/asr-inference-snap-design.md`. Decisions: one snap per family, Whisper first; copy gemma4's v2 engine/runtime/model schema; testbed adapter doubles as the snap's server; socket-activated UDS daemon; no audio interfaces needed |
+| T14a | `myna.server`: standalone entry point wrapping an `SttService` adapter behind the real transport on a UDS path | todo | | T07, T16 | Runs on bare metal; harness transcribes a fixture clip through the socket |
+| T14b | whisper-snap skeleton: snapcraft.yaml (core24, components), `cpu` engine, one small model component, `modelctl` wiring, install hooks | todo | | T14a | Installs; `modelctl use-engine --auto` works; fixture clip transcribed through the snap's socket |
+| T14c | Socket exposure + access control for confined clients (content interface vs file perms + polkit) | todo | | T14b, T17 | Joint decision with T17; documented in design note |
+| T15 | Engine variants + hardware selection (nvidia-gpu engine, remaining model components, VRAM-aware model gating follow-up with inference-snaps-cli team) | todo | | T14b, T12 | Engine chosen automatically per hardware tier |
 
 ## Workstream C — Transport (IE114 wire protocol)
 
@@ -98,5 +101,5 @@ runtimes/models, install hooks for hardware selection), and
    evaluation matrix produced.
 4. **M3 — Spec convergence:** T16, T18, T19, T12. IE114 updated with
    transport, events, and measured performance contract.
-5. **M4 — End-to-end dictation:** T14, T20–T22. Hotkey → speech → text in a
-   GNOME app via the inference snap.
+5. **M4 — End-to-end dictation:** T14a–T14c, T20–T22. Hotkey → speech → text
+   in a GNOME app via the whisper snap.
