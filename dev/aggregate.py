@@ -23,16 +23,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_latest(path: Path) -> list[dict]:
-    """Return one record per (label, clip), last occurrence winning."""
+    """Return one record per (label, clip, cold), last occurrence winning.
+
+    Cold samples are keyed separately so a clip measured both cold and warm
+    keeps both rows rather than the warm run clobbering the cold one.
+    """
     if not path.exists():
         raise SystemExit(f"no results at {path} — run dev/bench.py first")
-    latest: dict[tuple[str, str], dict] = {}
+    latest: dict[tuple[str, str, bool], dict] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if not raw:
             continue
         rec = json.loads(raw)
-        latest[(rec["label"], rec["clip"])] = rec
+        latest[(rec["label"], rec["clip"], bool(rec.get("cold", False)))] = rec
     return list(latest.values())
 
 
@@ -44,25 +48,34 @@ def _pct(values: list[float], q: float) -> float | None:
 
 
 def summarize(records: list[dict]) -> dict[str, dict]:
-    """Group records by label and micro-average the metrics."""
+    """Group records by label and micro-average the metrics.
+
+    Accuracy and warm latency come from the warm rows; cold-load latency is
+    reported separately from the cold samples (``--cold`` bench runs).
+    """
     groups: dict[str, list[dict]] = {}
     for rec in records:
         groups.setdefault(rec["label"], []).append(rec)
 
     summary = {}
     for label, recs in groups.items():
-        finals = [r["finalize_latency"] for r in recs if r.get("finalize_latency") is not None]
-        wer_edits = sum(r["wer_edits"] for r in recs)
-        ref_words = sum(r["ref_words"] for r in recs)
-        cer_edits = sum(r["cer_edits"] for r in recs)
-        ref_chars = sum(r["ref_chars"] for r in recs)
+        warm = [r for r in recs if not r.get("cold", False)]
+        cold = [r for r in recs if r.get("cold", False)]
+        finals = [r["finalize_latency"] for r in warm if r.get("finalize_latency") is not None]
+        cold_finals = [r["finalize_latency"] for r in cold if r.get("finalize_latency") is not None]
+        wer_edits = sum(r["wer_edits"] for r in warm)
+        ref_words = sum(r["ref_words"] for r in warm)
+        cer_edits = sum(r["cer_edits"] for r in warm)
+        ref_chars = sum(r["ref_chars"] for r in warm)
         summary[label] = {
-            "clips": len(recs),
+            "clips": len(warm),
             "wer": wer_edits / ref_words if ref_words else 0.0,
             "cer": cer_edits / ref_chars if ref_chars else 0.0,
             "median_final": _pct(finals, 0.5),
             "p90_final": _pct(finals, 0.9),
-            "audio": sum(r["audio_seconds"] for r in recs),
+            # cold = model load + that clip's decode; max across cold samples
+            "cold_final": max(cold_finals) if cold_finals else None,
+            "audio": sum(r["audio_seconds"] for r in warm),
         }
     return summary
 
@@ -72,18 +85,25 @@ def _f(x, spec="6.2f"):
 
 
 def print_overall(summary: dict[str, dict]) -> None:
-    print(f"{'label':20} {'clips':>5} {'WER%':>7} {'CER%':>7} {'med final':>10} {'p90 final':>10}")
-    print("-" * 64)
+    print(
+        f"{'label':20} {'clips':>5} {'WER%':>7} {'CER%':>7} "
+        f"{'med final':>10} {'p90 final':>10} {'cold load':>10}"
+    )
+    print("-" * 75)
     for label in sorted(summary):
         s = summary[label]
         print(
             f"{label:20} {s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
-            f"{_f(s['median_final'], '10.3f')} {_f(s['p90_final'], '10.3f')}"
+            f"{_f(s['median_final'], '10.3f')} {_f(s['p90_final'], '10.3f')} "
+            f"{_f(s['cold_final'], '10.3f')}"
         )
+    print("\nmed/p90 final + cold load are seconds (end-of-audio -> committed text).")
+    print("cold load = first request after restart: model load + that clip's decode.")
 
 
 def print_by_category(records: list[dict]) -> None:
+    records = [r for r in records if not r.get("cold", False)]  # warm only
     labels = sorted({r["label"] for r in records})
     cats = sorted({r["category"] for r in records})
     # micro WER per (category, label)
