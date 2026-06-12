@@ -1,10 +1,12 @@
-"""Session contract tests: fake adapter driven by the harness over loopback.
+"""Session contract tests: fake adapter driven by the harness.
 
-These pin down the semantics every transport and adapter must honour. When
-the WebSocket-over-UDS transport lands, it must pass these same tests with
-only the client/service wiring swapped.
+These pin down the semantics every transport and adapter must honour. Each
+test runs against every transport (loopback and WebSocket-over-UDS) with only
+the client/service wiring swapped — the loopback run is the reference
+semantics, the others prove the wire protocol preserves them.
 """
 
+import contextlib
 from collections.abc import AsyncIterator
 
 import pytest
@@ -15,42 +17,66 @@ from myna.core import (
     PcmChunk,
     SessionConfig,
     TranscriptionFinal,
+    WsUnixClient,
+    serve_unix,
 )
 from myna.testbed import FakeAdapter, Harness, ScriptStep, SilenceSource
 
 TERMINAL = ("transcription.done", "transcription.error")
 
 
-async def run_fake(adapter=None, duration=0.2):
-    adapter = adapter or FakeAdapter()
-    return await Harness().run(
-        client=LoopbackClient(adapter),
-        candidate=adapter.candidate,
-        source=SilenceSource(duration_seconds=duration),
-    )
+@contextlib.asynccontextmanager
+async def loopback_transport(service, tmp_path):
+    yield LoopbackClient(service)
 
 
-async def test_exactly_one_terminal_event_and_it_is_last():
+@contextlib.asynccontextmanager
+async def ws_unix_transport(service, tmp_path):
+    socket_path = tmp_path / "ubustt.sock"
+    async with serve_unix(service, socket_path):
+        yield WsUnixClient(socket_path)
+
+
+@pytest.fixture(params=[loopback_transport, ws_unix_transport], ids=["loopback", "ws-uds"])
+def transport(request):
+    return request.param
+
+
+@pytest.fixture
+def run_fake(transport, tmp_path):
+    async def run(adapter=None, duration=0.2):
+        adapter = adapter or FakeAdapter()
+        async with transport(adapter, tmp_path) as client:
+            return await Harness().run(
+                client=client,
+                candidate=adapter.candidate,
+                source=SilenceSource(duration_seconds=duration),
+            )
+
+    return run
+
+
+async def test_exactly_one_terminal_event_and_it_is_last(run_fake):
     record = await run_fake()
     kinds = [te.event.type for te in record.events]
     assert sum(k in TERMINAL for k in kinds) == 1
     assert kinds[-1] in TERMINAL
 
 
-async def test_done_carries_complete_transcript():
+async def test_done_carries_complete_transcript(run_fake):
     record = await run_fake()
     finals = [te.event.text for te in record.events if te.event.type == "transcription.final"]
     assert record.transcript == " ".join(finals)
     assert record.transcript == "The quick brown fox jumps over the lazy dog."
 
 
-async def test_event_timestamps_are_monotonic():
+async def test_event_timestamps_are_monotonic(run_fake):
     record = await run_fake()
     times = [te.t for te in record.events]
     assert times == sorted(times)
 
 
-async def test_metrics_populated():
+async def test_metrics_populated(run_fake):
     record = await run_fake()
     m = record.metrics
     assert m.time_to_first_event is not None
@@ -63,7 +89,7 @@ async def test_metrics_populated():
     assert m.event_counts["transcription.final"] == 2
 
 
-async def test_finals_are_never_retracted():
+async def test_finals_are_never_retracted(run_fake):
     """The vocabulary has no retraction: every final must survive into done."""
     record = await run_fake()
     for te in record.events:
@@ -80,14 +106,14 @@ class _CrashingAdapter:
         raise RuntimeError("boom")
 
 
-async def test_adapter_crash_surfaces_as_error_event():
+async def test_adapter_crash_surfaces_as_error_event(run_fake):
     record = await run_fake(adapter=_CrashingAdapter())
     kinds = [te.event.type for te in record.events]
     assert kinds == ["transcription.error"]
     assert record.events[0].event.code == "adapter_crash"
 
 
-async def test_custom_script_immediate_done():
+async def test_custom_script_immediate_done(run_fake):
     adapter = FakeAdapter(
         script=(ScriptStep(0.0, TranscriptionFinal(text="hi")),),
         done_after_audio_ends=False,
@@ -96,7 +122,7 @@ async def test_custom_script_immediate_done():
     assert record.transcript == "hi"
 
 
-async def test_result_record_serializes_to_json(tmp_path):
+async def test_result_record_serializes_to_json(run_fake, tmp_path):
     import json
 
     from myna.testbed.harness import write_records

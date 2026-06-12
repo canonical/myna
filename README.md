@@ -20,8 +20,10 @@ Tooling is [uv](https://docs.astral.sh/uv/):
 
 ```shell
 uv sync                                  # install
-uv run pytest                            # contract tests
-uv run python -m myna.testbed            # Phase 0 demo: fake adapter via loopback
+uv run pytest                            # contract tests (loopback + WebSocket/UDS)
+uv run python -m myna.testbed            # demo: fake adapter (--transport ws for UDS)
 uv run python dev/generate_fixtures.py   # synthesize the fixture corpus into fixtures/
                                          # (needs libespeak-ng1 + espeak-ng-data)
+uv sync --extra whisper                  # adds faster-whisper for the real adapter
+
 ```

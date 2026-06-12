@@ -5,7 +5,14 @@ description = "Speech to text on Ubuntu — dictation client and candidate-adapt
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
-dependencies = []
+dependencies = [
+    "websockets>=16.0",
+]
+
+[project.optional-dependencies]
+whisper = [
+    "faster-whisper>=1.2.1",
+]
 
 [dependency-groups]
 dev = [
