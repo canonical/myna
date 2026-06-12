@@ -23,6 +23,7 @@ iteration points on first run (NeMo's API drifts across versions).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from collections.abc import AsyncIterator
 
@@ -100,6 +101,20 @@ class NemotronAdapter:
             model.encoder.set_default_att_context_size(self._att_context_size)
         model.eval()
         return model
+
+    async def unload(self) -> None:
+        """Release the model (idle-unload, T27). Drops the reference and returns
+        cached CUDA blocks to the driver; the process (and CUDA context) stay —
+        full release needs socket-activation exit (T28). Idempotent."""
+        import gc
+
+        async with self._model_lock:
+            self._model = None
+        gc.collect()
+        with contextlib.suppress(Exception):
+            import torch
+
+            torch.cuda.empty_cache()
 
     async def _load_model_with_heartbeat(self, emit: EventSink):
         """Emit a ``preparing`` heartbeat while the (slow, cold) model loads —

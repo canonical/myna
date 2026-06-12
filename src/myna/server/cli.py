@@ -49,6 +49,14 @@ def build_parser() -> argparse.ArgumentParser:
         "tighten via dir permissions or dedicated group in production)",
     )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
+    parser.add_argument(
+        "--sleep-idle-seconds", type=float, default=0.0,
+        help="release the model after N idle seconds (0 = never)",
+    )
+    parser.add_argument(
+        "--idle-action", default="unload", choices=("unload", "exit"),
+        help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
+    )
     return parser
 
 
@@ -87,34 +95,56 @@ async def serve(args: argparse.Namespace) -> None:
             f"'{args.adapter}' extra"
         ) from exc
 
-    from myna.core import serve_unix
+    from myna.core import serve_unix, systemd_socket
+    from myna.server.lifecycle import LifecycleService, idle_monitor
 
     if args.preload:
         log.info("preloading adapter=%s model=%s", args.adapter, args.model or "(default)")
         await adapter._load_model()
 
+    lifecycle = LifecycleService(adapter)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
 
-    args.socket.parent.mkdir(parents=True, exist_ok=True)
-    # remove a stale socket left by an unclean shutdown, or bind() fails
-    with contextlib.suppress(FileNotFoundError):
-        args.socket.unlink()
-    async with serve_unix(adapter, args.socket):
-        os.chmod(args.socket, int(args.socket_mode, 8))
+    monitor = None
+    if args.sleep_idle_seconds > 0:
+        monitor = asyncio.ensure_future(
+            idle_monitor(lifecycle, args.sleep_idle_seconds, args.idle_action, stop, log=log)
+        )
+
+    # Under socket activation systemd owns the socket and hands it to us; we
+    # don't bind/chmod/unlink the path (it manages those).
+    inherited = systemd_socket()
+    if inherited is None:
+        args.socket.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):  # stale socket → bind() fails
+            args.socket.unlink()
+
+    async with serve_unix(lifecycle, args.socket, sock=inherited):
+        if inherited is None:
+            os.chmod(args.socket, int(args.socket_mode, 8))
         log.info(
-            "serving adapter=%s candidate=%s on %s (pid %d)",
+            "serving adapter=%s candidate=%s on %s (pid %d; idle=%s/%s; activation=%s)",
             args.adapter,
-            adapter.candidate.id,
-            args.socket,
+            lifecycle.candidate.id,
+            "systemd-socket" if inherited is not None else args.socket,
             os.getpid(),
+            args.sleep_idle_seconds or "off",
+            args.idle_action,
+            "yes" if inherited is not None else "no",
         )
         await stop.wait()
+
     log.info("shutting down")
-    with contextlib.suppress(FileNotFoundError):
-        args.socket.unlink()
+    if monitor is not None:
+        monitor.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await monitor
+    if inherited is None:
+        with contextlib.suppress(FileNotFoundError):
+            args.socket.unlink()
 
 
 def main(argv: list[str] | None = None) -> int:

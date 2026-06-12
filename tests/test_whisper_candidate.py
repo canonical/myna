@@ -23,6 +23,15 @@ def test_candidate_labels_a_bare_size():
     assert cand.streaming_strategy == "commit-on-finalize"
 
 
+async def test_unload_drops_the_model():
+    # idle-unload (T27); no real model needed — just the reference handling
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = object()
+    await adapter.unload()
+    assert adapter._model is None
+    await adapter.unload()  # idempotent
+
+
 def test_candidate_labels_a_component_directory_by_leaf():
     # snap passes --model $SNAP_COMPONENTS/model-small
     cand = FasterWhisperAdapter(
