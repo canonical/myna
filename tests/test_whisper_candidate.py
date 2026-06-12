@@ -6,7 +6,14 @@ label normalisation that keeps result records readable when the snap loads
 weights from a local CTranslate2 model-component directory (T15).
 """
 
-from myna.testbed.whisper import FasterWhisperAdapter
+from myna.testbed.whisper import FasterWhisperAdapter, _iso639_1
+
+
+def test_iso639_1_drops_region_subtag():
+    # faster-whisper rejects BCP-47 region tags; the corpus uses them.
+    assert _iso639_1("en-GB") == "en"
+    assert _iso639_1("de") == "de"
+    assert _iso639_1(None) is None  # auto-detect
 
 
 def test_candidate_labels_a_bare_size():
