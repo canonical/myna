@@ -76,7 +76,7 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
-| T20 | Audio Adapter: PipeWire capture → bounded in-memory buffer → `PcmChunk` stream; VAD optional first pass | todo | | T01 | No disk persistence; buffer discarded on session end; unit tests with fake capture |
+| T20 | Audio Adapter: PipeWire capture → bounded in-memory buffer → `PcmChunk` stream; VAD optional first pass | in progress | Claude/Charles | T01 | No disk persistence; buffer discarded on session end; unit tests with fake capture. **Seeded:** `MicSource` (`myna.testbed.sources`) captures live PipeWire audio via `pw-record --raw` → `PcmChunk` stream, memory-only, `stop()`-terminated; `dev/dictate.py` is a working push-to-talk demo (speak → Enter → transcription) against the snap — the audio-push model end to end, verified live. Still to do for T20 proper: bounded ring buffer, VAD, `--target` virtual-node wiring (T05), fake-capture unit test |
 | T21 | Session controller: hotkey press/release driving the `DictationState` machine, wiring audio → `SttSession` → text output | todo | | T16, T20 | State transitions validated against `TRANSITIONS`; error states surface user feedback |
 | T22 | IBus `TextInjector` backend (commit-only MVP) + activity indicator; end-to-end dictation demo against the inference snap | todo | | T14, T21 | UD129 acceptance: commit-only insertion, indicator lifecycle, secure-field blocking where detectable |
 | T23 | Post-processing pass 1: capitalization/punctuation gap analysis per model (Nemotron has it native; Whisper mostly; what remains?) | todo | | T07 | Decide what post-processing the MVP actually needs before building it |
