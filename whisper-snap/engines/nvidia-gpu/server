@@ -1,0 +1,16 @@
+#!/bin/bash -eu
+
+# UNVERIFIED on hardware — scaffolded in T15. The faster-whisper-cuda runtime
+# component provides myna + CUDA CTranslate2 on PYTHONPATH and the cuBLAS/cuDNN
+# libraries on LD_LIBRARY_PATH (see runtimes/faster-whisper-cuda/runtime.yaml);
+# we run the same server module the cpu engine does, on the GPU.
+
+socket_path="$(modelctl get socket.path)"
+compute_type="$(modelctl get compute-type)"
+
+exec python3 -m myna.server \
+    --socket "$socket_path" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model small}" \
+    --device cuda \
+    --compute-type "${compute_type:-float16}" \
+    "$@"

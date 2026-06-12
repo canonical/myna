@@ -2,8 +2,10 @@
 
 socket_path="$(modelctl get socket.path)"
 
+# MODEL_DIR is exported from the active model.yaml and points at the
+# installed CTranslate2 model component (see models/*/model.yaml).
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
-    --model "${MODEL_NAME:-tiny}" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model tiny}" \
     --device cpu \
     "$@"

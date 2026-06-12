@@ -1,16 +1,20 @@
-# Whisper inference snap (UbuSTT) — T14b skeleton.
+# Whisper inference snap (UbuSTT).
 #
 # Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
 # v2 from inference-snaps-cli). Differences from the LLM snaps, per
 # docs/asr-inference-snap-design.md:
 #   - the server is the UbuSTT session server (myna-server) on a Unix socket,
 #     not an HTTP llama-server: no microphone access, no TCP port.
-#   - SKELETON DEVIATION: model weights are downloaded by faster-whisper into
-#     $SNAP_COMMON on first use (needs `network`), instead of being delivered
-#     as snap components. Components are the production path (T15).
+#   - model weights ship as per-model snap components (T15): run
+#     ./dev/download-models.sh before packing. No runtime download / `network`.
+#   - cpu engine venv is baked into the base snap (server-app part); the
+#     nvidia-gpu CUDA stack ships as the faster-whisper-cuda component
+#     (scaffolded in T15, build-verify on a CUDA box before relying on it).
 name: whisper
 base: core24
 version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
 summary: Whisper speech-to-text inference snap (UbuSTT)
 description: |
   Local, offline speech-to-text service exposing the UbuSTT session API on a
@@ -27,6 +31,12 @@ compression: lzo
 platforms:
   amd64:
 
+environment:
+  # Path modelctl/runtimes use to reach installed components, matching the
+  # reference snaps. Model components expose MODEL_DIR=$SNAP_COMPONENTS/<id>.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
 apps:
   whisper:
     command: bin/whisper
@@ -41,10 +51,8 @@ apps:
     plugs:
       - hardware-observe
       - opengl
-      - network # skeleton only: runtime model download (see header)
+      # Weights are components now (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
-    environment:
-      HF_HOME: $SNAP_COMMON/huggingface
 
 hooks:
   install:
@@ -107,3 +115,62 @@ parts:
       - jq
     organize:
       "server.sh": bin/
+
+  # Model weights as components. Populate components/ with
+  # ./dev/download-models.sh before packing. Each model-<size>-ct2/ directory
+  # (CTranslate2 conversion: model.bin, config.json, tokenizer.json, …) is
+  # routed into its own component; `prime: [-*]` keeps them out of the base.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-tiny-ct2/*": (component/model-tiny)/
+      "model-base-ct2/*": (component/model-base)/
+      "model-small-ct2/*": (component/model-small)/
+    prime:
+      - -*
+
+  # CUDA runtime as a component: myna[whisper] + ctranslate2 + NVIDIA cuBLAS/
+  # cuDNN pip libs under site-packages/. Exposed via PYTHONPATH + LD_LIBRARY_PATH
+  # (see runtimes/faster-whisper-cuda/runtime.yaml), run by the base python3.
+  # amd64-only; UNVERIFIED — scaffolded in T15, build-verify on a CUDA box.
+  faster-whisper-cuda:
+    plugin: nil
+    source: wheels
+    build-packages:
+      - python3
+      - python3-pip
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      pip3 install --target="$target" \
+        ./myna-0.0.1-py3-none-any.whl[whisper] \
+        ctranslate2 \
+        nvidia-cublas-cu12 \
+        nvidia-cudnn-cu12
+      craftctl default
+    organize:
+      "*": (component/faster-whisper-cuda)
+    prime:
+      - -*
+
+components:
+  model-tiny:
+    type: standard
+    summary: Whisper tiny CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper tiny (MIT).
+  model-base:
+    type: standard
+    summary: Whisper base CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper base (MIT).
+  model-small:
+    type: standard
+    summary: Whisper small CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper small (MIT).
+  faster-whisper-cuda:
+    type: standard
+    summary: faster-whisper CUDA runtime (CTranslate2 + cuBLAS/cuDNN)
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + CUDA CTranslate2
+      and the NVIDIA cuBLAS/cuDNN libraries. amd64 only.
