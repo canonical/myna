@@ -34,6 +34,11 @@ from myna.testbed.adapter import Candidate
 
 WHISPER_RATE = 16_000
 _PROGRESS_INTERVAL_SECONDS = 1.0
+# Heartbeat cadence while the model loads. A cold load is a few seconds from
+# disk but can be minutes on first use (weight download), during which there
+# is no audio to pace progress off — so tick on a timer instead. Coarser than
+# the audio cadence to avoid flooding a long download with events.
+_LOAD_HEARTBEAT_SECONDS = 2.0
 
 
 class FasterWhisperAdapter:
@@ -78,6 +83,18 @@ class FasterWhisperAdapter:
                 )
         return self._model
 
+    async def _load_model_with_heartbeat(self, emit: EventSink):
+        """Load the model, emitting a ``progress`` heartbeat throughout so the
+        client sees liveness during a slow cold load rather than a silent gap.
+        Emits at least once even when the model is already warm."""
+        load = asyncio.ensure_future(self._load_model())
+        await emit(TranscriptionProgress())  # immediate "session is alive"
+        while not load.done():
+            done, _ = await asyncio.wait({load}, timeout=_LOAD_HEARTBEAT_SECONDS)
+            if not done:
+                await emit(TranscriptionProgress())
+        return await load
+
     async def run_session(
         self,
         config: SessionConfig,
@@ -96,7 +113,7 @@ class FasterWhisperAdapter:
             return
 
         try:
-            model = await self._load_model()
+            model = await self._load_model_with_heartbeat(emit)
 
             buffered = bytearray()
             seconds_since_progress = 0.0
