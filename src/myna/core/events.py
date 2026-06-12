@@ -8,7 +8,13 @@ and flag it provisional.
 Semantics:
 
 - ``transcription.progress`` — "something is happening". May carry a short
-  unstable snippet to animate a UI. Never display as committed text.
+  unstable snippet to animate a UI. Never display as committed text. The
+  ``phase`` field distinguishes *what* is happening: ``"preparing"`` (the
+  model is loading — show "loading model…", expect a wait) vs ``"transcribing"``
+  (audio is being processed). This is the lifecycle signal from plan T26,
+  deliberately a field on the liveness we already emit rather than a new
+  ``session.starting`` event — and a single phase, not a full state machine
+  (the audio-push model makes "listening" the client's own business).
 - ``transcription.final``    — stable, committed text for one utterance
   segment. Never retracted.
 - ``transcription.done``     — end of session; carries the complete transcript.
@@ -26,6 +32,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, ClassVar
 
 
+# progress.phase values
+PHASE_PREPARING = "preparing"  # model loading; client should show "loading…"
+PHASE_TRANSCRIBING = "transcribing"  # audio being processed
+
+
 @dataclass(frozen=True)
 class Segment:
     """Timestamped transcript segment, relative to session start (seconds)."""
@@ -39,10 +50,13 @@ class Segment:
 @dataclass(frozen=True)
 class TranscriptionProgress:
     """Lightweight liveness signal. ``snippet`` is unstable text with no
-    accuracy guarantee and no retraction semantics — UI animation only."""
+    accuracy guarantee and no retraction semantics — UI animation only.
+    ``phase`` is ``"preparing"`` while the model loads, else ``"transcribing"``
+    (the default), so a cold load reads as "loading…" not a hang."""
 
     type: ClassVar[str] = "transcription.progress"
     snippet: str | None = None
+    phase: str = PHASE_TRANSCRIBING
 
 
 @dataclass(frozen=True)

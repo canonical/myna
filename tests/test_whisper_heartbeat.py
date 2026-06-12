@@ -6,7 +6,7 @@ the heartbeat logic can be exercised with a stubbed load and no GPU/weights.
 
 import asyncio
 
-from myna.core import TranscriptionProgress
+from myna.core import PHASE_PREPARING, TranscriptionProgress
 from myna.testbed import whisper as whisper_mod
 from myna.testbed.whisper import FasterWhisperAdapter
 
@@ -33,6 +33,7 @@ async def test_heartbeat_ticks_during_slow_load(monkeypatch):
     events = await collect(adapter)
 
     assert all(isinstance(e, TranscriptionProgress) for e in events)
+    assert all(e.phase == PHASE_PREPARING for e in events)  # "loading…", not transcribing
     assert len(events) >= 3  # immediate tick + several while loading
 
 
@@ -45,4 +46,5 @@ async def test_heartbeat_emits_once_when_warm(monkeypatch):
     monkeypatch.setattr(adapter, "_load_model", instant_load)
     events = await collect(adapter)
 
-    assert events == [TranscriptionProgress()]  # just the immediate liveness tick
+    # just the immediate liveness tick, tagged as the loading phase
+    assert events == [TranscriptionProgress(phase=PHASE_PREPARING)]
