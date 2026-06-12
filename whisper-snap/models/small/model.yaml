@@ -6,6 +6,7 @@ quantization: float32
 capabilities:
   - multilingual
 disk-size: 500M
-components: []
+components:
+  - model-small
 environment:
-  - MODEL_NAME=small
+  - MODEL_DIR=$SNAP_COMPONENTS/model-small

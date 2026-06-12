@@ -6,6 +6,10 @@ quantization: float32
 capabilities:
   - multilingual
 disk-size: 80M
-components: []
+# Weights shipped as a snap component (CTranslate2 conversion of
+# Systran/faster-whisper-tiny, MIT). modelctl installs it on use-model; the
+# server loads from the directory, so no network access is needed.
+components:
+  - model-tiny
 environment:
-  - MODEL_NAME=tiny
+  - MODEL_DIR=$SNAP_COMPONENTS/model-tiny

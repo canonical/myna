@@ -1,6 +1,6 @@
 # faster-whisper (CTranslate2) on CPU, serving the UbuSTT session API.
-# No components yet: the venv is baked into the snap and weights are
-# downloaded on demand (skeleton deviation; components are T15).
+# The CPU venv is baked into the base snap (server-app part); model weights
+# ship as per-model components (T15), so no runtime download / network access.
 servers:
   ubustt:
     protocol: ws+unix

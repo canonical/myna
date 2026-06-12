@@ -1,0 +1,24 @@
+# faster-whisper (CUDA CTranslate2) serving the UbuSTT session API.
+#
+# UNVERIFIED on hardware — scaffolded in T15. Unlike the cpu runtime (whose
+# venv is baked into the base snap), the GPU stack ships as a component: the
+# `faster-whisper-cuda` part installs myna[whisper] + ctranslate2 + the NVIDIA
+# cuBLAS/cuDNN pip libraries under `site-packages/`. We expose them via
+# PYTHONPATH + LD_LIBRARY_PATH rather than a relocatable venv (the base snap's
+# python3.12 runs the module — see engines/nvidia-gpu/server).
+#
+# NOTE: the python3.12 path below tracks the core24 base; revisit if the base
+# changes. The nvidia-*-cu12 wheels lay their .so files out under
+# site-packages/nvidia/<lib>/lib — CTranslate2 needs both on LD_LIBRARY_PATH.
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - PYTHONPATH=$SNAP_COMPONENTS/faster-whisper-cuda/site-packages
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/faster-whisper-cuda/site-packages/nvidia/cublas/lib
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/faster-whisper-cuda/site-packages/nvidia/cudnn/lib
+
+components:
+  - faster-whisper-cuda
