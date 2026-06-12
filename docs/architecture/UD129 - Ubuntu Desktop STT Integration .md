@@ -34,7 +34,7 @@ The system must:
 
 * Perform speech recognition locally using the Canonical Inference Snap.  
 * Function without network connectivity once the required models are installed.  
-* Stream audio input and transcription output in real time.  
+* Stream audio to the inference backend in real time, while exposing only stable committed text to the user.  
 * In the initial version, show a visible activity indicator during recording/transcription and insert only committed text into the target application.  
 * Use only bounded in-memory buffering and avoid persisting audio by default.  
 * Support configurable dictation languages, defaulting to the user's display language when available.  
@@ -47,8 +47,9 @@ The following features are out of scope:
 
 * Wake-word activation and background listening.  
 * Continuous dictation sessions.  
-* Cloud-based speech recognition services.  
-* Voice assistants, voice commands, or desktop control.  
+* Cloud-based speech recognition services.
+* No cloud post-processing.
+* Voice assistants, voice commands, or desktop control. This will be handled by separate context-aware features.
 * Speech translation.  
 * Speaker identification or diarization.  
 * Automatic language detection.  
@@ -131,6 +132,35 @@ The user must receive clear feedback when dictation cannot start or continue, fo
 * No compatible text input target is focused.  
 * Dictation is blocked in a secure field.
 
+## Session Lifecycle
+
+The session lifecycle is managed by the Speech Orchestrator and includes the following states:
+
+### Default State transitions
+
+Idle → Starting → Recording → Transcribing → Finalizing → Completed → Idle
+
+### Error transitions
+
+Any state → Error → Idle
+
+### Cancellation transitions
+
+Any active state → Cancelled → Idle
+
+### State descriptions
+
+| State | Meaning |
+| --- | --- |
+| Idle | No microphone capture |
+| Starting | Initializing audio and inference |
+| Recording | Audio capture active |
+| Transcribing | Inference active, partial hypotheses possible |
+| Finalizing | No new audio accepted, inference finishing |
+| Completed | Text committed |
+| Cancelled | Session aborted |
+| Error | Unrecoverable failure |
+
 ## Privacy and Security
 
 The system must be explicit and privacy-preserving by design.
@@ -187,7 +217,7 @@ It is responsible for:
 * Hosting pre-trained STT models in multiple sizes (lightweight, default, quality).  
 * Providing model runtimes for various accelerators (NVIDIA GPU, Intel NPU, CPU).  
 * Exposing a Configuration API for capabilities discovery and model negotiation.  
-* Providing a Transcription API (Mistral-like) that accepts raw audio frames and returns text segments.  
+* Providing a Transcription API (Mistral/OpenAI-like) that accepts raw audio frames and returns text segments.  
 * Managing model lifecycle and resource allocation.  
 * Versioning APIs and model runtimes to ensure compatibility with clients.
 
@@ -238,7 +268,7 @@ It handles:
 
 State Management maintains the session state, including:
 
-* Current session state (idle, listening, transcribing, finalizing).  
+* Current session state.
 * Audio buffer state.  
 * Inference session state.  
 * Text input target state.  
@@ -273,6 +303,14 @@ It is responsible for:
 * Supporting multiple backends: IBus (current), Wayland input-method protocol (future), xdg text input, and others.  
 * Blocking injection into secure fields (password fields, authentication prompts).  
 * Ensuring text is injected only into the originally selected target.
+
+### Activity Indicator
+
+The Activity Indicator is a non-intrusive visual element that shows when recording and transcription are active and until the process is finalized.
+
+States such as "Recording", "Transcribing", "Finalizing" and "Error" should be visually distinguishable.
+
+It could be represented as a system tray icon, like a volume meter, or a small overlay near the text input target, depending on what environment can reliably support.
 
 ### Settings UI
 
@@ -330,7 +368,7 @@ The system is designed around streaming input and streaming output through the S
 
 ### Audio streaming
 
-The Audio Adapter captures audio frames and streams them incrementally to the Speech Orchestrator, which forwards them to the Inference Snap.
+The Audio Adapter captures audio frames and streams them incrementally to the Inference Snap.
 
 The system does not wait until the user releases the hotkey before starting speech recognition. Instead, recognition begins immediately as audio frames arrive at the Inference Snap.
 
