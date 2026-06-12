@@ -36,6 +36,13 @@ from myna.core import (
 from myna.testbed.adapter import Candidate
 
 WHISPER_RATE = 16_000
+
+
+def _iso639_1(language: str | None) -> str | None:
+    """faster-whisper wants a bare ISO 639-1 code ("en"); the corpus uses
+    BCP-47-ish tags with region subtags ("en-GB"), which it rejects. Drop the
+    region. Keeps this model-specific quirk inside the adapter (house rule)."""
+    return language.split("-")[0] if language else None
 _PROGRESS_INTERVAL_SECONDS = 1.0
 # Heartbeat cadence while the model loads. A cold load is a few seconds from
 # disk but can be minutes on first use (weight download), during which there
@@ -187,7 +194,7 @@ class FasterWhisperAdapter:
 
         segments, _info = model.transcribe(
             samples,
-            language=config.language,
+            language=_iso639_1(config.language),
             initial_prompt=config.prompt,
         )
         return list(segments)  # drain the generator while still in the thread
