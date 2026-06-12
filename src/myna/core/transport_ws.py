@@ -26,6 +26,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
+import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -41,13 +43,45 @@ from myna.core.transport import SttService
 _TERMINAL = ("transcription.done", "transcription.error")
 
 
+_SD_LISTEN_FDS_START = 3  # systemd passes listening sockets from fd 3 up
+
+
+def systemd_socket() -> socket.socket | None:
+    """The listening socket handed in by systemd/snapd socket activation, or
+    ``None`` if this process wasn't launched that way.
+
+    Under socket activation, systemd owns and binds the socket and passes it as
+    fd 3 (advertised via ``LISTEN_FDS``/``LISTEN_PID``); the daemon serves on it
+    instead of binding a path, so it can exit on idle and be relaunched on the
+    next connection (T28). Testable in dev with ``systemd-socket-activate``.
+    """
+    if os.environ.get("LISTEN_PID") != str(os.getpid()):
+        return None
+    try:
+        count = int(os.environ.get("LISTEN_FDS", "0"))
+    except ValueError:
+        return None
+    if count < 1:
+        return None
+    return socket.socket(
+        fileno=_SD_LISTEN_FDS_START, family=socket.AF_UNIX, type=socket.SOCK_STREAM
+    )
+
+
 @contextlib.asynccontextmanager
-async def serve_unix(service: SttService, socket_path: Path | str):
+async def serve_unix(
+    service: SttService, socket_path: Path | str | None = None, *, sock: socket.socket | None = None
+):
     """Serve ``service`` on a Unix socket; one WebSocket connection per
-    session. Use as an async context manager."""
+    session. Use as an async context manager. Either binds ``socket_path``, or
+    serves on a pre-bound ``sock`` (e.g. from ``systemd_socket()``)."""
     handler = _SessionHandler(service)
-    async with unix_serve(handler.handle, path=str(socket_path)) as server:
-        yield server
+    if sock is not None:
+        async with unix_serve(handler.handle, sock=sock) as server:
+            yield server
+    else:
+        async with unix_serve(handler.handle, path=str(socket_path)) as server:
+            yield server
 
 
 class _SessionHandler:

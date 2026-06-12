@@ -18,7 +18,7 @@ from myna.core.events import (
 )
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService, SttSession
-from myna.core.transport_ws import WsUnixClient, serve_unix
+from myna.core.transport_ws import WsUnixClient, serve_unix, systemd_socket
 
 __all__ = [
     "PHASE_PREPARING",
@@ -42,6 +42,7 @@ __all__ = [
     "event_from_wire",
     "event_to_wire",
     "serve_unix",
+    "systemd_socket",
     "session_config_from_wire",
     "session_config_to_wire",
 ]
