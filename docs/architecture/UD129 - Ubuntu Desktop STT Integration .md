@@ -213,14 +213,14 @@ If the user changes focus to another application while still holding the hotkey,
 
 #### Protected fields
 
+The system must block dictation in secure input fields where secure-input metadata is available. Applications that do not expose secure-input state cannot be protected reliably. Protection is therefore best-effort rather than guaranteed.
+
 Special care is required for:
 
 * Password fields.  
 * Lock screen.  
 * Polkit prompts.  
 * Terminal emulators.  
-* Remote desktop sessions.  
-* Virtual machine windows.  
 * Browser address bars.  
 * Applications using custom text widgets.
 
