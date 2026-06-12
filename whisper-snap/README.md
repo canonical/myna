@@ -67,3 +67,18 @@ whisper show-engine               # active engine + model options
 
 Switching a model installs that model's component (weights are already in the
 snap revision); nothing is fetched from the network at runtime.
+
+## Idle behaviour
+
+The server unloads the model after an idle period, freeing the bulk of its
+memory (and most of the GPU VRAM); the next request reloads it (you'll see a
+brief "loading…" via `progress.phase`). Tune or disable it:
+
+```shell
+sudo whisper set sleep-idle-seconds=600   # default 300; 0 = never unload
+sudo snap restart whisper.server
+```
+
+Full process/VRAM release on idle (socket activation) is blocked upstream —
+`modelctl run` forks the server without passing the listening socket, so the
+snap uses in-process unload for now (see `docs/asr-inference-snap-design.md`).

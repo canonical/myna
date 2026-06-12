@@ -1,11 +1,17 @@
 #!/bin/bash -eu
 
 socket_path="$(modelctl get socket.path)"
+idle="$(modelctl get sleep-idle-seconds)"
 
 # MODEL_DIR is exported from the active model.yaml and points at the
 # installed CTranslate2 model component (see models/*/model.yaml).
+# Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
+# (Full process/VRAM release via socket activation is blocked upstream — see
+# docs/asr-inference-snap-design.md §4.)
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model tiny}" \
     --device cpu \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
     "$@"
