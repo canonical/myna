@@ -22,6 +22,10 @@ CONFIGS=(
   "nvidia-gpu small"
 )
 
+# Short clip used to measure cold load (model load + a small decode) right
+# after each restart, before the warm sweep.
+WARMUP_CLIP="commands-minimal"
+
 wait_for_socket() {
   for _ in $(seq 1 30); do
     [ -S "$SOCKET" ] && return 0
@@ -41,8 +45,11 @@ for cfg in "${CONFIGS[@]}"; do
   sudo whisper use-model "$model" --assume-yes
   sudo snap restart whisper.server
   wait_for_socket
-  # first request loads the model (cold); --batch + the adapter heartbeat
-  # absorb that. Label explicitly so the matrix rows are unambiguous.
+  # Cold sample: the very first request loads the model. Captured as its own
+  # tagged record (--cold) so it doesn't pollute the warm sweep.
+  uv run python "$REPO_ROOT/dev/bench.py" \
+    --socket "$SOCKET" --label "$engine/$model" --batch --cold "$WARMUP_CLIP"
+  # Warm sweep: model now resident in the daemon. Real per-clip latency + WER.
   uv run python "$REPO_ROOT/dev/bench.py" \
     --socket "$SOCKET" --label "$engine/$model" --batch
 done
