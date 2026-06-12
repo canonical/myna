@@ -99,6 +99,16 @@ class FasterWhisperAdapter:
                 )
         return self._model
 
+    async def unload(self) -> None:
+        """Release the model (idle-unload, T27). Dropping the CTranslate2
+        reference frees its CPU/GPU memory; ``_load_model`` reloads on the next
+        session. Idempotent."""
+        import gc
+
+        async with self._model_lock:
+            self._model = None
+        gc.collect()
+
     async def _load_model_with_heartbeat(self, emit: EventSink):
         """Load the model, emitting a ``preparing`` heartbeat throughout so the
         client shows "loading model…" during a slow cold load rather than a
