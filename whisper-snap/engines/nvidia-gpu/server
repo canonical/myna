@@ -12,7 +12,8 @@ idle="$(modelctl get sleep-idle-seconds)"
 # Idle-unload (T27) matters most here: frees GPU weights after idle. Full VRAM
 # release (process exit via socket activation) is blocked upstream — modelctl
 # run forks and doesn't pass the listening fd (design note §4).
-exec python3 -m myna.server \
+# exec -a sets argv[0] so nvidia-smi / ps show "<snap>-stt", not "python3".
+exec -a "${SNAP_INSTANCE_NAME:-myna}-stt" python3 -m myna.server \
     --socket "$socket_path" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model small}" \
     --device cuda \
