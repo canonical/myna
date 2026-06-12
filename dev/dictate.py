@@ -15,7 +15,9 @@ T08. Audio is never written to disk.
 from __future__ import annotations
 
 import argparse
+import array
 import asyncio
+import math
 import sys
 from pathlib import Path
 
@@ -26,20 +28,33 @@ from myna.core import SessionConfig, WsUnixClient  # noqa: E402
 from myna.testbed import Harness, MicSource  # noqa: E402
 from myna.testbed.adapter import Candidate  # noqa: E402
 
+METER_WIDTH = 28
+# int16 RMS that maps to a full bar — normal speech sits a few thousand, so
+# this keeps the meter lively without clipping to full on every syllable.
+METER_FULL_RMS = 6000.0
+
+
+def render_meter(chunk) -> None:
+    """Draw a level bar from one PCM chunk, redrawing in place."""
+    samples = array.array("h")  # native-endian s16, little on x86
+    samples.frombytes(chunk.data)
+    if not samples:
+        return
+    rms = math.sqrt(sum(s * s for s in samples) / len(samples))
+    filled = min(METER_WIDTH, int(rms / METER_FULL_RMS * METER_WIDTH))
+    bar = "█" * filled + "░" * (METER_WIDTH - filled)
+    print(f"\r🎤 [{bar}]", end="", flush=True)
+
 
 def show(te) -> None:
     e = te.event
-    if e.type == "transcription.progress":
-        print("·", end="", flush=True)  # liveness while listening/decoding
-    elif e.type == "transcription.final":
-        print(f"\n  » {e.text}", flush=True)
-    elif e.type == "transcription.error":
+    if e.type == "transcription.error":
         print(f"\n  [error] {e.code}: {e.message}", flush=True)
 
 
 async def one_utterance(args, loop) -> None:
-    mic = MicSource(sample_rate_hz=args.rate, target=args.target)
-    print("🎤 listening — speak, then press Enter (Ctrl-C to quit)")
+    mic = MicSource(sample_rate_hz=args.rate, target=args.target, on_chunk=render_meter)
+    print("speak, then press Enter (Ctrl-C to quit)")
     run = asyncio.ensure_future(
         Harness().run(
             client=WsUnixClient(args.socket),
@@ -58,10 +73,11 @@ async def one_utterance(args, loop) -> None:
         loop.remove_reader(sys.stdin.fileno())
 
     mic.stop()
+    print("\r🎤 transcribing… " + " " * METER_WIDTH, end="", flush=True)  # clear the meter
     record = await run
     m = record.metrics
-    took = f" ({m.finalize_latency:.2f}s)" if m.finalize_latency else ""
-    print(f"  transcript: {record.transcript!r}{took}\n")
+    took = f"  ({m.finalize_latency:.2f}s)" if m.finalize_latency else ""
+    print(f"\r  » {record.transcript}{took}\n")
 
 
 async def main() -> None:
