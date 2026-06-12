@@ -19,7 +19,9 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 Tooling is [uv](https://docs.astral.sh/uv/):
 
 ```shell
-uv sync                          # install
-uv run pytest                    # contract tests
-uv run python -m myna.testbed    # Phase 0 demo: fake adapter via loopback
+uv sync                                  # install
+uv run pytest                            # contract tests
+uv run python -m myna.testbed            # Phase 0 demo: fake adapter via loopback
+uv run python dev/generate_fixtures.py   # synthesize the fixture corpus into fixtures/
+                                         # (needs libespeak-ng1 + espeak-ng-data)
 ```

@@ -11,13 +11,15 @@ Rules of the house (from CLAUDE.md):
 """
 
 from myna.testbed.adapter import Adapter, Candidate
+from myna.testbed.corpus import Clip, by_category, load_manifest
 from myna.testbed.fake import FakeAdapter, ScriptStep
 from myna.testbed.harness import Harness, Metrics, ResultRecord, TimedEvent
-from myna.testbed.sources import SilenceSource
+from myna.testbed.sources import SilenceSource, WavFileSource
 
 __all__ = [
     "Adapter",
     "Candidate",
+    "Clip",
     "FakeAdapter",
     "Harness",
     "Metrics",
@@ -25,4 +27,7 @@ __all__ = [
     "ScriptStep",
     "SilenceSource",
     "TimedEvent",
+    "WavFileSource",
+    "by_category",
+    "load_manifest",
 ]
