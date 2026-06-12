@@ -9,15 +9,18 @@ received so clients can animate an activity indicator.
 Streaming via chunked re-decode (LocalAgreement) is T08 and will be a
 separate strategy on top of this adapter.
 
-Requires the ``whisper`` extra: ``uv sync --extra whisper``. Models are
-fetched from Hugging Face on first use (``Systran/faster-whisper-*``) and
-cached under ``HF_HOME``; pass ``download_root`` to pin a lab cache
-explicitly. Verify offline runs with ``HF_HUB_OFFLINE=1``.
+Requires the ``whisper`` extra: ``uv sync --extra whisper``. ``model_size``
+is either a bare size name (``"small"``) fetched from Hugging Face on first
+use (``Systran/faster-whisper-*``, cached under ``HF_HOME``) or a path to a
+local CTranslate2 model directory — the latter is how the snap loads weights
+shipped as model components, with no network access. Pass ``download_root``
+to pin a lab cache; verify offline runs with ``HF_HUB_OFFLINE=1``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 
 from myna.core import (
@@ -62,8 +65,13 @@ class FasterWhisperAdapter:
 
     @property
     def candidate(self) -> Candidate:
+        # ``model_size`` may be a bare size ("small") or a path to a local
+        # CTranslate2 model directory (snap model component). Label the
+        # candidate by the leaf name either way so result records stay
+        # readable instead of carrying an absolute component path.
+        label = os.path.basename(self._model_size.rstrip("/")) or self._model_size
         return Candidate(
-            model=f"whisper-{self._model_size}",
+            model=f"whisper-{label}",
             engine=f"faster-whisper-{self._device}",
             streaming_strategy="commit-on-finalize",
         )
