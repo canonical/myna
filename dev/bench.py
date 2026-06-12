@@ -127,12 +127,17 @@ async def main() -> None:
         args.label = detect_label()
 
     clips = select_clips(args)
+    pace = "fast as possible" if args.batch else "real-time pace (audio streams in full before finalize)"
     print(f"label={args.label}  clips={len(clips)}  socket={args.socket}")
-    print(f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6} {'final s':>8} {'first s':>8}")
-    print("-" * 66)
+    print(f"feeding audio at {pace}")
+    # 'audio s' is how long the clip takes to stream (the bulk of the per-line
+    # wait at real-time pace); 'final s' is end-of-audio -> committed text.
+    print(f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6} {'audio s':>8} {'final s':>8}")
+    print("-" * 74)
 
     lines = []
     tot_edits = tot_words = 0
+    tot_audio = 0.0
     finals: list[float] = []
     for clip in clips:
         record, wer, cer = await bench_clip(args, clip)
@@ -140,20 +145,23 @@ async def main() -> None:
         lines.append(line)
         tot_edits += wer.substitutions + wer.deletions + wer.insertions
         tot_words += wer.reference_length
+        tot_audio += line["audio_seconds"]
         if line["finalize_latency"] is not None:
             finals.append(line["finalize_latency"])
         print(
             f"{clip.id:24} {clip.category:10} "
             f"{_fmt(wer.rate * 100)} {_fmt(cer.rate * 100)} "
-            f"{_fmt(line['finalize_latency'], '8.3f')} "
-            f"{_fmt(line['time_to_first_event'], '8.3f')}"
+            f"{_fmt(line['audio_seconds'], '8.2f')} "
+            f"{_fmt(line['finalize_latency'], '8.3f')}"
         )
 
-    print("-" * 66)
+    print("-" * 74)
     micro_wer = (tot_edits / tot_words * 100) if tot_words else 0.0
     median_final = sorted(finals)[len(finals) // 2] if finals else None
     print(f"micro-averaged WER : {micro_wer:.2f}%  ({tot_edits} edits / {tot_words} ref words)")
-    print(f"median finalize    : {_fmt(median_final, '.3f')}s" if median_final is not None else "")
+    if median_final is not None:
+        print(f"median finalize    : {median_final:.3f}s  (end-of-audio -> committed text)")
+    print(f"audio streamed     : {tot_audio:.1f}s total" + ("" if args.batch else "  (use --batch to skip real-time pacing)"))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     run_started = datetime.now(timezone.utc).isoformat()
