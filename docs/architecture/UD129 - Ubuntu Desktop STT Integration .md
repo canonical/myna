@@ -191,6 +191,28 @@ The system must avoid inserting dictated text into the wrong application. The sy
 
 The target surface should be captured at session start and must not unexpectedly change during a session.
 
+#### Default behaviour
+
+In the default configuration, the system should continue to target the original text surface even if focus changes during an active session. This is the safest option to avoid wrong-target insertion.
+
+Example 1
+
+1. User focuses a text editor in LibreOffice Writer.
+2. User presses the dictation hotkey and starts speaking
+3. The target remains LibreOffice Writer for the entire dictation session. Everything goes into the text editor, even if the user alt-tabs to another application while still holding the hotkey.
+
+#### Target disappears
+
+If the originally targeted surface disappears during an active session, for instance they close the application or the window is minimized, the system should cancel the session safely, discarding any uncommitted text and showing an appropriate notification.
+
+No attempt should be made to recover or retarget a new surface in this case.
+
+#### Focus changes
+
+If the user changes focus to another application while still holding the hotkey, the system should continue targeting the original surface. There should be no dynamic retargeting to the new surface until the next session.
+
+#### Protected fields
+
 Special care is required for:
 
 * Password fields.  
@@ -201,6 +223,8 @@ Special care is required for:
 * Virtual machine windows.  
 * Browser address bars.  
 * Applications using custom text widgets.
+
+No dictation should be allowed in these contexts where secure input is expected, and the user should receive clear feedback if they attempt to start dictation in such a context.
 
 ## Architecture
 
