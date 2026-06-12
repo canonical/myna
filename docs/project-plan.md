@@ -37,8 +37,8 @@ integration work; B and D converge in the end-to-end milestone (T22).
 |---|---|---|---|---|---|
 | T01 | Scaffolding: package layout, core types, transport abstraction | done | Claude/Charles | — | `myna.core` events/audio/session/transport; ADRs written |
 | T02 | Fake adapter + harness skeleton (Phase 0) | done | Claude/Charles | T01 | `uv run python -m myna.testbed` produces a ResultRecord; contract tests in `tests/test_contract.py` pass |
-| T03 | Test-fixture audio corpus: short utterances with reference transcripts, per UD129 accuracy matrix (quiet/noise, accents, commands, long-form, technical vocab) | todo | | — | Read-only fixtures, redistributable licensing checked; manifest with reference text per clip |
-| T04 | WAV/file audio source for the harness (batch + real-time pacing) | todo | | T02 | Plays T03 fixtures through `AudioSource`; chunk size configurable |
+| T03 | Test-fixture audio corpus: short utterances with reference transcripts, per UD129 accuracy matrix (quiet/noise, accents, commands, long-form, technical vocab) | done (synthetic tier) | Claude/Charles | — | `dev/generate_fixtures.py` synthesizes all matrix categories via espeak-ng (CC0, offline, deterministic noise variants); manifest schema + loader in `myna.testbed.corpus`. Real recorded speech is T25 |
+| T04 | WAV/file audio source for the harness (batch + real-time pacing) | done | Claude/Charles | T02 | `WavFileSource` plays T03 fixtures; chunk size + realtime pacing configurable; covered in `tests/test_sources_and_corpus.py` |
 | T05 | Virtual PipeWire source node feeding fixture audio at real-time rate (Phase 1) | todo | | T04 | Works headless in the Taipei lab; node teardown clean across runs |
 | T06 | Accuracy metrics: WER/CER of `done` transcript vs reference, normalization rules documented | todo | | T03, T04 | Metrics computed from stored ResultRecords, not live runs |
 | T07 | First real adapter, commit-on-finalize (Phase 2): faster-whisper | todo | | T04 | Passes all contract tests; model deps as `uv` extra; `HF_HUB_OFFLINE=1` run verified |
@@ -47,6 +47,7 @@ integration work; B and D converge in the end-to-end milestone (T22).
 | T10 | Qwen3-ASR adapter via vLLM (known patching pain — keep inside adapter) | todo | | T07 | Document required patches in the adapter dir; do not leak into harness |
 | T11 | Matrix runner + result aggregation (Phase 4): sweep candidates × fixtures × configs, aggregate JSONL into comparison tables | todo | | T06, T08 | One command produces the model×hardware×strategy matrix |
 | T12 | Hardware tier report from Taipei lab runs | todo | | T11 | Written tiers proposal delivered to IE114/UD129 owners (feeds T19) |
+| T25 | Real recorded-speech corpus tier: redistributable human recordings (e.g. LibriSpeech/Common Voice subsets) added to the manifest, covering accents and noise authentically | todo | | T03 | Synthetic espeak audio is fine for plumbing/latency but not for real-world accuracy claims; licensing recorded per clip |
 
 ## Workstream B — ASR inference snap
 

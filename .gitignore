@@ -1,3 +1,6 @@
+# Generated fixture corpus — regenerate with `uv run python dev/generate_fixtures.py`
+fixtures/
+
 # Python / uv
 .venv/
 __pycache__/
