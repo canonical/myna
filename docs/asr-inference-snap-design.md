@@ -114,8 +114,12 @@ config). UbuSTT is a UDS service. Proposal:
 Under the audio-push model the client owns PipeWire capture, so the snap
 needs **no audio interfaces at all** — a meaningful privacy story: the STT
 snap is incapable of recording. Plugs reduce to `hardware-observe` + `opengl`
-(hooks/CLI/GPU). `network-bind` can likely be dropped once the TCP endpoint
-is gone; webui and `chat` features are dropped entirely.
+(hooks/CLI/GPU) + `network-bind`; webui and `chat` features are dropped
+entirely.
+
+Note (verified empirically on T14b): `network-bind` is required even with no
+TCP endpoint — snapd's seccomp policy gates the `listen()` syscall behind it
+regardless of address family, so a pure Unix-socket server still needs it.
 
 ### 3.4 Engine/model matrix (initial)
 
@@ -148,6 +152,11 @@ tuning (`compute-type`, `beam-size`, streaming strategy knobs from T08).
    Raise with the inference-snaps-cli team; testbed measurements (T12) will
    provide the numbers.
 2. **UDS server declaration** in `runtime.yaml` `servers:` (see 3.2).
+   Verified on T14b: `modelctl status` (v2.0.0-beta.1) fails with
+   `unsupported protocol "ws+unix" for server "ubustt"` — the status command
+   only understands HTTP endpoints. Everything else (engine selection, model
+   selection, run) works; raise the protocol enum with the
+   inference-snaps-cli team.
 3. **Capabilities discovery** is CLI-only for now (matches IE114's
    "configuration via CLI initially"); the network API remains open (T24).
 

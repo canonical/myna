@@ -60,8 +60,8 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
 | T13 | Study + design note: how qwen3/gemma4 snaps structure engines/components/hooks, and what an ASR snap does differently (audio-push server instead of llama.cpp server) | done | Claude/Charles | — | `docs/asr-inference-snap-design.md`. Decisions: one snap per family, Whisper first; copy gemma4's v2 engine/runtime/model schema; testbed adapter doubles as the snap's server; socket-activated UDS daemon; no audio interfaces needed |
-| T14a | `myna.server`: standalone entry point wrapping an `SttService` adapter behind the real transport on a UDS path | todo | | T07, T16 | Runs on bare metal; harness transcribes a fixture clip through the socket |
-| T14b | whisper-snap skeleton: snapcraft.yaml (core24, components), `cpu` engine, one small model component, `modelctl` wiring, install hooks | todo | | T14a | Installs; `modelctl use-engine --auto` works; fixture clip transcribed through the snap's socket |
+| T14a | `myna.server`: standalone entry point wrapping an `SttService` adapter behind the real transport on a UDS path | done | Claude/Charles | T07, T16 | `myna-server --socket … --model …` (`src/myna/server/`); subprocess integration test in `tests/test_server.py`; verification client `dev/transcribe.py` |
+| T14b | whisper-snap skeleton: snapcraft.yaml (core24), `cpu` engine, tiny/base/small models, `modelctl` v2 wiring, install hooks | done — installed & verified | Claude/Charles | T14a | `whisper-snap/`; installed, fixture clips transcribed through the snap socket; model selection (tiny→base) verified live. Warm finalize 0.5–0.8s on base CPU. Skeleton deviations: weights downloaded at runtime (components → T15), socket world-connectable (access control → T14c). Snapd findings recorded in design note (`network-bind` required for Unix `listen()`; `ws+unix` protocol unknown to `modelctl status`) |
 | T14c | Socket exposure + access control for confined clients (content interface vs file perms + polkit) | todo | | T14b, T17 | Joint decision with T17; documented in design note |
 | T15 | Engine variants + hardware selection (nvidia-gpu engine, remaining model components, VRAM-aware model gating follow-up with inference-snaps-cli team) | todo | | T14b, T12 | Engine chosen automatically per hardware tier |
 
@@ -86,6 +86,7 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
 | T18 | IE114 update proposal: audio-push model, WebSocket transport, event vocabulary (progress/final/done/error), error model with stable codes | todo | | T16 | Draft for Farshid; informed by T16 prototype findings |
+| T26 | Spec question: a session-lifecycle / `session.starting` signal so clients can show "loading model…" distinctly from "transcribing". Surfaced by T14b — cold model load (download) is a long silent gap that textless `progress` heartbeats only partially address; relates to IE114 comment [h] (session.starting/listening/transcribing states) | todo | | T18 | Recommendation for Farshid: keep the dumb-`progress` vocabulary, or add a lifecycle/status event? |
 | T19 | Performance contract proposal: latency SLOs grounded in measured testbed numbers, per hardware tier | todo | | T12 | Draft for IE114/UD129 owners ahead of a Wednesday sync |
 | T24 | Capabilities-discovery API sketch (models, languages, punctuation support) | todo | | T18 | Needed before Settings UI work can be scoped |
 

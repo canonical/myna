@@ -1,5 +1,13 @@
+# Local reference checkouts (qwen3-snap, gemma4-snap, inference-snaps-cli).
+# These carry their own .git and would commit as broken gitlinks — keep out.
+reference/
+
 # Generated fixture corpus — regenerate with `uv run python dev/generate_fixtures.py`
 fixtures/
+
+# Snap build artifacts
+whisper-snap/wheels/
+*.snap
 
 # Python / uv
 .venv/

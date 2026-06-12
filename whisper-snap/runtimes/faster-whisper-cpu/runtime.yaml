@@ -1,0 +1,11 @@
+# faster-whisper (CTranslate2) on CPU, serving the UbuSTT session API.
+# No components yet: the venv is baked into the snap and weights are
+# downloaded on demand (skeleton deviation; components are T15).
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment: []
+
+components: []

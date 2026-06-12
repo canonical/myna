@@ -1,0 +1,11 @@
+id: small
+name: small
+description: Whisper small (244M params) — best accuracy of the CPU options
+model-card-url: https://huggingface.co/Systran/faster-whisper-small
+quantization: float32
+capabilities:
+  - multilingual
+disk-size: 500M
+components: []
+environment:
+  - MODEL_NAME=small
