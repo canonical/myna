@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -107,7 +107,11 @@ class Harness:
         candidate: Candidate,
         source: AudioSource,
         config: SessionConfig | None = None,
+        on_event: Callable[[TimedEvent], None] | None = None,
     ) -> ResultRecord:
+        """Run one session. ``on_event``, if given, is called with each
+        ``TimedEvent`` the moment it arrives — for live display; the full
+        record is still returned at the end."""
         config = config or SessionConfig(audio_format=source.format)
         started_at = datetime.now(timezone.utc).isoformat()
         t0 = time.perf_counter()
@@ -131,7 +135,10 @@ class Harness:
             feeder = asyncio.ensure_future(feed())
             try:
                 async for event in session.events():
-                    timed.append(TimedEvent(t=time.perf_counter() - t0, event=event))
+                    te = TimedEvent(t=time.perf_counter() - t0, event=event)
+                    timed.append(te)
+                    if on_event is not None:
+                        on_event(te)
             finally:
                 await feeder
         finally:

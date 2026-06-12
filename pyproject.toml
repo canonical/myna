@@ -14,6 +14,9 @@ whisper = [
     "faster-whisper>=1.2.1",
 ]
 
+[project.scripts]
+myna-server = "myna.server.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8",
