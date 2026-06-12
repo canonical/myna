@@ -230,7 +230,7 @@ No dictation should be allowed in these contexts where secure input is expected,
 
 The system is organized into several interconnected components that handle session management, audio capture, inference, post-processing, and text output. These components work together to provide a responsive, real-time push-to-talk dictation experience.
 
-![image](./UbuSTT%20·%20Architecture.png)
+![image](Myna%20-%20System%20Architecture.png)
 
 ### Inference Snap
 
