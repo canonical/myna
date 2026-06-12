@@ -15,9 +15,13 @@ Requires the ``nemotron`` extra: ``uv sync --extra nemotron`` (pulls
 ``nvidia/stt_en_fastconformer_hybrid_large_streaming_multi`` is **English-only**
 and has native punctuation/capitalisation.
 
-STATUS: UNVERIFIED on hardware — written against the NeMo 2.x API; the
-``transcribe``/``set_default_att_context_size`` calls are the expected
-iteration points on first run (NeMo's API drifts across versions).
+``model_name`` is either a Hugging Face id (downloaded on first use) or a path
+to a local ``.nemo`` checkpoint — the latter is how the snap loads its model
+component offline.
+
+Verified on hardware (2026-06-14): decode and real-speech dictation work;
+latency is excellent (native transducer, ~0.03s finalize). WER on synthetic
+espeak audio is unreliable (the model is OOD on it) — judge it on real speech.
 """
 
 from __future__ import annotations
@@ -73,7 +77,10 @@ class NemotronAdapter:
 
     @property
     def candidate(self) -> Candidate:
+        # leaf name, without the .nemo extension for local checkpoints
         label = os.path.basename(self._model_name.rstrip("/")) or self._model_name
+        if label.endswith(".nemo"):
+            label = label[: -len(".nemo")]
         ctx = (
             f"-ctx{self._att_context_size[0]}.{self._att_context_size[1]}"
             if self._att_context_size
@@ -94,7 +101,16 @@ class NemotronAdapter:
     def _load_blocking(self):
         from nemo.collections.asr.models import ASRModel
 
-        model = ASRModel.from_pretrained(model_name=self._model_name, map_location=self._device)
+        # A local .nemo checkpoint (snap model component) is restored directly;
+        # anything else is treated as a Hugging Face id and downloaded.
+        if self._model_name.endswith(".nemo") and os.path.exists(self._model_name):
+            model = ASRModel.restore_from(
+                restore_path=self._model_name, map_location=self._device
+            )
+        else:
+            model = ASRModel.from_pretrained(
+                model_name=self._model_name, map_location=self._device
+            )
         # Cache-aware streaming models expose the latency/accuracy dial; other
         # models don't, so only set it when asked and supported.
         if self._att_context_size is not None and hasattr(model, "encoder"):

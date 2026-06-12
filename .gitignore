@@ -8,6 +8,8 @@ fixtures/
 # Snap build artifacts
 whisper-snap/wheels/
 whisper-snap/.hf-cache/
+nemotron-snap/wheels/
+nemotron-snap/.hf-cache/
 *.snap
 *.comp
 
