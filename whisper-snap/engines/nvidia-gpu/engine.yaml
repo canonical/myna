@@ -1,0 +1,35 @@
+name: nvidia-gpu
+summary: NVIDIA CUDA Whisper via faster-whisper
+description: |
+  Runs Whisper models with CUDA CTranslate2 on NVIDIA GPUs. Same
+  commit-on-finalize UbuSTT Unix-socket session API as the cpu engine; the
+  CUDA runtime (CTranslate2 + cuBLAS/cuDNN) ships as an on-demand component.
+vendor: Canonical Ltd
+
+# UNVERIFIED on hardware — scaffolded in T15. Build-verify on a CUDA box
+# before relying on auto-selection (see docs/asr-inference-snap-design.md §6).
+devices:
+  allof:
+    - type: gpu
+      vendor-id: 0x10de # NVIDIA Corporation
+  anyof:
+    - type: cpu
+      architecture: amd64
+
+runtime: faster-whisper-cuda
+
+model:
+  default: small
+  options:
+    - tiny
+    - base
+    - small
+    # Larger weights are GPU-tier candidates (T12 will size them); add the
+    # components + model.yaml entries once measured: medium, large-v3,
+    # distil-large-v3.
+
+configurations:
+  # CTranslate2 compute type on GPU. float16 is the usual default; int8_float16
+  # trades a little accuracy for memory headroom on smaller cards.
+  compute-type: float16
+  sleep-idle-seconds: 600

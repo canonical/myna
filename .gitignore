@@ -7,7 +7,9 @@ fixtures/
 
 # Snap build artifacts
 whisper-snap/wheels/
+whisper-snap/.hf-cache/
 *.snap
+*.comp
 
 # Python / uv
 .venv/

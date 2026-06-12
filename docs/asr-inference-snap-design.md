@@ -194,5 +194,20 @@ llama.cpp source.
    through the socket via the harness.
 3. **T14c** — socket exposure/access control for confined clients (joint
    with T17).
-4. **T15** — `nvidia-gpu` engine, remaining model components, VRAM gating
-   follow-up.
+4. **T15** — model weights as components + `nvidia-gpu` engine. **Done (CPU)
+   / scaffolded (GPU):**
+   - Model weights now ship as per-model snap components
+     (`model-{tiny,base,small}`), fetched into `whisper-snap/components/` by
+     `dev/download-models.sh` and routed into components at pack time. The
+     server loads from `MODEL_DIR=$SNAP_COMPONENTS/<id>`; the `network` plug
+     is dropped — no runtime download.
+   - Runtime-delivery decision: the **cpu venv stays baked into the base
+     snap** (the working T14b path), while the **CUDA stack ships as the
+     `faster-whisper-cuda` component** (myna[whisper] + ctranslate2 + NVIDIA
+     cuBLAS/cuDNN pip libs under `site-packages/`, exposed via
+     PYTHONPATH/LD_LIBRARY_PATH and run by the base `python3` — relocatable,
+     sidestepping the venv-relocation fallback flagged in §3.1).
+   - `nvidia-gpu` engine + `faster-whisper-cuda` runtime are written but
+     **UNVERIFIED on hardware** — build + auto-selection must be confirmed on
+     a CUDA box. Larger GPU-tier weights (medium, large-v3, distil-large-v3)
+     are deferred until T12 sizes them (see VRAM gap below).
