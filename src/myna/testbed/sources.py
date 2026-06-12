@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from myna.core import AudioFormat, PcmChunk
@@ -120,12 +120,16 @@ class MicSource:
         sample_rate_hz: int = 16_000,
         chunk_seconds: float = 0.1,
         target: str | None = None,
+        on_chunk: Callable[[PcmChunk], None] | None = None,
     ) -> None:
         self._format = AudioFormat(
             sample_rate_hz=sample_rate_hz, channels=1, sample_width_bytes=2
         )
         self._chunk_seconds = chunk_seconds
         self._target = target
+        # observation hook fired per captured chunk (e.g. a level meter /
+        # activity indicator); does not affect what is sent to the service
+        self._on_chunk = on_chunk
         self._stop = asyncio.Event()
 
     @property
@@ -163,7 +167,10 @@ class MicSource:
                     continue
                 if not data:
                     break
-                yield PcmChunk(data=data, format=self._format)
+                chunk = PcmChunk(data=data, format=self._format)
+                if self._on_chunk is not None:
+                    self._on_chunk(chunk)
+                yield chunk
         finally:
             proc.terminate()
             await proc.wait()
