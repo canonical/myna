@@ -102,7 +102,11 @@ def to_line(args, clip, record, wer, cer) -> dict:
         "wer": round(wer.rate, 4),
         "cer": round(cer.rate, 4),
         "edits": {"sub": wer.substitutions, "del": wer.deletions, "ins": wer.insertions},
+        # raw counts so the aggregator can micro-average across clips
+        "wer_edits": wer.substitutions + wer.deletions + wer.insertions,
         "ref_words": wer.reference_length,
+        "cer_edits": cer.substitutions + cer.deletions + cer.insertions,
+        "ref_chars": cer.reference_length,
         "audio_seconds": round(record.audio_duration_seconds, 3),
         "time_to_first_event": m.time_to_first_event,
         "finalize_latency": m.finalize_latency,
