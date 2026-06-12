@@ -14,12 +14,19 @@ from myna.testbed.adapter import Adapter, Candidate
 from myna.testbed.corpus import Clip, by_category, load_manifest
 from myna.testbed.fake import FakeAdapter, ScriptStep
 from myna.testbed.harness import Harness, Metrics, ResultRecord, TimedEvent
+from myna.testbed.metrics import (
+    ErrorRate,
+    character_error_rate,
+    normalize,
+    word_error_rate,
+)
 from myna.testbed.sources import SilenceSource, WavFileSource
 
 __all__ = [
     "Adapter",
     "Candidate",
     "Clip",
+    "ErrorRate",
     "FakeAdapter",
     "Harness",
     "Metrics",
@@ -29,5 +36,8 @@ __all__ = [
     "TimedEvent",
     "WavFileSource",
     "by_category",
+    "character_error_rate",
     "load_manifest",
+    "normalize",
+    "word_error_rate",
 ]
