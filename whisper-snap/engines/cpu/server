@@ -1,0 +1,9 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get socket.path)"
+
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --model "${MODEL_NAME:-tiny}" \
+    --device cpu \
+    "$@"

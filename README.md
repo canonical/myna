@@ -7,9 +7,11 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 
 ## Repository layout
 
-- `src/myna/core` — shared vocabulary: audio types, transcript events, session config, transport abstraction
-- `src/myna/testbed` — candidate-adapter evaluation testbed (fake adapter, harness, metrics)
+- `src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS)
+- `src/myna/testbed` — candidate-adapter evaluation testbed (fake + faster-whisper adapters, harness, fixture corpus, metrics)
+- `src/myna/server` — standalone UbuSTT server (`myna-server`), the process the whisper snap ships
 - `src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
+- `whisper-snap/` — Whisper inference snap packaging (engines/runtimes/models + modelctl)
 - `docs/architecture` — architecture decision records; read before structural changes
 - `docs/project-plan.md` — workstreams, tasks, and milestones
 - `reference/` — local checkouts of related projects (inference snaps, CLI); not committed
