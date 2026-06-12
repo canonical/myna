@@ -1,0 +1,22 @@
+name: cpu
+summary: CPU-optimized Whisper via faster-whisper
+description: |
+  Runs Whisper models with CTranslate2 on amd64/arm64 CPUs. Commit-on-finalize
+  transcription over the UbuSTT Unix-socket session API.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: faster-whisper-cpu
+
+model:
+  default: tiny
+  options:
+    - tiny
+    - base
+    - small

@@ -1,0 +1,109 @@
+# Whisper inference snap (UbuSTT) — T14b skeleton.
+#
+# Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
+# v2 from inference-snaps-cli). Differences from the LLM snaps, per
+# docs/asr-inference-snap-design.md:
+#   - the server is the UbuSTT session server (myna-server) on a Unix socket,
+#     not an HTTP llama-server: no microphone access, no TCP port.
+#   - SKELETON DEVIATION: model weights are downloaded by faster-whisper into
+#     $SNAP_COMMON on first use (needs `network`), instead of being delivered
+#     as snap components. Components are the production path (T15).
+name: whisper
+base: core24
+version: 0.1.0-dev
+summary: Whisper speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Unix domain socket. Wraps Whisper models served via faster-whisper
+  (CTranslate2), with hardware-based engine selection and switchable model
+  sizes via the IE108-compliant modelctl CLI.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+apps:
+  whisper:
+    command: bin/whisper
+    plugs:
+      - hardware-observe
+      - opengl
+      - network
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - opengl
+      - network # skeleton only: runtime model download (see header)
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+    environment:
+      HF_HOME: $SNAP_COMMON/huggingface
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      # Named symlink so cobra picks up the snap command name
+      ln --symbolic ./modelctl bin/whisper
+      craftctl default
+
+  cli-lspci:
+    plugin: nil
+    stage-packages:
+      - pciutils # lspci, used by hardware detection
+
+  server-app:
+    # myna-server + faster-whisper in a venv. The myna wheel is staged into
+    # wheels/ by dev/prepare.sh before packing.
+    plugin: python
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[whisper]
+    build-packages:
+      - python3-venv
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
