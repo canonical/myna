@@ -94,6 +94,7 @@ def to_line(args, clip, record, wer, cer) -> dict:
     m = record.metrics
     return {
         "label": args.label,
+        "cold": args.cold,
         "clip": clip.id,
         "category": clip.category,
         "language": clip.language,
@@ -125,6 +126,7 @@ async def main() -> None:
     parser.add_argument("--label", help="tag for this run (default: active engine name, e.g. 'cpu'); pass 'cpu/small' to record the model too")
     parser.add_argument("--category", help="only clips in this UD129 category")
     parser.add_argument("--batch", action="store_true", help="stream as fast as possible")
+    parser.add_argument("--cold", action="store_true", help="tag records as a cold-load sample (first request after a restart)")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")
     args = parser.parse_args()
     if args.label is None:
