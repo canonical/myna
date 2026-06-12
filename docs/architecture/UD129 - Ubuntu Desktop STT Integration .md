@@ -575,6 +575,12 @@ The specification should consider:
 * Languages with complex input behavior.  
 * Punctuation and capitalization expectations by language.
 
+### Accessibility considerations
+
+The indicator becomes a key accessibility feature to provide feedback that the system is actively listening and transcribing. It should be designed to be perceivable and understandable for users with various disabilities.
+
+It includes states such as "Recording", "Transcribing", "Finalizing" and "Error" that should be visually distinguishable. The indicator should also be announced by screen readers when it appears, providing clear feedback to users relying on assistive technologies.
+
 ## Cancellation Handling
 
 The user must be able to cancel an active dictation session at any time by releasing the hotkey or through an explicit cancellation action.
