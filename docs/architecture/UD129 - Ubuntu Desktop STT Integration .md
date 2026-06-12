@@ -575,6 +575,12 @@ The specification should consider:
 * Languages with complex input behavior.  
 * Punctuation and capitalization expectations by language.
 
+## Cancellation Handling
+
+The user must be able to cancel an active dictation session at any time by releasing the hotkey or through an explicit cancellation action.
+
+When a session is cancelled, recording should stop immediately, any uncommitted text should be discarded, the activity indicator should be cleared, and the microphone should be released.
+
 ## Failure Handling
 
 The system must fail safely. Different components handle different failure scenarios:
