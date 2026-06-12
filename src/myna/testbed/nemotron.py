@@ -27,6 +27,7 @@ import os
 from collections.abc import AsyncIterator
 
 from myna.core import (
+    PHASE_PREPARING,
     EventSink,
     PcmChunk,
     SessionConfig,
@@ -101,13 +102,14 @@ class NemotronAdapter:
         return model
 
     async def _load_model_with_heartbeat(self, emit: EventSink):
-        """Emit a progress heartbeat while the (slow, cold) model loads."""
+        """Emit a ``preparing`` heartbeat while the (slow, cold) model loads —
+        NeMo/torch import + CUDA init makes this gap especially long."""
         load = asyncio.ensure_future(self._load_model())
-        await emit(TranscriptionProgress())
+        await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         while not load.done():
             done, _ = await asyncio.wait({load}, timeout=_LOAD_HEARTBEAT_SECONDS)
             if not done:
-                await emit(TranscriptionProgress())
+                await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         return await load
 
     async def run_session(
