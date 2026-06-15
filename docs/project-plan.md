@@ -47,7 +47,7 @@ integration work; B and D converge in the end-to-end milestone (T22).
 | T10 | Qwen3-ASR adapter via vLLM (known patching pain — keep inside adapter) | todo | | T07 | Document required patches in the adapter dir; do not leak into harness |
 | T11 | Matrix runner + result aggregation (Phase 4): sweep candidates × fixtures × configs, aggregate JSONL into comparison tables | done (single-strategy) | Claude/Charles | T06, T08 | `dev/bench.py` sweeps fixtures against a live socket → `results/bench.jsonl`; `dev/aggregate.py` micro-averages WER/CER + finalize percentiles into a cross-`--label` table (overall + by-category), deduped by (label, clip); `dev/run-matrix.sh` drives engine/model switches → bench → aggregate in one command. Covers the model×hardware axis; the **streaming-strategy axis is added when T08 lands** (only commit-on-finalize exists today). Surfaced + fixed the `en-GB` adapter bug |
 | T12 | Hardware tier report from Taipei lab runs | todo | | T11 | Written tiers proposal delivered to IE114/UD129 owners (feeds T19) |
-| T25 | Real recorded-speech corpus tier: redistributable human recordings (e.g. LibriSpeech/Common Voice subsets) added to the manifest, covering accents and noise authentically | todo (**critical path**) | | T03 | **Promoted by the T09 run:** synthetic espeak audio cannot fairly compare architectures — Nemotron scored 59% WER on it but transcribes real speech perfectly. Blocks any real quality verdict, and therefore T12 (tiers) and T19 (perf contract). Synthetic tier stays valid for plumbing + latency only. Licensing recorded per clip |
+| T25 | Real recorded-speech corpus tier: redistributable human recordings (e.g. LibriSpeech/Common Voice subsets) added to the manifest, covering accents and noise authentically | done (clean+noise tier; accents follow-up) | Claude/Charles | T03 | `dev/fetch_real_corpus.py` downloads LibriSpeech `dev-clean` (CC-BY-4.0), decodes FLAC→16k mono WAV (ffmpeg), and writes `corpus/real/` (schema-v1 manifest, per-clip `source`/`license`, NOTICE for attribution). Selection is deliberately trivial (first N utterances in archive order) — **kept simple at Charles's request**; 12 `quiet` clips + 2 `noise` variants (real speech + seeded SNR-10, reusing the synthetic mixer). **Regenerated, not committed** — gitignored like `fixtures/`; dev takes the ~337 MB download hit (cached under gitignored `.cache/`). **Thesis verified 2026-06-14:** same Nemotron model scores **0.0% WER on the real clips** vs **44.6% on synthetic espeak** (100% on the pangram — empty output) — synthetic WER was indeed misleading; real WER is now trustworthy. Unblocks T12 (tiers) and T19 (perf contract). **Honest scope:** trivial first-N selection means low speaker variety (one speaker at the default N), and dev-clean is clean read speech — so this covers real-voice + noise authentically but **not accents/speaker diversity**; an accent-labelled corpus (Common Voice/VCTK; credentialed/large download) is the follow-up |
 
 ## Workstream B — ASR inference snap
 
@@ -94,7 +94,7 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 | T31 | Stable error-code taxonomy for IE114: enumerated codes with semantics (terminal vs recoverable, client vs server fault, retryable), replacing the ad-hoc adapter strings (`unsupported_audio_format`, `inference_failed`) | todo | | T18 | The part IE114 itself flagged incomplete. Two codes exist in adapter code, not a spec. Needs the full set + meaning before T18 can claim a complete error model |
 | T26 | Spec decision: add a session-lifecycle signal so clients show "loading model…" distinctly from "transcribing" | resolved (2026-06-14) | Claude/Charles | T18 | **Decision: yes, add a lifecycle signal** — `progress` conflates "model loading, nothing happening yet" with "transcribing, almost done", and the cold-load measurements (0.9–2.2 s whisper, more for NeMo) make that gap real. **Scoped, though:** the audio-push model collapses IE114 comment [h]'s `starting/listening/transcribing` trichotomy — the client owns capture so "listening" is redundant and "transcribing" == `progress`. So **one** new phase ("preparing"/model-loading), not a 3-state FSM (that would repeat the over-spec'ing the vocab simplification rejected). **Implemented as `progress.phase` field** (`preparing`/`transcribing`, default transcribing) — not a new event; adapters tag the load-heartbeat `preparing`, `dev/dictate.py` shows "loading model…" distinctly; field round-trips and is forward/backward compatible across the wire |
 | T19 | Performance contract proposal: latency SLOs grounded in measured testbed numbers, per hardware tier | todo | | T12 | Draft for IE114/UD129 owners ahead of a Wednesday sync |
-| T24 | Capabilities-discovery API sketch (models, languages, punctuation support) | todo | | T18 | Needed before Settings UI work can be scoped |
+| T24 | Capabilities-discovery API sketch (models, languages, punctuation support) | done | Claude/Charles | T18 | `myna.core.capabilities.Capabilities` (models, languages, `input_formats`, punctuation, translation) + wire codec; `SttService.capabilities()` / `SttClient.capabilities()` served over **both** transports (loopback direct; WS answers a `capabilities.query` message, parametrized contract test proves wire parity); all three adapters populate it (whisper multilingual/punctuation; nemotron en-only/native-punct; fake trivial). `dev/capabilities.py` queries a live snap. **Folds in the audio-format advertisement** (`input_formats`): the service states what PCM it accepts, the client delivers it, and the adapters now **reject** off-format audio instead of resampling — the `np.interp` blocks are gone from both adapters (symmetric with the existing channels/width rejection; conversion is the client's job under audio-push). Provisional vocab → feeds T18 |
 
 ---
 
@@ -121,6 +121,22 @@ point 3 shows, actively misleading across architectures.
    → real WER claims need a recorded-speech corpus (**T25, now critical path**); synthetic tier
    stays valid for plumbing + latency only.
 4. Nemotron is **English-only** (`non-english-german` 100%, as predicted).
+
+## Real-corpus finding (LibriSpeech tier, 2026-06-14)
+
+First run on the **real recorded-speech** tier (T25, `corpus/real/`), Nemotron,
+commit-on-finalize, vs the synthetic espeak tier under the *same model and code path*:
+
+| tier | clips | mean WER% |
+|---|---|---|
+| real (LibriSpeech dev-clean, clean read speech) | 6 | **0.0** |
+| synthetic (espeak, quiet + long-form) | 3 | **44.6** |
+
+The gap is the whole point of T25: the synthetic-tier WER (44.6%, incl. 100% / empty
+output on the pangram) is an artefact of espeak being out-of-distribution, **not** a
+model deficiency — the same model is flawless on real voice. WER claims must come from
+the real tier; the synthetic tier remains valid for plumbing + latency only. (Accents
+still uncovered — clean read speech only; Common Voice/VCTK is the follow-up.)
 
 ## Milestones
 
