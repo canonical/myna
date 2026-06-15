@@ -245,9 +245,9 @@ It is responsible for:
 * Managing model lifecycle and resource allocation.  
 * Versioning APIs and model runtimes to ensure compatibility with clients.
 
-### Speech Orchestrator
+### Speech Controller
 
-The Speech Orchestrator owns the session lifecycle and coordinates all other components.
+The Speech Controller owns the session lifecycle and coordinates all other components.
 
 It is responsible for:
 
@@ -287,16 +287,6 @@ It handles:
 * Audio format negotiation.  
 * Stream management.  
 * Low-level audio capture.
-
-### State Management
-
-State Management maintains the session state, including:
-
-* Current session state.
-* Audio buffer state.  
-* Inference session state.  
-* Text input target state.  
-* Error state.
 
 ### Post-Processing
 
