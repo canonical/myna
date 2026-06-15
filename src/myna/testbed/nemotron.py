@@ -33,6 +33,8 @@ from collections.abc import AsyncIterator
 
 from myna.core import (
     PHASE_PREPARING,
+    AudioFormat,
+    Capabilities,
     EventSink,
     PcmChunk,
     SessionConfig,
@@ -44,10 +46,22 @@ from myna.core import (
 from myna.testbed.adapter import Candidate
 
 NEMO_RATE = 16_000
+NEMO_FORMAT = AudioFormat(sample_rate_hz=NEMO_RATE, channels=1, sample_width_bytes=2)
 _PROGRESS_INTERVAL_SECONDS = 1.0
 _LOAD_HEARTBEAT_SECONDS = 2.0
 
 DEFAULT_MODEL = "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
+
+
+def _unwrap_transcript(result) -> str:
+    """Pull the transcript text out of NeMo's ``transcribe()`` return value,
+    which has drifted across versions: hybrid models hand back a ``(best, all)``
+    tuple, and items are ``Hypothesis`` objects (``.text``) on newer NeMo, plain
+    strings on older. This absorbs that variance so ``run_session`` sees a str."""
+    if isinstance(result, tuple):
+        result = result[0]
+    item = result[0]
+    return getattr(item, "text", item)
 
 
 def _parse_att_context_size(value: str | None) -> list[int] | None:
@@ -76,20 +90,36 @@ class NemotronAdapter:
         self._model_lock = asyncio.Lock()
 
     @property
-    def candidate(self) -> Candidate:
-        # leaf name, without the .nemo extension for local checkpoints
+    def _label(self) -> str:
+        """Readable model name: leaf path component, sans ``.nemo`` extension
+        for local checkpoints (the snap loads ``.../<file>.nemo``)."""
         label = os.path.basename(self._model_name.rstrip("/")) or self._model_name
         if label.endswith(".nemo"):
             label = label[: -len(".nemo")]
+        return label
+
+    @property
+    def candidate(self) -> Candidate:
         ctx = (
             f"-ctx{self._att_context_size[0]}.{self._att_context_size[1]}"
             if self._att_context_size
             else ""
         )
         return Candidate(
-            model=f"{label}{ctx}",
+            model=f"{self._label}{ctx}",
             engine=f"nemo-{self._device}",
             streaming_strategy="commit-on-finalize",
+        )
+
+    def capabilities(self) -> Capabilities:
+        # This FastConformer checkpoint is English-only with native
+        # punctuation/capitalisation; no translation.
+        return Capabilities(
+            models=(self._label,),
+            languages=("en",),
+            input_formats=(NEMO_FORMAT,),
+            punctuation=True,
+            translation=False,
         )
 
     async def _load_model(self):
@@ -98,7 +128,7 @@ class NemotronAdapter:
                 self._model = await asyncio.to_thread(self._load_blocking)
         return self._model
 
-    def _load_blocking(self):
+    def _load_blocking(self):  # pragma: no cover - real NeMo load; hardware-only
         from nemo.collections.asr.models import ASRModel
 
         # A local .nemo checkpoint (snap model component) is restored directly;
@@ -150,11 +180,19 @@ class NemotronAdapter:
         emit: EventSink,
     ) -> None:
         fmt = config.audio_format
-        if fmt.channels != 1 or fmt.sample_width_bytes != 2:
+        # Accepted format is advertised via capabilities() (T24); the client
+        # delivers it. Reject mismatches rather than resample (audio-push: the
+        # client owns capture + conversion) — symmetric across rate/channels/width.
+        if (
+            fmt.channels != 1
+            or fmt.sample_width_bytes != 2
+            or fmt.sample_rate_hz != NEMO_RATE
+        ):
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
-                    message=f"need mono S16LE, got {fmt.channels}ch "
+                    message=f"need {NEMO_RATE} Hz mono S16LE, got "
+                    f"{fmt.sample_rate_hz} Hz {fmt.channels}ch "
                     f"{8 * fmt.sample_width_bytes}-bit",
                 )
             )
@@ -177,7 +215,7 @@ class NemotronAdapter:
                 return
 
             text = await asyncio.to_thread(
-                self._transcribe, model, bytes(buffered), fmt.sample_rate_hz
+                self._transcribe, model, bytes(buffered)
             )
             text = text.strip()
             if text:
@@ -192,23 +230,12 @@ class NemotronAdapter:
                 )
             )
 
-    def _transcribe(self, model, pcm: bytes, rate: int) -> str:
-        """Blocking decode; runs in a worker thread. Returns the transcript."""
+    def _transcribe(self, model, pcm: bytes) -> str:
+        """Blocking decode; runs in a worker thread. Returns the transcript.
+        Audio is already ``NEMO_FORMAT`` (validated in ``run_session``)."""
         import numpy as np
 
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        if rate != NEMO_RATE:
-            n_out = int(len(samples) * NEMO_RATE / rate)
-            samples = np.interp(
-                np.linspace(0.0, len(samples) - 1, n_out),
-                np.arange(len(samples)),
-                samples,
-            ).astype(np.float32)
 
         result = model.transcribe(audio=[samples], batch_size=1, verbose=False)
-        # Hybrid models can return (best, all); take the best list. Items are
-        # Hypothesis objects (.text) on newer NeMo, plain strings on older.
-        if isinstance(result, tuple):
-            result = result[0]
-        item = result[0]
-        return getattr(item, "text", item)
+        return _unwrap_transcript(result)

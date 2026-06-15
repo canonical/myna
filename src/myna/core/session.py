@@ -3,7 +3,8 @@
 Mirrors the IE114 request body, minus ``pipewire-node-name``: under the
 audio-push model the client owns capture, so the service never needs a
 PipeWire identifier. Audio format travels with the config so the service can
-validate or resample before inference.
+validate it against its advertised ``Capabilities.input_formats`` (the service
+rejects mismatches rather than resampling — the client owns conversion).
 """
 
 from __future__ import annotations

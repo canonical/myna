@@ -100,6 +100,9 @@ async def test_finals_are_never_retracted(run_fake):
 class _CrashingAdapter:
     candidate = FakeAdapter().candidate
 
+    def capabilities(self):
+        return FakeAdapter().capabilities()
+
     async def run_session(
         self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
     ) -> None:
@@ -120,6 +123,17 @@ async def test_custom_script_immediate_done(run_fake):
     )
     record = await run_fake(adapter=adapter)
     assert record.transcript == "hi"
+
+
+async def test_capabilities_query_round_trips_over_transport(transport, tmp_path):
+    """capabilities() must survive the wire identically to the in-process call —
+    the same contract guarantee the event stream gets."""
+    adapter = FakeAdapter()
+    async with transport(adapter, tmp_path) as client:
+        caps = await client.capabilities()
+    assert caps == adapter.capabilities()
+    assert caps.models == ("fake",)
+    assert caps.input_formats  # non-empty: clients need a format to deliver
 
 
 async def test_result_record_serializes_to_json(run_fake, tmp_path):
