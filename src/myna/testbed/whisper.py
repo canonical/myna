@@ -25,6 +25,8 @@ from collections.abc import AsyncIterator
 
 from myna.core import (
     PHASE_PREPARING,
+    AudioFormat,
+    Capabilities,
     EventSink,
     PcmChunk,
     Segment,
@@ -37,6 +39,7 @@ from myna.core import (
 from myna.testbed.adapter import Candidate
 
 WHISPER_RATE = 16_000
+WHISPER_FORMAT = AudioFormat(sample_rate_hz=WHISPER_RATE, channels=1, sample_width_bytes=2)
 
 
 def _iso639_1(language: str | None) -> str | None:
@@ -84,6 +87,20 @@ class FasterWhisperAdapter:
             streaming_strategy="commit-on-finalize",
         )
 
+    def capabilities(self) -> Capabilities:
+        label = os.path.basename(self._model_size.rstrip("/")) or self._model_size
+        # ``*.en`` checkpoints are English-only; the rest are multilingual.
+        english_only = label.endswith(".en") or label.endswith("-en")
+        return Capabilities(
+            models=(f"whisper-{label}",),
+            languages=("en",) if english_only else ("*",),
+            input_formats=(WHISPER_FORMAT,),
+            punctuation=True,  # Whisper emits punctuation + capitalisation
+            # Whisper can translate→English, but this adapter doesn't wire
+            # output_language to the translate task yet — advertise honestly.
+            translation=False,
+        )
+
     async def _load_model(self):
         async with self._model_lock:
             if self._model is None:
@@ -128,11 +145,20 @@ class FasterWhisperAdapter:
         emit: EventSink,
     ) -> None:
         fmt = config.audio_format
-        if fmt.channels != 1 or fmt.sample_width_bytes != 2:
+        # The accepted format is advertised via capabilities() (T24); the
+        # client delivers it (audio-push: client owns capture + conversion).
+        # We reject mismatches rather than resample — symmetric across rate,
+        # channels and width, and no silent low-quality conversion here.
+        if (
+            fmt.channels != 1
+            or fmt.sample_width_bytes != 2
+            or fmt.sample_rate_hz != WHISPER_RATE
+        ):
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
-                    message=f"need mono S16LE, got {fmt.channels}ch "
+                    message=f"need {WHISPER_RATE} Hz mono S16LE, got "
+                    f"{fmt.sample_rate_hz} Hz {fmt.channels}ch "
                     f"{8 * fmt.sample_width_bytes}-bit",
                 )
             )
@@ -155,7 +181,7 @@ class FasterWhisperAdapter:
                 return
 
             segments = await asyncio.to_thread(
-                self._transcribe, model, bytes(buffered), fmt.sample_rate_hz, config
+                self._transcribe, model, bytes(buffered), config
             )
 
             want_timestamps = config.timestamp_granularity is not None
@@ -190,18 +216,12 @@ class FasterWhisperAdapter:
                 )
             )
 
-    def _transcribe(self, model, pcm: bytes, rate: int, config: SessionConfig) -> list:
-        """Blocking decode; runs in a worker thread."""
+    def _transcribe(self, model, pcm: bytes, config: SessionConfig) -> list:
+        """Blocking decode; runs in a worker thread. Audio is already
+        ``WHISPER_FORMAT`` (validated in ``run_session``) — no conversion."""
         import numpy as np
 
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        if rate != WHISPER_RATE:
-            n_out = int(len(samples) * WHISPER_RATE / rate)
-            samples = np.interp(
-                np.linspace(0.0, len(samples) - 1, n_out),
-                np.arange(len(samples)),
-                samples,
-            ).astype(np.float32)
 
         segments, _info = model.transcribe(
             samples,

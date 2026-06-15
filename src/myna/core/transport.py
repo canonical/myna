@@ -30,6 +30,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
 from myna.core.audio import PcmChunk
+from myna.core.capabilities import Capabilities
 from myna.core.events import TranscriptionError, TranscriptionEvent
 from myna.core.session import SessionConfig
 
@@ -62,6 +63,10 @@ class SttClient(Protocol):
 
     async def open_session(self, config: SessionConfig) -> SttSession: ...
 
+    async def capabilities(self) -> Capabilities:
+        """Query what the backend can do, before opening a session (T24)."""
+        ...
+
 
 @runtime_checkable
 class SttService(Protocol):
@@ -72,6 +77,12 @@ class SttService(Protocol):
     finishes or aborts) and emit events via ``emit``, ending with exactly one
     terminal event. Model-specific messiness stays inside the implementation.
     """
+
+    def capabilities(self) -> Capabilities:
+        """Describe what this backend can do (T24). Static metadata — no I/O,
+        no model load — so the client can discover it cheaply before a
+        session."""
+        ...
 
     async def run_session(
         self,
@@ -93,6 +104,9 @@ class LoopbackClient:
 
     async def open_session(self, config: SessionConfig) -> SttSession:
         return _LoopbackSession(self._service, config)
+
+    async def capabilities(self) -> Capabilities:
+        return self._service.capabilities()
 
 
 class _LoopbackSession:
