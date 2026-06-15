@@ -1,6 +1,6 @@
 # Myna Project Plan
 
-**Date:** 2026-06-12
+**Created:** 2026-06-12 · **Last updated:** 2026-06-14
 **Status:** Living document — update task status in place as work lands.
 
 This plan turns IE114 (UbuSTT API), UD129 (Desktop STT Integration), and the
