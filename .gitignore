@@ -2,8 +2,13 @@
 # These carry their own .git and would commit as broken gitlinks — keep out.
 reference/
 
-# Generated fixture corpus — regenerate with `uv run python dev/generate_fixtures.py`
+# Generated corpora — regenerate with the dev/ builders:
+#   fixtures/    -> dev/generate_fixtures.py  (synthetic espeak)
+#   corpus/      -> dev/fetch_real_corpus.py  (real LibriSpeech)
+#   .cache/      -> the ~337 MB LibriSpeech source download
 fixtures/
+corpus/
+.cache/
 
 # Snap build artifacts
 whisper-snap/wheels/
@@ -19,6 +24,9 @@ __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
 dist/
 
 # Testbed output
