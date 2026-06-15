@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 
 from myna.core import (
+    Capabilities,
     EventSink,
     PcmChunk,
     SessionConfig,
@@ -64,6 +65,11 @@ class FakeAdapter:
     @property
     def candidate(self) -> Candidate:
         return Candidate(model="fake", engine="scripted", streaming_strategy="scripted")
+
+    def capabilities(self) -> Capabilities:
+        # The fixture pins the discovery surface (T24) without a model: a single
+        # default format, no language/punctuation/translation claims.
+        return Capabilities(models=("fake",))
 
     async def run_session(
         self,

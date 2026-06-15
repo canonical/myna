@@ -39,6 +39,9 @@ class LifecycleService:
     def candidate(self):
         return self._service.candidate
 
+    def capabilities(self):
+        return self._service.capabilities()
+
     async def run_session(
         self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
     ) -> None:

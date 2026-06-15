@@ -4,6 +4,11 @@ Nothing in here may import from ``myna.testbed`` or ``myna.desktop``.
 """
 
 from myna.core.audio import AudioFormat, AudioSource, PcmChunk
+from myna.core.capabilities import (
+    Capabilities,
+    capabilities_from_wire,
+    capabilities_to_wire,
+)
 from myna.core.events import (
     PHASE_PREPARING,
     PHASE_TRANSCRIBING,
@@ -25,6 +30,7 @@ __all__ = [
     "PHASE_TRANSCRIBING",
     "AudioFormat",
     "AudioSource",
+    "Capabilities",
     "EventSink",
     "LoopbackClient",
     "PcmChunk",
@@ -39,6 +45,8 @@ __all__ = [
     "TranscriptionFinal",
     "TranscriptionProgress",
     "WsUnixClient",
+    "capabilities_from_wire",
+    "capabilities_to_wire",
     "event_from_wire",
     "event_to_wire",
     "serve_unix",

@@ -7,9 +7,12 @@ PCM as binary frames in, JSON transcript events as text frames out.
 Wire protocol (PROVISIONAL — input to the IE114 update, T18):
 
 1. Client connects to the Unix socket and completes the WebSocket handshake.
-2. Client sends one text frame: ``{"type": "session.start", "config": {...}}``
-   where ``config`` is the ``SessionConfig`` wire form (audio format,
-   language, prompt, ...).
+2. Client sends one text frame. Either:
+   - ``{"type": "capabilities.query"}`` — the server replies with one
+     ``{"type": "capabilities", "data": {...}}`` frame and closes (T24); or
+   - ``{"type": "session.start", "config": {...}}`` to open a session, where
+     ``config`` is the ``SessionConfig`` wire form (audio format, language,
+     prompt, ...), continuing below.
 3. Client streams raw PCM as binary frames, in the declared audio format.
 4. Client sends a text frame ``{"type": "session.finish"}`` when audio ends
    (hotkey released). Closing the connection instead aborts the session.
@@ -36,6 +39,7 @@ from websockets.asyncio.server import ServerConnection, unix_serve
 from websockets.exceptions import ConnectionClosed
 
 from myna.core.audio import PcmChunk
+from myna.core.capabilities import Capabilities, capabilities_from_wire, capabilities_to_wire
 from myna.core.events import TranscriptionError, TranscriptionEvent, event_from_wire, event_to_wire
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import SttService
@@ -93,9 +97,15 @@ class _SessionHandler:
             opening = await ws.recv()
         except ConnectionClosed:
             return
+        if self._is_capabilities_query(opening):
+            wire = capabilities_to_wire(self._service.capabilities())
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(json.dumps({"type": "capabilities", "data": wire}))
+                await ws.close()
+            return
         config = self._parse_start(opening)
         if config is None:
-            await ws.close(code=1002, reason="expected session.start")
+            await ws.close(code=1002, reason="expected session.start or capabilities.query")
             return
 
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue()
@@ -134,6 +144,15 @@ class _SessionHandler:
             await ws.close()
 
     @staticmethod
+    def _is_capabilities_query(frame: str | bytes) -> bool:
+        if isinstance(frame, bytes):
+            return False
+        try:
+            return json.loads(frame).get("type") == "capabilities.query"
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+    @staticmethod
     def _parse_start(frame: str | bytes) -> SessionConfig | None:
         if isinstance(frame, bytes):
             return None
@@ -158,6 +177,17 @@ class WsUnixClient:
             json.dumps({"type": "session.start", "config": session_config_to_wire(config)})
         )
         return _WsSession(ws)
+
+    async def capabilities(self) -> Capabilities:
+        ws = await unix_connect(self._socket_path)
+        try:
+            await ws.send(json.dumps({"type": "capabilities.query"}))
+            reply = json.loads(await ws.recv())
+            if reply.get("type") != "capabilities":
+                raise ValueError(f"expected capabilities reply, got {reply.get('type')!r}")
+            return capabilities_from_wire(reply.get("data") or {})
+        finally:
+            await ws.close()
 
 
 class _WsSession:
