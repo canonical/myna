@@ -25,6 +25,8 @@ myna-server = "myna.server.cli:main"
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "hypothesis>=6",
 ]
 
 [build-system]
@@ -37,3 +39,7 @@ packages = ["src/myna"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["myna"]
+branch = true
