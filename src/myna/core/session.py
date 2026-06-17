@@ -5,6 +5,14 @@ audio-push model the client owns capture, so the service never needs a
 PipeWire identifier. Audio format travels with the config so the service can
 validate it against its advertised ``Capabilities.input_formats`` (the service
 rejects mismatches rather than resampling — the client owns conversion).
+
+IE115 reconciliation (T37, see ``docs/IE115-deviations.md`` §1.6): this stays a
+flat config, not IE115's nested ``session.audio.input.transcription`` envelope —
+that nesting exists to co-locate speech-to-speech output config (voice, speed,
+output modalities) we don't have, so it's pure ceremony for a transcriber. There
+is deliberately no ``turn_detection`` field: turn detection is client-driven
+(the client signals end-of-audio explicitly), not server VAD (§1.4). The wire
+shape is versioned with ``myna.core.protocol.PROTOCOL_VERSION``.
 """
 
 from __future__ import annotations
