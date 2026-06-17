@@ -116,17 +116,6 @@ def test_systemd_socket_none_for_other_pid(monkeypatch):
     assert systemd_socket() is None
 
 
-def test_set_proc_name_sets_and_truncates_comm():
-    from myna.server.cli import _set_proc_name
-
-    original = open("/proc/self/comm").read().strip()
-    try:
-        _set_proc_name("myna-nemotron-very-long")
-        assert open("/proc/self/comm").read().strip() == "myna-nemotron-v"  # 15 chars
-    finally:
-        _set_proc_name(original)
-
-
 async def test_serves_on_a_pre_bound_socket(tmp_path):
     # the T28 mechanism: systemd hands us a bound+listening socket; we serve
     # on it instead of binding a path.

@@ -147,21 +147,11 @@ async def serve(args: argparse.Namespace) -> None:
             args.socket.unlink()
 
 
-def _set_proc_name(name: str) -> None:
-    """Set the kernel process name (``comm``, ≤15 chars) so ``ps``/``top`` show
-    something meaningful instead of ``python3``. nvidia-smi reads ``cmdline[0]``
-    instead, which the snap's engine scripts set via ``exec -a``."""
-    with contextlib.suppress(OSError):
-        with open("/proc/self/comm", "w") as fp:
-            fp.write(name[:15])
-
-
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
     )
     args = build_parser().parse_args(argv)
-    _set_proc_name(f"myna-{args.adapter}")
     try:
         asyncio.run(serve(args))
     except KeyboardInterrupt:
