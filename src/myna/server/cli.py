@@ -29,7 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="myna-server", description=__doc__)
     parser.add_argument("--socket", required=True, type=Path, help="Unix socket path to serve on")
     parser.add_argument(
-        "--adapter", default="whisper", choices=("whisper", "nemotron"), help="ASR backend"
+        "--adapter",
+        default="whisper",
+        choices=("whisper", "nemotron", "qwen-c"),
+        help="ASR backend",
     )
     parser.add_argument(
         "--model",
@@ -71,6 +74,15 @@ def build_adapter(args: argparse.Namespace):
             device=args.device or "cpu",
             compute_type=args.compute_type,
         )
+
+    if args.adapter == "qwen-c":
+        # The C runtime needs a local model directory (no downloading); the
+        # shared library is located via QWEN_ASR_LIB (set by the snap runtime).
+        from myna.testbed.qwen import QwenCAdapter
+
+        if not args.model:
+            raise SystemExit("--adapter qwen-c requires --model <model dir>")
+        return QwenCAdapter(args.model)
 
     from myna.testbed.nemotron import (
         DEFAULT_MODEL,
