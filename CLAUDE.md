@@ -52,6 +52,15 @@ cloud, no persistent audio.
 WebSocket over a Unix socket: PCM binary frames in, JSON events out, one
 connection per session.
 
+Handshake is versioned (`myna.core.protocol`, `PROTOCOL_VERSION`, T35): client
+declares `protocol_version` in `session.start`; server acks `session.created`
+(echoing the served version) or, on mismatch, a terminal
+`transcription.error(unsupported_protocol_version)`. The version is in-band
+(not a WS subprotocol token) so it stays transport-agnostic, and it versions the
+whole contract — event vocab + config + capabilities shapes — as one number
+(adding an event type is breaking, so bump it). Control frames carry a `type`
+key; transcript events carry an `event` key.
+
 Event vocabulary (`myna.core.events`; provisional until agreed with team):
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading) or
   `transcribing`. Optional unstable `snippet` for UI; never committed text.

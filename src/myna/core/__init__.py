@@ -21,6 +21,11 @@ from myna.core.events import (
     event_from_wire,
     event_to_wire,
 )
+from myna.core.protocol import (
+    PROTOCOL_VERSION,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    is_supported,
+)
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService, SttSession
 from myna.core.transport_ws import WsUnixClient, serve_unix, systemd_socket
@@ -28,6 +33,8 @@ from myna.core.transport_ws import WsUnixClient, serve_unix, systemd_socket
 __all__ = [
     "PHASE_PREPARING",
     "PHASE_TRANSCRIBING",
+    "PROTOCOL_VERSION",
+    "SUPPORTED_PROTOCOL_VERSIONS",
     "AudioFormat",
     "AudioSource",
     "Capabilities",
@@ -49,6 +56,7 @@ __all__ = [
     "capabilities_to_wire",
     "event_from_wire",
     "event_to_wire",
+    "is_supported",
     "serve_unix",
     "systemd_socket",
     "session_config_from_wire",
