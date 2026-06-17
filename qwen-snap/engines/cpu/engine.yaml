@@ -1,0 +1,23 @@
+name: cpu
+summary: CPU Qwen3-ASR via the pure-C runtime
+description: |
+  Runs Qwen3-ASR with the dependency-light pure-C engine (antirez/qwen-asr,
+  OpenBLAS) on amd64/arm64 CPUs, driven via ctypes. Commit-on-finalize
+  transcription over the UbuSTT Unix-socket session API. No torch/CUDA — the
+  parsimonious, multilingual, no-GPU-required runtime for the family.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: qwen-c
+
+model:
+  default: 0-6b
+  options:
+    - 0-6b
+    # - 1-7b  (add when shipping the 1.7B model — see README)
