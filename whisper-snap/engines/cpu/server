@@ -8,7 +8,7 @@ idle="$(modelctl get sleep-idle-seconds)"
 # Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
 # (Full process/VRAM release via socket activation is blocked upstream — see
 # docs/asr-inference-snap-design.md §4.)
-exec -a "${SNAP_INSTANCE_NAME:-myna}-stt" "$SNAP/bin/myna-server" \
+exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model tiny}" \
     --device cpu \
