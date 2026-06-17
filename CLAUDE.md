@@ -20,11 +20,16 @@ cloud, no persistent audio.
   LibriSpeech CC-BY, `dev/fetch_real_corpus.py` — T25). Real WER is trustworthy;
   synthetic WER is plumbing/latency only (Nemotron: 0% real vs 44.6% synthetic,
   same model).
-- **Adapters** (built, hardware-verified): faster-whisper (AED) and Nemotron /
-  FastConformer (native transducer). Qwen3 not started.
-  `myna-server --adapter whisper|nemotron` serves either on a UDS.
-- **Snaps**: `whisper-snap/`, `nemotron-snap/` (one per family) — modelctl/IE108,
-  weights as components, GPU engines, idle-unload; run in strict confinement.
+- **Adapters** (built, hardware-verified): faster-whisper (AED), Nemotron /
+  FastConformer (native transducer), and **Qwen3-ASR** via a verified
+  pure-C/ctypes adapter (`qwen-c`, zero pip deps, multilingual CPU, shipped).
+  A vLLM/GPU runtime for Qwen3 lives on the `qwen3-vllm-gpu` branch (parked).
+  `myna-server --adapter whisper|nemotron|qwen-c` serves any on a UDS.
+- **Snaps**: `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` (one per family) —
+  modelctl/IE108, weights as components, GPU engines, idle-unload; run in strict
+  confinement. `qwen-snap` ships the pure-C CPU engine; a GPU engine for the
+  family is on the `qwen3-vllm-gpu` branch (showing runtimes are switchable per
+  family via the existing engine mechanism).
 - **Desktop**: `dev/dictate.py` push-to-talk demo. Session controller + IBus
   injection (T21/T22) not started.
 
@@ -68,7 +73,7 @@ provisional.
 |---|---|---|
 | Whisper (faster-whisper) | MIT | AED; streaming is bolt-on chunked re-decode (LocalAgreement). CTranslate2. Built + snapped. |
 | Nemotron / FastConformer | — | Cache-aware RNNT, *natively streaming* (each frame once), `att_context_size` latency dial, native punctuation, English-only. NeMo. Built + snapped. |
-| Qwen3-ASR | Apache-2.0 | vLLM streaming; isolate in adapter. Not started. |
+| Qwen3-ASR | Apache-2.0 | Multilingual (30 langs), LLM decoder, prompt biasing. Shipped via pure-C/OpenBLAS through ctypes (CPU, zero pip deps, verified). A vLLM/GPU runtime is on the `qwen3-vllm-gpu` branch (parked). |
 
 Key distinction: native transducer (Nemotron) vs AED re-decode (Whisper) drives
 streaming latency / partial churn. The Open ASR Leaderboard (batch WER) can't
@@ -86,4 +91,5 @@ Model cache: `HF_HOME` fixed dir; `hf download` (resumable); verify offline with
 ## Open questions (plan workstream E)
 
 Error model / stable codes (T31); performance contract / latency SLOs (needs T12 lab runs);
-residency default policy (T29).
+residency default policy (T29); audio sample-encoding in `input_formats` — int16-vs-float32
+wire format + where the (currently uniform) int16→float32 conversion lives (T33, **team discussion**).
