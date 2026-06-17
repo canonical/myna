@@ -1,11 +1,19 @@
 # Myna Project Plan
 
-**Created:** 2026-06-12 · **Last updated:** 2026-06-14
+**Created:** 2026-06-12 · **Last updated:** 2026-06-17
 **Status:** Living document — update task status in place as work lands.
 
 This plan turns IE114 (UbuSTT API), UD129 (Desktop STT Integration), and the
 testbed phasing from CLAUDE.md into assignable tasks. Task IDs are stable;
 reference them in branches and PRs (e.g. `t02-fake-adapter`).
+
+**IE115 (2026-06-17):** a competing braindump proposing a WebSocket API shaped
+on OpenAI's Realtime API has appeared (`IE115-spec.txt`). It does *not* yet
+supersede IE114 — it is still a braindump. It happens to ratify the two pivots
+we already made against IE114 (audio-push + WebSocket), but imports a lot of
+OpenAI speech-to-speech baggage that a local transcriber doesn't want.
+Reconciliation is **Workstream F**; our push-backs live in
+`docs/IE115-deviations.md`.
 
 Open spec questions (transport, event vocabulary, capabilities discovery,
 error model, performance contract) are tracked as tasks in workstream E so
@@ -21,6 +29,10 @@ they get owners instead of lingering.
   abstraction.
 - **D — Desktop client**: the UD129 dictation experience.
 - **E — Spec work**: feed findings back into IE114/UD129.
+- **F — IE115 reconciliation**: integrate the IE115 WebSocket proposal where it
+  improves on IE114, and document where we deviate from its OpenAI-Realtime
+  lineage. Feeds E (it *is* spec work, but kept separate so the IE115 decisions
+  get their own owners and don't get lost inside the IE114-update task).
 
 Dependencies at a glance: A is unblocked now and feeds E; C unblocks B and D's
 integration work; B and D converge in the end-to-end milestone (T22).
@@ -90,12 +102,38 @@ Design note: `docs/asr-inference-snap-design.md` (T13 output).
 
 | ID | Task | Status | Owner | Depends on | Notes / acceptance |
 |---|---|---|---|---|---|
-| T18 | IE114 update proposal: audio-push model, WebSocket transport, event vocabulary (progress/final/done/error), lifecycle signal (from T26) | todo (drafting) | Claude/Charles | T16, T26 | **Committed (2026-06-14):** audio-push model + WebSocket-over-UDS transport (working prior art in `transport_ws.py`) + the progress/final/done/error vocab. Deliverable: the written proposal for Farshid. **Error model carved out to T31** — it was the genuinely-unresolved third and shouldn't block the transport/vocab draft |
+| T18 | IE114 update proposal: audio-push model, WebSocket transport, event vocabulary (progress/final/done/error), lifecycle signal (from T26) | todo (drafting) | Claude/Charles | T16, T26 | **Committed (2026-06-14):** audio-push model + WebSocket-over-UDS transport (working prior art in `transport_ws.py`) + the progress/final/done/error vocab. Deliverable: the written proposal for Farshid. **Error model carved out to T31** — it was the genuinely-unresolved third and shouldn't block the transport/vocab draft. **2026-06-17:** IE115 landed and independently validates the transport + push direction here; the IE115-specific reconciliation (versioning, event-name alignment, deviations note) is split into Workstream F (T34–T37) so this task stays the IE114-targeted update and the IE115 decisions get their own owners |
 | T31 | Stable error-code taxonomy for IE114: enumerated codes with semantics (terminal vs recoverable, client vs server fault, retryable), replacing the ad-hoc adapter strings (`unsupported_audio_format`, `inference_failed`) | todo | | T18 | The part IE114 itself flagged incomplete. Two codes exist in adapter code, not a spec. Needs the full set + meaning before T18 can claim a complete error model |
 | T26 | Spec decision: add a session-lifecycle signal so clients show "loading model…" distinctly from "transcribing" | resolved (2026-06-14) | Claude/Charles | T18 | **Decision: yes, add a lifecycle signal** — `progress` conflates "model loading, nothing happening yet" with "transcribing, almost done", and the cold-load measurements (0.9–2.2 s whisper, more for NeMo) make that gap real. **Scoped, though:** the audio-push model collapses IE114 comment [h]'s `starting/listening/transcribing` trichotomy — the client owns capture so "listening" is redundant and "transcribing" == `progress`. So **one** new phase ("preparing"/model-loading), not a 3-state FSM (that would repeat the over-spec'ing the vocab simplification rejected). **Implemented as `progress.phase` field** (`preparing`/`transcribing`, default transcribing) — not a new event; adapters tag the load-heartbeat `preparing`, `dev/dictate.py` shows "loading model…" distinctly; field round-trips and is forward/backward compatible across the wire |
 | T19 | Performance contract proposal: latency SLOs grounded in measured testbed numbers, per hardware tier | todo | | T12 | Draft for IE114/UD129 owners ahead of a Wednesday sync |
 | T24 | Capabilities-discovery API sketch (models, languages, punctuation support) | done | Claude/Charles | T18 | `myna.core.capabilities.Capabilities` (models, languages, `input_formats`, punctuation, translation) + wire codec; `SttService.capabilities()` / `SttClient.capabilities()` served over **both** transports (loopback direct; WS answers a `capabilities.query` message, parametrized contract test proves wire parity); all three adapters populate it (whisper multilingual/punctuation; nemotron en-only/native-punct; fake trivial). `dev/capabilities.py` queries a live snap. **Folds in the audio-format advertisement** (`input_formats`): the service states what PCM it accepts, the client delivers it, and the adapters now **reject** off-format audio instead of resampling — the `np.interp` blocks are gone from both adapters (symmetric with the existing channels/width rejection; conversion is the client's job under audio-push). Provisional vocab → feeds T18 |
 | T33 | **Team discussion (undecided):** sample *encoding* in the audio format — should `AudioFormat`/`input_formats` carry int16-vs-float32, so int16→float32 moves to the client (capture-native or edge-convert) and adapters only reinterpret, never convert? | todo (discuss) | | T24 | **No decision yet — bring to the team.** Finding (2026-06-16): `AudioFormat` has no encoding field today (width only; wire is implicitly S16LE, float32 not expressible). At the raw-frame API **all the adapters want the *same* thing** — float32 normalised [-1,1] 16k mono — and each does the identical `int16→float32/32768` (whisper/nemotron/qwen-c). int16 ingestion exists only at file/stdin decode boundaries we don't use, and converts to float internally anyway. **Implications pull both ways:** uniform target ⇒ a single wire encoding (keep s16le, or switch to f32le + convert once in `MicSource`) settles it without per-model negotiation; and since ASR universally wants float, a full capabilities *encoding-negotiation* axis looks premature (solves a divergence that doesn't exist). Open question = which wire encoding + where the one conversion lives (adapter today vs source/edge per the audio-push invariant). Don't over-build until a model actually diverges. Analysis: this session's grilling |
+
+## Workstream F — IE115 reconciliation
+
+IE115 (`IE115-spec.txt`) is a WebSocket transcription API modelled on OpenAI's
+Realtime API. It ratifies our two pivots away from IE114 — **audio-push** (the
+client streams PCM up, no `pipewire-node-name`) and **WebSocket** (the forced
+consequence of audio-push: SSE can't carry a client→server audio stream). The
+work here is *not* a rebuild — our `myna.core` is already closer to IE115 than
+to IE114 — it is renaming/negotiation plus stripping the OpenAI speech-to-speech
+baggage (conversation-item object graph, 24 kHz, base64-in-JSON, server VAD,
+`obfuscation`/`usage`, voice/tools/instructions) that a local transcriber
+doesn't want. See `docs/IE115-deviations.md` for the full keep/strip/modify
+rationale.
+
+| ID | Task | Status | Owner | Depends on | Notes / acceptance |
+|---|---|---|---|---|---|
+| T34 | Deviations note (`docs/IE115-deviations.md`): per-feature keep/strip/modify position vs OpenAI Realtime, each justified by an invariant or a measured number | in progress | Claude/Charles | — | Started 2026-06-17. Six push-backs (no conversation model; 16 kHz via capabilities not fixed 24 kHz; binary frames not base64; server VAD optional not mandatory; drop `obfuscation`/`usage`; strip s2s config) + conscious decisions on what IE115 drops (segments/score, prompt, model-loading phase, reconnect). This is the team-facing artefact; IE115's own "Deviations from OpenAI Realtime API" section lists only two trivial ones |
+| T35 | Protocol versioning: handshake-negotiated `protocol_version` (client states in `session.start`, server echoes in `session.created`) + a versioned event-vocabulary set | todo | | T34, T16 | **Charles's explicit requirement — the flexibility lever for "any future model".** Neither spec versions the wire: IE114 had `/v1/` in the path, IE115 dropped it for nothing. Decide token-in-subprotocol (`Sec-WebSocket-Protocol: myna.v1`) vs field-in-handshake. Must keep `capabilities.query` (T24) — IE115 has no capabilities discovery at all, which is the real omission |
+| T36 | Event-vocabulary reconciliation: keep `transcription.*` vs adopt OpenAI `conversation.item.input_audio_transcription.*` names; reconcile our `progress.snippet` (liveness, uncommitted) with IE115 `delta` (incremental *committed* text) | todo | | T34 | Shape is largely shared; this is naming + delta semantics. Recommendation in the deviations note: keep our flat `transcription.*` and collapse the five-deep conversation names. Decide whether we want a committed-delta stream or keep snippet-as-liveness-only. Preserve the T26 `progress.phase=preparing` signal — IE115 has no model-loading event |
+| T37 | Session lifecycle/config envelope: align `SessionConfig`/`session.start` with an IE115-shaped `session.update`/`session.created` exchange, stripped of s2s fields (voice, tools, instructions, output_modalities, create_response) | todo | | T34, T24 | `core/session.py` already carries the transcription-relevant fields (language, output_language, prompt, timestamp_granularity). Question is whether to nest under a `session: {audio: {input: {...}}}` envelope for client familiarity, or keep our flat config. Server VAD stays optional/off (client owns boundaries via `session.finish`) |
+
+T33 (audio sample-encoding) is the audio half of this reconciliation — IE115's
+fixed 24 kHz mandate makes the "negotiate format via `input_formats`, don't
+hardcode" position concrete. T31 (error-code taxonomy) is unchanged by IE115:
+IE115's `error` has `type`/`code`/`message` but, like IE114, defines no code
+set — same gap.
 
 ---
 
