@@ -4,21 +4,32 @@ Implements the session contract from ``myna.core.transport`` over the
 direction-of-travel IE114 transport: one WebSocket connection per session,
 PCM as binary frames in, JSON transcript events as text frames out.
 
-Wire protocol (PROVISIONAL — input to the IE114 update, T18):
+Wire protocol (PROVISIONAL — input to the IE115 reconciliation, T18/T35):
 
 1. Client connects to the Unix socket and completes the WebSocket handshake.
 2. Client sends one text frame. Either:
    - ``{"type": "capabilities.query"}`` — the server replies with one
      ``{"type": "capabilities", "data": {...}}`` frame and closes (T24); or
-   - ``{"type": "session.start", "config": {...}}`` to open a session, where
-     ``config`` is the ``SessionConfig`` wire form (audio format, language,
-     prompt, ...), continuing below.
-3. Client streams raw PCM as binary frames, in the declared audio format.
-4. Client sends a text frame ``{"type": "session.finish"}`` when audio ends
+   - ``{"type": "session.start", "protocol_version": "1", "config": {...}}`` to
+     open a session, where ``config`` is the ``SessionConfig`` wire form (audio
+     format, language, prompt, ...), continuing below.
+3. Server checks the declared ``protocol_version`` (``myna.core.protocol``). If
+   it can't serve it, the server sends a terminal
+   ``transcription.error`` (code ``unsupported_protocol_version``) and closes.
+   Otherwise it sends ``{"type": "session.created", "protocol_version": ...}``
+   echoing the version it will speak — a positive ack and the IE115-shaped
+   handshake reply. (No ``session.updated``: there is no mid-session reconfig.)
+4. Client streams raw PCM as binary frames, in the declared audio format.
+   (Binary frames, deliberately not IE115's base64-in-JSON — see
+   ``docs/IE115-deviations.md`` §1.3. Turn detection is client-driven: there is
+   no server VAD; the client owns the boundary.)
+5. Client sends a text frame ``{"type": "session.finish"}`` when audio ends
    (hotkey released). Closing the connection instead aborts the session.
-5. Server sends transcript events as text frames in the
+6. Server sends transcript events as text frames in the
    ``{"event": ..., "data": {...}}`` shape (see ``myna.core.events``), ending
-   with exactly one terminal event, then closes the connection.
+   with exactly one terminal event, then closes the connection. Control frames
+   (``session.created``) carry a ``"type"`` key; transcript events carry an
+   ``"event"`` key — that is how the client tells them apart.
 
 Like every transport, this module must pass ``tests/test_contract.py`` with
 only the wiring swapped — the loopback transport is the reference semantics.
@@ -41,6 +52,7 @@ from websockets.exceptions import ConnectionClosed
 from myna.core.audio import PcmChunk
 from myna.core.capabilities import Capabilities, capabilities_from_wire, capabilities_to_wire
 from myna.core.events import TranscriptionError, TranscriptionEvent, event_from_wire, event_to_wire
+from myna.core.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, is_supported
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import SttService
 
@@ -103,10 +115,32 @@ class _SessionHandler:
                 await ws.send(json.dumps({"type": "capabilities", "data": wire}))
                 await ws.close()
             return
-        config = self._parse_start(opening)
-        if config is None:
+        start = self._parse_start(opening)
+        if start is None:
             await ws.close(code=1002, reason="expected session.start or capabilities.query")
             return
+        config, client_version = start
+
+        if not is_supported(client_version):
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(
+                    json.dumps(
+                        event_to_wire(
+                            TranscriptionError(
+                                code="unsupported_protocol_version",
+                                message=(
+                                    f"server speaks {sorted(SUPPORTED_PROTOCOL_VERSIONS)}, "
+                                    f"client requested {client_version!r}"
+                                ),
+                            )
+                        )
+                    )
+                )
+                await ws.close()
+            return
+
+        with contextlib.suppress(ConnectionClosed):
+            await ws.send(json.dumps({"type": "session.created", "protocol_version": PROTOCOL_VERSION}))
 
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue()
 
@@ -153,14 +187,18 @@ class _SessionHandler:
             return False
 
     @staticmethod
-    def _parse_start(frame: str | bytes) -> SessionConfig | None:
+    def _parse_start(frame: str | bytes) -> tuple[SessionConfig, str | None] | None:
+        """Parse a ``session.start`` into ``(config, protocol_version)``, or
+        ``None`` if the frame isn't a session.start. ``protocol_version`` is
+        ``None`` when the client omits it (pre-versioning clients)."""
         if isinstance(frame, bytes):
             return None
         try:
             message = json.loads(frame)
             if message.get("type") != "session.start":
                 return None
-            return session_config_from_wire(message.get("config") or {})
+            config = session_config_from_wire(message.get("config") or {})
+            return config, message.get("protocol_version")
         except (ValueError, TypeError):
             return None
 
@@ -174,7 +212,13 @@ class WsUnixClient:
     async def open_session(self, config: SessionConfig) -> "_WsSession":
         ws = await unix_connect(self._socket_path)
         await ws.send(
-            json.dumps({"type": "session.start", "config": session_config_to_wire(config)})
+            json.dumps(
+                {
+                    "type": "session.start",
+                    "protocol_version": PROTOCOL_VERSION,
+                    "config": session_config_to_wire(config),
+                }
+            )
         )
         return _WsSession(ws)
 
@@ -194,6 +238,7 @@ class _WsSession:
     def __init__(self, ws) -> None:
         self._ws = ws
         self._audio_finished = False
+        self.protocol_version: str | None = None  # set from session.created
 
     async def send_audio(self, chunk: PcmChunk) -> None:
         if self._audio_finished:
@@ -211,7 +256,11 @@ class _WsSession:
             async for frame in self._ws:
                 if isinstance(frame, bytes):
                     continue  # server never sends binary; tolerate it
-                event = event_from_wire(json.loads(frame))
+                message = json.loads(frame)
+                if message.get("type") == "session.created":
+                    self.protocol_version = message.get("protocol_version")
+                    continue  # control frame, not a transcript event
+                event = event_from_wire(message)
                 yield event
                 if event.type in _TERMINAL:
                     return

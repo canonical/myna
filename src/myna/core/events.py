@@ -2,8 +2,22 @@
 
 PROVISIONAL — this tracks the working vocabulary in CLAUDE.md, which simplifies
 earlier IE114 drafts (no ``partial``/``replace``/epochs; retraction semantics
-were dropped as confusing). If you add an event type, document it in CLAUDE.md
-and flag it provisional.
+were dropped as confusing). If you add an event type, document it in CLAUDE.md,
+flag it provisional, and bump ``myna.core.protocol.PROTOCOL_VERSION`` — the
+event vocabulary is versioned as part of the wire contract (``event_from_wire``
+rejects unknown types, so a new event is a breaking change for old clients).
+
+IE115 reconciliation (T36, see ``docs/IE115-deviations.md`` §1.1): we keep these
+flat ``transcription.*`` names rather than adopting IE115's five-deep OpenAI
+``conversation.item.input_audio_transcription.{delta,completed,failed}`` — there
+is no conversation in dictation, only a stream becoming text. Mapping for anyone
+porting an IE115/OpenAI client: ``…transcription.delta`` →
+``transcription.progress`` (its ``snippet`` is unstable liveness, *not* IE115's
+committed incremental delta — we emit no committed deltas until streaming, T08);
+``…transcription.completed`` → ``transcription.final`` (per segment) +
+``transcription.done`` (session end); ``…transcription.failed`` →
+``transcription.error``. The single ``error`` channel replaces IE115's split
+top-level-``error`` / per-item-``failed``.
 
 Semantics:
 
@@ -21,9 +35,10 @@ Semantics:
 - ``transcription.error``    — structured error; terminal for the session.
 
 The wire encoding here is a transport-agnostic JSON object shape
-(``{"event": <type>, "data": {...}}``), deliberately mirroring the SSE framing
-in IE114 so the eventual transport (WebSocket per current direction) only has
-to frame these objects, not reinvent them.
+(``{"event": <type>, "data": {...}}``), so a transport only has to frame these
+objects, not reinvent them. Over ws+unix these go out as JSON text frames; the
+``"event"`` key distinguishes them from control frames (``session.created``),
+which carry a ``"type"`` key.
 """
 
 from __future__ import annotations
