@@ -79,8 +79,10 @@ The team's wire direction is now IE115 (OpenAI-subset) event names
 plus additive events (the liveness/`STATUS` event); the transport/orchestrator
 work maps the internal vocab onto those. See `docs/IE115-resolution.md`.
 Internal vocab:
-- `transcription.progress` — liveness; `phase` is `preparing` (model loading) or
-  `transcribing`. Optional unstable `snippet` for UI; never committed text.
+- `transcription.progress` — liveness; `phase` is `preparing` (model loading),
+  `ready` (model resident, gate open, nothing decoding yet — client may send
+  audio), or `transcribing`. Optional unstable `snippet` for UI; never committed
+  text. The three phases map onto the IE115 `STATUS` liveness `state`.
 - `transcription.final` — committed text for a segment; never retracted.
 - `transcription.done` — terminal; full transcript.
 - `transcription.error` — terminal; `code` + `message`.
