@@ -9,7 +9,7 @@ Ubuntu Desktop speech-to-text (dictation): hold a hotkey, speak, transcribed
 text is inserted into the focused app. Local, offline, privacy-preserving — no
 cloud, no persistent audio.
 
-## Current state (2026-06-14)
+## Current state (2026-07-01)
 
 - **Testbed**: harness + session contract over two transports (loopback,
   WebSocket-UDS), same contract tests; fake adapter (permanent fixture); WAV +
@@ -32,6 +32,18 @@ cloud, no persistent audio.
   family via the existing engine mechanism).
 - **Desktop**: `dev/dictate.py` push-to-talk demo. Session controller + IBus
   injection (T21/T22) not started.
+- **Spec (IE115)**: Workstream F **resolved (2026-07-01)** — the team settled on
+  IE115 as a *suitable subset* of OpenAI's Realtime API + additive events
+  (compat / remote-backend / industry-contribution). Adopted: our model-loading
+  **liveness event** (loading is a lifecycle state, not an error) and
+  **capabilities discovery as a separate models API**. Overruled for compat:
+  flat-profile + drop-`conversation.item`. Out of scope: translation. Full
+  mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
+  `docs/architecture/ie115-lifecycle.md`. Still open: error taxonomy (T31),
+  protocol versioning (T35), overload/lag signal, GPU memory pressure.
+- **Next**: **orchestrator subsystem** (Charles) — build against the lifecycle
+  diagram, stub the audio-adapter boundary (`docs/audio-adapter-api.md`) until it
+  lands. Inference snap server: Ivano. Audio adapter: Matias.
 
 ## Invariants (don't violate)
 
@@ -61,7 +73,12 @@ whole contract — event vocab + config + capabilities shapes — as one number
 (adding an event type is breaking, so bump it). Control frames carry a `type`
 key; transcript events carry an `event` key.
 
-Event vocabulary (`myna.core.events`; provisional until agreed with team):
+Event vocabulary (`myna.core.events`) — this is myna's **internal** contract.
+The team's wire direction is now IE115 (OpenAI-subset) event names
+(`session.*`, `input_audio_buffer.*`, `conversation.item.input_audio_transcription.*`)
+plus additive events (the liveness/`STATUS` event); the transport/orchestrator
+work maps the internal vocab onto those. See `docs/IE115-resolution.md`.
+Internal vocab:
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading) or
   `transcribing`. Optional unstable `snippet` for UI; never committed text.
 - `transcription.final` — committed text for a segment; never retracted.
