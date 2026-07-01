@@ -15,6 +15,17 @@ OpenAI speech-to-speech baggage that a local transcriber doesn't want.
 Reconciliation is **Workstream F**; our push-backs live in
 `docs/IE115-deviations.md`.
 
+**Update (2026-07-01):** Workstream F is resolved. The team decided IE115 will be
+a *suitable subset* of OpenAI's Realtime API (compatibility + remote-backend +
+industry-contribution reasons), extended with additive events. Our liveness event
+and capabilities discovery were adopted; the flat-profile and drop-conversation-
+item push-backs were overruled for compatibility; translation is out of scope.
+Full mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
+`docs/architecture/ie115-lifecycle.md`. Remaining open: error taxonomy (T31),
+protocol versioning (T35), overload-lag signal, GPU memory pressure. Next focus
+shifts to the **orchestrator subsystem** (Charles) and the inference snap server
+(Ivano).
+
 Open spec questions (transport, event vocabulary, capabilities discovery,
 error model, performance contract) are tracked as tasks in workstream E so
 they get owners instead of lingering.
