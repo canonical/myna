@@ -31,8 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c"),
-        help="ASR backend",
+        choices=("whisper", "nemotron", "qwen-c", "fake"),
+        help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
         "--model",
@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
 def build_adapter(args: argparse.Namespace):
     """Construct the chosen adapter, importing its extra lazily so --help and
     the other adapter work without it installed."""
+    if args.adapter == "fake":
+        # No model, no extra: the permanent regression fixture, served over the
+        # wire so transport/contract clients (e.g. the Rust orchestrator) can
+        # integration-test without a GPU or model. See myna.testbed.fake.
+        from myna.testbed.fake import FakeAdapter
+
+        return FakeAdapter()
+
     if args.adapter == "whisper":
         from myna.testbed.whisper import FasterWhisperAdapter
 
