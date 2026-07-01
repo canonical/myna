@@ -1,6 +1,6 @@
 # Myna Project Plan
 
-**Created:** 2026-06-12 · **Last updated:** 2026-06-18
+**Created:** 2026-06-12 · **Last updated:** 2026-07-01
 **Status:** Living document — update task status in place as work lands.
 
 This plan turns IE114 (UbuSTT API), UD129 (Desktop STT Integration), and the
@@ -44,9 +44,18 @@ they get owners instead of lingering.
   improves on IE114, and document where we deviate from its OpenAI-Realtime
   lineage. Feeds E (it *is* spec work, but kept separate so the IE115 decisions
   get their own owners and don't get lost inside the IE114-update task).
+- **G — Orchestrator subsystem (Rust)**: the client-side dictation brain — the
+  session + model-residency FSM from `docs/architecture/ie115-lifecycle.md`,
+  mediating the audio adapter (D/Matias), the inference snap (B/Ivano), the
+  hotkey (T21) and the injector (T22). Every external boundary is a trait with a
+  mock, so it is buildable now: the existing Python `myna-server` stands in for
+  the inference snap, a WAV source for the audio adapter, stdin for the hotkey,
+  stdout for the injector.
 
 Dependencies at a glance: A is unblocked now and feeds E; C unblocks B and D's
-integration work; B and D converge in the end-to-end milestone (T22).
+integration work; B and D converge in the end-to-end milestone (T22); G consumes
+B and D behind interfaces (stubbed until they land) and builds directly against
+the lifecycle diagram.
 
 ## Status legend
 
@@ -140,6 +149,41 @@ rationale.
 | T36 | Event-vocabulary reconciliation: keep `transcription.*` vs adopt OpenAI `conversation.item.input_audio_transcription.*` names; reconcile our `progress.snippet` (liveness, uncommitted) with IE115 `delta` (incremental *committed* text) | done | Claude/Charles | T34 | **Decided 2026-06-17 — keep flat `transcription.*`.** No code rename; the decision *is* the deliverable, documented in `core/events.py` with the IE115/OpenAI → ours mapping (delta→`progress` *snippet-as-liveness, not committed*; completed→`final`+`done`; failed→`error`; single error channel). `progress.phase=preparing` (T26) preserved — IE115 has no model-loading event. Committed-delta stream deferred to streaming (T08): we emit no committed deltas yet, so don't build the semantics until a model needs them. Vocab versioned via `PROTOCOL_VERSION` (T35) |
 | T37 | Session lifecycle/config envelope: align `SessionConfig`/`session.start` with an IE115-shaped `session.update`/`session.created` exchange, stripped of s2s fields (voice, tools, instructions, output_modalities, create_response) | done | Claude/Charles | T34, T24 | **Decided 2026-06-17 — keep flat config, add the `session.created` ack (via T35).** No nested `session.audio.input.transcription` envelope: that nesting only exists to co-locate s2s output config (voice/speed) we don't have. Existing fields (language, output_language, prompt, timestamp_granularity) cover transcription; decision documented in `core/session.py`. No `turn_detection` field — turn detection is client-driven via `session.finish`, never server VAD (deviations §1.4). `session.created` handshake reply landed in T35 |
 
+## Workstream G — Orchestrator subsystem (Rust)
+
+The client-side coordinator: it owns the **two-region async FSM** from
+`docs/architecture/ie115-lifecycle.md` — the per-connection session track
+(CREATED→ACTIVE→FINALIZING→DONE) running orthogonally to model residency
+(UNLOADED→LOADING→RESIDENT) — with the accept-gate (`ACTIVE ∧ RESIDENT`),
+commit-drain (COMMIT ≠ done; wait for `done`), pre-ready-audio drop, and
+terminal-vs-recoverable error mapping. The FSM is the deliverable; everything
+else is plumbing around it.
+
+**Buildable now via mocks (our earlier work):** the existing Python `myna-server`
+(ws+unix, fake/whisper/nemotron/qwen adapters) stands in for the IE115 inference
+snap; a WAV source over `corpus/real` for the audio adapter; stdin for the
+hotkey; stdout for the injector. Design decisions (2026-07-01, Charles): keep the
+FSM **wire-agnostic** and speak the *existing* `myna.core` wire first (real
+end-to-end runs against a running Python server today), with **IE115 event names
+as P4**; enhance the Python fake adapter to emit the full `STATUS` sequence so
+the residency gate is honestly exercised; small `core/orchestrator/cli`
+workspace; **rigorous** FSM (all async edge cases, not a thin loop); Python
+server kept as a test dependency (Rust integration tests spawn it).
+
+Stack: Rust (nightly present), tokio + tokio-tungstenite + serde. Honors the
+invariants: never persist audio, bounded in-memory buffering, no content logged.
+
+| ID | Task | Status | Owner | Depends on | Notes / acceptance |
+|---|---|---|---|---|---|
+| T38 | **P0** — Cargo workspace scaffold + `myna-core` crate: `AudioFormat`/`PcmChunk` (per `docs/audio-adapter-api.md` §2), event/session/protocol types + serde wire codec mirroring `myna.core`, `PROTOCOL_VERSION="1"` | done | Charles | — | **Done 2026-07-01.** `rust/` workspace (`myna-core` + `myna-orchestrator`/`myna-cli` stubs); tokio not yet pulled (T39). `myna-core` covers audio/events/session/protocol/control with a JSON codec verified against **golden frames captured from Python `myna.core`** (compared as parsed JSON values — key order/whitespace differ, structure matches; both ends parse JSON). 25 unit tests green, clippy clean. Includes the new `ready` phase (T42) |
+| T39 | **P1** — `BackendClient` trait + WS-over-UDS impl speaking the **existing** `myna.core` wire (`session.start`→binary PCM→`session.finish`; parse `session.created` + `transcription.*`) | done | Charles | T38, T14a | **Done 2026-07-01.** `myna-orchestrator::backend`: `BackendClient` trait → `BackendHandle` split into a cheap-clone `BackendSink` (audio/finish/abort up) + `BackendEvents` receiver (down), decoupling the FSM from the wire via channels so it can push audio and read events concurrently. `WsUnixBackend` (tokio + tokio-tungstenite over `UnixStream`) does the handshake (declares `protocol_version`, awaits `session.created`, maps a rejection error to `BackendError::Rejected`), then a pump task bridges the split WS to the channels (terminal-event/close/abort teardown; commit-drain: sink-drop keeps reading). Integration test spawns the real `myna-server --adapter fake` on a UDS and asserts the full scripted session round-trips (26 tests green, clippy clean). Also **added `--adapter fake` to the server CLI** (serves the permanent fixture over the wire, zero deps — reused by T42). Test launches the venv server binary **directly** (not `uv run`, which orphans a grandchild) so cleanup is reliable |
+| T40 | **P2** — the FSM (centerpiece): two orthogonal regions + accept-gate, commit-drain, pre-ready drop, terminal/recoverable error mapping (enum; taxonomy provisional pending T31). Fake-backend fixture emitting the full `STATUS{loading→ready→transcribing}` + edge cases | todo | Charles | T38 | Rigorous unit tests over the fake backend + fake audio; the fixture is a permanent regression asset (mirrors the Python fake adapter). Edge cases 3A/3B/3C from the lifecycle diagram each have a test |
+| T41 | **P3** — boundary mocks + demo bin: `AudioSource` trait + `WavFileSource` (real-time paced, `corpus/real`), `Trigger` (stdin), `TextSink` (stdout); wired into the `myna-cli` orchestrator binary end-to-end against the real Python server | todo | Charles | T39, T40, T20 | The Rust `dev/dictate.py`: trigger → WAV → transcription printed. `AudioSource` matches `docs/audio-adapter-api.md` §3 so Matias's crate drops in |
+| T42 | Python fake-adapter `STATUS`-sequence enhancement (mock fidelity): emit loading→ready→transcribing so the residency accept-gate is exercised over the wire, not just in unit tests | todo | Charles | T02 | **Vocab gap resolved 2026-07-01:** added a `ready` phase to `transcription.progress.phase` (`preparing\|ready\|transcribing`) — field, not a new event (T26 precedent); maps onto the IE115 `STATUS` liveness `state`. Landed in `myna.core.events`. Remaining: emit the sequence from the fake adapter. Feeds T39/T41 realism |
+| T43 | **P4** — IE115 wire alignment: a second `BackendClient` speaking IE115 names (`session.update`/`input_audio_buffer.append`/`conversation.item.input_audio_transcription.*`/`STATUS`) once Ivano's server lands | todo | Charles | T40 | Contained by the wire-agnostic FSM (T40) — a wire adapter, not a rebuild. Confirms the trait boundary held |
+
+---
+
 T33 (audio sample-encoding) is the audio half of this reconciliation — IE115's
 fixed 24 kHz mandate makes the "negotiate format via `input_formats`, don't
 hardcode" position concrete. T31 (error-code taxonomy) is unchanged by IE115:
@@ -200,3 +244,6 @@ still uncovered — clean read speech only; Common Voice/VCTK is the follow-up.)
    transport, events, and measured performance contract.
 5. **M4 — End-to-end dictation:** T14a–T14c, T20–T22. Hotkey → speech → text
    in a GNOME app via the whisper snap.
+6. **M5 — Orchestrator loop (Rust):** T38–T42. Trigger → WAV → transcription
+   through the wire-agnostic FSM against the real Python server; IE115 wire (T43)
+   follows once Ivano's server lands.
