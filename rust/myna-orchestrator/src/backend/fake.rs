@@ -221,3 +221,117 @@ fn error(code: &str, message: &str) -> TranscriptionEvent {
         message: message.into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::WavFileSource;
+    use crate::fsm::SessionOutcome;
+    use crate::runner::run_dictation;
+    use crate::sink::CollectingSink;
+    use myna_core::{AudioFormat, SessionConfig};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// Minimal in-memory canonical PCM WAV of `seconds` of silence.
+    fn silence_wav(seconds: f64) -> std::path::PathBuf {
+        let fmt = AudioFormat::default();
+        let data = vec![0u8; (fmt.bytes_per_second() as f64 * seconds) as usize];
+        let block_align = (fmt.channels as u16) * (fmt.sample_width_bytes as u16);
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&(fmt.channels as u16).to_le_bytes());
+        out.extend_from_slice(&fmt.sample_rate_hz.to_le_bytes());
+        out.extend_from_slice(&fmt.bytes_per_second().to_le_bytes());
+        out.extend_from_slice(&block_align.to_le_bytes());
+        out.extend_from_slice(&((fmt.sample_width_bytes as u16) * 8).to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&data);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("myna-gate-{}-{}.wav", std::process::id(), nanos));
+        std::fs::write(&path, out).unwrap();
+        path
+    }
+
+    /// A backend that records whether any audio arrived *before* it emitted
+    /// `ready`, then finishes cleanly. It delays `ready` behind a short sleep,
+    /// so a client that streamed eagerly would push audio into the closed gate
+    /// during the window.
+    struct GateProbe {
+        audio_before_ready: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl BackendClient for GateProbe {
+        async fn open_session(
+            &self,
+            _config: SessionConfig,
+        ) -> Result<BackendHandle, BackendError> {
+            let (out_tx, mut out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
+            let (ev_tx, ev_rx) = mpsc::channel(EVENT_CAPACITY);
+            let flag = self.audio_before_ready.clone();
+            tokio::spawn(async move {
+                let ready_emitted = Arc::new(AtomicBool::new(false));
+                let drain_ready = ready_emitted.clone();
+                let drain = tokio::spawn(async move {
+                    while let Some(o) = out_rx.recv().await {
+                        match o {
+                            Outbound::Audio(_) => {
+                                if !drain_ready.load(Ordering::SeqCst) {
+                                    flag.store(true, Ordering::SeqCst);
+                                }
+                            }
+                            Outbound::Finish | Outbound::Abort => break,
+                        }
+                    }
+                });
+                let _ = ev_tx.send(Ok(loading())).await;
+                // A window in which an ungated client would leak audio early.
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                ready_emitted.store(true, Ordering::SeqCst);
+                let _ = ev_tx.send(Ok(ready())).await;
+                let _ = drain.await; // audio streamed + finished
+                let _ = ev_tx.send(Ok(final_seg("ok"))).await;
+                let _ = ev_tx.send(Ok(done("ok"))).await;
+            });
+            Ok(BackendHandle {
+                sink: BackendSink { tx: out_tx },
+                events: BackendEvents { rx: ev_rx },
+                protocol_version: Some(PROTOCOL_VERSION.to_string()),
+            })
+        }
+    }
+
+    /// Regression for the deadlock/mass-drop this fixture family exists to guard:
+    /// the runner's client-side accept-gate must hold every chunk until the
+    /// backend signals `ready`. Without the gate (audio streamed eagerly), the
+    /// probe would see audio during its pre-ready window and the assert trips.
+    #[tokio::test]
+    async fn runner_gates_all_audio_until_ready() {
+        let path = silence_wav(0.5);
+        let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.05);
+        let audio_before_ready = Arc::new(AtomicBool::new(false));
+        let backend = GateProbe { audio_before_ready: audio_before_ready.clone() };
+        let mut sink = CollectingSink::default();
+
+        let outcome =
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+
+        assert!(
+            !audio_before_ready.load(Ordering::SeqCst),
+            "audio reached the backend before `ready` — the accept-gate leaked"
+        );
+        assert_eq!(outcome, SessionOutcome::Completed { transcript: "ok".into() });
+        std::fs::remove_file(&path).ok();
+    }
+}
