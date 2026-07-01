@@ -14,18 +14,26 @@
 //!   [`backend::ws_unix::WsUnixBackend`], speaking the existing `myna.core`
 //!   ws+unix wire against the running Python `myna-server`; the in-process
 //!   [`backend::fake::FakeBackend`] (T40) is the scripted regression fixture.
-//! - `AudioSource` — capture (T41), mocked by a WAV source; the real adapter
-//!   drops in per `docs/audio-adapter-api.md`.
-//! - `Trigger` / `TextSink` — hotkey and injector (T41), mocked by stdin/stdout.
+//! - [`audio::AudioSource`] — capture (T41), mocked by [`audio::WavFileSource`];
+//!   the real PipeWire adapter drops in per `docs/audio-adapter-api.md` §3.
+//! - [`trigger::Trigger`] / [`sink::TextSink`] — hotkey and injector (T41),
+//!   mocked by [`trigger::StdinTrigger`] / [`sink::StdoutSink`]; the real
+//!   GlobalShortcuts hotkey (T21) and IBus injector (T22) implement the traits.
 //!
-//! Status: `myna-core` (wire contract, T38), the backend seam (T39), and the
-//! two-region FSM + async driver (T40, [`fsm`] / [`driver`]) have landed; the
-//! boundary mocks + demo binary are T41.
+//! Status: `myna-core` (wire contract, T38), the backend seam (T39), the
+//! two-region FSM + async driver (T40, [`fsm`] / [`driver`]), and the boundary
+//! mocks + one-utterance runner (T41, [`audio`] / [`trigger`] / [`sink`] /
+//! [`runner`], wired in the `myna-dictate` binary) have all landed.
 
+pub mod audio;
 pub mod backend;
 pub mod driver;
 pub mod fsm;
+pub mod runner;
+pub mod sink;
+pub mod trigger;
 
+pub use audio::{AudioSource, CaptureError, CaptureStream, StopHandle, WavFileSource};
 pub use backend::{
     fake::FakeBackend, ws_unix::WsUnixBackend, BackendClient, BackendError, BackendEvents,
     BackendHandle, BackendSink, Outbound,
@@ -35,4 +43,7 @@ pub use fsm::{
     classify_error, Action, DropReason, ErrorDisposition, Fsm, FsmState, Input, OrchestratorEvent,
     Residency, SessionOutcome, SessionState,
 };
+pub use runner::run_dictation;
+pub use sink::{CollectingSink, StdoutSink, TextSink};
+pub use trigger::{ScriptedTrigger, StdinTrigger, Trigger, TriggerEdge};
 pub use myna_core;
