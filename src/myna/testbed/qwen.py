@@ -41,6 +41,7 @@ from collections.abc import AsyncIterator
 
 from myna.core import (
     PHASE_PREPARING,
+    PHASE_READY,
     AudioFormat,
     Capabilities,
     EventSink,
@@ -249,6 +250,10 @@ class QwenCAdapter:
 
         try:
             await self._load_model_with_heartbeat(emit)
+            # Signal `ready` before pulling audio so the client's accept-gate
+            # opens (IE115 STATUS{ready}); otherwise client-drops-until-ready and
+            # adapter-waits-for-audio deadlock (ie115-lifecycle.md §3A).
+            await emit(TranscriptionProgress(phase=PHASE_READY))
 
             buffered = bytearray()
             seconds_since_progress = 0.0
