@@ -1,0 +1,223 @@
+//! `FakeBackend` — the T40 in-process backend fixture, and a **permanent
+//! regression asset** (the Rust mirror of the Python `FakeAdapter`).
+//!
+//! It implements [`BackendClient`] without a model, a socket, or audio
+//! inspection: `open_session` spawns a task that plays a scripted sequence of
+//! transcript events into the downstream channel while draining (and ignoring)
+//! the audio the FSM pushes up. That lets the orchestrator FSM and its driver be
+//! exercised end-to-end — including the full `STATUS` liveness sequence
+//! (`loading → ready → transcribing`) and the async edge cases from
+//! `docs/architecture/ie115-lifecycle.md` — with zero I/O and deterministic
+//! output.
+//!
+//! Unlike the ws wire (where the pump treats any `transcription.error` as
+//! terminal and closes), the fixture emits exactly the script it is given and
+//! nothing more, so advisory/recoverable-error and commit-drain scenarios can be
+//! staged precisely.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use tokio::sync::mpsc;
+use tokio::sync::Notify;
+
+use myna_core::{
+    ErrorData, Progress, SessionConfig, TranscriptionEvent, TranscriptionFinal, PHASE_PREPARING,
+    PHASE_READY, PHASE_TRANSCRIBING, PROTOCOL_VERSION,
+};
+
+use super::{BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink, Outbound};
+
+const EVENT_CAPACITY: usize = 64;
+const OUTBOUND_CAPACITY: usize = 16;
+
+/// A step in a fake session script.
+#[derive(Clone, Debug)]
+pub enum FakeStep {
+    /// Emit an event downstream immediately.
+    Emit(TranscriptionEvent),
+    /// Block until the FSM sends `session.finish` (or aborts). Models a backend
+    /// that only decodes the tail after end-of-audio — the §3C commit-drain
+    /// subtlety.
+    WaitForFinish,
+}
+
+/// A scripted, model-free [`BackendClient`].
+pub struct FakeBackend {
+    script: Vec<FakeStep>,
+}
+
+impl FakeBackend {
+    /// Build from an explicit script.
+    pub fn new(script: Vec<FakeStep>) -> Self {
+        Self { script }
+    }
+
+    /// The canonical happy path: the full `STATUS` liveness sequence, a UI
+    /// snippet, two committed segments, and a terminal `done` — mirroring the
+    /// Python fake adapter's `default_script` plus loading→ready liveness.
+    pub fn happy_path() -> Self {
+        Self::new(vec![
+            FakeStep::Emit(loading()),
+            FakeStep::Emit(ready()),
+            FakeStep::Emit(transcribing()),
+            FakeStep::Emit(snippet("The quick")),
+            FakeStep::Emit(final_seg("The quick brown fox")),
+            FakeStep::Emit(snippet("jumps over")),
+            FakeStep::Emit(final_seg("jumps over the lazy dog.")),
+            FakeStep::Emit(done("The quick brown fox jumps over the lazy dog.")),
+        ])
+    }
+
+    /// §3C commit-drain: the model is ready and emits an early segment, but the
+    /// tail final and `done` only come *after* `session.finish`.
+    pub fn commit_drain() -> Self {
+        Self::new(vec![
+            FakeStep::Emit(loading()),
+            FakeStep::Emit(ready()),
+            FakeStep::Emit(final_seg("the quick brown fox")),
+            FakeStep::WaitForFinish,
+            FakeStep::Emit(final_seg("jumps over the lazy dog.")),
+            FakeStep::Emit(done("the quick brown fox jumps over the lazy dog.")),
+        ])
+    }
+
+    /// §3B error mid-stream: some progress, then a terminal error instead of a
+    /// `done`.
+    pub fn mid_stream_error(code: &str, message: &str) -> Self {
+        Self::new(vec![
+            FakeStep::Emit(loading()),
+            FakeStep::Emit(ready()),
+            FakeStep::Emit(final_seg("the quick")),
+            FakeStep::Emit(error(code, message)),
+        ])
+    }
+
+    /// §3A slow load: a run of `loading` before `ready`, so audio pushed early is
+    /// gated out. (Determinism of the *drop* is covered by the pure FSM tests;
+    /// this staging simply exercises the same sequence over the wire.)
+    pub fn slow_ready() -> Self {
+        Self::new(vec![
+            FakeStep::Emit(loading()),
+            FakeStep::WaitForFinish,
+            FakeStep::Emit(ready()),
+            FakeStep::Emit(final_seg("late")),
+            FakeStep::Emit(done("late")),
+        ])
+    }
+}
+
+#[async_trait::async_trait]
+impl BackendClient for FakeBackend {
+    async fn open_session(&self, _config: SessionConfig) -> Result<BackendHandle, BackendError> {
+        let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
+        let (ev_tx, ev_rx) =
+            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
+        tokio::spawn(pump(self.script.clone(), out_rx, ev_tx));
+        Ok(BackendHandle {
+            sink: BackendSink { tx: out_tx },
+            events: BackendEvents { rx: ev_rx },
+            protocol_version: Some(PROTOCOL_VERSION.to_string()),
+        })
+    }
+}
+
+/// Drives one fake session: a background drain reads outbound audio/control
+/// (signalling on `session.finish`/abort), while the foreground plays the
+/// script into the event channel.
+async fn pump(
+    script: Vec<FakeStep>,
+    mut out_rx: mpsc::Receiver<Outbound>,
+    ev_tx: mpsc::Sender<Result<TranscriptionEvent, BackendError>>,
+) {
+    let finished = Arc::new(Notify::new());
+    let aborted = Arc::new(AtomicBool::new(false));
+
+    let drain_finished = finished.clone();
+    let drain_aborted = aborted.clone();
+    let drain = tokio::spawn(async move {
+        while let Some(outbound) = out_rx.recv().await {
+            match outbound {
+                Outbound::Audio(_) => {} // fixture ignores audio content
+                Outbound::Finish => {
+                    // `notify_one` stores a permit, so a `notified()` that runs
+                    // *later* still wakes — no lost-wakeup race with WaitForFinish.
+                    drain_finished.notify_one();
+                }
+                Outbound::Abort => {
+                    drain_aborted.store(true, Ordering::SeqCst);
+                    drain_finished.notify_one();
+                    break;
+                }
+            }
+        }
+        // Sink dropped (FSM done) — release any pending WaitForFinish.
+        drain_finished.notify_one();
+    });
+
+    for step in script {
+        if aborted.load(Ordering::SeqCst) {
+            break;
+        }
+        match step {
+            FakeStep::Emit(event) => {
+                if ev_tx.send(Ok(event)).await.is_err() {
+                    break; // FSM dropped the receiver (terminal reached / abort)
+                }
+            }
+            FakeStep::WaitForFinish => {
+                finished.notified().await;
+                if aborted.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Dropping `ev_tx` closes the event stream; if the script didn't end in a
+    // terminal event, the driver observes the close and fails the session.
+    drop(ev_tx);
+    let _ = drain.await;
+}
+
+// --- event constructors (kept here so the scripts read declaratively) --------
+
+fn loading() -> TranscriptionEvent {
+    TranscriptionEvent::Progress(Progress::phase(PHASE_PREPARING))
+}
+
+fn ready() -> TranscriptionEvent {
+    TranscriptionEvent::Progress(Progress::phase(PHASE_READY))
+}
+
+fn transcribing() -> TranscriptionEvent {
+    TranscriptionEvent::Progress(Progress::phase(PHASE_TRANSCRIBING))
+}
+
+fn snippet(text: &str) -> TranscriptionEvent {
+    TranscriptionEvent::Progress(Progress {
+        snippet: Some(text.into()),
+        phase: PHASE_TRANSCRIBING.into(),
+    })
+}
+
+fn final_seg(text: &str) -> TranscriptionEvent {
+    TranscriptionEvent::Final(TranscriptionFinal {
+        text: text.into(),
+        segments: vec![],
+    })
+}
+
+fn done(text: &str) -> TranscriptionEvent {
+    TranscriptionEvent::Done(TranscriptionFinal {
+        text: text.into(),
+        segments: vec![],
+    })
+}
+
+fn error(code: &str, message: &str) -> TranscriptionEvent {
+    TranscriptionEvent::Error(ErrorData {
+        code: code.into(),
+        message: message.into(),
+    })
+}

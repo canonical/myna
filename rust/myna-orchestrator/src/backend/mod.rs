@@ -10,6 +10,7 @@
 //! client ([`ws_unix`]) and the T40 fake backend implement the same trait over
 //! the same channels.
 
+pub mod fake;
 pub mod ws_unix;
 
 use async_trait::async_trait;

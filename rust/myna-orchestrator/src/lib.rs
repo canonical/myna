@@ -12,18 +12,27 @@
 //! (Ivano) land:
 //! - [`backend::BackendClient`] — the inference service (T39). First impl:
 //!   [`backend::ws_unix::WsUnixBackend`], speaking the existing `myna.core`
-//!   ws+unix wire against the running Python `myna-server`.
+//!   ws+unix wire against the running Python `myna-server`; the in-process
+//!   [`backend::fake::FakeBackend`] (T40) is the scripted regression fixture.
 //! - `AudioSource` — capture (T41), mocked by a WAV source; the real adapter
 //!   drops in per `docs/audio-adapter-api.md`.
 //! - `Trigger` / `TextSink` — hotkey and injector (T41), mocked by stdin/stdout.
 //!
-//! Status: `myna-core` (wire contract, T38) and the backend seam (T39) landed;
-//! the FSM itself is T40.
+//! Status: `myna-core` (wire contract, T38), the backend seam (T39), and the
+//! two-region FSM + async driver (T40, [`fsm`] / [`driver`]) have landed; the
+//! boundary mocks + demo binary are T41.
 
 pub mod backend;
+pub mod driver;
+pub mod fsm;
 
 pub use backend::{
-    ws_unix::WsUnixBackend, BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink,
-    Outbound,
+    fake::FakeBackend, ws_unix::WsUnixBackend, BackendClient, BackendError, BackendEvents,
+    BackendHandle, BackendSink, Outbound,
+};
+pub use driver::{run_session, OrchestratorInput};
+pub use fsm::{
+    classify_error, Action, DropReason, ErrorDisposition, Fsm, FsmState, Input, OrchestratorEvent,
+    Residency, SessionOutcome, SessionState,
 };
 pub use myna_core;
