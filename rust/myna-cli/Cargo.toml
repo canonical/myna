@@ -1,0 +1,14 @@
+[package]
+name = "myna-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Demo binary for the myna dictation orchestrator."
+
+[[bin]]
+name = "myna-dictate"
+path = "src/main.rs"
+
+[dependencies]
+myna-core = { path = "../myna-core" }
+myna-orchestrator = { path = "../myna-orchestrator" }

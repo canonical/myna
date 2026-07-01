@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["myna-core", "myna-orchestrator", "myna-cli"]
+
+# The Rust orchestrator subsystem (plan Workstream G). `myna-core` mirrors the
+# Python `myna.core` wire contract (events / session / protocol / audio) so the
+# orchestrator can speak the existing ws+unix server today; `myna-orchestrator`
+# will hold the session + model-residency FSM (T40); `myna-cli` is the demo
+# binary (T41). Every external boundary is a trait with a mock — see the plan.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+thiserror = "1"

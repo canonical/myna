@@ -1,0 +1,12 @@
+[package]
+name = "myna-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Core types and wire codec for the myna dictation orchestrator"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
