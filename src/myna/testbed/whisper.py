@@ -25,6 +25,7 @@ from collections.abc import AsyncIterator
 
 from myna.core import (
     PHASE_PREPARING,
+    PHASE_READY,
     AudioFormat,
     Capabilities,
     EventSink,
@@ -166,6 +167,11 @@ class FasterWhisperAdapter:
 
         try:
             model = await self._load_model_with_heartbeat(emit)
+            # Model resident, accept-gate may open: signal `ready` BEFORE pulling
+            # audio. The client gates on this (IE115 STATUS{ready}) — without it
+            # the client drops all audio waiting for readiness while we wait for
+            # audio, a deadlock (see docs/architecture/ie115-lifecycle.md §3A).
+            await emit(TranscriptionProgress(phase=PHASE_READY))
 
             buffered = bytearray()
             seconds_since_progress = 0.0

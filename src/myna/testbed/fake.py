@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from myna.core import (
     Capabilities,
     EventSink,
+    PHASE_PREPARING,
+    PHASE_READY,
     PcmChunk,
     SessionConfig,
     TranscriptionDone,
@@ -34,8 +36,16 @@ class ScriptStep:
 
 
 def default_script() -> tuple[ScriptStep, ...]:
-    """A small two-segment session exercising every non-error event type."""
+    """A small two-segment session exercising every non-error event type.
+
+    Opens with the model-residency liveness (``preparing`` → ``ready``) so the
+    client's accept-gate is exercised over the wire the way a real adapter drives
+    it (T42) — ``ready`` before any audio is required, matching
+    docs/architecture/ie115-lifecycle.md §3A.
+    """
     return (
+        ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),
+        ScriptStep(0.05, TranscriptionProgress(phase=PHASE_READY)),
         ScriptStep(0.05, TranscriptionProgress(snippet="the quick")),
         ScriptStep(0.05, TranscriptionProgress(snippet="the quick brown")),
         ScriptStep(0.05, TranscriptionFinal(text="The quick brown fox")),

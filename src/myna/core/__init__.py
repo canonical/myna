@@ -11,6 +11,7 @@ from myna.core.capabilities import (
 )
 from myna.core.events import (
     PHASE_PREPARING,
+    PHASE_READY,
     PHASE_TRANSCRIBING,
     Segment,
     TranscriptionDone,
@@ -32,6 +33,7 @@ from myna.core.transport_ws import WsUnixClient, serve_unix, systemd_socket
 
 __all__ = [
     "PHASE_PREPARING",
+    "PHASE_READY",
     "PHASE_TRANSCRIBING",
     "PROTOCOL_VERSION",
     "SUPPORTED_PROTOCOL_VERSIONS",

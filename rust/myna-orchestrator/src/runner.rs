@@ -8,12 +8,14 @@
 //! a clean source end (hotkey release / WAV EOF) becomes `EndOfAudio`
 //! (finalize), and a capture fault becomes `Abort` (abandon, commit nothing).
 
-use tokio::sync::mpsc;
+use std::sync::Arc;
+
+use tokio::sync::{mpsc, Notify};
 
 use crate::audio::AudioSource;
 use crate::backend::{BackendClient, BackendError};
 use crate::driver::{run_session, OrchestratorInput};
-use crate::fsm::SessionOutcome;
+use crate::fsm::{OrchestratorEvent, SessionOutcome};
 use crate::sink::TextSink;
 use myna_core::SessionConfig;
 use futures_util::StreamExt;
@@ -47,9 +49,21 @@ where
     let (in_tx, in_rx) = mpsc::channel::<OrchestratorInput>(INPUT_CAPACITY);
     let (out_tx, mut out_rx) = mpsc::channel(OUTPUT_CAPACITY);
 
+    // Hold capture until the model is resident: the pump waits for the first
+    // `Ready` before pulling the first chunk. This is the client half of the
+    // accept-gate (ie115-lifecycle.md §3A) — without it a slow cold load lets a
+    // replayable/paced source drain entirely into the closed gate and every
+    // chunk is dropped. `notify_one` stores a permit, so a `Ready` that fires
+    // before the pump parks is not lost. (A live-mic adapter that must not block
+    // the speaker would instead ring-buffer; this suits paced/replayable
+    // sources, which is what the demo drives.)
+    let ready_gate = Arc::new(Notify::new());
+
     // Pump the capture stream into the FSM's input channel. A clean end →
     // EndOfAudio (finalize); a fault → Abort (discard).
+    let pump_gate = ready_gate.clone();
     let audio_task = tokio::spawn(async move {
+        pump_gate.notified().await; // wait for residency (or task abort below)
         let mut stream = Box::new(source).capture();
         while let Some(item) = stream.next().await {
             match item {
@@ -75,7 +89,12 @@ where
     let outcome = loop {
         tokio::select! {
             event = out_rx.recv(), if outputs_open => match event {
-                Some(event) => sink.emit(event).await,
+                Some(event) => {
+                    if matches!(event, OrchestratorEvent::Ready) {
+                        ready_gate.notify_one(); // open the capture gate, once
+                    }
+                    sink.emit(event).await;
+                }
                 None => outputs_open = false,
             },
             result = &mut driver => {
@@ -88,6 +107,11 @@ where
         }
     };
 
+    // The session is terminal. If it ended before `Ready` (e.g. a load-time
+    // error), the pump is still parked on the gate — abort rather than await so
+    // we never hang. In the happy path the pump already sent EndOfAudio and
+    // finished, so the abort is a no-op.
+    audio_task.abort();
     let _ = audio_task.await;
     outcome
 }
