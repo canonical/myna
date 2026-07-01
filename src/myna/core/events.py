@@ -24,11 +24,17 @@ Semantics:
 - ``transcription.progress`` — "something is happening". May carry a short
   unstable snippet to animate a UI. Never display as committed text. The
   ``phase`` field distinguishes *what* is happening: ``"preparing"`` (the
-  model is loading — show "loading model…", expect a wait) vs ``"transcribing"``
-  (audio is being processed). This is the lifecycle signal from plan T26,
-  deliberately a field on the liveness we already emit rather than a new
-  ``session.starting`` event — and a single phase, not a full state machine
-  (the audio-push model makes "listening" the client's own business).
+  model is loading — show "loading model…", expect a wait), ``"ready"`` (the
+  model is resident and the service will accept audio, but nothing is decoding
+  yet — the gate is open), or ``"transcribing"`` (audio is being processed).
+  This is the lifecycle signal from plan T26, deliberately a field on the
+  liveness we already emit rather than a new ``session.starting`` event — and
+  phase values, not a full state machine (the audio-push model makes
+  "listening" the client's own business). The three phases map onto the IE115
+  additive ``STATUS`` liveness event (``state: loading|ready|transcribing``,
+  see ``docs/architecture/ie115-lifecycle.md``); ``ready`` was added
+  (2026-07-01, plan T42) so the client can gate audio on model residency — the
+  accept-gate — over the wire, not just infer it.
 - ``transcription.final``    — stable, committed text for one utterance
   segment. Never retracted.
 - ``transcription.done``     — end of session; carries the complete transcript.
@@ -49,6 +55,7 @@ from typing import Any, ClassVar
 
 # progress.phase values
 PHASE_PREPARING = "preparing"  # model loading; client should show "loading…"
+PHASE_READY = "ready"  # model resident, safe to send audio; nothing decoding yet
 PHASE_TRANSCRIBING = "transcribing"  # audio being processed
 
 
@@ -66,8 +73,10 @@ class Segment:
 class TranscriptionProgress:
     """Lightweight liveness signal. ``snippet`` is unstable text with no
     accuracy guarantee and no retraction semantics — UI animation only.
-    ``phase`` is ``"preparing"`` while the model loads, else ``"transcribing"``
-    (the default), so a cold load reads as "loading…" not a hang."""
+    ``phase`` is ``"preparing"`` while the model loads, ``"ready"`` once it is
+    resident and the service will accept audio (gate open, nothing decoding
+    yet), else ``"transcribing"`` (the default), so a cold load reads as
+    "loading…" not a hang and the client can gate audio on ``ready``."""
 
     type: ClassVar[str] = "transcription.progress"
     snippet: str | None = None
