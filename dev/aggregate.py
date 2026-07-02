@@ -72,6 +72,9 @@ def summarize(records: list[dict]) -> dict[str, dict]:
         ref_chars = sum(r["ref_chars"] for r in warm)
         summary[label] = {
             "clips": len(warm),
+            "machine": next((r["provenance"]["machine"] for r in recs
+                             if isinstance(r.get("provenance"), dict)
+                             and r["provenance"].get("machine")), None),
             "wer": wer_edits / ref_words if ref_words else 0.0,
             "cer": cer_edits / ref_chars if ref_chars else 0.0,
             "rtf": _pct(rtfs, 0.5),
@@ -91,15 +94,18 @@ def _f(x, spec="6.2f"):
 
 
 def print_overall(summary: dict[str, dict]) -> None:
+    show_machine = any(s.get("machine") for s in summary.values())
+    mh = f"{'machine':14} " if show_machine else ""
     print(
-        f"{'label':20} {'clips':>5} {'WER%':>7} {'CER%':>7} {'RTF':>6} "
+        f"{'label':20} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'RTF':>6} "
         f"{'med final':>10} {'p95 final':>10} {'cold load':>10}"
     )
-    print("-" * 88)
+    print("-" * (88 + (15 if show_machine else 0)))
     for label in sorted(summary):
         s = summary[label]
+        mc = f"{(s.get('machine') or '--'):14} " if show_machine else ""
         print(
-            f"{label:20} {s['clips']:>5} "
+            f"{label:20} {mc}{s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
             f"{_f(s['rtf'], '6.2f')} "
             f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "

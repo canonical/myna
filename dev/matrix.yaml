@@ -1,0 +1,52 @@
+# Matrix runner config (T11) — see dev/matrix.py.
+#
+#   uv run python dev/matrix.py --config dev/matrix.yaml
+#
+# Each target is provisioned on a socket, sampled cold (model-load-from-cold)
+# then swept warm; every record is stamped with `hardware` below. Edit the
+# provenance to match the machine you run on — this is what makes cross-lab
+# aggregation meaningful (T12).
+
+manifest: corpus/real/manifest.json     # trustworthy WER (real speech); fixtures/ is plumbing only
+out: results/bench.jsonl
+cold_clip: librispeech-2277-149896-0026  # one clip, run first, tagged --cold to measure model load
+# clips: []                              # warm sweep clips; omit = whole manifest
+
+hardware:
+  machine: dev-local        # hostname / lab node id
+  cpu: unknown              # e.g. "Xeon Gold 6338"
+  gpu: null                 # e.g. "RTX 4090", or null for CPU-only
+  tier: dev                 # freeform tier tag (dev / workstation / server)
+
+targets:
+  # --- local-first: the runner spawns myna-server itself (no snap, no sudo) ---
+  - label: whisper-base/cpu
+    provision: server
+    adapter: whisper
+    model: base
+    device: cpu
+    env:
+      HF_HUB_OFFLINE: "1"
+
+  - label: qwen-c/cpu
+    provision: server
+    adapter: qwen-c
+    model: qwen-snap/components/Qwen3-ASR-0.6B   # resolved against the repo root
+    env:
+      QWEN_ASR_LIB: /snap/qwen/current/lib/libqwen_asr.so
+
+  # Needs the `nemotron` extra + a CUDA GPU; drop or set device: cpu otherwise.
+  - label: nemotron/cuda
+    provision: server
+    adapter: nemotron
+    device: cuda
+    env:
+      HF_HUB_OFFLINE: "1"
+
+  # --- later: drive an installed snap (store or local sideload). Needs sudo. ---
+  # - label: whisper-snap/nvidia-gpu
+  #   provision: snap
+  #   snap: whisper
+  #   socket: /var/snap/whisper/common/run/ubustt.sock
+  #   use_engine: nvidia-gpu
+  #   use_model: small
