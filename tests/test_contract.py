@@ -87,6 +87,13 @@ async def test_metrics_populated(run_fake):
     assert m.finalize_latency >= 0
     assert m.time_to_first_event <= m.time_to_first_final <= m.time_to_terminal
     assert m.event_counts["transcription.final"] == 2
+    # Residency/streaming liveness extracted from the phase transitions the
+    # fake adapter drives (preparing -> ready -> snippet): time_to_ready is the
+    # cold-load signal, time_to_first_snippet the streaming-responsiveness one.
+    assert m.time_to_ready is not None
+    assert m.time_to_first_snippet is not None
+    assert m.time_to_first_event <= m.time_to_ready <= m.time_to_first_snippet
+    assert m.rtf is not None and m.rtf >= 0
 
 
 async def test_finals_are_never_retracted(run_fake):
