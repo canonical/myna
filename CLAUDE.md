@@ -76,8 +76,13 @@ key; transcript events carry an `event` key.
 Event vocabulary (`myna.core.events`) — this is myna's **internal** contract.
 The team's wire direction is now IE115 (OpenAI-subset) event names
 (`session.*`, `input_audio_buffer.*`, `conversation.item.input_audio_transcription.*`)
-plus additive events (the liveness/`STATUS` event); the transport/orchestrator
-work maps the internal vocab onto those. See `docs/IE115-resolution.md`.
+plus additive events (the liveness/`STATUS` event). This is now **implemented on
+both ends as a selectable wire dialect** (T43/T45/T46): `myna.core.wire_ie115`
+(Python codec) + shape-sniff dispatch in `transport_ws` (`WsUnixIe115Client`);
+`WsUnixIe115Backend` in Rust (`myna-dictate --dialect ie115 [--base64-audio]`).
+The internal flat vocab stays the semantic core; the codec translates on each
+end, so the Rust FSM is untouched. Verified across whisper/nemotron/qwen-c. See
+`docs/architecture/ie115-wire.md` (frame contract) and `docs/IE115-resolution.md`.
 Internal vocab:
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading),
   `ready` (model resident, gate open, nothing decoding yet — client may send

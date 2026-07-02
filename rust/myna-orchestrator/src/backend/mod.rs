@@ -12,6 +12,7 @@
 
 pub mod fake;
 pub mod ws_unix;
+pub mod ws_unix_ie115;
 
 use async_trait::async_trait;
 use myna_core::{PcmChunk, SessionConfig, TranscriptionEvent, WireError};

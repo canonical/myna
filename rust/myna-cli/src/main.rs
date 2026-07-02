@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use myna_orchestrator::{
-    run_dictation, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge, WavFileSource,
-    WsUnixBackend,
+    run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge,
+    WavFileSource, WsUnixBackend, WsUnixIe115Backend,
 };
 use myna_core::SessionConfig;
 
@@ -33,6 +33,17 @@ struct Args {
     clips: Vec<Clip>,
     language: Option<String>,
     realtime: bool,
+    dialect: Dialect,
+    base64_audio: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Dialect {
+    /// The internal `myna.core` wire (`session.start` / `transcription.*`).
+    Internal,
+    /// The OpenAI-Realtime-shaped IE115 wire (`session.update` / `status` /
+    /// `conversation.item.input_audio_transcription.*`) — plan T43.
+    Ie115,
 }
 
 struct Clip {
@@ -51,6 +62,9 @@ OPTIONS:
     --clip <wav>       a single PCM WAV clip to dictate (repeatable)
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
     --language <lang>  language hint sent in the session config (e.g. en)
+    --dialect <name>   wire dialect: `internal` (default) or `ie115`
+    --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
+                       frames instead of raw binary (OpenAI parity)
     --no-realtime      stream the clip as fast as possible (default: real-time)
     -h, --help         show this help
 ";
@@ -60,6 +74,8 @@ fn parse_args() -> Result<Args, String> {
     let mut clips = Vec::new();
     let mut language = None;
     let mut realtime = true;
+    let mut dialect = Dialect::Internal;
+    let mut base64_audio = false;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -71,6 +87,12 @@ fn parse_args() -> Result<Args, String> {
             "--clip" => clips.push(Clip { path: PathBuf::from(next(&mut it, "--clip")?), reference: None }),
             "--corpus" => load_corpus(&PathBuf::from(next(&mut it, "--corpus")?), &mut clips)?,
             "--language" => language = Some(next(&mut it, "--language")?),
+            "--dialect" => dialect = match next(&mut it, "--dialect")?.as_str() {
+                "internal" => Dialect::Internal,
+                "ie115" => Dialect::Ie115,
+                other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
+            },
+            "--base64-audio" => base64_audio = true,
             "--no-realtime" => realtime = false,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
@@ -79,7 +101,10 @@ fn parse_args() -> Result<Args, String> {
     if clips.is_empty() {
         return Err(format!("one of --clip / --corpus is required\n\n{USAGE}"));
     }
-    Ok(Args { socket, clips, language, realtime })
+    if base64_audio && dialect != Dialect::Ie115 {
+        return Err("--base64-audio only applies to --dialect ie115".into());
+    }
+    Ok(Args { socket, clips, language, realtime, dialect, base64_audio })
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -118,7 +143,18 @@ async fn main() -> ExitCode {
         }
     };
 
-    let backend = WsUnixBackend::new(&args.socket);
+    // Same wire-agnostic run loop, either dialect: the FSM (and this driver)
+    // don't change — only the BackendClient does (plan T43).
+    match args.dialect {
+        Dialect::Internal => dictate(WsUnixBackend::new(&args.socket), &args).await,
+        Dialect::Ie115 => {
+            dictate(WsUnixIe115Backend::new(&args.socket).base64_audio(args.base64_audio), &args).await
+        }
+    }
+}
+
+/// The push-to-talk loop, generic over the backend dialect.
+async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let mut trigger = StdinTrigger::new();
     let mut sink = StdoutSink;
     let mut next_clip = 0usize;

@@ -35,8 +35,8 @@ pub mod trigger;
 
 pub use audio::{AudioSource, CaptureError, CaptureStream, StopHandle, WavFileSource};
 pub use backend::{
-    fake::FakeBackend, ws_unix::WsUnixBackend, BackendClient, BackendError, BackendEvents,
-    BackendHandle, BackendSink, Outbound,
+    fake::FakeBackend, ws_unix::WsUnixBackend, ws_unix_ie115::WsUnixIe115Backend, BackendClient,
+    BackendError, BackendEvents, BackendHandle, BackendSink, Outbound,
 };
 pub use driver::{run_session, OrchestratorInput};
 pub use fsm::{
