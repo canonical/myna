@@ -162,6 +162,12 @@ sudo; the local-first path) or **`snap`** (drives an installed snap: switches it
 engine/model and restarts it to force a cold load). The example config runs
 whisper/qwen-c/nemotron locally with the `server` provisioner.
 
+For `server` targets the runner also samples **peak RSS and VRAM** (psutil +
+nvidia-smi) and redirects each server's own logs to `results/matrix-logs/` so the
+console stays clean. Sampling barely perturbs latency; use `--no-resources` for
+pristine timing. Illustrative local run (real corpus): whisper-base/cpu 9.1% WER
+/ 640 MB, qwen-c/cpu 1.5% / 2.8 GB, nemotron/cuda 0.5% / 1.2 GB VRAM + RTF 0.01.
+
 ### Tests and coverage
 
 `uv run pytest` runs the **offline** suite: the fake-adapter contract tests plus
