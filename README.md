@@ -139,6 +139,13 @@ Repeat the `bench.py` run per adapter/model/machine (each `--label` is a row);
 `myna.testbed.metrics` and is deliberately Python-only — the Rust client emits
 transcripts + timings that feed the *same* scorer, keeping one source of truth.
 
+Beyond WER/CER, each run records latency drawn from the event timeline:
+**time-to-ready** (the cold model-load wait, `preparing`→`ready`), time-to-first
+snippet, finalize latency (key-release→committed text), and **RTF** (decode ÷
+audio, in `--batch`). Pass `--cold` for the first request after a (re)start so
+the snap's model-load-from-cold cost is captured distinctly; `aggregate.py`
+splits cold from warm and reports p50/p95.
+
 ### Tests and coverage
 
 `uv run pytest` runs the **offline** suite: the fake-adapter contract tests plus

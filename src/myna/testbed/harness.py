@@ -41,16 +41,26 @@ class TimedEvent:
 class Metrics:
     """Latencies in seconds since session open, None when not applicable.
 
-    ``finalize_latency`` is the gap between end-of-audio and the terminal
-    event — the "time from key release to committed text" number UD129 cares
-    about (target: 1–2 s on reference hardware).
+    ``time_to_ready`` is the model-residency / cold-load signal: the gap from
+    session open to the first ``progress(phase="ready")`` — for a snap that
+    idle-unloaded its weights this is the reload cost the user waits through
+    before dictation begins ("time to model load from cold"). Warm, it is small.
+    ``time_to_first_snippet`` is streaming responsiveness (first unstable
+    liveness text). ``finalize_latency`` is the gap between end-of-audio and the
+    terminal event — the "time from key release to committed text" number UD129
+    cares about (target: 1–2 s on reference hardware). ``rtf`` (real-time
+    factor) is decode time over audio duration; only meaningful in batch mode
+    (real-time pacing floors it at ~1.0).
     """
 
     time_to_first_event: float | None
+    time_to_ready: float | None
+    time_to_first_snippet: float | None
     time_to_first_final: float | None
     time_to_terminal: float | None
     audio_end: float | None
     finalize_latency: float | None
+    rtf: float | None
     event_counts: dict[str, int]
 
 
@@ -73,14 +83,23 @@ class ResultRecord:
         return record
 
 
-def compute_metrics(events: Iterable[TimedEvent], audio_end_t: float | None) -> Metrics:
-    first = first_final = terminal = None
+def compute_metrics(
+    events: Iterable[TimedEvent],
+    audio_end_t: float | None,
+    audio_duration_seconds: float | None = None,
+) -> Metrics:
+    first = ready = first_snippet = first_final = terminal = None
     counts: dict[str, int] = {}
     for te in events:
         kind = te.event.type
         counts[kind] = counts.get(kind, 0) + 1
         if first is None:
             first = te.t
+        if kind == "transcription.progress":
+            if ready is None and getattr(te.event, "phase", None) == "ready":
+                ready = te.t
+            if first_snippet is None and getattr(te.event, "snippet", None):
+                first_snippet = te.t
         if kind == "transcription.final" and first_final is None:
             first_final = te.t
         if kind in ("transcription.done", "transcription.error"):
@@ -88,12 +107,21 @@ def compute_metrics(events: Iterable[TimedEvent], audio_end_t: float | None) -> 
     finalize = (
         terminal - audio_end_t if terminal is not None and audio_end_t is not None else None
     )
+    # Decode wall-time excludes the cold-load wait: measure from ready (or first
+    # event) to terminal, so RTF reflects throughput, not model loading.
+    rtf = None
+    if terminal is not None and audio_duration_seconds:
+        decode_start = ready if ready is not None else (first or 0.0)
+        rtf = (terminal - decode_start) / audio_duration_seconds
     return Metrics(
         time_to_first_event=first,
+        time_to_ready=ready,
+        time_to_first_snippet=first_snippet,
         time_to_first_final=first_final,
         time_to_terminal=terminal,
         audio_end=audio_end_t,
         finalize_latency=finalize,
+        rtf=rtf,
         event_counts=counts,
     )
 
@@ -155,7 +183,7 @@ class Harness:
             audio_duration_seconds=audio_seconds,
             events=tuple(timed),
             audio_end_t=audio_end_t,
-            metrics=compute_metrics(timed, audio_end_t),
+            metrics=compute_metrics(timed, audio_end_t, audio_seconds),
             transcript=transcript,
         )
 

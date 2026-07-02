@@ -62,7 +62,10 @@ def summarize(records: list[dict]) -> dict[str, dict]:
         warm = [r for r in recs if not r.get("cold", False)]
         cold = [r for r in recs if r.get("cold", False)]
         finals = [r["finalize_latency"] for r in warm if r.get("finalize_latency") is not None]
-        cold_finals = [r["finalize_latency"] for r in cold if r.get("finalize_latency") is not None]
+        # Pure model-load wait (session open -> ready), independent of decode.
+        cold_readys = [r["time_to_ready"] for r in cold if r.get("time_to_ready") is not None]
+        warm_readys = [r["time_to_ready"] for r in warm if r.get("time_to_ready") is not None]
+        rtfs = [r["rtf"] for r in warm if r.get("rtf") is not None]
         wer_edits = sum(r["wer_edits"] for r in warm)
         ref_words = sum(r["ref_words"] for r in warm)
         cer_edits = sum(r["cer_edits"] for r in warm)
@@ -71,10 +74,13 @@ def summarize(records: list[dict]) -> dict[str, dict]:
             "clips": len(warm),
             "wer": wer_edits / ref_words if ref_words else 0.0,
             "cer": cer_edits / ref_chars if ref_chars else 0.0,
+            "rtf": _pct(rtfs, 0.5),
             "median_final": _pct(finals, 0.5),
-            "p90_final": _pct(finals, 0.9),
-            # cold = model load + that clip's decode; max across cold samples
-            "cold_final": max(cold_finals) if cold_finals else None,
+            "p95_final": _pct(finals, 0.95),
+            # cold-load = model residency wait only (time_to_ready), from --cold
+            # samples; the warm reload should be ~0.
+            "cold_ready": max(cold_readys) if cold_readys else None,
+            "warm_ready": _pct(warm_readys, 0.5),
             "audio": sum(r["audio_seconds"] for r in warm),
         }
     return summary
@@ -86,20 +92,21 @@ def _f(x, spec="6.2f"):
 
 def print_overall(summary: dict[str, dict]) -> None:
     print(
-        f"{'label':20} {'clips':>5} {'WER%':>7} {'CER%':>7} "
-        f"{'med final':>10} {'p90 final':>10} {'cold load':>10}"
+        f"{'label':20} {'clips':>5} {'WER%':>7} {'CER%':>7} {'RTF':>6} "
+        f"{'med final':>10} {'p95 final':>10} {'cold load':>10}"
     )
-    print("-" * 75)
+    print("-" * 88)
     for label in sorted(summary):
         s = summary[label]
         print(
             f"{label:20} {s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
-            f"{_f(s['median_final'], '10.3f')} {_f(s['p90_final'], '10.3f')} "
-            f"{_f(s['cold_final'], '10.3f')}"
+            f"{_f(s['rtf'], '6.2f')} "
+            f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "
+            f"{_f(s['cold_ready'], '10.3f')}"
         )
-    print("\nmed/p90 final + cold load are seconds (end-of-audio -> committed text).")
-    print("cold load = first request after restart: model load + that clip's decode.")
+    print("\nmed/p95 final are seconds (end-of-audio -> committed text); RTF = decode/audio.")
+    print("cold load = model residency wait (session open -> ready), from --cold runs.")
 
 
 def print_by_category(records: list[dict]) -> None:
