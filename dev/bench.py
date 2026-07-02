@@ -110,7 +110,12 @@ def to_line(args, clip, record, wer, cer) -> dict:
         "ref_chars": cer.reference_length,
         "audio_seconds": round(record.audio_duration_seconds, 3),
         "time_to_first_event": m.time_to_first_event,
+        "time_to_ready": m.time_to_ready,
+        "time_to_first_snippet": m.time_to_first_snippet,
+        "time_to_first_final": m.time_to_first_final,
+        "time_to_terminal": m.time_to_terminal,
         "finalize_latency": m.finalize_latency,
+        "rtf": round(m.rtf, 4) if m.rtf is not None else None,
         "started_at": record.started_at,
     }
 
@@ -144,14 +149,16 @@ async def main() -> None:
     print(f"label={args.label}  clips={len(clips)}  socket={args.socket}")
     print(f"feeding audio at {pace}")
     # 'audio s' is how long the clip takes to stream (the bulk of the per-line
-    # wait at real-time pace); 'final s' is end-of-audio -> committed text.
-    print(f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6} {'audio s':>8} {'final s':>8}")
-    print("-" * 74)
+    # wait at real-time pace); 'ready s' is the cold model-load wait (session
+    # open -> ready); 'final s' is end-of-audio -> committed text.
+    print(f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6} {'audio s':>8} {'ready s':>8} {'final s':>8}")
+    print("-" * 84)
 
     lines = []
     tot_edits = tot_words = 0
     tot_audio = 0.0
     finals: list[float] = []
+    readys: list[float] = []
     for clip in clips:
         record, wer, cer = await bench_clip(args, clip)
         line = to_line(args, clip, record, wer, cer)
@@ -161,17 +168,24 @@ async def main() -> None:
         tot_audio += line["audio_seconds"]
         if line["finalize_latency"] is not None:
             finals.append(line["finalize_latency"])
+        if line["time_to_ready"] is not None:
+            readys.append(line["time_to_ready"])
         print(
             f"{clip.id:24} {clip.category:10} "
             f"{_fmt(wer.rate * 100)} {_fmt(cer.rate * 100)} "
             f"{_fmt(line['audio_seconds'], '8.2f')} "
+            f"{_fmt(line['time_to_ready'], '8.3f')} "
             f"{_fmt(line['finalize_latency'], '8.3f')}"
         )
 
-    print("-" * 74)
+    print("-" * 84)
     micro_wer = (tot_edits / tot_words * 100) if tot_words else 0.0
     median_final = sorted(finals)[len(finals) // 2] if finals else None
     print(f"micro-averaged WER : {micro_wer:.2f}%  ({tot_edits} edits / {tot_words} ref words)")
+    if readys:
+        # The first clip carries the cold-load cost; report it distinctly.
+        print(f"time to ready      : first={readys[0]:.3f}s  median={sorted(readys)[len(readys) // 2]:.3f}s"
+              + ("  (--cold sample)" if args.cold else ""))
     if median_final is not None:
         print(f"median finalize    : {median_final:.3f}s  (end-of-audio -> committed text)")
     print(f"audio streamed     : {tot_audio:.1f}s total" + ("" if args.batch else "  (use --batch to skip real-time pacing)"))
