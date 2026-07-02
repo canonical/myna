@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket as socketlib
 import subprocess
 import sys
 import time
@@ -45,18 +44,20 @@ def _server_cmd() -> list[str]:
 
 
 def wait_for_socket(path: Path, timeout: float = 60.0) -> bool:
-    """Poll until the UDS exists *and* accepts a connection, or timeout."""
+    """Poll until the server has bound the UDS (the file appears), or timeout.
+
+    The server creates the socket file only once it is listening, so its
+    existence is a sufficient readiness signal — and unlike a bare connect()
+    probe it does not trip the websockets server's "invalid HTTP request"
+    handshake handler (a zero-byte connect-and-close looks like a broken client).
+    A short settle covers the gap between bind and the accept loop being ready.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if path.exists():
-            try:
-                with socketlib.socket(socketlib.AF_UNIX) as s:
-                    s.settimeout(1.0)
-                    s.connect(str(path))
-                return True
-            except OSError:
-                pass
-        time.sleep(0.5)
+            time.sleep(0.1)
+            return True
+        time.sleep(0.2)
     return False
 
 
