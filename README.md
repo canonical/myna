@@ -146,6 +146,22 @@ audio, in `--batch`). Pass `--cold` for the first request after a (re)start so
 the snap's model-load-from-cold cost is captured distinctly; `aggregate.py`
 splits cold from warm and reports p50/p95.
 
+To sweep **several backends** in one command, use the config-driven matrix
+runner. It provisions each target on a socket, takes a cold then a warm sample,
+stamps hardware provenance, and prints the matrix:
+
+```shell
+uv run python dev/matrix.py --config dev/matrix.yaml --dry-run   # show the plan
+uv run python dev/matrix.py --config dev/matrix.yaml             # run it
+```
+
+Edit `dev/matrix.yaml`: the `hardware:` block (machine/cpu/gpu/tier — what makes
+cross-lab aggregation meaningful) and the `targets:`. A target is provisioned
+either by **`server`** (the runner spawns `myna-server` itself — no snap, no
+sudo; the local-first path) or **`snap`** (drives an installed snap: switches its
+engine/model and restarts it to force a cold load). The example config runs
+whisper/qwen-c/nemotron locally with the `server` provisioner.
+
 ### Tests and coverage
 
 `uv run pytest` runs the **offline** suite: the fake-adapter contract tests plus
