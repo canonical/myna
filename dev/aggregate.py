@@ -93,26 +93,46 @@ def _f(x, spec="6.2f"):
     return format(x, spec) if isinstance(x, (int, float)) else "    --"
 
 
+def load_resources(path: Path) -> dict[str, dict]:
+    """Read the matrix runner's peak RAM/VRAM sidecar (label -> peaks), last
+    occurrence winning. Absent file -> empty (resource columns are then hidden).
+    """
+    if not path.exists():
+        return {}
+    peaks: dict[str, dict] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        raw = raw.strip()
+        if raw:
+            rec = json.loads(raw)
+            peaks[rec["label"]] = rec
+    return peaks
+
+
 def print_overall(summary: dict[str, dict]) -> None:
     show_machine = any(s.get("machine") for s in summary.values())
+    show_res = any(s.get("peak_rss_mb") for s in summary.values())
     mh = f"{'machine':14} " if show_machine else ""
+    rh = f"{'RSS MB':>9} {'VRAM MB':>9}" if show_res else ""
     print(
         f"{'label':20} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'RTF':>6} "
-        f"{'med final':>10} {'p95 final':>10} {'cold load':>10}"
+        f"{'med final':>10} {'p95 final':>10} {'cold load':>10} {rh}"
     )
-    print("-" * (88 + (15 if show_machine else 0)))
+    print("-" * (88 + (15 if show_machine else 0) + (20 if show_res else 0)))
     for label in sorted(summary):
         s = summary[label]
         mc = f"{(s.get('machine') or '--'):14} " if show_machine else ""
+        rc = f"{_f(s.get('peak_rss_mb'), '9.1f')} {_f(s.get('peak_vram_mb'), '9.1f')}" if show_res else ""
         print(
             f"{label:20} {mc}{s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
             f"{_f(s['rtf'], '6.2f')} "
             f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "
-            f"{_f(s['cold_ready'], '10.3f')}"
+            f"{_f(s['cold_ready'], '10.3f')} {rc}"
         )
     print("\nmed/p95 final are seconds (end-of-audio -> committed text); RTF = decode/audio.")
     print("cold load = model residency wait (session open -> ready), from --cold runs.")
+    if show_res:
+        print("RSS/VRAM = peak memory during the run (matrix runner, server provision).")
 
 
 def print_by_category(records: list[dict]) -> None:
@@ -145,6 +165,11 @@ def main() -> None:
 
     records = load_latest(args.infile)
     summary = summarize(records)
+    resources = load_resources(args.infile.parent / "matrix-resources.jsonl")
+    for label, peaks in resources.items():
+        if label in summary:
+            summary[label]["peak_rss_mb"] = peaks.get("peak_rss_mb")
+            summary[label]["peak_vram_mb"] = peaks.get("peak_vram_mb")
     print(f"{len(records)} records across {len(summary)} label(s) from {args.infile}\n")
     print_overall(summary)
     if args.by_category:

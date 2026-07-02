@@ -28,13 +28,16 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
+import psutil
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_BIN = Path(sys.executable).parent
+LOG_DIR = REPO_ROOT / "results" / "matrix-logs"
 
 
 def _server_cmd() -> list[str]:
@@ -61,6 +64,69 @@ def wait_for_socket(path: Path, timeout: float = 60.0) -> bool:
     return False
 
 
+def _gpu_memory_by_pid() -> dict[int, int]:
+    """pid -> VRAM MiB, from nvidia-smi. Empty if no GPU / tool absent."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    usage: dict[int, int] = {}
+    for line in out.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            usage[int(parts[0])] = int(parts[1])
+    return usage
+
+
+class ResourceSampler(threading.Thread):
+    """Background peak-memory sampler for a process tree (RSS via psutil, VRAM
+    via nvidia-smi). Sampled at a modest interval so it barely perturbs the
+    latency it runs alongside; disable with ``--no-resources`` for pristine
+    timing. ``peak_vram_mb`` stays None when no GPU process is seen.
+    """
+
+    def __init__(self, pid: int, interval: float = 0.5):
+        super().__init__(daemon=True)
+        self.pid = pid
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self.peak_rss_mb = 0.0
+        self.peak_vram_mb: float | None = None
+
+    def _tree(self) -> list[psutil.Process]:
+        try:
+            root = psutil.Process(self.pid)
+            return [root, *root.children(recursive=True)]
+        except psutil.Error:
+            return []
+
+    def run(self) -> None:
+        while not self._stop_event.is_set():
+            procs = self._tree()
+            rss = 0
+            for pr in procs:
+                try:
+                    rss += pr.memory_info().rss
+                except psutil.Error:
+                    pass
+            self.peak_rss_mb = max(self.peak_rss_mb, rss / 1e6)
+            gpu = _gpu_memory_by_pid()
+            if gpu:
+                pids = {pr.pid for pr in procs}
+                mine = sum(m for p, m in gpu.items() if p in pids)
+                if mine:
+                    self.peak_vram_mb = max(self.peak_vram_mb or 0.0, float(mine))
+            self._stop_event.wait(self.interval)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self.join(timeout=2)
+
+
 class ServerTarget:
     """A backend the runner spawns itself (``provision: server``)."""
 
@@ -72,6 +138,8 @@ class ServerTarget:
         self.env = spec.get("env", {})
         self.socket = Path(spec.get("socket") or f"/tmp/myna-matrix-{_slug(self.label)}.sock")
         self._proc: subprocess.Popen | None = None
+        self._log = None
+        self.logpath = LOG_DIR / f"{_slug(self.label)}.log"
 
     def start(self) -> None:
         if self.socket.exists():
@@ -86,10 +154,16 @@ class ServerTarget:
         if self.device:
             cmd += ["--device", self.device]
         env = {**os.environ, **{k: str(v) for k, v in self.env.items()}}
-        self._proc = subprocess.Popen(cmd, env=env)
+        # Redirect the server's own logs to a file so they don't interleave with
+        # the matrix/bench stdout (the noisy `websockets.server INFO connection
+        # open` lines). The file stays for debugging.
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self._log = self.logpath.open("w")
+        self._proc = subprocess.Popen(cmd, env=env, stdout=self._log, stderr=subprocess.STDOUT)
         if not wait_for_socket(self.socket):
             self.stop()
             raise SystemExit(f"[{self.label}] server did not come up on {self.socket}")
+        print(f"[{self.label}] server up (logs: {self.logpath.relative_to(REPO_ROOT)})")
 
     def stop(self) -> None:
         if self._proc is not None:
@@ -99,8 +173,15 @@ class ServerTarget:
             except subprocess.TimeoutExpired:
                 self._proc.kill()
             self._proc = None
+        if self._log is not None:
+            self._log.close()
+            self._log = None
         if self.socket.exists():
             self.socket.unlink()
+
+    @property
+    def pid(self) -> int | None:
+        return self._proc.pid if self._proc is not None else None
 
     # A spawned process is cold on start; no per-sample reset needed between the
     # cold and warm bench calls (one long-lived process, like the snap daemon).
@@ -133,6 +214,19 @@ class SnapTarget:
         subprocess.run(["sudo", "snap", "restart", self.service], check=True)
         if not wait_for_socket(self.socket):
             raise SystemExit(f"[{self.label}] snap socket {self.socket} did not appear")
+
+    @property
+    def pid(self) -> int | None:
+        """Best-effort daemon PID for resource sampling (systemd MainPID)."""
+        try:
+            out = subprocess.run(
+                ["systemctl", "show", f"snap.{self.service}.service",
+                 "--property=MainPID", "--value"],
+                capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.strip()
+            return int(out) if out.isdigit() and int(out) > 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
 
 
 def _sudo(snap: str, *args: str) -> None:
@@ -174,6 +268,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="print the plan; provision nothing")
     parser.add_argument("--keep-results", action="store_true",
                         help="append to the results file instead of resetting it")
+    parser.add_argument("--no-resources", action="store_true",
+                        help="skip peak RAM/VRAM sampling (for pristine latency timing)")
     args = parser.parse_args()
 
     if not args.config.exists():
@@ -205,13 +301,20 @@ def main() -> None:
     if not args.keep_results and out.exists():
         print(f"resetting {out}")
         out.unlink()
+    resources_path = out.parent / "matrix-resources.jsonl"
+    if not args.keep_results and resources_path.exists():
+        resources_path.unlink()
 
     for spec in targets:
         target = make_target(spec)
         provenance = {**hardware, "provision": spec.get("provision", "server")}
         print(f"\n=== {target.label} ===")
+        sampler = None
         try:
             target.start()
+            if not args.no_resources and target.pid is not None:
+                sampler = ResourceSampler(target.pid)
+                sampler.start()
             if cold_clip:
                 print(f"[{target.label}] cold sample ({cold_clip})")
                 run_bench(socket=target.socket, label=target.label, manifest=manifest,
@@ -220,6 +323,19 @@ def main() -> None:
             run_bench(socket=target.socket, label=target.label, manifest=manifest,
                       out=out, provenance=provenance, cold=False, clips=list(warm_clips))
         finally:
+            if sampler is not None:
+                sampler.stop()
+                rss = round(sampler.peak_rss_mb, 1)
+                vram = round(sampler.peak_vram_mb, 1) if sampler.peak_vram_mb else None
+                print(f"[{target.label}] peak RSS {rss} MB"
+                      + (f" / VRAM {vram} MB" if vram else " / VRAM --"))
+                with resources_path.open("a", encoding="utf-8") as fp:
+                    fp.write(json.dumps({
+                        "label": target.label,
+                        "machine": hardware.get("machine"),
+                        "peak_rss_mb": rss,
+                        "peak_vram_mb": vram,
+                    }) + "\n")
             target.stop()
 
     print("\n===================== MATRIX =====================")
