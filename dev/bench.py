@@ -139,10 +139,12 @@ async def main() -> None:
     parser.add_argument("--category", help="only clips in this UD129 category")
     parser.add_argument("--batch", action="store_true", help="stream as fast as possible")
     parser.add_argument("--cold", action="store_true", help="tag records as a cold-load sample (first request after a restart)")
+    parser.add_argument("--provenance", help="JSON object merged into every record (e.g. hardware/engine metadata from the matrix runner)")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")
     args = parser.parse_args()
     if args.label is None:
         args.label = detect_label()
+    provenance = json.loads(args.provenance) if args.provenance else None
 
     clips = select_clips(args)
     pace = "fast as possible" if args.batch else "real-time pace (audio streams in full before finalize)"
@@ -194,7 +196,10 @@ async def main() -> None:
     run_started = datetime.now(timezone.utc).isoformat()
     with args.out.open("a", encoding="utf-8") as fp:
         for line in lines:
-            fp.write(json.dumps({"run_started": run_started, **line}) + "\n")
+            record = {"run_started": run_started, **line}
+            if provenance:
+                record["provenance"] = provenance
+            fp.write(json.dumps(record) + "\n")
     print(f"wrote {len(lines)} records to {args.out}")
 
 
