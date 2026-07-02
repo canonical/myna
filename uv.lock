@@ -2276,9 +2276,11 @@ whisper = [
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
+    { name = "psutil" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -2292,9 +2294,11 @@ provides-extras = ["whisper", "nemotron"]
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6" },
+    { name = "psutil", specifier = ">=5" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=5" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 
 [[package]]
