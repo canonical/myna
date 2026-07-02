@@ -16,8 +16,11 @@ Workstream G (T38–T43) for the phased plan.
 ## Design commitments
 
 - **Wire-agnostic FSM.** The FSM speaks the *existing* `myna.core` wire first
-  (real end-to-end runs against the running Python `myna-server` today); IE115
-  event names are layered on in T43 as a second `BackendClient`, not a rebuild.
+  (real end-to-end runs against the running Python `myna-server` today); the
+  OpenAI-Realtime-shaped **IE115** wire is layered on (T43) as a *second*
+  `BackendClient` (`ws_unix_ie115::WsUnixIe115Backend`) — the FSM and driver are
+  unchanged, proving the trait boundary. Pick it at runtime with
+  `myna-dictate --dialect ie115` (see `../docs/architecture/ie115-wire.md`).
 - **Every boundary is a trait with a mock.** The existing Python `myna-server`
   stands in for the inference snap (Ivano); a WAV source for the audio adapter
   (Matias, per `../docs/audio-adapter-api.md`); stdin for the hotkey; stdout for
@@ -38,3 +41,22 @@ the structure matches — both ends parse JSON.
 cd rust
 cargo test
 ```
+
+## Run (push-to-talk demo)
+
+Against a running Python `myna-server` (any adapter) on a Unix socket:
+
+```sh
+# internal myna.core wire (default)
+myna-dictate --socket /tmp/myna.sock --language en --clip corpus/real/audio/<id>.wav
+
+# IE115 (OpenAI-Realtime-shaped) wire — same FSM, second backend
+myna-dictate --socket /tmp/myna.sock --dialect ie115 --language en --clip <wav>
+
+# IE115 with base64 input_audio_buffer.append frames (OpenAI parity) instead of
+# raw binary PCM (costs ~1.35x wire + ~16us CPU/chunk — see ie115-wire.md §5)
+myna-dictate --socket /tmp/myna.sock --dialect ie115 --base64-audio --clip <wav>
+```
+
+Press Enter to start an utterance, Enter again (or let the clip play out) to
+stop; `Ctrl-D` quits. `--corpus <dir>` cycles a corpus manifest.

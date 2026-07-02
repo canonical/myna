@@ -29,7 +29,7 @@ from myna.core.protocol import (
 )
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService, SttSession
-from myna.core.transport_ws import WsUnixClient, serve_unix, systemd_socket
+from myna.core.transport_ws import WsUnixClient, WsUnixIe115Client, serve_unix, systemd_socket
 
 __all__ = [
     "PHASE_PREPARING",
@@ -54,6 +54,7 @@ __all__ = [
     "TranscriptionFinal",
     "TranscriptionProgress",
     "WsUnixClient",
+    "WsUnixIe115Client",
     "capabilities_from_wire",
     "capabilities_to_wire",
     "event_from_wire",

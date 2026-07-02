@@ -55,6 +55,19 @@ from myna.core.events import TranscriptionError, TranscriptionEvent, event_from_
 from myna.core.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, is_supported
 from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
 from myna.core.transport import SttService
+from myna.core.wire_ie115 import (
+    INPUT_AUDIO_APPEND,
+    INPUT_AUDIO_COMMIT,
+    SESSION_CREATED,
+    SESSION_UPDATE,
+    SESSION_UPDATED,
+    Ie115Decoder,
+    Ie115Encoder,
+    append_to_pcm,
+    pcm_to_append,
+    session_config_from_ie115,
+    session_config_to_ie115,
+)
 
 _TERMINAL = ("transcription.done", "transcription.error")
 
@@ -105,6 +118,13 @@ class _SessionHandler:
         self._service = service
 
     async def handle(self, ws: ServerConnection) -> None:
+        """One connection. The dialect is chosen by **shape-sniffing** the
+        client's first frame (T44/T45): ``capabilities.query`` -> capabilities;
+        ``session.start`` -> internal ``myna.core`` wire; ``session.update`` ->
+        IE115 dialect. Our IE115 client sends ``session.update`` eagerly (like
+        the internal client sends ``session.start``); a *stock* OpenAI client
+        that waits for ``session.created`` first is the documented open item
+        (note §1)."""
         try:
             opening = await ws.recv()
         except ConnectionClosed:
@@ -115,12 +135,23 @@ class _SessionHandler:
                 await ws.send(json.dumps({"type": "capabilities", "data": wire}))
                 await ws.close()
             return
+
+        ie115_config = self._parse_session_update(opening)
+        if ie115_config is not None:
+            await self._handle_ie115(ws, ie115_config)
+            return
+
         start = self._parse_start(opening)
         if start is None:
-            await ws.close(code=1002, reason="expected session.start or capabilities.query")
+            await ws.close(
+                code=1002, reason="expected session.start, session.update, or capabilities.query"
+            )
             return
-        config, client_version = start
+        await self._handle_internal(ws, *start)
 
+    async def _handle_internal(
+        self, ws: ServerConnection, config: SessionConfig, client_version: str | None
+    ) -> None:
         if not is_supported(client_version):
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(
@@ -142,6 +173,61 @@ class _SessionHandler:
         with contextlib.suppress(ConnectionClosed):
             await ws.send(json.dumps({"type": "session.created", "protocol_version": PROTOCOL_VERSION}))
 
+        def on_text(message: dict, config: SessionConfig) -> tuple[str, PcmChunk | None]:
+            return ("finish", None) if message.get("type") == "session.finish" else ("ignore", None)
+
+        async def emit(event: TranscriptionEvent) -> None:
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(json.dumps(event_to_wire(event)))
+
+        await self._pump_session(ws, config, on_text=on_text, emit=emit)
+
+    async def _handle_ie115(self, ws: ServerConnection, config: SessionConfig) -> None:
+        """IE115 dialect: OpenAI-shaped frames translated via ``wire_ie115``."""
+        caps = self._service.capabilities()
+        model = caps.models[0] if caps.models else None
+        default_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
+        encoder = Ie115Encoder()
+
+        with contextlib.suppress(ConnectionClosed):
+            # session.created (server defaults) then session.updated (merged).
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": SESSION_CREATED,
+                        "session": session_config_to_ie115(
+                            SessionConfig(audio_format=default_format), model=model
+                        ),
+                    }
+                )
+            )
+            await ws.send(
+                json.dumps(
+                    {"type": SESSION_UPDATED, "session": session_config_to_ie115(config, model=model)}
+                )
+            )
+
+        def on_text(message: dict, config: SessionConfig) -> tuple[str, PcmChunk | None]:
+            mtype = message.get("type")
+            if mtype == INPUT_AUDIO_APPEND:
+                return ("append", append_to_pcm(message, config.audio_format))
+            if mtype == INPUT_AUDIO_COMMIT:
+                return ("finish", None)
+            return ("ignore", None)
+
+        async def emit(event: TranscriptionEvent) -> None:
+            frame = encoder.encode(event)
+            if frame is not None:  # `done` has no IE115 frame; close conveys it
+                with contextlib.suppress(ConnectionClosed):
+                    await ws.send(json.dumps(frame))
+
+        await self._pump_session(ws, config, on_text=on_text, emit=emit)
+
+    async def _pump_session(self, ws, config, *, on_text, emit) -> None:
+        """Shared session loop for both dialects: binary frames -> PCM; text
+        frames dispatched by ``on_text`` (append/finish/ignore); events out via
+        ``emit``. Reader runs concurrently with the adapter; commit-drain and
+        terminal handling are the same across dialects."""
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue()
 
         async def read_frames() -> None:
@@ -149,7 +235,11 @@ class _SessionHandler:
                 async for frame in ws:
                     if isinstance(frame, bytes):
                         await audio.put(PcmChunk(data=frame, format=config.audio_format))
-                    elif json.loads(frame).get("type") == "session.finish":
+                        continue
+                    kind, chunk = on_text(json.loads(frame), config)
+                    if kind == "append" and chunk is not None:
+                        await audio.put(chunk)
+                    elif kind == "finish":
                         break
             except ConnectionClosed:
                 pass  # client abort: just end the audio stream
@@ -159,10 +249,6 @@ class _SessionHandler:
         async def audio_iter() -> AsyncIterator[PcmChunk]:
             while (chunk := await audio.get()) is not None:
                 yield chunk
-
-        async def emit(event: TranscriptionEvent) -> None:
-            with contextlib.suppress(ConnectionClosed):
-                await ws.send(json.dumps(event_to_wire(event)))
 
         reader = asyncio.ensure_future(read_frames())
         try:
@@ -199,6 +285,20 @@ class _SessionHandler:
                 return None
             config = session_config_from_wire(message.get("config") or {})
             return config, message.get("protocol_version")
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _parse_session_update(frame: str | bytes) -> SessionConfig | None:
+        """Parse an IE115 ``session.update`` into a flat ``SessionConfig``, or
+        ``None`` if the frame isn't one (the shape-sniff hook)."""
+        if isinstance(frame, bytes):
+            return None
+        try:
+            message = json.loads(frame)
+            if message.get("type") != SESSION_UPDATE:
+                return None
+            return session_config_from_ie115(message.get("session") or {})
         except (ValueError, TypeError):
             return None
 
@@ -266,6 +366,64 @@ class _WsSession:
                     return
         except ConnectionClosed:
             return  # session ended without a terminal event (server abort)
+
+    async def aclose(self) -> None:
+        await self._ws.close()
+
+
+class WsUnixIe115Client:
+    """``SttClient`` speaking the **IE115 dialect** over ws+unix (T45 reference
+    client; the Rust client mirrors it, T43). Sends ``session.update`` eagerly as
+    the first frame (shape-sniff trigger). Audio goes as raw binary frames by
+    default, or base64 ``input_audio_buffer.append`` when ``base64_audio=True``
+    (OpenAI-parity path, feeds the T46 micro-benchmark)."""
+
+    def __init__(self, socket_path: Path | str, *, base64_audio: bool = False) -> None:
+        self._socket_path = str(socket_path)
+        self._base64_audio = base64_audio
+
+    async def open_session(self, config: SessionConfig) -> "_Ie115Session":
+        ws = await unix_connect(self._socket_path)
+        await ws.send(
+            json.dumps({"type": SESSION_UPDATE, "session": session_config_to_ie115(config)})
+        )
+        return _Ie115Session(ws, base64_audio=self._base64_audio)
+
+
+class _Ie115Session:
+    def __init__(self, ws, *, base64_audio: bool) -> None:
+        self._ws = ws
+        self._base64_audio = base64_audio
+        self._audio_finished = False
+        self._decoder = Ie115Decoder()
+
+    async def send_audio(self, chunk: PcmChunk) -> None:
+        if self._audio_finished:
+            raise RuntimeError("send_audio() after finish_audio()")
+        if self._base64_audio:
+            await self._ws.send(json.dumps(pcm_to_append(chunk)))
+        else:
+            await self._ws.send(chunk.data)
+
+    async def finish_audio(self) -> None:
+        if not self._audio_finished:
+            self._audio_finished = True
+            with contextlib.suppress(ConnectionClosed):
+                await self._ws.send(json.dumps({"type": INPUT_AUDIO_COMMIT}))
+
+    async def events(self) -> AsyncIterator[TranscriptionEvent]:
+        try:
+            async for frame in self._ws:
+                if isinstance(frame, bytes):
+                    continue  # server never sends binary; tolerate it
+                for event in self._decoder.decode(json.loads(frame)):
+                    yield event
+                    if event.type in _TERMINAL:
+                        return
+        except ConnectionClosed:
+            pass  # fall through: synthesise the terminal from close
+        for event in self._decoder.on_close():  # IE115 has no session `done` frame
+            yield event
 
     async def aclose(self) -> None:
         await self._ws.close()

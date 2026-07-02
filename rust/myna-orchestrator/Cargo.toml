@@ -9,6 +9,7 @@ description = "Session + model-residency FSM for the myna dictation orchestrator
 myna-core = { path = "../myna-core" }
 serde_json.workspace = true
 bytes.workspace = true
+base64.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
