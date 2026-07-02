@@ -7,15 +7,38 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 
 ## Repository layout
 
-- `src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS)
+- `src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS). Includes `wire_ie115.py`, the OpenAI-Realtime **IE115** wire dialect codec.
 - `src/myna/testbed` — candidate-adapter evaluation testbed (fake + model adapters, harness, fixture corpus, metrics)
-- `src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snap's ship
+- `src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snaps ship
 - `src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
-- `whisper-snap/` — Whisper inference snap packaging (engines/runtimes/models + modelctl)
-- `nemotron-snap/` — Nemotron / FastConformer inference snap packaging (engines/runtimes/models + modelctl)
+- `rust/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115
+- `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model family (engines/runtimes/models + modelctl), strict-confinement
 - `docs/architecture` — architecture decision records; read before structural changes
-- `docs/project-plan.md` — workstreams, tasks, and milestones
+- `docs/project-plan.md` — workstreams, tasks, and milestones (the living tracker)
 - `reference/` — local checkouts of related projects (inference snaps, CLI); not committed
+
+## Architecture: three roles, one contract
+
+Everything speaks one **session contract** (audio-push in, transcript events out;
+`docs/architecture/transport-and-events.md`) over WebSocket-on-a-Unix-socket.
+Three processes play three roles against it:
+
+- **Inference backend** — the Python `myna-server` (and the snaps that wrap it).
+  Hosts a model, listens on a UDS, has *no* microphone: the client pushes PCM,
+  the server rejects off-format audio and never resamples. Swap models with
+  `--adapter whisper|nemotron|qwen-c|fake`.
+- **Dictation client** — the Rust `myna-dictate` (`rust/`). Owns capture and the
+  hotkey, runs the wire-agnostic session/residency FSM, injects transcribed text.
+  The production hot path.
+- **Benchmark client** — the Python `dev/bench.py`. Replays a corpus through a
+  backend and scores WER/CER offline (no latency constraint), so accuracy work
+  and the dictation hot path don't entangle.
+
+Two peers (Rust client, Python bench) drive the *same* backend; a backend serves
+either. The wire is a **selectable dialect** — the internal flat
+`transcription.*` vocab, or the OpenAI-Realtime-shaped **IE115** names — and both
+ends translate at the edge, so neither the models nor the FSM change when the
+dialect does (`docs/architecture/ie115-wire.md`).
 
 ## Development
 
@@ -50,6 +73,11 @@ isn't synced into the current `.venv`. Model **weights** are separate: they
 download to `HF_HOME` on first use of an adapter (verify offline with
 `HF_HUB_OFFLINE=1`).
 
+The `qwen-c` adapter needs **no** pip extra — it's a pure-C engine reached via
+ctypes. Point it at the shared library and a local model dir:
+`QWEN_ASR_LIB=/snap/qwen/current/lib/libqwen_asr.so uv run myna-server
+--adapter qwen-c --model qwen-snap/components/Qwen3-ASR-0.6B --socket /tmp/ubustt.sock`.
+
 ### Common commands
 
 ```shell
@@ -59,13 +87,57 @@ uv run python dev/generate_fixtures.py   # synthetic corpus -> fixtures/  (needs
 uv run python dev/fetch_real_corpus.py   # real LibriSpeech corpus -> corpus/real/  (needs ffmpeg; ~337 MB download)
 
 # Serve a real adapter on a Unix socket, then talk to it:
-uv run myna-server --adapter nemotron --socket /tmp/ubustt.sock   # or --adapter whisper
+uv run myna-server --adapter nemotron --socket /tmp/ubustt.sock   # or --adapter whisper | qwen-c
 uv run python dev/capabilities.py --socket /tmp/ubustt.sock       # what can this server do?
 uv run python dev/transcribe.py --socket /tmp/ubustt.sock quiet-weather   # transcribe a fixture clip
 ```
 
 Both corpora are generated, not committed (gitignored) — run the builders above
 once before corpus-backed runs.
+
+### Dictate (the Rust client)
+
+`myna-dictate` is the push-to-talk client: it owns capture and drives the
+session FSM against a running backend. Build and run it against any
+`myna-server`:
+
+```shell
+cd rust && cargo build --release && cd ..
+uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
+
+# real-time push-to-talk from a WAV clip (Enter to start, Enter/clip-end to stop):
+./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en \
+    --clip corpus/real/audio/<id>.wav
+
+# same run over the OpenAI-Realtime IE115 wire — same FSM, different dialect:
+./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --dialect ie115 \
+    --language en --clip corpus/real/audio/<id>.wav
+```
+
+For a live-mic demo without Rust, `uv run python dev/dictate.py --socket
+/tmp/ubustt.sock` drives the same backend from Python (PipeWire capture).
+
+### Evaluate (benchmarking — the north star)
+
+The testbed replays a corpus through a backend and scores it offline. Accuracy
+is only trustworthy on the **real** corpus (`corpus/real/`, recorded speech);
+the synthetic espeak `fixtures/` exercise plumbing and latency only.
+
+```shell
+uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
+
+# sweep the real corpus, tagging the run; appends to results/bench.jsonl
+uv run python dev/bench.py --socket /tmp/ubustt.sock \
+    --manifest corpus/real/manifest.json --label whisper-base/cpu --batch
+
+# aggregate every recorded run into a WER/CER matrix (optionally per UD129 category)
+uv run python dev/aggregate.py --by-category
+```
+
+Repeat the `bench.py` run per adapter/model/machine (each `--label` is a row);
+`aggregate.py` collates them across the lab. WER normalisation lives in
+`myna.testbed.metrics` and is deliberately Python-only — the Rust client emits
+transcripts + timings that feed the *same* scorer, keeping one source of truth.
 
 ### Tests and coverage
 
@@ -116,7 +188,8 @@ long wait while snapcraft pulls torch/CUDA/NeMo and `download-models.sh` fetches
 weights.
 
 Per-snap build/install steps: [`whisper-snap/README.md`](whisper-snap/README.md),
-[`nemotron-snap/README.md`](nemotron-snap/README.md). In short, from each snap dir:
+[`nemotron-snap/README.md`](nemotron-snap/README.md),
+[`qwen-snap/README.md`](qwen-snap/README.md). In short, from each snap dir:
 
 ```shell
 ./dev/prepare.sh            # uv build --wheel -> wheels/  (no extra sync needed)
