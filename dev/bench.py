@@ -59,7 +59,7 @@ from myna.testbed.adapter import Candidate  # noqa: E402
 
 
 def select_clips(args: argparse.Namespace):
-    clips = load_manifest(REPO_ROOT / "fixtures" / "manifest.json")
+    clips = load_manifest(args.manifest)
     if args.clip:
         by_id = {c.id: c for c in clips}
         missing = [cid for cid in args.clip if cid not in by_id]
@@ -121,8 +121,15 @@ def _fmt(x, spec="6.2f"):
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("clip", nargs="*", help="clip ids (default: all fixtures)")
+    parser.add_argument("clip", nargs="*", help="clip ids (default: all in the manifest)")
     parser.add_argument("--socket", required=True, type=Path)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=REPO_ROOT / "fixtures" / "manifest.json",
+        help="corpus manifest to sweep (default: synthetic fixtures; "
+        "use corpus/real/manifest.json for trustworthy WER)",
+    )
     parser.add_argument("--label", help="tag for this run (default: active engine name, e.g. 'cpu'); pass 'cpu/small' to record the model too")
     parser.add_argument("--category", help="only clips in this UD129 category")
     parser.add_argument("--batch", action="store_true", help="stream as fast as possible")
