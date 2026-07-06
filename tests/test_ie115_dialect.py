@@ -233,6 +233,32 @@ async def test_ie115_custom_single_final(tmp_path):
     assert record.transcript == "hi"
 
 
+async def test_ie115_stock_client_can_wait_for_the_greeting(tmp_path):
+    """A stock OpenAI Realtime client sends nothing until it has seen
+    ``session.created`` — the server's eager greeting keeps that client from
+    deadlocking against the shape-sniff, and the session then runs normally."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "ubustt.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            greeting = json.loads(await ws.recv())  # before sending anything
+            assert greeting["type"] == w.SESSION_CREATED
+            assert "session" in greeting  # server defaults
+            await ws.send(json.dumps({"type": w.SESSION_UPDATE, "session": {"type": "realtime"}}))
+            updated = json.loads(await ws.recv())
+            assert updated["type"] == w.SESSION_UPDATED
+            await ws.send(b"\x00" * 3200)
+            await ws.send(json.dumps({"type": w.INPUT_AUDIO_COMMIT}))
+            while True:
+                frame = json.loads(await ws.recv())
+                assert frame["type"] != w.ERROR
+                if frame["type"] == w.TRANSCRIPTION_COMPLETED:
+                    break
+
+
 async def test_ie115_connection_persists_across_commits(tmp_path):
     """The OpenAI multi-commit shape (decided 2026-07-06): one connection carries
     several commit cycles, each answered by its own `completed`; the server does
