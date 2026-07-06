@@ -81,37 +81,6 @@ pub struct FsmState {
     pub residency: Residency,
 }
 
-/// How the client should treat an error (§3B). **Provisional** — the stable code
-/// taxonomy is plan T31; today the ws wire treats every `transcription.error` as
-/// terminal (and closes), so `Recoverable`/`Advisory` are exercised at the FSM
-/// level ahead of the wire supporting them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ErrorDisposition {
-    /// Session over; surface a hard failure.
-    Terminal,
-    /// Transient; the session returns to `Active` and the client may retry.
-    Recoverable,
-    /// Non-terminal advisory (e.g. `not_ready` for a pre-ready `APPEND`, §3A);
-    /// no state change.
-    Advisory,
-}
-
-/// Classify a `transcription.error` code into its disposition. **Provisional
-/// (T31):** only the two codes the lifecycle diagram names explicitly are
-/// mapped; everything else is conservatively `Terminal`.
-pub fn classify_error(code: &str) -> ErrorDisposition {
-    match code {
-        // §3A: audio sent before the model is resident — advisory, not fatal
-        // (loading is a lifecycle state, not an error).
-        "not_ready" => ErrorDisposition::Advisory,
-        // Open item #5 (overload/lag): the backend is falling behind. Transient
-        // — the client backs off and stays on the session. Placeholder pending
-        // the real overload signal + T31 taxonomy.
-        "overloaded" => ErrorDisposition::Recoverable,
-        _ => ErrorDisposition::Terminal,
-    }
-}
-
 /// Why an audio chunk was dropped by the accept-gate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DropReason {
@@ -137,12 +106,12 @@ pub enum OrchestratorEvent {
     Final(String),
     /// Utterance complete — the full transcript. Terminal.
     Done(String),
-    /// An error surfaced, tagged with its (provisional) disposition.
-    Error {
-        code: String,
-        message: String,
-        disposition: ErrorDisposition,
-    },
+    /// A backend error surfaced. Terminal — the session is over. (Every
+    /// `transcription.error` is terminal on the wire today; if T31 defines
+    /// recoverable/advisory errors, the disposition must ride the wire — e.g.
+    /// an `error.recoverable` field — and the §3B retry branch returns here.
+    /// Do not reintroduce it as client-side string-matching on codes.)
+    Error { code: String, message: String },
     /// A chunk was dropped by the accept-gate.
     AudioDropped(DropReason),
 }
@@ -345,24 +314,16 @@ impl Fsm {
     }
 
     fn on_error(&mut self, e: ErrorData, out: &mut Vec<Action>) {
-        let disposition = classify_error(&e.code);
+        // §3B: every backend error fails the session — that is the wire's
+        // actual contract (both dialects treat `transcription.error`/`error`
+        // as utterance-terminal). See the `OrchestratorEvent::Error` note for
+        // where a T31 recoverable disposition would slot back in.
         out.push(Action::Emit(OrchestratorEvent::Error {
             code: e.code.clone(),
             message: e.message.clone(),
-            disposition,
         }));
-        match disposition {
-            ErrorDisposition::Terminal => {
-                self.failure = Some((e.code, e.message));
-                self.session = SessionState::Failed;
-            }
-            ErrorDisposition::Recoverable => {
-                // §3B: a transient failure returns the session to Active so the
-                // client can retry the utterance on the same connection.
-                self.session = SessionState::Active;
-            }
-            ErrorDisposition::Advisory => {}
-        }
+        self.failure = Some((e.code, e.message));
+        self.session = SessionState::Failed;
     }
 
     fn on_backend_closed(&mut self, error: Option<String>, out: &mut Vec<Action>) {
@@ -376,7 +337,6 @@ impl Fsm {
         out.push(Action::Emit(OrchestratorEvent::Error {
             code: code.clone(),
             message: message.clone(),
-            disposition: ErrorDisposition::Terminal,
         }));
         self.failure = Some((code, message));
         self.session = SessionState::Failed;
@@ -530,23 +490,6 @@ mod tests {
     }
 
     #[test]
-    fn edge_3a_advisory_not_ready_is_non_terminal() {
-        let mut fsm = Fsm::new();
-        let a = fsm.on_input(Input::Backend(error("not_ready")));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::Error {
-                code: "not_ready".into(),
-                message: "boom".into(),
-                disposition: ErrorDisposition::Advisory,
-            }]
-        );
-        // Session survives; gate still closed.
-        assert_eq!(fsm.state().session, SessionState::Active);
-        assert_eq!(fsm.outcome(), None);
-    }
-
-    #[test]
     fn residency_can_lapse_back_to_loading_mid_session() {
         // Lifecycle open item #4: an idle-unload between utterances re-closes
         // the gate until the model reloads.
@@ -573,7 +516,9 @@ mod tests {
     // ---- §3B: error mid-stream ----------------------------------------------
 
     #[test]
-    fn edge_3b_terminal_error_fails_the_session() {
+    fn edge_3b_any_error_fails_the_session() {
+        // Every backend error is terminal — the wire carries no disposition
+        // (T31 open); when it does, the recoverable branch returns with it.
         let mut fsm = Fsm::new();
         fsm.on_input(Input::Backend(progress(PHASE_READY)));
         let a = fsm.on_input(Input::Backend(error("internal")));
@@ -582,7 +527,6 @@ mod tests {
             vec![OrchestratorEvent::Error {
                 code: "internal".into(),
                 message: "boom".into(),
-                disposition: ErrorDisposition::Terminal,
             }]
         );
         assert_eq!(fsm.state().session, SessionState::Failed);
@@ -593,26 +537,6 @@ mod tests {
                 message: "boom".into(),
             })
         );
-    }
-
-    #[test]
-    fn edge_3b_recoverable_error_returns_to_active() {
-        let mut fsm = Fsm::new();
-        fsm.on_input(Input::Backend(progress(PHASE_READY)));
-        fsm.on_input(Input::EndOfAudio); // Finalizing
-        let a = fsm.on_input(Input::Backend(error("overloaded")));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::Error {
-                code: "overloaded".into(),
-                message: "boom".into(),
-                disposition: ErrorDisposition::Recoverable,
-            }]
-        );
-        // Returned to Active for a retry; not terminal, residency preserved.
-        assert_eq!(fsm.state().session, SessionState::Active);
-        assert_eq!(fsm.state().residency, Residency::Resident);
-        assert_eq!(fsm.outcome(), None);
     }
 
     // ---- §3C: commit-drain — COMMIT is not "done" ---------------------------
@@ -699,7 +623,6 @@ mod tests {
             vec![OrchestratorEvent::Error {
                 code: "connection_closed".into(),
                 message: "reset".into(),
-                disposition: ErrorDisposition::Terminal,
             }]
         );
         assert_eq!(
