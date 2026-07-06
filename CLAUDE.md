@@ -64,13 +64,17 @@ cloud, no persistent audio.
 WebSocket over a Unix socket: PCM binary frames in, JSON events out, one
 connection per session.
 
-Handshake is versioned (`myna.core.protocol`, `PROTOCOL_VERSION`, T35): client
-declares `protocol_version` in `session.start`; server acks `session.created`
-(echoing the served version) or, on mismatch, a terminal
+The **server speaks first** (2026-07-06, hazard review): on connect it sends
+one `session.created` greeting carrying the served `protocol_version`
+(`myna.core.protocol`, T35) *and* the IE115 session defaults — so a stock
+OpenAI client (which waits for `session.created`) can't deadlock against the
+shape-sniff, and version-aware clients on either dialect learn the version.
+The internal client then declares `protocol_version` in `session.start`; on
+mismatch the server sends a terminal
 `transcription.error(unsupported_protocol_version)`. The version is in-band
-(not a WS subprotocol token) so it stays transport-agnostic, and it versions the
-whole contract — event vocab + config + capabilities shapes — as one number
-(adding an event type is breaking, so bump it). Control frames carry a `type`
+(not a WS subprotocol token) so it stays transport-agnostic, and it versions
+the whole contract — event vocab + config + capabilities shapes — as one
+number (adding an event type is breaking, so bump it). Control frames carry a `type`
 key; transcript events carry an `event` key.
 
 Event vocabulary (`myna.core.events`) — this is myna's **internal** contract.

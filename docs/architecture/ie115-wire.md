@@ -62,18 +62,18 @@ rather than inventing a new negotiation.
   (`"type":"session.update"` with a nested `session` object, no
   `protocol_version` field) and answers in IE115 for the rest of the connection.
 
-> **OPEN (selection mechanism).** Two candidate triggers, decide before coding
-> step 2: **(a)** *shape-sniff* — dialect inferred from the first frame's type
-> (`session.start` = internal, `session.update` = IE115), zero new fields, most
-> OpenAI-client-compatible (a stock client that opens and sends `session.update`
-> just works); **(b)** *explicit* — a `protocol`/`dialect` token in the handshake
-> or WS subprotocol. Recommendation: **(a)** for the PoC (maximises "a real
-> OpenAI client connects"), keep the versioned internal handshake untouched
-> beside it. Note (a) means the server must emit `session.created` *first* on
-> IE115 (see §4 sequence), so it can't wait for the client's first frame to pick
-> the dialect — it picks based on whether the client's first frame is
-> `session.update` (IE115) vs `session.start` (internal). Resolve this ordering
-> when we implement.
+> **RESOLVED (selection mechanism, 2026-07-06).** Shape-sniff — option (a) —
+> is implemented, and the ordering wrinkle it raised is resolved by the server
+> **speaking first**: on every connect the server immediately sends one
+> `session.created` **greeting** carrying both the IE115 `session` defaults
+> (what a stock OpenAI client waits for before sending anything — without the
+> greeting, a stock client and the sniffing server would deadlock, each waiting
+> for the other) and, additively, the served `protocol_version` (which stock
+> clients ignore). The dialect is then sniffed from the client's first frame as
+> in (a). Consequence for the internal dialect: the greeting *is* the
+> `session.created` ack — there is no second, post-`session.start` ack; version
+> mismatch is still answered by the terminal
+> `transcription.error(unsupported_protocol_version)`.
 
 ## 2. Session configuration — nested (the team kept OpenAI's shape)
 

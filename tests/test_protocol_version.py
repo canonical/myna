@@ -26,16 +26,31 @@ async def server(tmp_path):
         yield socket_path
 
 
-async def test_session_created_echoes_protocol_version(server):
-    """A compatible client learns the version the server speaks, from the
-    session.created handshake reply (captured as the session reads events)."""
+async def test_session_created_greeting_announces_protocol_version(server):
+    """A version-aware client learns the version the server speaks from the
+    session.created greeting (captured as the session reads events)."""
     client = WsUnixClient(server)
     session = await client.open_session(SessionConfig())
     await session.finish_audio()
     async for _event in session.events():
-        pass  # drain to the terminal event; session.created is seen first
+        pass  # drain to the terminal event; the greeting is seen first
     assert session.protocol_version == PROTOCOL_VERSION
     await session.aclose()
+
+
+async def test_greeting_is_sent_before_the_client_speaks(server):
+    """The server speaks first (the OpenAI-Realtime pattern): the greeting
+    arrives on connect, before the client sends anything — a stock client that
+    waits for session.created before its first frame must not deadlock against
+    the shape-sniff."""
+    ws = await unix_connect(str(server))
+    try:
+        greeting = json.loads(await ws.recv())  # no frame sent yet
+    finally:
+        await ws.close()
+    assert greeting["type"] == "session.created"
+    assert greeting["protocol_version"] == PROTOCOL_VERSION
+    assert "session" in greeting  # IE115 server defaults, for stock clients
 
 
 async def test_unsupported_version_is_a_terminal_error(server):
@@ -53,6 +68,8 @@ async def test_unsupported_version_is_a_terminal_error(server):
             )
         )
         reply = json.loads(await ws.recv())
+        if reply.get("type") == "session.created":  # the greeting
+            reply = json.loads(await ws.recv())
     finally:
         await ws.close()
     assert reply["event"] == "transcription.error"
@@ -61,12 +78,16 @@ async def test_unsupported_version_is_a_terminal_error(server):
 
 async def test_missing_version_is_accepted(server):
     """Clients predating the version field speak the only version that existed
-    then — treat a missing protocol_version as compatible."""
+    then — treat a missing protocol_version as compatible: the session runs to
+    a clean terminal instead of being rejected."""
     ws = await unix_connect(str(server))
     try:
+        json.loads(await ws.recv())  # the greeting
         await ws.send(json.dumps({"type": "session.start", "config": {}}))
+        await ws.send(json.dumps({"type": "session.finish"}))
         reply = json.loads(await ws.recv())
+        while reply.get("event") not in ("transcription.done", "transcription.error"):
+            reply = json.loads(await ws.recv())
     finally:
         await ws.close()
-    assert reply["type"] == "session.created"
-    assert reply["protocol_version"] == PROTOCOL_VERSION
+    assert reply["event"] == "transcription.done"
