@@ -7,6 +7,12 @@ PCM as binary frames in, JSON transcript events as text frames out.
 Wire protocol (PROVISIONAL — input to the IE115 reconciliation, T18/T35):
 
 1. Client connects to the Unix socket and completes the WebSocket handshake.
+   The server immediately sends one ``session.created`` **greeting** (the
+   OpenAI-Realtime pattern: server speaks first) carrying both the served
+   ``protocol_version`` (additive, for version-aware clients) and the IE115
+   ``session`` defaults (for stock OpenAI clients, which wait for
+   ``session.created`` before sending anything — without the greeting they
+   would deadlock against the shape-sniff below).
 2. Client sends one text frame. Either:
    - ``{"type": "capabilities.query"}`` — the server replies with one
      ``{"type": "capabilities", "data": {...}}`` frame and closes (T24); or
@@ -16,9 +22,9 @@ Wire protocol (PROVISIONAL — input to the IE115 reconciliation, T18/T35):
 3. Server checks the declared ``protocol_version`` (``myna.core.protocol``). If
    it can't serve it, the server sends a terminal
    ``transcription.error`` (code ``unsupported_protocol_version``) and closes.
-   Otherwise it sends ``{"type": "session.created", "protocol_version": ...}``
-   echoing the version it will speak — a positive ack and the IE115-shaped
-   handshake reply. (No ``session.updated``: there is no mid-session reconfig.)
+   The greeting already told the client which version the server speaks; there
+   is no per-session ack beyond it. (No ``session.updated`` on this dialect:
+   there is no mid-session reconfig.)
 4. Client streams raw PCM as binary frames, in the declared audio format.
    (Binary frames, deliberately not IE115's base64-in-JSON — see
    ``docs/IE115-deviations.md`` §1.3. Turn detection is client-driven: there is
@@ -118,19 +124,36 @@ class _SessionHandler:
         self._service = service
 
     async def handle(self, ws: ServerConnection) -> None:
-        """One connection. The dialect is chosen by **shape-sniffing** the
-        client's first frame (T44/T45): ``capabilities.query`` -> capabilities;
+        """One connection. The server speaks first: one ``session.created``
+        greeting (server defaults + served ``protocol_version``) goes out on
+        connect, so a stock OpenAI client — which waits for ``session.created``
+        before sending anything — cannot deadlock against the shape-sniff.
+        The dialect is then chosen by **shape-sniffing** the client's first
+        frame (T44/T45): ``capabilities.query`` -> capabilities;
         ``session.start`` -> internal ``myna.core`` wire; ``session.update`` ->
-        IE115 dialect. Our IE115 client sends ``session.update`` eagerly (like
-        the internal client sends ``session.start``); a *stock* OpenAI client
-        that waits for ``session.created`` first is the documented open item
-        (note §1)."""
+        IE115 dialect. Both dialects' clients skip the greeting as a control
+        frame."""
+        caps = self._service.capabilities()
+        default_model = caps.models[0] if caps.models else None
+        default_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
+        with contextlib.suppress(ConnectionClosed):
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": SESSION_CREATED,
+                        "protocol_version": PROTOCOL_VERSION,
+                        "session": session_config_to_ie115(
+                            SessionConfig(audio_format=default_format), model=default_model
+                        ),
+                    }
+                )
+            )
         try:
             opening = await ws.recv()
         except ConnectionClosed:
             return
         if self._is_capabilities_query(opening):
-            wire = capabilities_to_wire(self._service.capabilities())
+            wire = capabilities_to_wire(caps)
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps({"type": "capabilities", "data": wire}))
                 await ws.close()
@@ -138,7 +161,7 @@ class _SessionHandler:
 
         ie115_config = self._parse_session_update(opening)
         if ie115_config is not None:
-            await self._handle_ie115(ws, ie115_config)
+            await self._handle_ie115(ws, ie115_config, caps=caps)
             return
 
         start = self._parse_start(opening)
@@ -170,9 +193,6 @@ class _SessionHandler:
                 await ws.close()
             return
 
-        with contextlib.suppress(ConnectionClosed):
-            await ws.send(json.dumps({"type": "session.created", "protocol_version": PROTOCOL_VERSION}))
-
         def on_text(message: dict, config: SessionConfig) -> tuple[str, PcmChunk | None]:
             return ("finish", None) if message.get("type") == "session.finish" else ("ignore", None)
 
@@ -182,31 +202,21 @@ class _SessionHandler:
 
         await self._pump_session(ws, config, on_text=on_text, emit=emit)
 
-    async def _handle_ie115(self, ws: ServerConnection, config: SessionConfig) -> None:
+    async def _handle_ie115(
+        self, ws: ServerConnection, config: SessionConfig, *, caps: Capabilities
+    ) -> None:
         """IE115 dialect: OpenAI-shaped frames translated via ``wire_ie115``.
+        The ``session.created`` greeting already went out in ``handle``.
 
         The connection is **persistent** (OpenAI multi-commit shape, decided
         2026-07-06): each ``input_audio_buffer.commit`` closes one utterance —
         one adapter session, terminated by its ``completed`` — and the
         connection stays open for the next. The *client* closes when it is
         finished; the server only closes after the client does."""
-        caps = self._service.capabilities()
         model = caps.models[0] if caps.models else None
-        default_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
         encoder = Ie115Encoder()
 
         with contextlib.suppress(ConnectionClosed):
-            # session.created (server defaults) then session.updated (merged).
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": SESSION_CREATED,
-                        "session": session_config_to_ie115(
-                            SessionConfig(audio_format=default_format), model=model
-                        ),
-                    }
-                )
-            )
             await ws.send(
                 json.dumps(
                     {"type": SESSION_UPDATED, "session": session_config_to_ie115(config, model=model)}
@@ -412,6 +422,8 @@ class WsUnixClient:
         try:
             await ws.send(json.dumps({"type": "capabilities.query"}))
             reply = json.loads(await ws.recv())
+            if reply.get("type") == SESSION_CREATED:  # the server's greeting
+                reply = json.loads(await ws.recv())
             if reply.get("type") != "capabilities":
                 raise ValueError(f"expected capabilities reply, got {reply.get('type')!r}")
             return capabilities_from_wire(reply.get("data") or {})
