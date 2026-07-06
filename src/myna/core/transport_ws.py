@@ -49,7 +49,7 @@ from websockets.asyncio.client import unix_connect
 from websockets.asyncio.server import ServerConnection, unix_serve
 from websockets.exceptions import ConnectionClosed
 
-from myna.core.audio import PcmChunk
+from myna.core.audio import AudioFormat, PcmChunk
 from myna.core.capabilities import Capabilities, capabilities_from_wire, capabilities_to_wire
 from myna.core.events import TranscriptionError, TranscriptionEvent, event_from_wire, event_to_wire
 from myna.core.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, is_supported
@@ -183,7 +183,13 @@ class _SessionHandler:
         await self._pump_session(ws, config, on_text=on_text, emit=emit)
 
     async def _handle_ie115(self, ws: ServerConnection, config: SessionConfig) -> None:
-        """IE115 dialect: OpenAI-shaped frames translated via ``wire_ie115``."""
+        """IE115 dialect: OpenAI-shaped frames translated via ``wire_ie115``.
+
+        The connection is **persistent** (OpenAI multi-commit shape, decided
+        2026-07-06): each ``input_audio_buffer.commit`` closes one utterance —
+        one adapter session, terminated by its ``completed`` — and the
+        connection stays open for the next. The *client* closes when it is
+        finished; the server only closes after the client does."""
         caps = self._service.capabilities()
         model = caps.models[0] if caps.models else None
         default_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
@@ -207,27 +213,100 @@ class _SessionHandler:
                 )
             )
 
-        def on_text(message: dict, config: SessionConfig) -> tuple[str, PcmChunk | None]:
-            mtype = message.get("type")
-            if mtype == INPUT_AUDIO_APPEND:
-                return ("append", append_to_pcm(message, config.audio_format))
-            if mtype == INPUT_AUDIO_COMMIT:
-                return ("finish", None)
-            return ("ignore", None)
+        # One reader for the whole connection; _COMMIT marks utterance
+        # boundaries in-band, None marks the client closing the connection.
+        _COMMIT = object()
+        frames: asyncio.Queue[PcmChunk | object | None] = asyncio.Queue()
 
-        async def emit(event: TranscriptionEvent) -> None:
-            frame = encoder.encode(event)
-            if frame is not None:  # `done` has no IE115 frame; close conveys it
-                with contextlib.suppress(ConnectionClosed):
-                    await ws.send(json.dumps(frame))
+        async def read_frames() -> None:
+            try:
+                async for frame in ws:
+                    if isinstance(frame, bytes):
+                        await frames.put(PcmChunk(data=frame, format=config.audio_format))
+                        continue
+                    message = json.loads(frame)
+                    mtype = message.get("type")
+                    if mtype == INPUT_AUDIO_APPEND:
+                        await frames.put(append_to_pcm(message, config.audio_format))
+                    elif mtype == INPUT_AUDIO_COMMIT:
+                        await frames.put(_COMMIT)
+                    # other client frames (e.g. further session.update): ignored
+            except ConnectionClosed:
+                pass
+            finally:
+                await frames.put(None)
 
-        await self._pump_session(ws, config, on_text=on_text, emit=emit)
+        class _Utterance:
+            """Audio of one commit cycle, tracking whether its boundary
+            (commit or close) has been consumed off the queue yet."""
+
+            def __init__(self) -> None:
+                self.ended = False
+                self.closed = False
+
+            async def audio(self) -> AsyncIterator[PcmChunk]:
+                while True:
+                    item = await frames.get()
+                    if item is _COMMIT or item is None:
+                        self.ended = True
+                        self.closed = item is None
+                        return
+                    yield item
+
+            async def drain(self) -> None:
+                """Consume to the boundary if the adapter stopped pulling early
+                (e.g. rejected the format) so leftover audio of this utterance
+                is discarded, not misread as the next one."""
+                while not self.ended:
+                    item = await frames.get()
+                    if item is _COMMIT or item is None:
+                        self.ended = True
+                        self.closed = item is None
+
+        reader = asyncio.ensure_future(read_frames())
+        try:
+            while True:
+                # Start the adapter session EAGERLY, before any audio arrives:
+                # the adapter's load-heartbeat and `ready` must flow first,
+                # because a well-behaved client gates its audio on `ready`
+                # (lifecycle §3A / T42 — waiting for audio here would deadlock
+                # against a client waiting for `ready`). The cost is one empty
+                # adapter run when the client closes between utterances; its
+                # sends are suppressed and an empty utterance is cheap.
+                utterance = _Utterance()
+                terminal_seen = False
+
+                async def emit(event: TranscriptionEvent) -> None:
+                    nonlocal terminal_seen
+                    if event.type in _TERMINAL:
+                        terminal_seen = True
+                    with contextlib.suppress(ConnectionClosed):
+                        await ws.send(json.dumps(encoder.encode(event)))
+
+                await self._run_utterance(config, utterance.audio(), emit)
+                await utterance.drain()
+                if utterance.closed:
+                    break  # client closed the connection: normal end
+                if not terminal_seen:
+                    # Adapter broke the exactly-one-terminal contract; a compat
+                    # client is now waiting on `completed` — fail the utterance
+                    # rather than hang it.
+                    await emit(
+                        TranscriptionError(
+                            code="internal", message="adapter ended without a terminal event"
+                        )
+                    )
+        finally:
+            reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader
+            await ws.close()
 
     async def _pump_session(self, ws, config, *, on_text, emit) -> None:
-        """Shared session loop for both dialects: binary frames -> PCM; text
-        frames dispatched by ``on_text`` (append/finish/ignore); events out via
-        ``emit``. Reader runs concurrently with the adapter; commit-drain and
-        terminal handling are the same across dialects."""
+        """Internal-dialect session loop (one utterance per connection, server
+        closes after the terminal event): binary frames -> PCM; text frames
+        dispatched by ``on_text`` (finish/ignore); events out via ``emit``.
+        The reader runs concurrently with the adapter (commit-drain)."""
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue()
 
         async def read_frames() -> None:
@@ -252,16 +331,22 @@ class _SessionHandler:
 
         reader = asyncio.ensure_future(read_frames())
         try:
-            await self._service.run_session(config, audio_iter(), emit)
-        except Exception as exc:  # adapter bug: surface as a terminal error event
-            await emit(
-                TranscriptionError(code="adapter_crash", message=f"{type(exc).__name__}: {exc}")
-            )
+            await self._run_utterance(config, audio_iter(), emit)
         finally:
             reader.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
             await ws.close()
+
+    async def _run_utterance(self, config: SessionConfig, audio, emit) -> None:
+        """Run one adapter session, surfacing adapter bugs as a terminal error
+        event (shared by both dialects)."""
+        try:
+            await self._service.run_session(config, audio, emit)
+        except Exception as exc:
+            await emit(
+                TranscriptionError(code="adapter_crash", message=f"{type(exc).__name__}: {exc}")
+            )
 
     @staticmethod
     def _is_capabilities_query(frame: str | bytes) -> bool:

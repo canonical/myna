@@ -14,12 +14,17 @@ What the mapping does (see the note for the full table + open questions):
 - ``transcription.progress{phase}`` <-> additive ``STATUS{state}`` liveness event
   (``preparing``->``loading``). We deliberately do **not** emit OpenAI's
   ``server_error/model_loading`` — loading is a liveness property, not an error.
-- ``transcription.final`` <-> ``conversation.item.input_audio_transcription.completed``
-  (one committed item per segment; we mint ``item_id``/``content_index`` since
-  dictation has no conversation graph).
-- ``transcription.done`` has **no** IE115 frame: the terminal is the connection
-  close. The client decoder synthesises ``done`` on close from the accumulated
-  ``completed`` transcripts (open question, note §7.4).
+- ``transcription.final`` <-> ``conversation.item.input_audio_transcription.delta``
+  — committed, append-only segment text (the streaming revision contract,
+  ``docs/architecture/streaming.md`` §3a). One ``item_id`` per utterance (we mint
+  it; dictation has no conversation graph); every delta of the utterance and its
+  ``completed`` share it.
+- ``transcription.done`` <-> ``conversation.item.input_audio_transcription.completed``
+  — one per ``input_audio_buffer.commit``, carrying the full utterance
+  transcript. This is the utterance terminal: **the connection stays open**
+  (OpenAI multi-commit shape, decided 2026-07-06); the *client* closes when it is
+  finished. A close *before* ``completed`` therefore decodes as an error, never a
+  synthesised ``done`` — a dead server must not read as a successful utterance.
 - ``transcription.error`` <-> ``error{error:{type,code,message}}``. The code
   mapping is **lossy** (our richer codes collapse onto IE115's four) — that
   lossiness is the T31 evidence, kept on purpose.
@@ -141,19 +146,22 @@ def pcm_to_append(chunk: PcmChunk) -> dict:
 
 class Ie115Encoder:
     """Encodes internal transcript events into IE115 server frames, holding the
-    per-utterance ``item_id`` state IE115 requires (dictation has no
-    conversation graph, so we mint one per committed segment)."""
+    per-utterance ``item_id`` IE115 requires (dictation has no conversation
+    graph, so we mint one per utterance): every ``delta`` of an utterance and
+    its ``completed`` share the item; the ``completed`` retires it, so the next
+    utterance on the same connection gets a fresh one."""
 
     def __init__(self) -> None:
         self._item_id: str | None = None
 
-    def _next_item_id(self) -> str:
-        self._item_id = f"item_{uuid.uuid4().hex[:12]}"
+    def _item(self) -> str:
+        if self._item_id is None:
+            self._item_id = f"item_{uuid.uuid4().hex[:12]}"
         return self._item_id
 
-    def encode(self, event: TranscriptionEvent) -> dict | None:
-        """Return the IE115 frame for ``event``, or ``None`` if the event has no
-        IE115 frame (``done`` — the terminal is the connection close)."""
+    def encode(self, event: TranscriptionEvent) -> dict:
+        """Return the IE115 frame for ``event``. Every event has a frame:
+        ``done`` is the utterance's ``completed`` (the connection stays open)."""
         if isinstance(event, TranscriptionProgress):
             frame = {"type": STATUS_EVENT, "state": _PHASE_TO_STATE.get(event.phase, "transcribing")}
             if event.snippet:  # additive, optional (note §7.5)
@@ -161,13 +169,20 @@ class Ie115Encoder:
             return frame
         if isinstance(event, TranscriptionFinal):
             return {
+                "type": TRANSCRIPTION_DELTA,
+                "item_id": self._item(),
+                "content_index": 0,
+                "delta": event.text,
+            }
+        if isinstance(event, TranscriptionDone):
+            item = self._item()
+            self._item_id = None  # completed retires the utterance's item
+            return {
                 "type": TRANSCRIPTION_COMPLETED,
-                "item_id": self._next_item_id(),
+                "item_id": item,
                 "content_index": 0,
                 "transcript": event.text,
             }
-        if isinstance(event, TranscriptionDone):
-            return None  # terminal conveyed by close (note §7.4)
         if isinstance(event, TranscriptionError):
             etype, ecode = _ERROR_TO_IE115.get(event.code, ("server_error", "server_error"))
             return {"type": ERROR, "error": {"type": etype, "code": ecode, "message": event.message}}
@@ -178,12 +193,12 @@ class Ie115Encoder:
 
 
 class Ie115Decoder:
-    """Decodes IE115 server frames into internal transcript events, accumulating
-    ``completed`` transcripts so a terminal ``done`` can be synthesised when the
-    connection closes (IE115 has no session-level terminal — note §7.4)."""
+    """Decodes IE115 server frames into internal transcript events for **one
+    utterance**: the ``completed`` answering the client's commit is the terminal
+    ``done``. The client closes the connection itself after it — never infer
+    ``done`` from a server close."""
 
     def __init__(self) -> None:
-        self._transcripts: list[str] = []
         self._terminated = False
 
     def decode(self, frame: dict) -> list[TranscriptionEvent]:
@@ -196,14 +211,12 @@ class Ie115Decoder:
             phase = _STATE_TO_PHASE.get(frame.get("state"), PHASE_TRANSCRIBING)
             return [TranscriptionProgress(phase=phase, snippet=frame.get("snippet"))]
         if ftype == TRANSCRIPTION_DELTA:
-            # IE115 delta is committed-incremental; we have no committed-delta
-            # semantics until streaming (T08), so surface it as an unstable
-            # liveness snippet, consistent with our progress.snippet (note §3).
-            return [TranscriptionProgress(phase=PHASE_TRANSCRIBING, snippet=frame.get("delta"))]
+            # Committed, append-only segment text — the IE115 face of our
+            # `transcription.final` (streaming contract, streaming.md §3a).
+            return [TranscriptionFinal(text=frame.get("delta") or "")]
         if ftype == TRANSCRIPTION_COMPLETED:
-            text = frame.get("transcript", "")
-            self._transcripts.append(text)
-            return [TranscriptionFinal(text=text)]
+            self._terminated = True
+            return [TranscriptionDone(text=frame.get("transcript", ""))]
         if ftype == ERROR:
             self._terminated = True
             err = frame.get("error") or {}
@@ -211,9 +224,15 @@ class Ie115Decoder:
         return []  # unknown/ignored additive frame
 
     def on_close(self) -> list[TranscriptionEvent]:
-        """Synthesise the terminal ``done`` from accumulated completes, unless a
-        terminal ``error`` already went out. Idempotent."""
+        """A close *before* the utterance's terminal is a failure, not a result:
+        the transcript may be truncated, so it must never surface as a clean
+        ``done``. No-op (idempotent) after a real terminal."""
         if self._terminated:
             return []
         self._terminated = True
-        return [TranscriptionDone(text=" ".join(t for t in self._transcripts if t))]
+        return [
+            TranscriptionError(
+                code="connection_closed",
+                message="connection closed before the utterance completed",
+            )
+        ]

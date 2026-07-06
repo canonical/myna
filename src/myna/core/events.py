@@ -11,13 +11,15 @@ IE115 reconciliation (T36, see ``docs/IE115-deviations.md`` §1.1): we keep thes
 flat ``transcription.*`` names rather than adopting IE115's five-deep OpenAI
 ``conversation.item.input_audio_transcription.{delta,completed,failed}`` — there
 is no conversation in dictation, only a stream becoming text. Mapping for anyone
-porting an IE115/OpenAI client: ``…transcription.delta`` →
-``transcription.progress`` (its ``snippet`` is unstable liveness, *not* IE115's
-committed incremental delta — we emit no committed deltas until streaming, T08);
-``…transcription.completed`` → ``transcription.final`` (per segment) +
-``transcription.done`` (session end); ``…transcription.failed`` →
-``transcription.error``. The single ``error`` channel replaces IE115's split
-top-level-``error`` / per-item-``failed``.
+porting an IE115/OpenAI client (revised 2026-07-06 for persistent multi-commit
+connections, T47): ``…transcription.delta`` → ``transcription.final``
+(committed, append-only segment text — the streaming revision contract);
+``…transcription.completed`` → ``transcription.done`` (one per commit, full
+utterance transcript, the utterance terminal — the connection stays open);
+``…transcription.failed`` → ``transcription.error``. Our unstable
+``progress.snippet`` has no IE115 event of its own; it rides the additive
+``STATUS`` liveness frame, never ``delta``. The single ``error`` channel
+replaces IE115's split top-level-``error`` / per-item-``failed``.
 
 Semantics:
 

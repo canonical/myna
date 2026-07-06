@@ -79,17 +79,25 @@ def test_encoder_progress_phases_map_to_status_states():
     assert transcribing == {"type": w.STATUS_EVENT, "state": "transcribing", "snippet": "hi"}
 
 
-def test_encoder_final_becomes_completed_with_minted_item_id():
+def test_encoder_finals_become_deltas_sharing_the_utterance_item():
     enc = w.Ie115Encoder()
-    f1 = enc.encode(TranscriptionFinal(text="one"))
-    f2 = enc.encode(TranscriptionFinal(text="two"))
-    assert f1["type"] == w.TRANSCRIPTION_COMPLETED
-    assert f1["transcript"] == "one" and f1["content_index"] == 0
-    assert f1["item_id"] and f2["item_id"] and f1["item_id"] != f2["item_id"]  # one item per segment
+    d1 = enc.encode(TranscriptionFinal(text="one"))
+    d2 = enc.encode(TranscriptionFinal(text="two"))
+    assert d1["type"] == w.TRANSCRIPTION_DELTA
+    assert d1["delta"] == "one" and d1["content_index"] == 0
+    assert d1["item_id"] and d1["item_id"] == d2["item_id"]  # one item per utterance
 
 
-def test_encoder_done_has_no_frame():
-    assert w.Ie115Encoder().encode(TranscriptionDone(text="all")) is None
+def test_encoder_done_becomes_completed_and_retires_the_item():
+    enc = w.Ie115Encoder()
+    delta = enc.encode(TranscriptionFinal(text="one"))
+    done = enc.encode(TranscriptionDone(text="one two"))
+    assert done["type"] == w.TRANSCRIPTION_COMPLETED
+    assert done["transcript"] == "one two"
+    assert done["item_id"] == delta["item_id"]  # completed closes the same item
+    # the next utterance on the same (persistent) connection is a new item
+    next_done = enc.encode(TranscriptionDone(text="three"))
+    assert next_done["item_id"] != done["item_id"]
 
 
 def test_encoder_error_maps_lossily_and_decoder_recovers_ie115_code():
@@ -107,19 +115,33 @@ def test_encoder_error_maps_lossily_and_decoder_recovers_ie115_code():
     assert event.code == "server_error"  # not "adapter_crash"
 
 
-def test_decoder_synthesises_done_on_close():
+def test_decoder_delta_is_committed_final_and_completed_is_done():
     dec = w.Ie115Decoder()
-    dec.decode({"type": w.TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0, "transcript": "one"})
-    dec.decode({"type": w.TRANSCRIPTION_COMPLETED, "item_id": "i2", "content_index": 0, "transcript": "two"})
-    (done,) = dec.on_close()
-    assert isinstance(done, TranscriptionDone)
-    assert done.text == "one two"
+    (final,) = dec.decode(
+        {"type": w.TRANSCRIPTION_DELTA, "item_id": "i1", "content_index": 0, "delta": "one"}
+    )
+    assert isinstance(final, TranscriptionFinal) and final.text == "one"
+    (done,) = dec.decode(
+        {"type": w.TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0, "transcript": "one two"}
+    )
+    assert isinstance(done, TranscriptionDone) and done.text == "one two"
+    assert dec.on_close() == []  # terminal already delivered; close is just close
+
+
+def test_decoder_close_before_completed_is_an_error_not_a_done():
+    # A dead server must never read as a successful (possibly truncated) utterance.
+    dec = w.Ie115Decoder()
+    dec.decode({"type": w.TRANSCRIPTION_DELTA, "item_id": "i1", "content_index": 0, "delta": "one"})
+    (event,) = dec.on_close()
+    assert isinstance(event, TranscriptionError)
+    assert event.code == "connection_closed"
+    assert dec.on_close() == []  # idempotent
 
 
 def test_decoder_no_double_terminal_after_error():
     dec = w.Ie115Decoder()
     dec.decode({"type": w.ERROR, "error": {"type": "server_error", "code": "server_error", "message": "x"}})
-    assert dec.on_close() == []  # error already terminal; no synthesised done
+    assert dec.on_close() == []  # error already terminal
 
 
 def test_decoder_ignores_control_frames():
@@ -209,3 +231,35 @@ async def test_ie115_custom_single_final(tmp_path):
     )
     record = await _run(tmp_path, adapter=adapter)
     assert record.transcript == "hi"
+
+
+async def test_ie115_connection_persists_across_commits(tmp_path):
+    """The OpenAI multi-commit shape (decided 2026-07-06): one connection carries
+    several commit cycles, each answered by its own `completed`; the server does
+    not close after a terminal — the client closes when it is finished."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "ubustt.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            await ws.send(json.dumps({"type": w.SESSION_UPDATE, "session": {"type": "realtime"}}))
+            transcripts, items = [], []
+            for _ in range(2):
+                await ws.send(b"\x00" * 3200)  # ~100 ms of PCM
+                await ws.send(json.dumps({"type": w.INPUT_AUDIO_COMMIT}))
+                deltas = []
+                while True:
+                    frame = json.loads(await ws.recv())
+                    assert frame["type"] != w.ERROR
+                    if frame["type"] == w.TRANSCRIPTION_DELTA:
+                        deltas.append(frame)
+                    if frame["type"] == w.TRANSCRIPTION_COMPLETED:
+                        transcripts.append(frame["transcript"])
+                        items.append(frame["item_id"])
+                        # every delta of the utterance shares the completed's item
+                        assert all(d["item_id"] == frame["item_id"] for d in deltas)
+                        break
+    assert transcripts == ["The quick brown fox jumps over the lazy dog."] * 2
+    assert items[0] != items[1]  # one conversation item per utterance

@@ -10,9 +10,16 @@
 //! binary frames (default) or base64 `input_audio_buffer.append` (OpenAI-parity,
 //! `--base64-audio`), then `input_audio_buffer.commit` at end-of-audio.
 //! Server→client: `session.created`/`session.updated` (ignored control frames),
-//! additive `STATUS{state}` liveness, `conversation.item.input_audio_transcription.completed`,
-//! and `error`. IE115 has no session-level terminal, so a `done` is synthesised
-//! from the accumulated completes when the connection closes (note §7.4).
+//! additive `STATUS{state}` liveness, committed `…transcription.delta` segments
+//! (→ `final`), the utterance's `…transcription.completed` (→ `done`, the
+//! terminal), and `error`.
+//!
+//! The server keeps the connection open across commits (OpenAI multi-commit
+//! shape, decided 2026-07-06); this client uses one commit per connection and
+//! closes after its `completed` arrives. A close *before* the terminal ends the
+//! event stream without one, which the FSM maps to a `connection_closed`
+//! failure — never a synthesised `done` (a dead server must not read as a
+//! successful, possibly truncated, utterance).
 
 use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
@@ -121,81 +128,47 @@ type WsWrite = futures_util::stream::SplitSink<
     Message,
 >;
 
-/// Accumulates `completed` transcripts so a terminal `done` can be synthesised
-/// on close (IE115 has no session terminal — note §7.4). Mirrors the Python
+/// Decode one IE115 server frame into zero or more internal events (stateless —
+/// the utterance terminal is a real frame, `completed` → `done`). Control frames
+/// (`session.created`/`session.updated`) yield nothing. Mirrors the Python
 /// `Ie115Decoder`.
-struct Decoder {
-    transcripts: Vec<String>,
-    terminated: bool,
-}
-
-impl Decoder {
-    fn new() -> Self {
-        Self { transcripts: Vec::new(), terminated: false }
-    }
-
-    /// Decode one IE115 server frame into zero or more internal events. Control
-    /// frames (`session.created`/`session.updated`) yield nothing.
-    fn decode(&mut self, value: &Value) -> Vec<TranscriptionEvent> {
-        match value.get("type").and_then(Value::as_str) {
-            Some(STATUS_EVENT) => {
-                let phase = match value.get("state").and_then(Value::as_str) {
-                    Some("loading") => PHASE_PREPARING,
-                    Some("ready") => PHASE_READY,
-                    _ => PHASE_TRANSCRIBING,
-                };
-                let snippet = value.get("snippet").and_then(Value::as_str).map(String::from);
-                vec![TranscriptionEvent::Progress(Progress { snippet, phase: phase.to_string() })]
-            }
-            Some(TRANSCRIPTION_DELTA) => {
-                // IE115 delta is committed-incremental; we have no committed-delta
-                // semantics yet (T08), so surface it as an unstable snippet.
-                let snippet = value.get("delta").and_then(Value::as_str).map(String::from);
-                vec![TranscriptionEvent::Progress(Progress {
-                    snippet,
-                    phase: PHASE_TRANSCRIBING.to_string(),
-                })]
-            }
-            Some(TRANSCRIPTION_COMPLETED) => {
-                let text =
-                    value.get("transcript").and_then(Value::as_str).unwrap_or("").to_string();
-                self.transcripts.push(text.clone());
-                vec![TranscriptionEvent::Final(TranscriptionFinal { text, segments: vec![] })]
-            }
-            Some(ERROR) => {
-                self.terminated = true;
-                let err = value.get("error");
-                let code = err
-                    .and_then(|e| e.get("code"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("server_error")
-                    .to_string();
-                let message = err
-                    .and_then(|e| e.get("message"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                vec![TranscriptionEvent::Error(ErrorData { code, message })]
-            }
-            _ => vec![], // session.created/updated or unknown additive frame
+fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
+    match value.get("type").and_then(Value::as_str) {
+        Some(STATUS_EVENT) => {
+            let phase = match value.get("state").and_then(Value::as_str) {
+                Some("loading") => PHASE_PREPARING,
+                Some("ready") => PHASE_READY,
+                _ => PHASE_TRANSCRIBING,
+            };
+            let snippet = value.get("snippet").and_then(Value::as_str).map(String::from);
+            vec![TranscriptionEvent::Progress(Progress { snippet, phase: phase.to_string() })]
         }
-    }
-
-    /// Synthesise the terminal `done` from accumulated completes, unless a
-    /// terminal `error` already went out.
-    fn on_close(&mut self) -> Vec<TranscriptionEvent> {
-        if self.terminated {
-            return vec![];
+        Some(TRANSCRIPTION_DELTA) => {
+            // Committed, append-only segment text — the IE115 face of
+            // `transcription.final` (streaming contract, streaming.md §3a).
+            let text = value.get("delta").and_then(Value::as_str).unwrap_or("").to_string();
+            vec![TranscriptionEvent::Final(TranscriptionFinal { text, segments: vec![] })]
         }
-        self.terminated = true;
-        let text = self
-            .transcripts
-            .iter()
-            .filter(|t| !t.is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(" ");
-        vec![TranscriptionEvent::Done(TranscriptionFinal { text, segments: vec![] })]
+        Some(TRANSCRIPTION_COMPLETED) => {
+            // The utterance terminal: full transcript for this commit.
+            let text = value.get("transcript").and_then(Value::as_str).unwrap_or("").to_string();
+            vec![TranscriptionEvent::Done(TranscriptionFinal { text, segments: vec![] })]
+        }
+        Some(ERROR) => {
+            let err = value.get("error");
+            let code = err
+                .and_then(|e| e.get("code"))
+                .and_then(Value::as_str)
+                .unwrap_or("server_error")
+                .to_string();
+            let message = err
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            vec![TranscriptionEvent::Error(ErrorData { code, message })]
+        }
+        _ => vec![], // session.created/updated or unknown additive frame
     }
 }
 
@@ -212,7 +185,6 @@ async fn pump(
     ev_tx: mpsc::Sender<Result<TranscriptionEvent, BackendError>>,
     base64_audio: bool,
 ) {
-    let mut decoder = Decoder::new();
     let mut outbound_open = true;
     loop {
         tokio::select! {
@@ -248,21 +220,22 @@ async fn pump(
                             break;
                         }
                     };
-                    let mut terminal = false;
-                    for event in decoder.decode(&value) {
-                        terminal = event.is_terminal();
+                    for event in decode_frame(&value) {
+                        let terminal = event.is_terminal();
                         if ev_tx.send(Ok(event)).await.is_err() {
                             return; // FSM dropped the receiver
                         }
                         if terminal {
-                            break;
+                            // Our commit is answered; close our side of the
+                            // persistent connection (one utterance per connection).
+                            return;
                         }
-                    }
-                    if terminal {
-                        return; // terminal already delivered; no synthesised done
                     }
                 }
                 Some(Ok(Message::Binary(_))) => {} // server never sends binary
+                // Close before the terminal: fall out and drop `ev_tx` — the
+                // ended event stream reaches the FSM as BackendClosed (a
+                // `connection_closed` failure), never a synthesised `done`.
                 Some(Ok(Message::Close(_))) | None => break,
                 Some(Ok(_)) => {} // ping/pong
                 Some(Err(e)) => {
@@ -271,10 +244,6 @@ async fn pump(
                 }
             },
         }
-    }
-    // Connection closed without an IE115 terminal frame → synthesise `done`.
-    for event in decoder.on_close() {
-        let _ = ev_tx.send(Ok(event)).await;
     }
 }
 
@@ -300,43 +269,43 @@ mod tests {
 
     #[test]
     fn decoder_maps_status_to_progress_phases() {
-        let mut d = Decoder::new();
-        let loading = d.decode(&json!({"type": "status", "state": "loading"}));
+        let loading = decode_frame(&json!({"type": "status", "state": "loading"}));
         assert!(matches!(&loading[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_PREPARING));
-        let ready = d.decode(&json!({"type": "status", "state": "ready"}));
+        let ready = decode_frame(&json!({"type": "status", "state": "ready"}));
         assert!(matches!(&ready[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_READY));
     }
 
     #[test]
-    fn decoder_completed_to_final_then_synthesises_done() {
-        let mut d = Decoder::new();
-        let f = d.decode(&json!({
-            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
-            "transcript": "one"
+    fn decoder_delta_is_committed_final() {
+        let f = decode_frame(&json!({
+            "type": TRANSCRIPTION_DELTA, "item_id": "i1", "content_index": 0,
+            "delta": "one"
         }));
         assert!(matches!(&f[0], TranscriptionEvent::Final(t) if t.text == "one"));
-        d.decode(&json!({
-            "type": TRANSCRIPTION_COMPLETED, "item_id": "i2", "content_index": 0,
-            "transcript": "two"
-        }));
-        let done = d.on_close();
-        assert!(matches!(&done[0], TranscriptionEvent::Done(t) if t.text == "one two"));
     }
 
     #[test]
-    fn decoder_error_is_terminal_and_suppresses_synthesised_done() {
-        let mut d = Decoder::new();
-        let e = d.decode(&json!({
+    fn decoder_completed_is_the_terminal_done() {
+        let done = decode_frame(&json!({
+            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
+            "transcript": "one two"
+        }));
+        assert!(matches!(&done[0], TranscriptionEvent::Done(t) if t.text == "one two"));
+        assert!(done[0].is_terminal());
+    }
+
+    #[test]
+    fn decoder_error_is_terminal() {
+        let e = decode_frame(&json!({
             "type": ERROR, "error": {"type": "server_error", "code": "server_error", "message": "boom"}
         }));
         assert!(matches!(&e[0], TranscriptionEvent::Error(err) if err.code == "server_error"));
-        assert!(d.on_close().is_empty());
+        assert!(e[0].is_terminal());
     }
 
     #[test]
     fn decoder_ignores_control_frames() {
-        let mut d = Decoder::new();
-        assert!(d.decode(&json!({"type": "session.created", "session": {}})).is_empty());
-        assert!(d.decode(&json!({"type": "session.updated", "session": {}})).is_empty());
+        assert!(decode_frame(&json!({"type": "session.created", "session": {}})).is_empty());
+        assert!(decode_frame(&json!({"type": "session.updated", "session": {}})).is_empty());
     }
 }
