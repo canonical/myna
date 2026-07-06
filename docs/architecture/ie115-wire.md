@@ -319,6 +319,11 @@ Consolidated; each is a thing code will force that paper left vague:
 8. **Object-graph minimalism** — confirm a stock OpenAI client is happy without
    `conversation.item.added/done` + `input_audio_buffer.committed/speech_*`. If
    not, the "minimal subset" claim needs revisiting.
+9. **Cloud/remote backends (recorded, deliberately not designed).**
+   Connect-per-press stops being free over TCP+TLS (1–2 RTTs per press). If a
+   remote backend ever lands, hold the connection open across presses *inside*
+   its `BackendClient` (the IE115 server is already persistent multi-commit) —
+   invisible to the FSM. Do not design for it before it exists.
 
 ## 8. Implementation plan (this note is step 1)
 

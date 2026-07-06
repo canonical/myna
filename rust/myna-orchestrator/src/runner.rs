@@ -54,9 +54,11 @@ where
     // accept-gate (ie115-lifecycle.md §3A) — without it a slow cold load lets a
     // replayable/paced source drain entirely into the closed gate and every
     // chunk is dropped. `notify_one` stores a permit, so a `Ready` that fires
-    // before the pump parks is not lost. (A live-mic adapter that must not block
-    // the speaker would instead ring-buffer; this suits paced/replayable
-    // sources, which is what the demo drives.)
+    // before the pump parks is not lost. Holding the *stream* like this suits
+    // paced/replayable sources (what the demo drives); a live mic MUST instead
+    // capture from hotkey press into its ring buffer and gate only the push —
+    // speech during a cold load is otherwise lost (requirement:
+    // audio-adapter-api.md §6, a T21 acceptance criterion).
     let ready_gate = Arc::new(Notify::new());
 
     // Pump the capture stream into the FSM's input channel. A clean end →
