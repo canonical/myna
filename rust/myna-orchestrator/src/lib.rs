@@ -4,8 +4,9 @@
 //! `docs/architecture/ie115-lifecycle.md`: the per-connection session track
 //! (CREATED → ACTIVE → FINALIZING → DONE) running orthogonally to model
 //! residency (UNLOADED → LOADING → RESIDENT), with the accept-gate
-//! (`ACTIVE ∧ RESIDENT`), commit-drain (COMMIT ≠ done), pre-ready-audio drop,
-//! and terminal-vs-recoverable error mapping.
+//! (`ACTIVE ∧ RESIDENT`), commit-drain (COMMIT ≠ done), and pre-ready-audio
+//! drop. Every backend error is terminal (the wire carries no disposition; a
+//! T31 recoverable axis must arrive on the wire before a retry path returns).
 //!
 //! Every external boundary is a trait with a mock, so the FSM is buildable and
 //! testable before the real audio adapter (Matias) and IE115 inference snap
@@ -40,8 +41,8 @@ pub use backend::{
 };
 pub use driver::{run_session, OrchestratorInput};
 pub use fsm::{
-    classify_error, Action, DropReason, ErrorDisposition, Fsm, FsmState, Input, OrchestratorEvent,
-    Residency, SessionOutcome, SessionState,
+    Action, DropReason, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome,
+    SessionState,
 };
 pub use runner::run_dictation;
 pub use sink::{CollectingSink, StdoutSink, TextSink};
