@@ -138,7 +138,7 @@ GNOME portal delivers press **and** release, so hold-to-talk works without VAD):
 
 | Event | Adapter behavior | Why |
 |---|---|---|
-| **hotkey press** → start | `capture()`; chunks begin flowing | session begins |
+| **hotkey press** → start | `capture()`; chunks begin flowing **immediately** | session begins — see the capture-from-press requirement below |
 | **hotkey release** → graceful stop | stop capturing, drain any buffered chunks, then end the stream (`None`) | the service then signals end-of-audio and the model finalizes — a *clean* finish |
 | **cancel / abort** | drop the stream/handle; remaining buffer discarded | user cancelled; the service abandons the session, commits nothing |
 | **device fault** | yield `Err(CaptureError)`, then end | becomes a terminal session error |
@@ -158,6 +158,24 @@ not unbounded: if the consumer stalls, you want backpressure or controlled
 drop-oldest, never unbounded memory growth (and never spill to disk). Chunk
 size in the prototype is ~100 ms (configurable) — small enough for low latency,
 large enough to avoid per-chunk overhead; a reasonable default to start.
+
+**Requirement — capture from hotkey press; gate the *push*, not the capture**
+(promoted 2026-07-06; T21 acceptance criterion). The STT service signals
+readiness via `STATUS{ready}` / `progress.phase=ready`, and the dictation
+service must not *push* audio before it (the accept-gate,
+`ie115-lifecycle.md` §3A — pre-ready audio is dropped). But the model
+cold-loads in 0.9–5.8 s (measured, T11) and the default residency policy
+idle-unloads after 300 s, so a typical dictation starts cold-ish. If capture
+only starts at `ready`, everything the user says during the load window is
+silently lost — the product swallows the first sentence. So: **`capture()`
+starts filling the ring buffer at hotkey press**, and the *consumer* holds the
+buffered chunks until `ready`, then drains them into the push. The buffer
+depth must therefore cover at least the worst-case cold load we intend to
+tolerate — its size and the T29 idle-unload default are **one decision**, made
+together (e.g. tolerating a 6 s cold load at 16 kHz mono s16le costs a ~192 KB
+ring). A `WavFileSource`-style paced/replayable source may instead hold the
+stream itself (that is what the T41 runner does today); a live mic cannot —
+speech not captured is gone.
 
 ## 7. Format ownership & negotiation
 
