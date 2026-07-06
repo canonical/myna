@@ -102,7 +102,9 @@ async fn read_handshake_ack(read: &mut WsRead) -> Result<Option<String>, Backend
                 if value.get("event").is_some() {
                     // The server can reject the session with a terminal error
                     // *instead* of `session.created` (e.g. bad version).
-                    if let TranscriptionEvent::Error(err) = TranscriptionEvent::from_wire(&value)? {
+                    if let Some(TranscriptionEvent::Error(err)) =
+                        TranscriptionEvent::from_wire(&value)?
+                    {
                         return Err(BackendError::Rejected { code: err.code, message: err.message });
                     }
                     return Err(BackendError::Handshake(
@@ -183,12 +185,12 @@ async fn pump(
 }
 
 /// Decode a downstream text frame into a transcript event, or `None` if it is a
-/// (post-handshake, unexpected) control frame we should ignore.
+/// control frame or an unknown (additive) event type we should ignore.
 fn decode_event(text: &str) -> Result<Option<TranscriptionEvent>, BackendError> {
     let value: Value =
         serde_json::from_str(text).map_err(|e| BackendError::Transport(format!("bad JSON: {e}")))?;
     if value.get("event").is_some() {
-        Ok(Some(TranscriptionEvent::from_wire(&value)?))
+        Ok(TranscriptionEvent::from_wire(&value)?)
     } else {
         Ok(None)
     }
