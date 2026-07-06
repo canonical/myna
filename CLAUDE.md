@@ -93,7 +93,13 @@ IE115 connections are **persistent** (T47, 2026-07-06): multi-commit per
 connection, `final`↔`delta` / `done`↔`completed` (per-utterance `item_id`), the
 *client* closes after its commit's `completed`; close-before-`completed` is a
 `connection_closed` error, never a synthesised done. (Internal dialect stays
-one-shot.) See `docs/architecture/ie115-wire.md` (frame contract) and
+one-shot; recorded intent is for it to retreat to loopback/testbed-only once
+IE115 is the team wire — see plan T48.) A `session.…transcription.model` the
+server doesn't serve is **rejected** (`model_not_available`), never silently
+substituted; which socket serves which model is T48 (backend discovery,
+unowned). Every `transcription.error` is terminal on the wire today — T31 must
+put any recoverable/advisory disposition **on the wire**, not in client code
+tables. See `docs/architecture/ie115-wire.md` (frame contract) and
 `docs/IE115-resolution.md`.
 Internal vocab:
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading),
@@ -136,6 +142,9 @@ Model cache: `HF_HOME` fixed dir; `hf download` (resumable); verify offline with
 
 ## Open questions (plan workstream E)
 
-Error model / stable codes (T31); performance contract / latency SLOs (needs T12 lab runs);
-residency default policy (T29); audio sample-encoding in `input_formats` — int16-vs-float32
-wire format + where the (currently uniform) int16→float32 conversion lives (T33, **team discussion**).
+Error model / stable codes (T31 — requirement recorded: disposition rides the wire);
+performance contract / latency SLOs (needs T12 lab runs); residency default policy
+(T29 — decided **together with** the client capture-buffer depth, see audio-adapter-api §6);
+backend discovery / model selection across snaps (T48, unowned); audio sample-encoding
+in `input_formats` (T33, **team discussion** — position recorded in the plan row:
+keep s16le, add an `encoding` discriminant, int16→float32 is decode-side reinterpretation).
