@@ -81,8 +81,13 @@ both ends as a selectable wire dialect** (T43/T45/T46): `myna.core.wire_ie115`
 (Python codec) + shape-sniff dispatch in `transport_ws` (`WsUnixIe115Client`);
 `WsUnixIe115Backend` in Rust (`myna-dictate --dialect ie115 [--base64-audio]`).
 The internal flat vocab stays the semantic core; the codec translates on each
-end, so the Rust FSM is untouched. Verified across whisper/nemotron/qwen-c. See
-`docs/architecture/ie115-wire.md` (frame contract) and `docs/IE115-resolution.md`.
+end, so the Rust FSM is untouched. Verified across whisper/nemotron/qwen-c.
+IE115 connections are **persistent** (T47, 2026-07-06): multi-commit per
+connection, `final`↔`delta` / `done`↔`completed` (per-utterance `item_id`), the
+*client* closes after its commit's `completed`; close-before-`completed` is a
+`connection_closed` error, never a synthesised done. (Internal dialect stays
+one-shot.) See `docs/architecture/ie115-wire.md` (frame contract) and
+`docs/IE115-resolution.md`.
 Internal vocab:
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading),
   `ready` (model resident, gate open, nothing decoding yet — client may send

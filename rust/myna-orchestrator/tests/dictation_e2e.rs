@@ -124,3 +124,38 @@ async fn wav_dictation_round_trip_against_real_server() {
 
     std::fs::remove_file(&wav).ok();
 }
+
+/// The same chain over the IE115 dialect (T43/T47): the server holds the
+/// connection open after `completed` (persistent multi-commit shape) and the
+/// client treats its commit's `completed` as the terminal `done`, closing its
+/// own side — no synthesised done, no reliance on a server close.
+#[tokio::test]
+async fn wav_dictation_round_trip_over_ie115_dialect() {
+    let socket = unique_path("sock");
+    let Some(_server) = spawn_fake_server(&socket) else {
+        return; // skip: no venv server
+    };
+    if !wait_for_socket(&socket).await {
+        panic!("server did not bind {} within timeout", socket.display());
+    }
+
+    let wav = write_silence_wav(1);
+    let source = WavFileSource::new(&wav).unwrap();
+    let backend = myna_orchestrator::WsUnixIe115Backend::new(&socket);
+    let mut sink = CollectingSink::default();
+
+    let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+        .await
+        .expect("session opens against the fake server");
+
+    assert_eq!(
+        outcome,
+        SessionOutcome::Completed {
+            transcript: "The quick brown fox jumps over the lazy dog.".into()
+        },
+    );
+    // Committed segments arrive as IE115 deltas and decode back to finals.
+    assert_eq!(sink.finals(), vec!["The quick brown fox", "jumps over the lazy dog."]);
+
+    std::fs::remove_file(&wav).ok();
+}

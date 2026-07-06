@@ -1,10 +1,23 @@
 # IE115 wire dialect — concrete frame contract
 
-**Date:** 2026-07-02
+**Date:** 2026-07-02 · **Amended:** 2026-07-06 (persistent connections, T47)
 **Status:** Draft for implementation — pins the exact frames so the Python
 `myna-server` and the Rust client can speak IE115 end-to-end and give the team
 hands-on experience to continue the design discussion (open items flagged
 inline).
+
+> **Amendment (2026-07-06, T47).** OpenAI-API compatibility is decided, so the
+> connection is now **persistent** (multi-commit): the server does not close
+> after a terminal; each `input_audio_buffer.commit` is answered by its own
+> `…completed` and the connection stays open for the next utterance. This
+> forced the terminal to become a real frame: `final` now maps to `…delta`
+> (committed, append-only — streaming.md §3a) and `done` to `…completed` (one
+> per commit, full utterance transcript, `item_id` per utterance). The *client*
+> closes when finished; a close *before* `completed` is decoded as a
+> `connection_closed` **error**, never a synthesised `done` (a dead server must
+> not read as a successful, possibly truncated, utterance). Our client uses one
+> commit per connection (connect-per-press); compat clients may reuse the
+> connection. §3/§4 below are updated; former open question §7.4 is resolved.
 **Authors:** Claude, with Charles
 **Sources:** `IE115-spec.txt` (Farshid, 2026-06-30), `docs/IE115-resolution.md`
 (team decisions, 2026-07-01), `docs/architecture/ie115-lifecycle.md`,
@@ -130,9 +143,9 @@ the left of the split, server→client on the right.
 |---|---|---|
 | `session.created` (ack) | `session.created` (on connect) + `session.updated` (after a patch) | IE115 splits our single ack into two; see §4 ordering |
 | `transcription.progress{phase}` | **`STATUS{state}`** additive liveness event | `preparing→loading`, `ready→ready`, `transcribing→transcribing`. **Not** an OpenAI event — additive, agreed 2026-07-01 (§lifecycle). `snippet` (unstable) has no IE115 home; carry it as an optional field on STATUS or drop for the PoC (**OPEN**) |
-| `transcription.progress{snippet}` mid-stream | `conversation.item.input_audio_transcription.delta{delta}` — **only once we emit committed deltas** | today we emit *no* committed deltas (commit-on-finalize); our `snippet` is unstable liveness, IE115 `delta` is committed incremental text. Do **not** map snippet→delta (semantics differ). Streaming (T08) fills this in. For now: no `delta` frames; go straight to `completed` |
-| `transcription.final{text}` | `conversation.item.input_audio_transcription.completed{transcript}` | one committed utterance segment |
-| `transcription.done{text}` | (no direct IE115 frame) | terminal end-of-session. IE115 has no session-level "done" — the *last* `completed` is the transcript. **OPEN**: emit a final `completed` and rely on connection close, or add an additive `session.done`? For commit-on-finalize (one utterance) `completed` == `done` |
+| `transcription.progress{snippet}` mid-stream | rides `STATUS` (optional `snippet` field), **never** `delta` | our `snippet` is unstable liveness; IE115 `delta` is committed incremental text — semantics differ |
+| `transcription.final{text}` | `conversation.item.input_audio_transcription.delta{delta}` | committed, append-only segment text (streaming.md §3a); all deltas of an utterance share its `item_id` *(amended 2026-07-06)* |
+| `transcription.done{text}` | `conversation.item.input_audio_transcription.completed{transcript}` | the utterance terminal: one per commit, full transcript, closes the utterance's `item_id`. The connection stays open *(amended 2026-07-06 — was: no frame, close conveys it)* |
 | `transcription.error{code,message}` | `error{error:{type,code,message}}` | §6 taxonomy |
 
 **Object-graph fields we must synthesise.** IE115's transcription events require
@@ -162,9 +175,19 @@ client                                   server
   |            ... (paced) ...             |
   |<----- STATUS{transcribing} ------------|   optional liveness
   |------ input_audio_buffer.commit ------>|   end of utterance (hotkey release)
-  |<----- …transcription.completed --------|   {item_id, content_index:0, transcript}
-  |------ WS close ----------------------->|
+  |<----- …transcription.delta ------------|   committed segments {item_id, delta}
+  |<----- …transcription.completed --------|   utterance terminal {item_id, transcript}
+  |                                        |   connection STAYS OPEN (T47):
+  |------ input_audio_buffer.append ------>|   ... next utterance, same connection,
+  |------ input_audio_buffer.commit ------>|       new item_id ...
+  |<----- …transcription.completed --------|
+  |------ WS close ----------------------->|   the CLIENT closes when finished
 ```
+
+A server close *before* the client's commit is answered by `completed` is an
+error (`connection_closed`), never a synthesised done. Our own client
+(connect-per-press) sends one commit per connection and closes after its
+`completed` — a valid degenerate case of the multi-commit shape.
 
 This differs from our internal sequence only in frame names + the
 `created/updated` split; the **lifecycle** (residency gate on `ready`, pre-ready
@@ -247,9 +270,10 @@ Consolidated; each is a thing code will force that paper left vague:
    — sample-encoding.)
 3. **`prompt` placement** — top-level `session.prompt` vs
    `session.audio.input.transcription.prompt`; IE115 shows both. Pick one.
-4. **`done` semantics** — no IE115 session-level terminal event. Rely on last
-   `completed` + close, or add additive `session.done`? Matters once a session
-   spans multiple utterances (streaming).
+4. ~~**`done` semantics**~~ — **resolved 2026-07-06 (T47):** `completed` *is*
+   the per-utterance terminal on a persistent multi-commit connection; the
+   client closes; close-before-`completed` is an error. No additive
+   `session.done` needed.
 5. **STATUS shape** — field name (`state`), value set (`loading|ready|transcribing`),
    and whether `snippet` rides on it. Name is still "TBD" in the lifecycle doc.
 6. **Overload / lag signal** (Matias) — same additive-event category as STATUS;

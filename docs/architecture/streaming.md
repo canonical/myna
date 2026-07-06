@@ -28,12 +28,13 @@ an answer and defines the metric to hold it to.
 
 - `TranscriptionProgress.snippet` — unstable liveness text, "no accuracy
   guarantee, no retraction — UI animation only." Emitted by no adapter today.
-- `wire_ie115.py`: `TRANSCRIPTION_DELTA` constant defined; the **decoder** maps
-  an inbound IE115 `…transcription.delta` to an unstable `progress.snippet`
-  (deliberately *not* committed). The **encoder** emits no delta frames.
+- `wire_ie115.py` (as amended 2026-07-06, T47 — persistent connections): the
+  codec already speaks committed deltas both ways — `transcription.final` ↔
+  IE115 `…transcription.delta` (committed, append-only), `done` ↔ `…completed`
+  (per-commit terminal). Contract (a) below is therefore already the wire's
+  shape; unstable `snippet` rides `STATUS`, never `delta`.
 - T36 fixed the semantics boundary: IE115 `delta` = committed incremental text;
-  our `snippet` = unstable liveness. Kept distinct on purpose; "committed-delta
-  stream deferred to streaming (T08)."
+  our `snippet` = unstable liveness. Kept distinct on purpose.
 - `Metrics.time_to_first_snippet` already measures first-unstable-text latency.
 
 So the hooks are placed. T08 fills them in — once §2's contract is chosen.
@@ -92,9 +93,10 @@ Net rule:
 - Internal: reuse `transcription.final` for each committed segment; a streaming
   adapter simply emits several, earlier. **No new committed-delta event for the
   PoC** — segmentation (§2.1) covers the demoable win and needs no version churn.
-- IE115: a committed segment already maps to `…transcription.completed`. If/when
-  we add sub-segment committed deltas, they map to `…transcription.delta`
-  (encoder side), and the existing decoder mapping becomes symmetric.
+- IE115 (as amended 2026-07-06, T47): a committed segment maps to
+  `…transcription.delta` and the utterance terminal to `…transcription.completed`
+  — the codec is already symmetric both ways, so segmentation-only streaming
+  needs **no** wire change on either dialect.
 - Unstable motion stays on `progress.snippet` ↔ (optionally) `STATUS`; never
   `delta`.
 
