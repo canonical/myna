@@ -31,7 +31,7 @@ impl TextSink for StdoutSink {
             OrchestratorEvent::Snippet(text) => println!("   … {text}"),
             OrchestratorEvent::Final(text) => println!("   » {text}"),
             OrchestratorEvent::Done(text) => println!("✓ {text}"),
-            OrchestratorEvent::Error { code, message, .. } => {
+            OrchestratorEvent::Error { code, message } => {
                 eprintln!("✗ [{code}] {message}");
             }
             OrchestratorEvent::AudioDropped(reason) => {

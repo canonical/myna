@@ -163,6 +163,12 @@ client's fault and is **dropped** (no buffering server-side).
 > is wrong." Recommend: drop + one non-terminal advisory error so a
 > misbehaving client can self-correct and we can log the contract violation —
 > but it must **not** be treated as terminal (loading itself is not an error).
+>
+> **Implementation stance (2026-07-06):** no server emits `not_ready` today,
+> and clients treat *every* error as terminal (the orchestrator FSM's
+> string-matched advisory/recoverable guesses were deleted — see §3B note). If
+> this advisory is adopted, its non-terminal nature must be a **field on the
+> error frame**, not a code clients must know about.
 
 ### 3B. Error mid-stream
 
@@ -180,6 +186,13 @@ client's fault and is **dropped** (no buffering server-side).
 > declare terminal-vs-recoverable and client-vs-server fault so the client knows
 > whether to retry or surface a hard failure. `model_load_failed` (3B/OOM) is
 > terminal; a transient decode hiccup may be recoverable.
+>
+> **Requirement recorded 2026-07-06 (feeds T31):** the disposition must ride
+> **on the wire** (e.g. an additive `error.recoverable: bool`), never as a
+> client-side code→disposition table — three drifting copies of that table is
+> how we found this out (`ie115-wire.md` §6). Until the flag exists, every
+> error is terminal on both dialects, and the client FSM implements exactly
+> that (its speculative recoverable/advisory branches were removed).
 
 ### 3C. Buffer drain on COMMIT — COMMIT is not "done"
 

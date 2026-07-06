@@ -263,6 +263,17 @@ and terminal. Implementing it forces the T31 question: *is four codes enough?*
 Almost certainly not (no retryable/terminal axis, no client/server-fault axis
 beyond the type). Record the collisions we hit as T31 evidence.
 
+> **T31 requirement (recorded 2026-07-06): the disposition must ride the
+> wire.** Whatever code set T31 lands on, whether an error is
+> terminal/recoverable/advisory has to be a **field on the error frame** (e.g.
+> `error.recoverable: bool`, additive), not a client-side code→disposition
+> lookup table. Three independent copies of that table already existed (the
+> Rust FSM's `classify_error` string-match, the lossy `_ERROR_TO_IE115` map,
+> the ws server's terminal-always behavior) and were guaranteed to drift; the
+> Rust one was deleted (2026-07-06) — every client now treats every error as
+> terminal, which is the wire's real contract today. Reintroduce retry
+> semantics only when the flag exists on the wire.
+
 > **`model_loading` as an error is wrong** (review comment `[n]`, and our own
 > position): loading is a **liveness property**, not a failure. We surface it as
 > `STATUS{loading}` (additive) and **do not** emit `server_error/model_loading`.
