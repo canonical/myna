@@ -159,9 +159,9 @@ class _SessionHandler:
                 await ws.close()
             return
 
-        ie115_config = self._parse_session_update(opening)
-        if ie115_config is not None:
-            await self._handle_ie115(ws, ie115_config, caps=caps)
+        update = self._parse_session_update(opening)
+        if update is not None:
+            await self._handle_ie115(ws, *update, caps=caps)
             return
 
         start = self._parse_start(opening)
@@ -203,7 +203,12 @@ class _SessionHandler:
         await self._pump_session(ws, config, on_text=on_text, emit=emit)
 
     async def _handle_ie115(
-        self, ws: ServerConnection, config: SessionConfig, *, caps: Capabilities
+        self,
+        ws: ServerConnection,
+        config: SessionConfig,
+        requested_model: str | None,
+        *,
+        caps: Capabilities,
     ) -> None:
         """IE115 dialect: OpenAI-shaped frames translated via ``wire_ie115``.
         The ``session.created`` greeting already went out in ``handle``.
@@ -213,8 +218,30 @@ class _SessionHandler:
         one adapter session, terminated by its ``completed`` — and the
         connection stays open for the next. The *client* closes when it is
         finished; the server only closes after the client does."""
-        model = caps.models[0] if caps.models else None
         encoder = Ie115Encoder()
+
+        # One model per process: a request for a model this server does not
+        # serve is REJECTED, never silently answered by a different model (a
+        # compat client asking for X must not get Y). Selecting *which* server
+        # to dial is the discovery layer's job (plan T48), not this session's.
+        if requested_model is not None and requested_model not in caps.models:
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(
+                    json.dumps(
+                        encoder.encode(
+                            TranscriptionError(
+                                code="model_not_available",
+                                message=(
+                                    f"this server serves {list(caps.models)!r}, "
+                                    f"not {requested_model!r}"
+                                ),
+                            )
+                        )
+                    )
+                )
+                await ws.close()
+            return
+        model = requested_model or (caps.models[0] if caps.models else None)
 
         with contextlib.suppress(ConnectionClosed):
             await ws.send(
@@ -384,16 +411,22 @@ class _SessionHandler:
             return None
 
     @staticmethod
-    def _parse_session_update(frame: str | bytes) -> SessionConfig | None:
-        """Parse an IE115 ``session.update`` into a flat ``SessionConfig``, or
-        ``None`` if the frame isn't one (the shape-sniff hook)."""
+    def _parse_session_update(frame: str | bytes) -> tuple[SessionConfig, str | None] | None:
+        """Parse an IE115 ``session.update`` into ``(config, requested_model)``,
+        or ``None`` if the frame isn't one (the shape-sniff hook). The model is
+        kept separate from the flat config: it names *which server* should
+        answer, not how this session decodes."""
         if isinstance(frame, bytes):
             return None
         try:
             message = json.loads(frame)
             if message.get("type") != SESSION_UPDATE:
                 return None
-            return session_config_from_ie115(message.get("session") or {})
+            session = message.get("session") or {}
+            transcription = (((session.get("audio") or {}).get("input")) or {}).get(
+                "transcription"
+            ) or {}
+            return session_config_from_ie115(session), transcription.get("model")
         except (ValueError, TypeError):
             return None
 
