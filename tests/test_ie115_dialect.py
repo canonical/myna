@@ -259,6 +259,63 @@ async def test_ie115_stock_client_can_wait_for_the_greeting(tmp_path):
                     break
 
 
+async def test_ie115_rejects_a_model_this_server_does_not_serve(tmp_path):
+    """One model per process: a ``session.update`` naming a model this server
+    does not serve is rejected with an error, never silently answered by a
+    different model (a compat client asking for X must not get Y)."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "ubustt.sock"
+    async with serve_unix(FakeAdapter(), socket_path):  # serves only "fake"
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {"input": {"transcription": {"model": "whisper-large"}}},
+                        },
+                    }
+                )
+            )
+            reply = json.loads(await ws.recv())
+            assert reply["type"] == w.ERROR
+            assert reply["error"]["type"] == "invalid_request_error"
+            assert reply["error"]["code"] == "invalid_parameter"
+            assert "whisper-large" in reply["error"]["message"]
+
+
+async def test_ie115_serves_a_correctly_named_model(tmp_path):
+    """Naming the model the server actually serves is acknowledged, and the
+    ``session.updated`` echo carries it back."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "ubustt.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {"input": {"transcription": {"model": "fake"}}},
+                        },
+                    }
+                )
+            )
+            updated = json.loads(await ws.recv())
+            assert updated["type"] == w.SESSION_UPDATED
+            assert updated["session"]["audio"]["input"]["transcription"]["model"] == "fake"
+
+
 async def test_ie115_connection_persists_across_commits(tmp_path):
     """The OpenAI multi-commit shape (decided 2026-07-06): one connection carries
     several commit cycles, each answered by its own `completed`; the server does
