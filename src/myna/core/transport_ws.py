@@ -77,6 +77,15 @@ from myna.core.wire_ie115 import (
 
 _TERMINAL = ("transcription.done", "transcription.error")
 
+# Bound on the audio backlog the server holds per connection, in chunks
+# (~26 s at the client's ~100 ms chunks). Bounded, not unbounded, per the
+# bounded-buffer invariant: when a slow adapter falls behind on long-form
+# dictation, `put` blocks the WS reader, and backpressure propagates to the
+# client through the socket instead of growing server memory. This queue is
+# also where a future overload/lag signal (open item, Matias) would be
+# measured — design that signal against this bound.
+_AUDIO_QUEUE_MAXSIZE = 256
+
 
 _SD_LISTEN_FDS_START = 3  # systemd passes listening sockets from fd 3 up
 
@@ -253,7 +262,7 @@ class _SessionHandler:
         # One reader for the whole connection; _COMMIT marks utterance
         # boundaries in-band, None marks the client closing the connection.
         _COMMIT = object()
-        frames: asyncio.Queue[PcmChunk | object | None] = asyncio.Queue()
+        frames: asyncio.Queue[PcmChunk | object | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
 
         async def read_frames() -> None:
             try:
@@ -344,7 +353,7 @@ class _SessionHandler:
         closes after the terminal event): binary frames -> PCM; text frames
         dispatched by ``on_text`` (finish/ignore); events out via ``emit``.
         The reader runs concurrently with the adapter (commit-drain)."""
-        audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue()
+        audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
 
         async def read_frames() -> None:
             try:
