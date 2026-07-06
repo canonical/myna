@@ -74,7 +74,10 @@ mismatch the server sends a terminal
 `transcription.error(unsupported_protocol_version)`. The version is in-band
 (not a WS subprotocol token) so it stays transport-agnostic, and it versions
 the whole contract — event vocab + config + capabilities shapes — as one
-number (adding an event type is breaking, so bump it). Control frames carry a `type`
+number. Compat is **additive** (aligned with IE115, 2026-07-06): unknown event
+types / frames / phases are ignored on both ends, so adding an event is NOT a
+bump; bump only for semantic changes to existing events/shapes. The IE115
+dialect itself is declared unversioned-additive. Control frames carry a `type`
 key; transcript events carry an `event` key.
 
 Event vocabulary (`myna.core.events`) — this is myna's **internal** contract.
@@ -102,7 +105,8 @@ Internal vocab:
 - `transcription.error` — terminal; `code` + `message`.
 
 No `partial`/`replace`/epoch retraction (dropped as confusing). Adding an event?
-Document it here and flag it provisional.
+Document it here and flag it provisional (additive: old clients ignore it — no
+version bump needed).
 
 Discovery: before a session a client may send `capabilities.query` (WS) /
 `client.capabilities()` and get a `Capabilities` doc (models, languages,

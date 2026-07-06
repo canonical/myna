@@ -3,8 +3,11 @@
 //!
 //! The wire encoding is a transport-agnostic object shape,
 //! `{"event": <type>, "data": {…}}`, so a transport only frames these objects.
-//! Adding an event type is a breaking change ([`TranscriptionEvent::from_wire`]
-//! rejects unknown types), versioned as part of [`crate::protocol`].
+//! The vocabulary is **additive** (aligned 2026-07-06 with the IE115
+//! direction): [`TranscriptionEvent::from_wire`] returns `Ok(None)` for an
+//! unknown event type and callers skip it, so a new server-side event does not
+//! break deployed clients. [`crate::protocol`] version bumps are reserved for
+//! semantic changes to existing events/shapes.
 //!
 //! Semantics (unchanged from the Python contract):
 //! - [`TranscriptionEvent::Progress`] — liveness; never committed text. `phase`
@@ -117,8 +120,6 @@ pub enum TranscriptionEvent {
 pub enum WireError {
     #[error("frame is not a transcript event (missing string \"event\" key)")]
     NotAnEvent,
-    #[error("unknown event type: {0:?}")]
-    UnknownEvent(String),
     #[error("malformed event data: {0}")]
     BadData(#[from] serde_json::Error),
 }
@@ -150,22 +151,22 @@ impl TranscriptionEvent {
         json!({ "event": self.event_type(), "data": data })
     }
 
-    /// Decode from the wire object (Python `event_from_wire`), rejecting unknown
-    /// event types the way the Python side does.
-    pub fn from_wire(wire: &Value) -> Result<Self, WireError> {
+    /// Decode from the wire object (Python `event_from_wire`). `Ok(None)` for an
+    /// unknown event type — additive compat, the caller skips it.
+    pub fn from_wire(wire: &Value) -> Result<Option<Self>, WireError> {
         let event = wire.get("event").and_then(Value::as_str).ok_or(WireError::NotAnEvent)?;
         // Python: `dict(wire.get("data") or {})` — a missing/null data is {}.
         let data = match wire.get("data") {
             Some(Value::Null) | None => json!({}),
             Some(v) => v.clone(),
         };
-        Ok(match event {
+        Ok(Some(match event {
             EVENT_PROGRESS => TranscriptionEvent::Progress(serde_json::from_value(data)?),
             EVENT_FINAL => TranscriptionEvent::Final(serde_json::from_value(data)?),
             EVENT_DONE => TranscriptionEvent::Done(serde_json::from_value(data)?),
             EVENT_ERROR => TranscriptionEvent::Error(serde_json::from_value(data)?),
-            other => return Err(WireError::UnknownEvent(other.to_string())),
-        })
+            _ => return Ok(None),
+        }))
     }
 }
 
@@ -180,9 +181,9 @@ mod tests {
         let expected: Value = serde_json::from_str(golden).unwrap();
         assert_eq!(event.to_wire(), expected, "wire mismatch vs Python golden");
         // Round-trip: decoding our own output reproduces the event.
-        assert_eq!(&TranscriptionEvent::from_wire(&event.to_wire()).unwrap(), event);
+        assert_eq!(&TranscriptionEvent::from_wire(&event.to_wire()).unwrap().unwrap(), event);
         // And decoding the Python golden reproduces it too.
-        assert_eq!(&TranscriptionEvent::from_wire(&expected).unwrap(), event);
+        assert_eq!(&TranscriptionEvent::from_wire(&expected).unwrap().unwrap(), event);
     }
 
     #[test]
@@ -259,12 +260,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_event_type_rejected() {
+    fn unknown_event_type_is_ignored_not_rejected() {
+        // Additive compat: a new server-side event must not break this client.
         let wire = json!({"event": "transcription.partial", "data": {}});
-        assert!(matches!(
-            TranscriptionEvent::from_wire(&wire),
-            Err(WireError::UnknownEvent(t)) if t == "transcription.partial"
-        ));
+        assert!(matches!(TranscriptionEvent::from_wire(&wire), Ok(None)));
     }
 
     #[test]
@@ -278,7 +277,7 @@ mod tests {
         // Python `event_from_wire` treats absent/null data as {} → defaults.
         let wire = json!({"event": "transcription.progress"});
         assert_eq!(
-            TranscriptionEvent::from_wire(&wire).unwrap(),
+            TranscriptionEvent::from_wire(&wire).unwrap().unwrap(),
             TranscriptionEvent::Progress(Progress::default())
         );
     }

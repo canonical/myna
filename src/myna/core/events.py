@@ -2,10 +2,12 @@
 
 PROVISIONAL — this tracks the working vocabulary in CLAUDE.md, which simplifies
 earlier IE114 drafts (no ``partial``/``replace``/epochs; retraction semantics
-were dropped as confusing). If you add an event type, document it in CLAUDE.md,
-flag it provisional, and bump ``myna.core.protocol.PROTOCOL_VERSION`` — the
-event vocabulary is versioned as part of the wire contract (``event_from_wire``
-rejects unknown types, so a new event is a breaking change for old clients).
+were dropped as confusing). If you add an event type, document it in CLAUDE.md
+and flag it provisional. The compat policy is **additive** (aligned with the
+IE115 direction, 2026-07-06): ``event_from_wire`` returns ``None`` for an
+unknown event type and clients skip it, so adding an event is not a breaking
+change. Bump ``myna.core.protocol.PROTOCOL_VERSION`` only for *semantic*
+changes to existing events or config/capabilities shapes.
 
 IE115 reconciliation (T36, see ``docs/IE115-deviations.md`` §1.1): we keep these
 flat ``transcription.*`` names rather than adopting IE115's five-deep OpenAI
@@ -127,10 +129,12 @@ def event_to_wire(event: TranscriptionEvent) -> dict[str, Any]:
     return {"event": event.type, "data": asdict(event)}
 
 
-def event_from_wire(wire: dict[str, Any]) -> TranscriptionEvent:
+def event_from_wire(wire: dict[str, Any]) -> TranscriptionEvent | None:
+    """Decode a wire event, or ``None`` for an unknown event type (additive
+    compat: a new server-side event must not break deployed clients — skip it)."""
     cls = _EVENT_TYPES.get(wire.get("event", ""))
     if cls is None:
-        raise ValueError(f"unknown event type: {wire.get('event')!r}")
+        return None
     data = dict(wire.get("data") or {})
     if "segments" in data:
         data["segments"] = tuple(Segment(**s) for s in data["segments"])
