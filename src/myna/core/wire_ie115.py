@@ -79,6 +79,7 @@ _ERROR_TO_IE115 = {
     "unsupported_audio_format": ("invalid_request_error", "invalid_parameter"),
     "unsupported_protocol_version": ("invalid_request_error", "invalid_parameter"),
     "language_not_supported": ("invalid_request_error", "invalid_parameter"),
+    "model_not_available": ("invalid_request_error", "invalid_parameter"),
     "invalid_parameter": ("invalid_request_error", "invalid_parameter"),
     "unknown_parameter": ("invalid_request_error", "unknown_parameter"),
     "inference_failed": ("server_error", "server_error"),

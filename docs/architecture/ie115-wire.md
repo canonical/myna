@@ -133,6 +133,16 @@ are out of our subset. `session.update` is a **merge/patch** onto server default
 > cost for compat; implementing it is how we find out if it bites. Log-once on
 > an ignored inbound field would surface it without breaking compat (**proposed**).
 
+**`model` is honoured or rejected, never silently substituted** (2026-07-06).
+One model per server process (residency semantics stay clean). If
+`session.audio.input.transcription.model` names the served model, the
+`session.updated` echo carries it; if it names anything else, the server
+answers `error{invalid_request_error/invalid_parameter}` (internal code
+`model_not_available`) and closes — a compat client asking for model X must
+never silently get model Y. Choosing *which* socket/server to dial for a given
+model is a discovery/selection concern above the session (plan T48 — currently
+unowned between workstreams B, D, G).
+
 ## 3. Event mapping — internal ↔ IE115 (the codec's whole job)
 
 This realises the mapping already documented in `events.py`. Client→server on
@@ -246,12 +256,12 @@ two types:
 | `server_error` | `model_loading` | **contested** — see below |
 
 Our internal codes (`unsupported_audio_format`, `inference_failed`,
-`unsupported_protocol_version`, `language_not_supported`, …) must map onto these
-four for the IE115 dialect. That mapping is **lossy** — IE115 has no
-`unsupported_protocol_version`, no distinction between recoverable and terminal.
-Implementing it forces the T31 question: *is four codes enough?* Almost certainly
-not (no retryable/terminal axis, no client/server-fault axis beyond the type).
-Record the collisions we hit as T31 evidence.
+`unsupported_protocol_version`, `language_not_supported`, `model_not_available`,
+…) must map onto these four for the IE115 dialect. That mapping is **lossy** —
+IE115 has no `unsupported_protocol_version`, no distinction between recoverable
+and terminal. Implementing it forces the T31 question: *is four codes enough?*
+Almost certainly not (no retryable/terminal axis, no client/server-fault axis
+beyond the type). Record the collisions we hit as T31 evidence.
 
 > **`model_loading` as an error is wrong** (review comment `[n]`, and our own
 > position): loading is a **liveness property**, not a failure. We surface it as
