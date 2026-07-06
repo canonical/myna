@@ -456,8 +456,12 @@ class _WsSession:
                 message = json.loads(frame)
                 if message.get("type") == "session.created":
                     self.protocol_version = message.get("protocol_version")
-                    continue  # control frame, not a transcript event
+                    continue  # the server's greeting, not a transcript event
+                if "event" not in message:
+                    continue  # other control frames: ignore
                 event = event_from_wire(message)
+                if event is None:
+                    continue  # unknown event type: additive, skip
                 yield event
                 if event.type in _TERMINAL:
                     return

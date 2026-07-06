@@ -4,11 +4,21 @@ A single version number covers the whole client↔service contract over a
 transport: the opening handshake (``session.start`` / ``session.created``), the
 event vocabulary (``myna.core.events``), and the ``SessionConfig`` /
 ``Capabilities`` wire shapes. It is deliberately *one* number, not one per
-message — adding or renaming an event type, or changing a config/capabilities
-field, is a change to the set, so a client and service that disagree fail fast
-rather than silently misinterpret frames. (Note that even additive event types
-are breaking: ``event_from_wire`` rejects unknown types, so an old client can't
-ignore a new event. Bump on any such change.)
+message — renaming an event type or changing the semantics of an existing
+event/config/capabilities field is a change to the set, so a client and service
+that disagree fail fast rather than silently misinterpret frames.
+
+Compat policy (aligned 2026-07-06 with the adopted IE115 direction): the
+vocabulary is **additive** — unknown event types are ignored by clients
+(``event_from_wire`` returns ``None``), unknown progress phases are ignored by
+the Rust FSM, and unknown IE115 frames are ignored by both decoders. Adding an
+event is therefore *not* a version bump; reserve bumps for semantic changes to
+things that already exist. The IE115 dialect itself carries no negotiated
+version — it is declared **unversioned-additive** (OpenAI parity; a stock
+client has nothing to negotiate with). The server *announces* the version it
+speaks as an additive ``protocol_version`` field on the ``session.created``
+greeting it sends on every connection, whichever dialect follows, so a
+version-aware client can still learn it.
 
 Transport-agnostic by design (CLAUDE.md: transport behind an abstraction). The
 version travels *in band* in the opening handshake, not as a WebSocket

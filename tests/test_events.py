@@ -45,9 +45,10 @@ def test_progress_phase_defaults_and_crosses_the_wire():
     assert event_from_wire(wire).phase == PHASE_PREPARING
 
 
-def test_unknown_event_rejected():
-    with pytest.raises(ValueError):
-        event_from_wire({"event": "transcription.replace", "data": {}})
+def test_unknown_event_is_ignored_not_rejected():
+    """Additive compat (2026-07-06): a new server-side event type must not
+    break a deployed client — the decoder returns None and callers skip it."""
+    assert event_from_wire({"event": "transcription.replace", "data": {}}) is None
 
 
 def test_session_config_wire_roundtrip():

@@ -74,6 +74,16 @@ rather than inventing a new negotiation.
 > `session.created` ack — there is no second, post-`session.start` ack; version
 > mismatch is still answered by the terminal
 > `transcription.error(unsupported_protocol_version)`.
+>
+> **Versioning stance (2026-07-06, closes the "IE115 bypasses T35" gap).** The
+> IE115 dialect is **unversioned-additive** by declaration: a stock OpenAI
+> client has nothing to negotiate with, so compatibility rests on additive
+> evolution — unknown frame types, unknown fields, and unknown `STATUS` states
+> are ignored on both ends (both codecs already do). The internal dialect now
+> follows the same additive policy (`event_from_wire` ignores unknown event
+> types; `PROTOCOL_VERSION` bumps are reserved for *semantic* changes to
+> existing events/shapes). A version-aware client on either dialect learns the
+> served version from the greeting's `protocol_version` field.
 
 ## 2. Session configuration — nested (the team kept OpenAI's shape)
 
@@ -262,8 +272,11 @@ contract ("handle present *and* absent") is what we're validating.
 
 Consolidated; each is a thing code will force that paper left vague:
 
-1. **Dialect selection** — shape-sniff vs explicit token (§1). Recommend
-   shape-sniff for OpenAI-client compat.
+1. ~~**Dialect selection**~~ — **resolved 2026-07-06 (§1):** shape-sniff, with
+   the server speaking first (one `session.created` greeting on connect), so a
+   stock OpenAI client that waits for `session.created` cannot deadlock.
+   Versioning stance also settled in §1: IE115 is unversioned-additive; the
+   greeting announces the served `protocol_version` additively.
 2. **Audio format completeness** — IE115's `format` carries only `rate` + `type`.
    Channels (mono) and sample width (16-bit) are implicit. Where do we assert
    them, and how do we reject stereo/float without a field to name? (ties to T33
