@@ -51,6 +51,18 @@ pub trait AudioSource: Send {
     fn capture(self: Box<Self>) -> CaptureStream;
 }
 
+/// A boxed source is a source — lets callers pick an implementation at
+/// runtime (e.g. live mic vs WAV clip) and hand it to generic consumers.
+impl AudioSource for Box<dyn AudioSource> {
+    fn format(&self) -> AudioFormat {
+        (**self).format()
+    }
+
+    fn capture(self: Box<Self>) -> CaptureStream {
+        (*self).capture()
+    }
+}
+
 /// A cheap, cloneable graceful-stop handle (audio-adapter-api §3/§5): setting
 /// it makes an in-flight capture **drain then end** (stream yields `None`),
 /// which the orchestrator reads as end-of-audio — the clean hotkey-release

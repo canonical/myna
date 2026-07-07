@@ -46,8 +46,9 @@ cloud, no persistent audio.
   `myna-core::capture`) — `CaptureBackend` seam, adapter-owned pre-ready ring
   (drop-oldest + stats tap; real DSP stays in PipeWire filter-chain). T49 (API
   v2, `docs/audio-adapter-api.md`) and T50 (skeleton crate + `ScriptedBackend`
-  fake, drop-in proven through the T41 runner) are **done**; next is T51
-  (pw-record subprocess backend + live-mic verification), then T52
+  fake, drop-in proven through the T41 runner) are **done**; T51 (pw-record
+  subprocess backend, `myna-dictate --mic`) is code-complete and live-verified
+  against the fake adapter — one spoken whisper run remains, then T52
   (native pipewire-rs). Inference snap server: Ivano.
 
 ## Invariants (don't violate)
