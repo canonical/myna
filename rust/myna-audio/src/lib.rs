@@ -25,20 +25,23 @@
 //! so nothing said during a cold load is lost, up to the ring depth. Overflow
 //! is drop-oldest, surfaced as [`AudioStats::dropped`].
 //!
-//! Backends: [`ScriptedBackend`] (the permanent fake fixture, this crate's
-//! T50 deliverable), `PwRecordBackend` (subprocess, T51), `PipeWireBackend`
-//! (native `pipewire-rs`, T52). Real DSP (noise suppression etc.) is PipeWire
+//! Backends: [`ScriptedBackend`] (the permanent fake fixture, T50),
+//! [`PwRecordBackend`] (live capture via a `pw-record` subprocess, T51),
+//! `PipeWireBackend` (native `pipewire-rs`, T52 — device/channel enumeration,
+//! no fork). Real DSP (noise suppression etc.) is PipeWire
 //! filter-chain territory upstream of the capture node — this crate observes,
 //! it never transforms (§10).
 
 mod backend;
 mod fake;
+mod pw_record;
 mod ring;
 mod source;
 mod stats;
 
 pub use backend::{CaptureBackend, CaptureSpec, Producer};
 pub use fake::{ScriptedBackend, Step};
+pub use pw_record::PwRecordBackend;
 pub use source::{CaptureSource, CaptureSourceBuilder, DEFAULT_CHUNK, DEFAULT_RING_DEPTH};
 pub use stats::AudioStats;
 

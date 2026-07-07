@@ -13,24 +13,32 @@
 //! ```text
 //!   myna-server --adapter fake --socket /tmp/myna.sock &
 //!   myna-dictate --socket /tmp/myna.sock --clip corpus/real/audio/<id>.wav
+//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone (T51)
 //! ```
 //!
 //! Press Enter to start an utterance, Enter again to stop (or let the clip play
 //! out); the transcript prints. `Ctrl-D` quits. `--corpus <dir>` cycles through
-//! a corpus manifest instead of a single clip.
+//! a corpus manifest instead of a single clip. `--mic` captures live audio via
+//! `myna-audio` (`pw-record` backend): capture starts at press and buffers in
+//! the pre-ready ring while the model loads, so nothing said is lost.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
+use myna_audio::{AudioStats, CaptureSource, PwRecordBackend};
+use myna_core::{AudioFormat, AudioSource, SessionConfig, StopHandle};
 use myna_orchestrator::{
     run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge,
     WavFileSource, WsUnixBackend, WsUnixIe115Backend,
 };
-use myna_core::SessionConfig;
+use tokio::sync::watch;
 
 struct Args {
     socket: PathBuf,
     clips: Vec<Clip>,
+    mic: bool,
+    target: Option<String>,
     language: Option<String>,
     realtime: bool,
     dialect: Dialect,
@@ -55,12 +63,14 @@ const USAGE: &str = "\
 myna-dictate — orchestrator push-to-talk demo (T41)
 
 USAGE:
-    myna-dictate --socket <path> (--clip <wav> | --corpus <dir>) [options]
+    myna-dictate --socket <path> (--clip <wav> | --corpus <dir> | --mic) [options]
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server (required)
     --clip <wav>       a single PCM WAV clip to dictate (repeatable)
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
+    --mic              capture the live microphone (myna-audio / pw-record)
+    --target <node>    PipeWire node.name to capture from (with --mic)
     --language <lang>  language hint sent in the session config (e.g. en)
     --dialect <name>   wire dialect: `internal` (default) or `ie115`
     --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
@@ -72,6 +82,8 @@ OPTIONS:
 fn parse_args() -> Result<Args, String> {
     let mut socket = None;
     let mut clips = Vec::new();
+    let mut mic = false;
+    let mut target = None;
     let mut language = None;
     let mut realtime = true;
     let mut dialect = Dialect::Internal;
@@ -86,6 +98,8 @@ fn parse_args() -> Result<Args, String> {
             "--socket" => socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
             "--clip" => clips.push(Clip { path: PathBuf::from(next(&mut it, "--clip")?), reference: None }),
             "--corpus" => load_corpus(&PathBuf::from(next(&mut it, "--corpus")?), &mut clips)?,
+            "--mic" => mic = true,
+            "--target" => target = Some(next(&mut it, "--target")?),
             "--language" => language = Some(next(&mut it, "--language")?),
             "--dialect" => dialect = match next(&mut it, "--dialect")?.as_str() {
                 "internal" => Dialect::Internal,
@@ -98,13 +112,19 @@ fn parse_args() -> Result<Args, String> {
         }
     }
     let socket = socket.ok_or_else(|| format!("--socket is required\n\n{USAGE}"))?;
-    if clips.is_empty() {
-        return Err(format!("one of --clip / --corpus is required\n\n{USAGE}"));
+    if mic && !clips.is_empty() {
+        return Err("--mic and --clip/--corpus are mutually exclusive".into());
+    }
+    if !mic && clips.is_empty() {
+        return Err(format!("one of --clip / --corpus / --mic is required\n\n{USAGE}"));
+    }
+    if target.is_some() && !mic {
+        return Err("--target only applies to --mic".into());
     }
     if base64_audio && dialect != Dialect::Ie115 {
         return Err("--base64-audio only applies to --dialect ie115".into());
     }
-    Ok(Args { socket, clips, language, realtime, dialect, base64_audio })
+    Ok(Args { socket, clips, mic, target, language, realtime, dialect, base64_audio })
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -174,22 +194,42 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             break;
         }
 
-        let clip = &args.clips[next_clip % args.clips.len()];
-        next_clip += 1;
-        if let Some(reference) = &clip.reference {
-            println!("── clip {}: (reference: {reference})", clip.path.display());
+        // Build this utterance's source: live mic (T51) or the next clip.
+        // Boxed so both kinds run through the same loop below.
+        let (source, stop, mic_stats): (
+            Box<dyn AudioSource>,
+            StopHandle,
+            Option<watch::Receiver<AudioStats>>,
+        ) = if args.mic {
+            let mut builder = CaptureSource::builder(AudioFormat::default());
+            if let Some(node) = &args.target {
+                builder = builder.target(node.clone());
+            }
+            let source = builder.backend(Box::new(PwRecordBackend::new())).build();
+            println!("── mic: capturing (Enter to stop)");
+            let stats = source.stats();
+            let stop = source.stop_handle();
+            (Box::new(source), stop, Some(stats))
         } else {
-            println!("── clip {}", clip.path.display());
-        }
-
-        let source = match WavFileSource::new(&clip.path) {
-            Ok(s) => s.realtime(args.realtime),
-            Err(e) => {
-                eprintln!("✗ cannot open {}: {e}", clip.path.display());
-                continue;
+            let clip = &args.clips[next_clip % args.clips.len()];
+            next_clip += 1;
+            if let Some(reference) = &clip.reference {
+                println!("── clip {}: (reference: {reference})", clip.path.display());
+            } else {
+                println!("── clip {}", clip.path.display());
+            }
+            match WavFileSource::new(&clip.path) {
+                Ok(s) => {
+                    let s = s.realtime(args.realtime);
+                    let stop = s.stop_handle();
+                    (Box::new(s), stop, None)
+                }
+                Err(e) => {
+                    eprintln!("✗ cannot open {}: {e}", clip.path.display());
+                    continue;
+                }
             }
         };
-        let stop = source.stop_handle();
         let config = SessionConfig { language: args.language.clone(), ..Default::default() };
 
         // Run the utterance while watching for a Release edge (graceful early
@@ -216,6 +256,20 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
                 eprintln!("✗ session failed [{code}]: {message}");
             }
             Err(e) => eprintln!("✗ could not open session: {e}"),
+        }
+
+        // The T51 acceptance readout: how much the mic captured and whether
+        // the pre-ready ring aged anything out (zero drops expected).
+        if let Some(stats) = mic_stats {
+            let s = *stats.borrow();
+            if s.dropped > Duration::ZERO {
+                println!(
+                    "  (mic: captured {:.1?} — DROPPED {:.1?}: ring overflow, transcript starts mid-utterance)",
+                    s.captured, s.dropped
+                );
+            } else {
+                println!("  (mic: captured {:.1?}, zero drops)", s.captured);
+            }
         }
 
         if quit {
