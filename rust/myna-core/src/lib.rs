@@ -18,12 +18,14 @@
 //!   has no serde impl.
 
 pub mod audio;
+pub mod capture;
 pub mod control;
 pub mod events;
 pub mod protocol;
 pub mod session;
 
 pub use audio::{AudioFormat, PcmChunk};
+pub use capture::{AudioSource, CaptureError, CaptureStream, StopHandle};
 pub use control::{ClientControl, ServerControl};
 pub use events::{
     ErrorData, Progress, Segment, TranscriptionEvent, TranscriptionFinal, WireError,

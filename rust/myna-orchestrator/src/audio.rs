@@ -1,8 +1,9 @@
-//! The audio-capture boundary (plan T41) — the `AudioSource` trait from
-//! `docs/audio-adapter-api.md` §3, plus the [`WavFileSource`] mock used to drive
-//! the orchestrator end-to-end before the real PipeWire adapter (Matias, T20)
-//! lands. The trait signature matches the audio-adapter API exactly, so that
-//! crate drops in behind it unchanged.
+//! The audio-capture boundary (plan T41) — re-exports the consumer contract
+//! from `myna_core::capture` (`docs/audio-adapter-api.md` §3, moved there in
+//! T50 so the `myna-audio` adapter crate never depends on the orchestrator),
+//! plus the [`WavFileSource`] mock used to drive the orchestrator end-to-end.
+//! The real adapter (`myna-audio::CaptureSource`, T50–T52) drops in behind the
+//! same trait unchanged.
 //!
 //! Invariants honoured (audio-adapter-api §1): the client owns capture and
 //! pushes PCM; the source produces **exactly** its declared [`AudioFormat`] and
@@ -11,59 +12,11 @@
 //! stall.
 
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use bytes::Bytes;
-use futures_util::Stream;
 use myna_core::{AudioFormat, PcmChunk};
-use thiserror::Error;
 
-/// A capture-side fault (audio-adapter-api §4). Surfaced as an `Err` stream item
-/// so the dictation service turns it into a terminal session error rather than a
-/// silent stall.
-#[derive(Debug, Error)]
-pub enum CaptureError {
-    #[error("audio device unavailable: {0}")]
-    DeviceUnavailable(String),
-    #[error("requested format {0:?} cannot be produced")]
-    UnsupportedFormat(AudioFormat),
-    #[error("capture backend failed: {0}")]
-    Backend(String),
-}
-
-/// The stream a source yields once capturing: chunks until a clean end (`None`)
-/// or a fatal fault (one `Err`, then `None`).
-pub type CaptureStream = Pin<Box<dyn Stream<Item = Result<PcmChunk, CaptureError>> + Send>>;
-
-/// A source of push-side PCM (audio-adapter-api §3). The dictation service sets
-/// the exact [`AudioFormat`] from the STT service's advertised capabilities; the
-/// source produces exactly that and nothing else.
-pub trait AudioSource: Send {
-    /// The exact format this source emits.
-    fn format(&self) -> AudioFormat;
-
-    /// Begin capture, consuming the source.
-    fn capture(self: Box<Self>) -> CaptureStream;
-}
-
-/// A cheap, cloneable graceful-stop handle (audio-adapter-api §5): setting it
-/// makes an in-flight [`WavFileSource`] capture **drain then end** (stream
-/// yields `None`), which the orchestrator reads as end-of-audio — the clean
-/// hotkey-release path. Dropping the stream instead is the abort path.
-#[derive(Clone, Debug, Default)]
-pub struct StopHandle(Arc<AtomicBool>);
-
-impl StopHandle {
-    pub fn stop(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    fn is_stopped(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
+pub use myna_core::capture::{AudioSource, CaptureError, CaptureStream, StopHandle};
 
 /// Streams an uncompressed PCM WAV file as chunks in its native format — the
 /// WAV-backed mock for the orchestrator demo and tests. `realtime` paces chunks

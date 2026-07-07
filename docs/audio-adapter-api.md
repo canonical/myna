@@ -178,11 +178,11 @@ pub struct CaptureSpec {
 /// Where the backend delivers PCM. Push is synchronous and never blocks —
 /// callable from a tokio task, a plain thread, or a realtime callback.
 /// Overflow is the ring's problem (drop-oldest), never the backend's.
-pub struct Producer(/* ring + stats internals */);
+pub struct Producer(/* ring + stats + re-chunk internals */);
 impl Producer {
     /// Deliver raw PCM (any size). Returns false once the consumer is gone
     /// or capture has ended — the backend should stop producing.
-    pub fn push(&self, data: Bytes) -> bool;
+    pub fn push(&mut self, data: Bytes) -> bool;
     /// End capture: clean (None) after a graceful stop / device EOF, or
     /// fatal (Some(err)) — becomes the stream's single `Err`.
     pub fn finish(self, fault: Option<CaptureError>);

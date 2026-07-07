@@ -181,6 +181,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn myna_audio_capture_source_drops_in_behind_the_same_trait() {
+        // T50 acceptance: the real adapter crate (over its fake backend — the
+        // "mock audio adapter") replaces WavFileSource with no runner changes.
+        use myna_audio::{CaptureSource, ScriptedBackend, Step};
+        use std::time::Duration;
+
+        let backend_script =
+            ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(300))]);
+        let source = CaptureSource::builder(AudioFormat::default())
+            .backend(Box::new(backend_script))
+            .build();
+        let backend = FakeBackend::commit_drain();
+        let mut sink = CollectingSink::default();
+
+        let outcome =
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed {
+                transcript: "the quick brown fox jumps over the lazy dog.".into()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn capture_format_is_negotiated_into_config() {
         // A non-default WAV format must flow into the session config.
         let path = wav_file(1);
