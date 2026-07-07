@@ -41,9 +41,12 @@ cloud, no persistent audio.
   mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
   `docs/architecture/ie115-lifecycle.md`. Still open: error taxonomy (T31),
   protocol versioning (T35), overload/lag signal, GPU memory pressure.
-- **Next**: **orchestrator subsystem** (Charles) — build against the lifecycle
-  diagram, stub the audio-adapter boundary (`docs/audio-adapter-api.md`) until it
-  lands. Inference snap server: Ivano. Audio adapter: Matias.
+- **Next**: **audio adapter** (Charles — took over workstream D, 2026-07-07):
+  the `rust/myna-audio` crate behind the orchestrator's T41 `AudioSource` trait
+  — `CaptureBackend` seam (pw-record subprocess first, pipewire-rs later),
+  adapter-owned pre-ready ring, stats tap for the UI (real DSP stays in
+  PipeWire filter-chain). Plan T49–T52; API doc revision first (T49,
+  `docs/audio-adapter-api.md`). Inference snap server: Ivano.
 
 ## Invariants (don't violate)
 
