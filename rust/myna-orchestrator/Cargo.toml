@@ -15,3 +15,8 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 async-trait.workspace = true
+
+[dev-dependencies]
+# The real adapter crate, used only to prove it drops in behind the same
+# AudioSource trait the WavFileSource mock implements (T50 acceptance).
+myna-audio = { path = "../myna-audio" }

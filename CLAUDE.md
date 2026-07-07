@@ -42,11 +42,13 @@ cloud, no persistent audio.
   `docs/architecture/ie115-lifecycle.md`. Still open: error taxonomy (T31),
   protocol versioning (T35), overload/lag signal, GPU memory pressure.
 - **Next**: **audio adapter** (Charles — took over workstream D, 2026-07-07):
-  the `rust/myna-audio` crate behind the orchestrator's T41 `AudioSource` trait
-  — `CaptureBackend` seam (pw-record subprocess first, pipewire-rs later),
-  adapter-owned pre-ready ring, stats tap for the UI (real DSP stays in
-  PipeWire filter-chain). Plan T49–T52; API doc revision first (T49,
-  `docs/audio-adapter-api.md`). Inference snap server: Ivano.
+  the `rust/myna-audio` crate behind the `AudioSource` trait (now in
+  `myna-core::capture`) — `CaptureBackend` seam, adapter-owned pre-ready ring
+  (drop-oldest + stats tap; real DSP stays in PipeWire filter-chain). T49 (API
+  v2, `docs/audio-adapter-api.md`) and T50 (skeleton crate + `ScriptedBackend`
+  fake, drop-in proven through the T41 runner) are **done**; next is T51
+  (pw-record subprocess backend + live-mic verification), then T52
+  (native pipewire-rs). Inference snap server: Ivano.
 
 ## Invariants (don't violate)
 
