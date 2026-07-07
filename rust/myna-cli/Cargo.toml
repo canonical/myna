@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 myna-core = { path = "../myna-core" }
+myna-audio = { path = "../myna-audio" }
 myna-orchestrator = { path = "../myna-orchestrator" }
 tokio = { workspace = true }
 serde_json = { workspace = true }

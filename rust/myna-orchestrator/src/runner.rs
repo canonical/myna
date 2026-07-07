@@ -49,24 +49,23 @@ where
     let (in_tx, in_rx) = mpsc::channel::<OrchestratorInput>(INPUT_CAPACITY);
     let (out_tx, mut out_rx) = mpsc::channel(OUTPUT_CAPACITY);
 
-    // Hold capture until the model is resident: the pump waits for the first
-    // `Ready` before pulling the first chunk. This is the client half of the
-    // accept-gate (ie115-lifecycle.md §3A) — without it a slow cold load lets a
-    // replayable/paced source drain entirely into the closed gate and every
-    // chunk is dropped. `notify_one` stores a permit, so a `Ready` that fires
-    // before the pump parks is not lost. Holding the *stream* like this suits
-    // paced/replayable sources (what the demo drives); a live mic MUST instead
-    // capture from hotkey press into its ring buffer and gate only the push —
-    // speech during a cold load is otherwise lost (requirement:
-    // audio-adapter-api.md §6, a T21 acceptance criterion).
+    // Capture starts NOW; only the *push* into the FSM waits for the first
+    // `Ready`. This is the client half of the accept-gate
+    // (ie115-lifecycle.md §3A) plus the capture-from-press requirement
+    // (audio-adapter-api.md §6, a T21 acceptance criterion): a live adapter
+    // (`myna-audio::CaptureSource`) fills its bounded ring from `capture()`,
+    // so speech during a cold load is buffered, not lost; a lazy/paced source
+    // (WavFileSource) produces nothing until polled, so nothing drains into
+    // the closed gate either way. `notify_one` stores a permit, so a `Ready`
+    // that fires before the pump parks is not lost.
     let ready_gate = Arc::new(Notify::new());
 
     // Pump the capture stream into the FSM's input channel. A clean end →
     // EndOfAudio (finalize); a fault → Abort (discard).
     let pump_gate = ready_gate.clone();
     let audio_task = tokio::spawn(async move {
-        pump_gate.notified().await; // wait for residency (or task abort below)
-        let mut stream = Box::new(source).capture();
+        let mut stream = Box::new(source).capture(); // the press: ring fills from here
+        pump_gate.notified().await; // hold the push for residency (or task abort below)
         while let Some(item) = stream.next().await {
             match item {
                 Ok(chunk) => {
