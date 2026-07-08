@@ -146,11 +146,24 @@ tuning (`compute-type`, `beam-size`, streaming strategy knobs from T08).
 
 ## 4. Known gaps / things to flag upstream
 
-1. **VRAM-aware model gating**: v2 `model.yaml` has `disk-size` but no
-   memory/VRAM requirement; engine-level `devices` can gate on `vram` but
-   per-model gating (large-v3 needs ~3 GB VRAM, tiny doesn't) has no home.
-   Raise with the inference-snaps-cli team; testbed measurements (T12) will
-   provide the numbers.
+**Upstream feedback (2026-07-08, Farshid, testbed review):** items 2–4 are
+"surely doable"; item 1 is withdrawn — see its note. He also verified the
+whisper snap uses the NVIDIA GPU, and flagged that our snaps' modelctl wiring
+needs minor updates for upstream's improved multi-model support (plan T53).
+
+1. **VRAM-aware model gating** — **withdrawn (2026-07-08)**: upstream is
+   removing vRAM gating from the *engine* level too, so don't raise the
+   per-model version. Farshid's reasons, recorded: total/available vRAM at
+   install time is stale by startup (other applications take chunks); some
+   runtimes split a model across vRAM and CPU so a single number gates
+   wrongly (except MoE models that must fit at once); embeddings/context add
+   vRAM beyond the weights; and NVIDIA unified-memory platforms intentionally
+   don't report vRAM at all. **Our consequence:** no pre-gating anywhere —
+   attempt the load and **fail observably**: a load failure surfaces on the
+   wire through the existing lifecycle (`preparing` → terminal error; codes
+   are T31's), never a silent stall, and idle-unload (T27) bounds
+   steady-state pressure. T12 measurements stay useful as documented
+   guidance/defaults, not gates.
 2. **UDS server declaration** in `runtime.yaml` `servers:` (see 3.2).
    Verified on T14b: `modelctl status` (v2.0.0-beta.1) fails with
    `unsupported protocol "ws+unix" for server "ubustt"` — the status command
