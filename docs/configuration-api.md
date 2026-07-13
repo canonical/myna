@@ -151,22 +151,37 @@ schema directly (unprivileged), and **writes** through the broker (§3.3) with a
 polkit prompt. This keeps the common case (show me my settings) friction-free and
 puts the auth prompt only where a mutation actually happens.
 
-### 3.6 Engine selection: device-presence auto by default, manual override as a knob
+### 3.6 Engine selection: device-attribute matching auto by default, manual override as a knob
 
-Post-VRAM-gating (Farshid, 2026-07-08): `use-engine --auto` scores engines on
-**device presence only** (CPU arch/flags, GPU `vendor-id`) — no memory/VRAM gate,
-because total/available VRAM at install time is stale by startup, split-load and
+**What was removed is the memory/VRAM *capacity* gate, not device matching**
+(Farshid, 2026-07-08 + follow-up). `use-engine --auto` still scores engines on
+rich **device-attribute matching** — it is *not* a coarse present/absent check:
+
+- **GPUs:** device vendor, device *model* (e.g. Jetson Orin usually needs a
+  separate build), **NVIDIA compute capability**, **AMD microarchitecture**.
+- **CPUs:** AMD64 CPU flags / ARM64 CPU features (to target the expected
+  instruction sets), and in some cases the manufacturer-id (CPUID) — e.g. to
+  match an OpenVINO-based engine to all Intel CPUs, since the runtime itself
+  detects and uses the supported instructions.
+
+What is gone is the **VRAM/memory quantity gate**: total/available VRAM at
+install time is stale by startup (other apps take chunks), split-load and
 unified-memory platforms make a single number wrong, and NVIDIA unified memory
-does not report VRAM at all. Consequences for this API:
+does not report VRAM at all. So an engine is selected on *whether the hardware is
+the right kind*, never on *whether a model will fit*. Consequences for this API:
 
 - **Default is auto** (install hook already runs `use-engine --auto`); 95% of
   users never touch engine selection.
 - Expose a **manual override** (force `cpu` vs `nvidia-gpu`) as a config knob for
   the power user / debugging, defaulting to auto. The schema's engine enum is the
-  set of engines *compatible with detected hardware*.
-- **No pre-gating anywhere.** A model that will not fit is *attempted* and fails
-  **observably on the wire** (the `preparing` → terminal-error lifecycle; codes
-  are T31's), never silently. T12 sizing stays as *guidance/defaults*, not gates.
+  set of engines *compatible with detected hardware*, and each option should
+  carry **why** it matched or was ruled out (the attribute that decided it —
+  compute capability, microarch, CPU flag, vendor) so a UI/debug view can explain
+  the selection (see Appendix A.2).
+- **No capacity pre-gating anywhere.** A model that will not fit is *attempted*
+  and fails **observably on the wire** (the `preparing` → terminal-error
+  lifecycle; codes are T31's), never silently. T12 sizing stays as
+  *guidance/defaults*, not gates.
 
 ### 3.7 Residency / idle policy is layer-2 config, exposed as intent
 
@@ -320,8 +335,8 @@ availability so the UI can show "installed / downloadable / incompatible"
       "privileged": true,
       "options": [
         { "value": "auto",       "title": "Automatic",  "compatible": true },
-        { "value": "cpu",        "title": "CPU",        "compatible": true,  "selected_reason": "amd64" },
-        { "value": "nvidia-gpu", "title": "NVIDIA GPU", "compatible": false, "reason": "no device with vendor-id 0x10de" }
+        { "value": "cpu",        "title": "CPU",        "compatible": true,  "matched_on": ["arch:amd64", "flag:avx2"] },
+        { "value": "nvidia-gpu", "title": "NVIDIA GPU", "compatible": false, "reason": "no GPU device from vendor NVIDIA (0x10de)", "requires": { "gpu_vendor": "nvidia", "compute_capability": ">=7.0" } }
       ]
     },
     {
@@ -392,8 +407,12 @@ availability so the UI can show "installed / downloadable / incompatible"
 Notes on the strawman:
 
 - **`engine` gets a synthetic `auto` option** the manifest doesn't have — it maps
-  to `use-engine --auto` and is the default, per §3.6. `compatible`/`reason`
-  come from the same device-presence scoring the install hook runs (no VRAM gate).
+  to `use-engine --auto` and is the default, per §3.6. `compatible`/`matched_on`/
+  `reason`/`requires` come from the same device-**attribute** scoring the install
+  hook runs — vendor, device model, NVIDIA compute capability, AMD microarch, CPU
+  flags/CPUID — *not* a VRAM/capacity gate. `matched_on`/`requires` let a UI or
+  debug view explain *why* an engine was chosen or ruled out (e.g. "needs compute
+  capability ≥7.0").
 - **`compute-type` is scoped to an engine and reported `available:false`** when a
   different engine is active, so a UI greys it out with a reason rather than
   offering a key that has no effect. nemotron's `att-context-size` is the same
