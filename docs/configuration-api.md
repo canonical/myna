@@ -141,6 +141,7 @@ This is the **write-side sibling of capabilities (T24)**: capabilities describes
 the running model's *runtime* abilities; the config schema describes the *knobs*
 and their domains. They should be consistent (e.g. the model enum in the schema
 ⊇ the active model capabilities lists) but serve different consumers.
+A concrete strawman of this schema (whisper-snap) is in **Appendix A**.
 
 ### 3.5 Unprivileged read, brokered write
 
@@ -248,5 +249,179 @@ Proposed split, to confirm with the team:
   incompatible) need codes too; align with T31 rather than inventing strings.
 - **T53 modelctl multi-model sync** — pending Farshid's changelog; may already
   move some of §3.4 (schema/multi-model). Confirm before building.
+
+## Appendix A — concrete `describe-config` schema (whisper-snap example)
+
+A tangible strawman of §3.4 for the team to react to: the JSON a UI would read
+to render a settings panel for one installed snap, without any hardcoded
+per-snap knowledge. Grounded in whisper-snap's **actual** keys (package:
+`socket.path`/`verbose`/`sleep-idle-seconds`; engine `configurations:`
+`compute-type` on nvidia-gpu; the `use-model`/`use-engine` selectors). Output of
+a proposed `modelctl describe-config --format=json` (unprivileged read, §3.5).
+
+### A.1 Shape
+
+Top level = snap identity + the currently-active selectors + a flat `keys` list.
+Each key is self-describing enough to render a control and to validate a write
+before calling the broker.
+
+Common fields on every key:
+
+- `key` — the modelctl key (or the selector verb's target).
+- `title` / `description` — human-facing (i18n is the UI's problem).
+- `type` — `enum` | `integer` | `boolean` | `string`.
+- `scope` — `package` | `engine` | `user` | `selector` (the `use-model`/
+  `use-engine` verbs are modelled as `selector` keys, not plain `set`).
+- `default`, `current` — the manifest default and the live value.
+- `restart_required` — does applying this drop the socket (§5.5)?
+- `privileged` — does the **write** need the broker/polkit (§3.5)? (Reads never
+  do.)
+- type-specific domain: `options` (enum), `min`/`max`/`unit`/`special` (integer).
+
+Hardware/provisioning-dependent enums (`model`, `engine`) carry per-option
+availability so the UI can show "installed / downloadable / incompatible"
+(§3.4, §3.6, §3.8) rather than a bare string list.
+
+### A.2 Example
+
+```json
+{
+  "snap": "whisper",
+  "schema_version": "1",
+  "active": { "engine": "cpu", "model": "base" },
+  "keys": [
+    {
+      "key": "model",
+      "title": "Model",
+      "description": "Which Whisper model this backend serves.",
+      "type": "enum",
+      "scope": "selector",
+      "verb": "use-model",
+      "default": "tiny",
+      "current": "base",
+      "restart_required": true,
+      "privileged": true,
+      "options": [
+        { "value": "tiny",  "title": "Whisper tiny (39M)",  "installed": true,  "installable": true, "disk_size": "80M",  "capabilities": ["multilingual"] },
+        { "value": "base",  "title": "Whisper base (74M)",  "installed": true,  "installable": true, "disk_size": "150M", "capabilities": ["multilingual"] },
+        { "value": "small", "title": "Whisper small (244M)", "installed": false, "installable": true, "disk_size": "500M", "capabilities": ["multilingual"] }
+      ]
+    },
+    {
+      "key": "engine",
+      "title": "Compute engine",
+      "description": "Auto-selected from detected hardware; override for debugging.",
+      "type": "enum",
+      "scope": "selector",
+      "verb": "use-engine",
+      "default": "auto",
+      "current": "cpu",
+      "restart_required": true,
+      "privileged": true,
+      "options": [
+        { "value": "auto",       "title": "Automatic",  "compatible": true },
+        { "value": "cpu",        "title": "CPU",        "compatible": true,  "selected_reason": "amd64" },
+        { "value": "nvidia-gpu", "title": "NVIDIA GPU", "compatible": false, "reason": "no device with vendor-id 0x10de" }
+      ]
+    },
+    {
+      "key": "sleep-idle-seconds",
+      "title": "Unload model when idle",
+      "description": "Release the model after this many idle seconds (0 = never).",
+      "type": "integer",
+      "scope": "package",
+      "default": 300,
+      "current": 300,
+      "min": 0,
+      "unit": "seconds",
+      "special": { "0": "never unload" },
+      "restart_required": false,
+      "privileged": true,
+      "intent": {
+        "maps_to": "residency",
+        "presets": [
+          { "id": "instant",     "title": "Keep dictation instantly ready", "value": 0 },
+          { "id": "balanced",    "title": "Balanced",                        "value": 300 },
+          { "id": "save-memory", "title": "Free memory when idle",           "value": 30 }
+        ]
+      }
+    },
+    {
+      "key": "compute-type",
+      "title": "Compute precision",
+      "description": "CTranslate2 precision (nvidia-gpu engine only).",
+      "type": "enum",
+      "scope": "engine",
+      "default": "float16",
+      "current": "float16",
+      "restart_required": true,
+      "privileged": true,
+      "available": false,
+      "unavailable_reason": "active engine is 'cpu'; key belongs to 'nvidia-gpu'",
+      "options": [
+        { "value": "float16" },
+        { "value": "int8_float16" },
+        { "value": "int8" }
+      ]
+    },
+    {
+      "key": "verbose",
+      "title": "Verbose logging",
+      "type": "boolean",
+      "scope": "package",
+      "default": false,
+      "current": false,
+      "restart_required": true,
+      "privileged": true
+    },
+    {
+      "key": "socket.path",
+      "title": "Session socket path",
+      "type": "string",
+      "scope": "package",
+      "default": "$SNAP_COMMON/run/ubustt.sock",
+      "current": "/var/snap/whisper/common/run/ubustt.sock",
+      "restart_required": true,
+      "privileged": true,
+      "advanced": true
+    }
+  ]
+}
+```
+
+Notes on the strawman:
+
+- **`engine` gets a synthetic `auto` option** the manifest doesn't have — it maps
+  to `use-engine --auto` and is the default, per §3.6. `compatible`/`reason`
+  come from the same device-presence scoring the install hook runs (no VRAM gate).
+- **`compute-type` is scoped to an engine and reported `available:false`** when a
+  different engine is active, so a UI greys it out with a reason rather than
+  offering a key that has no effect. nemotron's `att-context-size` is the same
+  pattern (engine-scoped enum/free-string).
+- **`intent`** on `sleep-idle-seconds` is the optional UI-hint from §3.7: the
+  panel shows three presets (intent), the raw integer stays for the CLI/power
+  user. `restart_required:false` because idle-unload is in-process (T27).
+- **Availability is per-machine**, not the manifest superset (§3.4): `small` is an
+  option but `installed:false` — selecting it triggers a component pull (§A.3).
+- The schema is **derived** from the engine/model/package manifests + live
+  modelctl state (§6, "schema authority"), so it never drifts from what the snap
+  actually accepts.
+
+### A.3 Provisioning + progress (layer 1) — event shape
+
+When a write selects a not-yet-`installed` option (or the user adds a model),
+the broker drives the snapd component install and streams progress. Strawman
+events (broker → UI), progress gated on snapd 2.77 (§3.8):
+
+```json
+{ "type": "provision.progress", "snap": "whisper", "component": "model-small", "phase": "downloading", "done_bytes": 261881856, "total_bytes": 524288000 }
+{ "type": "provision.progress", "snap": "whisper", "component": "model-small", "phase": "installing" }
+{ "type": "provision.done",     "snap": "whisper", "component": "model-small" }
+{ "type": "provision.error",    "snap": "whisper", "component": "model-small", "code": "download_failed", "message": "network unreachable" }
+```
+
+Pre-2.77 (no byte progress) the honest fallback is `phase` transitions only
+(`downloading` → `installing` → done) with an indeterminate spinner. Error
+`code`s align with T31, not ad-hoc strings.
 </content>
 </invoke>
