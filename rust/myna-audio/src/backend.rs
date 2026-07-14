@@ -39,6 +39,7 @@ pub struct Producer {
     frame_bytes: usize,
     pending: BytesMut,
     captured: Duration,
+    session_peak: f32,
 }
 
 impl Producer {
@@ -49,7 +50,7 @@ impl Producer {
         chunk_bytes: usize,
         frame_bytes: usize,
     ) -> Self {
-        Self { ring, stats, format, chunk_bytes, frame_bytes, pending: BytesMut::new(), captured: Duration::ZERO }
+        Self { ring, stats, format, chunk_bytes, frame_bytes, pending: BytesMut::new(), captured: Duration::ZERO, session_peak: 0.0 }
     }
 
     /// Deliver raw PCM (any buffer size; the adapter re-chunks to whole-frame
@@ -84,11 +85,13 @@ impl Producer {
         let chunk = PcmChunk::new(data, self.format);
         let (rms, peak, clipped) = levels(&chunk);
         self.captured += chunk.duration();
+        self.session_peak = self.session_peak.max(peak);
         let dropped_bytes = self.ring.push(chunk);
         let bps = self.format.bytes_per_second().max(1) as f64;
         let _ = self.stats.send(AudioStats {
             rms,
             peak,
+            session_peak: self.session_peak,
             clipped,
             captured: self.captured,
             dropped: Duration::from_secs_f64(dropped_bytes as f64 / bps),

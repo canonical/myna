@@ -6,7 +6,9 @@
 //!
 //! The audio-adapter contract (`docs/audio-adapter-api.md` §5) maps cleanly:
 //! a clean source end (hotkey release / WAV EOF) becomes `EndOfAudio`
-//! (finalize), and a capture fault becomes `Abort` (abandon, commit nothing).
+//! (finalize), and a capture fault becomes `CaptureFailed` — a visible
+//! `Failed` outcome (abandon the backend session, commit nothing, but tell the
+//! user *why*), never a silent abort.
 
 use std::sync::Arc;
 
@@ -61,7 +63,7 @@ where
     let ready_gate = Arc::new(Notify::new());
 
     // Pump the capture stream into the FSM's input channel. A clean end →
-    // EndOfAudio (finalize); a fault → Abort (discard).
+    // EndOfAudio (finalize); a fault → CaptureFailed (discard + surface why).
     let pump_gate = ready_gate.clone();
     let audio_task = tokio::spawn(async move {
         let mut stream = Box::new(source).capture(); // the press: ring fills from here
@@ -73,8 +75,12 @@ where
                         return; // FSM already terminal; stop capturing
                     }
                 }
-                Err(_fault) => {
-                    let _ = in_tx.send(OrchestratorInput::Abort).await;
+                Err(fault) => {
+                    // The device/daemon faulted mid-capture: report it, don't
+                    // swallow it as a bare abort (the mic-unavailable case).
+                    let _ = in_tx
+                        .send(OrchestratorInput::CaptureFailed { message: fault.to_string() })
+                        .await;
                     return;
                 }
             }

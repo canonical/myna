@@ -31,6 +31,9 @@ pub enum OrchestratorInput {
     EndOfAudio,
     /// Abandon the utterance.
     Abort,
+    /// Local audio capture faulted (device gone, spawn failure, …). Surfaces
+    /// as a `Failed` outcome rather than a silent abort.
+    CaptureFailed { message: String },
 }
 
 /// Open a session against `backend` and run the FSM to completion.
@@ -70,6 +73,9 @@ pub async fn run_session<B: BackendClient>(
                 Some(OrchestratorInput::Audio(chunk)) => fsm.on_input(Input::Audio(chunk)),
                 Some(OrchestratorInput::EndOfAudio) => fsm.on_input(Input::EndOfAudio),
                 Some(OrchestratorInput::Abort) => fsm.on_input(Input::Abort),
+                Some(OrchestratorInput::CaptureFailed { message }) => {
+                    fsm.on_input(Input::CaptureFailed { message })
+                }
                 None => {
                     // Source exhausted: stop selecting on it, keep draining the
                     // backend to its terminal event.

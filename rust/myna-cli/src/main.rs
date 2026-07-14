@@ -252,6 +252,10 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         match outcome {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
+            Ok(SessionOutcome::Failed { code, message }) if code == "capture_failed" => {
+                eprintln!("✗ audio capture failed: {message}");
+                eprintln!("  (no mic? check `wpctl status` lists an Audio Source, or pass --target <node.name>)");
+            }
             Ok(SessionOutcome::Failed { code, message }) => {
                 eprintln!("✗ session failed [{code}]: {message}");
             }
@@ -269,6 +273,15 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
                 );
             } else {
                 println!("  (mic: captured {:.1?}, zero drops)", s.captured);
+            }
+            // Near-silent capture (~-40 dBFS peak) over a non-trivial window is
+            // almost always a muted input or the wrong node, not a quiet
+            // talker — flag it so an empty transcript isn't a mystery.
+            if s.captured > Duration::from_millis(500) && s.session_peak < 0.01 {
+                println!(
+                    "  ⚠ input was near-silent (peak {:.4}) — is the mic muted or the wrong device? check `wpctl status` / try --target <node.name>",
+                    s.session_peak
+                );
             }
         }
 
