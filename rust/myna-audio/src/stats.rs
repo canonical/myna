@@ -15,6 +15,11 @@ pub struct AudioStats {
     pub rms: f32,
     /// Peak level of the last captured chunk.
     pub peak: f32,
+    /// Highest peak seen across the whole session so far. Distinguishes "the
+    /// user never spoke" (stays ~0) from a mic that produced real signal — a
+    /// UI can warn when a whole utterance came back near-silent (muted input
+    /// or the wrong capture node).
+    pub session_peak: f32,
     /// The last captured chunk touched full scale.
     pub clipped: bool,
     /// Total audio captured this session (including anything later dropped).

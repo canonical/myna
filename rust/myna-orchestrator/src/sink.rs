@@ -30,6 +30,9 @@ impl TextSink for StdoutSink {
             OrchestratorEvent::Transcribing => {}
             OrchestratorEvent::Snippet(text) => println!("   … {text}"),
             OrchestratorEvent::Final(text) => println!("   » {text}"),
+            OrchestratorEvent::Done(text) if text.trim().is_empty() => {
+                println!("✓ (no speech detected)");
+            }
             OrchestratorEvent::Done(text) => println!("✓ {text}"),
             OrchestratorEvent::Error { code, message } => {
                 eprintln!("✗ [{code}] {message}");
