@@ -102,7 +102,9 @@ root daemon that can pull new components". Options:
 
 - **(a) polkit-wrapped `modelctl` invocations** — smallest; a polkit action per
   verb (`set`, `use-model`, `use-engine`), the UI calls through `pkexec`/a tiny
-  helper, the user gets an auth prompt. No new long-running daemon.
+  helper, the user gets an auth prompt. No new long-running daemon. (Awkward
+  under confinement — `pkexec`-ing a confined snap binary is the fiddly part,
+  independent of the policy question below.)
 - **(b) a small root D-Bus daemon** with a polkit policy — cleaner API, can also
   drive snapd for component installs (layer 1) and stream progress, but a new
   privileged component to own and confine.
@@ -110,12 +112,37 @@ root daemon that can pull new components". Options:
   existing infrastructure, but our config lives in modelctl's store, not snap
   config, so this needs a bridge either way.
 
-**Recommendation:** model the broker on (b) for the *provisioning + change* verbs
-(it is the natural owner of both layer-1 component pulls with progress and
-layer-2 changes), but keep the **read** path unprivileged and daemon-free (§3.5).
-Start with (a) if a daemon is too much for the MVP. Either way this is **not
+**Snap confinement is not the blocker it was assumed to be (Marco review,
+2026-07-14; verified against snapd source).** Two findings settle the shape:
+
+- A **strict-confined** snap *can* ship polkit configuration to the system via
+  snapd's **`polkit` interface** (`interfaces/builtin/polkit.go`, since snapd
+  2.55): `action-prefix` + `meta/polkit/<plug>.*.policy` files are installed to
+  `/usr/share/polkit-1/actions`, and `install-rules` (sha3-384-pinned) to
+  `/etc/polkit-1/rules.d`. With `action-prefix` set the snap is also
+  AppArmor-allowed to call polkitd `CheckAuthorization`/`RegisterAuthentication
+  AgentWithOptions`, so a daemon *inside the snap* can self-authorize. A classic
+  deb is **not** required.
+- snapd supports **D-Bus-activatable** services well (since ~2.49): a `daemon`
+  app declares `activates-on: [<slot>]` on a **`dbus`**-interface slot, snapd
+  generates the activation file (`SystemdService=`, so it starts on first call —
+  no always-running daemon) and itself ships the `<servicedir>` config pointing
+  the bus at `/var/lib/snapd/dbus-1/system-services/`. Owning a well-known name
+  is `allow-installation` for any app snap; an **unconfined** client (g-c-c)
+  reaches it through the generated bus policy with no snap-declaration (the
+  `dbus` `deny-connection`/`deny-auto-connection` bits gate only snap-to-snap
+  plugs).
+
+**Recommendation:** model the broker on (b) — and make it **D-Bus-activatable**,
+so one snap-internal system service serves the unprivileged read (§3.5) *and*
+brokers the privileged writes (its own polkit `.policy` + `CheckAuthorization`),
+with no always-on daemon and no UI process spawns. This is the natural owner of
+both layer-1 component pulls with progress and layer-2 changes. Start with (a)
+if even an activatable daemon is too much for the MVP. Either way this is **not
 STT-specific** — it belongs to the inference-snaps platform, which argues for
-device-engineering ownership (§4).
+device-engineering ownership (§4). The one remaining store dependency is the
+**`polkit` snap declaration** (§6) — the dbus/activation half needs none for an
+unconfined UI.
 
 ### 3.4 Config-schema discovery — the key required API change
 
@@ -130,9 +157,13 @@ modelctl today has the *scopes* and *values* but **no schema of the domains** �
 nothing says "`sleep-idle-seconds` is a non-negative integer" or "`model` is one
 of {tiny, base, small}". This is the central inference-snap-side change:
 
-- a `modelctl describe-config` (or `config-schema` / `--format=json` on an
-  existing command) that emits the key set with types/domains/defaults/scope/
-  restart-required, and
+- a **single** `modelctl describe-config` (or `config-schema` / `--format=json`
+  on an existing command) that emits the *whole* key set in one call —
+  types/domains/defaults/scope/restart-required — **not** a per-setting call
+  (Marco review: minimise UI process spawns). Each key also carries its
+  `current` value (Appendix A), so this one read doubles as get-all: the UI
+  populates the entire panel from it with no follow-up `modelctl get` per key,
+  and
 - for enums whose domain is hardware-dependent (engine, model options gated by
   installed components), the schema must reflect *what is actually installable/
   selectable on this machine*, not just the manifest superset.
@@ -150,6 +181,11 @@ unprivileged; the schema (§3.4) read must be too. So: a UI **reads** config +
 schema directly (unprivileged), and **writes** through the broker (§3.3) with a
 polkit prompt. This keeps the common case (show me my settings) friction-free and
 puts the auth prompt only where a mutation actually happens.
+
+The read is a **single get-all at UI startup**: one `describe-config` returns the
+schema *and* every key's `current` value (§3.4, Appendix A), so a panel renders
+and populates from one call — no per-key reads, and, once the broker is
+D-Bus-activatable (§3.3), no process spawn at all (the UI reads it over the bus).
 
 ### 3.6 Engine selection: device-attribute matching auto by default, manual override as a knob
 
@@ -238,7 +274,13 @@ Proposed split, to confirm with the team:
 
 - **Owner** of the broker + schema — device engineering (§4)?
 - **Broker shape** — polkit-wrapped CLI (a), root D-Bus daemon (b), or snapd
-  config bridge (c) (§3.3)?
+  config bridge (c) (§3.3)? (Leaning (b), D-Bus-activatable — Marco review.)
+- **`polkit` snap declaration** — the broker's snap needs a store-granted
+  declaration to plug the `polkit` interface (base decl is
+  `allow-installation: false` + `deny-auto-connection: true`). Confirm with the
+  snapd/store team that our first-party inference snaps can get it, **ideally
+  auto-connect** (else the user needs a one-time `snap connect`). The
+  dbus/activation half needs no declaration for an unconfined UI (§3.3).
 - **Provisioning home** — same broker, or Software Center / snapd directly (§3.8)?
 - **Restart-to-apply** acceptable for the MVP, or is graceful reconfigure needed
   for the residency/language knobs (§5.5)?
