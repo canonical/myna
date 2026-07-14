@@ -140,6 +140,11 @@ pub enum Input {
     EndOfAudio,
     /// The client abandoned the utterance.
     Abort,
+    /// Local audio capture faulted (e.g. the mic/device went away). Unlike
+    /// [`Input::Abort`] this is not a deliberate user cancel — it carries a
+    /// diagnostic and surfaces as a `Failed` outcome so the fault is visible,
+    /// while still closing the backend session with nothing committed.
+    CaptureFailed { message: String },
     /// A transcript event arrived from the backend.
     Backend(TranscriptionEvent),
     /// The backend connection closed (optionally with a wire-error reason).
@@ -219,6 +224,7 @@ impl Fsm {
             Input::Audio(chunk) => self.on_audio(chunk, &mut actions),
             Input::EndOfAudio => self.on_end_of_audio(&mut actions),
             Input::Abort => self.on_abort(&mut actions),
+            Input::CaptureFailed { message } => self.on_capture_failed(message, &mut actions),
             Input::Backend(event) => self.on_backend(event, &mut actions),
             Input::BackendClosed { error } => self.on_backend_closed(error, &mut actions),
         }
@@ -254,6 +260,17 @@ impl Fsm {
     fn on_abort(&mut self, out: &mut Vec<Action>) {
         if !self.session.is_terminal() {
             self.session = SessionState::Aborted;
+            out.push(Action::SendAbort);
+        }
+    }
+
+    fn on_capture_failed(&mut self, message: String, out: &mut Vec<Action>) {
+        // A capture fault is terminal like an abort (close the backend session,
+        // commit nothing) but must be visible: land in `Failed` with a stable
+        // client-local code, not silently in `Aborted`.
+        if !self.session.is_terminal() {
+            self.session = SessionState::Failed;
+            self.failure = Some(("capture_failed".into(), message));
             out.push(Action::SendAbort);
         }
     }
@@ -609,6 +626,29 @@ mod tests {
         assert_eq!(fsm.outcome(), Some(SessionOutcome::Aborted));
         // Idempotent after terminal.
         assert!(fsm.on_input(Input::Abort).is_empty());
+    }
+
+    #[test]
+    fn capture_failure_is_a_visible_failed_not_a_silent_abort() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        // Same wire effect as an abort (close, commit nothing) …
+        let a = fsm.on_input(Input::CaptureFailed {
+            message: "pw-record exited mid-capture: no target node available".into(),
+        });
+        assert!(matches!(a.as_slice(), [Action::SendAbort]));
+        // … but the outcome carries the diagnostic under a stable code.
+        match fsm.outcome() {
+            Some(SessionOutcome::Failed { code, message }) => {
+                assert_eq!(code, "capture_failed");
+                assert!(message.contains("no target node available"));
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        // Idempotent after terminal.
+        assert!(fsm
+            .on_input(Input::CaptureFailed { message: "again".into() })
+            .is_empty());
     }
 
     #[test]
