@@ -1,0 +1,27 @@
+# Rust
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and env
+*.log
+.env*
+
+# Audio/test artifacts
+*.wav
+*.raw
+*.pcm

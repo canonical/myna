@@ -1,0 +1,22 @@
+# Canonical Workshop sandbox definition for Myna audio adapter development
+name: myna-audio-adapter
+base: ubuntu:24.04
+packages:
+  - build-essential
+  - pkg-config
+  - clang
+  - libpipewire-0.3-dev
+  - libpulse-dev
+  - pipewire-utils
+  - pulseaudio-utils
+  - rustup
+features:
+  rust: stable
+env:
+  MYNA_AUDIO_BACKEND: pipewire
+args:
+  - --device=/dev/snd
+commands:
+  build: cargo build -p myna-audio-adapter --features ${MYNA_AUDIO_BACKEND:-pipewire}
+  test: cargo test -p myna-audio-adapter --features ${MYNA_AUDIO_BACKEND:-pipewire}
+  shell: bash

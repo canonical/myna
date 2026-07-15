@@ -1,0 +1,43 @@
+[package]
+name = "myna-audio-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "PipeWire/PulseAudio audio capture and STT-preparation library for Myna"
+
+[features]
+default = ["pipewire", "pulse"]
+pipewire = ["dep:pipewire"]
+pulse = ["dep:libpulse-binding", "dep:libpulse-simple-binding"]
+vad = ["dep:voice_activity_detector"]
+denoise = ["dep:nnnoiseless"]
+async = ["dep:futures-core"]
+test-util = []
+
+[dependencies]
+thiserror = "2"
+anyhow = { version = "1", optional = true }
+bytes = "1"
+bytemuck = "1"
+parking_lot = "0.12"
+
+# Audio backends
+pipewire = { version = "0.8", optional = true }
+libpulse-binding = { version = "2.28", optional = true }
+libpulse-simple-binding = { version = "2.28", optional = true }
+
+# Conversion
+rubato = "0.16"
+
+# Optional preprocessing
+voice_activity_detector = { version = "0.2", optional = true }
+nnnoiseless = { version = "0.5", optional = true }
+
+# Optional async adapter
+futures-core = { version = "0.3", optional = true }
+
+[dev-dependencies]
+hound = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
