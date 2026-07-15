@@ -62,8 +62,8 @@
 ### Implementation for User Story 1
 
 - [x] T017 [US1] Define `AudioBackend` trait and auto-probe (PipeWire → Pulse) in `crates/audio-adapter/src/backend/mod.rs`
-- [ ] T018 [US1] Implement PipeWire backend in `crates/audio-adapter/src/backend/pipewire.rs`: registry-based node enumeration, server-side format negotiation (FR-009), RT capture callback, device-lost detection
-- [ ] T019 [US1] Implement PulseAudio fallback backend in `crates/audio-adapter/src/backend/pulse.rs`: source enumeration, capture stream, device-lost detection
+- [x] T018 [US1] Implement PipeWire backend in `crates/audio-adapter/src/backend/pipewire.rs`: registry-based node enumeration, server-side format negotiation (FR-009), RT capture callback, device-lost detection
+- [x] T019 [US1] Implement PulseAudio fallback backend in `crates/audio-adapter/src/backend/pulse.rs`: source enumeration, capture stream, device-lost detection
 - [x] T020 [US1] Implement bounded SPSC ring buffer in `crates/audio-adapter/src/ring.rs`: drop-oldest on overflow, loss-span accounting, raised-cosine splice smoothing (FR-014/FR-015)
 - [ ] T021 [US1] Implement underrun detection and silence fill with smoothed boundaries + `Underrun` events in the capture path (`ring.rs`/backend modules) per FR-018
 - [x] T022 [US1] Implement `AudioStream` in `crates/audio-adapter/src/stream.rs` (`read`, `read_timeout`, `close`, `node`, `target_format`) draining frames and interleaved events in timeline order
