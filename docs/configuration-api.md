@@ -1,6 +1,6 @@
 # Backend-Snap Configuration API — Design Proposal
 
-**Date:** 2026-07-12
+**Date:** 2026-07-12 (revised 2026-07-15 after team review)
 **Status:** Proposed — team discussion draft (feeds workstream E; ownership TBD)
 **Authors:** Charles, with Claude
 
@@ -10,7 +10,7 @@ residency policy, per-inference tuning — and who owns that boundary.
 
 This is a **proposal to bring to the team**, not a settled contract. It records
 positions and their rationale, names the required inference-snap-side API
-changes, and lists the open questions (owner, broker shape, provisioning path).
+changes, and lists the open questions (owner, mediation shape, provisioning path).
 It builds on the snap design note (`asr-inference-snap-design.md`), capabilities
 discovery (`myna.core.capabilities`, T24), and the meeting action items from the
 Configuration-API discussion.
@@ -91,58 +91,86 @@ not.
 Per the meeting ("Configuration UI · Start with a CLI"), v1 is literally
 `modelctl` (aliased per-snap, e.g. `whisper set …`, `whisper use-model base`).
 But we specify the *shape* of the eventual programmatic surface now so the CLI
-and a later daemon/D-Bus API converge instead of diverging. The CLI is the first
+and a later programmatic API converge instead of diverging. The CLI is the first
 consumer of the same schema (§3.4) a GUI will later consume.
 
-### 3.3 A privileged config broker for unprivileged UIs
+### 3.3 Mediating privileged writes: snapd-managed config + a configure hook (not D-Bus)
 
 An unprivileged Settings panel cannot run `sudo modelctl`. Something must mediate
-root + restart behind an authorization prompt. This is the meeting's "external
-root daemon that can pull new components". Options:
+root + restart + component pulls behind an authorization prompt. This is the
+meeting's "external root daemon that can pull new components".
 
-- **(a) polkit-wrapped `modelctl` invocations** — smallest; a polkit action per
-  verb (`set`, `use-model`, `use-engine`), the UI calls through `pkexec`/a tiny
-  helper, the user gets an auth prompt. No new long-running daemon. (Awkward
-  under confinement — `pkexec`-ing a confined snap binary is the fiddly part,
-  independent of the policy question below.)
-- **(b) a small root D-Bus daemon** with a polkit policy — cleaner API, can also
-  drive snapd for component installs (layer 1) and stream progress, but a new
-  privileged component to own and confine.
-- **(c) snapd's own configuration** (`snap set` / snapd REST) mediated — reuses
-  existing infrastructure, but our config lives in modelctl's store, not snap
-  config, so this needs a bridge either way.
+**Direction change (team review, 2026-07-14/15).** Two platform constraints
+reshape this section *away* from the earlier D-Bus-daemon recommendation:
 
-**Snap confinement is not the blocker it was assumed to be (Marco review,
-2026-07-14; verified against snapd source).** Two findings settle the shape:
+- **No new D-Bus API** (advice from Jon S.). The team originally wanted
+  inference-snap discovery (mDNS-over-D-Bus) *and* transcription-over-D-Bus, and
+  dropped both. Since transcription now rides **TCP/UDS**, configuration should
+  use the **same protocol layer** — one uniform transport, not a second D-Bus
+  control surface. This also serves clients a system-bus D-Bus API would not:
+  future inference-snap clients from a **web app or another machine**.
+- **modelctl's storage backend is moving to snapd-managed config.** modelctl
+  today uses snapd as its storage backend, but inference snaps aren't allowed
+  direct access to that (unstable) storage layer. The plan is to expose the
+  **snapd-managed configuration** (`snap set` / `snap get`) so config can be
+  **seeded from a Gadget snap on Ubuntu Core**. That exposes *just the
+  configuration*; a snap **`configure` hook** can then do the heavy lifting —
+  install components and restart — the way modelctl does today.
 
-- A **strict-confined** snap *can* ship polkit configuration to the system via
-  snapd's **`polkit` interface** (`interfaces/builtin/polkit.go`, since snapd
-  2.55): `action-prefix` + `meta/polkit/<plug>.*.policy` files are installed to
-  `/usr/share/polkit-1/actions`, and `install-rules` (sha3-384-pinned) to
-  `/etc/polkit-1/rules.d`. With `action-prefix` set the snap is also
-  AppArmor-allowed to call polkitd `CheckAuthorization`/`RegisterAuthentication
-  AgentWithOptions`, so a daemon *inside the snap* can self-authorize. A classic
-  deb is **not** required.
-- snapd supports **D-Bus-activatable** services well (since ~2.49): a `daemon`
-  app declares `activates-on: [<slot>]` on a **`dbus`**-interface slot, snapd
-  generates the activation file (`SystemdService=`, so it starts on first call —
-  no always-running daemon) and itself ships the `<servicedir>` config pointing
-  the bus at `/var/lib/snapd/dbus-1/system-services/`. Owning a well-known name
-  is `allow-installation` for any app snap; an **unconfined** client (g-c-c)
-  reaches it through the generated bus policy with no snap-declaration (the
-  `dbus` `deny-connection`/`deny-auto-connection` bits gate only snap-to-snap
-  plugs).
+So the mediation story becomes two lanes over reused infrastructure, **not** a
+new privileged daemon:
 
-**Recommendation:** model the broker on (b) — and make it **D-Bus-activatable**,
-so one snap-internal system service serves the unprivileged read (§3.5) *and*
-brokers the privileged writes (its own polkit `.policy` + `CheckAuthorization`),
-with no always-on daemon and no UI process spawns. This is the natural owner of
-both layer-1 component pulls with progress and layer-2 changes. Start with (a)
-if even an activatable daemon is too much for the MVP. Either way this is **not
-STT-specific** — it belongs to the inference-snaps platform, which argues for
-device-engineering ownership (§4). The one remaining store dependency is the
-**`polkit` snap declaration** (§6) — the dbus/activation half needs none for an
-unconfined UI.
+- **Reads and rich clients** — a config surface over **TCP/UDS**, same protocol
+  layer as the transcription socket (§3.1 still holds: a *separate* surface from
+  the session socket, same transport family). This is what a web-app / remote /
+  cross-machine client would use, and gives us a uniform protocol layer across
+  transcription and configuration. **Protocol: gRPC** — with D-Bus off the table,
+  JB recommends **gRPC** for this surface. It fits the requirements well: runs
+  over both UDS (local, unprivileged) and TCP (remote/cross-machine), has a
+  first-class schema (protobuf/proto3) that doubles as the machine-readable
+  contract, native streaming (server-streaming RPC suits the provisioning
+  progress events of §3.8 / Appendix A.3), and mature multi-language clients for
+  future web/desktop consumers. (This is the config/control plane only; the
+  transcription wire stays WebSocket-over-UDS / IE115 as today — "same transport
+  family", not necessarily the same framing.)
+- **Privileged writes** — go through **snapd-managed config**: the frontend sets
+  keys via the **snapd REST API** (equivalent of `snap set <snap> key=value`),
+  which the desktop already reaches and which **snapd itself gates** with its own
+  polkit authorization. A **`configure` hook** in the snap reacts — validates,
+  pulls any needed components (layer 1), and restarts (or defers; see
+  `--no-restart` below).
+
+This **reuses existing infrastructure** (the earlier option (c)) rather than
+standing up a privileged D-Bus daemon with its own polkit policy: no new
+always-on component to own and confine, no snap-level `polkit` declaration to
+negotiate with the store, and authorization handled by snapd where the user
+already grants install/config prompts. The AppArmor/polkit self-authorization
+findings from the Marco review (a strict snap *can* ship polkit config and own a
+D-Bus name) remain **true but are no longer the chosen path** — kept in
+Appendix B as fallback evidence should a snap-local daemon ever be needed.
+
+**Restart is decoupled from the write.** `modelctl set` / `unset` / `use-model` /
+`use-engine` accept a **`--no-restart`** flag: the change is recorded but not
+applied until a separately-triggered restart. This lets a UI batch several
+changes (model + engine + idle policy) and restart **once**, lets the
+configure-hook / Gadget-seeding path record config at provision time and apply it
+on next start, and makes the restart an explicit, observable step rather than a
+side effect of every `set`. The schema's `restart_required` (§3.4) tells the UI
+*whether* a change leaves a restart pending; the restart itself is a separate
+verb.
+
+**Superseded options (recorded for the team).** The earlier draft weighed three
+broker shapes; the review resolves the choice:
+
+- ~~(a) polkit-wrapped `modelctl` invocations~~ — still a possible MVP shim, but
+  `pkexec`-ing a confined snap binary is awkward.
+- ~~(b) a small root D-Bus daemon~~ — **ruled out** by the no-new-D-Bus guidance.
+- **(c) snapd's own configuration** (`snap set` / snapd REST) mediated — **now the
+  direction**, paired with a `configure` hook for the install-and-restart work
+  and a TCP/UDS read surface for rich clients.
+
+This is **not STT-specific** — it belongs to the inference-snaps platform, which
+argues for device-engineering ownership (§4).
 
 ### 3.4 Config-schema discovery — the key required API change
 
@@ -152,6 +180,30 @@ For a UI to render controls without hardcoding per-snap knowledge, each snap mus
 detected-compatible; int≥0 for `sleep-idle-seconds`; enum/free for
 `att-context-size`), **default**, **scope** (package/engine/user), and whether
 changing it **requires a restart**.
+
+**Prefer a standardized config vocabulary over per-snap dynamic schemas (team
+guidance from the top, 2026-07-15).** The direction from leadership is to
+**enforce a uniform set of configurations** across backends rather than let every
+snap expose its own dynamic key set and schema — otherwise the user faces a
+different, unfamiliar pile of knobs per backend. Fully uniform isn't 100%
+feasible (some models/runtimes genuinely need their own tweaks, e.g.
+`att-context-size`, `compute-type`), so the working split is:
+
+- **A standard core vocabulary** — the same keys, names, types, and semantics on
+  *every* inference snap: `model`, `engine`, `sleep-idle-seconds`, `verbose`,
+  `socket.path`. A UI renders these once and they mean the same thing everywhere.
+- **A small, clearly-marked backend-specific tail** — the genuinely
+  model/runtime-specific knobs, in a bounded set, flagged so a UI can group them
+  under "advanced" and not treat them as first-class.
+
+Schema *discovery* therefore covers only what is **necessarily dynamic** — the
+values, domains, and per-machine availability — not an open-ended, per-snap
+key universe. Two of those dynamic pieces already have homes in modelctl:
+
+- the **model list** comes from **`modelctl list-models`** (not a bespoke
+  discovery call) — the schema's `model` enum is derived from it;
+- **`restart_required` is deterministic**, known per key, not something a snap
+  reports dynamically per write — the schema states it as a fixed property.
 
 modelctl today has the *scopes* and *values* but **no schema of the domains** —
 nothing says "`sleep-idle-seconds` is a non-negative integer" or "`model` is one
@@ -174,18 +226,19 @@ and their domains. They should be consistent (e.g. the model enum in the schema
 ⊇ the active model capabilities lists) but serve different consumers.
 A concrete strawman of this schema (whisper-snap) is in **Appendix A**.
 
-### 3.5 Unprivileged read, brokered write
+### 3.5 Unprivileged read, snapd-mediated write
 
 Displaying current settings must not require root. `modelctl get` is already
 unprivileged; the schema (§3.4) read must be too. So: a UI **reads** config +
-schema directly (unprivileged), and **writes** through the broker (§3.3) with a
-polkit prompt. This keeps the common case (show me my settings) friction-free and
-puts the auth prompt only where a mutation actually happens.
+schema directly (unprivileged), and **writes** through snapd-managed config
+(§3.3) — which snapd gates with its own authorization prompt. This keeps the
+common case (show me my settings) friction-free and puts the auth prompt only
+where a mutation actually happens.
 
 The read is a **single get-all at UI startup**: one `describe-config` returns the
 schema *and* every key's `current` value (§3.4, Appendix A), so a panel renders
-and populates from one call — no per-key reads, and, once the broker is
-D-Bus-activatable (§3.3), no process spawn at all (the UI reads it over the bus).
+and populates from one call — no per-key reads. Served over the TCP/UDS read
+surface (§3.3), the UI reads it without shelling out per key.
 
 ### 3.6 Engine selection: device-attribute matching auto by default, manual override as a knob
 
@@ -209,11 +262,14 @@ the right kind*, never on *whether a model will fit*. Consequences for this API:
 - **Default is auto** (install hook already runs `use-engine --auto`); 95% of
   users never touch engine selection.
 - Expose a **manual override** (force `cpu` vs `nvidia-gpu`) as a config knob for
-  the power user / debugging, defaulting to auto. The schema's engine enum is the
-  set of engines *compatible with detected hardware*, and each option should
-  carry **why** it matched or was ruled out (the attribute that decided it —
-  compute capability, microarch, CPU flag, vendor) so a UI/debug view can explain
-  the selection (see Appendix A.2).
+  the power user / debugging, defaulting to auto. This override **already exists**
+  — `modelctl use-engine <engine>` — so the API surfaces it rather than inventing
+  it. The schema's engine enum is the set of engines *compatible with detected
+  hardware*, and each option should carry **why** it matched or was ruled out
+  (the attribute that decided it — compute capability, microarch, CPU flag,
+  vendor). That "why" is **already available from `modelctl show-engine
+  <engine>`**, so the schema's per-option `matched_on`/`reason` (Appendix A.2) is
+  *derived from* `show-engine`, not a new data source.
 - **No capacity pre-gating anywhere.** A model that will not fit is *attempted*
   and fails **observably on the wire** (the `preparing` → terminal-error
   lifecycle; codes are T31's), never silently. T12 sizing stays as
@@ -221,7 +277,11 @@ the right kind*, never on *whether a model will fit*. Consequences for this API:
 
 ### 3.7 Residency / idle policy is layer-2 config, exposed as intent
 
-`sleep-idle-seconds` + idle-action (T27/T29) are config keys. The CLI keeps the
+`sleep-idle-seconds` + idle-action (T27/T29) are config keys. **What `sleep-idle-
+seconds` measures (clarified 2026-07-15):** it is the number of seconds between
+when the API **finishes responding** to a request and when the server **unloads
+the model** — i.e. it is the *definition of idle* (idle = time since the last
+response), not a poll interval or a hard cap. The CLI keeps the
 raw knob; a future Settings control should expose **intent** ("keep dictation
 instantly ready" vs "free memory when idle"), never the raw seconds or the
 unload mechanism (per T29/T30). The residency **default** (T29) is the product
@@ -233,21 +293,39 @@ lost.
 ### 3.8 Component provisioning + progress (layer 1)
 
 "Download another model" is a **component install** via snapd, driven by the
-broker (§3.3 option b) or by pointing the user at Software Center / a command
-(the meeting's "tell the user to go run a command?" fallback). Progress display
-depends on **snapd 2.77** component-download progress; until then the honest MVP
-is a spinner + "downloading…" with no percentage, or the CLI fallback. Choosing
-*other inference snaps entirely* (a different family) is **out of scope here** —
-that is general inference-snap discovery / Software Center territory, not
-STT-specific.
+snapd-managed-config / configure-hook path (§3.3) or by pointing the user at
+Software Center / a command (the meeting's "tell the user to go run a command?"
+fallback). Choosing *other inference snaps entirely* (a different family) is
+**out of scope here** — that is general inference-snap discovery / Software
+Center territory, not STT-specific.
+
+**Progress: read it from snapd, not from inside the snap (clarified
+2026-07-15).** There are two vantage points, and they differ:
+
+- **The desktop frontend is outside the confinement.** If it already talks to the
+  **snapd REST API** for configuration (`snap set`, §3.3), it can use that *same*
+  API to observe **component download progress** — snapd exposes change/task
+  progress today, from outside the snap, without `snapd-control`. So a Settings
+  UI can show real byte-level progress **now**, by watching the snapd change it
+  initiated. This is the preferred path and does not wait on snapd 2.77.
+- **modelctl, inside the snap, cannot see it** — a confined snap without
+  `snapd-control` has no access to that progress, so `modelctl` itself shows only
+  an **indeterminate spinner + "downloading…"** until **snapd 2.77** exposes
+  component-download progress to the snap. That spinner is the CLI's honest MVP,
+  *not* a limit on the GUI.
+
+So the guidance flips from the earlier draft: the byte-percentage story is a
+**frontend-via-snapd-REST** capability available now; only the in-snap CLI is
+gated on 2.77.
 
 ## 4. Ownership (open — the meeting's first question)
 
 Proposed split, to confirm with the team:
 
-- **Device engineering** owns the **config broker + schema surface** (§3.3–3.5)
-  and the provisioning path (§3.8) — these are the modelctl/IE108 platform,
-  per-snap and **not** STT-specific; every inference snap benefits.
+- **Device engineering** owns the **config surface + schema + snapd-config
+  mediation** (§3.3–3.5) and the provisioning path (§3.8) — these are the
+  modelctl/IE108 platform, per-snap and **not** STT-specific; every inference
+  snap benefits.
 - **The STT team (us)** owns the **STT-specific keys** (`att-context-size`, model
   options, residency intent mapping) and the **desktop Settings integration**
   (UD129 scope) that consumes the schema.
@@ -259,29 +337,37 @@ Proposed split, to confirm with the team:
 1. **Config-schema discovery** (§3.4) — machine-readable keys with
    type/domain/default/scope/restart-required, domains reflecting what is
    actually selectable on this machine. *The central change.*
-2. **Brokered write path** (§3.3) — polkit-gated or daemon-mediated
-   `set`/`use-model`/`use-engine` so an unprivileged UI can request changes with
-   an auth prompt, without running as root or shelling `sudo modelctl`.
+2. **Snapd-mediated write path** (§3.3) — config as **snapd-managed config**
+   (`snap set` via the snapd REST API, gated by snapd's own authorization) plus a
+   snap **`configure` hook** that installs components and restarts, so an
+   unprivileged UI can request changes without running as root or shelling `sudo
+   modelctl`. **No new D-Bus API** (Jon S.); rich/remote reads ride TCP/UDS via
+   **gRPC** (JB), the same transport family as transcription.
 3. **Unprivileged schema read** (§3.5) — parity with the already-unprivileged
    `modelctl get`.
 4. **Component install + progress** (§3.8) — trigger/observe model-component
-   downloads from a UI; progress gated on snapd 2.77.
+   downloads from a UI; a frontend with snapd REST access can read progress now,
+   in-snap CLI progress gated on snapd 2.77.
 5. **(Nice-to-have) apply without full restart** — for language/residency tuning,
    a graceful reconfigure beats a socket-dropping restart; flag as future, not
-   MVP.
+   MVP. (`--no-restart` already lets writes defer/batch the restart, §3.3.)
 
 ## 6. Open questions for the team
 
-- **Owner** of the broker + schema — device engineering (§4)?
-- **Broker shape** — polkit-wrapped CLI (a), root D-Bus daemon (b), or snapd
-  config bridge (c) (§3.3)? (Leaning (b), D-Bus-activatable — Marco review.)
-- **`polkit` snap declaration** — the broker's snap needs a store-granted
-  declaration to plug the `polkit` interface (base decl is
-  `allow-installation: false` + `deny-auto-connection: true`). Confirm with the
-  snapd/store team that our first-party inference snaps can get it, **ideally
-  auto-connect** (else the user needs a one-time `snap connect`). The
-  dbus/activation half needs no declaration for an unconfined UI (§3.3).
-- **Provisioning home** — same broker, or Software Center / snapd directly (§3.8)?
+- **Owner** of the config surface + schema + snapd-config mediation — device
+  engineering (§4)?
+- **Mediation shape confirmed?** — the review settles on **snapd-managed config
+  + `configure` hook** for writes and **TCP/UDS** for rich reads, *not* a D-Bus
+  daemon (Jon S.), with **gRPC** as the proposed protocol for that read/control
+  surface (JB). Confirm: (i) the platform team will expose snapd-managed config
+  for the inference snaps (currently blocked — no direct access to the unstable
+  storage layer, §3.3) and own the `configure`-hook install-and-restart logic;
+  and (ii) gRPC is the agreed control-plane protocol (vs plain JSON-over-UDS or
+  reusing the WS framing).
+- **Gadget-snap seeding** — does exposing snapd-managed config for Ubuntu Core
+  Gadget seeding change any key names/scopes we should align to now?
+- **Provisioning home** — snapd/configure-hook, or Software Center / snapd
+  directly (§3.8)?
 - **Restart-to-apply** acceptable for the MVP, or is graceful reconfigure needed
   for the residency/language knobs (§5.5)?
 - **Relationship to T48** — the config API needs to know *which snaps/sockets
@@ -300,8 +386,8 @@ Proposed split, to confirm with the team:
   unowned; §6.
 - **T29 residency default / T30 dev toggles** — §3.7; the config API is how users
   deviate from the T29 default; T30's power-user "out" is a subset of this.
-- **T17 access control** — the broker's polkit policy is the write-side of the
-  socket access-control decision; keep them coherent.
+- **T17 access control** — snapd's authorization on `snap set` is the write-side
+  of the socket access-control decision; keep them coherent.
 - **T31 error taxonomy** — config-change failures (component pull failed, model
   incompatible) need codes too; align with T31 rather than inventing strings.
 - **T53 modelctl multi-model sync** — pending Farshid's changelog; may already
@@ -320,7 +406,7 @@ a proposed `modelctl describe-config --format=json` (unprivileged read, §3.5).
 
 Top level = snap identity + the currently-active selectors + a flat `keys` list.
 Each key is self-describing enough to render a control and to validate a write
-before calling the broker.
+before submitting it.
 
 Common fields on every key:
 
@@ -331,8 +417,8 @@ Common fields on every key:
   `use-engine` verbs are modelled as `selector` keys, not plain `set`).
 - `default`, `current` — the manifest default and the live value.
 - `restart_required` — does applying this drop the socket (§5.5)?
-- `privileged` — does the **write** need the broker/polkit (§3.5)? (Reads never
-  do.)
+- `privileged` — does the **write** go through snapd-managed config / the
+  `configure` hook (§3.3, §3.5)? (Reads never do.)
 - type-specific domain: `options` (enum), `min`/`max`/`unit`/`special` (integer).
 
 Hardware/provisioning-dependent enums (`model`, `engine`) carry per-option
@@ -452,9 +538,9 @@ Notes on the strawman:
   to `use-engine --auto` and is the default, per §3.6. `compatible`/`matched_on`/
   `reason`/`requires` come from the same device-**attribute** scoring the install
   hook runs — vendor, device model, NVIDIA compute capability, AMD microarch, CPU
-  flags/CPUID — *not* a VRAM/capacity gate. `matched_on`/`requires` let a UI or
-  debug view explain *why* an engine was chosen or ruled out (e.g. "needs compute
-  capability ≥7.0").
+  flags/CPUID — *not* a VRAM/capacity gate. `matched_on`/`requires`/`reason` are
+  **sourced from `modelctl show-engine <engine>`** (§3.6), which already explains
+  why an engine was chosen or ruled out (e.g. "needs compute capability ≥7.0").
 - **`compute-type` is scoped to an engine and reported `available:false`** when a
   different engine is active, so a UI greys it out with a reason rather than
   offering a key that has no effect. nemotron's `att-context-size` is the same
@@ -470,9 +556,11 @@ Notes on the strawman:
 
 ### A.3 Provisioning + progress (layer 1) — event shape
 
-When a write selects a not-yet-`installed` option (or the user adds a model),
-the broker drives the snapd component install and streams progress. Strawman
-events (broker → UI), progress gated on snapd 2.77 (§3.8):
+When a write selects a not-yet-`installed` option (or the user adds a model), the
+configure-hook / snapd-config path (§3.3) drives the snapd component install. A
+frontend with snapd REST access watches the resulting snapd **change** for
+progress directly (§3.8); the shape below is the *normalized* view a
+TCP/UDS read surface (or the UI's own snapd-change adapter) would present:
 
 ```json
 { "type": "provision.progress", "snap": "whisper", "component": "model-small", "phase": "downloading", "done_bytes": 261881856, "total_bytes": 524288000 }
@@ -481,8 +569,33 @@ events (broker → UI), progress gated on snapd 2.77 (§3.8):
 { "type": "provision.error",    "snap": "whisper", "component": "model-small", "code": "download_failed", "message": "network unreachable" }
 ```
 
-Pre-2.77 (no byte progress) the honest fallback is `phase` transitions only
-(`downloading` → `installing` → done) with an indeterminate spinner. Error
-`code`s align with T31, not ad-hoc strings.
+A frontend reading snapd's change/task progress gets byte-level
+`downloading`/`installing`/done **today**; only the *in-snap* `modelctl` view is
+limited to `phase` transitions with an indeterminate spinner until snapd 2.77
+(§3.8). Error `code`s align with T31, not ad-hoc strings.
+
+## Appendix B — fallback: snap-local polkit / D-Bus (not the chosen path)
+
+Recorded so the option isn't re-litigated. The Marco review (2026-07-14,
+verified against snapd source) established that a snap-local privileged daemon
+*is* technically possible under strict confinement, should the snapd-managed-
+config path (§3.3) ever prove insufficient:
+
+- A **strict-confined** snap can ship polkit configuration via snapd's **`polkit`
+  interface** (`interfaces/builtin/polkit.go`, since snapd 2.55): `action-prefix`
+  + `meta/polkit/<plug>.*.policy` → `/usr/share/polkit-1/actions`, and
+  `install-rules` (sha3-384-pinned) → `/etc/polkit-1/rules.d`. With
+  `action-prefix` set the snap is AppArmor-allowed to call polkitd
+  `CheckAuthorization`/`RegisterAuthenticationAgentWithOptions`, so a daemon
+  *inside the snap* can self-authorize. A classic deb is not required. This would
+  need a store-granted `polkit` snap declaration (base decl is
+  `allow-installation: false` + `deny-auto-connection: true`).
+- snapd supports **D-Bus-activatable** services (since ~2.49): a `daemon` app
+  with `activates-on: [<slot>]` on a `dbus` slot starts on first call (no
+  always-running daemon); an unconfined client reaches it via snapd's generated
+  bus policy with no snap-declaration.
+
+This path is **superseded by the no-new-D-Bus guidance (Jon S., §3.3)** and kept
+here only as contingency evidence.
 </content>
 </invoke>
