@@ -1,0 +1,17 @@
+{
+  "integration": "omp",
+  "version": "0.12.15",
+  "installed_at": "2026-07-15T08:32:01.245748+00:00",
+  "files": {
+    ".omp/commands/speckit.analyze.md": "07e1e9f997bce9e06d3823ecf1ed315bb62381b81e7d6a7aef19c5087c320e70",
+    ".omp/commands/speckit.clarify.md": "595ae8988179a91780ce10e258afcccaa313b0924a79e720c66226e31af7ec00",
+    ".omp/commands/speckit.constitution.md": "e0d1d7c237d4657914dcccb6ea0c3a3a10d8d1d9a36b198282e22b3d0b9a55e5",
+    ".omp/commands/speckit.implement.md": "6a5713a4db8d48dd7c93e38b9957c6e54b6b7dc899ebab66f9ccb3bce58fdfeb",
+    ".omp/commands/speckit.converge.md": "e585bc94a3f01cb45eb4f4f6003268a7bc7e1f1685d343c25ad5dc3c484b4816",
+    ".omp/commands/speckit.plan.md": "ff1809d5d72b399ec364414a150c1a20e782677972d11f0bdf8c65c73f898a71",
+    ".omp/commands/speckit.checklist.md": "2124a817bddbff7f469fd47b08e43dd9a39b769499d367f6888a74e1e821412d",
+    ".omp/commands/speckit.specify.md": "e24c01f27d269dab73c4178ce5bb1c31198dbfc36b9198cc6e407ef1122f4745",
+    ".omp/commands/speckit.tasks.md": "e3569f2fbdb99704b81e3647ce9e52fb812764d6b2590fc497a2c2130b43ba72",
+    ".omp/commands/speckit.taskstoissues.md": "0a436a42ceca2db309df88985d1939ee7f176c4a7a2d7c7a8d2253006cfe6870"
+  }
+}
