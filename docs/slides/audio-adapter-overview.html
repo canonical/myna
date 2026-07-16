@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Myna Audio Adapter — Overview</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/theme/white.css">
+  <style>
+    .reveal { font-size: 30px; }
+    .reveal h1 { font-size: 1.6em; }
+    .reveal h2 { font-size: 1.15em; margin-bottom: 0.6em; }
+    .reveal ul { font-size: 0.78em; line-height: 1.45; }
+    .reveal li { margin-bottom: 0.25em; }
+    .reveal .small { font-size: 0.6em; color: #555; }
+    .pipeline { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 0.8em 0; }
+    .pipeline .box { border: 2px solid #333; border-radius: 8px; padding: 8px 12px; font-size: 0.55em; background: #f5f5f5; }
+    .pipeline .box.hl { background: #e95420; color: #fff; border-color: #c7431a; font-weight: bold; }
+    .pipeline .arrow { font-size: 0.7em; color: #666; }
+    .cols { display: flex; gap: 1.2em; text-align: left; }
+    .cols > div { flex: 1; }
+    .reveal pre { font-size: 0.5em; line-height: 1.35; box-shadow: none; border: 1px solid #ddd; border-radius: 6px; }
+    .reveal pre code { padding: 12px; max-height: 480px; }
+    .reveal table { font-size: 0.6em; }
+    .tag { display: inline-block; background: #eee; border-radius: 4px; padding: 1px 8px; font-size: 0.55em; margin-right: 4px; color: #444; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <section>
+        <h1>Myna Audio Adapter</h1>
+        <p>How it works, and where it fits in the Myna dictation effort</p>
+        <p class="small">specs/001-rust-audio-adapter · draft PR #6 · 2026-07-15</p>
+      </section>
+
+      <section>
+        <h2>The wider effort: offline dictation for Ubuntu Desktop</h2>
+        <ul>
+          <li><strong>Myna</strong> is push-to-talk speech-to-text for Ubuntu Desktop (Wayland/GNOME first): hold a hotkey, speak, committed text lands in the focused app <span class="small">(UD129)</span></li>
+          <li><strong>Local and private by design</strong>: inference via the Canonical Inference Snap, no cloud, no network needed, audio never persisted to disk</li>
+          <li>Explicit user control: capture only while the hotkey is held, visible activity indicator, secure fields blocked</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>The pipeline — and where this piece sits</h2>
+        <div class="pipeline">
+          <div class="box">Hotkey</div><div class="arrow">→</div>
+          <div class="box">Speech Controller<br><span class="small">session lifecycle</span></div><div class="arrow">→</div>
+          <div class="box hl">Audio Adapter<br><span class="small">this work</span></div><div class="arrow">→</div>
+          <div class="box">Inference Snap<br><span class="small">STT models</span></div><div class="arrow">→</div>
+          <div class="box">Post-Processing</div><div class="arrow">→</div>
+          <div class="box">Text Injection<br><span class="small">IBus → Wayland</span></div>
+        </div>
+        <ul>
+          <li>The Audio Adapter is a <strong>Rust library</strong> that captures microphone audio and prepares it for STT inference</li>
+          <li>Its one known consumer is the <strong>Speech Controller</strong> — the API surface it uses is pinned in the contract and guarded by a dedicated consumer-scenario test</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>What the library does</h2>
+        <ul>
+          <li><strong>Stateless primitives</strong> — the caller owns the dictation session; the library just does <code>enumerate_nodes()</code> → <code>open_stream()</code> → <code>read()</code> loop → <code>close()</code></li>
+          <li><strong>Capture</strong> from PipeWire (native, primary) or PulseAudio (fallback), any input node the server exposes — one stream per node, idempotent open</li>
+          <li><strong>Convert</strong> anything the mic produces into one stable STT format (default 16 kHz / mono / S16LE) — server-side negotiation preferred, in-process resampling (rubato) as fallback</li>
+          <li><strong>Optionally preprocess</strong>: RNNoise denoising, Silero voice-activity detection (feature-gated; dereverb deferred)</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Streaming semantics: honest, artifact-free audio</h2>
+        <table>
+          <tr><th>Situation</th><th>Behavior</th></tr>
+          <tr><td>Consumer reads too slowly</td><td>Drop <em>oldest</em> frames, emit <code>Overrun</code> event, smooth the splice</td></tr>
+          <tr><td>Audio server underruns</td><td>Fill gap with silence (timeline stays continuous), emit <code>Underrun</code>, smoothed boundaries</td></tr>
+          <tr><td>Mic unplugged mid-stream</td><td><code>DeviceLost</code> error, stream closes — caller decides what's next</td></tr>
+          <tr><td>Source format changes mid-stream</td><td>Renegotiate transparently; error only if unconvertible</td></tr>
+        </table>
+        <p class="small">Frames are contiguous and non-overlapping; bounded 10 s in-memory buffer; nothing ever written to disk. All of this is codified as 15 testable contract guarantees (G1–G15).</p>
+      </section>
+
+      <section>
+        <h2>One dictation session, end to end</h2>
+        <pre><code>// settings time
+let nodes = enumerate_nodes()?;            // populate device picker
+// hotkey pressed
+let mut stream = open_stream(&config)?;    // first frame ≤ 100 ms
+while hotkey_held {
+    for item in stream.read_timeout(d)? {
+        match item {
+            Frame(f)                  => inference.send(f.data),
+            Event(VoiceActivity{..})  => chunk_utterance(),
+            Event(DeviceLost{..})     => end_session_with_error(),
+            Event(_)                  => log_diagnostics(),
+        }
+    }
+}
+// hotkey released
+stream.close();                            // ≤ 200 ms, buffers cleared</code></pre>
+        <p class="small">This exact call pattern is the Speech Controller's consumer surface — asserted by <code>tests/consumer_scenario.rs</code>.</p>
+      </section>
+
+      <section>
+        <h2>How we're building it: spec-driven</h2>
+        <div class="pipeline">
+          <div class="box">constitution</div><div class="arrow">→</div>
+          <div class="box">specify</div><div class="arrow">→</div>
+          <div class="box">clarify ×13</div><div class="arrow">→</div>
+          <div class="box">plan</div><div class="arrow">→</div>
+          <div class="box">tasks</div><div class="arrow">→</div>
+          <div class="box">analyze</div><div class="arrow">→</div>
+          <div class="box">implement</div>
+        </div>
+        <ul>
+          <li>Every behavioral decision (buffer policy, disconnect handling, underrun fill…) was asked, answered, and written into the spec before any code</li>
+          <li>Cross-artifact analysis caught coverage gaps (sandbox tasks, watermarks, branch plan) before implementation could start on stale plans</li>
+          <li>Artifacts: spec (22 FRs) · plan · research · data model · API contract (G1–G15) · diagrams · quickstart · 59 tasks</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>The constitution: non-negotiables</h2>
+        <ul>
+          <li><span class="tag">I</span> <strong>Red-green TDD</strong> — tests written and observed failing before implementation</li>
+          <li><span class="tag">II</span> <strong>Integration-ready</strong> — same tests run on a VM with a virtual audio interface or on real hardware</li>
+          <li><span class="tag">III</span> <strong>Performance watermarks</strong> — checked-in high/low baselines (memory, CPU, latency) with tolerances that catch drift</li>
+          <li><span class="tag">IV</span> <strong>Workshop environments</strong> — <code>workshop.yaml</code> defines the dev/test sandbox; no ad-hoc host setup</li>
+          <li><span class="tag">V</span> <strong>Privacy-first</strong> — no audio on disk, no network, bounded buffers</li>
+          <li>Plus: staged feature-branch delivery, and concise unattributed commits/PRs</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Testing regime</h2>
+        <div class="cols">
+          <div>
+            <p><strong>Three layers</strong></p>
+            <ul>
+              <li>Hermetic unit + contract tests (MockBackend, WAV fixtures)</li>
+              <li>Integration tests against a live server via virtual audio nodes</li>
+              <li>Conformance examples: first frame ≤ 100 ms, close ≤ 200 ms, lag ≤ 100 ms</li>
+            </ul>
+          </div>
+          <div>
+            <p><strong>Workshop sandbox</strong></p>
+            <ul>
+              <li>One command brings up an isolated audio server — PipeWire <em>or</em> PulseAudio, selected at launch</li>
+              <li>Per-backend declared test subsets; host audio never touched</li>
+              <li>Offline after first provisioning; environment errors ≠ test failures</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Delivery: seven staged branches</h2>
+        <table>
+          <tr><th>#</th><th>Branch</th><th>Delivers</th><th>Merge gate</th></tr>
+          <tr><td>1</td><td>foundation</td><td>workspace, workshop.yaml, core types</td><td>builds + sandbox smoke</td></tr>
+          <tr><td>2</td><td>us1-capture</td><td>enumerate/open/read/close (MVP)</td><td>contract + consumer + integration</td></tr>
+          <tr><td>3</td><td>us2-convert</td><td>resample + format conversion</td><td>+ 48 kHz→16 kHz virtual-node test</td></tr>
+          <tr><td>4</td><td>us3-preprocess</td><td>denoise + VAD</td><td>+ accuracy benchmark</td></tr>
+          <tr><td>5</td><td>async-examples</td><td>async adapter, conformance examples</td><td>conformance in sandbox</td></tr>
+          <tr><td>6</td><td>sandbox-matrix</td><td>backend matrix, isolation, offline</td><td>both backends 100% green</td></tr>
+          <tr><td>7</td><td>polish-watermarks</td><td>docs, perf baselines</td><td>full matrix + watermark test</td></tr>
+        </table>
+        <p class="small">Every merge leaves main green; each branch carries its own tests (red first).</p>
+      </section>
+
+      <section>
+        <h2>Status &amp; next steps</h2>
+        <ul>
+          <li>✅ Constitution v1.2.0, full spec-kit artifact set, 59-task plan — <strong>draft PR #6</strong></li>
+          <li>▶ Next: <code>001-audio-foundation</code> branch — Cargo workspace, <code>workshop.yaml</code>, foundational types</li>
+          <li>Then branch-by-branch to an MVP the Speech Controller can consume, feeding the wider UD129 milestone</li>
+        </ul>
+        <p class="small">Docs: specs/001-rust-audio-adapter/ · docs/architecture/UD129 · github.com/canonical/myna/pull/6</p>
+      </section>
+
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({ hash: true, slideNumber: true, transition: 'fade' });
+  </script>
+</body>
+</html>

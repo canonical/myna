@@ -1,0 +1,28 @@
+# Rust
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and env
+*.log
+.env*
+
+# Audio/test artifacts (committed test fixtures are exempt)
+*.wav
+*.raw
+*.pcm
+!crates/audio-adapter/tests/fixtures/*.wav
