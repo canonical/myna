@@ -14,12 +14,9 @@ pulse = ["dep:libpulse-binding", "dep:libpulse-simple-binding"]
 vad = ["dep:voice_activity_detector"]
 denoise = ["dep:nnnoiseless"]
 async = ["dep:futures-core"]
-test-util = []
 
 [dependencies]
 thiserror = "2"
-anyhow = { version = "1", optional = true }
-bytes = "1"
 bytemuck = "1"
 parking_lot = "0.12"
 
@@ -39,5 +36,4 @@ nnnoiseless = { version = "0.5", optional = true }
 futures-core = { version = "0.3", optional = true }
 
 [dev-dependencies]
-hound = "3"
-criterion = { version = "0.5", features = ["html_reports"] }
+bytemuck = "1"

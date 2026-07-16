@@ -11,9 +11,9 @@ pub struct AudioFrame {
     pub format: AudioFormat,
     /// Start time of this frame relative to stream open.
     pub timestamp: Duration,
-    /// Duration represented by `data`.
-    pub duration: Duration,
-    /// Monotonically increasing sequence number.
+    /// Monotonically increasing sequence number assigned at capture time.
+    /// A gap in delivered sequence numbers means frames were dropped (see
+    /// `StreamEvent::Overrun`).
     pub seq: u64,
 }
 
@@ -43,5 +43,11 @@ impl AudioFrame {
     /// Number of frames (samples per channel) represented by the data.
     pub fn frame_count(&self) -> usize {
         self.data.len() / self.format.frame_size_bytes()
+    }
+
+    /// Duration represented by `data`, derived from the payload and format so
+    /// it can never disagree with the actual sample count.
+    pub fn duration(&self) -> Duration {
+        self.format.duration_for_bytes(self.data.len())
     }
 }

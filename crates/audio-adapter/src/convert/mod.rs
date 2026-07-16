@@ -55,6 +55,20 @@ impl ConversionPipeline {
         channels::planar_f32_to_interleaved(&planar, &self.target)
     }
 
+    /// Drain the resampler's carried input and delay line (end-of-stream
+    /// only) and convert the tail to target-format bytes.
+    pub fn flush(&mut self) -> Result<Vec<u8>, Error> {
+        let Some(resampler) = &mut self.resampler else {
+            return Ok(Vec::new());
+        };
+        let planar = resampler.flush()?;
+        if planar.first().is_none_or(Vec::is_empty) {
+            return Ok(Vec::new());
+        }
+        let planar = channels::adjust_channels(&planar, self.target.channels);
+        channels::planar_f32_to_interleaved(&planar, &self.target)
+    }
+
     /// Update the source format (e.g., on mid-stream renegotiation).
     pub fn renegotiate_source(&mut self, new_source: AudioFormat) -> Result<(), Error> {
         if !is_conversion_supported(&new_source, &self.target) {
@@ -129,8 +143,10 @@ mod tests {
         let target = AudioFormat::default_target();
         let input: Vec<u8> = vec![0i16; 48_000].iter().flat_map(|s| s.to_le_bytes()).collect();
         let mut pipeline = ConversionPipeline::new(source, target.clone()).unwrap();
-        let output = pipeline.process(&input).unwrap();
-        // Resampler may produce slightly fewer than exactly 1s due to delay; accept approximate.
+        let mut output = pipeline.process(&input).unwrap();
+        output.extend(pipeline.flush().unwrap());
+        // Resampler may produce slightly more/less than exactly 1 s due to
+        // filter transients; accept approximate.
         let output_frames = output.len() / target.frame_size_bytes();
         assert!(output_frames >= 15_800 && output_frames <= 16_500, "unexpected output frame count: {output_frames}");
     }

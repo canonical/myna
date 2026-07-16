@@ -126,7 +126,8 @@ stream.close();                                        // Finalizing → Idle; b
 | `vad` | no | Silero VAD preprocessing stage + `VoiceActivity` events |
 | `denoise` | no | RNNoise (`nnnoiseless`) preprocessing stage |
 | `async` | no | `futures::Stream` adapter |
-| `test-util` | no | `MockBackend` for consumer/test use — not part of the consumer surface |
+
+`MockBackend` (and `open_stream_with_backend` for explicit backend injection) is always compiled — no feature gate — so idempotent-open and all contract behavior are identical in production and under test. It is never reachable implicitly: the auto-probe returns an error rather than falling back to mock capture. Not part of the consumer surface.
 
 ## Stability
 

@@ -1,45 +1,18 @@
-//! Optional audio preprocessing stages (denoise, VAD, deverb).
-
-#[cfg(feature = "denoise")]
-pub mod denoise;
-
-#[cfg(feature = "vad")]
-pub mod vad;
+//! Optional audio preprocessing (denoise, VAD, deverb).
+//!
+//! Not implemented yet: `StreamConfig::validate` rejects enabled preprocess
+//! flags so a consumer can never silently believe preprocessing is active
+//! (FR-010/FR-011 pending). The trait below is the integration point future
+//! stages (RNNoise denoise behind feature `denoise`, Silero VAD behind
+//! feature `vad`, and an eventual deverb stage — deferred per FR-011 MAY)
+//! will implement; adding stages is a non-breaking change.
 
 use crate::error::Error;
 use crate::frame::{AudioFrame, StreamEvent};
 
-/// A single preprocessing stage.
+/// A single preprocessing stage, applied to frames before delivery.
 pub trait PreprocessStage: Send {
-    /// Process a frame in place, returning any events emitted.
+    /// Process a frame in place, returning any events emitted (e.g.
+    /// `StreamEvent::VoiceActivity` transitions from a VAD stage).
     fn process(&mut self, frame: &mut AudioFrame) -> Result<Vec<StreamEvent>, Error>;
-}
-
-/// A chain of preprocessing stages.
-pub struct StageChain {
-    stages: Vec<Box<dyn PreprocessStage>>,
-}
-
-impl StageChain {
-    pub fn new() -> Self {
-        Self { stages: Vec::new() }
-    }
-
-    pub fn add(&mut self, stage: Box<dyn PreprocessStage>) {
-        self.stages.push(stage);
-    }
-
-    pub fn process(&mut self, frame: &mut AudioFrame) -> Result<Vec<StreamEvent>, Error> {
-        let mut events = Vec::new();
-        for stage in &mut self.stages {
-            events.extend(stage.process(frame)?);
-        }
-        Ok(events)
-    }
-}
-
-impl Default for StageChain {
-    fn default() -> Self {
-        Self::new()
-    }
 }

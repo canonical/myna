@@ -1,22 +1,33 @@
-# Canonical Workshop sandbox definition for Myna audio adapter development
 name: myna-audio-adapter
-base: ubuntu:24.04
-packages:
-  - build-essential
-  - pkg-config
-  - clang
-  - libpipewire-0.3-dev
-  - libpulse-dev
-  - pipewire-utils
-  - pulseaudio-utils
-  - rustup
-features:
-  rust: stable
-env:
-  MYNA_AUDIO_BACKEND: pipewire
-args:
-  - --device=/dev/snd
-commands:
-  build: cargo build -p myna-audio-adapter --features ${MYNA_AUDIO_BACKEND:-pipewire}
-  test: cargo test -p myna-audio-adapter --features ${MYNA_AUDIO_BACKEND:-pipewire}
-  shell: bash
+base: ubuntu@24.04
+actions:
+  setup: |
+    #!/bin/bash
+    set -euo pipefail
+    sudo apt-get update
+    sudo apt-get install -y \
+      build-essential pkg-config clang \
+      libpipewire-0.3-dev libpulse-dev \
+      pipewire pipewire-bin pulseaudio-utils \
+      rustup
+    rustup default stable
+  build: |
+    #!/bin/bash
+    set -euo pipefail
+    cargo build -p myna-audio-adapter
+  build-hermetic: |
+    #!/bin/bash
+    set -euo pipefail
+    cargo build -p myna-audio-adapter --no-default-features --features test-util
+  test: |
+    #!/bin/bash
+    set -euo pipefail
+    cargo test -p myna-audio-adapter
+  test-hermetic: |
+    #!/bin/bash
+    set -euo pipefail
+    cargo test -p myna-audio-adapter --no-default-features --features test-util
+  integration: |
+    #!/bin/bash
+    set -euo pipefail
+    MYNA_AUDIO_IT=1 cargo test -p myna-audio-adapter --test integration -- --ignored

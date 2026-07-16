@@ -21,7 +21,8 @@ Thumbs.db
 *.log
 .env*
 
-# Audio/test artifacts
+# Audio/test artifacts (committed test fixtures are exempt)
 *.wav
 *.raw
 *.pcm
+!crates/audio-adapter/tests/fixtures/*.wav

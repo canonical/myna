@@ -51,12 +51,8 @@ pub fn planar_f32_to_interleaved(
     for f in 0..frames {
         let frame_offset = f * target.frame_size_bytes();
         for c in 0..target.channels as usize {
-            let sample = channels[c][f];
-            let mixed = if c < channels.len() {
-                sample
-            } else {
-                0.0
-            };
+            // Guard before indexing: zero-fill channels the source lacks.
+            let mixed = if c < channels.len() { channels[c][f] } else { 0.0 };
             encode_sample(
                 mixed,
                 target.sample_format,

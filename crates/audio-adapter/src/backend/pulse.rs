@@ -9,7 +9,7 @@ use libpulse_binding as pulse;
 use libpulse_simple_binding as psimple;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::Duration;
 
 fn sample_format_to_pulse(fmt: SampleFormat) -> Result<pulse::sample::Format, Error> {
@@ -29,6 +29,14 @@ fn pulse_default_node() -> InputNode {
     }
 }
 
+fn map_open_error(e: pulse::error::PAErr) -> Error {
+    match pulse::error::Code::try_from(e) {
+        Ok(pulse::error::Code::Access) => Error::PermissionDenied,
+        Ok(pulse::error::Code::NoEntity) => Error::NoDevice,
+        _ => Error::Backend(format!("PulseAudio open failed: {e}")),
+    }
+}
+
 /// PulseAudio capture backend using the `libpulse-simple` API.
 pub struct PulseAudioBackend;
 
@@ -40,10 +48,16 @@ impl PulseAudioBackend {
 
 impl AudioBackend for PulseAudioBackend {
     fn enumerate(&self) -> Result<Vec<InputNode>, Error> {
+        // TODO(T019): enumerate sources via the full async API; the simple API
+        // has no introspection. Until then only the default source is exposed.
         Ok(vec![pulse_default_node()])
     }
 
-    fn open(&self, config: StreamConfig, mut producer: QueueProducer) -> Result<Box<dyn BackendStream>, Error> {
+    fn open(
+        &self,
+        config: StreamConfig,
+        producer: QueueProducer,
+    ) -> Result<Box<dyn BackendStream>, Error> {
         let format = config.target_format;
         let spec = pulse::sample::Spec {
             format: sample_format_to_pulse(format.sample_format)?,
@@ -57,24 +71,22 @@ impl AudioBackend for PulseAudioBackend {
         }
 
         let dev: Option<String> = match &config.node {
-            NodeSelector::ByName(name) => Some(name.clone()),
-            NodeSelector::ById(id) if id.0.as_str() == "pulse-default" => None,
-            NodeSelector::Default => None,
+            NodeSelector::ByName(name) if name != "pulse-default" => Some(name.clone()),
             _ => None,
         };
         let dev_ref = dev.as_deref();
 
         let simple = psimple::Simple::new(
-            None,                            // default server
-            "myna-audio-adapter",            // client name
+            None,                     // default server
+            "myna-audio-adapter",     // client name
             pulse::stream::Direction::Record,
-            dev_ref,                         // source name or default
-            "speech-to-text capture",        // stream description
+            dev_ref,                  // source name or default
+            "speech-to-text capture", // stream description
             &spec,
-            None,                            // default channel map
-            None,                            // default buffering attributes
+            None, // default channel map
+            None, // default buffering attributes
         )
-        .map_err(|e| Error::Backend(format!("PulseAudio open failed: {e}")))?;
+        .map_err(map_open_error)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
@@ -82,44 +94,41 @@ impl AudioBackend for PulseAudioBackend {
         let chunk_duration = Duration::from_millis(10);
         let chunk_bytes = format.bytes_for_duration(chunk_duration);
 
-        let handle: JoinHandle<()> = thread::spawn(move || {
+        thread::spawn(move || {
             let mut buf = vec![0u8; chunk_bytes];
-            let mut seq: u64 = 0;
-            let mut timestamp = Duration::ZERO;
             while running_clone.load(Ordering::Relaxed) {
                 match simple.read(&mut buf) {
                     Ok(()) => {
-                        producer.push_frame(buf.clone(), timestamp, chunk_duration, seq);
-                        seq += 1;
-                        timestamp += chunk_duration;
+                        // Hand off the filled buffer; the queue assigns
+                        // timestamps and sequence numbers.
+                        let data = std::mem::replace(&mut buf, vec![0u8; chunk_bytes]);
+                        producer.push_frame(data);
                     }
-                    Err(e) => {
-                        eprintln!("PulseAudio read error: {e}");
-                        producer.push_event(StreamEvent::DeviceLost { node: node_id });
+                    Err(_) => {
+                        producer.push_event(StreamEvent::DeviceLost {
+                            node: node_id.clone(),
+                        });
                         break;
                     }
                 }
             }
         });
 
-        Ok(Box::new(PulseAudioStream {
-            running,
-            handle: Some(handle),
-        }))
+        Ok(Box::new(PulseAudioStream { running }))
     }
 }
 
 struct PulseAudioStream {
     running: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
 }
 
 impl BackendStream for PulseAudioStream {
     fn close(&mut self) -> Result<(), Error> {
+        // Signal the capture thread and detach. `Simple::read` blocks with no
+        // timeout, so joining here could hang close() past its 200 ms budget
+        // (G8/SC-004) when the source is suspended; the thread exits (and
+        // drops the Pulse connection) as soon as the pending read returns.
         self.running.store(false, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
         Ok(())
     }
 }

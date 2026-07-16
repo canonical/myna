@@ -84,6 +84,15 @@ impl StreamConfig {
                 "max_buffer_duration must be > 0".into(),
             ));
         }
+        // Preprocessing stages are not implemented yet (FR-010/FR-011 pending);
+        // fail loudly rather than silently ignoring the request.
+        if self.preprocess.denoise || self.preprocess.vad || self.preprocess.deverb {
+            return Err(crate::Error::Backend(
+                "audio preprocessing (denoise/vad/deverb) is not implemented yet; \
+                 disable the preprocess flags"
+                    .into(),
+            ));
+        }
         Ok(())
     }
 

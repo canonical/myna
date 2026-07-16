@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if first_frame_time.is_none() {
                         first_frame_time = Some(start.elapsed());
                     }
-                    last_real_timestamp = frame.timestamp + frame.duration;
+                    last_real_timestamp = frame.timestamp + frame.duration();
                     read_count += 1;
                 }
                 myna_audio_adapter::StreamItem::Event(event) => {

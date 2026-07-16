@@ -5,31 +5,41 @@ use crate::frame::StreamItem;
 use crate::node::{InputNode, NodeId};
 use crate::ring::QueueConsumer;
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::Duration;
-use std::sync::LazyLock;
 
-/// Global registry of currently open streams, keyed by node id.
-/// Weak references allow streams to be closed when the last handle is dropped.
-static OPEN_STREAMS: LazyLock<Mutex<std::collections::HashMap<NodeId, Weak<StreamInner>>>> =
-    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+/// Global registry of currently open streams, keyed by node id (FR-003: one
+/// open stream per node; opening an already-open node returns the existing
+/// handle). Compiled unconditionally so the idempotency guarantee is identical
+/// in production and under test.
+static OPEN_STREAMS: LazyLock<Mutex<HashMap<NodeId, Weak<StreamInner>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
-#[cfg(not(any(test, feature = "test-util")))]
-pub(crate) fn get_existing_stream(node_id: &NodeId) -> Option<AudioStream> {
+/// Idempotent ensure-open: return the live stream for `node` if one exists,
+/// otherwise create one via `create` *while holding the registry lock*, so two
+/// concurrent opens of the same node cannot both create a stream.
+pub(crate) fn open_or_existing(
+    node: InputNode,
+    target_format: AudioFormat,
+    create: impl FnOnce() -> Result<(QueueConsumer, Box<dyn BackendStream>), Error>,
+) -> Result<AudioStream, Error> {
     let mut registry = OPEN_STREAMS.lock();
-    // Clean up dead entries while we search.
     registry.retain(|_, weak| weak.strong_count() > 0);
-    registry.get(node_id).and_then(|weak| weak.upgrade()).map(AudioStream::from_inner)
-}
-
-#[cfg(not(any(test, feature = "test-util")))]
-pub(crate) fn register_stream(node_id: NodeId, inner: Weak<StreamInner>) {
-    OPEN_STREAMS.lock().insert(node_id, inner);
-}
-
-pub(crate) fn unregister_stream(node_id: &NodeId) {
-    OPEN_STREAMS.lock().remove(node_id);
+    if let Some(existing) = registry.get(&node.id).and_then(Weak::upgrade) {
+        return Ok(AudioStream { inner: existing });
+    }
+    let (consumer, backend) = create()?;
+    let inner = Arc::new(StreamInner {
+        consumer: Mutex::new(consumer),
+        backend: Mutex::new(backend),
+        node,
+        target_format,
+        closed: AtomicBool::new(false),
+    });
+    registry.insert(inner.node.id.clone(), Arc::downgrade(&inner));
+    Ok(AudioStream { inner })
 }
 
 pub(crate) struct StreamInner {
@@ -37,72 +47,61 @@ pub(crate) struct StreamInner {
     backend: Mutex<Box<dyn BackendStream>>,
     node: InputNode,
     target_format: AudioFormat,
-    next_seq: AtomicU64,
+    closed: AtomicBool,
+}
+
+impl StreamInner {
+    /// Stop capture, release the source, clear buffers, and drop the registry
+    /// entry — but only if the entry still refers to this stream, so a close
+    /// racing a reopen never deletes the newer stream's registration.
+    fn shutdown(&self) {
+        if self.closed.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let _ = self.backend.lock().close();
+        self.consumer.lock().clear();
+        let mut registry = OPEN_STREAMS.lock();
+        if let Some(weak) = registry.get(&self.node.id) {
+            if std::ptr::eq(weak.as_ptr(), self) {
+                registry.remove(&self.node.id);
+            }
+        }
+    }
 }
 
 impl Drop for StreamInner {
     fn drop(&mut self) {
-        let _ = self.backend.get_mut().close();
-        unregister_stream(&self.node.id);
+        self.shutdown();
     }
 }
 
 /// Handle to one open capture stream.
-#[derive(Clone)]
+///
+/// Handles obtained through the idempotent open share the same underlying
+/// stream. `close()` on any handle stops capture for all of them (FR-008);
+/// remaining handles read an empty, closed stream.
 pub struct AudioStream {
     inner: Arc<StreamInner>,
 }
 
 impl AudioStream {
-    pub(crate) fn new(
-        consumer: QueueConsumer,
-        backend: Box<dyn BackendStream>,
-        node: InputNode,
-        target_format: AudioFormat,
-    ) -> Self {
-        let inner = Arc::new(StreamInner {
-            consumer: Mutex::new(consumer),
-            backend: Mutex::new(backend),
-            node,
-            target_format,
-            next_seq: AtomicU64::new(0),
-        });
-        #[cfg(not(any(test, feature = "test-util")))]
-        register_stream(inner.node.id.clone(), Arc::downgrade(&inner));
-        Self { inner }
-    }
-
-    #[cfg(not(any(test, feature = "test-util")))]
-    pub(crate) fn from_inner(inner: Arc<StreamInner>) -> Self {
-        Self { inner }
-    }
-
     /// Non-blocking read: drain whatever is buffered (possibly empty).
+    /// Frames carry the timestamps and sequence numbers assigned at capture
+    /// time; a sequence gap plus an `Overrun` event indicates dropped audio.
     pub fn read(&mut self) -> Result<Vec<StreamItem>, Error> {
+        Ok(self.inner.consumer.lock().drain())
+    }
+
+    /// Blocking read: wait (on a condvar, not by polling) until at least one
+    /// item is available or the timeout elapses, then drain.
+    pub fn read_timeout(&mut self, timeout: Duration) -> Result<Vec<StreamItem>, Error> {
         let mut consumer = self.inner.consumer.lock();
         let mut items = Vec::new();
-        while let Some(mut item) = consumer.pop() {
-            if let StreamItem::Frame(frame) = &mut item {
-                frame.seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed);
-            }
-            items.push(item);
+        if let Some(first) = consumer.pop_timeout(timeout) {
+            items.push(first);
+            items.extend(consumer.drain());
         }
         Ok(items)
-    }
-
-    /// Blocking read with timeout; returns at least one item if available.
-    pub fn read_timeout(&mut self, timeout: Duration) -> Result<Vec<StreamItem>, Error> {
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let items = self.read()?;
-            if !items.is_empty() {
-                return Ok(items);
-            }
-            if std::time::Instant::now() >= deadline {
-                return Ok(Vec::new());
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
     }
 
     /// The node this stream captures from.
@@ -115,16 +114,16 @@ impl AudioStream {
         &self.inner.target_format
     }
 
-    /// Close the stream, releasing resources and clearing buffers.
-    pub fn close(self) -> Result<(), Error> {
-        // Dropping self drops the Arc; if this is the last reference, StreamInner::Drop closes the backend.
-        drop(self);
-        Ok(())
+    /// Whether the stream has been closed (by any handle or by device loss).
+    pub fn is_closed(&self) -> bool {
+        self.inner.closed.load(Ordering::SeqCst)
     }
-}
 
-impl Drop for AudioStream {
-    fn drop(&mut self) {
-        // The actual close/teardown happens in StreamInner::Drop when the Arc count reaches zero.
+    /// Close the stream: stop capture, release the audio source, and clear
+    /// buffers (FR-008, SC-004). Effective immediately, even if other handles
+    /// to the same stream exist.
+    pub fn close(self) -> Result<(), Error> {
+        self.inner.shutdown();
+        Ok(())
     }
 }
