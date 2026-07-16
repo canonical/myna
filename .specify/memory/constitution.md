@@ -1,25 +1,26 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.1.0 → 1.2.0
-Modified principles: none renamed or redefined
+Version change: 1.2.0 → 1.3.0
+Modified principles:
+  - I. Red-Green TDD — added temporal boundary (from ratification onward);
+    added explicit exclusion for evaluation harnesses (Python testbed, myna-server)
 Added sections:
-  - Staged Delivery in Feature Branches (under Development Workflow & Quality Gates)
+  - Python components as evaluation harnesses (under Technology & Environment Constraints)
 Removed sections: none
 Templates requiring updates:
-  - ✅ .specify/templates/plan-template.md — no changes required (branch staging is
-    expressed through tasks, checked at the existing Constitution Check gate)
+  - ✅ .specify/templates/plan-template.md — no changes required
   - ✅ .specify/templates/spec-template.md — no changes required
-  - ✅ .specify/templates/tasks-template.md — updated: Implementation Strategy now requires
-    a branch staging plan mapping phases/stories to feature branches
-  - ⚠ specs/001-rust-audio-adapter/tasks.md — pending regeneration (already stale vs
-    FR-020–FR-022); must include a branch staging plan when regenerated
+  - ✅ .specify/templates/tasks-template.md — no changes required
+  - ⚠ specs/001-rust-audio-adapter/tasks.md — still pending regeneration (already stale
+    vs FR-020–FR-022)
 Follow-up TODOs: none
 
-Previous reports: 1.1.0 added Commit & Pull Request Communication. 1.0.0 (initial
-ratification) established Core Principles I–V, Technology & Environment Constraints,
-Development Workflow & Quality Gates, Governance; updated tasks-template.md (tests
-REQUIRED) and specs/001-rust-audio-adapter/plan.md (Constitution Check gates).
+Previous reports: 1.2.0 added Staged Delivery in Feature Branches. 1.1.0 added Commit
+& Pull Request Communication. 1.0.0 (initial ratification) established Core Principles
+I–V, Technology & Environment Constraints, Development Workflow & Quality Gates,
+Governance; updated tasks-template.md (tests REQUIRED) and
+specs/001-rust-audio-adapter/plan.md (Constitution Check gates).
 -->
 
 # Myna Constitution
@@ -28,16 +29,26 @@ REQUIRED) and specs/001-rust-audio-adapter/plan.md (Constitution Check gates).
 
 ### I. Red-Green TDD (NON-NEGOTIABLE)
 
-All production code MUST be written test-first: write a test that captures the required
-behavior, observe it fail (red), write the minimum implementation to make it pass (green),
-then refactor with the suite green. Pull requests MUST show test and implementation changes
-together; a change that adds behavior without a test that would have failed before the change
-MUST be rejected in review. Contract guarantees defined in feature design artifacts (e.g.,
-contracts/) MUST be encoded as executable tests before the code that satisfies them exists.
+All new production code written after ratification (2026-07-15) MUST be written
+test-first: write a test that captures the required behavior, observe it fail (red), write
+the minimum implementation to make it pass (green), then refactor with the suite green.
+Existing code written before ratification is not retroactively required to have been test-
+first, but any behavioral change to existing code MUST follow the red-green-refactor cycle.
+Pull requests that add behavior MUST show test and implementation changes together; a change
+that adds behavior without a test that would have failed before the change MUST be rejected
+in review. Contract guarantees defined in feature design artifacts (e.g., contracts/) MUST
+be encoded as executable tests before the code that satisfies them exists.
+
+**Evaluation harnesses excluded**: the Python testbed (`myna.testbed`) and `myna-server`
+are research and evaluation infrastructure, not shipped production components (see
+Technology & Environment Constraints). They are explicitly exempt from the TDD
+requirement — their tests may be written after implementation or not at all.
 
 Rationale: myna processes live microphone audio where regressions are audible and
 privacy-sensitive; test-first is the only reliable way to keep behavioral guarantees
-enforced rather than aspirational.
+enforced rather than aspirational. The temporal boundary prevents endless retroactive
+backfill of tests for working, pre-ratification code, while ensuring all forward momentum
+is test-driven.
 
 ### II. Integration-Test Readiness on Real Audio Stacks
 
@@ -96,10 +107,17 @@ the constraint most expensive to retrofit and most damaging to violate.
 
 ## Technology & Environment Constraints
 
-- Implementation language for system components is Rust (stable toolchain, current edition);
-  deviations require Complexity Tracking justification in the feature plan.
+- Implementation language for shipped system components is Rust (stable toolchain, current
+  edition); deviations require Complexity Tracking justification in the feature plan.
 - Target platform is Ubuntu Desktop (current LTS and later) with PipeWire as the primary
   audio server and PulseAudio compatibility maintained.
+- **Python components are evaluation harnesses**: the Python testbed (`myna.testbed`) and
+  `myna-server` are research and evaluation infrastructure — they benchmark candidate
+  adapters, measure accuracy and latency, and serve as a lightweight local backend during
+  development. They are NOT shipped production components and are not subject to the TDD
+  requirement (Principle I), performance watermark baselines (Principle III), or the Rust
+  language constraint. The production inference snap and dictation client are Rust; the
+  Python components are scaffolding for the research that informs them.
 - New system dependencies MUST be added to the Workshop definition in the same PR that
   introduces them.
 - Reference environments for watermark baselines (Principle III) are the Workshop container
@@ -162,4 +180,4 @@ and wording. Compliance is reviewed at every feature's Constitution Check gate a
 review per the workflow gates above; persistent violations MUST be either remediated or
 ratified as amendments — silent divergence is not permitted.
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-15 | **Last Amended**: 2026-07-15
+**Version**: 1.3.0 | **Ratified**: 2026-07-15 | **Last Amended**: 2026-07-15
