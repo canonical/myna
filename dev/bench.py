@@ -146,6 +146,18 @@ async def main() -> None:
         args.label = detect_label()
     provenance = json.loads(args.provenance) if args.provenance else None
 
+    # Ask the server what model it actually serves, so the *weight version*
+    # travels with the data instead of only the human --label (todo.txt /
+    # labelling): adapters report a versioned id in capabilities (e.g.
+    # whisper-base@<commit>). Best-effort — an old server or one without a
+    # capabilities surface just yields no served_models.
+    served_models: list[str] = []
+    try:
+        caps = await WsUnixClient(args.socket).capabilities()
+        served_models = list(caps.models)
+    except Exception as exc:  # noqa: BLE001 — discovery is advisory
+        print(f"(capabilities query failed: {type(exc).__name__}: {exc})")
+
     clips = select_clips(args)
     pace = "fast as possible" if args.batch else "real-time pace (audio streams in full before finalize)"
     print(f"label={args.label}  clips={len(clips)}  socket={args.socket}")
@@ -196,7 +208,7 @@ async def main() -> None:
     run_started = datetime.now(timezone.utc).isoformat()
     with args.out.open("a", encoding="utf-8") as fp:
         for line in lines:
-            record = {"run_started": run_started, **line}
+            record = {"run_started": run_started, "served_models": served_models, **line}
             if provenance:
                 record["provenance"] = provenance
             fp.write(json.dumps(record) + "\n")
