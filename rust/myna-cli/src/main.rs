@@ -13,20 +13,20 @@
 //! ```text
 //!   myna-server --adapter fake --socket /tmp/myna.sock &
 //!   myna-dictate --socket /tmp/myna.sock --clip corpus/real/audio/<id>.wav
-//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone (T51)
+//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone (T52, native PipeWire)
 //! ```
 //!
 //! Press Enter to start an utterance, Enter again to stop (or let the clip play
 //! out); the transcript prints. `Ctrl-D` quits. `--corpus <dir>` cycles through
 //! a corpus manifest instead of a single clip. `--mic` captures live audio via
-//! `myna-audio` (`pw-record` backend): capture starts at press and buffers in
+//! `myna-audio` (native PipeWire backend): capture starts at press and buffers in
 //! the pre-ready ring while the model loads, so nothing said is lost.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use myna_audio::{AudioStats, CaptureSource, PwRecordBackend};
+use myna_audio::{AudioStats, CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, AudioSource, SessionConfig, StopHandle};
 use myna_orchestrator::{
     run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge,
@@ -69,8 +69,10 @@ OPTIONS:
     --socket <path>    Unix socket of a running myna-server (required)
     --clip <wav>       a single PCM WAV clip to dictate (repeatable)
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
-    --mic              capture the live microphone (myna-audio / pw-record)
+    --mic              capture the live microphone (myna-audio / native PipeWire)
     --target <node>    PipeWire node.name to capture from (with --mic)
+    --list-devices     list input devices (stable node.name + label) and exit;
+                       stays live — plug/unplug updates the list until Ctrl-C
     --language <lang>  language hint sent in the session config (e.g. en)
     --dialect <name>   wire dialect: `internal` (default) or `ie115`
     --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
@@ -155,6 +157,11 @@ fn load_corpus(dir: &std::path::Path, clips: &mut Vec<Clip>) -> Result<(), Strin
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Standalone action: list input devices and exit (no socket needed).
+    if std::env::args().skip(1).any(|a| a == "--list-devices") {
+        return list_devices().await;
+    }
+
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
@@ -171,6 +178,40 @@ async fn main() -> ExitCode {
             dictate(WsUnixIe115Backend::new(&args.socket).base64_audio(args.base64_audio), &args).await
         }
     }
+}
+
+/// `--list-devices`: print the live input-device list (stable `node.name` +
+/// human label) and keep updating it as devices appear/disappear until Ctrl-C
+/// (feature 002-native-pipewire-backend, US4).
+async fn list_devices() -> ExitCode {
+    let devices = match myna_audio::InputDevices::new() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("cannot enumerate input devices: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut watch = devices.watch();
+    // Give the registry a beat to deliver the initial set.
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(500), watch.changed()).await;
+    println!("input devices (Ctrl-C to stop watching):");
+    let render = |list: &[myna_audio::InputDevice]| {
+        if list.is_empty() {
+            println!("  (none)");
+        }
+        for d in list {
+            println!("  {}\t{}", d.node_name, d.label);
+        }
+    };
+    render(&devices.list());
+    loop {
+        if watch.changed().await.is_err() {
+            break;
+        }
+        println!("── devices changed ──");
+        render(&devices.list());
+    }
+    ExitCode::SUCCESS
 }
 
 /// The push-to-talk loop, generic over the backend dialect.
@@ -194,7 +235,7 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             break;
         }
 
-        // Build this utterance's source: live mic (T51) or the next clip.
+        // Build this utterance's source: live mic (T52, native PipeWire) or the next clip.
         // Boxed so both kinds run through the same loop below.
         let (source, stop, mic_stats): (
             Box<dyn AudioSource>,
@@ -205,7 +246,7 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             if let Some(node) = &args.target {
                 builder = builder.target(node.clone());
             }
-            let source = builder.backend(Box::new(PwRecordBackend::new())).build();
+            let source = builder.backend(Box::new(PipeWireBackend::new())).build();
             println!("── mic: capturing (Enter to stop)");
             let stats = source.stats();
             let stop = source.stop_handle();

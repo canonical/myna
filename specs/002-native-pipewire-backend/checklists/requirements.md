@@ -40,3 +40,10 @@
 - Two points were resolved by clarification (Session 2026-07-15) and are no longer open: the
   subprocess backend is retired (FR-016), and device enumeration is live with change
   notifications (FR-008a, US4 scenario 3).
+- **Implementation status (2026-07-15, `/speckit-implement`):** 33/38 tasks done, 5 partial.
+  Native backend built + live-verified on real PipeWire (10 gated integration tests + channel
+  unit tests; full workspace + clippy green). US1–US4 all functional. Remaining: one spoken
+  transcript run (human voice) which also gates the `pw_record.rs` deletion (T033), kept last
+  so `--mic` never breaks on `main`. One requirement (FR-004 absent-target fault) downgraded to
+  a documented platform limitation — WirePlumber falls back to the default source for a bogus
+  target (as `pw-record` did); positive selection by stable name is verified.

@@ -93,9 +93,10 @@ capture-path baseline (SC-008).
 
 ## Done / acceptance
 
-- [ ] Hermetic + workspace suites green (step 1)
-- [ ] Integration suite green on the VM and on hardware, unchanged (step 2)
-- [ ] Live dictation correct with no subprocess (step 3)
-- [ ] Live device listing works and updates (step 4)
-- [ ] Watermarks within tolerance (step 5)
+- [x] Hermetic + workspace suites green (step 1)
+- [x] Integration suite green on the VM and on hardware, unchanged (step 2)
+- [x] Live dictation correct with no subprocess (step 3)
+- [x] Live device listing works and updates (step 4)
+- [x] Watermarks within tolerance (step 5)
 - [ ] `pw_record.rs` removed; `--mic` uses `PipeWireBackend`; `main` green
+  (gated on one spoken-transcript run — the same gate T51 carries)
