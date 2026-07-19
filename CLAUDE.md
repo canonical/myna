@@ -1,7 +1,14 @@
 # CLAUDE.md — UbuSTT (myna) project context
 
 Lean context for a coding agent. **`docs/project-plan.md` is the living task
-tracker (stable IDs T01–T32) — read it first** for status and next steps.
+tracker (stable global IDs, currently T01–T55) — read it first** for status and
+next steps.
+
+Two task-numbering schemes exist and do **not** correspond: the plan's global
+`TNN` IDs, and the per-feature `T0NN` numbers inside each
+`specs/NNN-*/tasks.md` (spec-kit-local). E.g. plan **T52** (native PipeWire
+backend) was delivered as feature `002-native-pipewire-backend`, whose own tasks
+run T001–T038. When a task ID is ambiguous, say which scheme.
 
 ## What this is
 
@@ -9,7 +16,23 @@ Ubuntu Desktop speech-to-text (dictation): hold a hotkey, speak, transcribed
 text is inserted into the focused app. Local, offline, privacy-preserving — no
 cloud, no persistent audio.
 
-## Current state (2026-07-01)
+## Code map
+
+- `src/myna/` — the **Python** side. `myna.core` is the shared session contract
+  (audio / events / session / capabilities / protocol / transports, incl. the
+  IE115 wire codec). **It is load-bearing, not legacy**: `myna.server` (the
+  `myna-server` process the snaps ship), *every* `myna.testbed` adapter
+  (whisper / nemotron / qwen / fake / harness / sources), and the whole test
+  suite import it. `myna.desktop` is small interface stubs (T21/T22, todo).
+- `rust/` — the **Rust** dictation client. `myna-core` *mirrors* that wire
+  contract for the client (+ the capture consumer traits); `myna-audio` is the
+  capture adapter; `myna-orchestrator` the session/residency FSM; `myna-cli` the
+  `myna-dictate` binary. ~6k lines, the production hot path.
+- **Two `core`s on purpose.** Python `myna.core` (server + testbed) and Rust
+  `myna-core` (client) are peer mirrors of one contract shipping in different
+  processes/languages — not duplicates to collapse.
+
+## Current state (2026-07-19)
 
 - **Testbed**: harness + session contract over two transports (loopback,
   WebSocket-UDS), same contract tests; fake adapter (permanent fixture); WAV +
@@ -30,8 +53,15 @@ cloud, no persistent audio.
   confinement. `qwen-snap` ships the pure-C CPU engine; a GPU engine for the
   family is on the `qwen3-vllm-gpu` branch (showing runtimes are switchable per
   family via the existing engine mechanism).
-- **Desktop**: `dev/dictate.py` push-to-talk demo. Session controller + IBus
-  injection (T21/T22) not started.
+- **Desktop client (Rust, largely built)**: `myna-dictate` (`rust/`) is the
+  push-to-talk client — `myna-orchestrator`'s wire-agnostic session/residency
+  FSM, driven from `myna-cli`, capturing live mic audio through `myna-audio`'s
+  **native `pipewire-rs` backend** (`--mic`, node selection by stable
+  `node.name`, channel pick/downmix, `--list-devices`), speaking both the
+  internal wire and IE115. Verified end-to-end against `myna-server`. Still
+  **todo**: the Python desktop session controller + **IBus text injection**
+  into the focused app (T21/T22) — the last-mile that turns transcripts into
+  keystrokes. `dev/dictate.py` is a Python live-mic demo of the same path.
 - **Spec (IE115)**: Workstream F **resolved (2026-07-01)** — the team settled on
   IE115 as a *suitable subset* of OpenAI's Realtime API + additive events
   (compat / remote-backend / industry-contribution). Adopted: our model-loading
@@ -41,15 +71,19 @@ cloud, no persistent audio.
   mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
   `docs/architecture/ie115-lifecycle.md`. Still open: error taxonomy (T31),
   protocol versioning (T35), overload/lag signal, GPU memory pressure.
-- **Next**: **audio adapter** (Charles — took over workstream D, 2026-07-07):
-  the `rust/myna-audio` crate behind the `AudioSource` trait (now in
-  `myna-core::capture`) — `CaptureBackend` seam, adapter-owned pre-ready ring
-  (drop-oldest + stats tap; real DSP stays in PipeWire filter-chain). T49 (API
-  v2, `docs/audio-adapter-api.md`) and T50 (skeleton crate + `ScriptedBackend`
-  fake, drop-in proven through the T41 runner) are **done**; T51 (pw-record
-  subprocess backend, `myna-dictate --mic`) is code-complete and live-verified
-  against the fake adapter — one spoken whisper run remains, then T52
-  (native pipewire-rs). Inference snap server: Ivano.
+- **Next**: **IBus text injection + desktop session controller** (T21/T22) — the
+  remaining last-mile so a spoken utterance lands as text in the focused app;
+  the Rust capture→FSM→transcript path that feeds it is done. Also open: bring
+  the Python testbed extras + a CUDA/GPU SDK under Workshop (T55, follow-up),
+  and the workstream-E spec items below. Inference snap server: Ivano.
+
+  (Audio adapter — workstream D, Charles — is **done**: `rust/myna-audio` behind
+  the `AudioSource`/`CaptureBackend` seam, T49–T52 complete; the native
+  `pipewire-rs` backend is the **sole** live-capture path and the `pw-record`
+  subprocess was retired (feature 002 T033, branch `002f`). A Canonical
+  **Workshop** dev environment (`.workshop/myna.yaml` + in-project `pipewire`
+  SDK) and CI (`.github/workflows/ci.yml`, running the workshop's `lint` /
+  `test` / `py-test` actions) were added, closing Principle IV for the crate.)
 
 ## Invariants (don't violate)
 
