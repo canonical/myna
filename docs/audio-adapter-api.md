@@ -239,6 +239,68 @@ then live ones. No arm/drain two-phase API needed.
 - **Discard on session end.** Abort drops the ring's contents on the floor;
   nothing outlives the stream. (Invariant §1.2.)
 
+### Backpressure, sizing & mode (findings 2026-07-15, spec-kit review)
+
+Two distinct ways the drain falls behind the 1×-realtime capture, with opposite
+fixes:
+
+- **Kind 1 — bounded backpressure (cold load).** The push is gated until
+  `ready`, so audio accumulates for the cold-load window (0.9–5.8 s measured,
+  T11) plus ms-scale scheduler jitter. Bounded and predictable — **this is the
+  ring's only real sizing driver.** Size it to comfortably exceed the worst-case
+  cold load across shipped tiers (one decision with T29). Memory is a
+  non-constraint (32 KB/s → 10 s = 320 KB, 60 s ≈ 2 MB), so err generous.
+- **Kind 2 — sustained backpressure.** The consumer is *permanently* slower than
+  realtime. No finite buffer fixes this (a bigger one only delays overflow and
+  balloons latency). It arises **only when streaming a model that can't decode
+  faster than realtime (RTF ≥ ~1)** — inherently over budget, or pushed
+  sub-realtime by sustained CPU/GPU contention or thermal throttling. The
+  response is **not** to grow the buffer or insert anything: drop-oldest +
+  surface `dropped` (and, when it lands, signal/bail — the model is over budget
+  for that tier). `AudioStats::dropped` should read **0** in a healthy session;
+  non-zero is a Kind-2 diagnosis, not an accepted loss budget.
+
+**Batch vs streaming — the mode that decides whether Kind 2 even exists:**
+
+- **Batch (commit-on-finalize) — the MVP and the safe floor.** During capture
+  the server only *accepts/buffers* PCM (realtime-trivial even under load); the
+  heavy decode runs *after* key release, when the mic has stopped. A slow model
+  becomes post-release *latency*, never audio loss — Kind 2 cannot reach the
+  ring, and generous cold-load sizing is unambiguously free. All shipped
+  adapters are commit-on-finalize today (T07/T09/T10a); streaming is T08 (not
+  started), so Kind 2 is currently unreachable.
+- **Streaming (T08).** The server decodes *during* capture, so a cold-load
+  backlog must be *decoded* to clear while live audio keeps arriving. On a
+  marginal model this creates a **latency tail whose length ≈ the cold-load
+  backlog** — a large cold-load buffer is then a liability, not free (bigger
+  buffer → longer tail; at RTF ≈ 1 the tail persists the whole session; at
+  RTF ≥ 1 it never closes = Kind 2). Streaming must therefore be **RTF-gated per
+  tier** (enable only where the testbed shows RTF comfortably < 1); the
+  catch-up/tail dynamics are governed by the server's RTF — an inference-backend
+  property, not a ring-size one.
+
+**Two "sizes"?** No — the client ring has **one** driver (Kind 1, cold load).
+"Model-running-to-process-chunks" buffering is the **inference backend's**
+concern (batch accumulation / streaming decode queue + its server-side memory
+tradeoffs), behind its API. The resident memory a second size would optimise is
+negligible: the ring is ~1000× smaller than the model weights, so the
+resident-memory lever is the residency/idle-unload policy (T29), not ring depth.
+
+### Underruns (device gaps) — nothing to do here
+
+A genuine underrun — the capture *source* produces nothing for a span (a device
+xrun) — is already handled one layer down: PipeWire's ALSA source pads gaps with
+silence and keeps the timeline continuous (`spa_alsa_skip()` in
+`spa/plugins/alsa/alsa-pcm.c` memsets a buffer when no frames are available;
+`alsa_recover()` accounts the xrun on the clock). By the time audio reaches the
+backend the stream is already continuous, so the crate adds **no** underrun
+concept, no silence-fill, no `Underrun` event. An *overrun* (Kind 1/2 above) is
+the opposite — real audio the consumer didn't take in time; the response is
+drop-oldest + the `dropped` counter, never synthetic silence. For an ASR
+consumer the resulting discontinuity is benign (the model's front-end washes out
+an isolated transient; a splice is preferable to inserted silence, which a model
+may read as a pause / punctuation). Splice-smoothing is DSP and stays out (§10).
+
 ## 7. Format ownership & negotiation
 
 Unchanged from v1, now with the backend named as the conversion point:
