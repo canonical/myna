@@ -6,9 +6,9 @@ pre-commit text may change) and the new testbed metric that makes streaming
 quality measurable. Written to be decided the way `ie115-wire.md` was: small,
 concrete, demoable.
 **Authors:** Claude, with Charles
-**Sources:** `docs/project-plan.md` (T08, T36, M2), `src/myna/core/events.py`
-(the flat vocab + IE115 mapping), `src/myna/core/wire_ie115.py` (delta hooks
-already in place), `src/myna/testbed/harness.py` (`Metrics`),
+**Sources:** `docs/project-plan.md` (T08, T36, M2), `server/src/myna/core/events.py`
+(the flat vocab + IE115 mapping), `server/src/myna/core/wire_ie115.py` (delta hooks
+already in place), `server/src/myna/testbed/harness.py` (`Metrics`),
 `docs/architecture/ie115-wire.md §7.4`.
 
 ## 0. What this note decides

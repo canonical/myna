@@ -6,6 +6,6 @@ set -euo pipefail
 snap_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(dirname "$snap_dir")"
 
-cd "$repo_root"
+cd "$repo_root/server"
 uv build --wheel --out-dir "$snap_dir/wheels"
 ls -l "$snap_dir/wheels"

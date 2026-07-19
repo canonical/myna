@@ -3,9 +3,9 @@
 reference/
 
 # Generated corpora — regenerate with the dev/ builders:
-#   fixtures/    -> dev/generate_fixtures.py  (synthetic espeak)
-#   corpus/      -> dev/fetch_real_corpus.py  (real LibriSpeech)
-#   .cache/      -> the ~337 MB LibriSpeech source download
+#   server/fixtures/ -> dev/generate_fixtures.py  (synthetic espeak)
+#   corpus/          -> dev/fetch_real_corpus.py  (real LibriSpeech)
+#   .cache/          -> the ~337 MB LibriSpeech source download
 fixtures/
 corpus/
 .cache/

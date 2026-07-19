@@ -102,7 +102,7 @@ async def test_harness_runs_clip_through_fake_adapter(tmp_path):
 
 generated = pytest.mark.skipif(
     not (FIXTURES / "manifest.json").exists(),
-    reason="run `uv run python dev/generate_fixtures.py` first",
+    reason="run `python dev/generate_fixtures.py` from repo root first",
 )
 
 

@@ -1,6 +1,6 @@
 """Generate the synthetic fixture corpus (T03, synthetic tier).
 
-    uv run python dev/generate_fixtures.py [--out fixtures]
+    uv run python dev/generate_fixtures.py [--out server/fixtures]
 
 Synthesizes the UD129 accuracy-matrix categories with espeak-ng into 16 kHz
 mono S16LE WAV files plus a ``manifest.json`` (see ``myna.testbed.corpus``).
@@ -304,8 +304,8 @@ def main() -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=REPO_ROOT / "fixtures",
-        help="output corpus directory (default: <repo>/fixtures)",
+        default=REPO_ROOT / "server" / "fixtures",
+        help="output corpus directory (default: <repo>/server/fixtures)",
     )
     args = parser.parse_args()
     manifest = generate(args.out)

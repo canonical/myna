@@ -41,4 +41,4 @@ actions:
     cd /project/client && cargo clippy --workspace --all-targets -- -D warnings
   # Python offline suite (fake-adapter contract + adapter logic).
   py-test: |
-    cd /project && uv run pytest "$@"
+    cd /project/server && uv run pytest "$@"

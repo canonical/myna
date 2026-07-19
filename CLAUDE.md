@@ -18,7 +18,7 @@ cloud, no persistent audio.
 
 ## Code map
 
-- `src/myna/` — the **Python** side. `myna.core` is the shared session contract
+- `server/src/myna/` — the **Python** side. `myna.core` is the shared session contract
   (audio / events / session / capabilities / protocol / transports, incl. the
   IE115 wire codec). **It is load-bearing, not legacy**: `myna.server` (the
   `myna-server` process the snaps ship), *every* `myna.testbed` adapter

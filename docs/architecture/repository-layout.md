@@ -21,10 +21,11 @@ forcing them to share a single package manager or language runtime.
 
 ## Decision
 
-### Python side — `src/myna/`
+### Python side — `server/`
 
-A single `uv`-managed Python package, `src/myna` (installed wheel name `myna`),
-with three subpackages and a strict dependency direction:
+A single `uv`-managed Python project at `server/` (`server/pyproject.toml`,
+`server/uv.lock`), providing an installed wheel named `myna`. Package source
+lives at `server/src/myna/`:
 
 ```
 myna.core     <- shared vocabulary; depends on nothing else in myna
@@ -88,7 +89,7 @@ client/
 
 One snap per model family. Each snap:
 - Bundles model weights as snap components.
-- Builds the `myna` Python wheel (with the family's extras) from `src/myna/`.
+- Builds the `myna` Python wheel (with the family's extras) from `server/src/myna/`.
 - Runs `myna-server` as the confined IE115 endpoint.
 - Supports idle-unload (modelctl/IE108) and model lifecycle management.
 
@@ -150,7 +151,7 @@ spec; each side's `core` is its typed expression of that spec.
   model family snap requires only a new `NNN-snap/` directory without touching
   the Rust workspace.
 - Layout changes to the directory tree (renaming `client/`, renaming
-  crates, restructuring `src/myna/`) should be proposed by updating **this ADR**
+  crates, restructuring `server/src/myna/`) should be proposed by updating **this ADR**
   first, so the rationale travels with the change. Use `git mv` to preserve
   blame history; do not rewrite.
 - If the testbed later needs to be deployable standalone (Taipei lab), the
