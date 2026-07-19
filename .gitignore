@@ -34,3 +34,7 @@ dist/
 
 # Testbed output
 results/
+
+# Canonical Workshop per-project instance state (the .workshop/ definitions
+# are committed; the lock ties a launched instance to this checkout).
+.workshop.lock

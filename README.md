@@ -42,6 +42,46 @@ dialect does (`docs/architecture/ie115-wire.md`).
 
 ## Development
 
+There are two ways to get a build+test environment: a **Workshop** (one command,
+reproducible, the canonical dev environment) or a **manual** install. Both give
+you the Rust toolchain, the PipeWire build dependencies the native capture
+adapter (`myna-audio`) links against, and `uv` for the Python evaluation harness.
+
+### Workshop (recommended)
+
+A [Canonical Workshop](https://ubuntu.com/workshop/docs) definition lives in
+[`.workshop/`](.workshop/) (`myna.yaml` + the in-project `pipewire` SDK). It
+declares the toolchain and system dependencies as composable SDKs, so one
+command gives you a reproducible environment with everything pre-installed —
+particularly useful for the VM-based integration tests (constitution Principle
+IV), and CI can consume the same definition.
+
+```shell
+workshop launch myna                       # build the environment (first run pulls the SDKs)
+workshop shell myna                         # a shell inside it, project mounted at /project
+workshop exec myna -- bash -lc 'cd /project/rust && cargo test'   # or run one command
+```
+
+The `pipewire` in-project SDK (`.workshop/pipewire/`) installs
+`libpipewire-0.3-dev`, `libclang-dev`, `pkg-config`, and the PipeWire audio
+tooling via its `setup-base` hook; the Rust and `uv` SDKs supply the rest. To
+capture from a real host microphone inside the workshop, hand-connect host
+audio: `workshop connect myna/pipewire:sound :custom-device` (the integration
+tests don't need it — they build their own virtual-audio graph).
+
+### Manual setup
+
+**Prerequisites** (install on the host directly):
+- **Rust** 1.75+ (the workspace toolchain) — via [rustup](https://rustup.rs).
+- **System build deps** for the native PipeWire capture backend — the
+  `libpipewire-0.3` headers, plus libclang and pkg-config the `pipewire`
+  crate's `-sys` build needs (bindgen + library lookup):
+  ```shell
+  sudo apt install libpipewire-0.3-dev libclang-dev pkg-config
+  ```
+- **uv** (Python tooling) — via `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  or your package manager.
+
 Tooling is [uv](https://docs.astral.sh/uv/). `uv` owns a project virtualenv
 (`.venv/`) and keeps it matching `pyproject.toml` + `uv.lock`: `uv sync`
 installs that environment, `uv run <cmd>` runs a command inside it.
@@ -52,9 +92,9 @@ The base install is tiny (`websockets`) plus the `dev` group (pytest,
 pytest-cov, Hypothesis). The two real ASR backends are **optional extras** — opt
 in only when you need them, because they are large:
 
-| Extra | Pulls in | For |
-|---|---|---|
-| `whisper`  | faster-whisper (CTranslate2) | the Whisper adapter / `whisper-snap` |
+| Extra      | Pulls in                                      | For                                    |
+|------------|-----------------------------------------------|----------------------------------------|
+| `whisper`  | faster-whisper (CTranslate2)                  | the Whisper adapter / `whisper-snap`   |
 | `nemotron` | `nemo_toolkit[asr]` + torch + CUDA (multi-GB) | the Nemotron adapter / `nemotron-snap` |
 
 `uv sync` is declarative: it makes `.venv` match *exactly* what you request, so
@@ -112,10 +152,22 @@ uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
 # same run over the OpenAI-Realtime IE115 wire — same FSM, different dialect:
 ./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --dialect ie115 \
     --language en --clip corpus/real/audio/<id>.wav
+
+# live microphone via the native PipeWire backend (no subprocess):
+./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic
+./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic \
+    --target alsa_input.pci-0000_c1_00.6.HiFi__Mic2__source   # a specific node.name
+
+# list input devices (stable node.name + label), live as they appear/disappear:
+./rust/target/release/myna-dictate --list-devices
 ```
 
-For a live-mic demo without Rust, `uv run python dev/dictate.py --socket
-/tmp/ubustt.sock` drives the same backend from Python (PipeWire capture).
+Live mic capture uses the native `pipewire-rs` backend in `myna-audio`
+(`--mic`), which selects the input node by stable `node.name`, picks/downmixes
+channels on multi-channel interfaces, and lets the PipeWire graph resample to
+the negotiated format — no `pw-record` subprocess. `--list-devices` enumerates
+input sources live. For a live-mic demo without Rust, `uv run python
+dev/dictate.py --socket /tmp/ubustt.sock` drives the same backend from Python.
 
 ### Evaluate (benchmarking — the north star)
 
