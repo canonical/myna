@@ -1,5 +1,5 @@
 # In-project SDK: PipeWire build + runtime dependencies for the native audio
-# capture backend (rust/myna-audio, feature 002-native-pipewire-backend).
+# capture backend (client/myna-audio, feature 002-native-pipewire-backend).
 #
 # `pipewire-rs` binds libpipewire-0.3; its -sys crate runs bindgen at build
 # time (libclang) and locates the library with pkg-config. The audio utilities

@@ -3,7 +3,7 @@
 **Date:** 2026-06-18 · **Revised:** 2026-07-07 (v2)
 **Status:** Settled contract (plan T49) — the v1 discussion draft plus the
 workstream-D takeover decisions (2026-07-07), baked in. Built as the
-`rust/myna-audio` crate (T50 skeleton + fake backend, T51 `pw-record`
+`client/myna-audio` crate (T50 skeleton + fake backend, T51 `pw-record`
 subprocess backend, T52 native `pipewire-rs` backend).
 **Authors:** Claude, with Charles
 **Prototype refs:** `myna/core/audio.py` (`AudioFormat`, `PcmChunk`,
@@ -32,7 +32,7 @@ workstream D (2026-07-07); the v1 open questions (§10 then) are now decisions:
   `AudioFormat`/`PcmChunk`; `myna-orchestrator` re-exports them unchanged, so
   the T41 mocks and runner keep compiling. The adapter crate depends on
   `myna-core` only — never on the orchestrator.
-- **Crate boundary:** `rust/myna-audio`, a workspace member versioned with the
+- **Crate boundary:** `client/myna-audio`, a workspace member versioned with the
   workspace. Public surface: `CaptureSource` (the adapter), `CaptureBackend` +
   `CaptureSpec` + `Producer` (the backend seam), `AudioStats` (the tap),
   `ScriptedBackend` (the permanent fake fixture — same philosophy as
@@ -391,6 +391,6 @@ such stage exists today, and VAD explicitly stays out (the hotkey is the VAD).
 | `Stream` vs `mpsc` vs `async_stream` | Public API is a `Stream` (matches T41's trait); internally a custom ring, because drop-oldest isn't an mpsc semantic. |
 | Encoding discriminant now? | Not yet — T33 is a team discussion; room reserved, S16LE assumed, both languages change together (§2). |
 | `pw-record` vs `libpipewire` | Both, sequenced: subprocess first (T51), native later (T52), behind `CaptureBackend` (§5). |
-| Crate boundary | `rust/myna-audio` workspace member; consumer traits in `myna-core`; adapter never depends on the orchestrator. |
+| Crate boundary | `client/myna-audio` workspace member; consumer traits in `myna-core`; adapter never depends on the orchestrator. |
 | Graceful-stop idiom | `StopHandle` (atomic flag, ~250 ms promptness contract), shared between consumer and backend (§3/§5). |
 | Buffering policy | Adapter-owned ring, drop-oldest + stats, 10 s provisional default paired with T29 (§6). |

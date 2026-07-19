@@ -24,7 +24,7 @@ cloud, no persistent audio.
   `myna-server` process the snaps ship), *every* `myna.testbed` adapter
   (whisper / nemotron / qwen / fake / harness / sources), and the whole test
   suite import it. `myna.desktop` is small interface stubs (T21/T22, todo).
-- `rust/` — the **Rust** dictation client. `myna-core` *mirrors* that wire
+- `client/` — the **Rust** dictation client. `myna-core` *mirrors* that wire
   contract for the client (+ the capture consumer traits); `myna-audio` is the
   capture adapter; `myna-orchestrator` the session/residency FSM; `myna-cli` the
   `myna-dictate` binary. ~6k lines, the production hot path.
@@ -53,7 +53,7 @@ cloud, no persistent audio.
   confinement. `qwen-snap` ships the pure-C CPU engine; a GPU engine for the
   family is on the `qwen3-vllm-gpu` branch (showing runtimes are switchable per
   family via the existing engine mechanism).
-- **Desktop client (Rust, largely built)**: `myna-dictate` (`rust/`) is the
+- **Desktop client (Rust, largely built)**: `myna-dictate` (`client/`) is the
   push-to-talk client — `myna-orchestrator`'s wire-agnostic session/residency
   FSM, driven from `myna-cli`, capturing live mic audio through `myna-audio`'s
   **native `pipewire-rs` backend** (`--mic`, node selection by stable
@@ -77,7 +77,7 @@ cloud, no persistent audio.
   the Python testbed extras + a CUDA/GPU SDK under Workshop (T55, follow-up),
   and the workstream-E spec items below. Inference snap server: Ivano.
 
-  (Audio adapter — workstream D, Charles — is **done**: `rust/myna-audio` behind
+  (Audio adapter — workstream D, Charles — is **done**: `client/myna-audio` behind
   the `AudioSource`/`CaptureBackend` seam, T49–T52 complete; the native
   `pipewire-rs` backend is the **sole** live-capture path and the `pw-record`
   subprocess was retired (feature 002 T033, branch `002f`). A Canonical

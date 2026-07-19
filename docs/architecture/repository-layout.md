@@ -6,7 +6,7 @@
 
 *Updated 2026-07-19 to document the Rust client workspace and snap packaging
 that were added after the original 2026-06-12 record. The original predated
-the entire `rust/` tree and the snaps.*
+the entire `client/` tree and the snaps.*
 
 ## Context
 
@@ -56,12 +56,12 @@ Model/engine dependencies (faster-whisper, NeMo, OpenBLAS/ctypes) are `uv`
 optional-dependency extras scoped per adapter (`[whisper]`, `[nemotron]`),
 never imported by `myna.core` or the harness.
 
-### Rust side — `rust/`
+### Rust side — `client/`
 
 A Cargo workspace with four crates:
 
 ```
-rust/
+client/
   myna-core/          <- wire contract mirror (IE115 types, FSM events)
   myna-audio/         <- capture adapter (pipewire-rs backend; AudioSource /
   |                      CaptureBackend traits)
@@ -149,7 +149,7 @@ spec; each side's `core` is its typed expression of that spec.
 - The snap build graph is independent of the Rust client build; adding a new
   model family snap requires only a new `NNN-snap/` directory without touching
   the Rust workspace.
-- Layout changes to the directory tree (renaming `rust/` to `client/`, renaming
+- Layout changes to the directory tree (renaming `client/`, renaming
   crates, restructuring `src/myna/`) should be proposed by updating **this ADR**
   first, so the rationale travels with the change. Use `git mv` to preserve
   blame history; do not rewrite.

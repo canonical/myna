@@ -11,7 +11,7 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 - `src/myna/testbed` — candidate-adapter evaluation testbed (fake + model adapters, harness, fixture corpus, metrics)
 - `src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snaps ship
 - `src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
-- `rust/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115
+- `client/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115
 - `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model family (engines/runtimes/models + modelctl), strict-confinement
 - `docs/architecture` — architecture decision records; read before structural changes
 - `docs/project-plan.md` — workstreams, tasks, and milestones (the living tracker)
@@ -27,7 +27,7 @@ Three processes play three roles against it:
   Hosts a model, listens on a UDS, has *no* microphone: the client pushes PCM,
   the server rejects off-format audio and never resamples. Swap models with
   `--adapter whisper|nemotron|qwen-c|fake`.
-- **Dictation client** — the Rust `myna-dictate` (`rust/`). Owns capture and the
+- **Dictation client** — the Rust `myna-dictate` (`client/`). Owns capture and the
   hotkey, runs the wire-agnostic session/residency FSM, injects transcribed text.
   The production hot path.
 - **Benchmark client** — the Python `dev/bench.py`. Replays a corpus through a
@@ -59,7 +59,7 @@ IV), and CI can consume the same definition.
 ```shell
 workshop launch myna                       # build the environment (first run pulls the SDKs)
 workshop shell myna                         # a shell inside it, project mounted at /project
-workshop exec myna -- bash -lc 'cd /project/rust && cargo test'   # or run one command
+workshop exec myna -- bash -lc 'cd /project/client && cargo test'   # or run one command
 ```
 
 The `pipewire` in-project SDK (`.workshop/pipewire/`) installs
@@ -142,24 +142,24 @@ session FSM against a running backend. Build and run it against any
 `myna-server`:
 
 ```shell
-cd rust && cargo build --release && cd ..
+cd client && cargo build --release && cd ..
 uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
 
 # real-time push-to-talk from a WAV clip (Enter to start, Enter/clip-end to stop):
-./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en \
+./client/target/release/myna-dictate --socket /tmp/ubustt.sock --language en \
     --clip corpus/real/audio/<id>.wav
 
 # same run over the OpenAI-Realtime IE115 wire — same FSM, different dialect:
-./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --dialect ie115 \
+./client/target/release/myna-dictate --socket /tmp/ubustt.sock --dialect ie115 \
     --language en --clip corpus/real/audio/<id>.wav
 
 # live microphone via the native PipeWire backend (no subprocess):
-./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic
-./rust/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic \
+./client/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic
+./client/target/release/myna-dictate --socket /tmp/ubustt.sock --language en --mic \
     --target alsa_input.pci-0000_c1_00.6.HiFi__Mic2__source   # a specific node.name
 
 # list input devices (stable node.name + label), live as they appear/disappear:
-./rust/target/release/myna-dictate --list-devices
+./client/target/release/myna-dictate --list-devices
 ```
 
 Live mic capture uses the native `pipewire-rs` backend in `myna-audio`
