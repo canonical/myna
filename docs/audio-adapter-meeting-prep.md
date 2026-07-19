@@ -3,7 +3,7 @@
 **Date:** 2026-06-18
 **Status:** Pre-meeting prep — refresh with decisions afterward
 **Authors:** Claude, with Charles
-**Context:** Architecture diagram `Myna - System Architecture.png`; agenda —
+**Context:** System architecture diagram in `docs/architecture/UD129 - Ubuntu Desktop STT Integration.md` (§ Architecture); agenda —
 daemon-or-library, API with the dictation service, who handles the hotkey, …
 
 In the diagram the **Audio Adapter** sits in the Speech Orchestrator between the

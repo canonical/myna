@@ -230,7 +230,69 @@ No dictation should be allowed in these contexts where secure input is expected,
 
 The system is organized into several interconnected components that handle session management, audio capture, inference, post-processing, and text output. These components work together to provide a responsive, real-time push-to-talk dictation experience.
 
-![image](Myna%20-%20System%20Architecture.png)
+**Overview:**
+
+```mermaid
+flowchart LR
+    User(["User"])
+    AS["Audio Server\n(Audio capture, PipeWire, DSP)"]
+    SO["Myna Speech Orchestrator\n(Session lifecycle and state management)"]
+    LSR["Local Speech Recognition\n(Local inference)"]
+    TF["Text Finalisation\n(Normalisation, Formatting,\nLanguage specific cleanup)"]
+    App["Your Application\n(Terminal, Browser, Editor, Chat, etc.)"]
+
+    User -- "Hotkey" --> SO
+    AS -- "Audio Stream" --> SO
+    SO -- "Raw Audio Frames" --> LSR
+    LSR -- "Text Segments" --> SO
+    SO -- "Committed Text" --> TF
+    TF -- "Text Insert" --> App
+```
+
+**Detailed component view:**
+
+```mermaid
+flowchart TB
+    subgraph IB["Inference Backend"]
+        OtherSnaps["Other inference snaps\n(Whisper, Parakeet, NemoTron, Qwen3-ASR, \u2026)"]
+        subgraph InfSnap["Inference snap"]
+            Weights["Model weights\n(0.6B / 1.7B \u2014 en, subset, et)"]
+            Runtimes["Model runtimes\n(GPU / CPU / NPU)"]
+            SnapCLI["Inference snap CLI"]
+            STTS["STT Server\n(Transcription API endpoint)"]
+        end
+    end
+
+    subgraph SPO["Speech Orchestrator"]
+        DS["Dictation Service\nHotkey listener \u2014 microphone stream\nInference API adapters \u2014 audio forwarding"]
+        AA["Audio Adapter\nAudio pre-processing\nOpens and configures device\nStreams PCM to Dictation Service"]
+        AS["Audio Server\n(PipeWire / PulseAudio / DSP)"]
+        TF["Text Finalisation\nNormalisation, capitalisation\nPunctuation, formatting\nLanguage-specific cleanup"]
+        TI["Text Injection Layer\nIBus / input method\nxdg / other"]
+    end
+
+    subgraph UIL["User Interaction"]
+        Settings["Settings UI\nTranscription language\nInstall inference snaps\nModel size \u2014 hotkey\nPost-processing"]
+        WC["Wayland Compositor"]
+        Widget["Text rendering widget"]
+        AI["Activity Indicator"]
+    end
+
+    GDS["Client\n(gRPC / DBus / Socket \u2014 TBD)"]
+
+    GDS --> DS
+    DS -- "Control Channel\n(Configuration API\nCapabilities discovery)" --> STTS
+    DS -- "Data Channel\n(Raw audio frames)" --> STTS
+    STTS -- "Text segments\n(committed text)" --> DS
+    AS -- "Raw audio frames\n(pcm16 / float32)" --> AA
+    AA --> DS
+    DS --> TF
+    TF --> TI
+    TI --> WC
+    WC -. "Wayland text input" .-> Widget
+    DS --> AI
+    Settings -.-> DS
+```
 
 ### Inference Snap
 
