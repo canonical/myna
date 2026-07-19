@@ -3,9 +3,9 @@
 #
 # Constitution Principle IV: the canonical dev environment is defined here as
 # composable SDKs, launched with `workshop launch myna` / `workshop exec`. This
-# covers what the Rust client subsystem (rust/) needs to build and test — the
+# covers what the Rust client subsystem (client/) needs to build and test — the
 # toolchain plus the PipeWire dev headers and audio tooling that the native
-# capture backend (rust/myna-audio, feature 002-native-pipewire-backend) links
+# capture backend (client/myna-audio, feature 002-native-pipewire-backend) links
 # against and integration-tests with, and uv for the Python evaluation harness.
 #
 # The PipeWire dev headers, libclang (bindgen), and audio tooling are provided
@@ -15,7 +15,7 @@
 name: myna
 base: ubuntu@24.04
 sdks:
-  # Workspace toolchain (rust/Cargo.toml: rust-version = 1.75) — cargo, clippy,
+  # Workspace toolchain (client/Cargo.toml: rust-version = 1.75) — cargo, clippy,
   # rustfmt.
   - name: rust
 
@@ -35,10 +35,10 @@ actions:
   # Rust workspace: build + full test suite (hermetic + gated integration; the
   # PipeWire-gated tests skip cleanly when MYNA_PIPEWIRE_TESTS is unset).
   test: |
-    cd /project/rust && cargo test --workspace "$@"
+    cd /project/client && cargo test --workspace "$@"
   # Rust lints as errors.
   lint: |
-    cd /project/rust && cargo clippy --workspace --all-targets -- -D warnings
+    cd /project/client && cargo clippy --workspace --all-targets -- -D warnings
   # Python offline suite (fake-adapter contract + adapter logic).
   py-test: |
     cd /project && uv run pytest "$@"
