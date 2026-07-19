@@ -1,0 +1,23 @@
+# In-project SDK: PipeWire build + runtime dependencies for the native audio
+# capture backend (rust/myna-audio, feature 002-native-pipewire-backend).
+#
+# `pipewire-rs` binds libpipewire-0.3; its -sys crate runs bindgen at build
+# time (libclang) and locates the library with pkg-config. The audio utilities
+# (pw-cli / wpctl) are used for device inspection and to stand up the
+# virtual-audio graph (null-sink / pw-loopback) that the env-gated integration
+# suite (MYNA_PIPEWIRE_TESTS=1) captures from — so the tests run without
+# physical hardware (Principle II) and unchanged on real hardware.
+#
+# System packages are installed by the setup-base hook (hooks/setup-base, runs
+# as root at install). The host-sound custom-device plug below is optional and
+# hand-connected; the integration tests build their own virtual graph.
+name: pipewire
+summary: PipeWire dev headers, libclang, pkg-config, and audio tooling for myna-audio.
+
+plugs:
+  # Optional host audio: connect by hand to capture from a real host
+  # microphone inside the workshop:
+  #   workshop connect myna/pipewire:sound :custom-device
+  sound:
+    interface: custom-device
+    subsystem: sound

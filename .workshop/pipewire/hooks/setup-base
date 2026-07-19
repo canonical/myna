@@ -1,0 +1,18 @@
+#!/bin/bash
+# setup-base — runs as root at SDK install (and when this SDK's revision
+# changes). Installs the system build + test dependencies for myna-audio:
+#   - libpipewire-0.3-dev : PipeWire client headers (pipewire-rs links these)
+#   - libclang-dev        : libclang for the pipewire-sys bindgen step
+#   - pkg-config          : libspa-sys/libpipewire-sys build.rs locate the libs
+#   - pipewire, wireplumber, pipewire-audio-client-libraries : runtime + pw-cli/wpctl
+#   - libpulse-dev        : PulseAudio compat headers for any pulse-path work
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends \
+  libpipewire-0.3-dev \
+  libclang-dev \
+  pkg-config \
+  pipewire \
+  pipewire-audio-client-libraries \
+  wireplumber \
+  libpulse-dev
