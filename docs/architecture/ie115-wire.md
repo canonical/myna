@@ -21,7 +21,7 @@ inline).
 **Authors:** Claude, with Charles
 **Sources:** `IE115-spec.txt` (Farshid, 2026-06-30), `docs/IE115-resolution.md`
 (team decisions, 2026-07-01), `docs/architecture/ie115-lifecycle.md`,
-`src/myna/core/{events,session,transport_ws}.py` (the internal vocab + current
+`server/src/myna/core/{events,session,transport_ws}.py` (the internal vocab + current
 wire), the review comments `[c]`–`[n]` in `IE115-spec.txt`.
 
 ## 0. Why implement it now (and on both ends)

@@ -22,7 +22,7 @@ from myna.testbed.whisper import FasterWhisperAdapter
 MANIFEST = Path(__file__).parent.parent / "fixtures" / "manifest.json"
 
 pytestmark = pytest.mark.skipif(
-    not MANIFEST.exists(), reason="run `uv run python dev/generate_fixtures.py` first"
+    not MANIFEST.exists(), reason="run `python dev/generate_fixtures.py` from repo root first"
 )
 
 

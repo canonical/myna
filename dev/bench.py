@@ -131,7 +131,7 @@ async def main() -> None:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "fixtures" / "manifest.json",
+        default=REPO_ROOT / "server" / "fixtures" / "manifest.json",
         help="corpus manifest to sweep (default: synthetic fixtures; "
         "use corpus/real/manifest.json for trustworthy WER)",
     )

@@ -7,10 +7,10 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 
 ## Repository layout
 
-- `src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS). Includes `wire_ie115.py`, the OpenAI-Realtime **IE115** wire dialect codec.
-- `src/myna/testbed` — candidate-adapter evaluation testbed (fake + model adapters, harness, fixture corpus, metrics)
-- `src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snaps ship
-- `src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
+- `server/src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS). Includes `wire_ie115.py`, the OpenAI-Realtime **IE115** wire dialect codec.
+- `server/src/myna/testbed` — candidate-adapter evaluation testbed (fake + model adapters, harness, fixture corpus, metrics)
+- `server/src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snaps ship
+- `server/src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
 - `client/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115
 - `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model family (engines/runtimes/models + modelctl), strict-confinement
 - `docs/architecture` — architecture decision records; read before structural changes
@@ -82,9 +82,11 @@ tests don't need it — they build their own virtual-audio graph).
 - **uv** (Python tooling) — via `curl -LsSf https://astral.sh/uv/install.sh | sh`
   or your package manager.
 
-Tooling is [uv](https://docs.astral.sh/uv/). `uv` owns a project virtualenv
-(`.venv/`) and keeps it matching `pyproject.toml` + `uv.lock`: `uv sync`
-installs that environment, `uv run <cmd>` runs a command inside it.
+Tooling is [uv](https://docs.astral.sh/uv/). The Python project lives under
+`server/`; all `uv` commands run from there. `uv` owns a project virtualenv
+(`server/.venv/`) and keeps it matching `server/pyproject.toml` + `server/uv.lock`:
+`cd server && uv sync` installs that environment, `cd server && uv run <cmd>` runs
+a command inside it.
 
 ### Dependencies and extras
 
@@ -97,11 +99,12 @@ in only when you need them, because they are large:
 | `whisper`  | faster-whisper (CTranslate2)                  | the Whisper adapter / `whisper-snap`   |
 | `nemotron` | `nemo_toolkit[asr]` + torch + CUDA (multi-GB) | the Nemotron adapter / `nemotron-snap` |
 
-`uv sync` is declarative: it makes `.venv` match *exactly* what you request, so
+`uv sync` is declarative: it makes `server/.venv` match *exactly* what you request, so
 it installs no extras by default, and syncing with fewer extras prunes ones
 installed earlier. Name every extra you want in the same command:
 
 ```shell
+cd server
 uv sync                                     # base + dev only (fake adapter, contract tests)
 uv sync --extra whisper                      # + Whisper
 uv sync --extra whisper --extra nemotron     # + both real adapters
@@ -114,22 +117,23 @@ download to `HF_HOME` on first use of an adapter (verify offline with
 `HF_HUB_OFFLINE=1`).
 
 The `qwen-c` adapter needs **no** pip extra — it's a pure-C engine reached via
-ctypes. Point it at the shared library and a local model dir:
+ctypes. Point it at the shared library and a local model dir (from `server/`):
 `QWEN_ASR_LIB=/snap/qwen/current/lib/libqwen_asr.so uv run myna-server
---adapter qwen-c --model qwen-snap/components/Qwen3-ASR-0.6B --socket /tmp/ubustt.sock`.
+--adapter qwen-c --model ../qwen-snap/components/Qwen3-ASR-0.6B --socket /tmp/ubustt.sock`.
 
 ### Common commands
 
 ```shell
-uv run pytest                            # offline suite: contract + adapter logic
-uv run python -m myna.testbed            # demo: fake adapter (--transport ws for UDS)
-uv run python dev/generate_fixtures.py   # synthetic corpus -> fixtures/  (needs libespeak-ng1 + espeak-ng-data)
-uv run python dev/fetch_real_corpus.py   # real LibriSpeech corpus -> corpus/real/  (needs ffmpeg; ~337 MB download)
+cd server
+uv run pytest                              # offline suite: contract + adapter logic
+uv run python -m myna.testbed              # demo: fake adapter (--transport ws for UDS)
+uv run python ../dev/generate_fixtures.py  # synthetic corpus -> server/fixtures/  (needs libespeak-ng1 + espeak-ng-data)
+uv run python ../dev/fetch_real_corpus.py  # real LibriSpeech corpus -> corpus/real/  (needs ffmpeg; ~337 MB download)
 
 # Serve a real adapter on a Unix socket, then talk to it:
 uv run myna-server --adapter nemotron --socket /tmp/ubustt.sock   # or --adapter whisper | qwen-c
-uv run python dev/capabilities.py --socket /tmp/ubustt.sock       # what can this server do?
-uv run python dev/transcribe.py --socket /tmp/ubustt.sock quiet-weather   # transcribe a fixture clip
+uv run python ../dev/capabilities.py --socket /tmp/ubustt.sock    # what can this server do?
+uv run python ../dev/transcribe.py --socket /tmp/ubustt.sock quiet-weather   # transcribe a fixture clip
 ```
 
 Both corpora are generated, not committed (gitignored) — run the builders above
@@ -143,7 +147,7 @@ session FSM against a running backend. Build and run it against any
 
 ```shell
 cd client && cargo build --release && cd ..
-uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
+(cd server && uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock) &
 
 # real-time push-to-talk from a WAV clip (Enter to start, Enter/clip-end to stop):
 ./client/target/release/myna-dictate --socket /tmp/ubustt.sock --language en \
@@ -166,24 +170,24 @@ Live mic capture uses the native `pipewire-rs` backend in `myna-audio`
 (`--mic`), which selects the input node by stable `node.name`, picks/downmixes
 channels on multi-channel interfaces, and lets the PipeWire graph resample to
 the negotiated format — no `pw-record` subprocess. `--list-devices` enumerates
-input sources live. For a live-mic demo without Rust, `uv run python
-dev/dictate.py --socket /tmp/ubustt.sock` drives the same backend from Python.
+input sources live. For a live-mic demo without Rust, `cd server && uv run python ../dev/dictate.py --socket /tmp/ubustt.sock` drives the same backend from Python.
 
 ### Evaluate (benchmarking — the north star)
 
 The testbed replays a corpus through a backend and scores it offline. Accuracy
 is only trustworthy on the **real** corpus (`corpus/real/`, recorded speech);
-the synthetic espeak `fixtures/` exercise plumbing and latency only.
+the synthetic espeak `server/fixtures/` exercise plumbing and latency only.
 
 ```shell
+cd server
 uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock &
 
 # sweep the real corpus, tagging the run; appends to results/bench.jsonl
-uv run python dev/bench.py --socket /tmp/ubustt.sock \
-    --manifest corpus/real/manifest.json --label whisper-base/cpu --batch
+uv run python ../dev/bench.py --socket /tmp/ubustt.sock \
+    --manifest ../corpus/real/manifest.json --label whisper-base/cpu --batch
 
 # aggregate every recorded run into a WER/CER matrix (optionally per UD129 category)
-uv run python dev/aggregate.py --by-category
+uv run python ../dev/aggregate.py --by-category
 ```
 
 Repeat the `bench.py` run per adapter/model/machine (each `--label` is a row);
@@ -203,8 +207,9 @@ runner. It provisions each target on a socket, takes a cold then a warm sample,
 stamps hardware provenance, and prints the matrix:
 
 ```shell
-uv run python dev/matrix.py --config dev/matrix.yaml --dry-run   # show the plan
-uv run python dev/matrix.py --config dev/matrix.yaml             # run it
+cd server
+uv run python ../dev/matrix.py --config ../dev/matrix.yaml --dry-run   # show the plan
+uv run python ../dev/matrix.py --config ../dev/matrix.yaml             # run it
 ```
 
 Edit `dev/matrix.yaml`: the `hardware:` block (machine/cpu/gpu/tier — what makes
@@ -222,7 +227,7 @@ pristine timing. Illustrative local run (real corpus): whisper-base/cpu 9.1% WER
 
 ### Tests and coverage
 
-`uv run pytest` runs the **offline** suite: the fake-adapter contract tests plus
+`cd server && uv run pytest` runs the **offline** suite: the fake-adapter contract tests plus
 each adapter's own logic (audio-format rejection, event finalisation, NeMo
 result-shape handling). Tests that need a real model or extra skip cleanly when
 it's absent, so the offline run stays green on any machine — including in CI
@@ -237,9 +242,10 @@ from every NeMo return shape. Hypothesis caches counterexamples under
 Coverage uses [pytest-cov](https://pytest-cov.readthedocs.io/):
 
 ```shell
+cd server
 uv run pytest --cov=myna                                  # coverage summary for the package
 uv run pytest --cov=myna --cov-report=term-missing        # + the exact uncovered line numbers
-uv run pytest --cov=myna --cov-report=html                # browsable report -> htmlcov/index.html
+uv run pytest --cov=myna --cov-report=html                # browsable report -> server/htmlcov/
 uv run pytest --cov=myna.testbed.nemotron tests/test_nemotron_unit.py   # scope to one module
 ```
 
@@ -255,7 +261,7 @@ The `whisper` / `nemotron` extras and the snap packages install the **same
 third-party libraries** (faster-whisper, NeMo) — they're declared once in
 `pyproject.toml` and consumed two independent ways:
 
-- `uv sync --extra <name>` puts them in your `.venv` so you can run an adapter
+- `cd server && uv sync --extra <name>` puts them in your `server/.venv` so you can run an adapter
   locally (testbed / `myna-server`).
 - the snap build packages them *into the snap*, so end users need neither uv
   nor the extras.

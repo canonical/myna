@@ -26,7 +26,7 @@ from myna.testbed.adapter import Candidate  # noqa: E402
 def pick_source(args: argparse.Namespace) -> tuple[WavFileSource, str | None]:
     if args.wav:
         return WavFileSource(args.wav, realtime=not args.batch), None
-    clips = {c.id: c for c in load_manifest(REPO_ROOT / "fixtures" / "manifest.json")}
+    clips = {c.id: c for c in load_manifest(REPO_ROOT / "server" / "fixtures" / "manifest.json")}
     if args.clip not in clips:
         raise SystemExit(f"unknown clip {args.clip!r}; available: {', '.join(sorted(clips))}")
     clip = clips[args.clip]
