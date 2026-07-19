@@ -1,0 +1,40 @@
+# CI for myna — runs the build+test suite inside the *same* Canonical Workshop
+# environment developers use locally (.workshop/myna.yaml), so "green in CI"
+# means "green in the environment you develop in" (constitution Principle IV).
+#
+# The launch-workshop action installs Workshop on the hosted runner and builds
+# the `myna` workshop (Rust toolchain + uv + the in-project pipewire SDK). The
+# named actions (`lint`, `test`, `py-test`) are defined in .workshop/myna.yaml.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  workshop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # TODO(security): pin to a commit SHA before relying on this in anger —
+      # @v1 tracks the latest v1.* and can move under us.
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          # Persist the crate registry and uv cache across runs.
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Rust lint (clippy -D warnings)
+        run: workshop run myna lint
+
+      - name: Rust tests (cargo test --workspace)
+        run: workshop run myna test
+
+      # Offline Python suite (fake-adapter contract + adapter logic; the
+      # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
+      - name: Python tests (pytest)
+        run: workshop run myna py-test
