@@ -24,3 +24,8 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "
 tokio-tungstenite = "0.24"
 futures-util = { version = "0.3", features = ["sink"] }
 async-trait = "0.1"
+# Native PipeWire bindings (feature 002-native-pipewire-backend). Binds system
+# libpipewire-0.3; the -sys crate needs libclang for bindgen at build time.
+# v0_3_44 enables PW_KEY_TARGET_OBJECT for node selection by name (T021); the
+# host runs libpipewire 1.6.x, so the API is present.
+pipewire = { version = "0.10", features = ["v0_3_44"] }

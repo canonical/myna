@@ -15,6 +15,10 @@
 - Q: Retire the subprocess backend, or keep it as a fallback? → A: Retire it — the native backend is the sole live-capture backend after this feature.
 - Q: Is device enumeration a point-in-time listing or a live API? → A: Live — enumeration reflects devices appearing/disappearing while running, with change notifications.
 
+### Implementation finding 2026-07-15 (absent-target behavior)
+
+- A **bogus / absent** `target` node.name does **not** produce a clear fault under the default WirePlumber session-manager policy: the graph falls back to the default source and captures. This is platform behavior, not a backend defect — `pw-record --target <bogus>` does the same (verified: captures from the default mic). So FR-004's "absent target → device-unavailable fault" (US2 scenario 3) is **downgraded to a known limitation**: strict absent-target faulting would need a session-manager policy/route change outside this crate. The load-bearing, testable guarantees remain: (a) a **resolvable** target captures *that* node (US2 scenario 1), and (b) a chosen target that later vanishes mid-capture faults via the stream error path (`DONT_RECONNECT` is set when a target is given). The `myna-cli --list-devices` output (US4) lets a user pick a real name, which is the intended path.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Dictate through the native backend, no subprocess (Priority: P1)
@@ -76,7 +80,11 @@ same named target still resolves to the same device.
    volatile identifiers are reassigned, **Then** the same target still selects the same
    physical device.
 3. **Given** a targeted device is absent when capture begins, **When** the user presses the
-   hotkey, **Then** the session ends with a clear "device unavailable" fault naming the target.
+   hotkey, **Then** ideally the session ends with a clear "device unavailable" fault naming the
+   target. **Known limitation (see Implementation finding 2026-07-15):** under the default
+   WirePlumber policy the graph instead falls back to the default source (as `pw-record` does),
+   so this fault is not guaranteed; the enforced guarantee is that a *resolvable* target selects
+   that node (scenario 1) and a chosen device that vanishes mid-capture faults.
 
 ---
 

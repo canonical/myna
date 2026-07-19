@@ -634,14 +634,14 @@ mod tests {
         fsm.on_input(Input::Backend(progress(PHASE_READY)));
         // Same wire effect as an abort (close, commit nothing) …
         let a = fsm.on_input(Input::CaptureFailed {
-            message: "pw-record exited mid-capture: no target node available".into(),
+            message: "PipeWire capture stream error: node vanished mid-capture".into(),
         });
         assert!(matches!(a.as_slice(), [Action::SendAbort]));
         // … but the outcome carries the diagnostic under a stable code.
         match fsm.outcome() {
             Some(SessionOutcome::Failed { code, message }) => {
                 assert_eq!(code, "capture_failed");
-                assert!(message.contains("no target node available"));
+                assert!(message.contains("vanished mid-capture"));
             }
             other => panic!("expected Failed, got {other:?}"),
         }

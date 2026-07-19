@@ -11,6 +11,7 @@ bytes.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
+pipewire.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

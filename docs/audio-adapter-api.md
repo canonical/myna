@@ -206,7 +206,7 @@ the difference and doesn't need to; the adapter discards the ring on abort.
 |---|---|---|
 | `ScriptedBackend` | T50 | The permanent fake fixture: scripted silence/bytes/pacing/faults, zero audio deps. Drives every unit test; the "mock audio adapter" for orchestrator work. |
 | `PwRecordBackend` | T51 | Port of `MicSource`: `pw-record --raw --rate … --channels … --format s16 [--target …] -`, bounded reads, terminate on stop. pw-record's own graph link does the resample/downmix to the requested rate/channels. |
-| `PipeWireBackend` | T52 | Native `pipewire-rs`: device/channel enumeration, node selection by stable `node.name`, channel pick/downmix, graph-side conversion, no fork. Decide then whether the subprocess backend stays as a fallback. |
+| `PipeWireBackend` | T52 **(done)** | Native `pipewire-rs`: node selection by stable `node.name` (`PW_KEY_TARGET_OBJECT`), channel pick/downmix (interleaved-S16 select+average to the negotiated layout), graph-side resample/downmix, no fork. Live device enumeration is a sibling API (`InputDevices`, below). **Now the sole live-capture backend** — the `PwRecordBackend` subprocess is retired (feature 002-native-pipewire-backend, FR-016). **Platform note:** a *bogus* `target` falls back to the default source under the default WirePlumber policy (as `pw-record` did), so strict absent-target faulting is a documented limitation, not enforced. |
 
 ## 6. The pre-ready ring (buffering, settled)
 
@@ -357,9 +357,16 @@ discussion, beyond "system default":
   specified indices. Native backend only (T52); the subprocess backend
   rejects it rather than silently capturing the wrong channels.
 
-Device *enumeration* (listing nodes for a settings UI) is deliberately out of
-this contract — it's a T52 concern and probably a separate crate-level helper,
-not part of `AudioSource`.
+Device *enumeration* (listing nodes for a settings UI) is **now implemented**
+(T52) as `InputDevices` in `myna-audio` — separate from `AudioSource`, as
+anticipated. It is **live**: `InputDevices::new()` starts a registry watch on a
+dedicated PipeWire loop thread; `list()` returns the current input sources
+(each `{ node_name, label }`) and `watch()` yields a
+`tokio::sync::watch::Receiver<Vec<InputDevice>>` that updates as devices
+appear/disappear (feature 002-native-pipewire-backend, FR-008/FR-008a). The
+stable `node_name` it yields is exactly what feeds `CaptureSpec.target`.
+`myna-dictate --list-devices` prints it live. (`DeviceChange` deltas are a
+reserved additive type; the watch-of-list covers the current need.)
 
 ## 10. Filtering — PipeWire filter-chain, not in-crate
 
