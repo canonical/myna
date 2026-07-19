@@ -2,7 +2,7 @@
 //! the device and delivers raw PCM through a [`Producer`]; the adapter core
 //! ([`crate::CaptureSource`]) owns everything behind it — re-chunking, the
 //! stats tap, the bounded ring. Backends: [`crate::ScriptedBackend`] (fake,
-//! T50), `PwRecordBackend` (subprocess, T51), `PipeWireBackend` (native, T52).
+//! T50), `PipeWireBackend` (native, T52 — the sole live-capture backend).
 
 use std::sync::Arc;
 use std::time::Duration;
