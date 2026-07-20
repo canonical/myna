@@ -6,10 +6,23 @@
 //! "hello lands in the field" acceptance of I1/SC-001). Focus/secure detection
 //! (I5, I8) lands in the safety branch 003e (T035).
 //!
-//! ⚠️ This test changes the **global input engine** while it runs, so it is
-//! gated: enable it only in a disposable desktop session (the VM, or a
-//! `dbus-run-session`-isolated IBus), never casually on a working desktop. It
-//! skips cleanly when the gate is unset, so the suite compiles and runs as a
+//! ⚠️ This test changes the **global input engine** while it runs, and an IBus
+//! daemon writes its address file under `$XDG_CONFIG_HOME/ibus/bus/`. Run it in
+//! an **isolated** session so it never touches your real IBus config — isolate
+//! `XDG_CONFIG_HOME`/`XDG_CACHE_HOME` and drop the shared display name so the
+//! daemon can't clobber `~/.config/ibus/bus/<machine>-unix-wayland-0`:
+//!
+//! ```sh
+//! dbus-run-session -- bash -c '
+//!   export XDG_CONFIG_HOME=$(mktemp -d) XDG_CACHE_HOME=$(mktemp -d)
+//!   unset WAYLAND_DISPLAY DISPLAY
+//!   ibus-daemon --daemonize --panel disable --xim
+//!   sleep 2
+//!   MYNA_IBUS_TESTS=1 cargo test -p myna-desktop --no-default-features --test ibus_hw
+//! '
+//! ```
+//!
+//! It skips cleanly when the gate is unset, so the suite compiles and runs as a
 //! no-op offline (Principle II).
 
 use myna_desktop::inject::ibus::IbusInjector;

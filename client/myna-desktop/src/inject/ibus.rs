@@ -122,7 +122,9 @@ fn ibus_component() -> Value<'static> {
 
 /// Locate the IBus private-bus address: `$IBUS_ADDRESS`, else the socket file
 /// under `~/.config/ibus/bus/` (the file the daemon writes). We pick the entry
-/// matching the current display, falling back to the newest readable file.
+/// matching the current display, and **validated** against liveness so a stale
+/// address file (e.g. left by a crashed/replaced daemon) yields an actionable
+/// error rather than a bare "connection refused".
 fn discover_address() -> Result<String, InjectError> {
     if let Ok(addr) = std::env::var("IBUS_ADDRESS") {
         if !addr.is_empty() {
@@ -145,18 +147,58 @@ fn discover_address() -> Result<String, InjectError> {
     let mut files: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
     // Newest last, so the display match (if any) or the newest wins.
     files.sort_by_key(|p| p.metadata().and_then(|m| m.modified()).ok());
-    let chosen = want
-        .as_deref()
-        .and_then(|w| files.iter().rev().find(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.ends_with(w)).unwrap_or(false)))
-        .or_else(|| files.last())
-        .ok_or_else(|| InjectError::Unavailable("no IBus socket file found".into()))?;
+    // Rank display matches ahead of the rest, newest first within each group.
+    let ranked: Vec<&PathBuf> = {
+        let matches_display = |p: &&PathBuf| {
+            want.as_deref().is_some_and(|w| {
+                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(w))
+            })
+        };
+        let (mut hit, miss): (Vec<&PathBuf>, Vec<&PathBuf>) =
+            files.iter().rev().partition(matches_display);
+        hit.extend(miss);
+        hit
+    };
 
-    let text = std::fs::read_to_string(chosen)
-        .map_err(|e| InjectError::Unavailable(format!("reading {}: {e}", chosen.display())))?;
-    text.lines()
-        .find_map(|l| l.strip_prefix("IBUS_ADDRESS="))
-        .map(|s| s.to_string())
-        .ok_or_else(|| InjectError::Unavailable("IBus socket file has no IBUS_ADDRESS".into()))
+    // Walk candidates best-first; take the first whose daemon is alive and whose
+    // socket exists. Remember a stale candidate so we can explain it.
+    let mut stale: Option<(String, Option<i64>)> = None;
+    for path in ranked {
+        let Ok(text) = std::fs::read_to_string(path) else { continue };
+        let Some(addr) = text.lines().find_map(|l| l.strip_prefix("IBUS_ADDRESS=")) else {
+            continue;
+        };
+        let addr = addr.to_string();
+        let pid: Option<i64> = text
+            .lines()
+            .find_map(|l| l.strip_prefix("IBUS_DAEMON_PID="))
+            .and_then(|p| p.trim().parse().ok());
+        // The daemon PID is alive (Linux /proc) and the unix socket path exists?
+        let pid_alive =
+            pid.map(|p| PathBuf::from(format!("/proc/{p}")).exists()).unwrap_or(true);
+        let sock_ok = addr
+            .split("path=")
+            .nth(1)
+            .and_then(|s| s.split(',').next())
+            .map(|sp| PathBuf::from(sp).exists())
+            .unwrap_or(true);
+        if pid_alive && sock_ok {
+            return Ok(addr);
+        }
+        stale.get_or_insert((addr, pid));
+    }
+
+    Err(match stale {
+        Some((_, pid)) => InjectError::Unavailable(format!(
+            "IBus address file(s) present but the daemon looks gone (stale PID {} / missing \
+             socket). Try `ibus restart` (or set IBUS_ADDRESS).",
+            pid.map(|p| p.to_string()).unwrap_or_else(|| "?".into())
+        )),
+        None => InjectError::Unavailable(format!(
+            "no usable IBus address in {} (is an IBus daemon running? try `ibus restart`)",
+            dir.display()
+        )),
+    })
 }
 
 // ── Engine + Factory D-Bus objects ──────────────────────────────────────────
