@@ -482,7 +482,12 @@ class _WsSession:
     async def send_audio(self, chunk: PcmChunk) -> None:
         if self._audio_finished:
             raise RuntimeError("send_audio() after finish_audio()")
-        await self._ws.send(chunk.data)
+        # The server may end the session (terminal error/done) and close mid-
+        # stream; the reason arrives on the events channel. A failed send here is
+        # then expected — suppress it (as finish_audio does) so it doesn't mask
+        # the real error with a ConnectionClosed traceback from the feeder.
+        with contextlib.suppress(ConnectionClosed):
+            await self._ws.send(chunk.data)
 
     async def finish_audio(self) -> None:
         if not self._audio_finished:
@@ -543,10 +548,13 @@ class _Ie115Session:
     async def send_audio(self, chunk: PcmChunk) -> None:
         if self._audio_finished:
             raise RuntimeError("send_audio() after finish_audio()")
-        if self._base64_audio:
-            await self._ws.send(json.dumps(pcm_to_append(chunk)))
-        else:
-            await self._ws.send(chunk.data)
+        # See _WsSession.send_audio: tolerate the server closing mid-stream so a
+        # terminal error isn't masked by a ConnectionClosed traceback.
+        with contextlib.suppress(ConnectionClosed):
+            if self._base64_audio:
+                await self._ws.send(json.dumps(pcm_to_append(chunk)))
+            else:
+                await self._ws.send(chunk.data)
 
     async def finish_audio(self) -> None:
         if not self._audio_finished:

@@ -36,6 +36,7 @@ from __future__ import annotations
 import array
 import asyncio
 import ctypes
+import glob
 import os
 from collections.abc import AsyncIterator
 
@@ -151,10 +152,57 @@ class _QwenLib:
             self._libc.free(ptr)
 
 
+_LIB_NAME = "libqwen_asr.so"
+
+
+class QwenRuntimeUnavailable(RuntimeError):
+    """The pure-C runtime (``libqwen_asr.so``) could not be located/loaded.
+    Distinct from an inference failure so it surfaces its own error code."""
+
+
+def _candidate_lib_paths(explicit: str | None) -> list[str]:
+    """Ordered candidate locations for ``libqwen_asr.so``. First existing wins.
+
+    Deliberately auto-discovers the library so a dev run doesn't need
+    ``LD_LIBRARY_PATH``/``QWEN_ASR_LIB`` hand-set: explicit arg, then the
+    ``QWEN_ASR_LIB`` env (what the snap sets), then an installed ``qwen`` snap
+    (the parsimonious CPU runtime ships it under ``$SNAP/lib``), newest revision
+    first. The bare name is appended last so the dynamic loader's own search
+    path still works as a final fallback."""
+    candidates: list[str] = []
+    if explicit:
+        candidates.append(explicit)
+    env = os.environ.get("QWEN_ASR_LIB")
+    if env:
+        candidates.append(env)
+    # Installed snap: /snap/qwen/current/lib, then any revision (newest first).
+    candidates.append(f"/snap/qwen/current/lib/{_LIB_NAME}")
+    candidates.extend(sorted(glob.glob(f"/snap/qwen/*/lib/{_LIB_NAME}"), reverse=True))
+    candidates.append(_LIB_NAME)  # loader search path (LD_LIBRARY_PATH etc.)
+    seen: set[str] = set()  # de-dupe, preserving order
+    return [c for c in candidates if not (c in seen or seen.add(c))]
+
+
 def _resolve_lib_path(explicit: str | None) -> str:
-    """Resolve the shared library: explicit arg, then ``QWEN_ASR_LIB``, then the
-    loader search path (bare ``libqwen_asr.so``)."""
-    return explicit or os.environ.get("QWEN_ASR_LIB") or "libqwen_asr.so"
+    """Return the first candidate that exists on disk, else the bare library name
+    (so the dynamic loader still gets a shot via its own search path)."""
+    candidates = _candidate_lib_paths(explicit)
+    for path in candidates:
+        if os.path.isabs(path) and os.path.exists(path):
+            return path
+    return candidates[-1]  # bare name; loader search path is the last resort
+
+
+def _load_error_hint(explicit: str | None) -> str:
+    """Human-actionable message for when the library can't be loaded: what we
+    looked for and how to point us at it, instead of a bare ``OSError``."""
+    looked = "\n".join(f"  - {p}" for p in _candidate_lib_paths(explicit))
+    return (
+        f"could not load the Qwen3-ASR C runtime ({_LIB_NAME}). Looked in:\n"
+        f"{looked}\n"
+        "Install the qwen snap (which ships it under $SNAP/lib), or set "
+        "QWEN_ASR_LIB=/path/to/libqwen_asr.so."
+    )
 
 
 class QwenCAdapter:
@@ -165,6 +213,7 @@ class QwenCAdapter:
         lib_path: str | None = None,
     ) -> None:
         self._model = model
+        self._lib_arg = lib_path
         self._lib_path = _resolve_lib_path(lib_path)
         self._lib: _QwenLib | None = None
         self._ctx: int | None = None
@@ -200,7 +249,13 @@ class QwenCAdapter:
                 self._lib, self._ctx = await asyncio.to_thread(self._load_blocking)
 
     def _load_blocking(self) -> tuple[_QwenLib, int]:
-        lib = _QwenLib(self._lib_path)
+        try:
+            lib = _QwenLib(self._lib_path)
+        except OSError as exc:
+            # A bare OSError ("cannot open shared object file") is opaque; wrap it
+            # with where we looked and how to fix it (the adapter surfaces this
+            # message as the transcription.error's text).
+            raise QwenRuntimeUnavailable(_load_error_hint(self._lib_arg)) from exc
         return lib, lib.load(self._model)
 
     async def unload(self) -> None:
@@ -273,6 +328,12 @@ class QwenCAdapter:
             if text:
                 await emit(TranscriptionFinal(text=text))
             await emit(TranscriptionDone(text=text))
+        except QwenRuntimeUnavailable as exc:
+            # Missing runtime library is an environment/config fault, not a
+            # decode failure — its own code, and the message says how to fix it.
+            await emit(
+                TranscriptionError(code="runtime_library_missing", message=str(exc))
+            )
         except Exception as exc:
             await emit(
                 TranscriptionError(

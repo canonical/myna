@@ -48,8 +48,18 @@ async def main() -> None:
     print("(a cold server may download/load the model first; watch `snap logs -f whisper.server`)")
 
     def show(te) -> None:
-        data = getattr(te.event, "text", None) or getattr(te.event, "snippet", None) or ""
-        print(f"  {te.t:7.3f}s  {te.event.type:24} {data!r}", flush=True)
+        ev = te.event
+        if ev.type == "transcription.error":
+            # An error carries code + message, not text/snippet — show them, or
+            # the failure reads as an empty string and the reason is lost.
+            detail = f"{getattr(ev, 'code', 'internal')}: {getattr(ev, 'message', '') or '(no message)'}"
+        elif ev.type == "transcription.progress":
+            phase = getattr(ev, "phase", "")
+            snippet = getattr(ev, "snippet", None) or ""
+            detail = f"[{phase}] {snippet}".rstrip()
+        else:
+            detail = getattr(ev, "text", None) or ""
+        print(f"  {te.t:7.3f}s  {ev.type:24} {detail!r}", flush=True)
 
     record = await Harness().run(
         client=WsUnixClient(args.socket),

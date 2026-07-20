@@ -35,6 +35,7 @@ from myna.testbed.qwen import (
     QWEN_FORMAT,
     QWEN_RATE,
     QwenCAdapter,
+    _candidate_lib_paths,
     _qwen_language,
     _resolve_lib_path,
 )
@@ -88,12 +89,31 @@ def test_qwen_language_none_and_unknown_fall_through_to_autodetect():
 # --- library-path resolution -----------------------------------------------
 
 
-def test_resolve_lib_path_prefers_explicit_then_env_then_default(monkeypatch):
+def test_candidate_lib_paths_ordering(monkeypatch):
+    """Discovery order: explicit arg, then $QWEN_ASR_LIB, then the installed
+    snap, then the bare name for the loader's own search path."""
     monkeypatch.setenv("QWEN_ASR_LIB", "/from/env.so")
-    assert _resolve_lib_path("/explicit.so") == "/explicit.so"
-    assert _resolve_lib_path(None) == "/from/env.so"
+    candidates = _candidate_lib_paths("/explicit.so")
+    assert candidates[0] == "/explicit.so"
+    assert candidates[1] == "/from/env.so"
+    assert candidates[-1] == "libqwen_asr.so"
+    assert any(c.startswith("/snap/qwen/") for c in candidates)
+    # No explicit/env: still auto-discovers (snap + loader path), no manual setup.
     monkeypatch.delenv("QWEN_ASR_LIB")
-    assert _resolve_lib_path(None) == "libqwen_asr.so"
+    assert _candidate_lib_paths(None)[-1] == "libqwen_asr.so"
+    assert "/explicit.so" not in _candidate_lib_paths(None)
+
+
+def test_resolve_lib_path_returns_first_existing(monkeypatch, tmp_path):
+    """An explicit arg only wins if it exists on disk; a bogus path falls through
+    to discovery rather than being handed to a doomed CDLL()."""
+    monkeypatch.delenv("QWEN_ASR_LIB", raising=False)
+    real = tmp_path / "libqwen_asr.so"
+    real.write_bytes(b"")
+    assert _resolve_lib_path(str(real)) == str(real)
+    # Nonexistent explicit path: skipped; falls back to the bare name (or an
+    # installed snap) rather than resolving to the missing file.
+    assert _resolve_lib_path("/does/not/exist.so") != "/does/not/exist.so"
 
 
 # --- audio-format rejection (property) -------------------------------------
@@ -256,6 +276,23 @@ async def test_c_decode_failure_surfaces_as_error_event(monkeypatch):
     assert isinstance(events[-1], TranscriptionError)
     assert events[-1].code == "inference_failed"
     assert "RuntimeError" in events[-1].message
+
+
+async def test_c_missing_runtime_library_surfaces_actionable_error(monkeypatch):
+    """A missing libqwen_asr.so must not read as an opaque OSError: distinct code
+    plus a message that says where we looked and how to fix it (no manual
+    LD_LIBRARY_PATH needed to understand the failure)."""
+    monkeypatch.delenv("QWEN_ASR_LIB", raising=False)
+    # Point at a library that definitely doesn't exist so real snap discovery
+    # can't accidentally satisfy the load.
+    adapter = QwenCAdapter("/model", lib_path="/nonexistent/libqwen_asr.so")
+    monkeypatch.setattr(qwen_mod, "_resolve_lib_path", lambda explicit: "/nonexistent/libqwen_asr.so")
+    adapter._lib_path = "/nonexistent/libqwen_asr.so"
+    events = await _drive_session(adapter, SessionConfig(audio_format=QWEN_FORMAT), [_pcm_seconds(0.1)])
+    assert isinstance(events[-1], TranscriptionError)
+    assert events[-1].code == "runtime_library_missing"
+    assert "libqwen_asr.so" in events[-1].message
+    assert "QWEN_ASR_LIB" in events[-1].message
 
 
 # --- int16 → float32 conversion (the FFI buffer contract) ------------------
