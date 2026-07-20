@@ -17,7 +17,7 @@ path = "src/bin/myna-desktop.rs"
 # The GTK4 activity-indicator overlay. On by default for the shipped app; the
 # hermetic test suite builds `--no-default-features` so it never links GTK.
 default = ["ui-gtk"]
-ui-gtk = ["dep:gtk4", "dep:glib"]
+ui-gtk = ["dep:gtk4", "dep:glib", "dep:async-channel"]
 
 [dependencies]
 myna-core = { path = "../myna-core" }
@@ -37,5 +37,7 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "glob
 # Desktop notifications for error states / secure-field refusals.
 notify-rust = "4"
 # GTK4 overlay — only pulled in with the `ui-gtk` feature (see [features]).
-gtk4 = { version = "0.11", optional = true }
+gtk4 = { version = "0.11", optional = true, features = ["v4_10"] }
 glib = { version = "0.22", optional = true }
+# Channel bridging the tokio controller to the GTK main-thread indicator loop.
+async-channel = { version = "2", optional = true }

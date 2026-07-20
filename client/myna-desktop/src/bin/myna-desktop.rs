@@ -1,30 +1,32 @@
-//! `myna-desktop` — the push-to-talk dictation app (plan T21/T22, T020).
+//! `myna-desktop` — the push-to-talk dictation app (plan T21/T22, T020/T025/T030).
 //!
-//! Composes the MVP activation stand-in (the orchestrator's `StdinTrigger` —
-//! Enter to start, Enter to stop; the real GlobalShortcuts hotkey is branch
-//! 003c), the IBus text injector, and a headless `NotifyIndicator` (the GTK
-//! overlay is branch 003d) over a live `myna-audio` PipeWire capture source and
-//! the `myna-orchestrator` session, into a [`DesktopController`].
+//! Composes activation (the GlobalShortcuts hotkey with `--hotkey`, else the
+//! `StdinTrigger` MVP stand-in), the IBus text injector, and an activity
+//! indicator over a live `myna-audio` PipeWire capture source and the
+//! `myna-orchestrator` session, into a [`DesktopController`].
+//!
+//! With the `ui-gtk` feature (default), the persistent GTK4 overlay indicator
+//! runs on the process **main thread** (GTK's requirement) while the controller
+//! (tokio) runs on a worker thread; the two are bridged by an `async-channel`
+//! (R6). Without `ui-gtk`, a headless `NotifyIndicator` runs on a plain tokio
+//! runtime.
 //!
 //! ```text
 //!   myna-server --adapter whisper --socket /tmp/myna.sock &
-//!   myna-desktop --socket /tmp/myna.sock [--language en]
-//!   # focus a text field, press Enter, speak, press Enter → text is injected
+//!   myna-desktop --socket /tmp/myna.sock --hotkey --language en
+//!   # focus a text field, hold Super+D, speak, release → text is injected
 //! ```
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
-use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::ibus::IbusInjector;
 use myna_desktop::shortcut::portal::GlobalShortcutTrigger;
-use myna_desktop::DesktopController;
-use myna_orchestrator::{
-    run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
-};
-use myna_audio::{CaptureSource, PipeWireBackend};
+use myna_desktop::{DesktopController, Indicator};
+use myna_orchestrator::{run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend};
 use tokio::sync::mpsc;
 
 const USAGE: &str = "\
@@ -85,34 +87,19 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
     it.next().ok_or_else(|| format!("{flag} needs a value"))
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    let injector = match IbusInjector::connect().await {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("cannot connect to IBus: {e}");
-            eprintln!("  (is an IBus daemon running? check `ibus-daemon` / `echo $IBUS_ADDRESS`)");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    // One dictation session per Press: a fresh backend connection + live capture
-    // source, run through the orchestrator (capture-at-press, ready-gated push).
-    // NOTE (T21 follow-up): negotiate `input_format` from server capabilities
-    // (capabilities.query) instead of assuming the default; the adapters we ship
-    // accept the default 16 kHz s16le mono, so the MVP uses it directly.
+/// Build the per-Press session factory: a fresh backend connection + live
+/// capture source, run through the orchestrator (capture-at-press, ready-gated).
+///
+/// NOTE (T21 follow-up): negotiate `input_format` from server capabilities
+/// (capabilities.query) rather than assuming the default; the shipped adapters
+/// accept the default 16 kHz s16le mono, so the MVP uses it directly.
+fn make_session(
+    args: &Args,
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
     let socket = args.socket.clone();
     let language = args.language.clone();
     let target = args.target.clone();
-    let session = move |events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+    move |events: mpsc::Sender<OrchestratorEvent>| {
         let backend = WsUnixBackend::new(&socket);
         let mut builder = CaptureSource::builder(AudioFormat::default());
         if let Some(node) = &target {
@@ -126,18 +113,22 @@ async fn main() -> ExitCode {
             run_dictation(&backend, config, source, &mut sink).await
         });
         (run, stop)
+    }
+}
+
+/// Build and run the controller with the given indicator (tokio side).
+async fn run_controller(args: Args, indicator: impl Indicator + 'static) -> ExitCode {
+    let injector = match IbusInjector::connect().await {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("cannot connect to IBus: {e}");
+            eprintln!("  (is an IBus daemon running? check `ibus-daemon` / `echo $IBUS_ADDRESS`)");
+            return ExitCode::FAILURE;
+        }
     };
 
-    println!(
-        "myna-desktop → {} — {}, then speak; the transcript is injected into the focused field",
-        args.socket.display(),
-        if args.hotkey { "hold Super+D" } else { "press Enter to start, Enter to stop, Ctrl-D to quit" }
-    );
-
-    let builder = DesktopController::builder()
-        .injector(injector)
-        .indicator(NotifyIndicator::new())
-        .session(session);
+    let builder =
+        DesktopController::builder().injector(injector).indicator(indicator).session(make_session(&args));
 
     let mut controller = if args.hotkey {
         match GlobalShortcutTrigger::bind("dictate", Some("SUPER+d")).await {
@@ -153,6 +144,76 @@ async fn main() -> ExitCode {
     };
 
     controller.run().await;
-    println!("bye");
     ExitCode::SUCCESS
+}
+
+fn banner(args: &Args) {
+    println!(
+        "myna-desktop → {} — {}, then speak; the transcript is injected into the focused field",
+        args.socket.display(),
+        if args.hotkey { "hold Super+D" } else { "press Enter to start, Enter to stop, Ctrl-D to quit" }
+    );
+}
+
+fn main() -> ExitCode {
+    let args = match parse_args() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    banner(&args);
+
+    #[cfg(feature = "ui-gtk")]
+    {
+        run_with_gtk(args)
+    }
+    #[cfg(not(feature = "ui-gtk"))]
+    {
+        run_headless(args)
+    }
+}
+
+/// Headless path: a plain tokio runtime + the `NotifyIndicator`.
+#[cfg(not(feature = "ui-gtk"))]
+fn run_headless(args: Args) -> ExitCode {
+    use myna_desktop::indicator::notify::NotifyIndicator;
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("cannot start async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let code = rt.block_on(run_controller(args, NotifyIndicator::new()));
+    println!("bye");
+    code
+}
+
+/// GTK path (R6): GTK owns the main thread + GLib loop; the controller runs on a
+/// worker thread with a `GtkIndicator` bridged over an `async-channel`. When the
+/// session loop ends the sender drops, closing the channel, which quits the GTK
+/// app (see `run_indicator_app`).
+#[cfg(feature = "ui-gtk")]
+fn run_with_gtk(args: Args) -> ExitCode {
+    use myna_desktop::indicator::gtk::{run_indicator_app, GtkIndicator};
+
+    let (tx, rx) = async_channel::unbounded();
+    let worker = std::thread::spawn(move || {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("cannot start async runtime: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        rt.block_on(run_controller(args, GtkIndicator::new(tx)))
+    });
+
+    // Blocks in the GLib main loop until the channel closes (session ended).
+    let _gtk_code = run_indicator_app(rx);
+    let code = worker.join().unwrap_or(ExitCode::FAILURE);
+    println!("bye");
+    code
 }
