@@ -175,25 +175,25 @@ input sources live. For a live-mic demo without Rust, `cd server && uv run pytho
 
 ### Dictate into apps — `myna-desktop` (the shipped last-mile)
 
-`myna-desktop` is the actual dictation app: a global-shortcut hotkey activates
-push-to-talk and the committed transcript is injected via **IBus** into whatever
-app was focused, with a GTK activity indicator. Needs a Wayland/GNOME session, a
-running IBus daemon, and (for `--hotkey`) `xdg-desktop-portal` with a
-GlobalShortcuts backend.
+`myna-desktop` is the actual dictation app: activate push-to-talk and the
+committed transcript is injected via **IBus** into whatever app was focused.
+Because dictation targets *another* app, activation must not need terminal focus
+— the default is **toggle-to-talk via a GNOME custom keyboard shortcut**: the app
+runs as a daemon and a shortcut bound to `myna-desktop --toggle` pokes it (tap to
+start, tap to stop). Needs a Wayland/GNOME session and a running IBus daemon.
 
 ```shell
 (cd server && uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock) &
 cd client && cargo build --release && cd ..
 
-# focus a text field, then — stdin stand-in for the hotkey (Enter to start/stop):
-./client/target/release/myna-desktop --socket /tmp/ubustt.sock --language en
-
-# hands-free: hold Super+D (confirm/rebind in the desktop's own shortcut dialog):
-./client/target/release/myna-desktop --socket /tmp/ubustt.sock --hotkey --language en
+./client/target/release/myna-desktop --install-shortcut          # once: binds Super+D
+./client/target/release/myna-desktop --socket /tmp/ubustt.sock --language en   # daemon
+# focus a text field, tap Super+D, speak, tap Super+D → transcript injected there
 ```
 
-The settled T21/T22 contract — controller state model, the three trait seams,
-the IBus-over-`zbus` backend, the portal hotkey, the GTK indicator — is in
+Alternatives: `--portal` (GlobalShortcuts hold-to-talk — packaged snap/flatpak
+only), `--stdin` (terminal debug), `--overlay` (experimental GTK overlay that can
+steal focus on Wayland). The settled T21/T22 contract is in
 `docs/desktop-injection.md`.
 
 ### Evaluate (benchmarking — the north star)

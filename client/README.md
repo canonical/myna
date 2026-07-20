@@ -75,20 +75,27 @@ myna-dictate --list-devices
 
 ### The dictation app — `myna-desktop` (hotkey → IBus injection)
 
-The shipped push-to-talk app. Needs a Wayland/GNOME session, a running IBus
-daemon, and (for `--hotkey`) an `xdg-desktop-portal` with a GlobalShortcuts
-backend. Focus a text field, activate, speak, release → the transcript is
-injected into that field.
+The shipped push-to-talk app. Needs a Wayland/GNOME session and a running IBus
+daemon. Activation must not depend on terminal focus (dictation injects into
+*another* app), so the default is **toggle-to-talk via a GNOME custom keyboard
+shortcut**: the app runs as a daemon on a control socket, and a GNOME shortcut
+bound to `myna-desktop --toggle` pokes it (tap = start, tap = stop). This works
+for a plain unsandboxed binary — no terminal focus, no portal, no app id.
 
 ```sh
 (cd ../server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 
-# stdin stand-in for the hotkey (Enter to start, Enter to stop):
-myna-desktop --socket /tmp/myna.sock --language en
-
-# hands-free: hold-to-talk on Super+D (confirm/rebind in the desktop's own dialog):
-myna-desktop --socket /tmp/myna.sock --hotkey --language en
+myna-desktop --install-shortcut           # once: binds Super+D → `myna-desktop --toggle`
+myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running)
+# focus a text field, tap Super+D, speak, tap Super+D → transcript injected there
 ```
+
+Other activation modes: `--portal` (GlobalShortcuts hold-to-talk — only works
+when packaged as a snap/flatpak, which GNOME grants an app identity); `--stdin`
+(terminal debug — injects back into the terminal); `--overlay` (GTK activity
+overlay instead of notifications — **experimental**: on GNOME/Wayland the overlay
+window can steal focus and cut the session short). Feedback defaults to desktop
+notifications.
 
 See `../docs/desktop-injection.md` for the settled T21/T22 contract (controller
 state model, the three seams, the IBus-over-zbus backend, the GTK indicator).
