@@ -1,0 +1,39 @@
+[package]
+name = "myna-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Desktop session controller + text injection — the dictation last-mile (plan T21/T22, feature 003-desktop-injection)."
+
+[lib]
+name = "myna_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myna-desktop"
+path = "src/bin/myna-desktop.rs"
+
+[features]
+# The GTK4 activity-indicator overlay. On by default for the shipped app; the
+# hermetic test suite builds `--no-default-features` so it never links GTK.
+default = ["ui-gtk"]
+ui-gtk = ["dep:gtk4", "dep:glib"]
+
+[dependencies]
+myna-core = { path = "../myna-core" }
+myna-audio = { path = "../myna-audio" }
+myna-orchestrator = { path = "../myna-orchestrator" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+futures-util = { workspace = true }
+# D-Bus: the IBus engine object + a portal-client fallback (pure Rust).
+zbus = "5"
+# Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the
+# vendored `zbus`-direct path is the fallback if this cannot be fetched.
+ashpd = "0.13"
+# Desktop notifications for error states / secure-field refusals.
+notify-rust = "4"
+# GTK4 overlay — only pulled in with the `ui-gtk` feature (see [features]).
+gtk4 = { version = "0.11", optional = true }
+glib = { version = "0.22", optional = true }

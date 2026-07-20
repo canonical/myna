@@ -1,0 +1,26 @@
+#!/bin/bash
+# setup-base — runs as root at SDK install (and when this SDK's revision
+# changes). Installs the system build + test dependencies for myna-desktop
+# (feature 003-desktop-injection):
+#   Build:
+#   - libgtk-4-dev  : GTK4 headers/libs; gtk4-rs links these via pkg-config
+#                     (only needed for the `ui-gtk` feature; the hermetic
+#                     suite builds --no-default-features without GTK)
+#   - libglib2.0-dev, pkg-config : glib-rs build + library discovery
+#   Gated-integration runtime services (skip cleanly when the gates are unset):
+#   - ibus          : the IBus daemon the MYNA_IBUS_TESTS suite injects through
+#   - xdg-desktop-portal, xdg-desktop-portal-gnome : the portal + a
+#                     GlobalShortcuts backend for the MYNA_PORTAL_TESTS suite
+#   - dbus, dbus-x11 : a D-Bus session bus (dbus-run-session) for both suites
+# zbus/ashpd are pure-Rust (no system -dev headers).
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends \
+  libgtk-4-dev \
+  libglib2.0-dev \
+  pkg-config \
+  ibus \
+  xdg-desktop-portal \
+  xdg-desktop-portal-gnome \
+  dbus \
+  dbus-x11

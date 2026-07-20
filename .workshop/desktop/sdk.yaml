@@ -1,0 +1,17 @@
+# In-project SDK: desktop build + runtime dependencies for the dictation
+# last-mile (client/myna-desktop, feature 003-desktop-injection).
+#
+# The desktop crate builds a GTK4 activity-indicator overlay (gtk4-rs binds
+# libgtk-4 via pkg-config; behind the `ui-gtk` Cargo feature) and integrates
+# with IBus (text injection) and the xdg-desktop-portal GlobalShortcuts backend
+# (hotkey activation) over D-Bus. `zbus`/`ashpd` are pure-Rust and need no
+# system -dev headers, but the env-gated integration suites
+# (MYNA_IBUS_TESTS=1 / MYNA_PORTAL_TESTS=1) exercise a *running* IBus daemon and
+# an xdg-desktop-portal with a GlobalShortcuts backend on a D-Bus session bus —
+# so those runtime services are installed here too. They skip cleanly when the
+# gates are unset (Principle II: identical code on the VM and on hardware).
+#
+# System packages are installed by the setup-base hook (hooks/setup-base, runs
+# as root at install). Referenced from .workshop/myna.yaml as `project-desktop`.
+name: desktop
+summary: GTK4 dev headers, IBus daemon, and xdg-desktop-portal (GlobalShortcuts) for myna-desktop.
