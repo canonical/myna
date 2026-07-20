@@ -26,9 +26,11 @@ Three processes play three roles against it:
   Hosts a model, listens on a UDS, has *no* microphone: the client pushes PCM,
   the server rejects off-format audio and never resamples. Swap models with
   `--adapter whisper|nemotron|qwen-c|fake`.
-- **Dictation client** — the Rust `myna-dictate` (`client/`). Owns capture and the
-  hotkey, runs the wire-agnostic session/residency FSM, injects transcribed text.
-  The production hot path.
+- **Dictation client** — the Rust client (`client/`). Owns capture and the
+  hotkey and runs the wire-agnostic session/residency FSM. Two binaries:
+  `myna-dictate` (the testbed demo — WAV/corpus/live-mic, stdin hotkey) and
+  `myna-desktop` (the shipped push-to-talk app — GlobalShortcuts hotkey + IBus
+  text injection into the focused app). The production hot path.
 - **Benchmark client** — the Python `dev/bench.py`. Replays a corpus through a
   backend and scores WER/CER offline (no latency constraint), so accuracy work
   and the dictation hot path don't entangle.
@@ -170,6 +172,29 @@ Live mic capture uses the native `pipewire-rs` backend in `myna-audio`
 channels on multi-channel interfaces, and lets the PipeWire graph resample to
 the negotiated format — no `pw-record` subprocess. `--list-devices` enumerates
 input sources live. For a live-mic demo without Rust, `cd server && uv run python ../dev/dictate.py --socket /tmp/ubustt.sock` drives the same backend from Python.
+
+### Dictate into apps — `myna-desktop` (the shipped last-mile)
+
+`myna-desktop` is the actual dictation app: a global-shortcut hotkey activates
+push-to-talk and the committed transcript is injected via **IBus** into whatever
+app was focused, with a GTK activity indicator. Needs a Wayland/GNOME session, a
+running IBus daemon, and (for `--hotkey`) `xdg-desktop-portal` with a
+GlobalShortcuts backend.
+
+```shell
+(cd server && uv run myna-server --adapter whisper --model base --socket /tmp/ubustt.sock) &
+cd client && cargo build --release && cd ..
+
+# focus a text field, then — stdin stand-in for the hotkey (Enter to start/stop):
+./client/target/release/myna-desktop --socket /tmp/ubustt.sock --language en
+
+# hands-free: hold Super+D (confirm/rebind in the desktop's own shortcut dialog):
+./client/target/release/myna-desktop --socket /tmp/ubustt.sock --hotkey --language en
+```
+
+The settled T21/T22 contract — controller state model, the three trait seams,
+the IBus-over-`zbus` backend, the portal hotkey, the GTK indicator — is in
+`docs/desktop-injection.md`.
 
 ### Evaluate (benchmarking — the north star)
 

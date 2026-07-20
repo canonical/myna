@@ -30,7 +30,6 @@ lives at `server/src/myna/`:
 ```
 myna.core     <- shared vocabulary; depends on nothing else in myna
 myna.testbed  -> depends only on myna.core
-myna.desktop  -> depends only on myna.core
 ```
 
 - `myna.core` — the **load-bearing shared contract**. Audio types
@@ -46,9 +45,12 @@ myna.desktop  -> depends only on myna.core
 - `myna.testbed` — `Candidate`/`Adapter`, the permanent `FakeAdapter` regression
   fixture, audio sources (WAV, live-mic), the `Harness` with its
   `ResultRecord`/metrics schema, bench driver and corpus tooling.
-- `myna.desktop` — UD129-side contracts (`TextInjector`, dictation state model).
-  Implementation is a later workstream (T21/T22); stubs exist so both halves
-  ideate against the same vocabulary.
+
+The Ubuntu Desktop dictation client (UD129 — session controller, IBus text
+injection, activity indicator) is **not** a Python package: it lives in the Rust
+`client/myna-desktop` crate (feature 003-desktop-injection). The former
+`myna.desktop` interface stubs were retired once that contract landed in Rust;
+see `../desktop-injection.md`.
 
 Interfaces are `typing.Protocol`s, not ABCs: adapters and backends are
 structural plug-ins and should not need to import a base class to conform.
@@ -59,7 +61,7 @@ never imported by `myna.core` or the harness.
 
 ### Rust side — `client/`
 
-A Cargo workspace with four crates:
+A Cargo workspace with five crates:
 
 ```
 client/
@@ -67,7 +69,8 @@ client/
   myna-audio/         <- capture adapter (pipewire-rs backend; AudioSource /
   |                      CaptureBackend traits)
   myna-orchestrator/  <- session/residency FSM (wire-agnostic)
-  myna-cli/           <- myna-dictate binary (CLI, hotkey, glue)
+  myna-cli/           <- myna-dictate binary (testbed demo: WAV/corpus/mic)
+  myna-desktop/       <- myna-desktop app (hotkey + IBus injection + indicator)
 ```
 
 - `myna-core` — **mirrors** the Python `myna.core` wire contract for the Rust
@@ -82,8 +85,15 @@ client/
 - `myna-orchestrator` — push-to-talk session / residency FSM. Drives model
   loading, the `preparing` → `ready` → `transcribing` lifecycle, and
   multi-commit IE115 sessions. Wire-agnostic: speaks `myna-core` types.
-- `myna-cli` — the `myna-dictate` binary. CLI, hotkey handling, and wires
-  `myna-audio` + `myna-orchestrator` + the IE115 WebSocket transport together.
+- `myna-cli` — the `myna-dictate` binary: the testbed/demo push-to-talk client
+  (WAV clip / corpus / live mic, stdin hotkey stand-in), wiring `myna-audio` +
+  `myna-orchestrator` + the IE115 WebSocket transport together.
+- `myna-desktop` — the shipped `myna-desktop` dictation app (feature
+  003-desktop-injection, T21/T22): the `DesktopController` composing a
+  GlobalShortcuts-portal hotkey (`Trigger`), an IBus-over-`zbus` text injector
+  (`Injector`), and a GTK4 activity indicator (`Indicator`) over the same
+  `myna-orchestrator` session. Each boundary is a trait with a mock; see
+  `../desktop-injection.md`.
 
 ### Snap packages — `whisper-snap/`, `nemotron-snap/`, `qwen-snap/`
 
