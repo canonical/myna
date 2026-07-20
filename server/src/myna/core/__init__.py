@@ -1,6 +1,7 @@
 """Shared vocabulary for all Myna components.
 
-Nothing in here may import from ``myna.testbed`` or ``myna.desktop``.
+Nothing in here may import from ``myna.testbed`` (nor, formerly, ``myna.desktop``
+— the desktop client now lives in the Rust ``client/myna-desktop`` crate).
 """
 
 from myna.core.audio import AudioFormat, AudioSource, PcmChunk

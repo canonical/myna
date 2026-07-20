@@ -7,7 +7,9 @@ Package layout:
 - ``myna.testbed`` — candidate-adapter evaluation testbed: adapters wrap STT
   candidates behind the IE114-shaped service interface; the harness drives
   them and records timing/accuracy results.
-- ``myna.desktop`` — interface stubs for the Ubuntu Desktop dictation client
-  (UD129): session controller, text injection. Implementation comes later;
-  the stubs exist so the testbed and the desktop client share one vocabulary.
+
+The Ubuntu Desktop dictation client (UD129) — session controller + text
+injection — now lives in the Rust ``client/myna-desktop`` crate (feature
+003-desktop-injection); the former ``myna.desktop`` interface stubs were retired
+once that contract landed in Rust.
 """
