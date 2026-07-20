@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["myna-core", "myna-audio", "myna-orchestrator", "myna-cli"]
+members = ["myna-core", "myna-audio", "myna-orchestrator", "myna-cli", "myna-desktop"]
 
 # The Rust client subsystem (plan Workstreams D + G). `myna-core` mirrors the
 # Python `myna.core` wire contract (events / session / protocol / audio) plus

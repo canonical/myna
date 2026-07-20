@@ -27,6 +27,12 @@ sdks:
   # .workshop/pipewire/sdk.yaml.
   - name: project-pipewire
 
+  # In-project SDK: GTK4 dev headers (the `ui-gtk` activity indicator) plus the
+  # IBus daemon and xdg-desktop-portal GlobalShortcuts backend the desktop
+  # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
+  # env-gated integration-tests against. See .workshop/desktop/sdk.yaml.
+  - name: project-desktop
+
 # Named automation, runnable in or out of CI with `workshop run myna <action>`.
 # Bodies are bash, run as the workshop user with the project mounted at
 # /project. The CI workflow (.github/workflows/ci.yml) drives these same
