@@ -295,8 +295,12 @@ impl DesktopController {
                     Some(TriggerEdge::Release) => {
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
+                        // Stop reading the trigger for this utterance: any
+                        // further edges (the next push-to-talk cycle) belong to
+                        // the next session, not this finalizing one.
+                        trigger_open = false;
                     }
-                    Some(TriggerEdge::Press) => {} // ignore an extra press
+                    Some(TriggerEdge::Press) => {} // ignore an extra press while recording
                     None => {
                         trigger_open = false;
                         quit_after = true;

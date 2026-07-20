@@ -27,6 +27,8 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 futures-util = { workspace = true }
+serde = { workspace = true }
+tokio-stream = "0.1"
 # D-Bus: the IBus engine object + a portal-client fallback (pure Rust).
 zbus = "5"
 # Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the

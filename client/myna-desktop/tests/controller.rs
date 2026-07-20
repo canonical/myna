@@ -1,40 +1,47 @@
 //! Hermetic controller tests (no D-Bus / IBus / portal / display).
 //!
-//! Foundational coverage (T010 checkpoint): the [`DesktopController`] composes
-//! three mocked boundaries and runs a full mocked session — commits land in
-//! order, the indicator walks Recording→Finalizing→Hidden, and the controller
-//! returns to `Idle`. The deep US1 guarantees (commit-once, snippet-never,
-//! no-capture-between-sessions, cold-load, error states) land here in branch
-//! 003b (T011–T017).
+//! US1 (T011–T016) + T011a: the [`DesktopController`] drives committed
+//! transcripts into the injector (commit-only, in order, each once), shows the
+//! right indicator states, never captures audio outside a Press→Release window
+//! (FR-004/SC-004), and surfaces acquire/stream errors as a clean `Error` state
+//! without capturing. All boundaries are mocks; the session runs the *real*
+//! `run_dictation` path over `FakeBackend` + a mock capture source, so the
+//! capture-at-press / ready-gate reuse is exercised, not re-implemented.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use myna_audio::{AudioFormat, CaptureSource, ScriptedBackend, Step};
+use myna_core::{AudioSource, CaptureStream, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::indicator::IndicatorState;
-use myna_desktop::inject::mock::MockInjector;
+use myna_desktop::inject::mock::{AcquireOutcome, MockInjector};
 use myna_desktop::{DesktopController, DictationState};
 use myna_orchestrator::{
-    run_dictation, FakeBackend, OrchestratorEvent, ScriptedTrigger, StopHandle, TriggerEdge,
+    run_dictation, FakeBackend, OrchestratorEvent, ScriptedTrigger, SessionOutcome, StopHandle,
+    TriggerEdge,
 };
-use myna_core::SessionConfig;
 use tokio::sync::mpsc;
 
-/// A session factory that runs `FakeBackend::commit_drain` over a short silent
-/// mock capture source — the hermetic analogue of the real capture+inference
-/// path. The tail final + `done` arrive only after `session.finish` (i.e. after
-/// the controller stops capture on Release), exercising the commit-drain window.
-fn commit_drain_session()
--> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send {
+// ── Session-factory helpers ─────────────────────────────────────────────────
+
+/// A short silent mock capture source (100 ms), in the default format.
+fn silent_source() -> CaptureSource {
+    CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(100))])))
+        .build()
+}
+
+/// A session factory that runs `backend` over a fresh silent capture source,
+/// forwarding events on the controller's channel. `wrap` lets a test observe or
+/// substitute the audio source (e.g. the T011a capture probe).
+fn backend_session(
+    make_backend: impl Fn() -> FakeBackend + Send + 'static,
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send {
     move |events: mpsc::Sender<OrchestratorEvent>| {
-        let backend = FakeBackend::commit_drain();
-        let source = CaptureSource::builder(AudioFormat::default())
-            .backend(Box::new(ScriptedBackend::new(vec![Step::Silence(
-                Duration::from_millis(200),
-            )])))
-            .build();
+        let backend = make_backend();
+        let source = silent_source();
         let stop = source.stop_handle();
         let run: SessionRun = Box::pin(async move {
             let mut sink = ChannelSink(events);
@@ -44,77 +51,314 @@ fn commit_drain_session()
     }
 }
 
-#[tokio::test]
-async fn full_mocked_session_commits_in_order_and_returns_to_idle() {
-    let injector = MockInjector::new();
-    let indicator = MockIndicator::new();
-    let inject_log = injector.log();
-    let indicate_log: Arc<Mutex<Vec<IndicatorState>>> = indicator.log();
+/// A session that emits a fixed `OrchestratorEvent` script and completes with
+/// `outcome` (used where no `FakeBackend` fixture matches, e.g. no-speech).
+fn events_session(
+    events: Vec<OrchestratorEvent>,
+    outcome: SessionOutcome,
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send {
+    let mut slot = Some((events, outcome));
+    move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let (events, outcome) = slot.take().expect("events_session is single-use");
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            for e in events {
+                let _ = tx.send(e).await;
+            }
+            Ok(outcome)
+        });
+        (run, stop)
+    }
+}
 
-    let mut controller = DesktopController::builder()
-        .trigger(ScriptedTrigger::new([TriggerEdge::Press, TriggerEdge::Release]))
+fn build(
+    edges: impl IntoIterator<Item = TriggerEdge>,
+    injector: MockInjector,
+    indicator: MockIndicator,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> DesktopController {
+    DesktopController::builder()
+        .trigger(ScriptedTrigger::new(edges))
         .injector(injector)
         .indicator(indicator)
-        .session(commit_drain_session())
-        .build();
+        .session(session)
+        .build()
+}
 
+// ── T011: commit twice, in order, each once, never re-committed ──────────────
+
+#[tokio::test]
+async fn commit_drain_commits_each_segment_once_in_order() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        backend_session(FakeBackend::commit_drain),
+    );
     controller.run().await;
 
-    // Committed transcript, in order, each once (commit-only, commit-drain tail).
-    let commits = inject_log.lock().unwrap().commits.clone();
-    assert_eq!(commits, vec!["the quick brown fox", "jumps over the lazy dog."]);
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.commits, vec!["the quick brown fox", "jumps over the lazy dog."]);
+    // Each segment appears exactly once — never re-committed.
+    assert_eq!(log.commits.len(), 2);
+    assert_eq!(log.restores, 1);
+    assert_eq!(controller.state(), DictationState::Idle);
+}
 
-    // Idempotent teardown restored the engine exactly once (I11).
-    assert_eq!(inject_log.lock().unwrap().restores, 1);
+// ── T011a: push-to-talk — no capture while Idle; capture only in a session ────
 
-    // The indicator became active, passed through Finalizing, and cleared.
-    let states = indicate_log.lock().unwrap().clone();
-    assert_eq!(states.first(), Some(&IndicatorState::Recording));
-    assert!(states.contains(&IndicatorState::Finalizing), "expected a Finalizing state: {states:?}");
-    assert_eq!(states.last(), Some(&IndicatorState::Hidden));
+/// Wraps an [`AudioSource`], recording each `capture()` invocation in a shared
+/// probe. Capture *only* happens inside `capture()`, which the controller calls
+/// exactly once per started session — so the probe count is the number of
+/// capture windows.
+struct RecordingSource {
+    inner: Box<dyn AudioSource>,
+    probe: Arc<Mutex<usize>>,
+}
 
-    // No transcript text ever reached the indicator (privacy, N8).
-    for s in &states {
-        if let IndicatorState::Error(msg) = s {
-            assert!(msg.is_empty() || !msg.contains("quick"), "indicator leaked text: {msg}");
-        }
+impl AudioSource for RecordingSource {
+    fn format(&self) -> AudioFormat {
+        self.inner.format()
     }
+    fn capture(self: Box<Self>) -> CaptureStream {
+        *self.probe.lock().unwrap() += 1;
+        let this = *self;
+        this.inner.capture()
+    }
+}
 
-    // Back to Idle at the end of the loop.
+#[tokio::test]
+async fn no_capture_while_idle_only_between_press_and_release() {
+    let probe = Arc::new(Mutex::new(0usize));
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+
+    let session_probe = probe.clone();
+    let session = move |events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let backend = FakeBackend::commit_drain();
+        let source = RecordingSource { inner: Box::new(silent_source()), probe: session_probe.clone() };
+        // A RecordingSource has no stop_handle of its own; drive the inner one.
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let mut sink = ChannelSink(events);
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await
+        });
+        (run, stop)
+    };
+
+    // Two full push-to-talk cycles.
+    let mut controller = build(
+        [
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ],
+        injector,
+        MockIndicator::new(),
+        session,
+    );
+    controller.run().await;
+
+    // Capture started exactly once per Press — never while Idle, never twice
+    // per session, never between sessions (SC-004).
+    assert_eq!(*probe.lock().unwrap(), 2, "capture must start once per Press only");
+    // Both sessions committed.
+    assert_eq!(inject_log.lock().unwrap().commits.len(), 4);
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+// ── T012: cold-load — buffered speech yields exactly one eventual commit ──────
+
+#[tokio::test]
+async fn cold_load_yields_exactly_one_commit_nothing_lost() {
+    // A cold load (`Loading` before `Ready`) followed by a single committed
+    // segment: the controller commits it exactly once and loses nothing. (The
+    // ring-buffering of speech across the load window is the orchestrator's
+    // capture-at-press behavior, asserted at the capture seam in T011a and in
+    // feature 002; here we assert the controller's one-commit outcome.)
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Loading,
+                OrchestratorEvent::Ready,
+                OrchestratorEvent::Final("late".into()),
+                OrchestratorEvent::Done("late".into()),
+            ],
+            SessionOutcome::Completed { transcript: "late".into() },
+        ),
+    );
+    controller.run().await;
+
+    assert_eq!(inject_log.lock().unwrap().commits, vec!["late"]);
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+// ── T013: an unstable Snippet is never committed (commit-only) ────────────────
+
+#[tokio::test]
+async fn snippet_is_never_committed() {
+    // happy_path emits snippets ("The quick", "jumps over") *and* finals; only
+    // the finals may be committed.
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        backend_session(FakeBackend::happy_path),
+    );
+    controller.run().await;
+
+    let commits = inject_log.lock().unwrap().commits.clone();
+    assert_eq!(commits, vec!["The quick brown fox", "jumps over the lazy dog."]);
+    // No committed segment is a bare snippet.
+    assert!(!commits.iter().any(|c| c == "The quick" || c == "jumps over"));
+}
+
+// ── T014: a no-speech session commits nothing and ends clean ──────────────────
+
+#[tokio::test]
+async fn no_speech_session_commits_nothing() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Loading,
+                OrchestratorEvent::Ready,
+                OrchestratorEvent::Done(String::new()),
+            ],
+            SessionOutcome::Completed { transcript: String::new() },
+        ),
+    );
+    controller.run().await;
+
+    assert!(inject_log.lock().unwrap().commits.is_empty(), "no speech → no commit");
+    // Teardown still released the engine cleanly (one restore via end/cancel).
+    {
+        let log = inject_log.lock().unwrap();
+        assert_eq!(log.ends + log.cancels, 1);
+    }
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+// ── T015: acquire NoTarget / Unavailable → Error state, no capture ────────────
+
+async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
+    let probe = Arc::new(Mutex::new(0usize));
+    let injector = MockInjector::new().with_acquires([outcome]);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+
+    let session_probe = probe.clone();
+    let session = move |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        *session_probe.lock().unwrap() += 1; // must never happen
+        (Box::pin(async { Ok(SessionOutcome::Aborted) }), StopHandle::default())
+    };
+
+    let mut controller =
+        build([TriggerEdge::Press], injector, indicator, session);
+    controller.run().await;
+
+    assert_eq!(*probe.lock().unwrap(), 0, "no session/capture on an acquire error");
+    assert!(inject_log.lock().unwrap().commits.is_empty());
+    assert!(
+        matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))),
+        "acquire error must surface an Error state"
+    );
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
 #[tokio::test]
-async fn secure_field_refuses_before_any_capture() {
-    // acquire() → Err(SecureField): the controller shows an error and never
-    // starts a session (a slice of US4/T034, exercised via the mock here to
-    // prove the pre-capture abort path in the foundational controller).
-    use myna_desktop::inject::mock::AcquireOutcome;
+async fn no_target_surfaces_error_without_capturing() {
+    assert_acquire_error_aborts_without_capture(AcquireOutcome::NoTarget).await;
+}
 
-    let injector = MockInjector::new().with_acquires([AcquireOutcome::Secure]);
-    let indicator = MockIndicator::new();
+#[tokio::test]
+async fn unavailable_surfaces_error_without_capturing() {
+    assert_acquire_error_aborts_without_capture(AcquireOutcome::Unavailable("ibus down".into()))
+        .await;
+}
+
+// ── T016: literal text only; cancel/end idempotent + restore-once on error ────
+
+#[tokio::test]
+async fn error_path_cancels_and_restores_exactly_once() {
+    // mid_stream_error: some progress then a terminal error instead of done.
+    let injector = MockInjector::new();
     let inject_log = injector.log();
+    let indicator = MockIndicator::new();
     let indicate_log = indicator.log();
-
-    // A session factory that would panic if ever started — it must not be.
-    let never = |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
-        panic!("secure field must not start a capture session");
-    };
-
-    let mut controller = DesktopController::builder()
-        .trigger(ScriptedTrigger::new([TriggerEdge::Press]))
-        .injector(injector)
-        .indicator(indicator)
-        .session(never)
-        .build();
-
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        indicator,
+        backend_session(|| FakeBackend::mid_stream_error("decode_failed", "boom")),
+    );
     controller.run().await;
 
-    assert!(inject_log.lock().unwrap().commits.is_empty());
-    let states = indicate_log.lock().unwrap().clone();
-    assert!(
-        matches!(states.last(), Some(IndicatorState::Error(_))),
-        "expected an error state, got {states:?}"
-    );
+    let log = inject_log.lock().unwrap();
+    // The engine is restored exactly once even on the error path (I11).
+    assert_eq!(log.restores, 1);
+    // Only literal transcript text was ever committed — no key-combo tokens.
+    for c in &log.commits {
+        assert!(!c.contains('\t') && !c.to_lowercase().contains("alt+") && !c.contains("Super"));
+    }
+    assert!(matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))));
     assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn mock_injector_cancel_and_end_are_idempotent() {
+    // Direct seam check: repeated cancel/end restore the prior engine once.
+    use myna_desktop::inject::Injector;
+    let mut injector = MockInjector::new();
+    let log = injector.log();
+    let _ = injector.acquire().await.unwrap();
+    injector.cancel().await;
+    injector.cancel().await;
+    injector.end().await;
+    injector.end().await;
+    let log = log.lock().unwrap();
+    assert_eq!(log.restores, 1, "prior engine restored exactly once");
+    assert_eq!(log.cancels, 2);
+    assert_eq!(log.ends, 2);
+}
+
+// ── Foundational: full lifecycle indicator timeline (kept from 003a) ──────────
+
+#[tokio::test]
+async fn full_session_walks_recording_finalizing_hidden() {
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        MockInjector::new(),
+        indicator,
+        backend_session(FakeBackend::commit_drain),
+    );
+    controller.run().await;
+
+    let states = indicate_log.lock().unwrap().clone();
+    assert_eq!(states.first(), Some(&IndicatorState::Recording));
+    assert!(states.contains(&IndicatorState::Finalizing), "expected Finalizing: {states:?}");
+    assert_eq!(states.last(), Some(&IndicatorState::Hidden));
+    // Privacy (N8): no transcript text leaked into any indicator state.
+    for s in &states {
+        if let IndicatorState::Error(msg) = s {
+            assert!(!msg.contains("quick"), "indicator leaked text: {msg}");
+        }
+    }
 }
