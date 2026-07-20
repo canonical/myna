@@ -16,6 +16,7 @@ from myna.core import (
     LoopbackClient,
     PcmChunk,
     SessionConfig,
+    TranscriptionError,
     TranscriptionFinal,
     WsUnixClient,
     serve_unix,
@@ -121,6 +122,38 @@ async def test_adapter_crash_surfaces_as_error_event(run_fake):
     kinds = [te.event.type for te in record.events]
     assert kinds == ["transcription.error"]
     assert record.events[0].event.code == "adapter_crash"
+
+
+class _ImmediateErrorAdapter:
+    """Emits a terminal error before consuming any audio — like an adapter that
+    fails to load its model. Reproduces the mid-stream-close case: the server
+    closes the connection while the client feeder is still pushing audio."""
+
+    candidate = FakeAdapter().candidate
+
+    def capabilities(self):
+        return FakeAdapter().capabilities()
+
+    async def run_session(
+        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+    ) -> None:
+        await emit(TranscriptionError(code="inference_failed", message="model load failed"))
+
+
+async def test_terminal_error_mid_stream_does_not_mask_the_error(transport, tmp_path):
+    """A terminal error emitted while audio is still streaming must surface as the
+    error event, not a ConnectionClosed traceback from the still-running feeder
+    (regression: send_audio into a server-closed socket used to raise)."""
+    adapter = _ImmediateErrorAdapter()
+    async with transport(adapter, tmp_path) as client:
+        record = await Harness().run(
+            client=client,
+            candidate=adapter.candidate,
+            source=SilenceSource(duration_seconds=1.0, realtime=True),
+        )
+    assert [te.event.type for te in record.events] == ["transcription.error"]
+    assert record.events[0].event.code == "inference_failed"
+    assert record.events[0].event.message == "model load failed"
 
 
 async def test_custom_script_immediate_done(run_fake):
