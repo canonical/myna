@@ -24,14 +24,17 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::io::Write as _;
 use std::time::Duration;
 
-use myna_audio::{CaptureSource, PipeWireBackend};
+use async_trait::async_trait;
+use myna_audio::{AudioStats, CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_orchestrator::{
-    run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge,
-    WavFileSource, WsUnixBackend, WsUnixIe115Backend,
+    run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, TextSink, Trigger,
+    TriggerEdge, WavFileSource, WsUnixBackend, WsUnixIe115Backend,
 };
+use tokio::sync::watch;
 
 struct Args {
     socket: PathBuf,
@@ -213,6 +216,61 @@ async fn list_devices() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+// ── VU meter ────────────────────────────────────────────────────────────────
+
+/// Number of block-columns in the meter bar.
+const METER_COLS: usize = 32;
+
+/// Renders a live VU meter on the current terminal line (overwrites with `\r`).
+/// Uses RMS for the fill level (smooth) and marks the per-chunk peak with `▎`.
+/// Runs until the stats sender is dropped (i.e. the `CaptureSource` is done).
+async fn render_meter(mut stats: watch::Receiver<AudioStats>) {
+    loop {
+        if stats.changed().await.is_err() {
+            break;
+        }
+        let s = *stats.borrow_and_update();
+
+        let filled = (s.rms.clamp(0.0, 1.0) * METER_COLS as f32).round() as usize;
+        let peak_col = (s.peak.clamp(0.0, 1.0) * METER_COLS as f32).round() as usize;
+        let bar: String = (0..METER_COLS)
+            .map(|i| {
+                if i < filled {
+                    '█'
+                } else if i == peak_col && peak_col >= filled {
+                    '▎' // per-chunk peak needle
+                } else {
+                    '░'
+                }
+            })
+            .collect();
+
+        let db = if s.rms > 1e-7 { 20.0 * s.rms.log10() } else { -99.0f32 };
+        let clip = if s.clipped { '!' } else { ' ' };
+        print!("\r   ▐{bar}▌ {:>5.1} dBFS{clip}", db);
+        let _ = std::io::stdout().flush();
+    }
+    // Leave the line clean so subsequent output isn't garbled.
+    print!("\r\x1b[2K");
+    let _ = std::io::stdout().flush();
+}
+
+/// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
+/// the meter and session events don't overprint each other.
+struct MicMeterSink(StdoutSink);
+
+#[async_trait]
+impl TextSink for MicMeterSink {
+    async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
+        // Erase whatever the meter drew on this line.
+        print!("\r\x1b[2K");
+        let _ = std::io::stdout().flush();
+        self.0.emit(event).await;
+    }
+}
+
+// ── dictation entry points ───────────────────────────────────────────────────
+
 /// The push-to-talk loop, generic over the backend dialect.
 async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     if args.mic {
@@ -266,7 +324,6 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 /// Interactive push-to-talk mic mode: press Enter to speak, Enter to stop, Ctrl-D to quit.
 async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let mut trigger = StdinTrigger::new();
-    let mut sink = StdoutSink;
 
     println!("dictating to {} — press Enter to speak, Enter again to stop, Ctrl-D to quit", args.socket.display());
 
@@ -293,6 +350,11 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         let stop = source.stop_handle();
         let config = SessionConfig { language: args.language.clone(), ..Default::default() };
 
+        // Start the VU meter: runs as a background task, writes \r bars,
+        // and clears the line when the stats sender drops (session ends).
+        let meter = tokio::spawn(render_meter(mic_stats.clone()));
+        let mut sink = MicMeterSink(StdoutSink);
+
         // Run the utterance while watching for a Release edge (graceful early
         // stop → end-of-audio → finalize).
         let fut = run_dictation(&backend, config, source, &mut sink);
@@ -308,6 +370,12 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
                 }
             }
         };
+
+        // Stop the meter and ensure the line is clear before any outcome text.
+        meter.abort();
+        let _ = meter.await;
+        print!("\r\x1b[2K");
+        let _ = std::io::stdout().flush();
 
         match outcome {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
