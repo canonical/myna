@@ -19,6 +19,7 @@ use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::ibus::IbusInjector;
+use myna_desktop::shortcut::portal::GlobalShortcutTrigger;
 use myna_desktop::DesktopController;
 use myna_orchestrator::{
     run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
@@ -30,26 +31,32 @@ const USAGE: &str = "\
 myna-desktop — push-to-talk dictation (T21/T22)
 
 USAGE:
-    myna-desktop --socket <path> [--language <lang>] [--target <node>]
+    myna-desktop --socket <path> [--hotkey] [--language <lang>] [--target <node>]
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server (required)
+    --hotkey           activate hands-free via the GlobalShortcuts portal
+                       (hold-to-talk); default binding Super+D, confirm/rebind
+                       in the desktop's own shortcut dialog on first run.
+                       Without it, use Enter/Enter on stdin (the MVP stand-in).
     --language <lang>  language hint sent in the session config (e.g. en)
     --target <node>    PipeWire node.name to capture from (default: system default)
     -h, --help         show this help
 
-Enter starts an utterance; Enter again stops it (Ctrl-D quits). The transcript
-is injected via IBus into the field focused when you pressed Enter.
+Hold the shortcut (or Enter) to start an utterance, release (or Enter) to stop.
+The transcript is injected via IBus into the field focused when you started.
 ";
 
 struct Args {
     socket: PathBuf,
+    hotkey: bool,
     language: Option<String>,
     target: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut socket = None;
+    let mut hotkey = false;
     let mut language = None;
     let mut target = None;
     let mut it = std::env::args().skip(1);
@@ -60,6 +67,7 @@ fn parse_args() -> Result<Args, String> {
                 std::process::exit(0);
             }
             "--socket" => socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
+            "--hotkey" => hotkey = true,
             "--language" => language = Some(next(&mut it, "--language")?),
             "--target" => target = Some(next(&mut it, "--target")?),
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
@@ -67,6 +75,7 @@ fn parse_args() -> Result<Args, String> {
     }
     Ok(Args {
         socket: socket.ok_or_else(|| format!("--socket is required\n\n{USAGE}"))?,
+        hotkey,
         language,
         target,
     })
@@ -120,16 +129,28 @@ async fn main() -> ExitCode {
     };
 
     println!(
-        "myna-desktop → {} — focus a text field, press Enter to speak, Enter to stop, Ctrl-D to quit",
-        args.socket.display()
+        "myna-desktop → {} — {}, then speak; the transcript is injected into the focused field",
+        args.socket.display(),
+        if args.hotkey { "hold Super+D" } else { "press Enter to start, Enter to stop, Ctrl-D to quit" }
     );
 
-    let mut controller = DesktopController::builder()
-        .trigger(StdinTrigger::new())
+    let builder = DesktopController::builder()
         .injector(injector)
         .indicator(NotifyIndicator::new())
-        .session(session)
-        .build();
+        .session(session);
+
+    let mut controller = if args.hotkey {
+        match GlobalShortcutTrigger::bind("dictate", Some("SUPER+d")).await {
+            Ok(trigger) => builder.trigger(trigger).build(),
+            Err(e) => {
+                eprintln!("cannot bind the global shortcut: {e}");
+                eprintln!("  (is xdg-desktop-portal with a GlobalShortcuts backend running?)");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        builder.trigger(StdinTrigger::new()).build()
+    };
 
     controller.run().await;
     println!("bye");

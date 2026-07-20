@@ -112,14 +112,14 @@ injected — no terminal involved.
 
 ### Tests for User Story 2 (write first, must fail) ⚠️
 
-- [ ] T022 [P] [US2] Hermetic unit test for the autorepeat-dedup state machine in `client/myna-desktop/src/shortcut/portal.rs` (`#[cfg(test)]`, fed a fake portal-signal stream): first `Activated` → one `Press`; repeat `Activated` before `Deactivated` → ignored; `Deactivated` → `Release`; unbind/end → `None`. **Write first, observe fail, then satisfy with T024** (contract trigger.md T1–T4)
-- [ ] T023 [P] [US2] Integration test (gated `MYNA_PORTAL_TESTS`) in `tests/portal_hw.rs`: bind a test shortcut against the live portal; assert activate→`Press`, deactivate→`Release`; portal-unavailable → `Err(PortalUnavailable)` (contracts T1, T2, T5)
+- [X] T022 [P] [US2] Hermetic unit test for the autorepeat-dedup state machine in `client/myna-desktop/src/shortcut/portal.rs` (`#[cfg(test)]`, fed a fake portal-signal stream): first `Activated` → one `Press`; repeat `Activated` before `Deactivated` → ignored; `Deactivated` → `Release`; unbind/end → `None`. **Write first, observe fail, then satisfy with T024** (contract trigger.md T1–T4)
+- [X] T023 [P] [US2] Integration test (gated `MYNA_PORTAL_TESTS`) in `tests/portal_hw.rs`: bind a test shortcut against the live portal; assert activate→`Press`, deactivate→`Release`; portal-unavailable → `Err(PortalUnavailable)` (contracts T1, T2, T5)
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement `GlobalShortcutTrigger` in `client/myna-desktop/src/shortcut/portal.rs`: `bind(shortcut_id, preferred_trigger)` (portal CreateSession + BindShortcuts via `ashpd`/`zbus`); map `Activated`→`Press` (deduped, first-wins-until-`Deactivated`), `Deactivated`→`Release`, session-end→`None`; implement the orchestrator's `Trigger` trait (satisfies T022, T023; contracts T1–T6; FR-006/007/008/010)
-- [ ] T025 [US2] Add a `--hotkey`/portal mode to `client/myna-desktop/src/bin/myna-desktop.rs` selecting `GlobalShortcutTrigger` in place of `StdinTrigger`, with a default free `Super+<letter>` `preferred_trigger` confirmable via the desktop dialog (FR-009); document the first-run bind flow
-- [ ] T026 [US2] Run quickstart step 3 (hands-free): bind on first run, press-and-hold, speak, release → transcript injected with no terminal; autorepeat starts exactly one session (SC-003)
+- [X] T024 [US2] Implement `GlobalShortcutTrigger` in `client/myna-desktop/src/shortcut/portal.rs`: `bind(shortcut_id, preferred_trigger)` (portal CreateSession + BindShortcuts via `ashpd`/`zbus`); map `Activated`→`Press` (deduped, first-wins-until-`Deactivated`), `Deactivated`→`Release`, session-end→`None`; implement the orchestrator's `Trigger` trait (satisfies T022, T023; contracts T1–T6; FR-006/007/008/010)
+- [X] T025 [US2] Add a `--hotkey`/portal mode to `client/myna-desktop/src/bin/myna-desktop.rs` selecting `GlobalShortcutTrigger` in place of `StdinTrigger`, with a default free `Super+<letter>` `preferred_trigger` confirmable via the desktop dialog (FR-009); document the first-run bind flow
+- [X] T026 [US2] Run quickstart step 3 (hands-free): bind on first run, press-and-hold, speak, release → transcript injected with no terminal; autorepeat starts exactly one session (SC-003)
 
 **Checkpoint**: US1 + US2 both independently testable; dictation is hands-free.
 
