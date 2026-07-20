@@ -26,13 +26,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use myna_audio::{AudioStats, CaptureSource, PipeWireBackend};
-use myna_core::{AudioFormat, AudioSource, SessionConfig, StopHandle};
+use myna_audio::{CaptureSource, PipeWireBackend};
+use myna_core::{AudioFormat, SessionConfig};
 use myna_orchestrator::{
     run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, Trigger, TriggerEdge,
     WavFileSource, WsUnixBackend, WsUnixIe115Backend,
 };
-use tokio::sync::watch;
 
 struct Args {
     socket: PathBuf,
@@ -216,9 +215,58 @@ async fn list_devices() -> ExitCode {
 
 /// The push-to-talk loop, generic over the backend dialect.
 async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
+    if args.mic {
+        dictate_mic(backend, args).await
+    } else {
+        dictate_clips(backend, args).await
+    }
+}
+
+/// Batch clip mode: run each clip in sequence and exit — no trigger needed.
+async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
+    let n = args.clips.len();
+    let plural = if n == 1 { "" } else { "s" };
+    println!("dictating {n} clip{plural} to {}", args.socket.display());
+
+    let mut sink = StdoutSink;
+    let mut exit = ExitCode::SUCCESS;
+
+    for clip in &args.clips {
+        if let Some(reference) = &clip.reference {
+            println!("── clip {}: (reference: {reference})", clip.path.display());
+        } else {
+            println!("── clip {}", clip.path.display());
+        }
+        let source = match WavFileSource::new(&clip.path) {
+            Ok(s) => s.realtime(args.realtime),
+            Err(e) => {
+                eprintln!("✗ cannot open {}: {e}", clip.path.display());
+                exit = ExitCode::FAILURE;
+                continue;
+            }
+        };
+        let config = SessionConfig { language: args.language.clone(), ..Default::default() };
+        match run_dictation(&backend, config, source, &mut sink).await {
+            Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
+            Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
+            Ok(SessionOutcome::Failed { code, message }) => {
+                eprintln!("✗ session failed [{code}]: {message}");
+                exit = ExitCode::FAILURE;
+            }
+            Err(e) => {
+                eprintln!("✗ could not open session: {e}");
+                exit = ExitCode::FAILURE;
+            }
+        }
+    }
+
+    exit
+}
+
+/// Interactive push-to-talk mic mode: press Enter to speak, Enter to stop, Ctrl-D to quit.
+async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let mut trigger = StdinTrigger::new();
     let mut sink = StdoutSink;
-    let mut next_clip = 0usize;
 
     println!("dictating to {} — press Enter to speak, Enter again to stop, Ctrl-D to quit", args.socket.display());
 
@@ -235,47 +283,18 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             break;
         }
 
-        // Build this utterance's source: live mic (T52, native PipeWire) or the next clip.
-        // Boxed so both kinds run through the same loop below.
-        let (source, stop, mic_stats): (
-            Box<dyn AudioSource>,
-            StopHandle,
-            Option<watch::Receiver<AudioStats>>,
-        ) = if args.mic {
-            let mut builder = CaptureSource::builder(AudioFormat::default());
-            if let Some(node) = &args.target {
-                builder = builder.target(node.clone());
-            }
-            let source = builder.backend(Box::new(PipeWireBackend::new())).build();
-            println!("── mic: capturing (Enter to stop)");
-            let stats = source.stats();
-            let stop = source.stop_handle();
-            (Box::new(source), stop, Some(stats))
-        } else {
-            let clip = &args.clips[next_clip % args.clips.len()];
-            next_clip += 1;
-            if let Some(reference) = &clip.reference {
-                println!("── clip {}: (reference: {reference})", clip.path.display());
-            } else {
-                println!("── clip {}", clip.path.display());
-            }
-            match WavFileSource::new(&clip.path) {
-                Ok(s) => {
-                    let s = s.realtime(args.realtime);
-                    let stop = s.stop_handle();
-                    (Box::new(s), stop, None)
-                }
-                Err(e) => {
-                    eprintln!("✗ cannot open {}: {e}", clip.path.display());
-                    continue;
-                }
-            }
-        };
+        let mut builder = CaptureSource::builder(AudioFormat::default());
+        if let Some(node) = &args.target {
+            builder = builder.target(node.clone());
+        }
+        let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+        println!("── mic: capturing (Enter to stop)");
+        let mic_stats = source.stats();
+        let stop = source.stop_handle();
         let config = SessionConfig { language: args.language.clone(), ..Default::default() };
 
         // Run the utterance while watching for a Release edge (graceful early
-        // stop → end-of-audio → finalize). The clip playing out has the same
-        // effect on its own.
+        // stop → end-of-audio → finalize).
         let fut = run_dictation(&backend, config, source, &mut sink);
         tokio::pin!(fut);
         let mut quit = false;
@@ -305,25 +324,23 @@ async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 
         // The T51 acceptance readout: how much the mic captured and whether
         // the pre-ready ring aged anything out (zero drops expected).
-        if let Some(stats) = mic_stats {
-            let s = *stats.borrow();
-            if s.dropped > Duration::ZERO {
-                println!(
-                    "  (mic: captured {:.1?} — DROPPED {:.1?}: ring overflow, transcript starts mid-utterance)",
-                    s.captured, s.dropped
-                );
-            } else {
-                println!("  (mic: captured {:.1?}, zero drops)", s.captured);
-            }
-            // Near-silent capture (~-40 dBFS peak) over a non-trivial window is
-            // almost always a muted input or the wrong node, not a quiet
-            // talker — flag it so an empty transcript isn't a mystery.
-            if s.captured > Duration::from_millis(500) && s.session_peak < 0.01 {
-                println!(
-                    "  ⚠ input was near-silent (peak {:.4}) — is the mic muted or the wrong device? check `wpctl status` / try --target <node.name>",
-                    s.session_peak
-                );
-            }
+        let s = *mic_stats.borrow();
+        if s.dropped > Duration::ZERO {
+            println!(
+                "  (mic: captured {:.1?} — DROPPED {:.1?}: ring overflow, transcript starts mid-utterance)",
+                s.captured, s.dropped
+            );
+        } else {
+            println!("  (mic: captured {:.1?}, zero drops)", s.captured);
+        }
+        // Near-silent capture (~-40 dBFS peak) over a non-trivial window is
+        // almost always a muted input or the wrong node, not a quiet
+        // talker — flag it so an empty transcript isn't a mystery.
+        if s.captured > Duration::from_millis(500) && s.session_peak < 0.01 {
+            println!(
+                "  ⚠ input was near-silent (peak {:.4}) — is the mic muted or the wrong device? check `wpctl status` / try --target <node.name>",
+                s.session_peak
+            );
         }
 
         if quit {
