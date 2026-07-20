@@ -278,16 +278,20 @@ impl DesktopController {
 
         let outcome = loop {
             tokio::select! {
-                // Session finished: drain any buffered events, then return.
+                // Biased: drain buffered orchestrator events (commit `Final`, drive
+                // the indicator) before noticing a coincident Release/focus edge,
+                // so liveness is never dropped and the indicator walks its states
+                // in order even when a release arrives mid-stream.
+                biased;
+                Some(ev) = events_rx.recv() => {
+                    route_event(ev, injector.as_mut(), indicator.as_mut(), state).await;
+                }
+                // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
                         route_event(ev, injector.as_mut(), indicator.as_mut(), state).await;
                     }
                     break result;
-                }
-                // An orchestrator event: commit `Final`, drive the indicator.
-                Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state).await;
                 }
                 // A trigger edge: `Release` finalizes (graceful stop); a `None`
                 // means the trigger ended — stop capture and quit after.

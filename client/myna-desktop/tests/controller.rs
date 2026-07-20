@@ -362,3 +362,80 @@ async fn full_session_walks_recording_finalizing_hidden() {
         }
     }
 }
+
+// ── T027 [US3]: indicator lifecycle sequence + error, no transcript text ──────
+
+#[tokio::test]
+async fn indicator_walks_recording_transcribing_finalizing_hidden() {
+    // A realistic push-to-talk: liveness (Loading/Ready/Transcribing) streams
+    // while recording, THEN the user releases (→ Finalizing), then the tail
+    // final + Done arrive (→ Hidden). The session emits liveness now and the
+    // tail only after the release (stop); the controller's biased select drains
+    // the buffered liveness before handling the release, so the order is
+    // deterministic (no timing).
+    let staged = |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        // Pre-buffer the liveness events so the biased select drains them before
+        // it sees the (immediate, scripted) Release — deterministic, no timing.
+        let _ = tx.try_send(OrchestratorEvent::Loading);
+        let _ = tx.try_send(OrchestratorEvent::Ready);
+        let _ = tx.try_send(OrchestratorEvent::Transcribing);
+        let stop = StopHandle::default();
+        let stop2 = stop.clone();
+        let run: SessionRun = Box::pin(async move {
+            while !stop2.is_stopped() {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            let _ = tx.send(OrchestratorEvent::Final("hello world".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello world".into())).await;
+            Ok(SessionOutcome::Completed { transcript: "hello world".into() })
+        });
+        (run, stop)
+    };
+
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        MockInjector::new(),
+        indicator,
+        staged,
+    );
+    controller.run().await;
+
+    // The distinct states appear in lifecycle order (dedup adjacent repeats).
+    let mut seq: Vec<IndicatorState> = Vec::new();
+    for s in log.lock().unwrap().iter() {
+        if seq.last() != Some(s) {
+            seq.push(s.clone());
+        }
+    }
+    assert_eq!(
+        seq,
+        vec![
+            IndicatorState::Recording,
+            IndicatorState::Transcribing,
+            IndicatorState::Finalizing,
+            IndicatorState::Hidden,
+        ],
+        "indicator lifecycle order"
+    );
+}
+
+#[tokio::test]
+async fn indicator_shows_error_state_on_failure() {
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        MockInjector::new(),
+        indicator,
+        backend_session(|| FakeBackend::mid_stream_error("decode_failed", "boom")),
+    );
+    controller.run().await;
+
+    let states = log.lock().unwrap().clone();
+    assert!(
+        states.iter().any(|s| matches!(s, IndicatorState::Error(m) if m == "boom")),
+        "expected Error(\"boom\"): {states:?}"
+    );
+}

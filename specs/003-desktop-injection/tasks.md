@@ -136,14 +136,14 @@ distinct state per phase, appears within the latency target, and clears at end.
 
 ### Tests for User Story 3 (write first, must fail) ⚠️
 
-- [ ] T027 [P] [US3] Hermetic test (`MockIndicator`): a full lifecycle yields the state sequence Recording→Transcribing→Finalizing→Hidden, and an error yields `Error(msg)`; no transcript text ever passed to the indicator — `client/myna-desktop/tests/controller.rs` (contracts N1–N4, N8)
-- [ ] T028 [P] [US3] Integration test (gated, display-present) in `tests/indicator_hw.rs`: `GtkIndicator` becomes visible within the activation-latency target after `Recording` (N5, **FR-018**), exposes state to AT-SPI (N6, **FR-019**), and the `notify` fallback fires when the overlay surface is unavailable (N7, **FR-020**)
+- [X] T027 [P] [US3] Hermetic test (`MockIndicator`): a full lifecycle yields the state sequence Recording→Transcribing→Finalizing→Hidden, and an error yields `Error(msg)`; no transcript text ever passed to the indicator — `client/myna-desktop/tests/controller.rs` (contracts N1–N4, N8)
+- [X] T028 [P] [US3] Integration test (gated, display-present) in `tests/indicator_hw.rs`: `GtkIndicator` becomes visible within the activation-latency target after `Recording` (N5, **FR-018**), exposes state to AT-SPI (N6, **FR-019**), and the `notify` fallback fires when the overlay surface is unavailable (N7, **FR-020**)
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Implement `GtkIndicator` in `client/myna-desktop/src/indicator/gtk.rs` (`#[cfg(feature = "ui-gtk")]`): a borderless always-on-top non-focusable GTK4 overlay with distinct visuals per `IndicatorState`; state pushed via a channel from the tokio side; AT-SPI labels for a11y; error state also raises a `notify-rust` toast (satisfies T028; contracts N1–N7; FR-017/018/019/020)
-- [ ] T030 [US3] Wire the GTK main-thread/tokio-worker bridge in `client/myna-desktop/src/bin/myna-desktop.rs` (`ui-gtk`): GTK owns the main thread + GLib loop, the controller/tokio runtime runs on a worker thread, indicator states flow over a channel (plan Complexity Tracking main-thread row); select `GtkIndicator` when `ui-gtk` is on, else `NotifyIndicator`
-- [ ] T031 [US3] Run quickstart step 3 with the overlay: indicator appears on press, transitions through states, clears on completion; screen-reader announces state changes
+- [X] T029 [US3] Implement `GtkIndicator` in `client/myna-desktop/src/indicator/gtk.rs` (`#[cfg(feature = "ui-gtk")]`): a borderless always-on-top non-focusable GTK4 overlay with distinct visuals per `IndicatorState`; state pushed via a channel from the tokio side; AT-SPI labels for a11y; error state also raises a `notify-rust` toast (satisfies T028; contracts N1–N7; FR-017/018/019/020)
+- [X] T030 [US3] Wire the GTK main-thread/tokio-worker bridge in `client/myna-desktop/src/bin/myna-desktop.rs` (`ui-gtk`): GTK owns the main thread + GLib loop, the controller/tokio runtime runs on a worker thread, indicator states flow over a channel (plan Complexity Tracking main-thread row); select `GtkIndicator` when `ui-gtk` is on, else `NotifyIndicator`
+- [X] T031 [US3] Run quickstart step 3 with the overlay: indicator appears on press, transitions through states, clears on completion; screen-reader announces state changes
 
 **Checkpoint**: US1–US3 testable; the dictation experience is visible + hands-free.
 
