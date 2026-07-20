@@ -22,14 +22,16 @@ myna-audio (PipeWire) ──PCM──▶ run_dictation ──OrchestratorEvent�
 Three boundary seams, each with a mock so the controller is fully
 hermetic-testable (no D-Bus / IBus / portal / display):
 
-- **`Trigger`** (reused from `myna-orchestrator`) — activation edges. Production:
-  `shortcut::portal::GlobalShortcutTrigger`; MVP stand-in: `StdinTrigger`; tests:
-  `ScriptedTrigger`.
+- **`Trigger`** (reused from `myna-orchestrator`) — activation edges. Default:
+  `shortcut::control::ControlTrigger` (control socket + GNOME shortcut);
+  packaged: `shortcut::portal::GlobalShortcutTrigger`; debug: `StdinTrigger`;
+  tests: `ScriptedTrigger`.
 - **`Injector`** (`inject::Injector`) — text injection. Production:
   `inject::ibus::IbusInjector`; tests: `inject::mock::MockInjector`.
-- **`Indicator`** (`indicator::Indicator`) — activity surface. Production:
-  `indicator::gtk::GtkIndicator` (feature `ui-gtk`) + `indicator::notify::NotifyIndicator`
-  (error toasts / headless); tests: `indicator::mock::MockIndicator`.
+- **`Indicator`** (`indicator::Indicator`) — activity surface. Default:
+  `indicator::notify::NotifyIndicator` (notifications); opt-in experimental:
+  `indicator::gtk::GtkIndicator` (feature `ui-gtk`); tests:
+  `indicator::mock::MockIndicator`.
 
 ## Controller state model
 
@@ -84,24 +86,38 @@ the full register→activate→commit→restore cycle against an isolated IBus d
 (`dbus-run-session`) via the gated `ibus_hw` suite. Injection into a focused GUI
 field is the manual spoken-run / gated-suite acceptance on hardware.
 
-## Activation: GlobalShortcuts portal (R2)
+## Activation
 
-`GlobalShortcutTrigger::bind(id, preferred_trigger)` creates a portal session and
-binds one hold-to-talk shortcut (default `Super+D`, confirmed/rebound in the
-desktop's own dialog — the app ships no shortcut-config UI). `Activated`→`Press`,
-`Deactivated`→`Release`, session-end→`None`. Compositor autorepeat is collapsed to
-a single `Press` until `Deactivated` by the pure `Dedup` state machine
-(first-Activated-wins, FR-008), which is fully hermetic-tested via a scripted
-`PortalSignal` stream.
+Dictation injects into *another* app, so activation must not depend on terminal
+focus. Three mechanisms, behind the reused `Trigger` seam:
 
-## Activity indicator: GTK4 overlay (R6)
+- **Control socket + GNOME custom shortcut (default).** `shortcut::control::
+  ControlTrigger` listens on a Unix socket; `myna-desktop --toggle` pokes it
+  (first poke `Press`, next `Release` — toggle-to-talk). A GNOME custom keyboard
+  shortcut bound to `myna-desktop --toggle` (via `--install-shortcut`, gsettings)
+  fires it globally. Works for an unsandboxed binary: no terminal focus, no
+  portal, no app id. This is the works-today path on GNOME/Wayland.
+- **GlobalShortcuts portal (`--portal`, R2).** `shortcut::portal::
+  GlobalShortcutTrigger::bind(id, preferred_trigger)` — real hold-to-talk
+  (`Activated`→`Press`, `Deactivated`→`Release`), autorepeat collapsed by the
+  hermetic-tested `Dedup` state machine (FR-008). **But** GNOME's backend refuses
+  callers without an app identity ("an app id is required"), which it only grants
+  sandboxed / `.desktop`-launched apps — so this is the activation for the
+  **packaged** (snap/flatpak) build, not a bare dev binary.
+- **stdin (`--stdin`).** The orchestrator's `StdinTrigger` — terminal debug only
+  (the terminal keeps focus, so text injects back into the terminal).
 
-`GtkIndicator` is a borderless, non-focusable GTK4 overlay with distinct visuals
-per state and AT-SPI labels (FR-019); the error state also raises a `notify-rust`
-toast (FR-020). GTK owns the process **main thread** + GLib loop; the tokio
-controller runs on a worker thread; states flow over an `async-channel`. Gated
-behind the `ui-gtk` feature so the hermetic suite never links GTK; without it, the
-headless `NotifyIndicator` runs on a plain tokio runtime.
+## Activity indicator: notifications (default) + GTK4 overlay (R6)
+
+Feedback defaults to **desktop notifications** (`indicator::notify::
+NotifyIndicator`) — no window, so it never perturbs focus. An opt-in GTK4 overlay
+(`--overlay`, `indicator::gtk::GtkIndicator`) gives a persistent per-state surface
+with AT-SPI labels (FR-019), but is **experimental**: on GNOME/Wayland mapping a
+top-level can shift keyboard focus off the target — our IBus engine then sees
+`FocusOut` and ends the session (its wrong-target safety), cutting dictation
+short. When used it owns the process main thread + GLib loop, with the tokio
+controller on a worker thread bridged by an `async-channel`; the error state also
+raises a `notify-rust` toast.
 
 ## Testing (Principles I/II/III)
 
