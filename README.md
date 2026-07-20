@@ -10,8 +10,7 @@ The project draws its name from the [myna](https://en.wikipedia.org/wiki/Myna), 
 - `server/src/myna/core` — shared vocabulary: audio types, transcript events, session config, transports (loopback + WebSocket/UDS). Includes `wire_ie115.py`, the OpenAI-Realtime **IE115** wire dialect codec.
 - `server/src/myna/testbed` — candidate-adapter evaluation testbed (fake + model adapters, harness, fixture corpus, metrics)
 - `server/src/myna/server` — standalone UbuSTT server (`myna-server`), the process the snaps ship
-- `server/src/myna/desktop` — interface stubs for the Ubuntu Desktop dictation client (UD129)
-- `client/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115
+- `client/` — the dictation **client** and orchestrator: a wire-agnostic session/residency FSM (`myna-orchestrator`) + the `myna-dictate` push-to-talk binary (`myna-cli`), speaking both the internal wire and IE115; and `myna-desktop`, the shipped push-to-talk **dictation app** — GlobalShortcuts hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator (feature 003-desktop-injection; see `docs/desktop-injection.md`)
 - `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model family (engines/runtimes/models + modelctl), strict-confinement
 - `docs/architecture` — architecture decision records; read before structural changes
 - `docs/project-plan.md` — workstreams, tasks, and milestones (the living tracker)
