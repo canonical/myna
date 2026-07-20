@@ -275,6 +275,11 @@ impl DesktopController {
         let mut focus_open = true;
         let mut quit_after = false;
         let mut cancelled = false;
+        // After focus-loss we must not commit further text (it would land in the
+        // now-focused wrong surface): finalize what's already committed, discard
+        // the rest (FR-014/FR-022, SC-007). A normal Release does NOT suppress
+        // (the commit-drain tail is still ours to insert).
+        let mut commits_suppressed = false;
 
         let outcome = loop {
             tokio::select! {
@@ -284,15 +289,35 @@ impl DesktopController {
                 // in order even when a release arrives mid-stream.
                 biased;
                 Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state).await;
+                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed).await;
                 }
                 // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
-                        route_event(ev, injector.as_mut(), indicator.as_mut(), state).await;
+                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed).await;
                     }
                     break result;
                 }
+                // A focus-loss event: FocusOut finalizes safely (no more
+                // commits); TargetGone cancels (discard uncommitted). Checked
+                // before the trigger so focus-loss takes precedence (end safely).
+                fe = focus.next(), if focus_open => match fe {
+                    Some(FocusEvent::FocusOut) => {
+                        stop.stop();
+                        commits_suppressed = true;
+                        enter_finalizing(state, indicator.as_mut()).await;
+                        // A lost target ends this utterance; leave later edges
+                        // for the next session.
+                        trigger_open = false;
+                    }
+                    Some(FocusEvent::TargetGone) => {
+                        stop.stop();
+                        commits_suppressed = true;
+                        cancelled = true;
+                        trigger_open = false;
+                    }
+                    None => focus_open = false,
+                },
                 // A trigger edge: `Release` finalizes (graceful stop); a `None`
                 // means the trigger ended — stop capture and quit after.
                 edge = trigger.next_edge(), if trigger_open => match edge {
@@ -311,19 +336,6 @@ impl DesktopController {
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
                     }
-                },
-                // A focus-loss event: FocusOut finalizes safely; TargetGone
-                // cancels (discard uncommitted) — full policy lands in US4.
-                fe = focus.next(), if focus_open => match fe {
-                    Some(FocusEvent::FocusOut) => {
-                        stop.stop();
-                        enter_finalizing(state, indicator.as_mut()).await;
-                    }
-                    Some(FocusEvent::TargetGone) => {
-                        stop.stop();
-                        cancelled = true;
-                    }
-                    None => focus_open = false,
                 },
             }
         };
@@ -418,6 +430,7 @@ async fn route_event(
     injector: &mut dyn Injector,
     indicator: &mut dyn Indicator,
     state: &mut DictationState,
+    commit_allowed: bool,
 ) {
     if let OrchestratorEvent::Transcribing = event {
         if *state == DictationState::Recording {
@@ -429,8 +442,11 @@ async fn route_event(
     }
     if let OrchestratorEvent::Final(text) = event {
         // Commit-only: stable committed text is inserted; unstable `Snippet`
-        // never is (FR-012). A commit failure surfaces as a best-effort error.
-        let _ = injector.commit(&text).await;
+        // never is (FR-012). Suppressed after focus-loss so nothing lands in the
+        // wrong surface (FR-014, SC-007). A commit failure is best-effort.
+        if commit_allowed {
+            let _ = injector.commit(&text).await;
+        }
     }
 }
 
