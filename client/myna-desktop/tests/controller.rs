@@ -439,3 +439,77 @@ async fn indicator_shows_error_state_on_failure() {
         "expected Error(\"boom\"): {states:?}"
     );
 }
+
+// ── US4 safety (T032/T033): focus-loss policy ──────────────────────────────
+
+/// A session that pre-buffers `Final("first")` (committed before the focus
+/// event) and, after stop, emits `Final("second")` + Done (the tail that must be
+/// suppressed once focus is lost).
+fn two_segment_focus_session(
+    outcome: SessionOutcome,
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send {
+    move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let _ = tx.try_send(OrchestratorEvent::Loading);
+        let _ = tx.try_send(OrchestratorEvent::Ready);
+        let _ = tx.try_send(OrchestratorEvent::Final("first".into()));
+        let stop = StopHandle::default();
+        let stop2 = stop.clone();
+        let outcome = outcome.clone();
+        let run: SessionRun = Box::pin(async move {
+            while !stop2.is_stopped() {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            let _ = tx.send(OrchestratorEvent::Final("second".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("first second".into())).await;
+            Ok(outcome)
+        });
+        (run, stop)
+    }
+}
+
+#[tokio::test]
+async fn focus_out_finalizes_and_makes_no_further_commits() {
+    // T032 / I8 / SC-007: focus moves away mid-session — already-committed text
+    // stays, but NO further segment is committed (nothing lands in the new
+    // surface).
+    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press],
+        injector,
+        MockIndicator::new(),
+        two_segment_focus_session(SessionOutcome::Completed { transcript: "first second".into() }),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.commits, vec!["first"], "no commit after focus-out");
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn target_gone_cancels_and_makes_no_further_commits() {
+    // T033 / I9 / FR-022: the target window closes mid-session — discard the
+    // uncommitted tail, cancel (restore the engine), and notify (Error state).
+    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::TargetGone]);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press],
+        injector,
+        indicator,
+        two_segment_focus_session(SessionOutcome::Completed { transcript: "first second".into() }),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.commits, vec!["first"], "no commit after target-gone");
+    assert!(log.cancels >= 1, "target-gone must cancel");
+    assert_eq!(log.restores, 1, "engine restored exactly once");
+    assert!(
+        matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))),
+        "target-gone must notify"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}

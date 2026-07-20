@@ -161,16 +161,16 @@ the target window mid-session → cancelled safely.
 
 ### Tests for User Story 4 (write first, must fail) ⚠️
 
-- [ ] T032 [P] [US4] Hermetic controller test (`MockInjector` scripted `focus_events`): a `FocusEvent::FocusOut` mid-session finalizes already-committed text and ends the session with **zero** further `commit` calls — `client/myna-desktop/tests/controller.rs` (contract I8; FR-014, SC-007, US4-1)
-- [ ] T033 [P] [US4] Hermetic controller test: a `FocusEvent::TargetGone` cancels safely (discards uncommitted, `cancel` called, notification) (contract I9; FR-022, US4-2)
-- [ ] T034 [P] [US4] Hermetic controller test: `acquire` → `Err(SecureField)` refuses to start, shows an error/notification, and never captures audio (contract I5; FR-021, SC-008, US4-3)
-- [ ] T035 [P] [US4] Integration test (gated `MYNA_IBUS_TESTS`) in `tests/ibus_hw.rs`: real IBus `FocusOut` from a focused entry emits a `FocusEvent::FocusOut`; a password-purpose entry (`SetContentType` PASSWORD) makes `acquire` return `Err(SecureField)` (contracts I5, I8)
+- [X] T032 [P] [US4] Hermetic controller test (`MockInjector` scripted `focus_events`): a `FocusEvent::FocusOut` mid-session finalizes already-committed text and ends the session with **zero** further `commit` calls — `client/myna-desktop/tests/controller.rs` (contract I8; FR-014, SC-007, US4-1)
+- [X] T033 [P] [US4] Hermetic controller test: a `FocusEvent::TargetGone` cancels safely (discards uncommitted, `cancel` called, notification) (contract I9; FR-022, US4-2)
+- [X] T034 [P] [US4] Hermetic controller test: `acquire` → `Err(SecureField)` refuses to start, shows an error/notification, and never captures audio (contract I5; FR-021, SC-008, US4-3)
+- [X] T035 [P] [US4] Integration test (gated `MYNA_IBUS_TESTS`) in `tests/ibus_hw.rs`: real IBus `FocusOut` from a focused entry emits a `FocusEvent::FocusOut`; a password-purpose entry (`SetContentType` PASSWORD) makes `acquire` return `Err(SecureField)` (contracts I5, I8)
 
 ### Implementation for User Story 4
 
-- [ ] T036 [US4] Implement focus/secure detection in `client/myna-desktop/src/inject/ibus.rs`: `FocusOut`/context-gone → the `focus_events` stream (`FocusOut`/`TargetGone`); `SetContentType` password purpose → `acquire` returns `Err(SecureField)`; best-effort where no content-type is advertised, documented (satisfies T035; contracts I5, I8, I9; FR-021)
-- [ ] T037 [US4] Implement the controller safety policy in `client/myna-desktop/src/controller.rs`: on `FocusOut` → finalize-and-end (Finalizing→Completed, no new commits); on `TargetGone` → Cancelled + notify; on `SecureField` at acquire → Error + notify, no capture (satisfies T032, T033, T034; FR-014/021/022)
-- [ ] T038 [US4] Run quickstart step 4: focus-change mid-session inserts zero chars into the new surface (SC-007); password field refused (SC-008); target-window close cancels safely
+- [X] T036 [US4] Implement focus/secure detection in `client/myna-desktop/src/inject/ibus.rs`: `FocusOut`/context-gone → the `focus_events` stream (`FocusOut`/`TargetGone`); `SetContentType` password purpose → `acquire` returns `Err(SecureField)`; best-effort where no content-type is advertised, documented (satisfies T035; contracts I5, I8, I9; FR-021)
+- [X] T037 [US4] Implement the controller safety policy in `client/myna-desktop/src/controller.rs`: on `FocusOut` → finalize-and-end (Finalizing→Completed, no new commits); on `TargetGone` → Cancelled + notify; on `SecureField` at acquire → Error + notify, no capture (satisfies T032, T033, T034; FR-014/021/022)
+- [X] T038 [US4] Run quickstart step 4: focus-change mid-session inserts zero chars into the new surface (SC-007); password field refused (SC-008); target-window close cancels safely
 
 **Checkpoint**: all four stories independently functional; UD129 safety/privacy acceptance met.
 
