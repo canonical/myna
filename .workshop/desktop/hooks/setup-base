@@ -11,7 +11,18 @@
 #   - ibus          : the IBus daemon the MYNA_IBUS_TESTS suite injects through
 #   - xdg-desktop-portal, xdg-desktop-portal-gnome : the portal + a
 #                     GlobalShortcuts backend for the MYNA_PORTAL_TESTS suite
-#   - dbus, dbus-x11 : a D-Bus session bus (dbus-run-session) for both suites
+#   - dbus, dbus-x11 : a D-Bus session bus (dbus-run-session) for both suites,
+#                     and for feature 004's MYNA_DBUS_TESTS org.myna.Dictation
+#                     round-trip suite
+#   Feature 004 (GNOME Shell indicator):
+#   - gjs           : runs the extensions/myna-shell pure contract tests
+#                     (states/vumeter + stub-proxy lifecycle; no Shell needed)
+#   - gnome-shell, gnome-session : a GNOME Shell session for the extension
+#                     on-hardware acceptance (quickstart §4–§7). NOTE: this
+#                     SDK sits on ubuntu@24.04 (Shell 46); the extension's
+#                     metadata targets Shell 48/49 (Ubuntu 26.04), so the
+#                     install/enable acceptance happens on the 26.04 desktop —
+#                     these packages cover the tooling/validation path here.
 # zbus/ashpd are pure-Rust (no system -dev headers).
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -23,4 +34,7 @@ apt-get install --yes --no-install-recommends \
   xdg-desktop-portal \
   xdg-desktop-portal-gnome \
   dbus \
-  dbus-x11
+  dbus-x11 \
+  gjs \
+  gnome-shell \
+  gnome-session

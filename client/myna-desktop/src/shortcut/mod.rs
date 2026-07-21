@@ -7,6 +7,7 @@
 //! `specs/003-desktop-injection/contracts/trigger.md`.
 
 pub mod control;
+pub mod dbus;
 pub mod portal;
 
 pub use myna_orchestrator::{Trigger, TriggerEdge};

@@ -24,6 +24,7 @@
 //! suite drives the controller through the mocks.
 
 pub mod controller;
+pub mod dbus;
 pub mod indicator;
 pub mod inject;
 pub mod shortcut;

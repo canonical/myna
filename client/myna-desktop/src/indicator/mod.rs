@@ -9,6 +9,7 @@
 
 use async_trait::async_trait;
 
+pub mod dbus;
 #[cfg(feature = "ui-gtk")]
 pub mod gtk;
 pub mod mock;

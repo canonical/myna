@@ -1,0 +1,7 @@
+/* stylesheet.css — goop state colours + animation classes for the Myna
+ * dictation indicator (feature 004; research R6, data-model "State →
+ * visual-intent mapping"). All per-state tunables live here so the pure
+ * states.js mapping never has to change for a visual tweak. A high-contrast
+ * variant lands with the a11y task (T035); legibility never relies on colour
+ * alone (shape/animation also differ per state).
+ */
