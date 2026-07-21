@@ -32,6 +32,9 @@ use std::process::ExitCode;
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
+use myna_desktop::dbus::serve::ZbusBus;
+use myna_desktop::dbus::DictationService;
+use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::ibus::IbusInjector;
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
@@ -65,6 +68,8 @@ OPTIONS:
     --portal           activate via the GlobalShortcuts portal (packaged only)
     --stdin            DEBUG: drive from the terminal (injects into the terminal)
     --overlay          show the GTK activity overlay (experimental; may steal focus)
+    --dbus             serve org.myna.Dictation on the session bus for the GNOME
+                       Shell extension (falls back to notifications if no bus)
     -h, --help         show this help
 ";
 
@@ -80,6 +85,7 @@ struct Args {
     portal: bool,
     stdin: bool,
     overlay: bool,
+    dbus: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -108,6 +114,7 @@ fn parse_args() -> Result<Args, String> {
             "--portal" => a.portal = true,
             "--stdin" => a.stdin = true,
             "--overlay" => a.overlay = true,
+            "--dbus" => a.dbus = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
@@ -130,6 +137,7 @@ fn control_path(args: &Args) -> PathBuf {
 /// accept the default 16 kHz s16le mono, so the MVP uses it directly.
 fn make_session(
     args: &Args,
+    readiness: Option<Readiness>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
     let socket = args.socket.clone().expect("daemon requires --socket");
     let language = args.language.clone();
@@ -143,16 +151,32 @@ fn make_session(
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let stop = source.stop_handle();
         let config = SessionConfig { language: language.clone(), ..Default::default() };
-        let run: SessionRun = Box::pin(async move {
-            let mut sink = ChannelSink(events);
-            run_dictation(&backend, config, source, &mut sink).await
-        });
+        let run: SessionRun = match &readiness {
+            // --dbus: tee the event stream so the publisher can split
+            // loading/recording (R4); fresh cold readiness per session.
+            Some(r) => {
+                r.reset();
+                let r = r.clone();
+                Box::pin(async move {
+                    let mut sink = ReadinessTee::new(ChannelSink(events), r);
+                    run_dictation(&backend, config, source, &mut sink).await
+                })
+            }
+            None => Box::pin(async move {
+                let mut sink = ChannelSink(events);
+                run_dictation(&backend, config, source, &mut sink).await
+            }),
+        };
         (run, stop)
     }
 }
 
 /// Build and run the controller with the given indicator (tokio side).
-async fn run_controller(args: Args, indicator: impl Indicator + 'static) -> ExitCode {
+async fn run_controller(
+    args: Args,
+    indicator: impl Indicator + 'static,
+    readiness: Option<Readiness>,
+) -> ExitCode {
     let injector = match IbusInjector::connect().await {
         Ok(i) => i,
         Err(e) => {
@@ -165,7 +189,7 @@ async fn run_controller(args: Args, indicator: impl Indicator + 'static) -> Exit
     let builder = DesktopController::builder()
         .injector(injector)
         .indicator(indicator)
-        .session(make_session(&args));
+        .session(make_session(&args, readiness));
 
     let mut controller = if args.stdin {
         builder.trigger(StdinTrigger::new()).build()
@@ -314,9 +338,33 @@ fn run_headless(args: Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let code = rt.block_on(run_controller(args, NotifyIndicator::new()));
+    let code = if args.dbus {
+        rt.block_on(run_headless_dbus(args))
+    } else {
+        rt.block_on(run_controller(args, NotifyIndicator::new(), None))
+    };
     println!("bye");
     code
+}
+
+/// `--dbus`: serve `org.myna.Dictation` and use the D-Bus publisher as the
+/// indicator (feature 004 — the GNOME Shell extension consumes it). Falls back
+/// to desktop notifications when the session bus is unreachable or the name
+/// can't be owned — dictation itself never hard-fails (P15).
+async fn run_headless_dbus(args: Args) -> ExitCode {
+    match ZbusBus::serve().await {
+        Ok(bus) => {
+            let readiness = Readiness::new();
+            let service = DictationService::new(bus);
+            let indicator = DbusIndicator::new(service.bus(), readiness.clone());
+            eprintln!("serving org.myna.Dictation on the session bus");
+            run_controller(args, indicator, Some(readiness)).await
+        }
+        Err(e) => {
+            eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
+            run_controller(args, NotifyIndicator::new(), None).await
+        }
+    }
 }
 
 /// Opt-in GTK overlay path (R6): GTK owns the main thread + GLib loop; the
@@ -336,7 +384,7 @@ fn run_with_overlay(args: Args) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        rt.block_on(run_controller(args, GtkIndicator::new(tx)))
+        rt.block_on(run_controller(args, GtkIndicator::new(tx), None))
     });
 
     let _gtk_code = run_indicator_app(rx);

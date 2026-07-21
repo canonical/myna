@@ -53,4 +53,4 @@ actions:
   # GJS contract tests for the GNOME Shell extension (feature 004): the pure
   # state→visual-intent mapping + stub-proxy lifecycle. No Shell needed.
   gjs-test: |
-    cd /project/extensions/myna-shell && gjs -m test/states.test.js
+    cd /project/extensions/myna-shell && for t in test/*.test.js; do gjs -m "$t" || exit 1; done
