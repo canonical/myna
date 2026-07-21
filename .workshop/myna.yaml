@@ -30,7 +30,9 @@ sdks:
   # In-project SDK: GTK4 dev headers (the `ui-gtk` activity indicator) plus the
   # IBus daemon and xdg-desktop-portal GlobalShortcuts backend the desktop
   # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
-  # env-gated integration-tests against. See .workshop/desktop/sdk.yaml.
+  # env-gated integration-tests against — plus GJS and a GNOME Shell session
+  # for the feature 004 (GNOME Shell indicator) extension contract tests and
+  # acceptance. See .workshop/desktop/sdk.yaml.
   - name: project-desktop
 
 # Named automation, runnable in or out of CI with `workshop run myna <action>`.
@@ -48,3 +50,7 @@ actions:
   # Python offline suite (fake-adapter contract + adapter logic).
   py-test: |
     cd /project/server && uv run pytest "$@"
+  # GJS contract tests for the GNOME Shell extension (feature 004): the pure
+  # state→visual-intent mapping + stub-proxy lifecycle. No Shell needed.
+  gjs-test: |
+    cd /project/extensions/myna-shell && gjs -m test/states.test.js
