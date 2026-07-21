@@ -8,6 +8,12 @@ Runnable validation that the focus-safe goop indicator works end-to-end. See
 ## Prerequisites
 
 - Ubuntu 26.04+ on **Wayland**, GNOME Shell **50 or 51** (`gnome-shell --version`).
+  Dev-loop note (2026-07-21, verified on Shell 50.2): mutter **removed the
+  nested backend** — there is no `gnome-shell --nested`, plain `--wayland` does
+  not nest, and the `--devkit` viewer (`mutter-devkit`) is not shipped by
+  Ubuntu's mutter packages. On Wayland the only code-reload is a Shell
+  restart (log out/in); iterate on pure logic via the GJS contract tests
+  (step 3) and batch Shell-side checks into as few reloads as possible.
 - The Workshop dev env (`.workshop/myna.yaml`) with the desktop SDK (D-Bus, GJS,
   gnome-shell) — see the foundational task; or a GNOME session on hardware.
 - A running inference backend, e.g. `myna-server --adapter whisper --socket /tmp/myna.sock`.
