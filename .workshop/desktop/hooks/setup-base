@@ -20,7 +20,7 @@
 #   - gnome-shell, gnome-session : a GNOME Shell session for the extension
 #                     on-hardware acceptance (quickstart §4–§7). NOTE: this
 #                     SDK sits on ubuntu@24.04 (Shell 46); the extension's
-#                     metadata targets Shell 48/49 (Ubuntu 26.04), so the
+#                     metadata targets Shell 50/51 (Ubuntu 26.10), so the
 #                     install/enable acceptance happens on the 26.04 desktop —
 #                     these packages cover the tooling/validation path here.
 # zbus/ashpd are pure-Rust (no system -dev headers).

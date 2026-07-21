@@ -39,13 +39,13 @@ on-hardware acceptance (`quickstart.md`). Consumes `org.myna.Dictation`
 | X15 | Animations look smooth (≈60 fps) and don't accumulate across rapid start/stop cycles. | FR-009, SC-007 |
 | X16 | The optional panel button (if enabled) toggles a session equivalently to the hotkey, preserving commit-only behaviour, and dims when the daemon is absent. | FR-013/014, SC-010 |
 | X17 | State changes are announced by Orca and the goop is legible in high-contrast mode. | FR-022, SC-009 |
-| X18 | Loads on GNOME 48/49 (per `metadata.json` `shell-version`) and refuses to load on unsupported versions. | FR-020, SC-008 |
+| X18 | Loads on GNOME 50/51 (per `metadata.json` `shell-version`) and refuses to load on unsupported versions. | FR-020, SC-008 |
 
 ## Constraints
 
 - No network; no audio capture; renders/logs/persists no transcript content
   (privacy, constitution V — FR-019).
-- `metadata.json` declares `shell-version: ["48", "49"]`, a unique `uuid`, and no
+- `metadata.json` declares `shell-version: ["50", "51"]`, a unique `uuid`, and no
   settings schema (no picker — Out of Scope).
 - Bundle is directly loadable at
   `~/.local/share/gnome-shell/extensions/<uuid>/` (no build step).
