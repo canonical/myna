@@ -15,7 +15,7 @@
 //! The module is named `native` (not `pipewire`) to avoid colliding with the
 //! `pipewire` crate.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -45,14 +45,143 @@ use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 /// §5, FR-012) even when no audio is flowing.
 const STOP_POLL: Duration = Duration::from_millis(100);
 
+/// Dead-capture watchdog window (2026-07-21 hardware finding): a daemon with
+/// no session manager accepts `stream.connect` and even negotiates the stream
+/// to `Paused` — but nothing ever links it to a source node, so `process`
+/// never fires and the capture would masquerade as a clean, silent, empty
+/// stream (§3). Two guards: at open, a registry roundtrip requires a usable
+/// source to exist ([`no_source_message`]); after open, a stream that has
+/// produced zero buffers within this window is declared dead
+/// ([`no_flow_message`]). Healthy graphs deliver buffers within milliseconds
+/// of streaming; 3 s is generous headroom.
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The open-time link-wait decision for one stream-state transition.
+enum LinkWait {
+    /// Not wired yet — keep waiting (bounded by [`LINK_WAIT_TIMEOUT`]).
+    Waiting,
+    /// The graph negotiated the stream: a source is wired; open succeeds.
+    Wired,
+    /// The stream errored before wiring — fault the open.
+    Errored,
+}
+
+/// Pure decision: which stream states prove a source was wired.
+fn link_wait_on_state(new: &StreamState) -> LinkWait {
+    match new {
+        StreamState::Paused | StreamState::Streaming => LinkWait::Wired,
+        StreamState::Error(_) => LinkWait::Errored,
+        _ => LinkWait::Waiting,
+    }
+}
+
+/// The user-facing, content-free fault when the graph has no usable source
+/// at open — names the usual cause (a masked/absent session manager).
+fn no_source_message(target: Option<&str>) -> String {
+    match target {
+        Some(t) => format!(
+            "no audio source available for '{t}' — is a PipeWire session manager (e.g. WirePlumber) running?"
+        ),
+        None => {
+            "no audio source available — is a PipeWire session manager (e.g. WirePlumber) running?"
+                .to_string()
+        }
+    }
+}
+
+/// The user-facing, content-free fault when an opened stream produced zero
+/// buffers within the watchdog window — a dead stream, never a silent
+/// "successful" empty capture.
+fn no_flow_message(target: Option<&str>) -> String {
+    match target {
+        Some(t) => format!(
+            "no audio is flowing from '{t}' — the device may be stuck, unplugged, or the graph failed to link"
+        ),
+        None => {
+            "no audio is flowing from the capture source — the device may be stuck, unplugged, or the graph failed to link"
+                .to_string()
+        }
+    }
+}
+
+/// Roundtrip the registry once and report whether the graph has a usable
+/// capture source: any real `Audio/Source` (the device-enumeration mapping),
+/// or — with an explicit target — a node with that `node.name`. Runs the loop
+/// for a single core sync (milliseconds); globals from the initial roundtrip
+/// are the complete current graph.
+fn graph_has_source(
+    main_loop: &MainLoopRc,
+    core: &pipewire::core::CoreRc,
+    target: Option<&str>,
+) -> Result<bool, CaptureError> {
+    let registry = core.get_registry_rc().map_err(|e| {
+        CaptureError::DeviceUnavailable(format!("cannot get PipeWire registry: {e}"))
+    })?;
+    let found = Rc::new(Cell::new(false));
+    let _listener = registry
+        .add_listener_local()
+        .global({
+            let found = found.clone();
+            let target = target.map(str::to_string);
+            move |global| {
+                use pipewire::types::ObjectType;
+                if global.type_ != ObjectType::Node {
+                    return;
+                }
+                let Some(props) = &global.props else { return };
+                let hit = match &target {
+                    Some(t) => props.get("node.name") == Some(t.as_str()),
+                    None => crate::devices::map_input_device(|k| props.get(k)).is_some(),
+                };
+                if hit {
+                    found.set(true);
+                }
+            }
+        })
+        .register();
+
+    let seq = core
+        .sync(0)
+        .map_err(|e| CaptureError::Backend(format!("cannot sync PipeWire core: {e}")))?;
+    let _core_listener = core
+        .add_listener_local()
+        .done({
+            let main_loop = main_loop.clone();
+            move |_id, done_seq| {
+                if done_seq == seq {
+                    main_loop.quit();
+                }
+            }
+        })
+        .error({
+            let main_loop = main_loop.clone();
+            move |_id, _seq, _res, _msg| main_loop.quit()
+        })
+        .register();
+    main_loop.run();
+    Ok(found.get())
+}
+
 /// Native PipeWire capture backend. Construct with [`PipeWireBackend::new`];
 /// use through `CaptureSource::builder(fmt).backend(Box::new(...))`.
 #[derive(Default)]
-pub struct PipeWireBackend {}
+pub struct PipeWireBackend {
+    /// Daemon remote to connect to (`remote.name`, may be an absolute socket
+    /// path). `None` = the session default. Advanced/testing seam — e.g. the
+    /// gated suite's private no-session-manager daemon.
+    remote: Option<String>,
+}
 
 impl PipeWireBackend {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Connect to a specific daemon remote instead of the session default.
+    pub fn with_remote(remote: impl Into<String>) -> Self {
+        Self {
+            remote: Some(remote.into()),
+        }
     }
 }
 
@@ -78,7 +207,7 @@ impl CaptureBackend for PipeWireBackend {
         // Hand off to the loop thread; it reports open success/failure back
         // here synchronously so `start` returns the open error (§5).
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), CaptureError>>();
-        spawn_capture_thread(spec, producer, ready_tx);
+        spawn_capture_thread(spec, producer, ready_tx, self.remote);
         match ready_rx.recv() {
             Ok(result) => result,
             Err(_) => Err(CaptureError::Backend(
@@ -96,11 +225,12 @@ fn spawn_capture_thread(
     spec: CaptureSpec,
     producer: Producer,
     ready_tx: mpsc::Sender<Result<(), CaptureError>>,
+    remote: Option<String>,
 ) {
     std::thread::Builder::new()
         .name("myna-pw-capture".into())
         .spawn(move || {
-            run_capture(&spec, producer, &ready_tx);
+            run_capture(&spec, producer, ready_tx.clone(), remote.as_deref());
             // Backstop: if run_capture returned before signaling (it always
             // signals on every path), make sure `start` can never block.
             let _ = ready_tx.send(Ok(()));
@@ -116,35 +246,66 @@ fn spawn_capture_thread(
 fn run_capture(
     spec: &CaptureSpec,
     producer: Producer,
-    ready_tx: &mpsc::Sender<Result<(), CaptureError>>,
+    ready_tx: mpsc::Sender<Result<(), CaptureError>>,
+    remote: Option<&str>,
 ) {
+    // The open outcome is signalled exactly once, by whichever path comes
+    // first: an early return below, the link-wait succeeding (state reaches
+    // Paused/Streaming), the link-wait timeout, or the loop-quit catch-all.
+    let ready_tx = Rc::new(RefCell::new(Some(ready_tx)));
+    macro_rules! fail_open {
+        ($err:expr) => {{
+            if let Some(tx) = ready_tx.borrow_mut().take() {
+                let _ = tx.send(Err($err));
+            }
+            return;
+        }};
+    }
+
     let main_loop = match MainLoopRc::new(None) {
         Ok(l) => l,
         Err(e) => {
-            let _ = ready_tx.send(Err(CaptureError::DeviceUnavailable(format!(
+            fail_open!(CaptureError::DeviceUnavailable(format!(
                 "cannot create PipeWire loop: {e}"
-            ))));
-            return;
+            )));
         }
     };
     let context = match ContextRc::new(&main_loop, None) {
         Ok(c) => c,
         Err(e) => {
-            let _ = ready_tx.send(Err(CaptureError::DeviceUnavailable(format!(
+            fail_open!(CaptureError::DeviceUnavailable(format!(
                 "cannot create PipeWire context: {e}"
-            ))));
-            return;
+            )));
         }
     };
-    let core = match context.connect_rc(None) {
+    let core = match remote {
+        Some(name) => {
+            let props = properties! { *keys::REMOTE_NAME => name }.to_owned();
+            context.connect_rc(Some(props))
+        }
+        None => context.connect_rc(None),
+    };
+    let core = match core {
         Ok(c) => c,
         Err(e) => {
-            let _ = ready_tx.send(Err(CaptureError::DeviceUnavailable(format!(
+            fail_open!(CaptureError::DeviceUnavailable(format!(
                 "cannot connect to PipeWire: {e}"
-            ))));
-            return;
+            )));
         }
     };
+
+    // No-source graph check (see SILENCE_TIMEOUT): refuse to open a stream
+    // the graph could never feed. Skipped roundtrips would be a silent empty
+    // capture — the exact failure this guards (§3).
+    match graph_has_source(&main_loop, &core, spec.target.as_deref()) {
+        Ok(true) => {}
+        Ok(false) => {
+            fail_open!(CaptureError::DeviceUnavailable(no_source_message(
+                spec.target.as_deref()
+            )));
+        }
+        Err(e) => fail_open!(e),
+    }
 
     // Producer + terminal fault shared with the loop callbacks (single thread,
     // so Rc<RefCell<..>> is sound and never contended).
@@ -166,9 +327,7 @@ fn run_capture(
     let stream = match StreamRc::new(core, "myna-capture", props) {
         Ok(s) => s,
         Err(e) => {
-            let _ = ready_tx
-                .send(Err(CaptureError::Backend(format!("cannot create capture stream: {e}"))));
-            return;
+            fail_open!(CaptureError::Backend(format!("cannot create capture stream: {e}")));
         }
     };
 
@@ -182,6 +341,11 @@ fn run_capture(
         None => spec.format.channels as u32,
     };
 
+    // Open negotiation + the dead-stream watchdog (see SILENCE_TIMEOUT):
+    // reaching Paused/Streaming completes open; buffers flowing prove life.
+    let opened = Rc::new(Cell::new(false));
+    let buffers_seen = Rc::new(Cell::new(0u64));
+
     let stop = spec.stop.clone();
     let _listener = stream
         .add_local_listener_with_user_data(())
@@ -189,7 +353,17 @@ fn run_capture(
             let main_loop = main_loop.clone();
             let fault = fault.clone();
             let target = spec.target.clone();
+            let opened = opened.clone();
+            let ready_tx = ready_tx.clone();
             move |_stream, _ud, old, new| {
+                if !opened.get()
+                    && matches!(link_wait_on_state(&new), LinkWait::Wired)
+                {
+                    opened.set(true);
+                    if let Some(tx) = ready_tx.borrow_mut().take() {
+                        let _ = tx.send(Ok(()));
+                    }
+                }
                 if let StreamState::Error(msg) = &new {
                     // A stream error mid-capture (e.g. the device/daemon went
                     // away) → one terminal fault, then quit (FR-010, C10).
@@ -207,6 +381,7 @@ fn run_capture(
             let main_loop = main_loop.clone();
             let producer = producer.clone();
             let stop = stop.clone();
+            let buffers_seen = buffers_seen.clone();
             // Channel pick/downmix config (§9): pick these input-channel indices
             // from the `stream_channels`-wide stream and average them down to
             // `out_channels`. `None` = pass through unchanged.
@@ -215,6 +390,7 @@ fn run_capture(
             let out_channels = spec.format.channels as usize;
             move |stream, _ud| {
                 while let Some(mut buffer) = stream.dequeue_buffer() {
+                    buffers_seen.set(buffers_seen.get() + 1);
                     let datas = buffer.datas_mut();
                     if let Some(data) = datas.first_mut() {
                         let size = data.chunk().size() as usize;
@@ -252,9 +428,9 @@ fn run_capture(
     let _listener = match _listener {
         Ok(l) => l,
         Err(e) => {
-            let _ = ready_tx
-                .send(Err(CaptureError::Backend(format!("cannot register stream listener: {e}"))));
-            return;
+            fail_open!(CaptureError::Backend(format!(
+                "cannot register stream listener: {e}"
+            )));
         }
     };
 
@@ -270,6 +446,31 @@ fn run_capture(
         }
     });
     let _ = timer.update_timer(Some(STOP_POLL), Some(STOP_POLL)).into_result();
+
+    // Dead-stream watchdog (one-shot): an opened stream that produced zero
+    // buffers within the window is dead — fault loudly (as an open failure if
+    // negotiation somehow never completed, else a terminal runtime fault).
+    let watchdog = main_loop.loop_().add_timer({
+        let main_loop = main_loop.clone();
+        let ready_tx = ready_tx.clone();
+        let fault = fault.clone();
+        let target = spec.target.clone();
+        let buffers_seen = buffers_seen.clone();
+        move |_| {
+            if buffers_seen.get() > 0 {
+                return;
+            }
+            let msg = no_flow_message(target.as_deref());
+            *fault.borrow_mut() = Some(CaptureError::DeviceUnavailable(msg.clone()));
+            if let Some(tx) = ready_tx.borrow_mut().take() {
+                let _ = tx.send(Err(CaptureError::DeviceUnavailable(msg)));
+            }
+            main_loop.quit();
+        }
+    });
+    let _ = watchdog
+        .update_timer(Some(SILENCE_TIMEOUT), None)
+        .into_result();
 
     // Request EXACTLY the negotiated format: S16LE at the negotiated
     // rate/channels. PipeWire's graph inserts the resampler/downmixer so the
@@ -304,21 +505,37 @@ fn run_capture(
             Some(t) => CaptureError::DeviceUnavailable(format!("cannot connect to '{t}': {e}")),
             None => CaptureError::Backend(format!("cannot connect capture stream: {e}")),
         };
-        let _ = ready_tx.send(Err(err));
-        return;
+        fail_open!(err);
     }
 
-    // Open succeeded — unblock `start` with Ok, then run until quit.
-    let _ = ready_tx.send(Ok(()));
+    // Open success is signalled from `state_changed` once the stream is
+    // wired (Paused/Streaming), or the link-wait timer faults it — the loop
+    // must run for either, so `start` stays parked until then.
     main_loop.run();
 
-    // Loop quit: stop/abort/fault. Deliver exactly one terminal outcome to the
-    // consumer stream (queued audio drains first, then this).
+    // Loop quit: stop/abort/fault/link-timeout. Deliver exactly one terminal
+    // outcome to the consumer stream (queued audio drains first, then this).
     drop(timer);
+    drop(watchdog);
+    let was_opened = opened.get();
+    if !was_opened {
+        // Stop/abort during the link wait: close out the unsignalled open as
+        // a failure — never an empty stream masquerading as a clean end (§3).
+        if let Some(tx) = ready_tx.borrow_mut().take() {
+            let _ = tx.send(Err(CaptureError::DeviceUnavailable(
+                "capture stopped before an audio source was wired".into(),
+            )));
+        }
+    }
     let fault = fault.borrow_mut().take();
     let producer = producer.borrow_mut().take();
     if let Some(p) = producer {
-        p.finish(fault);
+        // On open failure `start` already returned Err and the ring was
+        // dropped: drop the producer quietly, mirroring the other
+        // open-failure paths. Only an opened stream finishes (fault or clean).
+        if was_opened {
+            p.finish(fault);
+        }
     }
 }
 
@@ -404,6 +621,56 @@ mod tests {
         let (chunks, fault) = drain(Box::new(source).capture()).await;
         assert!(chunks.is_empty());
         assert!(matches!(fault, Some(CaptureError::UnsupportedFormat(_))));
+    }
+
+    /// No-source link wait (2026-07-21 hardware finding): a daemon with no
+    /// session manager accepts `stream.connect` but never wires the stream to
+    /// a node — it sits in Connecting forever. Only Paused/Streaming prove a
+    /// source was wired; Error faults; everything else keeps waiting (bounded
+    /// by LINK_WAIT_TIMEOUT).
+    #[test]
+    fn link_wait_decision() {
+        assert!(matches!(link_wait_on_state(&StreamState::Paused), LinkWait::Wired));
+        assert!(matches!(
+            link_wait_on_state(&StreamState::Streaming),
+            LinkWait::Wired
+        ));
+        assert!(matches!(
+            link_wait_on_state(&StreamState::Connecting),
+            LinkWait::Waiting
+        ));
+        assert!(matches!(
+            link_wait_on_state(&StreamState::Unconnected),
+            LinkWait::Waiting
+        ));
+        assert!(matches!(
+            link_wait_on_state(&StreamState::Error("no node".into())),
+            LinkWait::Errored
+        ));
+    }
+
+    /// The no-source fault message is user-facing and actionable (names the
+    /// missing session manager), content-free, and includes the target when
+    /// one was requested.
+    #[test]
+    fn link_wait_timeout_message() {
+        let plain = no_source_message(None);
+        assert!(plain.contains("session manager"), "got: {plain}");
+        assert!(plain.contains("no audio source"), "got: {plain}");
+        let targeted = no_source_message(Some("alsa_input.pci-0000_00_1f.3.analog-stereo"));
+        assert!(targeted.contains("alsa_input.pci-0000_00_1f.3.analog-stereo"));
+        assert!(targeted.contains("session manager"));
+    }
+
+    /// The dead-stream watchdog message is likewise user-facing, content-free,
+    /// and names the target when one was requested.
+    #[test]
+    fn watchdog_message() {
+        let plain = no_flow_message(None);
+        assert!(plain.contains("no audio is flowing"), "got: {plain}");
+        let targeted = no_flow_message(Some("alsa_input.usb"));
+        assert!(targeted.contains("alsa_input.usb"));
+        assert!(targeted.contains("no audio is flowing"));
     }
 
     /// T026: an empty channel selection is rejected up front (C7) — never a

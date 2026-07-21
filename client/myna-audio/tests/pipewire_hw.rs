@@ -60,6 +60,55 @@ impl Drop for VirtualSource {
     }
 }
 
+/// A private `pipewire` daemon with NO session manager (Ubuntu's default
+/// `context.exec` starts none): the graph exists but has zero source nodes —
+/// the masked-wireplumber failure mode found on hardware (2026-07-21), where
+/// capture silently streamed nothing. Own runtime dir; killed + removed on
+/// drop. Returns `None` if the `pipewire` binary isn't available.
+struct NoSmDaemon {
+    child: Child,
+    runtime_dir: std::path::PathBuf,
+}
+
+impl NoSmDaemon {
+    fn spawn() -> Option<Self> {
+        let runtime_dir =
+            std::env::temp_dir().join(format!("myna-nosm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        std::fs::create_dir_all(&runtime_dir).ok()?;
+        let child = Command::new("pipewire")
+            .env("PIPEWIRE_RUNTIME_DIR", &runtime_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        // Wait for the daemon socket to appear.
+        for _ in 0..50 {
+            if runtime_dir.join("pipewire-0").exists() {
+                return Some(Self { child, runtime_dir });
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = child;
+        None
+    }
+
+    /// The remote clients connect to (libpipewire accepts an absolute socket
+    /// path as `remote.name`).
+    fn remote(&self) -> String {
+        self.runtime_dir.join("pipewire-0").display().to_string()
+    }
+}
+
+impl Drop for NoSmDaemon {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.runtime_dir);
+    }
+}
+
 fn enabled() -> bool {
     std::env::var_os("MYNA_PIPEWIRE_TESTS").is_some_and(|v| v == "1")
 }
@@ -102,6 +151,38 @@ async fn drain_with_timeout(
 #[test]
 fn gate_skips_cleanly_when_disabled() {
     skip_unless_enabled!();
+}
+
+/// No session manager → no sources in the graph: capture must FAULT LOUDLY
+/// within the link-wait timeout (`DeviceUnavailable`, naming the session
+/// manager) — never an open stream that silently delivers zero chunks (the
+/// masked-wireplumber failure mode found on hardware, 2026-07-21).
+#[tokio::test]
+async fn no_session_manager_faults_loudly() {
+    skip_unless_enabled!();
+    let Some(daemon) = NoSmDaemon::spawn() else {
+        eprintln!("skipped: could not spawn a private pipewire daemon");
+        return;
+    };
+
+    let source = CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build();
+    let started = std::time::Instant::now();
+    let (chunks, fault) =
+        drain_with_timeout(Box::new(source).capture(), Duration::from_secs(15)).await;
+
+    assert!(chunks.is_empty(), "a source-less graph must yield no audio");
+    match fault {
+        Some(CaptureError::DeviceUnavailable(msg)) => {
+            assert!(msg.contains("session manager"), "message should name the cause: {msg}")
+        }
+        other => panic!("expected DeviceUnavailable(no source), got {other:?}"),
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the fault must surface promptly, not hang the press"
+    );
 }
 
 /// T009: default-source capture yields chunks in exactly the negotiated format;
