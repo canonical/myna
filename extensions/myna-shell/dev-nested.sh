@@ -51,7 +51,14 @@ export XDG_CONFIG_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)"
 
 ibus-daemon --daemonize --panel disable --xim
 # GNOME 48+: plain `--wayland` inside a Wayland session IS the nested mode
-# (`--nested` was removed; `--display-server` opts out of nesting).
+# (`--nested` was removed; `--display-server` opts out of nesting). Without a
+# parent compositor mutter would try to become THE display server and fail
+# with "Device or resource busy" — so guard on WAYLAND_DISPLAY.
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "dev-nested: WAYLAND_DISPLAY is unset — run this from a terminal inside"
+    echo "  your Wayland session (nesting needs a parent compositor)."
+    exit 1
+fi
 gnome-shell --wayland &
 SHELL_PID=$!
 DESKTOP_PID=""
