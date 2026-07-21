@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOCKET="${1:-/tmp/myna.sock}"
 DESKTOP_BIN="${MYNA_DESKTOP_BIN:-$REPO_ROOT/client/target/debug/myna-desktop}"
 CONTROL=/tmp/myna-nested.sock
@@ -50,7 +50,9 @@ fi
 export XDG_CONFIG_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)"
 
 ibus-daemon --daemonize --panel disable --xim
-gnome-shell --nested --wayland &
+# GNOME 48+: plain `--wayland` inside a Wayland session IS the nested mode
+# (`--nested` was removed; `--display-server` opts out of nesting).
+gnome-shell --wayland &
 SHELL_PID=$!
 DESKTOP_PID=""
 cleanup() {
