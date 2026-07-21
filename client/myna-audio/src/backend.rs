@@ -50,7 +50,16 @@ impl Producer {
         chunk_bytes: usize,
         frame_bytes: usize,
     ) -> Self {
-        Self { ring, stats, format, chunk_bytes, frame_bytes, pending: BytesMut::new(), captured: Duration::ZERO, session_peak: 0.0 }
+        Self {
+            ring,
+            stats,
+            format,
+            chunk_bytes,
+            frame_bytes,
+            pending: BytesMut::new(),
+            captured: Duration::ZERO,
+            session_peak: 0.0,
+        }
     }
 
     /// Deliver raw PCM (any buffer size; the adapter re-chunks to whole-frame
@@ -86,15 +95,18 @@ impl Producer {
         let (rms, peak, clipped) = levels(&chunk);
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
-        let dropped_bytes = self.ring.push(chunk);
-        let bps = self.format.bytes_per_second().max(1) as f64;
+        // The buffer never drops (it grows to hold everything), so no audio
+        // is ever lost; `dropped` stays zero. `push` returns the buffer
+        // high-water mark, which we don't surface as a stat today.
+        let _ = self.ring.push(chunk);
+        let _ = self.format.bytes_per_second();
         let _ = self.stats.send(AudioStats {
             rms,
             peak,
             session_peak: self.session_peak,
             clipped,
             captured: self.captured,
-            dropped: Duration::from_secs_f64(dropped_bytes as f64 / bps),
+            dropped: Duration::ZERO,
         });
     }
 }

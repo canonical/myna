@@ -22,7 +22,9 @@ use myna_desktop::controller::SessionRun;
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::inject::mock::MockInjector;
 use myna_desktop::{DesktopController, DictationState};
-use myna_orchestrator::{OrchestratorEvent, ScriptedTrigger, SessionOutcome, StopHandle, TriggerEdge};
+use myna_orchestrator::{
+    OrchestratorEvent, ScriptedTrigger, SessionOutcome, StopHandle, TriggerEdge,
+};
 use tokio::sync::mpsc;
 
 /// Hermetic watermark: the controller's per-segment routing + commit overhead
@@ -42,10 +44,14 @@ async fn perf_hermetic_per_segment_overhead_within_tolerance() {
             let _ = tx.send(OrchestratorEvent::Loading).await;
             let _ = tx.send(OrchestratorEvent::Ready).await;
             for i in 0..SEGMENTS {
-                let _ = tx.send(OrchestratorEvent::Final(format!("segment {i}"))).await;
+                let _ = tx
+                    .send(OrchestratorEvent::Final(format!("segment {i}")))
+                    .await;
             }
             let _ = tx.send(OrchestratorEvent::Done(String::new())).await;
-            Ok(SessionOutcome::Completed { transcript: String::new() })
+            Ok(SessionOutcome::Completed {
+                transcript: String::new(),
+            })
         });
         (run, StopHandle::default())
     };
@@ -61,7 +67,13 @@ async fn perf_hermetic_per_segment_overhead_within_tolerance() {
     controller.run().await;
     let elapsed = start.elapsed();
 
-    assert_eq!(inject_log.lock().unwrap().commits.len(), SEGMENTS, "all segments committed");
+    // Coalesced: 200 back-to-back finals (no event between them) are buffered
+    // and inserted as ONE CommitText on the terminal `done`. The per-segment
+    // routing/buffering overhead is what this measures.
+    let commits = inject_log.lock().unwrap().commits.clone();
+    assert_eq!(commits.len(), 1, "the back-to-back burst is one coalesced commit");
+    assert!(commits[0].starts_with("segment 0"), "first segment present, in order");
+    assert!(commits[0].ends_with(&format!("segment {}", SEGMENTS - 1)), "last segment present");
     assert_eq!(controller.state(), DictationState::Idle);
 
     let per_segment = elapsed / SEGMENTS as u32;
@@ -69,5 +81,7 @@ async fn perf_hermetic_per_segment_overhead_within_tolerance() {
         per_segment < TOLERANCE_PER_SEGMENT,
         "per-segment overhead {per_segment:?} exceeds tolerance {TOLERANCE_PER_SEGMENT:?}"
     );
-    eprintln!("hermetic per-segment overhead: {per_segment:?} (tolerance {TOLERANCE_PER_SEGMENT:?})");
+    eprintln!(
+        "hermetic per-segment overhead: {per_segment:?} (tolerance {TOLERANCE_PER_SEGMENT:?})"
+    );
 }

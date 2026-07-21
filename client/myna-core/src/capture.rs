@@ -34,6 +34,12 @@ pub enum CaptureError {
     UnsupportedFormat(AudioFormat),
     #[error("capture backend failed: {0}")]
     Backend(String),
+    /// The capture buffer hit its bound because the consumer (the STT service)
+    /// could not keep up — an overload/lag condition. Surfaced (not silently
+    /// dropped) so the client can tell the user their hardware tier can't keep
+    /// up rather than lose speech. Carries the buffered duration in seconds.
+    #[error("audio buffer overflow after {0:.1}s — the transcription service cannot keep up with capture")]
+    Overloaded(f64),
 }
 
 /// The stream a source yields once capturing: chunks until a clean end

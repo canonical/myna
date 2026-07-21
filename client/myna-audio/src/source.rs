@@ -4,8 +4,11 @@
 //!
 //! `capture()` is the hotkey press: the backend starts and the ring fills the
 //! moment it is called. The consumer may defer polling (the accept-gate);
-//! nothing is lost up to the ring depth. `stop()` on the handle drains then
-//! ends; dropping the stream aborts and discards (§3/§6).
+//! nothing is lost up to the ring depth *while the model loads*, and once the
+//! consumer starts draining (server `ready`) nothing is dropped at all — the
+//! buffer grows to absorb lag rather than discard captured speech (see
+//! [`crate::ring`]). `stop()` on the handle drains then ends; dropping the
+//! stream aborts and discards (§3/§6).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,10 +20,16 @@ use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 use crate::ring::Ring;
 use crate::stats::AudioStats;
 
-/// Default ring depth (§6): comfortably above the 5.8 s worst measured model
-/// cold load, trivial memory (10 s at 16 kHz mono S16LE = 320 KB).
-/// **Provisional** — the final default is one decision with T29.
-pub const DEFAULT_RING_DEPTH: Duration = Duration::from_secs(10);
+/// Default ring depth (§6) — **advisory only.** The capture buffer never drops
+/// Default capture-buffer bound (§6) — the **overload guard**. The buffer never
+/// silently drops; it grows to hold audio across the cold-load window and any
+/// transient service lag. This bound only exists so a service that is
+/// *persistently* slower than realtime faults
+/// ([`myna_core::CaptureError::Overloaded`]) instead of growing without limit.
+/// It is deliberately generous — 5 minutes (~9.6 MB at 16 kHz mono S16LE) — so
+/// normal dictation, including a slow cold load, never trips it. **Provisional**
+/// — revisit alongside T29.
+pub const DEFAULT_RING_DEPTH: Duration = Duration::from_secs(300);
 
 /// Default chunk duration (~100 ms, the prototype's value): small enough for
 /// low latency, large enough to avoid per-chunk overhead.
@@ -78,11 +87,20 @@ impl AudioSource for CaptureSource {
         let mut chunk_bytes = (bps * self.chunk.as_secs_f64()) as usize;
         chunk_bytes -= chunk_bytes % frame_bytes;
         chunk_bytes = chunk_bytes.max(frame_bytes);
+        // The buffer never silently drops; `ring_depth` is now the *overload
+        // bound* — generous enough that normal dictation (incl. a slow cold
+        // load) never trips it, but finite so a service that can't keep up
+        // faults instead of growing without bound (see `crate::ring`).
         let max_bytes = ((bps * self.ring_depth.as_secs_f64()) as usize).max(chunk_bytes);
 
-        let ring = Ring::new(max_bytes);
-        let producer =
-            Producer::new(ring.clone(), self.stats.clone(), self.format, chunk_bytes, frame_bytes);
+        let ring = Ring::new(max_bytes, self.format);
+        let producer = Producer::new(
+            ring.clone(),
+            self.stats.clone(),
+            self.format,
+            chunk_bytes,
+            frame_bytes,
+        );
         let spec = CaptureSpec {
             format: self.format,
             target: self.target,
@@ -98,7 +116,10 @@ impl AudioSource for CaptureSource {
 
         // The guard rides inside the stream: dropping the stream (abort) trips
         // the stop flag for the backend and discards the ring.
-        let guard = ConsumerGuard { ring, stop: self.stop };
+        let guard = ConsumerGuard {
+            ring,
+            stop: self.stop,
+        };
         Box::pin(futures_util::stream::unfold(guard, |guard| async move {
             guard.ring.next().await.map(|item| (item, guard))
         }))
@@ -129,8 +150,10 @@ pub struct CaptureSourceBuilder {
 }
 
 impl CaptureSourceBuilder {
-    /// Pre-ready ring depth (§6). Pair with the T29 residency default: the
-    /// ring must cover the worst cold load the product tolerates.
+    /// Capture-buffer overload bound (§6). The buffer never silently drops; this
+    /// is the finite limit past which a service that can't keep up faults
+    /// ([`myna_core::CaptureError::Overloaded`]) rather than growing without
+    /// bound. Keep it generous (see [`DEFAULT_RING_DEPTH`]).
     pub fn ring_depth(mut self, depth: Duration) -> Self {
         self.ring_depth = depth;
         self

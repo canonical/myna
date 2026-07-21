@@ -29,7 +29,9 @@ use tokio::sync::mpsc;
 /// A short silent mock capture source (100 ms), in the default format.
 fn silent_source() -> CaptureSource {
     CaptureSource::builder(AudioFormat::default())
-        .backend(Box::new(ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(100))])))
+        .backend(Box::new(ScriptedBackend::new(vec![Step::Silence(
+            Duration::from_millis(100),
+        )])))
         .build()
 }
 
@@ -100,9 +102,14 @@ async fn commit_drain_commits_each_segment_once_in_order() {
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert_eq!(log.commits, vec!["the quick brown fox", "jumps over the lazy dog."]);
-    // Each segment appears exactly once — never re-committed.
-    assert_eq!(log.commits.len(), 2);
+    // Coalesced: the two finals arrive back-to-back (no event between them), so
+    // they are inserted as ONE CommitText — rapid successive IBus commits race
+    // and only the last lands, so the burst is joined. Order + content preserved.
+    assert_eq!(
+        log.commits,
+        vec!["the quick brown fox jumps over the lazy dog."]
+    );
+    assert_eq!(log.commits.len(), 1);
     assert_eq!(log.restores, 1);
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -138,7 +145,10 @@ async fn no_capture_while_idle_only_between_press_and_release() {
     let session_probe = probe.clone();
     let session = move |events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
         let backend = FakeBackend::commit_drain();
-        let source = RecordingSource { inner: Box::new(silent_source()), probe: session_probe.clone() };
+        let source = RecordingSource {
+            inner: Box::new(silent_source()),
+            probe: session_probe.clone(),
+        };
         // A RecordingSource has no stop_handle of its own; drive the inner one.
         let stop = StopHandle::default();
         let run: SessionRun = Box::pin(async move {
@@ -164,9 +174,14 @@ async fn no_capture_while_idle_only_between_press_and_release() {
 
     // Capture started exactly once per Press — never while Idle, never twice
     // per session, never between sessions (SC-004).
-    assert_eq!(*probe.lock().unwrap(), 2, "capture must start once per Press only");
-    // Both sessions committed.
-    assert_eq!(inject_log.lock().unwrap().commits.len(), 4);
+    assert_eq!(
+        *probe.lock().unwrap(),
+        2,
+        "capture must start once per Press only"
+    );
+    // Both sessions committed (one coalesced commit each — see
+    // `commit_drain_commits_each_segment_once_in_order`).
+    assert_eq!(inject_log.lock().unwrap().commits.len(), 2);
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
@@ -192,7 +207,9 @@ async fn cold_load_yields_exactly_one_commit_nothing_lost() {
                 OrchestratorEvent::Final("late".into()),
                 OrchestratorEvent::Done("late".into()),
             ],
-            SessionOutcome::Completed { transcript: "late".into() },
+            SessionOutcome::Completed {
+                transcript: "late".into(),
+            },
         ),
     );
     controller.run().await;
@@ -218,9 +235,14 @@ async fn snippet_is_never_committed() {
     controller.run().await;
 
     let commits = inject_log.lock().unwrap().commits.clone();
-    assert_eq!(commits, vec!["The quick brown fox", "jumps over the lazy dog."]);
+    assert_eq!(
+        commits,
+        vec!["The quick brown fox", "jumps over the lazy dog."]
+    );
     // No committed segment is a bare snippet.
-    assert!(!commits.iter().any(|c| c == "The quick" || c == "jumps over"));
+    assert!(!commits
+        .iter()
+        .any(|c| c == "The quick" || c == "jumps over"));
 }
 
 // ── T014: a no-speech session commits nothing and ends clean ──────────────────
@@ -239,12 +261,17 @@ async fn no_speech_session_commits_nothing() {
                 OrchestratorEvent::Ready,
                 OrchestratorEvent::Done(String::new()),
             ],
-            SessionOutcome::Completed { transcript: String::new() },
+            SessionOutcome::Completed {
+                transcript: String::new(),
+            },
         ),
     );
     controller.run().await;
 
-    assert!(inject_log.lock().unwrap().commits.is_empty(), "no speech → no commit");
+    assert!(
+        inject_log.lock().unwrap().commits.is_empty(),
+        "no speech → no commit"
+    );
     // Teardown still released the engine cleanly (one restore via end/cancel).
     {
         let log = inject_log.lock().unwrap();
@@ -265,17 +292,26 @@ async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
     let session_probe = probe.clone();
     let session = move |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
         *session_probe.lock().unwrap() += 1; // must never happen
-        (Box::pin(async { Ok(SessionOutcome::Aborted) }), StopHandle::default())
+        (
+            Box::pin(async { Ok(SessionOutcome::Aborted) }),
+            StopHandle::default(),
+        )
     };
 
-    let mut controller =
-        build([TriggerEdge::Press], injector, indicator, session);
+    let mut controller = build([TriggerEdge::Press], injector, indicator, session);
     controller.run().await;
 
-    assert_eq!(*probe.lock().unwrap(), 0, "no session/capture on an acquire error");
+    assert_eq!(
+        *probe.lock().unwrap(),
+        0,
+        "no session/capture on an acquire error"
+    );
     assert!(inject_log.lock().unwrap().commits.is_empty());
     assert!(
-        matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))),
+        matches!(
+            indicate_log.lock().unwrap().last(),
+            Some(IndicatorState::Error(_))
+        ),
         "acquire error must surface an Error state"
     );
     assert_eq!(controller.state(), DictationState::Idle);
@@ -316,7 +352,10 @@ async fn error_path_cancels_and_restores_exactly_once() {
     for c in &log.commits {
         assert!(!c.contains('\t') && !c.to_lowercase().contains("alt+") && !c.contains("Super"));
     }
-    assert!(matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))));
+    assert!(matches!(
+        indicate_log.lock().unwrap().last(),
+        Some(IndicatorState::Error(_))
+    ));
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
@@ -353,7 +392,10 @@ async fn full_session_walks_recording_finalizing_hidden() {
 
     let states = indicate_log.lock().unwrap().clone();
     assert_eq!(states.first(), Some(&IndicatorState::Recording));
-    assert!(states.contains(&IndicatorState::Finalizing), "expected Finalizing: {states:?}");
+    assert!(
+        states.contains(&IndicatorState::Finalizing),
+        "expected Finalizing: {states:?}"
+    );
     assert_eq!(states.last(), Some(&IndicatorState::Hidden));
     // Privacy (N8): no transcript text leaked into any indicator state.
     for s in &states {
@@ -385,9 +427,13 @@ async fn indicator_walks_recording_transcribing_finalizing_hidden() {
             while !stop2.is_stopped() {
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
-            let _ = tx.send(OrchestratorEvent::Final("hello world".into())).await;
+            let _ = tx
+                .send(OrchestratorEvent::Final("hello world".into()))
+                .await;
             let _ = tx.send(OrchestratorEvent::Done("hello world".into())).await;
-            Ok(SessionOutcome::Completed { transcript: "hello world".into() })
+            Ok(SessionOutcome::Completed {
+                transcript: "hello world".into(),
+            })
         });
         (run, stop)
     };
@@ -435,7 +481,9 @@ async fn indicator_shows_error_state_on_failure() {
 
     let states = log.lock().unwrap().clone();
     assert!(
-        states.iter().any(|s| matches!(s, IndicatorState::Error(m) if m == "boom")),
+        states
+            .iter()
+            .any(|s| matches!(s, IndicatorState::Error(m) if m == "boom")),
         "expected Error(\"boom\"): {states:?}"
     );
 }
@@ -460,7 +508,9 @@ fn two_segment_focus_session(
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
             let _ = tx.send(OrchestratorEvent::Final("second".into())).await;
-            let _ = tx.send(OrchestratorEvent::Done("first second".into())).await;
+            let _ = tx
+                .send(OrchestratorEvent::Done("first second".into()))
+                .await;
             Ok(outcome)
         });
         (run, stop)
@@ -478,12 +528,18 @@ async fn focus_out_finalizes_and_makes_no_further_commits() {
         [TriggerEdge::Press],
         injector,
         MockIndicator::new(),
-        two_segment_focus_session(SessionOutcome::Completed { transcript: "first second".into() }),
+        two_segment_focus_session(SessionOutcome::Completed {
+            transcript: "first second".into(),
+        }),
     );
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert_eq!(log.commits, vec!["first"], "no commit after focus-out");
+    // "first" was buffered but not yet flushed when focus left; committing it now
+    // would land in the *new* surface, so it is discarded — nothing lands after
+    // focus loss (SC-007). (With commit-on-finalize the whole burst arrives
+    // after finish, so this is the realistic outcome.)
+    assert!(log.commits.is_empty(), "nothing committed after focus-out");
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
@@ -499,16 +555,21 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
         [TriggerEdge::Press],
         injector,
         indicator,
-        two_segment_focus_session(SessionOutcome::Completed { transcript: "first second".into() }),
+        two_segment_focus_session(SessionOutcome::Completed {
+            transcript: "first second".into(),
+        }),
     );
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert_eq!(log.commits, vec!["first"], "no commit after target-gone");
+    assert!(log.commits.is_empty(), "nothing committed after target-gone");
     assert!(log.cancels >= 1, "target-gone must cancel");
     assert_eq!(log.restores, 1, "engine restored exactly once");
     assert!(
-        matches!(indicate_log.lock().unwrap().last(), Some(IndicatorState::Error(_))),
+        matches!(
+            indicate_log.lock().unwrap().last(),
+            Some(IndicatorState::Error(_))
+        ),
         "target-gone must notify"
     );
     assert_eq!(controller.state(), DictationState::Idle);

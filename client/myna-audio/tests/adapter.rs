@@ -12,7 +12,11 @@ use myna_core::{AudioFormat, AudioSource, CaptureError, PcmChunk};
 use tokio::sync::watch;
 use tokio::time::timeout;
 
-const FMT: AudioFormat = AudioFormat { sample_rate_hz: 16_000, channels: 1, sample_width_bytes: 2 };
+const FMT: AudioFormat = AudioFormat {
+    sample_rate_hz: 16_000,
+    channels: 1,
+    sample_width_bytes: 2,
+};
 
 fn secs(s: f64) -> Duration {
     Duration::from_secs_f64(s)
@@ -37,9 +41,7 @@ async fn wait_stats(
 }
 
 /// Drain a capture stream: collected Ok chunks + the fault, if any.
-async fn drain(
-    mut stream: myna_core::CaptureStream,
-) -> (Vec<PcmChunk>, Option<CaptureError>) {
+async fn drain(mut stream: myna_core::CaptureStream) -> (Vec<PcmChunk>, Option<CaptureError>) {
     let mut chunks = Vec::new();
     let mut fault = None;
     while let Some(item) = timeout(Duration::from_secs(5), stream.next())
@@ -62,7 +64,9 @@ async fn ring_fills_while_consumer_defers_then_drains_everything() {
     // §6: capture() is the press; the consumer holds off polling (the
     // accept-gate) and loses nothing up to the ring depth.
     let backend = ScriptedBackend::new(vec![Step::Silence(secs(0.5))]);
-    let source = CaptureSource::builder(FMT).backend(Box::new(backend)).build();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
     let mut stats = source.stats();
     let stream = Box::new(source).capture();
 
@@ -74,8 +78,14 @@ async fn ring_fills_while_consumer_defers_then_drains_everything() {
     let (chunks, fault) = drain(stream).await;
     assert!(fault.is_none());
     let total: usize = chunks.iter().map(|c| c.data.len()).sum();
-    assert_eq!(total, 16_000, "every captured byte is delivered after the hold");
-    assert!(chunks.iter().all(|c| c.format == FMT), "exactly the configured format");
+    assert_eq!(
+        total, 16_000,
+        "every captured byte is delivered after the hold"
+    );
+    assert!(
+        chunks.iter().all(|c| c.format == FMT),
+        "exactly the configured format"
+    );
     assert_eq!(chunks.len(), 5, "0.5 s at 100 ms chunks");
 }
 
@@ -86,7 +96,9 @@ async fn graceful_stop_drains_then_ends() {
         Step::Silence(secs(0.2)),
         Step::Wait(secs(30.0)), // "device still open"; interrupted by stop
     ]);
-    let source = CaptureSource::builder(FMT).backend(Box::new(backend)).build();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
     let mut stats = source.stats();
     let stop = source.stop_handle();
     let stream = Box::new(source).capture();
@@ -95,7 +107,10 @@ async fn graceful_stop_drains_then_ends() {
     stop.stop();
 
     let (chunks, fault) = drain(stream).await;
-    assert!(fault.is_none(), "graceful stop is a clean end, never an Err");
+    assert!(
+        fault.is_none(),
+        "graceful stop is a clean end, never an Err"
+    );
     let total: usize = chunks.iter().map(|c| c.data.len()).sum();
     assert_eq!(total, 6_400, "everything captured before the stop drains");
 }
@@ -105,7 +120,9 @@ async fn dropping_the_stream_aborts_the_backend() {
     // §3: abort = drop. The backend must observe it and exit.
     let backend = ScriptedBackend::new(vec![Step::Wait(secs(30.0))]);
     let finished = backend.finished();
-    let source = CaptureSource::builder(FMT).backend(Box::new(backend)).build();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
     let stop = source.stop_handle();
     let stream = Box::new(source).capture();
 
@@ -121,37 +138,67 @@ async fn dropping_the_stream_aborts_the_backend() {
 }
 
 #[tokio::test]
-async fn overflow_drops_oldest_and_reports_on_the_tap() {
-    // §6: depth 0.2 s, 1.0 s pushed while nobody drains → the newest 0.2 s
-    // survive and the tap accounts the aged-out 0.8 s.
+async fn buffer_holds_all_audio_and_never_drops() {
+    // §6 (corrected): the capture buffer never drops. 1.0 s is pushed while
+    // nobody drains (the pre-ready cold-load window), well within the bound;
+    // every chunk must survive and the tap must report zero dropped audio.
     let steps = (0..10u8).map(|i| Step::Bytes(vec![i; 3_200])).collect();
     let backend = ScriptedBackend::new(steps);
     let source = CaptureSource::builder(FMT)
-        .ring_depth(secs(0.2))
+        .ring_depth(secs(10.0)) // generous bound; must NOT trip on 1 s
         .backend(Box::new(backend))
         .build();
     let mut stats = source.stats();
     let stream = Box::new(source).capture();
 
     let snapshot = wait_stats(&mut stats, |s| s.captured >= secs(1.0)).await;
-    assert_eq!(snapshot.dropped, secs(0.8), "8 of 10 chunks aged out");
+    assert_eq!(snapshot.dropped, Duration::ZERO, "nothing is ever dropped");
 
     let (chunks, fault) = drain(stream).await;
     assert!(fault.is_none());
-    assert_eq!(chunks.len(), 2);
-    assert_eq!(chunks[0].data[0], 8, "oldest surviving chunk is the 9th pushed");
-    assert_eq!(chunks[1].data[0], 9, "newest chunk survives");
+    assert_eq!(chunks.len(), 10, "all 10 captured chunks survive");
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(chunk.data[0], i as u8, "chunks arrive in capture order, none lost");
+    }
+}
+
+#[tokio::test]
+async fn overload_bound_faults_instead_of_dropping_or_growing() {
+    // Past the bound (a service that can't keep up): the accepted audio still
+    // drains, then the stream ends with an `Overloaded` fault — never a silent
+    // truncation, never unbounded growth. Bound 0.2 s, push 1.0 s with nobody
+    // draining.
+    use myna_core::CaptureError;
+    let steps = (0..10u8).map(|i| Step::Bytes(vec![i; 3_200])).collect();
+    let backend = ScriptedBackend::new(steps);
+    let source = CaptureSource::builder(FMT)
+        .ring_depth(secs(0.2)) // ~6400 bytes: 2 chunks fit, the 3rd overflows
+        .backend(Box::new(backend))
+        .build();
+    let stream = Box::new(source).capture();
+
+    let (chunks, fault) = drain(stream).await;
+    assert!(!chunks.is_empty(), "accepted audio drains before the fault");
+    assert!(
+        matches!(fault, Some(CaptureError::Overloaded(_))),
+        "a full buffer faults as Overloaded, got {fault:?}"
+    );
 }
 
 #[tokio::test]
 async fn fault_is_one_err_then_end_after_captured_audio_drains() {
-    let backend =
-        ScriptedBackend::new(vec![Step::Silence(secs(0.2)), Step::Fault("boom".into())]);
-    let source = CaptureSource::builder(FMT).backend(Box::new(backend)).build();
+    let backend = ScriptedBackend::new(vec![Step::Silence(secs(0.2)), Step::Fault("boom".into())]);
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
     let stream = Box::new(source).capture();
 
     let (chunks, fault) = drain(stream).await;
-    assert_eq!(chunks.len(), 2, "audio captured before the fault still drains");
+    assert_eq!(
+        chunks.len(),
+        2,
+        "audio captured before the fault still drains"
+    );
     match fault {
         Some(CaptureError::Backend(msg)) => assert!(msg.contains("boom")),
         other => panic!("expected Backend fault, got {other:?}"),
@@ -171,10 +218,14 @@ async fn unopenable_device_is_one_err_then_end() {
 #[tokio::test]
 async fn stats_track_signal_levels() {
     // A full-scale square wave: rms ≈ peak ≈ 1.0, clipped.
-    let loud: Vec<u8> =
-        std::iter::repeat(i16::MAX.to_le_bytes()).take(1_600).flatten().collect();
+    let loud: Vec<u8> = std::iter::repeat(i16::MAX.to_le_bytes())
+        .take(1_600)
+        .flatten()
+        .collect();
     let backend = ScriptedBackend::new(vec![Step::Bytes(loud)]);
-    let source = CaptureSource::builder(FMT).backend(Box::new(backend)).build();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
     let mut stats = source.stats();
     let _stream = Box::new(source).capture();
 
@@ -187,9 +238,15 @@ async fn stats_track_signal_levels() {
 async fn short_final_chunk_flushes_whole_frames_only() {
     // Stereo (4-byte frames): 402 bytes pushed → 400 delivered, the trailing
     // partial frame dropped, never padded (§4).
-    let stereo = AudioFormat { sample_rate_hz: 16_000, channels: 2, sample_width_bytes: 2 };
+    let stereo = AudioFormat {
+        sample_rate_hz: 16_000,
+        channels: 2,
+        sample_width_bytes: 2,
+    };
     let backend = ScriptedBackend::new(vec![Step::Bytes(vec![0u8; 402])]);
-    let source = CaptureSource::builder(stereo).backend(Box::new(backend)).build();
+    let source = CaptureSource::builder(stereo)
+        .backend(Box::new(backend))
+        .build();
     let (chunks, fault) = drain(Box::new(source).capture()).await;
     assert!(fault.is_none());
     let total: usize = chunks.iter().map(|c| c.data.len()).sum();

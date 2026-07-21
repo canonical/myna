@@ -20,6 +20,7 @@
 pub mod audio;
 pub mod capture;
 pub mod control;
+pub mod debug;
 pub mod events;
 pub mod protocol;
 pub mod session;

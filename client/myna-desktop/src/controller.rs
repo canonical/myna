@@ -120,7 +120,8 @@ pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
 /// A single running dictation utterance: the boxed future of
 /// `run_dictation` (capture + inference), forwarding events on the channel the
 /// factory was handed.
-pub type SessionRun = futures_util::future::BoxFuture<'static, Result<SessionOutcome, BackendError>>;
+pub type SessionRun =
+    futures_util::future::BoxFuture<'static, Result<SessionOutcome, BackendError>>;
 
 /// Builds one dictation utterance per Press (fresh backend + capture source),
 /// returning the running future and a [`StopHandle`] that ends capture early
@@ -199,8 +200,12 @@ impl DesktopControllerBuilder {
         DesktopController {
             trigger: self.trigger.expect("DesktopController needs a Trigger"),
             injector: self.injector.expect("DesktopController needs an Injector"),
-            indicator: self.indicator.expect("DesktopController needs an Indicator"),
-            session: self.session.expect("DesktopController needs a SessionFactory"),
+            indicator: self
+                .indicator
+                .expect("DesktopController needs an Indicator"),
+            session: self
+                .session
+                .expect("DesktopController needs a SessionFactory"),
             state: DictationState::Idle,
         }
     }
@@ -239,6 +244,7 @@ impl DesktopController {
     /// Run exactly one Press→(Release|terminal|focus-loss) utterance.
     async fn run_one_utterance(&mut self) {
         advance(&mut self.state, DictationState::Starting);
+        myna_core::dbg_log!("ctrl", "press: starting utterance");
 
         // Acquire the target focused *now*. Secure/no-target/unavailable →
         // surface an error and abort without ever capturing audio (FR-021/023).
@@ -280,6 +286,12 @@ impl DesktopController {
         // the rest (FR-014/FR-022, SC-007). A normal Release does NOT suppress
         // (the commit-drain tail is still ours to insert).
         let mut commits_suppressed = false;
+        // Buffered committed text not yet inserted. Consecutive `Final`s (a
+        // commit-on-finalize adapter emits them in one burst) are coalesced
+        // here and inserted as ONE `CommitText`: rapid successive IBus commits
+        // race and only the last lands, so we join the burst. Spaced streaming
+        // finals still flush individually (see `route_event`).
+        let mut pending = String::new();
 
         let outcome = loop {
             tokio::select! {
@@ -289,12 +301,12 @@ impl DesktopController {
                 // in order even when a release arrives mid-stream.
                 biased;
                 Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed).await;
+                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, &mut pending).await;
                 }
                 // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
-                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed).await;
+                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, &mut pending).await;
                     }
                     break result;
                 }
@@ -303,6 +315,7 @@ impl DesktopController {
                 // before the trigger so focus-loss takes precedence (end safely).
                 fe = focus.next(), if focus_open => match fe {
                     Some(FocusEvent::FocusOut) => {
+                        myna_core::dbg_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
                         stop.stop();
                         commits_suppressed = true;
                         enter_finalizing(state, indicator.as_mut()).await;
@@ -311,6 +324,7 @@ impl DesktopController {
                         trigger_open = false;
                     }
                     Some(FocusEvent::TargetGone) => {
+                        myna_core::dbg_log!("ctrl", "TargetGone: cancelling utterance");
                         stop.stop();
                         commits_suppressed = true;
                         cancelled = true;
@@ -322,6 +336,7 @@ impl DesktopController {
                 // means the trigger ended — stop capture and quit after.
                 edge = trigger.next_edge(), if trigger_open => match edge {
                     Some(TriggerEdge::Release) => {
+                        myna_core::dbg_log!("ctrl", "release: graceful stop, finalizing");
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
                         // Stop reading the trigger for this utterance: any
@@ -343,12 +358,27 @@ impl DesktopController {
         // Terminal disposition.
         if cancelled {
             self.injector.cancel().await;
-            self.indicator.set_state(IndicatorState::Error("dictation target closed".into())).await;
+            self.indicator
+                .set_state(IndicatorState::Error("dictation target closed".into()))
+                .await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
                 Ok(SessionOutcome::Completed { .. }) => {
                     ensure_finalizing(&mut self.state);
+                    // Safety flush: normally the terminal `done` already flushed
+                    // the buffered burst in `route_event` (leaving `pending`
+                    // empty); this catches a completed run whose last event was
+                    // a `Final` with nothing after it. Never double-commits
+                    // (the flush takes the buffer).
+                    if !commits_suppressed && !pending.is_empty() {
+                        myna_core::dbg_log!(
+                            "inject",
+                            "flushing {} buffered chars on complete",
+                            pending.len()
+                        );
+                        let _ = self.injector.commit(&pending).await;
+                    }
                     self.injector.set_activity(false).await;
                     self.injector.end().await;
                     self.indicator.set_state(IndicatorState::Hidden).await;
@@ -360,12 +390,16 @@ impl DesktopController {
                 }
                 Ok(SessionOutcome::Failed { message, .. }) => {
                     self.injector.cancel().await;
-                    self.indicator.set_state(IndicatorState::Error(message)).await;
+                    self.indicator
+                        .set_state(IndicatorState::Error(message))
+                        .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
                 Err(err) => {
                     self.injector.cancel().await;
-                    self.indicator.set_state(IndicatorState::Error(err.to_string())).await;
+                    self.indicator
+                        .set_state(IndicatorState::Error(err.to_string()))
+                        .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
             }
@@ -384,7 +418,9 @@ impl DesktopController {
             other => other.to_string(),
         };
         self.injector.cancel().await; // idempotent; releases if anything stuck
-        self.indicator.set_state(IndicatorState::Error(message)).await;
+        self.indicator
+            .set_state(IndicatorState::Error(message))
+            .await;
         advance(&mut self.state, DictationState::Error);
         advance(&mut self.state, DictationState::Idle);
     }
@@ -393,7 +429,10 @@ impl DesktopController {
 /// Enter `Finalizing` from an active state (idempotent — a no-op if already
 /// finalizing or past it).
 async fn enter_finalizing(state: &mut DictationState, indicator: &mut dyn Indicator) {
-    if matches!(*state, DictationState::Recording | DictationState::Transcribing) {
+    if matches!(
+        *state,
+        DictationState::Recording | DictationState::Transcribing
+    ) {
         advance(state, DictationState::Finalizing);
         indicator.set_state(IndicatorState::Finalizing).await;
     }
@@ -402,7 +441,10 @@ async fn enter_finalizing(state: &mut DictationState, indicator: &mut dyn Indica
 /// Ensure we are in `Finalizing` before completing (a clip that plays out
 /// without an explicit Release still passes through Finalizing).
 fn ensure_finalizing(state: &mut DictationState) {
-    if matches!(*state, DictationState::Recording | DictationState::Transcribing) {
+    if matches!(
+        *state,
+        DictationState::Recording | DictationState::Transcribing
+    ) {
         advance(state, DictationState::Finalizing);
     }
 }
@@ -422,16 +464,33 @@ fn finalize_state(state: &mut DictationState, terminal: DictationState) {
     }
 }
 
-/// Route one orchestrator event: commit `Final` segments (commit-only — never
-/// `Snippet`), and drive the indicator via [`event_to_indicator`]. Advances
-/// `Recording → Transcribing` on the first decoding event.
+/// Route one orchestrator event: buffer `Final` segments (commit-only — never
+/// `Snippet`) for coalesced insertion, and drive the indicator via
+/// [`event_to_indicator`]. Advances `Recording → Transcribing` on the first
+/// decoding event.
+///
+/// Committed text is buffered in `pending` rather than inserted immediately:
+/// consecutive `Final`s (a commit-on-finalize adapter emits the whole utterance
+/// as a back-to-back burst) are joined and flushed as ONE `CommitText`. This is
+/// essential because rapid successive IBus commits race and only the last one
+/// lands in the target — the "only the last bit gets inserted" bug. Any
+/// non-`Final` event (a `done`, a liveness ping between spaced streaming finals)
+/// first flushes the buffer, so spaced finals still insert promptly and in
+/// order.
 async fn route_event(
     event: OrchestratorEvent,
     injector: &mut dyn Injector,
     indicator: &mut dyn Indicator,
     state: &mut DictationState,
     commit_allowed: bool,
+    pending: &mut String,
 ) {
+    // A non-Final event is a boundary: flush the buffered final burst as one
+    // commit before handling it (so ordering with `done`/indicator holds).
+    if !matches!(event, OrchestratorEvent::Final(_)) {
+        flush_commit(injector, pending, commit_allowed).await;
+    }
+
     if let OrchestratorEvent::Transcribing = event {
         if *state == DictationState::Recording {
             advance(state, DictationState::Transcribing);
@@ -441,12 +500,38 @@ async fn route_event(
         indicator.set_state(indicator_state).await;
     }
     if let OrchestratorEvent::Final(text) = event {
-        // Commit-only: stable committed text is inserted; unstable `Snippet`
+        // Commit-only: stable committed text is buffered; unstable `Snippet`
         // never is (FR-012). Suppressed after focus-loss so nothing lands in the
-        // wrong surface (FR-014, SC-007). A commit failure is best-effort.
+        // wrong surface (FR-014, SC-007).
+        myna_core::dbg_log!(
+            "inject",
+            "final(len={}) buffered; commit_allowed={commit_allowed}",
+            text.len()
+        );
         if commit_allowed {
-            let _ = injector.commit(&text).await;
+            if !pending.is_empty() {
+                pending.push(' ');
+            }
+            pending.push_str(&text);
         }
+    }
+}
+
+/// Insert the buffered committed text as a single `CommitText`, then clear the
+/// buffer. A no-op when empty; discards (does not insert) when commits are
+/// suppressed. A commit failure is best-effort.
+async fn flush_commit(injector: &mut dyn Injector, pending: &mut String, commit_allowed: bool) {
+    if pending.is_empty() {
+        return;
+    }
+    if commit_allowed {
+        let text = std::mem::take(pending);
+        match injector.commit(&text).await {
+            Ok(()) => myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text),
+            Err(e) => myna_core::dbg_log!("inject", "commit FAILED: {e}"),
+        }
+    } else {
+        pending.clear();
     }
 }
 
@@ -533,8 +618,14 @@ mod tests {
 
     #[test]
     fn loading_and_ready_map_to_recording() {
-        assert_eq!(event_to_indicator(&OrchestratorEvent::Loading), Some(IndicatorState::Recording));
-        assert_eq!(event_to_indicator(&OrchestratorEvent::Ready), Some(IndicatorState::Recording));
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Loading),
+            Some(IndicatorState::Recording)
+        );
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Ready),
+            Some(IndicatorState::Recording)
+        );
     }
 
     #[test]
@@ -568,8 +659,14 @@ mod tests {
     fn text_events_do_not_touch_the_indicator() {
         // Snippet/Final carry transcript text and must never drive the indicator
         // (privacy, N8); AudioDropped is a capture-side signal, not a UI state.
-        assert_eq!(event_to_indicator(&OrchestratorEvent::Snippet("hi".into())), None);
-        assert_eq!(event_to_indicator(&OrchestratorEvent::Final("hello".into())), None);
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Snippet("hi".into())),
+            None
+        );
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Final("hello".into())),
+            None
+        );
         assert_eq!(
             event_to_indicator(&OrchestratorEvent::AudioDropped(
                 myna_orchestrator::DropReason::NotResident
