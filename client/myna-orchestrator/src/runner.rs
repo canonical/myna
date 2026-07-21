@@ -67,17 +67,31 @@ where
     let pump_gate = ready_gate.clone();
     let audio_task = tokio::spawn(async move {
         let mut stream = Box::new(source).capture(); // the press: ring fills from here
+        myna_core::dbg_log!("capture", "stream opened; waiting for ready gate");
         pump_gate.notified().await; // hold the push for residency (or task abort below)
+        myna_core::dbg_log!("capture", "ready gate open; forwarding audio");
+        let mut chunks = 0u64;
+        let mut bytes = 0u64;
         while let Some(item) = stream.next().await {
             match item {
                 Ok(chunk) => {
+                    chunks += 1;
+                    bytes += chunk.data.len() as u64;
+                    if myna_core::debug::enabled() && chunks % 20 == 0 {
+                        myna_core::debug::log(
+                            "capture",
+                            format!("forwarded {chunks} chunks / {bytes} bytes so far"),
+                        );
+                    }
                     if in_tx.send(OrchestratorInput::Audio(chunk)).await.is_err() {
+                        myna_core::dbg_log!("capture", "FSM gone; stop capturing at {chunks} chunks");
                         return; // FSM already terminal; stop capturing
                     }
                 }
                 Err(fault) => {
                     // The device/daemon faulted mid-capture: report it, don't
                     // swallow it as a bare abort (the mic-unavailable case).
+                    myna_core::dbg_log!("capture", "capture fault: {fault}");
                     let _ = in_tx
                         .send(OrchestratorInput::CaptureFailed { message: fault.to_string() })
                         .await;
@@ -85,6 +99,11 @@ where
                 }
             }
         }
+        myna_core::dbg_log!(
+            "capture",
+            "end of audio after {chunks} chunks / {bytes} bytes ({:.2}s @16k mono s16)",
+            bytes as f64 / 32000.0
+        );
         let _ = in_tx.send(OrchestratorInput::EndOfAudio).await;
     });
 
@@ -98,6 +117,7 @@ where
             event = out_rx.recv(), if outputs_open => match event {
                 Some(event) => {
                     if matches!(event, OrchestratorEvent::Ready) {
+                        myna_core::dbg_log!("runner", "READY received; opening capture gate");
                         ready_gate.notify_one(); // open the capture gate, once
                     }
                     sink.emit(event).await;

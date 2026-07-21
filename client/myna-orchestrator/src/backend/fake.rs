@@ -334,4 +334,84 @@ mod tests {
         assert_eq!(outcome, SessionOutcome::Completed { transcript: "ok".into() });
         std::fs::remove_file(&path).ok();
     }
+
+    /// A backend that delays `ready` (model still loading) and counts every
+    /// audio byte the FSM forwards after the gate opens.
+    struct CountingLateReady {
+        received: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl BackendClient for CountingLateReady {
+        async fn open_session(
+            &self,
+            _config: SessionConfig,
+        ) -> Result<BackendHandle, BackendError> {
+            use std::sync::atomic::Ordering;
+            let (out_tx, mut out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
+            let (ev_tx, ev_rx) = mpsc::channel(EVENT_CAPACITY);
+            let received = self.received.clone();
+            tokio::spawn(async move {
+                let _ = ev_tx.send(Ok(loading())).await;
+                // The model "loads" for a beat while the client keeps capturing.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                let _ = ev_tx.send(Ok(ready())).await;
+                while let Some(o) = out_rx.recv().await {
+                    match o {
+                        Outbound::Audio(chunk) => {
+                            received.fetch_add(chunk.data.len(), Ordering::SeqCst);
+                        }
+                        Outbound::Finish | Outbound::Abort => break,
+                    }
+                }
+                let _ = ev_tx.send(Ok(final_seg("ok"))).await;
+                let _ = ev_tx.send(Ok(done("ok"))).await;
+            });
+            Ok(BackendHandle {
+                sink: BackendSink { tx: out_tx },
+                events: BackendEvents { rx: ev_rx },
+                protocol_version: Some(PROTOCOL_VERSION.to_string()),
+            })
+        }
+    }
+
+    /// Reproduction of the desktop "only the last few seconds land" bug: a live
+    /// mic fills the capture ring while the server model loads (`ready` lags).
+    /// Every captured byte must survive to reach the backend once the gate
+    /// opens — the ring is a hold-during-load buffer, not a lossy rolling
+    /// window (§6, and the explicit product requirement).
+    #[tokio::test]
+    async fn no_audio_is_dropped_when_ready_lags_capture() {
+        use myna_audio::{CaptureSource, ScriptedBackend, Step};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let fmt = AudioFormat::default();
+        // ~1 s of audio (10 × 0.1 s), paced like a live mic. The default buffer
+        // bound is generous, so nothing is dropped while `ready` lags.
+        let bytes_per_chunk = (fmt.bytes_per_second() as usize) / 10; // 0.1 s
+        let total_bytes = bytes_per_chunk * 10;
+        let mut steps = Vec::new();
+        for _ in 0..10 {
+            steps.push(Step::Bytes(vec![7u8; bytes_per_chunk]));
+            steps.push(Step::Wait(Duration::from_millis(20)));
+        }
+        let source = CaptureSource::builder(fmt)
+            .backend(Box::new(ScriptedBackend::new(steps)))
+            .build();
+
+        let received = Arc::new(AtomicUsize::new(0));
+        let backend = CountingLateReady { received: received.clone() };
+        let mut sink = CollectingSink::default();
+
+        let outcome =
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+
+        assert!(matches!(outcome, SessionOutcome::Completed { .. }));
+        assert_eq!(
+            received.load(Ordering::SeqCst),
+            total_bytes,
+            "every captured byte must reach the backend — the ring must not drop \
+             audio captured while the model was loading"
+        );
+    }
 }

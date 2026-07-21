@@ -132,15 +132,24 @@ async fn pump(
     // Once the FSM drops the sink (without an explicit Abort), we stop sending
     // but keep draining events until the backend finishes (commit-drain).
     let mut outbound_open = true;
+    let mut audio_frames = 0u64;
+    let mut audio_bytes = 0u64;
     loop {
         tokio::select! {
             outbound = out_rx.recv(), if outbound_open => match outbound {
                 Some(Outbound::Audio(chunk)) => {
+                    audio_frames += 1;
+                    audio_bytes += chunk.data.len() as u64;
                     if write.send(Message::Binary(chunk.data.to_vec())).await.is_err() {
+                        myna_core::dbg_log!("ws", "audio send failed after {audio_frames} frames");
                         break;
                     }
                 }
                 Some(Outbound::Finish) => {
+                    myna_core::dbg_log!(
+                        "ws",
+                        "-> session.finish (sent {audio_frames} audio frames / {audio_bytes} bytes)"
+                    );
                     let frame = serde_json::to_string(&ClientControl::SessionFinish)
                         .expect("serializable");
                     if write.send(Message::Text(frame)).await.is_err() {
@@ -148,6 +157,7 @@ async fn pump(
                     }
                 }
                 Some(Outbound::Abort) => {
+                    myna_core::dbg_log!("ws", "-> abort (after {audio_frames} audio frames)");
                     let _ = write.close().await;
                     return; // abort: stop reading events too
                 }
@@ -158,6 +168,7 @@ async fn pump(
                     match decode_event(&text) {
                         Ok(Some(event)) => {
                             let terminal = event.is_terminal();
+                            myna_core::dbg_log!("ws", "<- {}", event_summary(&event));
                             if ev_tx.send(Ok(event)).await.is_err() {
                                 break; // FSM dropped the receiver
                             }
@@ -193,5 +204,30 @@ fn decode_event(text: &str) -> Result<Option<TranscriptionEvent>, BackendError> 
         Ok(TranscriptionEvent::from_wire(&value)?)
     } else {
         Ok(None)
+    }
+}
+
+/// One-line summary of a wire event for `MYNA_DEBUG` (type + text length/preview
+/// for transcript-bearing events, so "which final carried what" is visible).
+pub(crate) fn event_summary(event: &TranscriptionEvent) -> String {
+    match event {
+        TranscriptionEvent::Progress(p) => format!("progress(phase={})", p.phase),
+        TranscriptionEvent::Final(f) => {
+            format!("final(len={}, {:?})", f.text.len(), preview(&f.text))
+        }
+        TranscriptionEvent::Done(d) => {
+            format!("done(len={}, {:?})", d.text.len(), preview(&d.text))
+        }
+        TranscriptionEvent::Error(e) => format!("error(code={}, {})", e.code, e.message),
+    }
+}
+
+fn preview(text: &str) -> String {
+    let max = 60;
+    if text.chars().count() <= max {
+        text.to_string()
+    } else {
+        let head: String = text.chars().take(max).collect();
+        format!("{head}…")
     }
 }

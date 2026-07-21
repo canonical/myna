@@ -18,10 +18,14 @@ workstream D (2026-07-07); the v1 open questions (§10 then) are now decisions:
   `pw-record` subprocess first (known-working, ported from `MicSource`), the
   native `pipewire-rs` binding later behind the same seam. The *public* API
   never names the backend.
-- **The adapter owns the bounded pre-ready ring** (§6): `capture()` starts
+- **The adapter owns the bounded capture buffer** (§6): `capture()` starts
   filling it at hotkey press; the consumer defers draining until the model is
-  `ready`. Overflow policy: **drop-oldest**, surfaced on the stats tap — never
-  block capture, never fail the session.
+  `ready`. Overflow policy: **never drop captured speech** — the buffer grows to
+  hold everything across the cold-load window and any lag, up to a generous
+  bound; past that it faults (`CaptureError::Overloaded`) so the user is told
+  the service can't keep up. It never silently truncates and never blocks
+  capture. (Corrected 2026-07-20 — see §6; the earlier drop-oldest policy
+  silently lost the front of long utterances.)
 - **No in-crate DSP** (§10): real filtering (noise suppression etc.) is
   PipeWire filter-chain territory, upstream of our capture node. The v1 §8
   observation hook grows into a **stats tap** (RMS / peak / clipping /
@@ -87,6 +91,11 @@ pub enum CaptureError {
     UnsupportedFormat(AudioFormat),
     #[error("capture backend failed: {0}")]
     Backend(String),
+    /// The capture buffer hit its bound because the STT service could not keep
+    /// up (a persistently sub-realtime tier). Surfaced — never silently
+    /// dropped — so the client can tell the user rather than lose speech.
+    #[error("audio buffer overflow after {0:.1}s — the transcription service cannot keep up")]
+    Overloaded(f64),
 }
 
 /// The stream a source yields once capturing: chunks until a clean end
@@ -113,8 +122,9 @@ Rules of engagement (the contract T21's session controller codes against):
 - **`capture()` is the hotkey press.** The device opens and the ring (§6)
   starts filling the moment it is called. Call it at press.
 - **Polling may be deferred.** The consumer holds off draining the stream
-  until the accept-gate opens (`ready`); nothing is lost up to the ring depth.
-  This is how the §6 requirement is met without a two-phase API.
+  until the accept-gate opens (`ready`); **nothing is dropped** while it waits
+  — the buffer holds all captured audio (up to the §6 overload bound). This is
+  how the §6 requirement is met without a two-phase API.
 - **Graceful stop (hotkey release):** `stop()` on the handle → the backend
   stops capturing, everything already captured drains through the stream,
   then `None`. The service then signals end-of-audio and the model finalizes.
@@ -132,14 +142,14 @@ device ──▶ CaptureBackend ──▶ Producer::push(bytes)
                                    │  re-chunk to whole-frame ~100 ms chunks
                                    │  update stats tap (RMS/peak/clip, §8)
                                    ▼
-                          bounded ring (drop-oldest, §6)
+                          bounded buffer (no-drop; overload faults, §6)
                                    ▼
                           CaptureStream  ◀── drained when the consumer chooses
 ```
 
 ```rust
 let source = CaptureSource::builder(negotiated_format)
-    .ring_depth(Duration::from_secs(10))    // §6; pair with T29
+    .ring_depth(Duration::from_secs(300))   // §6 overload bound; pair with T29
     .chunk(Duration::from_millis(100))      // whole frames, prototype default
     .target("alsa_input.usb-...")           // optional node.name (§9)
     .backend(Box::new(PwRecordBackend::new()))  // T51; ScriptedBackend in tests
@@ -177,7 +187,8 @@ pub struct CaptureSpec {
 
 /// Where the backend delivers PCM. Push is synchronous and never blocks —
 /// callable from a tokio task, a plain thread, or a realtime callback.
-/// Overflow is the ring's problem (drop-oldest), never the backend's.
+/// Overflow is the buffer's problem (grow, then fault Overloaded), not the
+/// backend's; the producer never drops.
 pub struct Producer(/* ring + stats + re-chunk internals */);
 impl Producer {
     /// Deliver raw PCM (any size). Returns false once the consumer is gone
@@ -222,20 +233,23 @@ doesn't poll the stream until `ready`, then drains — buffered chunks first,
 then live ones. No arm/drain two-phase API needed.
 
 - **Depth** is a builder param (`ring_depth`), denominated in duration and
-  converted at the negotiated format (10 s at 16 kHz mono S16LE = 320 KB).
-  **Default: 10 s, provisional** — comfortably above the 5.8 s worst measured
-  cold load, trivial memory. The final default is **one decision with T29**
-  (idle-unload period ↔ tolerated cold load ↔ ring depth); revisit both
-  together.
-- **Overflow: drop-oldest.** If the consumer stalls past the depth (a
-  pathological cold load, a wedged push), the oldest chunks age out and
-  `AudioStats::dropped` accumulates their duration so the UI can warn.
-  Rationale: past the tolerated load window the oldest audio is the stalest;
-  blocking would stall the capture path (and a realtime callback can't
-  block); failing the session turns a slow load into a user-facing error,
-  which defeats the ring's purpose. The cost — a transcript that starts
-  mid-utterance, with no wire-level signal — is acknowledged and visible on
-  the stats tap.
+  converted at the negotiated format. It is now the **overload bound**, not a
+  drop window. **Default: 300 s (~9.6 MB at 16 kHz mono S16LE), provisional** —
+  far above any tolerated cold load, so normal dictation never trips it; finite
+  so a wedged/over-budget service can't grow it without limit. The final default
+  is **one decision with T29**.
+- **Overflow: never drop — fault instead (corrected 2026-07-20).** The buffer
+  grows to hold *all* captured audio across the cold-load window and any lag; it
+  never ages out captured speech. Only if it exceeds `ring_depth` — a service
+  *persistently* slower than realtime — does it stop, drain what it holds, and
+  end the stream with `CaptureError::Overloaded(seconds)`, which the client
+  surfaces ("the transcription service cannot keep up with capture"). Rationale
+  for the reversal: the original drop-oldest policy silently discarded the
+  **front** of the utterance during the pre-ready cold-load window, so a long
+  dictation landed as only its last few seconds — an unacceptable silent loss.
+  Informing the user (or, later, regressing to a slower batch tier) beats
+  smoothing it over. A realtime callback still can't block, so the producer
+  simply latches the fault; the already-buffered audio drains first.
 - **Discard on session end.** Abort drops the ring's contents on the floor;
   nothing outlives the stream. (Invariant §1.2.)
 
@@ -255,10 +269,11 @@ fixes:
   balloons latency). It arises **only when streaming a model that can't decode
   faster than realtime (RTF ≥ ~1)** — inherently over budget, or pushed
   sub-realtime by sustained CPU/GPU contention or thermal throttling. The
-  response is **not** to grow the buffer or insert anything: drop-oldest +
-  surface `dropped` (and, when it lands, signal/bail — the model is over budget
-  for that tier). `AudioStats::dropped` should read **0** in a healthy session;
-  non-zero is a Kind-2 diagnosis, not an accepted loss budget.
+  response is **never to drop or insert partial audio**: hold up to the bound,
+  then fault `Overloaded` and let the client tell the user this tier can't keep
+  up (or, later, regress to batch). `AudioStats::dropped` reads **0** always now
+  (the buffer never drops); an `Overloaded` fault — not a nonzero `dropped` — is
+  the Kind-2 diagnosis.
 
 **Batch vs streaming — the mode that decides whether Kind 2 even exists:**
 
@@ -296,10 +311,10 @@ silence and keeps the timeline continuous (`spa_alsa_skip()` in
 backend the stream is already continuous, so the crate adds **no** underrun
 concept, no silence-fill, no `Underrun` event. An *overrun* (Kind 1/2 above) is
 the opposite — real audio the consumer didn't take in time; the response is
-drop-oldest + the `dropped` counter, never synthetic silence. For an ASR
-consumer the resulting discontinuity is benign (the model's front-end washes out
-an isolated transient; a splice is preferable to inserted silence, which a model
-may read as a pause / punctuation). Splice-smoothing is DSP and stays out (§10).
+**hold up to the §6 bound, then fault `Overloaded`** (never drop, never insert
+synthetic silence). Because the buffer no longer drops, there is no
+drop-induced splice discontinuity in a healthy session at all. Splice-smoothing
+would be DSP and stays out either way (§10).
 
 ## 7. Format ownership & negotiation
 
@@ -388,9 +403,9 @@ such stage exists today, and VAD explicitly stays out (the hotkey is the VAD).
 
 | v1 §10 question | Resolution |
 |---|---|
-| `Stream` vs `mpsc` vs `async_stream` | Public API is a `Stream` (matches T41's trait); internally a custom ring, because drop-oldest isn't an mpsc semantic. |
+| `Stream` vs `mpsc` vs `async_stream` | Public API is a `Stream` (matches T41's trait); internally a custom buffer, because the no-drop-then-fault overload semantics aren't an mpsc semantic. |
 | Encoding discriminant now? | Not yet — T33 is a team discussion; room reserved, S16LE assumed, both languages change together (§2). |
 | `pw-record` vs `libpipewire` | Both, sequenced: subprocess first (T51), native later (T52), behind `CaptureBackend` (§5). |
 | Crate boundary | `client/myna-audio` workspace member; consumer traits in `myna-core`; adapter never depends on the orchestrator. |
 | Graceful-stop idiom | `StopHandle` (atomic flag, ~250 ms promptness contract), shared between consumer and backend (§3/§5). |
-| Buffering policy | Adapter-owned ring, drop-oldest + stats, 10 s provisional default paired with T29 (§6). |
+| Buffering policy | Adapter-owned buffer, **no-drop** + overload fault, 300 s provisional bound paired with T29 (§6). |
