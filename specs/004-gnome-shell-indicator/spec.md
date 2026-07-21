@@ -141,7 +141,7 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 
 #### Platform, accessibility & packaging
 
-- **FR-020**: The extension MUST declare the GNOME Shell versions it supports (target Ubuntu 26.04+, GNOME 48/49) and MUST NOT attempt to load on unsupported Shell versions.
+- **FR-020**: The extension MUST declare the GNOME Shell versions it supports (target Ubuntu 26.10+, GNOME 50/51) and MUST NOT attempt to load on unsupported Shell versions.
 - **FR-021**: The extension MUST re-initialize cleanly across Shell restart/session relogin and MUST release all actors, timers, and D-Bus subscriptions on disable (no leaks).
 - **FR-022**: State changes MUST be exposed to assistive technologies (screen-reader perceivable) and the indicator MUST remain legible in high-contrast/accessibility modes.
 - **FR-023**: On GNOME, this extension becomes the preferred activity-indicator surface; `myna-desktop`'s own indicator MUST remain the fallback when the extension is absent, and enabling the extension MUST NOT change commit-only injection behavior.
@@ -164,7 +164,7 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **SC-005**: No transcript content or dictation history is ever rendered by, logged by, or persisted by the extension, and no audio is captured by it (verifiable by inspection and behavior).
 - **SC-006**: With `myna-desktop` absent, then started, then stopped, the extension stays dormant, activates, and returns to dormant respectively — with no user-facing errors for these expected conditions and no leaked actors/timers after disable.
 - **SC-007**: Animations sustain a smooth frame rate (target ≈60 fps on reference hardware) during each state's animation and do not accumulate overlapping animations across rapid start/stop cycles.
-- **SC-008**: The extension loads and functions on the targeted GNOME Shell versions (Ubuntu 26.04+, GNOME 48/49) and refuses to load on unsupported versions rather than failing at runtime.
+- **SC-008**: The extension loads and functions on the targeted GNOME Shell versions (Ubuntu 26.10+, GNOME 50/51) and refuses to load on unsupported versions rather than failing at runtime.
 - **SC-009**: Indicator state changes are announced to a screen reader and the indicator remains legible in high-contrast mode, verifiable with assistive-technology tooling.
 - **SC-010**: When a panel trigger is provided, clicking it starts and stops a session equivalently to the hotkey, with identical commit-only text behavior, in 100% of trials.
 
@@ -175,7 +175,7 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **D-Bus contract owned here, implemented in `myna-desktop`**: this feature defines the session-bus interface (state + state-change signal + audio-level values + optional start/stop/toggle + error message); the emitting side is added to `myna-desktop`. Exact member names/signatures are a design detail resolved in planning, guided by the landscape's `org.myna.Dictation` sketch.
 - **State vocabulary maps to the internal contract**: idle/loading(preparing)/recording/transcribing/finalizing/error map onto the project's session/liveness phases (`transcription.progress` phases `preparing`/`ready`/`transcribing`, plus finalize/error). Unknown values degrade to neutral (FR-008).
 - **Preferred surface on GNOME**: on GNOME this extension is the preferred indicator surface and satisfies feature 003's FR-020 fallback expectation; `myna-desktop`'s own notification/OSD indicator remains the fallback when the extension is not installed/enabled. Other desktops (wlroots/KDE) keep the notification path and are out of scope here.
-- **Target platform**: Ubuntu Desktop on Wayland with GNOME 48/49 (Ubuntu 26.04+); older GNOME and non-GNOME desktops are out of scope.
+- **Target platform**: Ubuntu Desktop on Wayland with GNOME 50/51 (Ubuntu 26.10+); older GNOME and non-GNOME desktops are out of scope.
 - **Privacy**: consistent with the project invariants — no audio persisted, no transcription content logged/rendered by default; the indicator shows state and level only.
 - **Timing targets**: activation-latency and teardown targets are inherited from feature 003 / UD129 (≈100–200 ms activation on reference hardware).
 - **Visual/animation design specifics** (exact "goop" geometry, animation family, whether a panel icon is always visible, VU representation, theming, packaging/distribution) are intentionally left as design decisions for planning; the requirements above bound them (focus-safe, state-legible, smooth, privacy-preserving, HIG-compliant) without fixing a single look.

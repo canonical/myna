@@ -37,8 +37,8 @@ Two deliverables, one contract between them:
 
 **Language/Version**:
 - `myna-desktop` publisher: Rust (stable, workspace edition 2021, `rust-version = 1.75`).
-- Extension: **GJS** (GNOME JavaScript / SpiderMonkey) targeting GNOME Shell 48
-  and 49 — the platform-mandated language for in-compositor UI (no Rust option).
+- Extension: **GJS** (GNOME JavaScript / SpiderMonkey) targeting GNOME Shell 50
+  and 51 — the platform-mandated language for in-compositor UI (no Rust option).
 
 **Primary Dependencies**:
 - Publisher side: `zbus` (5.x, **already vendored**) — serves the
@@ -71,7 +71,7 @@ either deliverable.
   each state, observe the goop + focus-safety). The GJS suite is scaffolding for
   the harness tier (see Constitution Check), not gated by TDD.
 
-**Target Platform**: Ubuntu Desktop 26.04+ on Wayland, GNOME Shell 48/49; session
+**Target Platform**: Ubuntu Desktop 26.04+ on Wayland, GNOME Shell 50/51; session
 D-Bus present. Older GNOME and non-GNOME desktops are out of scope (they keep the
 `NotifyIndicator` path).
 
@@ -178,7 +178,7 @@ client/
 
 extensions/                    # NEW top-level: GJS artifacts (non-Rust, harness-tier)
 └── myna-shell/                # the GNOME Shell extension bundle
-    ├── metadata.json          #   uuid, shell-version [48, 49], name, settings-schema (none)
+    ├── metadata.json          #   uuid, shell-version [50, 51], name, settings-schema (none)
     ├── extension.js           #   enable()/disable(): wire proxy ↔ Indicator actor
     ├── dbus.js                #   Gio.DBusProxy for org.myna.Dictation (connect/reconnect)
     ├── indicator.js           #   the goop St.DrawingArea/St.Widget + PanelMenu button

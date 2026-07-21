@@ -7,7 +7,7 @@ Runnable validation that the focus-safe goop indicator works end-to-end. See
 
 ## Prerequisites
 
-- Ubuntu 26.04+ on **Wayland**, GNOME Shell **48 or 49** (`gnome-shell --version`).
+- Ubuntu 26.04+ on **Wayland**, GNOME Shell **50 or 51** (`gnome-shell --version`).
 - The Workshop dev env (`.workshop/myna.yaml`) with the desktop SDK (D-Bus, GJS,
   gnome-shell) — see the foundational task; or a GNOME session on hardware.
 - A running inference backend, e.g. `myna-server --adapter whisper --socket /tmp/myna.sock`.
