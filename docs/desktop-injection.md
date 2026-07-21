@@ -142,12 +142,98 @@ An opt-in GTK4 overlay (`--overlay`, `indicator::gtk::GtkIndicator`) gives a
 persistent per-state surface with AT-SPI labels (FR-019), but is
 **experimental**: on GNOME/Wayland mapping a top-level can shift keyboard focus
 off the target — our IBus engine then sees `FocusOut` and ends the session (its
-wrong-target safety), cutting dictation short. The fix (a proper always-on-top
-HUD that never takes focus) is to move it to the **layer-shell** protocol
-(`gtk4-layer-shell`, `KeyboardMode::None`), as the reference Handy app does;
-tracked for the UI-improvements pass. When used it owns the process main thread
-+ GLib loop, with the tokio controller on a worker thread bridged by an
-`async-channel`; the error state also raises a `notify-rust` toast.
+wrong-target safety), cutting dictation short. The clean fix (an always-on-top
+HUD that never takes focus) is the **`wlr-layer-shell`** protocol
+(`gtk4-layer-shell`, `KeyboardMode::None`), as the reference Handy app does —
+**but that only works on wlroots compositors and KWin; Mutter does not implement
+layer-shell**, so it is not a fix on our primary target (GNOME). See the
+platform survey below for why, and what the actually-portable options are. When
+used it owns the process main thread + GLib loop, with the tokio controller on a
+worker thread bridged by an `async-channel`; the error state also raises a
+`notify-rust` toast.
+
+## Wayland input-stealing: the platform landscape (survey)
+
+Everything hard about the last-mile is one theme: **on Wayland the compositor
+owns focus, input routing, and surface stacking; a client cannot reach outside
+its own surface** the way an X11 client could (XTEST synthetic input, global key
+grabs, override-redirect always-on-top). That isolation is deliberate. It splits
+into three problems, each with a different protocol story and a different
+GNOME/Mutter answer. This is a fast-moving area; the notes below are the state
+as we found it and are the reason several choices above look like workarounds
+rather than the "obvious" solution.
+
+**1. Getting text *into* the focused app (injection).**
+- *X11 legacy:* XTEST synthesises keystrokes into whatever is focused. No
+  Wayland equivalent by design.
+- *Wayland protocols:* `text-input-v3` (app-side; the app opts in to receive
+  IM text — Mutter implements this, it's how committed text reaches GTK/Qt
+  apps) vs `input-method-v2` (lets a *client* be the input method) and
+  `virtual-keyboard-v1` (inject raw keycodes). The latter two are wlroots
+  protocols and **Mutter implements neither** — GNOME routes input methods
+  through **IBus** (in-compositor), not a client-facing Wayland protocol.
+- *So on GNOME* the only sanctioned client→app text paths are **IBus** (be an
+  engine — what we do), AT-SPI (accessibility; not designed for insertion,
+  unreliable), or synthesising input via the **RemoteDesktop portal**
+  (keycode/pointer emulation, not text commit).
+- *The "right" upstream fix, once it settles:* for generic input emulation the
+  clear direction is **libei/libeis** (emulated input) mediated by the
+  `org.freedesktop.portal.RemoteDesktop` portal — cross-desktop,
+  compositor-arbitrated, user-consented; Mutter already carries libei support.
+  But libei is keystrokes/pointer, not *semantic text commit*; for dictation,
+  committing text through an IM is more correct than faking keycodes (IME
+  composition, non-Latin scripts, autocorrect fields). There is **no**
+  cross-desktop *text-commit* portal yet, so IBus stays the GNOME path and
+  `input-method-v2` the wlroots path (see the `Injector` seam in *Future*). The
+  genuinely-unsettled question is whether a portable IM/text-injection
+  interface ever standardises; until then the `Injector` trait is our
+  portability boundary and IBus is the shipping backend.
+
+**2. Showing UI without stealing focus (the indicator overlay).**
+- *X11 legacy:* override-redirect + `_NET_WM_STATE_ABOVE` gives an always-on-top
+  surface that never takes focus. No portable Wayland equivalent for ordinary
+  clients.
+- *Wayland protocols:* `wlr-layer-shell` (`zwlr_layer_shell_v1`) is the
+  panel/OSD/overlay protocol with explicit keyboard-interactivity control
+  (`KeyboardMode::None` = never focus). Implemented by wlroots compositors and
+  **KWin** — **not by Mutter**. GNOME's long-standing position is that on-screen
+  shell chrome belongs to **GNOME Shell extensions** (JS, in the compositor
+  process), not arbitrary client surfaces, so it has declined to adopt
+  layer-shell.
+- *So on GNOME* there is currently **no sanctioned way for a normal client to
+  show an always-on-top, non-focus-stealing overlay.** The realistic options are
+  (a) a **GNOME Shell extension** for the indicator (the GNOME-blessed path, but
+  a separate JS component with its own packaging/review), (b) lean on the
+  **notification/OSD** facilities the shell already owns (what `NotifyIndicator`
+  does — hence it's the default), or (c) ship layer-shell for KDE/wlroots users
+  and fall back to notifications on GNOME (`gtk4-layer-shell` gates on
+  `is_supported()`; this is what Handy effectively does).
+- *The "right" upstream fix, once it settles:* a **standardised cross-desktop
+  layer-shell** in `wayland-protocols` (an `ext-`namespace successor has been
+  discussed for years) that Mutter would implement — or GNOME converging on some
+  other client-overlay mechanism. Nothing is merged/adopted, so this is the most
+  genuinely-open of the three. Until then, treat the persistent overlay as
+  **compositor-dependent** and keep notifications as the portable floor.
+
+**3. Activating without focus (the global hotkey).**
+- *X11 legacy:* any client could grab a global key.
+- *Wayland:* the `org.freedesktop.portal.GlobalShortcuts` portal is the
+  sanctioned cross-desktop answer and GNOME implements it — but the GNOME
+  backend only serves callers with an **app identity** (Flatpak/snap or a
+  `.desktop` launch), so a bare unsandboxed binary is refused.
+- *This one is essentially settled:* the portal is the right interface; the only
+  friction is app-identity. Hence the default ships the **GNOME custom
+  keybinding** (gsettings → `--toggle`) for the unsandboxed dev binary and
+  `--portal` for the packaged build. Once packaged (snap), the portal is the
+  correct path with no workaround.
+
+**Net:** activation is solved (portal, modulo packaging); injection is solved on
+GNOME via IBus with a clean seam for the wlroots path and no portable successor
+yet; the focus-safe overlay is the one with no good GNOME answer today, which is
+why the shipped default is notifications and the overlay is opt-in and
+compositor-dependent. Re-survey when: Mutter ships layer-shell (or an `ext-`
+equivalent lands), a text-injection portal appears, or libei-based injection
+becomes the norm for assistive input.
 
 ## Testing (Principles I/II/III)
 
@@ -164,9 +250,15 @@ tracked for the UI-improvements pass. When used it owns the process main thread
 
 ## Future (R3/R9)
 
-- **Wayland-native `input_method_v2`** backend for wlroots compositors (mutter
-  lacks it; IBus is the only path on GNOME) — addable behind the same `Injector`
-  seam.
+- **Wayland-native `input_method_v2`** backend for wlroots compositors (Mutter
+  lacks it — IBus is the only path on GNOME; see the platform survey above) —
+  addable behind the same `Injector` seam. The seam is exactly the portability
+  boundary the survey argues for: IBus today, `input_method_v2` for wlroots, and
+  whatever portable text-injection path standardises later, all behind
+  `Injector` with no controller/FSM changes.
+- **Focus-safe overlay** is compositor-dependent (survey §2): a `gtk4-layer-shell`
+  backend would serve KDE/wlroots; GNOME needs a Shell extension or the
+  notification floor. Kept behind the `Indicator` seam.
 - **Streaming preedit**: `Injector::set_preedit`/`supports_preedit` are scaffolded
   (`IbusInjector` reports `true`) but unused — the MVP is commit-only. Flipping it
   on routes `Snippet` → preedit without reshaping the seam or the FSM.
