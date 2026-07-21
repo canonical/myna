@@ -10,6 +10,8 @@
 //! well-known name and serves `/org/myna/Dictation` lands in the polish phase
 //! (contract publisher.md P13–P15).
 
+pub mod serve;
+
 /// Well-known bus name owned by `myna-desktop --dbus` (contract §Bus topology).
 pub const BUS_NAME: &str = "org.myna.Dictation";
 /// Object path the interface is served at.

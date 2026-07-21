@@ -1,7 +1,39 @@
 /* stylesheet.css — goop state colours + animation classes for the Myna
  * dictation indicator (feature 004; research R6, data-model "State →
  * visual-intent mapping"). All per-state tunables live here so the pure
- * states.js mapping never has to change for a visual tweak. A high-contrast
- * variant lands with the a11y task (T035); legibility never relies on colour
- * alone (shape/animation also differ per state).
+ * states.js mapping never has to change for a visual tweak.
+ *
+ * The actor reads its fill colour from the `-myna-goop-color` custom property
+ * of its style class. Colours are from the GNOME palette; a high-contrast
+ * variant lands with the a11y task (T035), and legibility never relies on
+ * colour alone (shape/animation also differ per state — US2, T021).
  */
+
+/* Base (and unknown-state fallback; states.js 'active' intent). */
+.myna-goop {
+    -myna-goop-color: #3584e4; /* brand blue */
+}
+
+.myna-goop-loading {
+    -myna-goop-color: #e5a50a; /* warm amber — model warming up */
+}
+
+.myna-goop-recording {
+    -myna-goop-color: #3584e4; /* brand blue — listening */
+}
+
+.myna-goop-active {
+    -myna-goop-color: #3584e4; /* neutral "active" for unknown states */
+}
+
+.myna-goop-transcribing {
+    -myna-goop-color: #9141ac; /* processing purple */
+}
+
+.myna-goop-finalizing {
+    -myna-goop-color: #33d17a; /* confirming green */
+}
+
+.myna-goop-error {
+    -myna-goop-color: #e01b24; /* error red */
+}
