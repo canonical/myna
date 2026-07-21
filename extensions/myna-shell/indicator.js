@@ -2,17 +2,21 @@
 // contracts extension.md X8–X12; geometry/animation per research R6).
 //
 // The goop is an St.DrawingArea added to Main.layoutManager as *chrome* —
-// never a window, never reactive, never in the input region — so it cannot
-// take keyboard focus by construction (X11/SC-001). It exists only while the
-// dictation state ≠ idle (push-to-talk, X3): show() eases it in, hide() eases
-// it out and destroys it, destroy() (extension disable) tears down
-// immediately with no leaked actors/transitions/signals (X9).
+// never a window, non-reactive, non-focusable — so it cannot take keyboard
+// focus by construction (X11/SC-001). (GNOME 48+ removed the chrome
+// input-region params — `affectsInputRegion`/`trackInput` no longer exist in
+// layout.js; a non-reactive chrome actor is pointer-transparent as-is.)
+// It exists only while the dictation state ≠ idle (push-to-talk, X3): show()
+// eases it in, hide() eases it out and destroys it, destroy() (extension
+// disable) tears down immediately with no leaked actors/transitions/signals
+// (X9).
 //
 // Visual intent (cssClass/animation/a11yLabel) comes from the pure states.js;
 // the state colour comes from the `-myna-goop-color` custom property in
 // stylesheet.css so visuals are tunable without touching actor code (R6).
 // Per-state animations (breathe/ripple/shimmer/…) land with US2 (T021).
 
+import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -40,7 +44,7 @@ class GoopActor extends St.DrawingArea {
             opacity: 0,
         });
         this._color = FALLBACK_COLOR;
-        this.set_accessible_role('status');
+        this.set_accessible_role(Atk.Role.STATUSBAR);
         this.connect('repaint', () => this._draw());
     }
 
@@ -106,10 +110,9 @@ export class GoopIndicator {
     show(intent) {
         if (this._actor === null) {
             this._actor = new GoopActor();
-            Main.layoutManager.addTopChrome(this._actor, {
-                affectsInputRegion: false,
-                trackInput: false,
-            });
+            // Chrome above all windows; the only trackable params on GNOME
+            // 48+ are trackFullscreen/affectsStruts, both defaulting false.
+            Main.layoutManager.addTopChrome(this._actor);
             this._monitorsChangedId = Main.layoutManager.connect(
                 'monitors-changed', () => this._position());
             this._position();
