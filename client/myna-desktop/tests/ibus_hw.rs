@@ -46,60 +46,56 @@ fn gate_skips_cleanly_when_unset() {
     }
 }
 
-/// I1 + I11: IBus wire protocol integration test.
+/// I1 + I11: IBus wire protocol integration test — connect, acquire (become the
+/// active engine), commit "hello", end, and restore the prior engine.
 ///
-/// In a headless/isolated IBus session (no GUI, no focused text field), the
-/// daemon does NOT send FocusIn when an engine is activated (there's no actual
-/// input context to focus). With the fail-closed security fix, `acquire()` now
-/// correctly refuses to proceed without a focus signal.
-///
-/// This test verifies:
-/// 1. Connection to IBus daemon succeeds
-/// 2. Wire protocol calls (RegisterComponent, SetGlobalEngine) succeed  
-/// 3. Headless acquire correctly fails (Unavailable) due to missing focus
-/// 4. End-to-end injection (acquire→commit→restore) requires a REAL GUI session
-///    with a focused text field (manual quickstart step 4)
+/// In a headless/isolated IBus session there is no focused GUI field, so no
+/// secure content-type is delivered; `purpose` stays 0 and `acquire` succeeds
+/// (the security model refuses only a *known-secure* PASSWORD/PIN field, never
+/// a slow/absent focus — that is the ordinary-field case). The end-to-end
+/// "hello lands in the field" acceptance still needs a real GUI (quickstart
+/// step 4).
 #[tokio::test]
-async fn ibus_wire_protocol_headless() {
+async fn ibus_commit_and_restore() {
     if !ibus_enabled() {
-        eprintln!("skipping ibus_wire_protocol_headless: MYNA_IBUS_TESTS unset");
+        eprintln!("skipping ibus_commit_and_restore: MYNA_IBUS_TESTS unset");
         return;
     }
 
-    // Connect to the daemon and verify address discovery works.
-    let injector = IbusInjector::connect().await.expect("connect to IBus daemon");
-    let _before = injector.global_engine().await;
-    eprintln!("Connected to IBus daemon (global engine = {})", _before.as_deref().unwrap_or("none"));
-    drop(injector);
+    // Record the engine active before we touch anything.
+    let probe = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let before = probe.global_engine().await;
+    eprintln!("Connected to IBus daemon (global engine = {})", before.as_deref().unwrap_or("none"));
+    drop(probe);
 
-    // In headless mode, acquire must fail (no focus signal).
     let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
-    let result = injector.acquire().await;
-
-    // Headless: no focused input context → no FocusIn → acquire fails (fail-closed).
-    assert!(
-        result.is_err(),
-        "acquire must fail in headless mode (no focus) (got {result:?})"
-    );
-    match &result {
-        Err(myna_desktop::inject::InjectError::Unavailable(msg)) => {
-            assert!(
-                msg.contains("focus signal"),
-                "error should mention missing focus signal: {msg}"
-            );
-            eprintln!("Headless acquire correctly refused (fail-closed): {}", result.as_ref().unwrap_err());
-        }
+    match injector.acquire().await {
+        Ok(_target) => {}
         Err(myna_desktop::inject::InjectError::Backend(msg)) => {
-            // If running against a real session (not isolated), SetGlobalEngine may
-            // fail due to conflicts. This is acceptable - skip with a warning.
+            // Running against a real (non-isolated) session: SetGlobalEngine can
+            // conflict with the live engine. Skip with a warning.
             eprintln!("⚠️  Backend error: {msg}");
-            eprintln!("⚠️  Tests should run in isolated session (see module docs)");
+            eprintln!("⚠️  Tests should run in an isolated session (see module docs)");
             return;
         }
-        other => panic!("expected Unavailable(focus signal...) or Backend(...), got {other:?}"),
+        Err(other) => panic!("unexpected acquire error: {other:?}"),
     }
 
-    // No need to call end(): acquire failed, so no engine activation to restore.
+    // Commit-only: a literal segment. On the VM this lands in the focused test
+    // entry (I1/SC-001); here we assert the wire call succeeds.
+    injector.commit("hello").await.expect("commit hello");
+
+    // End restores the prior engine (idempotent — call twice).
+    injector.end().await;
+    injector.end().await;
+
+    // I11: if there was a prior global engine, it is restored exactly once.
+    let after = IbusInjector::connect().await.expect("reconnect").global_engine().await;
+    if before.is_some() {
+        assert_eq!(after, before, "prior global engine must be restored on end");
+    } else {
+        eprintln!("no prior engine in this session; wire cycle completed (after = {after:?})");
+    }
 }
 
 /// T035 / I5, I8: focus-out from a focused entry emits `FocusEvent::FocusOut`,
@@ -126,42 +122,44 @@ async fn ibus_focus_and_secure_detection() {
 }
 
 /// Fail-closed security property: `acquire` requires a positive focus signal
-/// before allowing injection. This prevents the vulnerability where we would
-/// proceed with `purpose=0` (unknown) when the focus/content-type callbacks
-/// are delayed or missing.
+/// before allowing injection into a secure field. The security model (F2): a
+/// secure field (PASSWORD/PIN) reliably drives `FocusIn` immediately followed
+/// by `SetContentType`; `acquire` waits for `FocusIn`, then lets
+/// `SetContentType` settle (CONTENT_TYPE_GRACE) before reading `purpose`, so a
+/// password field can't slip through on the race between the two callbacks.
 ///
-/// In headless mode (no GUI, no focused field), IBus doesn't send FocusIn, so
-/// `acquire` must fail. In a real GUI session with a focused text field, IBus
-/// sends FocusIn immediately when the engine is activated, and `acquire` succeeds.
+/// A *slow/absent* `FocusIn` is NOT a hard-fail: that is the ordinary-field
+/// case (IBus focuses different widgets on different schedules), and refusing
+/// there would break legitimate dictation. So in headless mode (no GUI field,
+/// purpose stays 0) `acquire` succeeds — there is no actual secure field to
+/// protect.
 ///
-/// This test verifies the fail-closed behavior in headless mode. The success
-/// path (with focus) is verified by the manual quickstart step 4.
+/// The security-relevant assertion (PASSWORD → `Err(SecureField)`) requires a
+/// real focused password field and is the manual quickstart step 4; here we
+/// assert the safe-default path (no secure content-type → acquire succeeds,
+/// then cleanly restores).
 #[tokio::test]
-async fn ibus_fail_closed_on_timeout() {
+async fn ibus_secure_default_path() {
     if !ibus_enabled() {
-        eprintln!("skipping ibus_fail_closed_on_timeout: MYNA_IBUS_TESTS unset");
+        eprintln!("skipping ibus_secure_default_path: MYNA_IBUS_TESTS unset");
         return;
     }
 
     let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
-    // Headless: no focused input context → no FocusIn signal.
-    let result = injector.acquire().await;
-
-    // Fail-closed: must return Unavailable (or Backend if running against real session).
-    match result {
-        Err(myna_desktop::inject::InjectError::Unavailable(_)) => {
-            // Expected in isolated headless session.
+    // Headless: no secure content-type delivered → purpose stays 0 → safe.
+    match injector.acquire().await {
+        Ok(_target) => {
+            // Safe default: no known-secure field, injection permitted.
+            injector.end().await;
         }
         Err(myna_desktop::inject::InjectError::Backend(msg)) => {
-            // If running against a real session, SetGlobalEngine may fail.
+            // Running against a real session: SetGlobalEngine can conflict. Skip.
             eprintln!("⚠️  Backend error: {msg}");
-            eprintln!("⚠️  Tests should run in isolated session (see module docs)");
-            return;
+            eprintln!("⚠️  Tests should run in an isolated session (see module docs)");
         }
-        other => panic!(
-            "acquire must fail (Unavailable or Backend) when no focus signal arrives (got {other:?})"
-        ),
+        Err(myna_desktop::inject::InjectError::SecureField) => {
+            panic!("unexpected SecureField in headless mode (no password field focused)");
+        }
+        Err(other) => panic!("unexpected acquire error: {other:?}"),
     }
-
-    // No cleanup needed: acquire failed, no engine was activated.
 }

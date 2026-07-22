@@ -19,9 +19,13 @@ pub trait Indicator: Send {
 
 The controller maps `OrchestratorEvent` → `IndicatorState`:
 `Loading`→`Recording` (with a loading hint in some backends) · `Ready`→
-`Recording` · `Transcribing`→`Transcribing` · `Release`/`Finalizing`→`Finalizing`
-· `Done`→`Hidden` · `Error{message}`→`Error(message)`. Push-to-toggle semantics:
-the indicator walks Recording → Transcribing → [toggle] → Finalizing → Hidden.
+`Recording` · `Transcribing`→`Recording` · `Release`/`Finalizing`→`Finalizing`
+· `Done`→`Hidden` · `Error{message}`→`Error(message)`. The indicator walks
+Recording → [release] → Finalizing → Hidden. `Transcribing` maps to `Recording`
+(listening) because streaming adapters emit it *while the user is still
+speaking* — showing a distinct "working" look mid-utterance reads wrong. The
+internal `DictationState::Transcribing` still advances; it just isn't projected
+to the indicator during capture.
 
 ## Guarantees (each row → at least one test)
 

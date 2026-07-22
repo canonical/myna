@@ -408,13 +408,15 @@ async fn full_session_walks_recording_finalizing_hidden() {
 // ── T027 [US3]: indicator lifecycle sequence + error, no transcript text ──────
 
 #[tokio::test]
-async fn indicator_walks_recording_transcribing_finalizing_hidden() {
-    // A realistic push-to-toggle: liveness (Loading/Ready/Transcribing) streams
-    // during the session, showing distinct Recording → Transcribing states, THEN
-    // the user toggles/releases (→ Finalizing), then the tail final + Done
-    // arrive (→ Hidden). The session emits liveness now and the tail only after
-    // the release (stop); the controller's biased select drains the buffered
-    // liveness before handling the release, so the order is deterministic (no timing).
+async fn indicator_walks_recording_finalizing_hidden() {
+    // A realistic push-to-talk: liveness (Loading/Ready/Transcribing) streams
+    // during the session — all shown as Recording (listening), because a
+    // `transcribing` event while the user is still speaking must NOT flip the
+    // indicator to the "working" look — THEN the user releases (→ Finalizing),
+    // then the tail final + Done arrive (→ Hidden). The session emits liveness
+    // now and the tail only after the release (stop); the controller's biased
+    // select drains the buffered liveness before handling the release, so the
+    // order is deterministic (no timing).
     let staged = |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
         // Pre-buffer the liveness events so the biased select drains them before
         // it sees the (immediate, scripted) Release — deterministic, no timing.
@@ -459,11 +461,10 @@ async fn indicator_walks_recording_transcribing_finalizing_hidden() {
         seq,
         vec![
             IndicatorState::Recording,
-            IndicatorState::Transcribing,
             IndicatorState::Finalizing,
             IndicatorState::Hidden,
         ],
-        "indicator lifecycle order"
+        "indicator lifecycle order (Transcribing stays on Recording during capture)"
     );
 }
 
