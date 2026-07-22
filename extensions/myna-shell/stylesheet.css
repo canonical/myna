@@ -1,20 +1,23 @@
 /* stylesheet.css — chrome styling for the experimental RibbonView (feature
- * 004; indicator.js). The per-state *colours* live in JS (TREATMENTS in
- * indicator.js) because they drive the Cairo-painted VU bars; this file styles
- * the container and the status label. All of this is behind the view.js seam —
- * a redesign replaces indicator.js + these rules together.
+ * 004; indicator.js). The per-state *colours* and the goop itself live in JS
+ * (TREATMENTS + Cairo painting in indicator.js) because they drive the flowing,
+ * gradient-filled blob; this file styles the container and the status label.
+ * All of this is behind the view.js seam — a redesign replaces indicator.js +
+ * these rules together.
  */
 
 .myna-ribbon-box {
-    padding: 6px 10px;
-    spacing: 4px;
-    background-color: rgba(0, 0, 0, 0.55);
-    border-radius: 14px;
+    padding: 8px 14px 6px 14px;
+    spacing: 2px;
+    background-color: rgba(12, 14, 20, 0.62);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .myna-ribbon-label {
     font-size: 11pt;
     font-weight: 600;
-    color: #ffffff;
+    letter-spacing: 0.3px;
+    color: rgba(255, 255, 255, 0.92);
     text-align: center;
 }

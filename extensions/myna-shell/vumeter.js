@@ -7,7 +7,12 @@
 // freezing on the last value (R5/SC-004).
 export const STALE_MS = 300;
 // Never fully dead while active, so the VU reads as "alive, quiet" not "off".
-const FLOOR = 0.06;
+export const FLOOR = 0.06;
+// Speech is quiet in full-scale terms (RMS ~0.03–0.15). A raw linear level
+// leaves the VU barely twitching, so we lift it perceptually with a soft
+// saturation curve `1 - exp(-GAIN·l)`: it lifts quiet speech steeply, eases
+// toward 1 without ever pinning, and is strictly monotonic (contract holds).
+const GAIN = 6.0;
 
 /** Clamp to [0,1]. */
 function clamp01(x) {
@@ -17,15 +22,27 @@ function clamp01(x) {
 }
 
 /**
+ * Perceptual lift of a raw [0,1] level: gain + power curve, clamped to [0,1].
+ * Monotonic non-decreasing, so it never breaks the "louder → higher" contract.
+ *
+ * @param {number} level - normalized audio level in [0,1].
+ * @returns {number} boosted level in [0,1].
+ */
+export function boostLevel(level) {
+    return 1 - Math.exp(-GAIN * clamp01(level));
+}
+
+/**
  * Level → glow/VU intensity in [FLOOR,1], monotonic and clamped, decaying to
- * FLOOR once the last update is older than STALE_MS (X5).
+ * FLOOR once the last update is older than STALE_MS (X5). The raw level is
+ * perceptually boosted (boostLevel) so quiet speech visibly drives the VU.
  *
  * @param {number} level - normalized audio level in [0,1].
  * @param {number} [ageMs] - ms since that level arrived (0 = fresh).
  * @returns {number} intensity in [FLOOR, 1].
  */
 export function levelToIntensity(level, ageMs = 0) {
-    const l = clamp01(level);
+    const l = boostLevel(level);
     if (ageMs >= STALE_MS)
         return FLOOR;
     // Linear ease toward the floor across the stale window.

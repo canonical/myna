@@ -98,15 +98,25 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `None` when the event drives no indicator change (commit-only text events).
 ///
 /// `Loading`/`Ready` both show `Recording` (a cold load is "listening, warming
-/// up"); `Transcribing` shows a distinct decoding state; `Done` hides the
-/// indicator; an `Error` shows its message. `Snippet`/`Final` carry transcript
-/// text and never touch the indicator (privacy, N8). The `Finalizing` state is
-/// controller-driven — set on the `Release`/focus-out edge, not derivable from
-/// an event — so it has no row here (see [`DesktopController`]).
+/// up"); `Done` hides the indicator; an `Error` shows its message.
+/// `Snippet`/`Final` carry transcript text and never touch the indicator
+/// (privacy, N8). The `Finalizing` state is controller-driven — set on the
+/// `Release`/focus-out edge, not derivable from an event — so it has no row
+/// here (see [`DesktopController`]).
+///
+/// `Transcribing` also shows `Recording` (listening): in push-to-talk the model
+/// streams / re-decodes *while the key is held and the user is still speaking*,
+/// so a mid-capture decode event must NOT flip the user-facing indicator to a
+/// "finishing / please wait" look — that belongs only *after* the release edge
+/// (`Finalizing`). The visible phase is trigger-driven: Listening while held,
+/// Finishing once released. (The internal `DictationState::Transcribing` still
+/// advances in `route_event` to record that decoding began; it just isn't
+/// projected to the indicator during capture.)
 pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
     match event {
-        OrchestratorEvent::Loading | OrchestratorEvent::Ready => Some(IndicatorState::Recording),
-        OrchestratorEvent::Transcribing => Some(IndicatorState::Transcribing),
+        OrchestratorEvent::Loading
+        | OrchestratorEvent::Ready
+        | OrchestratorEvent::Transcribing => Some(IndicatorState::Recording),
         OrchestratorEvent::Done(_) => Some(IndicatorState::Hidden),
         OrchestratorEvent::Error { message, .. } => Some(IndicatorState::Error(message.clone())),
         OrchestratorEvent::Snippet(_)
@@ -629,10 +639,14 @@ mod tests {
     }
 
     #[test]
-    fn transcribing_maps_to_transcribing() {
+    fn transcribing_maps_to_recording_during_capture() {
+        // Push-to-talk: a decode event that arrives while the key is held
+        // (streaming / re-decode overlaps capture) keeps the indicator on
+        // "listening" — the finishing look is release-driven (`Finalizing`),
+        // not decode-driven.
         assert_eq!(
             event_to_indicator(&OrchestratorEvent::Transcribing),
-            Some(IndicatorState::Transcribing)
+            Some(IndicatorState::Recording)
         );
     }
 
