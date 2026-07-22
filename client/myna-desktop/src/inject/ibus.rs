@@ -49,7 +49,9 @@ const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
 
 /// How long `acquire` waits for the daemon to focus our engine (and deliver the
-/// content-type) before proceeding best-effort.
+/// content-type) before **failing closed**. If no focus signal arrives within
+/// this timeout, `acquire` returns `Unavailable` rather than proceeding without
+/// secure-field confirmation (fail-closed behavior).
 const FOCUS_WAIT: Duration = Duration::from_millis(400);
 
 // ── GVariant builders (IBus serializable objects) ───────────────────────────
@@ -394,10 +396,27 @@ impl Injector for IbusInjector {
         self.call("SetGlobalEngine", &(ENGINE_NAME,)).await?;
         self.active = true;
 
-        // Wait for the daemon to focus our engine on the current context, so we
-        // can read its content-type (secure-field check).
-        let _ = tokio::time::timeout(FOCUS_WAIT, self.state.focus_in.notified()).await;
+        // Wait for the daemon to focus our engine on the current context. **Fail-closed**:
+        // we require FocusIn to arrive within FOCUS_WAIT. In normal operation IBus sends
+        // this immediately when the engine is activated. If it doesn't arrive, something
+        // is wrong and we refuse to proceed.
+        let focus_received = tokio::time::timeout(FOCUS_WAIT, self.state.focus_in.notified())
+            .await
+            .is_ok();
 
+        if !focus_received {
+            // No focus signal within FOCUS_WAIT — cannot establish secure state.
+            self.restore_prior_engine().await;
+            return Err(InjectError::Unavailable(
+                "IBus focus signal not received within timeout (cannot confirm secure state)".into(),
+            ));
+        }
+
+        // Focus received. Now check the content-type (secure-field detection). IBus
+        // sends SetContentType when the input context has explicit purpose metadata.
+        // If purpose is PASSWORD or PIN, refuse. If it's 0 (unknown/default), that's
+        // acceptable: in real GUI contexts with secure fields, IBus reliably sends the
+        // purpose; in headless/test contexts or normal fields, purpose=0 is safe.
         let purpose = self.state.purpose.load(Ordering::SeqCst);
         if purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN {
             // Refuse and restore immediately — never inject into a secure field.
