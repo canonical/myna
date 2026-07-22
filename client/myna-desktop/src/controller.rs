@@ -98,23 +98,26 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `None` when the event drives no indicator change (commit-only text events).
 ///
 /// `Loading`/`Ready` both show `Recording` (a cold load is "listening, warming
-/// up"); `Transcribing` shows the distinct `Transcribing` state; `Done` hides
-/// the indicator; an `Error` shows its message. `Snippet`/`Final` carry
-/// transcript text and never touch the indicator (privacy, N8). The
-/// `Finalizing` state is controller-driven — set on the `Release`/focus-out
-/// edge, not derivable from an event — so it has no row here (see
-/// [`DesktopController`]).
+/// up"); `Done` hides the indicator; an `Error` shows its message.
+/// `Snippet`/`Final` carry transcript text and never touch the indicator
+/// (privacy, N8). The `Finalizing` state is controller-driven — set on the
+/// `Release`/focus-out edge, not derivable from an event — so it has no row
+/// here (see [`DesktopController`]).
 ///
-/// Push-to-toggle semantics: the first press starts capture and shows
-/// `Recording`; when inference begins decoding the indicator transitions to the
-/// distinct `Transcribing` state (visible mid-session, before the user toggles
-/// again). The second toggle (release) transitions to `Finalizing`, then
-/// `Hidden` on `Done`. The lifecycle is: Recording → Transcribing →
-/// [toggle/release] → Finalizing → Hidden.
+/// **`Transcribing` maps to `Recording` (listening).** Streaming / re-decode
+/// adapters emit `transcribing` progress *while the key is still held and the
+/// user is still speaking* — projecting that to the UI flips the indicator to
+/// the "working" look mid-utterance, which reads wrong in push-to-talk. The
+/// visible phase is trigger-driven: `Recording` (listening) while held,
+/// `Finalizing` (finishing) after release. The internal
+/// `DictationState::Transcribing` still advances (see [`route_event`]); it just
+/// isn't projected to the indicator during capture. Lifecycle: Recording →
+/// [release] → Finalizing → Hidden.
 pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
     match event {
         OrchestratorEvent::Loading | OrchestratorEvent::Ready => Some(IndicatorState::Recording),
-        OrchestratorEvent::Transcribing => Some(IndicatorState::Transcribing),
+        // Listening, not "working": stay on Recording while the user speaks.
+        OrchestratorEvent::Transcribing => Some(IndicatorState::Recording),
         OrchestratorEvent::Done(_) => Some(IndicatorState::Hidden),
         OrchestratorEvent::Error { message, .. } => Some(IndicatorState::Error(message.clone())),
         OrchestratorEvent::Snippet(_)
@@ -365,6 +368,7 @@ impl DesktopController {
 
         // Terminal disposition.
         if cancelled {
+            myna_core::dbg_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
             self.indicator
                 .set_state(IndicatorState::Error("dictation target closed".into()))
@@ -373,6 +377,7 @@ impl DesktopController {
         } else {
             match outcome {
                 Ok(SessionOutcome::Completed { .. }) => {
+                    myna_core::dbg_log!("ctrl", "utterance completed");
                     ensure_finalizing(&mut self.state);
                     // Safety flush: normally the terminal `done` already flushed
                     // the buffered burst in `route_event` (leaving `pending`
@@ -393,10 +398,12 @@ impl DesktopController {
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
                 Ok(SessionOutcome::Aborted) => {
+                    myna_core::dbg_log!("ctrl", "utterance aborted");
                     self.injector.cancel().await;
                     finalize_state(&mut self.state, DictationState::Cancelled);
                 }
                 Ok(SessionOutcome::Failed { message, .. }) => {
+                    myna_core::dbg_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
                     self.indicator
                         .set_state(IndicatorState::Error(message))
@@ -404,6 +411,7 @@ impl DesktopController {
                     finalize_state(&mut self.state, DictationState::Error);
                 }
                 Err(err) => {
+                    myna_core::dbg_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
                     self.indicator
                         .set_state(IndicatorState::Error(err.to_string()))
@@ -431,6 +439,7 @@ impl DesktopController {
             InjectError::NoTarget => "no text field is focused".to_string(),
             other => other.to_string(),
         };
+        myna_core::dbg_log!("ctrl", "acquire failed, aborting before capture: {message}");
         self.injector.cancel().await; // idempotent; releases if anything stuck
         self.indicator
             .set_state(IndicatorState::Error(message))
@@ -643,13 +652,16 @@ mod tests {
     }
 
     #[test]
-    fn transcribing_maps_to_transcribing_state() {
-        // Push-to-toggle: a decode event transitions the indicator to the
-        // distinct "transcribing" state, visible mid-session. The finishing
-        // look (`Finalizing`) still arrives only on the toggle/release edge.
+    fn transcribing_maps_to_recording_during_capture() {
+        // Streaming/re-decode adapters emit `transcribing` while the key is held
+        // and the user is still speaking; projecting the distinct "working" look
+        // mid-utterance reads wrong. The indicator stays on Recording
+        // (listening) during capture; the finishing look arrives only on the
+        // release edge (`Finalizing`). Internal state still advances to
+        // Transcribing (see `route_event`), it just isn't shown here.
         assert_eq!(
             event_to_indicator(&OrchestratorEvent::Transcribing),
-            Some(IndicatorState::Transcribing)
+            Some(IndicatorState::Recording)
         );
     }
 

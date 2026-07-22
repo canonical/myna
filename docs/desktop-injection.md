@@ -56,13 +56,16 @@ FR-004/SC-004).
 Event routing (`route_event`): `Final` → committed text (commit-only — never
 `Snippet`); every liveness event → `Indicator::set_state` via the
 `OrchestratorEvent → IndicatorState` mapping (`Loading`/`Ready`→Recording,
-`Transcribing`→Transcribing, `Done`→Hidden, `Error`→Error(msg)); `Release`/
-focus-loss → Finalizing. Push-to-toggle semantics: the indicator walks
-Recording → Transcribing → [toggle] → Finalizing → Hidden, showing the
-distinct transcribing state mid-session before the user toggles again. The
-select loop is **biased** (drain buffered liveness before a coincident
-Release/focus edge), and focus-loss is handled **before** the trigger so it
-wins (end safely).
+`Transcribing`→**Recording**, `Done`→Hidden, `Error`→Error(msg)); `Release`/
+focus-loss → Finalizing. The indicator walks Recording → [release] → Finalizing
+→ Hidden. **`Transcribing` maps to `Recording` (listening), not a distinct
+"working" look**: streaming / re-decode adapters emit `transcribing` progress
+*while the key is still held and the user is still speaking*, so projecting it
+mid-utterance reads wrong — the visible phase is trigger-driven (listening while
+held, finishing after release). The internal `DictationState::Transcribing`
+still advances; it just isn't shown during capture. The select loop is
+**biased** (drain buffered liveness before a coincident Release/focus edge), and
+focus-loss is handled **before** the trigger so it wins (end safely).
 
 **Commit coalescing (2026-07-20).** `Final`s are **buffered** and inserted as a
 single `CommitText` at the next boundary (the terminal `done`, or any non-`Final`

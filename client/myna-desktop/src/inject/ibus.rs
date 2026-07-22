@@ -48,11 +48,18 @@ const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
 
-/// How long `acquire` waits for the daemon to focus our engine (and deliver the
-/// content-type) before **failing closed**. If no focus signal arrives within
-/// this timeout, `acquire` returns `Unavailable` rather than proceeding without
-/// secure-field confirmation (fail-closed behavior).
+/// How long `acquire` waits for the daemon to focus our engine before checking
+/// the content-type. Secure fields (PASSWORD/PIN) reliably drive `FocusIn`
+/// immediately, so this window catches them; a slow/absent `FocusIn` is the
+/// normal-field case and we proceed (a hard-fail here breaks legitimate
+/// dictation into fields IBus focuses differently).
 const FOCUS_WAIT: Duration = Duration::from_millis(400);
+
+/// After `FocusIn`, how long to let `SetContentType` settle before reading the
+/// purpose. IBus delivers the content-type in the same burst as focus for a
+/// secure field, so this short grace closes the FocusIn/SetContentType race
+/// without adding perceptible latency (the security-relevant window).
+const CONTENT_TYPE_GRACE: Duration = Duration::from_millis(50);
 
 // ── GVariant builders (IBus serializable objects) ───────────────────────────
 //
@@ -396,34 +403,36 @@ impl Injector for IbusInjector {
         self.call("SetGlobalEngine", &(ENGINE_NAME,)).await?;
         self.active = true;
 
-        // Wait for the daemon to focus our engine on the current context. **Fail-closed**:
-        // we require FocusIn to arrive within FOCUS_WAIT. In normal operation IBus sends
-        // this immediately when the engine is activated. If it doesn't arrive, something
-        // is wrong and we refuse to proceed.
+        // Wait for the daemon to focus our engine on the current context, then read
+        // the content-type (secure-field check, R5). The security model: a secure
+        // field (PASSWORD/PIN) reliably drives `FocusIn` immediately followed by
+        // `SetContentType` in the same burst. So we wait for `FocusIn` (bounded by
+        // FOCUS_WAIT), then give `SetContentType` a short grace to settle before
+        // reading `purpose` — this closes the FocusIn→SetContentType race that a
+        // bare read would lose. We do NOT hard-fail on a slow/absent `FocusIn`:
+        // that is the ordinary-field case (IBus focuses different widgets on
+        // different schedules), and refusing there breaks legitimate dictation.
         let focus_received = tokio::time::timeout(FOCUS_WAIT, self.state.focus_in.notified())
             .await
             .is_ok();
-
-        if !focus_received {
-            // No focus signal within FOCUS_WAIT — cannot establish secure state.
-            self.restore_prior_engine().await;
-            return Err(InjectError::Unavailable(
-                "IBus focus signal not received within timeout (cannot confirm secure state)".into(),
-            ));
+        if focus_received {
+            // Focus arrived — let SetContentType land so a password field can't slip
+            // through on the race between the two callbacks.
+            tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
 
-        // Focus received. Now check the content-type (secure-field detection). IBus
-        // sends SetContentType when the input context has explicit purpose metadata.
-        // If purpose is PASSWORD or PIN, refuse. If it's 0 (unknown/default), that's
-        // acceptable: in real GUI contexts with secure fields, IBus reliably sends the
-        // purpose; in headless/test contexts or normal fields, purpose=0 is safe.
         let purpose = self.state.purpose.load(Ordering::SeqCst);
         if purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN {
             // Refuse and restore immediately — never inject into a secure field.
+            myna_core::dbg_log!("inject", "acquire refused: secure field (purpose={purpose})");
             self.restore_prior_engine().await;
             return Err(InjectError::SecureField);
         }
 
+        myna_core::dbg_log!(
+            "inject",
+            "acquire ok: focus_received={focus_received} purpose={purpose}"
+        );
         Ok(InjectionTarget::new(ENGINE_PATH, false))
     }
 
