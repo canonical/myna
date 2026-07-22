@@ -416,6 +416,12 @@ impl DesktopController {
         }
 
         advance(&mut self.state, DictationState::Idle);
+        // Drain any hotkey pokes that queued while we were in Finalizing (with
+        // the trigger paused): otherwise the outer `run()` loop would deliver
+        // them one-by-one on next_edge(), each flipping the toggle and driving
+        // a ghost Recording→Finalizing cycle per spam poke. No-op for
+        // hold-to-talk triggers (portal / stdin) where every edge is real.
+        self.trigger.discard_pending().await;
         let _ = quit_after; // the outer `run` loop re-reads the trigger (now None)
     }
 
