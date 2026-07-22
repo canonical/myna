@@ -1,181 +1,168 @@
 # CLAUDE.md — UbuSTT (myna) project context
 
 Lean context for a coding agent. **`docs/project-plan.md` is the living task
-tracker (stable global IDs, currently T01–T55) — read it first** for status and
+tracker (stable global IDs, currently T01–T56) — read it first** for status and
 next steps.
 
+## Working on this repo (spec-kit)
+
+Spec-kit (speckit) was adopted **mid-development** (2026-07-15), so the repo has
+a "before" and "after": early work landed ad-hoc against `docs/project-plan.md`;
+features **002 (native PipeWire backend)**, **003 (desktop injection)**, and
+**004 (GNOME Shell indicator)** were built through the spec-driven flow under
+`specs/NNN-*/`, governed by `.specify/memory/constitution.md` (v1.3.0). **New
+work should use the spec-kit workflow** — see the `speckit-*` skills
+(`specify` → `plan` → `tasks` → `implement`, plus `clarify`/`analyze`/`checklist`).
+
 Two task-numbering schemes exist and do **not** correspond: the plan's global
-`TNN` IDs, and the per-feature `T0NN` numbers inside each
-`specs/NNN-*/tasks.md` (spec-kit-local). E.g. plan **T52** (native PipeWire
-backend) was delivered as feature `002-native-pipewire-backend`, whose own tasks
-run T001–T038. When a task ID is ambiguous, say which scheme.
+`TNN` IDs, and the per-feature `T0NN` numbers inside each `specs/NNN-*/tasks.md`.
+E.g. plan **T52** (native PipeWire backend) shipped as feature
+`002-native-pipewire-backend`, whose own tasks run T001–T038. When a task ID is
+ambiguous, say which scheme.
+
+The constitution binds shipped Rust components (TDD, integration-readiness,
+performance watermarks, Workshop dev env, privacy/offline). The Python
+testbed/`myna-server` and the GJS extension are **evaluation-harness tier** —
+exempt from strict TDD / watermarks / the Rust-language rule, but still bound by
+the privacy + offline invariants.
 
 ## What this is
 
-Ubuntu Desktop speech-to-text (dictation): hold a hotkey, speak, transcribed
+Ubuntu Desktop speech-to-text (dictation): activate a hotkey, speak, transcribed
 text is inserted into the focused app. Local, offline, privacy-preserving — no
 cloud, no persistent audio.
 
 ## Code map
 
-- `server/src/myna/` — the **Python** side. `myna.core` is the shared session contract
-  (audio / events / session / capabilities / protocol / transports, incl. the
-  IE115 wire codec). **It is load-bearing, not legacy**: `myna.server` (the
+- `server/src/myna/` — the **Python** side. `myna.core` is the shared session
+  contract (audio / events / session / capabilities / protocol / transports,
+  incl. the IE115 wire codec). **Load-bearing, not legacy**: `myna.server` (the
   `myna-server` process the snaps ship), *every* `myna.testbed` adapter
-  (whisper / nemotron / qwen / fake / harness / sources), and the whole test
-  suite import it. The Ubuntu Desktop dictation client (T21/T22) is **not**
-  Python — it lives in the Rust `client/myna-desktop` crate (the former
-  `myna.desktop` interface stubs were retired once that contract landed in Rust).
-- `client/` — the **Rust** dictation client. `myna-core` *mirrors* that wire
-  contract for the client (+ the capture consumer traits); `myna-audio` is the
-  capture adapter; `myna-orchestrator` the session/residency FSM; `myna-cli` the
-  `myna-dictate` testbed binary; `myna-desktop` the shipped push-to-talk app
-  (hotkey + IBus injection + activity indicator, T21/T22). The production hot path.
+  (whisper / nemotron / qwen / fake / harness / sources), and the test suite all
+  import it.
+- `client/` — the **Rust** dictation client. `myna-core` mirrors the wire
+  contract (+ capture consumer traits); `myna-audio` is the capture adapter;
+  `myna-orchestrator` the session/residency FSM; `myna-cli` the `myna-dictate`
+  testbed binary; `myna-desktop` the shipped push-to-talk app (hotkey + IBus
+  injection + activity indicator + the `org.myna.Dictation` D-Bus publisher).
+  The production hot path.
+- `extensions/myna-shell/` — the **GJS** GNOME Shell extension (feature 004): a
+  focus-safe in-compositor dictation indicator ("goop"/ribbon) that consumes
+  `org.myna.Dictation` from `myna-desktop`. Pure UI — never captures, transcribes,
+  or injects. Non-Rust by platform necessity (in-compositor UI must be GJS).
+- `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model
+  family; strict confinement.
 - **Two `core`s on purpose.** Python `myna.core` (server + testbed) and Rust
   `myna-core` (client) are peer mirrors of one contract shipping in different
   processes/languages — not duplicates to collapse.
 
-## Current state (2026-07-20)
+## Current state
 
 - **Testbed**: harness + session contract over two transports (loopback,
-  WebSocket-UDS), same contract tests; fake adapter (permanent fixture); WAV +
-  live-mic sources; WER/CER metrics; capabilities discovery (T24); bench + matrix
-  aggregator (`dev/bench.py`, `dev/aggregate.py`). Two corpora, both regenerated
-  (gitignored), not committed: synthetic espeak (`fixtures/`,
-  `dev/generate_fixtures.py`) and **real recorded speech** (`corpus/real/`,
-  LibriSpeech CC-BY, `dev/fetch_real_corpus.py` — T25). Real WER is trustworthy;
-  synthetic WER is plumbing/latency only (Nemotron: 0% real vs 44.6% synthetic,
-  same model).
+  WebSocket-UDS); fake adapter (permanent fixture); WAV + live-mic sources;
+  WER/CER metrics; capabilities discovery; bench + matrix aggregator
+  (`dev/bench.py`, `dev/matrix.py`, `dev/aggregate.py`). Two corpora, both
+  regenerated (gitignored): synthetic espeak (`dev/generate_fixtures.py`) and
+  **real recorded speech** (`corpus/real/`, LibriSpeech, `dev/fetch_real_corpus.py`).
+  Real WER is trustworthy; synthetic WER is plumbing/latency only (Nemotron: 0%
+  real vs 44.6% synthetic, same model).
 - **Adapters** (built, hardware-verified): faster-whisper (AED), Nemotron /
-  FastConformer (native transducer), and **Qwen3-ASR** via a verified
-  pure-C/ctypes adapter (`qwen-c`, zero pip deps, multilingual CPU, shipped).
-  A vLLM/GPU runtime for Qwen3 lives on the `qwen3-vllm-gpu` branch (parked).
-  `myna-server --adapter whisper|nemotron|qwen-c` serves any on a UDS.
-- **Snaps**: `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` (one per family) —
-  modelctl/IE108, weights as components, GPU engines, idle-unload; run in strict
-  confinement. `qwen-snap` ships the pure-C CPU engine; a GPU engine for the
-  family is on the `qwen3-vllm-gpu` branch (showing runtimes are switchable per
-  family via the existing engine mechanism).
-- **Desktop client (Rust, built)**: two binaries. `myna-dictate` (`myna-cli`) is
-  the testbed/demo push-to-talk client — `myna-orchestrator`'s wire-agnostic
-  session/residency FSM capturing live mic audio through `myna-audio`'s **native
-  `pipewire-rs` backend** (`--mic`, node selection by stable `node.name`, channel
-  pick/downmix, `--list-devices`), speaking both the internal wire and IE115,
-  verified end-to-end against `myna-server`. **`myna-desktop`** is the shipped
-  dictation last-mile (T21/T22, feature 003-desktop-injection): a
-  `DesktopController` composing a GlobalShortcuts-portal hotkey, an
-  **IBus-over-`zbus`** text injector (commit-only, focus/secure-field safe), and
-  a GTK4 activity indicator over the same FSM — each boundary a trait with a
-  mock. Hermetic + gated (isolated-daemon IBus wire cycle) suites green; the
-  spoken run into a focused GNOME app is the on-hardware acceptance. See
-  `docs/desktop-injection.md`. `dev/dictate.py` is a Python live-mic demo of the
-  capture path.
-- **Spec (IE115)**: Workstream F **resolved (2026-07-01)** — the team settled on
-  IE115 as a *suitable subset* of OpenAI's Realtime API + additive events
-  (compat / remote-backend / industry-contribution). Adopted: our model-loading
-  **liveness event** (loading is a lifecycle state, not an error) and
-  **capabilities discovery as a separate models API**. Overruled for compat:
-  flat-profile + drop-`conversation.item`. Out of scope: translation. Full
-  mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
-  `docs/architecture/ie115-lifecycle.md`. Still open: error taxonomy (T31),
-  protocol versioning (T35), overload/lag signal, GPU memory pressure.
-- **Next**: the last-mile (T21/T22) is **done** (feature 003-desktop-injection) —
-  a spoken utterance now lands as text in the focused app via IBus. Remaining on
-  the desktop side are on-hardware acceptances (the manual spoken run; the
-  display/portal gated suites). Also open: bring the Python testbed extras + a
-  CUDA/GPU SDK under Workshop (T55, follow-up), and the workstream-E spec items
-  below. Inference snap server: Ivano.
-
-  (Audio adapter — workstream D, Charles — is **done**: `client/myna-audio` behind
-  the `AudioSource`/`CaptureBackend` seam, T49–T52 complete; the native
-  `pipewire-rs` backend is the **sole** live-capture path and the `pw-record`
-  subprocess was retired (feature 002 T033, branch `002f`). A Canonical
-  **Workshop** dev environment (`.workshop/myna.yaml` + in-project `pipewire` and
-  `desktop` SDKs — the latter adds gtk4/IBus/portal/D-Bus for `myna-desktop`) and
-  CI (`.github/workflows/ci.yml`, running the workshop's `lint` /
-  `test` / `py-test` actions) were added, closing Principle IV for the crate.)
+  FastConformer (native transducer), and Qwen3-ASR via a pure-C/ctypes adapter
+  (`qwen-c`, zero pip deps, multilingual CPU). `myna-server --adapter
+  whisper|nemotron|qwen-c|fake` serves any on a UDS. A Qwen3 vLLM/GPU runtime is
+  parked on `qwen3-vllm-gpu`.
+- **Client (Rust)**: `myna-dictate` is the testbed/demo push-to-talk client —
+  the wire-agnostic session/residency FSM over `myna-audio`'s native
+  `pipewire-rs` capture (`--mic`, node selection by stable `node.name`,
+  channel pick/downmix, `--list-devices`), speaking both the internal wire and
+  IE115. `myna-desktop` is the shipped last-mile: a `DesktopController` composing
+  a hotkey (GNOME shortcut / GlobalShortcuts portal), an IBus-over-`zbus` text
+  injector (commit-only, focus/secure-field safe), a GTK4 activity indicator, and
+  a `--dbus` mode serving `org.myna.Dictation` for the GNOME extension. See
+  `docs/desktop-injection.md`.
+- **GNOME extension** (feature 004): the focus-safe indicator on GNOME/Wayland,
+  where a normal client can't show an always-on-top overlay. `myna-desktop --dbus`
+  publishes state + audio level over `org.myna.Dictation`; the extension renders
+  it (Cairo VU ribbon + content-free status label) behind a swappable
+  `IndicatorView` seam. Contract in `specs/004-gnome-shell-indicator/`.
+- **Snaps**: one per family — modelctl, weights as components, GPU engines,
+  idle-unload, strict confinement.
+- **Open / next**: error taxonomy (T31, disposition must ride the wire), backend
+  discovery / model selection across snaps (T48), toolchain fully under Workshop
+  (T55), extension screen-reader announcements (T56). Inference snap server: Ivano.
 
 ## Invariants (don't violate)
 
 - **Audio-push**: the *client* owns PipeWire capture and pushes PCM; the STT
-  service has no microphone access. Design interfaces accordingly. The client
-  also owns format conversion: the service advertises accepted `input_formats`
-  (capabilities, T24) and **rejects** off-format audio — adapters never resample.
-- **Never persist audio; don't log transcription content by default.**
-- **Fix the adapter, not the harness.** The harness speaks only the IE114-shaped
+  service has no microphone access. The client also owns format conversion: the
+  service advertises accepted `input_formats` (capabilities) and **rejects**
+  off-format audio — adapters never resample.
+- **Never persist audio; don't log transcription content by default.** The
+  `org.myna.Dictation` bus and the indicator carry state + normalized level only.
+- **Fix the adapter, not the harness.** The harness speaks only the
   `myna.core` interfaces; all model messiness lives in adapters. The fake adapter
   is a permanent regression fixture.
-- **Transport behind an abstraction.** WebSocket-over-UDS is implemented
-  (`myna/core/transport_ws.py`; snaps serve `ws+unix`) — keep
-  adapters/harness transport-agnostic.
+- **Transport behind an abstraction.** WebSocket-over-UDS is the transport
+  (`myna/core/transport_ws.py`; snaps serve `ws+unix`) — keep adapters/harness
+  transport-agnostic.
 
 ## Transport & events
 
 WebSocket over a Unix socket: PCM binary frames in, JSON events out, one
 connection per session.
 
-The **server speaks first** (2026-07-06, hazard review): on connect it sends
-one `session.created` greeting carrying the served `protocol_version`
-(`myna.core.protocol`, T35) *and* the IE115 session defaults — so a stock
-OpenAI client (which waits for `session.created`) can't deadlock against the
-shape-sniff, and version-aware clients on either dialect learn the version.
-The internal client then declares `protocol_version` in `session.start`; on
-mismatch the server sends a terminal
-`transcription.error(unsupported_protocol_version)`. The version is in-band
-(not a WS subprotocol token) so it stays transport-agnostic, and it versions
-the whole contract — event vocab + config + capabilities shapes — as one
-number. Compat is **additive** (aligned with IE115, 2026-07-06): unknown event
+The **server speaks first**: on connect it sends a `session.created` greeting
+carrying the served `protocol_version` (`myna.core.protocol`) and IE115 session
+defaults — so a stock OpenAI client (which waits for `session.created`) can't
+deadlock against the shape-sniff, and version-aware clients learn the version
+in-band (not a WS subprotocol token, so it stays transport-agnostic). The version
+covers the whole contract as one number. Compat is **additive**: unknown event
 types / frames / phases are ignored on both ends, so adding an event is NOT a
-bump; bump only for semantic changes to existing events/shapes. The IE115
-dialect itself is declared unversioned-additive. Control frames carry a `type`
-key; transcript events carry an `event` key.
+bump — bump only for semantic changes to existing events/shapes. Control frames
+carry a `type` key; transcript events carry an `event` key.
 
-Event vocabulary (`myna.core.events`) — this is myna's **internal** contract.
-The team's wire direction is now IE115 (OpenAI-subset) event names
-(`session.*`, `input_audio_buffer.*`, `conversation.item.input_audio_transcription.*`)
-plus additive events (the liveness/`STATUS` event). This is now **implemented on
-both ends as a selectable wire dialect** (T43/T45/T46): `myna.core.wire_ie115`
-(Python codec) + shape-sniff dispatch in `transport_ws` (`WsUnixIe115Client`);
-`WsUnixIe115Backend` in Rust (`myna-dictate --dialect ie115 [--base64-audio]`).
-The internal flat vocab stays the semantic core; the codec translates on each
-end, so the Rust FSM is untouched. Verified across whisper/nemotron/qwen-c.
-IE115 connections are **persistent** (T47, 2026-07-06): multi-commit per
-connection, `final`↔`delta` / `done`↔`completed` (per-utterance `item_id`), the
-*client* closes after its commit's `completed`; close-before-`completed` is a
-`connection_closed` error, never a synthesised done. (Internal dialect stays
-one-shot; recorded intent is for it to retreat to loopback/testbed-only once
-IE115 is the team wire — see plan T48.) A `session.…transcription.model` the
-server doesn't serve is **rejected** (`model_not_available`), never silently
-substituted; which socket serves which model is T48 (backend discovery,
-unowned). Every `transcription.error` is terminal on the wire today — T31 must
-put any recoverable/advisory disposition **on the wire**, not in client code
-tables. See `docs/architecture/ie115-wire.md` (frame contract) and
-`docs/IE115-resolution.md`.
+**Two selectable wire dialects**, both implemented end-to-end (verified across
+whisper/nemotron/qwen-c):
+- **Internal** flat vocab (`myna.core.events`) — the semantic core.
+- **IE115** (OpenAI-Realtime-subset) event names (`session.*`,
+  `input_audio_buffer.*`, `conversation.item.input_audio_transcription.*`) plus
+  additive events (the liveness/`STATUS` event). `myna.core.wire_ie115` (Python
+  codec) + shape-sniff dispatch in `transport_ws`; `WsUnixIe115Backend` in Rust
+  (`myna-dictate --dialect ie115 [--base64-audio]`).
+
+The codec translates at each edge, so the FSM never changes when the dialect
+does. IE115 connections are **persistent** (multi-commit per connection,
+`final`↔`delta` / `done`↔`completed` with per-utterance `item_id`); the *client*
+closes after its commit's `completed`, and close-before-`completed` is a
+`connection_closed` error, never a synthesised done. A requested model the server
+doesn't serve is **rejected** (`model_not_available`), never silently
+substituted. Every `transcription.error` is terminal on the wire today — T31 must
+put any recoverable/advisory disposition **on the wire**, not in client tables.
+See `docs/architecture/ie115-wire.md` and `docs/IE115-resolution.md`.
+
 Internal vocab:
 - `transcription.progress` — liveness; `phase` is `preparing` (model loading),
-  `ready` (model resident, gate open, nothing decoding yet — client may send
-  audio), or `transcribing`. Optional unstable `snippet` for UI; never committed
-  text. The three phases map onto the IE115 `STATUS` liveness `state`.
+  `ready` (resident, gate open, nothing decoding yet — client may send audio), or
+  `transcribing`. Optional unstable `snippet` for UI; never committed text. Maps
+  onto the IE115 `STATUS` liveness `state`.
 - `transcription.final` — committed text for a segment; never retracted.
 - `transcription.done` — terminal; full transcript.
 - `transcription.error` — terminal; `code` + `message`.
 
 No `partial`/`replace`/epoch retraction (dropped as confusing). Adding an event?
-Document it here and flag it provisional (additive: old clients ignore it — no
-version bump needed).
+Document it here and flag it provisional (additive: old clients ignore it).
 
-Discovery: before a session a client may send `capabilities.query` (WS) /
-`client.capabilities()` and get a `Capabilities` doc (models, languages,
-`input_formats`, punctuation, translation) — `myna.core.capabilities`, T24,
-provisional.
+Discovery: before a session a client may send `capabilities.query` and get a
+`Capabilities` doc (models, languages, `input_formats`, punctuation, translation)
+— `myna.core.capabilities`, provisional.
 
 ## Models
 
 | Model | License | Notes |
 |---|---|---|
-| Whisper (faster-whisper) | MIT | AED; streaming is bolt-on chunked re-decode (LocalAgreement). CTranslate2. Built + snapped. |
-| Nemotron / FastConformer | — | Cache-aware RNNT, *natively streaming* (each frame once), `att_context_size` latency dial, native punctuation, English-only. NeMo. Built + snapped. |
-| Qwen3-ASR | Apache-2.0 | Multilingual (30 langs), LLM decoder, prompt biasing. Shipped via pure-C/OpenBLAS through ctypes (CPU, zero pip deps, verified). A vLLM/GPU runtime is on the `qwen3-vllm-gpu` branch (parked). |
+| Whisper (faster-whisper) | MIT | AED; streaming is bolt-on chunked re-decode (LocalAgreement). CTranslate2. |
+| Nemotron / FastConformer | — | Cache-aware RNNT, *natively streaming* (each frame once), `att_context_size` latency dial, native punctuation, English-only. NeMo. |
+| Qwen3-ASR | Apache-2.0 | Multilingual (30 langs), LLM decoder, prompt biasing. Shipped via pure-C/OpenBLAS through ctypes (CPU, zero pip deps). GPU runtime parked on `qwen3-vllm-gpu`. |
 
 Key distinction: native transducer (Nemotron) vs AED re-decode (Whisper) drives
 streaming latency / partial churn. The Open ASR Leaderboard (batch WER) can't
@@ -186,15 +173,15 @@ Model cache: `HF_HOME` fixed dir; `hf download` (resumable); verify offline with
 
 ## Environment & conventions
 
-- Tooling `uv`; GPU CUDA; PipeWire audio. Extras: `whisper`, `nemotron`.
-- New spec artifacts: plain text, IE114/UD129 house style. Design notes in
-  `docs/asr-inference-snap-design.md` + `docs/architecture/`.
+- Tooling `uv`; GPU CUDA; PipeWire audio. Python extras: `whisper`, `nemotron`.
+  Canonical dev env is Canonical **Workshop** (`.workshop/myna.yaml`).
+- New spec artifacts go under `specs/NNN-*/` via the spec-kit flow. Design notes
+  in `docs/asr-inference-snap-design.md` + `docs/architecture/`.
 
 ## Open questions (plan workstream E)
 
-Error model / stable codes (T31 — requirement recorded: disposition rides the wire);
-performance contract / latency SLOs (needs T12 lab runs); residency default policy
-(T29 — decided **together with** the client capture-buffer depth, see audio-adapter-api §6);
-backend discovery / model selection across snaps (T48, unowned); audio sample-encoding
-in `input_formats` (T33, **team discussion** — position recorded in the plan row:
-keep s16le, add an `encoding` discriminant, int16→float32 is decode-side reinterpretation).
+Error model / stable codes (T31 — disposition rides the wire); performance
+contract / latency SLOs (needs lab runs); residency default policy (T29, decided
+together with the client capture-buffer depth); backend discovery / model
+selection across snaps (T48); audio sample-encoding in `input_formats` (T33 —
+keep s16le, add an `encoding` discriminant).
