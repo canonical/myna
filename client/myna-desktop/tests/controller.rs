@@ -409,12 +409,12 @@ async fn full_session_walks_recording_finalizing_hidden() {
 
 #[tokio::test]
 async fn indicator_walks_recording_transcribing_finalizing_hidden() {
-    // A realistic push-to-talk: liveness (Loading/Ready/Transcribing) streams
-    // while recording, THEN the user releases (→ Finalizing), then the tail
-    // final + Done arrive (→ Hidden). The session emits liveness now and the
-    // tail only after the release (stop); the controller's biased select drains
-    // the buffered liveness before handling the release, so the order is
-    // deterministic (no timing).
+    // A realistic push-to-toggle: liveness (Loading/Ready/Transcribing) streams
+    // during the session, showing distinct Recording → Transcribing states, THEN
+    // the user toggles/releases (→ Finalizing), then the tail final + Done
+    // arrive (→ Hidden). The session emits liveness now and the tail only after
+    // the release (stop); the controller's biased select drains the buffered
+    // liveness before handling the release, so the order is deterministic (no timing).
     let staged = |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
         // Pre-buffer the liveness events so the biased select drains them before
         // it sees the (immediate, scripted) Release — deterministic, no timing.

@@ -57,9 +57,12 @@ Event routing (`route_event`): `Final` → committed text (commit-only — never
 `Snippet`); every liveness event → `Indicator::set_state` via the
 `OrchestratorEvent → IndicatorState` mapping (`Loading`/`Ready`→Recording,
 `Transcribing`→Transcribing, `Done`→Hidden, `Error`→Error(msg)); `Release`/
-focus-loss → Finalizing. The select loop is **biased** (drain buffered liveness
-before a coincident Release/focus edge), and focus-loss is handled **before** the
-trigger so it wins (end safely).
+focus-loss → Finalizing. Push-to-toggle semantics: the indicator walks
+Recording → Transcribing → [toggle] → Finalizing → Hidden, showing the
+distinct transcribing state mid-session before the user toggles again. The
+select loop is **biased** (drain buffered liveness before a coincident
+Release/focus edge), and focus-loss is handled **before** the trigger so it
+wins (end safely).
 
 **Commit coalescing (2026-07-20).** `Final`s are **buffered** and inserted as a
 single `CommitText` at the next boundary (the terminal `done`, or any non-`Final`
