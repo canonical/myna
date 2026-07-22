@@ -295,6 +295,14 @@ export class RibbonView {
             descriptor.statusText ? `Dictation: ${descriptor.statusText}` : 'Dictation');
 
         this._setPulsing(treatment.pulse);
+
+        // An error is terminal on the wire and may NOT be followed by an idle
+        // transition (e.g. no backend server running → nothing ever calls
+        // hide()). Since the goop is Shell chrome with no window decoration to
+        // close it, self-dismiss after the hold so the error shows its reason
+        // and then fades away on its own.
+        if (descriptor.isError)
+            this._scheduleErrorDismiss();
     }
 
     setLevel(rms, _peak) {
@@ -304,19 +312,26 @@ export class RibbonView {
 
     hide() {
         // Errors linger with their reason instead of vanishing (view policy).
+        // The dismiss may already be scheduled from show(); either way, hold.
         if (this._holdingError && this._actor !== null) {
-            if (this._errorHoldTimer === 0) {
-                this._errorHoldTimer = GLib.timeout_add(
-                    GLib.PRIORITY_DEFAULT, ERROR_HOLD_MS, () => {
-                        this._errorHoldTimer = 0;
-                        this._holdingError = false;
-                        this._dismiss();
-                        return GLib.SOURCE_REMOVE;
-                    });
-            }
+            this._scheduleErrorDismiss();
             return;
         }
         this._dismiss();
+    }
+
+    // Arm (once) the error hold → self-dismiss timer. Idempotent: a live hold
+    // is kept so repeated error/hide events don't restart the countdown.
+    _scheduleErrorDismiss() {
+        if (this._errorHoldTimer !== 0 || this._actor === null)
+            return;
+        this._errorHoldTimer = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, ERROR_HOLD_MS, () => {
+                this._errorHoldTimer = 0;
+                this._holdingError = false;
+                this._dismiss();
+                return GLib.SOURCE_REMOVE;
+            });
     }
 
     destroy() {
@@ -420,11 +435,17 @@ export class RibbonView {
         this._mode = null;
         if (actor !== null)
             actor.remove_all_transitions();
+        // Collapse in from the sides and vanish in the middle: pivot at the
+        // centre and squeeze scale_x → 0 (with a touch of vertical squeeze and
+        // a fade) for a smooth pinch-out.
+        box.remove_all_transitions();
+        box.set_pivot_point(0.5, 0.5);
         box.ease({
             opacity: 0,
-            scale_y: 0.6,
+            scale_x: 0.0,
+            scale_y: 0.85,
             duration: CLEAR_MS,
-            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
             onComplete: () => {
                 Main.layoutManager.removeChrome(box);
                 box.destroy();
