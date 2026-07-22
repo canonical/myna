@@ -33,7 +33,7 @@ use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::ZbusBus;
-use myna_desktop::dbus::DictationService;
+use myna_desktop::dbus::{DictationService, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::ibus::IbusInjector;
@@ -138,6 +138,7 @@ fn control_path(args: &Args) -> PathBuf {
 fn make_session(
     args: &Args,
     readiness: Option<Readiness>,
+    pump_bus: Option<SharedBus>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
     let socket = args.socket.clone().expect("daemon requires --socket");
     let language = args.language.clone();
@@ -151,22 +152,31 @@ fn make_session(
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let stop = source.stop_handle();
         let config = SessionConfig { language: language.clone(), ..Default::default() };
-        let run: SessionRun = match &readiness {
-            // --dbus: tee the event stream so the publisher can split
-            // loading/recording (R4); fresh cold readiness per session.
-            Some(r) => {
-                r.reset();
-                let r = r.clone();
-                Box::pin(async move {
+        // --dbus: pump the capture level meter onto org.myna.Dictation for the
+        // session's lifetime (the pump ends when the source drops its stats
+        // sender at session end). Grab the receiver before the source moves.
+        let pump = pump_bus
+            .clone()
+            .map(|bus| (bus, source.stats()));
+        let readiness = readiness.clone();
+        let run: SessionRun = Box::pin(async move {
+            if let Some((bus, stats)) = pump {
+                tokio::spawn(myna_desktop::dbus::pump::run(bus, stats));
+            }
+            // Tee the event stream so the publisher can split loading/recording
+            // (R4) when in --dbus mode; fresh cold readiness per session.
+            match readiness {
+                Some(r) => {
+                    r.reset();
                     let mut sink = ReadinessTee::new(ChannelSink(events), r);
                     run_dictation(&backend, config, source, &mut sink).await
-                })
+                }
+                None => {
+                    let mut sink = ChannelSink(events);
+                    run_dictation(&backend, config, source, &mut sink).await
+                }
             }
-            None => Box::pin(async move {
-                let mut sink = ChannelSink(events);
-                run_dictation(&backend, config, source, &mut sink).await
-            }),
-        };
+        });
         (run, stop)
     }
 }
@@ -176,6 +186,7 @@ async fn run_controller(
     args: Args,
     indicator: impl Indicator + 'static,
     readiness: Option<Readiness>,
+    pump_bus: Option<SharedBus>,
 ) -> ExitCode {
     let injector = match IbusInjector::connect().await {
         Ok(i) => i,
@@ -189,7 +200,7 @@ async fn run_controller(
     let builder = DesktopController::builder()
         .injector(injector)
         .indicator(indicator)
-        .session(make_session(&args, readiness));
+        .session(make_session(&args, readiness, pump_bus));
 
     let mut controller = if args.stdin {
         builder.trigger(StdinTrigger::new()).build()
@@ -341,7 +352,7 @@ fn run_headless(args: Args) -> ExitCode {
     let code = if args.dbus {
         rt.block_on(run_headless_dbus(args))
     } else {
-        rt.block_on(run_controller(args, NotifyIndicator::new(), None))
+        rt.block_on(run_controller(args, NotifyIndicator::new(), None, None))
     };
     println!("bye");
     code
@@ -357,14 +368,15 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
             let readiness = Readiness::new();
             let service = DictationService::new(bus);
             let indicator = DbusIndicator::new(service.bus(), readiness.clone());
+            let pump_bus = service.bus();
             eprintln!("serving org.myna.Dictation on the session bus");
-            run_controller(args, indicator, Some(readiness)).await
+            run_controller(args, indicator, Some(readiness), Some(pump_bus)).await
         }
         Err(e) => {
             eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
             eprintln!("  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale — e.g. a tmux/screen");
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            run_controller(args, NotifyIndicator::new(), None).await
+            run_controller(args, NotifyIndicator::new(), None, None).await
         }
     }
 }
@@ -386,7 +398,7 @@ fn run_with_overlay(args: Args) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        rt.block_on(run_controller(args, GtkIndicator::new(tx), None))
+        rt.block_on(run_controller(args, GtkIndicator::new(tx), None, None))
     });
 
     let _gtk_code = run_indicator_app(rx);

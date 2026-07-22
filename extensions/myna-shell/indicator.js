@@ -1,177 +1,288 @@
-// indicator.js — the goop actor + its Shell-chrome lifecycle (feature 004,
-// contracts extension.md X8–X12; geometry/animation per research R6).
+// indicator.js — RibbonView: the EXPERIMENTAL presentation (feature 004; one
+// implementation of the view.js IndicatorView seam). Everything here is
+// deliberately behind that interface so the team can redesign it, or a future
+// user theme can replace it, without touching the contract / proxy / states /
+// level pump. This is @cdunn's first-pass vision, not a settled design.
 //
-// The goop is an St.DrawingArea added to Main.layoutManager as *chrome* —
-// never a window, non-reactive, non-focusable — so it cannot take keyboard
-// focus by construction (X11/SC-001). (GNOME 48+ removed the chrome
-// input-region params — `affectsInputRegion`/`trackInput` no longer exist in
-// layout.js; a non-reactive chrome actor is pointer-transparent as-is.)
-// It exists only while the dictation state ≠ idle (push-to-talk, X3): show()
-// eases it in, hide() eases it out and destroys it, destroy() (extension
-// disable) tears down immediately with no leaked actors/transitions/signals
-// (X9).
+// A wide ribbon hanging under the top bar: a row of VU bars driven by the live
+// audio level, a content-free status label, a per-state colour/animation, and
+// errors held visible with their reason before clearing (so an error never
+// just vanishes). Added as Shell chrome — non-reactive, non-focusable — so it
+// can never take keyboard focus (X11/SC-001).
 //
-// Visual intent (cssClass/animation/a11yLabel) comes from the pure states.js;
-// the state colour comes from the `-myna-goop-color` custom property in
-// stylesheet.css so visuals are tunable without touching actor code (R6).
-// Per-state animations (breathe/ripple/shimmer/…) land with US2 (T021).
+// All the knobs are here at the top: tweak freely, reload, iterate.
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const GOOP_WIDTH = 120;
-const GOOP_HEIGHT = 96;
-// Ease-in/out well inside the activation/teardown latency targets (SC-003).
-const APPEAR_MS = 160;
-const CLEAR_MS = 180;
+import {levelToBars} from './vumeter.js';
 
-const FALLBACK_COLOR = {red: 0x35, green: 0x84, blue: 0xe4};
+// ── Tunables ────────────────────────────────────────────────────────────────
+const WIDTH_FRACTION = 0.8;      // ribbon spans ~80% of the monitor width
+const HEIGHT = 56;               // ribbon height (px)
+const BAR_COUNT = 48;            // VU bars across the ribbon
+const BAR_GAP = 3;               // px between bars
+const APPEAR_MS = 180;
+const CLEAR_MS = 220;
+const VU_FPS = 30;               // VU repaint cadence
+const ERROR_HOLD_MS = 3500;      // keep an error visible this long before clearing
 
-const GoopActor = GObject.registerClass(
-class GoopActor extends St.DrawingArea {
+// Per-state palette (RGB 0–255) + whether the state pulses. Colours chosen for
+// legible, conventional activity cues; edit here to reskin.
+const TREATMENTS = {
+    loading:      {rgb: [229, 165, 10],  pulse: true},   // amber — warming up
+    recording:    {rgb: [45, 194, 130],  pulse: false},  // green — listening (VU carries life)
+    transcribing: {rgb: [53, 132, 224],  pulse: false},  // blue — thinking
+    finalizing:   {rgb: [38, 162, 105],  pulse: true},   // deep green — confirming
+    error:        {rgb: [224, 27, 36],   pulse: true},   // red — problem
+    active:       {rgb: [143, 148, 168], pulse: true},   // neutral — unknown state
+};
+
+const RibbonActor = GObject.registerClass(
+class RibbonActor extends St.DrawingArea {
     _init() {
         super._init({
-            style_class: 'myna-goop',
-            // Never focusable, never clickable: focus-safety is the feature.
+            style_class: 'myna-ribbon',
             reactive: false,
             can_focus: false,
-            width: GOOP_WIDTH,
-            height: GOOP_HEIGHT,
+            height: HEIGHT,
             opacity: 0,
         });
-        this._color = FALLBACK_COLOR;
+        this._rgb = TREATMENTS.active.rgb;
+        this._bars = new Array(BAR_COUNT).fill(0.06);
         this.set_accessible_role(Atk.Role.STATUSBAR);
         this.connect('repaint', () => this._draw());
     }
 
-    /** Apply a states.js visual-intent record (cssClass + a11y label). */
-    setIntent(intent) {
-        this.style_class = intent.cssClass
-            ? `myna-goop ${intent.cssClass}`
-            : 'myna-goop';
-        if (intent.a11yLabel)
-            this.set_accessible_name(intent.a11yLabel);
-
-        const themeNode = this.get_theme_node();
-        const [found, color] = themeNode.lookup_color('-myna-goop-color', false);
-        this._color = found ? color : FALLBACK_COLOR;
+    setColor(rgb) {
+        this._rgb = rgb;
         this.queue_repaint();
     }
 
-    // The base goop geometry (R6): a droplet hanging from the top bar — flat
-    // top edge tucked under the panel, sides curving out into a round bulb.
+    setBars(bars) {
+        this._bars = bars;
+        this.queue_repaint();
+    }
+
     _draw() {
         const cr = this.get_context();
-        const [width, height] = this.get_surface_size();
-
-        const cx = width / 2;
-        const bulbR = Math.min(width, height) * 0.42;
-        const bulbCy = height - bulbR - 4;
-
-        cr.moveTo(cx - 14, 0);
-        cr.lineTo(cx + 14, 0);
-        cr.curveTo(
-            cx + 30, bulbCy - bulbR * 0.3,
-            cx + bulbR, bulbCy - bulbR * 0.5,
-            cx + bulbR, bulbCy);
-        cr.arc(cx, bulbCy, bulbR, 0, Math.PI);
-        cr.curveTo(
-            cx - bulbR, bulbCy - bulbR * 0.5,
-            cx - 30, bulbCy - bulbR * 0.3,
-            cx - 14, 0);
-        cr.closePath();
-
-        const {red, green, blue} = this._color;
-        cr.setSourceRGBA(red / 255, green / 255, blue / 255, 0.92);
-        cr.fillPreserve();
-        cr.setSourceRGBA(red / 255, green / 255, blue / 255, 0.35);
-        cr.setLineWidth(2.5);
-        cr.stroke();
-
+        const [w, h] = this.get_surface_size();
+        const n = this._bars.length;
+        const slot = w / n;
+        const barW = Math.max(1, slot - BAR_GAP);
+        const [r, g, b] = this._rgb;
+        cr.setSourceRGBA(r / 255, g / 255, b / 255, 0.95);
+        for (let i = 0; i < n; i++) {
+            const bh = Math.max(2, this._bars[i] * (h - 6));
+            const x = i * slot + (slot - barW) / 2;
+            const y = (h - bh) / 2;
+            // Rounded-ish bar via a filled rect (cheap; good enough for a VU).
+            cr.rectangle(x, y, barW, bh);
+        }
+        cr.fill();
         cr.$dispose();
     }
 });
 
-/**
- * Owns the goop's presence on the Shell chrome: at most one actor, created on
- * the first non-idle intent, eased out and destroyed on idle.
- */
-export class GoopIndicator {
+/** RibbonView — implements the view.js IndicatorView interface. */
+export class RibbonView {
     constructor() {
         this._actor = null;
+        this._label = null;
+        this._box = null;
         this._monitorsChangedId = 0;
+        this._vuTimer = 0;
+        this._errorHoldTimer = 0;
+        this._pulseHandle = null;
+        this._lastLevel = 0;
+        this._holdingError = false;
     }
 
-    /** Show (or retarget) the goop for a non-idle visual intent. */
-    show(intent) {
-        if (this._actor === null) {
-            this._actor = new GoopActor();
-            // Chrome above all windows; the only trackable params on GNOME
-            // 48+ are trackFullscreen/affectsStruts, both defaulting false.
-            Main.layoutManager.addTopChrome(this._actor);
-            this._monitorsChangedId = Main.layoutManager.connect(
-                'monitors-changed', () => this._position());
-            this._position();
-
-            // Appear: fade + grow from the panel edge (R6), pivoting at the
-            // top-center the goop hangs from.
-            this._actor.set_pivot_point(0.5, 0);
-            this._actor.set_scale(0.7, 0.7);
-            this._actor.ease({
-                opacity: 255,
-                scale_x: 1.0,
-                scale_y: 1.0,
-                duration: APPEAR_MS,
-                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-            });
+    show(descriptor) {
+        this._ensureActor();
+        // An error is held visible for a beat even if a hide() races in.
+        if (this._errorHoldTimer !== 0) {
+            GLib.source_remove(this._errorHoldTimer);
+            this._errorHoldTimer = 0;
         }
-        this._actor.setIntent(intent);
+        this._holdingError = !!descriptor.isError;
+
+        const treatment = TREATMENTS[descriptor.key] ?? TREATMENTS.active;
+        this._actor.setColor(treatment.rgb);
+        this._label.text = descriptor.statusText;
+        this._actor.set_accessible_name(
+            descriptor.statusText ? `Dictation: ${descriptor.statusText}` : 'Dictation');
+
+        this._setPulsing(treatment.pulse);
     }
 
-    /** Ease the goop out and destroy it (state returned to idle). */
+    setLevel(rms, _peak) {
+        this._lastLevel = rms;
+        this._lastLevelAt = GLib.get_monotonic_time();
+    }
+
     hide() {
-        const actor = this._actor;
-        if (actor === null)
+        // Errors linger with their reason instead of vanishing (view policy).
+        if (this._holdingError && this._actor !== null) {
+            if (this._errorHoldTimer === 0) {
+                this._errorHoldTimer = GLib.timeout_add(
+                    GLib.PRIORITY_DEFAULT, ERROR_HOLD_MS, () => {
+                        this._errorHoldTimer = 0;
+                        this._holdingError = false;
+                        this._dismiss();
+                        return GLib.SOURCE_REMOVE;
+                    });
+            }
             return;
+        }
+        this._dismiss();
+    }
+
+    destroy() {
+        this._stopTimers();
+        if (this._actor !== null)
+            this._actor.remove_all_transitions();
+        if (this._box !== null) {
+            Main.layoutManager.removeChrome(this._box);
+            this._box.destroy();
+        }
         this._detach();
-        actor.ease({
-            opacity: 0,
-            scale_x: 0.7,
-            scale_y: 0.7,
-            duration: CLEAR_MS,
-            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
-            onComplete: () => actor.destroy(),
+    }
+
+    // ── internals ────────────────────────────────────────────────────────────
+
+    _ensureActor() {
+        if (this._actor !== null)
+            return;
+        this._actor = new RibbonActor();
+        this._label = new St.Label({
+            style_class: 'myna-ribbon-label',
+            text: '',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        this._box = new St.BoxLayout({
+            style_class: 'myna-ribbon-box',
+            orientation: Clutter.Orientation.VERTICAL,
+            reactive: false,
+            can_focus: false,
+        });
+        this._box.add_child(this._actor);
+        this._box.add_child(this._label);
+
+        Main.layoutManager.addTopChrome(this._box);
+        this._monitorsChangedId = Main.layoutManager.connect(
+            'monitors-changed', () => this._position());
+        this._position();
+
+        this._box.set_pivot_point(0.5, 0);
+        this._box.set_scale(1.0, 0.6);
+        this._box.ease({
+            opacity: 255,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            duration: APPEAR_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+        });
+
+        this._startVu();
+    }
+
+    _startVu() {
+        if (this._vuTimer !== 0)
+            return;
+        this._vuTimer = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, Math.floor(1000 / VU_FPS), () => {
+                if (this._actor === null)
+                    return GLib.SOURCE_REMOVE;
+                const ageMs = this._lastLevelAt
+                    ? (GLib.get_monotonic_time() - this._lastLevelAt) / 1000
+                    : 9999;
+                this._actor.setBars(levelToBars(this._lastLevel, ageMs, BAR_COUNT));
+                return GLib.SOURCE_CONTINUE;
+            });
+    }
+
+    _setPulsing(on) {
+        if (this._actor === null)
+            return;
+        this._actor.remove_all_transitions();
+        if (!on) {
+            this._actor.opacity = 255;
+            return;
+        }
+        // A slow breathing pulse via a looping opacity transition.
+        this._actor.opacity = 255;
+        this._actor.ease({
+            opacity: 140,
+            duration: 900,
+            mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
+            autoReverse: true,
+            repeatCount: -1,
         });
     }
 
-    /** Immediate teardown (extension disable / Shell restart) — no leaks. */
-    destroy() {
-        if (this._actor !== null) {
-            this._actor.remove_all_transitions();
-            this._actor.destroy();
-        }
-        this._detach();
+    _dismiss() {
+        const box = this._box;
+        if (box === null)
+            return;
+        this._stopTimers();
+        this._detachSignals();
+        const actor = this._actor;
+        this._actor = null;
+        this._box = null;
+        this._label = null;
+        if (actor !== null)
+            actor.remove_all_transitions();
+        box.ease({
+            opacity: 0,
+            scale_y: 0.6,
+            duration: CLEAR_MS,
+            mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+            onComplete: () => {
+                Main.layoutManager.removeChrome(box);
+                box.destroy();
+            },
+        });
     }
 
-    _detach() {
+    _position() {
+        if (this._box === null)
+            return;
+        const monitor = Main.layoutManager.primaryMonitor;
+        const width = Math.round(monitor.width * WIDTH_FRACTION);
+        this._actor.width = width;
+        this._box.set_position(
+            monitor.x + Math.round((monitor.width - width) / 2),
+            monitor.y + Main.panel.height);
+    }
+
+    _stopTimers() {
+        if (this._vuTimer !== 0) {
+            GLib.source_remove(this._vuTimer);
+            this._vuTimer = 0;
+        }
+        if (this._errorHoldTimer !== 0) {
+            GLib.source_remove(this._errorHoldTimer);
+            this._errorHoldTimer = 0;
+        }
+    }
+
+    _detachSignals() {
         if (this._monitorsChangedId !== 0) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
             this._monitorsChangedId = 0;
         }
-        this._actor = null;
     }
 
-    // Center-top of the primary monitor, hanging just under the panel.
-    _position() {
-        if (this._actor === null)
-            return;
-        const monitor = Main.layoutManager.primaryMonitor;
-        this._actor.set_position(
-            monitor.x + Math.round((monitor.width - GOOP_WIDTH) / 2),
-            monitor.y + Main.panel.height);
+    _detach() {
+        this._detachSignals();
+        this._actor = null;
+        this._box = null;
+        this._label = null;
     }
 }
