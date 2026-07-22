@@ -34,12 +34,14 @@ export class DictationService {
     constructor({
         onStateChanged = null,
         onAvailabilityChanged = null,
+        onLevel = null,
         _watchName = null,
         _unwatchName = null,
         _createProxy = null,
     } = {}) {
         this._onStateChanged = onStateChanged ?? (() => {});
         this._onAvailabilityChanged = onAvailabilityChanged ?? (() => {});
+        this._onLevel = onLevel ?? (() => {});
         this._watchName = _watchName ??
             ((appeared, vanished) => Gio.bus_watch_name(
                 Gio.BusType.SESSION, BUS_NAME, Gio.BusNameWatcherFlags.NONE,
@@ -105,6 +107,10 @@ export class DictationService {
                     const [state, errorMessage] = params.deep_unpack();
                     this._setState(state, errorMessage);
                 }),
+            // Audio level (AudioRms/AudioPeak) updates arrive as property
+            // changes; forward the latest for the VU (content-free, energy only).
+            this._proxy.connect('g-properties-changed',
+                () => this._emitLevel()),
         ];
         this._available = true;
         this._onAvailabilityChanged(true);
@@ -115,6 +121,15 @@ export class DictationService {
         const errorMessage =
             this._proxy.get_cached_property('ErrorMessage')?.deep_unpack() ?? '';
         this._setState(state, errorMessage);
+        this._emitLevel();
+    }
+
+    _emitLevel() {
+        if (this._proxy === null)
+            return;
+        const rms = this._proxy.get_cached_property('AudioRms')?.deep_unpack() ?? 0;
+        const peak = this._proxy.get_cached_property('AudioPeak')?.deep_unpack() ?? 0;
+        this._onLevel(rms, peak);
     }
 
     _onVanished() {

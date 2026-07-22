@@ -1,76 +1,50 @@
-// states.js — PURE dictation-state → visual-intent mapping for the Myna goop
-// (feature 004-gnome-shell-indicator; data-model E1 + "State → visual-intent
-// mapping"; contract extension.md X1–X4, X6).
+// states.js — PURE dictation-state → *semantic descriptor* (feature
+// 004-gnome-shell-indicator; data-model E1). This is the STABLE layer: it maps
+// the org.myna.Dictation wire State to a content-free, presentation-free
+// descriptor. It says *what* the system is doing — never how to draw it.
+// Renderers (view.js implementations) own all pixels: colour, geometry,
+// animation. Swapping the look never touches this file.
 //
-// Consumed by indicator.js (the actor layer); unit-tested by
-// test/states.test.js without a Shell. The record is CSS-class + animation +
-// a11y label only — tunables live in stylesheet.css, and nothing here ever
-// carries transcript text (constitution V): inputs are the state string plus
-// an optional content-free error reason.
+// Unit-tested by test/states.test.js without a Shell. Inputs are the state
+// string plus an optional content-free error reason; nothing here ever carries
+// transcript text (constitution V, X6).
 
-// Visual intent for each known org.myna.Dictation State (additive wire enum —
-// unknowns fall through to ACTIVE_INTENT, never throw; X2).
-const INTENTS = {
-    loading: {
-        cssClass: 'myna-goop-loading',
-        animation: 'breathe',
-        a11yLabel: 'Dictation: loading model',
-    },
-    recording: {
-        cssClass: 'myna-goop-recording',
-        animation: 'ripple',
-        a11yLabel: 'Dictation: listening',
-    },
-    transcribing: {
-        cssClass: 'myna-goop-transcribing',
-        animation: 'shimmer',
-        a11yLabel: 'Dictation: transcribing',
-    },
-    finalizing: {
-        cssClass: 'myna-goop-finalizing',
-        animation: 'flash',
-        a11yLabel: 'Dictation: finishing',
-    },
-    error: {
-        cssClass: 'myna-goop-error',
-        animation: 'shake',
-        a11yLabel: 'Dictation: error',
-    },
+// The stable descriptor for each known State: a machine `key` (renderers switch
+// on this) and a human, content-free `statusText` (shown to the user / read by
+// Orca). Additive: unknown states fall through to ACTIVE, never throw (X2).
+const DESCRIPTORS = {
+    loading: {key: 'loading', statusText: 'Loading model…'},
+    recording: {key: 'recording', statusText: 'Listening'},
+    transcribing: {key: 'transcribing', statusText: 'Transcribing'},
+    finalizing: {key: 'finalizing', statusText: 'Finishing'},
+    error: {key: 'error', statusText: 'Error'},
 };
 
-// Unknown/extra states degrade to a neutral "active" treatment (FR-008, X2).
-const ACTIVE_INTENT = {
-    cssClass: 'myna-goop-active',
-    animation: 'pulse',
-    a11yLabel: 'Dictation: active',
-};
+// Unknown/extra states degrade to a neutral "active" descriptor (FR-008, X2).
+const ACTIVE = {key: 'active', statusText: 'Active'};
 
-// idle → no actor at all (push-to-talk, FR-002, X3).
-const HIDDEN_INTENT = {
-    cssClass: null,
-    animation: 'none',
-    a11yLabel: null,
-    hidden: true,
-};
+// idle → nothing shown (push-to-talk, FR-002, X3).
+const HIDDEN = {key: 'idle', statusText: '', hidden: true, isError: false};
 
 /**
- * Map an org.myna.Dictation State string to a visual-intent record
- * `{cssClass, animation, a11yLabel, hidden}`.
+ * Map an org.myna.Dictation State string to a semantic descriptor
+ * `{key, statusText, isError, hidden}`.
  *
  * @param {string} state - the wire State (idle|loading|recording|
  *     transcribing|finalizing|error, or an unknown additive value).
- * @param {string} [errorReason] - content-free reason shown only in the
- *     `error` a11y label (E3); ignored for every other state so caller text
- *     can never leak into a label (X6).
- * @returns {{cssClass: string|null, animation: string, a11yLabel: string|null, hidden: boolean}}
+ * @param {string} [errorReason] - content-free reason appended to the error
+ *     statusText (E3); ignored for every other state so caller text can never
+ *     leak into a non-error status (X6).
+ * @returns {{key: string, statusText: string, isError: boolean, hidden: boolean}}
  */
-export function stateToIntent(state, errorReason = '') {
+export function stateToDescriptor(state, errorReason = '') {
     if (state === 'idle' || state === null || state === undefined)
-        return {...HIDDEN_INTENT};
+        return {...HIDDEN};
 
-    const intent = INTENTS[state] ?? ACTIVE_INTENT;
-    let a11yLabel = intent.a11yLabel;
-    if (state === 'error' && errorReason !== '')
-        a11yLabel = `Dictation: error — ${errorReason}`;
-    return {...intent, a11yLabel, hidden: false};
+    const base = DESCRIPTORS[state] ?? ACTIVE;
+    const isError = base.key === 'error';
+    let statusText = base.statusText;
+    if (isError && errorReason !== '')
+        statusText = `Error — ${errorReason}`;
+    return {key: base.key, statusText, isError, hidden: false};
 }

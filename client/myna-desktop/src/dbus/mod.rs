@@ -10,6 +10,7 @@
 //! well-known name and serves `/org/myna/Dictation` lands in the polish phase
 //! (contract publisher.md P13–P15).
 
+pub mod pump;
 pub mod serve;
 
 /// Well-known bus name owned by `myna-desktop --dbus` (contract §Bus topology).

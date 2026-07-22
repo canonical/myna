@@ -9,7 +9,7 @@
 import System from 'system';
 
 import {DictationService} from '../dbus.js';
-import {stateToIntent} from '../states.js';
+import {stateToDescriptor} from '../states.js';
 
 let failures = 0;
 
@@ -41,6 +41,8 @@ function makeStubBus(initialState = 'idle') {
     const proxy = {
         state: initialState,
         errorMessage: '',
+        rms: 0,
+        peak: 0,
         _handlers: {},
         connect(signal, cb) {
             this._handlers[signal] = cb;
@@ -50,7 +52,13 @@ function makeStubBus(initialState = 'idle') {
             calls.disconnected++;
         },
         get_cached_property(name) {
-            return variant(name === 'State' ? this.state : this.errorMessage);
+            switch (name) {
+            case 'State': return variant(this.state);
+            case 'ErrorMessage': return variant(this.errorMessage);
+            case 'AudioRms': return variant(this.rms);
+            case 'AudioPeak': return variant(this.peak);
+            default: return null;
+            }
         },
         // Test driver: emit StateChanged as the real publisher would.
         emitStateChanged(state, errorMessage = '') {
@@ -58,6 +66,12 @@ function makeStubBus(initialState = 'idle') {
             this.errorMessage = errorMessage;
             this._handlers['g-signal']?.(
                 this, null, 'StateChanged', variant([state, errorMessage]));
+        },
+        // Test driver: emit an audio-level property change.
+        emitLevel(rms, peak = rms) {
+            this.rms = rms;
+            this.peak = peak;
+            this._handlers['g-properties-changed']?.(this, variant({}), []);
         },
     };
 
@@ -87,24 +101,29 @@ function makeStubBus(initialState = 'idle') {
 function makeWiredService(initialState = 'idle') {
     const stub = makeStubBus(initialState);
     const shown = [];
+    const levels = [];
     let hides = 0;
-    const spyIndicator = {
-        show: intent => shown.push(intent),
+    // A spy IndicatorView (view.js shape): records what it's told to render.
+    const spyView = {
+        show: descriptor => shown.push(descriptor),
+        setLevel: (rms, peak) => levels.push([rms, peak]),
         hide: () => hides++,
+        destroy: () => {},
     };
     const service = new DictationService({
         onStateChanged: (state, errorMessage) => {
-            const intent = stateToIntent(state, errorMessage);
-            if (intent.hidden)
-                spyIndicator.hide();
+            const descriptor = stateToDescriptor(state, errorMessage);
+            if (descriptor.hidden)
+                spyView.hide();
             else
-                spyIndicator.show(intent);
+                spyView.show(descriptor);
         },
+        onLevel: (rms, peak) => spyView.setLevel(rms, peak),
         _watchName: stub.watchName,
         _unwatchName: stub.unwatchName,
         _createProxy: stub.createProxy,
     });
-    return {stub, service, shown, hides: () => hides};
+    return {stub, service, shown, levels, hides: () => hides};
 }
 
 // --- X7: enable() with the name absent stays dormant (no actor, no error) --
@@ -122,21 +141,26 @@ function makeWiredService(initialState = 'idle') {
 // --- X8: name-appeared connects + reflects current State; vanished → idle --
 
 {
-    const {stub, service, shown, hides} = makeWiredService('recording');
+    const {stub, service, shown, levels, hides} = makeWiredService('recording');
     service.enable();
     stub.appear();
     eq('X8 proxy created on appeared', stub.calls.proxyCreated, 1);
     check('X8 service reports available', service.available);
-    eq('X8 reflects current State', shown.at(-1)?.cssClass, 'myna-goop-recording');
+    eq('X8 reflects current State', shown.at(-1)?.key, 'recording');
     eq('X8 service state mirrors', service.state, 'recording');
 
     // Live transitions flow through the signal.
     stub.proxy.emitStateChanged('transcribing');
-    eq('X8 signal drives the actor', shown.at(-1)?.cssClass,
-        'myna-goop-transcribing');
-    stub.proxy.emitStateChanged('error', 'no text field is focused');
-    eq('X8 error reason reaches the label', shown.at(-1)?.a11yLabel,
-        'Dictation: error — no text field is focused');
+    eq('X8 signal drives the view', shown.at(-1)?.key, 'transcribing');
+    stub.proxy.emitStateChanged('error', 'no audio source available');
+    eq('X8 error reason reaches the status', shown.at(-1)?.statusText,
+        'Error — no audio source available');
+    check('X8 error descriptor flagged', shown.at(-1)?.isError === true);
+
+    // Audio level property changes are forwarded for the VU.
+    stub.proxy.emitLevel(0.42, 0.6);
+    eq('X8 level forwarded to the view', JSON.stringify(levels.at(-1)),
+        JSON.stringify([0.42, 0.6]));
 
     stub.vanish();
     check('X8 vanished → unavailable', !service.available);
@@ -153,7 +177,8 @@ function makeWiredService(initialState = 'idle') {
     stub.appear();
     service.disable();
     eq('X9 name unwatched on disable', stub.calls.unwatched, 1);
-    eq('X9 proxy disconnected on disable', stub.calls.disconnected, 1);
+    // Both proxy subscriptions (StateChanged + properties-changed) are dropped.
+    eq('X9 proxy signals disconnected on disable', stub.calls.disconnected, 2);
 
     // Signals after disable are dead: the watch is gone, so nothing can fire.
     check('X9 service reports unavailable after disable', !service.available);
@@ -187,8 +212,7 @@ function makeWiredService(initialState = 'idle') {
     stub.appear();
     eq('X10 re-watched on re-enable', stub.calls.watched, 2);
     eq('X10 fresh proxy on re-appear', stub.calls.proxyCreated, 2);
-    eq('X10 reflects current State again', shown.at(-1)?.cssClass,
-        'myna-goop-transcribing');
+    eq('X10 reflects current State again', shown.at(-1)?.key, 'transcribing');
     service.disable();
 }
 
