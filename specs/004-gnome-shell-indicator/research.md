@@ -108,7 +108,23 @@ cache and lets the extension pull the latest without buffering). Pushing raw PCM
 
 ## R6 — Goop geometry & animation (deferred design axis)
 
-**Decision**: A center-top **hanging blob** drawn in a `St.DrawingArea` via Cairo
+**SUPERSEDED (2026-07-22, on-hardware review with @cdunn)** — the center blob
+read as tightly-packed, the colour set was unintuitive (purple-while-speaking),
+and there was no visible status text or persistent error. Replaced by an
+**experimental `RibbonView`**: a ~80%-monitor-width ribbon under the panel with
+a Cairo **bar VU** driven by the live level, a content-free **status label**,
+a conventional palette (amber loading / green listening / blue transcribing /
+green finalizing / red error), and **errors held visible with their reason**
+before clearing. Crucially, *all* presentation now sits behind a new
+**`IndicatorView` seam** (`view.js`: `show`/`setLevel`/`hide`/`destroy` +
+`createView()` factory), with `states.js` reduced to a semantic descriptor
+(`{key, statusText, isError, hidden}`). The contract, proxy/lifecycle, state
+set, and Rust level pump are the *certain* layer; the look is swappable
+(team redesign / future user theme) without touching them. Both R6 and R7
+below are the original blob-and-glow vision, kept for context; the ribbon is
+likewise provisional. Diagrammed inline in `indicator.js`/`view.js`.
+
+**Original decision**: A center-top **hanging blob** drawn in a `St.DrawingArea` via Cairo
 (a rounded droplet whose bottom edge wobbles), sized ~à la an OSD, positioned by
 `Main.layoutManager` just under the panel. Animations via
 `Clutter.PropertyTransition` / `ease()`:
