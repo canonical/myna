@@ -545,6 +545,37 @@ async fn focus_out_finalizes_and_makes_no_further_commits() {
 }
 
 #[tokio::test]
+async fn focus_out_protection_holds_for_every_utterance() {
+    // Regression (observed live on Wayland): `focus_events` used to be
+    // single-consumer — utterance 1 took the stream, so utterances 2+ selected
+    // on an empty one and focus-loss was ignored; a session started in a
+    // terminal committed into a password field after a mid-session click
+    // (FR-014/FR-022 violation). Every utterance must receive focus events.
+    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Press],
+        injector,
+        MockIndicator::new(),
+        // Re-usable factory: each utterance buffers "first" and emits the tail
+        // + Done only after stop (commit-on-finalize shape).
+        two_segment_focus_session(SessionOutcome::Completed {
+            transcript: "first second".into(),
+        }),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.acquires, 2, "both utterances ran");
+    assert!(
+        log.commits.is_empty(),
+        "focus-out must suppress commits in EVERY utterance, got {:?}",
+        log.commits
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
 async fn target_gone_cancels_and_makes_no_further_commits() {
     // T033 / I9 / FR-022: the target window closes mid-session — discard the
     // uncommitted tail, cancel (restore the engine), and notify (Error state).

@@ -105,6 +105,9 @@ pub trait Injector: Send {
 
     /// Take the focus/target-loss event stream for the acquired target. Returns
     /// an owned (`'static`) stream so the controller can select on it while
-    /// continuing to drive the injector (`commit`/`end`). Call once per session.
+    /// continuing to drive the injector (`commit`/`end`). Called **once per
+    /// session** — implementations MUST deliver focus events on every call, not
+    /// just the first (a single-consumer stream silently disables focus-loss
+    /// safety for utterances 2+).
     fn focus_events(&mut self) -> BoxStream<'static, FocusEvent>;
 }

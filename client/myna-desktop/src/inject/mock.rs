@@ -83,6 +83,9 @@ impl MockInjector {
     }
 
     /// Script focus events delivered on the `focus_events` stream (in order).
+    /// The script is delivered on **every** `focus_events` call — each utterance
+    /// gets its own focus stream, matching the real injector's broadcast (a
+    /// single-consumer stream hid a focus-loss safety bug for utterances 2+).
     pub fn with_focus_events(mut self, events: impl IntoIterator<Item = FocusEvent>) -> Self {
         self.focus = events.into_iter().collect();
         self
@@ -145,6 +148,6 @@ impl Injector for MockInjector {
     }
 
     fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
-        stream::iter(std::mem::take(&mut self.focus)).boxed()
+        stream::iter(self.focus.clone()).boxed()
     }
 }
