@@ -105,7 +105,27 @@ default; when on it prints transcript text (`myna_core::debug`).
   coalescing above). Commit-only — the engine never calls `UpdatePreeditText`.
 - **Focus/secure (R4/R5)**: `FocusOut` → a `FocusEvent::FocusOut` on the focus
   stream (controller ends safely, suppresses further commits); `SetContentType`
-  with `PASSWORD`/`PIN` purpose → `acquire` returns `Err(SecureField)`.
+  with `PASSWORD`/`PIN` purpose → refused. Checked at **two** points (F2):
+  `acquire` waits for `FocusIn` then lets `SetContentType` settle
+  (`FOCUS_WAIT`=400ms + `CONTENT_TYPE_GRACE`=50ms) before reading the purpose,
+  and `commit` re-reads the latest purpose each call — closing the window where
+  `SetContentType` arrives after `acquire` returned (late delivery, or a
+  mid-session focus change into a secure field). A slow/absent `FocusIn` is NOT
+  a hard-fail: that is the ordinary-field case, and refusing there breaks
+  legitimate dictation.
+
+**Residual risk (FR-021 "where undetectable", US4-4).** Detection is a *push*
+signal to our engine: if the field was focused *before* we became the global
+engine (the normal push-to-talk order), we see the content-type only if the
+stack re-delivers it on engine switch. On the X11 GTK-IM path the daemon does;
+on Wayland (Mutter translating `text-input-v3`) it has been observed NOT to for
+at least some secure fields (e.g. the GNOME Settings password entry), so
+`purpose` stays 0 and we cannot tell a password field from a notes field —
+dictation proceeds. This is a platform limitation, not a bypassable check: a
+hard-fail on "no content-type seen" would refuse every ordinary field too.
+Diagnose per-field with `MYNA_DEBUG=1` — the acquire/commit paths log
+`focus_received`, `purpose`, every `SetContentType`/`FocusIn`/`FocusOut`, and
+commit refusals.
 
 Verified: the connection handshake + GVariant shapes against the running daemon;
 the full register→activate→commit→restore cycle against an isolated IBus daemon
