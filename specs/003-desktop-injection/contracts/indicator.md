@@ -18,9 +18,10 @@ pub trait Indicator: Send {
 ```
 
 The controller maps `OrchestratorEvent` → `IndicatorState`:
-`Loading`→(preparing, shown as `Recording` with a loading hint) · `Ready`/capture→
+`Loading`→`Recording` (with a loading hint in some backends) · `Ready`→
 `Recording` · `Transcribing`→`Transcribing` · `Release`/`Finalizing`→`Finalizing`
-· `Done`→`Hidden` · `Error{message}`→`Error(message)`.
+· `Done`→`Hidden` · `Error{message}`→`Error(message)`. Push-to-toggle semantics:
+the indicator walks Recording → Transcribing → [toggle] → Finalizing → Hidden.
 
 ## Guarantees (each row → at least one test)
 
