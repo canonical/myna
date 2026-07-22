@@ -48,6 +48,11 @@ const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
 
+/// Whether an IBus input-purpose is a secure field we refuse to inject into.
+fn is_secure_purpose(purpose: u32) -> bool {
+    purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN
+}
+
 /// How long `acquire` waits for the daemon to focus our engine before checking
 /// the content-type. Secure fields (PASSWORD/PIN) reliably drive `FocusIn`
 /// immediately, so this window catches them; a slow/absent `FocusIn` is the
@@ -234,6 +239,7 @@ struct EngineObject {
 impl EngineObject {
     async fn focus_in(&self) {
         self.state.focused.store(true, Ordering::SeqCst);
+        myna_core::dbg_log!("inject", "IBus FocusIn received");
         self.state.focus_in.notify_waiters();
     }
 
@@ -245,6 +251,7 @@ impl EngineObject {
 
     async fn focus_out(&self) {
         self.state.focused.store(false, Ordering::SeqCst);
+        myna_core::dbg_log!("inject", "IBus FocusOut received");
         let _ = self.state.focus_tx.send(FocusEvent::FocusOut);
     }
 
@@ -254,7 +261,13 @@ impl EngineObject {
     }
 
     /// `SetContentType(purpose, hints)` — the secure-field signal (R5).
-    async fn set_content_type(&self, purpose: u32, _hints: u32) {
+    /// Metadata only (never field content), so safe to debug-log.
+    async fn set_content_type(&self, purpose: u32, hints: u32) {
+        myna_core::dbg_log!(
+            "inject",
+            "IBus SetContentType: purpose={purpose} hints={hints}{}",
+            if is_secure_purpose(purpose) { " (SECURE)" } else { "" }
+        );
         self.state.purpose.store(purpose, Ordering::SeqCst);
     }
 
@@ -422,7 +435,7 @@ impl Injector for IbusInjector {
         }
 
         let purpose = self.state.purpose.load(Ordering::SeqCst);
-        if purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN {
+        if is_secure_purpose(purpose) {
             // Refuse and restore immediately — never inject into a secure field.
             myna_core::dbg_log!("inject", "acquire refused: secure field (purpose={purpose})");
             self.restore_prior_engine().await;
@@ -443,6 +456,17 @@ impl Injector for IbusInjector {
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
         if text.is_empty() {
             return Ok(());
+        }
+        // Commit-time secure-field re-check (F2 hardening): `SetContentType` can
+        // arrive *after* `acquire` returned — late delivery on the
+        // Wayland/text-input-v3 path, or a mid-session focus change into a
+        // secure field. `acquire`'s check alone can't cover that window, so
+        // re-read the latest purpose here and never commit into a known-secure
+        // field (I5, FR-021).
+        let purpose = self.state.purpose.load(Ordering::SeqCst);
+        if is_secure_purpose(purpose) {
+            myna_core::dbg_log!("inject", "commit REFUSED: secure field (purpose={purpose})");
+            return Err(InjectError::SecureField);
         }
         self.conn
             .emit_signal(None::<&str>, ENGINE_PATH, ENGINE_IFACE, "CommitText", &(ibus_text(text),))
@@ -467,6 +491,23 @@ impl Injector for IbusInjector {
         match self.focus_rx.take() {
             Some(rx) => UnboundedReceiverStream::new(rx).boxed(),
             None => futures_util::stream::empty().boxed(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// I5/FR-021: PASSWORD and PIN purposes are the secure set, checked both at
+    /// `acquire` and at `commit` (late SetContentType delivery).
+    #[test]
+    fn secure_purpose_classification() {
+        assert!(is_secure_purpose(PURPOSE_PASSWORD));
+        assert!(is_secure_purpose(PURPOSE_PIN));
+        // 0 (unknown/default) and ordinary purposes must not refuse.
+        for purpose in [0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 255] {
+            assert!(!is_secure_purpose(purpose), "purpose {purpose} must be injectable");
         }
     }
 }

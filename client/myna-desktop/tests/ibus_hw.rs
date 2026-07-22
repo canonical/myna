@@ -99,14 +99,18 @@ async fn ibus_commit_and_restore() {
 }
 
 /// T035 / I5, I8: focus-out from a focused entry emits `FocusEvent::FocusOut`,
-/// and a password-purpose entry (`SetContentType` PASSWORD) makes `acquire`
-/// return `Err(SecureField)`.
+/// and a password-purpose entry (`SetContentType` PASSWORD) makes both
+/// `acquire` and `commit` return `Err(SecureField)`.
 ///
 /// Both require a **focused GUI input context** (a real editable widget / a
 /// password field) that the isolated headless daemon does not provide, so the
 /// automated body only asserts the injector connects; the focus-out and
 /// secure-refusal edges are the manual GUI acceptance (quickstart step 4). The
-/// detection code lives in `inject::ibus` (FocusOut→stream; PASSWORD→SecureField).
+/// detection code lives in `inject::ibus` (FocusOut→stream; PASSWORD→SecureField
+/// at acquire AND at commit — the commit re-check covers `SetContentType`
+/// arriving after acquire, which the Wayland/text-input-v3 path does).
+/// Diagnose per-field with `MYNA_DEBUG=1`: every `FocusIn`/`FocusOut`/
+/// `SetContentType`, the acquire purpose read, and commit refusals are logged.
 #[tokio::test]
 async fn ibus_focus_and_secure_detection() {
     if !ibus_enabled() {

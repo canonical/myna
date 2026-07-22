@@ -80,6 +80,9 @@ pub trait Injector: Send {
     async fn set_activity(&mut self, active: bool);
 
     /// Insert stable committed text (never modified afterwards). Commit-only.
+    /// May return `Err(SecureField)` when the target's secure state became
+    /// known only after `acquire` (late content-type delivery) — backends
+    /// re-check on every commit (I5, FR-021).
     async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
 
     /// FUTURE (streaming preedit, R9): render a volatile in-flight hypothesis in
