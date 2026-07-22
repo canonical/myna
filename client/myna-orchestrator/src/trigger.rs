@@ -19,6 +19,14 @@ pub enum TriggerEdge {
 #[async_trait]
 pub trait Trigger: Send {
     async fn next_edge(&mut self) -> Option<TriggerEdge>;
+
+    /// Drop any edges that have queued up since the last `next_edge()` call
+    /// *without* delivering them — used by the controller between utterances
+    /// to swallow hotkey spam that arrived during finalization (so it doesn't
+    /// bounce the session straight back into another Recording→Finalizing
+    /// cycle). Default: nothing to drain (hold-to-talk sources emit no ghost
+    /// edges; a stray press during a session is a real user intent).
+    async fn discard_pending(&mut self) {}
 }
 
 /// Reads stdin lines and toggles `Press`/`Release` per line — the two-Enter
