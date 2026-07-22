@@ -98,7 +98,7 @@ impl ZbusBus {
     /// the well-known name (C1). `Err` when the bus is unreachable — the
     /// caller falls back to `NotifyIndicator` (P15).
     pub async fn serve() -> zbus::Result<Self> {
-        let conn = Connection::session().await?;
+        let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
         conn.object_server()
             .at(OBJECT_PATH, DictationObject { served: Arc::clone(&served) })
@@ -112,6 +112,57 @@ impl ZbusBus {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
+}
+
+/// Connect to the session bus, recovering from a stale `guid=` in
+/// `DBUS_SESSION_BUS_ADDRESS`.
+///
+/// A tmux/screen server (or any process) that survives logout keeps the
+/// *previous* session bus's address — same `unix:path=$XDG_RUNTIME_DIR/bus`,
+/// but with the old bus's `guid=`. libdbus/GIO ignore the guid hint and just
+/// connect; zbus verifies it and refuses ("Server GUID mismatch"). Since the
+/// socket path is authoritative and the guid is only an optional hint, on that
+/// specific failure we retry once with the guid stripped — matching every
+/// other D-Bus client — rather than dropping a working session to the
+/// notification fallback.
+async fn connect_session() -> zbus::Result<Connection> {
+    match Connection::session().await {
+        Err(zbus::Error::Handshake(msg)) if msg.contains("GUID mismatch") => {
+            let Some(address) = sanitized_session_address() else {
+                return Err(zbus::Error::Handshake(msg));
+            };
+            eprintln!(
+                "note: DBUS_SESSION_BUS_ADDRESS carries a stale guid (survived logout, \
+                 e.g. tmux/screen); retrying at the socket path without it"
+            );
+            zbus::conn::Builder::address(address.as_str())?.build().await
+        }
+        other => other,
+    }
+}
+
+/// `DBUS_SESSION_BUS_ADDRESS` with every `guid=…` hint dropped, or `None` when
+/// the variable is unset or had no guid to strip (nothing to retry).
+fn sanitized_session_address() -> Option<String> {
+    let raw = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok()?;
+    let stripped = strip_guid(&raw);
+    (stripped != raw).then_some(stripped)
+}
+
+/// Drop `guid=` key/value pairs from a D-Bus address (`;`-separated entries,
+/// each `transport:key=val,key=val`). Pure, for the unit test.
+fn strip_guid(address: &str) -> String {
+    address
+        .split(';')
+        .map(|entry| {
+            entry
+                .split(',')
+                .filter(|kv| !kv.starts_with("guid="))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 #[async_trait]
@@ -177,5 +228,34 @@ impl Bus for ZbusBus {
         if let Err(e) = result {
             myna_core::dbg_log!("dbus", "property set {name} failed: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_guid;
+
+    #[test]
+    fn strip_guid_removes_the_stale_hint_keeps_the_path() {
+        assert_eq!(
+            strip_guid("unix:path=/run/user/1000/bus,guid=07b3a7a2051b7e37"),
+            "unix:path=/run/user/1000/bus"
+        );
+    }
+
+    #[test]
+    fn strip_guid_is_a_noop_without_a_guid() {
+        let addr = "unix:path=/run/user/1000/bus";
+        assert_eq!(strip_guid(addr), addr);
+    }
+
+    #[test]
+    fn strip_guid_handles_multiple_address_entries() {
+        // dbus-daemon emits the guid as a trailing param; a bus address may
+        // list several `;`-separated entries.
+        assert_eq!(
+            strip_guid("unix:path=/run/user/1000/bus,guid=deadbeef;unix:abstract=/tmp/foo,guid=cafe"),
+            "unix:path=/run/user/1000/bus;unix:abstract=/tmp/foo"
+        );
     }
 }

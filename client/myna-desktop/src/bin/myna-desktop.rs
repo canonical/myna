@@ -362,6 +362,8 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
         }
         Err(e) => {
             eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
+            eprintln!("  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale — e.g. a tmux/screen");
+            eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
             run_controller(args, NotifyIndicator::new(), None).await
         }
     }
