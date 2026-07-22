@@ -120,17 +120,21 @@ default; when on it prints transcript text (`myna_core::debug`).
   legitimate dictation.
 
 **Residual risk (FR-021 "where undetectable", US4-4).** Detection is a *push*
-signal to our engine: if the field was focused *before* we became the global
-engine (the normal push-to-talk order), we see the content-type only if the
-stack re-delivers it on engine switch. On the X11 GTK-IM path the daemon does;
-on Wayland (Mutter translating `text-input-v3`) it has been observed NOT to for
-at least some secure fields (e.g. the GNOME Settings password entry), so
-`purpose` stays 0 and we cannot tell a password field from a notes field —
-dictation proceeds. This is a platform limitation, not a bypassable check: a
-hard-fail on "no content-type seen" would refuse every ordinary field too.
-Diagnose per-field with `MYNA_DEBUG=1` — the acquire/commit paths log
-`focus_received`, `purpose`, every `SetContentType`/`FocusIn`/`FocusOut`, and
-commit refusals.
+signal to our engine. **X11/XWayland apps**: GTK's IBus module talks to the
+daemon directly, so `SetContentType` reaches us and refusal works. **Wayland
+apps**: the field's content-type stops at the compositor — verified on GNOME
+Shell (libmutter-18, and even the newer mutter-51): the `ClutterInputMethod`
+bridge between Mutter's `text-input-v3` relay and the shell's IBus client has
+NO content-type entry point (its whole surface is commit/focus/preedit/
+surrounding/keys), and `ibusManager.js` has no content-type handling. The
+signal never enters the IBus daemon, so `purpose` stays 0 for every Wayland
+field — a password field is indistinguishable from a notes field (confirmed
+live with `MYNA_DEBUG=1`: `FocusIn` arrives promptly, `SetContentType` never
+does). This is a platform gap, not a bypassable check: hard-failing on "no
+content-type seen" would refuse every ordinary Wayland field too. The fix
+belongs upstream (mutter/gnome-shell IM bridge). Diagnose per-field with
+`MYNA_DEBUG=1` — the acquire/commit paths log `focus_received`, `purpose`,
+every `SetContentType`/`FocusIn`/`FocusOut`, and commit refusals.
 
 Verified: the connection handshake + GVariant shapes against the running daemon;
 the full register→activate→commit→restore cycle against an isolated IBus daemon
