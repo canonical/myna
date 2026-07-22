@@ -26,9 +26,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::stream::{BoxStream, StreamExt};
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tokio::sync::Notify;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::BroadcastStream;
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
 use zbus::Connection;
 
@@ -220,7 +220,10 @@ fn discover_address() -> Result<String, InjectError> {
 /// Shared engine state: the daemon's `FocusIn`/`FocusOut`/`SetContentType`
 /// callbacks land on the object; this state relays them to the injector.
 struct EngineState {
-    focus_tx: mpsc::UnboundedSender<FocusEvent>,
+    /// Focus-loss events are **broadcast**: every utterance subscribes its own
+    /// receiver, so focus-loss safety holds for session N, not just the first
+    /// (a single-consumer channel silently disabled it after utterance 1).
+    focus_tx: broadcast::Sender<FocusEvent>,
     /// Latest input-purpose from `SetContentType` (0 until one arrives).
     purpose: AtomicU32,
     /// Set once the daemon focuses our engine on a context.
@@ -306,7 +309,6 @@ impl FactoryObject {
 pub struct IbusInjector {
     conn: Connection,
     state: Arc<EngineState>,
-    focus_rx: Option<mpsc::UnboundedReceiver<FocusEvent>>,
     /// The global engine to restore on teardown (saved at `acquire`).
     prior_engine: Option<String>,
     /// True while our engine is the active/global one (drives restore-once).
@@ -331,7 +333,9 @@ impl IbusInjector {
             .await
             .map_err(|e| InjectError::Unavailable(format!("cannot connect to IBus: {e}")))?;
 
-        let (focus_tx, focus_rx) = mpsc::unbounded_channel();
+        // Capacity is generous for a 2-event vocabulary; a lagging session is
+        // treated as focus-lost (fail-safe) by `focus_events`.
+        let (focus_tx, _) = broadcast::channel(16);
         let state = Arc::new(EngineState {
             focus_tx,
             purpose: AtomicU32::new(0),
@@ -341,7 +345,6 @@ impl IbusInjector {
         Ok(Self {
             conn,
             state,
-            focus_rx: Some(focus_rx),
             prior_engine: None,
             active: false,
             objects_served: false,
@@ -488,10 +491,13 @@ impl Injector for IbusInjector {
     }
 
     fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
-        match self.focus_rx.take() {
-            Some(rx) => UnboundedReceiverStream::new(rx).boxed(),
-            None => futures_util::stream::empty().boxed(),
-        }
+        // Fresh subscription per utterance. If a session ever lags the
+        // broadcast (missed focus events), fail safe: synthesize a FocusOut so
+        // the controller finalizes instead of committing across a possible
+        // focus boundary (FR-014/FR-022).
+        BroadcastStream::new(self.state.focus_tx.subscribe())
+            .map(|r| r.unwrap_or(FocusEvent::FocusOut))
+            .boxed()
     }
 }
 

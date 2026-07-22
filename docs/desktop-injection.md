@@ -104,7 +104,12 @@ default; when on it prints transcript text (`myna_core::debug`).
   with a serialized `IBusText` (`(sa{sv}sv)`) **once per burst** (see commit
   coalescing above). Commit-only — the engine never calls `UpdatePreeditText`.
 - **Focus/secure (R4/R5)**: `FocusOut` → a `FocusEvent::FocusOut` on the focus
-  stream (controller ends safely, suppresses further commits); `SetContentType`
+  stream (controller ends safely, suppresses further commits). The stream is a
+  **broadcast** — every utterance subscribes its own receiver, so focus-loss
+  safety holds for session N, not just the first (a single-consumer channel
+  silently disabled it after utterance 1: observed live as text crossing a
+  mid-session focus change into another window); a lagging receiver is treated
+  as focus-lost (fail-safe). `SetContentType`
   with `PASSWORD`/`PIN` purpose → refused. Checked at **two** points (F2):
   `acquire` waits for `FocusIn` then lets `SetContentType` settle
   (`FOCUS_WAIT`=400ms + `CONTENT_TYPE_GRACE`=50ms) before reading the purpose,
