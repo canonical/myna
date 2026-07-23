@@ -1,0 +1,66 @@
+# Build the myna client snap and smoke-test the artifact under confinement.
+#
+# Distinct from ci.yml (Workshop build+test, constitution IV): snap builds
+# need snapcraft + LXD, not the Workshop toolchain — folding them under
+# Workshop is the recorded T55(c) follow-up. Same developer-local commands
+# (myna-snap/dev/prepare.sh && snapcraft pack), driven by the action.
+name: Snap
+
+on:
+  pull_request:
+    paths:
+      - "client/**"
+      - "myna-snap/**"
+      - ".github/workflows/snap.yml"
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - "myna-snap/**"
+      - ".github/workflows/snap.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # craft-parts local sources must live inside the project dir; stage the
+      # client workspace exactly as a local build does.
+      - name: Stage the client workspace
+        run: myna-snap/dev/prepare.sh
+
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: myna-snap
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myna-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 14
+
+  smoke:
+    name: Confined smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: myna-snap
+
+      # Strict confinement, sideloaded (store review interfaces like
+      # `pipewire` stay disconnected — nothing here needs them).
+      - name: Install the snap
+        run: sudo snap install --dangerous ./myna_*_amd64.snap
+
+      - name: Binaries run confined
+        run: |
+          myna --help
+          myna.testbed --help
+
+      - name: Offline invariant — no network plug in the manifest
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+          ! unsquashfs -no-progress -cat ./myna_*_amd64.snap meta/snap.yaml | grep -q -- "- network"
