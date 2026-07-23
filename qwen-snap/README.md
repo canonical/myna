@@ -41,6 +41,21 @@ network/GPU components — `snapcraft pack` produces `qwen_*.snap` +
 Model IDs are `0-6b` / `1-7b` (component names can't contain dots): e.g.
 `qwen use-model 0-6b`.
 
+## Confined clients (the `ubustt-socket` slot)
+
+`$SNAP_COMMON/run` (the session-socket dir) is exposed as a writable content
+share for strictly-confined clients — the `myna` dictation snap
+(`myna-snap/`):
+
+```shell
+sudo snap connect myna:backend qwen:ubustt-socket
+```
+
+The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
+Access control is "an admin connected the plug"; identity-based control is
+T17. **Note:** the slot is in `snap/snapcraft.yaml`; rebuild + reinstall the
+snap to get it.
+
 ## Adding the 1.7B model
 
 This build ships only `0-6b` (so it never declares a component with no weights).
