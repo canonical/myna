@@ -237,7 +237,7 @@ fn banner(args: &Args) {
     } else {
         println!("myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop.");
         println!("  if you haven't bound one yet: `myna-desktop --install-shortcut` (binds Super+D)");
-        println!("  or bind a GNOME custom shortcut to: `{} --toggle`", exe_path());
+        println!("  or bind a GNOME custom shortcut to: `{}`", toggle_command());
     }
 }
 
@@ -248,6 +248,18 @@ fn exe_path() -> String {
         .unwrap_or_else(|| "myna-desktop".to_string())
 }
 
+/// The command a desktop shortcut should invoke to poke the daemon. Under
+/// snap confinement `current_exe` is a *revisioned* path that goes stale on
+/// refresh — use the stable `/snap/bin/<instance>.toggle` entry instead.
+fn toggle_command() -> String {
+    if let Ok(instance) = std::env::var("SNAP_INSTANCE_NAME") {
+        if !instance.is_empty() {
+            return format!("/snap/bin/{instance}.toggle");
+        }
+    }
+    format!("{} --toggle", exe_path())
+}
+
 /// `--install-shortcut`: bind a GNOME custom keybinding to `myna-desktop
 /// --toggle`, appending to any existing custom keybindings (never clobbering).
 fn install_shortcut(accel: &str) -> ExitCode {
@@ -255,7 +267,7 @@ fn install_shortcut(accel: &str) -> ExitCode {
     const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
     const PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/";
     let kb_schema = format!("{SCHEMA}.custom-keybinding:{PATH}");
-    let command = format!("{} --toggle", exe_path());
+    let command = toggle_command();
 
     let gset = |args: &[&str]| Command::new("gsettings").args(args).status().map(|s| s.success()).unwrap_or(false);
 

@@ -19,7 +19,7 @@
 //! the user's global input method until restored.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -134,23 +134,80 @@ fn ibus_component() -> Value<'static> {
 
 // ── IBus address discovery ──────────────────────────────────────────────────
 
+/// The invoking user's real home, read from `/etc/passwd` (world-readable,
+/// including under snap confinement). Needed because snapd redirects `$HOME`
+/// (and the gnome runtime redirects `XDG_CONFIG_HOME`) into `~/snap/<name>/…`,
+/// while the IBus daemon writes its address file under the *real* home.
+fn real_home_from_passwd(user: &str, passwd: &str) -> Option<PathBuf> {
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        if fields.next()? == user {
+            // name:passwd:uid:gid:gecos:**home**:shell
+            fields.nth(4).filter(|h| !h.is_empty()).map(PathBuf::from)
+        } else {
+            None
+        }
+    })
+}
+
+/// Candidate `ibus/bus` directories, best first. Ordinarily this is just
+/// `$XDG_CONFIG_HOME/ibus/bus` / `~/.config/ibus/bus`; under snap confinement
+/// (`$SNAP` set) the real user's config dir is appended, since the snap-private
+/// `$HOME` never contains the daemon's address file.
+fn candidate_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut push_unique = |d: PathBuf| {
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    };
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            push_unique(PathBuf::from(xdg).join("ibus/bus"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            push_unique(PathBuf::from(home).join(".config/ibus/bus"));
+        }
+    }
+    if std::env::var_os("SNAP").is_some() {
+        if let Some(real) = std::env::var("USER")
+            .ok()
+            .and_then(|u| real_home_from_passwd(&u, &std::fs::read_to_string("/etc/passwd").unwrap_or_default()))
+        {
+            push_unique(real.join(".config/ibus/bus"));
+        }
+    }
+    dirs
+}
+
 /// Locate the IBus private-bus address: `$IBUS_ADDRESS`, else the socket file
-/// under `~/.config/ibus/bus/` (the file the daemon writes). We pick the entry
-/// matching the current display, and **validated** against liveness so a stale
-/// address file (e.g. left by a crashed/replaced daemon) yields an actionable
-/// error rather than a bare "connection refused".
+/// under `~/.config/ibus/bus/` (the file the daemon writes — every candidate
+/// dir from [`candidate_dirs`] is searched). We pick the entry matching the
+/// current display, and **validated** against liveness so a stale address file
+/// (e.g. left by a crashed/replaced daemon) yields an actionable error rather
+/// than a bare "connection refused".
 fn discover_address() -> Result<String, InjectError> {
     if let Ok(addr) = std::env::var("IBUS_ADDRESS") {
         if !addr.is_empty() {
             return Ok(addr);
         }
     }
-    let config = std::env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"));
-    let dir = config.join("ibus/bus");
-    let entries = std::fs::read_dir(&dir)
-        .map_err(|e| InjectError::Unavailable(format!("no IBus socket dir {}: {e}", dir.display())))?;
+    let dirs = candidate_dirs();
+    let first = dirs.first().cloned().unwrap_or_else(|| PathBuf::from("~/.config/ibus/bus"));
+    let mut files: Vec<PathBuf> = Vec::new();
+    for dir in &dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            files.extend(entries.filter_map(|e| e.ok().map(|e| e.path())));
+        }
+    }
+    if files.is_empty() {
+        return Err(InjectError::Unavailable(format!(
+            "no IBus socket dir {} (is an IBus daemon running? try `ibus restart`)",
+            first.display()
+        )));
+    }
 
     // Prefer a file whose name ends with the current Wayland/X display.
     let want = std::env::var("WAYLAND_DISPLAY")
@@ -158,13 +215,23 @@ fn discover_address() -> Result<String, InjectError> {
         .or_else(|_| std::env::var("DISPLAY").map(|d| format!("unix{}", d.replace(':', "-"))))
         .ok();
 
-    let mut files: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    pick_address(files, want.as_deref(), &first)
+}
+
+/// Rank the candidate address files (display match first, then newest) and
+/// take the first whose daemon is alive and whose socket exists.
+/// `searched` names the primary dir for error messages.
+fn pick_address(
+    mut files: Vec<PathBuf>,
+    want: Option<&str>,
+    searched: &Path,
+) -> Result<String, InjectError> {
     // Newest last, so the display match (if any) or the newest wins.
     files.sort_by_key(|p| p.metadata().and_then(|m| m.modified()).ok());
     // Rank display matches ahead of the rest, newest first within each group.
     let ranked: Vec<&PathBuf> = {
         let matches_display = |p: &&PathBuf| {
-            want.as_deref().is_some_and(|w| {
+            want.is_some_and(|w| {
                 p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(w))
             })
         };
@@ -210,7 +277,7 @@ fn discover_address() -> Result<String, InjectError> {
         )),
         None => InjectError::Unavailable(format!(
             "no usable IBus address in {} (is an IBus daemon running? try `ibus restart`)",
-            dir.display()
+            searched.display()
         )),
     })
 }
@@ -515,5 +582,100 @@ mod tests {
         for purpose in [0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 255] {
             assert!(!is_secure_purpose(purpose), "purpose {purpose} must be injectable");
         }
+    }
+
+    /// Snap confinement (feature 005): the real home is recovered from
+    /// /etc/passwd, since snapd redirects $HOME into ~/snap/<name>/.
+    #[test]
+    fn real_home_parsed_from_passwd() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      charles:x:1000:1000:Charles,,,:/home/charles:/bin/bash\n";
+        assert_eq!(
+            real_home_from_passwd("charles", passwd),
+            Some(PathBuf::from("/home/charles"))
+        );
+        assert_eq!(real_home_from_passwd("root", passwd), Some(PathBuf::from("/root")));
+        assert_eq!(real_home_from_passwd("nobody-here", passwd), None);
+        // Tolerates blank/garbage lines.
+        assert_eq!(real_home_from_passwd("charles", "\ngarbage\n"), None);
+    }
+
+    /// Write a fake IBus address file (+ its socket path, so liveness passes)
+    /// into `dir`; returns the file path. Uses *this* test process's PID so
+    /// the daemon-alive check holds.
+    fn fake_address_file(dir: &Path, name: &str, addr_suffix: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let sock = dir.join(format!("sock-{addr_suffix}"));
+        std::fs::write(&sock, []).unwrap();
+        let file = dir.join(name);
+        std::fs::write(
+            &file,
+            format!(
+                "IBUS_ADDRESS=unix:path={}\nIBUS_DAEMON_PID={}\n",
+                sock.display(),
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        file
+    }
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("myna-ibus-test-{}-{}", std::process::id(), tag));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The daemon's address file is found in ANY candidate dir (feature 005 —
+    /// under confinement the first dirs are snap-private and empty).
+    #[test]
+    fn address_found_in_later_candidate_dir() {
+        let snap_private = temp_dir("snap");
+        let real_home = temp_dir("real");
+        let file = fake_address_file(&real_home, "abc-unix-wayland-0", "real");
+
+        // Searching only the (empty) snap-private dir yields nothing…
+        let files: Vec<PathBuf> = std::fs::read_dir(&snap_private)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        assert!(pick_address(files, Some("unix-wayland-0"), &snap_private).is_err());
+
+        // …but with the real-home dir's entries included, the address is found.
+        let files: Vec<PathBuf> = std::fs::read_dir(&real_home)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        let addr = pick_address(files, Some("unix-wayland-0"), &snap_private).unwrap();
+        assert!(addr.starts_with("unix:path="), "{addr}");
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// A stale address file (dead daemon PID) is reported as stale, not used.
+    #[test]
+    fn stale_daemon_is_not_picked() {
+        let dir = temp_dir("stale");
+        std::fs::write(
+            dir.join("abc-unix-wayland-0"),
+            format!("IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=2\n", dir.display()),
+        )
+        .unwrap();
+        // PID 2 is not this process but is alive on Linux — use a PID that
+        // cannot exist instead.
+        std::fs::write(
+            dir.join("def-unix-wayland-0"),
+            format!("IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=4194303\n", dir.display()),
+        )
+        .unwrap();
+        let files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        let err = pick_address(files, Some("unix-wayland-0"), &dir).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("stale") || msg.contains("no usable"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -19,8 +19,12 @@ use tokio::net::{UnixListener, UnixStream};
 
 use super::{Trigger, TriggerEdge};
 
-/// The default control-socket path (`$XDG_RUNTIME_DIR/myna-desktop.sock`, else
-/// `/tmp`).
+/// The default control-socket path (`$XDG_RUNTIME_DIR/myna-desktop.sock`,
+/// else `/tmp`). Under snap confinement `$XDG_RUNTIME_DIR` is already
+/// snap-scoped (`/run/user/<uid>/snap.<instance>`) and writable, so the same
+/// filename works unchanged — a plain `$XDG_RUNTIME_DIR/myna-desktop.sock`
+/// would only break for a *confined* process with an unscoped runtime dir,
+/// which snapd never produces.
 pub fn default_socket_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
