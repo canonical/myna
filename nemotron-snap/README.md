@@ -53,6 +53,21 @@ Watch it: `sudo snap logs -f nemotron.server`; the socket appears at
 uv run python dev/dictate.py --socket /var/snap/nemotron/common/run/ubustt.sock
 ```
 
+## Confined clients (the `ubustt-socket` slot)
+
+`$SNAP_COMMON/run` (the session-socket dir) is exposed as a writable content
+share for strictly-confined clients — the `myna` dictation snap
+(`myna-snap/`):
+
+```shell
+sudo snap connect myna:backend nemotron:ubustt-socket
+```
+
+The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
+Access control is "an admin connected the plug"; identity-based control is
+T17. **Note:** the slot is in `snap/snapcraft.yaml`; rebuild + reinstall the
+snap to get it.
+
 ## The latency dial
 
 ```shell

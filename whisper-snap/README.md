@@ -13,7 +13,8 @@ PCM frames.
 service needs no network and downloads nothing at runtime. A `cpu` engine
 (baked-in venv) is verified; the `nvidia-gpu` engine + `faster-whisper-cuda`
 runtime component are scaffolded and need build verification on a CUDA box.
-Socket access control for confined clients is T14c/T17.
+Confined clients reach the socket via the `ubustt-socket` content share
+(T14c, below); identity-based access control remains T17.
 
 ## Build
 
@@ -56,6 +57,20 @@ Transcribe a fixture clip through the snap (from the repo root):
 uv run python dev/transcribe.py \
     --socket /var/snap/whisper/common/run/ubustt.sock quiet-weather
 ```
+
+## Confined clients (the `ubustt-socket` slot)
+
+The snap exposes `$SNAP_COMMON/run` (where the session socket lives) as a
+writable content share so strictly-confined clients — the `myna` dictation
+snap (`myna-snap/`) — can reach it:
+
+```shell
+sudo snap connect myna:backend whisper:ubustt-socket
+```
+
+The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
+Access control is "an admin connected the plug"; identity-based control is
+T17. Unconfined clients keep using the socket path directly.
 
 ## Model selection
 
