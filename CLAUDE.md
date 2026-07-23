@@ -50,6 +50,10 @@ cloud, no persistent audio.
   focus-safe in-compositor dictation indicator ("goop"/ribbon) that consumes
   `org.myna.Dictation` from `myna-desktop`. Pure UI — never captures, transcribes,
   or injects. Non-Rust by platform necessity (in-compositor UI must be GJS).
+- `myna-snap/` — the **client snap** (feature 005): packages `myna-desktop` +
+  `myna-dictate` as the strictly-confined `myna` snap (no `network` plug).
+  Reaches a backend snap's session socket over the `ubustt-socket` writable
+  content share (T14c); `dev/prepare.sh` stages `client/` before packing.
 - `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model
   family; strict confinement.
 - **Two `core`s on purpose.** Python `myna.core` (server + testbed) and Rust
@@ -87,6 +91,14 @@ cloud, no persistent audio.
   `IndicatorView` seam. Contract in `specs/004-gnome-shell-indicator/`.
 - **Snaps**: one per family — modelctl, weights as components, GPU engines,
   idle-unload, strict confinement.
+- **Client snap (feature 005)**: the orchestrator ships as the confined `myna`
+  snap (`myna-snap/`); backend socket via the `ubustt-socket` content share
+  (T14c resolved for confined clients — identity/polkit stays T17). Verified
+  confined end-to-end against the whisper snap; literal hotkey press + spoken
+  injection are human acceptance. CI: `.github/workflows/snap.yml` builds and
+  smoke-tests the snap. Packaging gotchas are recorded in the snapcraft.yaml
+  comments (no `gnome` extension for Rust builds; rust-plugin/rustup-1.29
+  workaround; the confined PipeWire staging set + XDG_RUNTIME_DIR symlink).
 - **Open / next**: error taxonomy (T31, disposition must ride the wire), backend
   discovery / model selection across snaps (T48), toolchain fully under Workshop
   (T55), extension screen-reader announcements (T56). Inference snap server: Ivano.
