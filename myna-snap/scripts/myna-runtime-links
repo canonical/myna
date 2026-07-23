@@ -1,0 +1,15 @@
+#!/bin/sh
+# Compat symlinks for the snap-scoped XDG_RUNTIME_DIR (the desktop-launch
+# pattern — forum.snapcraft.io/t/wayland-dconf-and-xdg-runtime-dir/186/10).
+# snapd points XDG_RUNTIME_DIR at /run/user/<uid>/snap.<name>, but the
+# session's sockets live one level up; PipeWire/Wayland clients resolve the
+# socket from $XDG_RUNTIME_DIR, so link the host sockets in. AppArmor
+# resolves the symlink to the host path, which the pipewire/wayland
+# interfaces allow. Sourced (not exec'd) by the app wrappers.
+for sock in pipewire-0 wayland-0; do
+    host="$XDG_RUNTIME_DIR/../$sock"
+    link="$XDG_RUNTIME_DIR/$sock"
+    if [ -S "$host" ] && [ ! -e "$link" ]; then
+        ln -s "$host" "$link" 2>/dev/null || true
+    fi
+done

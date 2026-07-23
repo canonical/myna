@@ -1,0 +1,170 @@
+# Myna dictation client snap (UbuSTT) — ships the Rust orchestrator.
+#
+# This is the mirror image of the inference snaps (whisper/nemotron/qwen):
+# under the audio-push invariant *this* snap owns the microphone, the hotkey,
+# and text injection; it captures PCM and pushes it to a backend snap's
+# session socket. The backend socket is reached over the `backend` content
+# share (T14c): the backend snap exports $SNAP_COMMON/run (writable content
+# slot `ubustt-socket`), bind-mounted here at $SNAP_DATA/backend.
+#
+# Deliberately NO `network` plug: dictation is local and offline; every
+# boundary is a Unix socket or the session bus (constitution V).
+#
+# Build:  ./dev/prepare.sh && snapcraft pack
+name: myna
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.75 # pipewire interface + writable content shares
+summary: Myna push-to-talk dictation (UbuSTT client)
+description: |
+  Local, offline push-to-talk dictation for the Ubuntu desktop. Tap the
+  hotkey, speak, tap again — the transcript is typed into the focused
+  application via IBus. Audio is captured by this snap (the inference snaps
+  have no microphone access) and pushed as PCM to a local backend snap
+  (whisper, nemotron, or qwen) over a Unix socket; nothing leaves the
+  machine and no audio is persisted.
+
+  Activation is hold/toggle-to-talk via the GlobalShortcuts portal; state
+  and the live audio level are published on org.myna.Dictation for the
+  myna-shell GNOME extension indicator. Feedback falls back to desktop
+  notifications.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # The staged libpipewire must find its SPA plugins inside the snap — its
+  # compiled-in default (/usr/lib/…/spa-0.2) resolves against the core24
+  # base, which has no spa-0.2 ("can't make support.system handle").
+  SPA_PLUGIN_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/spa-0.2
+  PIPEWIRE_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pipewire-0.3
+  PIPEWIRE_CONFIG_DIR: $SNAP/usr/share/pipewire
+
+apps:
+  # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
+  # NOTE: deliberately NO `gnome` extension — its build env points
+  # LD_LIBRARY_PATH at the core22-based gnome-46-2404-sdk, whose older glibc
+  # breaks every noble-linked build tool (rustup/cargo/ld: GLIBC_PRIVATE
+  # symbol errors). GTK4 is staged from noble instead (consistent glibc);
+  # the overlay is opt-in/experimental, and on GNOME the myna-shell
+  # extension is the real indicator anyway.
+  myna:
+    command: bin/myna-daemon
+    plugs:
+      - pipewire # mic capture — snapd gates it: `snap connect myna:pipewire`
+      - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
+      - desktop-legacy # the IBus daemon's private socket (text injection)
+      - gsettings # dconf write for --install-shortcut (control mode)
+      - wayland
+      - x11
+      - backend # content share → the backend snap's session socket
+    slots:
+      - dictation # org.myna.Dictation for the GNOME Shell indicator
+
+  # Poke the running daemon (control-socket activation mode):
+  # bind `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
+  toggle:
+    command: bin/myna-desktop --toggle
+
+  # Bind Super+D → `myna.toggle` via dconf (control-socket activation mode;
+  # not needed with the default portal activation). Uses dconf because the
+  # GNOME schemas are not visible inside the snap's core24 /usr — dconf
+  # writes need no schema, and the gsettings interface grants them.
+  install-shortcut:
+    command: bin/myna-install-shortcut
+    plugs:
+      - gsettings
+
+  # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
+  # dialect selection. `home` lets it read clips from the user's files.
+  testbed:
+    command: bin/myna-testbed
+    plugs:
+      - pipewire
+      - home
+      - backend
+
+# The backend session socket, shared by an inference snap (whisper /
+# nemotron / qwen). Manual connect (different publishers):
+#   sudo snap connect myna:backend whisper:ubustt-socket
+# One active backend at a time; multi-backend discovery/selection is T48.
+plugs:
+  backend:
+    interface: content
+    content: ubustt-socket
+    target: $SNAP_DATA/backend
+
+slots:
+  dictation:
+    interface: dbus
+    bus: session
+    name: org.myna.Dictation
+
+parts:
+  # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:
+  # its prologue env validation runs before any part builds, and with rustup
+  # 1.29 both its checks (`rustup dump-testament` with no default toolchain;
+  # `cargo --version` in the bare instance) fail before the toolchain it
+  # would install exists. A nil part + explicit toolchain is deterministic.
+  rust-deps:
+    plugin: nil
+    build-snaps:
+      - rustup
+    override-pull: |
+      rustup default stable
+
+  # The Rust workspace (client/), staged into this project by dev/prepare.sh
+  # (craft-parts local sources must live inside the project dir). Builds the
+  # shipped app (ui-gtk default feature: GTK4 overlay available) + the
+  # testbed CLI.
+  client:
+    plugin: nil
+    after: [rust-deps]
+    source: client
+    build-packages:
+      - curl
+      - gcc
+      - git
+      - pkg-config
+      - libclang-dev # bindgen, for pipewire-sys
+      - libpipewire-0.3-dev
+      - libgtk-4-dev # ui-gtk (default feature of myna-desktop)
+    override-build: |
+      toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
+      export PATH="$toolchain/bin:$PATH"
+      cargo install -f --locked --path myna-desktop --root "$CRAFT_PART_INSTALL"
+      cargo install -f --locked --path myna-cli --root "$CRAFT_PART_INSTALL"
+      rm -f "$CRAFT_PART_INSTALL"/.crates.toml "$CRAFT_PART_INSTALL"/.crates2.json
+    stage-packages:
+      - libpipewire-0.3-0
+      # protocol-native & friends: mandatory modules loaded by pw_context_new
+      # (PIPEWIRE_MODULE_DIR). libspa-0.2-modules comes in as a dependency.
+      - libpipewire-0.3-modules
+      - libgtk-4-1 # the ui-gtk overlay (staged from noble; see the apps note)
+      - libglib2.0-bin # gsettings, for reference/debug inside the snap
+
+  # PipeWire client config (client.conf & friends). In noble these ship in
+  # pipewire-bin (libpipewire-0.3-common is docs-only); pw_context_new treats
+  # a missing client.conf as fatal. Keep ONLY the config dir — not the
+  # pipewire daemon binaries the package also carries.
+  pipewire-config:
+    plugin: nil
+    stage-packages:
+      - pipewire-bin
+    prime:
+      - usr/share/pipewire
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - dconf-cli # dconf write, for myna-install-shortcut
+    organize:
+      "myna-daemon": bin/myna-daemon
+      "myna-testbed": bin/myna-testbed
+      "myna-install-shortcut": bin/myna-install-shortcut
+      "myna-runtime-links": bin/myna-runtime-links

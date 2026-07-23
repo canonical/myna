@@ -1,0 +1,48 @@
+#!/bin/sh
+# myna daemon launcher (snap): the shipped default wiring for myna-desktop —
+# GlobalShortcuts-portal hotkey + the org.myna.Dictation publisher for the
+# GNOME Shell indicator, against the backend socket shared over the
+# `backend` content interface.
+#
+# Env knobs (all optional):
+#   MYNA_BACKEND_SOCKET  backend socket path (default: the content share)
+#   MYNA_ACTIVATION      portal (default) | control | stdin
+#   MYNA_LANGUAGE        language hint for the session config
+# Extra args are appended, e.g. `myna --target <node.name>`.
+set -eu
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    exec "$SNAP/bin/myna-desktop" --help
+fi
+
+# PipeWire/Wayland compat symlinks (see bin/myna-runtime-links).
+. "$SNAP/bin/myna-runtime-links"
+
+# snapd appends the slot's source basename to the content target, so the
+# share of $SNAP_COMMON/run lands at $SNAP_DATA/backend/run.
+socket="${MYNA_BACKEND_SOCKET:-$SNAP_DATA/backend/run/ubustt.sock}"
+if [ ! -S "$socket" ]; then
+    echo "myna: no backend socket at $socket" >&2
+    echo "  install + connect a backend snap, e.g.:" >&2
+    echo "    sudo snap connect myna:backend whisper:ubustt-socket" >&2
+    echo "  (or point MYNA_BACKEND_SOCKET at a session socket)" >&2
+    exit 1
+fi
+
+activation="${MYNA_ACTIVATION:-portal}"
+args="--socket $socket --dbus"
+case "$activation" in
+    portal) args="$args --portal" ;;
+    control) ;; # control-socket daemon: poke it with `myna.toggle`
+    stdin) args="$args --stdin" ;;
+    *)
+        echo "myna: unknown MYNA_ACTIVATION=$activation (portal|control|stdin)" >&2
+        exit 1
+        ;;
+esac
+if [ -n "${MYNA_LANGUAGE:-}" ]; then
+    args="$args --language $MYNA_LANGUAGE"
+fi
+
+# shellcheck disable=SC2086
+exec "$SNAP/bin/myna-desktop" $args "$@"
