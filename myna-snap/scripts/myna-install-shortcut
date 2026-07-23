@@ -1,0 +1,28 @@
+#!/bin/sh
+# Bind a GNOME custom keyboard shortcut (default <Super>d) to `myna.toggle`
+# (control-socket activation mode). Uses `dconf` directly: inside the snap the
+# host's GSettings schemas are not visible (the base snap owns /usr), and
+# dconf writes need no schema — the `gsettings` interface grants
+# ca.desrt.dconf.Writer. Appends to any existing custom keybindings; never
+# clobbers.
+set -eu
+
+SCHEMA_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
+KB_PATH="$SCHEMA_PATH/myna/"
+ACCEL="${1:-<Super>d}"
+COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
+
+current="$(dconf read "$SCHEMA_PATH" || true)"
+case "$current" in
+    *"$KB_PATH"*) new_list="$current" ;;
+    "" | "[]" | "@as []") new_list="['$KB_PATH']" ;;
+    *) new_list="$(printf '%s' "$current" | sed "s/^\[/['$KB_PATH', /")" ;;
+esac
+
+dconf write "$SCHEMA_PATH" "$new_list"
+dconf write "$KB_PATH/name" "'myna dictation'"
+dconf write "$KB_PATH/command" "'$COMMAND'"
+dconf write "$KB_PATH/binding" "'$ACCEL'"
+
+echo "bound $ACCEL → $COMMAND"
+echo "start the daemon in control mode (MYNA_ACTIVATION=control myna), focus a field, tap $ACCEL."
