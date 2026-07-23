@@ -104,6 +104,15 @@ config). UbuSTT is a UDS service. Proposal:
   with T17: content interface exposing the socket directory vs. plain file
   permissions on a world-readable socket + polkit-style identity checks
   (IE114 access-control comments). Out of scope here; T17 owns it.
+  **Update (2026-07-22, feature 005 / T57):** the confined-client half is
+  now settled in favor of the **content interface**: each inference snap
+  slots `$SNAP_COMMON/run` as a writable content share (`ubustt-socket`),
+  which is precisely the case snapd's content interface supports named
+  sockets for (its writable-share AppArmor rules exist "for using named
+  sockets within the exported directory"). The `myna` client snap plugs it
+  at `$SNAP_DATA/backend`. What remains with T17 is the *identity* half
+  (polkit-style checks on who may talk to the socket once connected) — the
+  share itself is admin-gated only.
 - `runtime.yaml` `servers:` entry declares the endpoint, e.g.
   `ubustt: {protocol: ws+unix, base-path: /v1}` — the field is free-form
   enough today; flag to the inference-snaps-cli team that a UDS server type
