@@ -59,6 +59,25 @@
 - [ ] T017 plan tracker row (T57) + CLAUDE.md state + design-note T14c update
   (design note done; plan row + CLAUDE.md pending)
 
+## Field findings (2026-07-24, user acceptance session)
+
+- **Stale session-bus guid**: shells/tmux surviving logout carry
+  `DBUS_SESSION_BUS_ADDRESS` with the old bus's `guid=`. zbus rejects it
+  (fixed: shared stale-guid-tolerant `connect_session()` now used by the
+  portal bind too); sd-bus (busctl) cripples the connection (EPERM /
+  AccessDenied); GIO ignores it. User-facing fix: unset/correct the env var.
+- **Confined signal denial**: snapd's dbus slot admits unconfined peers for
+  method calls/replies only — the `StateChanged` broadcast to the (unconfined)
+  GNOME extension is AppArmor-denied. Extension `dbus.js` gained an adaptive
+  GetAll polling fallback (signals stay the fast path); needs a Shell
+  restart to load. Candidate upstream snapd fix recorded in the README.
+- **Portal v1 UX**: bind sheet re-prompts every daemon start (no persist
+  tokens in v1 / ashpd 0.13) and the grab didn't register on GNOME 50 —
+  activation default flipped to `control` (`myna.toggle` +
+  `myna.install-shortcut`); portal is opt-in (`MYNA_ACTIVATION=portal`).
+- Control-mode end-to-end accepted by the user (toggle → recording →
+  injected transcript).
+
 ## Notes
 
 - T011–T013 need the local machine (snapd + session); they are the SC-002/003
