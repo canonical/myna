@@ -74,6 +74,12 @@ gdbus introspect --session --dest org.myna.Dictation \
     --object-path /org/myna/Dictation
 ```
 
+> **Read the bus from a *host* shell.** snapd's `dbus` slot policy only
+> admits `label=unconfined` peers, so calling `org.myna.Dictation` from a
+> *confined* context (a `snap run --shell`, a Workshop/LXD/toolbox container
+> with the session bus forwarded) fails with `Access denied`. The GNOME
+> Shell extension is in-compositor (unconfined) and unaffected.
+
 ## Interfaces (and why)
 
 | plug | why |
