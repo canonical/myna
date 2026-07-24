@@ -7,13 +7,28 @@
 // watch, disconnects the proxy, and drops every subscription (X9); re-enable
 // re-establishes cleanly (X10).
 //
+// Updates travel two ways. The signal fast path (StateChanged +
+// g-properties-changed) is used whenever it flows. But a *confined* publisher
+// (the myna snap) cannot get its signals to us: snapd's dbus slot only admits
+// `peer=(label=unconfined)` for *method calls and their replies* — unsolicited
+// signal sends to unconfined subscribers are AppArmor-denied (feature 005
+// finding). Properties stay readable, so we also POLL GetAll — fast while a
+// session is active (VU smoothness), slow while idle. Both paths are deduped,
+// so when signals do flow (unsnapped daemon) the poll is a no-op.
+//
 // The Gio seams (_watchName/_unwatchName/_createProxy) are injectable so the
 // lifecycle is contract-testable headless against a stub (test/lifecycle.test.js).
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 const BUS_NAME = 'org.myna.Dictation';
 const OBJECT_PATH = '/org/myna/Dictation';
+
+// Poll cadence: a live session wants a responsive VU; idle just needs to
+// notice state flips within a beat.
+const POLL_ACTIVE_MS = 100;
+const POLL_IDLE_MS = 2000;
 
 export class DictationService {
     /**
@@ -55,8 +70,11 @@ export class DictationService {
         this._watchId = 0;
         this._proxy = null;
         this._proxySignalIds = [];
+        this._pollId = 0;
         this._state = 'idle';
         this._errorMessage = '';
+        this._rms = 0;
+        this._peak = 0;
         this._available = false;
     }
 
@@ -122,6 +140,7 @@ export class DictationService {
             this._proxy.get_cached_property('ErrorMessage')?.deep_unpack() ?? '';
         this._setState(state, errorMessage);
         this._emitLevel();
+        this._schedulePoll();
     }
 
     _emitLevel() {
@@ -129,7 +148,65 @@ export class DictationService {
             return;
         const rms = this._proxy.get_cached_property('AudioRms')?.deep_unpack() ?? 0;
         const peak = this._proxy.get_cached_property('AudioPeak')?.deep_unpack() ?? 0;
+        this._setLevel(rms, peak);
+    }
+
+    _setLevel(rms, peak) {
+        if (rms === this._rms && peak === this._peak)
+            return;
+        this._rms = rms;
+        this._peak = peak;
         this._onLevel(rms, peak);
+    }
+
+    // ── Polling fallback (confined publishers can't signal us — header) ──
+
+    _pollInterval() {
+        return this._state === 'idle' ? POLL_IDLE_MS : POLL_ACTIVE_MS;
+    }
+
+    _schedulePoll() {
+        this._cancelPoll();
+        this._pollId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, this._pollInterval(), () => {
+                this._pollId = 0;
+                this._pollOnce();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _cancelPoll() {
+        if (this._pollId !== 0) {
+            GLib.source_remove(this._pollId);
+            this._pollId = 0;
+        }
+    }
+
+    _pollOnce() {
+        if (this._proxy === null)
+            return;
+        // Headless-test stubs have no .call; signals drive them instead.
+        if (typeof this._proxy.call !== 'function')
+            return;
+        this._proxy.call(
+            'org.freedesktop.DBus.Properties.GetAll',
+            new GLib.Variant('(s)', [BUS_NAME]),
+            Gio.DBusCallFlags.NONE, 1000, null,
+            (proxy, res) => {
+                try {
+                    const [props] = proxy.call_finish(res).deep_unpack();
+                    const state = props.State?.deep_unpack() ?? 'idle';
+                    const errorMessage = props.ErrorMessage?.deep_unpack() ?? '';
+                    const rms = props.AudioRms?.deep_unpack() ?? 0;
+                    const peak = props.AudioPeak?.deep_unpack() ?? 0;
+                    this._setState(state, errorMessage);
+                    this._setLevel(rms, peak);
+                } catch (e) {
+                    // Daemon raced away mid-poll; the name watch clears us.
+                    logError(e, 'myna-shell poll');
+                }
+                this._schedulePoll();
+            });
     }
 
     _onVanished() {
@@ -141,12 +218,17 @@ export class DictationService {
     }
 
     _setState(state, errorMessage) {
+        // Dedupe: the poll repeats the current state; only real transitions
+        // (and the signal fast path) may re-drive the view.
+        if (state === this._state && errorMessage === this._errorMessage)
+            return;
         this._state = state;
         this._errorMessage = errorMessage;
         this._onStateChanged(state, errorMessage);
     }
 
     _teardownProxy() {
+        this._cancelPoll();
         if (this._proxy === null)
             return;
         for (const id of this._proxySignalIds)
