@@ -90,18 +90,33 @@ impl GlobalShortcutTrigger {
         Self { signals, dedup: Dedup::default(), _keepalive: Keepalive::None }
     }
 
-    /// Create a portal session, bind `shortcut_id` (offering `preferred_trigger`
-    /// to the portal's own confirm/rebind UI — FR-009), and merge the
-    /// `Activated`/`Deactivated` signals for that shortcut into one stream.
+    /// Create a portal session on the crate's shared session-bus connection
+    /// (stale-`guid` tolerant — see [`crate::dbus::serve::connect_session`]),
+    /// bind `shortcut_id` (offering `preferred_trigger` to the portal's own
+    /// confirm/rebind UI — FR-009), and merge the `Activated`/`Deactivated`
+    /// signals for that shortcut into one stream.
     #[cfg(not(test))]
     pub async fn bind(
+        shortcut_id: &str,
+        preferred_trigger: Option<&str>,
+    ) -> Result<Self, TriggerError> {
+        let conn = crate::dbus::serve::connect_session()
+            .await
+            .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+        Self::bind_with_connection(conn, shortcut_id, preferred_trigger).await
+    }
+
+    /// As [`Self::bind`] but on a caller-provided session-bus connection.
+    #[cfg(not(test))]
+    pub async fn bind_with_connection(
+        conn: zbus::Connection,
         shortcut_id: &str,
         preferred_trigger: Option<&str>,
     ) -> Result<Self, TriggerError> {
         use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
         use futures_util::future;
 
-        let shortcuts = GlobalShortcuts::new()
+        let shortcuts = GlobalShortcuts::with_connection(conn)
             .await
             .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
         let session = shortcuts
