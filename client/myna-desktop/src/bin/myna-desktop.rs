@@ -38,7 +38,7 @@ use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::ibus::IbusInjector;
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
-use myna_desktop::shortcut::portal::GlobalShortcutTrigger;
+use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger};
 use myna_desktop::{DesktopController, Indicator};
 use myna_orchestrator::{run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend};
 use tokio::sync::mpsc;
@@ -65,7 +65,9 @@ OPTIONS:
     --toggle           poke the running daemon (bind this to a GNOME shortcut)
     --install-shortcut bind a GNOME custom keybinding (accel, default <Super>d)
                        to `myna-desktop --toggle`, then exit
-    --portal           activate via the GlobalShortcuts portal (packaged only)
+    --portal           activate via the GlobalShortcuts portal (packaged only);
+                       press-to-toggle by default (tap = start, tap = stop)
+    --hold             with --portal: hold-to-talk instead (hold = record)
     --stdin            DEBUG: drive from the terminal (injects into the terminal)
     --overlay          show the GTK activity overlay (experimental; may steal focus)
     --dbus             serve org.myna.Dictation on the session bus for the GNOME
@@ -83,6 +85,7 @@ struct Args {
     toggle: bool,
     install_shortcut: Option<String>,
     portal: bool,
+    hold: bool,
     stdin: bool,
     overlay: bool,
     dbus: bool,
@@ -112,6 +115,7 @@ fn parse_args() -> Result<Args, String> {
                 a.install_shortcut = Some(accel.unwrap_or_else(|| DEFAULT_ACCEL.to_string()));
             }
             "--portal" => a.portal = true,
+            "--hold" => a.hold = true,
             "--stdin" => a.stdin = true,
             "--overlay" => a.overlay = true,
             "--dbus" => a.dbus = true,
@@ -205,7 +209,8 @@ async fn run_controller(
     let mut controller = if args.stdin {
         builder.trigger(StdinTrigger::new()).build()
     } else if args.portal {
-        match GlobalShortcutTrigger::bind("dictate", Some(&args.shortcut)).await {
+        let mode = if args.hold { ActivationMode::Hold } else { ActivationMode::Toggle };
+        match GlobalShortcutTrigger::bind("dictate", Some(&args.shortcut), mode).await {
             Ok(trigger) => builder.trigger(trigger).build(),
             Err(e) => {
                 eprintln!("cannot bind the GlobalShortcuts portal: {e}");
@@ -233,7 +238,8 @@ fn banner(args: &Args) {
     if args.stdin {
         println!("myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)");
     } else if args.portal {
-        println!("myna-desktop → {sock} — hold {} to talk (portal)", args.shortcut);
+        let verb = if args.hold { "hold" } else { "tap" };
+        println!("myna-desktop → {sock} — {verb} {} to talk (portal)", args.shortcut);
     } else {
         println!("myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop.");
         println!("  if you haven't bound one yet: `myna-desktop --install-shortcut` (binds Super+D)");

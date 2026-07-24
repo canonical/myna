@@ -40,26 +40,61 @@ pub enum PortalSignal {
     Deactivated,
 }
 
-/// The autorepeat-dedup state machine: first `Activated` wins until a
-/// `Deactivated`; repeats in between are ignored (FR-008).
+/// How portal activations map to dictation edges.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ActivationMode {
+    /// Each full keypress flips start/stop (the default — matches the
+    /// control-socket toggle; hold-to-talk is the uncomfortable outlier).
+    #[default]
+    Toggle,
+    /// Hold-to-talk: key down = start, key up = stop.
+    Hold,
+}
+
+/// The autorepeat-dedup state machine. Hold: first `Activated` wins until a
+/// `Deactivated`; repeats in between are ignored (FR-008). Toggle: the first
+/// `Activated` of each physical press flips the session edge; `Deactivated`
+/// only rearms the next press.
 #[derive(Debug, Default)]
 struct Dedup {
+    mode: ActivationMode,
+    /// Hold: the key is currently down. Toggle: a dictation session is active.
     pressed: bool,
+    /// Toggle only: the key is physically down (autorepeat guard).
+    key_down: bool,
 }
 
 impl Dedup {
+    fn with_mode(mode: ActivationMode) -> Self {
+        Self { mode, ..Default::default() }
+    }
+
     fn on(&mut self, signal: PortalSignal) -> Option<TriggerEdge> {
-        match signal {
-            PortalSignal::Activated if !self.pressed => {
-                self.pressed = true;
-                Some(TriggerEdge::Press)
-            }
-            PortalSignal::Activated => None, // autorepeat while held — ignore
-            PortalSignal::Deactivated if self.pressed => {
-                self.pressed = false;
-                Some(TriggerEdge::Release)
-            }
-            PortalSignal::Deactivated => None, // spurious release — ignore
+        match self.mode {
+            ActivationMode::Hold => match signal {
+                PortalSignal::Activated if !self.pressed => {
+                    self.pressed = true;
+                    Some(TriggerEdge::Press)
+                }
+                PortalSignal::Activated => None, // autorepeat while held — ignore
+                PortalSignal::Deactivated if self.pressed => {
+                    self.pressed = false;
+                    Some(TriggerEdge::Release)
+                }
+                PortalSignal::Deactivated => None, // spurious release — ignore
+            },
+            ActivationMode::Toggle => match signal {
+                PortalSignal::Activated if !self.key_down => {
+                    self.key_down = true;
+                    self.pressed = !self.pressed;
+                    Some(if self.pressed { TriggerEdge::Press } else { TriggerEdge::Release })
+                }
+                PortalSignal::Activated => None, // autorepeat while held — ignore
+                PortalSignal::Deactivated => {
+                    self.key_down = false; // rearm; never an edge in toggle mode
+                    None
+                }
+            },
         }
     }
 }
@@ -85,9 +120,17 @@ pub struct GlobalShortcutTrigger {
 
 impl GlobalShortcutTrigger {
     /// Build a trigger from a pre-made [`PortalSignal`] stream — the hermetic
-    /// test seam (no D-Bus / portal).
+    /// test seam (no D-Bus / portal). Uses the default [`ActivationMode`].
     pub fn from_signals(signals: BoxStream<'static, PortalSignal>) -> Self {
-        Self { signals, dedup: Dedup::default(), _keepalive: Keepalive::None }
+        Self::from_signals_with_mode(signals, ActivationMode::default())
+    }
+
+    /// [`Self::from_signals`] with an explicit [`ActivationMode`].
+    pub fn from_signals_with_mode(
+        signals: BoxStream<'static, PortalSignal>,
+        mode: ActivationMode,
+    ) -> Self {
+        Self { signals, dedup: Dedup::with_mode(mode), _keepalive: Keepalive::None }
     }
 
     /// Create a portal session on the crate's shared session-bus connection
@@ -99,11 +142,12 @@ impl GlobalShortcutTrigger {
     pub async fn bind(
         shortcut_id: &str,
         preferred_trigger: Option<&str>,
+        mode: ActivationMode,
     ) -> Result<Self, TriggerError> {
         let conn = crate::dbus::serve::connect_session()
             .await
             .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
-        Self::bind_with_connection(conn, shortcut_id, preferred_trigger).await
+        Self::bind_with_connection(conn, shortcut_id, preferred_trigger, mode).await
     }
 
     /// As [`Self::bind`] but on a caller-provided session-bus connection.
@@ -112,6 +156,7 @@ impl GlobalShortcutTrigger {
         conn: zbus::Connection,
         shortcut_id: &str,
         preferred_trigger: Option<&str>,
+        mode: ActivationMode,
     ) -> Result<Self, TriggerError> {
         use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
         use futures_util::future;
@@ -153,7 +198,7 @@ impl GlobalShortcutTrigger {
 
         Ok(Self {
             signals,
-            dedup: Dedup::default(),
+            dedup: Dedup::with_mode(mode),
             _keepalive: Keepalive::Portal(shortcuts, session),
         })
     }
@@ -182,7 +227,17 @@ mod tests {
     use super::*;
 
     fn trigger(signals: Vec<PortalSignal>) -> GlobalShortcutTrigger {
-        GlobalShortcutTrigger::from_signals(stream::iter(signals).boxed())
+        GlobalShortcutTrigger::from_signals_with_mode(
+            stream::iter(signals).boxed(),
+            ActivationMode::Hold,
+        )
+    }
+
+    fn toggle_trigger(signals: Vec<PortalSignal>) -> GlobalShortcutTrigger {
+        GlobalShortcutTrigger::from_signals_with_mode(
+            stream::iter(signals).boxed(),
+            ActivationMode::Toggle,
+        )
     }
 
     async fn drain(mut t: GlobalShortcutTrigger) -> Vec<TriggerEdge> {
@@ -248,5 +303,51 @@ mod tests {
         assert_eq!(t.next_edge().await, Some(TriggerEdge::Press));
         assert_eq!(t.next_edge().await, Some(TriggerEdge::Release));
         assert_eq!(t.next_edge().await, None);
+    }
+
+    // ── Toggle mode (the default): each physical press flips the session ──
+
+    // A full press (Activated+Deactivated) = one edge; the next full press
+    // produces the opposite edge — tap-to-start, tap-to-stop.
+    #[tokio::test]
+    async fn toggle_presses_alternate_press_release() {
+        let edges = drain(toggle_trigger(vec![
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+        ]))
+        .await;
+        assert_eq!(edges, vec![TriggerEdge::Press, TriggerEdge::Release]);
+    }
+
+    // Autorepeat while the key is held still collapses to a single toggle —
+    // a long hold must NOT stop the session (the hold-to-talk failure mode
+    // toggle mode exists to avoid).
+    #[tokio::test]
+    async fn toggle_hold_does_not_stop_the_session() {
+        let edges = drain(toggle_trigger(vec![
+            PortalSignal::Activated,
+            PortalSignal::Activated,
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+        ]))
+        .await;
+        assert_eq!(edges, vec![TriggerEdge::Press, TriggerEdge::Release]);
+    }
+
+    // A spurious Deactivated without a press yields nothing and doesn't
+    // desync the next real press.
+    #[tokio::test]
+    async fn toggle_spurious_deactivated_is_ignored() {
+        let edges = drain(toggle_trigger(vec![
+            PortalSignal::Deactivated,
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+        ]))
+        .await;
+        assert_eq!(edges, vec![TriggerEdge::Press]);
     }
 }

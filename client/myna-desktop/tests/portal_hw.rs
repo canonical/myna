@@ -35,7 +35,13 @@ async fn portal_bind_succeeds_or_reports_cleanly() {
         eprintln!("skipping portal_bind: MYNA_PORTAL_TESTS unset");
         return;
     }
-    match GlobalShortcutTrigger::bind("dictate-test", Some("SUPER+j")).await {
+    let bound = GlobalShortcutTrigger::bind(
+        "dictate-test",
+        Some("SUPER+j"),
+        myna_desktop::shortcut::portal::ActivationMode::Hold,
+    )
+    .await;
+    match bound {
         Ok(_trigger) => eprintln!("bound test shortcut; hold Super+J to see Press/Release (manual)"),
         Err(e) => eprintln!("portal bind reported cleanly: {e}"),
     }
