@@ -125,7 +125,11 @@ impl ZbusBus {
 /// specific failure we retry once with the guid stripped — matching every
 /// other D-Bus client — rather than dropping a working session to the
 /// notification fallback.
-async fn connect_session() -> zbus::Result<Connection> {
+///
+/// Shared by every session-bus client in this crate (the publisher, the
+/// GlobalShortcuts portal trigger): `Connection::session()` alone would
+/// hard-fail in the stale-guid environment.
+pub(crate) async fn connect_session() -> zbus::Result<Connection> {
     match Connection::session().await {
         Err(zbus::Error::Handshake(msg)) if msg.contains("GUID mismatch") => {
             let Some(address) = sanitized_session_address() else {
