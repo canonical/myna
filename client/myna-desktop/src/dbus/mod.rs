@@ -37,16 +37,16 @@ pub enum PropertyValue {
 }
 
 /// The bus boundary all publisher logic is written against (research R11):
-/// emit a `StateChanged` signal; set a property. Small enough that the real
-/// `zbus` implementation (polish phase) and the hermetic [`FakeBus`] are both
-/// trivial, keeping the state/level mapping testable without a session bus.
+/// set a property. Every set is pushed to subscribers with the standard
+/// `org.freedesktop.DBus.Properties.PropertiesChanged` — the interface
+/// defines no custom signals, because a strictly-confined publisher may not
+/// broadcast those to unconfined subscribers while `PropertiesChanged` on its
+/// own path crosses confinement freely (contract dbus-interface.md
+/// §Confinement). Small enough that the real `zbus` implementation and the
+/// hermetic [`FakeBus`] are both trivial, keeping the state/level mapping
+/// testable without a session bus.
 #[async_trait]
 pub trait Bus: Send {
-    /// Emit `StateChanged(state, error_message)` — exactly once per state
-    /// transition (C2); `error_message` is empty unless `state == "error"` and
-    /// is always a content-free reason (C3).
-    async fn emit_state_changed(&mut self, state: &str, error_message: &str);
-
     /// Set a property (`State` / `AudioRms` / `AudioPeak` / `ErrorMessage`),
     /// emitting `PropertiesChanged` on the real bus.
     async fn set_property(&mut self, name: &str, value: PropertyValue);
@@ -79,11 +79,10 @@ impl DictationService {
     }
 }
 
-/// Hermetic in-memory [`Bus`] (research R11): records every emitted
-/// `StateChanged` (state + error args, in order) and keeps the latest snapshot
-/// of each property. A permanent fixture (like `indicator::mock::MockIndicator`)
-/// — clone it *before* handing it to the publisher; all clones share the
-/// recording.
+/// Hermetic in-memory [`Bus`] (research R11): records every property set (in
+/// order) and keeps the latest snapshot of each property. A permanent fixture
+/// (like `indicator::mock::MockIndicator`) — clone it *before* handing it to
+/// the publisher; all clones share the recording.
 #[derive(Clone, Default)]
 pub struct FakeBus {
     inner: Arc<Mutex<FakeBusInner>>,
@@ -91,7 +90,7 @@ pub struct FakeBus {
 
 #[derive(Default)]
 struct FakeBusInner {
-    signals: Vec<(String, String)>,
+    sets: Vec<(String, PropertyValue)>,
     properties: HashMap<String, PropertyValue>,
 }
 
@@ -101,9 +100,19 @@ impl FakeBus {
         Self::default()
     }
 
-    /// Every `StateChanged` emitted, as `(state, error_message)` in order.
-    pub fn signals(&self) -> Vec<(String, String)> {
-        self.inner.lock().expect("fake bus poisoned").signals.clone()
+    /// The `State` values set, in order — the transition sequence a
+    /// `PropertiesChanged` subscriber observes (C2).
+    pub fn state_history(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .expect("fake bus poisoned")
+            .sets
+            .iter()
+            .filter_map(|(name, value)| match (name.as_str(), value) {
+                ("State", PropertyValue::Str(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The latest value set for `name`, if any.
@@ -119,20 +128,10 @@ impl FakeBus {
 
 #[async_trait]
 impl Bus for FakeBus {
-    async fn emit_state_changed(&mut self, state: &str, error_message: &str) {
-        self.inner
-            .lock()
-            .expect("fake bus poisoned")
-            .signals
-            .push((state.to_string(), error_message.to_string()));
-    }
-
     async fn set_property(&mut self, name: &str, value: PropertyValue) {
-        self.inner
-            .lock()
-            .expect("fake bus poisoned")
-            .properties
-            .insert(name.to_string(), value);
+        let mut inner = self.inner.lock().expect("fake bus poisoned");
+        inner.sets.push((name.to_string(), value.clone()));
+        inner.properties.insert(name.to_string(), value);
     }
 }
 
@@ -141,39 +140,33 @@ mod tests {
     use super::*;
 
     /// Contract publisher.md P-seam / research R11: the hermetic fake bus
-    /// records emitted `StateChanged` signals (name + args) and the latest
-    /// property snapshot, so publisher logic is testable without a session bus.
+    /// records property sets (in order) and the latest property snapshot, so
+    /// publisher logic is testable without a session bus.
     #[tokio::test]
-    async fn fake_bus_records_signals_and_latest_properties() {
+    async fn fake_bus_records_sets_and_latest_properties() {
         let mut bus = FakeBus::new();
 
-        bus.emit_state_changed("recording", "").await;
-        bus.emit_state_changed("error", "no text field is focused").await;
         bus.set_property("State", PropertyValue::Str("recording".into()))
             .await;
-        bus.set_property("State", PropertyValue::Str("error".into())).await;
+        bus.set_property("State", PropertyValue::Str("error".into()))
+            .await;
         bus.set_property("AudioRms", PropertyValue::F64(0.42)).await;
 
         assert_eq!(
-            bus.signals(),
-            vec![
-                ("recording".to_string(), String::new()),
-                (
-                    "error".to_string(),
-                    "no text field is focused".to_string()
-                ),
-            ],
-            "every StateChanged recorded in order, with its args"
+            bus.state_history(),
+            vec!["recording".to_string(), "error".to_string()],
+            "every State set recorded in order"
         );
         assert_eq!(
             bus.property("State"),
             Some(PropertyValue::Str("error".into())),
             "latest property snapshot wins"
         );
+        assert_eq!(bus.property("AudioRms"), Some(PropertyValue::F64(0.42)),);
         assert_eq!(
-            bus.property("AudioRms"),
-            Some(PropertyValue::F64(0.42)),
+            bus.property("AudioPeak"),
+            None,
+            "unset properties stay absent"
         );
-        assert_eq!(bus.property("AudioPeak"), None, "unset properties stay absent");
     }
 }

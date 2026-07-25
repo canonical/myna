@@ -12,10 +12,10 @@ implementation for hermetic tests (R11).
 
 | # | Guarantee | Test tier |
 |---|---|---|
-| P1 | `set_state(s)` maps `IndicatorState` → the E1 `State` string and emits `StateChanged` + updates the `State` property. | hermetic (fake bus) |
+| P1 | `set_state(s)` maps `IndicatorState` → the E1 `State` string and updates the `State` property (pushed via `PropertiesChanged`). | hermetic (fake bus) |
 | P2 | The `Loading`→`Ready` split surfaces as `loading` then `recording` (R4/C5): the indicator tracks whether `Ready` has been seen this session. | hermetic |
 | P3 | `hide()` publishes `idle`, zeroes `AudioRms`/`AudioPeak`, and clears `ErrorMessage`. | hermetic |
-| P4 | Error state carries the existing content-free message via `ErrorMessage` + `StateChanged` arg; never transcript (C3). | hermetic |
+| P4 | Error state carries the existing content-free message via the `ErrorMessage` property; never transcript (C3). | hermetic |
 | P5 | Is a drop-in `Indicator`: the controller wiring is unchanged; `DbusIndicator` composes with `NotifyIndicator` as fallback (both can run; D-Bus preferred). | hermetic + compile |
 
 ## Level pump

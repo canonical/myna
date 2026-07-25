@@ -10,7 +10,7 @@ derived level). Cross-refs to spec Key Entities and the D-Bus contract
 ## E1 — DictationState (the wire state string)
 
 The single source of truth for the goop's treatment. String enum on the
-`org.myna.Dictation.State` property and in `StateChanged`.
+`org.myna.Dictation.State` property (updates pushed via `PropertiesChanged`).
 
 | Value | Meaning | Derived in myna-desktop from |
 |---|---|---|
@@ -48,8 +48,8 @@ Rules:
 
 ## E3 — ErrorReason (optional)
 
-A short, user-facing reason string carried by `StateChanged`'s second argument
-(and mirrored in an `ErrorMessage` property) when `State == error` — e.g.
+A short, user-facing reason string carried by the `ErrorMessage` property
+when `State == error` — e.g.
 "no text field is focused", "refusing to type into a password field",
 "inference backend unavailable". Empty when not in error. Content-free (never
 transcript). Sourced from the controller's existing `IndicatorState::Error(msg)`

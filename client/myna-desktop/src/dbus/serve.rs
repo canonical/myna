@@ -11,14 +11,16 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use zbus::object_server::SignalEmitter;
 use zbus::Connection;
 
 use crate::dbus::{Bus, PropertyValue, BUS_NAME, OBJECT_PATH};
 
-/// The served property values (the `org.myna.Dictation` members). `State`
-/// starts `idle`, levels at floor, no error — the dormant snapshot a
-/// name-appeared client reads (X8).
+/// The served property values (the `org.myna.Dictation` members — the
+/// interface defines no signals; every update is pushed via the standard
+/// `PropertiesChanged`, the one broadcast that crosses snap confinement to
+/// unconfined subscribers, contract §Confinement). `State` starts `idle`,
+/// levels at floor, no error — the dormant snapshot a name-appeared client
+/// reads (X8).
 #[derive(Debug, Default)]
 struct ServedState {
     state: String,
@@ -37,8 +39,7 @@ impl ServedState {
 }
 
 /// The `org.myna.Dictation` object. Properties read the shared [`ServedState`]
-/// (updated by the publisher through the [`Bus`] seam); the `StateChanged`
-/// signal is emitted by the publisher via [`DictationObject::state_changed`].
+/// (updated by the publisher through the [`Bus`] seam).
 struct DictationObject {
     served: Arc<Mutex<ServedState>>,
 }
@@ -47,7 +48,11 @@ struct DictationObject {
 impl DictationObject {
     #[zbus(property)]
     async fn state(&self) -> String {
-        self.served.lock().expect("served state poisoned").state.clone()
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .state
+            .clone()
     }
 
     #[zbus(property)]
@@ -57,7 +62,10 @@ impl DictationObject {
 
     #[zbus(property)]
     async fn audio_peak(&self) -> f64 {
-        self.served.lock().expect("served state poisoned").audio_peak
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .audio_peak
     }
 
     #[zbus(property)]
@@ -68,16 +76,6 @@ impl DictationObject {
             .error_message
             .clone()
     }
-
-    /// `StateChanged(s state, s error_message)` — one per state transition
-    /// (C2). Named distinctly in Rust so it can't collide with the
-    /// property-change helper the macro generates for the `State` property.
-    #[zbus(signal, name = "StateChanged")]
-    async fn publish_state_changed(
-        emitter: &SignalEmitter<'_>,
-        state: String,
-        error_message: String,
-    ) -> zbus::Result<()>;
 }
 
 /// The real session-bus [`Bus`]. Best-effort: a bus hiccup is logged, never
@@ -101,7 +99,12 @@ impl ZbusBus {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
         conn.object_server()
-            .at(OBJECT_PATH, DictationObject { served: Arc::clone(&served) })
+            .at(
+                OBJECT_PATH,
+                DictationObject {
+                    served: Arc::clone(&served),
+                },
+            )
             .await?;
         conn.request_name(BUS_NAME).await?;
         Ok(Self { conn, served })
@@ -139,7 +142,9 @@ pub(crate) async fn connect_session() -> zbus::Result<Connection> {
                 "note: DBUS_SESSION_BUS_ADDRESS carries a stale guid (survived logout, \
                  e.g. tmux/screen); retrying at the socket path without it"
             );
-            zbus::conn::Builder::address(address.as_str())?.build().await
+            zbus::conn::Builder::address(address.as_str())?
+                .build()
+                .await
         }
         other => other,
     }
@@ -171,26 +176,6 @@ fn strip_guid(address: &str) -> String {
 
 #[async_trait]
 impl Bus for ZbusBus {
-    async fn emit_state_changed(&mut self, state: &str, error_message: &str) {
-        let result = async {
-            let iface_ref = self
-                .conn
-                .object_server()
-                .interface::<_, DictationObject>(OBJECT_PATH)
-                .await?;
-            DictationObject::publish_state_changed(
-                iface_ref.signal_emitter(),
-                state.to_string(),
-                error_message.to_string(),
-            )
-            .await
-        }
-        .await;
-        if let Err(e) = result {
-            myna_core::dbg_log!("dbus", "StateChanged emit failed: {e}");
-        }
-    }
-
     async fn set_property(&mut self, name: &str, value: PropertyValue) {
         let result = async {
             // Update the served snapshot, then emit PropertiesChanged with the
@@ -199,16 +184,11 @@ impl Bus for ZbusBus {
                 let mut served = self.served.lock().expect("served state poisoned");
                 match (name, &value) {
                     ("State", PropertyValue::Str(s)) => served.state = s.clone(),
-                    ("ErrorMessage", PropertyValue::Str(s)) => {
-                        served.error_message = s.clone()
-                    }
+                    ("ErrorMessage", PropertyValue::Str(s)) => served.error_message = s.clone(),
                     ("AudioRms", PropertyValue::F64(d)) => served.audio_rms = *d,
                     ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
                     _ => {
-                        myna_core::dbg_log!(
-                            "dbus",
-                            "ignoring unknown property set: {name}"
-                        );
+                        myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
                     }
                 }
@@ -258,7 +238,9 @@ mod tests {
         // dbus-daemon emits the guid as a trailing param; a bus address may
         // list several `;`-separated entries.
         assert_eq!(
-            strip_guid("unix:path=/run/user/1000/bus,guid=deadbeef;unix:abstract=/tmp/foo,guid=cafe"),
+            strip_guid(
+                "unix:path=/run/user/1000/bus,guid=deadbeef;unix:abstract=/tmp/foo,guid=cafe"
+            ),
             "unix:path=/run/user/1000/bus;unix:abstract=/tmp/foo"
         );
     }
