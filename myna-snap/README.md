@@ -10,21 +10,31 @@ microphone, the hotkey, and text injection (audio-push invariant); the
 backend snaps only receive PCM on a socket. It deliberately has **no
 `network` plug** — every boundary is a Unix socket or the session bus.
 
-## Build
+## Setup (the repeatable path)
 
 ```shell
-./dev/prepare.sh   # stage client/ into the project (craft-parts rule)
-snapcraft pack
-```
+# 0. A backend snap must be installed and serving, e.g. whisper (see
+#    whisper-snap/README.md); check with:
+snap logs -n5 whisper.server
 
-## Install
-
-```shell
+# 1. Build + install this snap
+./dev/prepare.sh && snapcraft pack
 sudo snap install --dangerous ./myna_*.snap
 
+# 2. Connect the two manual interfaces
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
 sudo snap connect myna:backend whisper:ubustt-socket     # the backend session socket
+
+# 3. Bind your dictation key (writes Super+D → /snap/bin/myna.toggle via dconf)
+myna.install-shortcut                 # or: myna.install-shortcut '<Super>t'
+
+# 4. Run the daemon (leave it running; autostart is a known gap below)
+myna
+
+# 5. Focus a text field, tap the key, speak, tap again → transcript injected.
 ```
+
+That's it. If step 5 misbehaves, jump to **Troubleshooting**.
 
 The `backend` plug is a writable content share of the backend snap's
 `$SNAP_COMMON/run` (T14c): after connecting, the session socket appears at
@@ -33,33 +43,37 @@ The `backend` plug is a writable content share of the backend snap's
 is T48). The backend daemon must have run at least once for the socket to
 exist (`sudo snap start whisper.server`).
 
-## Run
+## Activation
 
-```shell
-myna            # the daemon: portal hotkey + org.myna.Dictation publisher
-```
+Everything is **press-to-toggle** by default: tap the key to start, tap
+again to stop. Two trigger transports:
 
-- **Activation** defaults to the **control socket** (`myna.toggle`) — bind a
-  key with `myna.install-shortcut` (Super+D → `/snap/bin/myna.toggle`, via
-  dconf) or any GNOME custom shortcut to that command. The **portal**
-  (`MYNA_ACTIVATION=portal myna`) is opt-in for now: the GlobalShortcuts
-  portal here is v1 — it re-prompts with the bind sheet on every daemon
-  start (persist/restore tokens are v2, unexposed by ashpd 0.13) and the
-  grab did not register reliably on GNOME 50 (under investigation — see the
-  debug recipe below). `MYNA_ACTIVATION=stdin myna` for terminal debugging.
-- **Indicator**: `--dbus` mode is on by default in the launcher, serving
-  `org.myna.Dictation` for the myna-shell GNOME extension; desktop
-  notifications are the fallback. The experimental GTK overlay is available
-  (`MYNA_ACTIVATION=portal myna --overlay`).
-- **Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_ACTIVATION`, `MYNA_LANGUAGE`.
+- **Control socket (default)** — `myna` listens for pokes; `myna.toggle`
+  sends one. Any desktop can bind a custom shortcut to
+  `/snap/bin/myna.toggle` (`myna.install-shortcut` does it for GNOME).
+- **GlobalShortcuts portal** (`MYNA_ACTIVATION=portal myna`) — the
+  sandboxed-native trigger. Caveats on this stack (portal v1): the bind
+  sheet re-prompts on *every* daemon start (persist/restore tokens are v2,
+  unexposed by ashpd 0.13). Once you confirm a key in the sheet it works —
+  press-to-toggle like everything else; `myna --hold` (or
+  `MYNA_ACTIVATION=portal myna --hold`) switches it to hold-to-talk.
+
+`MYNA_ACTIVATION=stdin myna` drives from the terminal (debug; injects back
+into the terminal).
+
+**Indicator**: the launcher always serves `org.myna.Dictation` for the
+myna-shell GNOME extension; desktop notifications are the fallback. The
+experimental GTK overlay is `--overlay`.
+
+**Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_ACTIVATION`, `MYNA_LANGUAGE`.
 
 ## Apps
 
 | app | what |
 |---|---|
 | `myna` | the dictation daemon (launcher around `myna-desktop`) |
-| `myna.toggle` | poke the daemon's control socket (control activation mode) |
-| `myna.install-shortcut` | bind Super+D → `myna.toggle` via dconf |
+| `myna.toggle` | poke the daemon's control socket (start/stop) |
+| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf) |
 | `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
 
 ## Verify (confined, end to end)
@@ -77,11 +91,27 @@ gdbus introspect --session --dest org.myna.Dictation \
     --object-path /org/myna/Dictation
 ```
 
-> **Read the bus from a *host* shell.** snapd's `dbus` slot policy only
-> admits `label=unconfined` peers, so calling `org.myna.Dictation` from a
-> *confined* context (a `snap run --shell`, a Workshop/LXD/toolbox container
-> with the session bus forwarded) fails with `Access denied`. The GNOME
-> Shell extension is in-compositor (unconfined) and unaffected.
+## Troubleshooting
+
+- **`myna` says "no backend socket"** — connect the backend plug (step 2)
+  and make sure the backend daemon has run (`snap logs whisper.server`).
+- **`myna.toggle` can't reach the daemon** — `myna` isn't running (or it's
+  running with a different `MYNA_ACTIVATION`; control mode is required).
+- **Nothing is injected, state shows `error`** — read the reason:
+  `gdbus call --session --dest org.myna.Dictation \
+    --object-path /org/myna/Dictation \
+    --method org.freedesktop.DBus.Properties.Get org.myna.Dictation ErrorMessage`
+  (a *capture_failed* usually means `myna:pipewire` isn't connected).
+- **`busctl` fails with "Operation not permitted" / "Access denied" against
+  the session bus in general** — your shell's `DBUS_SESSION_BUS_ADDRESS`
+  carries a stale `guid=` (a terminal/tmux server that survived a logout;
+  sd-bus validates the guid, GIO ignores it, myna recovers by itself). Fix:
+  `export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"`, and
+  restart the offending terminal server.
+- **Reading the bus from a container fails with "Access denied"** — snapd's
+  `dbus` slot only admits `label=unconfined` peers; call from a host shell
+  (not `snap run --shell`, Workshop/LXD/toolbox). The GNOME Shell extension
+  is in-compositor (unconfined) and unaffected.
 
 ## Interfaces (and why)
 
@@ -97,8 +127,18 @@ gdbus introspect --session --dest org.myna.Dictation \
 
 The IBus injector finds the daemon's address file under your *real* home
 even though snapd redirects `$HOME` (feature-005 discovery fix); the
-control socket lives under `$XDG_RUNTIME_DIR/snap.myna/` as AppArmor
-requires.
+control socket lives under the snap-scoped `$XDG_RUNTIME_DIR`.
+
+**Confinement note (indicator bus):** `org.myna.Dictation` is properties-only
+by design. snapd's `dbus` slot AppArmor policy denies broadcasting *custom*
+signals to unconfined subscribers (and can't be safely widened — AppArmor
+dbus rules can't discriminate message types), but it does allow
+`org.freedesktop.DBus.Properties` sends on the service's own path, which is
+exactly the shape of a `PropertiesChanged` broadcast. State + level updates
+are therefore pushed with standard `PropertiesChanged`; the myna-shell
+extension subscribes and gets the fast push path confined or not — no
+polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
+§Confinement).
 
 ## Known gaps (tracked)
 
@@ -108,18 +148,11 @@ requires.
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
   store upload.
-- **Custom signals don't cross confinement — `PropertiesChanged` does.** The
-  `org.myna.Dictation` publisher is properties-only by design: snapd's dbus
-  slot AppArmor policy denies broadcasting custom session-bus signals to
-  unconfined subscribers, but allows `org.freedesktop.DBus.Properties` sends
-  on the service's own path — the shape of a `PropertiesChanged` broadcast.
-  State + level updates are pushed with standard `PropertiesChanged`; the
-  myna-shell extension subscribes (no polling).
-- **Portal hotkey (v1):** re-prompts every daemon start; grab unreliable on
-  GNOME 50. Diagnose with:
+- **Portal hotkey (v1):** the bind sheet re-prompts every daemon start
+  (see Activation). If a confirmed key doesn't grab, diagnose with:
   ```shell
   gdbus monitor --session --dest org.freedesktop.portal.Desktop &
-  MYNA_ACTIVATION=portal myna   # confirm the sheet, then hold your key
+  MYNA_ACTIVATION=portal myna   # confirm the sheet, then press your key
   # org.freedesktop.portal.GlobalShortcuts Activated should appear on press;
   # nothing = the grab never registered (portal side)
   ```

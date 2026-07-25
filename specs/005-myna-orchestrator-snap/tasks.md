@@ -76,9 +76,16 @@
   extension subscribes to `g-properties-changed` — no polling, no signal gap
   (contract 004 dbus-interface.md §Confinement).
 - **Portal v1 UX**: bind sheet re-prompts every daemon start (no persist
-  tokens in v1 / ashpd 0.13) and the grab didn't register on GNOME 50 —
-  activation default flipped to `control` (`myna.toggle` +
+  tokens in v1 / ashpd 0.13); once a key is confirmed in the sheet the grab
+  works (user-verified 2026-07-24 — the earlier ESC-t report was pre-fix).
+  Activation default flipped to `control` (`myna.toggle` +
   `myna.install-shortcut`); portal is opt-in (`MYNA_ACTIVATION=portal`).
+- **Press-to-toggle is the default activation style everywhere** (user
+  decision 2026-07-24: hold-to-talk is uncomfortable): portal trigger gains
+  `ActivationMode` (Toggle default, `--hold` opts into hold-to-talk) with
+  hermetic Dedup tests; control socket was always toggle.
+- **`myna.install-shortcut` bug fixed**: double slash in the dconf key
+  (`myna//name`) + sed delimiter vs slash-containing paths.
 - Control-mode end-to-end accepted by the user (toggle → recording →
   injected transcript).
 

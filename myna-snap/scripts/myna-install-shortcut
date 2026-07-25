@@ -7,22 +7,24 @@
 # clobbers.
 set -eu
 
-SCHEMA_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
-KB_PATH="$SCHEMA_PATH/myna/"
+LIST_KEY="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
+KB_KEY="$LIST_KEY/myna"          # key form (writes): no trailing slash
+KB_DIR="$KB_KEY/"                # dir form: how the entry appears in the list
 ACCEL="${1:-<Super>d}"
 COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
 
-current="$(dconf read "$SCHEMA_PATH" || true)"
+current="$(dconf read "$LIST_KEY" || true)"
 case "$current" in
-    *"$KB_PATH"*) new_list="$current" ;;
-    "" | "[]" | "@as []") new_list="['$KB_PATH']" ;;
-    *) new_list="$(printf '%s' "$current" | sed "s/^\[/['$KB_PATH', /")" ;;
+    *"$KB_DIR"*) new_list="$current" ;;
+    "" | "[]" | "@as []") new_list="['$KB_DIR']" ;;
+    # Insert after the opening '[' (| delimiter: the path contains slashes).
+    *) new_list="$(printf '%s' "$current" | sed "s|^\[|['$KB_DIR', |")" ;;
 esac
 
-dconf write "$SCHEMA_PATH" "$new_list"
-dconf write "$KB_PATH/name" "'myna dictation'"
-dconf write "$KB_PATH/command" "'$COMMAND'"
-dconf write "$KB_PATH/binding" "'$ACCEL'"
+dconf write "$LIST_KEY" "$new_list"
+dconf write "$KB_KEY/name" "'myna dictation'"
+dconf write "$KB_KEY/command" "'$COMMAND'"
+dconf write "$KB_KEY/binding" "'$ACCEL'"
 
 echo "bound $ACCEL → $COMMAND"
-echo "start the daemon in control mode (MYNA_ACTIVATION=control myna), focus a field, tap $ACCEL."
+echo "start the daemon (myna), focus a field, tap $ACCEL to start/stop."
