@@ -7,6 +7,19 @@
 // watch, disconnects the proxy, and drops every subscription (X9); re-enable
 // re-establishes cleanly (X10).
 //
+// All updates arrive one way: the standard
+// org.freedesktop.DBus.Properties.PropertiesChanged signal. The proxy applies
+// it to its property cache before emitting g-properties-changed, so we simply
+// re-read the cached State/ErrorMessage/AudioRms/AudioPeak and forward what
+// changed. This is the one push channel that works for EVERY publisher,
+// confined or not: snapd's dbus slot policy lets a strictly-confined service
+// send on its own path with the Properties interface to
+// peer=(name=org.freedesktop.DBus, label=unconfined) — which is exactly the
+// shape dbus-daemon assigns a destination-less broadcast — while
+// custom-interface signals to unconfined peers are AppArmor-denied. The
+// org.myna.Dictation interface therefore defines no custom signals —
+// properties only (contract dbus-interface.md §Confinement).
+//
 // The Gio seams (_watchName/_unwatchName/_createProxy) are injectable so the
 // lifecycle is contract-testable headless against a stub (test/lifecycle.test.js).
 
@@ -57,6 +70,8 @@ export class DictationService {
         this._proxySignalIds = [];
         this._state = 'idle';
         this._errorMessage = '';
+        this._rms = 0;
+        this._peak = 0;
         this._available = false;
     }
 
@@ -99,36 +114,40 @@ export class DictationService {
     _onAppeared() {
         this._teardownProxy();
         this._proxy = this._createProxy();
+        // State transitions and audio levels alike ride PropertiesChanged
+        // (the header explains why there is no custom signal to join).
         this._proxySignalIds = [
-            this._proxy.connect('g-signal',
-                (_proxy, _sender, signal, params) => {
-                    if (signal !== 'StateChanged')
-                        return;
-                    const [state, errorMessage] = params.deep_unpack();
-                    this._setState(state, errorMessage);
-                }),
-            // Audio level (AudioRms/AudioPeak) updates arrive as property
-            // changes; forward the latest for the VU (content-free, energy only).
             this._proxy.connect('g-properties-changed',
-                () => this._emitLevel()),
+                () => this._reflectCached()),
         ];
         this._available = true;
         this._onAvailabilityChanged(true);
         // Reflect the current State so a mid-session daemon start shows the
-        // right treatment immediately (X8).
+        // right treatment immediately (X8). The proxy's initial GetAll has
+        // already populated the cache.
+        this._reflectCached();
+    }
+
+    // Forward the cached snapshot, deduped — the publisher pushes every
+    // change, so the cache is always current when this runs.
+    _reflectCached() {
+        if (this._proxy === null)
+            return;
         const state = this._proxy.get_cached_property('State')?.deep_unpack() ??
             'idle';
         const errorMessage =
             this._proxy.get_cached_property('ErrorMessage')?.deep_unpack() ?? '';
-        this._setState(state, errorMessage);
-        this._emitLevel();
-    }
-
-    _emitLevel() {
-        if (this._proxy === null)
-            return;
         const rms = this._proxy.get_cached_property('AudioRms')?.deep_unpack() ?? 0;
         const peak = this._proxy.get_cached_property('AudioPeak')?.deep_unpack() ?? 0;
+        this._setState(state, errorMessage);
+        this._setLevel(rms, peak);
+    }
+
+    _setLevel(rms, peak) {
+        if (rms === this._rms && peak === this._peak)
+            return;
+        this._rms = rms;
+        this._peak = peak;
         this._onLevel(rms, peak);
     }
 
@@ -141,6 +160,11 @@ export class DictationService {
     }
 
     _setState(state, errorMessage) {
+        // Dedupe: PropertiesChanged fires per property, so a multi-property
+        // transition re-reflects the current state; only real transitions
+        // may re-drive the view.
+        if (state === this._state && errorMessage === this._errorMessage)
+            return;
         this._state = state;
         this._errorMessage = errorMessage;
         this._onStateChanged(state, errorMessage);

@@ -32,7 +32,8 @@ function variant(value) {
 }
 
 // Stub D-Bus world: an injectable name watch + a stub Dictation proxy that
-// records connect/disconnect and can be driven through StateChanged signals.
+// records connect/disconnect and can be driven through property changes (the
+// publisher's only update channel — see dbus.js's header).
 function makeStubBus(initialState = 'idle') {
     const calls = {watched: 0, unwatched: 0, proxyCreated: 0, disconnected: 0};
     let appearedCb = null;
@@ -60,12 +61,13 @@ function makeStubBus(initialState = 'idle') {
             default: return null;
             }
         },
-        // Test driver: emit StateChanged as the real publisher would.
-        emitStateChanged(state, errorMessage = '') {
-            this.state = state;
+        // Test driver: a state transition, pushed as a property change the
+        // way the real publisher does it (State + ErrorMessage sets, then
+        // PropertiesChanged).
+        emitState(state, errorMessage = '') {
             this.errorMessage = errorMessage;
-            this._handlers['g-signal']?.(
-                this, null, 'StateChanged', variant([state, errorMessage]));
+            this.state = state;
+            this._handlers['g-properties-changed']?.(this, variant({}), []);
         },
         // Test driver: emit an audio-level property change.
         emitLevel(rms, peak = rms) {
@@ -149,10 +151,10 @@ function makeWiredService(initialState = 'idle') {
     eq('X8 reflects current State', shown.at(-1)?.key, 'recording');
     eq('X8 service state mirrors', service.state, 'recording');
 
-    // Live transitions flow through the signal.
-    stub.proxy.emitStateChanged('transcribing');
-    eq('X8 signal drives the view', shown.at(-1)?.key, 'transcribing');
-    stub.proxy.emitStateChanged('error', 'no audio source available');
+    // Live transitions flow through pushed property changes.
+    stub.proxy.emitState('transcribing');
+    eq('X8 pushed change drives the view', shown.at(-1)?.key, 'transcribing');
+    stub.proxy.emitState('error', 'no audio source available');
     eq('X8 error reason reaches the status', shown.at(-1)?.statusText,
         'Error — no audio source available');
     check('X8 error descriptor flagged', shown.at(-1)?.isError === true);
@@ -177,8 +179,8 @@ function makeWiredService(initialState = 'idle') {
     stub.appear();
     service.disable();
     eq('X9 name unwatched on disable', stub.calls.unwatched, 1);
-    // Both proxy subscriptions (StateChanged + properties-changed) are dropped.
-    eq('X9 proxy signals disconnected on disable', stub.calls.disconnected, 2);
+    // The proxy subscription (g-properties-changed) is dropped.
+    eq('X9 proxy signals disconnected on disable', stub.calls.disconnected, 1);
 
     // Signals after disable are dead: the watch is gone, so nothing can fire.
     check('X9 service reports unavailable after disable', !service.available);
