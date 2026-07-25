@@ -39,11 +39,14 @@ exist (`sudo snap start whisper.server`).
 myna            # the daemon: portal hotkey + org.myna.Dictation publisher
 ```
 
-- **Activation** defaults to the GlobalShortcuts portal (the packaged path —
-  portals only serve apps with an identity). Bind/rebind the key in the
-  desktop's portal UI. Fallback: `MYNA_ACTIVATION=control myna` +
-  `myna.install-shortcut` (binds Super+D → `myna.toggle`), or
-  `MYNA_ACTIVATION=stdin myna` for terminal debugging.
+- **Activation** defaults to the **control socket** (`myna.toggle`) — bind a
+  key with `myna.install-shortcut` (Super+D → `/snap/bin/myna.toggle`, via
+  dconf) or any GNOME custom shortcut to that command. The **portal**
+  (`MYNA_ACTIVATION=portal myna`) is opt-in for now: the GlobalShortcuts
+  portal here is v1 — it re-prompts with the bind sheet on every daemon
+  start (persist/restore tokens are v2, unexposed by ashpd 0.13) and the
+  grab did not register reliably on GNOME 50 (under investigation — see the
+  debug recipe below). `MYNA_ACTIVATION=stdin myna` for terminal debugging.
 - **Indicator**: `--dbus` mode is on by default in the launcher, serving
   `org.myna.Dictation` for the myna-shell GNOME extension; desktop
   notifications are the fallback. The experimental GTK overlay is available
@@ -105,3 +108,18 @@ requires.
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
   store upload.
+- **Custom signals don't cross confinement — `PropertiesChanged` does.** The
+  `org.myna.Dictation` publisher is properties-only by design: snapd's dbus
+  slot AppArmor policy denies broadcasting custom session-bus signals to
+  unconfined subscribers, but allows `org.freedesktop.DBus.Properties` sends
+  on the service's own path — the shape of a `PropertiesChanged` broadcast.
+  State + level updates are pushed with standard `PropertiesChanged`; the
+  myna-shell extension subscribes (no polling).
+- **Portal hotkey (v1):** re-prompts every daemon start; grab unreliable on
+  GNOME 50. Diagnose with:
+  ```shell
+  gdbus monitor --session --dest org.freedesktop.portal.Desktop &
+  MYNA_ACTIVATION=portal myna   # confirm the sheet, then hold your key
+  # org.freedesktop.portal.GlobalShortcuts Activated should appear on press;
+  # nothing = the grab never registered (portal side)
+  ```
