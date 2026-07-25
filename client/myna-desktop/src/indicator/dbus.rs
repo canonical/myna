@@ -114,12 +114,13 @@ impl<S: TextSink> TextSink for ReadinessTee<S> {
     }
 }
 
-/// Publishes `IndicatorState` transitions as `StateChanged` signals + `State`
-/// property updates via the [`crate::dbus::Bus`] seam (P1). Emits exactly one
-/// signal per *wire-state* transition (C2 — a duplicate `IndicatorState` whose
-/// mapped state is unchanged is a no-op), carries only state + a content-free
-/// reason (C3), and `hide()` publishes `idle`, zeroes the levels, and clears
-/// `ErrorMessage` (P3).
+/// Publishes `IndicatorState` transitions as `State`/`ErrorMessage` property
+/// updates via the [`crate::dbus::Bus`] seam (P1) — pushed to subscribers with
+/// the standard `PropertiesChanged`, the interface's only signal (contract
+/// §Confinement). Emits exactly one `State` update per *wire-state* transition
+/// (C2 — a duplicate `IndicatorState` whose mapped state is unchanged is a
+/// no-op), carries only state + a content-free reason (C3), and `hide()`
+/// publishes `idle`, zeroes the levels, and clears `ErrorMessage` (P3).
 pub struct DbusIndicator {
     bus: SharedBus,
     readiness: Readiness,
@@ -138,8 +139,10 @@ impl DbusIndicator {
         }
     }
 
-    /// Emit the transition (unless it repeats the current wire state) and keep
-    /// the `State`/`ErrorMessage` properties consistent with it.
+    /// Publish the transition (unless it repeats the current wire state) as
+    /// `ErrorMessage` + `State` property sets, each pushed to subscribers via
+    /// `PropertiesChanged` (C2). `ErrorMessage` goes first so a client
+    /// reacting to the `State` flip already reads the consistent reason.
     async fn publish(&mut self, state: &str, error_message: &str) {
         let current = (state.to_string(), error_message.to_string());
         if self.last.as_ref() == Some(&current) {
@@ -150,8 +153,6 @@ impl DbusIndicator {
         self.last = Some(current);
 
         let mut bus = self.bus.lock().await;
-        bus.set_property("State", PropertyValue::Str(state.to_string()))
-            .await;
         if state == wire_state::ERROR {
             bus.set_property(
                 "ErrorMessage",
@@ -162,7 +163,8 @@ impl DbusIndicator {
             bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
                 .await;
         }
-        bus.emit_state_changed(state, error_message).await;
+        bus.set_property("State", PropertyValue::Str(state.to_string()))
+            .await;
     }
 }
 
@@ -197,7 +199,10 @@ mod tests {
     #[test]
     fn indicator_state_maps_to_wire_state() {
         assert_eq!(map_state(&IndicatorState::Hidden, false), "idle");
-        assert_eq!(map_state(&IndicatorState::Transcribing, true), "transcribing");
+        assert_eq!(
+            map_state(&IndicatorState::Transcribing, true),
+            "transcribing"
+        );
         assert_eq!(map_state(&IndicatorState::Finalizing, true), "finalizing");
         assert_eq!(
             map_state(&IndicatorState::Error("refusing to type".into()), true),

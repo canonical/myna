@@ -38,7 +38,7 @@ MYNA_DBUS_TESTS=1 dbus-run-session -- cargo test -p myna-desktop dbus_hw
 ```
 
 **Expected**: `myna-desktop` (test harness) claims `org.myna.Dictation`, a `zbus`
-client observes `StateChanged` + reads `State`/`AudioRms`/`AudioPeak`, and
+client observes `PropertiesChanged` + reads `State`/`AudioRms`/`AudioPeak`, and
 name-appeared/vanished fire on start/stop (C1, C9, P13–P14). Runs identically on
 the desktop VM and hardware (constitution II).
 
@@ -112,7 +112,7 @@ cd client
 cargo test -p myna-desktop --test watermarks    # + the new dbus level-pump cadence check
 ```
 
-**Expected**: `StateChanged`→property-update latency and level-pump cadence within
+**Expected**: state-push→property-update latency and level-pump cadence within
 declared tolerances; no capture-path regression vs the feature-002/003 baselines.
 Extension fps is a manual observation in step 5 (harness-tier exemption).
 

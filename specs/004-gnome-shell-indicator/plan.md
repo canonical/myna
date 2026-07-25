@@ -24,8 +24,9 @@ fallback when the extension is absent (spec FR-020 / FR-023).
 
 Two deliverables, one contract between them:
 1. **`myna-desktop` D-Bus publisher** (Rust, TDD, shipped component) — a
-   `DbusIndicator` implementing the existing `Indicator` seam by emitting
-   `StateChanged` and updating `State`/`AudioRms`/`AudioPeak` properties, plus a
+   `DbusIndicator` implementing the existing `Indicator` seam by updating
+   `State`/`ErrorMessage`/`AudioRms`/`AudioPeak` properties (each update pushed
+   via the standard `PropertiesChanged`), plus a
    `DbusTrigger` feeding `Start`/`Stop`/`Toggle` into the orchestrator's existing
    `Trigger` seam (mirrors `ControlTrigger`). The `AudioStats` `watch` receiver
    (`myna-audio`) already carries the levels; a small pump publishes them.
@@ -81,11 +82,11 @@ D-Bus present. Older GNOME and non-GNOME desktops are out of scope (they keep th
 
 **Performance Goals** (inherited from feature 003 / UD129, pinned as watermarks —
 constitution III): indicator visible within the activation-latency target
-(≈100–200 ms) after `StateChanged(recording)`; goop animations sustain ≈60 fps
-and never block the compositor; audio-level updates at ~15–20 Hz with the VU
-decaying to floor within a bounded window (~300 ms) on a stale stream;
-`StateChanged` → visual update < 50 ms; no capture-path regression (publisher
-adds only a `watch` read + a signal emit per state change).
+(≈100–200 ms) after `State=recording` is published; goop animations sustain
+≈60 fps and never block the compositor; audio-level updates at ~15–20 Hz with
+the VU decaying to floor within a bounded window (~300 ms) on a stale stream;
+state push → visual update < 50 ms; no capture-path regression (publisher
+adds only a `watch` read + a property set per state change).
 
 **Constraints**: focus-safe (never take key focus — the entire point); push-to-talk
 (no overlay while idle); **privacy** — the interface and the indicator carry state
@@ -124,7 +125,7 @@ Constitution v1.3.0. This feature spans **two tiers**:
 |---|---|---|
 | I. Red-Green TDD (post-ratification) | Publisher: `DbusIndicator` state→signal mapping, property snapshots, and `DbusTrigger` edge dedup land test-first behind a fake-bus seam; the contract table in `contracts/dbus-interface.md` is encoded as executable tests before code. Extension: harness-tier — the pure state→visual-intent mapping gets a GJS contract test, but actor/animation code is exercised by the manual acceptance, not test-first. | PASS (publisher); EXEMPT (extension, harness-tier) |
 | II. Integration-Test Readiness | Publisher boundary is the `zbus` object behind the existing seams; hermetic tests use a fake bus, real behaviour in one `MYNA_DBUS_TESTS`-gated suite runnable on VM and hardware unchanged. Extension acceptance runs on a GNOME session (VM with a Wayland GNOME session, or hardware) via the same D-Bus contract. | PASS (by design) |
-| III. Performance Watermarks | `StateChanged`→visible, level-update cadence, and animation frame-rate targets are declared (Technical Context) with tolerances; the publisher's per-state overhead is measured as a Rust watermark (reuses feature-002/003 capture baselines — no capture-path change). Extension fps is a manual observation (harness-tier exemption). | PASS (publisher); EXEMPT (extension) |
+| III. Performance Watermarks | state-push→visible, level-update cadence, and animation frame-rate targets are declared (Technical Context) with tolerances; the publisher's per-state overhead is measured as a Rust watermark (reuses feature-002/003 capture baselines — no capture-path change). Extension fps is a manual observation (harness-tier exemption). | PASS (publisher); EXEMPT (extension) |
 | IV. Workshop-Based Dev Environment | New test/runtime deps must land in `.workshop/myna.yaml`: a **session D-Bus** for the gated publisher suite (likely already present via the `desktop` SDK from feature 003) and, for the extension acceptance, **GJS + a GNOME Shell session** (`gnome-shell`, `gjs`). Scoped as a foundational task; the extension bundle needs no build toolchain (pure GJS). | GATED — tracked |
 | V. Privacy-First, Offline-First | The interface exposes state + normalized level only — never transcript text; the extension renders/logs/persists no content and captures no audio; no network on either side; audio buffers unchanged (publisher only reads the existing `AudioStats` `watch`). | PASS (by design) |
 
@@ -160,8 +161,8 @@ client/
 │   ├── src/
 │   │   ├── indicator/
 │   │   │   ├── mod.rs         #   Indicator seam (UNCHANGED)
-│   │   │   ├── dbus.rs        #   NEW: DbusIndicator — emits org.myna.Dictation
-│   │   │   │                  #        StateChanged + State/AudioRms/AudioPeak
+│   │   │   ├── dbus.rs        #   NEW: DbusIndicator — publishes
+│   │   │   │                  #        State/ErrorMessage/AudioRms/AudioPeak
 │   │   │   └── notify.rs …    #   UNCHANGED fallback (NotifyIndicator)
 │   │   ├── shortcut/
 │   │   │   ├── mod.rs         #   Trigger seam (UNCHANGED)

@@ -28,9 +28,12 @@ not applicable on Wayland and still focus-fragile.
 
 **Decision**: A **session-bus D-Bus interface** `org.myna.Dictation`, served by
 `myna-desktop`, consumed by the extension via `Gio.DBusProxy`. State as a `State`
-property + a `StateChanged(s state, s error_message)` signal; levels as
-`AudioRms`/`AudioPeak` `d` properties updated at ~15–20 Hz; optional
-`Start()`/`Stop()`/`Toggle()` methods.
+property (+ `ErrorMessage`), every update pushed with the standard
+`PropertiesChanged` — the interface defines no custom signals, because
+`PropertiesChanged` on the service's own path is the one broadcast a
+strictly-confined publisher may send to unconfined subscribers (contract
+§Confinement); levels as `AudioRms`/`AudioPeak` `d` properties updated at
+~15–20 Hz; optional `Start()`/`Stop()`/`Toggle()` methods.
 
 **Rationale**: D-Bus is the native GNOME IPC; `Gio.DBusProxy` gives the extension
 property-caching + signal subscription for free. `myna-desktop` already vendors
@@ -217,7 +220,7 @@ unnecessary.
 the `IndicatorState`→`State`-string mapping (incl. the R4 loading split), property
 snapshots, and `DbusTrigger` edge/dedup; plus one env-gated (`MYNA_DBUS_TESTS=1`)
 suite standing the real object on a session bus (`dbus-run-session` in CI) and
-asserting a `zbus` client observes `StateChanged` and the properties. (b)
+asserting a `zbus` client observes `PropertiesChanged` and the properties. (b)
 **GJS extension** — factor the state→visual-intent + stale-decay logic into pure
 `states.js`/`vumeter.js` and unit-test them with a GJS test runner against a stub;
 lifecycle (connect/disconnect/unknown-state) tested against a stub proxy; the

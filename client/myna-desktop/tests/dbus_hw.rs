@@ -3,8 +3,9 @@
 //! dbus-interface.md C1/C9.
 //!
 //! Stands the real `zbus`-backed object on a session bus and asserts a `zbus`
-//! client observes `StateChanged`, reads `State`/`AudioRms`/`AudioPeak`, and
-//! sees name-appeared/vanished on start/shutdown. Run under an isolated
+//! client observes `PropertiesChanged` for `State`, reads
+//! `State`/`AudioRms`/`AudioPeak`, and sees name-appeared/vanished on
+//! start/shutdown. Run under an isolated
 //! session bus (exactly like the IBus suite):
 //!
 //! ```sh
