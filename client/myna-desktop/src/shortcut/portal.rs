@@ -111,7 +111,7 @@ enum Keepalive {
     ),
 }
 
-/// A hold-to-talk [`Trigger`] backed by the GlobalShortcuts portal.
+/// A [`Trigger`] backed by the GlobalShortcuts portal.
 pub struct GlobalShortcutTrigger {
     signals: BoxStream<'static, PortalSignal>,
     dedup: Dedup,

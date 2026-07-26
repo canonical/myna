@@ -186,9 +186,9 @@ daemon.
 (cd server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 cd client && cargo build --release && cd ..
 
-./client/target/release/myna-desktop --install-shortcut          # once: binds Super+D
+./client/target/release/myna-desktop --install-shortcut '<Super>t>'        # once: binds a shortcut
 ./client/target/release/myna-desktop --socket /tmp/myna.sock --language en   # daemon
-# focus a text field, tap Super+D, speak, tap Super+D -> transcript injected there
+# focus a text field, tap the shortcut, speak, tap -> transcript injected there
 ```
 
 Alternatives: `--portal` (hold-to-talk via the GlobalShortcuts portal — packaged

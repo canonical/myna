@@ -12,7 +12,7 @@
 //! socket, and a GNOME shortcut bound to `myna-desktop --toggle` pokes it (press
 //! = start, press again = stop). This works for a plain unsandboxed binary on
 //! GNOME/Wayland — no terminal focus, no portal, no app id. Run
-//! `myna-desktop --install-shortcut` once to bind `Super+D` for you.
+//! `myna-desktop --install-shortcut '<Super>t'` once to bind a shortcut for you.
 //!
 //! Alternatives: `--portal` (GlobalShortcuts hold-to-talk — only works packaged
 //! as a snap/flatpak, which GNOME grants an app identity); `--stdin` (terminal
@@ -21,9 +21,9 @@
 //!
 //! ```text
 //!   myna-server --adapter whisper --socket /tmp/myna.sock &
-//!   myna-desktop --install-shortcut                 # once: binds Super+D
+//!   myna-desktop --install-shortcut '<Super>t'      # once: binds a shortcut
 //!   myna-desktop --socket /tmp/myna.sock --language en   # the daemon
-//!   # focus a text field, tap Super+D, speak, tap Super+D → text is injected
+//!   # focus a text field, tap the shortcut, speak, tap again → text is injected
 //! ```
 
 use std::path::PathBuf;
@@ -43,16 +43,13 @@ use myna_desktop::{DesktopController, Indicator};
 use myna_orchestrator::{run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend};
 use tokio::sync::mpsc;
 
-const DEFAULT_SHORTCUT: &str = "SUPER+d";
-const DEFAULT_ACCEL: &str = "<Super>d";
-
 const USAGE: &str = "\
 myna-desktop — push-to-talk dictation (T21/T22)
 
 USAGE:
     myna-desktop --socket <path> [options]      # run the dictation daemon
     myna-desktop --toggle                       # start/stop the running daemon
-    myna-desktop --install-shortcut [<accel>]   # bind a GNOME shortcut (Super+D)
+    myna-desktop --install-shortcut <accel>     # bind a GNOME shortcut (e.g. '<Super>t')
 
 Focus a text field, tap the shortcut to start, speak, tap again to stop. The
 committed transcript is injected via IBus into that field.
@@ -63,10 +60,12 @@ OPTIONS:
     --target <node>    PipeWire node.name to capture from (default: system default)
     --control <path>   control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
     --toggle           poke the running daemon (bind this to a GNOME shortcut)
-    --install-shortcut bind a GNOME custom keybinding (accel, default <Super>d)
-                       to `myna-desktop --toggle`, then exit
+    --install-shortcut bind a GNOME custom keybinding to <accel>
+                       (e.g. '<Super>t'), then exit
     --portal           activate via the GlobalShortcuts portal (packaged only);
                        press-to-toggle by default (tap = start, tap = stop)
+    --shortcut <accel> preferred trigger for --portal mode (the portal's bind
+                       dialog may still let you pick a different key)
     --hold             with --portal: hold-to-talk instead (hold = record)
     --stdin            DEBUG: drive from the terminal (injects into the terminal)
     --overlay          show the GTK activity overlay (experimental; may steal focus)
@@ -75,13 +74,13 @@ OPTIONS:
     -h, --help         show this help
 ";
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Args {
     socket: Option<PathBuf>,
     language: Option<String>,
     target: Option<String>,
     control: Option<PathBuf>,
-    shortcut: String,
+    shortcut: Option<String>,
     toggle: bool,
     install_shortcut: Option<String>,
     portal: bool,
@@ -92,8 +91,11 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args { shortcut: DEFAULT_SHORTCUT.to_string(), ..Default::default() };
-    let mut it = std::env::args().skip(1).peekable();
+    parse_args_from(std::env::args().skip(1).peekable())
+}
+
+fn parse_args_from(mut it: std::iter::Peekable<impl Iterator<Item = String>>) -> Result<Args, String> {
+    let mut a = Args::default();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -104,15 +106,10 @@ fn parse_args() -> Result<Args, String> {
             "--language" => a.language = Some(next(&mut it, "--language")?),
             "--target" => a.target = Some(next(&mut it, "--target")?),
             "--control" => a.control = Some(PathBuf::from(next(&mut it, "--control")?)),
-            "--shortcut" => a.shortcut = next(&mut it, "--shortcut")?,
+            "--shortcut" => a.shortcut = Some(next(&mut it, "--shortcut")?),
             "--toggle" => a.toggle = true,
             "--install-shortcut" => {
-                // Optional accel argument (not starting with '-').
-                let accel = match it.peek() {
-                    Some(v) if !v.starts_with('-') => it.next(),
-                    _ => None,
-                };
-                a.install_shortcut = Some(accel.unwrap_or_else(|| DEFAULT_ACCEL.to_string()));
+                a.install_shortcut = Some(next(&mut it, "--install-shortcut")?);
             }
             "--portal" => a.portal = true,
             "--hold" => a.hold = true,
@@ -210,7 +207,7 @@ async fn run_controller(
         builder.trigger(StdinTrigger::new()).build()
     } else if args.portal {
         let mode = if args.hold { ActivationMode::Hold } else { ActivationMode::Toggle };
-        match GlobalShortcutTrigger::bind("dictate", Some(&args.shortcut), mode).await {
+        match GlobalShortcutTrigger::bind("dictate", args.shortcut.as_deref(), mode).await {
             Ok(trigger) => builder.trigger(trigger).build(),
             Err(e) => {
                 eprintln!("cannot bind the GlobalShortcuts portal: {e}");
@@ -239,10 +236,11 @@ fn banner(args: &Args) {
         println!("myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)");
     } else if args.portal {
         let verb = if args.hold { "hold" } else { "tap" };
-        println!("myna-desktop → {sock} — {verb} {} to talk (portal)", args.shortcut);
+        let key = args.shortcut.as_deref().unwrap_or("your chosen shortcut");
+        println!("myna-desktop → {sock} — {verb} {key} to talk (portal)");
     } else {
         println!("myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop.");
-        println!("  if you haven't bound one yet: `myna-desktop --install-shortcut` (binds Super+D)");
+        println!("  if you haven't bound one yet: `myna-desktop --install-shortcut '<Super>t>'");
         println!("  or bind a GNOME custom shortcut to: `{}`", toggle_command());
     }
 }
@@ -266,8 +264,9 @@ fn toggle_command() -> String {
     format!("{} --toggle", exe_path())
 }
 
-/// `--install-shortcut`: bind a GNOME custom keybinding to `myna-desktop
-/// --toggle`, appending to any existing custom keybindings (never clobbering).
+/// `--install-shortcut <accel>`: bind a GNOME custom keybinding to
+/// `myna-desktop --toggle`, appending to any existing custom keybindings
+/// (never clobbering).
 fn install_shortcut(accel: &str) -> ExitCode {
     use std::process::Command;
     const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
@@ -423,4 +422,52 @@ fn run_with_overlay(args: Args) -> ExitCode {
     let code = worker.join().unwrap_or(ExitCode::FAILURE);
     println!("bye");
     code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> std::iter::Peekable<impl Iterator<Item = String>> {
+        v.iter().map(|s| s.to_string()).collect::<Vec<_>>().into_iter().peekable()
+    }
+
+    #[test]
+    fn install_shortcut_requires_accel() {
+        // Missing accel must fail — no default.
+        let result = parse_args_from(args(&["--install-shortcut"]));
+        assert!(result.is_err(), "--install-shortcut without accel should fail");
+        assert!(result.unwrap_err().contains("--install-shortcut needs a value"));
+    }
+
+    #[test]
+    fn install_shortcut_with_accel_succeeds() {
+        let result = parse_args_from(args(&["--install-shortcut", "<Super>t"]));
+        assert!(result.is_ok(), "--install-shortcut with accel should succeed");
+        assert_eq!(result.unwrap().install_shortcut, Some("<Super>t".to_string()));
+    }
+
+    #[test]
+    fn install_shortcut_accel_not_consumed_as_next_flag() {
+        // Accel that looks like a flag (starts with '-') should still be accepted
+        // because --install-shortcut always consumes the next arg.
+        let result = parse_args_from(args(&["--install-shortcut", "--not-a-flag"]));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().install_shortcut, Some("--not-a-flag".to_string()));
+    }
+
+    #[test]
+    fn portal_shortcut_defaults_to_none() {
+        // Without --shortcut, portal mode lets the portal dialog pick the key.
+        let result = parse_args_from(args(&["--portal", "--socket", "/tmp/x.sock"]));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().shortcut, None);
+    }
+
+    #[test]
+    fn portal_shortcut_explicit() {
+        let result = parse_args_from(args(&["--portal", "--shortcut", "<Super>t", "--socket", "/tmp/x.sock"]));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().shortcut, Some("<Super>t".to_string()));
+    }
 }

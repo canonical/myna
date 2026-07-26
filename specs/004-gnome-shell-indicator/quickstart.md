@@ -72,11 +72,11 @@ is not yet running (X7).
 
 ```sh
 myna-desktop --dbus --socket /tmp/myna.sock --language en &   # serves org.myna.Dictation
-myna-desktop --install-shortcut                               # once: binds Super+D (feature 003)
+myna-desktop --install-shortcut '<Super>t>'                              # once: binds a shortcut (feature 003)
 # focus a text field (GNOME Text Editor), then:
-#   tap Super+D  → goop appears (loading glow if cold, then listening ripple)
+#   tap the shortcut  → goop appears (loading glow if cold, then listening ripple)
 #   speak        → glow/VU tracks your voice
-#   tap Super+D  → finalizing flash, text injected via IBus, goop clears
+#   tap the shortcut  → finalizing flash, text injected via IBus, goop clears
 ```
 
 **Expected / assert**:
