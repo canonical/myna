@@ -25,8 +25,8 @@ sudo snap install --dangerous ./myna_*.snap
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
 sudo snap connect myna:backend whisper:ubustt-socket     # the backend session socket
 
-# 3. Bind your dictation key (writes Super+D → /snap/bin/myna.toggle via dconf)
-myna.install-shortcut                 # or: myna.install-shortcut '<Super>t'
+# 3. Bind your dictation key (writes <accel> → /snap/bin/myna.toggle via dconf)
+myna.install-shortcut '<Super>t>'                 # or any other accel string
 
 # 4. Run the daemon (leave it running; autostart is a known gap below)
 myna

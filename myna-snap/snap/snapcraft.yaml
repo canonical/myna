@@ -70,7 +70,7 @@ apps:
   toggle:
     command: bin/myna-desktop --toggle
 
-  # Bind Super+D → `myna.toggle` via dconf (control-socket activation mode;
+  # Bind <accel> → `myna.toggle` via dconf (control-socket activation mode;
   # not needed with the default portal activation). Uses dconf because the
   # GNOME schemas are not visible inside the snap's core24 /usr — dconf
   # writes need no schema, and the gsettings interface grants them.

@@ -1,16 +1,18 @@
 #!/bin/sh
-# Bind a GNOME custom keyboard shortcut (default <Super>d) to `myna.toggle`
+# Bind a GNOME custom keyboard shortcut to `myna.toggle`
 # (control-socket activation mode). Uses `dconf` directly: inside the snap the
 # host's GSettings schemas are not visible (the base snap owns /usr), and
 # dconf writes need no schema — the `gsettings` interface grants
 # ca.desrt.dconf.Writer. Appends to any existing custom keybindings; never
 # clobbers.
+#
+# Usage: myna-install-shortcut <accel>   (e.g. '<Super>t')
 set -eu
 
 LIST_KEY="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
 KB_KEY="$LIST_KEY/myna"          # key form (writes): no trailing slash
 KB_DIR="$KB_KEY/"                # dir form: how the entry appears in the list
-ACCEL="${1:-<Super>d}"
+ACCEL="${1:?usage: myna-install-shortcut <accel> (e.g. '<Super>t')}"
 COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
 
 current="$(dconf read "$LIST_KEY" || true)"

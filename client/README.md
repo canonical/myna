@@ -85,9 +85,9 @@ for a plain unsandboxed binary — no terminal focus, no portal, no app id.
 ```sh
 (cd ../server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 
-myna-desktop --install-shortcut           # once: binds Super+D → `myna-desktop --toggle`
+myna-desktop --install-shortcut '<Super>t>'      # once: binds a shortcut → `myna-desktop --toggle`
 myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running)
-# focus a text field, tap Super+D, speak, tap Super+D → transcript injected there
+# focus a text field, tap your shortcut, speak, tap → transcript injected there
 ```
 
 Other activation modes: `--portal` (GlobalShortcuts hold-to-talk — only works
