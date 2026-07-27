@@ -1,19 +1,19 @@
 # Backend-Snap Configuration API — Design Proposal
 
-**Date:** 2026-07-12 (revised 2026-07-15 after team review)
-**Status:** Proposed — team discussion draft (feeds workstream E; ownership TBD)
+**Date:** 2026-07-12 (revised 2026-07-15 after team review; revised 2026-07-27 after platform meeting)
+**Status:** In progress — positions partially settled; open questions tracked in §6
 **Authors:** Charles, with Claude
 
 How the desktop (Settings UI, orchestrator, power user) reads and changes the
 configuration of the ASR inference snaps — model selection, engine selection,
 residency policy, per-inference tuning — and who owns that boundary.
 
-This is a **proposal to bring to the team**, not a settled contract. It records
-positions and their rationale, names the required inference-snap-side API
-changes, and lists the open questions (owner, mediation shape, provisioning path).
-It builds on the snap design note (`asr-inference-snap-design.md`), capabilities
-discovery (`myna.core.capabilities`, T24), and the meeting action items from the
-Configuration-API discussion.
+This document records positions and their rationale, names the required
+inference-snap-side API changes, and tracks open questions (owner, mediation
+shape, provisioning path). It builds on the snap design note
+(`asr-inference-snap-design.md`), capabilities discovery (`myna.core.capabilities`,
+T24), and action items from the Configuration-API discussions (2026-07-14/15,
+2026-07-27).
 
 ## 1. Context
 
@@ -61,6 +61,11 @@ unprivileged and per-session; it **must not** become a privileged control plane
 **layers 1 and 2**, and about drawing the boundaries so the three do not leak
 into each other.
 
+> **⚠ Open (§6):** Whether **language** belongs permanently in layer 3 (per-session
+> wire param) or should acquire a layer-2 default (persisted config) is under
+> review by platform engineering. Do not hardcode either position until guidance
+> arrives.
+
 ### Model selection has two distinct verbs (the classic conflation)
 
 - **Session request** (layer 3): a client asks for a model in `session.update`;
@@ -86,6 +91,14 @@ config-mutation vector and entangle it with T17 access control. Read-only
 *runtime* discovery (`capabilities.query`) stays on the socket; *settings* do
 not.
 
+**Transport: UDS via content share — TCP is ruled out.** The `myna` client snap
+is strictly confined with no `network` plug, so a TCP-only backend is
+unreachable by design. The correct topology — UDS socket exposed through a
+`ubustt-socket` writable content share — is already how the whisper-snap is
+packaged and must remain the norm for any community inference snap. Any
+proposed config surface (§3.3) must sit on the same UDS/content-share transport,
+not on TCP.
+
 ### 3.2 CLI first; specify the shape a UI will later consume
 
 Per the meeting ("Configuration UI · Start with a CLI"), v1 is literally
@@ -94,7 +107,15 @@ But we specify the *shape* of the eventual programmatic surface now so the CLI
 and a later programmatic API converge instead of diverging. The CLI is the first
 consumer of the same schema (§3.4) a GUI will later consume.
 
-### 3.3 Mediating privileged writes: snapd-managed config + a configure hook (not D-Bus)
+### 3.3 Mediating privileged writes: snapd-managed config + a configure hook
+
+**What "mediation" means here.** An unprivileged Settings panel cannot run
+`sudo modelctl` — it lacks the privilege and would break confinement. Something
+must sit between the UI and the privileged snap operations (root + restart +
+component pulls) and authorize the user before acting. That intermediary is the
+*mediator*. Options are: a bespoke root daemon, a D-Bus service, or
+**snapd itself** via its config API + configure hooks. The chosen path uses
+snapd as the mediator, reusing infrastructure that already exists.
 
 An unprivileged Settings panel cannot run `sudo modelctl`. Something must mediate
 root + restart + component pulls behind an authorization prompt. This is the
@@ -105,10 +126,9 @@ reshape this section *away* from the earlier D-Bus-daemon recommendation:
 
 - **No new D-Bus API** (advice from Jon S.). The team originally wanted
   inference-snap discovery (mDNS-over-D-Bus) *and* transcription-over-D-Bus, and
-  dropped both. Since transcription now rides **TCP/UDS**, configuration should
-  use the **same protocol layer** — one uniform transport, not a second D-Bus
-  control surface. This also serves clients a system-bus D-Bus API would not:
-  future inference-snap clients from a **web app or another machine**.
+  dropped both. Since transcription now rides **UDS**, configuration should
+  use the **same transport layer** — one uniform socket family, not a second D-Bus
+  control surface.
 - **modelctl's storage backend is moving to snapd-managed config.** modelctl
   today uses snapd as its storage backend, but inference snaps aren't allowed
   direct access to that (unstable) storage layer. The plan is to expose the
@@ -120,25 +140,26 @@ reshape this section *away* from the earlier D-Bus-daemon recommendation:
 So the mediation story becomes two lanes over reused infrastructure, **not** a
 new privileged daemon:
 
-- **Reads and rich clients** — a config surface over **TCP/UDS**, same protocol
-  layer as the transcription socket (§3.1 still holds: a *separate* surface from
-  the session socket, same transport family). This is what a web-app / remote /
-  cross-machine client would use, and gives us a uniform protocol layer across
-  transcription and configuration. **Protocol: gRPC** — with D-Bus off the table,
-  JB recommends **gRPC** for this surface. It fits the requirements well: runs
-  over both UDS (local, unprivileged) and TCP (remote/cross-machine), has a
-  first-class schema (protobuf/proto3) that doubles as the machine-readable
-  contract, native streaming (server-streaming RPC suits the provisioning
-  progress events of §3.8 / Appendix A.3), and mature multi-language clients for
-  future web/desktop consumers. (This is the config/control plane only; the
-  transcription wire stays WebSocket-over-UDS / IE115 as today — "same transport
-  family", not necessarily the same framing.)
+- **Reads and rich clients** — a config surface over **UDS** (see §3.1 — TCP is
+  ruled out), *separate* from the transcription session socket but on the same
+  transport family. **Protocol: gRPC preferred**, but D-Bus remains on the table
+  if it proves a more appropriate fit for the specific integration (e.g. tighter
+  desktop policy, existing tooling). The protocol choice is a soft preference,
+  not a closed decision. gRPC arguments: protobuf schema doubles as
+  machine-readable contract, native server-streaming suits provisioning progress
+  (§3.8 / Appendix A.3), multi-language client support. D-Bus arguments:
+  already the system integration bus on Ubuntu Desktop, well-understood policy,
+  avoids a second socket. Settle this with the platform team before building.
+  (This is the config/control plane only; the transcription wire stays
+  WebSocket-over-UDS / IE115 as today.)
 - **Privileged writes** — go through **snapd-managed config**: the frontend sets
   keys via the **snapd REST API** (equivalent of `snap set <snap> key=value`),
   which the desktop already reaches and which **snapd itself gates** with its own
   polkit authorization. A **`configure` hook** in the snap reacts — validates,
-  pulls any needed components (layer 1), and restarts (or defers; see
-  `--no-restart` below).
+  pulls any needed components (layer 1), and **automatically restarts** (or
+  defers; see restart policy below). The UI must surface a "restarting…"
+  indicator while the socket is down and signal readiness when it comes back.
+  Silent restarts are not acceptable — the user must see feedback.
 
 This **reuses existing infrastructure** (the earlier option (c)) rather than
 standing up a privileged D-Bus daemon with its own polkit policy: no new
@@ -149,7 +170,15 @@ findings from the Marco review (a strict snap *can* ship polkit config and own a
 D-Bus name) remain **true but are no longer the chosen path** — kept in
 Appendix B as fallback evidence should a snap-local daemon ever be needed.
 
-**Restart is decoupled from the write.** `modelctl set` / `unset` / `use-model` /
+**Restart policy (settled 2026-07-27).** When a configuration change requires a
+restart, the configure hook **triggers the restart automatically** — no manual
+intervention required. The UI must show the user a "restarting backend…" state
+while the socket is down and confirm readiness when the new process is serving.
+`--no-restart` remains available for batching multiple writes (apply once at
+the end) and for Gadget-seeding / provision-time config, but the default for
+a user-initiated Settings change is automatic restart with feedback.
+
+`modelctl set` / `unset` / `use-model` /
 `use-engine` accept a **`--no-restart`** flag: the change is recorded but not
 applied until a separately-triggered restart. This lets a UI batch several
 changes (model + engine + idle policy) and restart **once**, lets the
@@ -167,7 +196,7 @@ broker shapes; the review resolves the choice:
 - ~~(b) a small root D-Bus daemon~~ — **ruled out** by the no-new-D-Bus guidance.
 - **(c) snapd's own configuration** (`snap set` / snapd REST) mediated — **now the
   direction**, paired with a `configure` hook for the install-and-restart work
-  and a TCP/UDS read surface for rich clients.
+  and a UDS read surface for rich clients.
 
 This is **not STT-specific** — it belongs to the inference-snaps platform, which
 argues for device-engineering ownership (§4).
@@ -226,6 +255,51 @@ and their domains. They should be consistent (e.g. the model enum in the schema
 ⊇ the active model capabilities lists) but serve different consumers.
 A concrete strawman of this schema (whisper-snap) is in **Appendix A**.
 
+### 3.4.1 Gap: model capabilities query API (not yet in modelctl)
+
+**⚠ New gap identified 2026-07-27.** The current `modelctl` exposes snap-level
+configuration (socket path, idle policy, engine, active model) but has **no API
+to query the capabilities of the model itself** — e.g. which languages it
+supports, what model variants it offers, what accuracy/speed trade-offs each
+variant implies. This is distinct from both:
+
+- `capabilities.query` on the transcription socket (T24) — runtime state of the
+  *currently running* model, not a static property of the model family; and
+- `describe-config` (§3.4) — knobs that can be changed, not what each option
+  *can do*.
+
+What is missing is something like `modelctl describe-model <id>` (or a
+`models` section inside `describe-config`), returning per-model:
+
+```json
+{
+  "id": "base",
+  "title": "Whisper base (74M)",
+  "languages": ["en", "fr", "de", "es", "..."],
+  "multilingual": true,
+  "variants": [
+    { "engine": "cpu",        "compute_type": "int8",       "notes": "fastest on CPU" },
+    { "engine": "nvidia-gpu", "compute_type": "float16",    "notes": "full accuracy" }
+  ],
+  "disk_size": "150M",
+  "installed": true
+}
+```
+
+This is needed for:
+- A Settings "choose model" control that tells the user what each option *does*
+  (language coverage, quality tier), not just its name.
+- Model profile mapping (§3.7) — a profile recommendation requires knowing each
+  model's characteristics.
+- UD136's "Download language models?" UX — showing what you get before you
+  download it.
+
+**Owner: TBD** (same ownership question as describe-config, §4). This should be
+part of the platform team's `describe-config` deliverable, or a companion
+`describe-model` command. The strawman in Appendix A already embeds partial
+per-option metadata (size, capabilities tags) — that section should be extended
+to cover the full model capability surface once ownership is confirmed.
+
 ### 3.5 Unprivileged read, snapd-mediated write
 
 Displaying current settings must not require root. `modelctl get` is already
@@ -237,7 +311,7 @@ where a mutation actually happens.
 
 The read is a **single get-all at UI startup**: one `describe-config` returns the
 schema *and* every key's `current` value (§3.4, Appendix A), so a panel renders
-and populates from one call — no per-key reads. Served over the TCP/UDS read
+and populates from one call — no per-key reads. Served over the UDS read
 surface (§3.3), the UI reads it without shelling out per key.
 
 ### 3.6 Engine selection: device-attribute matching auto by default, manual override as a knob
@@ -290,6 +364,24 @@ default and the client capture ring-buffer depth are one decision — the buffer
 must cover the worst-case cold load the policy tolerates, or pre-ready speech is
 lost.
 
+**Model profiles (UD136: default/lightweight/quality) — position 2026-07-27.**
+Computing profiles from first principles (mapping profile → model + engine +
+compute-type automatically from hardware + benchmarks) is the ideal but is
+not practical in the first iteration. The agreed approach:
+
+- **First iteration: recommend, don't enforce.** After the initial benchmarking
+  run (already done — `results/`), surface a *recommended* profile to the user
+  based on their hardware. Do not auto-install or auto-switch snaps — installing
+  a snap from inside a snap is unsupported and out of scope.
+- **Machinery needed first:** model profile recommendations require the model
+  capability query API (§3.4.1) so the UI knows what each option provides. The
+  profile metadata (accuracy tier, resource tier, recommended-for) should live
+  as tags in the config schema's model options (Appendix A) rather than being
+  hardcoded per-snap in the UI.
+- **No auto-correction.** If a different snap family would serve the user better,
+  the UI can surface that as a suggestion pointing at Software Center, not as an
+  automated action.
+
 ### 3.8 Component provisioning + progress (layer 1)
 
 "Download another model" is a **component install** via snapd, driven by the
@@ -299,99 +391,131 @@ fallback). Choosing *other inference snaps entirely* (a different family) is
 **out of scope here** — that is general inference-snap discovery / Software
 Center territory, not STT-specific.
 
-**Progress: read it from snapd, not from inside the snap (clarified
-2026-07-15).** There are two vantage points, and they differ:
+**Progress: a snap limitation, not a design choice (clarified 2026-07-27).**
+There are two vantage points:
 
 - **The desktop frontend is outside the confinement.** If it already talks to the
   **snapd REST API** for configuration (`snap set`, §3.3), it can use that *same*
   API to observe **component download progress** — snapd exposes change/task
   progress today, from outside the snap, without `snapd-control`. So a Settings
   UI can show real byte-level progress **now**, by watching the snapd change it
-  initiated. This is the preferred path and does not wait on snapd 2.77.
+  initiated. This is the preferred path and does not wait on snapd 2.77/2.78.
 - **modelctl, inside the snap, cannot see it** — a confined snap without
   `snapd-control` has no access to that progress, so `modelctl` itself shows only
-  an **indeterminate spinner + "downloading…"** until **snapd 2.77** exposes
-  component-download progress to the snap. That spinner is the CLI's honest MVP,
-  *not* a limit on the GUI.
+  an **indeterminate spinner + "downloading…"** until snapd exposes
+  component-download progress to the snap (no committed version as of 2026-07-27).
+  That spinner is the CLI's honest MVP, *not* a limit on the GUI.
 
-So the guidance flips from the earlier draft: the byte-percentage story is a
-**frontend-via-snapd-REST** capability available now; only the in-snap CLI is
-gated on 2.77.
+**Snapd version dependency is a platform constraint, not something we can resolve
+unilaterally.** Using snap components gives us model packaging but no in-snap
+progress. Better in-snap progress requires a future snapd release. The UD136
+Settings UX depends on which snapd features have landed; track those with the
+snapd team but do not gate the STT design on a specific version.
 
-## 4. Ownership (open — the meeting's first question)
+## 4. Ownership (open — still unresolved as of 2026-07-27)
 
-Proposed split, to confirm with the team:
+Proposed split, still to be confirmed:
 
 - **Device engineering** owns the **config surface + schema + snapd-config
   mediation** (§3.3–3.5) and the provisioning path (§3.8) — these are the
   modelctl/IE108 platform, per-snap and **not** STT-specific; every inference
-  snap benefits.
+  snap benefits. This includes `describe-config` and the model capability query
+  API (§3.4.1).
 - **The STT team (us)** owns the **STT-specific keys** (`att-context-size`, model
-  options, residency intent mapping) and the **desktop Settings integration**
-  (UD129 scope) that consumes the schema.
+  options, residency intent mapping), the model capability metadata surface
+  (§3.4.1 — we drive the spec even if device engineering builds it), and the
+  **desktop Settings integration** (UD129 scope) that consumes the schema.
 - **Software Center integration** for choosing other inference snaps is **out of
   scope** for this spec (not STT-specific).
+
+**⚠ Gap:** The pluggability contract for community / third-party inference snaps
+(what a snap must implement to be picked up as a backend — IE115 dialect,
+`capabilities.query`, `ubustt-socket` content share, config schema) needs a
+**clear public developer document with tutorials and examples**. This is the
+T48-adjacent work (backend discovery) and is currently unowned. It is not
+pure STT scope nor pure platform scope — ownership must be explicitly assigned.
 
 ## 5. Required inference-snap-side API changes (summary)
 
 1. **Config-schema discovery** (§3.4) — machine-readable keys with
    type/domain/default/scope/restart-required, domains reflecting what is
-   actually selectable on this machine. *The central change.*
-2. **Snapd-mediated write path** (§3.3) — config as **snapd-managed config**
+   actually selectable on this machine. *The central change.* Owner TBD (§4).
+2. **Model capabilities query API** (§3.4.1) — per-model: supported languages,
+   multilingual flag, available variants, disk size, quality/resource tier tags.
+   **⚠ New gap** — not currently in modelctl. Needed for Settings model picker,
+   model profiles (§3.7), and UD136 download UX.
+3. **Snapd-mediated write path** (§3.3) — config as **snapd-managed config**
    (`snap set` via the snapd REST API, gated by snapd's own authorization) plus a
-   snap **`configure` hook** that installs components and restarts, so an
-   unprivileged UI can request changes without running as root or shelling `sudo
-   modelctl`. **No new D-Bus API** (Jon S.); rich/remote reads ride TCP/UDS via
-   **gRPC** (JB), the same transport family as transcription.
-3. **Unprivileged schema read** (§3.5) — parity with the already-unprivileged
+   snap **`configure` hook** that installs components and **automatically restarts
+   with user-visible feedback**. No new D-Bus API; protocol for the read/control
+   surface (gRPC vs D-Bus) is a soft preference to settle with the platform team.
+4. **Unprivileged schema read** (§3.5) — parity with the already-unprivileged
    `modelctl get`.
-4. **Component install + progress** (§3.8) — trigger/observe model-component
-   downloads from a UI; a frontend with snapd REST access can read progress now,
-   in-snap CLI progress gated on snapd 2.77.
-5. **(Nice-to-have) apply without full restart** — for language/residency tuning,
-   a graceful reconfigure beats a socket-dropping restart; flag as future, not
-   MVP. (`--no-restart` already lets writes defer/batch the restart, §3.3.)
+5. **Component install + progress** (§3.8) — trigger/observe model-component
+   downloads from a UI; a frontend with snapd REST access can read progress now;
+   in-snap CLI progress is blocked on a future snapd release (platform constraint).
+6. **Restart with user feedback** (§3.3) — the configure hook triggers automatic
+   restart; the UI must surface a "restarting…" indicator and signal readiness.
+   This is **not** a nice-to-have — silent restarts are unacceptable.
+7. **Pluggability contract document** (§4) — a public developer doc + tutorials
+   so community snap authors know exactly what to implement. Currently unowned.
 
-## 6. Open questions for the team
+## 6. Open questions — status after 2026-07-27 meeting
 
-- **Owner** of the config surface + schema + snapd-config mediation — device
-  engineering (§4)?
-- **Mediation shape confirmed?** — the review settles on **snapd-managed config
-  + `configure` hook** for writes and **TCP/UDS** for rich reads, *not* a D-Bus
-  daemon (Jon S.), with **gRPC** as the proposed protocol for that read/control
-  surface (JB). Confirm: (i) the platform team will expose snapd-managed config
-  for the inference snaps (currently blocked — no direct access to the unstable
-  storage layer, §3.3) and own the `configure`-hook install-and-restart logic;
-  and (ii) gRPC is the agreed control-plane protocol (vs plain JSON-over-UDS or
-  reusing the WS framing).
-- **Gadget-snap seeding** — does exposing snapd-managed config for Ubuntu Core
-  Gadget seeding change any key names/scopes we should align to now?
-- **Provisioning home** — snapd/configure-hook, or Software Center / snapd
-  directly (§3.8)?
-- **Restart-to-apply** acceptable for the MVP, or is graceful reconfigure needed
-  for the residency/language knobs (§5.5)?
-- **Relationship to T48** — the config API needs to know *which snaps/sockets
-  exist and what each serves*; backend discovery (T48) is the read-side of that
-  and is currently unowned. Decide whether discovery + config schema are one
-  surface or two.
-- **schema authority** — does the schema live in modelctl (derived from engine/
-  model manifests + `configurations:`) or in a new per-snap manifest? (Prefer
-  derived — single source of truth, no drift.)
+| # | Question | Status | Notes |
+|---|---|---|---|
+| 1 | **Owner of describe-config** | 🔴 Open | Not resolved. Additionally, current modelctl has no model-capability query at all (§3.4.1 — new gap). |
+| 2 | **Mediation shape confirmed?** | 🟡 Partial | Snapd-managed config + configure hook is the direction; platform team still needs to unblock the storage layer. |
+| 3 | **gRPC vs D-Bus for control plane** | 🟡 Soft | gRPC preferred; D-Bus acceptable if more appropriate. Settle with platform team before building. |
+| 4 | **Pluggability contract for community snaps** | 🔴 Open | Needs a public developer document + tutorials + examples. Currently unowned (T48-adjacent). |
+| 5 | **UDS vs TCP transport** | ✅ Settled | **TCP ruled out for security.** UDS via content share (`ubustt-socket`) is mandatory — the client snap has no `network` plug. |
+| 6 | **Restart-to-apply for MVP?** | ✅ Settled | Restart **is** automatic and **must** show user feedback (progress / readiness). Silent restarts are not acceptable. |
+| 7 | **Model profiles (default/lightweight/quality)** | 🟡 Scoped | First iteration: recommendation after benchmarking, not auto-install. Requires model capability API (§3.4.1). Installing a snap from a snap is out of scope. |
+| 8 | **Snapd version dependencies** | 🟡 Noted | Platform constraint, not a design choice. Frontend-via-snapd-REST progress works today; in-snap progress blocked on a future snapd release. Track with snapd team; do not gate STT design on a specific version. |
+| 9 | **Language: layer 2 or layer 3?** | 🔴 Open | Waiting on platform engineering guidance. Do not hardcode position. |
+| 10 | **T48 sunset / internal dialect** | ➡ Deferred | Leave as-is; other protocols will likely follow. |
+| 11 | **Schema authority** | 🔴 Open | Waiting on platform team (same as ownership, item 1). Prefer derived from engine/model manifests (no drift). |
+| 12 | **T31 error alignment** | 🟡 Scoped | Design team owns UX: two user-facing error classes — **critical** (service unavailable) and **recoverable** (degraded, partial service). Detailed wire codes (T31) are the *content* delivered within these two types, not additional UX types. Align UD136 error states to these two classes. |
+| 13 | **T53 modelctl multi-model sync** | 🟡 Clarified | See §7 for full expansion. |
+
+- **Gadget-snap seeding** — does exposing snapd-managed config change key
+  names/scopes we should align to now? Still open; flag to platform team when
+  the storage layer unblocks.
+- **Provisioning home** — snapd/configure-hook or Software Center? Still open for
+  cross-snap/cross-family provisioning. Within-snap component install: configure
+  hook (§3.3).
 
 ## 7. Relationship to existing work
 
 - **T24 capabilities** — read-side *runtime* discovery; the config schema (§3.4)
-  is its write-side sibling; keep them consistent.
+  is its write-side sibling; keep them consistent. The model capabilities query
+  (§3.4.1) is a static complement — what the model *can* do, independent of
+  what is currently running.
 - **T48 backend discovery** — the enumeration layer the config API sits on;
-  unowned; §6.
+  unowned; interacts with the pluggability contract (§4).
 - **T29 residency default / T30 dev toggles** — §3.7; the config API is how users
   deviate from the T29 default; T30's power-user "out" is a subset of this.
 - **T17 access control** — snapd's authorization on `snap set` is the write-side
   of the socket access-control decision; keep them coherent.
 - **T31 error taxonomy** — config-change failures (component pull failed, model
-  incompatible) need codes too; align with T31 rather than inventing strings.
-- **T53 modelctl multi-model sync** — pending Farshid's changelog; may already
-  move some of §3.4 (schema/multi-model). Confirm before building.
+  incompatible) need codes, but the UX layer sees only two classes: **critical**
+  (service unavailable — user cannot dictate) and **recoverable** (degraded
+  service — dictation works at reduced quality or with a fallback). The T31 wire
+  codes are the *machine-readable detail* delivered within those two UX classes
+  and are the design team's responsibility to map to copy + actions. UD136's
+  error states ("speech model not installed", "inference backend unavailable",
+  "selected language unsupported") should be classified as critical vs recoverable
+  before those states can be fully specified.
+- **T53 modelctl multi-model sync** — this refers to work (pending Farshid's
+  changelog) to make modelctl aware of *multiple model slots* — i.e. a backend
+  that can serve more than one model variant, or a modelctl that coordinates
+  across several installed inference snaps rather than one. The concern for the
+  config API: if T53 changes the modelctl topology (e.g. per-slot keys, per-slot
+  selectors, a `slots` array in describe-config), building `describe-config` (§3.4)
+  against the current single-model shape risks immediate misalignment.
+  **Action: sync with Farshid before finalising the describe-config shape** to
+  confirm whether multi-model support changes the top-level schema structure
+  (e.g. is `active.model` still a single value, or does it become a list/map?).
 
 ## Appendix A — concrete `describe-config` schema (whisper-snap example)
 
@@ -560,7 +684,7 @@ When a write selects a not-yet-`installed` option (or the user adds a model), th
 configure-hook / snapd-config path (§3.3) drives the snapd component install. A
 frontend with snapd REST access watches the resulting snapd **change** for
 progress directly (§3.8); the shape below is the *normalized* view a
-TCP/UDS read surface (or the UI's own snapd-change adapter) would present:
+UDS read surface (or the UI's own snapd-change adapter) would present:
 
 ```json
 { "type": "provision.progress", "snap": "whisper", "component": "model-small", "phase": "downloading", "done_bytes": 261881856, "total_bytes": 524288000 }
