@@ -172,6 +172,50 @@ cd client && cargo build --release && cd ..
 ./client/target/release/myna-dictate --list-devices
 ```
 
+## Streaming mode
+
+By default dictation is **batch**: text appears when the utterance ends. A
+backend started with `--streaming` also emits **committed segments**
+progressively as you speak — each is append-only (never retracted). Provisional
+hypothesis text (`unstable`) is never injected; it only displays if you opt in.
+
+```shell
+# 1. serve an adapter in streaming mode
+(cd server && uv run myna-server --adapter whisper --model tiny \
+    --socket /tmp/myna.sock --streaming) &
+
+# 2. dictate — committed segments print as » lines before the final ✓
+#    (force --mode streaming: the auto default resolves to batch on hardware
+#    whose baseline RTF ≥ 1.0, e.g. CPU-only whisper-tiny)
+./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
+    --mode streaming --clip corpus/real/audio/<id>.wav
+
+# other display modes:
+./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
+    --mode batch --clip corpus/real/audio/<id>.wav      # no » lines, only ✓
+./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
+    --mode streaming --show-unstable --clip corpus/real/audio/<id>.wav   # + ~ lines
+```
+
+- **Tier gate**: `--mode auto` (the default) resolves against measured RTF
+  baselines in `results/streaming-tiers.json` — streaming only when the model's
+  RTF < 1.0 on this hardware; batch otherwise (including unmeasured hardware).
+  The preference persists in `~/.config/myna/settings.json`; see
+  `docs/streaming-mode-settings.md`.
+- **The wire**: deltas carry `disposition: committed|unstable` (committed adds
+  `segment_index`); the server advertises `session.streaming` on the greeting.
+  Contract: `specs/007-streaming-mode/contracts/streaming-wire.md`.
+- **Interop fixture**: with the canonical/whisper-snap adapter + WhisperLive
+  docker running on `/tmp/myna-adapter.sock`, the live protocol check is
+  `cargo test -p myna-cli --test interop_canonical -- --ignored` (findings:
+  `docs/interop/canonical-whisper-snap-report.md`).
+
+Known gap: segments are emitted after full decode today, so "progressive" means
+multiple `»` lines around decode granularity rather than true mid-audio
+emission — real-time commit-ahead emission (LocalAgreement / the native
+Nemotron transducer loop) is the follow-up. Details and Qwen-C deferral:
+`docs/architecture/streaming.md`.
+
 ## Dictate into apps — `myna-desktop`
 
 `myna-desktop` is the actual dictation app: activate push-to-talk and the
@@ -218,12 +262,19 @@ uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock &
 uv run python ../dev/bench.py --socket /tmp/myna.sock \
     --manifest ../corpus/real/manifest.json --label whisper-base/cpu --batch
 
+# streaming-mode runs (server needs --streaming) record extra metrics:
+uv run python ../dev/bench.py --socket /tmp/myna.sock --streaming \
+    --manifest ../corpus/real/manifest.json --label whisper-tiny/streaming
+
 # collate every recorded run into a WER/CER matrix:
 uv run python ../dev/aggregate.py --by-category
 ```
 
 Each run also records latency from the event timeline — time-to-ready (cold model
 load), time-to-first-snippet, finalize latency, and RTF — plus peak RSS/VRAM.
+Streaming runs additionally record `time_to_first_committed`, `committed_segments`,
+and `commit_stability` (the append-only invariant; baselines in
+`results/streaming-watermarks.json`).
 Pass `--cold` for the first request after a (re)start to capture the cold-load
 cost distinctly.
 
