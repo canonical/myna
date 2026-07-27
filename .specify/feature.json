@@ -1,1 +1,3 @@
-{"feature_directory":"specs/007-streaming-mode"}
+{
+  "feature_directory": "specs/008-progressive-emission"
+}
