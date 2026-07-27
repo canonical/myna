@@ -99,9 +99,28 @@ cloud, no persistent audio.
   smoke-tests the snap. Packaging gotchas are recorded in the snapcraft.yaml
   comments (no `gnome` extension for Rust builds; rust-plugin/rustup-1.29
   workaround; the confined PipeWire staging set + XDG_RUNTIME_DIR symlink).
-- **Open / next**: error taxonomy (T31, disposition must ride the wire), backend
-  discovery / model selection across snaps (T48), toolchain fully under Workshop
-  (T55), extension screen-reader announcements (T56). Inference snap server: Ivano.
+- **Streaming mode (feature 007, landed 2026-07-27)**: dual-mode streaming is
+  implemented end-to-end — `disposition: committed|unstable` on IE115 deltas +
+  `session.streaming` greeting field (contract:
+  `specs/007-streaming-mode/contracts/streaming-wire.md`); `--streaming` on
+  `myna-server` (whisper: commit-on-finalize + per-segment deltas; nemotron:
+  sentence-split stand-in for the native loop); client FSM routes committed →
+  `Final` (inject-safe) / unstable → `Unstable` (display-only, FR-007);
+  `myna-dictate --mode auto|streaming|batch [--show-unstable]`; RTF tier gate
+  via `results/streaming-tiers.json` + watermarks in
+  `results/streaming-watermarks.json` (SC-002: streaming WER == batch WER;
+  SC-004: commit-stability 100%). **Known gap vs FR-008**: segments emit after
+  full decode (time-to-first-committed ≈ audio duration) — true mid-audio
+  emission needs LocalAgreement (whisper) / NeMo native loop (nemotron).
+  Interop report delivered: `docs/interop/canonical-whisper-snap-report.md` —
+  the canonical/whisper-snap's deltas restate the growing hypothesis with no
+  disposition field (verified live; `myna-cli/tests/interop_canonical.rs`).
+  Settings: `docs/streaming-mode-settings.md`.
+- **Open / next**: true progressive emission (LocalAgreement / NeMo native
+  transducer loop — the FR-008 gap above), error taxonomy (T31, disposition
+  must ride the wire), backend discovery / model selection across snaps (T48),
+  toolchain fully under Workshop (T55), extension screen-reader announcements
+  (T56). UD136 desktop-UX follow-ups: T58–T62. Inference snap server: Ivano.
 
 ## Invariants (don't violate)
 
@@ -161,7 +180,11 @@ Internal vocab:
 - `transcription.done` — terminal; full transcript.
 - `transcription.error` — terminal; `code` + `message`.
 
-No `partial`/`replace`/epoch retraction (dropped as confusing). Adding an event?
+No `partial`/`replace`/epoch retraction on the wire *today* — but UD136
+(2026-07-26) made a **streaming mode** a product requirement alongside batch:
+the design-review direction is committed chunks shown progressively (append-only
+holds); whether any *unstable* hypothesis text gets wire representation is an
+open question for the streaming spec (T08/T63). Adding an event?
 Document it here and flag it provisional (additive: old clients ignore it).
 
 Discovery: before a session a client may send `capabilities.query` and get a

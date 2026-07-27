@@ -45,6 +45,9 @@ struct Args {
     realtime: bool,
     dialect: Dialect,
     base64_audio: bool,
+    ws_path: Option<String>,
+    show_unstable: bool,
+    mode: myna_core::StreamingMode,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -79,6 +82,12 @@ OPTIONS:
     --dialect <name>   wire dialect: `internal` (default) or `ie115`
     --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
                        frames instead of raw binary (OpenAI parity)
+    --ws-path <path>   (ie115) WebSocket endpoint path (default /; colleagues'
+                       adapter uses /ws)
+    --show-unstable    display unstable hypothesis deltas as `~` lines
+                       (streaming mode; off by default — FR-007)
+    --mode <mode>      transcription mode: `auto` (default; tier-gated),
+                       `streaming`, or `batch` — overrides the persisted setting
     --no-realtime      stream the clip as fast as possible (default: real-time)
     -h, --help         show this help
 ";
@@ -92,6 +101,9 @@ fn parse_args() -> Result<Args, String> {
     let mut realtime = true;
     let mut dialect = Dialect::Internal;
     let mut base64_audio = false;
+    let mut ws_path: Option<String> = None;
+    let mut show_unstable = false;
+    let mut mode = None;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -111,6 +123,14 @@ fn parse_args() -> Result<Args, String> {
                 other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
             },
             "--base64-audio" => base64_audio = true,
+            "--ws-path" => ws_path = Some(next(&mut it, "--ws-path")?),
+            "--show-unstable" => show_unstable = true,
+            "--mode" => mode = Some(match next(&mut it, "--mode")?.as_str() {
+                "auto" => myna_core::StreamingMode::Auto,
+                "streaming" => myna_core::StreamingMode::Streaming,
+                "batch" => myna_core::StreamingMode::Batch,
+                other => return Err(format!("unknown mode: {other} (want auto|streaming|batch)")),
+            }),
             "--no-realtime" => realtime = false,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
@@ -128,7 +148,14 @@ fn parse_args() -> Result<Args, String> {
     if base64_audio && dialect != Dialect::Ie115 {
         return Err("--base64-audio only applies to --dialect ie115".into());
     }
-    Ok(Args { socket, clips, mic, target, language, realtime, dialect, base64_audio })
+    if ws_path.is_some() && dialect != Dialect::Ie115 {
+        return Err("--ws-path only applies to --dialect ie115".into());
+    }
+    // T049/T050: the --mode flag overrides the persisted setting; the persisted
+    // setting (Auto default) is resolved against the tier gate below.
+    let mode = mode.unwrap_or_else(|| myna_core::Settings::load().streaming_mode);
+
+    Ok(Args { socket, clips, mic, target, language, realtime, dialect, base64_audio, ws_path, show_unstable, mode })
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -177,7 +204,11 @@ async fn main() -> ExitCode {
     match args.dialect {
         Dialect::Internal => dictate(WsUnixBackend::new(&args.socket), &args).await,
         Dialect::Ie115 => {
-            dictate(WsUnixIe115Backend::new(&args.socket).base64_audio(args.base64_audio), &args).await
+            let mut backend = WsUnixIe115Backend::new(&args.socket).base64_audio(args.base64_audio);
+            if let Some(ref path) = args.ws_path {
+                backend = backend.ws_path(path);
+            }
+            dictate(backend, &args).await
         }
     }
 }
@@ -255,6 +286,69 @@ async fn render_meter(mut stats: watch::Receiver<AudioStats>) {
     let _ = std::io::stdout().flush();
 }
 
+/// T036 (feature 007): drops `Unstable` hypothesis events unless the user
+/// opted in with --show-unstable. Committed text always passes through.
+struct UnstableFilter<T> {
+    inner: T,
+    show_unstable: bool,
+}
+
+#[async_trait]
+impl<T: TextSink> TextSink for UnstableFilter<T> {
+    async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
+        if !self.show_unstable
+            && matches!(event, myna_orchestrator::fsm::OrchestratorEvent::Unstable(_))
+        {
+            return; // FR-007: unstable text is never shown by default
+        }
+        self.inner.emit(event).await;
+    }
+}
+
+/// T038 (feature 007): batch display mode — progressive committed `Final`
+/// segments are swallowed; the terminal `Done` (full transcript) is the only
+/// text shown. Unstable/AudioDropped/lifecycle still pass through.
+struct BatchDisplay<T>(T);
+
+#[async_trait]
+impl<T: TextSink> TextSink for BatchDisplay<T> {
+    async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
+        if matches!(event, myna_orchestrator::fsm::OrchestratorEvent::Final(_)) {
+            return;
+        }
+        self.0.emit(event).await;
+    }
+}
+
+/// T042/T043 (feature 007): load the RTF tier table and resolve the requested
+/// mode through the gate. Hardware fingerprinting is deliberately coarse
+/// (arch + env override for the lab); the model axis uses the table's entries
+/// for this hardware — an exact model match isn't knowable pre-session.
+fn resolve_display_mode(requested: myna_core::StreamingMode) -> myna_core::StreamingMode {
+    use myna_core::{resolve_mode, StreamingMode, TierTable};
+    if requested != StreamingMode::Auto {
+        return requested;
+    }
+    let hardware = std::env::var("MYNA_HARDWARE_TIER")
+        .unwrap_or_else(|_| format!("{}-cpu-generic", std::env::consts::ARCH));
+    let table_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../results/streaming-tiers.json");
+    let table = std::fs::read_to_string(&table_path)
+        .ok()
+        .and_then(|text| TierTable::from_json(&text).ok())
+        .unwrap_or_default();
+    // Model is server-side; resolve against every measured model on this
+    // hardware and take the most permissive outcome — if ANY measured model
+    // streams here, auto allows streaming (the server gates itself too).
+    let viable = table
+        .assessments
+        .iter()
+        .filter(|a| a.hardware == hardware)
+        .any(|a| a.rtf < myna_core::DEFAULT_RTF_THRESHOLD);
+    let _ = resolve_mode; // gate semantics pinned by unit tests in myna-core
+    if viable { StreamingMode::Streaming } else { StreamingMode::Batch }
+}
+
 /// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
 /// the meter and session events don't overprint each other.
 struct MicMeterSink(StdoutSink);
@@ -286,7 +380,10 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let plural = if n == 1 { "" } else { "s" };
     println!("dictating {n} clip{plural} to {}", args.socket.display());
 
-    let mut sink = StdoutSink;
+    let resolved = resolve_display_mode(args.mode);
+    println!("mode: {:?}", resolved);
+    let mut streaming_sink = UnstableFilter { inner: StdoutSink, show_unstable: args.show_unstable };
+    let mut batch_sink = BatchDisplay(UnstableFilter { inner: StdoutSink, show_unstable: args.show_unstable });
     let mut exit = ExitCode::SUCCESS;
 
     for clip in &args.clips {
@@ -304,7 +401,13 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             }
         };
         let config = SessionConfig { language: args.language.clone(), ..Default::default() };
-        match run_dictation(&backend, config, source, &mut sink).await {
+        let outcome = match resolved {
+            myna_core::StreamingMode::Batch => {
+                run_dictation(&backend, config, source, &mut batch_sink).await
+            }
+            _ => run_dictation(&backend, config, source, &mut streaming_sink).await,
+        };
+        match outcome {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, message }) => {
@@ -353,7 +456,10 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         // Start the VU meter: runs as a background task, writes \r bars,
         // and clears the line when the stats sender drops (session ends).
         let meter = tokio::spawn(render_meter(mic_stats.clone()));
-        let mut sink = MicMeterSink(StdoutSink);
+        let mut sink = UnstableFilter {
+            inner: MicMeterSink(StdoutSink),
+            show_unstable: args.show_unstable,
+        };
 
         // Run the utterance while watching for a Release edge (graceful early
         // stop → end-of-audio → finalize).

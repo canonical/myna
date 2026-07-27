@@ -54,6 +54,7 @@ which carry a ``"type"`` key.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from typing import Any, ClassVar
 
 
@@ -61,6 +62,17 @@ from typing import Any, ClassVar
 PHASE_PREPARING = "preparing"  # model loading; client should show "loading…"
 PHASE_READY = "ready"  # model resident, safe to send audio; nothing decoding yet
 PHASE_TRANSCRIBING = "transcribing"  # audio being processed
+
+
+# Disposition enum for streaming mode (T04, feature 007-streaming-mode)
+class Disposition(str, Enum):
+    """Discriminant for committed vs unstable text in streaming transcription.
+    
+    - COMMITTED: Text is final, append-only, safe to inject into text field
+    - UNSTABLE: Text is provisional, may be revised or superseded
+    """
+    COMMITTED = "committed"
+    UNSTABLE = "unstable"
 
 
 @dataclass(frozen=True)
@@ -94,6 +106,8 @@ class TranscriptionFinal:
     type: ClassVar[str] = "transcription.final"
     text: str = ""
     segments: tuple[Segment, ...] = ()
+    disposition: Disposition = Disposition.COMMITTED  # Default: committed (backward-compat)
+    segment_index: int | None = None  # Monotonic index for committed segments
 
 
 @dataclass(frozen=True)

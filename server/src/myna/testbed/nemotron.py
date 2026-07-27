@@ -36,6 +36,7 @@ from myna.core import (
     PHASE_READY,
     AudioFormat,
     Capabilities,
+    Disposition,
     EventSink,
     PcmChunk,
     SessionConfig,
@@ -75,6 +76,21 @@ def _parse_att_context_size(value: str | None) -> list[int] | None:
     return parts
 
 
+def _split_sentences(text: str) -> list[str]:
+    """Split text into sentence-level committed segments (streaming demo).
+    
+    Splits on sentence-ending punctuation followed by whitespace, keeping the
+    trailing space with each segment so concatenation reproduces the original.
+    """
+    import re
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    if len(parts) <= 1:
+        return [text]
+    # Re-attach the separating space to all but the last segment
+    segments = [p + " " for p in parts[:-1]] + [parts[-1]]
+    return segments
+
+
 class NemotronAdapter:
     def __init__(
         self,
@@ -83,12 +99,19 @@ class NemotronAdapter:
         # NeMo picks CUDA when available; this model is GPU-oriented.
         device: str = "cuda",
         att_context_size: list[int] | None = None,
+        streaming: bool = False,  # T023: Enable streaming mode
     ) -> None:
         self._model_name = model_name
         self._device = device
         self._att_context_size = att_context_size
+        self._streaming = streaming
         self._model = None
         self._model_lock = asyncio.Lock()
+
+    @property
+    def streaming(self) -> bool:
+        """Whether this adapter emits progressive committed segments (T027)."""
+        return self._streaming
 
     @property
     def _label(self) -> str:
@@ -224,9 +247,22 @@ class NemotronAdapter:
             )
             text = text.strip()
             if text:
-                # one utterance -> one final; per-word timestamps are a
-                # streaming concern (follow-up), so no segments here
-                await emit(TranscriptionFinal(text=text))
+                if self._streaming:
+                    # T024/T025: In streaming mode, emit sentence-level committed
+                    # segments progressively. Native frame-at-a-time transducer
+                    # streaming (NeMo streaming API) is a follow-up; this sentence
+                    # split exercises the wire protocol's committed-segment path.
+                    sentences = _split_sentences(text)
+                    for i, sentence in enumerate(sentences):
+                        await emit(TranscriptionFinal(
+                            text=sentence,
+                            disposition=Disposition.COMMITTED,
+                            segment_index=i,
+                        ))
+                else:
+                    # one utterance -> one final; per-word timestamps are a
+                    # streaming concern (follow-up), so no segments here
+                    await emit(TranscriptionFinal(text=text))
             await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(

@@ -122,6 +122,7 @@ pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
         OrchestratorEvent::Error { message, .. } => Some(IndicatorState::Error(message.clone())),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
+        | OrchestratorEvent::Unstable(_)
         | OrchestratorEvent::AudioDropped(_) => None,
     }
 }

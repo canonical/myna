@@ -30,6 +30,8 @@ impl TextSink for StdoutSink {
             OrchestratorEvent::Transcribing => {}
             OrchestratorEvent::Snippet(text) => println!("   … {text}"),
             OrchestratorEvent::Final(text) => println!("   » {text}"),
+            // T034: unstable hypothesis — `~` prefix, display-only.
+            OrchestratorEvent::Unstable(text) => println!("   ~ {text}"),
             OrchestratorEvent::Done(text) if text.trim().is_empty() => {
                 println!("✓ (no speech detected)");
             }

@@ -1,10 +1,16 @@
 # IE115 wire dialect — concrete frame contract
 
-**Date:** 2026-07-02 · **Amended:** 2026-07-06 (persistent connections, T47)
+**Date:** 2026-07-02 · **Amended:** 2026-07-06 (persistent connections, T47), 2026-07-27 (streaming disposition discriminant, feature 007)
 **Status:** Draft for implementation — pins the exact frames so the Python
 `myna-server` and the Rust client can speak IE115 end-to-end and give the team
 hands-on experience to continue the design discussion (open items flagged
 inline).
+
+> **Amendment (2026-07-27, feature 007-streaming-mode).** The wire protocol
+> gains an explicit `disposition` field on `…transcription.delta` events to
+> distinguish committed (inject-safe) from unstable (provisional) text in
+> streaming mode. See `specs/007-streaming-mode/contracts/streaming-wire.md`
+> for the complete streaming wire contract.
 
 > **Amendment (2026-07-06, T47).** OpenAI-API compatibility is decided, so the
 > connection is now **persistent** (multi-commit): the server does not close

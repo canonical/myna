@@ -44,6 +44,7 @@ from myna.core.events import (
     PHASE_PREPARING,
     PHASE_READY,
     PHASE_TRANSCRIBING,
+    Disposition,
     TranscriptionDone,
     TranscriptionError,
     TranscriptionEvent,
@@ -91,7 +92,9 @@ _ERROR_TO_IE115 = {
 # --- session config <-> nested IE115 `session` object ---------------------------
 
 
-def session_config_to_ie115(config: SessionConfig, *, model: str | None = None) -> dict:
+def session_config_to_ie115(
+    config: SessionConfig, *, model: str | None = None, streaming: bool | None = None
+) -> dict:
     """Flat ``SessionConfig`` -> the nested IE115 ``session`` object (the body of
     ``session.update`` / ``session.created`` / ``session.updated``)."""
     transcription: dict = {}
@@ -110,6 +113,9 @@ def session_config_to_ie115(config: SessionConfig, *, model: str | None = None) 
             }
         },
     }
+    # Add streaming field if specified (T14, feature 007)
+    if streaming is not None:
+        session["streaming"] = streaming
     return session
 
 
@@ -169,12 +175,17 @@ class Ie115Encoder:
                 frame["snippet"] = event.snippet
             return frame
         if isinstance(event, TranscriptionFinal):
-            return {
+            frame = {
                 "type": TRANSCRIPTION_DELTA,
                 "item_id": self._item(),
                 "content_index": 0,
                 "delta": event.text,
+                "disposition": event.disposition.value,  # Add disposition field (T11, feature 007)
             }
+            # Add segment_index only for committed segments (T13, feature 007)
+            if event.disposition == event.disposition.COMMITTED and event.segment_index is not None:
+                frame["segment_index"] = event.segment_index
+            return frame
         if isinstance(event, TranscriptionDone):
             item = self._item()
             self._item_id = None  # completed retires the utterance's item
@@ -214,7 +225,15 @@ class Ie115Decoder:
         if ftype == TRANSCRIPTION_DELTA:
             # Committed, append-only segment text — the IE115 face of our
             # `transcription.final` (streaming contract, streaming.md §3a).
-            return [TranscriptionFinal(text=frame.get("delta") or "")]
+            # Parse disposition field (T12, feature 007); default to committed for backward-compat
+            disposition_str = frame.get("disposition", "committed")
+            disposition = Disposition.COMMITTED if disposition_str == "committed" else Disposition.UNSTABLE
+            segment_index = frame.get("segment_index")  # Optional, only present for committed
+            return [TranscriptionFinal(
+                text=frame.get("delta") or "",
+                disposition=disposition,
+                segment_index=segment_index,
+            )]
         if ftype == TRANSCRIPTION_COMPLETED:
             self._terminated = True
             return [TranscriptionDone(text=frame.get("transcript", ""))]
@@ -237,3 +256,21 @@ class Ie115Decoder:
                 message="connection closed before the utterance completed",
             )
         ]
+
+
+# --- test helpers (T08-T010, feature 007) ----------------------------------------
+
+def encode_delta(event: TranscriptionFinal, item_id: str) -> dict:
+    """Helper for testing: encode a TranscriptionFinal as an IE115 delta frame."""
+    encoder = Ie115Encoder()
+    encoder._item_id = item_id  # Override the generated item_id for testing
+    return encoder.encode(event)
+
+
+def decode_delta(frame: dict) -> TranscriptionFinal:
+    """Helper for testing: decode an IE115 delta frame to TranscriptionFinal."""
+    decoder = Ie115Decoder()
+    events = decoder.decode(frame)
+    if not events or not isinstance(events[0], TranscriptionFinal):
+        raise ValueError(f"Expected TranscriptionFinal, got {events}")
+    return events[0]

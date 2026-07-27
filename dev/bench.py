@@ -79,9 +79,10 @@ def select_clips(args: argparse.Namespace):
 async def bench_clip(args, clip):
     """Run one clip against the socket; return (record, wer, cer)."""
     source = clip.open_source(realtime=not args.batch)
+    streaming_strategy = "streaming" if args.streaming else "batch"
     record = await Harness().run(
         client=WsUnixClient(args.socket),
-        candidate=Candidate(model=args.label, engine="socket", streaming_strategy="?"),
+        candidate=Candidate(model=args.label, engine="socket", streaming_strategy=streaming_strategy),
         source=source,
         config=SessionConfig(audio_format=source.format, language=clip.language),
     )
@@ -113,9 +114,13 @@ def to_line(args, clip, record, wer, cer) -> dict:
         "time_to_ready": m.time_to_ready,
         "time_to_first_snippet": m.time_to_first_snippet,
         "time_to_first_final": m.time_to_first_final,
+        "time_to_first_committed": m.time_to_first_committed,
         "time_to_terminal": m.time_to_terminal,
         "finalize_latency": m.finalize_latency,
         "rtf": round(m.rtf, 4) if m.rtf is not None else None,
+        "commit_stability": m.commit_stability,
+        "committed_segments": m.committed_segments,
+        "streaming_strategy": record.candidate.streaming_strategy,
         "started_at": record.started_at,
     }
 
@@ -138,6 +143,7 @@ async def main() -> None:
     parser.add_argument("--label", help="tag for this run (default: active engine name, e.g. 'cpu'); pass 'cpu/small' to record the model too")
     parser.add_argument("--category", help="only clips in this UD129 category")
     parser.add_argument("--batch", action="store_true", help="stream as fast as possible")
+    parser.add_argument("--streaming", action="store_true", help="enable streaming mode (progressive committed segments)")
     parser.add_argument("--cold", action="store_true", help="tag records as a cold-load sample (first request after a restart)")
     parser.add_argument("--provenance", help="JSON object merged into every record (e.g. hardware/engine metadata from the matrix runner)")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")

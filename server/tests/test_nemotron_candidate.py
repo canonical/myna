@@ -44,7 +44,10 @@ def test_parse_att_context_size():
 
 
 def _args(**kw):
-    base = dict(adapter="whisper", model=None, device=None, compute_type="default", att_context_size=None)
+    base = dict(
+        adapter="whisper", model=None, device=None, compute_type="default",
+        att_context_size=None, streaming=False,
+    )
     base.update(kw)
     return argparse.Namespace(**base)
 
