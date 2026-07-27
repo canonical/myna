@@ -17,6 +17,14 @@ whisper = [
 nemotron = [
     "nemo_toolkit[asr]>=2.0",
 ]
+# Small transducer snaps (feature 008): Parakeet TDT int8 ONNX via ONNX
+# Runtime (no torch), and the sherpa-onnx turnkey streaming runtime.
+parakeet = [
+    "onnxruntime>=1.17",
+]
+sherpa = [
+    "sherpa-onnx>=1.10",
+]
 
 [project.scripts]
 myna-server = "myna.server.cli:main"

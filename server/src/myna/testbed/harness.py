@@ -58,6 +58,7 @@ class Metrics:
     time_to_first_snippet: float | None
     time_to_first_final: float | None
     time_to_first_committed: float | None  # First committed text (streaming)
+    time_to_first_unstable: float | None  # First unstable hypothesis (streaming)
     time_to_terminal: float | None
     audio_end: float | None
     finalize_latency: float | None
@@ -91,7 +92,8 @@ def compute_metrics(
     audio_end_t: float | None,
     audio_duration_seconds: float | None = None,
 ) -> Metrics:
-    first = ready = first_snippet = first_final = first_committed = terminal = None
+    first = ready = first_snippet = first_final = first_committed = None
+    first_unstable = terminal = None
     counts: dict[str, int] = {}
     committed_segments = 0
     committed_texts: list[str] = []
@@ -120,6 +122,9 @@ def compute_metrics(
                 text = getattr(te.event, "text", "")
                 if text:
                     committed_texts.append(text)
+            elif disposition == "unstable":
+                if first_unstable is None:
+                    first_unstable = te.t
         if kind in ("transcription.done", "transcription.error"):
             terminal = te.t
     
@@ -142,6 +147,7 @@ def compute_metrics(
         time_to_first_snippet=first_snippet,
         time_to_first_final=first_final,
         time_to_first_committed=first_committed,
+        time_to_first_unstable=first_unstable,
         time_to_terminal=terminal,
         audio_end=audio_end_t,
         finalize_latency=finalize,

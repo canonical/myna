@@ -109,16 +109,24 @@ cloud, no persistent audio.
   `myna-dictate --mode auto|streaming|batch [--show-unstable]`; RTF tier gate
   via `results/streaming-tiers.json` + watermarks in
   `results/streaming-watermarks.json` (SC-002: streaming WER == batch WER;
-  SC-004: commit-stability 100%). **Known gap vs FR-008**: segments emit after
-  full decode (time-to-first-committed ≈ audio duration) — true mid-audio
-  emission needs LocalAgreement (whisper) / NeMo native loop (nemotron).
+  SC-004: commit-stability 100%). **Feature 008 (in flight,
+  `specs/008-progressive-emission/`)**: the whisper adapter now streams for
+  real — rolling re-decode loop (`server/src/myna/testbed/streaming/`) with
+  three wire-invisible commit strategies (`--strategy local-agreement`
+  default / `tail-mutation` / `fixed-head`); unstable ~1.5 s in, first commit
+  ~2.5 s in on whisper-tiny CPU. FR-008 closed for whisper. Watermarks on
+  26–28 s concatenated streams (`corpus/real/manifest-streams.json`):
+  fixed-head == batch WER, LA/TM +2.4 pp (AED right-context cost; beam ruled
+  out). Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
+  native loop (Spike S2, GPU), Parakeet + sherpa-onnx snaps, report.
   Interop report delivered: `docs/interop/canonical-whisper-snap-report.md` —
   the canonical/whisper-snap's deltas restate the growing hypothesis with no
   disposition field (verified live; `myna-cli/tests/interop_canonical.rs`).
   Settings: `docs/streaming-mode-settings.md`.
-- **Open / next**: true progressive emission (LocalAgreement / NeMo native
-  transducer loop — the FR-008 gap above), error taxonomy (T31, disposition
-  must ride the wire), backend discovery / model selection across snaps (T48),
+- **Open / next**: nemotron native transducer loop (008 US2, Spike S2 on the
+  NVIDIA PC), Parakeet + sherpa-onnx small snaps (008 US3/US4), error taxonomy
+  (T31, disposition must ride the wire), backend discovery / model selection
+  across snaps (T48),
   toolchain fully under Workshop (T55), extension screen-reader announcements
   (T56). UD136 desktop-UX follow-ups: T58–T62. Inference snap server: Ivano.
 

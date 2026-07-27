@@ -115,6 +115,7 @@ def to_line(args, clip, record, wer, cer) -> dict:
         "time_to_first_snippet": m.time_to_first_snippet,
         "time_to_first_final": m.time_to_first_final,
         "time_to_first_committed": m.time_to_first_committed,
+        "time_to_first_unstable": m.time_to_first_unstable,
         "time_to_terminal": m.time_to_terminal,
         "finalize_latency": m.finalize_latency,
         "rtf": round(m.rtf, 4) if m.rtf is not None else None,

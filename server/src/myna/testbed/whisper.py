@@ -1,13 +1,15 @@
-"""faster-whisper adapter, commit-on-finalize mode (Phase 2, T07).
+"""faster-whisper adapter — batch and true streaming modes.
 
-Wraps faster-whisper (CTranslate2 Whisper) behind ``SttService``. This is the
-simplest honest strategy for an AED model: buffer the pushed audio, decode
-once when the client finishes, emit one ``final`` per Whisper segment, then
-``done``. ``progress`` events (no text) are emitted while audio is being
-received so clients can animate an activity indicator.
+Wraps faster-whisper (CTranslate2 Whisper) behind ``SttService``. Batch mode
+(degenerate streaming, I7): buffer the pushed audio, decode once when the
+client finishes, emit one ``final`` per Whisper segment, then ``done``.
 
-Streaming via chunked re-decode (LocalAgreement) is T08 and will be a
-separate strategy on top of this adapter.
+Streaming mode (feature 008): the rolling re-decode loop in
+``myna.testbed.streaming`` decodes the uncommitted window on a cadence while
+audio is still arriving; the selected strategy (``local-agreement`` default,
+``tail-mutation``, ``fixed-head``) decides what to commit when, and emission
+rides the 007 committed/unstable dispositions — append-only commits,
+display-only unstable hypotheses.
 
 Requires the ``whisper`` extra: ``uv sync --extra whisper``. ``model_size``
 is either a bare size name (``"small"``) fetched from Hugging Face on first
@@ -69,12 +71,20 @@ class FasterWhisperAdapter:
         compute_type: str = "default",
         download_root: str | None = None,
         streaming: bool = False,  # T020: Enable streaming mode
+        strategy: str = "local-agreement",  # 008: streaming commit strategy
+        stream_cadence_s: float = 1.0,  # seconds of new audio between re-decodes
+        stream_window_cap_s: float = 30.0,  # max uncommitted window (I6)
+        stream_beam_size: int = 1,  # re-decode beam; 5 ≈ batch quality, 1 ≈ 5× cheaper
     ) -> None:
         self._model_size = model_size
         self._device = device
         self._compute_type = compute_type
         self._download_root = download_root
         self._streaming = streaming
+        self._strategy = strategy
+        self._stream_cadence_s = stream_cadence_s
+        self._stream_window_cap_s = stream_window_cap_s
+        self._stream_beam_size = stream_beam_size
         self._model = None
         self._model_lock = asyncio.Lock()
 
@@ -93,7 +103,7 @@ class FasterWhisperAdapter:
         return Candidate(
             model=f"whisper-{label}",
             engine=f"faster-whisper-{self._device}",
-            streaming_strategy="commit-on-finalize",
+            streaming_strategy=self._strategy if self._streaming else "commit-on-finalize",
         )
 
     def capabilities(self) -> Capabilities:
@@ -181,6 +191,10 @@ class FasterWhisperAdapter:
             # audio, a deadlock (see docs/architecture/ie115-lifecycle.md §3A).
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
+            if self._streaming:
+                await self._run_streaming_session(model, config, audio, emit)
+                return
+
             buffered = bytearray()
             seconds_since_progress = 0.0
             async for chunk in audio:
@@ -200,22 +214,17 @@ class FasterWhisperAdapter:
 
             want_timestamps = config.timestamp_granularity is not None
             finals: list[str] = []
-            segment_index = 0  # T022: Track segment index for streaming
             for segment in segments:
                 text = segment.text.strip()
                 if not text:
                     continue
                 finals.append(text)
-                
-                # T022: In streaming mode, emit as committed deltas with segment_index
-                disposition = Disposition.COMMITTED if self._streaming else Disposition.COMMITTED
-                seg_idx = segment_index if self._streaming else None
-                
+                # Batch mode is degenerate streaming (I7): committed finals,
+                # no segment_index.
                 await emit(
                     TranscriptionFinal(
                         text=text,
-                        disposition=disposition,
-                        segment_index=seg_idx,
+                        disposition=Disposition.COMMITTED,
                         segments=(
                             (
                                 Segment(
@@ -230,7 +239,6 @@ class FasterWhisperAdapter:
                         ),
                     )
                 )
-                segment_index += 1
             await emit(TranscriptionDone(text=" ".join(finals)))
         except Exception as exc:
             await emit(
@@ -238,6 +246,57 @@ class FasterWhisperAdapter:
                     code="inference_failed", message=f"{type(exc).__name__}: {exc}"
                 )
             )
+
+    async def _run_streaming_session(
+        self,
+        model,
+        config: SessionConfig,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
+    ) -> None:
+        """Feature 008: rolling re-decode with a commit strategy. Emits
+        committed/unstable finals while audio is still arriving (FR-001/002);
+        end-of-audio resolves the tail (I5) and the loop returns exactly the
+        concatenation of committed text (I2) for the terminal done."""
+        from myna.testbed.streaming.loop import run_streaming_loop
+        from myna.testbed.streaming.strategies import Hypothesis, SegmentText, Word, make_strategy
+
+        language = _iso639_1(config.language)
+        prompt = config.prompt
+
+        def decode(samples, offset: float) -> Hypothesis:
+            segments, _info = model.transcribe(
+                samples,
+                language=language,
+                initial_prompt=prompt,
+                beam_size=self._stream_beam_size,
+                word_timestamps=True,
+                vad_filter=False,
+            )
+            words: list[Word] = []
+            segs: list[SegmentText] = []
+            for seg in segments:  # drain the generator (we're in a thread)
+                segs.append(
+                    SegmentText(
+                        text=seg.text,
+                        start=seg.start + offset,
+                        end=seg.end + offset,
+                        no_speech_prob=seg.no_speech_prob,
+                    )
+                )
+                for w in seg.words or []:
+                    words.append(Word(text=w.word, start=w.start + offset, end=w.end + offset))
+            return Hypothesis(words=words, segments=segs)
+
+        transcript = await run_streaming_loop(
+            audio,
+            emit,
+            decode,
+            make_strategy(self._strategy),
+            cadence_seconds=self._stream_cadence_s,
+            window_cap_seconds=self._stream_window_cap_s,
+        )
+        await emit(TranscriptionDone(text=transcript))
 
     def _transcribe(self, model, pcm: bytes, config: SessionConfig) -> list:
         """Blocking decode; runs in a worker thread. Audio is already

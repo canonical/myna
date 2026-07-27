@@ -57,6 +57,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="enable streaming mode (progressive committed segments; whisper/nemotron)",
     )
     parser.add_argument(
+        "--strategy", default=None,
+        choices=("local-agreement", "tail-mutation", "fixed-head"),
+        help="whisper streaming strategy (default: local-agreement); "
+        "valid only with --adapter whisper --streaming",
+    )
+    parser.add_argument(
+        "--stream-cadence-s", type=float, default=None,
+        help="seconds of new audio between re-decode ticks (whisper streaming)",
+    )
+    parser.add_argument(
+        "--stream-window-cap-s", type=float, default=None,
+        help="max uncommitted audio window in seconds before force-commit "
+        "(whisper streaming)",
+    )
+    parser.add_argument(
+        "--stream-beam-size", type=int, default=None,
+        help="beam size for streaming re-decode ticks (default 1 = greedy; "
+        "5 matches batch decode quality at ~5x tick cost)",
+    )
+    parser.add_argument(
         "--sleep-idle-seconds", type=float, default=0.0,
         help="release the model after N idle seconds (0 = never)",
     )
@@ -86,6 +106,12 @@ def build_adapter(args: argparse.Namespace):
             device=args.device or "cpu",
             compute_type=args.compute_type,
             streaming=args.streaming,
+            # getattr: programmatic callers (tests, embedding) may build the
+            # namespace without the streaming flags.
+            strategy=getattr(args, "strategy", None) or "local-agreement",
+            stream_cadence_s=getattr(args, "stream_cadence_s", None) or 1.0,
+            stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or 30.0,
+            stream_beam_size=getattr(args, "stream_beam_size", None) or 1,
         )
 
     if args.adapter == "qwen-c":
@@ -173,11 +199,31 @@ async def serve(args: argparse.Namespace) -> None:
             args.socket.unlink()
 
 
+def _validate_streaming_args(args: argparse.Namespace) -> None:
+    """Strategy flags are whisper-only (contracts/strategy-config.md); with
+    --streaming off they are inert (batch degenerate) — warn, don't fail."""
+    if args.strategy is not None and args.adapter != "whisper":
+        raise SystemExit("--strategy is valid only with --adapter whisper")
+    if not args.streaming:
+        inert = [
+            f"--{name}"
+            for name, value in (
+                ("strategy", args.strategy),
+                ("stream-cadence-s", args.stream_cadence_s),
+                ("stream-window-cap-s", args.stream_window_cap_s),
+            )
+            if value is not None
+        ]
+        if inert:
+            log.warning("%s ignored without --streaming (batch mode)", ", ".join(inert))
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
     )
     args = build_parser().parse_args(argv)
+    _validate_streaming_args(args)
     try:
         asyncio.run(serve(args))
     except KeyboardInterrupt:

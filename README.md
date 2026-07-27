@@ -181,8 +181,10 @@ hypothesis text (`unstable`) is never injected; it only displays if you opt in.
 
 ```shell
 # 1. serve an adapter in streaming mode
+#    (--strategy picks the whisper commit policy: local-agreement default,
+#    tail-mutation, fixed-head — invisible on the wire)
 (cd server && uv run myna-server --adapter whisper --model tiny \
-    --socket /tmp/myna.sock --streaming) &
+    --socket /tmp/myna.sock --streaming --strategy local-agreement) &
 
 # 2. dictate — committed segments print as » lines before the final ✓
 #    (force --mode streaming: the auto default resolves to batch on hardware
@@ -210,10 +212,25 @@ hypothesis text (`unstable`) is never injected; it only displays if you opt in.
   `cargo test -p myna-cli --test interop_canonical -- --ignored` (findings:
   `docs/interop/canonical-whisper-snap-report.md`).
 
-Known gap: segments are emitted after full decode today, so "progressive" means
-multiple `»` lines around decode granularity rather than true mid-audio
-emission — real-time commit-ahead emission (LocalAgreement / the native
-Nemotron transducer loop) is the follow-up. Details and Qwen-C deferral:
+Whisper streams for real (feature 008): a rolling re-decode loop decodes the
+uncommitted window every `--stream-cadence-s` (default 1 s) while audio is
+still arriving, and the selected strategy decides what to commit:
+
+- **`local-agreement`** (default) — commit the word prefix that two successive
+  decodes agree on; first `~` ~1.5 s in, first `»` ~2.5 s in on CPU
+  (whisper-tiny watermark: +2.4 pp WER vs batch, commit stability 100%).
+- **`tail-mutation`** — commit all complete segments except the trailing one;
+  the trailing segment displays as unstable (the WhisperLive heuristic,
+  implemented in-adapter).
+- **`fixed-head`** — no re-decode: cut at pauses (arm 15 s, 500 ms silence),
+  decode each chunk once, commit. Batch-quality WER (0 pp delta), coarsest
+  latency — the cheap-tier strategy.
+
+Watermarks: `results/streaming-watermarks.json` (measured on 26–28 s
+concatenated real-speech streams, `corpus/real/manifest-streams.json`).
+Nemotron's native frame-once transducer loop and two small transducer snaps
+(Parakeet-class int8 ONNX; sherpa-onnx) are in flight under
+`specs/008-progressive-emission/`. Details and Qwen-C deferral:
 `docs/architecture/streaming.md`.
 
 ## Dictate into apps — `myna-desktop`
