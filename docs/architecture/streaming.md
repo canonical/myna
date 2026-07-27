@@ -1,10 +1,34 @@
 # Streaming transcription (T08) — the revision contract
 
-**Date:** 2026-07-03
+**Date:** 2026-07-03 · **Implemented:** 2026-07-27 (feature 007-streaming-mode)
 **Status:** Draft for ratification — pins the one decision that gates T08 (how
 pre-commit text may change) and the new testbed metric that makes streaming
 quality measurable. Written to be decided the way `ie115-wire.md` was: small,
 concrete, demoable.
+
+> **Implementation status (2026-07-27, feature 007).** The contract below is
+> now live on the wire: `disposition: committed|unstable` on IE115 deltas
+> (`specs/007-streaming-mode/contracts/streaming-wire.md`), `session.streaming`
+> on the greeting, `segment_index` on committed segments. Server: both
+> adapters accept `--streaming` (whisper = commit-on-finalize + per-segment
+> committed deltas; nemotron = sentence-split committed deltas as a stand-in
+> for the native transducer loop). Client: the FSM routes committed → `Final`
+> (inject-safe) and unstable → `Unstable` (display-only, FR-007);
+> `myna-dictate --mode auto|streaming|batch` + `--show-unstable`;
+> RTF tier gate via `results/streaming-tiers.json`.
+>
+> **Known gap vs FR-008:** segments are emitted after full decode today
+> (time-to-first-committed ≈ audio duration). True mid-audio emission needs
+> the real LocalAgreement integration (whisper) and the NeMo native
+> frame-at-a-time loop (nemotron) — the wire and client plumbing shipped here
+> is what those land on.
+>
+> **Qwen-C deferral:** streaming is not implemented for the Qwen3-ASR adapter.
+> Its LLM-decoder architecture (prompt-conditioned, non-monotonic token
+> output) has no proven committed-frontier strategy comparable to a
+> transducer's monotonic emission or LocalAgreement's stability criterion —
+> bolting on chunked re-decode would inherit whisper's latency without the
+> stability evidence. Deferred until an approach is validated upstream.
 **Authors:** Claude, with Charles
 **Sources:** `docs/project-plan.md` (T08, T36, M2), `server/src/myna/core/events.py`
 (the flat vocab + IE115 mapping), `server/src/myna/core/wire_ie115.py` (delta hooks

@@ -24,13 +24,17 @@ pub mod debug;
 pub mod events;
 pub mod protocol;
 pub mod session;
+pub mod settings;
+pub mod tier;
 
 pub use audio::{AudioFormat, PcmChunk};
 pub use capture::{AudioSource, CaptureError, CaptureStream, StopHandle};
 pub use control::{ClientControl, ServerControl};
 pub use events::{
-    ErrorData, Progress, Segment, TranscriptionEvent, TranscriptionFinal, WireError,
-    PHASE_PREPARING, PHASE_READY, PHASE_TRANSCRIBING,
+    Disposition, ErrorData, Progress, Segment, StreamingMode, TranscriptionEvent,
+    TranscriptionFinal, WireError, PHASE_PREPARING, PHASE_READY, PHASE_TRANSCRIBING,
 };
 pub use protocol::{is_supported, PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS};
+pub use settings::{resolve_mode, Settings};
+pub use tier::{streaming_viable, TierAssessment, TierTable, DEFAULT_RTF_THRESHOLD};
 pub use session::SessionConfig;

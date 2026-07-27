@@ -38,3 +38,12 @@ results/
 # Canonical Workshop per-project instance state (the .workshop/ definitions
 # are committed; the lock ties a launched instance to this checkout).
 .workshop.lock
+
+# Rust build artifacts
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+Cargo.lock

@@ -53,6 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(
+        "--streaming", action="store_true",
+        help="enable streaming mode (progressive committed segments; whisper/nemotron)",
+    )
+    parser.add_argument(
         "--sleep-idle-seconds", type=float, default=0.0,
         help="release the model after N idle seconds (0 = never)",
     )
@@ -81,6 +85,7 @@ def build_adapter(args: argparse.Namespace):
             args.model or "tiny",
             device=args.device or "cpu",
             compute_type=args.compute_type,
+            streaming=args.streaming,
         )
 
     if args.adapter == "qwen-c":
@@ -102,6 +107,7 @@ def build_adapter(args: argparse.Namespace):
         args.model or DEFAULT_MODEL,
         device=args.device or "cuda",
         att_context_size=_parse_att_context_size(args.att_context_size),
+        streaming=args.streaming,
     )
 
 

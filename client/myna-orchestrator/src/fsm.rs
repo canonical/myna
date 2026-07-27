@@ -104,6 +104,10 @@ pub enum OrchestratorEvent {
     Snippet(String),
     /// Committed segment text; never retracted.
     Final(String),
+    /// Unstable hypothesis text — provisional, may be superseded. NEVER
+    /// injected (FR-007); display-only, and only when the user opts in
+    /// (e.g. myna-dictate --show-unstable). Injectors ignore this variant.
+    Unstable(String),
     /// Utterance complete — the full transcript. Terminal.
     Done(String),
     /// A backend error surfaced. Terminal — the session is over. (Every
@@ -285,7 +289,17 @@ impl Fsm {
             TranscriptionEvent::Progress(p) => self.on_progress(p, out),
             TranscriptionEvent::Final(f) => {
                 self.mark_resident(out);
-                out.push(Action::Emit(OrchestratorEvent::Final(f.text)));
+                // T032/T033 (feature 007): route on disposition. Committed text
+                // is inject-safe (Final); unstable hypothesis text is display-
+                // only (Unstable) and must never reach an injector (FR-007).
+                match f.disposition {
+                    myna_core::Disposition::Committed => {
+                        out.push(Action::Emit(OrchestratorEvent::Final(f.text)))
+                    }
+                    myna_core::Disposition::Unstable => {
+                        out.push(Action::Emit(OrchestratorEvent::Unstable(f.text)))
+                    }
+                }
             }
             TranscriptionEvent::Done(d) => {
                 self.transcript = d.text.clone();
@@ -385,6 +399,7 @@ mod tests {
         TranscriptionEvent::Final(TranscriptionFinal {
             text: text.into(),
             segments: vec![],
+            ..Default::default()
         })
     }
 
@@ -392,6 +407,27 @@ mod tests {
         TranscriptionEvent::Done(TranscriptionFinal {
             text: text.into(),
             segments: vec![],
+            ..Default::default()
+        })
+    }
+
+    /// T028: a committed streaming delta (disposition=committed, with index).
+    fn committed_seg(text: &str, segment_index: u32) -> TranscriptionEvent {
+        TranscriptionEvent::Final(TranscriptionFinal {
+            text: text.into(),
+            segments: vec![],
+            disposition: myna_core::Disposition::Committed,
+            segment_index: Some(segment_index),
+        })
+    }
+
+    /// T033: an unstable hypothesis delta (disposition=unstable).
+    fn unstable_seg(text: &str) -> TranscriptionEvent {
+        TranscriptionEvent::Final(TranscriptionFinal {
+            text: text.into(),
+            segments: vec![],
+            disposition: myna_core::Disposition::Unstable,
+            segment_index: None,
         })
     }
 
@@ -713,5 +749,70 @@ mod tests {
             a,
             Action::Emit(OrchestratorEvent::AudioDropped(DropReason::NotActive))
         )));
+    }
+
+    // ---- T028-T030: streaming mode (feature 007) -----------------------------
+
+    /// T028: committed deltas are emitted progressively as Final events,
+    /// before the utterance's terminal — the streaming happy path.
+    #[test]
+    fn streaming_committed_segments_emit_progressively() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+
+        // Two committed segments arrive mid-utterance (still Active, not yet
+        // Finalizing) — each is surfaced immediately as a Final event.
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(committed_seg("Many ", 0)))),
+            vec![OrchestratorEvent::Final("Many ".into())]
+        );
+        assert_eq!(fsm.state().session, SessionState::Active);
+
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(committed_seg("little wrinkles ", 1)))),
+            vec![OrchestratorEvent::Final("little wrinkles ".into())]
+        );
+        assert_eq!(fsm.state().session, SessionState::Active);
+    }
+
+    /// T029: a streaming utterance terminates correctly — committed deltas
+    /// followed by Done; the accumulated transcript is the Done text.
+    #[test]
+    fn streaming_terminal_completes_after_committed_deltas() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        fsm.on_input(Input::Backend(committed_seg("Many ", 0)));
+        fsm.on_input(Input::Backend(committed_seg("little wrinkles", 1)));
+
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(done("Many little wrinkles")))),
+            vec![OrchestratorEvent::Done("Many little wrinkles".into())]
+        );
+        assert_eq!(
+            fsm.outcome(),
+            Some(SessionOutcome::Completed {
+                transcript: "Many little wrinkles".into(),
+            })
+        );
+    }
+
+    /// T033: unstable deltas are never emitted as committed Final text — they
+    /// surface as Unstable events (display-only; injectors ignore them).
+    #[test]
+    fn streaming_unstable_deltas_are_not_committed() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+
+        // Unstable hypothesis: NOT a Final — must not reach an injector.
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(unstable_seg("little wrinkles")))),
+            vec![OrchestratorEvent::Unstable("little wrinkles".into())]
+        );
+
+        // A committed delta following the unstable one commits normally.
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(committed_seg("little wrinkles ", 0)))),
+            vec![OrchestratorEvent::Final("little wrinkles ".into())]
+        );
     }
 }

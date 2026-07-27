@@ -145,6 +145,9 @@ class _SessionHandler:
         caps = self._service.capabilities()
         default_model = caps.models[0] if caps.models else None
         default_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
+        # T027: advertise streaming mode on the greeting (additive; absent on
+        # adapters that don't define `streaming` → old behavior).
+        streaming = getattr(self._service, "streaming", None)
         with contextlib.suppress(ConnectionClosed):
             await ws.send(
                 json.dumps(
@@ -152,7 +155,9 @@ class _SessionHandler:
                         "type": SESSION_CREATED,
                         "protocol_version": PROTOCOL_VERSION,
                         "session": session_config_to_ie115(
-                            SessionConfig(audio_format=default_format), model=default_model
+                            SessionConfig(audio_format=default_format),
+                            model=default_model,
+                            streaming=streaming,
                         ),
                     }
                 )

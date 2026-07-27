@@ -1,0 +1,12 @@
+{
+  "assessments": [
+    {
+      "model": "whisper-tiny",
+      "hardware": "x86_64-cpu-generic",
+      "rtf": 1.0811,
+      "strategy": "batch",
+      "measured_at": "2026-07-27T00:00:00Z"
+    }
+  ],
+  "_comment": "RTF baselines for the streaming tier gate (FR-002, FR-012). Measured via dev/bench.py --streaming on the real corpus; regenerate with dev/matrix.py in the lab. whisper-tiny on generic CPU: RTF 1.08 > 1.0 → batch (this machine correctly gates to batch)."
+}

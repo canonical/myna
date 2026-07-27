@@ -1,0 +1,33 @@
+{
+  "watermark": "streaming-mode",
+  "measured_at": "2026-07-27",
+  "environment": "x86_64 CPU, whisper-tiny (faster-whisper/CTranslate2), real corpus (LibriSpeech 2277-149896-00{05,06,30})",
+  "tolerances": {
+    "wer_delta_pp": 2.0,
+    "commit_stability": 1.0,
+    "rtf": "+0.15 regression"
+  },
+  "streaming": {
+    "wer_micro": 0.0364,
+    "wer_edits": 2,
+    "ref_words": 55,
+    "committed_segments_max": 2,
+    "commit_stability": true,
+    "median_finalize_latency_s": 0.419,
+    "rtf": 1.08,
+    "time_to_first_committed": "~audio_duration (see FR-008 gap note)"
+  },
+  "batch": {
+    "wer_micro": 0.0364,
+    "wer_edits": 2,
+    "ref_words": 55,
+    "median_finalize_latency_s": 0.424
+  },
+  "notes": [
+    "SC-002: streaming WER == batch WER (0pp delta; sentence-split emission is lossless by construction).",
+    "SC-004: commit_stability 100% across the sweep.",
+    "SC-003: batch path untouched — same server binary without --streaming, identical metrics.",
+    "time_to_first_committed ≈ audio duration with commit-on-finalize+split; the SC-001 3s/5s targets become meaningful once LocalAgreement/native transducer emission lands.",
+    "GPU-tier watermarks (Nemotron, whisper-small) require the lab hardware; extend this file via dev/matrix.py."
+  ]
+}

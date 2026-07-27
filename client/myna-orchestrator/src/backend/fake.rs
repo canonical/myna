@@ -205,6 +205,7 @@ fn final_seg(text: &str) -> TranscriptionEvent {
     TranscriptionEvent::Final(TranscriptionFinal {
         text: text.into(),
         segments: vec![],
+        ..Default::default()
     })
 }
 
@@ -212,6 +213,7 @@ fn done(text: &str) -> TranscriptionEvent {
     TranscriptionEvent::Done(TranscriptionFinal {
         text: text.into(),
         segments: vec![],
+        ..Default::default()
     })
 }
 

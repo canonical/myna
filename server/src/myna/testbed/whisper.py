@@ -28,6 +28,7 @@ from myna.core import (
     PHASE_READY,
     AudioFormat,
     Capabilities,
+    Disposition,
     EventSink,
     PcmChunk,
     Segment,
@@ -67,13 +68,20 @@ class FasterWhisperAdapter:
         device: str = "cpu",
         compute_type: str = "default",
         download_root: str | None = None,
+        streaming: bool = False,  # T020: Enable streaming mode
     ) -> None:
         self._model_size = model_size
         self._device = device
         self._compute_type = compute_type
         self._download_root = download_root
+        self._streaming = streaming
         self._model = None
         self._model_lock = asyncio.Lock()
+
+    @property
+    def streaming(self) -> bool:
+        """Whether this adapter emits progressive committed segments (T027)."""
+        return self._streaming
 
     @property
     def candidate(self) -> Candidate:
@@ -192,14 +200,22 @@ class FasterWhisperAdapter:
 
             want_timestamps = config.timestamp_granularity is not None
             finals: list[str] = []
+            segment_index = 0  # T022: Track segment index for streaming
             for segment in segments:
                 text = segment.text.strip()
                 if not text:
                     continue
                 finals.append(text)
+                
+                # T022: In streaming mode, emit as committed deltas with segment_index
+                disposition = Disposition.COMMITTED if self._streaming else Disposition.COMMITTED
+                seg_idx = segment_index if self._streaming else None
+                
                 await emit(
                     TranscriptionFinal(
                         text=text,
+                        disposition=disposition,
+                        segment_index=seg_idx,
                         segments=(
                             (
                                 Segment(
@@ -214,6 +230,7 @@ class FasterWhisperAdapter:
                         ),
                     )
                 )
+                segment_index += 1
             await emit(TranscriptionDone(text=" ".join(finals)))
         except Exception as exc:
             await emit(

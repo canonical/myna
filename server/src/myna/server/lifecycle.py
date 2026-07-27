@@ -39,6 +39,11 @@ class LifecycleService:
     def candidate(self):
         return self._service.candidate
 
+    @property
+    def streaming(self) -> bool | None:
+        """Delegate streaming mode to the wrapped adapter (T027)."""
+        return getattr(self._service, "streaming", None)
+
     def capabilities(self):
         return self._service.capabilities()
 

@@ -205,6 +205,70 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// T030 (feature 007): streaming round-trip — committed deltas arrive
+    /// progressively at the sink; unstable deltas surface as Unstable, never
+    /// as committed Final text; the terminal Done carries the full transcript.
+    #[tokio::test]
+    async fn streaming_committed_deltas_flow_to_sink_progressively() {
+        use crate::backend::fake::FakeStep;
+        use myna_core::{Disposition, Progress, TranscriptionEvent, TranscriptionFinal, PHASE_READY};
+
+        let committed = |text: &str, i: u32| {
+            TranscriptionEvent::Final(TranscriptionFinal {
+                text: text.into(),
+                segments: vec![],
+                disposition: Disposition::Committed,
+                segment_index: Some(i),
+            })
+        };
+        let unstable = |text: &str| {
+            TranscriptionEvent::Final(TranscriptionFinal {
+                text: text.into(),
+                segments: vec![],
+                disposition: Disposition::Unstable,
+                segment_index: None,
+            })
+        };
+
+        let backend = FakeBackend::new(vec![
+            FakeStep::Emit(TranscriptionEvent::Progress(Progress::phase(PHASE_READY))),
+            FakeStep::Emit(committed("Many ", 0)),
+            FakeStep::Emit(unstable("little wrinkl")),
+            FakeStep::Emit(unstable("little wrinkles")),
+            FakeStep::Emit(committed("little wrinkles ", 1)),
+            FakeStep::WaitForFinish,
+            FakeStep::Emit(TranscriptionEvent::Done(TranscriptionFinal {
+                text: "Many little wrinkles".into(),
+                ..Default::default()
+            })),
+        ]);
+
+        let path = wav_file(1);
+        let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.1);
+        let mut sink = CollectingSink::default();
+
+        let outcome =
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed { transcript: "Many little wrinkles".into() }
+        );
+        // Committed segments reached the sink progressively, in order.
+        assert_eq!(sink.finals(), vec!["Many ", "little wrinkles "]);
+        // Unstable hypotheses surfaced as Unstable — not committed text.
+        let unstables: Vec<_> = sink
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                OrchestratorEvent::Unstable(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(unstables, vec!["little wrinkl", "little wrinkles"]);
+        std::fs::remove_file(&path).ok();
+    }
+
     #[tokio::test]
     async fn myna_audio_capture_source_drops_in_behind_the_same_trait() {
         // T50 acceptance: the real adapter crate (over its fake backend — the

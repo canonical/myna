@@ -36,6 +36,40 @@ pub const EVENT_FINAL: &str = "transcription.final";
 pub const EVENT_DONE: &str = "transcription.done";
 pub const EVENT_ERROR: &str = "transcription.error";
 
+/// Disposition enum for streaming mode (T05, feature 007-streaming-mode)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Disposition {
+    /// Text is final, append-only, safe to inject into text field
+    Committed,
+    /// Text is provisional, may be revised or superseded
+    Unstable,
+}
+
+impl Default for Disposition {
+    fn default() -> Self {
+        Self::Committed  // Backward-compatible default
+    }
+}
+
+/// Streaming mode selector (T05, feature 007-streaming-mode)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamingMode {
+    /// Force streaming regardless of tier (user accepts potential latency)
+    Streaming,
+    /// Force batch regardless of tier (user prefers all-at-once)
+    Batch,
+    /// Resolve to streaming or batch based on tier assessment (default)
+    Auto,
+}
+
+impl Default for StreamingMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 fn default_phase() -> String {
     PHASE_TRANSCRIBING.to_string()
 }
@@ -85,6 +119,10 @@ pub struct TranscriptionFinal {
     pub text: String,
     #[serde(default)]
     pub segments: Vec<Segment>,
+    #[serde(default)]
+    pub disposition: Disposition,
+    #[serde(default)]
+    pub segment_index: Option<u32>,
 }
 
 /// `transcription.error` payload — stable machine-readable `code`, human
@@ -219,8 +257,10 @@ mod tests {
             &TranscriptionEvent::Final(TranscriptionFinal {
                 text: "The quick brown fox".into(),
                 segments: vec![],
+                disposition: Disposition::default(),
+                segment_index: None,
             }),
-            r#"{"event": "transcription.final", "data": {"text": "The quick brown fox", "segments": []}}"#,
+            r#"{"event": "transcription.final", "data": {"text": "The quick brown fox", "segments": [], "disposition": "committed", "segment_index": null}}"#,
         );
     }
 
@@ -230,16 +270,23 @@ mod tests {
             &TranscriptionEvent::Final(TranscriptionFinal {
                 text: "hi".into(),
                 segments: vec![Segment { start: 0.0, end: 1.0, text: "hi".into(), score: None }],
+                disposition: Disposition::default(),
+                segment_index: None,
             }),
-            r#"{"event": "transcription.final", "data": {"text": "hi", "segments": [{"start": 0.0, "end": 1.0, "text": "hi", "score": null}]}}"#,
+            r#"{"event": "transcription.final", "data": {"text": "hi", "segments": [{"start": 0.0, "end": 1.0, "text": "hi", "score": null}], "disposition": "committed", "segment_index": null}}"#,
         );
     }
 
     #[test]
     fn done_full_transcript() {
         assert_wire(
-            &TranscriptionEvent::Done(TranscriptionFinal { text: "full text".into(), segments: vec![] }),
-            r#"{"event": "transcription.done", "data": {"text": "full text", "segments": []}}"#,
+            &TranscriptionEvent::Done(TranscriptionFinal {
+                text: "full text".into(),
+                segments: vec![],
+                disposition: Disposition::default(),
+                segment_index: None,
+            }),
+            r#"{"event": "transcription.done", "data": {"text": "full text", "segments": [], "disposition": "committed", "segment_index": null}}"#,
         );
     }
 
@@ -280,5 +327,45 @@ mod tests {
             TranscriptionEvent::from_wire(&wire).unwrap().unwrap(),
             TranscriptionEvent::Progress(Progress::default())
         );
+    }
+
+    // T009: Disposition encoding/decoding tests (feature 007-streaming-mode)
+    #[test]
+    fn final_with_disposition_committed() {
+        assert_wire(
+            &TranscriptionEvent::Final(TranscriptionFinal {
+                text: "Hello world".into(),
+                segments: vec![],
+                disposition: Disposition::Committed,
+                segment_index: Some(0),
+            }),
+            r#"{"event": "transcription.final", "data": {"text": "Hello world", "segments": [], "disposition": "committed", "segment_index": 0}}"#,
+        );
+    }
+
+    #[test]
+    fn final_with_disposition_unstable() {
+        assert_wire(
+            &TranscriptionEvent::Final(TranscriptionFinal {
+                text: "Hello wor".into(),
+                segments: vec![],
+                disposition: Disposition::Unstable,
+                segment_index: None,
+            }),
+            r#"{"event": "transcription.final", "data": {"text": "Hello wor", "segments": [], "disposition": "unstable", "segment_index": null}}"#,
+        );
+    }
+
+    #[test]
+    fn disposition_default_is_committed() {
+        // T010: Backward-compat test - absent disposition defaults to committed
+        let wire = json!({"event": "transcription.final", "data": {"text": "test", "segments": []}});
+        let event = TranscriptionEvent::from_wire(&wire).unwrap().unwrap();
+        if let TranscriptionEvent::Final(final_event) = event {
+            assert_eq!(final_event.disposition, Disposition::Committed);
+            assert_eq!(final_event.segment_index, None);
+        } else {
+            panic!("Expected TranscriptionEvent::Final");
+        }
     }
 }

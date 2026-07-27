@@ -36,13 +36,15 @@ use super::{BackendClient, BackendError, BackendEvents, BackendHandle, BackendSi
 
 const OUTBOUND_CAPACITY: usize = 16;
 const EVENT_CAPACITY: usize = 64;
-const WS_URL: &str = "ws://localhost/";
+const DEFAULT_WS_PATH: &str = "/";
 
 // IE115 frame type strings.
 const SESSION_UPDATE: &str = "session.update";
 const INPUT_AUDIO_APPEND: &str = "input_audio_buffer.append";
 const INPUT_AUDIO_COMMIT: &str = "input_audio_buffer.commit";
 const STATUS_EVENT: &str = "status";
+const MODEL_LOADED: &str = "model.loaded";
+const MODEL_UNLOADED: &str = "model.unloaded";
 const TRANSCRIPTION_DELTA: &str = "conversation.item.input_audio_transcription.delta";
 const TRANSCRIPTION_COMPLETED: &str = "conversation.item.input_audio_transcription.completed";
 const ERROR: &str = "error";
@@ -52,17 +54,25 @@ const ERROR: &str = "error";
 pub struct WsUnixIe115Backend {
     socket_path: std::path::PathBuf,
     base64_audio: bool,
+    ws_path: String,
 }
 
 impl WsUnixIe115Backend {
     pub fn new(socket_path: impl Into<std::path::PathBuf>) -> Self {
-        Self { socket_path: socket_path.into(), base64_audio: false }
+        Self { socket_path: socket_path.into(), base64_audio: false, ws_path: DEFAULT_WS_PATH.into() }
     }
 
     /// Send audio as base64 `input_audio_buffer.append` frames (OpenAI parity)
     /// instead of raw WS binary frames.
     pub fn base64_audio(mut self, yes: bool) -> Self {
         self.base64_audio = yes;
+        self
+    }
+
+    /// Override the WebSocket endpoint path (default `/`). The colleagues'
+    /// canonical/whisper-snap adapter serves at `/ws`.
+    pub fn ws_path(mut self, path: impl Into<String>) -> Self {
+        self.ws_path = path.into();
         self
     }
 }
@@ -77,14 +87,20 @@ fn session_update_frame(config: &SessionConfig) -> Value {
     if let Some(prompt) = &config.prompt {
         transcription.insert("prompt".into(), json!(prompt));
     }
+
+    let mut input = serde_json::Map::new();
+    input.insert("format".into(), json!({ "type": "audio/pcm", "rate": config.audio_format.sample_rate_hz }));
+    // Only include transcription if non-empty — the canonical/whisper-snap
+    // adapter rejects an empty transcription object.
+    if !transcription.is_empty() {
+        input.insert("transcription".into(), Value::Object(transcription));
+    }
+
     json!({
         "type": SESSION_UPDATE,
         "session": {
             "type": "realtime",
-            "audio": { "input": {
-                "format": { "type": "audio/pcm", "rate": config.audio_format.sample_rate_hz },
-                "transcription": Value::Object(transcription),
-            }},
+            "audio": { "input": Value::Object(input) },
         }
     })
 }
@@ -95,19 +111,26 @@ impl BackendClient for WsUnixIe115Backend {
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(|e| BackendError::Connect(format!("{}: {e}", self.socket_path.display())))?;
-        let (ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
+        let ws_url = format!("ws://localhost{}", self.ws_path);
+        let (ws, _resp) = tokio_tungstenite::client_async(&ws_url, stream)
             .await
             .map_err(|e| BackendError::Handshake(e.to_string()))?;
         let (mut write, read) = ws.split();
 
-        // Send `session.update` eagerly — the shape-sniff trigger. Like the
-        // Python client we do not block on `session.created`; the pump ignores
-        // the control frames.
-        let frame = session_update_frame(&config);
-        write
-            .send(Message::Text(frame.to_string()))
-            .await
-            .map_err(|e| BackendError::Transport(e.to_string()))?;
+        // Send `session.update` if we have meaningful config to communicate.
+        // For external servers (ws_path != "/") that don't need the shape-sniff
+        // trigger, skip it when the update would be empty — their adapters may
+        // unconditionally reload the backend on any session.update (observed in
+        // canonical/whisper-snap, which kills the connection and loses audio).
+        let has_config = config.language.is_some() || config.prompt.is_some();
+        let needs_shape_sniff = self.ws_path == DEFAULT_WS_PATH;
+        if has_config || needs_shape_sniff {
+            let frame = session_update_frame(&config);
+            write
+                .send(Message::Text(frame.to_string()))
+                .await
+                .map_err(|e| BackendError::Transport(e.to_string()))?;
+        }
 
         let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
         let (ev_tx, ev_rx) = mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
@@ -143,16 +166,54 @@ fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
             let snippet = value.get("snippet").and_then(Value::as_str).map(String::from);
             vec![TranscriptionEvent::Progress(Progress { snippet, phase: phase.to_string() })]
         }
+        // canonical/whisper-snap adapter: model.loaded ≈ our STATUS{ready}
+        Some(MODEL_LOADED) => {
+            vec![TranscriptionEvent::Progress(Progress { snippet: None, phase: PHASE_READY.to_string() })]
+        }
+        // canonical/whisper-snap adapter: model.unloaded ≈ our STATUS{loading}
+        // (their SetConfig unconditionally reloads the backend — closes the gate
+        // until the new connection's model.loaded arrives)
+        Some(MODEL_UNLOADED) => {
+            vec![TranscriptionEvent::Progress(Progress { snippet: None, phase: PHASE_PREPARING.to_string() })]
+        }
         Some(TRANSCRIPTION_DELTA) => {
             // Committed, append-only segment text — the IE115 face of
             // `transcription.final` (streaming contract, streaming.md §3a).
+            // Parse disposition field (T12, feature 007); default to committed for backward-compat
+            use myna_core::Disposition;
             let text = value.get("delta").and_then(Value::as_str).unwrap_or("").to_string();
-            vec![TranscriptionEvent::Final(TranscriptionFinal { text, segments: vec![] })]
+            let disposition_str = value.get("disposition").and_then(Value::as_str).unwrap_or("committed");
+            let disposition = if disposition_str == "unstable" {
+                Disposition::Unstable
+            } else {
+                Disposition::Committed
+            };
+            let segment_index = value.get("segment_index").and_then(Value::as_u64).map(|n| n as u32);
+            vec![TranscriptionEvent::Final(TranscriptionFinal {
+                text,
+                segments: vec![],
+                disposition,
+                segment_index,
+            })]
         }
         Some(TRANSCRIPTION_COMPLETED) => {
             // The utterance terminal: full transcript for this commit.
+            // HOWEVER: the canonical/whisper-snap adapter sends empty completed
+            // as a "revision reset" signal (clear partial, re-send from scratch).
+            // Only treat non-empty completed as the real terminal.
             let text = value.get("transcript").and_then(Value::as_str).unwrap_or("").to_string();
-            vec![TranscriptionEvent::Done(TranscriptionFinal { text, segments: vec![] })]
+            if text.is_empty() {
+                // Revision reset — not a terminal. The next delta carries the
+                // corrected text. Ignore for now (our FSM already committed the
+                // delta; the streaming spec must define a proper discriminant).
+                vec![]
+            } else {
+                vec![TranscriptionEvent::Done(TranscriptionFinal {
+                    text,
+                    segments: vec![],
+                    ..Default::default()
+                })]
+            }
         }
         Some(ERROR) => {
             let err = value.get("error");
@@ -168,7 +229,13 @@ fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
                 .to_string();
             vec![TranscriptionEvent::Error(ErrorData { code, message })]
         }
-        _ => vec![], // session.created/updated or unknown additive frame
+        _ => {
+            // session.created/updated or unknown additive frame
+            // T015 (feature 007): session.created may carry a "streaming" field
+            // indicating whether the server will emit progressive committed segments.
+            // TODO: Parse and expose session.streaming when implementing US1.
+            vec![]
+        }
     }
 }
 
