@@ -39,6 +39,15 @@ old clients ignore it (per the unversioned-additive wire stance).
 | `disposition` | `"committed"` \| `"unstable"` | No (default: `"committed"`) | Whether this text is append-only (safe to inject) or provisional (may be revised) |
 | `segment_index` | integer | No | Monotonically increasing index for committed segments within this utterance. Absent on unstable deltas. |
 
+**Whitespace (pinned 2026-07-27):** committed deltas carry their own natural
+whitespace (leading spaces preserved; only the utterance's first delta sheds
+its leading space), so the **verbatim** concatenation of committed deltas
+equals the `completed` transcript — an injector inserting each delta as it
+lands needs no separator logic. Unstable deltas are the *uncommitted
+remainder* of the hypothesis (never restating committed text) and likewise
+keep their natural leading space. See
+`specs/008-progressive-emission/contracts/emission-semantics.md` (I2/I3).
+
 ### Completed (unchanged — always committed)
 
 ```json

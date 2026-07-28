@@ -57,12 +57,14 @@ def test_tail_mutation_single_segment_all_unstable():
 
 def test_tail_mutation_stuck_partial_escape():
     s = TailMutation()
-    h = hyp([("a ", 0, 1), ("b ", 1, 2)], [("a", 0, 1), ("b", 1, 2)])
+    # Segment texts carry leading spaces (faster-whisper natural spacing);
+    # the merged commit keeps them — the loop sheds the utterance-edge one.
+    h = hyp([("a ", 0, 1), ("b ", 1, 2)], [(" a", 0, 1), (" b", 1, 2)])
     decision = None
     for _ in range(STUCK_PASSES + 2):
         decision = s.commit_rule(None, h, window_end=2.0, force=False)
     assert decision is not None
-    assert decision.commit_text == "a b"
+    assert decision.commit_text == " a b"
     assert decision.commit_end == 2.0
     assert decision.unstable_text == ""
 

@@ -115,7 +115,12 @@ class ChunkedStrategy(Protocol):
 
 
 def _join(words: list[Word]) -> str:
-    return "".join(w.text for w in words).strip()
+    """Verbatim word-text join (natural spacing): whisper word texts carry
+    their own leading whitespace, so joining verbatim keeps inter-word
+    spaces; only trailing whitespace is trimmed. The loop sheds the leading
+    space of an utterance's first emission (committed chunks concatenate
+    verbatim to the transcript — contracts/emission-semantics.md I2)."""
+    return "".join(w.text for w in words).rstrip()
 
 
 class TailMutation:
@@ -154,9 +159,10 @@ class TailMutation:
                     )
             return CommitDecision()
         complete, trailing = segs[:-1], segs[-1]
-        commit_text = " ".join(s.text.strip() for s in complete).strip()
+        # Natural spacing here too: segment texts carry leading whitespace.
+        commit_text = "".join(s.text for s in complete).rstrip()
         commit_end = complete[-1].end if complete else 0.0
-        unstable = trailing.text.strip()
+        unstable = trailing.text.rstrip()
 
         # Stuck-partial escape: unchanged trailing segment across STUCK_PASSES
         # consecutive ticks ⇒ force-commit it and advance past its end.
@@ -166,9 +172,8 @@ class TailMutation:
             self._stuck = 0
         self._last_unstable = unstable
         if self._stuck > STUCK_PASSES:
-            commit_text = " ".join(
-                x for x in (commit_text, unstable) if x
-            ).strip()
+            # Verbatim concat: `unstable` keeps its natural leading space.
+            commit_text = (commit_text + unstable).rstrip()
             commit_end = trailing.end
             unstable = ""
             self._stuck = 0
