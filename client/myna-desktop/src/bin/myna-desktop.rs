@@ -69,6 +69,10 @@ OPTIONS:
     --hold             with --portal: hold-to-talk instead (hold = record)
     --stdin            DEBUG: drive from the terminal (injects into the terminal)
     --overlay          show the GTK activity overlay (experimental; may steal focus)
+    --preedit          show the in-flight hypothesis in the field's preedit region
+                       (experimental; IBus only — volatile, underlined, replaced
+                       as it updates, cleared on commit; never committed text).
+                       Needs a streaming server (myna-server --streaming)
     --dbus             serve org.myna.Dictation on the session bus for the GNOME
                        Shell extension (falls back to notifications if no bus)
     -h, --help         show this help
@@ -87,6 +91,7 @@ struct Args {
     hold: bool,
     stdin: bool,
     overlay: bool,
+    preedit: bool,
     dbus: bool,
 }
 
@@ -115,6 +120,7 @@ fn parse_args_from(mut it: std::iter::Peekable<impl Iterator<Item = String>>) ->
             "--hold" => a.hold = true,
             "--stdin" => a.stdin = true,
             "--overlay" => a.overlay = true,
+            "--preedit" => a.preedit = true,
             "--dbus" => a.dbus = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
@@ -201,7 +207,8 @@ async fn run_controller(
     let builder = DesktopController::builder()
         .injector(injector)
         .indicator(indicator)
-        .session(make_session(&args, readiness, pump_bus));
+        .session(make_session(&args, readiness, pump_bus))
+        .preedit(args.preedit);
 
     let mut controller = if args.stdin {
         builder.trigger(StdinTrigger::new()).build()

@@ -235,10 +235,14 @@ async fn snippet_is_never_committed() {
     controller.run().await;
 
     let commits = inject_log.lock().unwrap().commits.clone();
+    // Two spaced flushes (a progress event separates the finals); the second
+    // carries the defensive separator — verbatim concatenation reconstructs
+    // the transcript.
     assert_eq!(
         commits,
-        vec!["The quick brown fox", "jumps over the lazy dog."]
+        vec!["The quick brown fox", " jumps over the lazy dog."]
     );
+    assert_eq!(commits.concat(), "The quick brown fox jumps over the lazy dog.");
     // No committed segment is a bare snippet.
     assert!(!commits
         .iter()
@@ -604,5 +608,218 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
         ),
         "target-gone must notify"
     );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+// ── R9 streaming preedit (opt-in): Unstable → preedit, never committed ──────
+
+/// Build a controller with the preedit opt-in switched on (the `build` helper
+/// covers the commit-only default).
+fn build_preedit(
+    edges: impl IntoIterator<Item = TriggerEdge>,
+    injector: MockInjector,
+    indicator: MockIndicator,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> DesktopController {
+    DesktopController::builder()
+        .trigger(ScriptedTrigger::new(edges))
+        .injector(injector)
+        .indicator(indicator)
+        .session(session)
+        .preedit(true)
+        .build()
+}
+
+#[tokio::test]
+async fn streaming_unstable_is_preedit_only_never_committed() {
+    // R9 / FR-012-relaxed-for-preedit: with `--preedit`, each `Unstable`
+    // hypothesis is rendered (replaced) in the preedit region; only `Final`
+    // text is ever committed. A pending stable burst must be committed *before*
+    // the preedit tail that follows it, so the volatile text is drawn after the
+    // committed text it extends.
+    let injector = MockInjector::new().with_preedit_support();
+    let inject_log = injector.log();
+    let mut controller = build_preedit(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Unstable("hel".into()),
+                OrchestratorEvent::Unstable("hello".into()),
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Unstable("hello wor".into()),
+                OrchestratorEvent::Final("world".into()),
+                OrchestratorEvent::Done("hello world".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello world".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    // Every unstable hypothesis shown, in order; none committed.
+    assert_eq!(log.preedits, vec!["hel", "hello", "hello wor"]);
+    // Spaced streaming commits flush separately; the second gets a separator
+    // from the text already in the field (stripped-segment server).
+    assert_eq!(log.commits, vec!["hello", " world"]);
+    // (A preedit string may later appear as a commit — "hello" stabilized and
+    // was committed by its `Final`. The invariant is the *channel*: volatile
+    // text only ever enters via set_preedit, stable text only via commit.)
+    // The commit of "hello" lands before the preedit tail "hello wor" that
+    // extends it (the real IBus injector's commit clears the prior preedit).
+    assert_eq!(
+        log.order,
+        vec!["preedit", "preedit", "commit", "preedit", "commit"]
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn stripped_streaming_segments_are_spaced_across_flushes() {
+    // Regression (observed live): a whisper streaming server emits committed
+    // deltas stripped of whitespace ("This", "is not", "working that
+    // well."), and spaced commits flush separately — verbatim insertion
+    // produced "Thisis notworking that well.". The controller must separate
+    // commits that don't carry their own whitespace.
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Final("This".into()),
+                OrchestratorEvent::Unstable("is not".into()),
+                OrchestratorEvent::Final("is not".into()),
+                OrchestratorEvent::Unstable("working that".into()),
+                OrchestratorEvent::Final("working that well.".into()),
+                OrchestratorEvent::Done("This is not working that well.".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "This is not working that well.".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.commits.concat(),
+        "This is not working that well.",
+        "verbatim concatenation of inserted commits must reproduce the transcript: {:?}",
+        log.commits
+    );
+}
+
+#[tokio::test]
+async fn natural_spacing_segments_get_no_double_spaces() {
+    // Contract I2 servers emit segments with natural (leading-space)
+    // whitespace: they concatenate verbatim — the controller must NOT add
+    // separators, neither across flushes nor inside a coalesced burst.
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Final("He began to wish".into()),
+                OrchestratorEvent::Unstable(" that he had".into()),
+                OrchestratorEvent::Final(" that he had".into()),
+                OrchestratorEvent::Final(" compromised in some way.".into()),
+                OrchestratorEvent::Done("He began to wish that he had compromised in some way.".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "He began to wish that he had compromised in some way.".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    // The two trailing Finals form one burst → coalesced into one commit;
+    // the leading spaces are preserved verbatim, never doubled.
+    assert_eq!(
+        log.commits,
+        vec![
+            "He began to wish".to_string(),
+            " that he had compromised in some way.".to_string()
+        ]
+    );
+    assert_eq!(
+        log.commits.concat(),
+        "He began to wish that he had compromised in some way."
+    );
+}
+
+#[tokio::test]
+async fn preedit_is_off_by_default_even_when_supported() {
+    // FR-012 commit-only is the default: without the opt-in, `Unstable` events
+    // are ignored by the injector even when the backend has a preedit region.
+    let injector = MockInjector::new().with_preedit_support();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Unstable("hel".into()),
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Done("hello".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert!(log.preedits.is_empty(), "preedit must be opt-in");
+    assert_eq!(log.commits, vec!["hello"]);
+}
+
+#[tokio::test]
+async fn preedit_suppressed_with_commits_after_focus_loss() {
+    // FR-014/SC-007: focus lost mid-session — nothing further lands in the
+    // (new) surface, commits AND preedit alike.
+    let injector = MockInjector::new()
+        .with_preedit_support()
+        .with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let inject_log = injector.log();
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let _ = tx.try_send(OrchestratorEvent::Final("first".into()));
+        let stop = StopHandle::default();
+        let stop2 = stop.clone();
+        let run: SessionRun = Box::pin(async move {
+            while !stop2.is_stopped() {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            let _ = tx.send(OrchestratorEvent::Unstable("first sec".into())).await;
+            let _ = tx.send(OrchestratorEvent::Final("second".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("first second".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "first second".into(),
+            })
+        });
+        (run, stop)
+    };
+    let mut controller = build_preedit(
+        [TriggerEdge::Press],
+        injector,
+        MockIndicator::new(),
+        session,
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert!(log.commits.is_empty(), "nothing committed after focus-out");
+    assert!(log.preedits.is_empty(), "no preedit after focus-out");
     assert_eq!(controller.state(), DictationState::Idle);
 }

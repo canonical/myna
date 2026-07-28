@@ -79,6 +79,19 @@ spaced streaming finals (separated by a liveness event) still flush and insert
 individually. A segment buffered but not yet flushed when focus is lost is
 discarded, not inserted into the now-wrong surface (SC-007).
 
+**Spacing between commits (2026-07-27).** Contract I2 (008
+emission-semantics) makes committed deltas **verbatim-concatenable**: they
+carry their own natural whitespace (whisper word/segment texts keep their
+leading spaces; only the utterance's first delta sheds its leading space), so
+an injector that inserts each delta as it lands reproduces the transcript
+exactly. The controller is additionally *defensive*: when joining a burst or
+flushing a spaced commit after earlier text, it inserts a separator **only
+if neither side already has whitespace** — so legacy stripped-segment servers
+(the fake adapter, pre-fix whisper) get single spaces restored and contract
+servers never get doubles. Regression tests:
+`stripped_streaming_segments_are_spaced_across_flushes` (the live "Thisis
+notworking that well." bug) and `natural_spacing_segments_get_no_double_spaces`.
+
 **Live instrumentation (`MYNA_DEBUG=1`).** Every pipeline stage streams
 timestamped stderr diagnostics — `capture:` (bytes forwarded, end-of-audio
 total), `runner:` (ready gate), `ws:` (audio frames sent, events received with
@@ -102,7 +115,8 @@ default; when on it prints transcript text (`myna_core::debug`).
   ours; restore on `end`/`cancel` (idempotent, restore-once).
 - **Commit**: buffer `Final` segments and emit the engine's `CommitText` signal
   with a serialized `IBusText` (`(sa{sv}sv)`) **once per burst** (see commit
-  coalescing above). Commit-only — the engine never calls `UpdatePreeditText`.
+  coalescing above). Commit-only by default; with `--preedit` the engine also
+  drives `UpdatePreeditText`/`HidePreeditText` (see *Streaming preedit* below).
 - **Focus/secure (R4/R5)**: `FocusOut` → a `FocusEvent::FocusOut` on the focus
   stream (controller ends safely, suppresses further commits). The stream is a
   **broadcast** — every utterance subscribes its own receiver, so focus-loss
@@ -140,6 +154,69 @@ Verified: the connection handshake + GVariant shapes against the running daemon;
 the full register→activate→commit→restore cycle against an isolated IBus daemon
 (`dbus-run-session`) via the gated `ibus_hw` suite. Injection into a focused GUI
 field is the manual spoken-run / gated-suite acceptance on hardware.
+
+## Streaming preedit (`--preedit`, R9)
+
+Opt-in partials in the field: with `myna-desktop --preedit` (and a streaming
+server, e.g. `myna-server --adapter whisper --streaming`), each `Unstable`
+hypothesis is rendered in the target's **preedit region** — the same
+volatile-text channel IMEs use — instead of waiting silently for commits:
+
+- **Render**: `UpdatePreeditText(IBusText, cursor, visible, mode)` — note the
+  **four** args: the daemon parses the engine signal strictly as `(vubu)`
+  (ibus ≥ 1.5.29, `bus/engineproxy.c`), and a 3-arg `(vub)` emission fails
+  `g_variant_get` there and is dropped *silently*. `mode` is
+  `IBUS_ENGINE_PREEDIT_CLEAR` — focus-out discards the volatile text, never
+  commits it. The `IBusText` carries a single underline attribute spanning
+  the whole string (IBus indexes are **char**-based, not bytes) — the
+  conventional "uncommitted" visual. Two serialization traps, both
+  root-caused live (2026-07-28) by diffing our signal bytes against
+  libibus-serialized canonical bytes and driving a probe `IBus.InputContext`:
+  the attr list must be **variant-wrapped** (`(sa{sv}sv)`, not inline
+  `(sa{sv}s(sa{sv}av))` — tolerated for `CommitText`, dropped for preedit),
+  and the `mode` arg above. The daemon's parser is the reference; the
+  structure-print comparison alone is insufficient (both shapes *print*
+  alike).
+- **Replace**: successive `Unstable` deltas *replace* the region; nothing
+  accumulates, and preedit text is never sent via `CommitText`.
+- **Clear**: a `commit` hides the region first (the controller also flushes any
+  pending stable burst *before* drawing the next preedit tail, so volatile text
+  always lands after the committed text it extends); `cancel`/`end` hide it
+  defensively; an empty `set_preedit("")` hides explicitly.
+- **Same guards as commit**: the secure-purpose re-check (F2/I5) applies to
+  preedit too — nothing, not even volatile text, is rendered into a
+  known-secure field; after focus-loss both commits and preedit are suppressed
+  (FR-014/SC-007).
+
+This is the R9 extension the `Injector` seam was shaped for
+(`set_preedit`/`supports_preedit`): no FSM or wire change — the controller
+routes `OrchestratorEvent::Unstable` → `set_preedit` only when the flag is on
+AND the backend reports `supports_preedit()` (IBus: yes; a future uinput/wtype
+fallback: no). FR-012's commit-only guarantee is relaxed **only for the
+preedit region** and **only under the opt-in**; every other injection
+invariant stands. The flag is off by default because in-field hypothesis
+display is still design-contested (UD136) — `--preedit` exists to evaluate it
+live.
+
+**Styling reality (for the design meeting, plan T64).** The preedit *text*
+is delivered and replaced/committed correctly everywhere (probe-verified),
+but the *differentiating style* is not ours to control on GNOME: on native
+Wayland the app talks text-input-v3 to Mutter, which strips IBus preedit
+attributes (ibus ChangeLog: "GNOME Wayland uses text-input version 3 which
+deletes the preedit style") — GTK renders preedit with its own default
+look, and our underline attribute is honored only where the app/toolkit
+supports it (X11/XWayland IBus clients, some GTK paths). So a *consistent*
+cross-app "unstable" visual may need to live in the shell extension's chrome
+(feature 004) rather than in-field styling. Whether partials graduate from
+opt-in to default, and with what visual treatment, is a UD136 design call. Hermetic coverage: `tests/controller.rs`
+(`streaming_unstable_is_preedit_only_never_committed`,
+`preedit_is_off_by_default_even_when_supported`,
+`preedit_suppressed_with_commits_after_focus_loss`) + the GVariant shape test
+in `inject/ibus.rs`; the live wire check is `MYNA_IBUS_TESTS=1 cargo test -p
+myna-desktop --test ibus_hw ibus_preedit_cycle` (observable against a probe
+`IBus.InputContext`, which receives the underlined updates verbatim), and
+`ibus_preedit_visual_probe` renders replace-then-commit preedit into a real
+focused field for the visual acceptance.
 
 ## Activation
 
@@ -294,6 +371,7 @@ becomes the norm for assistive input.
 - **Focus-safe overlay** is compositor-dependent (survey §2): a `gtk4-layer-shell`
   backend would serve KDE/wlroots; GNOME needs a Shell extension or the
   notification floor. Kept behind the `Indicator` seam.
-- **Streaming preedit**: `Injector::set_preedit`/`supports_preedit` are scaffolded
-  (`IbusInjector` reports `true`) but unused — the MVP is commit-only. Flipping it
-  on routes `Snippet` → preedit without reshaping the seam or the FSM.
+- **Streaming preedit**: **landed** (2026-07-27) as the opt-in `--preedit`
+  flag — see *Streaming preedit* above. The remaining piece is deciding whether
+  in-field partials graduate from opt-in to default once the UD136
+  hypothesis-display question is settled with design.

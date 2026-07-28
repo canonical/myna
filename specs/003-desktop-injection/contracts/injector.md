@@ -17,10 +17,12 @@ pub trait Injector: Send {
     async fn set_activity(&mut self, active: bool);
     /// Insert stable committed text (never modified afterwards). Commit-only.
     async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
-    /// FUTURE (streaming preedit, R9): render a volatile in-flight hypothesis in
-    /// the target's preedit region, replaced on the next call and cleared by
-    /// `commit`. Default no-op; only backends with a real preedit region honor
-    /// it. NOT called in the commit-only MVP.
+    /// Streaming preedit (R9, landed 2026-07-27 as opt-in `--preedit`): render a
+    /// volatile in-flight hypothesis in the target's preedit region, replaced on
+    /// the next call and cleared by `commit`. Default no-op; only backends with
+    /// a real preedit region honor it. Called by the controller only when the
+    /// opt-in is on AND `supports_preedit()`; the commit-only default never
+    /// routes unstable text here.
     async fn set_preedit(&mut self, _text: &str) {}
     /// Whether this backend has a replacement-safe preedit region (IBus / future
     /// Wayland input-method-v2 → true; uinput/wtype fallback → false).
@@ -67,20 +69,40 @@ pub enum InjectError { SecureField, NoTarget, Unavailable(String), Backend(Strin
 
 ## Non-goals (this iteration)
 
-- No preedit/provisional rendering in the target — **commit-only MVP**. The seam
-  is shaped for it (`set_preedit`/`supports_preedit`, R9) but the controller does
-  not route `Snippet` to preedit and no backend enables it here. `set_preedit`
-  stays a no-op default; `supports_preedit()` returns `false`.
+- ~~No preedit/provisional rendering in the target — **commit-only MVP**.~~
+  **Updated 2026-07-27**: preedit rendering landed as the opt-in
+  `myna-desktop --preedit` flag (see *Streaming preedit (R9)* below). The
+  **default remains commit-only** — without the flag no backend renders
+  provisional text and FR-012 is fully in force.
 - No post-processing beyond what the inference backend emits (out of scope).
 - No Wayland-native (`input_method_v2`) backend here (kept addable, R3).
 
-## Future extension: streaming preedit (R9)
+## Streaming preedit (R9) — landed 2026-07-27 (opt-in)
 
-When enabled in a later iteration: the controller routes
-`OrchestratorEvent::Snippet` → `set_preedit` (volatile, replaced each update) and
-`Final`/`Done` → `commit` (clears preedit, inserts stable text) — but only when
-`supports_preedit()`. FR-012's commit-only guarantee is relaxed *for that
-iteration*; every other invariant here (target fixed at start, secure-field
-refusal, literal-text-only, idempotent cancel/end, no committed-text retraction)
-is unchanged. Guarantees I2–I12 continue to hold; a new row would assert
-"successive `set_preedit` calls replace, and `commit` clears the preedit region."
+Implemented as `myna-desktop --preedit` + `DesktopController::builder().preedit(true)`:
+the controller routes `OrchestratorEvent::Unstable` (feature 007's
+`disposition: unstable` deltas — the streaming-era successor to the `Snippet`
+this section originally named) → `set_preedit` (volatile, replaced each update)
+and `Final`/`Done` → `commit` (clears preedit, inserts stable text) — but only
+when the flag is on AND `supports_preedit()`. `IbusInjector` implements it via
+`UpdatePreeditText` (single underline attribute spanning the hypothesis,
+char-indexed) / `HidePreeditText`, with the same commit-time secure-purpose
+re-check (I5/F2) applied to preedit. Wire detail (root-caused 2026-07-28):
+the daemon parses the engine signal **strictly as `(vubu)`** — the `mode`
+arg (`IBUS_ENGINE_PREEDIT_CLEAR`) is mandatory, and the attr list must be
+variant-wrapped in the `IBusText` (`(sa{sv}sv)`); a 3-arg `(vub)` emission
+or an inline attr list is dropped silently by the daemon. FR-012's commit-only guarantee is relaxed
+*for the preedit region under the opt-in only*; every other invariant here
+(target fixed at start, secure-field refusal, literal-text-only, idempotent
+cancel/end, no committed-text retraction) is unchanged. Guarantees I2–I12
+continue to hold, plus:
+
+| # | Given | When | Then | Spec |
+|---|-------|------|------|------|
+| I13 | preedit enabled, preedit-capable backend | `Unstable` hypotheses arrive | each is rendered via `set_preedit` (replaced, never via `commit`); a pending stable burst is committed *before* the next preedit tail; `commit` clears the region | FR-012 (relaxed, opt-in), R9 |
+| I14 | preedit enabled, focus lost mid-session | `Unstable`/`Final` tail arrives | neither preedit nor commit lands after focus loss | FR-014, SC-007 |
+
+Default-off rationale: in-field hypothesis display is still design-contested
+(UD136) — the flag exists to evaluate it live before any default flips.
+Tests: `client/myna-desktop/tests/controller.rs` (I13/I14 hermetic),
+`inject/ibus.rs` (preedit GVariant shape).

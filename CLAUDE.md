@@ -44,7 +44,8 @@ cloud, no persistent audio.
   contract (+ capture consumer traits); `myna-audio` is the capture adapter;
   `myna-orchestrator` the session/residency FSM; `myna-cli` the `myna-dictate`
   testbed binary; `myna-desktop` the shipped push-to-talk app (hotkey + IBus
-  injection + activity indicator + the `org.myna.Dictation` D-Bus publisher).
+  injection + opt-in IBus preedit partials via `--preedit` + activity indicator
+  + the `org.myna.Dictation` D-Bus publisher).
   The production hot path.
 - `extensions/myna-shell/` — the **GJS** GNOME Shell extension (feature 004): a
   focus-safe in-compositor dictation indicator ("goop"/ribbon) that consumes
@@ -117,7 +118,11 @@ cloud, no persistent audio.
   ~2.5 s in on whisper-tiny CPU. FR-008 closed for whisper. Watermarks on
   26–28 s concatenated streams (`corpus/real/manifest-streams.json`):
   fixed-head == batch WER, LA/TM +2.4 pp (AED right-context cost; beam ruled
-  out). Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
+  out — part of that gap was commit-boundary dedupe bugs fixed 2026-07-28:
+  the overlap alignment is now frontier-anchored at **character** level
+  (squashed words), so re-decode churn — earlier-word edits, silence
+  compression re-timing, merged/split tokens ("es"+"Carlos." → "escarlos.")
+  — can't double-commit boundary words; watermarks want re-measuring). Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
   native loop (Spike S2, GPU), Parakeet + sherpa-onnx snaps, report.
   Interop report delivered: `docs/interop/canonical-whisper-snap-report.md` —
   the canonical/whisper-snap's deltas restate the growing hypothesis with no
