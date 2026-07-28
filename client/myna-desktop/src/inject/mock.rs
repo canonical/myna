@@ -1,10 +1,11 @@
 //! `MockInjector` — the hermetic text-injection fixture (T007).
 //!
 //! Scripts `acquire` outcomes and a `focus_events` stream, and records every
-//! `commit` / `set_activity` / `cancel` / `end` call so controller tests can
-//! assert commit order/count, idempotent teardown, and the commit-only
-//! invariant — with no IBus, D-Bus, or display. `supports_preedit()` is `false`
-//! and `set_preedit` is a no-op (commit-only MVP; contract injector.md).
+//! `commit` / `set_preedit` / `set_activity` / `cancel` / `end` call so
+//! controller tests can assert commit order/count, idempotent teardown, and the
+//! commit-only invariant — with no IBus, D-Bus, or display. `supports_preedit()`
+//! is `false` by default (commit-only; contract injector.md); preedit tests opt
+//! in via [`MockInjector::with_preedit_support`].
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,13 @@ use super::{FocusEvent, InjectError, InjectionTarget, Injector};
 pub struct InjectorLog {
     /// Committed segment texts, in order (commit-only invariant).
     pub commits: Vec<String>,
+    /// Preedit texts passed to `set_preedit`, in order (volatile — must never
+    /// also appear in `commits`).
+    pub preedits: Vec<String>,
+    /// Interleaved commit/preedit operation order (`"commit"` / `"preedit"`),
+    /// so tests can assert a pending commit always lands *before* the preedit
+    /// tail that follows it.
+    pub order: Vec<&'static str>,
     /// `set_activity` toggles, in order.
     pub activity: Vec<bool>,
     /// Number of `acquire` calls.
@@ -54,6 +62,8 @@ pub struct MockInjector {
     focus: Vec<FocusEvent>,
     /// True once a target is acquired and not yet released (drives restore-once).
     acquired: bool,
+    /// What `supports_preedit()` reports (false unless opted in).
+    preedit_supported: bool,
     log: Arc<Mutex<InjectorLog>>,
 }
 
@@ -71,8 +81,16 @@ impl MockInjector {
             acquires: VecDeque::from([AcquireOutcome::Ok("mock-target".into())]),
             focus: Vec::new(),
             acquired: false,
+            preedit_supported: false,
             log: Arc::new(Mutex::new(InjectorLog::default())),
         }
+    }
+
+    /// Report a replacement-safe preedit region and record `set_preedit` calls
+    /// (the IBus backend's behavior; default is commit-only).
+    pub fn with_preedit_support(mut self) -> Self {
+        self.preedit_supported = true;
+        self
     }
 
     /// Script the sequence of `acquire` outcomes (one popped per call; the last
@@ -125,8 +143,20 @@ impl Injector for MockInjector {
     }
 
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
-        self.log.lock().unwrap().commits.push(text.to_string());
+        let mut log = self.log.lock().unwrap();
+        log.commits.push(text.to_string());
+        log.order.push("commit");
         Ok(())
+    }
+
+    async fn set_preedit(&mut self, text: &str) {
+        let mut log = self.log.lock().unwrap();
+        log.preedits.push(text.to_string());
+        log.order.push("preedit");
+    }
+
+    fn supports_preedit(&self) -> bool {
+        self.preedit_supported
     }
 
     async fn cancel(&mut self) {

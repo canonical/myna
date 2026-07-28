@@ -98,6 +98,78 @@ async fn ibus_commit_and_restore() {
     }
 }
 
+/// I13 (live): the preedit wire cycle — `UpdatePreeditText` (replace) →
+/// `commit` (clears the region, inserts stable text) → `end` — succeeds against
+/// a real daemon. The *visual* acceptance (the underlined hypothesis appears in
+/// a focused GTK entry, is replaced as it updates, and is replaced by committed
+/// text) is manual: run `myna-desktop --preedit` against `myna-server
+/// --adapter whisper --streaming` and dictate into a focused editor.
+#[tokio::test]
+async fn ibus_preedit_cycle() {
+    if !ibus_enabled() {
+        eprintln!("skipping ibus_preedit_cycle: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    match injector.acquire().await {
+        Ok(_target) => {}
+        Err(myna_desktop::inject::InjectError::Backend(msg)) => {
+            eprintln!("⚠️  Backend error: {msg} (run in an isolated session)");
+            return;
+        }
+        Err(other) => panic!("unexpected acquire error: {other:?}"),
+    }
+    assert!(myna_desktop::inject::Injector::supports_preedit(&injector));
+    // Replace: two successive unstable hypotheses, then an explicit clear.
+    injector.set_preedit("hel").await;
+    injector.set_preedit("hello wor").await;
+    injector.set_preedit("").await;
+    // Commit clears the region; end is safe after (idempotent hide).
+    injector.commit("hello world").await.expect("commit after preedit");
+    injector.end().await;
+}
+
+/// Live **visual** probe for the preedit path (R9): shows an underlined
+/// preedit, replaces it, then commits — while you watch a real focused field.
+/// Run it and click into any editable text field when prompted:
+///
+/// ```text
+/// MYNA_IBUS_TESTS=1 cargo test -p myna-desktop --test ibus_hw \
+///     ibus_preedit_visual_probe -- --nocapture
+/// ```
+///
+/// Expected: "unstable one" appears underlined in the field, is *replaced* by
+/// "unstable two", then disappears as "probe: committed." is inserted. If the
+/// text appears but is NOT underlined, the app renders preedit without
+/// attributes (fine); if nothing appears, the app/daemon drops
+/// `UpdatePreeditText` — report which app you focused. Takes over the global
+/// IME for ~12 s (same caveat as every test in this file).
+#[tokio::test]
+async fn ibus_preedit_visual_probe() {
+    if !ibus_enabled() {
+        eprintln!("skipping ibus_preedit_visual_probe: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    eprintln!("preedit probe: click into an editable text field — acquiring in 5 s…");
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    match injector.acquire().await {
+        Ok(_target) => {}
+        Err(other) => panic!("unexpected acquire error: {other:?}"),
+    }
+    eprintln!(">>> showing preedit 'unstable one' (3 s)");
+    injector.set_preedit("unstable one").await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    eprintln!(">>> replacing with 'unstable two' (3 s)");
+    injector.set_preedit("unstable two").await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    eprintln!(">>> committing 'probe: committed.' — preedit must clear");
+    injector.commit("probe: committed.").await.expect("commit");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    injector.end().await;
+    eprintln!("probe done — was the preedit visible and underlined?");
+}
+
 /// T035 / I5, I8: focus-out from a focused entry emits `FocusEvent::FocusOut`,
 /// and a password-purpose entry (`SetContentType` PASSWORD) makes both
 /// `acquire` and `commit` return `Err(SecureField)`.

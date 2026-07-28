@@ -85,10 +85,12 @@ pub trait Injector: Send {
     /// re-check on every commit (I5, FR-021).
     async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
 
-    /// FUTURE (streaming preedit, R9): render a volatile in-flight hypothesis in
-    /// the target's preedit region, replaced on the next call and cleared by
-    /// `commit`. Default no-op; only backends with a real preedit region honor
-    /// it. NOT called in the commit-only MVP.
+    /// Streaming preedit (R9): render a volatile in-flight hypothesis in the
+    /// target's preedit region, replaced on the next call and cleared by
+    /// `commit` (empty string clears explicitly). Default no-op; only backends
+    /// with a real preedit region honor it. The controller calls this only
+    /// when its opt-in preedit mode is on AND `supports_preedit()` — the
+    /// commit-only default (FR-012) never routes unstable text here.
     async fn set_preedit(&mut self, _text: &str) {}
 
     /// Whether this backend has a replacement-safe preedit region (IBus / future

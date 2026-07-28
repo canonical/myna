@@ -222,6 +222,14 @@ removal.
 
 ## R9 — Future extension: streaming preedit (partial-then-commit)
 
+> **Landed 2026-07-27** as opt-in `myna-desktop --preedit`: the controller
+> routes `OrchestratorEvent::Unstable` (feature 007's unstable deltas — the
+> streaming-era form of the `Snippet` named below) → `set_preedit`, implemented
+> in `IbusInjector` via `UpdatePreeditText` (underlined, char-indexed) /
+> `HidePreeditText`, with the commit-time secure re-check applied to preedit
+> too. Default stays commit-only. See `docs/desktop-injection.md` §*Streaming
+> preedit* and `contracts/injector.md` (I13/I14).
+
 **Decision**: The MVP is commit-only (FR-012), but the `Injector` seam is shaped
 **now** to accommodate a future streaming UX where in-flight hypotheses render as
 provisional text in the target and are rewritten/replaced on finalization —

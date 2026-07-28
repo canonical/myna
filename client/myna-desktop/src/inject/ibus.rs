@@ -7,6 +7,11 @@
 //! the prior engine on session end. Focus and secure-field state arrive through
 //! the engine's `FocusIn`/`FocusOut`/`SetContentType` callbacks (R4/R5).
 //!
+//! Commit-only by default; with the controller's opt-in `--preedit` (R9), the
+//! volatile streaming hypothesis is rendered via `UpdatePreeditText` (underlined,
+//! replaced on each update, cleared by `commit`/`HidePreeditText`) — never
+//! committed, and withheld from known-secure fields exactly like `commit`.
+//!
 //! ## Verification
 //!
 //! The connection layer (address discovery + `zbus` bus handshake) and the
@@ -48,6 +53,14 @@ const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
 
+/// `IBusPreeditFocusMode::CLEAR`: the preedit is discarded on focus-out (never
+/// implicitly committed) — the only safe mode for volatile dictation text.
+/// The daemon parses the engine's `UpdatePreeditText` signal strictly as
+/// `(vubu)` (ibus 1.5.34, bus/engineproxy.c): a 3-arg `(vub)` emission fails
+/// `g_variant_get` there and is dropped *silently* — the engine MUST send the
+/// mode. (Root-caused 2026-07-28: commits landed but preedit never rendered.)
+const PREEDIT_MODE_CLEAR: u32 = 0;
+
 /// Whether an IBus input-purpose is a secure field we refuse to inject into.
 fn is_secure_purpose(purpose: u32) -> bool {
     purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN
@@ -88,6 +101,16 @@ fn ibus_attr_list() -> Value<'static> {
     )
 }
 
+/// Wrap a serialized field in a variant (`v`): IBusText's attribute list is a
+/// variant-wrapped `IBusAttrList`, not an inline structure. (The inline shape
+/// `(sa{sv}s(sa{sv}av))` is *tolerated* by the daemon's CommitText path but
+/// its UpdatePreeditText handler fails to deserialize it and forwards an
+/// empty preedit with visible=false — root-caused 2026-07-28 by diffing our
+/// signal bytes against libibus-serialized canonical bytes.)
+fn variant_wrap(v: Value<'static>) -> Value<'static> {
+    Value::Value(Box::new(v))
+}
+
 /// `IBusText` → `(sa{sv}sv)`: the committed string with an empty attribute list.
 fn ibus_text(text: &str) -> Value<'static> {
     Value::from(
@@ -95,7 +118,50 @@ fn ibus_text(text: &str) -> Value<'static> {
             .add_field("IBusText".to_string())
             .add_field(empty_attach())
             .add_field(text.to_string())
-            .append_field(ibus_attr_list()) // `v`
+            .append_field(variant_wrap(ibus_attr_list())) // `v`
+            .build()
+            .expect("IBusText structure"),
+    )
+}
+
+// IBusAttrType / IBusAttrUnderline constants for the preedit attribute.
+const ATTR_TYPE_UNDERLINE: u32 = 1;
+const ATTR_UNDERLINE_SINGLE: u32 = 1;
+
+/// `IBusAttrList` carrying one underline attribute spanning `[0, end)` — the
+/// conventional "this text is volatile" marker for a preedit region (R9).
+fn ibus_preedit_attr_list(end: u32) -> Value<'static> {
+    let underline = Value::from(
+        StructureBuilder::new()
+            .add_field("IBusAttribute".to_string())
+            .add_field(empty_attach())
+            .add_field(ATTR_TYPE_UNDERLINE)
+            .add_field(ATTR_UNDERLINE_SINGLE)
+            .add_field(0u32) // start index (chars)
+            .add_field(end) // end index (chars)
+            .build()
+            .expect("IBusAttribute structure"),
+    );
+    Value::from(
+        StructureBuilder::new()
+            .add_field("IBusAttrList".to_string())
+            .add_field(empty_attach())
+            .add_field(vec![underline]) // attributes (av)
+            .build()
+            .expect("IBusAttrList structure"),
+    )
+}
+
+/// `IBusText` for preedit: the volatile hypothesis, underlined over its whole
+/// length so the field renders it as uncommitted (the IME-convention visual).
+fn ibus_preedit_text(text: &str) -> Value<'static> {
+    let chars = text.chars().count() as u32;
+    Value::from(
+        StructureBuilder::new()
+            .add_field("IBusText".to_string())
+            .add_field(empty_attach())
+            .add_field(text.to_string())
+            .append_field(variant_wrap(ibus_preedit_attr_list(chars))) // `v`
             .build()
             .expect("IBusText structure"),
     )
@@ -381,6 +447,10 @@ pub struct IbusInjector {
     /// True while our engine is the active/global one (drives restore-once).
     active: bool,
     objects_served: bool,
+    /// True while a preedit region is showing in the target (so `commit` and
+    /// teardown clear it exactly when needed, never emitting redundant
+    /// `HidePreeditText` signals).
+    preedit_active: bool,
 }
 
 impl std::fmt::Debug for IbusInjector {
@@ -415,6 +485,7 @@ impl IbusInjector {
             prior_engine: None,
             active: false,
             objects_served: false,
+            preedit_active: false,
         })
     }
 
@@ -457,6 +528,19 @@ impl IbusInjector {
             .map_err(|e| InjectError::Backend(format!("serve engine: {e}")))?;
         self.objects_served = true;
         Ok(())
+    }
+
+    /// Emit `HidePreeditText` if a preedit region is up. Best-effort: a
+    /// failed hide at teardown must not mask the engine restore.
+    async fn hide_preedit(&mut self) {
+        if !self.preedit_active {
+            return;
+        }
+        self.preedit_active = false;
+        let _ = self
+            .conn
+            .emit_signal(None::<&str>, ENGINE_PATH, ENGINE_IFACE, "HidePreeditText", &())
+            .await;
     }
 
     async fn restore_prior_engine(&mut self) {
@@ -524,6 +608,9 @@ impl Injector for IbusInjector {
     }
 
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
+        // A commit clears the preedit region (contract injector.md): the
+        // volatile tail is superseded by stable text.
+        self.hide_preedit().await;
         if text.is_empty() {
             return Ok(());
         }
@@ -544,16 +631,53 @@ impl Injector for IbusInjector {
             .map_err(|e| InjectError::Backend(format!("CommitText failed: {e}")))
     }
 
+    async fn set_preedit(&mut self, text: &str) {
+        // Same guard as `commit` (F2/I5): never render even volatile text into
+        // a known-secure field — preedit is still text in the target.
+        let purpose = self.state.purpose.load(Ordering::SeqCst);
+        if is_secure_purpose(purpose) {
+            myna_core::dbg_log!("inject", "preedit REFUSED: secure field (purpose={purpose})");
+            return;
+        }
+        if text.is_empty() {
+            self.hide_preedit().await;
+            return;
+        }
+        // `UpdatePreeditText(IBusText, cursor_pos, visible, mode)` — the
+        // region is *replaced* on each update (replacement-safe, R9), so
+        // successive unstable hypotheses never accumulate. Cursor at the end
+        // (chars). Mode is PREEDIT_CLEAR: focus-out must discard the volatile
+        // text, never commit it.
+        let cursor = text.chars().count() as u32;
+        match self
+            .conn
+            .emit_signal(
+                None::<&str>,
+                ENGINE_PATH,
+                ENGINE_IFACE,
+                "UpdatePreeditText",
+                &(ibus_preedit_text(text), cursor, true, PREEDIT_MODE_CLEAR),
+            )
+            .await
+        {
+            Ok(()) => self.preedit_active = true,
+            Err(e) => myna_core::dbg_log!("inject", "UpdatePreeditText failed: {e}"),
+        }
+    }
+
     fn supports_preedit(&self) -> bool {
-        // IBus has a replacement-safe preedit region (R9); commit-only for now.
+        // IBus has a replacement-safe preedit region (R9). Whether it is *used*
+        // is the controller's call (opt-in `--preedit`); commit-only otherwise.
         true
     }
 
     async fn cancel(&mut self) {
+        self.hide_preedit().await;
         self.restore_prior_engine().await;
     }
 
     async fn end(&mut self) {
+        self.hide_preedit().await;
         self.restore_prior_engine().await;
     }
 
@@ -571,6 +695,33 @@ impl Injector for IbusInjector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R9: the preedit `IBusText` carries one underline attribute spanning the
+    /// whole string (the volatile-text marker), and the cursor/end index counts
+    /// **chars**, not bytes (IBus indexes are character-based).
+    #[test]
+    fn preedit_text_is_fully_underlined_and_char_indexed() {
+        let v = ibus_preedit_text("héllo w");
+        let Value::Structure(s) = &v else { panic!("IBusText must be a structure") };
+        assert_eq!(s.fields()[0], Value::from("IBusText"));
+        assert_eq!(s.fields()[2], Value::from("héllo w"));
+        // The attribute list is a variant (`v`) wrapping the IBusAttrList
+        // structure — not an inline structure (daemon compatibility).
+        let Value::Value(attrs_box) = &s.fields()[3] else { panic!("attrs must be variant-wrapped") };
+        let Value::Structure(attrs) = &**attrs_box else { panic!("attrs structure") };
+        assert_eq!(attrs.fields()[0], Value::from("IBusAttrList"));
+        let Value::Array(list) = &attrs.fields()[2] else { panic!("attr array") };
+        assert_eq!(list.len(), 1, "exactly one (underline) attribute");
+        // `av` elements are variant-wrapped.
+        let Value::Value(inner) = &list[0] else { panic!("attr variant") };
+        let Value::Structure(attr) = &**inner else { panic!("attr structure") };
+        assert_eq!(attr.fields()[0], Value::from("IBusAttribute"));
+        assert_eq!(attr.fields()[2], Value::from(ATTR_TYPE_UNDERLINE));
+        assert_eq!(attr.fields()[3], Value::from(ATTR_UNDERLINE_SINGLE));
+        assert_eq!(attr.fields()[4], Value::from(0u32));
+        // "héllo w" is 7 chars but 8 bytes — the span must be 7.
+        assert_eq!(attr.fields()[5], Value::from(7u32));
+    }
 
     /// I5/FR-021: PASSWORD and PIN purposes are the secure set, checked both at
     /// `acquire` and at `commit` (late SetContentType delivery).
@@ -679,3 +830,5 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+

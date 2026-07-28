@@ -174,6 +174,9 @@ pub struct DesktopController {
     indicator: Box<dyn Indicator>,
     session: Box<dyn SessionFactory>,
     state: DictationState,
+    /// Opt-in (R9): route `Unstable` hypotheses to the injector's preedit
+    /// region. Default false — commit-only (FR-012).
+    preedit: bool,
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
@@ -184,6 +187,7 @@ pub struct DesktopControllerBuilder {
     injector: Option<Box<dyn Injector>>,
     indicator: Option<Box<dyn Indicator>>,
     session: Option<Box<dyn SessionFactory>>,
+    preedit: bool,
 }
 
 impl DesktopControllerBuilder {
@@ -207,6 +211,15 @@ impl DesktopControllerBuilder {
         self
     }
 
+    /// Enable streaming preedit (R9): `Unstable` hypotheses are rendered in
+    /// the target's preedit region (volatile, replaced per update, cleared by
+    /// the next commit) when the injector `supports_preedit()`. Off by default
+    /// — the commit-only guarantee (FR-012) holds unless explicitly relaxed.
+    pub fn preedit(mut self, on: bool) -> Self {
+        self.preedit = on;
+        self
+    }
+
     /// Finish the controller. Panics if any boundary is missing (a wiring bug).
     pub fn build(self) -> DesktopController {
         DesktopController {
@@ -219,6 +232,7 @@ impl DesktopControllerBuilder {
                 .session
                 .expect("DesktopController needs a SessionFactory"),
             state: DictationState::Idle,
+            preedit: self.preedit,
         }
     }
 }
@@ -287,6 +301,7 @@ impl DesktopController {
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
+        let preedit = self.preedit;
 
         tokio::pin!(run);
         let mut trigger_open = true;
@@ -304,6 +319,10 @@ impl DesktopController {
         // race and only the last lands, so we join the burst. Spaced streaming
         // finals still flush individually (see `route_event`).
         let mut pending = String::new();
+        // Whether any text has been committed this utterance — drives the
+        // whitespace-aware separator between *separately flushed* commits
+        // (see `flush_commit`).
+        let mut committed_any = false;
 
         let outcome = loop {
             tokio::select! {
@@ -313,12 +332,12 @@ impl DesktopController {
                 // in order even when a release arrives mid-stream.
                 biased;
                 Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, &mut pending).await;
+                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut pending, &mut committed_any).await;
                 }
                 // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
-                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, &mut pending).await;
+                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut pending, &mut committed_any).await;
                     }
                     break result;
                 }
@@ -391,7 +410,11 @@ impl DesktopController {
                             "flushing {} buffered chars on complete",
                             pending.len()
                         );
-                        let _ = self.injector.commit(&pending).await;
+                        let mut text = std::mem::take(&mut pending);
+                        if committed_any && !text.starts_with(char::is_whitespace) {
+                            text.insert(0, ' ');
+                        }
+                        let _ = self.injector.commit(&text).await;
                     }
                     self.injector.set_activity(false).await;
                     self.injector.end().await;
@@ -489,9 +512,10 @@ fn finalize_state(state: &mut DictationState, terminal: DictationState) {
 }
 
 /// Route one orchestrator event: buffer `Final` segments (commit-only — never
-/// `Snippet`) for coalesced insertion, and drive the indicator via
-/// [`event_to_indicator`]. Advances `Recording → Transcribing` on the first
-/// decoding event.
+/// `Snippet`/`Unstable` text) for coalesced insertion, render `Unstable`
+/// hypotheses via the injector's preedit region when the opt-in is on (R9), and
+/// drive the indicator via [`event_to_indicator`]. Advances
+/// `Recording → Transcribing` on the first decoding event.
 ///
 /// Committed text is buffered in `pending` rather than inserted immediately:
 /// consecutive `Final`s (a commit-on-finalize adapter emits the whole utterance
@@ -507,12 +531,14 @@ async fn route_event(
     indicator: &mut dyn Indicator,
     state: &mut DictationState,
     commit_allowed: bool,
+    preedit: bool,
     pending: &mut String,
+    committed_any: &mut bool,
 ) {
     // A non-Final event is a boundary: flush the buffered final burst as one
     // commit before handling it (so ordering with `done`/indicator holds).
     if !matches!(event, OrchestratorEvent::Final(_)) {
-        flush_commit(injector, pending, commit_allowed).await;
+        flush_commit(injector, pending, commit_allowed, committed_any).await;
     }
 
     if let OrchestratorEvent::Transcribing = event {
@@ -523,7 +549,7 @@ async fn route_event(
     if let Some(indicator_state) = event_to_indicator(&event) {
         indicator.set_state(indicator_state).await;
     }
-    if let OrchestratorEvent::Final(text) = event {
+    if let OrchestratorEvent::Final(text) = &event {
         // Commit-only: stable committed text is buffered; unstable `Snippet`
         // never is (FR-012). Suppressed after focus-loss so nothing lands in the
         // wrong surface (FR-014, SC-007).
@@ -533,10 +559,29 @@ async fn route_event(
             text.len()
         );
         if commit_allowed {
-            if !pending.is_empty() {
+            // Whitespace-aware join: servers whose segments carry natural
+            // (leading-space) whitespace concatenate verbatim (contract I2);
+            // stripped-segment servers get a separator — never a double space.
+            if !pending.is_empty()
+                && !pending.ends_with(char::is_whitespace)
+                && !text.starts_with(char::is_whitespace)
+            {
                 pending.push(' ');
             }
-            pending.push_str(&text);
+            pending.push_str(text);
+        }
+    }
+    if let OrchestratorEvent::Unstable(text) = &event {
+        // Streaming preedit (R9, opt-in): show the volatile hypothesis in the
+        // target's preedit region — replaced on each update, cleared by the
+        // next `commit`. The flush above runs first, so any pending stable
+        // burst is committed (which clears the old preedit) *before* the new
+        // preedit tail is drawn after it. Never committed (FR-012); suppressed
+        // with commits after focus-loss (FR-014); skipped unless enabled and
+        // the backend has a real preedit region (`supports_preedit`).
+        if preedit && commit_allowed && injector.supports_preedit() {
+            myna_core::dbg_log!("inject", "preedit(len={})", text.len());
+            injector.set_preedit(text).await;
         }
     }
 }
@@ -544,14 +589,31 @@ async fn route_event(
 /// Insert the buffered committed text as a single `CommitText`, then clear the
 /// buffer. A no-op when empty; discards (does not insert) when commits are
 /// suppressed. A commit failure is best-effort.
-async fn flush_commit(injector: &mut dyn Injector, pending: &mut String, commit_allowed: bool) {
+///
+/// `committed_any` tracks whether this utterance has already inserted text:
+/// streaming commits flush *separately* (spaced by liveness/unstable events),
+/// so a later flush needs a separator from the text already in the field —
+/// prepended here, but only when the buffered text doesn't carry its own
+/// leading whitespace (contract I2 servers) — never a double space.
+async fn flush_commit(
+    injector: &mut dyn Injector,
+    pending: &mut String,
+    commit_allowed: bool,
+    committed_any: &mut bool,
+) {
     if pending.is_empty() {
         return;
     }
     if commit_allowed {
-        let text = std::mem::take(pending);
+        let mut text = std::mem::take(pending);
+        if *committed_any && !text.starts_with(char::is_whitespace) {
+            text.insert(0, ' ');
+        }
         match injector.commit(&text).await {
-            Ok(()) => myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text),
+            Ok(()) => {
+                *committed_any = true;
+                myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text)
+            }
             Err(e) => myna_core::dbg_log!("inject", "commit FAILED: {e}"),
         }
     } else {
