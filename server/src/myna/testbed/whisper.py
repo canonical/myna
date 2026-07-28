@@ -215,9 +215,14 @@ class FasterWhisperAdapter:
             want_timestamps = config.timestamp_granularity is not None
             finals: list[str] = []
             for segment in segments:
-                text = segment.text.strip()
+                # Natural spacing: segment texts carry leading whitespace;
+                # committed finals concatenate verbatim to the transcript
+                # (I2). Only the first sheds its leading space.
+                text = segment.text.rstrip()
                 if not text:
                     continue
+                if not finals:
+                    text = text.lstrip()
                 finals.append(text)
                 # Batch mode is degenerate streaming (I7): committed finals,
                 # no segment_index.
@@ -239,7 +244,7 @@ class FasterWhisperAdapter:
                         ),
                     )
                 )
-            await emit(TranscriptionDone(text=" ".join(finals)))
+            await emit(TranscriptionDone(text="".join(finals)))
         except Exception as exc:
             await emit(
                 TranscriptionError(

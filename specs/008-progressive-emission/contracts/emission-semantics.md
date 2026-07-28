@@ -14,10 +14,20 @@ against.
   `disposition: committed`, that text is never retracted, rewritten, or
   re-emitted. `segment_index` is monotonic per utterance.
 - **I2 Final equals concatenation**: the terminal event's full transcript
-  equals the concatenation of all committed segments (no gaps, overlaps, or
-  duplicates) — 007 FR-009.
+  equals the **verbatim** concatenation of all committed segments (no gaps,
+  overlaps, or duplicates) — 007 FR-009. Committed deltas therefore carry
+  their own natural whitespace (model word/segment texts keep their leading
+  spaces; only the utterance's first delta sheds its leading space): a
+  consumer that inserts each delta as it lands — with no separator logic —
+  reproduces the final transcript exactly. (Pinned 2026-07-27 after the
+  whisper loop stripped each delta, and injectors concatenating them verbatim
+  produced "Thisis notworking that well.".)
 - **I3 Unstable supersedes unstable**: an unstable delta replaces only the most
-  recent unstable delta; it never touches committed text.
+  recent unstable delta; it never touches committed text. Its display text is
+  the *uncommitted remainder* of the current hypothesis — it never restates
+  words a previous commit already emitted, and once text has been committed
+  it keeps its natural leading space, so in-field preedit renders correctly
+  as a continuation of the committed text.
 - **I4 Commit clears unstable**: a committed delta invalidates any outstanding
   unstable text (007 revision semantics).
 - **I5 No unstable limbo**: end-of-audio resolves all outstanding text — the
