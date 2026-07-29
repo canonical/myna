@@ -89,10 +89,10 @@
 
 **Independent Test**: `snap install --dangerous parakeet_*.snap`, dictate a multi-sentence realtime clip through the confined socket — `»` segments arrive mid-utterance; installed size meets SC-005 (quickstart S3)
 
-- [ ] T023 [US3] Stage Parakeet TDT 0.6B v3 int8 ONNX export into the model cache (`HF_HOME`, `hf download`, verify `HF_HUB_OFFLINE=1`) via `dev/fetch_parakeet_onnx.py`
-- [ ] T024 [US3] Port the greedy TDT decode loop (preprocess → encode → decode_step with duration-head skip, murmure `engine.rs` as reference) to numpy/onnxruntime in `server/src/myna/testbed/parakeet.py`
-- [ ] T025 [US3] Implement the parakeet adapter `run_session` in `server/src/myna/testbed/parakeet.py`: fixed-head chunk-commit reusing `testbed/streaming/window.py` + the fixed-head strategy; capabilities (25 languages, input_formats), ready gating, off-format rejection (FR-012)
-- [ ] T026 [US3] Validate the parakeet adapter against the invariant harness + real-corpus WER (SC-003); record watermarks
+- [X] T023 [US3] Stage Parakeet TDT 0.6B v3 int8 ONNX weights via `dev/fetch_parakeet_onnx.py` — **source changed 2026-07-29**: murmure's bundled re-quantization (GitHub release zip, pinned + sha256, XDG cache), not istupakov's HF export — istupakov's int8 encoder collapses non-monotonically on some window lengths (nemo128 does utterance-global CMVN; murmure's encoder is the only fully robust int8 found)
+- [X] T024 [US3] Port the greedy TDT decode loop (preprocess → encode → decode_step with duration-head skip, murmure `engine.rs` as reference) to numpy/onnxruntime in `server/src/myna/testbed/parakeet.py`
+- [X] T025 [US3] Implement the parakeet adapter `run_session` in `server/src/myna/testbed/parakeet.py`: **SilenceCut chunk-commit** (murmure `chunking.rs`/`vad.rs` port in `testbed/streaming/strategies.py` — a Parakeet-native variant of the retired fixed-head, per the reopened Decision 7; not a FixedHead revival) reusing `testbed/streaming/window.py` + the restored chunked branch of `loop.py`; capabilities (25 languages, input_formats), ready gating, off-format rejection (FR-012)
+- [X] T026 [US3] Validate the parakeet adapter against the invariant harness + real-corpus WER (SC-003: streaming ≤ batch — 2.2/0.0% vs 4.4/0.0%); record watermarks (`results/bench-008-small-snaps.jsonl` → `results/streaming-watermarks.json`)
 - [ ] T027 [US3] Create `parakeet-snap/` packaging (snapcraft.yaml mirroring `whisper-snap/` layout: model as component, strict confinement, `ws+unix` session socket, idle-unload)
 - [ ] T028 [US3] Confined end-to-end validation through the `ubustt-socket` share (T14c pattern) + installed-size measurement vs the full NeMo snap (SC-005)
 
@@ -106,10 +106,10 @@
 
 **Independent Test**: Confined sherpa snap: continuous `~` partials + endpoint-driven `»` commits on a realtime clip; size meets SC-005 (quickstart S3)
 
-- [ ] T029 [US4] Export a NeMo-family streaming transducer to sherpa-onnx format via `dev/export_sherpa_model.sh` (k2-fsa export scripts; Zipformer fallback per `research.md` Decision 8 if the NeMo export fails)
-- [ ] T030 [US4] Implement the sherpa adapter in `server/src/myna/testbed/sherpa.py`: `OnlineRecognizer` push loop — partial results → unstable, endpoint-detected segments → committed; capabilities + ready gating + off-format rejection (FR-012)
+- [X] T029 [US4] ~~Export~~ **Fetch** a NeMo-family streaming transducer in sherpa-onnx format via `dev/fetch_sherpa_model.py` — k2-fsa's pre-exported `sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8` made the export scripts unnecessary (80/1040 ms latency variants + Zipformer fallback fetch the same way)
+- [X] T030 [US4] Implement the sherpa adapter in `server/src/myna/testbed/sherpa.py`: `OnlineRecognizer` push loop — partial results → unstable, endpoint-detected segments → committed; capabilities + ready gating + off-format rejection (FR-012). Note: sherpa-onnx's native lib needs onnxruntime 1.27.x's version node (pyproject pins `onnxruntime>=1.27,<1.28`; `dev/fetch_sherpa_model.py --fix-libs` symlinks the venv lib)
 - [ ] T031 [US4] Create `sherpa-snap/` packaging (mirrors `parakeet-snap/`; sherpa-onnx runtime, model component, strict confinement)
-- [ ] T032 [US4] Validate sherpa emission against the invariant harness; record watermarks + installed size (SC-005); confined end-to-end validation
+- [~] T032 [US4] Validate sherpa emission against the invariant harness (stub-recognizer routing tests + live bench commit-stability ✓); record watermarks ✓ (`results/bench-008-small-snaps.jsonl`); installed size (SC-005) + confined end-to-end validation pending T031
 
 **Checkpoint**: US4 functional — both small snaps measured side by side
 

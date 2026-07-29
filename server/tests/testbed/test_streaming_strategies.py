@@ -123,20 +123,25 @@ def test_silence_cut_force_cut_bounds_window():
 
 def test_silence_cut_scans_incrementally_after_advance():
     # After a cut the loop advances the frontier (keeping 1 s overlap); the
-    # policy must not re-scan the overlap nor lose its noise floor.
+    # policy must not re-scan the overlap nor lose its noise floor. Drives the
+    # policy exactly like the loop: observe per 0.5 s chunk, cut, advance.
     cut = SilenceCut()
-    first = np.concatenate([_speech(16.0), _silence(1.0)])
-    assert cut.observe(first, 0.0, 17.0) == 17.0
-    # New window starts at 16.0 (1 s overlap kept); 16 s more speech, a pause.
-    second = np.concatenate([_speech(17.0), _silence(1.0)])
-    cut_at = None
-    for end in np.arange(17.5, 35.5, 0.5):
-        window = second[: int((end - 16.0) * RATE)]
-        cut_at = cut.observe(window, 16.0, float(end))
+    audio = np.concatenate([_speech(16.0), _silence(1.0), _speech(17.0), _silence(1.0)])
+    frontier = 0.0
+    cuts = []
+    for end in np.arange(0.5, 35.5, 0.5):
+        window = audio[int(frontier * RATE) : int(end * RATE)]
+        cut_at = cut.observe(window, frontier, float(end))
         if cut_at is not None:
-            break
-    assert cut_at is not None, "no second cut after frontier advance"
-    assert cut_at >= 16.0 + 15.0  # re-armed relative to the new window
+            cuts.append(cut_at)
+            frontier = cut_at - 1.0  # RollingWindow keeps 1 s of overlap
+    assert len(cuts) == 2, f"expected a cut per pause, got {cuts}"
+    # First pause starts at 16 s; the cut lands at the frame where the 0.5 s
+    # silence run completes (VAD detection lag included), not at a call
+    # boundary. The second re-arms 15 s past the advanced frontier.
+    assert 16.4 <= cuts[0] <= 17.5
+    assert cuts[1] >= cuts[0] - 1.0 + 15.0
+    assert 33.5 <= cuts[1] <= 35.0
 
 
 def test_silence_cut_adapts_to_quiet_speech():
