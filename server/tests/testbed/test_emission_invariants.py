@@ -322,6 +322,54 @@ def test_alignment_drop_no_frontier_match():
     assert _alignment_drop(["a"], []) == 0
 
 
+def test_alignment_drop_abstains_when_claimed_region_exceeds_overlap():
+    # Watermark regression (2026-07-28, stream-2277-02 tail-mutation):
+    # committed "...Then he rang the ball. No answer."; the tail decode of
+    # genuinely-new audio said "he rang again this time harder still no
+    # answer" and the clipped overlap never re-surfaced the OLD "no
+    # answer". The only suffix occurrence sat at the END of the new stream
+    # and the unbounded search dropped all 9 genuinely-new words. The old
+    # region re-transcribes only the window's 1 s overlap — it can never be
+    # 9 words — so the alignment must abstain entirely.
+    tail = ["perhaps", "could", "do", "it", "up", "here", "then", "he", "rang", "the", "ball", "no", "answer"]
+    new = ["he", "rang", "again", "this", "time", "harder", "still", "no", "answer"]
+    assert _alignment_drop(tail, new) == 0
+
+
+def test_alignment_drop_abstains_instead_of_falling_through_to_short_suffix():
+    # A 6-word claim already exceeds the overlap bound — and the 2-char
+    # suffix "er" lives inside "harder", so falling through to shorter
+    # suffixes would eat the same genuinely-new words more loosely.
+    # Abstention must be total (no shorter-suffix retry, no partial drop).
+    tail = ["this", "time", "harder"]
+    new = ["he", "rang", "again", "this", "time", "harder", "still", "no", "answer"]
+    assert _alignment_drop(tail, new) == 0
+    # The same frontier run within the physical overlap bound still drops:
+    new_short = ["this", "time", "harder", "still", "no", "answer"]
+    assert _alignment_drop(tail, new_short) == 3
+
+
+def test_drop_committed_keeps_new_tail_ending_in_frontier_repeat():
+    # Full `_drop_committed` path for the watermark regression: nothing may
+    # be dropped even though the new tail ends with the committed frontier
+    # phrase.
+    committed = ["then", "he", "rang", "the", "ball", "no", "answer"]
+    through = 24.0
+    words = [
+        Word(text=" He", start=24.2, end=24.5),
+        Word(text=" rang", start=24.5, end=24.8),
+        Word(text=" again", start=24.8, end=25.2),
+        Word(text=" this", start=25.2, end=25.5),
+        Word(text=" time", start=25.5, end=25.8),
+        Word(text=" harder.", start=25.8, end=26.3),
+        Word(text=" Still", start=26.3, end=26.6),
+        Word(text=" no", start=26.6, end=26.8),
+        Word(text=" answer.", start=26.8, end=27.2),
+    ]
+    kept = _drop_committed(words, committed, through)
+    assert [w.text for w in kept] == [w.text for w in words]
+
+
 # ---------------------------------------------------------------------------
 # RollingWindow units (I6 mechanics)
 # ---------------------------------------------------------------------------

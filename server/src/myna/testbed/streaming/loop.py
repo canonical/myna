@@ -49,6 +49,20 @@ _OVERLAP_LOOKBACK = 12  # words of committed history text-alignment dedupe uses
 # to the timestamp signal.
 _MIN_OVERLAP_CHARS = 2
 
+# Old content in a re-decode is physically bounded: it re-transcribes only
+# the RollingWindow's 1 s of pre-frontier overlap audio, so the duplicate
+# region is always a short *prefix* of the new hypothesis. At conversational
+# speech rates the overlap holds ~2-3 words; 5 is a generous bound (300 wpm
+# for a full second). A claimed duplicate region LONGER than that is new
+# text coincidentally repeating committed text, and the alignment must
+# abstain — matching there eats genuinely-new words (observed 2026-07-28,
+# stream-2277-02/tail-mutation: committed "...the ball. No answer." +
+# decode "he rang again this time harder still no answer" — the clipped
+# overlap never re-surfaced the OLD "no answer", so the only match was the
+# genuinely-new final one and the whole 9-word tail dropped). If
+# `overlap_seconds` ever grows past ~2 s this bound should grow with it.
+_MAX_OVERLAP_WORDS = 5
+
 
 def _squash(text: str) -> str:
     """Lowercased alphanumerics only — word boundaries and punctuation vanish,
@@ -75,6 +89,17 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
     matchers (difflib) are avoided deliberately: they can partition away the
     frontier run when genuinely-new words after it match older committed
     words.
+
+    The claimed duplicate region is bounded at [`_MAX_OVERLAP_WORDS`]
+    words: old content re-transcribes only the window's 1 s overlap audio,
+    so it is always a short prefix of the hypothesis. A match implying a
+    longer drop is new text coincidentally repeating committed text — the
+    alignment ABSTAINS (returns 0) rather than dropping new words, and does
+    not fall through to shorter suffixes: those would match the same
+    out-of-region text more loosely (a 2-char suffix like "er" lives inside
+    "harder"), compounding the loss. Under-dropping leaks a visible
+    duplicate; over-dropping silently loses words — on ambiguity, keep the
+    words.
     """
     if not tail or not new:
         return 0
@@ -87,9 +112,10 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
     max_k = min(len(tail_squash), len(new_squash))
     for k in range(max_k, _MIN_OVERLAP_CHARS - 1, -1):
         j = new_squash.find(tail_squash[-k:])
-        if j >= 0:
-            end = j + k
-            break
+        if j < 0:
+            continue  # this length absent; try a shorter suffix
+        end = j + k
+        break
     if not end:
         return 0
     drop = 0
@@ -100,6 +126,13 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
             drop += 1
         else:
             break
+    if drop > _MAX_OVERLAP_WORDS:
+        # The match claims more words than the overlap audio can hold — it
+        # is new text repeating committed text (see _MAX_OVERLAP_WORDS).
+        # Abstain entirely: no shorter-suffix retry (same spurious region,
+        # looser match), no partial drop (the match is either wholly the
+        # overlap re-transcription or wholly coincidence).
+        return 0
     return drop
 
 
