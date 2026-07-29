@@ -21,7 +21,7 @@ from myna.core import (
 )
 from myna.core.audio import AudioFormat
 from myna.testbed.streaming.loop import run_streaming_loop
-from myna.testbed.streaming.strategies import Hypothesis, Word, make_strategy
+from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, Word
 from myna.testbed.streaming.window import RollingWindow
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
@@ -124,7 +124,7 @@ async def fake_audio(seconds: float, chunk_s: float = 0.5):
         yield PcmChunk(data=b"\x00\x00" * int(16_000 * chunk_s), format=FORMAT)
 
 
-async def run_loop(strategy_name, seconds, cadence=1.0, cap=30.0):
+async def run_loop(seconds, cadence=1.0, cap=30.0):
     events = []
 
     async def emit(e):
@@ -134,7 +134,7 @@ async def run_loop(strategy_name, seconds, cadence=1.0, cap=30.0):
         fake_audio(seconds),
         emit,
         scripted_decode(),
-        make_strategy(strategy_name),
+        LocalAgreement(),
         cadence_seconds=cadence,
         window_cap_seconds=cap,
     )
@@ -151,7 +151,7 @@ async def run_loop(strategy_name, seconds, cadence=1.0, cap=30.0):
 async def test_redecode_loop_commits_progressively_and_completes():
     """I1/I2/I3/I5 over a 10 s session: ≥1 commit before end, unstable seen,
     done == concatenation."""
-    events, transcript = await run_loop("local-agreement", seconds=10)
+    events, transcript = await run_loop(seconds=10)
     committed = _committed(events)
     assert len(committed) >= 2, "expected progressive commits mid-session"
     assert _unstable(events), "expected unstable hypotheses during the session"
@@ -161,18 +161,12 @@ async def test_redecode_loop_commits_progressively_and_completes():
 
 
 @pytest.mark.asyncio
-async def test_redecode_loop_bounded_window_force_commits():
-    """I6: a 5 s cap over 12 s of audio forces commits; nothing is lost."""
-    events, transcript = await run_loop("tail-mutation", seconds=12, cap=5.0)
+async def test_redecode_loop_bounded_window_completes():
+    """I6: a 5 s cap over 12 s of audio keeps the window bounded; commits
+    land and nothing is lost (the force path itself is unit-tested on the
+    strategy)."""
+    events, transcript = await run_loop(seconds=12, cap=5.0)
     assert len(_committed(events)) >= 1
-    assert_append_only_and_complete(events)
-
-
-@pytest.mark.asyncio
-async def test_chunked_loop_decodes_once_per_cut():
-    """fixed-head: no unstable by design; commits land; transcript complete."""
-    events, transcript = await run_loop("fixed-head", seconds=10)
-    assert not _unstable(events), "fixed-head must not emit unstable text"
     assert_append_only_and_complete(events)
 
 
@@ -181,7 +175,7 @@ async def test_committed_chunks_keep_natural_spacing():
     """I2 mechanics: committed chunks after the first keep their leading
     space (whisper natural spacing), so an injector concatenating them as
     they land reproduces single-spaced text — no missing or doubled spaces."""
-    events, transcript = await run_loop("local-agreement", seconds=10)
+    events, transcript = await run_loop(seconds=10)
     committed = _committed(events)
     assert len(committed) >= 2
     assert not committed[0].text.startswith(" "), "first chunk sheds its leading space"
@@ -198,7 +192,7 @@ async def test_unstable_never_restates_committed_text():
     of the hypothesis — words a previous commit already emitted must not
     reappear (in-field preedit would otherwise duplicate committed text),
     and it keeps its natural leading space once text has been committed."""
-    events, _ = await run_loop("local-agreement", seconds=10)
+    events, _ = await run_loop(seconds=10)
     seen_committed: list[str] = []
     for e in _finals(events):
         if e.disposition == Disposition.COMMITTED:

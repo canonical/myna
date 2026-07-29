@@ -57,12 +57,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="enable streaming mode (progressive committed segments; whisper/nemotron)",
     )
     parser.add_argument(
-        "--strategy", default=None,
-        choices=("local-agreement", "tail-mutation", "fixed-head"),
-        help="whisper streaming strategy (default: local-agreement); "
-        "valid only with --adapter whisper --streaming",
-    )
-    parser.add_argument(
         "--stream-cadence-s", type=float, default=None,
         help="seconds of new audio between re-decode ticks (whisper streaming)",
     )
@@ -108,7 +102,6 @@ def build_adapter(args: argparse.Namespace):
             streaming=args.streaming,
             # getattr: programmatic callers (tests, embedding) may build the
             # namespace without the streaming flags.
-            strategy=getattr(args, "strategy", None) or "local-agreement",
             stream_cadence_s=getattr(args, "stream_cadence_s", None) or 1.0,
             stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or 30.0,
             stream_beam_size=getattr(args, "stream_beam_size", None) or 1,
@@ -200,15 +193,12 @@ async def serve(args: argparse.Namespace) -> None:
 
 
 def _validate_streaming_args(args: argparse.Namespace) -> None:
-    """Strategy flags are whisper-only (contracts/strategy-config.md); with
-    --streaming off they are inert (batch degenerate) — warn, don't fail."""
-    if args.strategy is not None and args.adapter != "whisper":
-        raise SystemExit("--strategy is valid only with --adapter whisper")
+    """Streaming tuning flags are whisper-only (contracts/strategy-config.md);
+    with --streaming off they are inert (batch degenerate) — warn, don't fail."""
     if not args.streaming:
         inert = [
             f"--{name}"
             for name, value in (
-                ("strategy", args.strategy),
                 ("stream-cadence-s", args.stream_cadence_s),
                 ("stream-window-cap-s", args.stream_window_cap_s),
             )

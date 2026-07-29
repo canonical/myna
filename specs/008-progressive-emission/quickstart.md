@@ -22,17 +22,16 @@ populated (`hf download`, verify `HF_HUB_OFFLINE=1`), `client/` built
 ## S1 — Whisper strategies (US1)
 
 ```sh
-myna-server --socket /tmp/myna.sock --adapter whisper --model base --streaming \
-    --strategy local-agreement
+myna-server --socket /tmp/myna.sock --adapter whisper --model base --streaming
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
     --mode streaming --show-unstable \
     --clip corpus/real/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: `~` lines during playback; ≥ 1 `»` line before the clip ends;
-`✓` equals the concatenation of `»` lines (I2). Repeat with
-`--strategy tail-mutation` and `--strategy fixed-head` — client behavior
-identical, only emission timing differs (FR-004).
+`✓` equals the concatenation of `»` lines (I2). (The 2026-07-28 triage
+retired tail-mutation/fixed-head after the watermark sweep —
+contracts/emission-semantics.md.)
 
 Batch regression: same clip without `--streaming` ⇒ one `»` at end, identical
 final text (I7).
@@ -64,13 +63,15 @@ snaps meets SC-005 vs the full NeMo snap.
 ## S4 — Watermarks and gates
 
 ```sh
-dev/bench.py --streaming --backends whisper:local-agreement,whisper:tail-mutation,\
-whisper:fixed-head,nemotron,parakeet,sherpa --corpus corpus/real
+dev/rebaseline-streaming-watermarks.sh   # whisper: batch + streaming sweep on
+                                         # the 26-28 s concatenated streams
 ```
 
-Expected: `results/streaming-watermarks.json` gains time-to-first-unstable /
+Expected: `results/streaming-watermarks.json` holds time-to-first-unstable /
 time-to-first-committed / finalize-latency per backend×tier; SC-001/003/004
-gates evaluated; commit stability 1.0 everywhere (SC-002).
+gates evaluated; commit stability 1.0 everywhere (SC-002). Strategy triage
+settled 2026-07-28: local-agreement only (SC-001 pass); extend per-backend as
+nemotron/parakeet/sherpa land.
 
 ## S5 — Concluding report
 

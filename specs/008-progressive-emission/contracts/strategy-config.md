@@ -9,30 +9,29 @@ here crosses the session wire (strategies are wire-invisible, FR-004).
 
 ```text
 myna-server --adapter whisper --streaming \
-    [--strategy local-agreement|tail-mutation|fixed-head]   # default: local-agreement
-    [--stream-cadence-s 1.0] [--stream-window-cap-s 30]
+    [--stream-cadence-s 1.0] [--stream-window-cap-s 30] [--stream-beam-size 1]
 
-myna-server --adapter nemotron --streaming          # native loop; no --strategy
-myna-server --adapter parakeet  --streaming         # fixed-head semantics built in
+myna-server --adapter nemotron --streaming          # native loop
 myna-server --adapter sherpa    --streaming         # native recognizer endpointing
 ```
 
-- `--strategy` is valid only for the whisper adapter; rejected otherwise
-  (clear CLI error).
+- The whisper commit strategy is **local-agreement**; the 2026-07-28 triage
+  (emission-semantics.md) removed the `--strategy` selector along with
+  tail-mutation/fixed-head.
 - `--streaming` off ⇒ batch degenerate (I7), all streaming flags ignored.
-- Strategy/cadence/window are fixed at process start; no session.update or
+- Cadence/window/beam are fixed at process start; no session.update or
   mid-session mutation.
 
 ## Snap configuration
 
 Snaps expose the same knobs via `snap set` (mirroring existing snap config
-plumbing): `streaming`, `strategy`, cadence/window caps. Parakeet/sherpa snaps
-expose only `streaming` (their emission semantics are intrinsic).
+plumbing): `streaming`, cadence/window caps. Small-transducer snaps expose
+only `streaming` (their emission semantics are intrinsic).
 
 ## Capabilities advertisement (existing contract, no change)
 
 - `session.streaming` greeting field (007) reports whether the *service* will
-  emit progressively; it does NOT name the strategy.
+  emit progressively.
 - Client `--mode auto|streaming|batch` behaves as shipped in 007: `auto`
   follows the greeting + tier gate, `batch` forces degenerate mode,
   `streaming` requests progressive emission.

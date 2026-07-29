@@ -6,10 +6,11 @@ client finishes, emit one ``final`` per Whisper segment, then ``done``.
 
 Streaming mode (feature 008): the rolling re-decode loop in
 ``myna.testbed.streaming`` decodes the uncommitted window on a cadence while
-audio is still arriving; the selected strategy (``local-agreement`` default,
-``tail-mutation``, ``fixed-head``) decides what to commit when, and emission
-rides the 007 committed/unstable dispositions — append-only commits,
-display-only unstable hypotheses.
+audio is still arriving; the local-agreement strategy decides what to commit
+when, and emission rides the 007 committed/unstable dispositions —
+append-only commits, display-only unstable hypotheses. (The 008 sweep
+compared three strategies; local-agreement was the only SC-001 pass —
+see strategies.py.)
 
 Requires the ``whisper`` extra: ``uv sync --extra whisper``. ``model_size``
 is either a bare size name (``"small"``) fetched from Hugging Face on first
@@ -71,7 +72,6 @@ class FasterWhisperAdapter:
         compute_type: str = "default",
         download_root: str | None = None,
         streaming: bool = False,  # T020: Enable streaming mode
-        strategy: str = "local-agreement",  # 008: streaming commit strategy
         stream_cadence_s: float = 1.0,  # seconds of new audio between re-decodes
         stream_window_cap_s: float = 30.0,  # max uncommitted window (I6)
         stream_beam_size: int = 1,  # re-decode beam; 5 ≈ batch quality, 1 ≈ 5× cheaper
@@ -81,7 +81,6 @@ class FasterWhisperAdapter:
         self._compute_type = compute_type
         self._download_root = download_root
         self._streaming = streaming
-        self._strategy = strategy
         self._stream_cadence_s = stream_cadence_s
         self._stream_window_cap_s = stream_window_cap_s
         self._stream_beam_size = stream_beam_size
@@ -103,7 +102,7 @@ class FasterWhisperAdapter:
         return Candidate(
             model=f"whisper-{label}",
             engine=f"faster-whisper-{self._device}",
-            streaming_strategy=self._strategy if self._streaming else "commit-on-finalize",
+            streaming_strategy="local-agreement" if self._streaming else "commit-on-finalize",
         )
 
     def capabilities(self) -> Capabilities:
@@ -264,7 +263,7 @@ class FasterWhisperAdapter:
         end-of-audio resolves the tail (I5) and the loop returns exactly the
         concatenation of committed text (I2) for the terminal done."""
         from myna.testbed.streaming.loop import run_streaming_loop
-        from myna.testbed.streaming.strategies import Hypothesis, SegmentText, Word, make_strategy
+        from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, Word
 
         language = _iso639_1(config.language)
         prompt = config.prompt
@@ -279,25 +278,16 @@ class FasterWhisperAdapter:
                 vad_filter=False,
             )
             words: list[Word] = []
-            segs: list[SegmentText] = []
             for seg in segments:  # drain the generator (we're in a thread)
-                segs.append(
-                    SegmentText(
-                        text=seg.text,
-                        start=seg.start + offset,
-                        end=seg.end + offset,
-                        no_speech_prob=seg.no_speech_prob,
-                    )
-                )
                 for w in seg.words or []:
                     words.append(Word(text=w.word, start=w.start + offset, end=w.end + offset))
-            return Hypothesis(words=words, segments=segs)
+            return Hypothesis(words=words)
 
         transcript = await run_streaming_loop(
             audio,
             emit,
             decode,
-            make_strategy(self._strategy),
+            LocalAgreement(),
             cadence_seconds=self._stream_cadence_s,
             window_cap_seconds=self._stream_window_cap_s,
         )
