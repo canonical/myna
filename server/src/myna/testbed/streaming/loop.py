@@ -1,8 +1,12 @@
 """The streaming emission loop (feature 008).
 
-Drives a RollingWindow + commit strategy over a live PCM chunk stream:
-the uncommitted window is re-decoded on a cadence and the strategy decides
-what to commit when. Emits 007-contract events (committed finals with
+Drives a RollingWindow + commit strategy over a live PCM chunk stream.
+Re-decode strategies (local-agreement): the uncommitted window is re-decoded
+on a cadence and the strategy decides what to commit when. Chunked policies
+(SilenceCut, murmure-style — Parakeet TDT): the loop watches the audio for a
+silence/force cut; only then is the region up to the cut decoded *once* and
+committed wholesale — no re-decode, cheapest compute, no unstable text by
+design. Emits 007-contract events (committed finals with
 monotonic ``segment_index``; unstable finals that supersede the previous
 unstable) and returns the accumulated committed transcript — the caller
 emits ``TranscriptionDone``.
@@ -230,6 +234,26 @@ async def run_streaming_loop(
 
     async for chunk in audio:
         window.append(chunk.data, chunk.duration_seconds)
+
+        if getattr(strategy, "mode", "redecode") == "chunked":
+            cut = strategy.observe(window.samples(), window.frontier, window.end)
+            if cut is not None and cut - window.frontier >= MIN_DECODE_S:
+                samples = window.region_before(cut)
+                hyp = await asyncio.to_thread(decode, samples, window.frontier)
+                fresh = fresh_words(hyp.words)
+                text = _join_natural(fresh)
+                if text:
+                    await emit_committed(_utterance_edge(text, not committed), fresh)
+                # The audio up to the cut is covered (committed, possibly
+                # empty for a silence chunk) — the frontier and the dedupe
+                # watermark both advance.
+                committed_through = max(committed_through, cut)
+                window.advance(cut)
+                last_unstable = ""  # I4 (chunked emits no unstable by design)
+            elif window.end - last_decode_end >= cadence_seconds:
+                last_decode_end = window.end
+                await emit(TranscriptionProgress())  # liveness on quiet ticks
+            continue
 
         # tick on cadence
         if window.end - last_decode_end < cadence_seconds:
