@@ -18,11 +18,15 @@ trade: no unstable hypotheses by design — continuous partials is the
 sherpa-onnx arm's comparison point (US4). All emission invariants (I1–I7) are
 enforced by the shared ``streaming.loop``.
 
-Requires the ``parakeet`` extra: ``uv sync --extra parakeet``. Weights come
-from ``istupakov/parakeet-tdt-0.6b-v3-onnx`` (the export murmure ships),
-staged by ``dev/fetch_parakeet_onnx.py`` into the HF cache; ``--model`` points
-at a local directory instead (snap model component). Verify offline with
-``HF_HUB_OFFLINE=1``.
+Requires the ``parakeet`` extra: ``uv sync --extra parakeet``. Weights are
+murmure's ``parakeet-tdt-0.6b-v3-int8`` bundle, staged by
+``dev/fetch_parakeet_onnx.py`` (pinned + sha256-verified) into the XDG cache;
+``--model`` points at a local directory instead (snap model component).
+Murmure's re-quantized int8 encoder is load-bearing: istupakov's HF int8
+encoder collapses (blank output mid-audio) non-monotonically on some inputs
+— the nemo128 preprocessor does utterance-global CMVN, so feature statistics
+shift with window length and that quantization can't absorb the shift
+(2026-07-29 discriminator runs; murmure's decodes every probed length).
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import asyncio
 import os
 import re
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import numpy as np
 
@@ -54,7 +59,6 @@ from myna.testbed.streaming.strategies import SC_FORCE_CUT_S, Hypothesis, Word
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
 
-HF_REPO_ID = "istupakov/parakeet-tdt-0.6b-v3-onnx"
 MODEL_FILES = (
     "encoder-model.int8.onnx",
     "decoder_joint-model.int8.onnx",
@@ -227,11 +231,17 @@ class _ParakeetOnnx:
 
 
 def _default_model_dir() -> str:
-    """The HF cache snapshot (downloads on first use; HF_HUB_OFFLINE=1 uses the
-    cache — dev/fetch_parakeet_onnx.py stages it)."""
-    from huggingface_hub import snapshot_download
+    """The staged weights (downloads on first use; offline-safe once staged by
+    dev/fetch_parakeet_onnx.py). The dev/ script is imported by path — it is
+    not part of the installed package (snaps ship weights as components and
+    always pass ``--model``)."""
+    import importlib.util
 
-    return snapshot_download(HF_REPO_ID, allow_patterns=list(MODEL_FILES))
+    fetch = Path(__file__).resolve().parents[4] / "dev" / "fetch_parakeet_onnx.py"
+    spec = importlib.util.spec_from_file_location("fetch_parakeet_onnx", fetch)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return str(mod.stage(mod.default_model_dir()))
 
 
 class ParakeetAdapter:

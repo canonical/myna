@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "parakeet", "fake"),
+        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -111,6 +111,11 @@ def build_adapter(args: argparse.Namespace):
         from myna.testbed.parakeet import ParakeetAdapter
 
         return ParakeetAdapter(args.model, streaming=args.streaming)
+
+    if args.adapter == "sherpa":
+        from myna.testbed.sherpa import SherpaAdapter
+
+        return SherpaAdapter(args.model, streaming=args.streaming)
 
     if args.adapter == "qwen-c":
         # The C runtime needs a local model directory (no downloading); the

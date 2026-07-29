@@ -49,6 +49,21 @@ against.
 - Never commit words ending within ~0.5 s of the window tail (insufficient
   right context — whisper boundary heuristic).
 
+### chunked-commit (SilenceCut — parakeet, US3)
+
+Not a re-decode strategy: the loop watches the uncommitted window with a
+murmure-ported cut policy (`SilenceCut`, adaptive-RMS VAD; 15 s arm / 500 ms
+silence cut / 60 s force cut with 1 s overlap); when a pause cuts, the region
+up to the cut is decoded **once** and committed wholesale. Emits no unstable
+text by design (decode-once is the whole point; liveness progress events fill
+the gaps). Parakeet TDT decode is chunk-final, so re-decode buys nothing —
+and pause-bounded chunks give the nemo128 preprocessor's utterance-global
+CMVN utterance-like statistics (2026-07-29: window-length-dependent feature
+shifts break fragile int8 quantizations mid-audio; murmure's re-quantized
+encoder is the robust one). The cut fires the frame the silence run crosses
+(murmure checks every 33 ms tick — a call-boundary check misses pauses that
+end mid-call). Must still satisfy I1–I7 (the shared loop enforces them).
+
 ### Retired (2026-07-28 triage): tail-mutation, fixed-head
 
 The long-stream watermark sweep (`results/streaming-watermarks.json`)

@@ -1,38 +1,95 @@
-"""Stage the Parakeet TDT 0.6B v3 int8 ONNX export into the model cache (008/T023).
+"""Stage the Parakeet TDT 0.6B v3 int8 ONNX weights (008 US3 / T023).
 
     uv run python dev/fetch_parakeet_onnx.py [--out-dir DIR]
 
-Source: `istupakov/parakeet-tdt-0.6b-v3-onnx` — the ONNX export murmure ships
-(same file layout as murmure's bundled `parakeet-tdt-0.6b-v3-int8` resources):
-`nemo128.onnx` (mel preprocessor), `encoder-model.int8.onnx`,
-`decoder_joint-model.int8.onnx` (TDT decoder+joint), `vocab.txt`. We fetch only
-the int8 weights — the fp32 encoder/decoder are the snap's opt-in variants and
-are several GB.
+Source: murmure's `parakeet-tdt-0.6b-v3-int8` bundle (GitHub release zip,
+pinned + sha256-verified) — `nemo128.onnx` (mel preprocessor),
+`encoder-model.int8.onnx`, `decoder_joint-model.int8.onnx` (TDT
+decoder+joint), `vocab.txt`, in the layout the adapter expects.
+
+Why murmure's bundle and not the istupakov HF export: the preprocessor,
+decoder_joint and vocab are byte-identical, but istupakov's int8 *encoder*
+collapses (blank output mid-audio) non-monotonically on some inputs
+(12/14/18/20-22 s prefixes of stream-2277-01 fail; 15-17/19/28 s decode) —
+the nemo128 preprocessor does utterance-global CMVN, so feature statistics
+shift with window length and that quantization can't absorb the shift.
+Murmure's re-quantized encoder decodes every probed length fully
+(2026-07-29 discriminator runs). sherpa's k2 int8 export is intermediate
+(22 s collapse) — murmure's is the only fully robust int8 encoder found.
 
 Model: NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0), 25 languages, punctuation +
-capitalisation. ONNX export layout by istupakov (parakeet.cpp).
-
-Download goes through `huggingface_hub.snapshot_download` (resumable, cached
-under HF_HOME like the whisper models). Verify offline afterwards with:
-
-    HF_HUB_OFFLINE=1 uv run python dev/fetch_parakeet_onnx.py
+capitalisation. Cached under XDG_CACHE_HOME/myna/models; re-running verifies
+the checksum and skips the download (offline-safe once staged).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
+import shutil
 import sys
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
-REPO_ID = "istupakov/parakeet-tdt-0.6b-v3-onnx"
-# int8 weights + preprocessor + vocab only; the fp32 encoder/decoder
-# (encoder-model.onnx + .onnx.data) are multi-GB and unused by the adapter.
-FILES = (
+URL = "https://github.com/Kieirra/murmure-model/releases/download/1.2.0/parakeet-tdt-0.6b-v3-int8.zip"
+SHA256 = "2adb3e2e6feaace71119eed506cb18401ac41b8daef1b6411a9e0ca5f12cacfe"
+MODEL_FILES = (
     "encoder-model.int8.onnx",
     "decoder_joint-model.int8.onnx",
     "nemo128.onnx",
     "vocab.txt",
 )
+
+
+def default_model_dir() -> Path:
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return cache / "myna" / "models" / "parakeet-tdt-0.6b-v3-int8"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _download(url: str, dest: Path) -> None:
+    """Resumable download (Range append) with progress on stderr."""
+    have = dest.stat().st_size if dest.exists() else 0
+    req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
+    with urllib.request.urlopen(req, timeout=60) as resp, dest.open("ab") as out:
+        while block := resp.read(1 << 20):
+            out.write(block)
+            print(f"\r{dest.name}: {(have + out.tell()) / 1e6:.0f} MB", end="", file=sys.stderr)
+    print(file=sys.stderr)
+
+
+def staged(out_dir: Path) -> bool:
+    return all((out_dir / f).exists() for f in MODEL_FILES)
+
+
+def stage(out_dir: Path) -> Path:
+    """Download (resumable), verify, and extract the weights into ``out_dir``.
+    No-op when already staged — offline-safe after the first run."""
+    if staged(out_dir):
+        return out_dir
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=out_dir.parent) as tmp:
+        zip_path = Path(tmp) / "model.zip"
+        _download(URL, zip_path)
+        if (digest := _sha256(zip_path)) != SHA256:
+            raise RuntimeError(f"sha256 mismatch: {digest} != {SHA256} (pinned {URL})")
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(tmp)
+        extracted = Path(tmp) / "parakeet-tdt-0.6b-v3-int8"
+        out_dir.mkdir(exist_ok=True)
+        for name in MODEL_FILES:
+            shutil.move(str(extracted / name), out_dir / name)
+    return out_dir
 
 
 def main() -> int:
@@ -41,29 +98,13 @@ def main() -> int:
         "--out-dir",
         type=Path,
         default=None,
-        help="download here instead of the HF cache (e.g. a lab cache to pass "
+        help="stage here instead of the XDG cache (e.g. a lab cache to pass "
         "as --model to myna-server --adapter parakeet)",
     )
     args = parser.parse_args()
-
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        sys.exit("huggingface_hub is required (uv sync --extra whisper provides it)")
-
-    path = Path(
-        snapshot_download(
-            REPO_ID,
-            allow_patterns=list(FILES),
-            local_dir=str(args.out_dir) if args.out_dir else None,
-        )
-    )
-    missing = [f for f in FILES if not (path / f).exists()]
-    if missing:
-        sys.exit(f"download incomplete, missing: {', '.join(missing)}")
-
-    total = sum((path / f).stat().st_size for f in FILES)
-    print(f"parakeet int8 ONNX ready: {path} ({total / 1e6:.0f} MB)")
+    out_dir = stage(args.out_dir or default_model_dir())
+    total = sum((out_dir / f).stat().st_size for f in MODEL_FILES)
+    print(f"parakeet int8 ONNX ready: {out_dir} ({total / 1e6:.0f} MB)")
     return 0
 
 

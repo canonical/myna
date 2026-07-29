@@ -203,11 +203,19 @@ class SilenceCut:
             if frame_end > scan_from and frame_end - window_start >= self._arm:
                 if activity == "silent":
                     self._silence_run += SC_FRAME_S
+                    if self._silence_run >= self._silence_cut:
+                        # murmure cuts the tick the run crosses — at this
+                        # frame, not the next call boundary: a pause that ends
+                        # mid-call would otherwise go active and reset the run
+                        # before the check ever saw it (missed 1.1 s pause on
+                        # stream-2277-02, 2026-07-29). The cut covers audio up
+                        # to this frame — the trailing silence rides in, so no
+                        # word straddles.
+                        self._silence_run = 0.0
+                        self._scanned = frame_end
+                        return frame_end
                 elif activity == "active":
                     self._silence_run = 0.0
             off += frame_len
         self._scanned = window_end
-        if duration >= self._arm and self._silence_run >= self._silence_cut:
-            self._silence_run = 0.0
-            return window_end
         return None
