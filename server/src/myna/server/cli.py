@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "fake"),
+        choices=("whisper", "nemotron", "qwen-c", "parakeet", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(
         "--streaming", action="store_true",
-        help="enable streaming mode (progressive committed segments; whisper/nemotron)",
+        help="enable streaming mode (progressive committed segments; whisper/nemotron/parakeet)",
     )
     parser.add_argument(
         "--stream-cadence-s", type=float, default=None,
@@ -106,6 +106,11 @@ def build_adapter(args: argparse.Namespace):
             stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or 30.0,
             stream_beam_size=getattr(args, "stream_beam_size", None) or 1,
         )
+
+    if args.adapter == "parakeet":
+        from myna.testbed.parakeet import ParakeetAdapter
+
+        return ParakeetAdapter(args.model, streaming=args.streaming)
 
     if args.adapter == "qwen-c":
         # The C runtime needs a local model directory (no downloading); the
@@ -195,17 +200,22 @@ async def serve(args: argparse.Namespace) -> None:
 def _validate_streaming_args(args: argparse.Namespace) -> None:
     """Streaming tuning flags are whisper-only (contracts/strategy-config.md);
     with --streaming off they are inert (batch degenerate) — warn, don't fail."""
+    tuning = [
+        f"--{name}"
+        for name, value in (
+            ("stream-cadence-s", args.stream_cadence_s),
+            ("stream-window-cap-s", args.stream_window_cap_s),
+            ("stream-beam-size", args.stream_beam_size),
+        )
+        if value is not None
+    ]
     if not args.streaming:
-        inert = [
-            f"--{name}"
-            for name, value in (
-                ("stream-cadence-s", args.stream_cadence_s),
-                ("stream-window-cap-s", args.stream_window_cap_s),
-            )
-            if value is not None
-        ]
-        if inert:
-            log.warning("%s ignored without --streaming (batch mode)", ", ".join(inert))
+        if tuning:
+            log.warning("%s ignored without --streaming (batch mode)", ", ".join(tuning))
+    elif tuning and args.adapter != "whisper":
+        # Parakeet's chunked commit has its own constants (SilenceCut); the
+        # re-decode tuning flags are whisper-only (contracts/strategy-config.md).
+        log.warning("%s are whisper-only, ignored for --adapter %s", ", ".join(tuning), args.adapter)
 
 
 def main(argv: list[str] | None = None) -> int:

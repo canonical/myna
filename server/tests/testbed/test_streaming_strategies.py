@@ -7,9 +7,12 @@ triage removed tail-mutation and fixed-head — see strategies.py.)
 
 from __future__ import annotations
 
+import numpy as np
+
 from myna.testbed.streaming.strategies import (
     Hypothesis,
     LocalAgreement,
+    SilenceCut,
     Word,
 )
 
@@ -54,6 +57,96 @@ def test_local_agreement_force_over_cap():
     texts = [w.text for w in d.commit_words]
     assert "w8 " in texts and "w9 " not in texts
     assert d.commit_end == 8.9
+
+
+# ---------------------------------------------------------------------------
+# SilenceCut (chunked commit, murmure port — 008 US3)
+# ---------------------------------------------------------------------------
+
+RATE = 16_000
+
+
+def _speech(seconds: float, rms: float = 0.05) -> np.ndarray:
+    """Deterministic speech-like noise at the given RMS."""
+    rng = np.random.default_rng(42)
+    samples = rng.standard_normal(int(seconds * RATE)).astype(np.float32)
+    return samples * (rms / np.sqrt(np.mean(samples * samples)))
+
+
+def _silence(seconds: float) -> np.ndarray:
+    return np.zeros(int(seconds * RATE), dtype=np.float32)
+
+
+def test_silence_cut_never_fires_before_arm():
+    cut = SilenceCut()
+    # 10 s of speech then 2 s of silence, all under the 15 s arm.
+    audio = np.concatenate([_speech(10.0), _silence(2.0)])
+    assert cut.observe(audio, 0.0, 12.0) is None
+
+
+def test_silence_cut_fires_on_pause_past_arm():
+    cut = SilenceCut()
+    # 16 s speech, then silence; observe incrementally (per 0.5 s) like the loop.
+    audio = np.concatenate([_speech(16.0), _silence(2.0), _speech(2.0)])
+    cut_at = None
+    for end in np.arange(0.5, 20.5, 0.5):
+        window = audio[: int(end * RATE)]
+        cut_at = cut.observe(window, 0.0, float(end))
+        if cut_at is not None:
+            break
+    assert cut_at is not None, "no cut on a 1 s+ pause past the arm"
+    # The pause starts at 16 s; the cut lands at the window end once 0.5 s of
+    # silence has run (murmure cuts at buffer end, trailing silence included).
+    assert 16.4 <= cut_at <= 17.5
+
+
+def test_silence_cut_ignores_short_pauses():
+    cut = SilenceCut()
+    # Past the arm, pauses under the 0.5 s cut don't fire.
+    audio = np.concatenate([_speech(16.0), _silence(0.3), _speech(2.0), _silence(0.3), _speech(1.0)])
+    for end in np.arange(0.5, 19.5, 0.5):
+        window = audio[: int(end * RATE)]
+        assert cut.observe(window, 0.0, float(end)) is None
+
+
+def test_silence_cut_force_cut_bounds_window():
+    cut = SilenceCut()
+    audio = _speech(61.0)  # continuous speech, no pause: the force cut bounds it
+    cut_at = None
+    for end in np.arange(1.0, 61.5, 1.0):
+        window = audio[: int(end * RATE)]
+        cut_at = cut.observe(window, 0.0, float(end))
+        if cut_at is not None:
+            break
+    assert cut_at == 60.0
+
+
+def test_silence_cut_scans_incrementally_after_advance():
+    # After a cut the loop advances the frontier (keeping 1 s overlap); the
+    # policy must not re-scan the overlap nor lose its noise floor.
+    cut = SilenceCut()
+    first = np.concatenate([_speech(16.0), _silence(1.0)])
+    assert cut.observe(first, 0.0, 17.0) == 17.0
+    # New window starts at 16.0 (1 s overlap kept); 16 s more speech, a pause.
+    second = np.concatenate([_speech(17.0), _silence(1.0)])
+    cut_at = None
+    for end in np.arange(17.5, 35.5, 0.5):
+        window = second[: int((end - 16.0) * RATE)]
+        cut_at = cut.observe(window, 16.0, float(end))
+        if cut_at is not None:
+            break
+    assert cut_at is not None, "no second cut after frontier advance"
+    assert cut_at >= 16.0 + 15.0  # re-armed relative to the new window
+
+
+def test_silence_cut_adapts_to_quiet_speech():
+    # Quiet speech (rms ~0.01) above a low noise floor still counts as active
+    # (adaptive thresholds, murmure vad.rs parity) — no spurious cut mid-word.
+    cut = SilenceCut()
+    audio = np.concatenate([_silence(1.0), _speech(18.0, rms=0.01)])
+    for end in np.arange(0.5, 19.5, 0.5):
+        window = audio[: int(end * RATE)]
+        assert cut.observe(window, 0.0, float(end)) is None
 
 
 def test_local_agreement_empty_hypothesis():

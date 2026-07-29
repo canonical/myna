@@ -20,7 +20,11 @@ nemotron = [
 # Small transducer snaps (feature 008): Parakeet TDT int8 ONNX via ONNX
 # Runtime (no torch), and the sherpa-onnx turnkey streaming runtime.
 parakeet = [
-    "onnxruntime>=1.17",
+    # 1.27.x exactly: sherpa-onnx 1.13.x's native lib needs the VERS_1.27.0
+    # version node, and each onnxruntime lib exports only its own (1.28
+    # dropped VERS_1.27.0). The sherpa extra resolves its libonnxruntime
+    # from this package.
+    "onnxruntime>=1.27,<1.28",
 ]
 sherpa = [
     "sherpa-onnx>=1.10",

@@ -21,7 +21,7 @@ from myna.core import (
 )
 from myna.core.audio import AudioFormat
 from myna.testbed.streaming.loop import run_streaming_loop
-from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, Word
+from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, SilenceCut, Word
 from myna.testbed.streaming.window import RollingWindow
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
@@ -206,6 +206,53 @@ async def test_unstable_never_restates_committed_text():
                 assert e.text.startswith(" "), (
                     f"unstable tail after commits must keep its leading space: {e.text!r}"
                 )
+
+
+@pytest.mark.asyncio
+async def test_chunked_loop_commits_per_pause_and_completes():
+    """Chunked mode (SilenceCut, 008 US3): no re-decode, no unstable — a cut
+    past the arm commits the region wholesale; the I5 tail commits the rest;
+    done == verbatim concatenation, no duplicates across the 1 s overlap."""
+    rng = np.random.default_rng(7)
+
+    def pcm(seconds: float, speech: bool) -> bytes:
+        n = int(seconds * 16_000)
+        if not speech:
+            return b"\x00\x00" * n
+        noise = rng.standard_normal(n)
+        noise = noise * (0.05 / np.sqrt(np.mean(noise * noise)))
+        return (noise * 32767).astype(np.int16).tobytes()
+
+    # 16 s speech, 1 s pause (cuts past the 15 s arm), 4 s speech (I5 tail).
+    plan = [(16.0, True), (1.0, False), (4.0, True)]
+
+    async def audio():
+        for seconds, speech in plan:
+            for _ in range(int(seconds / 0.5)):
+                yield PcmChunk(data=pcm(0.5, speech), format=FORMAT)
+
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    transcript = await run_streaming_loop(
+        audio(),
+        emit,
+        scripted_decode(),
+        SilenceCut(),
+        cadence_seconds=1.0,
+        window_cap_seconds=65.0,
+    )
+    events.append(TranscriptionDone(text=transcript))
+    committed = _committed(events)
+    assert len(committed) == 2, f"expected pause commit + tail commit, got {[e.text for e in committed]}"
+    assert not _unstable(events), "chunked mode emits no unstable by design"
+    # The first commit covers the region up to the cut (~17 s of audio at one
+    # word per second); the tail covers the rest — no word committed twice.
+    all_words = "".join(e.text for e in committed).split()
+    assert len(all_words) == len(set(all_words)), f"duplicated words: {all_words}"
+    assert_append_only_and_complete(events)
 
 
 @pytest.mark.asyncio
