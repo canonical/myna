@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Re-baseline streaming-mode watermarks on the 26-28 s concatenated streams
-# after the character-level frontier-anchored dedupe fix (d7d9c72).
+# Re-baseline streaming-mode watermarks on the 26-28 s concatenated streams.
 #
-# Runs whisper-tiny through all three streaming strategies + batch against
-# corpus/real/manifest-streams.json, appending results to a fresh JSONL.
+# Runs whisper-tiny batch + streaming (local-agreement — the only strategy
+# since the 2026-07-28 triage) against corpus/real/manifest-streams.json,
+# appending results to a fresh JSONL.
 #
 # Usage: cd /home/charles/Projects/myna && bash dev/rebaseline-streaming-watermarks.sh
 
@@ -30,15 +30,15 @@ cleanup() {
 trap cleanup EXIT
 
 run_sweep() {
-    local strategy="$1"   # batch | local-agreement | tail-mutation | fixed-head
+    local mode="$1"   # batch | streaming
     local label="$2"
 
     echo ""
     echo "============================================================"
-    echo "  Strategy: $strategy  ->  label: $label"
+    echo "  Mode: $mode  ->  label: $label"
     echo "============================================================"
 
-    if [ "$strategy" = "batch" ]; then
+    if [ "$mode" = "batch" ]; then
         streaming_flag=""
     else
         streaming_flag="--streaming"
@@ -54,7 +54,6 @@ run_sweep() {
         --device cpu \
         --preload \
         $streaming_flag \
-        ${streaming_flag:+--strategy "$strategy"} \
         &
     SERVER_PID=$!
     echo "server started (PID $SERVER_PID), waiting for socket..."
@@ -89,15 +88,13 @@ run_sweep() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     rm -f "$SOCKET"
-    echo "done with $strategy"
+    echo "done with $mode"
 }
 
 # ── Sweep ──────────────────────────────────────────────────────────────────
 
 run_sweep batch              "$LABEL_PREFIX/batch"
-run_sweep local-agreement    "$LABEL_PREFIX/local-agreement"
-run_sweep tail-mutation      "$LABEL_PREFIX/tail-mutation"
-run_sweep fixed-head         "$LABEL_PREFIX/fixed-head"
+run_sweep streaming          "$LABEL_PREFIX/local-agreement"
 
 echo ""
 echo "============================================================"

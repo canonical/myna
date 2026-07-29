@@ -113,16 +113,19 @@ cloud, no persistent audio.
   SC-004: commit-stability 100%). **Feature 008 (in flight,
   `specs/008-progressive-emission/`)**: the whisper adapter now streams for
   real — rolling re-decode loop (`server/src/myna/testbed/streaming/`) with
-  three wire-invisible commit strategies (`--strategy local-agreement`
-  default / `tail-mutation` / `fixed-head`); unstable ~1.5 s in, first commit
-  ~2.5 s in on whisper-tiny CPU. FR-008 closed for whisper. Watermarks on
-  26–28 s concatenated streams (`corpus/real/manifest-streams.json`):
-  fixed-head == batch WER, LA/TM +2.4 pp (AED right-context cost; beam ruled
-  out — part of that gap was commit-boundary dedupe bugs fixed 2026-07-28:
-  the overlap alignment is now frontier-anchored at **character** level
-  (squashed words), so re-decode churn — earlier-word edits, silence
-  compression re-timing, merged/split tokens ("es"+"Carlos." → "escarlos.")
-  — can't double-commit boundary words; watermarks want re-measuring). Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
+  the local-agreement commit strategy (the 2026-07-28 sweep retired
+  tail-mutation/fixed-head: LA was the only SC-001 pass at equal WER —
+  `specs/008/contracts/emission-semantics.md`); unstable ~1.5 s in, first
+  commit ~2.5 s in on whisper-tiny CPU. FR-008 closed for whisper. Watermarks
+  on 26–28 s concatenated streams (`corpus/real/manifest-streams.json`,
+  re-baselined 2026-07-28): batch 4.79 %, LA 7.19 % (+2.4 pp AED
+  right-context cost; beam ruled out). The commit-boundary dedupe is
+  frontier-anchored at **character** level (squashed words) with an
+  overlap-size bound: old content re-transcribes only the window's 1 s
+  overlap audio, so a claimed duplicate region > 5 words is coincidence and
+  the alignment abstains — churn, silence re-timing, and merged/split tokens
+  can't double-commit boundary words, and genuinely-new text repeating the
+  frontier phrase can't be eaten. Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
   native loop (Spike S2, GPU), Parakeet + sherpa-onnx snaps, report.
   Interop report delivered: `docs/interop/canonical-whisper-snap-report.md` —
   the canonical/whisper-snap's deltas restate the growing hypothesis with no

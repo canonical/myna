@@ -1,6 +1,6 @@
 {
   "watermark": "streaming-mode",
-  "measured_at": "2026-07-27",
+  "measured_at": "2026-07-28",
   "environment": "x86_64 CPU, whisper-tiny (faster-whisper/CTranslate2)",
   "tolerances": {
     "wer_delta_pp": 2.0,
@@ -22,31 +22,31 @@
     "median_finalize_latency_s": 0.424
   },
   "emission_008": {
-    "note": "feature 008 progressive emission, whisper-tiny CPU, long-stream corpus (results/bench-008-streams.jsonl). SC-001 targets: ttfu <= 2s, ttfc <= 5s. SC-003: streaming WER within 2pp of batch.",
+    "note": "feature 008 progressive emission, whisper-tiny CPU, long-stream corpus (results/bench-008-rebaseline.jsonl, re-measured 2026-07-28 after the character-level dedupe + overlap-bound fix; supersedes bench-008-streams.jsonl). SC-001 targets: ttfu <= 2s, ttfc <= 5s. SC-003: streaming WER within 2pp of batch.",
     "batch": {
       "wer_micro": 0.0479,
-      "median_finalize_latency_s": 0.963,
+      "median_finalize_latency_s": 0.907,
       "commit_stability": true
     },
     "local-agreement": {
       "wer_micro": 0.0719,
       "wer_delta_pp_vs_batch": 2.4,
-      "time_to_first_unstable_s": [1.7, 1.4],
+      "time_to_first_unstable_s": [1.5, 1.4],
       "time_to_first_committed_s": [2.4, 3.5],
-      "committed_segments": [12, 8],
+      "committed_segments": [13, 8],
       "commit_stability": true,
-      "median_finalize_latency_s": 0.366,
-      "rtf": [0.97, 1.02]
+      "median_finalize_latency_s": 0.358,
+      "rtf": [1.02, 1.02]
     },
     "tail-mutation": {
       "wer_micro": 0.0719,
       "wer_delta_pp_vs_batch": 2.4,
-      "time_to_first_unstable_s": [1.7, 1.4],
-      "time_to_first_committed_s": [7.9, 6.8],
-      "committed_segments": [7, 7],
+      "time_to_first_unstable_s": [1.4, 1.4],
+      "time_to_first_committed_s": [7.8, 6.8],
+      "committed_segments": [7, 6],
       "commit_stability": true,
-      "median_finalize_latency_s": 0.424,
-      "rtf": [0.97, 1.03]
+      "median_finalize_latency_s": 0.417,
+      "rtf": [1.02, 1.02]
     },
     "fixed-head": {
       "wer_micro": 0.0479,
@@ -55,8 +55,8 @@
       "time_to_first_committed_s": [17.6, 20.2],
       "committed_segments": [2, 2],
       "commit_stability": true,
-      "median_finalize_latency_s": 0.434,
-      "rtf": [0.97, 1.02]
+      "median_finalize_latency_s": 0.440,
+      "rtf": [1.02, 1.02]
     }
   },
   "notes": [
@@ -64,6 +64,9 @@
     "SC-002/SC-004: PASS — commit stability 100% across all strategies and the sweep.",
     "SC-003: PASS for fixed-head (0pp — decode-once-at-pause is batch-quality); MARGINAL for local-agreement and tail-mutation (+2.4pp vs 2.0pp tolerance) on whisper-tiny/greedy. Beam size ruled out as the cause (beam5 sweep: LA 10.2% vs 10.8% pre-dedupe, TM unchanged) — the delta is inherent AED re-decode right-context loss at commit boundaries; expect it to narrow on larger models (re-measure with whisper-base/small on the GPU tier).",
     "Boundary-duplication bug class found and fixed during the sweep: word-timestamp drift between decodes leaks duplicated words at commit frontiers (e.g. 'USUAL. USUAL.'); fixed with text-alignment overlap dedupe in the emission loop (LA 10.8% -> 7.2%, TM 13.2% -> 7.2%).",
+    "2026-07-28 rebaseline (dev/rebaseline-streaming-watermarks.sh): the character-level frontier-anchored dedupe (d7d9c72) regressed TM to 12.0% on first re-measure — its anywhere-in-stream suffix search matched the committed-tail suffix at the END of a genuinely-new decode ('no answer' repeated) and dropped 9 new words. Fixed by bounding the claimed duplicate region to _MAX_OVERLAP_WORDS (5): old content re-transcribes only the window's 1 s overlap audio, so a longer claim is coincidence and the alignment abstains (under-drop leaks a visible duplicate; over-drop silently loses words). Post-fix sweep restores batch 4.79 / LA 7.19 / TM 7.19 / FH 4.79 with all emission-invariant tests green.",
+    "2026-07-28 strategy triage: with the sweep data clean, tail-mutation and fixed-head were RETIRED — LA was the only SC-001 pass (ttfc 2.4-3.5s vs TM 6.8-7.8s; FH ~18s, no unstable) at equal WER, with the strongest right-context guarantee of the re-decode pair and no whisper-segment dependencies. FH's decode-once == batch WER control result stands as evidence the +2.4pp re-decode gap is right-context loss, not plumbing. Batch mode is the floor for any tier where re-decode is unaffordable; chunked revival lives in git history. myna-server --strategy removed.",
+    "Run variance: repeat LA sweeps on identical code vary ±0.6 pp (7.19-7.78%, 12-13/167 edits) — cadence ticks land at different wall-clock offsets vs audio chunks, shifting commit boundaries and whisper segment decisions. Treat sub-1pp strategy deltas on this 2-clip corpus as noise.",
     "GPU-tier watermarks (nemotron native, whisper-base/small) require the lab hardware; extend via dev/matrix.py."
   ]
 }

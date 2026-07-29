@@ -1,11 +1,11 @@
 """The streaming emission loop (feature 008).
 
-Drives a RollingWindow + StreamingStrategy over a live PCM chunk stream:
-re-decode strategies decode the uncommitted window on a cadence; chunked
-strategies decode once per detected cut. Emits 007-contract events
-(committed finals with monotonic ``segment_index``; unstable finals that
-supersede the previous unstable) and returns the accumulated committed
-transcript — the caller emits ``TranscriptionDone``.
+Drives a RollingWindow + commit strategy over a live PCM chunk stream:
+the uncommitted window is re-decoded on a cadence and the strategy decides
+what to commit when. Emits 007-contract events (committed finals with
+monotonic ``segment_index``; unstable finals that supersede the previous
+unstable) and returns the accumulated committed transcript — the caller
+emits ``TranscriptionDone``.
 
 Invariants enforced here (contracts/emission-semantics.md):
 - I1/I2: committed text is append-only; the returned transcript is exactly
@@ -76,9 +76,9 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
 
     Anchored on the *committed frontier*, at **character** level: word texts
     are squashed ([`_squash`]) and the longest suffix of the committed tail
-    occurring anywhere in the new stream (leftmost occurrence) marks the
-    duplicate region — everything up to its end is old. Character matching
-    survives the two ways word-level matching fails:
+    occurring in the new stream (leftmost occurrence) marks the duplicate
+    region — everything up to its end is old. Character matching survives
+    the two ways word-level matching fails:
     - decode churn inside the overlap window ("in some way or" → "and some
       white or" — the exact prefix==suffix match returned 0: "or or");
     - word-boundary churn after a pause — the re-decode merges committed
@@ -231,20 +231,7 @@ async def run_streaming_loop(
     async for chunk in audio:
         window.append(chunk.data, chunk.duration_seconds)
 
-        if strategy.mode == "chunked":
-            cut = strategy.observe(window.samples(), window.frontier, window.end)
-            if cut is not None and cut - window.frontier >= MIN_DECODE_S:
-                samples = window.region_before(cut)
-                hyp = await asyncio.to_thread(decode, samples, window.frontier)
-                fresh = fresh_words(hyp.words)
-                text = _join_natural(fresh)
-                if text:
-                    await emit_committed(_utterance_edge(text, not committed), fresh)
-                    committed_through = max(committed_through, cut)
-                window.advance(cut)
-            continue
-
-        # re-decode strategies: tick on cadence
+        # tick on cadence
         if window.end - last_decode_end < cadence_seconds:
             continue
         last_decode_end = window.end
@@ -252,11 +239,9 @@ async def run_streaming_loop(
         decision = strategy.commit_rule(last_hyp, hyp, window.end, window.over_cap)
         last_hyp = hyp
         produced = False
-        if decision.commit_text and decision.commit_end > committed_through:
+        if decision is not None and decision.commit_end > committed_through:
             fresh = fresh_words(list(decision.commit_words))
             text = _join_natural(fresh) if fresh else ""
-            if not text and not decision.commit_words:
-                text = decision.commit_text  # strategy gave no words; trust it
             if text:
                 await emit_committed(_utterance_edge(text, not committed), fresh)
                 committed_through = decision.commit_end

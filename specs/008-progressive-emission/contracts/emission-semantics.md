@@ -40,7 +40,7 @@ against.
 
 ## Strategy commit rules
 
-### local-agreement (default, gated on Spike S1)
+### local-agreement (the shipped strategy)
 
 - Input: successive word-timestamped hypotheses of the uncommitted window.
 - **Commit**: the longest prefix of the current hypothesis whose words agree
@@ -48,30 +48,21 @@ against.
 - **Unstable**: the remainder of the current hypothesis (expected to mutate).
 - Never commit words ending within ~0.5 s of the window tail (insufficient
   right context — whisper boundary heuristic).
-- Fallback if S1 no-go: agreement over segment-text prefixes instead of words.
 
-### tail-mutation
+### Retired (2026-07-28 triage): tail-mutation, fixed-head
 
-- Input: one decode of the uncommitted window per tick.
-- **Commit**: all complete segments except the trailing one (the WhisperLive
-  `completed` heuristic, implemented in-adapter — this strategy subsumes that
-  algorithm); a trailing segment repeated unchanged across > N passes (N ≈ 10)
-  is force-committed (stuck-partial escape). Note: commits here have limited
-  right context, so this is the weakest-guaranteed strategy — commit stability
-  is measured (I1/I2 sweeps), not assumed.
-- **Unstable**: the trailing segment, resent each pass (may be revised
-  wholesale — legal under I3).
-
-### fixed-head
-
-- Input: VAD/energy segmentation of the incoming stream (arm 15 s, cut on
-  500 ms silence, force-cut 60 s with 1 s overlap — starting constants,
-  re-validated on our corpora).
-- **Commit**: each finalized chunk, decoded once, immediately on cut. Overlap
-  regions deduplicated at merge (word-level, ~6-word window).
-- **Unstable**: optional per-chunk partial; MAY be omitted entirely (fixed-head
-  is the strategy for tiers where re-decode is unaffordable — I1–I7 hold
-  without unstable emission).
+The long-stream watermark sweep (`results/streaming-watermarks.json`)
+settled the strategy comparison: **local-agreement was the only SC-001
+pass** (ttfc 2.4–3.5 s vs tail-mutation's 6.8–7.8 s; fixed-head ~18 s with
+no unstable emission) at equal WER (LA/TM 7.19 %; FH == batch 4.79 %),
+with the strongest right-context guarantee of the re-decode pair and no
+whisper-segment-specific dependencies. tail-mutation (the WhisperLive
+`completed` heuristic, weakest right-context guarantee — commit stability
+was measured, not assumed) and fixed-head (decode-once-at-pause) were
+removed from the tree. fixed-head's control result stands: decode-once ==
+batch WER, so the +2.4 pp re-decode gap is right-context loss, not
+plumbing. If a tier where re-decode is unaffordable ever appears, batch
+mode is the floor and a chunked strategy can be revived from git history.
 
 ### native (nemotron, sherpa — informational)
 
