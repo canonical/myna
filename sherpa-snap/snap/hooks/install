@@ -1,0 +1,30 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.install"
+
+# Redirect stdout to stdout+syslog
+exec 1> >(tee >(logger --tag=$tag))
+# Redirect stderr to stderr+syslog
+exec 2> >(logger --stderr --priority error --tag=$tag)
+
+#
+# Set generic config
+#
+
+modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
+modelctl set --package verbose="false"
+# Idle-unload: release the model after this many idle seconds (0 = never).
+modelctl set --package sleep-idle-seconds="300"
+
+#
+# Auto select an engine
+#
+
+if snapctl is-connected hardware-observe; then
+    modelctl use-engine --auto --assume-yes --verbose
+elif lscpu -V &> /dev/null; then
+    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
+    modelctl use-engine --auto --assume-yes --verbose
+else
+    echo "hardware-observe interface not auto connected. Skip auto engine selection."
+fi

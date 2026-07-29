@@ -47,3 +47,12 @@ release/
 *.rlib
 *.prof*
 Cargo.lock
+# snap build artifacts (weights staged by dev/download-models.sh, wheels by dev/prepare.sh)
+parakeet-snap/components/model-*/
+parakeet-snap/wheels/
+parakeet-snap/*.snap
+parakeet-snap/*.comp
+sherpa-snap/components/model-*/
+sherpa-snap/wheels/
+sherpa-snap/*.snap
+sherpa-snap/*.comp

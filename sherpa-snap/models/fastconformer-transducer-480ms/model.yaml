@@ -1,0 +1,14 @@
+id: fastconformer-transducer-480ms
+name: fastconformer-transducer-480ms
+description: NeMo streaming FastConformer transducer (English, 480ms latency) — int8 ONNX, k2-fsa export
+model-card-url: https://huggingface.co/csukuangfj/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8
+quantization: int8
+capabilities:
+  - streaming
+disk-size: 230M
+# Weights shipped as a snap component. modelctl installs it on use-model;
+# the server loads from the directory, so no network access is needed.
+components:
+  - model-fastconformer-480ms
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-fastconformer-480ms

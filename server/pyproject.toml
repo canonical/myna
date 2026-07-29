@@ -28,6 +28,9 @@ parakeet = [
 ]
 sherpa = [
     "sherpa-onnx>=1.10",
+    # sherpa-onnx's native lib resolves libonnxruntime from this package (the
+    # wheel doesn't bundle it); same 1.27.x pin as the parakeet extra.
+    "onnxruntime>=1.27,<1.28",
 ]
 
 [project.scripts]
