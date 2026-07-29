@@ -95,142 +95,28 @@ report (T12 is still open on the engineering side).
 
 ---
 
-## 4. Reading sample corpus (English only this round)
+## 4. Reading sample corpus (English only this round, except two short
+non-English failure-mode probe sentences in §7)
 
-Six passage categories. Non-English translations are **explicitly deferred**
-pending review of this English version — do not translate ad hoc.
+The full reading sample corpus (six English passage categories, plus two
+short non-English probe sentences for TC-07/TC-08) has been extracted into
+a standalone file: **[`docs/test-samples-en.md`](test-samples-en.md)**.
 
-Sourcing rule: long-form passages (#1, #6) come from **contemporary,
-permissively-licensed real text** — Wikipedia/Wikinews (CC BY-SA / CC BY) or
-US government publications (public domain as government works) — never
-decades-old public-domain literature, which reads unnaturally when spoken
-aloud by a modern speaker. Product-specific categories (#2–#4) are original,
-hand-written, since no external source can supply myna-specific vocabulary.
+Quick index (section numbers refer to `test-samples-en.md`):
 
-Each passage below lists: the reference text (ground truth), an approximate
-spoken duration, and a source/license note.
+- §1 — Natural long-form prose (2 passages: A, B) — used by TC-01, TC-10, TC-11
+- §2 — Command / short-utterance set (10 lines) — used by TC-03
+- §3 — Domain / technical vocabulary passage — used by TC-04
+- §4 — Numbers, dates, and punctuation-heavy passage — used by TC-05
+- §5 — Pangram / phonetic smoke-test — used by TC-06
+- §6 — Long continuous passage for streaming tests (30s+) — used by TC-02, §9
+- §7 — Unsupported-language probes: French sentence (TC-07, Nemotron) and
+  Estonian sentence (TC-08, Qwen only) — the Estonian sentence still needs
+  native/fluent-speaker review before use
 
-### 4.1 Natural long-form prose (2 passages)
-
-Used to test connected, naturally-prosodic speech — not clipped,
-over-enunciated word lists.
-
-**Passage A** (~35 seconds spoken)
-
-> Source: adapted from Wikipedia, "Artificial intelligence" article
-> (CC BY-SA 4.0), current revision as of 2026.
-
-> "Artificial intelligence research has focused on a few key goals: reasoning,
-> knowledge representation, planning, learning, natural language processing,
-> and perception. General intelligence, the ability to complete any task
-> performable by a human, is among the field's long-term objectives. To reach
-> these goals, researchers have used a wide range of techniques, including
-> search and mathematical optimization, formal logic, artificial neural
-> networks, and methods based on statistics, probability, and economics."
-
-**Passage B** (~30 seconds spoken)
-
-> Source: adapted from a public plain-language summary published by NIST
-> (US government work, public domain), current guidance on cybersecurity
-> basics.
-
-> "Every organization that uses computers and networks faces a basic set of
-> cybersecurity risks. Employees can help manage those risks by using strong,
-> unique passwords, keeping software up to date, and being cautious with
-> email attachments and links from unknown senders. Multi-factor
-> authentication adds an extra layer of protection, even if a password is
-> stolen. Regularly backing up important files means that a ransomware
-> attack or hardware failure doesn't have to mean permanent data loss."
-
-### 4.2 Command / short-utterance set
-
-Realistic, discrete lines a dictation user would actually speak in a single
-hotkey press. Read each **as a separate take** (press hotkey, speak one line,
-release/stop).
-
-1. "Open a new terminal window."
-2. "Send this to the team by Friday."
-3. "Comma, new paragraph, period."
-4. "Undo that."
-5. "Schedule a meeting for tomorrow at three PM."
-6. "Reply: sounds good, see you then."
-7. "Search for nearby coffee shops."
-8. "Mute the microphone."
-9. "New line. Thanks, talk soon."
-10. "Cancel that, never mind."
-
-### 4.3 Domain / technical vocabulary passage
-
-Loaded with terms this project's actual users will say — proper nouns,
-acronyms, package names, version strings, file paths.
-
-> "I installed the myna dash desktop snap alongside whisper dash snap and
-> nemotron dash snap, then confirmed PipeWire was routing my microphone
-> correctly. The hotkey triggers IBus injection, and I enabled the preedit
-> flag to preview unstable text before it commits. After upgrading to version
-> one point three point zero, I checked the config at tilde slash dot config
-> slash myna slash settings dot json to make sure streaming mode was still
-> set to auto. The GNOME Shell extension shows the activity indicator without
-> stealing focus from my terminal."
-
-*(Read naturally — spell out "PipeWire", "myna-desktop", "IBus", "Nemotron"
-as words, not letter-by-letter, unless that's how you'd normally say them.)*
-
-### 4.4 Numbers, dates, and punctuation-heavy passage
-
-Probes digit/date normalization and whether real spoken usage matches the
-documented NFKC/casefold/punctuation normalization rules used in scoring.
-
-> "Call me at five five five, oh one four two, on July twenty-ninth, two
-> thousand twenty-six. The invoice total came to four hundred and twelve
-> dollars and fifty cents, due within thirty days. My flight leaves at six
-> forty-five AM from gate B twelve, and the confirmation code is X-Ray Tango
-> four seven one."
-
-### 4.5 Pangram / phonetic smoke-test
-
-Short, phonetically dense — use as a quick canary before starting a full
-session, and as a fast regression check between configuration changes.
-
-> "The quick brown fox jumps over the lazy dog."
-
-*(Optional second pangram if a quick second data point is useful: "Pack my
-box with five dozen liquor jugs.")*
-
-### 4.6 Long continuous passage for streaming tests (30s+)
-
-A single uninterrupted, multi-sentence read — not disconnected clips — to
-exercise multiple commit boundaries, natural silence gaps, and mid-sentence
-pauses. Use this specifically for the streaming-mode checks in §8.
-
-> Source: adapted from Wikinews-style contemporary reporting text
-> (CC BY 2.5) plus a US government (NASA, public domain) mission-update
-> style paragraph, combined into one continuous read (~45–60 seconds).
-
-> "Researchers announced this week that a new weather satellite has begun
-> transmitting data from orbit, providing forecasters with higher-resolution
-> imagery than previous generations of instruments. The satellite, launched
-> earlier this year, carries sensors capable of tracking storm systems in
-> near real time, which officials say should improve early warnings for
-> coastal communities. Meanwhile, engineers at the mission's ground control
-> center confirmed that all onboard systems are operating within expected
-> parameters, and the spacecraft has successfully completed its first orbit
-> adjustment maneuver. The next major milestone, a full calibration of the
-> imaging instruments, is expected to be completed within the coming month,
-> after which the satellite will begin routine operational service."
-
-### 4.7 Unsupported-language probes
-
-**`[TODO: pending translated passage — do not fill in until English content
-above is reviewed]`**
-
-Placeholder rows exist in the test matrix (§5) for:
-
-- Nemotron given a non-English passage (expect failure/garbled output).
-- Any model given a passage in a language outside Qwen's 30-language list
-  (expect failure/garbled/misidentified output).
-
-Do not source or translate this content yet.
+Beyond the two short §7 probe sentences, non-English translations of the
+full corpus are **explicitly deferred** pending review of the English
+version in that file — do not translate ad hoc.
 
 ---
 
@@ -243,13 +129,13 @@ has no CPU engine; Qwen has no GPU engine in this build).
 | Dimension | Values |
 |---|---|
 | Model | Whisper, Nemotron, Qwen3-ASR |
-| Language | English (all passages, §4.1–4.6); non-English placeholder (§4.7, pending) |
+| Language | English (all passages, test-samples-en.md §1–§6); French and Estonian (two short probe sentences only, test-samples-en.md §7, TC-07/TC-08) |
 | Mode | `batch`, `streaming`, `auto` (real-world default) |
 | Hardware | CPU-only, NVIDIA GPU |
 | Injection target app | one plain text field (e.g. GNOME Text Editor / gedit), one "real" app (e.g. browser address bar, LibreOffice Writer) |
 
 **Minimum required run per tester**: for each installed model, read
-passages §4.1–4.6 at least once in `auto` mode on their available hardware,
+passages test-samples-en.md §1–§6 at least once in `auto` mode on their available hardware,
 into at least one plain-text app. Testers with time to cover more of the
 matrix (multiple modes, multiple apps, both hardware tiers if they have
 access to both) should do so and note it in the results table.
@@ -296,11 +182,11 @@ set to `batch`.
 **Steps**:
 1. Open the target app, place the cursor in an empty document.
 2. Press the hotkey to start recording.
-3. Read Passage A (§4.1) aloud at a natural pace, in one take.
+3. Read Passage A (test-samples-en.md §1) aloud at a natural pace, in one take.
 4. Stop recording (release/press hotkey per install mode).
 5. Wait for the transcript to finish appearing in the document.
 6. Compare the injected text word-for-word against the reference transcript
-   in §4.1.
+   in test-samples-en.md §1.
 
 **Expected Result**: Injected text matches the reference transcript with no
 more than a small number of minor word errors (a handful of substitutions is
@@ -322,13 +208,13 @@ equivalent) enabled; plain-text app focused and empty.
 
 **Steps**:
 1. Press the hotkey to start recording.
-2. Read the long continuous passage (§4.6) aloud at a natural pace,
+2. Read the long continuous passage (test-samples-en.md §6) aloud at a natural pace,
    including its natural sentence-boundary pauses — do not read it as
    disconnected fragments.
 3. Observe the app during recording: note when unstable text first appears,
    and note each point where text transitions from unstable to committed.
 4. Stop recording once the full passage has been read.
-5. Compare the final injected text against the reference transcript in §4.6.
+5. Compare the final injected text against the reference transcript in test-samples-en.md §6.
 
 **Expected Result**: Unstable text is visually distinguishable (e.g. `~`
 prefix or preedit styling) and disappears/resolves into committed text
@@ -350,13 +236,13 @@ actually built around (hotkey → short phrase → inject).
 empty.
 
 **Steps**:
-1. For each of the 10 lines in §4.2, in order:
+1. For each of the 10 lines in test-samples-en.md §2, in order:
    a. Press the hotkey.
    b. Speak the single line.
    c. Stop recording.
    d. Note the injected result on a new line in the document.
 2. After all 10 lines, compare each injected line against its reference
-   text in §4.2.
+   text in test-samples-en.md §2.
 
 **Expected Result**: Each utterance is transcribed independently and
 correctly, including short imperative phrases and the punctuation-command
@@ -378,7 +264,7 @@ category ASR models commonly mangle.
 empty.
 
 **Steps**:
-1. Press the hotkey and read the domain/technical passage (§4.3) aloud in
+1. Press the hotkey and read the domain/technical passage (test-samples-en.md §3) aloud in
    one take, pronouncing product terms naturally (not spelled out
    letter-by-letter).
 2. Stop recording and wait for the transcript.
@@ -406,11 +292,11 @@ scoring's normalization rules treat them.
 empty.
 
 **Steps**:
-1. Press the hotkey and read the numbers/dates passage (§4.4) aloud in one
+1. Press the hotkey and read the numbers/dates passage (test-samples-en.md §4) aloud in one
    take, at a natural pace (do not artificially slow down for the digits).
 2. Stop recording and wait for the transcript.
 3. Compare the phone number, date, currency amount, time, and confirmation
-   code against the reference text in §4.4.
+   code against the reference text in test-samples-en.md §4.
 
 **Expected Result**: Each numeric/date/currency span is either transcribed
 in digit form ("555-0142", "July 29th, 2026") or in an equivalent spelled-out
@@ -447,37 +333,45 @@ and move past.
 
 ### TC-07 — Unsupported-language probe: Nemotron given non-English speech
 
-**Description**: `[TODO: blocked on §4.7 — do not execute until a
-non-English passage is supplied and reviewed]`. Placeholder to confirm
-Nemotron's documented English-only limitation fails gracefully (garbled or
-empty output) rather than silently producing plausible-looking wrong text.
+**Description**: Confirms Nemotron's documented English-only limitation
+fails gracefully (garbled or empty output) rather than silently producing
+plausible-looking wrong text, using the French sentence in
+`test-samples-en.md` §7.1.
 
-**Preconditions**: Nemotron installed; non-English passage available
-(pending).
+**Preconditions**: Nemotron installed; plain-text app focused and empty.
 
-**Steps**: `[TODO: pending translated passage]`
+**Steps**:
+1. Press the hotkey to start recording.
+2. Read the French sentence in `test-samples-en.md` §7.1 aloud, at a
+   natural pace.
+3. Stop recording and observe the injected result.
 
-**Expected Result**: `[TODO]` — expected outcome is garbled or empty output,
-not a plausible-but-wrong English transcript; the failure should be obvious
-to the tester, not silently misleading.
+**Expected Result**: Garbled or empty output, not a plausible-but-wrong
+English transcript — the failure should be obvious to the tester, not
+silently misleading. Log the exact observed output verbatim.
 
 ---
 
 ### TC-08 — Unsupported-language probe: language outside Qwen's 30-language list
 
-**Description**: `[TODO: blocked on §4.7 — do not execute until a passage in
-a language outside Qwen3-ASR's supported list is supplied and reviewed]`.
-Placeholder to confirm behavior when a user speaks a language the active
-model was never trained to support.
+**Description**: Confirms behavior when Qwen3-ASR is given a language it
+was never trained to support, using the Estonian sentence in
+`test-samples-en.md` §7.2. **Scoped to Qwen3-ASR only** — Whisper's
+multilingual checkpoints support Estonian, so running this probe against
+Whisper would not demonstrate an out-of-vocabulary failure.
 
-**Preconditions**: Any model installed; out-of-list-language passage
-available (pending).
+**Preconditions**: Qwen3-ASR (`qwen-snap`) installed; plain-text app
+focused and empty.
 
-**Steps**: `[TODO: pending translated passage]`
+**Steps**:
+1. Press the hotkey to start recording.
+2. Read the Estonian sentence in `test-samples-en.md` §7.2 aloud, at a
+   natural pace.
+3. Stop recording and observe the injected result.
 
-**Expected Result**: `[TODO]` — expected outcome is garbled, empty, or
-misidentified-as-a-different-language output; log the exact observed
-behavior since this shapes future error-taxonomy work (T31).
+**Expected Result**: Garbled, empty, or misidentified-as-a-different-language
+output; log the exact observed behavior verbatim since this shapes future
+error-taxonomy work (T31).
 
 ---
 
@@ -611,7 +505,7 @@ test. Do not spend extended time trying to work around it.
 
 ## 9. Streaming-specific checks
 
-Using the long continuous passage (§4.6) in `streaming` mode with
+Using the long continuous passage (test-samples-en.md §6) in `streaming` mode with
 `--show-unstable` (or the desktop equivalent, if exposed):
 
 1. Confirm unstable text is visually distinguished (e.g. prefixed `~`, or
@@ -658,7 +552,8 @@ This test plan explicitly does **not** cover:
 - arm64 hardware (whisper-snap declares an arm64 build target, but it is
   unverified — out of scope until that changes).
 - Crowd-testing submission tooling/process (deferred to a later document).
-- Non-English passages and translated content (deferred pending review of
-  this English version).
+- Non-English passages and translated content, beyond the two short §7
+  probe sentences (TC-07 French, TC-08 Estonian) — full-corpus translation
+  is deferred pending review of the English version.
 - Formal, numeric latency SLOs (no ratified hardware-tier performance
   contract exists yet in this project).
