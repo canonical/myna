@@ -1,0 +1,664 @@
+# Myna System Test Plan (End-User Accuracy & Performance)
+
+**Scope**: system-level, end-to-end testing only — a human presses the hotkey,
+speaks, and judges what lands in a focused text field. This plan does **not**
+cover unit tests, contract/wire tests, or the automated WER/CER harness
+(`dev/bench.py`, `dev/matrix.py`, `pytest`) — those are already exercised
+elsewhere and are out of scope here (see §11).
+
+**Audience**: internal dev/QA team first (dry run), then opened to community
+testers in a later wave. Crowd-testing submission tooling is intentionally
+**not** specified in this document (deferred).
+
+**Status of inputs used**: current model set (Whisper, Nemotron, Qwen3-ASR),
+current streaming/batch mode implementation (features 007/008), and current
+snap hardware verification status, as of 2026-07-29. See `docs/project-plan.md`
+for the authoritative task tracker.
+
+---
+
+## 1. Purpose
+
+Measure, from a real end user's perspective:
+
+- **Accuracy**: does the transcribed/injected text match what was actually
+  said, across languages, models, and vocabulary types a real user will use?
+- **Performance**: does dictation *feel* responsive — from hotkey press to
+  text appearing, and from end-of-speech to final committed text — across
+  hardware a real user might own?
+
+This plan produces **directional, human-judged** results. It is deliberately
+not a replacement for the automated WER/CER benchmark suite, which already
+provides precise, repeatable numbers per model/config
+(`results/bench.jsonl`, `results/streaming-watermarks.json`). Where this plan's
+subjective findings and the automated numbers disagree, trust the automated
+numbers for the metric itself, and treat this plan's findings as a signal that
+something needs to be re-benchmarked.
+
+---
+
+## 2. Roles & environment prerequisites
+
+**Tester role**: no engineering background required beyond following setup
+instructions; must be a fluent/native speaker of the language they're testing
+in (accuracy judgments on non-native speech are not meaningful signal for
+this round).
+
+**Required environment**:
+
+- Ubuntu 24.04 (or another `core24`-based snap environment).
+- **GNOME on Wayland.** This is the only desktop environment currently
+  verified for the hotkey + IBus injection + indicator stack. X11/XWayland
+  and non-GNOME compositors (KDE, wlroots) are **not** supported test targets
+  for this round — do not file accuracy/performance bugs against them; a
+  single "doesn't work outside GNOME/Wayland" note is sufficient if tried.
+- `myna` client snap installed, plus at least one of: `whisper-snap`,
+  `nemotron-snap`, `qwen-snap` (install whichever models are under test — see
+  §3).
+- A working microphone, tested independently (e.g. via GNOME Settings sound
+  input meter) before starting — mic problems should not be logged as myna
+  bugs.
+- Hotkey configured per `docs/desktop-injection.md` (default `Super+D`,
+  toggle- or hold-to-talk depending on install path).
+
+**Hardware tiers to cover** (tester self-reports actual specs; laptop or
+desktop doesn't matter):
+
+- **CPU-only** machine (no supported NVIDIA GPU present, or GPU snap not
+  installed).
+- **NVIDIA GPU** machine (CUDA-capable card, GPU-enabled snap variant
+  installed where available — currently whisper and nemotron ship GPU
+  engines; qwen is CPU-only regardless of hardware).
+
+Record exact CPU model, RAM, and GPU model (if any) in the results table
+(§9) — this is the closest thing this project currently has to a hardware-tier
+report (T12 is still open on the engineering side).
+
+---
+
+## 3. Models under test
+
+| Model | License | Language coverage | Mode support (shipped) | Snap | Notes for testers |
+|---|---|---|---|---|---|
+| **Whisper** (faster-whisper) | MIT | Multilingual (`*`) on non-`.en` checkpoints; English-only on `.en` checkpoints | Batch + streaming (local-agreement) | `whisper-snap` | CPU and NVIDIA GPU engines both shipped |
+| **Nemotron** (FastConformer) | — | **English only** | Batch (native streaming loop still in development) | `nemotron-snap` | NVIDIA GPU only — no CPU engine exists |
+| **Qwen3-ASR** (`qwen-c`) | Apache-2.0 | 30 languages: zh, en, yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da, fi, pl, cs, fil, fa, el, ro, hu, mk | Batch (streaming exists but is sub-realtime on weaker CPUs — expect it to lag) | `qwen-snap` | CPU only in this shipped build |
+
+**Expected failure modes** (not bugs — record as "expected" if observed):
+
+- Nemotron given non-English speech: expect garbled or empty output.
+- Any model given a language outside its supported set (e.g. a language
+  outside Qwen's 30 list) via a language not English: expect garbled,
+  empty, or misrecognized-as-a-different-language output.
+- Qwen streaming mode on a modest CPU: expect visibly laggy/delayed partials,
+  not necessarily wrong text.
+
+---
+
+## 4. Reading sample corpus (English only this round)
+
+Six passage categories. Non-English translations are **explicitly deferred**
+pending review of this English version — do not translate ad hoc.
+
+Sourcing rule: long-form passages (#1, #6) come from **contemporary,
+permissively-licensed real text** — Wikipedia/Wikinews (CC BY-SA / CC BY) or
+US government publications (public domain as government works) — never
+decades-old public-domain literature, which reads unnaturally when spoken
+aloud by a modern speaker. Product-specific categories (#2–#4) are original,
+hand-written, since no external source can supply myna-specific vocabulary.
+
+Each passage below lists: the reference text (ground truth), an approximate
+spoken duration, and a source/license note.
+
+### 4.1 Natural long-form prose (2 passages)
+
+Used to test connected, naturally-prosodic speech — not clipped,
+over-enunciated word lists.
+
+**Passage A** (~35 seconds spoken)
+
+> Source: adapted from Wikipedia, "Artificial intelligence" article
+> (CC BY-SA 4.0), current revision as of 2026.
+
+> "Artificial intelligence research has focused on a few key goals: reasoning,
+> knowledge representation, planning, learning, natural language processing,
+> and perception. General intelligence, the ability to complete any task
+> performable by a human, is among the field's long-term objectives. To reach
+> these goals, researchers have used a wide range of techniques, including
+> search and mathematical optimization, formal logic, artificial neural
+> networks, and methods based on statistics, probability, and economics."
+
+**Passage B** (~30 seconds spoken)
+
+> Source: adapted from a public plain-language summary published by NIST
+> (US government work, public domain), current guidance on cybersecurity
+> basics.
+
+> "Every organization that uses computers and networks faces a basic set of
+> cybersecurity risks. Employees can help manage those risks by using strong,
+> unique passwords, keeping software up to date, and being cautious with
+> email attachments and links from unknown senders. Multi-factor
+> authentication adds an extra layer of protection, even if a password is
+> stolen. Regularly backing up important files means that a ransomware
+> attack or hardware failure doesn't have to mean permanent data loss."
+
+### 4.2 Command / short-utterance set
+
+Realistic, discrete lines a dictation user would actually speak in a single
+hotkey press. Read each **as a separate take** (press hotkey, speak one line,
+release/stop).
+
+1. "Open a new terminal window."
+2. "Send this to the team by Friday."
+3. "Comma, new paragraph, period."
+4. "Undo that."
+5. "Schedule a meeting for tomorrow at three PM."
+6. "Reply: sounds good, see you then."
+7. "Search for nearby coffee shops."
+8. "Mute the microphone."
+9. "New line. Thanks, talk soon."
+10. "Cancel that, never mind."
+
+### 4.3 Domain / technical vocabulary passage
+
+Loaded with terms this project's actual users will say — proper nouns,
+acronyms, package names, version strings, file paths.
+
+> "I installed the myna dash desktop snap alongside whisper dash snap and
+> nemotron dash snap, then confirmed PipeWire was routing my microphone
+> correctly. The hotkey triggers IBus injection, and I enabled the preedit
+> flag to preview unstable text before it commits. After upgrading to version
+> one point three point zero, I checked the config at tilde slash dot config
+> slash myna slash settings dot json to make sure streaming mode was still
+> set to auto. The GNOME Shell extension shows the activity indicator without
+> stealing focus from my terminal."
+
+*(Read naturally — spell out "PipeWire", "myna-desktop", "IBus", "Nemotron"
+as words, not letter-by-letter, unless that's how you'd normally say them.)*
+
+### 4.4 Numbers, dates, and punctuation-heavy passage
+
+Probes digit/date normalization and whether real spoken usage matches the
+documented NFKC/casefold/punctuation normalization rules used in scoring.
+
+> "Call me at five five five, oh one four two, on July twenty-ninth, two
+> thousand twenty-six. The invoice total came to four hundred and twelve
+> dollars and fifty cents, due within thirty days. My flight leaves at six
+> forty-five AM from gate B twelve, and the confirmation code is X-Ray Tango
+> four seven one."
+
+### 4.5 Pangram / phonetic smoke-test
+
+Short, phonetically dense — use as a quick canary before starting a full
+session, and as a fast regression check between configuration changes.
+
+> "The quick brown fox jumps over the lazy dog."
+
+*(Optional second pangram if a quick second data point is useful: "Pack my
+box with five dozen liquor jugs.")*
+
+### 4.6 Long continuous passage for streaming tests (30s+)
+
+A single uninterrupted, multi-sentence read — not disconnected clips — to
+exercise multiple commit boundaries, natural silence gaps, and mid-sentence
+pauses. Use this specifically for the streaming-mode checks in §8.
+
+> Source: adapted from Wikinews-style contemporary reporting text
+> (CC BY 2.5) plus a US government (NASA, public domain) mission-update
+> style paragraph, combined into one continuous read (~45–60 seconds).
+
+> "Researchers announced this week that a new weather satellite has begun
+> transmitting data from orbit, providing forecasters with higher-resolution
+> imagery than previous generations of instruments. The satellite, launched
+> earlier this year, carries sensors capable of tracking storm systems in
+> near real time, which officials say should improve early warnings for
+> coastal communities. Meanwhile, engineers at the mission's ground control
+> center confirmed that all onboard systems are operating within expected
+> parameters, and the spacecraft has successfully completed its first orbit
+> adjustment maneuver. The next major milestone, a full calibration of the
+> imaging instruments, is expected to be completed within the coming month,
+> after which the satellite will begin routine operational service."
+
+### 4.7 Unsupported-language probes
+
+**`[TODO: pending translated passage — do not fill in until English content
+above is reviewed]`**
+
+Placeholder rows exist in the test matrix (§5) for:
+
+- Nemotron given a non-English passage (expect failure/garbled output).
+- Any model given a passage in a language outside Qwen's 30-language list
+  (expect failure/garbled/misidentified output).
+
+Do not source or translate this content yet.
+
+---
+
+## 5. Test matrix
+
+Cross the following dimensions. Not every cell applies to every model — use
+§3's mode/language support to skip inapplicable combinations (e.g. Nemotron
+has no CPU engine; Qwen has no GPU engine in this build).
+
+| Dimension | Values |
+|---|---|
+| Model | Whisper, Nemotron, Qwen3-ASR |
+| Language | English (all passages, §4.1–4.6); non-English placeholder (§4.7, pending) |
+| Mode | `batch`, `streaming`, `auto` (real-world default) |
+| Hardware | CPU-only, NVIDIA GPU |
+| Injection target app | one plain text field (e.g. GNOME Text Editor / gedit), one "real" app (e.g. browser address bar, LibreOffice Writer) |
+
+**Minimum required run per tester**: for each installed model, read
+passages §4.1–4.6 at least once in `auto` mode on their available hardware,
+into at least one plain-text app. Testers with time to cover more of the
+matrix (multiple modes, multiple apps, both hardware tiers if they have
+access to both) should do so and note it in the results table.
+
+**Same-speaker consistency**: where possible, have the *same* tester read the
+*same* passage across different models/modes/hardware so that differences
+are attributable to the model/config, not the speaker. If multiple testers
+are available, have them all read the same passages — divergence in results
+across testers on the same passage/model is itself signal about
+accent/speaker-diversity sensitivity (a known gap — the automated real-speech
+corpus currently has low speaker diversity).
+
+**Pass/fail reference tolerances** (reused from existing engineering
+watermarks, since none exist specifically for human judgment yet):
+
+- Streaming vs. batch accuracy should feel roughly comparable — engineering
+  watermark tolerance is ≤2 percentage points WER delta. As a human, this
+  translates to: streaming should not introduce noticeably more wrong words
+  than batch on the same passage.
+- Once text is shown as committed (not `~`-prefixed unstable text), it must
+  **never change or disappear**. Any committed text flickering, being
+  overwritten, or vanishing is a **fail**, not a rough edge.
+- No duplicated or repeated phrases at commit boundaries in streaming mode.
+
+---
+
+## 6. Detailed test cases
+
+Each test case below follows: **Description**, **Preconditions**, **Steps**,
+**Expected Result**. These instantiate the dimensions in §5's matrix into
+concrete, repeatable procedures. Testers should log the outcome of each case
+they run in the §9 results table, using the Test Case ID for traceability.
+
+### TC-01 — Batch mode, natural long-form dictation (English)
+
+**Description**: Baseline accuracy check — dictate natural connected prose
+in the product's default-adjacent mode (`batch`) and compare against the
+reference transcript.
+
+**Preconditions**: Model installed (repeat per model); hotkey configured;
+plain-text app (e.g. GNOME Text Editor) focused and empty; mode explicitly
+set to `batch`.
+
+**Steps**:
+1. Open the target app, place the cursor in an empty document.
+2. Press the hotkey to start recording.
+3. Read Passage A (§4.1) aloud at a natural pace, in one take.
+4. Stop recording (release/press hotkey per install mode).
+5. Wait for the transcript to finish appearing in the document.
+6. Compare the injected text word-for-word against the reference transcript
+   in §4.1.
+
+**Expected Result**: Injected text matches the reference transcript with no
+more than a small number of minor word errors (a handful of substitutions is
+acceptable; missing sentences, garbled runs of text, or empty output are
+not). Text appears only once, in full, after speech ends — no partial/
+flickering text during recording in batch mode.
+
+---
+
+### TC-02 — Streaming mode, long continuous passage, commit behavior
+
+**Description**: Exercises streaming mode's progressive emission across
+multiple commit boundaries and natural pauses, and verifies the
+unstable/committed distinction is respected end-to-end.
+
+**Preconditions**: Model with streaming support installed (Whisper or
+Qwen3-ASR — see §3); mode set to `streaming`; `--show-unstable` (or desktop
+equivalent) enabled; plain-text app focused and empty.
+
+**Steps**:
+1. Press the hotkey to start recording.
+2. Read the long continuous passage (§4.6) aloud at a natural pace,
+   including its natural sentence-boundary pauses — do not read it as
+   disconnected fragments.
+3. Observe the app during recording: note when unstable text first appears,
+   and note each point where text transitions from unstable to committed.
+4. Stop recording once the full passage has been read.
+5. Compare the final injected text against the reference transcript in §4.6.
+
+**Expected Result**: Unstable text is visually distinguishable (e.g. `~`
+prefix or preedit styling) and disappears/resolves into committed text
+without ever being the thing actually written into the document. Once a
+span of text is committed, it does not change, vanish, or get overwritten
+later in the session. No phrase is duplicated at a commit boundary. The
+final transcript's accuracy is comparable to the same passage read in batch
+mode (TC-01-style comparison) — not meaningfully worse.
+
+---
+
+### TC-03 — Command / short-utterance accuracy
+
+**Description**: Verifies accuracy on short, discrete, realistic dictation
+commands rather than long-form prose — the shape of speech this product is
+actually built around (hotkey → short phrase → inject).
+
+**Preconditions**: Model installed; mode `auto`; plain-text app focused and
+empty.
+
+**Steps**:
+1. For each of the 10 lines in §4.2, in order:
+   a. Press the hotkey.
+   b. Speak the single line.
+   c. Stop recording.
+   d. Note the injected result on a new line in the document.
+2. After all 10 lines, compare each injected line against its reference
+   text in §4.2.
+
+**Expected Result**: Each utterance is transcribed independently and
+correctly, including short imperative phrases and the punctuation-command
+line ("Comma, new paragraph, period.") — note whether spoken punctuation is
+transcribed literally (expected, since spoken-punctuation-as-command is not
+a current documented feature) or interpreted as an actual comma/paragraph
+break/period (would indicate an undocumented capability, log as a note, not
+a bug). No utterance is dropped, merged with the previous one, or duplicated.
+
+---
+
+### TC-04 — Domain/technical vocabulary accuracy
+
+**Description**: Verifies the model's handling of proper nouns, acronyms,
+version strings, and file paths specific to this product's own domain — a
+category ASR models commonly mangle.
+
+**Preconditions**: Model installed; mode `auto`; plain-text app focused and
+empty.
+
+**Steps**:
+1. Press the hotkey and read the domain/technical passage (§4.3) aloud in
+   one take, pronouncing product terms naturally (not spelled out
+   letter-by-letter).
+2. Stop recording and wait for the transcript.
+3. Compare specifically the technical terms (PipeWire, myna-desktop, IBus,
+   Nemotron, "one point three point zero", the file path) against the
+   reference text — treat these terms as the primary signal, not overall
+   prose fluency.
+
+**Expected Result**: Common English words transcribe correctly (high bar).
+Product-specific terms and the version string/file path are recorded as
+"correct", "phonetically close" (e.g. "pipe wire" instead of "PipeWire" —
+log as a minor/expected miss, not a failure), or "unrecognizable" (log as a
+failure) — this test case's primary output is a per-term scorecard rather
+than a single pass/fail.
+
+---
+
+### TC-05 — Numbers, dates, and punctuation normalization
+
+**Description**: Verifies real spoken numbers/dates/punctuation transcribe
+in a form a human would consider correct, independent of how the automated
+scoring's normalization rules treat them.
+
+**Preconditions**: Model installed; mode `auto`; plain-text app focused and
+empty.
+
+**Steps**:
+1. Press the hotkey and read the numbers/dates passage (§4.4) aloud in one
+   take, at a natural pace (do not artificially slow down for the digits).
+2. Stop recording and wait for the transcript.
+3. Compare the phone number, date, currency amount, time, and confirmation
+   code against the reference text in §4.4.
+
+**Expected Result**: Each numeric/date/currency span is either transcribed
+in digit form ("555-0142", "July 29th, 2026") or in an equivalent spelled-out
+form that a human reader would judge as correct — log the exact form
+produced per span, since this is directly useful signal for whether the
+existing NFKC/casefold/punctuation normalization used in automated scoring
+matches what users actually see. Digit transpositions, wrong dates, or
+dropped spans are failures.
+
+---
+
+### TC-06 — Pangram smoke test
+
+**Description**: Fast canary check to run before a full session and after
+any configuration change (model, mode, hardware) — should take under 10
+seconds to execute and judge.
+
+**Preconditions**: Model installed; any mode; plain-text app focused and
+empty.
+
+**Steps**:
+1. Press the hotkey.
+2. Say: "The quick brown fox jumps over the lazy dog."
+3. Stop recording.
+4. Compare the injected text against the reference sentence.
+
+**Expected Result**: Exact or near-exact match. This sentence previously
+caught a Nemotron empty-output bug on synthetic audio — any empty, garbled,
+or wildly incorrect output here is a strong signal to stop and investigate
+before continuing with longer passages, rather than a minor issue to note
+and move past.
+
+---
+
+### TC-07 — Unsupported-language probe: Nemotron given non-English speech
+
+**Description**: `[TODO: blocked on §4.7 — do not execute until a
+non-English passage is supplied and reviewed]`. Placeholder to confirm
+Nemotron's documented English-only limitation fails gracefully (garbled or
+empty output) rather than silently producing plausible-looking wrong text.
+
+**Preconditions**: Nemotron installed; non-English passage available
+(pending).
+
+**Steps**: `[TODO: pending translated passage]`
+
+**Expected Result**: `[TODO]` — expected outcome is garbled or empty output,
+not a plausible-but-wrong English transcript; the failure should be obvious
+to the tester, not silently misleading.
+
+---
+
+### TC-08 — Unsupported-language probe: language outside Qwen's 30-language list
+
+**Description**: `[TODO: blocked on §4.7 — do not execute until a passage in
+a language outside Qwen3-ASR's supported list is supplied and reviewed]`.
+Placeholder to confirm behavior when a user speaks a language the active
+model was never trained to support.
+
+**Preconditions**: Any model installed; out-of-list-language passage
+available (pending).
+
+**Steps**: `[TODO: pending translated passage]`
+
+**Expected Result**: `[TODO]` — expected outcome is garbled, empty, or
+misidentified-as-a-different-language output; log the exact observed
+behavior since this shapes future error-taxonomy work (T31).
+
+---
+
+### TC-09 — Secure-field injection behavior (GNOME/Wayland)
+
+**Description**: Tracks the known, currently unresolved gap where myna
+cannot distinguish a password field from a normal text field on
+GNOME/Wayland. See §8 for full background — this test case is the
+executable form of that check.
+
+**Preconditions**: Any model installed; a GNOME/Wayland-native app with a
+password field available (e.g. GNOME Settings → change password dialog).
+
+**Steps**:
+1. Focus the password field.
+2. Press the hotkey and say: "test password one two three" (never a real
+   password).
+3. Stop recording.
+4. Observe whether text appears in the password field.
+
+**Expected Result**: Currently expected (not a new bug): the dictated text
+is injected into the password field, since secure-field detection does not
+reach the IBus injector on GNOME/Wayland today. Log the exact observed
+behavior every run — this is a tracked awareness test, and any change in
+behavior (e.g. injection now correctly refused) is itself a significant
+signal worth flagging prominently.
+
+---
+
+### TC-10 — Cross-app injection consistency
+
+**Description**: Verifies dictation and injection work consistently across
+more than one real application, not just a single reference text editor.
+
+**Preconditions**: Model installed; mode `auto`.
+
+**Steps**:
+1. Repeat TC-01 (Passage A) with the target app set to a browser address
+   bar or search box.
+2. Repeat TC-01 (Passage A) again with the target app set to a
+   full document editor (e.g. LibreOffice Writer).
+3. Compare both results against the GNOME Text Editor result from the
+   original TC-01 run.
+
+**Expected Result**: Transcription accuracy is consistent across apps (the
+model doesn't know or care which app has focus) — any app-specific
+difference indicates an injection bug (e.g. dropped characters, wrong
+cursor position, focus stolen mid-dictation) rather than a model accuracy
+issue, and should be logged as such.
+
+---
+
+### TC-11 — Hardware tier comparison (CPU vs. GPU)
+
+**Description**: Directional comparison of accuracy and perceived latency
+for the same model/passage across a CPU-only machine and an NVIDIA GPU
+machine, where the tester has access to both.
+
+**Preconditions**: Same model installed on both a CPU-only and an NVIDIA
+GPU machine; same tester reads the same passage on both.
+
+**Steps**:
+1. On the CPU-only machine, run TC-01 (Passage A) in `auto` mode; record the
+   §7 performance observations alongside the transcript.
+2. Repeat identically on the NVIDIA GPU machine.
+3. Compare both transcripts against each other and against the reference
+   text, and compare the two sets of performance observations.
+
+**Expected Result**: Accuracy should be effectively identical between
+hardware tiers for the same model (hardware should not change *what* is
+transcribed, only *how fast*). Any accuracy divergence between tiers is a
+fail worth escalating. Latency/responsiveness differences are expected and
+should simply be recorded (e.g. GPU noticeably faster time-to-first-text),
+not treated as a failure.
+
+---
+
+## 7. Performance observations
+
+**Framing**: these are subjective, stopwatch-or-feel observations from a
+real user's perspective, not a formal benchmark. No ratified latency SLOs
+exist yet for this project (hardware-tier performance contract is still an
+open engineering item) — this section's job is to surface *directional*
+problems (e.g. "GPU feels instant, CPU has a multi-second pause"), not to
+produce citable numbers.
+
+For each test run, note (rough categories are fine — "instant" /
+"noticeable but acceptable" / "slow enough to be annoying"):
+
+1. **Hotkey press → indicator appears**: how quickly does the user get
+   feedback that recording has started?
+2. **End of speech → first text appears**:
+   - Batch mode: time until the full committed transcript appears.
+   - Streaming mode: time until the first unstable (`~`) text appears, and
+     separately, time until the first committed text appears.
+3. **Overall session feel**: did the system ever seem to hang, drop audio,
+   or require the user to repeat themselves?
+4. **System load side-effects**: noticeable fan noise, lag in other
+   applications, or visible CPU/GPU load spikes during transcription (a
+   rough proxy for load, since formal RTF measurement is not expected of
+   testers).
+
+---
+
+## 8. Security / edge-case test: secure-field behavior
+
+**Background**: on GNOME/Wayland, this project has a documented, currently
+unresolved gap — the desktop's secure-field marking (used for password
+fields) does not reach the IBus injector, meaning myna cannot currently tell
+a password field apart from a normal text field. On X11/XWayland this
+detection works correctly, but X11 is not a primary supported target in this
+round.
+
+**Test case** (log the observed outcome every time — this is a known issue,
+not a surprise, but must be tracked so a future fix can be verified against
+this same test):
+
+1. Focus a password field in a GNOME/Wayland-native app (e.g. a login form,
+   GNOME Settings password change dialog).
+2. Trigger the hotkey and dictate a short phrase (do **not** use a real
+   password — use e.g. "test password one two three").
+3. Record whether myna:
+   - Refuses to inject (correct/expected long-term behavior), or
+   - Injects the dictated text into the password field (currently the
+     expected/known outcome on GNOME/Wayland today).
+
+This is not a blocking bug for this test round — it's an awareness/tracking
+test. Do not spend extended time trying to work around it.
+
+---
+
+## 9. Streaming-specific checks
+
+Using the long continuous passage (§4.6) in `streaming` mode with
+`--show-unstable` (or the desktop equivalent, if exposed):
+
+1. Confirm unstable text is visually distinguished (e.g. prefixed `~`, or
+   shown as preedit) and is **never** the text actually injected into the
+   focused app — only committed text should land in the document.
+2. Confirm committed text is append-only: once text is committed, it does
+   not change, get overwritten, or disappear later in the same session.
+3. Confirm natural pauses/silence gaps in the passage do not cause the
+   system to drop text, freeze, or duplicate the phrase spoken just before
+   the pause.
+4. Compare the final transcript against the same passage read in `batch`
+   mode — flag if streaming's final result looks meaningfully worse (more
+   than a couple of wrong words difference) than batch's.
+
+---
+
+## 10. Results reporting
+
+Fill in one row per test run:
+
+| Date | Tester | Test Case ID | Model | Language | Mode | Hardware (CPU/GPU, brief specs) | App | Passage(s) | Pass/Fail | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | | |
+
+Additional free-text notes to capture per run where relevant:
+- Accent/native-language of tester (for attributing accuracy differences).
+- Background noise conditions (quiet room vs. not).
+- Any expected-failure cases from §3 that were observed (mark as
+  "expected", not a bug).
+- Secure-field observation from §8.
+
+---
+
+## 11. Out of scope
+
+This test plan explicitly does **not** cover:
+
+- Unit tests, contract/wire-protocol tests, or any part of the existing
+  `pytest`/Rust test suites.
+- Automated WER/CER/RTF benchmarking (`dev/bench.py`, `dev/matrix.py`,
+  `dev/aggregate.py`) — those already exist and produce precise, repeatable
+  numbers; this plan is a human-perspective complement, not a replacement.
+- Non-GNOME desktop environments (KDE, wlroots compositors) and X11/XWayland.
+- arm64 hardware (whisper-snap declares an arm64 build target, but it is
+  unverified — out of scope until that changes).
+- Crowd-testing submission tooling/process (deferred to a later document).
+- Non-English passages and translated content (deferred pending review of
+  this English version).
+- Formal, numeric latency SLOs (no ratified hardware-tier performance
+  contract exists yet in this project).
