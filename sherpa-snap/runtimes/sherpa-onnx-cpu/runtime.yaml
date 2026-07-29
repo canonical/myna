@@ -1,0 +1,11 @@
+# sherpa-onnx OnlineRecognizer (CPU) serving the UbuSTT session API.
+# The venv is baked into the base snap (server-app part); model weights ship
+# as a component, so no runtime download / network access.
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment: []
+
+components: []

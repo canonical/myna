@@ -1,0 +1,140 @@
+# Parakeet inference snap (UbuSTT) — feature 008 US3.
+#
+# The small CPU-tier transducer snap: Parakeet TDT 0.6B v3 int8 ONNX via
+# onnxruntime (no torch), a fraction of the full NeMo snap's size (SC-005).
+# Follows the whisper-snap pattern (modelctl v2 + engine/runtime/model
+# manifests + weights as a component), simplified to one engine (cpu) and one
+# model — that's the whole point of the small snap.
+#
+# The server is myna-server --adapter parakeet --streaming (chunked commit,
+# SilenceCut): the streaming-class UX is this snap's reason to exist. Weights
+# ship as a component: run ./dev/download-models.sh before packing. No
+# `network` plug.
+name: parakeet
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: Parakeet TDT speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Unix domain socket. Wraps NVIDIA's Parakeet TDT 0.6B v3 (25 languages,
+  punctuation) as an int8 ONNX export served via onnxruntime, with chunked
+  progressive commit (pause-delimited chunks decoded once and committed while
+  the user keeps speaking).
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # Path modelctl/runtimes use to reach installed components, matching the
+  # reference snaps. Model components expose MODEL_DIR=$SNAP_COMPONENTS/<id>.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  parakeet:
+    command: bin/parakeet
+    plugs:
+      - hardware-observe
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      # Weights are a component (no runtime download), so no `network`.
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs:
+      - hardware-observe
+  post-refresh:
+    plugs:
+      - hardware-observe
+
+# Expose the session socket to confined clients (T14c — the myna orchestrator
+# snap plugs this). See whisper-snap's snapcraft.yaml for the full comment.
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      # Named symlink so cobra picks up the snap command name
+      ln --symbolic ./modelctl bin/parakeet
+      craftctl default
+
+  server-app:
+    # myna-server + onnxruntime in a venv. The myna wheel is staged into
+    # wheels/ by dev/prepare.sh before packing.
+    plugin: python
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[parakeet]
+    build-packages:
+      - python3-venv
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  # Model weights as a component. Populate components/ with
+  # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
+  # the base.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-parakeet-int8/*": (component/model-parakeet-int8)/
+    prime:
+      - -*
+
+components:
+  model-parakeet-int8:
+    type: standard
+    summary: Parakeet TDT 0.6B v3 int8 ONNX weights
+    description: |
+      NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0) int8 ONNX export — murmure's
+      re-quantized encoder (robust across window lengths; istupakov's HF int8
+      encoder collapses mid-audio on some lengths) + nemo128 preprocessor,
+      TDT decoder_joint, vocab.

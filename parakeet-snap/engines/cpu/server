@@ -1,0 +1,18 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get socket.path)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# MODEL_DIR is exported from the active model.yaml and points at the
+# installed ONNX model component (see models/*/model.yaml).
+# --streaming: chunked progressive commit is this snap's reason to exist
+# (008 US3). Idle-unload (T27): drop the model after sleep-idle-seconds,
+# keep serving.
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --adapter parakeet \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is the model component installed? try: parakeet use-model parakeet-tdt-0.6b-v3}" \
+    --streaming \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

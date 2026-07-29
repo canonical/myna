@@ -2273,6 +2273,7 @@ parakeet = [
     { name = "onnxruntime" },
 ]
 sherpa = [
+    { name = "onnxruntime" },
     { name = "sherpa-onnx" },
 ]
 whisper = [
@@ -2294,6 +2295,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.2.1" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'nemotron'", specifier = ">=2.0" },
     { name = "onnxruntime", marker = "extra == 'parakeet'", specifier = ">=1.27,<1.28" },
+    { name = "onnxruntime", marker = "extra == 'sherpa'", specifier = ">=1.27,<1.28" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa'", specifier = ">=1.10" },
     { name = "websockets", specifier = ">=16.0" },
 ]
