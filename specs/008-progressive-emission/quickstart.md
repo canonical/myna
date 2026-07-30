@@ -2,24 +2,11 @@
 
 **Feature**: `specs/008-progressive-emission`
 
-Runnable scenarios proving the feature end-to-end. The headline validation is
-that the **2026-07-27 failing manual test now passes** (SC-006): provisional
-(`~`) and committed (`»`) lines arrive *during* realtime playback.
-
 Prerequisites: real corpus fetched (`dev/fetch_real_corpus.py`), model cache
-populated (`hf download`, verify `HF_HUB_OFFLINE=1`), `client/` built
-(`cargo build --release`). GPU scenarios require the NVIDIA PC.
+populated, `client/` built (`cargo build --release`). GPU scenarios require the
+NVIDIA PC.
 
-## S0 — Spikes (gates before adapter work)
-
-- **S1 (CPU)**: run the word-timestamp stability spike over ≥ 10 real-corpus
-  clips per `research.md` Decision 3. Record agreement rate / drift; apply the
-  go/no-go to the default strategy.
-- **S2 (GPU)**: run the NeMo live-feed spike per `research.md` Decision 6.
-  Record the push pattern, per-step partial stability, finalize latency at two
-  `att_context_size` settings; apply the go/no-go.
-
-## S1 — Whisper strategies (US1)
+## S1 — Whisper local-agreement
 
 ```sh
 myna-server --socket /tmp/myna.sock --adapter whisper --model base --streaming
@@ -28,15 +15,12 @@ myna-server --socket /tmp/myna.sock --adapter whisper --model base --streaming
     --clip corpus/real/audio/librispeech-2277-149896-0005.wav
 ```
 
-Expected: `~` lines during playback; ≥ 1 `»` line before the clip ends;
-`✓` equals the concatenation of `»` lines (I2). (The 2026-07-28 triage
-retired tail-mutation/fixed-head after the watermark sweep —
-contracts/emission-semantics.md.)
+Expected: `~` unstable lines during playback; at least one committed `»`
+before the clip ends; terminal `✓` equals the concatenation of `»` lines.
 
-Batch regression: same clip without `--streaming` ⇒ one `»` at end, identical
-final text (I7).
+Batch regression: omit `--streaming`; exactly one `»` arrives at end-of-audio.
 
-## S2 — Nemotron native loop (US2, GPU)
+## S2 — Nemotron native loop (GPU)
 
 ```sh
 myna-server --socket /tmp/myna.sock --adapter nemotron --streaming
@@ -44,37 +28,56 @@ myna-server --socket /tmp/myna.sock --adapter nemotron --streaming
     --mode streaming --show-unstable --clip <30 s real clip>
 ```
 
-Expected: continuous `~` partials; `»` commits at natural boundaries; terminal
-`✓` within 1 s of clip end (SC-004); repeated with a 5 s clip shows comparable
-time-to-first-`»`.
+Expected: continuous `~` partials; committed `»` segments at natural
+boundaries; terminal `✓` within 1 s of clip end.
 
-## S3 — Small snaps (US3, US4)
+## S3 — Small snaps
 
 ```sh
-snap install --dangerous parakeet_*.snap   # and sherpa_*.snap
-# point myna-dictate at the snap's session socket (ubustt-socket share, T14c)
-./client/target/release/myna-dictate --socket $SNAP_COMMON/ubustt/myna.sock \
-    --dialect ie115 --mode streaming --show-unstable --clip <real clip>
+sudo snap install --dangerous \
+    parakeet_*.snap parakeet+model-parakeet-int8.comp
+sudo snap install --dangerous \
+    sherpa_*.snap sherpa+model-fastconformer-480ms.comp
 ```
 
-Expected: confined end-to-end progressive dictation; `du` on the installed
-snaps meets SC-005 vs the full NeMo snap.
+Parakeet:
+
+```sh
+./client/target/release/myna-dictate \
+    --socket /var/snap/parakeet/common/run/ubustt.sock \
+    --mode streaming --clip <real clip>
+```
+
+Expected: committed `»` chunks after the configured arm plus a pause; no `~`
+partials. Default arm is 15 s; adjust with:
+
+```sh
+sudo snap set parakeet stream-arm-seconds=5
+sudo snap restart parakeet.server
+```
+
+Sherpa:
+
+```sh
+./client/target/release/myna-dictate \
+    --socket /var/snap/sherpa/common/run/ubustt.sock \
+    --mode streaming --show-unstable --clip <real clip>
+```
+
+Expected: continuous `~` partials and endpoint-driven committed `»` segments.
+Neither snap requires `hardware-observe`.
 
 ## S4 — Watermarks and gates
 
 ```sh
-dev/rebaseline-streaming-watermarks.sh   # whisper: batch + streaming sweep on
-                                         # the 26-28 s concatenated streams
+dev/rebaseline-streaming-watermarks.sh
 ```
 
-Expected: `results/streaming-watermarks.json` holds time-to-first-unstable /
-time-to-first-committed / finalize-latency per backend×tier; SC-001/003/004
-gates evaluated; commit stability 1.0 everywhere (SC-002). Strategy triage
-settled 2026-07-28: local-agreement only (SC-001 pass); extend per-backend as
-nemotron/parakeet/sherpa land.
+Expected: `results/streaming-watermarks.json` records time-to-first-unstable,
+time-to-first-committed, finalize latency, WER, and commit stability per
+backend×tier.
 
 ## S5 — Concluding report
 
-`docs/interop/streaming-conclusion.md` (SC-007): accuracy, latency profile,
-footprint, tier coverage for every backend; recommended backend per hardware
-tier. This artifact closes the streaming investigation.
+`docs/interop/streaming-conclusion.md` compares accuracy, latency, footprint,
+and tier coverage, and recommends a backend per hardware tier.

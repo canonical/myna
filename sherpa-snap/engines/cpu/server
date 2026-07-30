@@ -3,14 +3,17 @@
 socket_path="$(modelctl get socket.path)"
 idle="$(modelctl get sleep-idle-seconds)"
 
-# MODEL_DIR is exported from the active model.yaml and points at the
-# installed ONNX model component (see models/*/model.yaml).
+# MODEL_DIR normally comes from model.yaml when modelctl runs the engine. This
+# CPU-only snap bypasses modelctl run to avoid hardware scoring, so fall back
+# to its single component directly.
+MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-fastconformer-480ms}"
+
 # --streaming: native partials + endpoint commits are this snap's reason to
 # exist (008 US4). Idle-unload (T27) as in the other inference snaps.
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter sherpa \
-    --model "${MODEL_DIR:?MODEL_DIR unset — is the model component installed? try: sherpa use-model fastconformer-transducer-480ms}" \
+    --model "$MODEL_DIR" \
     --streaming \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \

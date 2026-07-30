@@ -54,7 +54,13 @@ from myna.core import (
     TranscriptionProgress,
 )
 from myna.testbed.adapter import Candidate
-from myna.testbed.streaming.strategies import SC_FORCE_CUT_S, Hypothesis, Word
+from myna.testbed.streaming.strategies import (
+    SC_ARM_S,
+    SC_FORCE_CUT_S,
+    SC_SILENCE_CUT_S,
+    Hypothesis,
+    Word,
+)
 
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
@@ -252,9 +258,21 @@ class ParakeetAdapter:
         model_dir: str | None = None,
         *,
         streaming: bool = False,
+        stream_arm_s: float = SC_ARM_S,
+        stream_silence_cut_s: float = SC_SILENCE_CUT_S,
+        stream_force_cut_s: float = SC_FORCE_CUT_S,
     ) -> None:
         self._model_dir = model_dir
         self._streaming = streaming
+        self._stream_arm_s = float(stream_arm_s)
+        self._stream_silence_cut_s = float(stream_silence_cut_s)
+        self._stream_force_cut_s = float(stream_force_cut_s)
+        if self._stream_arm_s <= 0:
+            raise ValueError("stream_arm_s must be > 0")
+        if self._stream_silence_cut_s <= 0:
+            raise ValueError("stream_silence_cut_s must be > 0")
+        if self._stream_force_cut_s <= 0:
+            raise ValueError("stream_force_cut_s must be > 0")
         self._model: _ParakeetOnnx | None = None
         self._model_lock = asyncio.Lock()
 
@@ -391,10 +409,14 @@ class ParakeetAdapter:
             audio,
             emit,
             decode,
-            SilenceCut(),
+            SilenceCut(
+                arm_seconds=self._stream_arm_s,
+                silence_cut_seconds=self._stream_silence_cut_s,
+                force_cut_seconds=self._stream_force_cut_s,
+            ),
             cadence_seconds=_PROGRESS_INTERVAL_SECONDS,  # liveness tick only
             # The force cut is the memory bound (I6) in chunked mode.
-            window_cap_seconds=SC_FORCE_CUT_S + 5.0,
+            window_cap_seconds=self._stream_force_cut_s + 5.0,
             overlap_seconds=1.0,  # murmure CHUNK_FORCED_OVERLAP_SECS
         )
         await emit(TranscriptionDone(text=transcript))

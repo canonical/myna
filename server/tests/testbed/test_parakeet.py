@@ -7,7 +7,16 @@ text/vocab mechanics the emission loop depends on (I2 verbatim concat).
 
 from __future__ import annotations
 
-from myna.testbed.parakeet import _detokenize, _load_vocab, _tokens_to_words
+import pytest
+
+from myna.server.cli import build_adapter, build_parser
+from myna.testbed.parakeet import (
+    ParakeetAdapter,
+    _detokenize,
+    _load_vocab,
+    _tokens_to_words,
+)
+from myna.testbed.streaming.strategies import SilenceCut
 
 
 def test_detokenize_strips_leading_and_pre_punctuation_spaces():
@@ -44,3 +53,64 @@ def test_load_vocab(tmp_path):
     assert vocab[5] == " hello"  # ▁ becomes a literal space
     assert vocab[9] == "world"
     assert len(vocab) == 11
+
+
+async def test_streaming_cut_constants_are_configurable(monkeypatch):
+    """The snap exposes the SilenceCut knobs; the adapter must wire them into
+    the strategy instead of always using murmure's defaults."""
+    adapter = ParakeetAdapter(
+        streaming=True,
+        stream_arm_s=2.5,
+        stream_silence_cut_s=0.25,
+        stream_force_cut_s=7.0,
+    )
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured["strategy"] = strategy
+        captured["kwargs"] = kwargs
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    async def empty_audio():
+        if False:
+            yield b""  # pragma: no cover - async iterator shape only
+
+    async def emit(_event):
+        pass
+
+    await adapter._run_streaming_session(object(), empty_audio(), emit)
+
+    strategy = captured["strategy"]
+    assert isinstance(strategy, SilenceCut)
+    assert strategy._arm == 2.5
+    assert strategy._silence_cut == 0.25
+    assert strategy._force_cut == 7.0
+    assert captured["kwargs"]["window_cap_seconds"] == 12.0
+
+
+def test_streaming_cut_constants_must_be_positive():
+    with pytest.raises(ValueError, match="stream_arm_s"):
+        ParakeetAdapter(stream_arm_s=0)
+    with pytest.raises(ValueError, match="stream_silence_cut_s"):
+        ParakeetAdapter(stream_silence_cut_s=0)
+    with pytest.raises(ValueError, match="stream_force_cut_s"):
+        ParakeetAdapter(stream_force_cut_s=0)
+
+
+def test_cli_wires_streaming_cut_constants():
+    args = build_parser().parse_args(
+        [
+            "--socket", "/tmp/s.sock",
+            "--adapter", "parakeet",
+            "--streaming",
+            "--stream-arm-s", "2.5",
+            "--stream-silence-cut-s", "0.25",
+            "--stream-force-cut-s", "7.0",
+        ]
+    )
+    adapter = build_adapter(args)
+    assert adapter._stream_arm_s == 2.5
+    assert adapter._stream_silence_cut_s == 0.25
+    assert adapter._stream_force_cut_s == 7.0

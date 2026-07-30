@@ -17,3 +17,10 @@ model:
   default: parakeet-tdt-0.6b-v3
   options:
     - parakeet-tdt-0.6b-v3
+
+configurations:
+  # SilenceCut chunked-commit knobs (seconds). Lower stream-arm-seconds for
+  # earlier chunks; the 15/0.5/60 defaults are murmure's proven constants.
+  stream-arm-seconds: 15
+  stream-silence-cut-seconds: 0.5
+  stream-force-cut-seconds: 60

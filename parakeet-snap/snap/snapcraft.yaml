@@ -41,24 +41,18 @@ environment:
 apps:
   parakeet:
     command: bin/parakeet
-    plugs:
-      - hardware-observe
 
   server:
     command: bin/server.sh
     daemon: simple
     plugs:
-      - hardware-observe
       # Weights are a component (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
 
 hooks:
-  install:
-    plugs:
-      - hardware-observe
-  post-refresh:
-    plugs:
-      - hardware-observe
+  install: {}
+  post-refresh: {}
+  configure: {}
 
 # Expose the session socket to confined clients (T14c — the myna orchestrator
 # snap plugs this). See whisper-snap's snapcraft.yaml for the full comment.
