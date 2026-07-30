@@ -95,14 +95,38 @@ report (T12 is still open on the engineering side).
 
 ---
 
-## 4. Reading sample corpus (English only this round, except two short
-non-English failure-mode probe sentences in §7)
+## 4. Reading sample corpus (English, plus a 9-language diversity set)
 
-The full reading sample corpus (six English passage categories, plus two
-short non-English probe sentences for TC-07/TC-08) has been extracted into
-a standalone file: **[`docs/test-samples-en.md`](test-samples-en.md)**.
+The full English reading sample corpus (six passage categories, plus two
+short non-English probe sentences for TC-07/TC-08) lives in a standalone
+file: **[`docs/test-samples-en.md`](test-samples-en.md)**.
 
-Quick index (section numbers refer to `test-samples-en.md`):
+The same six-section corpus (§1–§6) has also been translated into 9
+additional languages, each in its own file, to cover script/phonetic
+diversity and give Qwen3-ASR and Whisper real accuracy signal beyond
+English. **All translations are draft, machine-assisted, and require
+native/fluent-speaker review before use** (per §2's fluent-speaker
+requirement) — do not run a test session against an unreviewed file.
+Product-specific terms (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
+Nemotron, GNOME Shell, version strings, file paths) are kept in English in
+every translated file, matching how a real bilingual user would actually
+speak them.
+
+| Language | File | Notes |
+|---|---|---|
+| English | [`test-samples-en.md`](test-samples-en.md) | Reviewed/canonical; also holds the §7 unsupported-language probes |
+| Spanish (es) | [`test-samples-es.md`](test-samples-es.md) | Needs native review |
+| French (fr) | [`test-samples-fr.md`](test-samples-fr.md) | Needs native review; shares its §5 pangram with the TC-07 probe sentence |
+| Italian (it) | [`test-samples-it.md`](test-samples-it.md) | Needs native review |
+| Portuguese (pt) | [`test-samples-pt.md`](test-samples-pt.md) | Needs native review; confirm European vs. Brazilian variant preference |
+| German (de) | [`test-samples-de.md`](test-samples-de.md) | Needs native review |
+| Czech (cs) | [`test-samples-cs.md`](test-samples-cs.md) | Needs native review |
+| Arabic (ar) | [`test-samples-ar.md`](test-samples-ar.md) | Needs native review; RTL — also a signal for bidirectional text/injection handling around English product terms; confirm MSA vs. dialect preference |
+| Hindi (hi) | [`test-samples-hi.md`](test-samples-hi.md) | Needs native review; Devanagari — frequent script-mixing with English product terms is expected, not an error |
+| Mandarin (zh) | [`test-samples-zh.md`](test-samples-zh.md) | Needs native review; Simplified Chinese draft — confirm Traditional preference per tester |
+
+Each language file mirrors `test-samples-en.md`'s structure — quick index
+(section numbers are consistent across all files):
 
 - §1 — Natural long-form prose (2 passages: A, B) — used by TC-01, TC-10, TC-11
 - §2 — Command / short-utterance set (10 lines) — used by TC-03
@@ -110,13 +134,14 @@ Quick index (section numbers refer to `test-samples-en.md`):
 - §4 — Numbers, dates, and punctuation-heavy passage — used by TC-05
 - §5 — Pangram / phonetic smoke-test — used by TC-06
 - §6 — Long continuous passage for streaming tests (30s+) — used by TC-02, §9
-- §7 — Unsupported-language probes: French sentence (TC-07, Nemotron) and
-  Estonian sentence (TC-08, Qwen only) — the Estonian sentence still needs
-  native/fluent-speaker review before use
+- §7 (English file only) — Unsupported-language probes: French sentence
+  (TC-07, Nemotron) and Estonian sentence (TC-08, Qwen only) — the Estonian
+  sentence still needs native/fluent-speaker review before use
 
-Beyond the two short §7 probe sentences, non-English translations of the
-full corpus are **explicitly deferred** pending review of the English
-version in that file — do not translate ad hoc.
+**Model applicability per language**: all 9 non-English languages above are
+within Qwen3-ASR's 30-language list, so each can be tested on both
+Qwen3-ASR and Whisper (Nemotron remains English-only per §3 and is
+excluded from all non-English runs except the TC-07 failure probe).
 
 ---
 
@@ -129,16 +154,20 @@ has no CPU engine; Qwen has no GPU engine in this build).
 | Dimension | Values |
 |---|---|
 | Model | Whisper, Nemotron, Qwen3-ASR |
-| Language | English (all passages, test-samples-en.md §1–§6); French and Estonian (two short probe sentences only, test-samples-en.md §7, TC-07/TC-08) |
+| Language | English (all passages, `test-samples-en.md` §1–§6); Spanish, French, Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin (full §1–§6 corpus per language, pending native review — see §4 table); French and Estonian (two short probe sentences only, `test-samples-en.md` §7, TC-07/TC-08) |
 | Mode | `batch`, `streaming`, `auto` (real-world default) |
 | Hardware | CPU-only, NVIDIA GPU |
 | Injection target app | one plain text field (e.g. GNOME Text Editor / gedit), one "real" app (e.g. browser address bar, LibreOffice Writer) |
 
-**Minimum required run per tester**: for each installed model, read
-passages test-samples-en.md §1–§6 at least once in `auto` mode on their available hardware,
-into at least one plain-text app. Testers with time to cover more of the
-matrix (multiple modes, multiple apps, both hardware tiers if they have
-access to both) should do so and note it in the results table.
+**Minimum required run per tester**: for each installed model, read the
+English passages in `test-samples-en.md` §1–§6 at least once in `auto`
+mode on their available hardware, into at least one plain-text app.
+Testers who are fluent/native speakers of one of the 9 additional languages
+in §4 (and whose language file has passed native-speaker review) should
+also cover that language's §1–§6 corpus at least once. Testers with time to
+cover more of the matrix (multiple modes, multiple apps, multiple
+languages, both hardware tiers if they have access to both) should do so
+and note it in the results table.
 
 **Same-speaker consistency**: where possible, have the *same* tester read the
 *same* passage across different models/modes/hardware so that differences
@@ -169,7 +198,16 @@ Each test case below follows: **Description**, **Preconditions**, **Steps**,
 concrete, repeatable procedures. Testers should log the outcome of each case
 they run in the §9 results table, using the Test Case ID for traceability.
 
-### TC-01 — Batch mode, natural long-form dictation (English)
+**Language repetition**: TC-01 through TC-06, TC-10, and TC-11 are written
+against `test-samples-en.md` for readability, but should be repeated once
+per language a tester is fluent in and has an approved (reviewed)
+translation file for — see the §4 table for the full list of language
+files. Substitute the corresponding section of the language file being
+tested wherever a step references `test-samples-en.md`. Do not run these
+test cases against a translation file that has not yet had native-speaker
+review (see §4 review-status notes per file).
+
+### TC-01 — Batch mode, natural long-form dictation
 
 **Description**: Baseline accuracy check — dictate natural connected prose
 in the product's default-adjacent mode (`batch`) and compare against the
@@ -177,16 +215,18 @@ reference transcript.
 
 **Preconditions**: Model installed (repeat per model); hotkey configured;
 plain-text app (e.g. GNOME Text Editor) focused and empty; mode explicitly
-set to `batch`.
+set to `batch`; language file for the language under test has passed
+native-speaker review (see §4).
 
 **Steps**:
 1. Open the target app, place the cursor in an empty document.
 2. Press the hotkey to start recording.
-3. Read Passage A (test-samples-en.md §1) aloud at a natural pace, in one take.
+3. Read Passage A (§1 of the language file under test, e.g.
+   `test-samples-en.md` for English) aloud at a natural pace, in one take.
 4. Stop recording (release/press hotkey per install mode).
 5. Wait for the transcript to finish appearing in the document.
 6. Compare the injected text word-for-word against the reference transcript
-   in test-samples-en.md §1.
+   in that same §1.
 
 **Expected Result**: Injected text matches the reference transcript with no
 more than a small number of minor word errors (a handful of substitutions is
@@ -204,17 +244,19 @@ unstable/committed distinction is respected end-to-end.
 
 **Preconditions**: Model with streaming support installed (Whisper or
 Qwen3-ASR — see §3); mode set to `streaming`; `--show-unstable` (or desktop
-equivalent) enabled; plain-text app focused and empty.
+equivalent) enabled; plain-text app focused and empty; language file for
+the language under test has passed native-speaker review (see §4).
 
 **Steps**:
 1. Press the hotkey to start recording.
-2. Read the long continuous passage (test-samples-en.md §6) aloud at a natural pace,
-   including its natural sentence-boundary pauses — do not read it as
-   disconnected fragments.
+2. Read the long continuous passage (§6 of the language file under test)
+   aloud at a natural pace, including its natural sentence-boundary pauses
+   — do not read it as disconnected fragments.
 3. Observe the app during recording: note when unstable text first appears,
    and note each point where text transitions from unstable to committed.
 4. Stop recording once the full passage has been read.
-5. Compare the final injected text against the reference transcript in test-samples-en.md §6.
+5. Compare the final injected text against the reference transcript in that
+   same §6.
 
 **Expected Result**: Unstable text is visually distinguishable (e.g. `~`
 prefix or preedit styling) and disappears/resolves into committed text
@@ -233,16 +275,17 @@ commands rather than long-form prose — the shape of speech this product is
 actually built around (hotkey → short phrase → inject).
 
 **Preconditions**: Model installed; mode `auto`; plain-text app focused and
-empty.
+empty; language file for the language under test has passed native-speaker
+review (see §4).
 
 **Steps**:
-1. For each of the 10 lines in test-samples-en.md §2, in order:
+1. For each of the 10 lines in §2 of the language file under test, in order:
    a. Press the hotkey.
    b. Speak the single line.
    c. Stop recording.
    d. Note the injected result on a new line in the document.
 2. After all 10 lines, compare each injected line against its reference
-   text in test-samples-en.md §2.
+   text in that same §2.
 
 **Expected Result**: Each utterance is transcribed independently and
 correctly, including short imperative phrases and the punctuation-command
@@ -261,17 +304,18 @@ version strings, and file paths specific to this product's own domain — a
 category ASR models commonly mangle.
 
 **Preconditions**: Model installed; mode `auto`; plain-text app focused and
-empty.
+empty; language file for the language under test has passed native-speaker
+review (see §4).
 
 **Steps**:
-1. Press the hotkey and read the domain/technical passage (test-samples-en.md §3) aloud in
-   one take, pronouncing product terms naturally (not spelled out
-   letter-by-letter).
+1. Press the hotkey and read the domain/technical passage (§3 of the
+   language file under test) aloud in one take, pronouncing product terms
+   naturally (not spelled out letter-by-letter).
 2. Stop recording and wait for the transcript.
 3. Compare specifically the technical terms (PipeWire, myna-desktop, IBus,
-   Nemotron, "one point three point zero", the file path) against the
-   reference text — treat these terms as the primary signal, not overall
-   prose fluency.
+   Nemotron, "one point three point zero", the file path — kept in English
+   in every language file per §4's convention) against the reference text —
+   treat these terms as the primary signal, not overall prose fluency.
 
 **Expected Result**: Common English words transcribe correctly (high bar).
 Product-specific terms and the version string/file path are recorded as
@@ -289,14 +333,16 @@ in a form a human would consider correct, independent of how the automated
 scoring's normalization rules treat them.
 
 **Preconditions**: Model installed; mode `auto`; plain-text app focused and
-empty.
+empty; language file for the language under test has passed native-speaker
+review (see §4).
 
 **Steps**:
-1. Press the hotkey and read the numbers/dates passage (test-samples-en.md §4) aloud in one
-   take, at a natural pace (do not artificially slow down for the digits).
+1. Press the hotkey and read the numbers/dates passage (§4 of the language
+   file under test) aloud in one take, at a natural pace (do not
+   artificially slow down for the digits).
 2. Stop recording and wait for the transcript.
 3. Compare the phone number, date, currency amount, time, and confirmation
-   code against the reference text in test-samples-en.md §4.
+   code against the reference text in that same §4.
 
 **Expected Result**: Each numeric/date/currency span is either transcribed
 in digit form ("555-0142", "July 29th, 2026") or in an equivalent spelled-out
@@ -315,11 +361,13 @@ any configuration change (model, mode, hardware) — should take under 10
 seconds to execute and judge.
 
 **Preconditions**: Model installed; any mode; plain-text app focused and
-empty.
+empty; language file for the language under test has passed native-speaker
+review (see §4).
 
 **Steps**:
 1. Press the hotkey.
-2. Say: "The quick brown fox jumps over the lazy dog."
+2. Say the pangram/phonetic sentence from §5 of the language file under
+   test (e.g. "The quick brown fox jumps over the lazy dog." for English).
 3. Stop recording.
 4. Compare the injected text against the reference sentence.
 
@@ -420,7 +468,10 @@ more than one real application, not just a single reference text editor.
 model doesn't know or care which app has focus) — any app-specific
 difference indicates an injection bug (e.g. dropped characters, wrong
 cursor position, focus stolen mid-dictation) rather than a model accuracy
-issue, and should be logged as such.
+issue, and should be logged as such. Also worth noting for non-Latin-script
+or RTL languages (Arabic, Hindi, Mandarin): confirm cursor position and
+text direction render correctly across apps, since app-specific text
+direction/IME handling bugs are a distinct risk from model accuracy.
 
 ---
 
@@ -505,8 +556,10 @@ test. Do not spend extended time trying to work around it.
 
 ## 9. Streaming-specific checks
 
-Using the long continuous passage (test-samples-en.md §6) in `streaming` mode with
-`--show-unstable` (or the desktop equivalent, if exposed):
+Using the long continuous passage (§6 of the language file under test, e.g.
+`test-samples-en.md` for English — see §4 for the full list of language
+files) in `streaming` mode with `--show-unstable` (or the desktop
+equivalent, if exposed):
 
 1. Confirm unstable text is visually distinguished (e.g. prefixed `~`, or
    shown as preedit) and is **never** the text actually injected into the
@@ -552,8 +605,14 @@ This test plan explicitly does **not** cover:
 - arm64 hardware (whisper-snap declares an arm64 build target, but it is
   unverified — out of scope until that changes).
 - Crowd-testing submission tooling/process (deferred to a later document).
-- Non-English passages and translated content, beyond the two short §7
-  probe sentences (TC-07 French, TC-08 Estonian) — full-corpus translation
-  is deferred pending review of the English version.
+- Languages beyond the 9-language diversity set in §4 (Spanish, French,
+  Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin) plus the two
+  §7 probe sentences (TC-07 French, TC-08 Estonian) — further language
+  expansion (e.g. covering the rest of Qwen's 30-language list) is
+  deferred to a later round.
+- Running any translated-corpus test session before its file has passed
+  native/fluent-speaker review (see the per-file review-status notes in
+  §4) — all 9 non-English corpus files are currently draft,
+  machine-assisted translations.
 - Formal, numeric latency SLOs (no ratified hardware-tier performance
   contract exists yet in this project).
