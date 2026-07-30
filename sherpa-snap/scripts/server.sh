@@ -2,5 +2,6 @@
 
 set -euo pipefail
 
-engine="$(modelctl show-engine --format=json | jq -r .name)"
-exec modelctl run -- "$SNAP/engines/$engine/server"
+# CPU-only snap: don't ask modelctl to score hardware just to find the one
+# engine. The service only needs modelctl for config reads below.
+exec "$SNAP/engines/cpu/server" "$@"

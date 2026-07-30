@@ -1,0 +1,17 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.configure"
+exec 1> >(tee >(logger --tag=$tag))
+exec 2> >(logger --stderr --priority error --tag=$tag)
+
+# Values are consumed by engines/cpu/server via `snapctl get` on the next
+# service start. Validate here so a bad `snap set` fails at config time rather
+# than taking the daemon down on the next restart.
+for key in stream-arm-seconds stream-silence-cut-seconds stream-force-cut-seconds; do
+    value="$(snapctl get "$key")"
+    [ -z "$value" ] && continue
+    if [[ ! "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! awk -v v="$value" 'BEGIN { exit !(v > 0) }'; then
+        echo "$key must be a positive number of seconds (got '$value')"
+        exit 1
+    fi
+done

@@ -89,12 +89,12 @@
 
 **Independent Test**: `snap install --dangerous parakeet_*.snap`, dictate a multi-sentence realtime clip through the confined socket — `»` segments arrive mid-utterance; installed size meets SC-005 (quickstart S3)
 
-- [X] T023 [US3] Stage Parakeet TDT 0.6B v3 int8 ONNX weights via `dev/fetch_parakeet_onnx.py` — **source changed 2026-07-29**: murmure's bundled re-quantization (GitHub release zip, pinned + sha256, XDG cache), not istupakov's HF export — istupakov's int8 encoder collapses non-monotonically on some window lengths (nemo128 does utterance-global CMVN; murmure's encoder is the only fully robust int8 found)
-- [X] T024 [US3] Port the greedy TDT decode loop (preprocess → encode → decode_step with duration-head skip, murmure `engine.rs` as reference) to numpy/onnxruntime in `server/src/myna/testbed/parakeet.py`
-- [X] T025 [US3] Implement the parakeet adapter `run_session` in `server/src/myna/testbed/parakeet.py`: **SilenceCut chunk-commit** (murmure `chunking.rs`/`vad.rs` port in `testbed/streaming/strategies.py` — a Parakeet-native variant of the retired fixed-head, per the reopened Decision 7; not a FixedHead revival) reusing `testbed/streaming/window.py` + the restored chunked branch of `loop.py`; capabilities (25 languages, input_formats), ready gating, off-format rejection (FR-012)
-- [X] T026 [US3] Validate the parakeet adapter against the invariant harness + real-corpus WER (SC-003: streaming ≤ batch — 2.2/0.0% vs 4.4/0.0%); record watermarks (`results/bench-008-small-snaps.jsonl` → `results/streaming-watermarks.json`)
-- [X] T027 [US3] Create `parakeet-snap/` packaging (mirrors `whisper-snap/` layout, one cpu engine: model as component, strict confinement, `ws+unix` session socket, idle-unload) — packs; base 57 MB + component 729 MB
-- [~] T028 [US3] Confined end-to-end validation through the `ubustt-socket` share (T14c pattern) — **pending sudo** (install commands in parakeet-snap/README.md); installed-size ✓: ~787 MB vs the 6.4 GB NeMo snap ≈ 12 % (SC-005 pass, also < 1 GB absolute)
+- [X] T023 [US3] Stage Parakeet TDT 0.6B v3 int8 ONNX weights via `dev/fetch_parakeet_onnx.py`
+- [X] T024 [US3] Port the greedy TDT decode loop to numpy/onnxruntime in `server/src/myna/testbed/parakeet.py`
+- [X] T025 [US3] Implement Parakeet `run_session` with SilenceCut chunked commit, capabilities, ready gating, and off-format rejection
+- [X] T026 [US3] Validate Parakeet against the invariant harness and real-corpus WER; record watermarks
+- [X] T027 [US3] Create the CPU-only, strictly confined `parakeet-snap` (model component, `ws+unix` socket, idle-unload, no `hardware-observe`)
+- [X] T028 [US3] Validate confined end-to-end streaming through `/var/snap/parakeet/common/run/ubustt.sock`; make SilenceCut cadence configurable via `stream-arm-seconds`, `stream-silence-cut-seconds`, and `stream-force-cut-seconds`
 
 **Checkpoint**: US3 functional — small confined transducer snap streaming on CPU
 
@@ -108,8 +108,8 @@
 
 - [X] T029 [US4] ~~Export~~ **Fetch** a NeMo-family streaming transducer in sherpa-onnx format via `dev/fetch_sherpa_model.py` — k2-fsa's pre-exported `sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8` made the export scripts unnecessary (80/1040 ms latency variants + Zipformer fallback fetch the same way)
 - [X] T030 [US4] Implement the sherpa adapter in `server/src/myna/testbed/sherpa.py`: `OnlineRecognizer` push loop — partial results → unstable, endpoint-detected segments → committed; capabilities + ready gating + off-format rejection (FR-012). Note: sherpa-onnx's native lib needs onnxruntime 1.27.x's version node (pyproject pins `onnxruntime>=1.27,<1.28`; `dev/fetch_sherpa_model.py --fix-libs` symlinks the venv lib)
-- [X] T031 [US4] Create `sherpa-snap/` packaging (mirrors `parakeet-snap/`; sherpa-onnx runtime, model component, strict confinement; primed libonnxruntime symlink for the native module) — packs; base 74 MB + component 127 MB
-- [~] T032 [US4] Validate sherpa emission against the invariant harness (stub-recognizer routing tests + live bench commit-stability ✓); record watermarks ✓ (`results/bench-008-small-snaps.jsonl`); installed size ✓ ~201 MB ≈ 3 % of the NeMo snap (SC-005 pass); confined end-to-end validation **pending sudo** (install commands in sherpa-snap/README.md)
+- [X] T031 [US4] Create the CPU-only, strictly confined `sherpa-snap` (model component, `ws+unix` socket, idle-unload, no `hardware-observe`)
+- [~] T032 [US4] Validate sherpa emission (stub-recognizer tests and live bench complete; watermarks and installed size recorded); confined end-to-end validation remains
 
 **Checkpoint**: US4 functional — both small snaps measured side by side
 

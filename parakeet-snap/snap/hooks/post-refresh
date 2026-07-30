@@ -4,4 +4,14 @@ tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
 exec 1> >(tee >(logger --tag=$tag))
 exec 2> >(logger --stderr --priority error --tag=$tag)
 
-modelctl use-engine --auto --assume-yes --verbose
+# Defaults for refreshes from revisions that predate the SilenceCut config
+# knobs. Preserve any user-set values.
+if ! modelctl get stream-arm-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-arm-seconds="15"
+fi
+if ! modelctl get stream-silence-cut-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-silence-cut-seconds="0.5"
+fi
+if ! modelctl get stream-force-cut-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-force-cut-seconds="60"
+fi

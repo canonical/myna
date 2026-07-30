@@ -35,23 +35,16 @@ environment:
 apps:
   sherpa:
     command: bin/sherpa
-    plugs:
-      - hardware-observe
 
   server:
     command: bin/server.sh
     daemon: simple
     plugs:
-      - hardware-observe
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
 
 hooks:
-  install:
-    plugs:
-      - hardware-observe
-  post-refresh:
-    plugs:
-      - hardware-observe
+  install: {}
+  post-refresh: {}
 
 # Expose the session socket to confined clients (T14c).
 slots:

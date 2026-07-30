@@ -15,16 +15,12 @@ modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
 modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 modelctl set --package sleep-idle-seconds="300"
+# SilenceCut chunked-commit defaults (seconds). Users can lower these with
+# `snap set parakeet stream-arm-seconds=5` etc.
+modelctl set --package stream-arm-seconds="15"
+modelctl set --package stream-silence-cut-seconds="0.5"
+modelctl set --package stream-force-cut-seconds="60"
 
 #
-# Auto select an engine
+# CPU-only snap: no hardware auto-selection is needed. Only package config.
 #
-
-if snapctl is-connected hardware-observe; then
-    modelctl use-engine --auto --assume-yes --verbose
-elif lscpu -V &> /dev/null; then
-    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
-    modelctl use-engine --auto --assume-yes --verbose
-else
-    echo "hardware-observe interface not auto connected. Skip auto engine selection."
-fi

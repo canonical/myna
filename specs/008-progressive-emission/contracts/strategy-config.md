@@ -2,36 +2,46 @@
 
 **Feature**: `specs/008-progressive-emission`
 
-How operators/packagers select streaming behavior. Server-side only; nothing
-here crosses the session wire (strategies are wire-invisible, FR-004).
+Operator-facing streaming controls. Server-side only; nothing here crosses the
+session wire.
 
-## `myna-server` CLI (extends the 007 `--streaming` flag)
+## `myna-server` CLI
 
 ```text
 myna-server --adapter whisper --streaming \
     [--stream-cadence-s 1.0] [--stream-window-cap-s 30] [--stream-beam-size 1]
 
-myna-server --adapter nemotron --streaming          # native loop
-myna-server --adapter sherpa    --streaming         # native recognizer endpointing
+myna-server --adapter parakeet --streaming \
+    [--stream-arm-s 15] [--stream-silence-cut-s 0.5] [--stream-force-cut-s 60]
+
+myna-server --adapter nemotron --streaming   # native loop
+myna-server --adapter sherpa   --streaming   # native recognizer endpointing
 ```
 
-- The whisper commit strategy is **local-agreement**; the 2026-07-28 triage
-  (emission-semantics.md) removed the `--strategy` selector along with
-  tail-mutation/fixed-head.
-- `--streaming` off ⇒ batch degenerate (I7), all streaming flags ignored.
-- Cadence/window/beam are fixed at process start; no session.update or
-  mid-session mutation.
+- Whisper uses local-agreement.
+- Parakeet uses SilenceCut chunked commit: no unstable partials; a pause after
+  the armed window commits a chunk.
+- `--streaming` off is batch mode on every adapter; streaming flags are ignored.
+- Values are fixed at process start.
 
 ## Snap configuration
 
-Snaps expose the same knobs via `snap set` (mirroring existing snap config
-plumbing): `streaming`, cadence/window caps. Small-transducer snaps expose
-only `streaming` (their emission semantics are intrinsic).
+Parakeet exposes the SilenceCut knobs through snapd config:
 
-## Capabilities advertisement (existing contract, no change)
+```sh
+sudo snap set parakeet \
+    stream-arm-seconds=5 \
+    stream-silence-cut-seconds=0.5 \
+    stream-force-cut-seconds=60
+sudo snap restart parakeet.server
+```
 
-- `session.streaming` greeting field (007) reports whether the *service* will
-  emit progressively.
-- Client `--mode auto|streaming|batch` behaves as shipped in 007: `auto`
-  follows the greeting + tier gate, `batch` forces degenerate mode,
-  `streaming` requests progressive emission.
+The packaged defaults are 15 / 0.5 / 60 seconds. Sherpa's endpointing is
+runtime-native and has no equivalent cadence knob.
+
+## Capabilities advertisement
+
+- `session.streaming` reports whether the service emits progressively.
+- Client `--mode auto|streaming|batch` behaves as in 007: `auto` follows the
+  greeting and tier gate; `batch` forces batch display; `streaming` requests
+  progressive emission.

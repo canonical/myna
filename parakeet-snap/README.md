@@ -1,33 +1,47 @@
-# parakeet-snap — Parakeet TDT int8 ONNX inference snap (UbuSTT, 008 US3)
+# parakeet-snap — Parakeet TDT int8 ONNX inference snap
 
-The small CPU-tier transducer snap: NVIDIA Parakeet TDT 0.6B v3 (25 languages,
-punctuation) as an int8 ONNX export served via onnxruntime — no torch, ~787 MB
-installed (base + model component) vs the full NeMo snap's 6.4 GB (SC-005).
+Small CPU-tier speech-to-text snap: NVIDIA Parakeet TDT 0.6B v3 (25 languages,
+punctuation) as an int8 ONNX export served via onnxruntime. No torch; roughly
+787 MB installed with the model component.
 
-Streaming: **chunked progressive commit** (`--streaming`, SilenceCut — pauses
-cut utterance-like chunks, each decoded once and committed while you keep
-speaking; no partial hypotheses by design). Batch mode on request
-(`myna-server --adapter parakeet` without `--streaming`).
+Streaming is enabled by default: SilenceCut emits committed chunks at pauses.
+It does not emit unstable partials.
 
 ## Build
 
 ```bash
-./dev/prepare.sh            # stage the myna wheel into wheels/
-./dev/download-models.sh    # stage components/model-parakeet-int8 (murmure's
-                            # robust re-quantization — see dev/fetch_parakeet_onnx.py)
+./dev/prepare.sh
+./dev/download-models.sh
 snapcraft pack
 ```
 
-## Install (sideload)
+## Install
 
 ```bash
 sudo snap install --dangerous \
     ./parakeet_*.snap \
     ./parakeet+model-parakeet-int8.comp
-sudo snap connect parakeet:hardware-observe
-# socket: /var/snap/parakeet/common/run/ubustt.sock (ws+unix session API)
 ```
 
-Weights: murmure's `parakeet-tdt-0.6b-v3-int8` bundle (CC-BY-4.0). The
-`ubustt-socket` slot exposes the session socket to confined clients (the
-`myna` orchestrator snap plugs it, T14c).
+The snap is CPU-only and does not require `hardware-observe`. Session socket:
+
+```text
+/var/snap/parakeet/common/run/ubustt.sock
+```
+
+## Streaming cadence
+
+Defaults:
+
+- `stream-arm-seconds=15` — audio required before a pause can commit
+- `stream-silence-cut-seconds=0.5` — pause length that commits
+- `stream-force-cut-seconds=60` — maximum uncommitted window
+
+Example for earlier chunks:
+
+```bash
+sudo snap set parakeet stream-arm-seconds=5
+sudo snap restart parakeet.server
+```
+
+Lower values commit sooner but decode more often and use less right context.

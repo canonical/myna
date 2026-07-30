@@ -71,6 +71,21 @@ def build_parser() -> argparse.ArgumentParser:
         "5 matches batch decode quality at ~5x tick cost)",
     )
     parser.add_argument(
+        "--stream-arm-s", type=float, default=None,
+        help="seconds of uncommitted audio before Parakeet SilenceCut can commit "
+        "(default 15; lower for earlier chunks)",
+    )
+    parser.add_argument(
+        "--stream-silence-cut-s", type=float, default=None,
+        help="pause duration in seconds that cuts a Parakeet streaming chunk "
+        "(default 0.5)",
+    )
+    parser.add_argument(
+        "--stream-force-cut-s", type=float, default=None,
+        help="max uncommitted audio window before Parakeet force-commits "
+        "(default 60)",
+    )
+    parser.add_argument(
         "--sleep-idle-seconds", type=float, default=0.0,
         help="release the model after N idle seconds (0 = never)",
     )
@@ -110,7 +125,13 @@ def build_adapter(args: argparse.Namespace):
     if args.adapter == "parakeet":
         from myna.testbed.parakeet import ParakeetAdapter
 
-        return ParakeetAdapter(args.model, streaming=args.streaming)
+        return ParakeetAdapter(
+            args.model,
+            streaming=args.streaming,
+            stream_arm_s=getattr(args, "stream_arm_s", None) or 15.0,
+            stream_silence_cut_s=getattr(args, "stream_silence_cut_s", None) or 0.5,
+            stream_force_cut_s=getattr(args, "stream_force_cut_s", None) or 60.0,
+        )
 
     if args.adapter == "sherpa":
         from myna.testbed.sherpa import SherpaAdapter

@@ -2,17 +2,32 @@
 
 socket_path="$(modelctl get socket.path)"
 idle="$(modelctl get sleep-idle-seconds)"
+# `snap set parakeet stream-*=...` writes top-level snap config; modelctl's
+# package config holds the install-time defaults. Prefer the user-visible
+# snapd value, then fall back to the package default.
+stream_arm="$(snapctl get stream-arm-seconds 2>/dev/null || true)"
+stream_silence_cut="$(snapctl get stream-silence-cut-seconds 2>/dev/null || true)"
+stream_force_cut="$(snapctl get stream-force-cut-seconds 2>/dev/null || true)"
+stream_arm="${stream_arm:-$(modelctl get stream-arm-seconds)}"
+stream_silence_cut="${stream_silence_cut:-$(modelctl get stream-silence-cut-seconds)}"
+stream_force_cut="${stream_force_cut:-$(modelctl get stream-force-cut-seconds)}"
 
-# MODEL_DIR is exported from the active model.yaml and points at the
-# installed ONNX model component (see models/*/model.yaml).
+# MODEL_DIR normally comes from model.yaml when modelctl runs the engine. This
+# CPU-only snap bypasses modelctl run to avoid hardware scoring, so fall back
+# to its single component directly.
+MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-parakeet-int8}"
+
 # --streaming: chunked progressive commit is this snap's reason to exist
 # (008 US3). Idle-unload (T27): drop the model after sleep-idle-seconds,
 # keep serving.
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter parakeet \
-    --model "${MODEL_DIR:?MODEL_DIR unset — is the model component installed? try: parakeet use-model parakeet-tdt-0.6b-v3}" \
+    --model "$MODEL_DIR" \
     --streaming \
+    --stream-arm-s "${stream_arm:-15}" \
+    --stream-silence-cut-s "${stream_silence_cut:-0.5}" \
+    --stream-force-cut-s "${stream_force_cut:-60}" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
     "$@"
