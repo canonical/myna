@@ -127,6 +127,19 @@ set, and Rust level pump are the *certain* layer; the look is swappable
 below are the original blob-and-glow vision, kept for context; the ribbon is
 likewise provisional. Diagrammed inline in `indicator.js`/`view.js`.
 
+**SUPERSEDED AGAIN (2026-07-30, HUD redesign)** — the Ribbon's ~80%-monitor-width
+top-of-panel presentation is itself replaced by a **bottom-center HUD pill**
+styled after GNOME's own volume/brightness OSD (a much narrower, compact
+element, not a wide ribbon). `RibbonView`/`indicator.js` is deleted outright
+(not kept as a selectable alternate — see spec Assumptions); a new `hud.js`
+implements the same `IndicatorView` seam. The descriptor shape in `states.js`
+is reshaped from `{key, statusText, isError, hidden}` to `{key, statusText,
+severity, hidden}` where `severity` is `'recoverable' | 'critical' | null`,
+to carry the new two-tier problem distinction (R13). See R14/R15/R16 below for
+the HUD's specific design decisions. The Rust contract, proxy/lifecycle
+(`dbus.js`), and level pump are unaffected — this redesign only replaces the
+*view* half of the seam plus reshapes the pure descriptor it consumes.
+
 **Original decision**: A center-top **hanging blob** drawn in a `St.DrawingArea` via Cairo
 (a rounded droplet whose bottom edge wobbles), sized ~à la an OSD, positioned by
 `Main.layoutManager` just under the panel. Animations via
@@ -151,6 +164,9 @@ treatment (fails the "goop" vision). The blob-with-glow-VU is the brief's intent
 
 ## R7 — VU representation (deferred design axis)
 
+**SUPERSEDED (2026-07-30, HUD redesign)** — replaced by R16's segmented bar
+meter. Kept for context below.
+
 **Decision**: **Glow intensity + radius** driven by `AudioRms`, with `AudioPeak`
 gating an occasional brighter rim — i.e. the VU *is* the goop's aura, not a
 separate bar. No numeric readout, no waveform.
@@ -161,6 +177,7 @@ carries only energy (privacy), and degrades gracefully via stale-decay (R5).
 **Alternatives considered**: A discrete segmented bar or circular arc (more
 chrome, less "alive"); a waveform (needs samples — out). Glow is the most
 integrated with the goop.
+
 
 ## R8 — Panel presence & trigger (spec FR-013/014, US4/P3)
 
@@ -253,6 +270,154 @@ unblocks the on-hardware acceptance now.
 external review dependency on the critical path); snap-bundling (couples to the
 inference-snap work, out of scope). Both deferred.
 
+## R13 — Recoverable/critical severity representation (2026-07-30 HUD redesign)
+
+**Decision**: Extend the existing `IndicatorState::Error(String)` variant to
+`IndicatorState::Error { message: String, recoverable: bool }` (a field
+addition, not a new top-level variant). `DbusIndicator::map_state` publishes
+**two distinct additive `State` wire values** from it — `error` when
+`recoverable == false` (critical), and a new `notice` when `recoverable ==
+true` (recoverable) — reusing the existing `ErrorMessage` property for both
+(broadened meaning, not renamed, so no interface break). A session that
+completes with an empty/blank transcript (`SessionOutcome::Completed{transcript}`
+where `transcript.trim().is_empty()`) publishes `notice` with a fixed
+content-free reason ("No speech detected") instead of `idle`; every other
+completion still publishes `idle` exactly as before. Both the live per-event
+path (`event_to_indicator`'s `Done(_)` arm) and the finalize-block safety net
+(`Ok(SessionOutcome::Completed{transcript})` in `controller.rs`) compute this
+through one shared helper, `completion_indicator_state(transcript: &str) ->
+IndicatorState`, so the two call sites can never disagree or race — whichever
+fires first "wins" and the second is a no-op under `DbusIndicator::publish`'s
+existing per-wire-state dedup (same value in, no re-publish).
+
+**Rationale**: The empty-transcript case is a *successful* completion, not a
+failure — fabricating a transient `error` state for it would be semantically
+wrong and would force GTK/Notify indicators (feature 003, out of scope here)
+to special-case a non-error event or else show a spurious error toast. A field
+on the existing `Error` variant keeps the ripple mechanical (6 files, one-line
+destructure updates) and lets feature-003's indicators ignore the new field
+entirely, provably unchanged. Realizing the split as two wire `State` values
+(rather than a separate `ErrorSeverity` property) costs nothing extra and is
+purely additive per the contract's existing compatibility rule (§Compatibility,
+dbus-interface.md): an unpatched extension build that doesn't recognize
+`notice` degrades to the existing neutral "active" treatment (FR-008), never a
+crash or a stuck error.
+
+**Alternatives considered**: (a) A new top-level `IndicatorState::Notice(String)`
+variant — identical 6-file ripple, no smaller, and reads as an unrelated
+concept rather than an error severity; (b) a side-channel bypassing the
+`Indicator` trait object (`Any`-downcasting to a `DbusIndicator`-only method)
+— non-idiomatic, breaks the shared trait-object seam every indicator backend
+relies on; (c) a separate `ErrorSeverity` D-Bus property alongside a
+synthesized `error` state for the empty-transcript case — semantically
+conflates a success path with an error, rejected. This is an interim,
+client-inferred classification (spec Assumptions) — the true wire-level error
+disposition remains T31/T62's job; this feature does not build that taxonomy.
+
+## R14 — Bottom-center HUD positioning
+
+**Decision**: `Main.layoutManager.addChrome` (the generic chrome API, not
+`addTopChrome` which is panel-anchored) with manual positioning at
+`monitor.y + monitor.height - HEIGHT - MARGIN`, horizontally centered on the
+primary monitor — the same general placement GNOME's own volume/brightness OSD
+uses. Reuses the existing `monitors-changed` re-position pattern already in
+`indicator.js`'s `_position()` (renamed/carried into `hud.js`), just anchored
+to the bottom edge instead of just under the panel.
+
+**Rationale**: Matches the spec's FR-004 requirement and the reference design;
+`addChrome` (vs. `addTopChrome`) is the correct API for chrome that isn't
+panel-relative. No dependency on Shell's internal `OsdWindow` positioning
+logic (kept as a custom widget per the Assumptions — avoids relying on a
+private Shell UI internal that isn't a stable extension API).
+
+**Alternatives considered**: Reusing Shell's internal `OsdWindow` class
+directly — rejected (private API, no stability guarantee across GNOME
+versions); keeping the prior top-of-panel position — rejected per the spec's
+explicit repositioning requirement (FR-004).
+
+## R15 — Replace-in-place / restart-timer state machine (spec clarify pass, FR-007a/FR-007d)
+
+**Decision**: The HUD view keeps a single "held notice" slot per severity tier
+(reason string +, for `recoverable` only, a timer handle). A new arrival of
+the *same* severity while one is already showing replaces the reason/icon in
+place rather than stacking:
+- **`recoverable`**: replaces the reason and **restarts** the auto-dismiss
+  timer in full (fresh ~3.5 s window) — so a second "no speech detected"
+  right after the first doesn't clear on the original's now-stale schedule.
+- **`critical`**: replaces the reason but there is no timer to restart — it
+  simply remains persistent until the user dismisses it; the dismiss
+  requirement is never waived by a replacement.
+
+**Rationale**: Directly encodes the two clarify-pass decisions (concurrent
+critical errors → replace-in-place; concurrent recoverable notices →
+replace-in-place + restart timer). Keeping one slot per severity (not a queue)
+matches how the D-Bus interface already models state as a single current
+value, not a queue, and avoids UI complexity (stacked notices) for what the
+spec's Assumptions call an incidental, low-frequency case.
+
+**Alternatives considered**: Queuing multiple notices — rejected (spec
+clarify pass Q1/Q2 explicitly chose replace-in-place over queuing); ignoring a
+second arrival while one is showing — rejected (would hide a second, possibly
+different, "no speech" occurrence a user might want to know about promptly).
+
+## R16 — Segmented bar meter (replaces R7's glow)
+
+**Decision**: A fixed set of discrete vertical bars (24) whose active count
+tracks the same `AudioRms`/`AudioPeak` inputs the prior glow used, with the
+same stale-decay-to-floor behavior (R5, spec FR-011). Segments illuminate
+left-to-right conventional-VU-style (not a symmetric spindle profile) and are
+colour-zoned green/yellow/red by position, matching a real hardware VU meter.
+
+**Rationale**: Matches the reference design's segmented/dotted meter look and
+the spec clarify pass's explicit choice of a discrete bar meter over a
+continuous waveform or blob (spec Clarifications, 2026-07-30 session). No new
+D-Bus fields are needed — `AudioRms`/`AudioPeak` already carry everything a
+bar meter needs.
+
+**Alternatives considered**: Keeping a continuous smoothed waveform restyled
+to fit the narrower pill — rejected per the clarify-pass decision; a numeric
+readout — rejected (less legible at a glance, not what the reference design
+shows). A symmetric "spindle" bar-height profile (tallest in the centre,
+tapering to the edges — the initial implementation, mirroring the old
+ribbon's shape) was tried and removed: it doesn't read as a VU meter and
+gave no way to express green/yellow/red zones by position.
+
+## R16a — VU calibration and level-update forwarding (2026-07-30, manual-test follow-up)
+
+Two real bugs surfaced only in a live GNOME session (not catchable by the
+headless test suite, which necessarily mocks the D-Bus proxy and Shell
+actors) — see `extensions/myna-shell/README.md` §Testing for why.
+
+**Bug 1 — flat meter regardless of audio.** `dbus.js`'s `_setLevel` dropped a
+level update when its RMS/peak were numerically identical to the previous
+one. `HudView` uses *arrival time*, not value, to detect a stale stream
+(R5) — so a steady voice signal (which legitimately repeats the same
+quantized RMS/peak for consecutive ~50 ms pumps) stopped refreshing that
+timestamp and decayed to the floor after `STALE_MS`. **Fix**: forward every
+level update regardless of whether the values repeat; only the *state*
+descriptor (`states.js`) is deduplicated, never the level.
+
+**Bug 2 — meter needed shouting to move.** The original `boostLevel` used a
+generic exponential gain (`1 - exp(-6·level)`) tuned by guesswork. A live
+capture against a Plantronics/Poly Blackwire C5220 headset measured real
+speech at RMS≈0.009–0.024 / peak≈0.025–0.067 (linear full-scale) against a
+noise floor of ≈0.00003 — an exponential gain calibrated for "generic loud
+audio" left normal speech barely above the floor. **Fix**: a calibrated dBFS
+mapping (`DB_FLOOR = -67`, `DB_CEILING = -14`) derived from that measurement,
+so normal conversational speech lands around the middle of the meter (not
+its floor) without needing to raise your voice. RMS and a weighted peak
+(`PEAK_WEIGHT = 0.55`) are combined so consonants/transients are visible
+without a single spike pinning the meter. These constants are specific to
+the measured hardware/gain chain and may need re-tuning for very different
+microphones; there is no per-device auto-calibration (out of scope).
+
+**Consolidation**: the pre-existing `levelToIntensity`/`levelToBars`
+(single-value, symmetric-spindle-shaped) functions were removed once
+`levelsToIntensity`/`intensityToActiveSegments`/`segmentColor` (RMS+peak,
+left-to-right, colour-zoned) fully replaced their only caller (`hud.js`) —
+dead code left over from R16's first pass would have been misleading
+(its docstring still called it a "ribbon VU").
+
 ## Open items carried to the plan / future
 
 - Whether the constitution should explicitly name **GJS UI shims** as an
@@ -261,3 +426,9 @@ inference-snap work, out of scope). Both deferred.
 - Public distribution channel (R12) — follow-up.
 - A future non-GNOME focus-safe overlay (`gtk4-layer-shell` for wlroots/KDE)
   behind the same `org.myna.Dictation` contract — out of scope, contract-ready.
+- A true wire-level error disposition/taxonomy (T31/T62) that would let R13's
+  interim, client-inferred severity classification be replaced by a real
+  disposition carried end-to-end from the inference backend — this feature's
+  classification is a stopgap, not that taxonomy.
+
+

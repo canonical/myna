@@ -28,7 +28,45 @@ pub enum IndicatorState {
     /// Release seen; awaiting the terminal transcript.
     Finalizing,
     /// An error / secure-field refusal, with a user-facing message.
-    Error(String),
+    ///
+    /// `recoverable` (feature 004, 2026-07-30 HUD redesign, data-model E1a)
+    /// distinguishes a non-blocking issue the user can immediately retry past
+    /// (e.g. a session that completed with no speech captured) from a
+    /// critical failure that persists until acknowledged (e.g. no microphone
+    /// available). This is an interim, client-inferred classification ahead
+    /// of a true wire-level error disposition (T31/T62) — see
+    /// `controller::completion_indicator_state`. Non-D-Bus indicators
+    /// (`gtk`/`notify`) currently render every `Error` identically regardless
+    /// of this field (out of scope for feature 004); only `indicator::dbus`
+    /// branches on it.
+    Error {
+        message: String,
+        recoverable: bool,
+    },
+}
+
+impl IndicatorState {
+    /// A critical, persistent error (`recoverable: false`) — the pre-2026-07-30
+    /// behavior of `Error(msg)`, kept as a convenience constructor so call
+    /// sites read naturally. Persists until the user acknowledges it (D-Bus:
+    /// until dismissed; other indicators: until the session/state clears).
+    pub fn critical(message: impl Into<String>) -> Self {
+        IndicatorState::Error {
+            message: message.into(),
+            recoverable: false,
+        }
+    }
+
+    /// A recoverable, non-blocking issue (`recoverable: true`) — e.g. a
+    /// session that completed with nothing captured. Auto-dismisses on the
+    /// D-Bus/HUD path (feature 004); non-D-Bus indicators render it exactly
+    /// like a critical error today (out of scope for feature 004).
+    pub fn recoverable(message: impl Into<String>) -> Self {
+        IndicatorState::Error {
+            message: message.into(),
+            recoverable: true,
+        }
+    }
 }
 
 /// The activity-indicator seam. `set_state` is idempotent per state.

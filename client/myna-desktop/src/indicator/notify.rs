@@ -46,7 +46,11 @@ fn toast_text(state: &IndicatorState) -> Option<(String, String)> {
             "⏳ Dictation: finishing".into(),
             "Inserting the final text…".into(),
         )),
-        IndicatorState::Error(message) => Some(("⚠ Dictation error".into(), message.clone())),
+        // `recoverable` (feature 004, 2026-07-30) is intentionally ignored
+        // here: this indicator renders every error identically regardless of
+        // severity (out of scope for feature 004 — see plan.md Complexity
+        // Tracking).
+        IndicatorState::Error { message, .. } => Some(("⚠ Dictation error".into(), message.clone())),
     }
 }
 
@@ -107,7 +111,7 @@ impl Indicator for NotifyIndicator {
     async fn set_state(&mut self, state: IndicatorState) {
         match toast_text(&state) {
             Some((summary, body)) => {
-                let error = matches!(state, IndicatorState::Error(_));
+                let error = matches!(state, IndicatorState::Error { .. });
                 self.id = self.show(summary, body, error).await;
             }
             None => {
@@ -132,14 +136,32 @@ mod tests {
         assert!(toast_text(&IndicatorState::Recording).is_some());
         assert!(toast_text(&IndicatorState::Transcribing).is_some());
         assert!(toast_text(&IndicatorState::Finalizing).is_some());
-        assert!(toast_text(&IndicatorState::Error("boom".into())).is_some());
+        assert!(toast_text(&IndicatorState::critical("boom")).is_some());
         assert!(toast_text(&IndicatorState::Hidden).is_none());
     }
 
     #[test]
     fn error_toast_carries_the_message() {
-        let (_summary, body) = toast_text(&IndicatorState::Error("mic gone".into())).unwrap();
+        let (_summary, body) = toast_text(&IndicatorState::critical("mic gone")).unwrap();
         assert_eq!(body, "mic gone");
+    }
+
+    /// T011/P19 (2026-07-30): this indicator's behavior for the error state
+    /// is provably unchanged regardless of `recoverable` — same toast and
+    /// same `Critical` urgency for both severities.
+    #[test]
+    fn error_rendering_unchanged_regardless_of_recoverable() {
+        let critical = toast_text(&IndicatorState::critical("x")).unwrap();
+        let recoverable = toast_text(&IndicatorState::recoverable("x")).unwrap();
+        assert_eq!(critical, recoverable);
+        assert!(matches!(
+            IndicatorState::critical("x"),
+            IndicatorState::Error { .. }
+        ));
+        assert!(matches!(
+            IndicatorState::recoverable("x"),
+            IndicatorState::Error { .. }
+        ));
     }
 
     #[test]

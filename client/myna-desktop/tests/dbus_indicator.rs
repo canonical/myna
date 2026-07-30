@@ -50,9 +50,7 @@ async fn hide_publishes_idle_zeroes_levels_clears_error() {
     let mut indicator = DbusIndicator::new(service.bus(), readiness);
 
     indicator
-        .set_state(IndicatorState::Error(
-            "refusing to type into a password field".into(),
-        ))
+        .set_state(IndicatorState::critical("refusing to type into a password field"))
         .await;
     assert_eq!(
         fake.property("ErrorMessage"),
@@ -114,18 +112,57 @@ async fn duplicate_states_do_not_reemit() {
     );
 }
 
+/// T009/C10 (2026-07-30): `Error{recoverable: true}` publishes the `notice`
+/// wire state (not `error`), reusing `ErrorMessage` for the reason; a
+/// critical error still publishes `error`. Leaving either problem state
+/// clears `ErrorMessage`.
+#[tokio::test]
+async fn recoverable_error_publishes_notice_not_error() {
+    let fake = FakeBus::new();
+    let service = DictationService::new(fake.clone());
+    let readiness = Readiness::new();
+    readiness.note_ready();
+    let mut indicator = DbusIndicator::new(service.bus(), readiness);
+
+    indicator
+        .set_state(IndicatorState::recoverable("No speech detected"))
+        .await;
+    assert_eq!(fake.property("State"), str_prop("notice"));
+    assert_eq!(fake.property("ErrorMessage"), str_prop("No speech detected"));
+
+    // Leaving the recoverable notice clears ErrorMessage, same as leaving a
+    // critical error would.
+    indicator.set_state(IndicatorState::Recording).await;
+    assert_eq!(fake.property("ErrorMessage"), str_prop(""));
+
+    indicator
+        .set_state(IndicatorState::critical("microphone unavailable"))
+        .await;
+    assert_eq!(fake.property("State"), str_prop("error"));
+    assert_eq!(
+        fake.property("ErrorMessage"),
+        str_prop("microphone unavailable")
+    );
+
+    assert_eq!(
+        fake.state_history(),
+        vec!["notice", "recording", "error"]
+    );
+}
+
 /// C3: every published payload is a wire state + a content-free reason — the
 /// `State` values can only ever be the six state strings plus the reason
 /// string from `IndicatorState::Error` in `ErrorMessage` (never transcript,
 /// which never reaches the indicator seam).
 #[tokio::test]
 async fn payloads_are_content_free() {
-    const WIRE_STATES: [&str; 6] = [
+    const WIRE_STATES: [&str; 7] = [
         "idle",
         "loading",
         "recording",
         "transcribing",
         "finalizing",
+        "notice",
         "error",
     ];
     let fake = FakeBus::new();
@@ -134,9 +171,7 @@ async fn payloads_are_content_free() {
 
     indicator.set_state(IndicatorState::Recording).await;
     indicator
-        .set_state(IndicatorState::Error(
-            "inference backend unavailable".into(),
-        ))
+        .set_state(IndicatorState::critical("inference backend unavailable"))
         .await;
     indicator.hide().await;
 

@@ -1,6 +1,6 @@
 # Contract: `org.myna.Dictation` (session bus)
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
 
 The single seam between `myna-desktop` (publisher, Rust/`zbus`) and the GNOME
 Shell extension (consumer, GJS/`Gio.DBusProxy`). State + level only — never
@@ -22,10 +22,10 @@ executable tests on both sides before implementation.
 
 | Property | Type | Range / values | Meaning |
 |---|---|---|---|
-| `State` | `s` | `idle`\|`loading`\|`recording`\|`transcribing`\|`finalizing`\|`error` (additive) | current dictation state (E1) |
+| `State` | `s` | `idle`\|`loading`\|`recording`\|`transcribing`\|`finalizing`\|`notice`\|`error` (additive) | current dictation state (E1). **(2026-07-30)** `notice` is new: a recoverable, non-blocking issue (e.g. empty-transcript completion) — additive per §Compatibility, so an unpatched client degrades it to the existing neutral "active" treatment (FR-008). |
 | `AudioRms` | `d` | `[0.0, 1.0]` | RMS level; `0.0` when idle (E2) |
 | `AudioPeak` | `d` | `[0.0, 1.0]` | peak level; `0.0` when idle (E2) |
-| `ErrorMessage` | `s` | content-free reason; `""` unless `State==error` | user-facing error reason (E3) |
+| `ErrorMessage` | `s` | content-free reason; `""` unless `State==error` or `State==notice` | user-facing reason (E3). **(2026-07-30)** broadened to cover both severities — not renamed, to avoid an interface break. |
 
 ### Signals
 
@@ -56,6 +56,8 @@ change already reads the consistent reason.
 | C7 | `Start` returns `(false, reason)` — not a panic — when a session cannot start (no target / secure field / backend down), with a content-free reason. | hermetic + gated |
 | C8 | Unknown/extra `State` values are additive: a client that doesn't recognize one MUST NOT break (contract is unknown-tolerant). | documented + extension-side C-ext tests |
 | C9 | With no owner, a client sees the name absent and no signals; when `myna-desktop` starts/stops, name-appeared/vanished fire. | env-gated + extension lifecycle test |
+| C10 | **(2026-07-30)** A session that completes with an empty/blank transcript publishes `notice` (not `idle`), with a fixed content-free `ErrorMessage` reason; a non-empty completion publishes `idle` exactly as before. | hermetic `dbus_indicator.rs` + `controller.rs` (empty vs. non-empty transcript cases) |
+| C11 | **(2026-07-30)** The live per-event path (`event_to_indicator`'s `Done(_)` arm) and the finalize-block safety net (`SessionOutcome::Completed`) always agree on `notice` vs. `idle` for the same transcript — both route through one shared `completion_indicator_state()` helper, so they can never publish conflicting states, and a redundant second call is a no-op under C2's per-wire-state dedup. | hermetic `controller.rs` (asserts both call sites produce identical `IndicatorState` for the same transcript) |
 
 ## Confinement (why properties only)
 
@@ -81,6 +83,19 @@ bundling.
 ## Compatibility
 
 Additive, matching the project's transport rule: new properties/signals/state
-values may be added without a break; consumers ignore unknowns (C8). No version
-token on the interface for the MVP (the state-string additivity covers evolution);
-if a semantic break is ever needed it will be a new interface name.
+values may be added without a break; consumers ignore unknowns (C8). **(2026-07-30)**
+The `notice` state value is exactly this kind of additive change — realized
+entirely within the existing `State`/`ErrorMessage` properties, no new members
+were needed. No version token on the interface for the MVP (the state-string
+additivity covers evolution); if a semantic break is ever needed it will be a
+new interface name.
+
+## Note: severity is interim, not a wire-level disposition (2026-07-30)
+
+The `notice`/`error` split is a **client-inferred classification**
+(`myna-desktop` computes it from an empty-transcript check, see
+`data-model.md` E1a and `research.md` R13), not a true error disposition
+carried end-to-end from the inference backend. It is a stopgap ahead of
+T31/T62's proper error-taxonomy work; this contract does not attempt to model
+that taxonomy, only the two coarse severities this feature needs.
+
