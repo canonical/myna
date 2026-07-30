@@ -616,3 +616,52 @@ This test plan explicitly does **not** cover:
   machine-assisted translations.
 - Formal, numeric latency SLOs (no ratified hardware-tier performance
   contract exists yet in this project).
+
+---
+
+## 12. Improvements (deferred)
+
+The following improvements were identified during review. They are collected
+here for tracking and future implementation.
+
+### Model coverage — Parakeet and Sherpa
+
+Parakeet and Sherpa are expected to be packaged soon and should be added to
+the model set in §3 and the test matrix in §5 once available.
+
+### Audio sample collection
+
+Collecting the actual audio recordings produced during test sessions would
+add value — the LibreSpeech corpus likely covers much of what is needed, but
+only a small subset has been pulled into the benchmark suite so far. A
+process for contributors to submit recordings alongside their results
+transcripts should be defined.
+
+### Microphone quality alerting
+
+Poorly configured microphones produce worse accuracy results but are not
+currently distinguishable from a model accuracy problem. Two approaches to
+address this:
+
+1. A warning in the indicator when the detected input quality is low.
+2. Documentation explaining how to benchmark and tune the microphone before
+   running a test session.
+
+### Default hotkey — replace Super+D
+
+`Super+D` is not a good default hotkey choice. Instructions in several places
+still reference it. The recommended default should be updated to `Super+T`
+(which works correctly) across all documentation and install paths.
+
+### Qwen3-ASR GPU support via VLLM
+
+The currently packaged Qwen3-ASR runtime is CPU-only. VLLM ports exist that
+can use GPU acceleration hardware. Packaging a GPU-enabled Qwen3-ASR variant
+should be tracked as a future engineering item.
+
+### Hardware reporting script
+
+Testers are currently asked to manually record CPU model, RAM, and GPU model.
+A script should be provided to capture and format this information
+consistently, reducing transcription errors and making the results table
+easier to compare across submissions.
