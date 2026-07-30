@@ -48,9 +48,10 @@ cloud, no persistent audio.
   + the `org.myna.Dictation` D-Bus publisher).
   The production hot path.
 - `extensions/myna-shell/` — the **GJS** GNOME Shell extension (feature 004): a
-  focus-safe in-compositor dictation indicator ("goop"/ribbon) that consumes
-  `org.myna.Dictation` from `myna-desktop`. Pure UI — never captures, transcribes,
-  or injects. Non-Rust by platform necessity (in-compositor UI must be GJS).
+  focus-safe in-compositor dictation HUD (a bottom-center pill styled after
+  GNOME's own volume/brightness OSD) that consumes `org.myna.Dictation` from
+  `myna-desktop`. Pure UI — never captures, transcribes, or injects. Non-Rust
+  by platform necessity (in-compositor UI must be GJS).
 - `myna-snap/` — the **client snap** (feature 005): packages `myna-desktop` +
   `myna-dictate` as the strictly-confined `myna` snap (no `network` plug).
   Reaches a backend snap's session socket over the `ubustt-socket` writable
@@ -88,8 +89,11 @@ cloud, no persistent audio.
 - **GNOME extension** (feature 004): the focus-safe indicator on GNOME/Wayland,
   where a normal client can't show an always-on-top overlay. `myna-desktop --dbus`
   publishes state + audio level over `org.myna.Dictation`; the extension renders
-  it (Cairo VU ribbon + content-free status label) behind a swappable
-  `IndicatorView` seam. Contract in `specs/004-gnome-shell-indicator/`.
+  a bottom-center HUD pill (mic/mic-slash icon, a calibrated green/yellow/red
+  segmented VU meter, and a recoverable-vs-critical severity split — an
+  auto-dismissing notice for e.g. "no speech detected" vs. a persistent,
+  explicitly-dismissed error) behind a swappable `IndicatorView` seam. Contract
+  in `specs/004-gnome-shell-indicator/`.
 - **Snaps**: one per family — modelctl, weights as components, GPU engines,
   idle-unload, strict confinement.
 - **Client snap (feature 005)**: the orchestrator ships as the confined `myna`

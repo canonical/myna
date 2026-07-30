@@ -314,11 +314,13 @@ rather than the "obvious" solution.
   layer-shell.
 - *So on GNOME* there is currently **no sanctioned way for a normal client to
   show an always-on-top, non-focus-stealing overlay.** The realistic options are
-  (a) a **GNOME Shell extension** for the indicator (the GNOME-blessed path, but
-  a separate JS component with its own packaging/review), (b) lean on the
-  **notification/OSD** facilities the shell already owns (what `NotifyIndicator`
-  does — hence it's the default), or (c) ship layer-shell for KDE/wlroots users
-  and fall back to notifications on GNOME (`gtk4-layer-shell` gates on
+  (a) a **GNOME Shell extension** for the indicator (the GNOME-blessed path, a
+  separate JS component with its own packaging/review — **shipped**: see
+  `extensions/myna-shell/` / feature 004, a bottom-center HUD pill consuming
+  `org.myna.Dictation`), (b) lean on the **notification/OSD** facilities the
+  shell already owns (what `NotifyIndicator` does — the fallback when the
+  extension is absent), or (c) ship layer-shell for KDE/wlroots users and fall
+  back to notifications on GNOME (`gtk4-layer-shell` gates on
   `is_supported()`; this is what Handy effectively does).
 - *The "right" upstream fix, once it settles:* a **standardised cross-desktop
   layer-shell** in `wayland-protocols` (an `ext-`namespace successor has been

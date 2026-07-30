@@ -98,7 +98,8 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `None` when the event drives no indicator change (commit-only text events).
 ///
 /// `Loading`/`Ready` both show `Recording` (a cold load is "listening, warming
-/// up"); `Done` hides the indicator; an `Error` shows its message.
+/// up"); `Done` hides the indicator unless nothing was captured (see
+/// [`completion_indicator_state`]); an `Error` shows its message.
 /// `Snippet`/`Final` carry transcript text and never touch the indicator
 /// (privacy, N8). The `Finalizing` state is controller-driven — set on the
 /// `Release`/focus-out edge, not derivable from an event — so it has no row
@@ -112,18 +113,44 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `Finalizing` (finishing) after release. The internal
 /// `DictationState::Transcribing` still advances (see [`route_event`]); it just
 /// isn't projected to the indicator during capture. Lifecycle: Recording →
-/// [release] → Finalizing → Hidden.
+/// [release] → Finalizing → Hidden (or, since 2026-07-30, a recoverable
+/// `notice` — see below).
 pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
     match event {
         OrchestratorEvent::Loading | OrchestratorEvent::Ready => Some(IndicatorState::Recording),
         // Listening, not "working": stay on Recording while the user speaks.
         OrchestratorEvent::Transcribing => Some(IndicatorState::Recording),
-        OrchestratorEvent::Done(_) => Some(IndicatorState::Hidden),
-        OrchestratorEvent::Error { message, .. } => Some(IndicatorState::Error(message.clone())),
+        OrchestratorEvent::Done(text) => Some(completion_indicator_state(text)),
+        OrchestratorEvent::Error { message, .. } => Some(IndicatorState::critical(message.clone())),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
         | OrchestratorEvent::Unstable(_)
         | OrchestratorEvent::AudioDropped(_) => None,
+    }
+}
+
+/// The indicator state for a completed session's transcript (feature 004,
+/// 2026-07-30 HUD redesign, data-model E1a, research R13, contract C10/C11).
+///
+/// An empty/blank transcript means nothing was captured — a **recoverable**,
+/// non-blocking issue (e.g. "no speech detected"), not a failure: the session
+/// completed successfully, so this is NOT an `OrchestratorEvent::Error`. A
+/// non-empty transcript hides the indicator exactly as before.
+///
+/// This single helper is called from **both** the live per-event path
+/// ([`event_to_indicator`]'s `Done` arm, above) and the finalize-block safety
+/// net (this module's `Ok(SessionOutcome::Completed{transcript})` handler,
+/// below) so the two can never disagree (C11) — whichever fires first
+/// publishes the state; the other's call is a no-op under
+/// `DbusIndicator::publish`'s existing per-wire-state dedup (C2).
+///
+/// This is an interim, client-inferred classification, not a true wire-level
+/// error disposition — that remains T31/T62's job (spec Assumptions).
+pub fn completion_indicator_state(transcript: &str) -> IndicatorState {
+    if transcript.trim().is_empty() {
+        IndicatorState::recoverable("No speech detected")
+    } else {
+        IndicatorState::Hidden
     }
 }
 
@@ -391,12 +418,12 @@ impl DesktopController {
             myna_core::dbg_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
             self.indicator
-                .set_state(IndicatorState::Error("dictation target closed".into()))
+                .set_state(IndicatorState::critical("dictation target closed"))
                 .await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
-                Ok(SessionOutcome::Completed { .. }) => {
+                Ok(SessionOutcome::Completed { transcript }) => {
                     myna_core::dbg_log!("ctrl", "utterance completed");
                     ensure_finalizing(&mut self.state);
                     // Safety flush: normally the terminal `done` already flushed
@@ -418,7 +445,13 @@ impl DesktopController {
                     }
                     self.injector.set_activity(false).await;
                     self.injector.end().await;
-                    self.indicator.set_state(IndicatorState::Hidden).await;
+                    // C11: agrees with event_to_indicator's Done arm — both
+                    // call completion_indicator_state so a Hidden vs. notice
+                    // disagreement can never happen; a redundant repeat here
+                    // is a no-op under DbusIndicator::publish's dedup (C2).
+                    self.indicator
+                        .set_state(completion_indicator_state(&transcript))
+                        .await;
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
                 Ok(SessionOutcome::Aborted) => {
@@ -430,7 +463,7 @@ impl DesktopController {
                     myna_core::dbg_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
                     self.indicator
-                        .set_state(IndicatorState::Error(message))
+                        .set_state(IndicatorState::critical(message))
                         .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
@@ -438,7 +471,7 @@ impl DesktopController {
                     myna_core::dbg_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
                     self.indicator
-                        .set_state(IndicatorState::Error(err.to_string()))
+                        .set_state(IndicatorState::critical(err.to_string()))
                         .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
@@ -466,7 +499,7 @@ impl DesktopController {
         myna_core::dbg_log!("ctrl", "acquire failed, aborting before capture: {message}");
         self.injector.cancel().await; // idempotent; releases if anything stuck
         self.indicator
-            .set_state(IndicatorState::Error(message))
+            .set_state(IndicatorState::critical(message))
             .await;
         advance(&mut self.state, DictationState::Error);
         advance(&mut self.state, DictationState::Idle);
@@ -736,6 +769,38 @@ mod tests {
         );
     }
 
+    /// T013/C10 (2026-07-30): a `Done` with an empty/blank transcript maps to
+    /// the recoverable notice, not `Hidden` — this is the live-event half of
+    /// the dual-call-site agreement (see `completion_indicator_state` tests
+    /// below and `tests/controller.rs` for the finalize-block half).
+    #[test]
+    fn done_with_empty_transcript_maps_to_recoverable_notice() {
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Done("".into())),
+            Some(IndicatorState::recoverable("No speech detected"))
+        );
+        assert_eq!(
+            event_to_indicator(&OrchestratorEvent::Done("   ".into())),
+            Some(IndicatorState::recoverable("No speech detected")),
+            "whitespace-only transcript counts as empty"
+        );
+    }
+
+    /// T013: `completion_indicator_state` in isolation — empty/blank →
+    /// recoverable notice, non-empty → Hidden.
+    #[test]
+    fn completion_indicator_state_splits_on_empty_transcript() {
+        assert_eq!(
+            completion_indicator_state(""),
+            IndicatorState::recoverable("No speech detected")
+        );
+        assert_eq!(
+            completion_indicator_state("   "),
+            IndicatorState::recoverable("No speech detected")
+        );
+        assert_eq!(completion_indicator_state("hello"), IndicatorState::Hidden);
+    }
+
     #[test]
     fn error_maps_to_error_with_message() {
         assert_eq!(
@@ -743,7 +808,7 @@ mod tests {
                 code: "x".into(),
                 message: "boom".into()
             }),
-            Some(IndicatorState::Error("boom".into()))
+            Some(IndicatorState::critical("boom"))
         );
     }
 

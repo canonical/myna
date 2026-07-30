@@ -1,18 +1,24 @@
 // vumeter.js — PURE VU logic (feature 004; contract extension.md X5; research
-// R5/R7). Level → a normalized intensity with stale-decay, and a bar-height
-// profile for a ribbon VU. No Shell, no gi imports — unit-tested headless.
+// R5/R16). RMS/peak → a headset-calibrated dBFS intensity with stale-decay,
+// active-segment count, and conventional green/yellow/red zones. The legacy
+// bar-height profile remains for compatibility/tests. No Shell or gi imports.
 // Carries energy only, never samples or content (constitution V, X6).
 
 // Past this age with no fresh level, ease the VU to its floor rather than
 // freezing on the last value (R5/SC-004).
 export const STALE_MS = 300;
 // Never fully dead while active, so the VU reads as "alive, quiet" not "off".
-export const FLOOR = 0.06;
-// Speech is quiet in full-scale terms (RMS ~0.03–0.15). A raw linear level
-// leaves the VU barely twitching, so we lift it perceptually with a soft
-// saturation curve `1 - exp(-GAIN·l)`: it lifts quiet speech steeply, eases
-// toward 1 without ever pinning, and is strictly monotonic (contract holds).
-const GAIN = 6.0;
+export const FLOOR = 0.04;
+
+// Calibrated from a normal-speech Blackwire C5220 capture (2026-07-30):
+// noise ≈ -80 dBFS, normal speech RMS ≈ -41 dBFS / peak ≈ -32 dBFS,
+// strong speech RMS ≈ -32 dBFS / peak ≈ -23 dBFS. Map that useful acoustic
+// range onto the full meter instead of applying a shallow linear gain.
+const DB_FLOOR = -67;
+const DB_CEILING = -14;
+const PEAK_WEIGHT = 0.55;
+const YELLOW_START = 0.68;
+const RED_START = 0.86;
 
 /** Clamp to [0,1]. */
 function clamp01(x) {
@@ -29,48 +35,45 @@ function clamp01(x) {
  * @returns {number} boosted level in [0,1].
  */
 export function boostLevel(level) {
-    return 1 - Math.exp(-GAIN * clamp01(level));
+    const l = clamp01(level);
+    if (l <= 0)
+        return 0;
+    const db = 20 * Math.log10(l);
+    return clamp01((db - DB_FLOOR) / (DB_CEILING - DB_FLOOR));
 }
 
 /**
- * Level → glow/VU intensity in [FLOOR,1], monotonic and clamped, decaying to
- * FLOOR once the last update is older than STALE_MS (X5). The raw level is
- * perceptually boosted (boostLevel) so quiet speech visibly drives the VU.
+ * RMS + peak → VU intensity in [FLOOR,1], monotonic and clamped, decaying to
+ * FLOOR once the last update is older than STALE_MS (X5). RMS keeps the
+ * display stable; a weighted peak makes consonants and short transients
+ * visible without pinning the meter. Both inputs use the same calibrated
+ * dBFS scale (boostLevel) so quiet speech visibly drives the VU.
  *
- * @param {number} level - normalized audio level in [0,1].
+ * @param {number} rms - normalized RMS level in [0,1].
+ * @param {number} peak - normalized peak level in [0,1].
  * @param {number} [ageMs] - ms since that level arrived (0 = fresh).
  * @returns {number} intensity in [FLOOR, 1].
  */
-export function levelToIntensity(level, ageMs = 0) {
-    const l = boostLevel(level);
+export function levelsToIntensity(rms, peak, ageMs = 0) {
+    const combined = boostLevel(Math.max(clamp01(rms), clamp01(peak) * PEAK_WEIGHT));
     if (ageMs >= STALE_MS)
         return FLOOR;
     // Linear ease toward the floor across the stale window.
     const freshness = ageMs <= 0 ? 1 : 1 - clamp01(ageMs / STALE_MS);
-    return FLOOR + (Math.max(l, FLOOR) - FLOOR) * freshness;
+    return FLOOR + (Math.max(combined, FLOOR) - FLOOR) * freshness;
 }
 
-/**
- * A symmetric bar-height profile for a ribbon VU: `barCount` values in
- * [FLOOR,1], tallest in the centre and tapering to the edges, scaled by the
- * current intensity. Deterministic (no randomness) so it's testable; a view
- * may add its own liveliness on top.
- *
- * @param {number} level - normalized audio level in [0,1].
- * @param {number} [ageMs] - ms since that level (for stale-decay).
- * @param {number} [barCount] - number of bars (>=1).
- * @returns {number[]} heights in [FLOOR,1], length `barCount`.
- */
-export function levelToBars(level, ageMs = 0, barCount = 24) {
-    const n = Math.max(1, Math.floor(barCount));
-    const intensity = levelToIntensity(level, ageMs);
-    const mid = (n - 1) / 2;
-    const bars = new Array(n);
-    for (let i = 0; i < n; i++) {
-        // 1 at centre → ~0.35 at the edges: a smooth spindle shape.
-        const dist = mid === 0 ? 0 : Math.abs(i - mid) / mid;
-        const shape = 1 - 0.65 * dist * dist;
-        bars[i] = Math.max(FLOOR, intensity * shape);
-    }
-    return bars;
+/** Number of illuminated segments for an intensity and fixed segment count. */
+export function intensityToActiveSegments(intensity, segmentCount = 24) {
+    const count = Math.max(1, Math.floor(segmentCount));
+    return Math.min(count, Math.ceil(clamp01(intensity) * count));
+}
+
+/** Conventional segmented-VU colour zone for a segment's normalized place. */
+export function segmentColor(position) {
+    if (position >= RED_START)
+        return 'red';
+    if (position >= YELLOW_START)
+        return 'yellow';
+    return 'green';
 }

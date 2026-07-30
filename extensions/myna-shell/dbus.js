@@ -144,8 +144,11 @@ export class DictationService {
     }
 
     _setLevel(rms, peak) {
-        if (rms === this._rms && peak === this._peak)
-            return;
+        // Do not deduplicate numerically-identical level updates. Arrival time
+        // is part of the VU contract: HudView uses each fresh update to reset
+        // stale-decay. A steady/quantized signal can legitimately publish the
+        // same RMS/peak for many frames; dropping those arrivals made a live
+        // microphone decay to the flat floor after ~300 ms.
         this._rms = rms;
         this._peak = peak;
         this._onLevel(rms, peak);
@@ -155,7 +158,7 @@ export class DictationService {
         this._teardownProxy();
         this._available = false;
         this._onAvailabilityChanged(false);
-        // Daemon gone (crash/exit): clear the goop to idle (X8).
+        // Daemon gone (crash/exit): clear the HUD pill to idle (X8).
         this._setState('idle', '');
     }
 

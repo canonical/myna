@@ -255,10 +255,12 @@ async fn snippet_is_never_committed() {
 async fn no_speech_session_commits_nothing() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
     let mut controller = build(
         [TriggerEdge::Press, TriggerEdge::Release],
         injector,
-        MockIndicator::new(),
+        indicator,
         events_session(
             vec![
                 OrchestratorEvent::Loading,
@@ -282,6 +284,18 @@ async fn no_speech_session_commits_nothing() {
         assert_eq!(log.ends + log.cancels, 1);
     }
     assert_eq!(controller.state(), DictationState::Idle);
+
+    // T015/C11 (2026-07-30): the live `Done("")` event and the finalize-block
+    // `SessionOutcome::Completed{transcript: ""}` both route through
+    // `completion_indicator_state`, so the final indicator state is the
+    // recoverable notice — never `Hidden` — and the two calls agree (the
+    // second is a no-op under the real DbusIndicator's dedup; here with
+    // MockIndicator we just assert the final state is right).
+    assert_eq!(
+        indicate_log.lock().unwrap().last(),
+        Some(&IndicatorState::recoverable("No speech detected")),
+        "an empty-transcript completion must surface the recoverable notice, not Hidden"
+    );
 }
 
 // ── T015: acquire NoTarget / Unavailable → Error state, no capture ────────────
@@ -314,7 +328,7 @@ async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
     assert!(
         matches!(
             indicate_log.lock().unwrap().last(),
-            Some(IndicatorState::Error(_))
+            Some(IndicatorState::Error { .. })
         ),
         "acquire error must surface an Error state"
     );
@@ -358,7 +372,7 @@ async fn error_path_cancels_and_restores_exactly_once() {
     }
     assert!(matches!(
         indicate_log.lock().unwrap().last(),
-        Some(IndicatorState::Error(_))
+        Some(IndicatorState::Error { .. })
     ));
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -403,8 +417,8 @@ async fn full_session_walks_recording_finalizing_hidden() {
     assert_eq!(states.last(), Some(&IndicatorState::Hidden));
     // Privacy (N8): no transcript text leaked into any indicator state.
     for s in &states {
-        if let IndicatorState::Error(msg) = s {
-            assert!(!msg.contains("quick"), "indicator leaked text: {msg}");
+        if let IndicatorState::Error { message, .. } = s {
+            assert!(!message.contains("quick"), "indicator leaked text: {message}");
         }
     }
 }
@@ -488,7 +502,7 @@ async fn indicator_shows_error_state_on_failure() {
     assert!(
         states
             .iter()
-            .any(|s| matches!(s, IndicatorState::Error(m) if m == "boom")),
+            .any(|s| matches!(s, IndicatorState::Error { message, .. } if message == "boom")),
         "expected Error(\"boom\"): {states:?}"
     );
 }
@@ -604,7 +618,7 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
     assert!(
         matches!(
             indicate_log.lock().unwrap().last(),
-            Some(IndicatorState::Error(_))
+            Some(IndicatorState::Error { .. })
         ),
         "target-gone must notify"
     );

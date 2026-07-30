@@ -9,6 +9,12 @@
 // implementation. A redesign (the team's, or a future user theme) is: write a
 // new IndicatorView and change the factory below. Nothing else moves.
 //
+// 2026-07-30 HUD redesign: the prior `RibbonView` (`indicator.js`, a
+// top-of-panel ribbon) is replaced by `HudView` (`hud.js`, a bottom-center
+// pill styled after GNOME's own OSD) — deleted, not kept as a selectable
+// alternate (spec Assumptions). This interface itself is unchanged; only the
+// implementation behind the factory below moved.
+//
 // # IndicatorView interface
 //
 // A view renders dictation activity as Shell chrome. It is driven entirely by
@@ -17,15 +23,18 @@
 //
 //   show(descriptor)   Make the indicator visible (if not already) and render
 //                      this semantic descriptor from states.js:
-//                      `{key, statusText, isError, hidden}`. Never called with
-//                      a hidden descriptor (the extension calls hide() for idle).
+//                      `{key, statusText, severity, hidden}` (severity is
+//                      `'recoverable' | 'critical' | null`, 2026-07-30). Never
+//                      called with a hidden descriptor (the extension calls
+//                      hide() for idle).
 //   setLevel(rms, peak) Feed the latest normalized audio level in [0,1]
 //                      (org.myna.Dictation AudioRms/AudioPeak) for the VU.
 //                      May arrive before show() or after hide(); a view must
 //                      tolerate that (ignore when not visible).
-//   hide()             Return to idle: animate away and release actors. An
-//                      error descriptor MAY be held briefly by the view before
-//                      it honours a hide (so errors don't just vanish).
+//   hide()             Return to idle: animate away and release actors. A
+//                      held notice/error (severity !== null) MAY be kept
+//                      visible briefly — or until an explicit dismiss —
+//                      before honouring a hide (so it doesn't just vanish).
 //   destroy()          Immediate teardown (extension disable / Shell restart):
 //                      destroy every actor, cancel every timer/transition,
 //                      drop every subscription — no leaks (X9).
@@ -33,19 +42,19 @@
 // A view carries/renders no transcript content — only the descriptor's
 // content-free statusText and the level (constitution V).
 
-import {RibbonView} from './indicator.js';
+import {HudView} from './hud.js';
 
 /**
  * Construct the active IndicatorView. The single place a redesign is selected;
  * `name` leaves room for future user choice (settings/themes).
  *
- * @param {string} [name] - view id; defaults to the experimental ribbon.
+ * @param {string} [name] - view id; defaults to the bottom-center HUD pill.
  * @returns {object} an IndicatorView (see the interface above).
  */
-export function createView(name = 'ribbon') {
+export function createView(name = 'hud') {
     switch (name) {
-    case 'ribbon':
+    case 'hud':
     default:
-        return new RibbonView();
+        return new HudView();
     }
 }
