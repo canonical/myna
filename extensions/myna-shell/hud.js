@@ -5,27 +5,30 @@
 //
 // A compact pill styled after GNOME's own volume/brightness OSD: bottom-center
 // of the primary monitor (R14), a mic/mic-slash icon (contextual on severity,
-// X19), a content-free status label, a segmented bar meter for the live audio
-// level (R16 — shown only for the non-problem states; the reference design
-// doesn't draw one alongside a notice/error row), and — for a critical error
-// only — a dismiss (×) control that is pointer-reactive but never
-// keyboard-focusable (X22, FR-007c), so a click can never steal keyboard
-// focus (X11/SC-001).
+// X19), a content-free status label, a flowing wave-ribbon for the live audio
+// level (2026-07-30 wave-ribbon redesign, R17 — replaces the segmented bar
+// meter; refined 2026-07-30 per the "fabric in gentle airflow" design pass:
+// a smoothed, layered ribbon rather than an oscilloscope, tinted amber and
+// gently pulsing — not hidden — during a recoverable notice, R17a), and —
+// for a critical error only — a dismiss (×) control that is pointer-reactive
+// but never keyboard-focusable (X22, FR-007c), so a click can never steal
+// keyboard focus (X11/SC-001).
 //
 // The "held notice" slot (recoverable vs. critical) implements the
 // replace-in-place / restart-timer rules from research R15 (FR-007a/FR-007d,
-// X20): any new problem descriptor replaces whatever is currently held
-// (never a queue); a recoverable notice's hold timer restarts in full on a
-// repeat; a critical error has no timer and never auto-dismisses.
+// X20): any new problem descriptor (severity !== null) replaces whatever is
+// currently held (never a queue); a recoverable notice's hold timer restarts
+// in full on a repeat; a critical error has no timer and never auto-dismisses.
 //
 // Added as Shell chrome — non-reactive, non-focusable — except the dismiss
 // control, so nothing here can ever take keyboard focus. Pixels/geometry are
 // deliberately isolated behind this one file (and its pure `hud-logic.js`
-// helper); states.js/view.js/dbus.js/vumeter.js are untouched by this
-// redesign.
+// helper); states.js/view.js/dbus.js are untouched by this redesign. The
+// wave ribbon's own math/paint (ribbon.js/ribbon-paint.js/accent.js) are
+// likewise pure, Shell-independent modules — this file only wires them into
+// an `St.DrawingArea` actor.
 
 import Atk from 'gi://Atk';
-import Cairo from 'gi://cairo';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -33,19 +36,25 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {
-    levelsToIntensity,
-    intensityToActiveSegments,
-    segmentColor,
-} from './vumeter.js';
+import {SystemPreferences} from './accent.js';
 import {
     computePosition,
     iconForSeverity,
+    ribbonPhaseForStateKey,
+    ribbonVisibleForSeverity,
     severityAutoDismisses,
     shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
 } from './hud-logic.js';
+import {
+    applyEnvelopeSmoothing,
+    computeEnvelope,
+    computeRibbonModel,
+    DEFAULT_ENVELOPE_HZ,
+    UNFOLD_MS,
+} from './ribbon.js';
+import {paintRibbon} from './ribbon-paint.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
@@ -56,33 +65,66 @@ const PILL_WIDTH = 360;
 // to near-zero regardless of the real audio level, the flat-vumeter bug a
 // manual test caught (2026-07-30 follow-up).
 const PILL_HEIGHT_ESTIMATE = 88;
-const BAR_COUNT = 24;
-const BAR_METER_WIDTH = 160;
-const BAR_METER_HEIGHT = 32;
-const VU_FPS = 30;
+const RIBBON_WIDTH = 160;
+const RIBBON_HEIGHT = 32;
 const APPEAR_MS = 180;
 const CLEAR_MS = 200;
 const RECOVERABLE_HOLD_MS = 3500; // matches the prior ERROR_HOLD_MS baseline
 
-// A Cairo-drawn segmented VU meter (R16) — replaces the prior continuous
-// goop/ribbon glow entirely. Power mapping, dBFS calibration, active-segment
-// count, and green/yellow/red zones live in vumeter.js; this actor only draws.
-const BarMeterActor = GObject.registerClass(
-class BarMeterActor extends St.DrawingArea {
+// A Cairo-drawn flowing wave ribbon (2026-07-30, R17) — replaces the prior
+// segmented bar meter entirely. Envelope/strand/phase-timing math lives in
+// ribbon.js, the accent-color/reduced-motion resolution in accent.js, and
+// the actual Cairo drawing in ribbon-paint.js (shared verbatim with the
+// standalone dev-lab tuning tool, R20); this actor only wires them together
+// and owns the GLib timers.
+const WaveRibbonActor = GObject.registerClass(
+class WaveRibbonActor extends St.DrawingArea {
     _init() {
         super._init({
-            style_class: 'myna-hud-bars',
+            style_class: 'myna-hud-ribbon',
             reactive: false,
             can_focus: false,
-            width: BAR_METER_WIDTH,
-            height: BAR_METER_HEIGHT,
+            width: RIBBON_WIDTH,
+            height: RIBBON_HEIGHT,
             x_expand: false,
             y_expand: false,
         });
         this._lastRms = 0;
         this._lastPeak = 0;
         this._lastLevelAt = 0;
+        // The SMOOTHED envelope actually driving the wave shape (~300 ms
+        // one-pole low-pass, 2026-07-30 refinement) — distinct from
+        // vumeter.js's arrival-time stale-decay above. Caller-maintained
+        // state, updated once per repaint frame via `applyEnvelopeSmoothing`
+        // so `ribbon.js` itself stays a pure function of its inputs.
+        this._smoothedEnvelope = 0;
+        this._lastDrawAt = 0;
+        this._severityTint = null;
+        this._startedAt = GLib.get_monotonic_time();
+        // Every new actor (i.e. every new session, since HudView tears
+        // down and recreates its actors between sessions) begins in the
+        // brief `unfold` phase (FR-010a) and self-advances to `flow` once
+        // — never interrupted by an external setPhase() for the ordinary
+        // recording/loading states (hud-logic.js's `ribbonPhaseForStateKey`
+        // deliberately returns null for those).
+        this._phase = 'unfold';
+        this._phaseStartedAt = this._startedAt;
+        this._unfoldTimerId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, UNFOLD_MS, () => {
+                this._unfoldTimerId = 0;
+                if (this._phase === 'unfold')
+                    this.setPhase('flow');
+                return GLib.SOURCE_REMOVE;
+            });
+
+        this._prefs = new SystemPreferences({
+            onAccentChanged: () => this.queue_repaint(),
+            onMotionChanged: () => this.queue_repaint(),
+        });
+        this._prefs.enable();
+
         this.connect('repaint', () => this._draw());
+        this.connect('destroy', () => this._onDestroy());
     }
 
     setLevel(rms, peak = rms) {
@@ -92,42 +134,67 @@ class BarMeterActor extends St.DrawingArea {
         this.queue_repaint();
     }
 
+    /**
+     * Force a lifecycle-phase change (2026-07-30, R17). A no-op if already
+     * in that phase, so redundant calls (e.g. the same state repeating)
+     * never restart an in-flight phase animation.
+     *
+     * @param {('unfold'|'flow'|'relax'|'morph'|'complete')} phase
+     */
+    setPhase(phase) {
+        if (phase === this._phase)
+            return;
+        this._phase = phase;
+        this._phaseStartedAt = GLib.get_monotonic_time();
+        this.queue_repaint();
+    }
+
+    /**
+     * Set the severity tint (2026-07-30 design refinement, R17a):
+     * `'recoverable'` keeps the ribbon visible, amber, and gently pulsing
+     * instead of hidden; `'critical'`/`null` render normally (a critical
+     * error hides the whole ribbon at the `HudView` level instead — see
+     * `hud-logic.js`'s `ribbonVisibleForSeverity`).
+     *
+     * @param {(('recoverable'|'critical')|null)} tint
+     */
+    setSeverityTint(tint) {
+        if (tint === this._severityTint)
+            return;
+        this._severityTint = tint;
+        this.queue_repaint();
+    }
+
     _draw() {
         const cr = this.get_context();
         const [w, h] = this.get_surface_size();
         const now = GLib.get_monotonic_time();
         const ageMs = this._lastLevelAt ? (now - this._lastLevelAt) / 1000 : 9999;
-        const intensity = levelsToIntensity(
-            this._lastRms, this._lastPeak, ageMs);
-        const active = intensityToActiveSegments(intensity, BAR_COUNT);
+        const instantEnvelope = computeEnvelope(this._lastRms, this._lastPeak, ageMs);
+        const dtMs = this._lastDrawAt ? (now - this._lastDrawAt) / 1000 : 1000 / DEFAULT_ENVELOPE_HZ;
+        this._smoothedEnvelope = applyEnvelopeSmoothing(this._smoothedEnvelope, instantEnvelope, dtMs);
+        this._lastDrawAt = now;
 
-        const gap = w / BAR_COUNT;
-        const barWidth = gap * 0.55;
-        for (let i = 0; i < BAR_COUNT; i++) {
-            const position = (i + 1) / BAR_COUNT;
-            const lit = i < active;
-            switch (segmentColor(position)) {
-            case 'red':
-                cr.setSourceRGBA(0.95, 0.24, 0.20, lit ? 1.0 : 0.16);
-                break;
-            case 'yellow':
-                cr.setSourceRGBA(0.98, 0.72, 0.18, lit ? 1.0 : 0.16);
-                break;
-            case 'green':
-            default:
-                cr.setSourceRGBA(0.20, 0.82, 0.42, lit ? 1.0 : 0.16);
-                break;
-            }
-            // Conventional VU: fixed-height segments illuminate left-to-right
-            // as signal power rises. Slight taper keeps the row visually alive
-            // without making amplitude ambiguous.
-            const barH = h * (0.66 + 0.34 * position);
-            const x = i * gap + (gap - barWidth) / 2;
-            const y = (h - barH) / 2;
-            cr.rectangle(x, y, barWidth, barH);
-            cr.fill();
-        }
+        const elapsedMs = (now - this._startedAt) / 1000;
+        const phaseElapsedMs = (now - this._phaseStartedAt) / 1000;
+        const model = computeRibbonModel({
+            envelope: this._smoothedEnvelope,
+            elapsedMs,
+            phase: this._phase,
+            phaseElapsedMs,
+            reducedMotion: this._prefs.reducedMotion,
+            severityTint: this._severityTint,
+        });
+        paintRibbon(cr, w, h, model, this._prefs.accentPalette);
         cr.$dispose();
+    }
+
+    _onDestroy() {
+        if (this._unfoldTimerId !== 0) {
+            GLib.source_remove(this._unfoldTimerId);
+            this._unfoldTimerId = 0;
+        }
+        this._prefs.disable();
     }
 });
 
@@ -137,10 +204,10 @@ export class HudView {
         this._box = null;
         this._icon = null;
         this._label = null;
-        this._bars = null;
+        this._ribbon = null;
         this._dismissButton = null;
         this._monitorsChangedId = 0;
-        this._vuTimer = 0;
+        this._ribbonTimer = 0;
         this._holdTimer = 0;
         this._lastRms = 0;
         this._lastPeak = 0;
@@ -159,7 +226,7 @@ export class HudView {
         // waiting for a numerically-different update.
         this._lastRms = rms;
         this._lastPeak = peak;
-        this._bars?.setLevel(rms, peak);
+        this._ribbon?.setLevel(rms, peak);
     }
 
     hide() {
@@ -186,7 +253,7 @@ export class HudView {
         this._box = null;
         this._icon = null;
         this._label = null;
-        this._bars = null;
+        this._ribbon = null;
         this._dismissButton = null;
         this._held = null;
     }
@@ -222,9 +289,19 @@ export class HudView {
         if (colorClass !== null)
             this._box.add_style_class_name(colorClass);
 
-        // The bar meter only makes sense for the non-problem states (the
-        // reference design doesn't draw one alongside a notice/error row).
-        this._bars.visible = severity === null;
+        // 2026-07-30, R17a: only a critical error hides the ribbon; a
+        // recoverable notice keeps it visible, tinted amber and gently
+        // pulsing instead (hud-logic.js's `ribbonVisibleForSeverity`).
+        this._ribbon.visible = ribbonVisibleForSeverity(severity);
+        this._ribbon.setSeverityTint(severity);
+
+        // 2026-07-30, R17: force the ribbon into `morph`/`complete` for the
+        // two transitions that must visibly change its motion; every other
+        // key (recording/loading/...) leaves the ribbon's own internal
+        // unfold→flow phase alone (hud-logic.js's `ribbonPhaseForStateKey`).
+        const forcedPhase = ribbonPhaseForStateKey(descriptor.key);
+        if (forcedPhase !== null)
+            this._ribbon.setPhase(forcedPhase);
 
         this._dismissButton.visible = severity === 'critical';
     }
@@ -263,8 +340,8 @@ export class HudView {
             text: '',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._bars = new BarMeterActor();
-        this._bars.setLevel(this._lastRms, this._lastPeak);
+        this._ribbon = new WaveRibbonActor();
+        this._ribbon.setLevel(this._lastRms, this._lastPeak);
         // The dismiss (×) control: the ONLY reactive/focusable-capable actor
         // in this chrome. can_focus stays false even though it's clickable —
         // that is the whole point (X11/FR-007c): a click can dismiss it
@@ -289,7 +366,7 @@ export class HudView {
             can_focus: false,
         });
         contentBox.add_child(this._label);
-        contentBox.add_child(this._bars);
+        contentBox.add_child(this._ribbon);
 
         this._box = new St.BoxLayout({
             style_class: 'myna-hud-pill',
@@ -319,7 +396,7 @@ export class HudView {
             mode: Clutter.AnimationMode.EASE_OUT_BACK,
         });
 
-        this._startVu();
+        this._startRibbonTimer();
     }
 
     _position() {
@@ -330,14 +407,14 @@ export class HudView {
         this._box.set_position(x, y);
     }
 
-    _startVu() {
-        if (this._vuTimer !== 0)
+    _startRibbonTimer() {
+        if (this._ribbonTimer !== 0)
             return;
-        this._vuTimer = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT, Math.floor(1000 / VU_FPS), () => {
-                if (this._bars === null)
+        this._ribbonTimer = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, Math.floor(1000 / DEFAULT_ENVELOPE_HZ), () => {
+                if (this._ribbon === null)
                     return GLib.SOURCE_REMOVE;
-                this._bars.queue_repaint();
+                this._ribbon.queue_repaint();
                 return GLib.SOURCE_CONTINUE;
             });
     }
@@ -351,7 +428,7 @@ export class HudView {
         this._box = null;
         this._icon = null;
         this._label = null;
-        this._bars = null;
+        this._ribbon = null;
         this._dismissButton = null;
         box.remove_all_transitions();
         box.set_pivot_point(0.5, 0.5);
@@ -369,9 +446,9 @@ export class HudView {
     }
 
     _stopTimers() {
-        if (this._vuTimer !== 0) {
-            GLib.source_remove(this._vuTimer);
-            this._vuTimer = 0;
+        if (this._ribbonTimer !== 0) {
+            GLib.source_remove(this._ribbonTimer);
+            this._ribbonTimer = 0;
         }
         if (this._holdTimer !== 0) {
             GLib.source_remove(this._holdTimer);

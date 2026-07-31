@@ -1,8 +1,12 @@
-// vumeter.js — PURE VU logic (feature 004; contract extension.md X5; research
-// R5/R16). RMS/peak → a headset-calibrated dBFS intensity with stale-decay,
-// active-segment count, and conventional green/yellow/red zones. The legacy
-// bar-height profile remains for compatibility/tests. No Shell or gi imports.
-// Carries energy only, never samples or content (constitution V, X6).
+// vumeter.js — PURE envelope logic (feature 004; contract extension.md X5;
+// research R5/R16/R16a/R17). RMS/peak → a headset-calibrated dBFS intensity
+// with stale-decay. This is the shared envelope math `ribbon.js` (the
+// 2026-07-30 wave-ribbon redesign) delegates to unchanged — the segmented
+// bar-meter-only helpers (`intensityToActiveSegments`/`segmentColor`) that
+// used to live here were removed once `ribbon.js` fully replaced their only
+// caller (`hud.js`'s `BarMeterActor`, itself replaced by `WaveRibbonActor`).
+// No Shell or gi imports. Carries energy only, never samples or content
+// (constitution V, X6).
 
 // Past this age with no fresh level, ease the VU to its floor rather than
 // freezing on the last value (R5/SC-004).
@@ -17,8 +21,6 @@ export const FLOOR = 0.04;
 const DB_FLOOR = -67;
 const DB_CEILING = -14;
 const PEAK_WEIGHT = 0.55;
-const YELLOW_START = 0.68;
-const RED_START = 0.86;
 
 /** Clamp to [0,1]. */
 function clamp01(x) {
@@ -61,19 +63,4 @@ export function levelsToIntensity(rms, peak, ageMs = 0) {
     // Linear ease toward the floor across the stale window.
     const freshness = ageMs <= 0 ? 1 : 1 - clamp01(ageMs / STALE_MS);
     return FLOOR + (Math.max(combined, FLOOR) - FLOOR) * freshness;
-}
-
-/** Number of illuminated segments for an intensity and fixed segment count. */
-export function intensityToActiveSegments(intensity, segmentCount = 24) {
-    const count = Math.max(1, Math.floor(segmentCount));
-    return Math.min(count, Math.ceil(clamp01(intensity) * count));
-}
-
-/** Conventional segmented-VU colour zone for a segment's normalized place. */
-export function segmentColor(position) {
-    if (position >= RED_START)
-        return 'red';
-    if (position >= YELLOW_START)
-        return 'yellow';
-    return 'green';
 }

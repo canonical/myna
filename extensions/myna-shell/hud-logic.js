@@ -99,3 +99,45 @@ export const PILL_COLOR_CLASSES = [
     'myna-hud-severity-critical',
     'myna-hud-phase-loading',
 ];
+
+/**
+ * Which wave-ribbon lifecycle phase (ribbon.js) a state transition forces,
+ * or `null` when the ribbon manages its own phase internally (2026-07-30
+ * wave-ribbon redesign, R17). Only the two transitions that must visibly
+ * change the ribbon's motion are forced here:
+ *   - `transcribing` → `morph` (FR-010a: session ended, simplified
+ *     processing motion).
+ *   - `finalizing` → `complete` (FR-010d: the brief quiet-success
+ *     indication before the pill clears).
+ * Every other key (including `recording`/`loading`) returns `null` so the
+ * actor's own unfold→flow auto-transition (fired once, shortly after the
+ * actor is created for a new session) is never interrupted by a redundant
+ * external phase-set on the very first descriptor a fresh session receives.
+ *
+ * @param {string} key - the state's `key` (states.js's descriptor field).
+ * @returns {('morph'|'complete'|null)}
+ */
+export function ribbonPhaseForStateKey(key) {
+    if (key === 'transcribing')
+        return 'morph';
+    if (key === 'finalizing')
+        return 'complete';
+    return null;
+}
+
+/**
+ * Whether the wave ribbon stays visible for this severity (2026-07-30
+ * design refinement — "fabric in gentle airflow" pass). Only a **critical**
+ * error fully hides/collapses the ribbon (the pill's icon/border/message
+ * carry that state instead); a **recoverable** notice keeps the ribbon
+ * visible, tinted amber and gently pulsing rather than hidden — motion
+ * "pauses" but never reads as dead. `descriptor.severity` is passed
+ * straight through as `ribbon.js`'s `severityTint` input (the values
+ * already match: `null | 'recoverable' | 'critical'`).
+ *
+ * @param {(string|null)} severity
+ * @returns {boolean}
+ */
+export function ribbonVisibleForSeverity(severity) {
+    return severity !== 'critical';
+}

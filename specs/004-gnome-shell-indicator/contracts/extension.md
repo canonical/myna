@@ -1,6 +1,6 @@
 # Contract: GNOME Shell extension (GJS)
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30)
 
 The consumer half: `extensions/myna-shell/`. Harness-tier (Complexity Tracking) —
 the **pure mapping/lifecycle** guarantees below are GJS-unit-tested against a stub;
@@ -9,7 +9,11 @@ on-hardware acceptance (`quickstart.md`). Consumes `org.myna.Dictation`
 (`contracts/dbus-interface.md`). **(2026-07-30)**: the "goop"/`RibbonView`
 presentation is replaced by a bottom-center HUD pill (`hud.js`); `states.js`'s
 descriptor is reshaped from `{key, statusText, isError, hidden}` to `{key,
-statusText, severity, hidden}` (data-model E1a).
+statusText, severity, hidden}` (data-model E1a). **(2026-07-30, R17)**: the
+segmented bar meter (`BarMeterActor`) is replaced by a flowing wave ribbon
+(`WaveRibbonActor`), colored from the desktop's accent-color preference (E2a)
+with a reduced-motion fallback (E2b) — both sourced locally from GSettings, not
+the D-Bus contract, which is unchanged.
 
 ## Pure, unit-tested (GJS contract test, `test/states.test.js`)
 
@@ -19,10 +23,12 @@ statusText, severity, hidden}` (data-model E1a).
 | X2 | An **unknown** `State` maps to the neutral "active" intent (`severity: null`) and never throws. | FR-008 |
 | X3 | `idle` maps to "hidden" (no actor). | FR-002 |
 | X4 | `loading` and `recording` map to distinct intents (FR-006). | FR-006 |
-| X5 | `vumeter.js` maps RMS+peak `[0,1]` to a VU intensity monotonically (in the calibrated speech range), clamps out-of-range/NaN, and **decays to floor** when the last update is older than the stale window (~300 ms) — regardless of whether the repeated value is numerically identical to the previous one (R16a). | FR-010/011, SC-004 |
+| X5 | `ribbon.js`'s envelope smoothing (reusing `vumeter.js`'s `boostLevel`/stale-decay unchanged) maps RMS+peak `[0,1]` to an intensity monotonically (in the calibrated speech range), clamps out-of-range/NaN, and **decays to floor** when the last update is older than the stale window (~300 ms) — regardless of whether the repeated value is numerically identical to the previous one (R16a). | FR-010/011, SC-004 |
 | X6 | No mapping output contains transcript text — inputs are state + level only (privacy). | constitution V |
 | X19 | **(2026-07-30)** `notice` maps to `severity: 'recoverable'` and `error` maps to `severity: 'critical'`; the two are mutually exclusive and each carries a distinct icon choice (mic-with-slash for `critical` only). | FR-007, data-model E1a |
-| X23 | **(2026-07-30, R16a)** `segmentColor(position)` returns `'green'` below the yellow threshold, `'yellow'` below the red threshold, and `'red'` at/above it — a conventional VU colour zoning by position, not by raw level. | FR-010 |
+| X24 | **(2026-07-30, R17/R17a)** `ribbon.js` generates layered strands (`base`/`voice`/`secondary` roles, 3-5 total) from a single SMOOTHED envelope value (a ~300 ms one-pole low-pass over the calibrated instantaneous envelope, `applyEnvelopeSmoothing`) with fixed per-strand phase/delay/amplitude offsets, deterministically (same smoothed envelope + elapsed time → same control points), and each of the 5 lifecycle phases (unfold/flow/relax/morph/complete) is a pure, independently-callable timing function. | FR-010/FR-010a |
+| X25 | **(2026-07-30, R18)** `accent.js` resolves a chosen accent-color name to a derived palette (main/highlight/darker-complement/translucent) via the fixed 9-entry hex table — the darker-complement tone is a computed colour complement, **except for orange, whose darker-complement is a fixed aubergine tone** — and falls back to the fixed Ubuntu-orange palette when the resolved user-value is `null` (never actively set, including the untouched default) or the schema/key is absent — never throwing. | FR-010b |
+| X26 | **(2026-07-30, R19)** The reduced-motion query resolves to a boolean without throwing when the schema/key is absent (defaults to full motion in that case). | FR-022a |
 
 ## Lifecycle, tested against a stub proxy
 
@@ -41,13 +47,18 @@ statusText, severity, hidden}` (data-model E1a).
 | X11 | The HUD pill is added as Shell chrome and **never takes keyboard focus**: typing continues to land in the focused app while it is visible — including when the critical-error dismiss (×) control is clicked. | FR-001/FR-007c, SC-001 |
 | X12 | It becomes visible within the activation-latency target after `recording` and clears within the teardown target after `idle`. | FR-003, SC-003 |
 | X13 | Each state/severity shows a visually distinct treatment; a viewer can identify loading/listening/transcribing/finalizing/recoverable-notice/critical-error without seeing transcript. | FR-005/006/007, SC-002 |
-| X14 | The segmented VU meter tracks captured level (calibrated to real speech, not raw linear gain — R16a) and eases to floor on silence/stale; nothing shown when idle. | FR-010/011, SC-004 |
+| X14 | **(2026-07-30, R17)** The wave ribbon tracks captured level (calibrated to real speech, not raw linear gain — R16a), unfolds on start, relaxes toward a thin idle line on pause/stale, morphs into a simplified processing motion on stop, and shows nothing when idle. | FR-010/010a/011, SC-004 |
 | X15 | Animations look smooth (≈60 fps) and don't accumulate across rapid start/stop cycles. | FR-009, SC-007 |
 | X16 | The optional panel button (if enabled) toggles a session equivalently to the hotkey, preserving commit-only behaviour, and dims when the daemon is absent. | FR-013/014, SC-010 |
 | X17 | The HUD pill is legible in high-contrast mode. (Screen-reader/AT-SPI announcement of state transitions is tracked separately as T56 — not a guarantee of this contract.) | FR-022 |
 | X18 | Loads on GNOME 50/51 (per `metadata.json` `shell-version`) and refuses to load on unsupported versions. | FR-020, SC-008 |
 | X21 | **(2026-07-30)** The HUD pill renders bottom-center of the primary monitor (matching GNOME's native volume/brightness OSD position), repositioning correctly across `monitors-changed`, and does not appear off-screen on any tested monitor layout. | FR-004 |
 | X22 | **(2026-07-30)** The critical-error pill's dismiss (×) control is clickable with the mouse and clears the notice immediately; it never receives keyboard focus at any point. | FR-007b/FR-007c |
+| X27 | **(2026-07-30, R17/R18)** The ribbon is visibly rendered in the user's chosen system accent color (verified across at least 3 chosen colors) or the fixed Ubuntu-orange default when none is actively chosen (including the untouched default), and re-colors live if the accent color is changed while a session is active. | FR-010b, SC-011 |
+| X28 | **(2026-07-30, R19)** With the system reduced-motion preference enabled, the HUD pill shows the static/minimal-motion alternative instead of the flowing ribbon, while still reflecting state/level. | FR-022a, SC-012 |
+| X29 | **(new)** On a session that completes successfully, the ribbon briefly shows a quiet success indication before the pill clears, and this never delays the pill's dismissal or a new session starting. | FR-010d |
+| X30 | **(2026-07-30, R17a)** During a `morph` phase (transcribing), the ribbon crossfades from the flowing wave into 3 travelling dots rather than switching abruptly. During `complete`, it converges toward a single centred point with a brightness pulse. | FR-010a, FR-010d |
+| X31 | **(2026-07-30, R17a)** A recoverable notice keeps the ribbon **visible**, tinted amber (matching the pill's existing amber treatment) with audio-reactivity paused (a gentle idle pulse, not frozen), rather than hidden; a critical error still hides the ribbon entirely. | FR-010e, SC-014 |
 
 ## Constraints
 
@@ -59,4 +70,9 @@ statusText, severity, hidden}` (data-model E1a).
   `~/.local/share/gnome-shell/extensions/<uuid>/` (no build step).
 - **(2026-07-30)** `RibbonView`/`indicator.js` is deleted, not retained as a
   selectable alternate view (spec Assumptions).
+- **(2026-07-30, R17/R20)** `extensions/myna-shell/dev-lab/` (a standalone
+  GTK4/libadwaita app sharing `accent.js`/`ribbon.js`/`ribbon-paint.js`/`dbus.js`
+  with the extension) is **not** part of this bundle: excluded from
+  `metadata.json`'s file set and the install step in `quickstart.md` step 4;
+  it carries none of this contract's guarantees as its own obligations.
 
