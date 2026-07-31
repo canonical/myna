@@ -233,10 +233,15 @@ Extension fps is a manual observation in step 5 (harness-tier exemption).
 - Step 5 passes on hardware: spoken text lands in the focused app **and** focus is
   never stolen by the HUD pill, with all states legible, the wave ribbon tracking
   voice/lifecycle phases correctly, and accent-color/reduced-motion behaving per
-  X27/X28.
+  X27/X28. **(2026-08-01, partial manual verification)**: the basic recording
+  flow (HUD appears, focus never stolen, spoken text injected) is confirmed on
+  hardware. Still open: the ribbon's accent-color/Ubuntu-orange fallback (X27),
+  reduced-motion static alternative (X28), and the completion success pulse
+  (X29) have not yet been specifically exercised.
 - Steps 5a/5b pass: the recoverable notice auto-dismisses and never blocks a new
   session; the critical error persists until dismissed and its × control never
-  steals focus.
+  steals focus. **(2026-08-01, manually verified on hardware — both the
+  recoverable and critical severity walkthroughs pass.)**
 - SC-013's structured comparison run and recorded (≥3 observers, majority
   verdict favoring the wave ribbon over the prior segmented meter — T050a).
 - `docs/desktop-injection.md` §2 updated to record this extension as the GNOME
