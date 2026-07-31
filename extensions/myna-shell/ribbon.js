@@ -79,12 +79,23 @@ const BASE_ALPHA = 0.28;
 const BASE_AMPLITUDE = 0.05;
 const BASE_SPEED_SCALE = 0.35;
 
-const FLOW_SPEED = 0.0022;
+const FLOW_SPEED = 0.0032;
 const SPATIAL_FREQUENCY = 1.6;
 
 // Never fully flat while active — reads as "alive, quiet", not "off"
 // (same philosophy as vumeter.js's FLOOR).
 const IDLE_AMPLITUDE = 0.025;
+
+// The amplitude RESPONSE CURVE (2026-07-31, "log scale" follow-up) — distinct
+// from vumeter.js's dBFS calibration, which decides what counts as
+// quiet/normal/loud speech in the first place. This reshapes the already-
+// calibrated envelope specifically for the wave's visual amplitude: a mild
+// logarithmic lift so modest-but-real speech reads as clearly present
+// on-screen, while staying anchored at the same ceiling (env=1 → amplitude=1)
+// `computeSafeScale` (ribbon-paint.js) already guarantees never clips —
+// this curve reshapes what happens *below* that ceiling, never the ceiling
+// itself, so it cannot reopen the cropping bug. See `shapeAmplitude`.
+export const AMPLITUDE_CURVE_K = 5;
 
 // A strong-syllable onset for the (optional, sparse) particle highlights:
 // only a genuine rise in the smoothed envelope counts, never a raw sample
@@ -98,6 +109,26 @@ function clamp01(x) {
     if (Number.isNaN(x))
         return 0;
     return Math.max(0, Math.min(1, x));
+}
+
+/**
+ * The amplitude response curve: a mild logarithmic lift so quiet-but-real
+ * speech (a low but nonzero envelope) reads as clearly present, while
+ * loud speech still tops out at the same ceiling as before (`1`) — a
+ * "higher at low energy, capped at highest energy" shape, matching a
+ * conventional audio loudness/log-encoding curve. Boundary-preserving
+ * (`0→0`, `1→1`) and strictly monotonic, so it never changes the ceiling
+ * `computeSafeScale` (ribbon-paint.js) guards against — only what happens
+ * below it.
+ *
+ * @param {number} env - the calibrated, smoothed envelope in [0,1].
+ * @returns {number} the shaped amplitude in [0,1].
+ */
+export function shapeAmplitude(env) {
+    const e = clamp01(env);
+    if (e <= 0)
+        return 0;
+    return clamp01(Math.log(1 + AMPLITUDE_CURVE_K * e) / Math.log(1 + AMPLITUDE_CURVE_K));
 }
 
 /**
@@ -332,11 +363,12 @@ export function computeRibbonModel({
     }
     case 'flow':
     default:
-        // Steady-state: amplitude tracks the smoothed envelope directly.
+        // Steady-state: amplitude tracks the smoothed envelope (through
+        // shapeAmplitude's response curve, below).
         break;
     }
 
-    const voiceAmplitude = Math.max(IDLE_AMPLITUDE, env);
+    const voiceAmplitude = Math.max(IDLE_AMPLITUDE, shapeAmplitude(env));
     const voicePoints = generateWavePoints(voiceAmplitude, elapsedMs, VOICE_PHASE, 0, points);
     const layers = [{
         role: 'voice',
