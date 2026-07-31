@@ -486,6 +486,72 @@ async fn indicator_walks_recording_finalizing_hidden() {
     );
 }
 
+/// Regression (manual test report, 2026-07-31; found while fixing the
+/// focus-loss bugs — confirmed present even in the pre-2026-07-31 code, so
+/// independent of those fixes): a `Transcribing` liveness ping that lands in
+/// the event channel just AFTER the Release edge has already moved the
+/// controller into `Finalizing` must NOT clobber the indicator back to
+/// `Recording`. Unlike `indicator_walks_recording_finalizing_hidden` (which
+/// buffers `Transcribing` *before* the Release so it's drained first), this
+/// session only sends `Transcribing` once it observes `stop.stop()` having
+/// already fired — i.e. strictly after the controller has processed Release
+/// and advanced to `Finalizing` — reproducing the real race against a live
+/// whisper adapter, which was producing a spurious `finalizing → recording →
+/// idle` flicker at the end of every utterance.
+#[tokio::test]
+async fn late_transcribing_event_after_release_does_not_reopen_recording() {
+    let staged = |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let _ = tx.try_send(OrchestratorEvent::Loading);
+        let _ = tx.try_send(OrchestratorEvent::Ready);
+        let stop = StopHandle::default();
+        let stop2 = stop.clone();
+        let run: SessionRun = Box::pin(async move {
+            // Wait for Release to actually land (stop.stop() called) before
+            // sending Transcribing — this is the causal ordering that
+            // guarantees `state` is already `Finalizing` by the time the
+            // controller routes this event (see the test's doc comment).
+            while !stop2.is_stopped() {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            let _ = tx.send(OrchestratorEvent::Transcribing).await;
+            let _ = tx.send(OrchestratorEvent::Final("hello".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        MockInjector::new(),
+        indicator,
+        staged,
+    );
+    controller.run().await;
+
+    let mut seq: Vec<IndicatorState> = Vec::new();
+    for s in log.lock().unwrap().iter() {
+        if seq.last() != Some(s) {
+            seq.push(s.clone());
+        }
+    }
+    assert_eq!(
+        seq,
+        vec![
+            IndicatorState::Recording,
+            IndicatorState::Finalizing,
+            IndicatorState::Hidden,
+        ],
+        "a Transcribing event arriving after Release must not reopen \
+         Recording — got {seq:?} (expected a clean finalizing → hidden, no \
+         flicker back to recording)"
+    );
+}
+
 #[tokio::test]
 async fn indicator_shows_error_state_on_failure() {
     let indicator = MockIndicator::new();
@@ -623,6 +689,110 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
         "target-gone must notify"
     );
     assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// Regression (manual test report, 2026-07-31): a `FocusOut`-terminated
+/// utterance with an empty transcript must surface "Focus lost", not "No
+/// speech detected" — the session was deliberately cut short, so the empty
+/// transcript doesn't mean the user said nothing.
+#[tokio::test]
+async fn focus_out_with_empty_transcript_surfaces_focus_lost_not_no_speech() {
+    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press],
+        injector,
+        indicator,
+        // The session must actually block on `stop.stop()` (as the real
+        // orchestrator does) rather than complete instantly, so the FocusOut
+        // event has a real chance to land before the session's own natural
+        // completion — `events_session` completes immediately and would race
+        // right past the focus event, silently exercising the wrong path.
+        two_segment_focus_session(SessionOutcome::Completed {
+            transcript: String::new(),
+        }),
+    );
+    controller.run().await;
+
+    assert_eq!(
+        indicate_log.lock().unwrap().last(),
+        Some(&IndicatorState::recoverable("Focus lost")),
+        "an empty-transcript completion caused by focus-loss must say \
+         \"Focus lost\", never \"No speech detected\""
+    );
+}
+
+// ── Regression: FocusOut must resync the trigger's toggle parity ───────────
+// (manual test report, 2026-07-31: "have to press the hotkey twice" to resume
+// dictation after the target field lost focus.)
+
+/// A toggle-tracking mock trigger mirroring the *real* `ControlTrigger`'s
+/// press/release parity — unlike [`ScriptedTrigger`], which just replays a
+/// fixed list of edges with no internal state, this tracks a `pressed` bit
+/// that flips on every poke, exactly like the production control-socket /
+/// portal-toggle triggers. This is the seam needed to observe the "next poke
+/// delivers a swallowed Release instead of Press" desync bug: `ScriptedTrigger`
+/// has no parity to desync, so it can never catch this regression.
+struct ToggleMockTrigger {
+    pokes_remaining: usize,
+    pressed: bool,
+}
+
+impl ToggleMockTrigger {
+    fn new(pokes: usize) -> Self {
+        Self { pokes_remaining: pokes, pressed: false }
+    }
+}
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for ToggleMockTrigger {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        if self.pokes_remaining == 0 {
+            return None;
+        }
+        self.pokes_remaining -= 1;
+        self.pressed = !self.pressed;
+        Some(if self.pressed { TriggerEdge::Press } else { TriggerEdge::Release })
+    }
+
+    async fn resync(&mut self) {
+        self.pressed = false;
+    }
+}
+
+#[tokio::test]
+async fn focus_out_resyncs_trigger_so_the_very_next_poke_starts_a_new_utterance() {
+    // Two physical pokes: the first starts utterance 1 (Press); FocusOut ends
+    // it via `stop.stop()` without the controller ever reading a matching
+    // edge off the trigger. Without the fix, the trigger's `pressed` bit is
+    // left `true` from utterance 1's own Press, so poke 2 flips it to
+    // `false` and delivers a `Release` — silently swallowed by the outer
+    // idle-wait loop — and the trigger then runs out of scripted pokes
+    // (`None`), ending the whole controller after only ONE utterance. With
+    // the fix (`trigger.resync()` called on FocusOut), poke 2 correctly
+    // delivers a fresh `Press`, and utterance 2 runs.
+    let trigger = ToggleMockTrigger::new(2);
+    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let inject_log = injector.log();
+    let mut controller = DesktopController::builder()
+        .trigger(trigger)
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(two_segment_focus_session(SessionOutcome::Completed {
+            transcript: "first second".into(),
+        }))
+        .build();
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.acquires, 2,
+        "both utterances must run — the second poke must deliver a real \
+         Press, not a stray Release silently swallowed while idle (got {} \
+         acquire(s))",
+        log.acquires
+    );
 }
 
 // ── R9 streaming preedit (opt-in): Unstable → preedit, never committed ──────

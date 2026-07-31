@@ -288,7 +288,20 @@ export class HudView {
             if (severityAutoDismisses(severity))
                 this._armHoldTimer();
         } else {
+            // Bug (manual test report, 2026-07-31): leaving a held notice for
+            // ANY reason — not just being replaced by a new one — must also
+            // cancel any pending auto-dismiss timer. Without this, a stale
+            // `_holdTimer` armed by an earlier recoverable notice (e.g. "No
+            // speech detected") outlives that notice: if the state moves on
+            // to a plain `recording`/`loading` descriptor before the timer
+            // fires, the orphaned timer still calls `_dismiss()` ~3.5s later
+            // and tears down the pill even though a genuine recording is now
+            // in progress ("pill disappears while listening").
             this._held = null;
+            if (this._holdTimer !== 0) {
+                GLib.source_remove(this._holdTimer);
+                this._holdTimer = 0;
+            }
         }
 
         this._icon.icon_name = iconForSeverity(severity);
