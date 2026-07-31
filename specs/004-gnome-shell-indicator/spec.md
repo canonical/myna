@@ -30,6 +30,21 @@
 - Q: If a second recoverable issue arrives while a first recoverable notice is still auto-dismissing, what happens? → A: Replace in place and restart the auto-dismiss countdown — the notice updates to the new occurrence's reason and gets a fresh full-length hold window, rather than clearing on the original's now-stale schedule.
 - Q: Since the HUD now sits in the same screen region as GNOME's native volume/brightness OSD, should the extension actively avoid/coordinate with that overlap? → A: No special handling required. Incidental simultaneous display (e.g. the user adjusts volume while dictating) is acceptable; whichever ordering the Shell's own chrome stacking produces is fine — no collision-avoidance or repositioning logic is required.
 
+### Session 2026-07-30 (wave-ribbon meter — replaces segmented VU meter)
+
+- Q: Should the segmented/discrete VU meter (the prior HUD redesign's R16) be replaced outright or kept as a selectable alternate? → A: Replaced outright. There is no user-facing choice between meter styles; a flowing wave-ribbon becomes the only audio-level representation.
+- Q: What form should the audio-level representation take instead of discrete bars? → A: A flowing, organic "wave ribbon" — a small number of translucent, layered strands animating left-to-right from a single smoothed loudness signal, conveying voice presence/intensity (not a literal frequency spectrum or a rendering of raw audio samples), with distinct behavior across the session lifecycle: a brief unfold on start, continuous flow while speaking, a smooth relax toward a thin idle motion during pauses, and a smooth morph into a simplified processing motion when recording ends.
+- Q: What color should the ribbon use? → A: The user's system accent-color preference as the primary color, with a lighter/highlight tone and a darker/complementary translucent secondary tone derived from it for depth. If the user has never actively chosen an accent color — including sitting on the untouched system default, even where that default's name coincides with a color a user could also deliberately pick — the ribbon falls back to a fixed default color instead.
+- Q: Does the ribbon change behavior for reduced-motion or lower-power preferences? → A: Yes. When the user's system-wide reduced-motion preference is enabled, the flowing ribbon is replaced by a static level line or a gently-scaling microphone indicator, driven by the same underlying level/state inputs, instead of continuous animation.
+- Q: Does this change introduce any new way to develop or tune the animation itself? → A: Yes, as a non-shipped addition: a small standalone developer tool that connects to the same real dictation interface as the extension (so it reacts to genuine live audio and state, not simulated data), purely to speed up iterating on the animation's feel — including a plain focusable text area so a real end-to-end dictation session (through to text injection) can be exercised without a separate target application. It carries no independent user-facing requirements and is not part of the shipped extension.
+
+### Session 2026-07-30 ("fabric in gentle airflow" refinement — not an oscilloscope)
+
+- Q: The first wave-ribbon pass drove the wave shape directly from the live audio envelope — is that the intended feel? → A: No. It read as too literal/technical ("nervous, noisy, an oscilloscope"). The wave representation MUST be a smoothed, controlled interpretation of loudness — responsive enough to reassure the user, but never a literal reproduction of audio energy tick-by-tick. Audio drives the animation's *energy*; the product controls its *shape*.
+- Q: Does that change what drives colour or add level zones? → A: No — still no green/amber/red loudness zones, no clipping implication, no continuous colour-by-loudness; Ubuntu orange (or the chosen accent) stays primary throughout, with a brighter/warm highlight at the wave's loudest crests and a darker/translucent secondary tone for depth (FR-010b unchanged).
+- Q: Should the ribbon stay hidden during a recoverable issue, as originally built? → A: No — reversed. The ribbon now stays **visible** during a recoverable notice, tinted amber (matching the notice's existing amber treatment) with audio-reactivity paused and a gentle idle pulse, rather than hidden — this reads as "still listening, minor issue" instead of "gone dark." A **critical** error still hides/collapses the ribbon entirely; only the recoverable case changed.
+- Q: Are sparse "particle" highlights on strong syllables in scope now? → A: Optional and explicitly NOT built out as visible particles in this pass — the design brief itself cautions that overdoing this reads as a music visualizer. The detection logic exists and is unit-tested as a foundation, but no particle rendering ships yet; a future pass may add it conservatively if desired.
+
 ### Session 2026-07-21 (informed defaults; see Assumptions)
 
 - Q: Does this feature include text injection, or is it UI-only? → A: UI-only. IBus injection (feature 003) stays and is toolkit-agnostic; the shell's direct Clutter text access covers only Clutter/GTK widgets and would regress coverage for Qt/Electron/Firefox. The extension visualizes state and optionally triggers start/stop; it never commits text.
@@ -91,23 +106,30 @@ A person dictates and nothing was heard (they spoke too quietly, or paused too l
 3. **Given** a hard failure occurs (e.g. no microphone available), **When** that error reaches the indicator, **Then** a persistent notice appears with a clear, content-free reason and a visible dismiss control, and it does NOT clear on its own.
 4. **Given** a persistent notice is showing, **When** the person activates its dismiss control, **Then** the notice clears immediately and does not reappear on its own.
 5. **Given** a persistent notice's dismiss control, **When** the person points at or activates it with the mouse, **Then** keyboard focus never leaves the user's currently focused application (the dismiss control is clickable but never focusable, consistent with FR-001).
+6. **Given** a non-blocking recoverable notice is showing, **When** the person looks at the level representation, **Then** it remains visible — tinted amber, gently pulsing — rather than disappearing, so the indicator reads as "still listening, minor issue" rather than "gone dark."
+7. **Given** a persistent critical-error notice is showing, **When** the person looks at the level representation, **Then** it is hidden, consistent with the error's icon/message replacing it.
 
 ---
 
-### User Story 3 - See that my voice is being captured (Priority: P2)
+### User Story 3 - See that my voice is being captured, with a premium feel (Priority: P2)
 
-A person sees real-time feedback that their voice is actually being picked up — a VU-style level or a glow whose intensity tracks captured audio level — so they know the microphone is working and they are speaking at a usable volume.
+A person sees real-time, organic feedback that their voice is actually being picked up — a flowing, softly glowing wave rendered in their own accent color, rather than a technical-looking meter — so they know the microphone is working and they are speaking at a usable volume, and experience the indicator as a polished, native part of the desktop rather than an audio-engineering tool. The wave settles to a gentle idle motion during silence or pauses, and morphs smoothly rather than cutting abruptly when the session moves between listening, transcribing, and finishing.
 
-**Why this priority**: Level feedback answers the most common failure ("is it hearing me?") and makes the UI feel alive. It builds on US1/US2 (the indicator must already exist and show state) and requires an audio-level stream that may not be present in the very first slice, hence P2.
+**Why this priority**: Level feedback answers the most common failure ("is it hearing me?") and makes the UI feel alive and premium rather than utilitarian. It builds on US1/US2 (the indicator must already exist and show state) and requires an audio-level stream that may not be present in the very first slice, hence P2.
 
-**Independent Test**: With a session active, feed known audio levels through the interface and assert the indicator's level representation tracks them (rises with louder input, falls with silence) at a smooth, responsive update rate, and that it shows no level when idle.
+**Independent Test**: With a session active, feed known audio levels through the interface and assert the indicator's flowing level representation tracks them (grows fuller/brighter with louder input, relaxes toward a thin idle motion with silence) at a smooth, responsive update rate, shows no level when idle, transitions smoothly across the session's start/pause/stop, is rendered in the user's accent color (or a default when none is actively chosen), and falls back to a static representation when reduced motion is enabled.
 
 **Acceptance Scenarios**:
 
-1. **Given** an active recording session, **When** the captured audio level rises, **Then** the indicator's level representation increases correspondingly and smoothly.
-2. **Given** an active recording session, **When** input goes silent, **Then** the level representation falls toward its floor.
-3. **Given** no session is active, **When** idle, **Then** no audio level is displayed.
-4. **Given** the interface stops publishing level updates (stale), **When** updates lapse beyond a short window, **Then** the level representation decays to its floor rather than freezing at the last value.
+1. **Given** an active recording session, **When** the captured audio level rises, **Then** the indicator's flowing level representation grows fuller and brighter, smoothly and within a fixed visual cap (never so bright or large that it becomes distracting).
+2. **Given** an active recording session, **When** input goes quiet or pauses, **Then** the representation relaxes smoothly toward a thin, gently moving line rather than stopping abruptly, and a subtle traveling motion may remain to show listening is still active.
+3. **Given** no session is active, **When** idle, **Then** no level representation is displayed.
+4. **Given** the interface stops publishing level updates (stale), **When** updates lapse beyond a short window, **Then** the representation decays to its floor rather than freezing at the last value.
+5. **Given** a dictation session starts, **When** the indicator first appears, **Then** the level representation unfolds smoothly over a brief, sub-second period rather than appearing instantly at full form.
+6. **Given** a dictation session ends and moves into transcribing, **When** that transition happens, **Then** the level representation morphs smoothly into a simplified processing motion rather than switching abruptly.
+7. **Given** the indicator is rendered, **When** the person has actively chosen a system accent color, **Then** the level representation is rendered in that color; **When** they have not (including the untouched system default), **Then** it renders in a fixed default color instead.
+8. **Given** the person has enabled a system-wide reduced-motion preference, **When** the indicator is shown, **Then** the level representation presents as a static or minimally-animated alternative instead of the flowing wave, while still conveying the same state/level information.
+9. **Given** a dictation session completes successfully, **When** the HUD pill is about to clear, **Then** the level representation briefly shows a quiet success indication before fading, without delaying the pill's dismissal or blocking a new session from starting.
 
 ---
 
@@ -143,6 +165,9 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **Rapid state churn** (fast start/stop): indicator does not accumulate overlapping animations or leak actors; transitions coalesce.
 - **High-contrast / accessibility mode**: indicator remains legible; state changes are perceivable by assistive technology.
 - **Multi-monitor / panel on a specific monitor**: indicator positions bottom-center consistently and does not appear off-screen.
+- **System accent color not actively chosen, or unsupported on an older GNOME version**: the level representation falls back to a fixed default color rather than failing or rendering unstyled (US3-7).
+- **Reduced-motion preference enabled**: the level representation uses a static/minimal-motion alternative instead of the flowing animation, while still reflecting level and state (US3-8).
+- **A recoverable notice is showing while a session is (or was) active**: the level representation stays visible, tinted amber and gently pulsing, rather than disappearing (US2a-6); a critical error, by contrast, hides it (US2a-7).
 
 ## Requirements *(mandatory)*
 
@@ -169,7 +194,12 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 
 #### Audio-level feedback
 
-- **FR-010**: The indicator MUST provide a real-time audio-level representation as a segmented VU meter (a fixed set of discrete segments that illuminate left-to-right, colour-zoned green/yellow/red by position) during recording, updated at a smooth, responsive rate, and calibrated so ordinary conversational speech is clearly visible rather than requiring an elevated voice.
+- **FR-010**: The indicator MUST provide a real-time audio-level representation as a flowing, organic wave (not a discrete segmented meter) during recording, updated at a smooth, responsive rate, and calibrated so ordinary conversational speech is clearly visible rather than requiring an elevated voice. The wave MUST be a **smoothed, controlled interpretation** of loudness, not a literal, tick-by-tick reproduction of the audio envelope — it MUST NOT read as an oscilloscope, frequency display, or other audio-engineering instrument.
+- **FR-010a**: The wave representation MUST unfold smoothly over a brief (sub-second) period when a session starts, MUST relax smoothly toward a thin, minimally-animated idle motion during pauses/silence rather than stopping abruptly, and MUST morph smoothly into a simplified processing motion when the session moves from recording into transcribing, rather than switching treatments abruptly.
+- **FR-010b**: The wave representation MUST be rendered using the user's system accent-color preference as its primary color (with a lighter/highlight tone and a darker/complementary translucent secondary tone derived from it for depth — the darker tone is a computed complement of the primary color, **except when the primary color is orange, where it is a fixed aubergine tone** rather than a generic computed complement), and MUST fall back to a fixed default color when the user has not actively chosen an accent color — an untouched system default MUST be treated as not actively chosen, even where its name coincides with a color a user could also deliberately select — or when the system does not support an accent-color preference at all.
+- **FR-010c**: The wave representation's brightness and size MUST be capped so that even the loudest input never renders in a way that is visually distracting or overwhelms the surrounding indicator chrome.
+- **FR-010d**: When a session completes successfully, the wave representation MUST briefly show a quiet success indication before the HUD pill clears, and this MUST NOT delay the user's ability to start a new session.
+- **FR-010e**: During a **recoverable** notice, the wave representation MUST remain visible — tinted to match the notice's amber treatment, with audio-reactivity paused (a gentle idle pulse instead of tracking live input) — rather than hidden. During a **critical** error, the wave representation MUST be hidden, consistent with the persistent error notice and mic-with-slash icon replacing it.
 - **FR-011**: The audio-level representation MUST show no level while idle and MUST decay toward its floor when the level stream goes stale or silent (never freeze at the last value).
 - **FR-012**: The audio-level representation MUST convey only level/energy and MUST NOT render or leak any transcript content.
 
@@ -191,14 +221,17 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **FR-020**: The extension MUST declare the GNOME Shell versions it supports (target Ubuntu 26.10+, GNOME 50/51) and MUST NOT attempt to load on unsupported Shell versions.
 - **FR-021**: The extension MUST re-initialize cleanly across Shell restart/session relogin and MUST release all actors, timers, and D-Bus subscriptions on disable (no leaks).
 - **FR-022**: The indicator MUST remain legible in high-contrast/accessibility modes. (Screen-reader/AT-SPI announcement of state transitions is tracked separately as T56 and is out of scope for this change.)
+- **FR-022a**: The indicator MUST honor the user's system-wide reduced-motion preference: when enabled, the flowing wave representation MUST be replaced by a static or minimally-animated alternative that still conveys state and level, rather than continuing full animation.
 - **FR-023**: On GNOME, this extension becomes the preferred activity-indicator surface; `myna-desktop`'s own indicator MUST remain the fallback when the extension is absent, and enabling the extension MUST NOT change commit-only injection behavior.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Dictation state**: the current lifecycle state consumed by the indicator — one of idle, loading/preparing, recording, transcribing, finalizing, error — plus, for the error state, a severity classification (recoverable | critical) and an optional content-free reason; the sole driver of the indicator's visual treatment.
-- **Audio level**: a bounded energy/level value (RMS and peak, normalized) published during recording; drives the segmented, colour-zoned VU meter and carries no transcript content.
+- **Audio level**: a bounded energy/level value (RMS and peak, normalized) published during recording; drives the flowing wave representation (or its static reduced-motion alternative) and carries no transcript content.
 - **Dictation control interface**: the session-bus D-Bus contract exposed by `myna-desktop` — state property, state-change signal, audio-level values, error severity classification, and optional start/stop/toggle commands and error message — that this feature defines and the extension consumes.
 - **Indicator surface**: the compositor-hosted, focus-safe HUD pill (bottom-center, OSD-styled) and optional panel presence that renders state, severity, and level.
+- **Accent color preference**: the user's system-wide accent-color choice, or its absence, used to color the wave representation; sourced from the desktop environment itself, not from `myna-desktop` or the dictation session.
+- **Motion preference**: the user's system-wide reduced-motion setting, used to choose between the flowing wave and its static/minimal-motion alternative.
 
 ## Success Criteria *(mandatory)*
 
@@ -214,6 +247,10 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **SC-008**: The extension loads and functions on the targeted GNOME Shell versions (Ubuntu 26.10+, GNOME 50/51) and refuses to load on unsupported versions rather than failing at runtime.
 - **SC-009**: A recoverable-issue notice clears on its own within a short, bounded delay in 100% of trials without any user action, and never blocks a subsequent session from starting; a critical-error notice persists until dismissed in 100% of trials and never clears on its own.
 - **SC-010**: When a panel trigger is provided, clicking it starts and stops a session equivalently to the hotkey, with identical commit-only text behavior, in 100% of trials.
+- **SC-011**: The audio-level visualization is rendered in the user's actively-chosen system accent color, or a fixed default color when none has been actively chosen, in 100% of trials — verifiable across at least three different chosen accent colors plus the untouched-default case.
+- **SC-012**: When a person has enabled their system's reduced-motion preference, the audio-level visualization presents its static/minimal-motion alternative instead of the flowing animation in 100% of trials, while still correctly reflecting level and state.
+- **SC-013**: In a structured side-by-side comparison with at least 3 observers, a majority describe the flowing wave representation as smoother and more polished than the discrete meter it replaces.
+- **SC-014**: During a recoverable notice, the level representation remains visible (amber, gently pulsing) in 100% of trials rather than disappearing; during a critical error, it is hidden in 100% of trials.
 
 ## Assumptions
 
@@ -226,12 +263,16 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - **Target platform**: Ubuntu Desktop on Wayland with GNOME 50/51 (Ubuntu 26.10+); older GNOME and non-GNOME desktops are out of scope.
 - **Privacy**: consistent with the project invariants — no audio persisted, no transcription content logged/rendered by default; the indicator shows state and level only.
 - **Timing targets**: activation-latency and teardown targets are inherited from feature 003 / UD129 (≈100–200 ms activation on reference hardware); the recoverable-notice auto-dismiss delay reuses the existing hold window already used by the prior implementation (≈3.5s) rather than introducing a new tunable.
-- **Visual/animation design specifics** (exact pill geometry, icon set beyond the mic/mic-slash distinction, bar-meter segment count, theming, packaging/distribution) are intentionally left as design decisions for planning; the requirements above bound them (focus-safe, state-legible, smooth, privacy-preserving, HIG-compliant, bottom-center OSD-styled) without fixing every pixel.
+- **Visual/animation design specifics** (exact pill geometry, icon set beyond the mic/mic-slash distinction, wave strand/control-point counts, exact accent-color derivation, packaging/distribution) are intentionally left as design decisions for planning; the requirements above bound them (focus-safe, state-legible, smooth, privacy-preserving, HIG-compliant, bottom-center OSD-styled) without fixing every pixel.
 - **Extension language/runtime**: GNOME Shell extensions are GJS/Clutter/St by platform necessity; this is a platform constraint of the compositor, not a violation of the project's Rust-for-shipped-components rule (an in-compositor UI cannot be Rust). To be recorded in the plan's Complexity Tracking.
 - **Custom widget, not Shell's internal OSD class**: the HUD pill is a new St-based widget styled to resemble GNOME's OSD, not a reuse of Shell's internal `OsdWindow` implementation — avoiding a dependency on private Shell UI internals that are not a stable extension API.
 - **Prior goop implementation removed, not retained**: the Cairo/`RibbonView` presentation (`indicator.js`) is deleted once the new HUD view lands; it is not kept as a selectable alternate view. The `view.js` `IndicatorView` interface and factory (the swap seam) are unchanged.
 - **T56 and US4 are unaffected**: screen-reader/AT-SPI announcements (T56) remain separate, unspecced future work; the optional panel click-to-toggle affordance (US4) is untouched by this redesign.
 - **No coordination with GNOME's native OSD**: incidental simultaneous on-screen display with GNOME's own volume/brightness OSD (both now occupy the bottom-center region) is acceptable; this feature does not implement collision-avoidance, suppression, or repositioning logic to coordinate with it.
+- **Accent-color and reduced-motion are desktop-environment preferences, not new settings this feature introduces**: both are read from GNOME's existing system-wide preferences (the same platform-constraint treatment already given to D-Bus/GJS above — named because they are the boundary of the problem domain, not a design choice being introduced here). Exact sourcing mechanics are a planning-phase detail.
+- **The wave stays a synthesized envelope, not raw audio**: consistent with the project's audio-in-UI privacy posture (no samples, no waveform of actual audio), the flowing wave is driven by the same single smoothed loudness value the segmented meter used — never raw PCM — so this redesign does not reopen the earlier rejection of a literal waveform on privacy grounds.
+- **A non-shipped developer tuning tool accompanies this redesign**: a small standalone application, connected to the same real dictation interface as the extension, exists solely to speed up iterating on the wave's look/feel and to allow exercising a full real dictation session (through text injection) without a separate target app. It is not part of the shipped extension, has no independent functional requirements of its own, and is not subject to this spec's GNOME-Shell-version or packaging constraints.
+- **Sparse particle highlights are deferred, not required**: the "fabric in gentle airflow" refinement's optional 4th layer (brief highlight points on strong syllables) is intentionally not rendered in this pass — only the underlying detection is built, as a foundation for a future, conservative addition if desired. The design brief itself cautions that overdoing this reads as a music visualizer; omitting the rendering is a deliberate scope choice, not an oversight.
 
 ## Out of Scope
 
@@ -243,3 +284,5 @@ A person who prefers a pointer to a hotkey can click a subtle panel presence to 
 - Support for GNOME Shell versions before 48, and for non-GNOME desktops (wlroots/KDE keep the notification indicator).
 - Wake-word / always-on presence, continuous dictation, voice commands, translation, dictation history, transcript display, or audio retention.
 - Owning residency/idle-unload policy, model selection, or backend discovery (consumed, not decided, here).
+- A user-facing choice between meter styles (segmented vs. wave) — the wave representation fully replaces the segmented meter with no alternate.
+- Public distribution, packaging, or shipping of the standalone developer tuning tool — it is a private development aid, not a shipped or user-facing surface.

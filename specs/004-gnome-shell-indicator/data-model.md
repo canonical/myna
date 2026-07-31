@@ -47,20 +47,20 @@ Realized as the choice between the `notice` and `error` wire state values
 themselves (E1) — not a separate D-Bus property. Backed in Rust by
 `IndicatorState::Error { message: String, recoverable: bool }`.
 
-| Severity | Wire `State` | UX treatment | Auto-dismiss? |
-|---|---|---|---|
-| `recoverable` | `notice` | Non-blocking notice; a new session may start while it's showing | Yes — ~3.5 s hold, restarts in full if a new recoverable notice arrives while one is showing (R15) |
-| `critical` | `error` | Persistent notice with a dismiss (×) control | No — remains until the user dismisses it; a new critical error while one is undismissed replaces the reason in place without waiving the dismiss requirement (R15) |
+| Severity | Wire `State` | UX treatment | Auto-dismiss? | Wave ribbon (2026-07-30, R17a) |
+|---|---|---|---|---|
+| `recoverable` | `notice` | Non-blocking notice; a new session may start while it's showing | Yes — ~3.5 s hold, restarts in full if a new recoverable notice arrives while one is showing (R15) | **Visible**, tinted amber, audio-reactivity paused (gentle idle pulse) — not hidden |
+| `critical` | `error` | Persistent notice with a dismiss (×) control | No — remains until the user dismisses it; a new critical error while one is undismissed replaces the reason in place without waiving the dismiss requirement (R15) | Hidden (the pill's icon/border/message carry the state instead) |
 
 This is an **interim, client-inferred classification** (spec Assumptions;
 research R13) pending T31/T62's wire-level error taxonomy — not itself that
 taxonomy.
 
-## E2 — AudioLevel (the VU-meter input)
+## E2 — AudioLevel (the wave-ribbon input)
 
 | Field | Type / range | Source | Notes |
 |---|---|---|---|
-| `AudioRms` | `d`, `[0.0, 1.0]` linear full-scale | `AudioStats.rms` | drives the segmented VU meter's active-segment count (dominant input, stable) |
+| `AudioRms` | `d`, `[0.0, 1.0]` linear full-scale | `AudioStats.rms` | drives the wave ribbon's envelope/strand generation (dominant input, stable) |
 | `AudioPeak` | `d`, `[0.0, 1.0]` linear full-scale | `AudioStats.peak` | blended in at reduced weight so transients/consonants are visible without pinning the meter |
 
 Rules:
@@ -70,12 +70,53 @@ Rules:
   time**, not value — a repeated identical RMS/peak still counts as fresh
   (R16a; a 2026-07-30 manual-test regression found the extension had been
   dropping "unchanged" updates and treating a steady voice as stale).
-- **(2026-07-30, R16/R16a)**: the bar meter maps RMS+peak through a
-  hardware-calibrated dBFS scale (`vumeter.js`'s `levelsToIntensity`), then
-  lights a left-to-right count of 24 segments (`intensityToActiveSegments`)
-  colour-zoned green/yellow/red by position (`segmentColor`) — a conventional
-  VU meter, not the ribbon-era symmetric spindle shape.
+- **(2026-07-30, R17 — wave-ribbon redesign)**: RMS+peak are combined through
+  the same hardware-calibrated dBFS scale R16a established
+  (`ribbon.js`'s envelope smoothing, reusing `vumeter.js`'s `boostLevel`/
+  stale-decay unchanged), then used to generate ~3 strands × 12–20 control
+  points each (small per-strand phase/delay/amplitude offsets off the *same*
+  envelope value — never independent per-strand state) painted by the shared
+  `ribbon-paint.js`. Replaces R16's left-to-right segmented-bar rendering of
+  the same underlying intensity value; the envelope math itself (R16a's
+  calibration + stale-decay-by-arrival-time) is unchanged and reused verbatim.
+- **(2026-07-30, R17a — "fabric in gentle airflow" refinement)**: a SECOND
+  smoothing stage sits between the calibrated instantaneous envelope above
+  and the wave shape: `ribbon.js`'s `applyEnvelopeSmoothing`, a one-pole
+  low-pass with a ~300 ms time constant (`SMOOTHING_TAU_MS`, 250-400 ms
+  design range), maintained as caller-owned state across repaint frames
+  (same pattern as phase/phaseStartedAt) so `ribbon.js` itself stays a pure
+  function of its inputs. This is what keeps the ribbon reading as a
+  smoothed, controlled interpretation of loudness rather than a literal,
+  oscilloscope-like reproduction of the envelope tick-by-tick.
 - Carries energy only — never samples, never content (constitution V, R5).
+
+## E2a — AccentColorPreference (extension-side, sourced from the desktop, 2026-07-30)
+
+| Field | Type | Source | Notes |
+|---|---|---|---|
+| chosen | `string \| null` | `Gio.Settings.get_user_value('accent-color')` on `org.gnome.desktop.interface`, schema/key-existence guarded (R18) | `null` only when never actively written by the user — including the untouched factory default (itself `'blue'`) |
+| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | 9-entry libadwaita hex table (R18) keyed by `chosen`, or a fixed Ubuntu-orange (`#E95420`) fallback when `chosen == null` or the schema/key is absent | drives the ribbon's strand colors in `ribbon-paint.js`. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange, where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement |
+
+Rules:
+- Read live via `changed::accent-color`, so an in-session accent-color change
+  re-colors the ribbon without restart.
+- Sourced entirely from the desktop environment, not from `myna-desktop` or
+  the D-Bus contract — no wire change (data-model E2/dbus-interface.md
+  unaffected).
+- Safe on pre-GNOME-47 shells (schema/key absent): degrades to the same
+  Ubuntu-orange fallback, never an exception (R18).
+
+## E2b — MotionPreference (extension-side, sourced from the desktop, 2026-07-30)
+
+| Field | Type | Source | Notes |
+|---|---|---|---|
+| reducedMotion | `boolean` | `org.gnome.desktop.interface`'s `enable-animations` (inverted), schema/key-existence guarded (R19) | when `true`, the ribbon renders a static level line / gently-scaling mic indicator instead of the flowing wave (FR-022a) |
+
+Rules:
+- Read live via `changed::enable-animations`, same pattern as E2a.
+- Drives only the *rendering* choice (static vs. flowing) — the underlying
+  level/state inputs (E2) are unaffected either way (FR-022a: "still conveys
+  state and level").
 
 ## E3 — ErrorReason (optional)
 
@@ -97,12 +138,15 @@ The extension's in-memory view; not on the wire.
 |---|---|
 | current state | last `DictationState` received (default `idle`) |
 | current level | last `AudioLevel` + a timestamp (for stale-decay) |
-| HUD pill actor | the bottom-center `St.Widget` (2026-07-30: replaces the top-of-panel ribbon/goop) added via `Main.layoutManager.addChrome`; exists only while state ≠ `idle` |
+| HUD pill actor | the bottom-center `St.Widget` (2026-07-30: replaces the top-of-panel ribbon/goop) added via `Main.layoutManager.addChrome`; exists only while state ≠ `idle`; its level sub-actor is `WaveRibbonActor` (2026-07-30, R17 — replaces `BarMeterActor`), painted via the shared `ribbon-paint.js` |
 | held notice slot | **(2026-07-30)** one severity-scoped slot (reason + optional dismiss-timer handle) implementing the replace-in-place/restart-timer rules (R15) |
 | dismiss control | **(2026-07-30)** the critical-error pill's × button: pointer-reactive (`reactive: true`), never keyboard-focusable (`can_focus: false`) — FR-007c |
+| ribbon severity tint | **(2026-07-30, R17a)** `descriptor.severity` passed straight through to the ribbon as its `severityTint` (`null \| 'recoverable' \| 'critical'`); the ribbon stays visible/amber/paused-pulsing for `'recoverable'`, hidden for `'critical'` (FR-010e, `hud-logic.js`'s `ribbonVisibleForSeverity`) |
 | panel button | optional `PanelMenu.Button`; reflects availability + Toggle (R8) — unaffected by this redesign |
 | availability | whether `org.myna.Dictation` currently has a bus name owner (R9) |
 | a11y label | `accessible_name` = human state label, updated per state (R10) |
+| accent color | current `AccentColorPreference` (E2a), re-read live; colors the ribbon strands |
+| motion preference | current `MotionPreference` (E2b), re-read live; selects flowing vs. static ribbon rendering |
 
 Rules:
 - No actor while `idle` (push-to-talk, spec FR-002); actors + timers + transitions

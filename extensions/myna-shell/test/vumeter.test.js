@@ -1,5 +1,6 @@
-// vumeter.test.js — GJS contract test for the pure VU logic (feature 004,
-// contract extension.md X5, SC-004). No Shell / no D-Bus.
+// vumeter.test.js — GJS contract test for the pure envelope logic (feature
+// 004, contract extension.md X5, SC-004), reused unchanged by ribbon.js
+// (2026-07-30 wave-ribbon redesign). No Shell / no D-Bus.
 //
 //     gjs -m test/vumeter.test.js        (from extensions/myna-shell/)
 
@@ -7,8 +8,6 @@ import System from 'system';
 
 import {
     levelsToIntensity,
-    intensityToActiveSegments,
-    segmentColor,
     STALE_MS,
 } from '../vumeter.js';
 
@@ -56,21 +55,20 @@ check('X5 NaN is safe', levelsToIntensity(NaN, NaN, 0) >= 0.0);
     check('X5 stale reaches the floor', stale <= levelsToIntensity(0.0, 0.0, 0) + 1e-9);
 }
 
-// --- conventional VU colour zones -----------------------------------------
+// --- conventional loudness zones (still true of the underlying envelope,
+// --- even though the wave ribbon no longer renders discrete colour zones) --
 
-check('low-power segment is green', segmentColor(0.25) === 'green');
-check('strong segment is yellow', segmentColor(0.72) === 'yellow');
-check('overload segment is red', segmentColor(0.92) === 'red');
-check('normal speech lights about half the meter',
-    intensityToActiveSegments(levelsToIntensity(0.009, 0.025, 0), 24) >= 11);
-check('active segment count clamps to meter length',
-    intensityToActiveSegments(5, 24) === 24);
+check('quiet input stays near the floor', levelsToIntensity(0.00003, 0.0001, 0) < 0.12);
+check('normal speech clearly moves the envelope',
+    (() => {
+        const normal = levelsToIntensity(0.009, 0.025, 0);
+        return normal >= 0.45 && normal <= 0.7;
+    })());
 
 // --- X6: no content in outputs (numbers only) ------------------------------
 
 check('X6 outputs are numbers only',
-    typeof levelsToIntensity(0.5, 0.5, 0) === 'number' &&
-    typeof intensityToActiveSegments(0.5, 24) === 'number');
+    typeof levelsToIntensity(0.5, 0.5, 0) === 'number');
 
 print(failures === 0 ? 'PASS vumeter.test.js' : `FAIL vumeter.test.js: ${failures} failure(s)`);
 System.exit(failures === 0 ? 0 : 1);

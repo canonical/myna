@@ -1,12 +1,15 @@
 # Quickstart / Validation: GNOME Shell Extension for Myna Dictation UI
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30)
 
 Runnable validation that the focus-safe HUD pill indicator works end-to-end. See
 `contracts/` for the guarantees each step proves and `plan.md` for structure.
 **(2026-07-30)**: the "goop" ribbon is replaced by a bottom-center HUD pill
 (`hud.js`); steps below are updated to also exercise the recoverable-notice and
-critical-error severities (C10/C11, X19–X22).
+critical-error severities (C10/C11, X19–X22). **(2026-07-30, wave-ribbon)**:
+the segmented bar meter is further replaced by a flowing, accent-colored wave
+ribbon (X14, X24–X28); a new optional step 3a covers the standalone `dev-lab`
+tuning tool.
 
 
 ## Prerequisites
@@ -57,15 +60,47 @@ the desktop VM and hardware (constitution II).
 cd extensions/myna-shell
 gjs -m test/states.test.js
 gjs -m test/hud.test.js
+gjs -m test/ribbon.test.js
+gjs -m test/accent.test.js
 ```
 
 **Expected**: `states.js` maps all known states (including `notice`/`error`
-severities) + a neutral unknown (X1–X4, X19), `vumeter.js` is monotonic/clamped
-and decays on stale (X5), no output carries content (X6), and the stub-proxy
-lifecycle (dormant / appeared / vanished / disable / re-enable) holds (X7–X10).
-`hud.test.js` asserts the replace-in-place/restart-timer behavior for repeated
-notices/errors and that the dismiss control's reactive-but-non-focusable
-property holds (X20).
+severities) + a neutral unknown (X1–X4, X19), the envelope smoothing in
+`ribbon.js` (reusing `vumeter.js`'s calibrated math unchanged, plus the
+2026-07-30 refinement's second ~300ms smoothing stage) is monotonic/clamped
+and decays on stale (X5), layered strand/control-point generation and the 5
+lifecycle-phase timing functions are deterministic, including the `morph`→
+travelling-dots and `complete`→convergence-point transitions and the
+recoverable severity's amber tint (X24, X30, X31), no output carries content
+(X6), and the stub-proxy lifecycle (dormant / appeared / vanished / disable
+/ re-enable) holds (X7–X10). `hud.test.js` asserts the replace-in-place/
+restart-timer behavior for repeated notices/errors, that the dismiss
+control's reactive-but-non-focusable property holds (X20), and that the
+ribbon stays visible for `recoverable` but hides for `critical`
+(`ribbonVisibleForSeverity`). `accent.test.js` asserts the accent-color
+fallback rule (untouched default and schema-absent both resolve to Ubuntu
+orange; a genuine user choice, including blue, resolves to its own palette —
+X25) and the reduced-motion query never throws (X26).
+
+## 3a. Fast iteration with `dev-lab` (optional, development aid — not part of the shipped extension)
+
+```sh
+cd extensions/myna-shell
+gjs -m dev-lab/main.js
+```
+
+**Expected**: a small libadwaita window opens with the wave-ribbon canvas, the
+manual-override tuning controls (fake level slider, per-phase trigger buttons,
+reduced-motion toggle, tunable sliders), and a plain text area. With
+`myna-desktop --dbus` running, the ribbon reacts to genuinely live audio/state
+(the tool reuses `dbus.js`'s `DictationService` unmodified — no simulated
+data). Focus the text area and trigger a real session via the configured
+hotkey to verify a spoken transcript lands there (confirms IBus injection
+targets an ordinary `GtkTextView` the same as any other app, R20). Edit
+`ribbon.js`/`ribbon-paint.js`/`accent.js`, relaunch (`Ctrl+C`, rerun the
+command above) to see changes — no extension install/reload/relogin needed.
+This step validates tuning only; it is not part of the extension's own
+acceptance criteria (X1–X28) and has no pass/fail gate of its own.
 
 ## 4. Install & enable the extension — GNOME session
 
@@ -73,6 +108,9 @@ property holds (X20).
 UUID=myna-shell@myna.dev
 mkdir -p ~/.local/share/gnome-shell/extensions/$UUID
 cp -r extensions/myna-shell/* ~/.local/share/gnome-shell/extensions/$UUID/
+# dev-lab/ is a non-shipped development tool (R20) — never installed as
+# part of the extension bundle.
+rm -rf ~/.local/share/gnome-shell/extensions/$UUID/dev-lab
 # Wayland: log out/in to reload the Shell (Alt+F2 r is X11-only).
 gnome-extensions enable $UUID
 gnome-extensions info $UUID        # → State: ENABLED
@@ -88,7 +126,7 @@ myna-desktop --dbus --socket /tmp/myna.sock --language en &   # serves org.myna.
 myna-desktop --install-shortcut '<Super>t>'                              # once: binds a shortcut (feature 003)
 # focus a text field (GNOME Text Editor), then:
 #   tap the shortcut  → HUD pill appears bottom-center (loading treatment if cold, then listening)
-#   speak        → VU meter lights green→yellow→red with your voice
+#   speak        → the wave ribbon flows, growing fuller/brighter with your voice
 #   tap the shortcut  → finalizing treatment, text injected via IBus, pill clears
 ```
 
@@ -100,9 +138,23 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
   volume/brightness OSD position (X21, FR-004).
 - States are distinct: a cold model load shows the **loading** treatment, not the
   listening treatment (X13, FR-006).
-- The VU meter lights more segments as you speak at normal volume (calibrated
-  to real speech, not a raw linear gain — R16a) and eases to floor on silence
-  (X14, SC-004).
+- The wave ribbon unfolds smoothly as the session starts, flows fuller/
+  brighter as you speak at normal volume (calibrated to real speech, not a raw
+  linear gain — R16a), relaxes to a thin idle line on a pause, and morphs into
+  a few travelling dots once you stop, before briefly converging to a single
+  point on completion (X14, X30, FR-010a/FR-010d, SC-004). The motion should
+  feel smoothed and controlled — like fabric in a gentle airflow — rather
+  than a nervous, tick-by-tick oscilloscope; individual syllables should
+  still be visible, just without sharp jumps (FR-010, 2026-07-30 refinement).
+- The ribbon is rendered in your system's accent color if you've actively
+  chosen one, or Ubuntu orange otherwise (X27, FR-010b, SC-011) — try this
+  with the accent-color setting on its untouched default, then with a color
+  explicitly chosen, to see both fall/through paths.
+- With the system's reduced-motion preference enabled, the ribbon is replaced
+  by a static/minimally-animated alternative (X28, FR-022a, SC-012).
+- On a successful completion, the ribbon briefly shows a quiet success
+  indication before the pill clears, without delaying dismissal or a new
+  session starting (X29, FR-010d).
 - The injected transcript matches what you said (feature 003 unchanged; the
   extension added no injection).
 - No transcript text ever appears in the pill or in logs (X6, SC-005).
@@ -117,6 +169,9 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
 **Expected / assert**:
 - A non-blocking notice appears (e.g. "No speech detected") — mic icon stays
   filled (not slashed), since the microphone itself isn't at fault (X19).
+- The wave ribbon stays **visible** (2026-07-30 refinement) — tinted amber,
+  gently pulsing rather than tracking live input — instead of disappearing
+  (X31, FR-010e, SC-014).
 - The notice clears on its own after ~3.5 s with no user action (X13, C10).
 - Starting a new session immediately (before the notice clears) proceeds
   normally and is not blocked or delayed by the still-visible notice.
@@ -134,6 +189,8 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
 **Expected / assert**:
 - A persistent notice appears with a clear, content-free reason and a mic-with-
   slash icon (X19) and a visible dismiss (×) control.
+- The wave ribbon is **hidden** (X31, FR-010e) — unlike the recoverable case,
+  the ribbon does not stay visible/tinted here.
 - The notice does **not** clear on its own — verify by waiting well past the
   recoverable-notice's ~3.5 s window.
 - Clicking the × clears the notice immediately (X22).
@@ -174,9 +231,13 @@ Extension fps is a manual observation in step 5 (harness-tier exemption).
 
 - Steps 1–3 green (hermetic + gated publisher, GJS contract).
 - Step 5 passes on hardware: spoken text lands in the focused app **and** focus is
-  never stolen by the HUD pill, with all states legible.
+  never stolen by the HUD pill, with all states legible, the wave ribbon tracking
+  voice/lifecycle phases correctly, and accent-color/reduced-motion behaving per
+  X27/X28.
 - Steps 5a/5b pass: the recoverable notice auto-dismisses and never blocks a new
   session; the critical error persists until dismissed and its × control never
   steals focus.
+- SC-013's structured comparison run and recorded (≥3 observers, majority
+  verdict favoring the wave ribbon over the prior segmented meter — T050a).
 - `docs/desktop-injection.md` §2 updated to record this extension as the GNOME
   focus-safe overlay answer (NotifyIndicator remains the fallback).

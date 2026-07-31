@@ -12,6 +12,8 @@ import System from 'system';
 import {
     computePosition,
     iconForSeverity,
+    ribbonPhaseForStateKey,
+    ribbonVisibleForSeverity,
     severityAutoDismisses,
     shouldReplaceHeldNotice,
     pillColorClass,
@@ -102,6 +104,30 @@ function eq(name, actual, expected) {
         PILL_COLOR_CLASSES.includes('myna-hud-severity-recoverable') &&
         PILL_COLOR_CLASSES.includes('myna-hud-severity-critical') &&
         PILL_COLOR_CLASSES.includes('myna-hud-phase-loading'));
+}
+
+// --- 2026-07-30, R17: which state keys force a ribbon phase change --------
+
+{
+    eq('transcribing forces the ribbon into morph',
+        ribbonPhaseForStateKey('transcribing'), 'morph');
+    eq('finalizing forces the ribbon into complete (FR-010d)',
+        ribbonPhaseForStateKey('finalizing'), 'complete');
+    for (const key of ['idle', 'loading', 'recording', 'notice', 'error', 'unknown-state']) {
+        eq(`${key} does not force a phase (the ribbon manages unfold/flow itself)`,
+            ribbonPhaseForStateKey(key), null);
+    }
+}
+
+// --- 2026-07-30, R17a: ribbon visibility by severity (only critical hides) -
+
+{
+    check('the ribbon stays visible for a recoverable notice (amber/paused instead of hidden)',
+        ribbonVisibleForSeverity('recoverable') === true);
+    check('the ribbon hides for a critical error',
+        ribbonVisibleForSeverity('critical') === false);
+    check('the ribbon stays visible for non-problem states',
+        ribbonVisibleForSeverity(null) === true);
 }
 
 print(failures === 0 ? 'PASS hud.test.js' : `FAIL hud.test.js: ${failures} failure(s)`);

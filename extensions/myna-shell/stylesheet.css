@@ -1,11 +1,12 @@
 /* stylesheet.css — chrome styling for HudView (feature 004-gnome-shell-
  * indicator, 2026-07-30 HUD redesign; hud.js). A compact pill styled after
- * GNOME's own volume/brightness OSD, positioned bottom-center (R14). The bar
- * meter itself is drawn in Cairo (hud.js's BarMeterActor); this file styles
- * the pill container, icon, label, and dismiss control. All of this is
- * behind the view.js seam — a redesign replaces hud.js + these rules
- * together. Replaces the prior RibbonView/`indicator.js` styling entirely
- * (deleted, not kept as an alternate).
+ * GNOME's own volume/brightness OSD, positioned bottom-center (R14). The
+ * wave ribbon itself is drawn in Cairo (hud.js's WaveRibbonActor, 2026-07-30
+ * wave-ribbon redesign — replaces the prior segmented BarMeterActor); this
+ * file styles the pill container, icon, label, and dismiss control. All of
+ * this is behind the view.js seam — a redesign replaces hud.js + these
+ * rules together. Replaces the prior RibbonView/`indicator.js` styling
+ * entirely (deleted, not kept as an alternate).
  */
 
 .myna-hud-pill {
@@ -32,12 +33,14 @@
     color: rgba(255, 255, 255, 0.92);
 }
 
-.myna-hud-bars {
+.myna-hud-ribbon {
     /* Sizing is set in hud.js; min-height/min-width are a hard floor so the
      * BoxLayout can never squeeze this actor's allocation down regardless of
      * surrounding content — a squeeze here previously made the vumeter read
      * as permanently flat no matter the real audio level (2026-07-30
-     * manual-test follow-up: the root cause of the "vumeter is flat" bug). */
+     * manual-test follow-up: the root cause of the "vumeter is flat" bug,
+     * R16a — still applicable to the wave ribbon that replaced the bar
+     * meter, R17). */
     min-height: 32px;
     min-width: 160px;
 }
