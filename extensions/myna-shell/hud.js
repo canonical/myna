@@ -65,7 +65,12 @@ const PILL_WIDTH = 360;
 // to near-zero regardless of the real audio level, the flat-vumeter bug a
 // manual test caught (2026-07-30 follow-up).
 const PILL_HEIGHT_ESTIMATE = 88;
-const RIBBON_WIDTH = 160;
+// 2026-07-31: no fixed RIBBON_WIDTH constant — the ribbon expands to fill
+// whatever horizontal space its parent actually allocates (see
+// WaveRibbonActor/contentBox below); a fixed width here was the bug (it
+// visibly stopped partway across the pill on real hardware instead of
+// reaching the right edge). stylesheet.css's `min-width: 160px` is the
+// only remaining width-related constant, and it's a floor, not a target.
 const RIBBON_HEIGHT = 32;
 const APPEAR_MS = 180;
 const CLEAR_MS = 200;
@@ -84,9 +89,19 @@ class WaveRibbonActor extends St.DrawingArea {
             style_class: 'myna-hud-ribbon',
             reactive: false,
             can_focus: false,
-            width: RIBBON_WIDTH,
             height: RIBBON_HEIGHT,
-            x_expand: false,
+            // 2026-07-31 fix: the ribbon previously had a hardcoded
+            // `width: 160` and `x_expand: false`, so it
+            // never grew past that regardless of how much wider the pill
+            // actually was — it visibly stopped partway across instead of
+            // reaching the right edge (reported from the real, installed
+            // extension, not just dev-lab). `x_expand` + `x_align: FILL`
+            // let it claim and fill whatever horizontal space its parent
+            // (`contentBox`, itself now expanding into the pill's leftover
+            // width below) actually allocates; `stylesheet.css`'s
+            // `min-width: 160px` remains as a floor only.
+            x_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
             y_expand: false,
         });
         this._lastRms = 0;
@@ -364,6 +379,13 @@ export class HudView {
             orientation: Clutter.Orientation.VERTICAL,
             reactive: false,
             can_focus: false,
+            // 2026-07-31 fix: claim the pill's leftover horizontal space
+            // (icon and dismiss button stay their natural/fixed size) and
+            // actually stretch into it, rather than collapsing to the
+            // label's natural (narrower) width — this is what the ribbon
+            // child needs from its parent to reach the pill's right edge.
+            x_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
         });
         contentBox.add_child(this._label);
         contentBox.add_child(this._ribbon);

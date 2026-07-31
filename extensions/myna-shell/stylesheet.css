@@ -34,13 +34,18 @@
 }
 
 .myna-hud-ribbon {
-    /* Sizing is set in hud.js; min-height/min-width are a hard floor so the
-     * BoxLayout can never squeeze this actor's allocation down regardless of
-     * surrounding content — a squeeze here previously made the vumeter read
-     * as permanently flat no matter the real audio level (2026-07-30
-     * manual-test follow-up: the root cause of the "vumeter is flat" bug,
-     * R16a — still applicable to the wave ribbon that replaced the bar
-     * meter, R17). */
+    /* min-height/min-width are a hard FLOOR only — the actor's actual width
+     * comes from hud.js's `x_expand`/`x_align: FILL`, so it stretches to
+     * fill whatever space its parent (`.myna-hud-content`) allocates,
+     * reaching the pill's right edge instead of stopping at a fixed pixel
+     * width (2026-07-31 fix, reported from the real installed extension:
+     * the ribbon previously stopped roughly halfway across). The floor
+     * still guards against the BoxLayout squeezing this actor's allocation
+     * down to near-zero regardless of surrounding content — a squeeze here
+     * previously made the vumeter read as permanently flat no matter the
+     * real audio level (2026-07-30 manual-test follow-up: the root cause
+     * of the "vumeter is flat" bug, R16a — still applicable to the wave
+     * ribbon that replaced the bar meter, R17). */
     min-height: 32px;
     min-width: 160px;
 }
