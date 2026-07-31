@@ -27,6 +27,20 @@ pub trait Trigger: Send {
     /// cycle). Default: nothing to drain (hold-to-talk sources emit no ghost
     /// edges; a stray press during a session is a real user intent).
     async fn discard_pending(&mut self) {}
+
+    /// Force this trigger's internal press/release parity back to "not
+    /// recording", *without* consuming a real edge — used by the controller
+    /// when an utterance ends for a reason other than reading a matching
+    /// edge off this trigger (e.g. focus-loss ends the session via
+    /// `stop.stop()`, never touching the trigger). Toggle-style triggers
+    /// (`ControlTrigger`, `GlobalShortcutTrigger` in `Toggle` mode) track
+    /// "pressed" as *session-active*, decoupled from any physical key state;
+    /// left unsynced, the next real user poke flips that bit the "wrong" way
+    /// and delivers a `Release` (silently swallowed while idle) instead of a
+    /// `Press` — the user has to press twice to resume (manual test report,
+    /// 2026-07-31). Default: a no-op (hold-to-talk / scripted sources track
+    /// real physical/test state that this desync can't touch).
+    async fn resync(&mut self) {}
 }
 
 /// Reads stdin lines and toggles `Press`/`Release` per line — the two-Enter

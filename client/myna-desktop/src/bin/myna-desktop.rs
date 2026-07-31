@@ -166,15 +166,31 @@ fn make_session(
             .clone()
             .map(|bus| (bus, source.stats()));
         let readiness = readiness.clone();
+        // Reset readiness synchronously, right here — when the session is
+        // created (i.e. when the controller calls `session.start()`), not
+        // lazily inside the `async move` block below. The controller
+        // publishes `IndicatorState::Recording` immediately after
+        // `session.start()` returns, before this future is ever polled; if
+        // `ready_seen` were still `true` from the *previous* utterance at
+        // that moment, `map_state` would publish `"recording"` first, only
+        // flipping to `"loading"` once this future is finally polled and the
+        // old `r.reset()` ran — a spurious recording→loading→recording
+        // triple-flip on the wire that the GNOME Shell HUD renders as a
+        // flicker on (re)start (no debounce there, by design elsewhere).
+        // Resetting here instead means `ready_seen` is already `false` before
+        // the controller ever reads it, so only one clean loading→recording
+        // transition is published.
+        if let Some(r) = &readiness {
+            r.reset();
+        }
         let run: SessionRun = Box::pin(async move {
             if let Some((bus, stats)) = pump {
                 tokio::spawn(myna_desktop::dbus::pump::run(bus, stats));
             }
             // Tee the event stream so the publisher can split loading/recording
-            // (R4) when in --dbus mode; fresh cold readiness per session.
+            // (R4) when in --dbus mode.
             match readiness {
                 Some(r) => {
-                    r.reset();
                     let mut sink = ReadinessTee::new(ChannelSink(events), r);
                     run_dictation(&backend, config, source, &mut sink).await
                 }
@@ -476,5 +492,44 @@ mod tests {
         let result = parse_args_from(args(&["--portal", "--shortcut", "<Super>t", "--socket", "/tmp/x.sock"]));
         assert!(result.is_ok());
         assert_eq!(result.unwrap().shortcut, Some("<Super>t".to_string()));
+    }
+
+    // Regression (manual test report, 2026-07-31): the HUD pill visibly
+    // "blinked" on (re)start — recording→loading→recording published in
+    // quick succession because `readiness.reset()` used to run lazily inside
+    // the session's `async move` block, only once that future was first
+    // polled. The controller publishes `IndicatorState::Recording`
+    // *synchronously* right after `session.start()` returns (before the
+    // future is ever polled), so a `ready_seen` left `true` from the
+    // *previous* utterance made that first publish read `"recording"`
+    // instead of the correct cold-start `"loading"`.
+    //
+    // `make_session`'s returned factory must reset `readiness` synchronously,
+    // the moment it's called — provably before the returned `run` future is
+    // ever polled/awaited.
+    #[test]
+    fn make_session_resets_readiness_synchronously_before_run_is_polled() {
+        let args = Args {
+            socket: Some(PathBuf::from("/tmp/myna-desktop-test-unused.sock")),
+            ..Default::default()
+        };
+        let readiness = Readiness::new();
+        // Simulate a previous utterance that reached Ready — the exact stale
+        // state that triggered the flicker.
+        readiness.note_ready();
+        assert!(readiness.ready_seen(), "test setup: readiness should start warm");
+
+        let mut factory = make_session(&args, Some(readiness.clone()), None);
+        let (events_tx, _events_rx) = mpsc::channel(1);
+        // Calling the factory is synchronous; `run` below is deliberately
+        // never polled/awaited, proving the reset can't be hiding inside it.
+        let (_run, _stop) = factory(events_tx);
+
+        assert!(
+            !readiness.ready_seen(),
+            "readiness must already be reset by the time session.start() \
+             returns, before the controller's next set_state(Recording) \
+             call — not lazily inside the unpolled session future"
+        );
     }
 }
