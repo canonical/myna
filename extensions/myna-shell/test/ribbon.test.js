@@ -16,6 +16,8 @@ import {
     computeEnvelope,
     computeRibbonModel,
     isStrongSyllableOnset,
+    shapeAmplitude,
+    AMPLITUDE_CURVE_K,
     unfoldProgress,
     relaxProgress,
     morphProgress,
@@ -32,7 +34,14 @@ import {
     DEFAULT_POINTS_PER_STRAND,
 } from '../ribbon.js';
 import {resolveAccentPalette} from '../accent.js';
-import {paintRibbon} from '../ribbon-paint.js';
+import {
+    paintRibbon,
+    computeSafeScale,
+    OVERFLOW_BOOST,
+    VOICE_THICKNESS_FRACTION,
+    BASE_CENTRELINE_FRACTION,
+    MAX_BODY_BILLOW,
+} from '../ribbon-paint.js';
 import {STALE_MS} from '../vumeter.js';
 
 let failures = 0;
@@ -123,6 +132,56 @@ check('X5 stale decays toward the floor',
         isStrongSyllableOnset(PARTICLE_ONSET_THRESHOLD));
     check('a small rise is not an onset', !isStrongSyllableOnset(0.01));
     check('a negative delta (level falling) is never an onset', !isStrongSyllableOnset(-0.5));
+}
+
+// --- 2026-07-31: amplitude response curve ("log scale" follow-up) --------
+// A mild logarithmic lift so quiet-but-real speech reads as clearly
+// present, while staying anchored at the same ceiling `computeSafeScale`
+// (ribbon-paint.js) already guards against — boundary-preserving and
+// monotonic, so this can never reopen the cropping-bug fix.
+
+{
+    eq('shapeAmplitude(0) is exactly 0 (boundary-preserving)', shapeAmplitude(0), 0);
+    eq('shapeAmplitude(1) is exactly 1 (same ceiling as before — never reopens the crop fix)',
+        shapeAmplitude(1), 1);
+
+    check('low energy is boosted above its raw value',
+        shapeAmplitude(0.1) > 0.1);
+    check('mid energy is boosted above its raw value',
+        shapeAmplitude(0.5) > 0.5);
+
+    // Strictly monotonic increasing across a representative sample.
+    const samples = [0, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+    let monotonic = true;
+    for (let i = 1; i < samples.length; i++) {
+        if (shapeAmplitude(samples[i]) <= shapeAmplitude(samples[i - 1]))
+            monotonic = false;
+    }
+    check('shapeAmplitude is strictly monotonic increasing', monotonic);
+
+    // Out-of-range/NaN inputs stay safely clamped (never throw, never
+    // produce a value outside [0,1]).
+    check('negative input clamps to 0', shapeAmplitude(-3) === 0);
+    check('above-1 input clamps to 1', shapeAmplitude(5) === 1);
+    check('NaN input is safe', shapeAmplitude(NaN) === 0);
+
+    check('AMPLITUDE_CURVE_K is a positive, finite tunable',
+        AMPLITUDE_CURVE_K > 0 && Number.isFinite(AMPLITUDE_CURVE_K));
+}
+
+// `computeRibbonModel` actually uses the shaped amplitude, not the raw
+// envelope — confirmed via the rendered voice strand's own peak, which
+// should match `shapeAmplitude(envelope)` (floored at the idle amplitude).
+{
+    const envelope = 0.2;
+    const model = computeRibbonModel({envelope, elapsedMs: 0, phase: 'flow'});
+    const voiceStrand = model.strands.find(s => s.role === 'voice');
+    const observedAmplitude = Math.max(...voiceStrand.points.map(p => Math.abs(p.y)));
+    const expectedAmplitude = shapeAmplitude(envelope);
+    check(`computeRibbonModel's voice amplitude (${observedAmplitude.toFixed(4)}) reflects the shaped envelope (${expectedAmplitude.toFixed(4)}), not the raw one (${envelope})`,
+        Math.abs(observedAmplitude - expectedAmplitude) < 0.01);
+    check('the shaped amplitude is a real boost over the raw envelope for this input',
+        observedAmplitude > envelope);
 }
 
 // --- X24: layered strands (base/voice/secondary), deterministic ---------
@@ -295,6 +354,67 @@ check('X5 stale decays toward the floor',
         logError(e);
     }
     check('paintRibbon runs against a real headless Cairo surface without throwing (all phases + amber tint)', !threw);
+}
+
+// --- Overflow guard regression (2026-07-31, narrowed same day, then
+// --- relaxed via OVERFLOW_BOOST same day): a manual test on real hardware
+// found the ribbon's centerline + body thickness could together reach well
+// past the canvas's half-height at full loudness, which Cairo silently
+// clips — the "cropped" look, since the body is opaque (~85-95% alpha).
+// `computeSafeScale` derives a scale factor from the SAME ceilings the
+// body's billow actually reaches, so this can never silently drift out of
+// sync even if that formula or `VOICE_THICKNESS_FRACTION` are retuned
+// later (this test imports the REAL constants, not a hardcoded copy — a
+// stale local copy of `VOICE_THICKNESS_FRACTION` here previously drifted
+// out of sync with a `ribbon-paint.js` tuning change and went unnoticed).
+// Glow/wisp are deliberately NOT part of this budget at all (low-alpha
+// overlays, so their own overflow is far less visible than the body's).
+//
+// `OVERFLOW_BOOST` (2026-07-31 follow-up, "give more room to base/voice
+// even if clipped") is an explicit, intentional relaxation of the
+// guarantee: with `OVERFLOW_BOOST > 1`, the opaque body MAY occasionally
+// graze or clip at extreme, sustained loudness — that trade-off is
+// deliberate, not a regression. This test therefore checks the *documented,
+// intentional* budget (including the boost), not a strict "never clips"
+// invariant, so a future edit still can't accidentally re-introduce the
+// original *unbounded* overflow (uncapped safeScale, or a boost so large it
+// swallows the entire guard) without this test catching it.
+
+{
+    const safeScale = computeSafeScale();
+    check('safeScale is a sane fraction, not zero/negative/absurd',
+        safeScale > 0 && safeScale <= 1);
+
+    // Recompute the intentional (boosted) budget using the REAL exported
+    // constants — if `ribbon-paint.js` retunes any of them, this recomputes
+    // to match rather than silently drifting.
+    const unscaledOpaqueWorstCase =
+        BASE_CENTRELINE_FRACTION +
+        (VOICE_THICKNESS_FRACTION * MAX_BODY_BILLOW) / 2;
+    const expectedSafeScale = Math.min(1, (0.5 * OVERFLOW_BOOST) / unscaledOpaqueWorstCase);
+    check(`safeScale (${safeScale.toFixed(4)}) matches the documented formula (0.5 * OVERFLOW_BOOST / worst-case), including the intentional overflow boost`,
+        Math.abs(safeScale - expectedSafeScale) < 1e-9);
+
+    // The boost must stay a deliberate, bounded choice — not silently grow
+    // into "the guard does nothing at all" territory (safeScale pinned at
+    // 1, i.e. zero shrink under any circumstance) without a human noticing.
+    check('OVERFLOW_BOOST is a positive, finite, deliberately-chosen multiplier',
+        OVERFLOW_BOOST > 0 && Number.isFinite(OVERFLOW_BOOST));
+    check('the current OVERFLOW_BOOST does not fully saturate the guard (safeScale < 1) — ' +
+        'if it ever does, the opaque-body guard is providing no protection at all',
+        safeScale < 1);
+
+    // Document the actual (now intentionally > 0.5, i.e. overflowing)
+    // worst-case extent in real pixels at the ribbon's real height, so a
+    // future reader can see exactly how much overflow is being accepted
+    // without needing to run the formula by hand.
+    const RIBBON_HEIGHT = 32; // must match hud.js's RIBBON_HEIGHT
+    const scaledOpaqueWorstCase = unscaledOpaqueWorstCase * safeScale;
+    const worstCasePx = scaledOpaqueWorstCase * RIBBON_HEIGHT;
+    const halfHeightPx = RIBBON_HEIGHT / 2;
+    print(`     (info) at height=${RIBBON_HEIGHT}px, worst-case opaque extent ≈ ${worstCasePx.toFixed(1)}px ` +
+        `vs. ${halfHeightPx}px available — ${worstCasePx > halfHeightPx ? 'intentionally overflows' : 'still fits'} ` +
+        `by design (OVERFLOW_BOOST=${OVERFLOW_BOOST})`);
 }
 
 print(failures === 0 ? 'PASS ribbon.test.js' : `FAIL ribbon.test.js: ${failures} failure(s)`);

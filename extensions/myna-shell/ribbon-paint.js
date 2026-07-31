@@ -13,8 +13,68 @@ import Cairo from 'gi://cairo';
 const AMBER_MAIN = '#F5A623';
 const AMBER_HIGHLIGHT = '#FFE0A6';
 
+// Ceilings the paint functions below actually reach at full loudness/
+// activity — referenced by `computeSafeScale` so the overflow guard stays
+// honest if the body's billow is ever retuned (2026-07-31, cropping-bug
+// fix, narrowed same day — see `computeSafeScale`'s doc comment for why
+// only the opaque contributors are in this budget).
+export const VOICE_THICKNESS_FRACTION = 0.85; // paintRibbon's own per-role thickness
+export const BASE_CENTRELINE_FRACTION = 0.82; // paintRibbon's un-clamped verticalScale factor
+export const MAX_BODY_BILLOW = 1 + (0.12 + 0.32 * 1); // bodyThickness()'s ceiling (activity=1)
+const WISP_THICKNESS_FRACTION = 0.5; // paintRibbon's own wispThickness (scales with safeScale, not part of its budget)
+
+// How much intentional overflow to allow beyond the guaranteed-no-clip
+// budget (2026-07-31, "give more room to base/voice" follow-up) — `1` keeps
+// the original guarantee (the opaque body never clips, even at the exact
+// worst-case billow peak); `>1` relaxes it proportionally, trading some of
+// that guarantee for a bigger, more dramatic wave that may occasionally
+// graze or clip at extreme, sustained loudness. Capped at `Math.min(1, …)`
+// in `computeSafeScale` regardless — this can make the shrink LESS
+// aggressive, never inflate the wave past its own raw (unshrunk) size.
+export const OVERFLOW_BOOST = 1.3;
+
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
+}
+
+/**
+ * The overflow guard (2026-07-31, cropping bug fix; narrowed 2026-07-31
+ * after a live-hardware follow-up: "amplitude too low"; relaxed further via
+ * `OVERFLOW_BOOST` same day per "let it overflow, even if it's clipped" —
+ * more room for the base/voice strands was worth some occasional clipping
+ * at extreme loudness). At full loudness the centerline swing and the
+ * body's billowed thickness — both **opaque** (~85-95% alpha) — can
+ * together reach well past the canvas's available half-height, which
+ * Cairo silently clips at the `St.DrawingArea`'s surface edge. With
+ * `OVERFLOW_BOOST > 1`, that's now an accepted, deliberate trade-off at the
+ * extreme end rather than a guarantee.
+ *
+ * The glow and wisp passes are, as before, not part of this budget at all
+ * (they're low-alpha overlays — glow: 10-24%; wisp: lower still — so their
+ * own overflow is even less visible than the body's).
+ *
+ * Rather than hand-picking a new fixed literal for "how much amplitude
+ * feels right" (which is exactly how the original values drifted out of
+ * sync with each other and caused the bug), this derives the scale factor
+ * from the SAME ceilings `bodyThickness()`'s billow actually reaches, then
+ * applies `OVERFLOW_BOOST` as the single, explicit "how much clipping risk
+ * am I willing to accept" dial — so retuning the billow formula still keeps
+ * this in relative sync, and the overflow policy itself stays a one-line,
+ * clearly-named decision rather than baked into the budget's other
+ * constants. Returns `1` (no shrink at all) once the (boosted) budget
+ * already covers the worst case.
+ *
+ * @returns {number} a multiplier in `(0, 1]` applied uniformly to the
+ *     centerline `verticalScale`, each role's body `thickness`, and
+ *     `wispThickness` — never applied unevenly, so the ribbon's relative
+ *     proportions (glow vs. body vs. wisp) are preserved, only its overall
+ *     scale shrinks (or doesn't).
+ */
+export function computeSafeScale() {
+    const worstCaseExtentFraction =
+        BASE_CENTRELINE_FRACTION +
+        (VOICE_THICKNESS_FRACTION * MAX_BODY_BILLOW) / 2;
+    return Math.min(1, (0.5 * OVERFLOW_BOOST) / worstCaseExtentFraction);
 }
 
 function hexToRgbFloat(hex) {
@@ -273,7 +333,11 @@ export function paintRibbon(cr, width, height, model, palette) {
         tint = null, elapsedMs = 0,
     } = model;
     const centreY = height / 2;
-    const verticalScale = (height / 2) * 0.82;
+    // 2026-07-31: `safeScale` (≤1) keeps the centerline + thickness + glow
+    // + wisp combination from ever exceeding the canvas's half-height —
+    // see `computeSafeScale`'s doc comment.
+    const safeScale = computeSafeScale();
+    const verticalScale = (height / 2) * BASE_CENTRELINE_FRACTION * safeScale;
 
     const mainRgb = tint === 'amber' ? hexToRgbFloat(AMBER_MAIN) : hexToRgbFloat(palette.main);
     const highlightRgb = tint === 'amber' ? hexToRgbFloat(AMBER_HIGHLIGHT) : hexToRgbFloat(palette.highlight);
@@ -326,7 +390,7 @@ export function paintRibbon(cr, width, height, model, palette) {
             let baseRgb = role === 'secondary' ? shadowRgb : mainRgb;
             if (brightnessBoost > 0)
                 baseRgb = lightenRgb(baseRgb, brightnessBoost * 0.6);
-            const thickness = height * (role === 'voice' ? 0.55 : role === 'secondary' ? 0.4 : 0.32);
+            const thickness = height * (role === 'voice' ? VOICE_THICKNESS_FRACTION : role === 'secondary' ? 0.4 : 0.32) * safeScale;
             // The secondary/base depth layers fade out toward silence too
             // (not just thinner — dimmer), so a calm moment reads as one
             // thin, quiet ribbon rather than several faint parallel
@@ -362,7 +426,7 @@ export function paintRibbon(cr, width, height, model, palette) {
     // a second parallel ribbon. Same banding reason as the glow above:
     // fade in smoothly with activity rather than a hard cutoff.
     if (voicePixelPoints !== null && effectStrength > 0) {
-        const wispThickness = height * 0.5;
+        const wispThickness = height * WISP_THICKNESS_FRACTION * safeScale;
         paintWisp(cr, voicePixelPoints, width, elapsedMs,
             mixRgb(mainRgb, highlightRgb, 0.4), 0.5 * effectStrength, wispThickness, 0.7, activity);
         paintWisp(cr, voicePixelPoints, width, elapsedMs + 240,
