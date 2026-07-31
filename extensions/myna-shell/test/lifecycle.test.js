@@ -9,6 +9,8 @@
 import System from 'system';
 
 import {DictationService} from '../dbus.js';
+import {IndicatorController} from '../indicator-controller.js';
+import {connectHudStyle} from '../settings-logic.js';
 import {stateToDescriptor} from '../states.js';
 
 let failures = 0;
@@ -140,6 +142,43 @@ function makeWiredService(initialState = 'idle') {
     service.disable();
 }
 
+// Feature 009 settings lifecycle: connect before initial read, propagate live
+// changes, and become inert after disable.
+{
+    const seen = [];
+    const settings = {
+        value: 'basic',
+        callback: null,
+        disconnected: 0,
+        connect(signal, callback) {
+            check('009 listens only to detailed hud-style signal',
+                signal === 'changed::hud-style');
+            this.callback = callback;
+            return 7;
+        },
+        disconnect(id) {
+            check('009 disconnects the installed settings signal', id === 7);
+            this.disconnected++;
+        },
+        get_string() {
+            return this.value;
+        },
+        emit(value) {
+            this.value = value;
+            this.callback?.();
+        },
+    };
+    const disconnect = connectHudStyle(settings, style => seen.push(style));
+    eq('009 initial style read happens after connect', seen[0], 'basic');
+    settings.emit('wave');
+    eq('009 live settings change propagates', seen.at(-1), 'wave');
+    disconnect();
+    settings.emit('basic');
+    eq('009 settings change after disable is inert', seen.at(-1), 'wave');
+    disconnect();
+    eq('009 settings disconnect is idempotent', settings.disconnected, 1);
+}
+
 // --- X8: name-appeared connects + reflects current State; vanished → idle --
 
 {
@@ -227,6 +266,64 @@ function makeWiredService(initialState = 'idle') {
     eq('X10 fresh proxy on re-appear', stub.calls.proxyCreated, 2);
     eq('X10 reflects current State again', shown.at(-1)?.key, 'transcribing');
     service.disable();
+}
+
+// Feature 009: the same service stream drives either view through one
+// presentation-independent controller. Equal levels stay fresh and unknown
+// states retain the neutral descriptor mapping.
+{
+    const stub = makeStubBus('recording');
+    const views = [];
+    const controller = new IndicatorController({
+        style: 'basic',
+        createView: (style, _options) => {
+            const calls = [];
+            const view = {
+                style,
+                calls,
+                show: descriptor => calls.push(['show', descriptor]),
+                setLevel: (rms, peak, receivedAt) => calls.push(['level', rms, peak, receivedAt]),
+                hide: () => calls.push(['hide']),
+                destroy: () => calls.push(['destroy']),
+            };
+            views.push(view);
+            return view;
+        },
+        now: () => 1000,
+        schedule: () => 1,
+        cancel: () => {},
+    });
+    let arrival = 1000;
+    const service = new DictationService({
+        onStateChanged: (state, reason) => controller.onDescriptor(
+            stateToDescriptor(state, reason)),
+        onLevel: (rms, peak) => controller.onLevel(rms, peak, arrival++),
+        onAvailabilityChanged: available => {
+            if (!available)
+                controller.onServiceUnavailable();
+        },
+        _watchName: stub.watchName,
+        _unwatchName: stub.unwatchName,
+        _createProxy: stub.createProxy,
+    });
+    service.enable();
+    stub.appear();
+    stub.proxy.emitState('quantizing');
+    eq('009 unknown state stays neutral through controller',
+        views[0].calls.filter(c => c[0] === 'show').at(-1)[1].key, 'active');
+    stub.proxy.emitLevel(0.4, 0.6);
+    stub.proxy.emitLevel(0.4, 0.6);
+    const levelCalls = views[0].calls.filter(c => c[0] === 'level');
+    check('009 repeated equal levels keep distinct arrival timestamps',
+        levelCalls.at(-1)[3] > levelCalls.at(-2)[3]);
+    controller.setStyle('wave');
+    eq('009 second style receives same semantic descriptor',
+        views[1].calls.find(c => c[0] === 'show')[1].key, 'active');
+    stub.vanish();
+    eq('009 service loss clears ordinary display',
+        JSON.stringify(views[1].calls.at(-1)), JSON.stringify(['hide']));
+    service.disable();
+    controller.destroy();
 }
 
 print(failures === 0

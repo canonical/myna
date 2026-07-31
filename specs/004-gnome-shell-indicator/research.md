@@ -1,5 +1,9 @@
 # Phase 0 Research: GNOME Shell Extension for Myna Dictation UI
 
+> **Historical presentation research.** It records the route to the wave HUD;
+> feature 009 is the current Basic/Wave presentation contract. Feature 004's
+> in-compositor and D-Bus decisions remain relevant.
+
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21
 
 Resolves the Technical-Context unknowns and the spec's deferred design axes. Each
@@ -857,5 +861,4 @@ deferred, hotkey-driven start/stop is sufficient for this tool's purpose.
   interim, client-inferred severity classification be replaced by a real
   disposition carried end-to-end from the inference backend — this feature's
   classification is a stopgap, not that taxonomy.
-
 

@@ -15,7 +15,7 @@ T21/T22 — the desktop last-mile) and `../docs/desktop-injection.md`.
 | `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` (`../docs/audio-adapter-api.md`) — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
 | `myna-cli` (`myna-dictate`) | demo binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
-| `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: GlobalShortcuts hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
+| `myna-desktop` (`myna-desktop`) | shipped dictation app: trigger → capture → IBus injection; notifications for bare runs, or `org.myna.Dictation` for the Shell HUD | **T21/T22 (done)** |
 
 ## Design commitments
 
@@ -30,10 +30,12 @@ T21/T22 — the desktop last-mile) and `../docs/desktop-injection.md`.
   `ScriptedBackend`); the hotkey is `Trigger` (`StdinTrigger` /
   `GlobalShortcutTrigger`); the injector/indicator are `Injector` / `Indicator`
   (`MockInjector` / `IbusInjector`, `MockIndicator` / `GtkIndicator`). Real
-  implementations drop in behind the same traits.
+  implementations drop in behind the same traits. `DbusIndicator` publishes the
+  state/level contract consumed by `../extensions/myna-shell/`.
 - **Invariants** (from `../CLAUDE.md`): never persist audio, bounded in-memory
   buffering, no transcription/audio content logged by default; the desktop
-  injector handles **text only** and is commit-only.
+  injector handles **text only** and is commit-only by default; opt-in
+  `--preedit` displays unstable streaming text through IBus preedit.
 
 ## Wire parity
 
@@ -94,8 +96,9 @@ Other activation modes: `--portal` (GlobalShortcuts hold-to-talk — only works
 when packaged as a snap/flatpak, which GNOME grants an app identity); `--stdin`
 (terminal debug — injects back into the terminal); `--overlay` (GTK activity
 overlay instead of notifications — **experimental**: on GNOME/Wayland the overlay
-window can steal focus and cut the session short). Feedback defaults to desktop
-notifications.
+window can steal focus and cut the session short); `--dbus` publishes
+`org.myna.Dictation` for the separately installed focus-safe Shell extension.
+Feedback defaults to desktop notifications only for a bare run without `--dbus`.
 
-See `../docs/desktop-injection.md` for the settled T21/T22 contract (controller
-state model, the three seams, the IBus-over-zbus backend, the GTK indicator).
+See `../docs/desktop-injection.md` for the settled T21/T22 contract and
+`../extensions/myna-shell/README.md` for the current Basic/Wave Shell HUD.

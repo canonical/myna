@@ -52,24 +52,6 @@ export function iconForSeverity(severity) {
  * @param {(string|null)} severity
  * @returns {boolean}
  */
-export function severityAutoDismisses(severity) {
-    return severity === 'recoverable';
-}
-
-/**
- * Whether an incoming descriptor should replace an already-held notice in
- * place rather than being ignored or queued (R15, FR-007a/FR-007d, X20): any
- * new problem descriptor (severity !== null) always replaces whatever is
- * currently held — there is exactly one held-notice slot, never a queue,
- * regardless of whether the severity matches the one already showing.
- *
- * @param {(string|null)} incomingSeverity
- * @returns {boolean}
- */
-export function shouldReplaceHeldNotice(incomingSeverity) {
-    return incomingSeverity !== null;
-}
-
 /**
  * The pill's colour-class name for this state/severity (feature 004
  * follow-up, post-manual-test-review): orange for a recoverable notice, red

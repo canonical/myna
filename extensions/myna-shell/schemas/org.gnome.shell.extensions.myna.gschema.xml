@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <enum id="org.gnome.shell.extensions.myna.HudStyle">
+    <value nick="basic" value="0"/>
+    <value nick="wave" value="1"/>
+  </enum>
+  <schema id="org.gnome.shell.extensions.myna"
+          path="/org/gnome/shell/extensions/myna/">
+    <key name="hud-style" enum="org.gnome.shell.extensions.myna.HudStyle">
+      <default>'basic'</default>
+      <summary>Dictation HUD style</summary>
+      <description>Select the basic audio meter or wave ribbon dictation HUD.</description>
+    </key>
+  </schema>
+</schemalist>

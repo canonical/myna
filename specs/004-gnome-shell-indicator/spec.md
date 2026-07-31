@@ -1,5 +1,9 @@
 # Feature Specification: GNOME Shell Extension for Myna Dictation UI
 
+> **Historical presentation artifact.** Feature 009 supersedes HUD selection,
+> settings, notice ownership, installation, and current acceptance. Feature 004's
+> D-Bus interface and publisher contracts remain authoritative.
+
 **Feature Branch**: `004-gnome-shell-indicator`
 
 **Created**: 2026-07-21

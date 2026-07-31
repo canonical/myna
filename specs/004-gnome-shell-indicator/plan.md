@@ -1,5 +1,9 @@
 # Implementation Plan: GNOME Shell Extension for Myna Dictation UI
 
+> **Historical presentation artifact.** Feature 009 supersedes HUD selection,
+> settings, notice ownership, installation, and current acceptance. Feature 004's
+> D-Bus interface and publisher contracts remain authoritative.
+
 **Branch**: `004-gnome-shell-indicator` | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30) | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/004-gnome-shell-indicator/spec.md`

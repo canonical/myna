@@ -42,8 +42,6 @@ import {
     iconForSeverity,
     ribbonPhaseForStateKey,
     ribbonVisibleForSeverity,
-    severityAutoDismisses,
-    shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
 } from './hud-logic.js';
@@ -74,7 +72,6 @@ const PILL_HEIGHT_ESTIMATE = 88;
 const RIBBON_HEIGHT = 32;
 const APPEAR_MS = 180;
 const CLEAR_MS = 200;
-const RECOVERABLE_HOLD_MS = 3500; // matches the prior ERROR_HOLD_MS baseline
 
 // A Cairo-drawn flowing wave ribbon (2026-07-30, R17) — replaces the prior
 // segmented bar meter entirely. Envelope/strand/phase-timing math lives in
@@ -142,10 +139,10 @@ class WaveRibbonActor extends St.DrawingArea {
         this.connect('destroy', () => this._onDestroy());
     }
 
-    setLevel(rms, peak = rms) {
+    setLevel(rms, peak = rms, receivedAt = GLib.get_monotonic_time()) {
         this._lastRms = rms;
         this._lastPeak = peak;
-        this._lastLevelAt = GLib.get_monotonic_time();
+        this._lastLevelAt = receivedAt;
         this.queue_repaint();
     }
 
@@ -215,7 +212,7 @@ class WaveRibbonActor extends St.DrawingArea {
 
 /** HudView — implements the view.js IndicatorView interface. */
 export class HudView {
-    constructor() {
+    constructor({onDismiss = null} = {}) {
         this._box = null;
         this._icon = null;
         this._label = null;
@@ -223,11 +220,11 @@ export class HudView {
         this._dismissButton = null;
         this._monitorsChangedId = 0;
         this._ribbonTimer = 0;
-        this._holdTimer = 0;
         this._lastRms = 0;
         this._lastPeak = 0;
-        // The single held-notice slot (R15): {severity, statusText} or null.
-        this._held = null;
+        this._lastLevelAt = 0;
+        this._onDismiss = onDismiss ?? (() => {});
+        this._retiringBoxes = new Set();
     }
 
     show(descriptor) {
@@ -235,26 +232,17 @@ export class HudView {
         this._applyDescriptor(descriptor);
     }
 
-    setLevel(rms, peak) {
+    setLevel(rms, peak, receivedAt = GLib.get_monotonic_time()) {
         // D-Bus levels may arrive before the State transition creates the HUD
         // actor. Cache them so the first rendered frame is live instead of
         // waiting for a numerically-different update.
         this._lastRms = rms;
         this._lastPeak = peak;
-        this._ribbon?.setLevel(rms, peak);
+        this._lastLevelAt = receivedAt;
+        this._ribbon?.setLevel(rms, peak, receivedAt);
     }
 
     hide() {
-        // A held notice/error is never dismissed by a wire idle transition —
-        // it clears on its own timer (recoverable, FR-007a) or the user's
-        // explicit dismiss (critical, FR-007b) — never by this call. This
-        // includes the daemon-crash/vanished edge case (dbus.js's
-        // `_onVanished` synthesizes an idle transition): a still-functional
-        // dismiss button is not "frozen" (FR-007b's persistence is a
-        // deliberate, later, more specific requirement than the general
-        // crash-clears-to-idle edge case, which predates severity tiers).
-        if (this._held !== null)
-            return;
         this._dismiss();
     }
 
@@ -265,44 +253,23 @@ export class HudView {
             Main.layoutManager.removeChrome(this._box);
             this._box.destroy();
         }
+        for (const box of this._retiringBoxes) {
+            box.remove_all_transitions();
+            Main.layoutManager.removeChrome(box);
+            box.destroy();
+        }
+        this._retiringBoxes.clear();
         this._box = null;
         this._icon = null;
         this._label = null;
         this._ribbon = null;
         this._dismissButton = null;
-        this._held = null;
     }
 
     // ── internals ────────────────────────────────────────────────────────────
 
     _applyDescriptor(descriptor) {
         const {severity, statusText} = descriptor;
-
-        if (shouldReplaceHeldNotice(severity)) {
-            // R15/X20: replace in place — never stack/queue a second notice.
-            this._held = {severity, statusText};
-            if (this._holdTimer !== 0) {
-                GLib.source_remove(this._holdTimer);
-                this._holdTimer = 0;
-            }
-            if (severityAutoDismisses(severity))
-                this._armHoldTimer();
-        } else {
-            // Bug (manual test report, 2026-07-31): leaving a held notice for
-            // ANY reason — not just being replaced by a new one — must also
-            // cancel any pending auto-dismiss timer. Without this, a stale
-            // `_holdTimer` armed by an earlier recoverable notice (e.g. "No
-            // speech detected") outlives that notice: if the state moves on
-            // to a plain `recording`/`loading` descriptor before the timer
-            // fires, the orphaned timer still calls `_dismiss()` ~3.5s later
-            // and tears down the pill even though a genuine recording is now
-            // in progress ("pill disappears while listening").
-            this._held = null;
-            if (this._holdTimer !== 0) {
-                GLib.source_remove(this._holdTimer);
-                this._holdTimer = 0;
-            }
-        }
 
         this._icon.icon_name = iconForSeverity(severity);
         this._label.text = statusText;
@@ -334,24 +301,10 @@ export class HudView {
         this._dismissButton.visible = severity === 'critical';
     }
 
-    _armHoldTimer() {
-        this._holdTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, RECOVERABLE_HOLD_MS, () => {
-            this._holdTimer = 0;
-            this._held = null;
-            this._dismiss();
-            return GLib.SOURCE_REMOVE;
-        });
-    }
-
     _onDismissClicked() {
         // FR-007c/X22: pointer-reactive but never focusable — this handler
         // only ever fires from a mouse click, never a keyboard event.
-        if (this._holdTimer !== 0) {
-            GLib.source_remove(this._holdTimer);
-            this._holdTimer = 0;
-        }
-        this._held = null;
-        this._dismiss();
+        this._onDismiss();
     }
 
     _ensureActor() {
@@ -369,7 +322,7 @@ export class HudView {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._ribbon = new WaveRibbonActor();
-        this._ribbon.setLevel(this._lastRms, this._lastPeak);
+        this._ribbon.setLevel(this._lastRms, this._lastPeak, this._lastLevelAt);
         // The dismiss (×) control: the ONLY reactive/focusable-capable actor
         // in this chrome. can_focus stays false even though it's clickable —
         // that is the whole point (X11/FR-007c): a click can dismiss it
@@ -465,6 +418,7 @@ export class HudView {
         this._label = null;
         this._ribbon = null;
         this._dismissButton = null;
+        this._retiringBoxes.add(box);
         box.remove_all_transitions();
         box.set_pivot_point(0.5, 0.5);
         box.ease({
@@ -474,6 +428,7 @@ export class HudView {
             duration: CLEAR_MS,
             mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
             onComplete: () => {
+                this._retiringBoxes.delete(box);
                 Main.layoutManager.removeChrome(box);
                 box.destroy();
             },
@@ -484,10 +439,6 @@ export class HudView {
         if (this._ribbonTimer !== 0) {
             GLib.source_remove(this._ribbonTimer);
             this._ribbonTimer = 0;
-        }
-        if (this._holdTimer !== 0) {
-            GLib.source_remove(this._holdTimer);
-            this._holdTimer = 0;
         }
     }
 

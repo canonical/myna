@@ -61,9 +61,11 @@ again to stop. Two trigger transports:
 `MYNA_ACTIVATION=stdin myna` drives from the terminal (debug; injects back
 into the terminal).
 
-**Indicator**: the launcher always serves `org.myna.Dictation` for the
-myna-shell GNOME extension; desktop notifications are the fallback. The
-experimental GTK overlay is `--overlay`.
+**Indicator**: the launcher always serves `org.myna.Dictation`. The separately
+installed `myna-shell` GNOME extension consumes it (Basic default, Wave ribbon
+selectable; see `../extensions/myna-shell/README.md`). Notifications are used
+only if the session bus cannot be served; the daemon does not detect a missing or
+disabled extension. The experimental GTK overlay is `--overlay`.
 
 **Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_ACTIVATION`, `MYNA_LANGUAGE`.
 
@@ -129,16 +131,10 @@ The IBus injector finds the daemon's address file under your *real* home
 even though snapd redirects `$HOME` (feature-005 discovery fix); the
 control socket lives under the snap-scoped `$XDG_RUNTIME_DIR`.
 
-**Confinement note (indicator bus):** `org.myna.Dictation` is properties-only
-by design. snapd's `dbus` slot AppArmor policy denies broadcasting *custom*
-signals to unconfined subscribers (and can't be safely widened — AppArmor
-dbus rules can't discriminate message types), but it does allow
-`org.freedesktop.DBus.Properties` sends on the service's own path, which is
-exactly the shape of a `PropertiesChanged` broadcast. State + level updates
-are therefore pushed with standard `PropertiesChanged`; the myna-shell
-extension subscribes and gets the fast push path confined or not — no
-polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
-§Confinement).
+**Confinement note (indicator bus):** state + level use standard
+`PropertiesChanged`, which snapd permits from the confined publisher to the
+unconfined Shell extension. The canonical rationale and policy constraints are
+in `specs/004-gnome-shell-indicator/contracts/dbus-interface.md` §Confinement.
 
 ## Known gaps (tracked)
 

@@ -14,8 +14,6 @@ import {
     iconForSeverity,
     ribbonPhaseForStateKey,
     ribbonVisibleForSeverity,
-    severityAutoDismisses,
-    shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
     MARGIN,
@@ -62,26 +60,6 @@ function eq(name, actual, expected) {
         iconForSeverity('recoverable'), 'audio-input-microphone-symbolic');
     eq('X19 no severity (loading/recording/...) → plain mic',
         iconForSeverity(null), 'audio-input-microphone-symbolic');
-}
-
-// --- FR-007a/FR-007b: auto-dismiss behavior by severity ---------------------
-
-{
-    check('recoverable notices auto-dismiss', severityAutoDismisses('recoverable') === true);
-    check('critical errors do not auto-dismiss', severityAutoDismisses('critical') === false);
-    check('non-problem states have no auto-dismiss concept', severityAutoDismisses(null) === false);
-}
-
-// --- X20: replace-in-place — any new problem descriptor replaces the held --
-// --- slot; there is never a queue, regardless of matching severity.       --
-
-{
-    check('a recoverable notice replaces a held slot',
-        shouldReplaceHeldNotice('recoverable') === true);
-    check('a critical error replaces a held slot',
-        shouldReplaceHeldNotice('critical') === true);
-    check('a non-problem state does not "replace" (nothing to hold)',
-        shouldReplaceHeldNotice(null) === false);
 }
 
 // --- Manual-test follow-up: severity/phase colour classes ------------------

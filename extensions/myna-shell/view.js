@@ -27,14 +27,12 @@
 //                      `'recoverable' | 'critical' | null`, 2026-07-30). Never
 //                      called with a hidden descriptor (the extension calls
 //                      hide() for idle).
-//   setLevel(rms, peak) Feed the latest normalized audio level in [0,1]
+//   setLevel(rms, peak, receivedAt) Feed the latest normalized audio level
+//                      in [0,1] with its monotonic arrival timestamp.
 //                      (org.myna.Dictation AudioRms/AudioPeak) for the VU.
 //                      May arrive before show() or after hide(); a view must
 //                      tolerate that (ignore when not visible).
-//   hide()             Return to idle: animate away and release actors. A
-//                      held notice/error (severity !== null) MAY be kept
-//                      visible briefly — or until an explicit dismiss —
-//                      before honouring a hide (so it doesn't just vanish).
+//   hide()             Return to idle: animate away and release actors.
 //   destroy()          Immediate teardown (extension disable / Shell restart):
 //                      destroy every actor, cancel every timer/transition,
 //                      drop every subscription — no leaks (X9).
@@ -43,6 +41,8 @@
 // content-free statusText and the level (constitution V).
 
 import {HudView} from './hud.js';
+import {BasicHudView} from './basic.js';
+import {createSelectedView} from './view-selection.js';
 
 /**
  * Construct the active IndicatorView. The single place a redesign is selected;
@@ -51,10 +51,9 @@ import {HudView} from './hud.js';
  * @param {string} [name] - view id; defaults to the bottom-center HUD pill.
  * @returns {object} an IndicatorView (see the interface above).
  */
-export function createView(name = 'hud') {
-    switch (name) {
-    case 'hud':
-    default:
-        return new HudView();
-    }
+export function createView(name = 'basic', options = {}) {
+    return createSelectedView(name, options, {
+        basic: viewOptions => new BasicHudView(viewOptions),
+        wave: viewOptions => new HudView(viewOptions),
+    });
 }

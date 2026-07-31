@@ -38,3 +38,9 @@ jobs:
       # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
       - name: Python tests (pytest)
         run: workshop run myna py-test
+
+      - name: GNOME extension tests (GJS)
+        run: workshop run myna gjs-test
+
+      - name: GNOME extension package smoke
+        run: workshop run myna gjs-package

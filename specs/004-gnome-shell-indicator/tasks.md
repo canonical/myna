@@ -1,5 +1,8 @@
 # Tasks: GNOME Shell Extension for Myna Dictation UI
 
+> **Historical implementation record.** Do not use this task list for the
+> current extension presentation or installation; see feature 009.
+
 **Input**: Design documents from `/specs/004-gnome-shell-indicator/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
 

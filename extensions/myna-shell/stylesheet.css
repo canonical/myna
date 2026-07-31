@@ -50,6 +50,50 @@
     min-width: 160px;
 }
 
+.myna-basic-pill {
+    padding: 14px 18px;
+    border-radius: 28px;
+    spacing: 16px;
+}
+
+.myna-basic-content {
+    spacing: 9px;
+}
+
+.myna-basic-label {
+    font-size: 13pt;
+    font-weight: 500;
+}
+
+.myna-basic-track {
+    height: 7px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.28);
+}
+
+.myna-basic-fill {
+    height: 7px;
+    border-radius: 4px;
+    background-color: rgb(233, 84, 32);
+}
+
+.myna-hud-pill.myna-hud-severity-recoverable .myna-basic-fill {
+    background-color: rgb(245, 166, 35);
+}
+
+.myna-hud-pill.myna-hud-severity-critical .myna-basic-fill {
+    background-color: rgb(224, 90, 90);
+}
+
+.hi-contrast .myna-basic-track {
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    background-color: rgba(0, 0, 0, 0.95);
+}
+
+.hi-contrast .myna-basic-fill {
+    background-color: rgb(255, 255, 255);
+}
+
 .myna-hud-dismiss {
     color: rgba(255, 255, 255, 0.75);
 }

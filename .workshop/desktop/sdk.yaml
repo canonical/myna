@@ -11,7 +11,7 @@
 # so those runtime services are installed here too. They skip cleanly when the
 # gates are unset (Principle II: identical code on the VM and on hardware).
 #
-# Feature 004 (GNOME Shell indicator) adds: `gjs` (runs the extensions/myna-shell
+# Features 004/009 (GNOME Shell indicator) add: `gjs` (runs the extensions/myna-shell
 # pure contract tests — no Shell needed) and `gnome-shell`/`gnome-session` (the
 # Shell session for the extension acceptance). The D-Bus session bus those
 # suites and 004's MYNA_DBUS_TESTS round-trip need was already here.
@@ -19,4 +19,4 @@
 # System packages are installed by the setup-base hook (hooks/setup-base, runs
 # as root at install). Referenced from .workshop/myna.yaml as `project-desktop`.
 name: desktop
-summary: GTK4 dev headers, IBus daemon, xdg-desktop-portal (GlobalShortcuts), GJS + GNOME Shell (feature 004 extension) for myna-desktop.
+summary: GTK4 dev headers, IBus daemon, xdg-desktop-portal, GJS + GNOME Shell for myna-desktop and the feature 004/009 extension.

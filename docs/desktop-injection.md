@@ -15,8 +15,10 @@ GlobalShortcutTrigger ──Press/Release──▶ ┌────────�
                                          │  (per-utterance FSM │
 IbusInjector ◀── commit(Final) ──────────│   over run_dictation)│
    (IBus engine)   focus/secure events ─▶│                     │
-                                         │  Indicator.set_state│──▶ GtkIndicator
-myna-audio (PipeWire) ──PCM──▶ run_dictation ──OrchestratorEvent─┘    / NotifyIndicator
+                                         │  Indicator.set_state│──▶ NotifyIndicator / GtkIndicator
+myna-audio (PipeWire) ──PCM──▶ run_dictation ──OrchestratorEvent─┘    / DbusIndicator
+                                                                         │
+                                                    org.myna.Dictation ───┘──▶ myna-shell
 ```
 
 Three boundary seams, each with a mock so the controller is fully
@@ -30,8 +32,9 @@ hermetic-testable (no D-Bus / IBus / portal / display):
   `inject::ibus::IbusInjector`; tests: `inject::mock::MockInjector`.
 - **`Indicator`** (`indicator::Indicator`) — activity surface. Default:
   `indicator::notify::NotifyIndicator` (notifications); opt-in experimental:
-  `indicator::gtk::GtkIndicator` (feature `ui-gtk`); tests:
-  `indicator::mock::MockIndicator`.
+  `indicator::gtk::GtkIndicator` (feature `ui-gtk`); `--dbus`:
+  `indicator::dbus::DbusIndicator`, consumed by the separately installed Shell
+  extension; tests: `indicator::mock::MockIndicator`.
 
 ## Controller state model
 
@@ -315,11 +318,12 @@ rather than the "obvious" solution.
 - *So on GNOME* there is currently **no sanctioned way for a normal client to
   show an always-on-top, non-focus-stealing overlay.** The realistic options are
   (a) a **GNOME Shell extension** for the indicator (the GNOME-blessed path, a
-  separate JS component with its own packaging/review — **shipped**: see
-  `extensions/myna-shell/` / feature 004, a bottom-center HUD pill consuming
-  `org.myna.Dictation`), (b) lean on the **notification/OSD** facilities the
-  shell already owns (what `NotifyIndicator` does — the fallback when the
-  extension is absent), or (c) ship layer-shell for KDE/wlroots users and fall
+  separate JS component with its own packaging/review — **shipped**: feature 004
+  established `org.myna.Dictation`; feature 009 defines the current Basic/Wave
+  HUD in `extensions/myna-shell/`), (b) lean on the **notification/OSD**
+  facilities the shell already owns (`NotifyIndicator` is the bare-binary path
+  and the `--dbus` fallback only when the session bus cannot be served; it does
+  not detect an absent/disabled extension), or (c) ship layer-shell for KDE/wlroots users and fall
   back to notifications on GNOME (`gtk4-layer-shell` gates on
   `is_supported()`; this is what Handy effectively does).
 - *The "right" upstream fix, once it settles:* a **standardised cross-desktop
@@ -341,11 +345,11 @@ rather than the "obvious" solution.
   `--portal` for the packaged build. Once packaged (snap), the portal is the
   correct path with no workaround.
 
-**Net:** activation is solved (portal, modulo packaging); injection is solved on
-GNOME via IBus with a clean seam for the wlroots path and no portable successor
-yet; the focus-safe overlay is the one with no good GNOME answer today, which is
-why the shipped default is notifications and the overlay is opt-in and
-compositor-dependent. Re-survey when: Mutter ships layer-shell (or an `ext-`
+**Net:** activation is solved (control-socket toggle by default; portal opt-in);
+injection is solved on GNOME via IBus with a clean seam for the wlroots path and
+no portable successor yet. The packaged GNOME path publishes D-Bus state for the
+separately installed Shell extension; a bare binary uses notifications, and the
+GTK overlay remains experimental. Re-survey when: Mutter ships layer-shell (or an `ext-`
 equivalent lands), a text-injection portal appears, or libei-based injection
 becomes the norm for assistive input.
 

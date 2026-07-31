@@ -25,10 +25,11 @@ description: |
   (whisper, nemotron, or qwen) over a Unix socket; nothing leaves the
   machine and no audio is persisted.
 
-  Activation is hold/toggle-to-talk via the GlobalShortcuts portal; state
+  Activation is toggle-to-talk through the daemon control socket by default;
+  GlobalShortcuts portal activation is opt-in. State
   and the live audio level are published on org.myna.Dictation for the
-  myna-shell GNOME extension indicator. Feedback falls back to desktop
-  notifications.
+  separately installed myna-shell GNOME extension indicator. Notifications are
+  used only when the session bus cannot be served.
 grade: devel
 confinement: strict
 compression: lzo
@@ -71,7 +72,7 @@ apps:
     command: bin/myna-desktop --toggle
 
   # Bind <accel> → `myna.toggle` via dconf (control-socket activation mode;
-  # not needed with the default portal activation). Uses dconf because the
+  # not needed with opt-in portal activation). Uses dconf because the
   # GNOME schemas are not visible inside the snap's core24 /usr — dconf
   # writes need no schema, and the gsettings interface grants them.
   install-shortcut:

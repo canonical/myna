@@ -4,9 +4,8 @@
 **Status:** Accepted
 **Authors:** Claude, with Charles
 
-*Updated 2026-07-19 to document the Rust client workspace and snap packaging
-that were added after the original 2026-06-12 record. The original predated
-the entire `client/` tree and the snaps.*
+*Updated 2026-07-31 to document the Rust client, snap packaging, and the
+platform-mandated GJS Shell extension added after the original record.*
 
 ## Context
 
@@ -15,8 +14,9 @@ evaluation testbed (Taipei lab, phases 0–4) and the Ubuntu Desktop dictation
 client (UD129). Both speak the IE115-shaped session contract (WebSocket over
 Unix socket, JSON events, PCM binary frames). The project is polyglot by
 design: the server / testbed / adapters are Python; the production push-to-talk
-client is Rust; inference is packaged as Ubuntu snaps. We need a layout that
-keeps the shared contract unambiguous across all three build graphs without
+client is Rust; inference is packaged as Ubuntu snaps; GNOME compositor UI is a
+GJS extension. We need a layout that keeps the shared contract unambiguous across
+all four build graphs without
 forcing them to share a single package manager or language runtime.
 
 ## Decision
@@ -40,7 +40,7 @@ myna.testbed  -> depends only on myna.core
   Used by `myna.server`, every `myna.testbed` adapter, and the full test suite.
   It is **not legacy and not to be collapsed** — it is the canonical Python
   expression of the wire contract.
-- `myna.server` — the `myna-server` process that all three inference snaps ship.
+- `myna.server` — the `myna-server` process that the inference snaps ship.
   Wraps the adapters behind the IE115 WebSocket transport.
 - `myna.testbed` — `Candidate`/`Adapter`, the permanent `FakeAdapter` regression
   fixture, audio sources (WAV, live-mic), the `Harness` with its
@@ -95,7 +95,16 @@ client/
   `myna-orchestrator` session. Each boundary is a trait with a mock; see
   `../desktop-injection.md`.
 
-### Snap packages — `whisper-snap/`, `nemotron-snap/`, `qwen-snap/`
+### GNOME Shell side — `extensions/myna-shell/`
+
+A platform-mandated GJS extension loaded inside GNOME Shell. Feature 004 defines
+the `org.myna.Dictation` publisher/consumer boundary; feature 009 defines the
+current presentation: Basic energy bar by default, Wave ribbon selectable via a
+local GSettings preference. The extension is pure UI and never captures audio,
+transcribes, or injects text. Operational documentation lives in
+`../../extensions/myna-shell/README.md`.
+
+### Snap packages — `whisper-snap/`, `nemotron-snap/`, `qwen-snap/`, `parakeet-snap/`, `sherpa-snap/`
 
 One snap per model family. Each snap:
 - Bundles model weights as snap components.
@@ -157,7 +166,7 @@ spec; each side's `core` is its typed expression of that spec.
   graph, not just by convention.
 - The desktop client and testbed cannot drift apart on event semantics — there
   is one `events.py` on the Python side; `myna-core` tracks it on the Rust side.
-- The snap build graph is independent of the Rust client build; adding a new
+- The snap and GJS build graphs are independent of the Rust client build; adding a new
   model family snap requires only a new `NNN-snap/` directory without touching
   the Rust workspace.
 - Layout changes to the directory tree (renaming `client/`, renaming

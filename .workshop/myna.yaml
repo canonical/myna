@@ -54,3 +54,19 @@ actions:
   # state→visual-intent mapping + stub-proxy lifecycle. No Shell needed.
   gjs-test: |
     cd /project/extensions/myna-shell && for t in test/*.test.js; do gjs -m "$t" || exit 1; done
+  # Build the GNOME extension ZIP in temporary storage. The source tree stays
+  # free of generated schema caches and package artifacts.
+  gjs-package: |
+    rm -rf /tmp/myna-shell-package && mkdir -p /tmp/myna-shell-package
+    cd /project/extensions/myna-shell
+    glib-compile-schemas --strict --dry-run schemas
+    extras=""
+    for source in *.js; do
+      case "$source" in extension.js|prefs.js) ;; *) extras="$extras --extra-source=$source" ;; esac
+    done
+    gnome-extensions pack --force --out-dir=/tmp/myna-shell-package $extras .
+    archive=/tmp/myna-shell-package/myna-shell@myna.dev.shell-extension.zip
+    for required in basic.js hud.js view.js view-selection.js indicator-controller.js dbus.js states.js vumeter.js ribbon.js ribbon-paint.js accent.js settings-logic.js prefs.js schemas/org.gnome.shell.extensions.myna.gschema.xml; do
+      unzip -Z1 "$archive" | grep -Fx "$required" >/dev/null
+    done
+    ! unzip -Z1 "$archive" | grep -Eq '(^|/)dev-lab/|(^|/)gschemas\.compiled$'

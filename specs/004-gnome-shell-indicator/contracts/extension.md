@@ -1,5 +1,9 @@
 # Contract: GNOME Shell extension (GJS)
 
+> **Superseded in part by feature 009**: the single-view/no-settings assumptions
+> below are historical. `specs/009-switchable-basic-hud/contracts/` defines the
+> current Basic/Wave preference and controller-owned notice lifetime.
+
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30)
 
 The consumer half: `extensions/myna-shell/`. Harness-tier (Complexity Tracking) —
@@ -75,4 +79,3 @@ the D-Bus contract, which is unchanged.
   with the extension) is **not** part of this bundle: excluded from
   `metadata.json`'s file set and the install step in `quickstart.md` step 4;
   it carries none of this contract's guarantees as its own obligations.
-

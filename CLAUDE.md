@@ -1,15 +1,14 @@
 # CLAUDE.md — UbuSTT (myna) project context
 
 Lean context for a coding agent. **`docs/project-plan.md` is the living task
-tracker (stable global IDs, currently T01–T56) — read it first** for status and
+tracker (stable global IDs, currently T01–T65) — read it first** for status and
 next steps.
 
 ## Working on this repo (spec-kit)
 
 Spec-kit (speckit) was adopted **mid-development** (2026-07-15), so the repo has
 a "before" and "after": early work landed ad-hoc against `docs/project-plan.md`;
-features **002 (native PipeWire backend)**, **003 (desktop injection)**, and
-**004 (GNOME Shell indicator)** were built through the spec-driven flow under
+features **002–009** were built through the spec-driven flow under
 `specs/NNN-*/`, governed by `.specify/memory/constitution.md` (v1.3.0). **New
 work should use the spec-kit workflow** — see the `speckit-*` skills
 (`specify` → `plan` → `tasks` → `implement`, plus `clarify`/`analyze`/`checklist`).
@@ -47,17 +46,17 @@ cloud, no persistent audio.
   injection + opt-in IBus preedit partials via `--preedit` + activity indicator
   + the `org.myna.Dictation` D-Bus publisher).
   The production hot path.
-- `extensions/myna-shell/` — the **GJS** GNOME Shell extension (feature 004): a
-  focus-safe in-compositor dictation HUD (a bottom-center pill styled after
-  GNOME's own volume/brightness OSD) that consumes `org.myna.Dictation` from
-  `myna-desktop`. Pure UI — never captures, transcribes, or injects. Non-Rust
-  by platform necessity (in-compositor UI must be GJS).
+- `extensions/myna-shell/` — the **GJS** GNOME Shell extension (feature 004
+  foundation, feature 009 current presentation): a focus-safe bottom-center HUD
+  consuming `org.myna.Dictation`. Basic audio meter is default; Wave ribbon is
+  selectable through persistent extension preferences. Pure UI — never captures,
+  transcribes, or injects. Operational guide: `extensions/myna-shell/README.md`.
 - `myna-snap/` — the **client snap** (feature 005): packages `myna-desktop` +
   `myna-dictate` as the strictly-confined `myna` snap (no `network` plug).
   Reaches a backend snap's session socket over the `ubustt-socket` writable
   content share (T14c); `dev/prepare.sh` stages `client/` before packing.
-- `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model
-  family; strict confinement.
+- `whisper-snap/`, `nemotron-snap/`, `qwen-snap/`, `parakeet-snap/`,
+  `sherpa-snap/` — one inference snap per model family; strict confinement.
 - **Two `core`s on purpose.** Python `myna.core` (server + testbed) and Rust
   `myna-core` (client) are peer mirrors of one contract shipping in different
   processes/languages — not duplicates to collapse.
@@ -86,14 +85,12 @@ cloud, no persistent audio.
   injector (commit-only, focus/secure-field safe), a GTK4 activity indicator, and
   a `--dbus` mode serving `org.myna.Dictation` for the GNOME extension. See
   `docs/desktop-injection.md`.
-- **GNOME extension** (feature 004): the focus-safe indicator on GNOME/Wayland,
-  where a normal client can't show an always-on-top overlay. `myna-desktop --dbus`
-  publishes state + audio level over `org.myna.Dictation`; the extension renders
-  a bottom-center HUD pill (mic/mic-slash icon, a calibrated green/yellow/red
-  segmented VU meter, and a recoverable-vs-critical severity split — an
-  auto-dismissing notice for e.g. "no speech detected" vs. a persistent,
-  explicitly-dismissed error) behind a swappable `IndicatorView` seam. Contract
-  in `specs/004-gnome-shell-indicator/`.
+- **GNOME extension** (features 004 + 009): feature 004 established the
+  `org.myna.Dictation` publisher/consumer and focus-safe Shell chrome; feature
+  009 is the current presentation contract. The default Basic HUD shows a simple
+  horizontal input-energy bar; Wave ribbon remains selectable. Both share one
+  controller-owned state/severity/notice lifecycle. Current contract:
+  `specs/009-switchable-basic-hud/`; D-Bus contract remains under feature 004.
 - **Snaps**: one per family — modelctl, weights as components, GPU engines,
   idle-unload, strict confinement.
 - **Client snap (feature 005)**: the orchestrator ships as the confined `myna`
@@ -129,14 +126,15 @@ cloud, no persistent audio.
   overlap audio, so a claimed duplicate region > 5 words is coincidence and
   the alignment abstains — churn, silence re-timing, and merged/split tokens
   can't double-commit boundary words, and genuinely-new text repeating the
-  frontier phrase can't be eaten. Spike S1 GO (0.997/0.982 agreement, tiny/base). Remaining: nemotron
-  native loop (Spike S2, GPU), Parakeet + sherpa-onnx snaps, report.
+  frontier phrase can't be eaten. Spike S1 GO (0.997/0.982 agreement, tiny/base).
+  Remaining: nemotron native loop (Spike S2, GPU) and the concluding report;
+  Parakeet ships and sherpa-onnx is packaged.
   Interop report delivered: `docs/interop/canonical-whisper-snap-report.md` —
   the canonical/whisper-snap's deltas restate the growing hypothesis with no
   disposition field (verified live; `myna-cli/tests/interop_canonical.rs`).
   Settings: `docs/streaming-mode-settings.md`.
 - **Open / next**: nemotron native transducer loop (008 US2, Spike S2 on the
-  NVIDIA PC), Parakeet + sherpa-onnx small snaps (008 US3/US4), error taxonomy
+  NVIDIA PC), error taxonomy
   (T31, disposition must ride the wire), backend discovery / model selection
   across snaps (T48),
   toolchain fully under Workshop (T55), extension screen-reader announcements
@@ -200,12 +198,10 @@ Internal vocab:
 - `transcription.done` — terminal; full transcript.
 - `transcription.error` — terminal; `code` + `message`.
 
-No `partial`/`replace`/epoch retraction on the wire *today* — but UD136
-(2026-07-26) made a **streaming mode** a product requirement alongside batch:
-the design-review direction is committed chunks shown progressively (append-only
-holds); whether any *unstable* hypothesis text gets wire representation is an
-open question for the streaming spec (T08/T63). Adding an event?
-Document it here and flag it provisional (additive: old clients ignore it).
+Streaming uses additive committed/unstable dispositions: committed chunks are
+append-only and inject-safe; unstable hypotheses are display-only and may be
+replaced. There is still no separate `partial`/`replace`/epoch retraction event.
+Adding an event remains additive when old clients can safely ignore it.
 
 Discovery: before a session a client may send `capabilities.query` and get a
 `Capabilities` doc (models, languages, `input_formats`, punctuation, translation)

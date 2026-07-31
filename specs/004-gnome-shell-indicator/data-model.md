@@ -1,5 +1,10 @@
 # Phase 1 Data Model: GNOME Shell Extension for Myna Dictation UI
 
+> **Superseded in part by feature 009**: `IndicatorSurface` below documents the
+> original wave-only ownership. The current model in
+> `specs/009-switchable-basic-hud/data-model.md` adds the style preference and
+> controller-owned held notices/timestamped levels.
+
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
 
 The entities crossing the extension↔`myna-desktop` seam and the extension's own
@@ -186,4 +191,3 @@ the HUD can distinguish the two problem tiers.
 
 The visual-intent record is CSS-class + icon-choice + label — no transcript,
 tunable in `stylesheet.css` without touching the mapping.
-

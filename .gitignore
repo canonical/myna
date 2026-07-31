@@ -32,6 +32,9 @@ __pycache__/
 htmlcov/
 dist/
 
+# GNOME extension generated schema cache
+gschemas.compiled
+
 # Testbed output
 results/
 

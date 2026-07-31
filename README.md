@@ -53,8 +53,9 @@ The rest of this README expands on each piece.
   indicator). `myna-audio` is the native PipeWire capture adapter,
   `myna-orchestrator` the session FSM, `myna-core` the wire contract.
 - `extensions/myna-shell/` — a **GJS** GNOME Shell extension: a focus-safe,
-  animated dictation indicator that runs inside the compositor and consumes state
-  from `myna-desktop` over D-Bus.
+  dictation indicator that runs inside the compositor and consumes state from
+  `myna-desktop` over D-Bus. It defaults to a simple native-style audio meter;
+  the animated wave ribbon remains selectable in extension preferences.
 - `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model
   family (strict-confinement packages of `myna-server` + a model + engines).
 - `docs/` — architecture and design notes; `docs/project-plan.md` is the living
@@ -85,8 +86,9 @@ edge, so neither the models nor the FSM change when the dialect does
 ### Workshop (recommended)
 
 A [Canonical Workshop](https://ubuntu.com/workshop/docs) definition in
-[`.workshop/`](.workshop/) gives you the whole toolchain (Rust, PipeWire deps,
-`uv`) in one reproducible environment — the same one CI uses.
+[`.workshop/`](.workshop/) gives CI's core Rust, PipeWire, GJS, and `uv`
+toolchain in one reproducible environment. GPU/model extras and snap-build
+coverage remain tracked as T55 in `docs/project-plan.md`.
 
 ```shell
 workshop launch myna
@@ -221,9 +223,9 @@ one to meet the latency targets — the other two were retired (details:
 
 Watermarks: `results/streaming-watermarks.json` (measured on 26–28 s
 concatenated real-speech streams, `corpus/real/manifest-streams.json`).
-Nemotron's native frame-once transducer loop and two small transducer snaps
-(Parakeet-class int8 ONNX; sherpa-onnx) are in flight under
-`specs/008-progressive-emission/`. Details and Qwen-C deferral:
+Nemotron's native frame-once transducer loop remains in flight. Parakeet ships
+and the sherpa-onnx snap is packaged under `specs/008-progressive-emission/`.
+Details and Qwen-C deferral:
 `docs/architecture/streaming.md`.
 
 ## Dictate into apps — `myna-desktop`
@@ -253,10 +255,12 @@ snap/flatpak only), `--stdin` (terminal debug), `--dbus` (also serve
 ### The GNOME Shell indicator
 
 On GNOME/Wayland a normal client can't show an always-on-top, focus-safe overlay,
-so the animated dictation indicator lives in a GJS extension that runs inside the
+so the switchable dictation indicator lives in a GJS extension inside the
 compositor and reads state + audio level from `myna-desktop --dbus` over D-Bus
-(`org.myna.Dictation`). It never captures, transcribes, or injects. Install it
-from `extensions/myna-shell/`; see `specs/004-gnome-shell-indicator/quickstart.md`.
+(`org.myna.Dictation`). Basic is the default; Wave ribbon is selectable in the
+extension preferences. It never captures, transcribes, or injects. Installation
+and troubleshooting: `extensions/myna-shell/README.md`; acceptance contract:
+`specs/009-switchable-basic-hud/quickstart.md`.
 
 ## Benchmarking
 
@@ -336,7 +340,9 @@ snapcraft pack
 
 Per-snap details: [`whisper-snap/README.md`](whisper-snap/README.md),
 [`nemotron-snap/README.md`](nemotron-snap/README.md),
-[`qwen-snap/README.md`](qwen-snap/README.md).
+[`qwen-snap/README.md`](qwen-snap/README.md),
+[`parakeet-snap/README.md`](parakeet-snap/README.md), and
+[`sherpa-snap/README.md`](sherpa-snap/README.md).
 
 ## Contributing
 

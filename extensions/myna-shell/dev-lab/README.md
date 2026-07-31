@@ -4,10 +4,9 @@ A small standalone GTK4 + libadwaita application for fast iteration on the
 HUD's wave-ribbon animation (feature `004-gnome-shell-indicator`, the
 2026-07-30 wave-ribbon redesign; research `R20`).
 
-**Not part of the shipped extension.** It is excluded from `../metadata.json`
-and the install step in `../../../specs/004-gnome-shell-indicator/quickstart.md`
-— it exists purely to speed up development, and carries none of the shipped
-extension's contract guarantees as its own.
+**Not part of the shipped extension.** The canonical install procedure in
+`../README.md` explicitly excludes it. It exists purely to speed up development
+and carries none of the shipped extension's contract guarantees as its own.
 
 ## Why this exists
 

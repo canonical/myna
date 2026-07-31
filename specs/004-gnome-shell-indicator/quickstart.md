@@ -1,5 +1,10 @@
 # Quickstart / Validation: GNOME Shell Extension for Myna Dictation UI
 
+> **Historical validation guide.** Its copy/install procedure predates the
+> required feature-009 GSettings schema. Use
+> `extensions/myna-shell/README.md` for installation and
+> `specs/009-switchable-basic-hud/quickstart.md` for current acceptance.
+
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30)
 
 Runnable validation that the focus-safe HUD pill indicator works end-to-end. See
@@ -104,20 +109,9 @@ acceptance criteria (X1–X28) and has no pass/fail gate of its own.
 
 ## 4. Install & enable the extension — GNOME session
 
-```sh
-UUID=myna-shell@myna.dev
-mkdir -p ~/.local/share/gnome-shell/extensions/$UUID
-cp -r extensions/myna-shell/* ~/.local/share/gnome-shell/extensions/$UUID/
-# dev-lab/ is a non-shipped development tool (R20) — never installed as
-# part of the extension bundle.
-rm -rf ~/.local/share/gnome-shell/extensions/$UUID/dev-lab
-# Wayland: log out/in to reload the Shell (Alt+F2 r is X11-only).
-gnome-extensions enable $UUID
-gnome-extensions info $UUID        # → State: ENABLED
-```
-
-**Expected**: extension enabled, dormant (no overlay) because `myna-desktop --dbus`
-is not yet running (X7).
+This historical guide no longer carries executable install commands. Use the
+single maintained procedure in `extensions/myna-shell/README.md`; it includes
+the feature-009 schema compilation and `State: ACTIVE` diagnostics.
 
 ## 5. End-to-end spoken run (the on-hardware acceptance)
 

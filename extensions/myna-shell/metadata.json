@@ -3,6 +3,7 @@
   "name": "Myna Dictation Indicator",
   "description": "Focus-safe dictation activity indicator for myna-desktop, driven by org.myna.Dictation. State and audio level only — never transcript content.",
   "shell-version": ["50", "51"],
+  "settings-schema": "org.gnome.shell.extensions.myna",
   "version": 1,
   "url": "https://github.com/myna-dev/myna"
 }
