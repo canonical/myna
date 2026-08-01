@@ -31,15 +31,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "fake"),
+        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
         "--model",
         default=None,
-        help=(
-            "model id/path; default per adapter (whisper: tiny, nemotron: streaming FastConformer)"
-        ),
+
+        help="model id/path; default per adapter (whisper: tiny, nemotron: streaming FastConformer; "
+        "sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
     )
     parser.add_argument(
         "--device",
@@ -115,6 +115,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("unload", "exit"),
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
     )
+    parser.add_argument(
+        "--funasr-language", default="auto",
+        choices=("auto", "zh", "en", "yue", "ja", "ko"),
+        help="language for SenseVoice decoding (default: auto)",
+    )
+    parser.add_argument(
+        "--funasr-textnorm", default="woitn",
+        choices=("woitn", "withitn"),
+        help="ITN mode: woitn (readable text, default), withitn (digits/dates)",
+    )
     return parser
 
 
@@ -159,6 +169,17 @@ def build_adapter(args: argparse.Namespace):
         from myna.testbed.sherpa import SherpaAdapter
 
         return SherpaAdapter(args.model, streaming=args.streaming)
+
+    if args.adapter == "funasr":
+        from myna.testbed.funasr import FunasrAdapter
+
+        # --model is the ONNX model dir, like sherpa; absent = the staged
+        # ModelScope cache snapshot (dev/fetch_funasr_model.py).
+        return FunasrAdapter(
+            args.model,
+            language=args.funasr_language,
+            textnorm=args.funasr_textnorm,
+        )
 
     if args.adapter == "qwen-c":
         # The C runtime needs a local model directory (no downloading); the

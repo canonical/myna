@@ -1,0 +1,15 @@
+id: sensevoice
+name: sensevoice
+description: SenseVoice-Small ONNX (FunASR, Apache-2.0) — best-in-class Chinese ASR
+model-card-url: https://www.modelscope.cn/models/botaruibo/SenseVoiceSmall-onnx
+quantization: float32
+capabilities:
+  - multilingual
+disk-size: 937M
+# Weights shipped as a snap component (ONNX export of iic/SenseVoiceSmall
+# by botaruibo, Apache-2.0). modelctl installs it on use-model; the server
+# loads from MODEL_DIR, so no network access is needed.
+components:
+  - model-sensevoice
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-sensevoice

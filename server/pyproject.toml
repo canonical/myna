@@ -32,6 +32,13 @@ sherpa = [
     # wheel doesn't bundle it); same 1.27.x pin as the parakeet extra.
     "onnxruntime>=1.27,<1.28",
 ]
+# FunASR / SenseVoice batch adapter (feature 009): ONNX Runtime + fbank +
+# sentencepiece, no torch/NeMo. The single funasr-onnx dep pulls in all
+# transitive deps (onnxruntime, kaldi-native-fbank, sentencepiece, numpy,
+# PyYAML, jieba, librosa, scipy, soundfile).
+funasr = [
+    "funasr-onnx>=0.4.2",
+]
 
 [project.scripts]
 myna-server = "myna.server.cli:main"

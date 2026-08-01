@@ -56,7 +56,7 @@ needed). Output is unpunctuated Chinese text.
 Pin language:
 
 ```sh
-myna-server --socket /tmp/myna.sock --adapter funasr --language zh
+myna-server --socket /tmp/myna.sock --adapter funasr --funasr-language zh
 ```
 
 Re-run the same clip — same result (model was already auto-detecting zh).
@@ -120,15 +120,15 @@ Build and install:
 
 ```sh
 (cd funasr-snap && ./dev/prepare.sh && snapcraft --use-lxd)
-sudo snap install --dangerous funasr_*.snap funasr+model-sensevoice-onnx.comp
+sudo snap install --dangerous myna-funasr_*.snap myna-funasr+model-sensevoice.comp
 ```
 
 End-to-end with confined client:
 
 ```sh
-sudo snap connect myna:ubustt-socket funasr:ubustt-socket
+sudo snap connect myna:ubustt-socket myna-funasr:ubustt-socket
 ./client/target/release/myna-dictate \
-    --socket /var/snap/funasr/common/run/ubustt.sock \
+    --socket /var/snap/myna-funasr/common/run/ubustt.sock \
     --clip corpus/real/audio/librispeech-2277-149896-0005.wav
 ```
 
@@ -141,7 +141,7 @@ snap reports `ready` after warm-up.
 # Let the server idle past the unload timeout
 sleep 120  # or whatever modelctl idle-unload interval
 # Next session should show `preparing` → `ready` again (re-load + warm-up)
-./client/target/release/myna-dictate --socket /var/snap/funasr/common/run/ubustt.sock \
+./client/target/release/myna-dictate --socket /var/snap/myna-funasr/common/run/ubustt.sock \
     --clip corpus/real/audio/librispeech-2277-149896-0005.wav
 ```
 

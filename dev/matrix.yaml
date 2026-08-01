@@ -43,6 +43,15 @@ targets:
     env:
       HF_HUB_OFFLINE: "1"
 
+  # FunASR SenseVoice-Small ONNX (feature 009). Needs the `funasr` extra.
+  # No `model:` — the adapter resolves the staged ModelScope cache snapshot
+  # (dev/fetch_funasr_model.py) by default, like sherpa resolves the HF cache.
+  - label: funasr/cpu
+    provision: server
+    adapter: funasr
+    env:
+      HF_HUB_OFFLINE: "1"
+
   # --- later: drive an installed snap (store or local sideload). Needs sudo. ---
   # - label: whisper-snap/nvidia-gpu
   #   provision: snap

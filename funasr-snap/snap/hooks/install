@@ -1,0 +1,32 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.install"
+
+# Redirect stdout to stdout+syslog
+exec 1> >(tee >(logger --tag=$tag))
+# Redirect stderr to stderr+syslog
+exec 2> >(logger --stderr --priority error --tag=$tag)
+
+#
+# Set generic config
+#
+
+modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
+modelctl set --package verbose="false"
+# Idle-unload: release the model after this many idle seconds (0 = never).
+# 5 min keeps frequent dictation warm but frees RAM when you walk away.
+modelctl set --package sleep-idle-seconds="300"
+
+#
+# Select an engine
+#
+
+if snapctl is-connected hardware-observe; then
+    modelctl use-engine --auto --assume-yes --verbose
+else
+    # Sideloaded installs don't auto-connect hardware-observe. This snap has
+    # exactly one engine (cpu), so detection is unnecessary — select it
+    # directly instead of skipping.
+    echo "hardware-observe not connected; selecting the only engine (cpu) directly."
+    modelctl use-engine cpu --assume-yes --verbose
+fi

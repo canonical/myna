@@ -146,6 +146,15 @@ rendered as spoken words. The `withitn` mode (ITN: "twenty twenty-five" →
 - Per the spec (FR-007), the option must exist; it lives as a constructor flag
   like other adapter configuration.
 
+**Measured follow-up (2026-07-31, FLEURS cmn_hans_cn test, 25 clips ≥ 5 s)**:
+`woitn` micro CER 13.21 % vs `withitn` 13.81 % — a wash. `withitn` recovers
+digit-heavy clips (32.4 % → 5.4 % on the best case) but conditions the decoder
+into different (sometimes worse) text elsewhere. Default confirmed. **Also
+discovered: `withitn` makes SenseVoice natively emit punctuation (，。、) —
+the model can punctuate itself, which means the future post-processing
+feature may not need a separate CT-Transformer stage for SenseVoice (sherpa
+still needs one). Recorded for the post-processing spec.**
+
 **Alternatives considered**:
 - `withitn` as default: rejected — the reference app's experience shows users
   prefer readable text; ITN mistakes (e.g., converting "one two three" to
