@@ -43,7 +43,6 @@ apps:
     plugs:
       - hardware-observe
       - opengl
-      - network
 
   server:
     command: bin/server.sh
