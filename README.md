@@ -13,7 +13,7 @@ You need the [Rust toolchain](https://rustup.rs), [uv](https://docs.astral.sh/uv
 and the PipeWire build headers:
 
 ```shell
-sudo apt install libpipewire-0.3-dev libclang-dev pkg-config
+sudo apt install build-essential libpipewire-0.3-dev libclang-dev libgio-2.0-dev libgdk-pixbuf-2.0-dev libgtk-4-dev
 ```
 
 The fastest smoke test needs no model weights and no audio — the `fake` adapter
@@ -23,12 +23,10 @@ serves a scripted transcript over the in-process loopback transport:
 cd server && uv sync && uv run python -m myna.testbed   # fake adapter -> a ResultRecord
 ```
 
-To dictate for real, serve a model on a socket and push audio at it from the Rust
-client (16 kHz mono works out of the box). Get a WAV first — either grab the
-LibriSpeech corpus (`uv run python ../dev/fetch_real_corpus.py`) or use your own:
+To dictate for real, a Myna STT inference snap needs to be installed (or run one from this repo directly). You can then use the reference client to push audio at it and see transcription results. The LibriSpeech corpus is a good example (`uv run python ../dev/fetch_real_corpus.py`).
 
 ```shell
-# 1. serve Whisper on a Unix socket (downloads the `base` weights on first run)
+# 1. serve Whisper on a Unix socket (downloads the `base` weights on first session)
 (cd server && uv sync --extra whisper && \
     uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 
@@ -49,14 +47,14 @@ The rest of this README expands on each piece.
   the model-evaluation harness (adapters, corpus, metrics).
 - `client/` — the **Rust** dictation client. `myna-dictate` (`myna-cli`) is the
   testbed/demo push-to-talk client; `myna-desktop` is the shipped dictation app
-  (hotkey → capture → IBus injection into the focused app, with an activity
-  indicator). `myna-audio` is the native PipeWire capture adapter,
-  `myna-orchestrator` the session FSM, `myna-core` the wire contract.
+  (hotkey → capture → IBus injection into the focused app). `myna-audio` is a
+  PipeWire capture adapter, `myna-orchestrator` the session FSM, `myna-core` the
+  wire contract.
 - `extensions/myna-shell/` — a **GJS** GNOME Shell extension: a focus-safe,
   animated dictation indicator that runs inside the compositor and consumes state
-  from `myna-desktop` over D-Bus.
-- `whisper-snap/`, `nemotron-snap/`, `qwen-snap/` — one inference snap per model
-  family (strict-confinement packages of `myna-server` + a model + engines).
+  from `myna-desktop` over D-Bus. Easy to make your own.
+- `*-snap/` — one inference snap per model family (strict-confinement packages
+  of `myna-server` + a model + engines).
 - `docs/` — architecture and design notes; `docs/project-plan.md` is the living
   task tracker.
 
@@ -68,17 +66,18 @@ out — over WebSocket-on-a-Unix-socket. Three roles play against it:
 - **Inference backend** (`myna-server` / a snap): hosts a model, listens on a
   socket, has *no* microphone — the client pushes PCM and the server rejects
   off-format audio rather than resampling. Swap models with
-  `--adapter whisper|nemotron|qwen-c|fake`.
-- **Dictation client** (Rust, `client/`): owns capture and the hotkey and runs
+  `--adapter whisper|nemotron|qwen-c|...|fake`.
+- **Dictation client** (`client/`): owns capture and the hotkey and runs
   the session FSM. `myna-dictate` is the demo (WAV/corpus/live-mic);
   `myna-desktop` is the shipped app that injects into the focused app via IBus.
 - **Benchmark client** (`dev/bench.py`): replays a corpus through a backend and
   scores WER/CER offline, so accuracy work stays out of the dictation hot path.
 
-The wire is a **selectable dialect** — the internal `transcription.*` vocabulary
-or the OpenAI-Realtime-shaped **IE115** names — and both ends translate at the
-edge, so neither the models nor the FSM change when the dialect does
-(`docs/architecture/ie115-wire.md`).
+The wire is a **selectable dialect** — the internal `transcription.*`
+vocabulary or the **Myna STT API** (a compatibile subset of the OpenAI Realtime
+Transcription API, with additions). Referred to as IE115 internally — and both
+ends translate at the edge, so neither the models nor the FSM change when the
+dialect does (`docs/architecture/ie115-wire.md`).
 
 ## Development environment
 
