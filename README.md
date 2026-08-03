@@ -13,7 +13,7 @@ You need the [Rust toolchain](https://rustup.rs), [uv](https://docs.astral.sh/uv
 and the PipeWire build headers:
 
 ```shell
-sudo apt install build-essential libpipewire-0.3-dev libclang-dev libgio-2.0-dev libgdk-pixbuf-2.0-dev libgtk-4-dev
+sudo apt install build-essential ffmpeg libpipewire-0.3-dev libclang-dev libgio-2.0-dev libgdk-pixbuf-2.0-dev libgtk-4-dev
 ```
 
 The fastest smoke test needs no model weights and no audio — the `fake` adapter
@@ -46,7 +46,7 @@ The rest of this README expands on each piece.
   `myna.server` is `myna-server`, the process the snaps ship; `myna.testbed` is
   the model-evaluation harness (adapters, corpus, metrics).
 - `client/` — the **Rust** dictation client. `myna-dictate` (`myna-cli`) is the
-  testbed/demo push-to-talk client; `myna-desktop` is the shipped dictation app
+  testbed/demo client; `myna-desktop` is the shipped dictation app
   (hotkey → capture → IBus injection into the focused app). `myna-audio` is a
   PipeWire capture adapter, `myna-orchestrator` the session FSM, `myna-core` the
   wire contract.
@@ -106,23 +106,12 @@ it keeps matching `server/pyproject.toml` + `server/uv.lock`:
 ```shell
 cd server
 uv sync                                     # base + dev (fake adapter, contract tests)
-uv sync --extra whisper                     # + Whisper
-uv sync --extra whisper --extra nemotron    # + both real adapters
+uv sync --extra whisper                     # packages just of the whisper server
+uv sync --all-extras                        # packages for every packaged model server (BIG)
 ```
 
 `uv sync` is declarative — it makes `.venv` match *exactly* what you request, and
-syncing with fewer extras prunes ones installed earlier. A `ModuleNotFoundError`
-for `faster_whisper` / `nemo` just means that extra isn't synced.
-
-| Extra      | Pulls in                                      | For                    |
-|------------|-----------------------------------------------|------------------------|
-| `whisper`  | faster-whisper (CTranslate2)                  | the Whisper adapter    |
-| `nemotron` | `nemo_toolkit[asr]` + torch + CUDA (multi-GB) | the Nemotron adapter   |
-
-The `qwen-c` adapter needs **no** extra — it's a pure-C engine reached via
-ctypes. Point it at the shared library and a local model dir:
-`QWEN_ASR_LIB=/snap/qwen/current/lib/libqwen_asr.so uv run myna-server --adapter
-qwen-c --model ../qwen-snap/components/Qwen3-ASR-0.6B --socket /tmp/myna.sock`.
+syncing with fewer extras prunes ones installed earlier.
 
 Model **weights** are separate from the code: they download to `HF_HOME` on first
 use of an adapter (verify offline with `HF_HUB_OFFLINE=1`).
@@ -137,7 +126,7 @@ uv run python ../dev/generate_fixtures.py       # synthetic corpus -> server/fix
 uv run python ../dev/fetch_real_corpus.py       # real LibriSpeech corpus -> corpus/real/
 
 # serve a real adapter, then talk to it:
-uv run myna-server --adapter nemotron --socket /tmp/myna.sock   # or whisper | qwen-c
+uv run myna-server --adapter nemotron --socket /tmp/myna.sock
 uv run python ../dev/capabilities.py --socket /tmp/myna.sock    # what can this server do?
 uv run python ../dev/transcribe.py --socket /tmp/myna.sock quiet-weather   # a fixture clip
 ```
@@ -154,15 +143,15 @@ backend:
 cd client && cargo build --release && cd ..
 (cd server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 
-# real-time push-to-talk from a WAV clip:
+# real-time from a WAV clip:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en \
     --clip corpus/real/audio/<id>.wav
 
-# over the OpenAI-Realtime IE115 wire — same FSM, different dialect:
+# over the Myna STT wire — same FSM, different dialect:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
     --language en --clip corpus/real/audio/<id>.wav
 
-# live microphone via the native PipeWire backend:
+# live microphone:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en --mic
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en --mic \
     --target alsa_input.pci-0000_c1_00.6.HiFi__Mic2__source   # a specific node.name
@@ -173,10 +162,13 @@ cd client && cargo build --release && cd ..
 
 ## Streaming mode
 
-By default dictation is **batch**: text appears when the utterance ends. A
-backend started with `--streaming` also emits **committed segments**
-progressively as you speak — each is append-only (never retracted). Provisional
-hypothesis text (`unstable`) is never injected; it only displays if you opt in.
+By default dictation is **batch**: text appears when the utterance ends. In a streaming
+mode, dictation results come back as you speak.
+
+Not all models are designed for streaming, and the feature may require more powerful
+hardware than batch mode. The backends that do support it can be switched by providing
+a `--streaming` parameter. The streaming chunks may always be committed (injected). Provisional
+hypothesis text is marked as `unstable` and should never be injected; it only displays if you opt in.
 
 ```shell
 # 1. serve an adapter in streaming mode
@@ -196,38 +188,9 @@ hypothesis text (`unstable`) is never injected; it only displays if you opt in.
     --mode streaming --show-unstable --clip corpus/real/audio/<id>.wav   # + ~ lines
 ```
 
-- **Tier gate**: `--mode auto` (the default) resolves against measured RTF
-  baselines in `results/streaming-tiers.json` — streaming only when the model's
-  RTF < 1.0 on this hardware; batch otherwise (including unmeasured hardware).
-  The preference persists in `~/.config/myna/settings.json`; see
-  `docs/streaming-mode-settings.md`.
-- **The wire**: deltas carry `disposition: committed|unstable` (committed adds
-  `segment_index`); the server advertises `session.streaming` on the greeting.
-  Contract: `specs/007-streaming-mode/contracts/streaming-wire.md`.
-- **Interop fixture**: with the canonical/whisper-snap adapter + WhisperLive
-  docker running on `/tmp/myna-adapter.sock`, the live protocol check is
-  `cargo test -p myna-cli --test interop_canonical -- --ignored` (findings:
-  `docs/interop/canonical-whisper-snap-report.md`).
-
-Whisper streams for real (feature 008): a rolling re-decode loop decodes the
-uncommitted window every `--stream-cadence-s` (default 1 s) while audio is
-still arriving, and the **local-agreement** strategy commits the word prefix
-two successive decodes agree on; first `~` ~1.5 s in, first `»` ~2.5 s in on
-CPU (whisper-tiny watermark: +2.4 pp WER vs batch, commit stability 100%).
-The 008 sweep compared three commit strategies; local-agreement was the only
-one to meet the latency targets — the other two were retired (details:
-`specs/008-progressive-emission/contracts/emission-semantics.md`).
-
-Watermarks: `results/streaming-watermarks.json` (measured on 26–28 s
-concatenated real-speech streams, `corpus/real/manifest-streams.json`).
-Nemotron's native frame-once transducer loop and two small transducer snaps
-(Parakeet-class int8 ONNX; sherpa-onnx) are in flight under
-`specs/008-progressive-emission/`. Details and Qwen-C deferral:
-`docs/architecture/streaming.md`.
-
 ## Dictate into apps — `myna-desktop`
 
-`myna-desktop` is the actual dictation app: activate push-to-talk and the
+`myna-desktop` is the actual dictation app: activate it and the
 committed transcript is injected via **IBus** into whatever app was focused.
 Because dictation targets *another* app, activation must not need terminal focus,
 so the default is **toggle-to-talk via a GNOME custom keyboard shortcut**: the
@@ -239,12 +202,12 @@ daemon.
 (cd server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 cd client && cargo build --release && cd ..
 
-./client/target/release/myna-desktop --install-shortcut '<Super>t>'        # once: binds a shortcut
+./client/target/release/myna-desktop --install-shortcut '<Super>t'           # once: binds a shortcut
 ./client/target/release/myna-desktop --socket /tmp/myna.sock --language en   # daemon
 # focus a text field, tap the shortcut, speak, tap -> transcript injected there
 ```
 
-Alternatives: `--portal` (hold-to-talk via the GlobalShortcuts portal — packaged
+Alternatives: `--portal` (supports hold-to-talk via the GlobalShortcuts portal — packaged
 snap/flatpak only), `--stdin` (terminal debug), `--dbus` (also serve
 `org.myna.Dictation` for the GNOME Shell indicator below). See
 `docs/desktop-injection.md`.
@@ -304,7 +267,7 @@ truth — the Rust client emits transcripts + timings that feed the same scorer)
 
 ```shell
 cd server && uv run pytest            # offline suite (skips cleanly without a model/GPU)
-cd client && cargo test               # Rust workspace
+cd client && cargo test               # desktop client suite
 ```
 
 The offline Python suite runs the fake-adapter contract tests plus each adapter's
@@ -319,23 +282,20 @@ skip offline and run unchanged on a VM or hardware.
 
 ## Building the snaps
 
-The `whisper` / `nemotron` extras and the snaps install the **same** third-party
+The server extras and the inference snaps pacakged here install the **same** third-party
 libraries two independent ways: `uv sync --extra <name>` puts them in your
-`.venv` for local runs; the snap build packages them into the snap so end users
-need neither uv nor the extras. **You don't need to sync any extra for the snaps
-to build** — snapcraft resolves them from PyPI in its own build container.
+`.venv` for local runs; the snap build packages them into the snap. **You don't need to sync any extra for the snaps to build** — snapcraft resolves them from PyPI in its own build container.
 
-From each snap dir:
+General procedure for packaging an inference snap,
 
 ```shell
+cd whisper-snap
 ./dev/prepare.sh            # uv build --wheel -> wheels/  (no extra sync needed)
 ./dev/download-models.sh    # fetch model weights into components/  (large)
 snapcraft pack
 ```
 
-Per-snap details: [`whisper-snap/README.md`](whisper-snap/README.md),
-[`nemotron-snap/README.md`](nemotron-snap/README.md),
-[`qwen-snap/README.md`](qwen-snap/README.md).
+The snaps have their own README's with further details.
 
 ## Contributing
 
@@ -348,3 +308,5 @@ unchanged, performance watermarks, the Workshop dev env, and privacy/offline
 invariants. If you're extending the project, start with the `speckit-specify`
 workflow rather than editing code directly, and read `docs/project-plan.md` for
 where things stand.
+
+See: https://github.com/github/spec-kit
