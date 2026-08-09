@@ -31,6 +31,11 @@ myna-server --socket /tmp/myna.sock --adapter nemotron --streaming
 Expected: continuous `~` partials; committed `»` segments at natural
 boundaries; terminal `✓` within 1 s of clip end.
 
+Validated 2026-08-04 (RTX 4080 Laptop, 30 s stream + 5 s clip): finalize
+0.059 s, TTFC 4.48 s at both lengths (ratio 1.0), streaming WER == batch —
+`results/streaming-watermarks.json` (`emission_008_nemotron_native`),
+pattern pinned in `results/spike-s2-nemo-streaming.md`.
+
 ## S3 — Small snaps
 
 ```sh

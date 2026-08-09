@@ -245,3 +245,40 @@ llama.cpp source.
      **UNVERIFIED on hardware** — build + auto-selection must be confirmed on
      a CUDA box. Larger GPU-tier weights (medium, large-v3, distil-large-v3)
      are deferred until T12 sizes them (see VRAM gap below).
+
+## 7. Packaged adapter comparison (measured, feature 008)
+
+Working draft — feature 008 sweep data; extend per tier via `dev/matrix.py`.
+Numbers from `results/streaming-watermarks.json` on the long-stream corpus
+(26–33 s same-speaker streams). WER across rows is comparable in kind but not
+in corpus size — treat ±1 pp as noise.
+
+| Snap | Model | Engine | Langs | Streaming strategy | WER batch | WER stream | TTFU | TTFC | Finalize |
+|------|-------|--------|-------|--------------------|-----------|------------|------|------|----------|
+| whisper | faster-whisper tiny (CPU) | CTranslate2 | multi | local-agreement re-decode (1 s cadence) | 4.8 % | 7.2 % (+2.4 pp) | 1.4–1.5 s | 2.4–3.5 s | 0.36 s |
+| nemotron | FastConformer hybrid large streaming multi | NeMo, CUDA | en | native cache-aware transducer | 0.0 % | 0.0 % (batch parity) | 2.4 s | 4.5 s (length-independent) | 0.06 s |
+| parakeet | Parakeet TDT 0.6B v3 int8 (murmure weights) | onnxruntime | 25 | chunked commit (SilenceCut; no partials) | 4.4 / 0.0 % | 2.2 / 0.0 % (≤ batch) | none | 17.8–20.4 s | 0.42 s |
+| sherpa | k2 FastConformer transducer 480 ms int8 | sherpa-onnx | en | native partials + rule endpointing | 4.4 / 3.9 % | 6.7 / 6.5 % (+2.2–2.6 pp) | 1.3 s | 12.0–20.5 s | 0.01 s |
+| qwen-c | Qwen ASR (C runtime) | external C lib | — | batch only | — | — | — | — | — |
+| fake | scripted (no model) | — | — | wire/contract regression fixture | — | — | — | — | — |
+
+Built component sizes: whisper model components tiny 73 MB / base 140 MB /
+small 462 MB, CUDA runtime component 1.7 GB; server snap 161 MB. The other
+snap payloads are not built on this machine.
+
+Reading the table:
+
+- **Accuracy leaders**: parakeet (chunked decode-once — no re-decode
+  right-context tax) and nemotron (frame-once native streaming — batch
+  parity). Whisper re-decode pays ~+2.4 pp at commit boundaries.
+- **Latency leaders**: sherpa for TTFU (1.3 s) and finalize (0.01 s);
+  nemotron for length-independent TTFC.
+- **Trade-off shorthand**: whisper = multilingual + tunable, moderate WER
+  cost; nemotron = best GPU-tier profile but en-only and heavy (NeMo);
+  parakeet = best CPU accuracy, no partials; sherpa = fastest partials,
+  no punctuation, endpoint-dependent commits.
+
+Hardware tiers: whisper rows are x86-64 CPU (whisper-tiny); nemotron row is
+RTX 4080 Laptop GPU. Per-tier watermarks live in
+`results/streaming-watermarks.json`; the streaming/batch default gate is
+`results/streaming-tiers.json`.

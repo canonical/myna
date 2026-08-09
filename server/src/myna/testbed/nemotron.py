@@ -5,10 +5,13 @@ A natively streaming transducer (cache-aware FastConformer-RNNT) behind
 each frame is processed once, and the latency/accuracy tradeoff is a built-in
 dial (``att_context_size``) rather than chunk-size tuning.
 
-This first cut is **commit-on-finalize** (buffer, decode once on finish) so it
-drops straight into the existing matrix alongside whisper. True frame-at-a-time
-streaming — where this architecture actually pays off — is the follow-up
-(converges with T08); the ``att_context_size`` dial is already plumbed.
+Batch mode is **commit-on-finalize** (buffer, decode once on finish).
+``streaming=True`` (T019) runs the native cache-aware path instead: live PCM
+pushes step the transducer once per ~0.5 s of audio through NeMo's
+``CacheAwareStreamingAudioBuffer`` + ``conformer_stream_step`` (spike S2
+pattern, research.md Decision 5), per-tick hypotheses emit as unstable, and
+two-tick-stable word prefixes commit. The ``att_context_size`` dial is the
+latency/accuracy knob in both modes.
 
 Requires the ``nemotron`` extra: ``uv sync --extra nemotron`` (pulls
 ``nemo_toolkit[asr]`` + torch — heavy, CUDA). The cache-aware streaming model
@@ -22,6 +25,9 @@ component offline.
 Verified on hardware (2026-06-14): decode and real-speech dictation work;
 latency is excellent (native transducer, ~0.03s finalize). WER on synthetic
 espeak audio is unreliable (the model is OOD on it) — judge it on real speech.
+Streaming verified (2026-08-04, RTX 4080 Laptop): batch-parity WER on a 30 s
+realtime stream, 0.059 s finalize, TTFC 4.5 s — watermarks in
+``results/streaming-watermarks.json`` (``emission_008_nemotron_native``).
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 from collections.abc import AsyncIterator
 
 from myna.core import (
@@ -51,6 +58,11 @@ NEMO_RATE = 16_000
 NEMO_FORMAT = AudioFormat(sample_rate_hz=NEMO_RATE, channels=1, sample_width_bytes=2)
 _PROGRESS_INTERVAL_SECONDS = 1.0
 _LOAD_HEARTBEAT_SECONDS = 2.0
+
+# Words at the hypothesis tail whose right context can still mutate; held
+# back from commits (nemotron has no word timestamps, so the guard is in
+# words, not the whisper loop's seconds).
+_TAIL_GUARD_WORDS = 2
 
 DEFAULT_MODEL = "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
 
@@ -76,19 +88,234 @@ def _parse_att_context_size(value: str | None) -> list[int] | None:
     return parts
 
 
-def _split_sentences(text: str) -> list[str]:
-    """Split text into sentence-level committed segments (streaming demo).
-    
-    Splits on sentence-ending punctuation followed by whitespace, keeping the
-    trailing space with each segment so concatenation reproduces the original.
+def _stable_commit_boundary(prev: str, cur: str, start: int) -> int | None:
+    """Char index in ``cur`` up to which text may be committed, or None.
+
+    The committable region is the word-aligned common prefix of the last two
+    decoder ticks (text the transducer re-emitted identically), minus a
+    ``_TAIL_GUARD_WORDS`` holdback — tail words have no right context yet and
+    can still mutate (the RNNT text carries no timestamps, so stability is
+    measured in ticks, not seconds). ``start`` is the already-committed
+    length; the boundary never moves backwards.
     """
-    import re
-    parts = re.split(r"(?<=[.!?])\s+", text)
-    if len(parts) <= 1:
-        return [text]
-    # Re-attach the separating space to all but the last segment
-    segments = [p + " " for p in parts[:-1]] + [parts[-1]]
-    return segments
+    n = min(len(prev), len(cur))
+    i = start
+    while i < n and prev[i] == cur[i]:
+        i += 1
+    words = [m.end() for m in re.finditer(r"\S+", cur[start:i])]
+    if len(words) <= _TAIL_GUARD_WORDS:
+        return None
+    return start + words[-_TAIL_GUARD_WORDS - 1]
+
+
+class _StreamDecoder:
+    """NeMo cache-aware streaming state machine (T019, spike S2 pattern).
+
+    Wraps ``CacheAwareStreamingAudioBuffer`` + ``conformer_stream_step`` for a
+    single live stream: ``push()`` appends PCM and, once at least
+    ``_STREAM_STEP_SECONDS`` of un-stepped audio is pending (or ``final``),
+    drains the buffer's ready chunks through the encoder/decoder, threading
+    the caches and the greedy hypothesis across steps. Returns the
+    **accumulated** transcript text — decoded from the hypothesis's
+    ``y_sequence`` because the streaming path never refreshes ``hyp.text``
+    mid-stream (it stays the previous partial's text).
+
+    Two live-feed adjustments versus NeMo's offline simulation loop:
+      * only **full** chunks on the model's chunk schedule are stepped
+        mid-stream; partial tails stay pending until the final flush. A
+        sub-chunk step makes the greedy RNNT consume encoder frames before
+        their right context (~13 frames) has arrived and permanently drops
+        the tokens that depended on it (measured 2026-08-04: 0.5 s ticks
+        lost utterance onsets wholesale, WER 0.29 vs batch 0.0 on the 30 s
+        stream; full-chunk ticks restore batch parity).
+      * the first ``append_audio`` returns ``stream_id=-1`` even though it
+        created stream 0; the id is pinned to 0 so later appends extend the
+        same stream instead of silently growing the batch.
+
+    Synchronous and blocking (GPU work) — call via ``asyncio.to_thread``.
+    """
+
+    def __init__(self, model) -> None:
+        import torch
+        from nemo.collections.asr.parts.utils.streaming_utils import (
+            CacheAwareStreamingAudioBuffer,
+        )
+
+        self._torch = torch
+        self._model = model
+        self._buffer = CacheAwareStreamingAudioBuffer(model)
+        (
+            self._cache_last_channel,
+            self._cache_last_time,
+            self._cache_last_channel_len,
+        ) = model.encoder.get_initial_cache_state(batch_size=1)
+        self._hyps = None
+        self._stream_id = -1
+        self._step = 0
+        sched = model.encoder.streaming_cfg
+        self._chunk_size = sched.chunk_size
+        self._shift_size = sched.shift_size
+
+    @staticmethod
+    def _sched(value, first: bool) -> int:
+        """First-chunk vs steady-state schedule entry (lists are [first, rest])."""
+        if isinstance(value, list):
+            return value[0] if first else value[1]
+        return value
+
+    def _full_chunks_pending(self) -> int:
+        """How many complete chunk-schedule steps the buffer can yield now."""
+        if self._buffer.buffer is None:
+            return 0
+        idx = self._buffer.buffer_idx
+        rem = int(self._buffer.streams_length[0]) - idx
+        n = 0
+        while rem >= self._sched(self._chunk_size, idx == 0):
+            n += 1
+            idx += self._sched(self._shift_size, idx == 0)
+            rem = int(self._buffer.streams_length[0]) - idx
+        return n
+
+    def push(self, pcm: bytes, *, final: bool = False) -> str | None:
+        """Append PCM; decode if a full chunk is pending. Returns the
+        accumulated text after a tick, or None when no tick ran."""
+        if pcm:
+            import numpy as np
+
+            samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+            self._buffer.append_audio(samples, self._stream_id)
+            self._stream_id = 0
+        if not final and self._full_chunks_pending() == 0:
+            return None
+        return self._drain(final=final)
+
+    def _drain(self, *, final: bool) -> str:
+        if self._buffer.buffer is None:
+            return ""
+        model = self._model
+        steps = self._full_chunks_pending() if not final else None
+        iterator = iter(self._buffer)
+        stepped = 0
+        while steps is None or stepped < steps:
+            try:
+                chunk_audio, chunk_lengths = next(iterator)
+            except StopIteration:
+                break
+            # NB: the buffer's generator advances buffer_idx *on yield* — pull
+            # exactly as many chunks as we step (never "peek and break"), or
+            # the pulled-but-unstepped chunk's audio is consumed silently and
+            # its tokens are lost (2026-08-04: dropped every other chunk).
+            stepped += 1
+            drop = model.encoder.streaming_cfg.drop_extra_pre_encoded if self._step else 0
+            keep = final and self._buffer.is_buffer_empty()
+            with self._torch.inference_mode():
+                (
+                    _pred,
+                    _texts,
+                    self._cache_last_channel,
+                    self._cache_last_time,
+                    self._cache_last_channel_len,
+                    best,
+                ) = model.conformer_stream_step(
+                    processed_signal=chunk_audio,
+                    processed_signal_length=chunk_lengths,
+                    cache_last_channel=self._cache_last_channel,
+                    cache_last_time=self._cache_last_time,
+                    cache_last_channel_len=self._cache_last_channel_len,
+                    keep_all_outputs=keep,
+                    previous_hypotheses=self._hyps,
+                    drop_extra_pre_encoded=drop,
+                )
+            self._hyps = best
+            self._step += 1
+        return self.text()
+
+    def text(self) -> str:
+        if not self._hyps:
+            return ""
+        ids = self._hyps[0].y_sequence
+        ids = ids.tolist() if hasattr(ids, "tolist") else list(ids)
+        return self._model.tokenizer.ids_to_text([int(i) for i in ids if int(i) >= 0])
+
+
+class _StreamEmitter:
+    """Committed/unstable event policy over the accumulated transcript (T019).
+
+    Maps the decoder's growing full-text hypothesis onto the 007 wire
+    dispositions, enforcing the 008 emission invariants
+    (contracts/emission-semantics.md):
+      * I1/I2: committed emissions are exact, advancing slices of the
+        accumulated text; ``transcript`` is their verbatim concatenation
+        (only the utterance's first emission sheds its leading space).
+      * I3: unstable emissions are the uncommitted remainder, never indexed.
+      * I4/I5: a commit clears the outstanding unstable; ``finish`` commits
+        the remainder. If the final text diverged inside the committed
+        region (rare — commits were two-tick-stable), the concatenation
+        stays canonical and the divergent tail is simply not re-committed.
+    """
+
+    def __init__(self) -> None:
+        self._raw: list[str] = []  # exact slices of the accumulated text
+        self._emitted: list[str] = []  # as emitted (first is lstripped)
+        self._committed_len = 0
+        self._last_text = ""
+        self._last_unstable = ""
+        self._seg = 0
+
+    @property
+    def transcript(self) -> str:
+        return "".join(self._emitted)
+
+    def update(self, text: str) -> list:
+        """One decode tick; returns the events to emit (may be empty)."""
+        events = []
+        boundary = _stable_commit_boundary(self._last_text, text, self._committed_len)
+        if boundary is not None and boundary > self._committed_len:
+            event = self._commit(text[self._committed_len : boundary])
+            self._committed_len = boundary
+            if event is not None:
+                events.append(event)
+            self._last_unstable = ""  # I4
+        unstable = self._remainder(text)
+        if unstable and unstable != self._last_unstable:
+            events.append(
+                TranscriptionFinal(text=unstable, disposition=Disposition.UNSTABLE)
+            )
+            self._last_unstable = unstable
+        self._last_text = text
+        return events
+
+    def finish(self, final_text: str) -> list:
+        """End-of-audio: commit the remaining tail (I5); returns events."""
+        events = []
+        if final_text.startswith("".join(self._raw)):
+            remainder = self._remainder(final_text)
+        else:
+            remainder = ""  # committed region mutated; concatenation wins (I2)
+        if remainder:
+            event = self._commit(final_text[self._committed_len :])
+            if event is not None:
+                events.append(event)
+        self._last_unstable = ""
+        return events
+
+    def _remainder(self, text: str) -> str:
+        tail = text[self._committed_len :]
+        return tail.lstrip() if not self._raw else tail
+
+    def _commit(self, raw: str) -> TranscriptionFinal | None:
+        self._raw.append(raw)
+        text = raw.lstrip() if len(self._raw) == 1 else raw
+        if not text:
+            return None
+        self._emitted.append(text)
+        event = TranscriptionFinal(
+            text=text,
+            disposition=Disposition.COMMITTED,
+            segment_index=self._seg,
+        )
+        self._seg += 1
+        return event
 
 
 class NemotronAdapter:
@@ -132,7 +359,9 @@ class NemotronAdapter:
         return Candidate(
             model=f"{self._label}{ctx}",
             engine=f"nemo-{self._device}",
-            streaming_strategy="commit-on-finalize",
+            streaming_strategy=(
+                "native-transducer" if self._streaming else "commit-on-finalize"
+            ),
         )
 
     def capabilities(self) -> Capabilities:
@@ -229,6 +458,10 @@ class NemotronAdapter:
             # adapter-waits-for-audio deadlock (ie115-lifecycle.md §3A).
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
+            if self._streaming:
+                await self._run_streaming_session(model, audio, emit)
+                return
+
             buffered = bytearray()
             seconds_since_progress = 0.0
             async for chunk in audio:
@@ -247,22 +480,9 @@ class NemotronAdapter:
             )
             text = text.strip()
             if text:
-                if self._streaming:
-                    # T024/T025: In streaming mode, emit sentence-level committed
-                    # segments progressively. Native frame-at-a-time transducer
-                    # streaming (NeMo streaming API) is a follow-up; this sentence
-                    # split exercises the wire protocol's committed-segment path.
-                    sentences = _split_sentences(text)
-                    for i, sentence in enumerate(sentences):
-                        await emit(TranscriptionFinal(
-                            text=sentence,
-                            disposition=Disposition.COMMITTED,
-                            segment_index=i,
-                        ))
-                else:
-                    # one utterance -> one final; per-word timestamps are a
-                    # streaming concern (follow-up), so no segments here
-                    await emit(TranscriptionFinal(text=text))
+                # one utterance -> one final; per-word timestamps are a
+                # streaming concern, so no segments here
+                await emit(TranscriptionFinal(text=text))
             await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(
@@ -270,6 +490,36 @@ class NemotronAdapter:
                     code="inference_failed", message=f"{type(exc).__name__}: {exc}"
                 )
             )
+
+    async def _run_streaming_session(
+        self,
+        model,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
+    ) -> None:
+        """T019 (US2): native frame-once streaming. PCM pushes feed the
+        cache-aware transducer (``_StreamDecoder``, spike S2 pattern); each
+        tick's accumulated text drives committed/unstable emissions
+        (``_StreamEmitter``). End-of-audio flushes the encoder tail
+        (``keep_all_outputs``) and commits the remainder (I5)."""
+        decoder = _StreamDecoder(model)
+        emitter = _StreamEmitter()
+        seconds_since_progress = 0.0
+        async for chunk in audio:
+            text = await asyncio.to_thread(decoder.push, chunk.data)
+            produced = False
+            if text is not None:
+                for event in emitter.update(text):
+                    await emit(event)
+                    produced = True
+            seconds_since_progress += chunk.duration_seconds
+            if not produced and seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
+                seconds_since_progress = 0.0
+                await emit(TranscriptionProgress())  # liveness on quiet ticks
+        final_text = await asyncio.to_thread(decoder.push, b"", final=True)
+        for event in emitter.finish(final_text):
+            await emit(event)
+        await emit(TranscriptionDone(text=emitter.transcript))
 
     def _transcribe(self, model, pcm: bytes) -> str:
         """Blocking decode; runs in a worker thread. Returns the transcript.

@@ -66,7 +66,8 @@ out — over WebSocket-on-a-Unix-socket. Three roles play against it:
 - **Inference backend** (`myna-server` / a snap): hosts a model, listens on a
   socket, has *no* microphone — the client pushes PCM and the server rejects
   off-format audio rather than resampling. Swap models with
-  `--adapter whisper|nemotron|qwen-c|...|fake`.
+  `--adapter whisper|nemotron|qwen-c|...|fake` (adapter comparison:
+  [docs/asr-inference-snap-design.md](docs/asr-inference-snap-design.md) §7).
 - **Dictation client** (`client/`): owns capture and the hotkey and runs
   the session FSM. `myna-dictate` is the demo (WAV/corpus/live-mic);
   `myna-desktop` is the shipped app that injects into the focused app via IBus.
