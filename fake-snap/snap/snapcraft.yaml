@@ -38,8 +38,7 @@ slots:
       write: [$SNAP_COMMON/run]
 
 hooks:
-  install:
-    plugs: []
+  install: {}
 
 parts:
   # The Python server package (server/ staged into this project by

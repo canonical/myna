@@ -4,14 +4,17 @@
 # (constitution II).
 summary: Install myna + fake backend snaps, connect, dictate a WAV clip
 
-# Snaps are sent from the host (prebuilt by CI / locally); HOST: env paths.
 prepare: |
-    test -f "$MYNA_SNAP" || { echo "SPREAD_MYNA_SNAP not set/missing"; exit 1; }
-    test -f "$FAKE_BACKEND_SNAP" || { echo "SPREAD_FAKE_BACKEND_SNAP not set/missing"; exit 1; }
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
+    test -f "$FAKE_SNAP" || { echo "fake-backend snap missing: build fake-snap first"; exit 1; }
 
 execute: |
     set -x
-    snap install --dangerous "$FAKE_BACKEND_SNAP"
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    snap install --dangerous "$FAKE_SNAP"
     snap install --dangerous "$MYNA_SNAP"
     snap connect myna:backend myna-fake-backend:ubustt-socket
 
@@ -25,13 +28,17 @@ execute: |
 
     # Virtual audio source, not a microphone (constitution II): the clip is
     # pushed as a WAV file; the fake adapter ignores content and returns its
-    # scripted transcript.
+    # scripted transcript. Confined, myna.testbed cannot read the spread
+    # project dir (home plug covers neither it nor /root), so stage the
+    # fixture into the snap's own data dir, which confinement always grants.
+    cp "$SPREAD_PATH/tests/spread/confined-e2e/fixture.wav" /var/snap/myna/current/fixture.wav
     # myna.testbed is the confined myna-dictate; it is stdin-triggered
     # (Enter starts the utterance), so feed it one Enter then hold the pipe.
-    ( printf '\n'; sleep 10 ) | \
+    ( printf '\n'; sleep 15 ) | \
         myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
-            --clip "$SPREAD_PATH/tests/spread/confined-e2e/fixture.wav" \
+            --clip /var/snap/myna/current/fixture.wav \
             > transcript.out 2>&1 || true
+    cat transcript.out
     grep -qF "The quick brown fox jumps over the lazy dog." transcript.out
 
 restore: |
