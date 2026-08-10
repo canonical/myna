@@ -65,8 +65,11 @@ def decode_words(model, samples: np.ndarray, beam_size: int) -> list[tuple[str, 
     return words
 
 
-def agreement(prev: list[tuple[str, float, float]], curr: list[tuple[str, float, float]],
-              prev_window_s: float) -> tuple[float, list[float], float]:
+def agreement(
+    prev: list[tuple[str, float, float]],
+    curr: list[tuple[str, float, float]],
+    prev_window_s: float,
+) -> tuple[float, list[float], float]:
     """Compare the earlier pass (tail-excluded) against the later pass.
 
     Returns (agreement_rate, per-word start drifts, agreed frontier seconds).
@@ -170,8 +173,10 @@ def main() -> None:
             f"{statistics.median(drifts) if drifts else 0:.3f} | "
             f"{statistics.mean(lags):.1f} |"
         )
-        print(f"  {clip_id}: agreement mean={statistics.mean(rates):.3f} "
-              f"min={min(rates):.3f} pairs={len(rates)}")
+        print(
+            f"  {clip_id}: agreement mean={statistics.mean(rates):.3f} "
+            f"min={min(rates):.3f} pairs={len(rates)}"
+        )
 
     if not all_rates:
         sys.exit("no adjacent-pass pairs measured (clips too short?)")
@@ -179,9 +184,7 @@ def main() -> None:
     mean_agree = statistics.mean(all_rates)
     min_agree = min(all_rates)
     med_drift = statistics.median(all_drifts) if all_drifts else 0.0
-    p90_drift = (
-        sorted(all_drifts)[int(0.9 * len(all_drifts))] if all_drifts else 0.0
-    )
+    p90_drift = sorted(all_drifts)[int(0.9 * len(all_drifts))] if all_drifts else 0.0
     mean_lag = statistics.mean(all_lags) if all_lags else 0.0
 
     go = mean_agree >= 0.90 and med_drift <= 0.3

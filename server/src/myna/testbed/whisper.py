@@ -52,6 +52,8 @@ def _iso639_1(language: str | None) -> str | None:
     BCP-47-ish tags with region subtags ("en-GB"), which it rejects. Drop the
     region. Keeps this model-specific quirk inside the adapter (house rule)."""
     return language.split("-")[0] if language else None
+
+
 _PROGRESS_INTERVAL_SECONDS = 1.0
 # Heartbeat cadence while the model loads. A cold load is a few seconds from
 # disk but can be minutes on first use (weight download), during which there
@@ -167,11 +169,7 @@ class FasterWhisperAdapter:
         # client delivers it (audio-push: client owns capture + conversion).
         # We reject mismatches rather than resample — symmetric across rate,
         # channels and width, and no silent low-quality conversion here.
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != WHISPER_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != WHISPER_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -207,9 +205,7 @@ class FasterWhisperAdapter:
                 await emit(TranscriptionDone(text=""))
                 return
 
-            segments = await asyncio.to_thread(
-                self._transcribe, model, bytes(buffered), config
-            )
+            segments = await asyncio.to_thread(self._transcribe, model, bytes(buffered), config)
 
             want_timestamps = config.timestamp_granularity is not None
             finals: list[str] = []
@@ -246,9 +242,7 @@ class FasterWhisperAdapter:
             await emit(TranscriptionDone(text="".join(finals)))
         except Exception as exc:
             await emit(
-                TranscriptionError(
-                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
-                )
+                TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
     async def _run_streaming_session(

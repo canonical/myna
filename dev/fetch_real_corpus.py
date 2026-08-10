@@ -30,7 +30,12 @@ from pathlib import Path
 
 # Reuse the synthetic tier's WAV writer + seeded-noise mixer (same house format).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_fixtures import NOISE_SEED, NOISE_SNR_DB, mix_noise, write_wav  # noqa: E402
+from generate_fixtures import (  # noqa: E402
+    NOISE_SEED,
+    NOISE_SNR_DB,
+    mix_noise,
+    write_wav,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RATE = 16_000
@@ -70,9 +75,23 @@ def download(url: str, dest: Path) -> Path:
 def decode_flac(data: bytes) -> array:
     """Decode FLAC bytes to 16 kHz mono S16LE samples via ffmpeg (piped)."""
     pcm = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-i", "pipe:0",
-         "-ar", str(RATE), "-ac", "1", "-f", "s16le", "pipe:1"],
-        input=data, stdout=subprocess.PIPE, check=True,
+        [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-ar",
+            str(RATE),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ],
+        input=data,
+        stdout=subprocess.PIPE,
+        check=True,
     ).stdout
     return array("h", pcm)
 
@@ -106,28 +125,52 @@ def build(out_dir: Path, tar_path: Path, n: int) -> Path:
 
     def add(clip_id: str, samples: array, txt: str, category: str, source: str) -> None:
         duration = write_wav(audio_dir / f"{clip_id}.wav", samples, RATE)
-        entries.append({
-            "id": clip_id, "path": f"audio/{clip_id}.wav", "text": txt,
-            "language": "en", "category": category,
-            "duration_seconds": round(duration, 3), "sample_rate_hz": RATE,
-            "channels": 1, "source": source, "license": LICENSE,
-        })
+        entries.append(
+            {
+                "id": clip_id,
+                "path": f"audio/{clip_id}.wav",
+                "text": txt,
+                "language": "en",
+                "category": category,
+                "duration_seconds": round(duration, 3),
+                "sample_rate_hz": RATE,
+                "channels": 1,
+                "source": source,
+                "license": LICENSE,
+            }
+        )
         print(f"  {clip_id:<30} {category:<6} {duration:6.2f}s")
 
     for utt_id, samples, txt in clips:
-        add(f"librispeech-{utt_id}", samples, txt, "quiet", f"librispeech:dev-clean:{utt_id}")
+        add(
+            f"librispeech-{utt_id}",
+            samples,
+            txt,
+            "quiet",
+            f"librispeech:dev-clean:{utt_id}",
+        )
     for utt_id, samples, txt in clips[:N_NOISE]:
-        add(f"librispeech-{utt_id}-noise-snr{int(NOISE_SNR_DB)}",
-            mix_noise(samples, NOISE_SNR_DB, NOISE_SEED), txt, "noise",
-            f"librispeech:dev-clean:{utt_id}+noise")
+        add(
+            f"librispeech-{utt_id}-noise-snr{int(NOISE_SNR_DB)}",
+            mix_noise(samples, NOISE_SNR_DB, NOISE_SEED),
+            txt,
+            "noise",
+            f"librispeech:dev-clean:{utt_id}+noise",
+        )
 
     (out_dir / "NOTICE").write_text(NOTICE, encoding="utf-8")
     manifest = out_dir / "manifest.json"
     manifest.write_text(
         json.dumps(
-            {"schema_version": 1, "generator": "dev/fetch_real_corpus.py", "clips": entries},
-            indent=2, ensure_ascii=False,
-        ) + "\n",
+            {
+                "schema_version": 1,
+                "generator": "dev/fetch_real_corpus.py",
+                "clips": entries,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return manifest
@@ -137,8 +180,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "corpus" / "real")
     parser.add_argument("--cache", type=Path, default=REPO_ROOT / ".cache" / "librispeech")
-    parser.add_argument("--tarball", type=Path, default=None,
-                        help="use an already-downloaded dev-clean.tar.gz instead of fetching")
+    parser.add_argument(
+        "--tarball",
+        type=Path,
+        default=None,
+        help="use an already-downloaded dev-clean.tar.gz instead of fetching",
+    )
     parser.add_argument("-n", type=int, default=12, help="number of clean clips (default 12)")
     args = parser.parse_args()
 

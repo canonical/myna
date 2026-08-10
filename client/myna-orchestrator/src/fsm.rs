@@ -683,7 +683,9 @@ mod tests {
         }
         // Idempotent after terminal.
         assert!(fsm
-            .on_input(Input::CaptureFailed { message: "again".into() })
+            .on_input(Input::CaptureFailed {
+                message: "again".into()
+            })
             .is_empty());
     }
 

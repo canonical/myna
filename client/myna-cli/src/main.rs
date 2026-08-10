@@ -22,9 +22,9 @@
 //! `myna-audio` (native PipeWire backend): capture starts at press and buffers in
 //! the pre-ready ring while the model loads, so nothing said is lost.
 
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::io::Write as _;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -112,25 +112,34 @@ fn parse_args() -> Result<Args, String> {
                 std::process::exit(0);
             }
             "--socket" => socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
-            "--clip" => clips.push(Clip { path: PathBuf::from(next(&mut it, "--clip")?), reference: None }),
+            "--clip" => clips.push(Clip {
+                path: PathBuf::from(next(&mut it, "--clip")?),
+                reference: None,
+            }),
             "--corpus" => load_corpus(&PathBuf::from(next(&mut it, "--corpus")?), &mut clips)?,
             "--mic" => mic = true,
             "--target" => target = Some(next(&mut it, "--target")?),
             "--language" => language = Some(next(&mut it, "--language")?),
-            "--dialect" => dialect = match next(&mut it, "--dialect")?.as_str() {
-                "internal" => Dialect::Internal,
-                "ie115" => Dialect::Ie115,
-                other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
-            },
+            "--dialect" => {
+                dialect = match next(&mut it, "--dialect")?.as_str() {
+                    "internal" => Dialect::Internal,
+                    "ie115" => Dialect::Ie115,
+                    other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
+                }
+            }
             "--base64-audio" => base64_audio = true,
             "--ws-path" => ws_path = Some(next(&mut it, "--ws-path")?),
             "--show-unstable" => show_unstable = true,
-            "--mode" => mode = Some(match next(&mut it, "--mode")?.as_str() {
-                "auto" => myna_core::StreamingMode::Auto,
-                "streaming" => myna_core::StreamingMode::Streaming,
-                "batch" => myna_core::StreamingMode::Batch,
-                other => return Err(format!("unknown mode: {other} (want auto|streaming|batch)")),
-            }),
+            "--mode" => {
+                mode = Some(match next(&mut it, "--mode")?.as_str() {
+                    "auto" => myna_core::StreamingMode::Auto,
+                    "streaming" => myna_core::StreamingMode::Streaming,
+                    "batch" => myna_core::StreamingMode::Batch,
+                    other => {
+                        return Err(format!("unknown mode: {other} (want auto|streaming|batch)"))
+                    }
+                })
+            }
             "--no-realtime" => realtime = false,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
@@ -140,7 +149,9 @@ fn parse_args() -> Result<Args, String> {
         return Err("--mic and --clip/--corpus are mutually exclusive".into());
     }
     if !mic && clips.is_empty() {
-        return Err(format!("one of --clip / --corpus / --mic is required\n\n{USAGE}"));
+        return Err(format!(
+            "one of --clip / --corpus / --mic is required\n\n{USAGE}"
+        ));
     }
     if target.is_some() && !mic {
         return Err("--target only applies to --mic".into());
@@ -155,7 +166,19 @@ fn parse_args() -> Result<Args, String> {
     // setting (Auto default) is resolved against the tier gate below.
     let mode = mode.unwrap_or_else(|| myna_core::Settings::load().streaming_mode);
 
-    Ok(Args { socket, clips, mic, target, language, realtime, dialect, base64_audio, ws_path, show_unstable, mode })
+    Ok(Args {
+        socket,
+        clips,
+        mic,
+        target,
+        language,
+        realtime,
+        dialect,
+        base64_audio,
+        ws_path,
+        show_unstable,
+        mode,
+    })
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -166,13 +189,19 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
 /// `dev/fetch_real_corpus.py`) and append its clips.
 fn load_corpus(dir: &std::path::Path, clips: &mut Vec<Clip>) -> Result<(), String> {
     let manifest = dir.join("manifest.json");
-    let text = std::fs::read_to_string(&manifest)
-        .map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let text =
+        std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let doc: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("{}: {e}", manifest.display()))?;
-    let entries = doc.get("clips").and_then(|c| c.as_array()).ok_or("manifest has no clips[]")?;
+    let entries = doc
+        .get("clips")
+        .and_then(|c| c.as_array())
+        .ok_or("manifest has no clips[]")?;
     for entry in entries {
-        let rel = entry.get("path").and_then(|p| p.as_str()).ok_or("clip missing path")?;
+        let rel = entry
+            .get("path")
+            .and_then(|p| p.as_str())
+            .ok_or("clip missing path")?;
         clips.push(Clip {
             path: dir.join(rel),
             reference: entry.get("text").and_then(|t| t.as_str()).map(String::from),
@@ -276,7 +305,11 @@ async fn render_meter(mut stats: watch::Receiver<AudioStats>) {
             })
             .collect();
 
-        let db = if s.rms > 1e-7 { 20.0 * s.rms.log10() } else { -99.0f32 };
+        let db = if s.rms > 1e-7 {
+            20.0 * s.rms.log10()
+        } else {
+            -99.0f32
+        };
         let clip = if s.clipped { '!' } else { ' ' };
         print!("\r   ▐{bar}▌ {:>5.1} dBFS{clip}", db);
         let _ = std::io::stdout().flush();
@@ -297,7 +330,10 @@ struct UnstableFilter<T> {
 impl<T: TextSink> TextSink for UnstableFilter<T> {
     async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
         if !self.show_unstable
-            && matches!(event, myna_orchestrator::fsm::OrchestratorEvent::Unstable(_))
+            && matches!(
+                event,
+                myna_orchestrator::fsm::OrchestratorEvent::Unstable(_)
+            )
         {
             return; // FR-007: unstable text is never shown by default
         }
@@ -331,8 +367,8 @@ fn resolve_display_mode(requested: myna_core::StreamingMode) -> myna_core::Strea
     }
     let hardware = std::env::var("MYNA_HARDWARE_TIER")
         .unwrap_or_else(|_| format!("{}-cpu-generic", std::env::consts::ARCH));
-    let table_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../results/streaming-tiers.json");
+    let table_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../results/streaming-tiers.json");
     let table = std::fs::read_to_string(&table_path)
         .ok()
         .and_then(|text| TierTable::from_json(&text).ok())
@@ -346,7 +382,11 @@ fn resolve_display_mode(requested: myna_core::StreamingMode) -> myna_core::Strea
         .filter(|a| a.hardware == hardware)
         .any(|a| a.rtf < myna_core::DEFAULT_RTF_THRESHOLD);
     let _ = resolve_mode; // gate semantics pinned by unit tests in myna-core
-    if viable { StreamingMode::Streaming } else { StreamingMode::Batch }
+    if viable {
+        StreamingMode::Streaming
+    } else {
+        StreamingMode::Batch
+    }
 }
 
 /// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
@@ -382,8 +422,14 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 
     let resolved = resolve_display_mode(args.mode);
     println!("mode: {:?}", resolved);
-    let mut streaming_sink = UnstableFilter { inner: StdoutSink, show_unstable: args.show_unstable };
-    let mut batch_sink = BatchDisplay(UnstableFilter { inner: StdoutSink, show_unstable: args.show_unstable });
+    let mut streaming_sink = UnstableFilter {
+        inner: StdoutSink,
+        show_unstable: args.show_unstable,
+    };
+    let mut batch_sink = BatchDisplay(UnstableFilter {
+        inner: StdoutSink,
+        show_unstable: args.show_unstable,
+    });
     let mut exit = ExitCode::SUCCESS;
 
     for clip in &args.clips {
@@ -400,7 +446,10 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
                 continue;
             }
         };
-        let config = SessionConfig { language: args.language.clone(), ..Default::default() };
+        let config = SessionConfig {
+            language: args.language.clone(),
+            ..Default::default()
+        };
         let outcome = match resolved {
             myna_core::StreamingMode::Batch => {
                 run_dictation(&backend, config, source, &mut batch_sink).await
@@ -428,7 +477,10 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let mut trigger = StdinTrigger::new();
 
-    println!("dictating to {} — press Enter to speak, Enter again to stop, Ctrl-D to quit", args.socket.display());
+    println!(
+        "dictating to {} — press Enter to speak, Enter again to stop, Ctrl-D to quit",
+        args.socket.display()
+    );
 
     loop {
         // Idle: wait for a Press (skip stray releases; EOF quits).
@@ -451,7 +503,10 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         println!("── mic: capturing (Enter to stop)");
         let mic_stats = source.stats();
         let stop = source.stop_handle();
-        let config = SessionConfig { language: args.language.clone(), ..Default::default() };
+        let config = SessionConfig {
+            language: args.language.clone(),
+            ..Default::default()
+        };
 
         // Start the VU meter: runs as a background task, writes \r bars,
         // and clears the line when the stats sender drops (session ends).

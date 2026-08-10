@@ -100,7 +100,7 @@ class LocalAgreement:
             prev_words = [w.text.strip().lower() for w in last.words]
             curr_words = [w.text.strip().lower() for w in current.words]
             matcher = difflib.SequenceMatcher(a=prev_words, b=curr_words, autojunk=False)
-            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            for tag, i1, i2, j1, _j2 in matcher.get_opcodes():
                 if tag != "equal":
                     break  # longest *prefix* agreement only
                 for k in range(i2 - i1):

@@ -162,11 +162,7 @@ class SherpaAdapter:
         fmt = config.audio_format
         # Audio-push invariant: the client owns capture + conversion; we
         # advertise the accepted format and reject mismatches, never resample.
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != SHERPA_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != SHERPA_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -208,9 +204,7 @@ class SherpaAdapter:
             await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(
-                TranscriptionError(
-                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
-                )
+                TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
     @staticmethod
@@ -262,9 +256,7 @@ class SherpaAdapter:
 
         async for chunk in audio:
             samples = np.frombuffer(chunk.data, dtype=np.int16).astype(np.float32) / 32768.0
-            endpoint, text = await asyncio.to_thread(
-                self._push, recognizer, stream, samples
-            )
+            endpoint, text = await asyncio.to_thread(self._push, recognizer, stream, samples)
             if endpoint:
                 await commit(text)
             elif text and text != last_unstable:

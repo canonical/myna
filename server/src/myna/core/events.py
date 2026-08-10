@@ -53,10 +53,9 @@ which carry a ``"type"`` key.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from enum import Enum
+from dataclasses import asdict, dataclass
+from enum import StrEnum
 from typing import Any, ClassVar
-
 
 # progress.phase values
 PHASE_PREPARING = "preparing"  # model loading; client should show "loading…"
@@ -65,12 +64,13 @@ PHASE_TRANSCRIBING = "transcribing"  # audio being processed
 
 
 # Disposition enum for streaming mode (T04, feature 007-streaming-mode)
-class Disposition(str, Enum):
+class Disposition(StrEnum):
     """Discriminant for committed vs unstable text in streaming transcription.
-    
+
     - COMMITTED: Text is final, append-only, safe to inject into text field
     - UNSTABLE: Text is provisional, may be revised or superseded
     """
+
     COMMITTED = "committed"
     UNSTABLE = "unstable"
 
@@ -135,7 +135,12 @@ TranscriptionEvent = (
 
 _EVENT_TYPES: dict[str, type] = {
     cls.type: cls
-    for cls in (TranscriptionProgress, TranscriptionFinal, TranscriptionDone, TranscriptionError)
+    for cls in (
+        TranscriptionProgress,
+        TranscriptionFinal,
+        TranscriptionDone,
+        TranscriptionError,
+    )
 }
 
 
@@ -152,4 +157,4 @@ def event_from_wire(wire: dict[str, Any]) -> TranscriptionEvent | None:
     data = dict(wire.get("data") or {})
     if "segments" in data:
         data["segments"] = tuple(Segment(**s) for s in data["segments"])
-    return cls(**data)
+    return cls(**data)  # type: ignore[no-any-return]

@@ -23,24 +23,36 @@ from myna.testbed.sources import SilenceSource
 def streaming_script() -> tuple[ScriptStep, ...]:
     """A scripted streaming session: 3 committed segments then done."""
     return (
-        ScriptStep(0.0, TranscriptionFinal(
-            text="Many little wrinkles ",
-            disposition=Disposition.COMMITTED,
-            segment_index=0,
-        )),
-        ScriptStep(0.05, TranscriptionFinal(
-            text="gathered between his eyes ",
-            disposition=Disposition.COMMITTED,
-            segment_index=1,
-        )),
-        ScriptStep(0.05, TranscriptionFinal(
-            text="as he contemplated this.",
-            disposition=Disposition.COMMITTED,
-            segment_index=2,
-        )),
-        ScriptStep(0.05, TranscriptionDone(
-            text="Many little wrinkles gathered between his eyes as he contemplated this."
-        )),
+        ScriptStep(
+            0.0,
+            TranscriptionFinal(
+                text="Many little wrinkles ",
+                disposition=Disposition.COMMITTED,
+                segment_index=0,
+            ),
+        ),
+        ScriptStep(
+            0.05,
+            TranscriptionFinal(
+                text="gathered between his eyes ",
+                disposition=Disposition.COMMITTED,
+                segment_index=1,
+            ),
+        ),
+        ScriptStep(
+            0.05,
+            TranscriptionFinal(
+                text="as he contemplated this.",
+                disposition=Disposition.COMMITTED,
+                segment_index=2,
+            ),
+        ),
+        ScriptStep(
+            0.05,
+            TranscriptionDone(
+                text="Many little wrinkles gathered between his eyes as he contemplated this."
+            ),
+        ),
     )
 
 
@@ -50,6 +62,7 @@ def _source() -> SilenceSource:
 
 
 # --- T017/T018: streaming emission delivers committed deltas with disposition ---
+
 
 @pytest.mark.asyncio
 async def test_streaming_emits_committed_deltas_with_disposition():
@@ -75,6 +88,7 @@ async def test_streaming_emits_committed_deltas_with_disposition():
 
 # --- T019: committed-text invariant (append-only, FR-005/FR-009) ---
 
+
 @pytest.mark.asyncio
 async def test_committed_concatenation_equals_final():
     """The concatenation of all committed segments equals the final transcript."""
@@ -89,8 +103,7 @@ async def test_committed_concatenation_equals_final():
     committed = "".join(
         te.event.text
         for te in record.events
-        if te.event.type == "transcription.final"
-        and te.event.disposition == Disposition.COMMITTED
+        if te.event.type == "transcription.final" and te.event.disposition == Disposition.COMMITTED
     )
     assert committed == record.transcript
     assert record.metrics.commit_stability is True

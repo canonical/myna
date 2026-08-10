@@ -44,7 +44,7 @@ pub use fsm::{
     Action, DropReason, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome,
     SessionState,
 };
+pub use myna_core;
 pub use runner::run_dictation;
 pub use sink::{CollectingSink, StdoutSink, TextSink};
 pub use trigger::{ScriptedTrigger, StdinTrigger, Trigger, TriggerEdge};
-pub use myna_core;

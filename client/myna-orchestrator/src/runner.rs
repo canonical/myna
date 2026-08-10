@@ -19,8 +19,8 @@ use crate::backend::{BackendClient, BackendError};
 use crate::driver::{run_session, OrchestratorInput};
 use crate::fsm::{OrchestratorEvent, SessionOutcome};
 use crate::sink::TextSink;
-use myna_core::SessionConfig;
 use futures_util::StreamExt;
+use myna_core::SessionConfig;
 
 /// Capacity of the audio backlog between the source and the FSM before
 /// backpressure applies — the "bounded in-memory buffer" invariant (~1.6 s at
@@ -84,7 +84,10 @@ where
                         );
                     }
                     if in_tx.send(OrchestratorInput::Audio(chunk)).await.is_err() {
-                        myna_core::dbg_log!("capture", "FSM gone; stop capturing at {chunks} chunks");
+                        myna_core::dbg_log!(
+                            "capture",
+                            "FSM gone; stop capturing at {chunks} chunks"
+                        );
                         return; // FSM already terminal; stop capturing
                     }
                 }
@@ -93,7 +96,9 @@ where
                     // swallow it as a bare abort (the mic-unavailable case).
                     myna_core::dbg_log!("capture", "capture fault: {fault}");
                     let _ = in_tx
-                        .send(OrchestratorInput::CaptureFailed { message: fault.to_string() })
+                        .send(OrchestratorInput::CaptureFailed {
+                            message: fault.to_string(),
+                        })
                         .await;
                     return;
                 }
@@ -191,8 +196,9 @@ mod tests {
         let backend = FakeBackend::commit_drain();
         let mut sink = CollectingSink::default();
 
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
 
         assert_eq!(
             outcome,
@@ -200,8 +206,14 @@ mod tests {
                 transcript: "the quick brown fox jumps over the lazy dog.".into()
             }
         );
-        assert_eq!(sink.finals(), vec!["the quick brown fox", "jumps over the lazy dog."]);
-        assert_eq!(sink.done().as_deref(), Some("the quick brown fox jumps over the lazy dog."));
+        assert_eq!(
+            sink.finals(),
+            vec!["the quick brown fox", "jumps over the lazy dog."]
+        );
+        assert_eq!(
+            sink.done().as_deref(),
+            Some("the quick brown fox jumps over the lazy dog.")
+        );
         std::fs::remove_file(&path).ok();
     }
 
@@ -211,7 +223,9 @@ mod tests {
     #[tokio::test]
     async fn streaming_committed_deltas_flow_to_sink_progressively() {
         use crate::backend::fake::FakeStep;
-        use myna_core::{Disposition, Progress, TranscriptionEvent, TranscriptionFinal, PHASE_READY};
+        use myna_core::{
+            Disposition, Progress, TranscriptionEvent, TranscriptionFinal, PHASE_READY,
+        };
 
         let committed = |text: &str, i: u32| {
             TranscriptionEvent::Final(TranscriptionFinal {
@@ -247,12 +261,15 @@ mod tests {
         let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.1);
         let mut sink = CollectingSink::default();
 
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
 
         assert_eq!(
             outcome,
-            SessionOutcome::Completed { transcript: "Many little wrinkles".into() }
+            SessionOutcome::Completed {
+                transcript: "Many little wrinkles".into()
+            }
         );
         // Committed segments reached the sink progressively, in order.
         assert_eq!(sink.finals(), vec!["Many ", "little wrinkles "]);
@@ -276,16 +293,16 @@ mod tests {
         use myna_audio::{CaptureSource, ScriptedBackend, Step};
         use std::time::Duration;
 
-        let backend_script =
-            ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(300))]);
+        let backend_script = ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(300))]);
         let source = CaptureSource::builder(AudioFormat::default())
             .backend(Box::new(backend_script))
             .build();
         let backend = FakeBackend::commit_drain();
         let mut sink = CollectingSink::default();
 
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
 
         assert_eq!(
             outcome,
@@ -304,8 +321,9 @@ mod tests {
         let backend = FakeBackend::happy_path();
         let mut sink = CollectingSink::default();
         // Pass a deliberately empty config; the runner fills audio_format.
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
         assert!(matches!(outcome, SessionOutcome::Completed { .. }));
         assert_eq!(fmt, AudioFormat::default());
         std::fs::remove_file(&path).ok();

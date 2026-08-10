@@ -35,6 +35,6 @@ pub use events::{
     TranscriptionFinal, WireError, PHASE_PREPARING, PHASE_READY, PHASE_TRANSCRIBING,
 };
 pub use protocol::{is_supported, PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS};
+pub use session::SessionConfig;
 pub use settings::{resolve_mode, Settings};
 pub use tier::{streaming_viable, TierAssessment, TierTable, DEFAULT_RTF_THRESHOLD};
-pub use session::SessionConfig;

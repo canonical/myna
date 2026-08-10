@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from typing import Any
 
 from myna.core.audio import AudioFormat, PcmChunk
 from myna.core.events import (
@@ -94,21 +95,24 @@ _ERROR_TO_IE115 = {
 
 def session_config_to_ie115(
     config: SessionConfig, *, model: str | None = None, streaming: bool | None = None
-) -> dict:
+) -> dict[str, Any]:
     """Flat ``SessionConfig`` -> the nested IE115 ``session`` object (the body of
     ``session.update`` / ``session.created`` / ``session.updated``)."""
-    transcription: dict = {}
+    transcription: dict[str, Any] = {}
     if model is not None:
         transcription["model"] = model
     if config.language is not None:
         transcription["language"] = config.language
     if config.prompt is not None:
         transcription["prompt"] = config.prompt  # note §7.3: kept here, not top-level
-    session: dict = {
+    session: dict[str, Any] = {
         "type": "realtime",
         "audio": {
             "input": {
-                "format": {"type": "audio/pcm", "rate": config.audio_format.sample_rate_hz},
+                "format": {
+                    "type": "audio/pcm",
+                    "rate": config.audio_format.sample_rate_hz,
+                },
                 "transcription": transcription,
             }
         },
@@ -119,7 +123,7 @@ def session_config_to_ie115(
     return session
 
 
-def session_config_from_ie115(session: dict) -> SessionConfig:
+def session_config_from_ie115(session: dict[str, Any]) -> SessionConfig:
     """Nested IE115 ``session`` object -> flat ``SessionConfig``. Channels/width
     are not expressible in IE115's ``format`` (note §7.2) so we assume our only
     accepted shape: mono 16-bit PCM."""
@@ -137,15 +141,18 @@ def session_config_from_ie115(session: dict) -> SessionConfig:
 # --- audio append <-> PcmChunk --------------------------------------------------
 
 
-def append_to_pcm(frame: dict, fmt: AudioFormat) -> PcmChunk:
+def append_to_pcm(frame: dict[str, Any], fmt: AudioFormat) -> PcmChunk:
     """Decode an ``input_audio_buffer.append`` (base64 PCM16) into a PcmChunk."""
     data = base64.b64decode(frame.get("audio") or "")
     return PcmChunk(data=data, format=fmt)
 
 
-def pcm_to_append(chunk: PcmChunk) -> dict:
+def pcm_to_append(chunk: PcmChunk) -> dict[str, Any]:
     """Encode a PcmChunk as an ``input_audio_buffer.append`` frame (base64)."""
-    return {"type": INPUT_AUDIO_APPEND, "audio": base64.b64encode(chunk.data).decode("ascii")}
+    return {
+        "type": INPUT_AUDIO_APPEND,
+        "audio": base64.b64encode(chunk.data).decode("ascii"),
+    }
 
 
 # --- event encode (server side) -------------------------------------------------
@@ -166,11 +173,14 @@ class Ie115Encoder:
             self._item_id = f"item_{uuid.uuid4().hex[:12]}"
         return self._item_id
 
-    def encode(self, event: TranscriptionEvent) -> dict:
+    def encode(self, event: TranscriptionEvent) -> dict[str, Any]:
         """Return the IE115 frame for ``event``. Every event has a frame:
         ``done`` is the utterance's ``completed`` (the connection stays open)."""
         if isinstance(event, TranscriptionProgress):
-            frame = {"type": STATUS_EVENT, "state": _PHASE_TO_STATE.get(event.phase, "transcribing")}
+            frame: dict[str, Any] = {
+                "type": STATUS_EVENT,
+                "state": _PHASE_TO_STATE.get(event.phase, "transcribing"),
+            }
             if event.snippet:  # additive, optional (note §7.5)
                 frame["snippet"] = event.snippet
             return frame
@@ -197,7 +207,10 @@ class Ie115Encoder:
             }
         if isinstance(event, TranscriptionError):
             etype, ecode = _ERROR_TO_IE115.get(event.code, ("server_error", "server_error"))
-            return {"type": ERROR, "error": {"type": etype, "code": ecode, "message": event.message}}
+            return {
+                "type": ERROR,
+                "error": {"type": etype, "code": ecode, "message": event.message},
+            }
         raise ValueError(f"cannot encode event: {event!r}")
 
 
@@ -213,34 +226,42 @@ class Ie115Decoder:
     def __init__(self) -> None:
         self._terminated = False
 
-    def decode(self, frame: dict) -> list[TranscriptionEvent]:
+    def decode(self, frame: dict[str, Any]) -> list[TranscriptionEvent]:
         """Zero or more internal events for one IE115 frame. Control frames
         (``session.created``/``session.updated``) yield nothing."""
         ftype = frame.get("type")
         if ftype in (SESSION_CREATED, SESSION_UPDATED):
             return []
         if ftype == STATUS_EVENT:
-            phase = _STATE_TO_PHASE.get(frame.get("state"), PHASE_TRANSCRIBING)
+            phase = _STATE_TO_PHASE.get(str(frame.get("state") or ""), PHASE_TRANSCRIBING)
             return [TranscriptionProgress(phase=phase, snippet=frame.get("snippet"))]
         if ftype == TRANSCRIPTION_DELTA:
             # Committed, append-only segment text — the IE115 face of our
             # `transcription.final` (streaming contract, streaming.md §3a).
             # Parse disposition field (T12, feature 007); default to committed for backward-compat
             disposition_str = frame.get("disposition", "committed")
-            disposition = Disposition.COMMITTED if disposition_str == "committed" else Disposition.UNSTABLE
+            disposition = (
+                Disposition.COMMITTED if disposition_str == "committed" else Disposition.UNSTABLE
+            )
             segment_index = frame.get("segment_index")  # Optional, only present for committed
-            return [TranscriptionFinal(
-                text=frame.get("delta") or "",
-                disposition=disposition,
-                segment_index=segment_index,
-            )]
+            return [
+                TranscriptionFinal(
+                    text=frame.get("delta") or "",
+                    disposition=disposition,
+                    segment_index=segment_index,
+                )
+            ]
         if ftype == TRANSCRIPTION_COMPLETED:
             self._terminated = True
             return [TranscriptionDone(text=frame.get("transcript", ""))]
         if ftype == ERROR:
             self._terminated = True
             err = frame.get("error") or {}
-            return [TranscriptionError(code=err.get("code", "server_error"), message=err.get("message", ""))]
+            return [
+                TranscriptionError(
+                    code=err.get("code", "server_error"), message=err.get("message", "")
+                )
+            ]
         return []  # unknown/ignored additive frame
 
     def on_close(self) -> list[TranscriptionEvent]:
@@ -260,14 +281,15 @@ class Ie115Decoder:
 
 # --- test helpers (T08-T010, feature 007) ----------------------------------------
 
-def encode_delta(event: TranscriptionFinal, item_id: str) -> dict:
+
+def encode_delta(event: TranscriptionFinal, item_id: str) -> dict[str, Any]:
     """Helper for testing: encode a TranscriptionFinal as an IE115 delta frame."""
     encoder = Ie115Encoder()
     encoder._item_id = item_id  # Override the generated item_id for testing
     return encoder.encode(event)
 
 
-def decode_delta(frame: dict) -> TranscriptionFinal:
+def decode_delta(frame: dict[str, Any]) -> TranscriptionFinal:
     """Helper for testing: decode an IE115 delta frame to TranscriptionFinal."""
     decoder = Ie115Decoder()
     events = decoder.decode(frame)

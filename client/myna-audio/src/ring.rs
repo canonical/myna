@@ -91,8 +91,8 @@ impl Ring {
                 // delivered once via the normal `fault` path in `next`.
                 inner.done = true;
                 if !inner.closed {
-                    let secs = inner.peak_bytes as f64
-                        / (inner.format.bytes_per_second().max(1) as f64);
+                    let secs =
+                        inner.peak_bytes as f64 / (inner.format.bytes_per_second().max(1) as f64);
                     inner.fault = Some(CaptureError::Overloaded(secs));
                 }
                 self.notify.notify_one();
@@ -189,7 +189,11 @@ mod tests {
         while let Some(Ok(c)) = r.next().await {
             got.push(c.data[0]);
         }
-        assert_eq!(got, (0..100).collect::<Vec<u8>>(), "every captured chunk survives");
+        assert_eq!(
+            got,
+            (0..100).collect::<Vec<u8>>(),
+            "every captured chunk survives"
+        );
     }
 
     #[tokio::test]
@@ -216,11 +220,14 @@ mod tests {
         assert_eq!(r.push(chunk(1, 100)), 100);
         assert_eq!(r.push(chunk(2, 100)), 200);
         r.push(chunk(3, 100)); // overflow: latches the fault, does not enqueue
-        // The two accepted chunks drain first...
+                               // The two accepted chunks drain first...
         assert_eq!(r.next().await.unwrap().unwrap().data[0], 1);
         assert_eq!(r.next().await.unwrap().unwrap().data[0], 2);
         // ...then the overload fault, exactly once, then end.
-        assert!(matches!(r.next().await, Some(Err(CaptureError::Overloaded(_)))));
+        assert!(matches!(
+            r.next().await,
+            Some(Err(CaptureError::Overloaded(_)))
+        ));
         assert!(r.next().await.is_none());
     }
 

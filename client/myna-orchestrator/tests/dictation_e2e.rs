@@ -33,8 +33,15 @@ fn repo_root() -> PathBuf {
 }
 
 fn unique_path(suffix: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("myna-orch-t41-{}-{}.{suffix}", std::process::id(), nanos))
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "myna-orch-t41-{}-{}.{suffix}",
+        std::process::id(),
+        nanos
+    ))
 }
 
 /// Write a canonical PCM WAV of `seconds` of silence in the default format.
@@ -66,7 +73,10 @@ fn write_silence_wav(seconds: usize) -> PathBuf {
 fn spawn_fake_server(socket: &Path) -> Option<ServerGuard> {
     let server_bin = repo_root().join("server/.venv/bin/myna-server");
     if !server_bin.exists() {
-        eprintln!("SKIP: {} not found; run `uv sync` first", server_bin.display());
+        eprintln!(
+            "SKIP: {} not found; run `uv sync` first",
+            server_bin.display()
+        );
         return None;
     }
     match Command::new(&server_bin)
@@ -120,7 +130,10 @@ async fn wav_dictation_round_trip_against_real_server() {
             transcript: "The quick brown fox jumps over the lazy dog.".into()
         },
     );
-    assert_eq!(sink.finals(), vec!["The quick brown fox", "jumps over the lazy dog."]);
+    assert_eq!(
+        sink.finals(),
+        vec!["The quick brown fox", "jumps over the lazy dog."]
+    );
 
     std::fs::remove_file(&wav).ok();
 }
@@ -155,7 +168,10 @@ async fn wav_dictation_round_trip_over_ie115_dialect() {
         },
     );
     // Committed segments arrive as IE115 deltas and decode back to finals.
-    assert_eq!(sink.finals(), vec!["The quick brown fox", "jumps over the lazy dog."]);
+    assert_eq!(
+        sink.finals(),
+        vec!["The quick brown fox", "jumps over the lazy dog."]
+    );
 
     std::fs::remove_file(&wav).ok();
 }

@@ -174,7 +174,16 @@ fn ibus_engine_desc() -> Value<'static> {
     let mut b = StructureBuilder::new()
         .add_field("IBusEngineDesc".to_string())
         .add_field(empty_attach());
-    for f in [ENGINE_NAME, "myna dictation", "myna speech-to-text", "en", "GPL", "myna", "", "us"] {
+    for f in [
+        ENGINE_NAME,
+        "myna dictation",
+        "myna speech-to-text",
+        "en",
+        "GPL",
+        "myna",
+        "",
+        "us",
+    ] {
         b = b.add_field(f.to_string());
     }
     b = b.add_field(0u32); // rank
@@ -190,7 +199,16 @@ fn ibus_component() -> Value<'static> {
     let mut b = StructureBuilder::new()
         .add_field("IBusComponent".to_string())
         .add_field(empty_attach());
-    for f in [COMPONENT_NAME, "myna dictation", "1.0", "GPL", "myna", "", "", ""] {
+    for f in [
+        COMPONENT_NAME,
+        "myna dictation",
+        "1.0",
+        "GPL",
+        "myna",
+        "",
+        "",
+        "",
+    ] {
         b = b.add_field(f.to_string());
     }
     b = b.add_field(Vec::<Value>::new()); // observed paths (av)
@@ -238,10 +256,12 @@ fn candidate_dirs() -> Vec<PathBuf> {
         }
     }
     if std::env::var_os("SNAP").is_some() {
-        if let Some(real) = std::env::var("USER")
-            .ok()
-            .and_then(|u| real_home_from_passwd(&u, &std::fs::read_to_string("/etc/passwd").unwrap_or_default()))
-        {
+        if let Some(real) = std::env::var("USER").ok().and_then(|u| {
+            real_home_from_passwd(
+                &u,
+                &std::fs::read_to_string("/etc/passwd").unwrap_or_default(),
+            )
+        }) {
             push_unique(real.join(".config/ibus/bus"));
         }
     }
@@ -261,7 +281,10 @@ fn discover_address() -> Result<String, InjectError> {
         }
     }
     let dirs = candidate_dirs();
-    let first = dirs.first().cloned().unwrap_or_else(|| PathBuf::from("~/.config/ibus/bus"));
+    let first = dirs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("~/.config/ibus/bus"));
     let mut files: Vec<PathBuf> = Vec::new();
     for dir in &dirs {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -298,7 +321,9 @@ fn pick_address(
     let ranked: Vec<&PathBuf> = {
         let matches_display = |p: &&PathBuf| {
             want.is_some_and(|w| {
-                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(w))
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(w))
             })
         };
         let (mut hit, miss): (Vec<&PathBuf>, Vec<&PathBuf>) =
@@ -311,7 +336,9 @@ fn pick_address(
     // socket exists. Remember a stale candidate so we can explain it.
     let mut stale: Option<(String, Option<i64>)> = None;
     for path in ranked {
-        let Ok(text) = std::fs::read_to_string(path) else { continue };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
         let Some(addr) = text.lines().find_map(|l| l.strip_prefix("IBUS_ADDRESS=")) else {
             continue;
         };
@@ -321,8 +348,9 @@ fn pick_address(
             .find_map(|l| l.strip_prefix("IBUS_DAEMON_PID="))
             .and_then(|p| p.trim().parse().ok());
         // The daemon PID is alive (Linux /proc) and the unix socket path exists?
-        let pid_alive =
-            pid.map(|p| PathBuf::from(format!("/proc/{p}")).exists()).unwrap_or(true);
+        let pid_alive = pid
+            .map(|p| PathBuf::from(format!("/proc/{p}")).exists())
+            .unwrap_or(true);
         let sock_ok = addr
             .split("path=")
             .nth(1)
@@ -402,7 +430,11 @@ impl EngineObject {
         myna_core::dbg_log!(
             "inject",
             "IBus SetContentType: purpose={purpose} hints={hints}{}",
-            if is_secure_purpose(purpose) { " (SECURE)" } else { "" }
+            if is_secure_purpose(purpose) {
+                " (SECURE)"
+            } else {
+                ""
+            }
         );
         self.state.purpose.store(purpose, Ordering::SeqCst);
     }
@@ -432,7 +464,9 @@ struct FactoryObject;
 #[zbus::interface(name = "org.freedesktop.IBus.Factory")]
 impl FactoryObject {
     async fn create_engine(&self, _name: String) -> zbus::zvariant::OwnedObjectPath {
-        zbus::zvariant::ObjectPath::try_from(ENGINE_PATH).unwrap().into()
+        zbus::zvariant::ObjectPath::try_from(ENGINE_PATH)
+            .unwrap()
+            .into()
     }
 }
 
@@ -455,7 +489,9 @@ pub struct IbusInjector {
 
 impl std::fmt::Debug for IbusInjector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IbusInjector").field("active", &self.active).finish()
+        f.debug_struct("IbusInjector")
+            .field("active", &self.active)
+            .finish()
     }
 }
 
@@ -489,9 +525,19 @@ impl IbusInjector {
         })
     }
 
-    async fn call(&self, member: &str, body: &(impl serde::Serialize + zbus::zvariant::DynamicType)) -> Result<zbus::Message, InjectError> {
+    async fn call(
+        &self,
+        member: &str,
+        body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
+    ) -> Result<zbus::Message, InjectError> {
         self.conn
-            .call_method(Some(IBUS_SERVICE), IBUS_PATH, Some(IBUS_IFACE), member, body)
+            .call_method(
+                Some(IBUS_SERVICE),
+                IBUS_PATH,
+                Some(IBUS_IFACE),
+                member,
+                body,
+            )
             .await
             .map_err(|e| InjectError::Backend(format!("{member} failed: {e}")))
     }
@@ -523,7 +569,12 @@ impl IbusInjector {
             .await
             .map_err(|e| InjectError::Backend(format!("serve factory: {e}")))?;
         server
-            .at(ENGINE_PATH, EngineObject { state: self.state.clone() })
+            .at(
+                ENGINE_PATH,
+                EngineObject {
+                    state: self.state.clone(),
+                },
+            )
             .await
             .map_err(|e| InjectError::Backend(format!("serve engine: {e}")))?;
         self.objects_served = true;
@@ -539,7 +590,13 @@ impl IbusInjector {
         self.preedit_active = false;
         let _ = self
             .conn
-            .emit_signal(None::<&str>, ENGINE_PATH, ENGINE_IFACE, "HidePreeditText", &())
+            .emit_signal(
+                None::<&str>,
+                ENGINE_PATH,
+                ENGINE_IFACE,
+                "HidePreeditText",
+                &(),
+            )
             .await;
     }
 
@@ -591,7 +648,10 @@ impl Injector for IbusInjector {
         let purpose = self.state.purpose.load(Ordering::SeqCst);
         if is_secure_purpose(purpose) {
             // Refuse and restore immediately — never inject into a secure field.
-            myna_core::dbg_log!("inject", "acquire refused: secure field (purpose={purpose})");
+            myna_core::dbg_log!(
+                "inject",
+                "acquire refused: secure field (purpose={purpose})"
+            );
             self.restore_prior_engine().await;
             return Err(InjectError::SecureField);
         }
@@ -626,7 +686,13 @@ impl Injector for IbusInjector {
             return Err(InjectError::SecureField);
         }
         self.conn
-            .emit_signal(None::<&str>, ENGINE_PATH, ENGINE_IFACE, "CommitText", &(ibus_text(text),))
+            .emit_signal(
+                None::<&str>,
+                ENGINE_PATH,
+                ENGINE_IFACE,
+                "CommitText",
+                &(ibus_text(text),),
+            )
             .await
             .map_err(|e| InjectError::Backend(format!("CommitText failed: {e}")))
     }
@@ -636,7 +702,10 @@ impl Injector for IbusInjector {
         // a known-secure field — preedit is still text in the target.
         let purpose = self.state.purpose.load(Ordering::SeqCst);
         if is_secure_purpose(purpose) {
-            myna_core::dbg_log!("inject", "preedit REFUSED: secure field (purpose={purpose})");
+            myna_core::dbg_log!(
+                "inject",
+                "preedit REFUSED: secure field (purpose={purpose})"
+            );
             return;
         }
         if text.is_empty() {
@@ -702,19 +771,31 @@ mod tests {
     #[test]
     fn preedit_text_is_fully_underlined_and_char_indexed() {
         let v = ibus_preedit_text("héllo w");
-        let Value::Structure(s) = &v else { panic!("IBusText must be a structure") };
+        let Value::Structure(s) = &v else {
+            panic!("IBusText must be a structure")
+        };
         assert_eq!(s.fields()[0], Value::from("IBusText"));
         assert_eq!(s.fields()[2], Value::from("héllo w"));
         // The attribute list is a variant (`v`) wrapping the IBusAttrList
         // structure — not an inline structure (daemon compatibility).
-        let Value::Value(attrs_box) = &s.fields()[3] else { panic!("attrs must be variant-wrapped") };
-        let Value::Structure(attrs) = &**attrs_box else { panic!("attrs structure") };
+        let Value::Value(attrs_box) = &s.fields()[3] else {
+            panic!("attrs must be variant-wrapped")
+        };
+        let Value::Structure(attrs) = &**attrs_box else {
+            panic!("attrs structure")
+        };
         assert_eq!(attrs.fields()[0], Value::from("IBusAttrList"));
-        let Value::Array(list) = &attrs.fields()[2] else { panic!("attr array") };
+        let Value::Array(list) = &attrs.fields()[2] else {
+            panic!("attr array")
+        };
         assert_eq!(list.len(), 1, "exactly one (underline) attribute");
         // `av` elements are variant-wrapped.
-        let Value::Value(inner) = &list[0] else { panic!("attr variant") };
-        let Value::Structure(attr) = &**inner else { panic!("attr structure") };
+        let Value::Value(inner) = &list[0] else {
+            panic!("attr variant")
+        };
+        let Value::Structure(attr) = &**inner else {
+            panic!("attr structure")
+        };
         assert_eq!(attr.fields()[0], Value::from("IBusAttribute"));
         assert_eq!(attr.fields()[2], Value::from(ATTR_TYPE_UNDERLINE));
         assert_eq!(attr.fields()[3], Value::from(ATTR_UNDERLINE_SINGLE));
@@ -731,7 +812,10 @@ mod tests {
         assert!(is_secure_purpose(PURPOSE_PIN));
         // 0 (unknown/default) and ordinary purposes must not refuse.
         for purpose in [0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 255] {
-            assert!(!is_secure_purpose(purpose), "purpose {purpose} must be injectable");
+            assert!(
+                !is_secure_purpose(purpose),
+                "purpose {purpose} must be injectable"
+            );
         }
     }
 
@@ -745,7 +829,10 @@ mod tests {
             real_home_from_passwd("charles", passwd),
             Some(PathBuf::from("/home/charles"))
         );
-        assert_eq!(real_home_from_passwd("root", passwd), Some(PathBuf::from("/root")));
+        assert_eq!(
+            real_home_from_passwd("root", passwd),
+            Some(PathBuf::from("/root"))
+        );
         assert_eq!(real_home_from_passwd("nobody-here", passwd), None);
         // Tolerates blank/garbage lines.
         assert_eq!(real_home_from_passwd("charles", "\ngarbage\n"), None);
@@ -772,8 +859,8 @@ mod tests {
     }
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("myna-ibus-test-{}-{}", std::process::id(), tag));
+        let dir =
+            std::env::temp_dir().join(format!("myna-ibus-test-{}-{}", std::process::id(), tag));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -810,14 +897,20 @@ mod tests {
         let dir = temp_dir("stale");
         std::fs::write(
             dir.join("abc-unix-wayland-0"),
-            format!("IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=2\n", dir.display()),
+            format!(
+                "IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=2\n",
+                dir.display()
+            ),
         )
         .unwrap();
         // PID 2 is not this process but is alive on Linux — use a PID that
         // cannot exist instead.
         std::fs::write(
             dir.join("def-unix-wayland-0"),
-            format!("IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=4194303\n", dir.display()),
+            format!(
+                "IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=4194303\n",
+                dir.display()
+            ),
         )
         .unwrap();
         let files: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -830,5 +923,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-
-

@@ -45,7 +45,10 @@ impl Default for StdinTrigger {
 
 impl StdinTrigger {
     pub fn new() -> Self {
-        Self { lines: BufReader::new(tokio::io::stdin()).lines(), pressed: false }
+        Self {
+            lines: BufReader::new(tokio::io::stdin()).lines(),
+            pressed: false,
+        }
     }
 }
 
@@ -55,7 +58,11 @@ impl Trigger for StdinTrigger {
         match self.lines.next_line().await {
             Ok(Some(_line)) => {
                 self.pressed = !self.pressed;
-                Some(if self.pressed { TriggerEdge::Press } else { TriggerEdge::Release })
+                Some(if self.pressed {
+                    TriggerEdge::Press
+                } else {
+                    TriggerEdge::Release
+                })
             }
             // EOF or a read error both end the trigger.
             Ok(None) | Err(_) => None,
@@ -70,7 +77,9 @@ pub struct ScriptedTrigger {
 
 impl ScriptedTrigger {
     pub fn new(edges: impl IntoIterator<Item = TriggerEdge>) -> Self {
-        Self { edges: edges.into_iter().collect() }
+        Self {
+            edges: edges.into_iter().collect(),
+        }
     }
 }
 

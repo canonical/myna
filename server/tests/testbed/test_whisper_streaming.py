@@ -12,16 +12,18 @@ from pathlib import Path
 
 import pytest
 
-from myna.core import LoopbackClient, SessionConfig
-from myna.testbed import Harness
-from myna.testbed.corpus import load_manifest
-from myna.testbed.whisper import FasterWhisperAdapter
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from test_emission_invariants import (
     assert_append_only_and_complete,
     assert_batch_degenerate,
     assert_unstable_wellformed,
 )
+
+from myna.core import LoopbackClient, SessionConfig
+from myna.testbed import Harness
+from myna.testbed.corpus import load_manifest
+from myna.testbed.whisper import FasterWhisperAdapter
 
 MANIFEST = Path(__file__).parent.parent / "fixtures" / "manifest.json"
 

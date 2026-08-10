@@ -48,19 +48,37 @@ import contextlib
 import json
 import os
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
+from typing import Any, cast
 
-from websockets.asyncio.client import unix_connect
-from websockets.asyncio.server import ServerConnection, unix_serve
+from websockets.asyncio.client import ClientConnection, unix_connect
+from websockets.asyncio.server import Server, ServerConnection, unix_serve
 from websockets.exceptions import ConnectionClosed
 
 from myna.core.audio import AudioFormat, PcmChunk
-from myna.core.capabilities import Capabilities, capabilities_from_wire, capabilities_to_wire
-from myna.core.events import TranscriptionError, TranscriptionEvent, event_from_wire, event_to_wire
-from myna.core.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, is_supported
-from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
-from myna.core.transport import SttService
+from myna.core.capabilities import (
+    Capabilities,
+    capabilities_from_wire,
+    capabilities_to_wire,
+)
+from myna.core.events import (
+    TranscriptionError,
+    TranscriptionEvent,
+    event_from_wire,
+    event_to_wire,
+)
+from myna.core.protocol import (
+    PROTOCOL_VERSION,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    is_supported,
+)
+from myna.core.session import (
+    SessionConfig,
+    session_config_from_wire,
+    session_config_to_wire,
+)
+from myna.core.transport import EventSink, SttService
 from myna.core.wire_ie115 import (
     INPUT_AUDIO_APPEND,
     INPUT_AUDIO_COMMIT,
@@ -114,17 +132,22 @@ def systemd_socket() -> socket.socket | None:
 
 @contextlib.asynccontextmanager
 async def serve_unix(
-    service: SttService, socket_path: Path | str | None = None, *, sock: socket.socket | None = None
-):
+    service: SttService,
+    socket_path: Path | str | None = None,
+    *,
+    sock: socket.socket | None = None,
+) -> AsyncIterator[Server]:
     """Serve ``service`` on a Unix socket; one WebSocket connection per
     session. Use as an async context manager. Either binds ``socket_path``, or
     serves on a pre-bound ``sock`` (e.g. from ``systemd_socket()``)."""
     handler = _SessionHandler(service)
     if sock is not None:
-        async with unix_serve(handler.handle, sock=sock) as server:
+        cm = unix_serve(handler.handle, sock=sock)
+        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
             yield server
     else:
-        async with unix_serve(handler.handle, path=str(socket_path)) as server:
+        cm = unix_serve(handler.handle, path=str(socket_path))
+        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
             yield server
 
 
@@ -181,7 +204,8 @@ class _SessionHandler:
         start = self._parse_start(opening)
         if start is None:
             await ws.close(
-                code=1002, reason="expected session.start, session.update, or capabilities.query"
+                code=1002,
+                reason="expected session.start, session.update, or capabilities.query",
             )
             return
         await self._handle_internal(ws, *start)
@@ -207,7 +231,7 @@ class _SessionHandler:
                 await ws.close()
             return
 
-        def on_text(message: dict, config: SessionConfig) -> tuple[str, PcmChunk | None]:
+        def on_text(message: dict[str, Any], config: SessionConfig) -> tuple[str, PcmChunk | None]:
             return ("finish", None) if message.get("type") == "session.finish" else ("ignore", None)
 
         async def emit(event: TranscriptionEvent) -> None:
@@ -260,7 +284,10 @@ class _SessionHandler:
         with contextlib.suppress(ConnectionClosed):
             await ws.send(
                 json.dumps(
-                    {"type": SESSION_UPDATED, "session": session_config_to_ie115(config, model=model)}
+                    {
+                        "type": SESSION_UPDATED,
+                        "session": session_config_to_ie115(config, model=model),
+                    }
                 )
             )
 
@@ -302,7 +329,8 @@ class _SessionHandler:
                         self.ended = True
                         self.closed = item is None
                         return
-                    yield item
+                    if isinstance(item, PcmChunk):
+                        yield item
 
             async def drain(self) -> None:
                 """Consume to the boundary if the adapter stopped pulling early
@@ -344,7 +372,8 @@ class _SessionHandler:
                     # rather than hang it.
                     await emit(
                         TranscriptionError(
-                            code="internal", message="adapter ended without a terminal event"
+                            code="internal",
+                            message="adapter ended without a terminal event",
                         )
                     )
         finally:
@@ -353,7 +382,14 @@ class _SessionHandler:
                 await reader
             await ws.close()
 
-    async def _pump_session(self, ws, config, *, on_text, emit) -> None:
+    async def _pump_session(
+        self,
+        ws: ServerConnection,
+        config: SessionConfig,
+        *,
+        on_text: Callable[[dict[str, Any], SessionConfig], tuple[str, PcmChunk | None]],
+        emit: EventSink,
+    ) -> None:
         """Internal-dialect session loop (one utterance per connection, server
         closes after the terminal event): binary frames -> PCM; text frames
         dispatched by ``on_text`` (finish/ignore); events out via ``emit``.
@@ -389,7 +425,9 @@ class _SessionHandler:
                 await reader
             await ws.close()
 
-    async def _run_utterance(self, config: SessionConfig, audio, emit) -> None:
+    async def _run_utterance(
+        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+    ) -> None:
         """Run one adapter session, surfacing adapter bugs as a terminal error
         event (shared by both dialects)."""
         try:
@@ -404,7 +442,7 @@ class _SessionHandler:
         if isinstance(frame, bytes):
             return False
         try:
-            return json.loads(frame).get("type") == "capabilities.query"
+            return bool(json.loads(frame).get("type") == "capabilities.query")
         except (ValueError, TypeError, AttributeError):
             return False
 
@@ -425,7 +463,9 @@ class _SessionHandler:
             return None
 
     @staticmethod
-    def _parse_session_update(frame: str | bytes) -> tuple[SessionConfig, str | None] | None:
+    def _parse_session_update(
+        frame: str | bytes,
+    ) -> tuple[SessionConfig, str | None] | None:
         """Parse an IE115 ``session.update`` into ``(config, requested_model)``,
         or ``None`` if the frame isn't one (the shape-sniff hook). The model is
         kept separate from the flat config: it names *which server* should
@@ -451,7 +491,7 @@ class WsUnixClient:
     def __init__(self, socket_path: Path | str) -> None:
         self._socket_path = str(socket_path)
 
-    async def open_session(self, config: SessionConfig) -> "_WsSession":
+    async def open_session(self, config: SessionConfig) -> _WsSession:
         ws = await unix_connect(self._socket_path)
         await ws.send(
             json.dumps(
@@ -479,7 +519,7 @@ class WsUnixClient:
 
 
 class _WsSession:
-    def __init__(self, ws) -> None:
+    def __init__(self, ws: ClientConnection) -> None:
         self._ws = ws
         self._audio_finished = False
         self.protocol_version: str | None = None  # set from session.created
@@ -535,7 +575,7 @@ class WsUnixIe115Client:
         self._socket_path = str(socket_path)
         self._base64_audio = base64_audio
 
-    async def open_session(self, config: SessionConfig) -> "_Ie115Session":
+    async def open_session(self, config: SessionConfig) -> _Ie115Session:
         ws = await unix_connect(self._socket_path)
         await ws.send(
             json.dumps({"type": SESSION_UPDATE, "session": session_config_to_ie115(config)})
@@ -544,7 +584,7 @@ class WsUnixIe115Client:
 
 
 class _Ie115Session:
-    def __init__(self, ws, *, base64_audio: bool) -> None:
+    def __init__(self, ws: ClientConnection, *, base64_audio: bool) -> None:
         self._ws = ws
         self._base64_audio = base64_audio
         self._audio_finished = False

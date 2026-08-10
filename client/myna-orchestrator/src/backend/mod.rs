@@ -77,18 +77,27 @@ impl BackendSink {
     /// bounded — the "bounded in-memory buffer" invariant); errors only if the
     /// session's transport task has gone away.
     pub async fn send_audio(&self, chunk: PcmChunk) -> Result<(), BackendError> {
-        self.tx.send(Outbound::Audio(chunk)).await.map_err(|_| BackendError::Closed)
+        self.tx
+            .send(Outbound::Audio(chunk))
+            .await
+            .map_err(|_| BackendError::Closed)
     }
 
     /// Signal end-of-audio (`session.finish`). The session is *not* over — the
     /// FSM must keep consuming events until a terminal one arrives.
     pub async fn finish(&self) -> Result<(), BackendError> {
-        self.tx.send(Outbound::Finish).await.map_err(|_| BackendError::Closed)
+        self.tx
+            .send(Outbound::Finish)
+            .await
+            .map_err(|_| BackendError::Closed)
     }
 
     /// Abort the session (close without finishing); nothing is committed.
     pub async fn abort(&self) -> Result<(), BackendError> {
-        self.tx.send(Outbound::Abort).await.map_err(|_| BackendError::Closed)
+        self.tx
+            .send(Outbound::Abort)
+            .await
+            .map_err(|_| BackendError::Closed)
     }
 }
 

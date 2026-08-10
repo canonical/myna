@@ -7,7 +7,9 @@ triage removed tail-mutation and fixed-head — see strategies.py.)
 
 from __future__ import annotations
 
-import numpy as np
+import pytest
+
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from myna.testbed.streaming.strategies import (
     Hypothesis,
@@ -44,7 +46,9 @@ def test_local_agreement_no_commit_on_revision():
 def test_local_agreement_rejects_drifted_words():
     s = LocalAgreement()
     h1 = hyp([(f"w{i} ", float(i), i + 0.9) for i in range(6)])
-    shifted = [(t, st + 0.5, e + 0.5) for t, st, e in [(f"w{i} ", float(i), i + 0.9) for i in range(6)]]
+    shifted = [
+        (t, st + 0.5, e + 0.5) for t, st, e in [(f"w{i} ", float(i), i + 0.9) for i in range(6)]
+    ]
     h2 = hyp(shifted)
     assert s.commit_rule(h1, h2, window_end=6.5, force=False) is None  # drift 0.5 s > AGREE_DRIFT_S
 
@@ -103,7 +107,9 @@ def test_silence_cut_fires_on_pause_past_arm():
 def test_silence_cut_ignores_short_pauses():
     cut = SilenceCut()
     # Past the arm, pauses under the 0.5 s cut don't fire.
-    audio = np.concatenate([_speech(16.0), _silence(0.3), _speech(2.0), _silence(0.3), _speech(1.0)])
+    audio = np.concatenate(
+        [_speech(16.0), _silence(0.3), _speech(2.0), _silence(0.3), _speech(1.0)]
+    )
     for end in np.arange(0.5, 19.5, 0.5):
         window = audio[: int(end * RATE)]
         assert cut.observe(window, 0.0, float(end)) is None

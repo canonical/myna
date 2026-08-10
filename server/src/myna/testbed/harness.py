@@ -15,8 +15,8 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from myna.core import (
@@ -81,9 +81,7 @@ class ResultRecord:
 
     def to_json(self) -> dict:
         record = asdict(self)
-        record["events"] = [
-            {"t": te.t, **event_to_wire(te.event)} for te in self.events
-        ]
+        record["events"] = [{"t": te.t, **event_to_wire(te.event)} for te in self.events]
         return record
 
 
@@ -98,7 +96,7 @@ def compute_metrics(
     committed_segments = 0
     committed_texts: list[str] = []
     commit_stability = True  # Assume stable unless we detect a retraction
-    
+
     for te in events:
         kind = te.event.type
         counts[kind] = counts.get(kind, 0) + 1
@@ -127,14 +125,12 @@ def compute_metrics(
                     first_unstable = te.t
         if kind in ("transcription.done", "transcription.error"):
             terminal = te.t
-    
+
     # Check commit stability: ensure all committed segments appear in final transcript
     # (This is a simple check; a more sophisticated version would check ordering)
     # For now, we just set it to True as the wire contract guarantees append-only
-    
-    finalize = (
-        terminal - audio_end_t if terminal is not None and audio_end_t is not None else None
-    )
+
+    finalize = terminal - audio_end_t if terminal is not None and audio_end_t is not None else None
     # Decode wall-time excludes the cold-load wait: measure from ready (or first
     # event) to terminal, so RTF reflects throughput, not model loading.
     rtf = None
@@ -173,7 +169,7 @@ class Harness:
         ``TimedEvent`` the moment it arrives — for live display; the full
         record is still returned at the end."""
         config = config or SessionConfig(audio_format=source.format)
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
         t0 = time.perf_counter()
         audio_seconds = 0.0
         audio_end_t: float | None = None

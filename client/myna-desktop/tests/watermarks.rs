@@ -71,9 +71,19 @@ async fn perf_hermetic_per_segment_overhead_within_tolerance() {
     // and inserted as ONE CommitText on the terminal `done`. The per-segment
     // routing/buffering overhead is what this measures.
     let commits = inject_log.lock().unwrap().commits.clone();
-    assert_eq!(commits.len(), 1, "the back-to-back burst is one coalesced commit");
-    assert!(commits[0].starts_with("segment 0"), "first segment present, in order");
-    assert!(commits[0].ends_with(&format!("segment {}", SEGMENTS - 1)), "last segment present");
+    assert_eq!(
+        commits.len(),
+        1,
+        "the back-to-back burst is one coalesced commit"
+    );
+    assert!(
+        commits[0].starts_with("segment 0"),
+        "first segment present, in order"
+    );
+    assert!(
+        commits[0].ends_with(&format!("segment {}", SEGMENTS - 1)),
+        "last segment present"
+    );
     assert_eq!(controller.state(), DictationState::Idle);
 
     let per_segment = elapsed / SEGMENTS as u32;

@@ -61,8 +61,14 @@ async fn session_against_canonical_adapter_completes() {
         panic!("expected Completed, got {outcome:?}");
     };
     let normalized = transcript.trim().to_lowercase();
-    assert!(normalized.contains("wrinkles"), "unexpected transcript: {transcript}");
+    assert!(
+        normalized.contains("wrinkles"),
+        "unexpected transcript: {transcript}"
+    );
     // The terminal done must be non-empty (their empty-completed-as-reset is
     // handled as a non-terminal, gap #3).
-    assert_eq!(sink.done().as_deref().map(str::trim), Some(transcript.trim()));
+    assert_eq!(
+        sink.done().as_deref().map(str::trim),
+        Some(transcript.trim())
+    );
 }

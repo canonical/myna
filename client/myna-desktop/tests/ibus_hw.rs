@@ -63,12 +63,19 @@ async fn ibus_commit_and_restore() {
     }
 
     // Record the engine active before we touch anything.
-    let probe = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let probe = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     let before = probe.global_engine().await;
-    eprintln!("Connected to IBus daemon (global engine = {})", before.as_deref().unwrap_or("none"));
+    eprintln!(
+        "Connected to IBus daemon (global engine = {})",
+        before.as_deref().unwrap_or("none")
+    );
     drop(probe);
 
-    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let mut injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     match injector.acquire().await {
         Ok(_target) => {}
         Err(myna_desktop::inject::InjectError::Backend(msg)) => {
@@ -90,7 +97,11 @@ async fn ibus_commit_and_restore() {
     injector.end().await;
 
     // I11: if there was a prior global engine, it is restored exactly once.
-    let after = IbusInjector::connect().await.expect("reconnect").global_engine().await;
+    let after = IbusInjector::connect()
+        .await
+        .expect("reconnect")
+        .global_engine()
+        .await;
     if before.is_some() {
         assert_eq!(after, before, "prior global engine must be restored on end");
     } else {
@@ -110,7 +121,9 @@ async fn ibus_preedit_cycle() {
         eprintln!("skipping ibus_preedit_cycle: MYNA_IBUS_TESTS unset");
         return;
     }
-    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let mut injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     match injector.acquire().await {
         Ok(_target) => {}
         Err(myna_desktop::inject::InjectError::Backend(msg)) => {
@@ -125,7 +138,10 @@ async fn ibus_preedit_cycle() {
     injector.set_preedit("hello wor").await;
     injector.set_preedit("").await;
     // Commit clears the region; end is safe after (idempotent hide).
-    injector.commit("hello world").await.expect("commit after preedit");
+    injector
+        .commit("hello world")
+        .await
+        .expect("commit after preedit");
     injector.end().await;
 }
 
@@ -152,7 +168,9 @@ async fn ibus_preedit_visual_probe() {
     }
     eprintln!("preedit probe: click into an editable text field — acquiring in 5 s…");
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let mut injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     match injector.acquire().await {
         Ok(_target) => {}
         Err(other) => panic!("unexpected acquire error: {other:?}"),
@@ -189,7 +207,9 @@ async fn ibus_focus_and_secure_detection() {
         eprintln!("skipping ibus_focus_and_secure_detection: MYNA_IBUS_TESTS unset");
         return;
     }
-    let injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     eprintln!(
         "connected (global engine = {:?}); focus a normal field then a password \
          field and verify FocusOut / SecureField manually (quickstart step 4)",
@@ -221,7 +241,9 @@ async fn ibus_secure_default_path() {
         return;
     }
 
-    let mut injector = IbusInjector::connect().await.expect("connect to IBus daemon");
+    let mut injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
     // Headless: no secure content-type delivered → purpose stays 0 → safe.
     match injector.acquire().await {
         Ok(_target) => {

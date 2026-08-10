@@ -37,14 +37,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="model id/path; default per adapter (whisper: tiny, nemotron: streaming FastConformer)",
+        help=(
+            "model id/path; default per adapter (whisper: tiny, nemotron: streaming FastConformer)"
+        ),
     )
     parser.add_argument(
-        "--device", default=None, choices=("cpu", "cuda"),
+        "--device",
+        default=None,
+        choices=("cpu", "cuda"),
         help="inference device; default per adapter (whisper: cpu, nemotron: cuda)",
     )
-    parser.add_argument("--compute-type", default="default", help="CTranslate2 compute type (whisper)")
-    parser.add_argument("--att-context-size", default=None, help="Nemotron latency dial, e.g. '70,0'")
+    parser.add_argument(
+        "--compute-type", default="default", help="CTranslate2 compute type (whisper)"
+    )
+    parser.add_argument(
+        "--att-context-size", default=None, help="Nemotron latency dial, e.g. '70,0'"
+    )
     parser.add_argument(
         "--socket-mode",
         default="0666",
@@ -53,44 +61,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(
-        "--streaming", action="store_true",
+        "--streaming",
+        action="store_true",
         help="enable streaming mode (progressive committed segments; whisper/nemotron/parakeet)",
     )
     parser.add_argument(
-        "--stream-cadence-s", type=float, default=None,
+        "--stream-cadence-s",
+        type=float,
+        default=None,
         help="seconds of new audio between re-decode ticks (whisper streaming)",
     )
     parser.add_argument(
-        "--stream-window-cap-s", type=float, default=None,
-        help="max uncommitted audio window in seconds before force-commit "
-        "(whisper streaming)",
+        "--stream-window-cap-s",
+        type=float,
+        default=None,
+        help="max uncommitted audio window in seconds before force-commit (whisper streaming)",
     )
     parser.add_argument(
-        "--stream-beam-size", type=int, default=None,
+        "--stream-beam-size",
+        type=int,
+        default=None,
         help="beam size for streaming re-decode ticks (default 1 = greedy; "
         "5 matches batch decode quality at ~5x tick cost)",
     )
     parser.add_argument(
-        "--stream-arm-s", type=float, default=None,
+        "--stream-arm-s",
+        type=float,
+        default=None,
         help="seconds of uncommitted audio before Parakeet SilenceCut can commit "
         "(default 15; lower for earlier chunks)",
     )
     parser.add_argument(
-        "--stream-silence-cut-s", type=float, default=None,
-        help="pause duration in seconds that cuts a Parakeet streaming chunk "
-        "(default 0.5)",
+        "--stream-silence-cut-s",
+        type=float,
+        default=None,
+        help="pause duration in seconds that cuts a Parakeet streaming chunk (default 0.5)",
     )
     parser.add_argument(
-        "--stream-force-cut-s", type=float, default=None,
-        help="max uncommitted audio window before Parakeet force-commits "
-        "(default 60)",
+        "--stream-force-cut-s",
+        type=float,
+        default=None,
+        help="max uncommitted audio window before Parakeet force-commits (default 60)",
     )
     parser.add_argument(
-        "--sleep-idle-seconds", type=float, default=0.0,
+        "--sleep-idle-seconds",
+        type=float,
+        default=0.0,
         help="release the model after N idle seconds (0 = never)",
     )
     parser.add_argument(
-        "--idle-action", default="unload", choices=("unload", "exit"),
+        "--idle-action",
+        default="unload",
+        choices=("unload", "exit"),
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
     )
     return parser
@@ -167,8 +189,7 @@ async def serve(args: argparse.Namespace) -> None:
         adapter = build_adapter(args)
     except ModuleNotFoundError as exc:
         raise SystemExit(
-            f"missing dependency ({exc.name}) — install myna with the "
-            f"'{args.adapter}' extra"
+            f"missing dependency ({exc.name}) — install myna with the '{args.adapter}' extra"
         ) from exc
 
     from myna.core import serve_unix, systemd_socket
@@ -241,13 +262,15 @@ def _validate_streaming_args(args: argparse.Namespace) -> None:
     elif tuning and args.adapter != "whisper":
         # Parakeet's chunked commit has its own constants (SilenceCut); the
         # re-decode tuning flags are whisper-only (contracts/strategy-config.md).
-        log.warning("%s are whisper-only, ignored for --adapter %s", ", ".join(tuning), args.adapter)
+        log.warning(
+            "%s are whisper-only, ignored for --adapter %s",
+            ", ".join(tuning),
+            args.adapter,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     args = build_parser().parse_args(argv)
     _validate_streaming_args(args)
     try:

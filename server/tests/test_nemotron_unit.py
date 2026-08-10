@@ -84,9 +84,7 @@ def test_rejects_any_noncanonical_format(rate, channels, width):
     # The rejection happens before the model loads, so no stub is needed.
     assume((rate, channels, width) != CANONICAL)
     fmt = AudioFormat(sample_rate_hz=rate, channels=channels, sample_width_bytes=width)
-    events = asyncio.run(
-        _drive_session(NemotronAdapter(), SessionConfig(audio_format=fmt), [])
-    )
+    events = asyncio.run(_drive_session(NemotronAdapter(), SessionConfig(audio_format=fmt), []))
     assert len(events) == 1  # rejected outright, nothing else emitted
     assert isinstance(events[0], TranscriptionError)
     assert events[0].code == "unsupported_audio_format"
@@ -248,9 +246,7 @@ async def test_progress_ticks_once_per_second_of_buffered_audio(monkeypatch):
     events = await _drive_session(adapter, SessionConfig(), chunks)
 
     transcribing = [
-        e
-        for e in events
-        if isinstance(e, TranscriptionProgress) and e.phase == PHASE_TRANSCRIBING
+        e for e in events if isinstance(e, TranscriptionProgress) and e.phase == PHASE_TRANSCRIBING
     ]
     assert len(transcribing) == 3
 

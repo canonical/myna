@@ -4,10 +4,8 @@ Tests that the disposition field is correctly encoded/decoded on delta events
 and that backward compatibility is maintained (absent field → committed default).
 """
 
-import pytest
-
 from myna.core import Disposition, TranscriptionFinal
-from myna.core.wire_ie115 import encode_delta, decode_delta
+from myna.core.wire_ie115 import decode_delta, encode_delta
 
 
 def test_disposition_encoding_committed():
@@ -17,9 +15,9 @@ def test_disposition_encoding_committed():
         disposition=Disposition.COMMITTED,
         segment_index=0,
     )
-    
+
     wire_frame = encode_delta(event, item_id="item_001")
-    
+
     assert wire_frame["type"] == "conversation.item.input_audio_transcription.delta"
     assert wire_frame["item_id"] == "item_001"
     assert wire_frame["delta"] == "Hello world"
@@ -33,9 +31,9 @@ def test_disposition_encoding_unstable():
         text="Hello wor",
         disposition=Disposition.UNSTABLE,
     )
-    
+
     wire_frame = encode_delta(event, item_id="item_001")
-    
+
     assert wire_frame["type"] == "conversation.item.input_audio_transcription.delta"
     assert wire_frame["item_id"] == "item_001"
     assert wire_frame["delta"] == "Hello wor"
@@ -53,9 +51,9 @@ def test_disposition_decoding_committed():
         "disposition": "committed",
         "segment_index": 0,
     }
-    
+
     event = decode_delta(wire_frame)
-    
+
     assert isinstance(event, TranscriptionFinal)
     assert event.text == "Hello world"
     assert event.disposition == Disposition.COMMITTED
@@ -71,9 +69,9 @@ def test_disposition_decoding_unstable():
         "delta": "Hello wor",
         "disposition": "unstable",
     }
-    
+
     event = decode_delta(wire_frame)
-    
+
     assert isinstance(event, TranscriptionFinal)
     assert event.text == "Hello wor"
     assert event.disposition == Disposition.UNSTABLE
@@ -89,9 +87,9 @@ def test_backward_compat_absent_disposition():
         "delta": "Hello world",
         # No disposition field - old wire format
     }
-    
+
     event = decode_delta(wire_frame)
-    
+
     assert isinstance(event, TranscriptionFinal)
     assert event.text == "Hello world"
     assert event.disposition == Disposition.COMMITTED  # Default
@@ -105,7 +103,7 @@ def test_multiple_committed_segments():
         TranscriptionFinal(text="world. ", disposition=Disposition.COMMITTED, segment_index=1),
         TranscriptionFinal(text="How are you?", disposition=Disposition.COMMITTED, segment_index=2),
     ]
-    
+
     for i, seg in enumerate(segments):
         frame = encode_delta(seg, item_id=f"item_{i:03d}")
         assert frame["disposition"] == "committed"

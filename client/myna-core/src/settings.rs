@@ -96,7 +96,12 @@ mod tests {
     fn forced_streaming_overrides_a_failing_gate() {
         // RTF 1.08 would gate to batch under Auto, but the user forced it.
         assert_eq!(
-            resolve_mode(StreamingMode::Streaming, &table(), "whisper-tiny", "x86_64-cpu-generic"),
+            resolve_mode(
+                StreamingMode::Streaming,
+                &table(),
+                "whisper-tiny",
+                "x86_64-cpu-generic"
+            ),
             StreamingMode::Streaming
         );
     }
@@ -122,7 +127,12 @@ mod tests {
     fn auto_resolves_through_the_gate() {
         let t = table();
         assert_eq!(
-            resolve_mode(StreamingMode::Auto, &t, "whisper-tiny", "x86_64-cpu-generic"),
+            resolve_mode(
+                StreamingMode::Auto,
+                &t,
+                "whisper-tiny",
+                "x86_64-cpu-generic"
+            ),
             StreamingMode::Batch
         );
         assert_eq!(
@@ -137,7 +147,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("myna-settings-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");
-        let settings = Settings { streaming_mode: StreamingMode::Batch };
+        let settings = Settings {
+            streaming_mode: StreamingMode::Batch,
+        };
         std::fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
         let restored: Settings =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();

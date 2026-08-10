@@ -29,10 +29,25 @@ from myna.core.protocol import (
     SUPPORTED_PROTOCOL_VERSIONS,
     is_supported,
 )
-from myna.core.session import SessionConfig, session_config_from_wire, session_config_to_wire
+from myna.core.session import (
+    SessionConfig,
+    session_config_from_wire,
+    session_config_to_wire,
+)
 from myna.core.streaming import SegmentAccumulator
-from myna.core.transport import EventSink, LoopbackClient, SttClient, SttService, SttSession
-from myna.core.transport_ws import WsUnixClient, WsUnixIe115Client, serve_unix, systemd_socket
+from myna.core.transport import (
+    EventSink,
+    LoopbackClient,
+    SttClient,
+    SttService,
+    SttSession,
+)
+from myna.core.transport_ws import (
+    WsUnixClient,
+    WsUnixIe115Client,
+    serve_unix,
+    systemd_socket,
+)
 
 __all__ = [
     "PHASE_PREPARING",

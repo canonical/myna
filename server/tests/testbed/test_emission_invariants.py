@@ -10,8 +10,9 @@ Events here are the myna.core dataclasses (or TimedEvent-wrapped ones).
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from myna.core import (
     Disposition,
@@ -30,6 +31,7 @@ FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 # ---------------------------------------------------------------------------
 # Invariant checkers (I1–I5, I7) — reusable across backends
 # ---------------------------------------------------------------------------
+
 
 def _finals(events):
     return [e for e in events if isinstance(e, TranscriptionFinal)]
@@ -93,6 +95,7 @@ def assert_batch_degenerate(events):
 # ---------------------------------------------------------------------------
 # Scripted decode + fake audio (no model)
 # ---------------------------------------------------------------------------
+
 
 def scripted_decode(word_per_second: str = "w"):
     """decode(samples, offset) -> Hypothesis with one word per second of audio,
@@ -246,7 +249,9 @@ async def test_chunked_loop_commits_per_pause_and_completes():
     )
     events.append(TranscriptionDone(text=transcript))
     committed = _committed(events)
-    assert len(committed) == 2, f"expected pause commit + tail commit, got {[e.text for e in committed]}"
+    assert len(committed) == 2, (
+        f"expected pause commit + tail commit, got {[e.text for e in committed]}"
+    )
     assert not _unstable(events), "chunked mode emits no unstable by design"
     # The first commit covers the region up to the cut (~17 s of audio at one
     # word per second); the tail covers the rest — no word committed twice.
@@ -259,7 +264,9 @@ async def test_chunked_loop_commits_per_pause_and_completes():
 async def test_batch_degenerate_event_stream():
     """I7 harness sanity: a canonical batch event list passes."""
     events = [
-        TranscriptionFinal(text="hello world", disposition=Disposition.COMMITTED, segment_index=None),
+        TranscriptionFinal(
+            text="hello world", disposition=Disposition.COMMITTED, segment_index=None
+        ),
         TranscriptionDone(text="hello world"),
     ]
     assert_batch_degenerate(events)
@@ -282,7 +289,7 @@ def test_drop_committed_survives_silence_compression():
     committed = ["pre-edit", "is", "actually", "working", "quite", "well"]
     through = 50.0
     words = [
-        Word(text=" well.", start=66.0, end=66.5),   # re-timed old word
+        Word(text=" well.", start=66.0, end=66.5),  # re-timed old word
         Word(text=" My", start=66.6, end=66.9),
         Word(text=" name", start=66.9, end=67.2),
         Word(text=" is", start=67.2, end=67.4),
@@ -317,7 +324,7 @@ def test_drop_committed_keeps_genuine_repetition():
     committed = ["i", "said", "no"]
     through = 10.0
     words = [
-        Word(text=" no", start=9.2, end=9.9),    # old instance (in overlap)
+        Word(text=" no", start=9.2, end=9.9),  # old instance (in overlap)
         Word(text=" No", start=10.5, end=10.9),  # genuinely new
         Word(text=" way.", start=10.9, end=11.4),
     ]
@@ -372,7 +379,21 @@ def test_alignment_drop_abstains_when_claimed_region_exceeds_overlap():
     # and the unbounded search dropped all 9 genuinely-new words. The old
     # region re-transcribes only the window's 1 s overlap — it can never be
     # 9 words — so the alignment must abstain entirely.
-    tail = ["perhaps", "could", "do", "it", "up", "here", "then", "he", "rang", "the", "ball", "no", "answer"]
+    tail = [
+        "perhaps",
+        "could",
+        "do",
+        "it",
+        "up",
+        "here",
+        "then",
+        "he",
+        "rang",
+        "the",
+        "ball",
+        "no",
+        "answer",
+    ]
     new = ["he", "rang", "again", "this", "time", "harder", "still", "no", "answer"]
     assert _alignment_drop(tail, new) == 0
 

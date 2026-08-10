@@ -40,7 +40,9 @@ use myna_desktop::inject::ibus::IbusInjector;
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger};
 use myna_desktop::{DesktopController, Indicator};
-use myna_orchestrator::{run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend};
+use myna_orchestrator::{
+    run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
+};
 use tokio::sync::mpsc;
 
 const USAGE: &str = "\
@@ -99,7 +101,9 @@ fn parse_args() -> Result<Args, String> {
     parse_args_from(std::env::args().skip(1).peekable())
 }
 
-fn parse_args_from(mut it: std::iter::Peekable<impl Iterator<Item = String>>) -> Result<Args, String> {
+fn parse_args_from(
+    mut it: std::iter::Peekable<impl Iterator<Item = String>>,
+) -> Result<Args, String> {
     let mut a = Args::default();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -158,13 +162,14 @@ fn make_session(
         }
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let stop = source.stop_handle();
-        let config = SessionConfig { language: language.clone(), ..Default::default() };
+        let config = SessionConfig {
+            language: language.clone(),
+            ..Default::default()
+        };
         // --dbus: pump the capture level meter onto org.myna.Dictation for the
         // session's lifetime (the pump ends when the source drops its stats
         // sender at session end). Grab the receiver before the source moves.
-        let pump = pump_bus
-            .clone()
-            .map(|bus| (bus, source.stats()));
+        let pump = pump_bus.clone().map(|bus| (bus, source.stats()));
         let readiness = readiness.clone();
         let run: SessionRun = Box::pin(async move {
             if let Some((bus, stats)) = pump {
@@ -213,7 +218,11 @@ async fn run_controller(
     let mut controller = if args.stdin {
         builder.trigger(StdinTrigger::new()).build()
     } else if args.portal {
-        let mode = if args.hold { ActivationMode::Hold } else { ActivationMode::Toggle };
+        let mode = if args.hold {
+            ActivationMode::Hold
+        } else {
+            ActivationMode::Toggle
+        };
         match GlobalShortcutTrigger::bind("dictate", args.shortcut.as_deref(), mode).await {
             Ok(trigger) => builder.trigger(trigger).build(),
             Err(e) => {
@@ -227,7 +236,10 @@ async fn run_controller(
         match ControlTrigger::bind(control_path(&args)) {
             Ok(trigger) => builder.trigger(trigger).build(),
             Err(e) => {
-                eprintln!("cannot bind control socket {}: {e}", control_path(&args).display());
+                eprintln!(
+                    "cannot bind control socket {}: {e}",
+                    control_path(&args).display()
+                );
                 return ExitCode::FAILURE;
             }
         }
@@ -238,17 +250,28 @@ async fn run_controller(
 }
 
 fn banner(args: &Args) {
-    let sock = args.socket.as_ref().map(|s| s.display().to_string()).unwrap_or_default();
+    let sock = args
+        .socket
+        .as_ref()
+        .map(|s| s.display().to_string())
+        .unwrap_or_default();
     if args.stdin {
-        println!("myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)");
+        println!(
+            "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
+        );
     } else if args.portal {
         let verb = if args.hold { "hold" } else { "tap" };
         let key = args.shortcut.as_deref().unwrap_or("your chosen shortcut");
         println!("myna-desktop → {sock} — {verb} {key} to talk (portal)");
     } else {
-        println!("myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop.");
+        println!(
+            "myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop."
+        );
         println!("  if you haven't bound one yet: `myna-desktop --install-shortcut '<Super>t>'");
-        println!("  or bind a GNOME custom shortcut to: `{}`", toggle_command());
+        println!(
+            "  or bind a GNOME custom shortcut to: `{}`",
+            toggle_command()
+        );
     }
 }
 
@@ -281,7 +304,13 @@ fn install_shortcut(accel: &str) -> ExitCode {
     let kb_schema = format!("{SCHEMA}.custom-keybinding:{PATH}");
     let command = toggle_command();
 
-    let gset = |args: &[&str]| Command::new("gsettings").args(args).status().map(|s| s.success()).unwrap_or(false);
+    let gset = |args: &[&str]| {
+        Command::new("gsettings")
+            .args(args)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
 
     // Read the current list and append our path if absent (don't clobber).
     let current = Command::new("gsettings")
@@ -336,7 +365,10 @@ fn main() -> ExitCode {
         return match rt.block_on(send_toggle(&path)) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("cannot reach the myna-desktop daemon at {}: {e}", path.display());
+                eprintln!(
+                    "cannot reach the myna-desktop daemon at {}: {e}",
+                    path.display()
+                );
                 eprintln!("  (is `myna-desktop --socket <path>` running?)");
                 ExitCode::FAILURE
             }
@@ -398,7 +430,9 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
         }
         Err(e) => {
             eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
-            eprintln!("  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale — e.g. a tmux/screen");
+            eprintln!(
+                "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale — e.g. a tmux/screen"
+            );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
             run_controller(args, NotifyIndicator::new(), None, None).await
         }
@@ -436,22 +470,37 @@ mod tests {
     use super::*;
 
     fn args(v: &[&str]) -> std::iter::Peekable<impl Iterator<Item = String>> {
-        v.iter().map(|s| s.to_string()).collect::<Vec<_>>().into_iter().peekable()
+        v.iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .peekable()
     }
 
     #[test]
     fn install_shortcut_requires_accel() {
         // Missing accel must fail — no default.
         let result = parse_args_from(args(&["--install-shortcut"]));
-        assert!(result.is_err(), "--install-shortcut without accel should fail");
-        assert!(result.unwrap_err().contains("--install-shortcut needs a value"));
+        assert!(
+            result.is_err(),
+            "--install-shortcut without accel should fail"
+        );
+        assert!(result
+            .unwrap_err()
+            .contains("--install-shortcut needs a value"));
     }
 
     #[test]
     fn install_shortcut_with_accel_succeeds() {
         let result = parse_args_from(args(&["--install-shortcut", "<Super>t"]));
-        assert!(result.is_ok(), "--install-shortcut with accel should succeed");
-        assert_eq!(result.unwrap().install_shortcut, Some("<Super>t".to_string()));
+        assert!(
+            result.is_ok(),
+            "--install-shortcut with accel should succeed"
+        );
+        assert_eq!(
+            result.unwrap().install_shortcut,
+            Some("<Super>t".to_string())
+        );
     }
 
     #[test]
@@ -460,7 +509,10 @@ mod tests {
         // because --install-shortcut always consumes the next arg.
         let result = parse_args_from(args(&["--install-shortcut", "--not-a-flag"]));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().install_shortcut, Some("--not-a-flag".to_string()));
+        assert_eq!(
+            result.unwrap().install_shortcut,
+            Some("--not-a-flag".to_string())
+        );
     }
 
     #[test]
@@ -473,7 +525,13 @@ mod tests {
 
     #[test]
     fn portal_shortcut_explicit() {
-        let result = parse_args_from(args(&["--portal", "--shortcut", "<Super>t", "--socket", "/tmp/x.sock"]));
+        let result = parse_args_from(args(&[
+            "--portal",
+            "--shortcut",
+            "<Super>t",
+            "--socket",
+            "/tmp/x.sock",
+        ]));
         assert!(result.is_ok());
         assert_eq!(result.unwrap().shortcut, Some("<Super>t".to_string()));
     }

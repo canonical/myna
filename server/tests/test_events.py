@@ -52,7 +52,12 @@ def test_unknown_event_is_ignored_not_rejected():
 
 
 def test_session_config_wire_roundtrip():
-    from myna.core import AudioFormat, SessionConfig, session_config_from_wire, session_config_to_wire
+    from myna.core import (
+        AudioFormat,
+        SessionConfig,
+        session_config_from_wire,
+        session_config_to_wire,
+    )
 
     config = SessionConfig(
         audio_format=AudioFormat(sample_rate_hz=48_000, channels=2),

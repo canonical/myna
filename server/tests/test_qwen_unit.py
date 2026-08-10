@@ -257,9 +257,7 @@ async def test_c_progress_ticks_once_per_second_of_buffered_audio(monkeypatch):
     chunks = [_pcm_seconds(1.0) for _ in range(3)]
     events = await _drive_session(adapter, SessionConfig(), chunks)
     transcribing = [
-        e
-        for e in events
-        if isinstance(e, TranscriptionProgress) and e.phase == PHASE_TRANSCRIBING
+        e for e in events if isinstance(e, TranscriptionProgress) and e.phase == PHASE_TRANSCRIBING
     ]
     assert len(transcribing) == 3
 
@@ -286,9 +284,13 @@ async def test_c_missing_runtime_library_surfaces_actionable_error(monkeypatch):
     # Point at a library that definitely doesn't exist so real snap discovery
     # can't accidentally satisfy the load.
     adapter = QwenCAdapter("/model", lib_path="/nonexistent/libqwen_asr.so")
-    monkeypatch.setattr(qwen_mod, "_resolve_lib_path", lambda explicit: "/nonexistent/libqwen_asr.so")
+    monkeypatch.setattr(
+        qwen_mod, "_resolve_lib_path", lambda explicit: "/nonexistent/libqwen_asr.so"
+    )
     adapter._lib_path = "/nonexistent/libqwen_asr.so"
-    events = await _drive_session(adapter, SessionConfig(audio_format=QWEN_FORMAT), [_pcm_seconds(0.1)])
+    events = await _drive_session(
+        adapter, SessionConfig(audio_format=QWEN_FORMAT), [_pcm_seconds(0.1)]
+    )
     assert isinstance(events[-1], TranscriptionError)
     assert events[-1].code == "runtime_library_missing"
     assert "libqwen_asr.so" in events[-1].message

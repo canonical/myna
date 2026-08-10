@@ -78,10 +78,12 @@ fn state_css_class(state: &IndicatorState) -> &'static str {
 /// on a worker thread and pushes states through the [`GtkIndicator`] paired with
 /// `rx` (see the binary, T030).
 pub fn run_indicator_app(rx: async_channel::Receiver<IndicatorState>) -> glib::ExitCode {
-    use gtk4 as gtk;
     use gtk::prelude::*;
+    use gtk4 as gtk;
 
-    let app = gtk::Application::builder().application_id("com.canonical.Myna.Indicator").build();
+    let app = gtk::Application::builder()
+        .application_id("com.canonical.Myna.Indicator")
+        .build();
 
     app.connect_activate(move |app| {
         let css = gtk::CssProvider::new();

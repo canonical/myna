@@ -42,7 +42,9 @@ async fn portal_bind_succeeds_or_reports_cleanly() {
     )
     .await;
     match bound {
-        Ok(_trigger) => eprintln!("bound test shortcut; hold Super+J to see Press/Release (manual)"),
+        Ok(_trigger) => {
+            eprintln!("bound test shortcut; hold Super+J to see Press/Release (manual)")
+        }
         Err(e) => eprintln!("portal bind reported cleanly: {e}"),
     }
 }

@@ -2,6 +2,7 @@
 name = "myna-orchestrator"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 description = "Session + model-residency FSM for the myna dictation orchestrator (plan T40)."
 

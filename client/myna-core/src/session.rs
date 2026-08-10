@@ -74,7 +74,10 @@ mod tests {
 
     #[test]
     fn round_trip() {
-        let cfg = SessionConfig { language: Some("fr".into()), ..Default::default() };
+        let cfg = SessionConfig {
+            language: Some("fr".into()),
+            ..Default::default()
+        };
         let decoded: SessionConfig = serde_json::from_value(cfg.to_wire()).unwrap();
         assert_eq!(decoded, cfg);
     }

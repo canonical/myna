@@ -24,7 +24,11 @@ pub struct AudioFormat {
 
 impl Default for AudioFormat {
     fn default() -> Self {
-        Self { sample_rate_hz: 16_000, channels: 1, sample_width_bytes: 2 }
+        Self {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            sample_width_bytes: 2,
+        }
     }
 }
 
@@ -44,7 +48,10 @@ pub struct PcmChunk {
 
 impl PcmChunk {
     pub fn new(data: impl Into<Bytes>, format: AudioFormat) -> Self {
-        Self { data: data.into(), format }
+        Self {
+            data: data.into(),
+            format,
+        }
     }
 
     pub fn duration(&self) -> Duration {
@@ -75,7 +82,10 @@ mod tests {
             r#"{"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2}"#,
         )
         .unwrap();
-        assert_eq!(serde_json::to_value(AudioFormat::default()).unwrap(), expected);
+        assert_eq!(
+            serde_json::to_value(AudioFormat::default()).unwrap(),
+            expected
+        );
     }
 
     #[test]

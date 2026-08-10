@@ -66,7 +66,10 @@ struct Dedup {
 
 impl Dedup {
     fn with_mode(mode: ActivationMode) -> Self {
-        Self { mode, ..Default::default() }
+        Self {
+            mode,
+            ..Default::default()
+        }
     }
 
     fn on(&mut self, signal: PortalSignal) -> Option<TriggerEdge> {
@@ -87,7 +90,11 @@ impl Dedup {
                 PortalSignal::Activated if !self.key_down => {
                     self.key_down = true;
                     self.pressed = !self.pressed;
-                    Some(if self.pressed { TriggerEdge::Press } else { TriggerEdge::Release })
+                    Some(if self.pressed {
+                        TriggerEdge::Press
+                    } else {
+                        TriggerEdge::Release
+                    })
                 }
                 PortalSignal::Activated => None, // autorepeat while held — ignore
                 PortalSignal::Deactivated => {
@@ -130,7 +137,11 @@ impl GlobalShortcutTrigger {
         signals: BoxStream<'static, PortalSignal>,
         mode: ActivationMode,
     ) -> Self {
-        Self { signals, dedup: Dedup::with_mode(mode), _keepalive: Keepalive::None }
+        Self {
+            signals,
+            dedup: Dedup::with_mode(mode),
+            _keepalive: Keepalive::None,
+        }
     }
 
     /// Create a portal session on the crate's shared session-bus connection
@@ -251,7 +262,11 @@ mod tests {
     // T1/T2: activate → one Press; deactivate → one Release.
     #[tokio::test]
     async fn activate_then_deactivate_maps_to_press_release() {
-        let edges = drain(trigger(vec![PortalSignal::Activated, PortalSignal::Deactivated])).await;
+        let edges = drain(trigger(vec![
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+        ]))
+        .await;
         assert_eq!(edges, vec![TriggerEdge::Press, TriggerEdge::Release]);
     }
 
@@ -292,7 +307,11 @@ mod tests {
     // A spurious Deactivated (no matching Activated) is ignored.
     #[tokio::test]
     async fn spurious_deactivated_is_ignored() {
-        let edges = drain(trigger(vec![PortalSignal::Deactivated, PortalSignal::Activated])).await;
+        let edges = drain(trigger(vec![
+            PortalSignal::Deactivated,
+            PortalSignal::Activated,
+        ]))
+        .await;
         assert_eq!(edges, vec![TriggerEdge::Press]);
     }
 

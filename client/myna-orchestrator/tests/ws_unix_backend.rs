@@ -36,8 +36,15 @@ fn repo_root() -> PathBuf {
 }
 
 fn unique_socket_path() -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("myna-orch-t39-{}-{}.sock", std::process::id(), nanos))
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "myna-orch-t39-{}-{}.sock",
+        std::process::id(),
+        nanos
+    ))
 }
 
 /// Launch `myna-server --adapter fake` on `socket` as a **direct** child (via
@@ -47,7 +54,10 @@ fn unique_socket_path() -> PathBuf {
 fn spawn_fake_server(socket: &Path) -> Option<ServerGuard> {
     let server_bin = repo_root().join("server/.venv/bin/myna-server");
     if !server_bin.exists() {
-        eprintln!("SKIP: {} not found; run `uv sync` first", server_bin.display());
+        eprintln!(
+            "SKIP: {} not found; run `uv sync` first",
+            server_bin.display()
+        );
         return None;
     }
     let child = Command::new(&server_bin)
@@ -100,7 +110,11 @@ async fn fake_server_round_trip() {
     // scripted `done` waits for end-of-audio, so this exercises the finish path.
     let fmt = AudioFormat::default();
     let chunk = PcmChunk::new(vec![0u8; fmt.bytes_per_second() as usize / 10], fmt); // ~100 ms
-    handle.sink.send_audio(chunk.clone()).await.expect("send audio");
+    handle
+        .sink
+        .send_audio(chunk.clone())
+        .await
+        .expect("send audio");
     handle.sink.send_audio(chunk).await.expect("send audio");
     handle.sink.finish().await.expect("finish");
 
@@ -123,7 +137,10 @@ async fn fake_server_round_trip() {
     assert!(saw_progress, "expected at least one progress event");
     assert_eq!(
         finals,
-        vec!["The quick brown fox".to_string(), "jumps over the lazy dog.".to_string()],
+        vec![
+            "The quick brown fox".to_string(),
+            "jumps over the lazy dog.".to_string()
+        ],
         "scripted final segments from the fake adapter",
     );
     assert_eq!(

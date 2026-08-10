@@ -52,7 +52,9 @@ async def main() -> None:
         if ev.type == "transcription.error":
             # An error carries code + message, not text/snippet — show them, or
             # the failure reads as an empty string and the reason is lost.
-            detail = f"{getattr(ev, 'code', 'internal')}: {getattr(ev, 'message', '') or '(no message)'}"
+            detail = (
+                f"{getattr(ev, 'code', 'internal')}: {getattr(ev, 'message', '') or '(no message)'}"
+            )
         elif ev.type == "transcription.progress":
             phase = getattr(ev, "phase", "")
             snippet = getattr(ev, "snippet", None) or ""
@@ -72,7 +74,11 @@ async def main() -> None:
     m = record.metrics
     print(f"\naudio duration : {record.audio_duration_seconds:.2f}s")
     print(f"first event    : {m.time_to_first_event:.3f}s" if m.time_to_first_event else "")
-    print(f"finalize       : {m.finalize_latency:.3f}s after end of audio" if m.finalize_latency else "")
+    print(
+        f"finalize       : {m.finalize_latency:.3f}s after end of audio"
+        if m.finalize_latency
+        else ""
+    )
     print(f"transcript     : {record.transcript!r}")
     if reference:
         print(f"reference      : {reference!r}")

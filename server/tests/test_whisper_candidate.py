@@ -42,9 +42,7 @@ async def test_unload_drops_the_model():
 
 def test_candidate_labels_a_component_directory_by_leaf():
     # snap passes --model $SNAP_COMPONENTS/model-small
-    cand = FasterWhisperAdapter(
-        "/snap/whisper/components/42/model-small/", device="cuda"
-    ).candidate
+    cand = FasterWhisperAdapter("/snap/whisper/components/42/model-small/", device="cuda").candidate
     assert cand.model == "whisper-model-small"  # leaf, not the absolute path
     assert cand.engine == "faster-whisper-cuda"
 

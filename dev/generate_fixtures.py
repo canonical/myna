@@ -107,8 +107,7 @@ CLIP_SPECS: tuple[ClipSpec, ...] = (
     ),
     ClipSpec(
         "names-people",
-        "Henry Jones met Siobhan O'Connor and Joaquin Marquez outside "
-        "Edinburgh Waverley station.",
+        "Henry Jones met Siobhan O'Connor and Joaquin Marquez outside Edinburgh Waverley station.",
         "en",
         "names",
         "en-us",
@@ -129,7 +128,8 @@ CLIP_SPECS: tuple[ClipSpec, ...] = (
         "en-gb-x-rp",
     ),
     ClipSpec(
-        # NOTE(charles): Longer term there will actually be accented clips. The eSpeak backend certainly *doesn't* have a real Scottish accent ;)
+        # NOTE(charles): Longer term there will actually be accented clips.
+        # The eSpeak backend certainly *doesn't* have a real Scottish accent ;)
         "accent-scotland",
         "The quick brown fox jumps over the lazy dog.",
         "en-GB",
@@ -189,7 +189,14 @@ class EspeakSynthesizer:
         self._buffer.clear()
         encoded = text.encode("utf-8")
         status = self._lib.espeak_Synth(
-            encoded, len(encoded) + 1, 0, self._POS_CHARACTER, 0, self._CHARS_UTF8, None, None
+            encoded,
+            len(encoded) + 1,
+            0,
+            self._POS_CHARACTER,
+            0,
+            self._CHARS_UTF8,
+            None,
+            None,
         )
         if status != 0:
             raise RuntimeError(f"espeak_Synth failed with status {status}")
@@ -273,7 +280,9 @@ def generate(
         print(f"  {clip_id:<24} {category:<12} {duration:6.2f}s")
 
     for spec in clip_specs:
-        samples = resample_linear(synth.synthesize(spec.text, spec.voice), synth.native_rate, TARGET_RATE)
+        samples = resample_linear(
+            synth.synthesize(spec.text, spec.voice), synth.native_rate, TARGET_RATE
+        )
         clean_samples[spec.id] = (spec, samples)
         add_entry(spec.id, spec, samples, spec.category)
 

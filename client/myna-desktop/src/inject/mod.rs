@@ -24,7 +24,10 @@ pub struct InjectionTarget {
 impl InjectionTarget {
     /// Build a target handle (backends construct this from the focused context).
     pub fn new(id: impl Into<String>, secure: bool) -> Self {
-        Self { secure, id: id.into() }
+        Self {
+            secure,
+            id: id.into(),
+        }
     }
 
     /// Whether the focused field is a password/secure field (injection refused).

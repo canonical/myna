@@ -68,9 +68,15 @@ def _gpu_memory_by_pid() -> dict[int, int]:
     """pid -> VRAM MiB, from nvidia-smi. Empty if no GPU / tool absent."""
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=pid,used_memory",
-             "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5, check=True,
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,used_memory",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return {}
@@ -149,8 +155,11 @@ class ServerTarget:
             # A model can be a bare name (whisper "base") or a local directory
             # (qwen weights). Resolve the latter against the repo so the spawned
             # server finds it regardless of cwd.
-            candidate = (REPO_ROOT / str(self.model))
-            cmd += ["--model", str(candidate) if candidate.exists() else str(self.model)]
+            candidate = REPO_ROOT / str(self.model)
+            cmd += [
+                "--model",
+                str(candidate) if candidate.exists() else str(self.model),
+            ]
         if self.device:
             cmd += ["--device", self.device]
         env = {**os.environ, **{k: str(v) for k, v in self.env.items()}}
@@ -220,9 +229,17 @@ class SnapTarget:
         """Best-effort daemon PID for resource sampling (systemd MainPID)."""
         try:
             out = subprocess.run(
-                ["systemctl", "show", f"snap.{self.service}.service",
-                 "--property=MainPID", "--value"],
-                capture_output=True, text=True, timeout=5, check=True,
+                [
+                    "systemctl",
+                    "show",
+                    f"snap.{self.service}.service",
+                    "--property=MainPID",
+                    "--value",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
             ).stdout.strip()
             return int(out) if out.isdigit() and int(out) > 0 else None
         except (OSError, subprocess.SubprocessError, ValueError):
@@ -246,13 +263,30 @@ def make_target(spec: dict):
     raise SystemExit(f"unknown provision kind: {kind!r} (want server|snap)")
 
 
-def run_bench(*, socket: Path, label: str, manifest: Path, out: Path, provenance: dict,
-              cold: bool, clips: list[str]) -> None:
+def run_bench(
+    *,
+    socket: Path,
+    label: str,
+    manifest: Path,
+    out: Path,
+    provenance: dict,
+    cold: bool,
+    clips: list[str],
+) -> None:
     cmd = [
-        sys.executable, str(REPO_ROOT / "dev" / "bench.py"),
-        "--socket", str(socket), "--label", label,
-        "--manifest", str(manifest), "--out", str(out), "--batch",
-        "--provenance", json.dumps(provenance),
+        sys.executable,
+        str(REPO_ROOT / "dev" / "bench.py"),
+        "--socket",
+        str(socket),
+        "--label",
+        label,
+        "--manifest",
+        str(manifest),
+        "--out",
+        str(out),
+        "--batch",
+        "--provenance",
+        json.dumps(provenance),
     ]
     if cold:
         cmd.append("--cold")
@@ -261,15 +295,22 @@ def run_bench(*, socket: Path, label: str, manifest: Path, out: Path, provenance
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "dev" / "matrix.yaml")
     parser.add_argument("--only", action="append", help="run only this target label (repeatable)")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; provision nothing")
-    parser.add_argument("--keep-results", action="store_true",
-                        help="append to the results file instead of resetting it")
-    parser.add_argument("--no-resources", action="store_true",
-                        help="skip peak RAM/VRAM sampling (for pristine latency timing)")
+    parser.add_argument(
+        "--keep-results",
+        action="store_true",
+        help="append to the results file instead of resetting it",
+    )
+    parser.add_argument(
+        "--no-resources",
+        action="store_true",
+        help="skip peak RAM/VRAM sampling (for pristine latency timing)",
+    )
     args = parser.parse_args()
 
     if not args.config.exists():
@@ -317,30 +358,57 @@ def main() -> None:
                 sampler.start()
             if cold_clip:
                 print(f"[{target.label}] cold sample ({cold_clip})")
-                run_bench(socket=target.socket, label=target.label, manifest=manifest,
-                          out=out, provenance=provenance, cold=True, clips=[cold_clip])
+                run_bench(
+                    socket=target.socket,
+                    label=target.label,
+                    manifest=manifest,
+                    out=out,
+                    provenance=provenance,
+                    cold=True,
+                    clips=[cold_clip],
+                )
             print(f"[{target.label}] warm sweep")
-            run_bench(socket=target.socket, label=target.label, manifest=manifest,
-                      out=out, provenance=provenance, cold=False, clips=list(warm_clips))
+            run_bench(
+                socket=target.socket,
+                label=target.label,
+                manifest=manifest,
+                out=out,
+                provenance=provenance,
+                cold=False,
+                clips=list(warm_clips),
+            )
         finally:
             if sampler is not None:
                 sampler.stop()
                 rss = round(sampler.peak_rss_mb, 1)
                 vram = round(sampler.peak_vram_mb, 1) if sampler.peak_vram_mb else None
-                print(f"[{target.label}] peak RSS {rss} MB"
-                      + (f" / VRAM {vram} MB" if vram else " / VRAM --"))
+                print(
+                    f"[{target.label}] peak RSS {rss} MB"
+                    + (f" / VRAM {vram} MB" if vram else " / VRAM --")
+                )
                 with resources_path.open("a", encoding="utf-8") as fp:
-                    fp.write(json.dumps({
-                        "label": target.label,
-                        "machine": hardware.get("machine"),
-                        "peak_rss_mb": rss,
-                        "peak_vram_mb": vram,
-                    }) + "\n")
+                    fp.write(
+                        json.dumps(
+                            {
+                                "label": target.label,
+                                "machine": hardware.get("machine"),
+                                "peak_rss_mb": rss,
+                                "peak_vram_mb": vram,
+                            }
+                        )
+                        + "\n"
+                    )
             target.stop()
 
     print("\n===================== MATRIX =====================")
     subprocess.run(
-        [sys.executable, str(REPO_ROOT / "dev" / "aggregate.py"), "--in", str(out), "--by-category"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "dev" / "aggregate.py"),
+            "--in",
+            str(out),
+            "--by-category",
+        ],
         check=True,
     )
 

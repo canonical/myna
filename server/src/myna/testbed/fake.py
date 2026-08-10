@@ -13,10 +13,10 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 
 from myna.core import (
-    Capabilities,
-    EventSink,
     PHASE_PREPARING,
     PHASE_READY,
+    Capabilities,
+    EventSink,
     PcmChunk,
     SessionConfig,
     TranscriptionDone,

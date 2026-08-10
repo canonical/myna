@@ -34,7 +34,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-URL = "https://github.com/Kieirra/murmure-model/releases/download/1.2.0/parakeet-tdt-0.6b-v3-int8.zip"
+URL = (
+    "https://github.com/Kieirra/murmure-model/releases/download/1.2.0/parakeet-tdt-0.6b-v3-int8.zip"
+)
 SHA256 = "2adb3e2e6feaace71119eed506cb18401ac41b8daef1b6411a9e0ca5f12cacfe"
 MODEL_FILES = (
     "encoder-model.int8.onnx",
@@ -64,7 +66,11 @@ def _download(url: str, dest: Path) -> None:
     with urllib.request.urlopen(req, timeout=60) as resp, dest.open("ab") as out:
         while block := resp.read(1 << 20):
             out.write(block)
-            print(f"\r{dest.name}: {(have + out.tell()) / 1e6:.0f} MB", end="", file=sys.stderr)
+            print(
+                f"\r{dest.name}: {(have + out.tell()) / 1e6:.0f} MB",
+                end="",
+                file=sys.stderr,
+            )
     print(file=sys.stderr)
 
 

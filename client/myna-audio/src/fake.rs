@@ -38,13 +38,21 @@ pub struct ScriptedBackend {
 
 impl ScriptedBackend {
     pub fn new(steps: Vec<Step>) -> Self {
-        Self { steps, unavailable: None, finished: Arc::new(AtomicBool::new(false)) }
+        Self {
+            steps,
+            unavailable: None,
+            finished: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// A backend whose device cannot be opened: `start()` fails with
     /// `DeviceUnavailable` and the capture stream is one `Err`, then `None`.
     pub fn unavailable(msg: impl Into<String>) -> Self {
-        Self { steps: Vec::new(), unavailable: Some(msg.into()), finished: Arc::new(AtomicBool::new(false)) }
+        Self {
+            steps: Vec::new(),
+            unavailable: Some(msg.into()),
+            finished: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Test probe: set once the capture task has exited — how tests observe
@@ -55,7 +63,11 @@ impl ScriptedBackend {
 }
 
 impl CaptureBackend for ScriptedBackend {
-    fn start(self: Box<Self>, spec: CaptureSpec, mut producer: Producer) -> Result<(), CaptureError> {
+    fn start(
+        self: Box<Self>,
+        spec: CaptureSpec,
+        mut producer: Producer,
+    ) -> Result<(), CaptureError> {
         if let Some(msg) = self.unavailable {
             return Err(CaptureError::DeviceUnavailable(msg));
         }

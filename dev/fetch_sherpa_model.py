@@ -42,7 +42,9 @@ def fix_libs() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=REPO_ID, help="HF repo id (latency variant or fallback)")
-    parser.add_argument("--fix-libs", action="store_true", help="symlink libonnxruntime for sherpa-onnx")
+    parser.add_argument(
+        "--fix-libs", action="store_true", help="symlink libonnxruntime for sherpa-onnx"
+    )
     args = parser.parse_args()
 
     if args.fix_libs:
@@ -51,8 +53,16 @@ def main() -> int:
     from huggingface_hub import snapshot_download
 
     path = Path(snapshot_download(args.repo))
-    missing = [f for f in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
-               if not (path / f).exists()]
+    missing = [
+        f
+        for f in (
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "joiner.int8.onnx",
+            "tokens.txt",
+        )
+        if not (path / f).exists()
+    ]
     if missing:
         sys.exit(f"download incomplete, missing: {', '.join(missing)}")
     total = sum(f.stat().st_size for f in path.glob("*.onnx"))

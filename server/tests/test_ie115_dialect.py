@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import contextlib
 
-import pytest
-
 from myna.core import (
     AudioFormat,
     EventSink,
@@ -47,7 +45,11 @@ def test_session_config_round_trips_through_ie115():
     assert session["type"] == "realtime"
     inp = session["audio"]["input"]
     assert inp["format"] == {"type": "audio/pcm", "rate": 16_000}
-    assert inp["transcription"] == {"model": "whisper-base", "language": "en", "prompt": "proper nouns"}
+    assert inp["transcription"] == {
+        "model": "whisper-base",
+        "language": "en",
+        "prompt": "proper nouns",
+    }
     # and back
     back = w.session_config_from_ie115(session)
     assert back.audio_format.sample_rate_hz == 16_000
@@ -122,7 +124,12 @@ def test_decoder_delta_is_committed_final_and_completed_is_done():
     )
     assert isinstance(final, TranscriptionFinal) and final.text == "one"
     (done,) = dec.decode(
-        {"type": w.TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0, "transcript": "one two"}
+        {
+            "type": w.TRANSCRIPTION_COMPLETED,
+            "item_id": "i1",
+            "content_index": 0,
+            "transcript": "one two",
+        }
     )
     assert isinstance(done, TranscriptionDone) and done.text == "one two"
     assert dec.on_close() == []  # terminal already delivered; close is just close
@@ -140,7 +147,9 @@ def test_decoder_close_before_completed_is_an_error_not_a_done():
 
 def test_decoder_no_double_terminal_after_error():
     dec = w.Ie115Decoder()
-    dec.decode({"type": w.ERROR, "error": {"type": "server_error", "code": "server_error", "message": "x"}})
+    dec.decode(
+        {"type": w.ERROR, "error": {"type": "server_error", "code": "server_error", "message": "x"}}
+    )
     assert dec.on_close() == []  # error already terminal
 
 
@@ -164,7 +173,9 @@ async def _run(tmp_path, *, adapter=None, base64_audio=False, duration=0.2):
     adapter = adapter or FakeAdapter()
     async with ie115_transport(adapter, tmp_path, base64_audio=base64_audio) as client:
         return await Harness().run(
-            client=client, candidate=adapter.candidate, source=SilenceSource(duration_seconds=duration)
+            client=client,
+            candidate=adapter.candidate,
+            source=SilenceSource(duration_seconds=duration),
         )
 
 
@@ -187,11 +198,7 @@ async def test_ie115_surfaces_status_liveness(tmp_path):
     """The residency liveness (preparing/ready) rides the additive STATUS event
     and decodes back to progress phases — the gate the client needs (T42)."""
     record = await _run(tmp_path)
-    phases = [
-        te.event.phase
-        for te in record.events
-        if te.event.type == "transcription.progress"
-    ]
+    phases = [te.event.phase for te in record.events if te.event.type == "transcription.progress"]
     assert "preparing" in phases
     assert "ready" in phases
     assert phases.index("preparing") < phases.index("ready")

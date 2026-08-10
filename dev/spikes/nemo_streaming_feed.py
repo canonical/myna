@@ -23,7 +23,6 @@ import time
 
 import soundfile as sf
 import torch
-
 from nemo.collections.asr.models import ASRModel
 from nemo.collections.asr.parts.utils.streaming_utils import (
     CacheAwareStreamingAudioBuffer,
@@ -48,7 +47,7 @@ def main() -> None:
     buffer = CacheAwareStreamingAudioBuffer(model)
     cfg = model.encoder.streaming_cfg
     print(
-        f"load={time.time()-t0:.1f}s att_ctx={model.encoder.att_context_size} "
+        f"load={time.time() - t0:.1f}s att_ctx={model.encoder.att_context_size} "
         f"chunk={cfg.chunk_size} shift={cfg.shift_size} "
         f"valid_out_len={cfg.valid_out_len}"
     )
@@ -118,10 +117,10 @@ def main() -> None:
         if full_chunks_pending():
             drain(final=False)
             dt = (time.time() - t1) * 1000
-            print(f"[{pos/sr:5.1f}s] {dt:5.0f} ms ...{text()[-60:]!r}")
+            print(f"[{pos / sr:5.1f}s] {dt:5.0f} ms ...{text()[-60:]!r}")
     t_end = time.time()
     drain(final=True)
-    print(f"finalize={(time.time()-t_end)*1000:.0f} ms steps={step}")
+    print(f"finalize={(time.time() - t_end) * 1000:.0f} ms steps={step}")
     print(f"FINAL: {text()!r}")
 
 

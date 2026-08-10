@@ -158,7 +158,10 @@ async fn buffer_holds_all_audio_and_never_drops() {
     assert!(fault.is_none());
     assert_eq!(chunks.len(), 10, "all 10 captured chunks survive");
     for (i, chunk) in chunks.iter().enumerate() {
-        assert_eq!(chunk.data[0], i as u8, "chunks arrive in capture order, none lost");
+        assert_eq!(
+            chunk.data[0], i as u8,
+            "chunks arrive in capture order, none lost"
+        );
     }
 }
 

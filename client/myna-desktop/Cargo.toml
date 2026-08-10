@@ -2,6 +2,7 @@
 name = "myna-desktop"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 description = "Desktop session controller + text injection — the dictation last-mile (plan T21/T22, feature 003-desktop-injection)."
 

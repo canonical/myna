@@ -56,7 +56,8 @@ pub async fn run(bus: SharedBus, mut stats: watch::Receiver<AudioStats>) {
 async fn publish_levels(bus: &SharedBus, rms: f64, peak: f64) {
     let mut bus = bus.lock().await;
     bus.set_property("AudioRms", PropertyValue::F64(rms)).await;
-    bus.set_property("AudioPeak", PropertyValue::F64(peak)).await;
+    bus.set_property("AudioPeak", PropertyValue::F64(peak))
+        .await;
 }
 
 #[cfg(test)]
@@ -66,7 +67,11 @@ mod tests {
     use std::sync::Arc;
 
     fn stats(rms: f32, peak: f32) -> AudioStats {
-        AudioStats { rms, peak, ..Default::default() }
+        AudioStats {
+            rms,
+            peak,
+            ..Default::default()
+        }
     }
 
     /// P6/E2: while a session runs, the pump publishes the latest RMS/peak
@@ -107,7 +112,10 @@ mod tests {
         drop(tx);
         handle.await.unwrap();
 
-        assert!(fake.property("State").is_none(), "pump must not touch State");
+        assert!(
+            fake.property("State").is_none(),
+            "pump must not touch State"
+        );
         assert!(
             fake.property("ErrorMessage").is_none(),
             "pump must not touch ErrorMessage"

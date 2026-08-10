@@ -85,20 +85,45 @@ mod tests {
     /// T037: the threshold check — below → streaming, at/above → batch.
     #[test]
     fn rtf_below_threshold_allows_streaming() {
-        assert!(streaming_viable(&table(), "whisper-small", "gpu-rtx", DEFAULT_RTF_THRESHOLD));
+        assert!(streaming_viable(
+            &table(),
+            "whisper-small",
+            "gpu-rtx",
+            DEFAULT_RTF_THRESHOLD
+        ));
     }
 
     #[test]
     fn rtf_above_threshold_forces_batch() {
-        assert!(!streaming_viable(&table(), "whisper-small", "cpu-i5", DEFAULT_RTF_THRESHOLD));
+        assert!(!streaming_viable(
+            &table(),
+            "whisper-small",
+            "cpu-i5",
+            DEFAULT_RTF_THRESHOLD
+        ));
     }
 
     /// T044: an unmeasured model×hardware pair defaults to batch (safe).
     #[test]
     fn unmeasured_tier_defaults_to_batch() {
-        assert!(!streaming_viable(&table(), "nemotron", "gpu-rtx", DEFAULT_RTF_THRESHOLD));
-        assert!(!streaming_viable(&table(), "whisper-small", "unknown-hw", DEFAULT_RTF_THRESHOLD));
-        assert!(!streaming_viable(&TierTable::default(), "whisper-small", "gpu-rtx", 1.0));
+        assert!(!streaming_viable(
+            &table(),
+            "nemotron",
+            "gpu-rtx",
+            DEFAULT_RTF_THRESHOLD
+        ));
+        assert!(!streaming_viable(
+            &table(),
+            "whisper-small",
+            "unknown-hw",
+            DEFAULT_RTF_THRESHOLD
+        ));
+        assert!(!streaming_viable(
+            &TierTable::default(),
+            "whisper-small",
+            "gpu-rtx",
+            1.0
+        ));
     }
 
     #[test]

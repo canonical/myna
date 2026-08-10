@@ -36,9 +36,8 @@ impl VirtualSource {
     /// Spawn a virtual source, optionally multi-channel via an explicit
     /// `audio.position` (e.g. `FL,FR,RL,RR` for 4ch).
     fn spawn_channels(node_name: &str, position: Option<&str>) -> Option<Self> {
-        let mut cap = format!(
-            "media.class=Audio/Source node.name={node_name} node.description=myna-test"
-        );
+        let mut cap =
+            format!("media.class=Audio/Source node.name={node_name} node.description=myna-test");
         if let Some(pos) = position {
             cap.push_str(&format!(" audio.position=[{pos}]"));
         }
@@ -49,7 +48,10 @@ impl VirtualSource {
             .stderr(std::process::Stdio::null())
             .spawn()
             .ok()?;
-        Some(Self { child, node_name: node_name.to_string() })
+        Some(Self {
+            child,
+            node_name: node_name.to_string(),
+        })
     }
 }
 
@@ -72,8 +74,7 @@ struct NoSmDaemon {
 
 impl NoSmDaemon {
     fn spawn() -> Option<Self> {
-        let runtime_dir =
-            std::env::temp_dir().join(format!("myna-nosm-{}", std::process::id()));
+        let runtime_dir = std::env::temp_dir().join(format!("myna-nosm-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&runtime_dir);
         std::fs::create_dir_all(&runtime_dir).ok()?;
         let child = Command::new("pipewire")
@@ -114,7 +115,9 @@ fn enabled() -> bool {
 }
 
 fn target() -> Option<String> {
-    std::env::var("MYNA_PIPEWIRE_TARGET").ok().filter(|s| !s.is_empty())
+    std::env::var("MYNA_PIPEWIRE_TARGET")
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 macro_rules! skip_unless_enabled {
@@ -175,7 +178,10 @@ async fn no_session_manager_faults_loudly() {
     assert!(chunks.is_empty(), "a source-less graph must yield no audio");
     match fault {
         Some(CaptureError::DeviceUnavailable(msg)) => {
-            assert!(msg.contains("session manager"), "message should name the cause: {msg}")
+            assert!(
+                msg.contains("session manager"),
+                "message should name the cause: {msg}"
+            )
         }
         other => panic!("expected DeviceUnavailable(no source), got {other:?}"),
     }
@@ -220,10 +226,17 @@ async fn default_capture_format_stop_and_no_drops() {
     assert!(fault.is_none(), "graceful stop is a clean end: {fault:?}");
     assert!(!chunks.is_empty(), "captured audio drains after stop");
     for c in &chunks {
-        assert_eq!(c.format, fmt, "every chunk is exactly the negotiated format");
+        assert_eq!(
+            c.format, fmt,
+            "every chunk is exactly the negotiated format"
+        );
     }
     let s = stats.borrow();
-    assert_eq!(s.dropped, Duration::ZERO, "healthy session drops nothing (SC-006)");
+    assert_eq!(
+        s.dropped,
+        Duration::ZERO,
+        "healthy session drops nothing (SC-006)"
+    );
 }
 
 /// T010: device native format ≠ negotiated → consumer still receives exactly
@@ -234,7 +247,11 @@ async fn default_capture_format_stop_and_no_drops() {
 async fn graph_side_conversion_delivers_negotiated_format() {
     skip_unless_enabled!();
     // 48 kHz stereo — very likely a conversion from the graph's native source.
-    let fmt = AudioFormat { sample_rate_hz: 48_000, channels: 2, sample_width_bytes: 2 };
+    let fmt = AudioFormat {
+        sample_rate_hz: 48_000,
+        channels: 2,
+        sample_width_bytes: 2,
+    };
     let mut builder = CaptureSource::builder(fmt).ring_depth(Duration::from_secs(30));
     if let Some(t) = target() {
         builder = builder.target(t);
@@ -254,7 +271,10 @@ async fn graph_side_conversion_delivers_negotiated_format() {
     assert!(fault.is_none(), "clean end: {fault:?}");
     assert!(!chunks.is_empty(), "captured some converted audio");
     for c in &chunks {
-        assert_eq!(c.format, fmt, "chunks carry the negotiated (converted) format");
+        assert_eq!(
+            c.format, fmt,
+            "chunks carry the negotiated (converted) format"
+        );
     }
 }
 
@@ -276,7 +296,9 @@ async fn graph_side_conversion_delivers_negotiated_format() {
 async fn abort_discards_cleanly() {
     skip_unless_enabled!();
     let fmt = AudioFormat::default();
-    let source = CaptureSource::builder(fmt).backend(Box::new(PipeWireBackend::new())).build();
+    let source = CaptureSource::builder(fmt)
+        .backend(Box::new(PipeWireBackend::new()))
+        .build();
     let stream = Box::new(source).capture();
     // Let capture start, then abort by dropping the stream: ConsumerGuard trips
     // stop + closes the ring; the loop thread must observe it and tear down.
@@ -294,8 +316,7 @@ async fn abort_discards_cleanly() {
 #[tokio::test]
 async fn multichannel_channel_selection_captures() {
     skip_unless_enabled!();
-    let Some(vsrc) = VirtualSource::spawn_channels("myna-test-4ch-023", Some("FL,FR,RL,RR"))
-    else {
+    let Some(vsrc) = VirtualSource::spawn_channels("myna-test-4ch-023", Some("FL,FR,RL,RR")) else {
         eprintln!("skipped: pw-loopback unavailable");
         return;
     };
@@ -325,7 +346,10 @@ async fn multichannel_channel_selection_captures() {
     stop.stop();
     let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
     assert!(fault.is_none(), "clean end: {fault:?}");
-    assert!(linked && !chunks.is_empty(), "multichannel selection linked + captured");
+    assert!(
+        linked && !chunks.is_empty(),
+        "multichannel selection linked + captured"
+    );
     for c in &chunks {
         assert_eq!(c.format, fmt, "output is the negotiated (downmixed) format");
     }
@@ -445,7 +469,10 @@ async fn enumerated_name_is_a_usable_target() {
     .unwrap_or(false);
     stop.stop();
     let _ = drain_with_timeout(stream, Duration::from_secs(3)).await;
-    assert!(linked, "an enumerated device name is a usable capture target");
+    assert!(
+        linked,
+        "an enumerated device name is a usable capture target"
+    );
 }
 
 mod watermarks {
@@ -547,8 +574,14 @@ async fn resolvable_target_selects_that_node() {
     .unwrap_or(false);
     stop.stop();
     let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
-    assert!(fault.is_none(), "clean end from a resolvable target: {fault:?}");
-    assert!(linked && !chunks.is_empty(), "capture linked to the named target");
+    assert!(
+        fault.is_none(),
+        "clean end from a resolvable target: {fault:?}"
+    );
+    assert!(
+        linked && !chunks.is_empty(),
+        "capture linked to the named target"
+    );
     for c in &chunks {
         assert_eq!(c.format, fmt);
     }
@@ -590,5 +623,8 @@ async fn stop_is_prompt() {
     // Stop-poll is 100 ms + drain; comfortably inside a generous bound. The
     // 250 ms contract is on the *flag observation*; end-to-end drain adds the
     // already-queued audio, so assert a practical ceiling.
-    assert!(elapsed < Duration::from_secs(1), "stop drained promptly: {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "stop drained promptly: {elapsed:?}"
+    );
 }

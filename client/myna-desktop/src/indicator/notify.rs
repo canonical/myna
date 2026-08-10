@@ -77,7 +77,11 @@ impl NotifyIndicator {
                 // low-urgency notifications and drops them straight into the
                 // tray — which is exactly the "no UI" symptom. Normal pops a
                 // banner; Critical for errors.
-                .urgency(if error { Urgency::Critical } else { Urgency::Normal });
+                .urgency(if error {
+                    Urgency::Critical
+                } else {
+                    Urgency::Normal
+                });
             if let Some(id) = id {
                 n.id(id); // replace the existing toast in place
             }

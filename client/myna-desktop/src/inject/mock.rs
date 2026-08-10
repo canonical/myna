@@ -118,7 +118,10 @@ impl MockInjector {
         if self.acquires.len() > 1 {
             self.acquires.pop_front().unwrap()
         } else {
-            self.acquires.front().cloned().unwrap_or(AcquireOutcome::NoTarget)
+            self.acquires
+                .front()
+                .cloned()
+                .unwrap_or(AcquireOutcome::NoTarget)
         }
     }
 }

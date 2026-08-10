@@ -122,9 +122,7 @@ class MicSource:
         target: str | None = None,
         on_chunk: Callable[[PcmChunk], None] | None = None,
     ) -> None:
-        self._format = AudioFormat(
-            sample_rate_hz=sample_rate_hz, channels=1, sample_width_bytes=2
-        )
+        self._format = AudioFormat(sample_rate_hz=sample_rate_hz, channels=1, sample_width_bytes=2)
         self._chunk_seconds = chunk_seconds
         self._target = target
         # observation hook fired per captured chunk (e.g. a level meter /
@@ -142,10 +140,14 @@ class MicSource:
 
     async def chunks(self) -> AsyncIterator[PcmChunk]:
         cmd = [
-            "pw-record", "--raw",
-            "--rate", str(self._format.sample_rate_hz),
-            "--channels", "1",
-            "--format", "s16",
+            "pw-record",
+            "--raw",
+            "--rate",
+            str(self._format.sample_rate_hz),
+            "--channels",
+            "1",
+            "--format",
+            "s16",
         ]
         if self._target:
             cmd += ["--target", self._target]
@@ -163,7 +165,7 @@ class MicSource:
                 try:
                     # bounded wait so stop() is honoured promptly between reads
                     data = await asyncio.wait_for(proc.stdout.read(n), timeout=0.25)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 if not data:
                     break

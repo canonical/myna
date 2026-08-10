@@ -327,7 +327,9 @@ fn run_capture(
     let stream = match StreamRc::new(core, "myna-capture", props) {
         Ok(s) => s,
         Err(e) => {
-            fail_open!(CaptureError::Backend(format!("cannot create capture stream: {e}")));
+            fail_open!(CaptureError::Backend(format!(
+                "cannot create capture stream: {e}"
+            )));
         }
     };
 
@@ -356,9 +358,7 @@ fn run_capture(
             let opened = opened.clone();
             let ready_tx = ready_tx.clone();
             move |_stream, _ud, old, new| {
-                if !opened.get()
-                    && matches!(link_wait_on_state(&new), LinkWait::Wired)
-                {
+                if !opened.get() && matches!(link_wait_on_state(&new), LinkWait::Wired) {
                     opened.set(true);
                     if let Some(tx) = ready_tx.borrow_mut().take() {
                         let _ = tx.send(Ok(()));
@@ -400,12 +400,9 @@ fn run_capture(
                             let slice = &samples[offset.min(samples.len())..end];
                             if !slice.is_empty() {
                                 let bytes = match &selection {
-                                    Some(idx) => select_channels_s16(
-                                        slice,
-                                        in_channels,
-                                        idx,
-                                        out_channels,
-                                    ),
+                                    Some(idx) => {
+                                        select_channels_s16(slice, in_channels, idx, out_channels)
+                                    }
                                     None => Bytes::copy_from_slice(slice),
                                 };
                                 let alive = producer
@@ -445,7 +442,9 @@ fn run_capture(
             }
         }
     });
-    let _ = timer.update_timer(Some(STOP_POLL), Some(STOP_POLL)).into_result();
+    let _ = timer
+        .update_timer(Some(STOP_POLL), Some(STOP_POLL))
+        .into_result();
 
     // Dead-stream watchdog (one-shot): an opened stream that produced zero
     // buffers within the window is dead — fault loudly (as an open failure if
@@ -485,10 +484,11 @@ fn run_capture(
         id: ParamType::EnumFormat.as_raw(),
         properties: audio_info.into(),
     };
-    let values: Vec<u8> = PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &Value::Object(obj))
-        .expect("serializing audio format pod")
-        .0
-        .into_inner();
+    let values: Vec<u8> =
+        PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &Value::Object(obj))
+            .expect("serializing audio format pod")
+            .0
+            .into_inner();
     let mut params = [Pod::from_bytes(&values).expect("valid format pod")];
 
     // With an explicit target, forbid the reconnect/fallback that AUTOCONNECT
@@ -614,7 +614,11 @@ mod tests {
     /// as the stream's single `Err`, before any PipeWire connection (C12).
     #[tokio::test]
     async fn non_s16_width_is_unsupported() {
-        let odd = CoreFormat { sample_rate_hz: 16_000, channels: 1, sample_width_bytes: 4 };
+        let odd = CoreFormat {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            sample_width_bytes: 4,
+        };
         let source = CaptureSource::builder(odd)
             .backend(Box::new(PipeWireBackend::new()))
             .build();
@@ -630,7 +634,10 @@ mod tests {
     /// by LINK_WAIT_TIMEOUT).
     #[test]
     fn link_wait_decision() {
-        assert!(matches!(link_wait_on_state(&StreamState::Paused), LinkWait::Wired));
+        assert!(matches!(
+            link_wait_on_state(&StreamState::Paused),
+            LinkWait::Wired
+        ));
         assert!(matches!(
             link_wait_on_state(&StreamState::Streaming),
             LinkWait::Wired

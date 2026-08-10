@@ -49,7 +49,11 @@ impl ControlTrigger {
         // with EADDRINUSE; clear it (best-effort) first.
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
-        Ok(Self { listener, path, pressed: false })
+        Ok(Self {
+            listener,
+            path,
+            pressed: false,
+        })
     }
 }
 
@@ -68,7 +72,11 @@ impl Trigger for ControlTrigger {
         let mut buf = [0u8; 16];
         let _ = conn.read(&mut buf).await; // content ignored; presence is the signal
         self.pressed = !self.pressed;
-        Some(if self.pressed { TriggerEdge::Press } else { TriggerEdge::Release })
+        Some(if self.pressed {
+            TriggerEdge::Press
+        } else {
+            TriggerEdge::Release
+        })
     }
 
     /// Drop any pokes queued on the accept backlog *without* flipping
@@ -136,8 +144,7 @@ mod tests {
     // "first tap does nothing" desync).
     #[tokio::test]
     async fn discard_pending_drains_backlog_without_flipping_parity() {
-        let path = std::env::temp_dir()
-            .join(format!("myna-ctl-drain-{}.sock", std::process::id()));
+        let path = std::env::temp_dir().join(format!("myna-ctl-drain-{}.sock", std::process::id()));
         let mut trigger = ControlTrigger::bind(&path).unwrap();
 
         // Start dictation, then "end" it — trigger is now at pressed=false.
@@ -165,8 +172,8 @@ mod tests {
     // Empty backlog: `discard_pending()` must return immediately, not block.
     #[tokio::test]
     async fn discard_pending_is_a_noop_when_empty() {
-        let path = std::env::temp_dir()
-            .join(format!("myna-ctl-drain-empty-{}.sock", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("myna-ctl-drain-empty-{}.sock", std::process::id()));
         let mut trigger = ControlTrigger::bind(&path).unwrap();
         // If this hangs, the poll_fn drain isn't correctly returning Pending→None.
         tokio::time::timeout(

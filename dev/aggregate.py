@@ -72,9 +72,14 @@ def summarize(records: list[dict]) -> dict[str, dict]:
         ref_chars = sum(r["ref_chars"] for r in warm)
         summary[label] = {
             "clips": len(warm),
-            "machine": next((r["provenance"]["machine"] for r in recs
-                             if isinstance(r.get("provenance"), dict)
-                             and r["provenance"].get("machine")), None),
+            "machine": next(
+                (
+                    r["provenance"]["machine"]
+                    for r in recs
+                    if isinstance(r.get("provenance"), dict) and r["provenance"].get("machine")
+                ),
+                None,
+            ),
             "wer": wer_edits / ref_words if ref_words else 0.0,
             "cer": cer_edits / ref_chars if ref_chars else 0.0,
             "rtf": _pct(rtfs, 0.5),
@@ -121,7 +126,11 @@ def print_overall(summary: dict[str, dict]) -> None:
     for label in sorted(summary):
         s = summary[label]
         mc = f"{(s.get('machine') or '--'):14} " if show_machine else ""
-        rc = f"{_f(s.get('peak_rss_mb'), '9.1f')} {_f(s.get('peak_vram_mb'), '9.1f')}" if show_res else ""
+        rc = (
+            f"{_f(s.get('peak_rss_mb'), '9.1f')} {_f(s.get('peak_vram_mb'), '9.1f')}"
+            if show_res
+            else ""
+        )
         print(
             f"{label:20} {mc}{s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
@@ -159,8 +168,14 @@ def print_by_category(records: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--in", dest="infile", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")
-    parser.add_argument("--by-category", action="store_true", help="also break WER down by UD129 category")
+    parser.add_argument(
+        "--in", dest="infile", type=Path, default=REPO_ROOT / "results" / "bench.jsonl"
+    )
+    parser.add_argument(
+        "--by-category",
+        action="store_true",
+        help="also break WER down by UD129 category",
+    )
     args = parser.parse_args()
 
     records = load_latest(args.infile)

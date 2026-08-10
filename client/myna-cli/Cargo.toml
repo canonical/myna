@@ -2,6 +2,7 @@
 name = "myna-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 description = "Demo binary for the myna dictation orchestrator."
 

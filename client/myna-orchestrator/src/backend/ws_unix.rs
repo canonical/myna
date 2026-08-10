@@ -8,9 +8,7 @@
 //! as JSON text frames, ending in exactly one terminal event.
 
 use futures_util::{SinkExt, StreamExt};
-use myna_core::{
-    ClientControl, SessionConfig, TranscriptionEvent, PROTOCOL_VERSION,
-};
+use myna_core::{ClientControl, SessionConfig, TranscriptionEvent, PROTOCOL_VERSION};
 use serde_json::Value;
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
@@ -36,7 +34,9 @@ pub struct WsUnixBackend {
 
 impl WsUnixBackend {
     pub fn new(socket_path: impl Into<std::path::PathBuf>) -> Self {
-        Self { socket_path: socket_path.into() }
+        Self {
+            socket_path: socket_path.into(),
+        }
     }
 }
 
@@ -57,7 +57,9 @@ impl BackendClient for WsUnixBackend {
             config,
         };
         write
-            .send(Message::Text(serde_json::to_string(&start).expect("serializable")))
+            .send(Message::Text(
+                serde_json::to_string(&start).expect("serializable"),
+            ))
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
@@ -66,7 +68,8 @@ impl BackendClient for WsUnixBackend {
         let protocol_version = read_handshake_ack(&mut read).await?;
 
         let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-        let (ev_tx, ev_rx) = mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
+        let (ev_tx, ev_rx) =
+            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
         tokio::spawn(pump(write, read, out_rx, ev_tx));
 
         Ok(BackendHandle {
@@ -77,9 +80,8 @@ impl BackendClient for WsUnixBackend {
     }
 }
 
-type WsRead = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>,
->;
+type WsRead =
+    futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>>;
 type WsWrite = futures_util::stream::SplitSink<
     tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>,
     Message,
@@ -105,7 +107,10 @@ async fn read_handshake_ack(read: &mut WsRead) -> Result<Option<String>, Backend
                     if let Some(TranscriptionEvent::Error(err)) =
                         TranscriptionEvent::from_wire(&value)?
                     {
-                        return Err(BackendError::Rejected { code: err.code, message: err.message });
+                        return Err(BackendError::Rejected {
+                            code: err.code,
+                            message: err.message,
+                        });
                     }
                     return Err(BackendError::Handshake(
                         "transcript event before session.created".into(),
@@ -198,8 +203,8 @@ async fn pump(
 /// Decode a downstream text frame into a transcript event, or `None` if it is a
 /// control frame or an unknown (additive) event type we should ignore.
 fn decode_event(text: &str) -> Result<Option<TranscriptionEvent>, BackendError> {
-    let value: Value =
-        serde_json::from_str(text).map_err(|e| BackendError::Transport(format!("bad JSON: {e}")))?;
+    let value: Value = serde_json::from_str(text)
+        .map_err(|e| BackendError::Transport(format!("bad JSON: {e}")))?;
     if value.get("event").is_some() {
         Ok(TranscriptionEvent::from_wire(&value)?)
     } else {

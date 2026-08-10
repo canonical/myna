@@ -48,7 +48,7 @@ pub enum Disposition {
 
 impl Default for Disposition {
     fn default() -> Self {
-        Self::Committed  // Backward-compatible default
+        Self::Committed // Backward-compatible default
     }
 }
 
@@ -100,14 +100,20 @@ pub struct Progress {
 
 impl Default for Progress {
     fn default() -> Self {
-        Self { snippet: None, phase: default_phase() }
+        Self {
+            snippet: None,
+            phase: default_phase(),
+        }
     }
 }
 
 impl Progress {
     /// A bare liveness ping in `phase`, no snippet.
     pub fn phase(phase: impl Into<String>) -> Self {
-        Self { snippet: None, phase: phase.into() }
+        Self {
+            snippet: None,
+            phase: phase.into(),
+        }
     }
 }
 
@@ -137,7 +143,10 @@ pub struct ErrorData {
 
 impl Default for ErrorData {
     fn default() -> Self {
-        Self { code: default_code(), message: String::new() }
+        Self {
+            code: default_code(),
+            message: String::new(),
+        }
     }
 }
 
@@ -174,7 +183,10 @@ impl TranscriptionEvent {
 
     /// Terminal events end a session: exactly one is emitted last.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, TranscriptionEvent::Done(_) | TranscriptionEvent::Error(_))
+        matches!(
+            self,
+            TranscriptionEvent::Done(_) | TranscriptionEvent::Error(_)
+        )
     }
 
     /// Encode to the `{"event": …, "data": {…}}` wire object (Python
@@ -192,7 +204,10 @@ impl TranscriptionEvent {
     /// Decode from the wire object (Python `event_from_wire`). `Ok(None)` for an
     /// unknown event type — additive compat, the caller skips it.
     pub fn from_wire(wire: &Value) -> Result<Option<Self>, WireError> {
-        let event = wire.get("event").and_then(Value::as_str).ok_or(WireError::NotAnEvent)?;
+        let event = wire
+            .get("event")
+            .and_then(Value::as_str)
+            .ok_or(WireError::NotAnEvent)?;
         // Python: `dict(wire.get("data") or {})` — a missing/null data is {}.
         let data = match wire.get("data") {
             Some(Value::Null) | None => json!({}),
@@ -219,9 +234,17 @@ mod tests {
         let expected: Value = serde_json::from_str(golden).unwrap();
         assert_eq!(event.to_wire(), expected, "wire mismatch vs Python golden");
         // Round-trip: decoding our own output reproduces the event.
-        assert_eq!(&TranscriptionEvent::from_wire(&event.to_wire()).unwrap().unwrap(), event);
+        assert_eq!(
+            &TranscriptionEvent::from_wire(&event.to_wire())
+                .unwrap()
+                .unwrap(),
+            event
+        );
         // And decoding the Python golden reproduces it too.
-        assert_eq!(&TranscriptionEvent::from_wire(&expected).unwrap().unwrap(), event);
+        assert_eq!(
+            &TranscriptionEvent::from_wire(&expected).unwrap().unwrap(),
+            event
+        );
     }
 
     #[test]
@@ -269,7 +292,12 @@ mod tests {
         assert_wire(
             &TranscriptionEvent::Final(TranscriptionFinal {
                 text: "hi".into(),
-                segments: vec![Segment { start: 0.0, end: 1.0, text: "hi".into(), score: None }],
+                segments: vec![Segment {
+                    start: 0.0,
+                    end: 1.0,
+                    text: "hi".into(),
+                    score: None,
+                }],
                 disposition: Disposition::default(),
                 segment_index: None,
             }),
@@ -293,7 +321,10 @@ mod tests {
     #[test]
     fn error_frame() {
         assert_wire(
-            &TranscriptionEvent::Error(ErrorData { code: "internal".into(), message: "boom".into() }),
+            &TranscriptionEvent::Error(ErrorData {
+                code: "internal".into(),
+                message: "boom".into(),
+            }),
             r#"{"event": "transcription.error", "data": {"code": "internal", "message": "boom"}}"#,
         );
     }
@@ -316,7 +347,10 @@ mod tests {
     #[test]
     fn missing_event_key_rejected() {
         let wire = json!({"type": "session.created", "protocol_version": "1"});
-        assert!(matches!(TranscriptionEvent::from_wire(&wire), Err(WireError::NotAnEvent)));
+        assert!(matches!(
+            TranscriptionEvent::from_wire(&wire),
+            Err(WireError::NotAnEvent)
+        ));
     }
 
     #[test]
@@ -359,7 +393,8 @@ mod tests {
     #[test]
     fn disposition_default_is_committed() {
         // T010: Backward-compat test - absent disposition defaults to committed
-        let wire = json!({"event": "transcription.final", "data": {"text": "test", "segments": []}});
+        let wire =
+            json!({"event": "transcription.final", "data": {"text": "test", "segments": []}});
         let event = TranscriptionEvent::from_wire(&wire).unwrap().unwrap();
         if let TranscriptionEvent::Final(final_event) = event {
             assert_eq!(final_event.disposition, Disposition::Committed);

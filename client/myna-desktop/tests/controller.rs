@@ -242,7 +242,10 @@ async fn snippet_is_never_committed() {
         commits,
         vec!["The quick brown fox", " jumps over the lazy dog."]
     );
-    assert_eq!(commits.concat(), "The quick brown fox jumps over the lazy dog.");
+    assert_eq!(
+        commits.concat(),
+        "The quick brown fox jumps over the lazy dog."
+    );
     // No committed segment is a bare snippet.
     assert!(!commits
         .iter()
@@ -598,7 +601,10 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert!(log.commits.is_empty(), "nothing committed after target-gone");
+    assert!(
+        log.commits.is_empty(),
+        "nothing committed after target-gone"
+    );
     assert!(log.cancels >= 1, "target-gone must cancel");
     assert_eq!(log.restores, 1, "engine restored exactly once");
     assert!(
@@ -732,7 +738,9 @@ async fn natural_spacing_segments_get_no_double_spaces() {
                 OrchestratorEvent::Unstable(" that he had".into()),
                 OrchestratorEvent::Final(" that he had".into()),
                 OrchestratorEvent::Final(" compromised in some way.".into()),
-                OrchestratorEvent::Done("He began to wish that he had compromised in some way.".into()),
+                OrchestratorEvent::Done(
+                    "He began to wish that he had compromised in some way.".into(),
+                ),
             ],
             SessionOutcome::Completed {
                 transcript: "He began to wish that he had compromised in some way.".into(),
@@ -801,9 +809,13 @@ async fn preedit_suppressed_with_commits_after_focus_loss() {
             while !stop2.is_stopped() {
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
-            let _ = tx.send(OrchestratorEvent::Unstable("first sec".into())).await;
+            let _ = tx
+                .send(OrchestratorEvent::Unstable("first sec".into()))
+                .await;
             let _ = tx.send(OrchestratorEvent::Final("second".into())).await;
-            let _ = tx.send(OrchestratorEvent::Done("first second".into())).await;
+            let _ = tx
+                .send(OrchestratorEvent::Done("first second".into()))
+                .await;
             Ok(SessionOutcome::Completed {
                 transcript: "first second".into(),
             })

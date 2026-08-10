@@ -8,8 +8,9 @@ verbatim-concat spacing (I2), off-format rejection (audio-push invariant).
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from myna.core import (
     AudioFormat,
@@ -130,7 +131,8 @@ async def test_streaming_empty_tail_not_committed():
     steps = [(True, "only segment"), (False, "")]
     events = await run(make_adapter(steps), audio_seconds=1.0)
     committed = [
-        e for e in events
+        e
+        for e in events
         if isinstance(e, TranscriptionFinal) and e.disposition == Disposition.COMMITTED
     ]
     assert len(committed) == 1

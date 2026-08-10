@@ -40,7 +40,13 @@ impl WavFileSource {
             .map_err(|e| CaptureError::DeviceUnavailable(format!("{}: {e}", path.display())))?;
         let (format, data) = parse_wav(&bytes)
             .map_err(|e| CaptureError::Backend(format!("{}: {e}", path.display())))?;
-        Ok(Self { format, data, chunk_seconds: 0.1, realtime: false, stop: StopHandle::default() })
+        Ok(Self {
+            format,
+            data,
+            chunk_seconds: 0.1,
+            realtime: false,
+            stop: StopHandle::default(),
+        })
     }
 
     /// Set the chunk size in seconds (default 0.1 s ≈ the prototype's ~100 ms).
@@ -80,9 +86,12 @@ impl AudioSource for WavFileSource {
         let frame_bytes = (self.format.channels as usize)
             .saturating_mul(self.format.sample_width_bytes as usize)
             .max(1);
-        let frames_per_chunk =
-            ((self.format.sample_rate_hz as f64) * self.chunk_seconds).round().max(1.0) as usize;
-        let bytes_per_chunk = frames_per_chunk.saturating_mul(frame_bytes).max(frame_bytes);
+        let frames_per_chunk = ((self.format.sample_rate_hz as f64) * self.chunk_seconds)
+            .round()
+            .max(1.0) as usize;
+        let bytes_per_chunk = frames_per_chunk
+            .saturating_mul(frame_bytes)
+            .max(frame_bytes);
 
         let cursor = WavCursor {
             data: self.data,
@@ -243,7 +252,10 @@ mod tests {
         let stop = source.stop_handle();
         stop.stop(); // release before any chunk is pulled
         let mut stream = Box::new(source).capture();
-        assert!(stream.next().await.is_none(), "stopped source drains to nothing");
+        assert!(
+            stream.next().await.is_none(),
+            "stopped source drains to nothing"
+        );
         std::fs::remove_file(&path).ok();
     }
 }

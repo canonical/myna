@@ -17,7 +17,10 @@ use crate::session::SessionConfig;
 pub enum ClientControl {
     /// Open a session: declares the protocol version and the session config.
     #[serde(rename = "session.start")]
-    SessionStart { protocol_version: String, config: SessionConfig },
+    SessionStart {
+        protocol_version: String,
+        config: SessionConfig,
+    },
     /// End of audio (hotkey released). Closing the socket instead *aborts*.
     #[serde(rename = "session.finish")]
     SessionFinish,
@@ -70,7 +73,10 @@ mod tests {
 
     #[test]
     fn session_finish_matches_python() {
-        assert_eq!(wire(&ClientControl::SessionFinish), golden(r#"{"type": "session.finish"}"#));
+        assert_eq!(
+            wire(&ClientControl::SessionFinish),
+            golden(r#"{"type": "session.finish"}"#)
+        );
     }
 
     #[test]
@@ -83,8 +89,13 @@ mod tests {
 
     #[test]
     fn session_created_matches_python() {
-        let frame = ServerControl::SessionCreated { protocol_version: PROTOCOL_VERSION.into() };
-        assert_eq!(wire(&frame), golden(r#"{"type": "session.created", "protocol_version": "1"}"#));
+        let frame = ServerControl::SessionCreated {
+            protocol_version: PROTOCOL_VERSION.into(),
+        };
+        assert_eq!(
+            wire(&frame),
+            golden(r#"{"type": "session.created", "protocol_version": "1"}"#)
+        );
     }
 
     #[test]

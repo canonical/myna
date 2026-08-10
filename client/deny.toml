@@ -1,0 +1,60 @@
+# cargo-deny policy (feature 006, FR-011): mechanically codifies the offline
+# invariant — the shipped dictation client must not gain a network stack
+# (constitution Principle V). The sanctioned transport is WebSocket over a
+# Unix domain socket (tokio-tungstenite, no TCP/TLS); HTTP/cloud client crates
+# are banned workspace-wide.
+#
+# Checked in CI by the `rust-dep-policy` gate (`workshop run myna deny`).
+
+[graph]
+all-features = false
+
+[bans]
+multiple-versions = "warn"
+deny = [
+  # HTTP clients / stacks
+  { name = "reqwest" },
+  { name = "hyper" },
+  { name = "hyper-util" },
+  { name = "ureq" },
+  { name = "curl" },
+  { name = "isahc" },
+  { name = "surf" },
+  { name = "awc" },
+  # TLS stacks (no network = no TLS; UDS needs neither)
+  { name = "rustls" },
+  { name = "native-tls" },
+  { name = "openssl" },
+  { name = "openssl-sys" },
+  # Cloud SDKs
+  { name = "aws-config" },
+  { name = "aws-sdk-stt" },
+  { name = "azure_core" },
+  { name = "google-cloud" },
+]
+skip = []
+
+[licenses]
+# Copyleft and unlicensed crates are a legal-review event, not a build
+# default; widen only deliberately.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+  # The workspace's own crates (repo LICENSE is GPL-3.0).
+  "GPL-3.0-only",
+]
+confidence-threshold = 0.8
+
+[advisories]
+# The per-PR gate does NOT audit advisories (that is the weekly `audit`
+# workflow's job, FR-012); this section exists so `cargo deny check` without
+# arguments stays meaningful. The CI gate runs `cargo deny check bans licenses`
+# explicitly.
+ignore = []

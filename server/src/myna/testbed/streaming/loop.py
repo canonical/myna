@@ -39,7 +39,13 @@ from collections.abc import AsyncIterator, Callable
 
 import numpy as np
 
-from myna.core import Disposition, EventSink, PcmChunk, TranscriptionFinal, TranscriptionProgress
+from myna.core import (
+    Disposition,
+    EventSink,
+    PcmChunk,
+    TranscriptionFinal,
+    TranscriptionProgress,
+)
 
 from .strategies import Hypothesis, Word
 from .window import RollingWindow
@@ -165,11 +171,7 @@ def _drop_committed(
     tail = committed_word_texts[-_OVERLAP_LOOKBACK:]
     new = [_norm(w.text) for w in words]
     drop = _alignment_drop(tail, new)
-    return [
-        w
-        for i, w in enumerate(words)
-        if not (w.end <= committed_through + 1e-3 or i < drop)
-    ]
+    return [w for i, w in enumerate(words) if not (w.end <= committed_through + 1e-3 or i < drop)]
 
 
 def _norm(text: str) -> str:

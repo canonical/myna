@@ -323,17 +323,25 @@ mod tests {
         let path = silence_wav(0.5);
         let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.05);
         let audio_before_ready = Arc::new(AtomicBool::new(false));
-        let backend = GateProbe { audio_before_ready: audio_before_ready.clone() };
+        let backend = GateProbe {
+            audio_before_ready: audio_before_ready.clone(),
+        };
         let mut sink = CollectingSink::default();
 
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
 
         assert!(
             !audio_before_ready.load(Ordering::SeqCst),
             "audio reached the backend before `ready` — the accept-gate leaked"
         );
-        assert_eq!(outcome, SessionOutcome::Completed { transcript: "ok".into() });
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed {
+                transcript: "ok".into()
+            }
+        );
         std::fs::remove_file(&path).ok();
     }
 
@@ -402,11 +410,14 @@ mod tests {
             .build();
 
         let received = Arc::new(AtomicUsize::new(0));
-        let backend = CountingLateReady { received: received.clone() };
+        let backend = CountingLateReady {
+            received: received.clone(),
+        };
         let mut sink = CollectingSink::default();
 
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await.unwrap();
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
 
         assert!(matches!(outcome, SessionOutcome::Completed { .. }));
         assert_eq!(

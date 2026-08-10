@@ -72,7 +72,10 @@ impl InputDevices {
             .expect("spawning the PipeWire device-registry thread");
 
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { devices: dev_rx, _quit: QuitOnDrop(Some(quit_tx)) }),
+            Ok(Ok(())) => Ok(Self {
+                devices: dev_rx,
+                _quit: QuitOnDrop(Some(quit_tx)),
+            }),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(CaptureError::DeviceUnavailable(
                 "PipeWire device-registry thread exited before signaling readiness".into(),
@@ -193,7 +196,11 @@ fn run_registry(
             }
         }
     });
-    let _ = timer.update_timer(Some(Duration::from_millis(100)), Some(Duration::from_millis(100)))
+    let _ = timer
+        .update_timer(
+            Some(Duration::from_millis(100)),
+            Some(Duration::from_millis(100)),
+        )
         .into_result();
 
     // Registry callbacks fire during the initial roundtrip once the loop runs,
@@ -214,8 +221,8 @@ fn run_registry(
 /// excluded); require a non-empty stable `node.name`; use `node.description`
 /// (falling back to `node.nick`, then `node.name`) as the human label.
 pub(crate) fn map_input_device<'a>(
-        lookup: impl Fn(&str) -> Option<&'a str>,
-    ) -> Option<InputDevice> {
+    lookup: impl Fn(&str) -> Option<&'a str>,
+) -> Option<InputDevice> {
     // Must be a plain audio capture source.
     if lookup("media.class") != Some("Audio/Source") {
         return None;
@@ -233,7 +240,10 @@ pub(crate) fn map_input_device<'a>(
         .filter(|s| !s.is_empty())
         .unwrap_or(node_name)
         .to_string();
-    Some(InputDevice { node_name: node_name.to_string(), label })
+    Some(InputDevice {
+        node_name: node_name.to_string(),
+        label,
+    })
 }
 
 #[cfg(test)]
@@ -291,10 +301,7 @@ mod tests {
 
     #[test]
     fn label_falls_back_to_node_name_when_no_description() {
-        let p = props(&[
-            ("media.class", "Audio/Source"),
-            ("node.name", "my-source"),
-        ]);
+        let p = props(&[("media.class", "Audio/Source"), ("node.name", "my-source")]);
         let dev = map_input_device(|k| p.get(k).copied()).expect("should map");
         assert_eq!(dev.label, "my-source");
     }

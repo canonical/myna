@@ -44,6 +44,13 @@ dev = [
     "hypothesis>=6",
     "pyyaml>=6",   # dev/matrix.py config
     "psutil>=5",   # dev/matrix.py peak RSS/VRAM sampling
+    # Quality gates (feature 006): patch-coverage gate, lint, scoped types,
+    # dead-code scan, scheduled lockfile audit.
+    "diff-cover>=9",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "vulture>=2.14",
+    "pip-audit>=2.7",
 ]
 
 [build-system]
@@ -60,3 +67,33 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["myna"]
 branch = true
+
+[tool.ruff]
+src = ["src", "../dev"]
+# House width is ~100; default 88 wraps too aggressively for this codebase.
+line-length = 100
+
+[tool.ruff.lint]
+# F401/F841 (unused imports/names) are the dead-code statics of FR-006;
+# E/W/I keep style and import hygiene mechanical (FR-010).
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501", "E402"]  # importorskip precedes gated imports
+# One-off experiment scripts stay ungated (evaluation-harness tier).
+"../dev/spikes/**" = ["E501", "B007", "B905", "UP042"]
+
+[tool.mypy]
+# Scoped strict: only the shared contract package (myna.core) is load-bearing
+# enough for strict typing; the testbed/adapters stay harness-tier (FR-010).
+mypy_path = "src"
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "myna.testbed.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "myna.server.*"
+ignore_errors = true

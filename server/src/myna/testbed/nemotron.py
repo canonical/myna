@@ -278,9 +278,7 @@ class _StreamEmitter:
             self._last_unstable = ""  # I4
         unstable = self._remainder(text)
         if unstable and unstable != self._last_unstable:
-            events.append(
-                TranscriptionFinal(text=unstable, disposition=Disposition.UNSTABLE)
-            )
+            events.append(TranscriptionFinal(text=unstable, disposition=Disposition.UNSTABLE))
             self._last_unstable = unstable
         self._last_text = text
         return events
@@ -359,9 +357,7 @@ class NemotronAdapter:
         return Candidate(
             model=f"{self._label}{ctx}",
             engine=f"nemo-{self._device}",
-            streaming_strategy=(
-                "native-transducer" if self._streaming else "commit-on-finalize"
-            ),
+            streaming_strategy=("native-transducer" if self._streaming else "commit-on-finalize"),
         )
 
     def capabilities(self) -> Capabilities:
@@ -387,13 +383,9 @@ class NemotronAdapter:
         # A local .nemo checkpoint (snap model component) is restored directly;
         # anything else is treated as a Hugging Face id and downloaded.
         if self._model_name.endswith(".nemo") and os.path.exists(self._model_name):
-            model = ASRModel.restore_from(
-                restore_path=self._model_name, map_location=self._device
-            )
+            model = ASRModel.restore_from(restore_path=self._model_name, map_location=self._device)
         else:
-            model = ASRModel.from_pretrained(
-                model_name=self._model_name, map_location=self._device
-            )
+            model = ASRModel.from_pretrained(model_name=self._model_name, map_location=self._device)
         # Cache-aware streaming models expose the latency/accuracy dial; other
         # models don't, so only set it when asked and supported.
         if self._att_context_size is not None and hasattr(model, "encoder"):
@@ -436,11 +428,7 @@ class NemotronAdapter:
         # Accepted format is advertised via capabilities() (T24); the client
         # delivers it. Reject mismatches rather than resample (audio-push: the
         # client owns capture + conversion) — symmetric across rate/channels/width.
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != NEMO_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != NEMO_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -475,9 +463,7 @@ class NemotronAdapter:
                 await emit(TranscriptionDone(text=""))
                 return
 
-            text = await asyncio.to_thread(
-                self._transcribe, model, bytes(buffered)
-            )
+            text = await asyncio.to_thread(self._transcribe, model, bytes(buffered))
             text = text.strip()
             if text:
                 # one utterance -> one final; per-word timestamps are a
@@ -486,9 +472,7 @@ class NemotronAdapter:
             await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(
-                TranscriptionError(
-                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
-                )
+                TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
     async def _run_streaming_session(

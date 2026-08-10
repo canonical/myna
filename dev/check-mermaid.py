@@ -41,11 +41,10 @@ def extract_blocks(text: str) -> list[str]:
 
 
 def validate_block(block: str, puppeteer_cfg: str | None, block_label: str) -> bool:
-    with tempfile.NamedTemporaryFile(
-        suffix=".mmd", mode="w", delete=False
-    ) as f_in, tempfile.NamedTemporaryFile(
-        suffix=".svg", mode="w", delete=False
-    ) as f_out:
+    with (
+        tempfile.NamedTemporaryFile(suffix=".mmd", mode="w", delete=False) as f_in,
+        tempfile.NamedTemporaryFile(suffix=".svg", mode="w", delete=False) as f_out,
+    ):
         f_in.write(block)
         f_in_path = f_in.name
         f_out_path = f_out.name
@@ -56,9 +55,7 @@ def validate_block(block: str, puppeteer_cfg: str | None, block_label: str) -> b
             cmd += ["-p", puppeteer_cfg]
         cmd += ["-i", f_in_path, "-o", f_out_path]
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
         ok = Path(f_out_path).exists() and "<svg" in Path(f_out_path).read_text()
         if not ok:
@@ -102,9 +99,7 @@ def main() -> int:
 
     # If PUPPETEER_EXECUTABLE_PATH is set and no explicit config, synthesise one.
     if not puppeteer_cfg and os.environ.get("PUPPETEER_EXECUTABLE_PATH"):
-        tmp = tempfile.NamedTemporaryFile(
-            suffix=".json", mode="w", delete=False
-        )
+        tmp = tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False)
         json.dump(
             {
                 "executablePath": os.environ["PUPPETEER_EXECUTABLE_PATH"],

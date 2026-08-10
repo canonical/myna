@@ -13,6 +13,14 @@ from __future__ import annotations
 
 import pytest
 
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
+
+from test_emission_invariants import (
+    assert_append_only_and_complete,
+    assert_commit_clears_unstable,
+    assert_unstable_wellformed,
+)
+
 from myna.core import (
     Disposition,
     PcmChunk,
@@ -27,13 +35,6 @@ from myna.testbed.nemotron import (
     _stable_commit_boundary,
     _StreamEmitter,
 )
-
-from test_emission_invariants import (
-    assert_append_only_and_complete,
-    assert_commit_clears_unstable,
-    assert_unstable_wellformed,
-)
-
 
 # --- commit boundary rule ---------------------------------------------------
 
@@ -148,7 +149,9 @@ async def _drive(adapter, chunks):
 
 
 def _pcm(seconds: float) -> PcmChunk:
-    return PcmChunk(data=b"\x00\x00" * int(seconds * NEMO_FORMAT.sample_rate_hz), format=NEMO_FORMAT)
+    return PcmChunk(
+        data=b"\x00\x00" * int(seconds * NEMO_FORMAT.sample_rate_hz), format=NEMO_FORMAT
+    )
 
 
 def _instant(value):
@@ -166,8 +169,7 @@ async def test_streaming_session_emits_progressively_and_completes(monkeypatch):
     events = await _drive(adapter, [_pcm(0.5) for _ in range(4)])
 
     assert any(
-        isinstance(e, TranscriptionFinal) and e.disposition == Disposition.UNSTABLE
-        for e in events
+        isinstance(e, TranscriptionFinal) and e.disposition == Disposition.UNSTABLE for e in events
     ), "no unstable emission — the FR-008 gap T019 closes"
     assert_append_only_and_complete(events)
     assert_unstable_wellformed(events)
@@ -231,7 +233,6 @@ async def test_nemotron_streaming_session_invariants(streaming_adapter):
     assert_unstable_wellformed(events)
     assert_commit_clears_unstable(events)
     assert any(
-        isinstance(e, TranscriptionFinal) and e.disposition == Disposition.UNSTABLE
-        for e in events
+        isinstance(e, TranscriptionFinal) and e.disposition == Disposition.UNSTABLE for e in events
     ), "native streaming must emit unstable hypotheses before end-of-audio"
     assert record.transcript

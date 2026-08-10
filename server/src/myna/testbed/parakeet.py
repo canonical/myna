@@ -79,8 +79,30 @@ MAX_TOKENS_PER_STEP = 10  # RNNT multi-token-per-frame guard (murmure parity)
 # Parakeet TDT 0.6B v3 is multilingual across 25 European languages,
 # auto-detected (no language input to the ONNX graph).
 LANGUAGES = (
-    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu",
-    "it", "lt", "lv", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+    "bg",
+    "cs",
+    "da",
+    "de",
+    "el",
+    "en",
+    "es",
+    "et",
+    "fi",
+    "fr",
+    "hr",
+    "hu",
+    "it",
+    "lt",
+    "lv",
+    "nl",
+    "pl",
+    "pt",
+    "ro",
+    "ru",
+    "sk",
+    "sl",
+    "sv",
+    "uk",
 )
 
 _LOAD_HEARTBEAT_SECONDS = 2.0
@@ -122,7 +144,7 @@ def _tokens_to_words(tokens: list[str], timestamps: list[float]) -> list[Word]:
     new word), keeping each word's natural leading space so committed chunks
     concatenate verbatim (I2). Times are relative to the decoded region."""
     words: list[Word] = []
-    for i, (token, start) in enumerate(zip(tokens, timestamps)):
+    for i, (token, start) in enumerate(zip(tokens, timestamps, strict=True)):
         end = timestamps[i + 1] if i + 1 < len(timestamps) else start + FRAME_S
         if token.startswith(" ") or not words:
             words.append(Word(text=token, start=start, end=end))
@@ -145,10 +167,14 @@ class _ParakeetOnnx:
             os.path.join(model_dir, "nemo128.onnx"), opts, providers=providers
         )
         self._encoder = ort.InferenceSession(
-            os.path.join(model_dir, "encoder-model.int8.onnx"), opts, providers=providers
+            os.path.join(model_dir, "encoder-model.int8.onnx"),
+            opts,
+            providers=providers,
         )
         self._decoder_joint = ort.InferenceSession(
-            os.path.join(model_dir, "decoder_joint-model.int8.onnx"), opts, providers=providers
+            os.path.join(model_dir, "decoder_joint-model.int8.onnx"),
+            opts,
+            providers=providers,
         )
         self._vocab, self._blank_idx = _load_vocab(model_dir)
         # Logits are vocab + TDT duration bins; the duration slice is the tail.
@@ -336,11 +362,7 @@ class ParakeetAdapter:
         fmt = config.audio_format
         # Audio-push invariant: the client owns capture + conversion; we
         # advertise the accepted format and reject mismatches, never resample.
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != PARAKEET_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != PARAKEET_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -381,9 +403,7 @@ class ParakeetAdapter:
             await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(
-                TranscriptionError(
-                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
-                )
+                TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
     async def _run_streaming_session(
@@ -401,9 +421,7 @@ class ParakeetAdapter:
 
         def decode(samples: np.ndarray, offset: float) -> Hypothesis:
             words = model.transcribe_words(samples)
-            return Hypothesis(
-                words=[Word(w.text, w.start + offset, w.end + offset) for w in words]
-            )
+            return Hypothesis(words=[Word(w.text, w.start + offset, w.end + offset) for w in words])
 
         transcript = await run_streaming_loop(
             audio,

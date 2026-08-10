@@ -78,9 +78,36 @@ _ISO_TO_QWEN_LANG = {
 
 # 30 languages per the model card / qwen_supported_languages_csv().
 _QWEN_LANGUAGES = (
-    "zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru",
-    "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs",
-    "fil", "fa", "el", "ro", "hu", "mk",
+    "zh",
+    "en",
+    "yue",
+    "ar",
+    "de",
+    "fr",
+    "es",
+    "pt",
+    "id",
+    "it",
+    "ko",
+    "ru",
+    "th",
+    "vi",
+    "ja",
+    "tr",
+    "hi",
+    "ms",
+    "nl",
+    "sv",
+    "da",
+    "fi",
+    "pl",
+    "cs",
+    "fil",
+    "fa",
+    "el",
+    "ro",
+    "hu",
+    "mk",
 )
 
 
@@ -140,7 +167,7 @@ class _QwenLib:
     def set_prompt(self, ctx: int, prompt: str | None) -> None:
         self._lib.qwen_set_prompt(ctx, prompt.encode() if prompt else None)
 
-    def transcribe_audio(self, ctx: int, samples: "array.array") -> str:
+    def transcribe_audio(self, ctx: int, samples: array.array) -> str:
         """``samples`` is a stdlib ``array('f')`` of normalised mono float32."""
         buf = (ctypes.c_float * len(samples)).from_buffer(samples)
         ptr = self._lib.qwen_transcribe_audio(ctx, buf, len(samples))
@@ -288,11 +315,7 @@ class QwenCAdapter:
         fmt = config.audio_format
         # Accepted format is advertised via capabilities() (T24); the client
         # delivers it. Reject mismatches rather than resample (audio-push).
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != QWEN_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != QWEN_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -331,14 +354,10 @@ class QwenCAdapter:
         except QwenRuntimeUnavailable as exc:
             # Missing runtime library is an environment/config fault, not a
             # decode failure — its own code, and the message says how to fix it.
-            await emit(
-                TranscriptionError(code="runtime_library_missing", message=str(exc))
-            )
+            await emit(TranscriptionError(code="runtime_library_missing", message=str(exc)))
         except Exception as exc:
             await emit(
-                TranscriptionError(
-                    code="inference_failed", message=f"{type(exc).__name__}: {exc}"
-                )
+                TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
     def _transcribe(self, pcm: bytes, config: SessionConfig) -> str:

@@ -24,7 +24,7 @@ import asyncio
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -39,11 +39,15 @@ def detect_label() -> str:
     try:
         out = subprocess.run(
             ["whisper", "show-engine", "--format=json"],
-            capture_output=True, text=True, timeout=10, check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
         ).stdout
         return json.loads(out).get("name") or "socket"
     except Exception:
         return "socket"
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -65,8 +69,7 @@ def select_clips(args: argparse.Namespace):
         missing = [cid for cid in args.clip if cid not in by_id]
         if missing:
             raise SystemExit(
-                f"unknown clip(s): {', '.join(missing)}; "
-                f"available: {', '.join(sorted(by_id))}"
+                f"unknown clip(s): {', '.join(missing)}; available: {', '.join(sorted(by_id))}"
             )
         clips = tuple(by_id[cid] for cid in args.clip)
     if args.category:
@@ -82,7 +85,9 @@ async def bench_clip(args, clip):
     streaming_strategy = "streaming" if args.streaming else "batch"
     record = await Harness().run(
         client=WsUnixClient(args.socket),
-        candidate=Candidate(model=args.label, engine="socket", streaming_strategy=streaming_strategy),
+        candidate=Candidate(
+            model=args.label, engine="socket", streaming_strategy=streaming_strategy
+        ),
         source=source,
         config=SessionConfig(audio_format=source.format, language=clip.language),
     )
@@ -103,7 +108,11 @@ def to_line(args, clip, record, wer, cer) -> dict:
         "transcript": record.transcript,
         "wer": round(wer.rate, 4),
         "cer": round(cer.rate, 4),
-        "edits": {"sub": wer.substitutions, "del": wer.deletions, "ins": wer.insertions},
+        "edits": {
+            "sub": wer.substitutions,
+            "del": wer.deletions,
+            "ins": wer.insertions,
+        },
         # raw counts so the aggregator can micro-average across clips
         "wer_edits": wer.substitutions + wer.deletions + wer.insertions,
         "ref_words": wer.reference_length,
@@ -141,12 +150,32 @@ async def main() -> None:
         help="corpus manifest to sweep (default: synthetic fixtures; "
         "use corpus/real/manifest.json for trustworthy WER)",
     )
-    parser.add_argument("--label", help="tag for this run (default: active engine name, e.g. 'cpu'); pass 'cpu/small' to record the model too")
+    parser.add_argument(
+        "--label",
+        help=(
+            "tag for this run (default: active engine name, e.g. 'cpu');"
+            " pass 'cpu/small' to record the model too"
+        ),
+    )
     parser.add_argument("--category", help="only clips in this UD129 category")
     parser.add_argument("--batch", action="store_true", help="stream as fast as possible")
-    parser.add_argument("--streaming", action="store_true", help="enable streaming mode (progressive committed segments)")
-    parser.add_argument("--cold", action="store_true", help="tag records as a cold-load sample (first request after a restart)")
-    parser.add_argument("--provenance", help="JSON object merged into every record (e.g. hardware/engine metadata from the matrix runner)")
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="enable streaming mode (progressive committed segments)",
+    )
+    parser.add_argument(
+        "--cold",
+        action="store_true",
+        help="tag records as a cold-load sample (first request after a restart)",
+    )
+    parser.add_argument(
+        "--provenance",
+        help=(
+            "JSON object merged into every record"
+            " (e.g. hardware/engine metadata from the matrix runner)"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")
     args = parser.parse_args()
     if args.label is None:
@@ -166,13 +195,20 @@ async def main() -> None:
         print(f"(capabilities query failed: {type(exc).__name__}: {exc})")
 
     clips = select_clips(args)
-    pace = "fast as possible" if args.batch else "real-time pace (audio streams in full before finalize)"
+    pace = (
+        "fast as possible"
+        if args.batch
+        else "real-time pace (audio streams in full before finalize)"
+    )
     print(f"label={args.label}  clips={len(clips)}  socket={args.socket}")
     print(f"feeding audio at {pace}")
     # 'audio s' is how long the clip takes to stream (the bulk of the per-line
     # wait at real-time pace); 'ready s' is the cold model-load wait (session
     # open -> ready); 'final s' is end-of-audio -> committed text.
-    print(f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6} {'audio s':>8} {'ready s':>8} {'final s':>8}")
+    print(
+        f"{'clip':24} {'category':10} {'WER%':>6} {'CER%':>6}"
+        f" {'audio s':>8} {'ready s':>8} {'final s':>8}"
+    )
     print("-" * 84)
 
     lines = []
@@ -205,17 +241,27 @@ async def main() -> None:
     print(f"micro-averaged WER : {micro_wer:.2f}%  ({tot_edits} edits / {tot_words} ref words)")
     if readys:
         # The first clip carries the cold-load cost; report it distinctly.
-        print(f"time to ready      : first={readys[0]:.3f}s  median={sorted(readys)[len(readys) // 2]:.3f}s"
-              + ("  (--cold sample)" if args.cold else ""))
+        print(
+            f"time to ready      : first={readys[0]:.3f}s"
+            f"  median={sorted(readys)[len(readys) // 2]:.3f}s"
+            + ("  (--cold sample)" if args.cold else "")
+        )
     if median_final is not None:
         print(f"median finalize    : {median_final:.3f}s  (end-of-audio -> committed text)")
-    print(f"audio streamed     : {tot_audio:.1f}s total" + ("" if args.batch else "  (use --batch to skip real-time pacing)"))
+    print(
+        f"audio streamed     : {tot_audio:.1f}s total"
+        + ("" if args.batch else "  (use --batch to skip real-time pacing)")
+    )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    run_started = datetime.now(timezone.utc).isoformat()
+    run_started = datetime.now(UTC).isoformat()
     with args.out.open("a", encoding="utf-8") as fp:
         for line in lines:
-            record = {"run_started": run_started, "served_models": served_models, **line}
+            record = {
+                "run_started": run_started,
+                "served_models": served_models,
+                **line,
+            }
             if provenance:
                 record["provenance"] = provenance
             fp.write(json.dumps(record) + "\n")

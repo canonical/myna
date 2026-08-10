@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
+
 from myna.server.cli import build_adapter, build_parser
 from myna.testbed.parakeet import (
     ParakeetAdapter,
@@ -74,7 +76,7 @@ async def test_streaming_cut_constants_are_configurable(monkeypatch):
     monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
 
     async def empty_audio():
-        if False:
+        for _ in ():
             yield b""  # pragma: no cover - async iterator shape only
 
     async def emit(_event):
@@ -102,12 +104,17 @@ def test_streaming_cut_constants_must_be_positive():
 def test_cli_wires_streaming_cut_constants():
     args = build_parser().parse_args(
         [
-            "--socket", "/tmp/s.sock",
-            "--adapter", "parakeet",
+            "--socket",
+            "/tmp/s.sock",
+            "--adapter",
+            "parakeet",
             "--streaming",
-            "--stream-arm-s", "2.5",
-            "--stream-silence-cut-s", "0.25",
-            "--stream-force-cut-s", "7.0",
+            "--stream-arm-s",
+            "2.5",
+            "--stream-silence-cut-s",
+            "0.25",
+            "--stream-force-cut-s",
+            "7.0",
         ]
     )
     adapter = build_adapter(args)

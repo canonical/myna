@@ -50,8 +50,7 @@ def load_manifest(manifest_path: Path | str) -> tuple[Clip, ...]:
     version = manifest.get("schema_version")
     if version != SCHEMA_VERSION:
         raise ValueError(
-            f"{manifest_path}: schema_version {version!r} unsupported "
-            f"(expected {SCHEMA_VERSION})"
+            f"{manifest_path}: schema_version {version!r} unsupported (expected {SCHEMA_VERSION})"
         )
     clips = []
     for entry in manifest["clips"]:

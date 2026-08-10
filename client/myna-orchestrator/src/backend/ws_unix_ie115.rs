@@ -59,7 +59,11 @@ pub struct WsUnixIe115Backend {
 
 impl WsUnixIe115Backend {
     pub fn new(socket_path: impl Into<std::path::PathBuf>) -> Self {
-        Self { socket_path: socket_path.into(), base64_audio: false, ws_path: DEFAULT_WS_PATH.into() }
+        Self {
+            socket_path: socket_path.into(),
+            base64_audio: false,
+            ws_path: DEFAULT_WS_PATH.into(),
+        }
     }
 
     /// Send audio as base64 `input_audio_buffer.append` frames (OpenAI parity)
@@ -89,7 +93,10 @@ fn session_update_frame(config: &SessionConfig) -> Value {
     }
 
     let mut input = serde_json::Map::new();
-    input.insert("format".into(), json!({ "type": "audio/pcm", "rate": config.audio_format.sample_rate_hz }));
+    input.insert(
+        "format".into(),
+        json!({ "type": "audio/pcm", "rate": config.audio_format.sample_rate_hz }),
+    );
     // Only include transcription if non-empty — the canonical/whisper-snap
     // adapter rejects an empty transcription object.
     if !transcription.is_empty() {
@@ -133,7 +140,8 @@ impl BackendClient for WsUnixIe115Backend {
         }
 
         let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-        let (ev_tx, ev_rx) = mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
+        let (ev_tx, ev_rx) =
+            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
         tokio::spawn(pump(write, read, out_rx, ev_tx, self.base64_audio));
 
         Ok(BackendHandle {
@@ -163,32 +171,54 @@ fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
                 Some("ready") => PHASE_READY,
                 _ => PHASE_TRANSCRIBING,
             };
-            let snippet = value.get("snippet").and_then(Value::as_str).map(String::from);
-            vec![TranscriptionEvent::Progress(Progress { snippet, phase: phase.to_string() })]
+            let snippet = value
+                .get("snippet")
+                .and_then(Value::as_str)
+                .map(String::from);
+            vec![TranscriptionEvent::Progress(Progress {
+                snippet,
+                phase: phase.to_string(),
+            })]
         }
         // canonical/whisper-snap adapter: model.loaded ≈ our STATUS{ready}
         Some(MODEL_LOADED) => {
-            vec![TranscriptionEvent::Progress(Progress { snippet: None, phase: PHASE_READY.to_string() })]
+            vec![TranscriptionEvent::Progress(Progress {
+                snippet: None,
+                phase: PHASE_READY.to_string(),
+            })]
         }
         // canonical/whisper-snap adapter: model.unloaded ≈ our STATUS{loading}
         // (their SetConfig unconditionally reloads the backend — closes the gate
         // until the new connection's model.loaded arrives)
         Some(MODEL_UNLOADED) => {
-            vec![TranscriptionEvent::Progress(Progress { snippet: None, phase: PHASE_PREPARING.to_string() })]
+            vec![TranscriptionEvent::Progress(Progress {
+                snippet: None,
+                phase: PHASE_PREPARING.to_string(),
+            })]
         }
         Some(TRANSCRIPTION_DELTA) => {
             // Committed, append-only segment text — the IE115 face of
             // `transcription.final` (streaming contract, streaming.md §3a).
             // Parse disposition field (T12, feature 007); default to committed for backward-compat
             use myna_core::Disposition;
-            let text = value.get("delta").and_then(Value::as_str).unwrap_or("").to_string();
-            let disposition_str = value.get("disposition").and_then(Value::as_str).unwrap_or("committed");
+            let text = value
+                .get("delta")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let disposition_str = value
+                .get("disposition")
+                .and_then(Value::as_str)
+                .unwrap_or("committed");
             let disposition = if disposition_str == "unstable" {
                 Disposition::Unstable
             } else {
                 Disposition::Committed
             };
-            let segment_index = value.get("segment_index").and_then(Value::as_u64).map(|n| n as u32);
+            let segment_index = value
+                .get("segment_index")
+                .and_then(Value::as_u64)
+                .map(|n| n as u32);
             vec![TranscriptionEvent::Final(TranscriptionFinal {
                 text,
                 segments: vec![],
@@ -201,7 +231,11 @@ fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
             // HOWEVER: the canonical/whisper-snap adapter sends empty completed
             // as a "revision reset" signal (clear partial, re-send from scratch).
             // Only treat non-empty completed as the real terminal.
-            let text = value.get("transcript").and_then(Value::as_str).unwrap_or("").to_string();
+            let text = value
+                .get("transcript")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             if text.is_empty() {
                 // Revision reset — not a terminal. The next delta carries the
                 // corrected text. Ignore for now (our FSM already committed the
@@ -337,7 +371,9 @@ mod tests {
     #[test]
     fn decoder_maps_status_to_progress_phases() {
         let loading = decode_frame(&json!({"type": "status", "state": "loading"}));
-        assert!(matches!(&loading[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_PREPARING));
+        assert!(
+            matches!(&loading[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_PREPARING)
+        );
         let ready = decode_frame(&json!({"type": "status", "state": "ready"}));
         assert!(matches!(&ready[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_READY));
     }
