@@ -68,6 +68,16 @@ Desktop last-mile stays human acceptance + the Workshop env-gated suites.
 
 ## Status
 
-Authored 2026-08-10. Local VM validation and the first nightly CI run are
-pending; this section must be updated (and the verdict revisited if the
-hosted-KVM assumption breaks) when they land.
+**Local VM validation: PASSED (2026-08-10).** The confined-e2e task ran
+green on a clean qemu ubuntu-24.04-64 image: both snaps installed
+`--dangerous`, `snap connect myna:backend
+myna-fake-backend:ubustt-socket`, WAV-driven dictation against the confined
+fake backend, scripted transcript asserted. Fixes the first runs surfaced:
+fake-snap PYTHONPATH, guest-side snap path resolution, fixture staging under
+confinement. The qemu image is a primed noble cloud image at
+`~/.spread/qemu/ubuntu-24.04-64.img` (cloud-init seed: ubuntu/ubuntu +
+password SSH); spread is built from the pinned commit, NOT the snap (the
+snap has no kvm plug and cannot run the qemu backend with KVM).
+
+First nightly CI run pending; revisit the verdict only if the hosted-KVM
+assumption breaks.

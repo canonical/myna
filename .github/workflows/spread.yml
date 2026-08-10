@@ -35,7 +35,49 @@ jobs:
       - name: KVM available
         run: |
           if [ ! -w /dev/kvm ]; then echo "hosted runner lost KVM"; exit 1; fi
-          kvm-ok
+          sudo apt-get update && sudo apt-get install -y cpu-checker && sudo kvm-ok
+
+      # The qemu backend needs a primed image at ~/.spread/qemu/<system>.img
+      # (SSH on 22, ubuntu/ubuntu password auth). Built from the noble cloud
+      # image + a cloud-init seed, primed by booting once; cached by hash of
+      # this step. Mirrors the recorded local procedure.
+      - name: Cache qemu image
+        id: img-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.spread/qemu
+          key: spread-qemu-ubuntu-24.04-64-v1
+
+      - name: Build + prime qemu image
+        if: steps.img-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y qemu-system-x86 cloud-image-utils sshpass
+          mkdir -p ~/.spread/qemu && cd ~/.spread/qemu
+          wget -q https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img \
+            -O ubuntu-24.04-64.img
+          HASH=$(openssl passwd -6 ubuntu)
+          printf '#cloud-config\nssh_pwauth: true\nusers:\n  - name: ubuntu\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: %s\n' "$HASH" > user-data
+          printf 'instance-id: myna-spread-seed\nlocal-hostname: myna-spread\n' > meta-data
+          cloud-localds seed.iso user-data meta-data
+          qemu-system-x86_64 -enable-kvm -m 2G -smp 2 -nographic \
+            -drive file=ubuntu-24.04-64.img,if=virtio,format=qcow2 \
+            -drive file=seed.iso,if=virtio,format=raw \
+            -netdev user,id=n1,hostfwd=tcp::10022-:22 \
+            -device virtio-net-pci,netdev=n1 &
+          QEMU=$!
+          for _ in $(seq 1 90); do
+            if sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
+                 -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+                 -p 10022 ubuntu@localhost 'cloud-init status --wait' 2>/dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
+            -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+            -p 10022 ubuntu@localhost 'sudo poweroff' || true
+          wait $QEMU || true
 
       - name: Stage + build client snap
         run: myna-snap/dev/prepare.sh
@@ -53,13 +95,11 @@ jobs:
 
       - name: Build spread (pinned commit)
         run: |
-          sudo apt-get update && sudo apt-get install -y golang-go qemu-kvm
+          sudo apt-get install -y golang-go
           git clone https://github.com/snapcore/spread.git /tmp/spread
           git -C /tmp/spread checkout "$SPREAD_COMMIT"
           cd /tmp/spread && go build -o "$GITHUB_WORKSPACE/spread-bin" ./cmd/spread
 
+      # The task resolves the snaps from the project dir (sent to the VM).
       - name: Run confined-e2e
-        env:
-          SPREAD_MYNA_SNAP: ${{ steps.client.outputs.snap }}
-          SPREAD_FAKE_BACKEND_SNAP: ${{ steps.backend.outputs.snap }}
         run: ./spread-bin qemu:ubuntu-24.04-64:tests/spread/confined-e2e

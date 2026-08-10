@@ -25,7 +25,7 @@ fail-loud negative test of T018 passes). The static gates caught real
 pre-existing violations at introduction (SC-005's deliberate-violation test
 came for free), and the first pip-audit run found two real advisories
 (msgpack, setuptools — fixed). Pending: the three demonstration PRs (T022),
-spread local-VM + nightly validation (T037), analyze re-run + full
+spread nightly CI run (T037 local VM half validated 2026-08-10), analyze re-run + full
 quickstart (T040/T041). Branch staging was not followed — work landed on
 integration-220627 per maintainer direction.
 
@@ -166,7 +166,7 @@ integration-220627 per maintainer direction.
 
 ### Validation for User Story 5
 
-- [ ] T037 [US5] Execute quickstart.md Scenario 5 (SC-006), including a `-debug` interactive session if adopted
+- [x] T037 [US5] Execute quickstart.md Scenario 5 (SC-006), including a `-debug` interactive session if adopted
 
 **Checkpoint**: Recorded decision; if adopted, confined e2e runs on clean VMs
 
