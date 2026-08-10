@@ -45,7 +45,7 @@ fn unique_socket_path() -> PathBuf {
 /// as a grandchild that our `kill` couldn't reach, orphaning it). `None` if the
 /// venv server isn't built (environment can't run the test — skip).
 fn spawn_fake_server(socket: &Path) -> Option<ServerGuard> {
-    let server_bin = repo_root().join(".venv/bin/myna-server");
+    let server_bin = repo_root().join("server/.venv/bin/myna-server");
     if !server_bin.exists() {
         eprintln!("SKIP: {} not found; run `uv sync` first", server_bin.display());
         return None;

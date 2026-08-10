@@ -64,7 +64,7 @@ fn write_silence_wav(seconds: usize) -> PathBuf {
 }
 
 fn spawn_fake_server(socket: &Path) -> Option<ServerGuard> {
-    let server_bin = repo_root().join(".venv/bin/myna-server");
+    let server_bin = repo_root().join("server/.venv/bin/myna-server");
     if !server_bin.exists() {
         eprintln!("SKIP: {} not found; run `uv sync` first", server_bin.display());
         return None;
