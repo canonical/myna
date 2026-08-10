@@ -17,13 +17,17 @@ added to this list at that point.
 testable increment and maps to one branch (see Branch Staging Plan).
 
 **Implementation status (2026-08-10, integration-220627)**: all tasks except
-T022/T037/T039/T040/T041 implemented and validated **locally** (each static
-gate caught its real pre-existing violations — the deliberate-violation test
-of SC-005 came for free; coverage/exercise/deadcode/patch-cov all run green
-on this branch). Pending: fresh-Workshop validation of the new actions
-(T005/T009), the three demonstration PRs (T022), spread local-VM + nightly
-validation (T037), and the polish tasks. Branch staging was not followed —
-work landed on integration-220627 per maintainer direction.
+T022/T037/T040/T041 implemented and validated **in the canonical Workshop
+environment** (T005/T009 done: every action — cov, py-cov, exercise,
+deadcode, patch-cov incl. exit-2 propagation, fmt, machete, deny, py-lint,
+py-types, shell-lint, workflow-lint, audit — ran green in the workshop; the
+fail-loud negative test of T018 passes). The static gates caught real
+pre-existing violations at introduction (SC-005's deliberate-violation test
+came for free), and the first pip-audit run found two real advisories
+(msgpack, setuptools — fixed). Pending: the three demonstration PRs (T022),
+spread local-VM + nightly validation (T037), analyze re-run + full
+quickstart (T040/T041). Branch staging was not followed — work landed on
+integration-220627 per maintainer direction.
 
 ## Format: `[ID] [P?] [Story] Description`
 
