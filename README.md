@@ -219,7 +219,21 @@ On GNOME/Wayland a normal client can't show an always-on-top, focus-safe overlay
 so the animated dictation indicator lives in a GJS extension that runs inside the
 compositor and reads state + audio level from `myna-desktop --dbus` over D-Bus
 (`org.myna.Dictation`). It never captures, transcribes, or injects. Install it
-from `extensions/myna-shell/`; see `specs/004-gnome-shell-indicator/quickstart.md`.
+by symlinking the source tree into the extensions directory (the directory name
+must match the extension `uuid` in `extensions/myna-shell/metadata.json`):
+
+```shell
+mkdir -p ~/.local/share/gnome-shell/extensions
+ln -s "$PWD/extensions/myna-shell" ~/.local/share/gnome-shell/extensions/myna-shell@myna.dev
+# restart the shell: log out/in (Wayland)
+gnome-extensions enable myna-shell@myna.dev
+gnome-extensions info myna-shell@myna.dev    # state should be ACTIVE
+```
+
+The metadata declares shell-version `["50", "51"]`; on other Shell versions add
+yours or `gnome-extensions enable --force`. Code changes under
+`extensions/myna-shell/` need a shell restart to take
+effect. See `specs/004-gnome-shell-indicator/quickstart.md`.
 
 ## Benchmarking
 
@@ -280,6 +294,63 @@ deliberately left uncovered rather than mocked.
 The Rust workspace has hermetic unit tests plus env-gated integration suites for
 real hardware (`MYNA_PIPEWIRE_TESTS=1`, `MYNA_DBUS_TESTS=1`, IBus wire cycle) that
 skip offline and run unchanged on a VM or hardware.
+
+### Coverage and dead code
+
+One command per language in the Workshop environment (same commands in CI):
+
+```shell
+workshop run myna cov        # Rust: HTML + lcov + Cobertura under client/target/coverage/
+workshop run myna py-cov     # Python: htmlcov/ + term-missing + Cobertura
+workshop run myna exercise   # real use-cases (both wire dialects) instrumented, merged exports
+workshop run myna deadcode   # populations + dead-code report: client/target/coverage/populations.md
+```
+
+`deadcode`'s report classifies every line as **test-covered**,
+**use-case-only** (an integration-test gap, not dead code), or
+**never-executed**, and appends static findings (`cargo machete`, vulture,
+ruff F401/F841). CI additionally enforces a **patch-coverage gate** on every
+PR: 80% of changed coverable lines (5-line floor; deletion-only PRs can't
+false-fail), self-hosted - no external service (`workshop run myna patch-cov`
+locally). Whole-project coverage is reported informationally only.
+
+### Instrumented builds & manual coverage
+
+To answer "did my manual testing exercise this code?", run any component
+instrumented, poke at it by hand, then generate the report. The scripted
+actions and manual runs write to the **same** data locations, so any mix
+merges into one report.
+
+Rust (per run, from `client/`):
+
+```shell
+cargo llvm-cov run --no-report --bin myna-dictate -- --socket /tmp/myna.sock --mic
+# ... poke at it; repeat with --bin myna-desktop etc. Each run appends data.
+cargo llvm-cov report --html --output-dir target/coverage/html   # report on demand
+cargo llvm-cov clean --workspace                                 # reset
+```
+
+Python (server/):
+
+```shell
+coverage run --parallel-mode --context=usecase:manual -m myna.server --adapter fake --socket /tmp/myna.sock
+# ... drive sessions against it; stop with Ctrl-C when done
+coverage combine          # merge all runs (tests + every manual session)
+coverage html --show-contexts   # per-line "covered by which run" detail
+rm -f .coverage*                # reset
+```
+
+Then `workshop run myna deadcode` (or `python dev/coverage_populations.py`)
+folds your manual runs into the populations + dead-code report.
+
+### Quality gates
+
+CI runs the full static battery per PR, each also runnable locally as a
+Workshop action: `fmt`, `machete` (unused Rust deps), `deny` (dependency
+policy - mechanically bans HTTP/TLS/cloud client crates in the client,
+codifying the offline invariant), `py-lint` (ruff), `py-types` (mypy strict
+on `myna/core`), `shell-lint`, `workflow-lint`. Dependency-advisory audits
+(`workshop run myna audit`) run weekly, not per PR.
 
 ## Building the snaps
 
