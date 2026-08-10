@@ -13,24 +13,32 @@ mkdir -p "$BIN"
 apt-get update
 apt-get install --yes --no-install-recommends shellcheck curl ca-certificates
 
-# cargo-binstall (bootstrap), then pinned prebuilt tool binaries.
-if [ ! -x "$BIN/cargo-binstall" ]; then
+# cargo-binstall (bootstrap — its installer drops the binary in
+# $CARGO_HOME/bin), then pinned prebuilt tool binaries.
+BINSTALL_HOME=/usr/local/cargo-binstall
+if [ ! -x "$BINSTALL_HOME/bin/cargo-binstall" ]; then
   curl -fsSL https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
-    | CARGO_HOME=/usr/local/cargo-binstall BINSTALL_INSTALL_DIR="$BIN" bash
+    | CARGO_HOME="$BINSTALL_HOME" bash
 fi
 
-export CARGO_HOME=/usr/local/cargo-binstall
-"$BIN/cargo-binstall" --no-confirm --no-symlinks --install-path "$BIN" \
+export CARGO_HOME="$BINSTALL_HOME"
+"$BINSTALL_HOME/bin/cargo-binstall" --no-confirm --no-symlinks --install-path "$BIN" \
   cargo-llvm-cov@0.6.21 \
-  cargo-deny@0.18.2 \
+  cargo-deny@0.20.2 \
   cargo-machete@0.9.1 \
-  cargo-audit@0.21.2
+  cargo-audit@0.22.1
 
 # actionlint (workflow-lint gate), pinned.
 ACTIONLINT_VERSION=1.7.7
 curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
   | tar -xz -C "$BIN" actionlint
 chmod +x "$BIN/actionlint"
+
+# binstall can exit 0 after skipping a crate whose prebuilt fetch failed
+# (observed: QuickInstall hiccup installed 2 of 4). Fail the hook instead.
+for tool in cargo-llvm-cov cargo-deny cargo-machete cargo-audit; do
+  [ -x "$BIN/$tool" ] || { echo "missing $tool after binstall" >&2; exit 1; }
+done
 
 # On PATH for login shells (workshop run/exec).
 printf 'export PATH="%s:$PATH"\n' "$BIN" > /etc/profile.d/zz-myna-coverage.sh

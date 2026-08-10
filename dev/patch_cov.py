@@ -106,7 +106,11 @@ def main() -> int:
         return path.startswith(EXCLUDE_PREFIXES)
 
     coverable = {
-        (f, n) for f, lines in changes.items() if not excluded(f) for n in lines if (f, n) in universe
+        (f, n)
+        for f, lines in changes.items()
+        if not excluded(f)
+        for n in lines
+        if (f, n) in universe
     }
     hit = {(f, n) for f, n in coverable if (f, n) in covered}
     missed = sorted(coverable - hit)

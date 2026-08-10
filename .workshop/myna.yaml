@@ -69,6 +69,9 @@ actions:
   cov: |
     export PATH=/usr/local/cargo-bin:$PATH
     rustup component add llvm-tools-preview 2>/dev/null || true
+    # The orchestrator e2e tests spawn server/.venv/bin/myna-server; sync it
+    # first or they skip silently (and Rust loses ~2 points of coverage).
+    (cd /project/server && uv sync -q)
     cd /project/client
     mkdir -p target/coverage
     cargo llvm-cov clean --workspace
@@ -97,13 +100,13 @@ actions:
   # report at client/target/coverage/populations.md (+ .json).
   deadcode: |
     cd /project/server && uv sync -q
-    cd /project && server/.venv/bin/python dev/coverage_populations.py
+    cd /project && /project/server/.venv/bin/python dev/coverage_populations.py
 
   # Self-hosted patch-coverage gate (default 80%, 5-line floor). Needs a full
   # checkout (merge base). Exit 2 = below threshold; other non-zero = error.
   patch-cov: |
     cd /project/server && uv sync -q
-    server/.venv/bin/python /project/dev/patch_cov.py "$@"
+    /project/server/.venv/bin/python /project/dev/patch_cov.py "$@"
 
   # --- static gates (FR-010/FR-011) ---
   fmt: |

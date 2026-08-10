@@ -31,7 +31,7 @@ mkdir -p "$WORK"
 
 notice() { printf '\033[1m== %s\033[0m\n' "$*"; }
 SERVER_PID=""
-cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true; }
+cleanup() { if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi }
 trap cleanup EXIT
 skip() { printf '\033[33mSKIP\033[0m %s\n' "$*"; }
 die() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
