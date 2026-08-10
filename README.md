@@ -333,15 +333,21 @@ cargo llvm-cov clean --workspace                                 # reset
 Python (server/):
 
 ```shell
-coverage run --parallel-mode --context=usecase:manual -m myna.server --adapter fake --socket /tmp/myna.sock
+uv run coverage run --parallel-mode --context=usecase:manual -m myna.server --adapter fake --socket /tmp/myna.sock
 # ... drive sessions against it; stop with Ctrl-C when done
-coverage combine          # merge all runs (tests + every manual session)
-coverage html --show-contexts   # per-line "covered by which run" detail
-rm -f .coverage*                # reset
+uv run coverage combine          # merge all runs (tests + every manual session)
+uv run coverage html --show-contexts   # per-line "covered by which run" detail
+rm -f .coverage*                 # reset
 ```
 
-Then `workshop run myna deadcode` (or `python dev/coverage_populations.py`)
-folds your manual runs into the populations + dead-code report.
+To fold your manual runs into the populations + dead-code report, refresh
+the merged exports and run `deadcode`:
+
+```shell
+cd client && cargo llvm-cov report --cobertura --output-path target/coverage/rust-merged.cobertura.xml
+cd ../server && uv run coverage xml -o coverage-merged.cobertura.xml
+cd .. && workshop run myna deadcode   # or: python dev/coverage_populations.py
+```
 
 ### Quality gates
 
