@@ -56,3 +56,10 @@ sherpa-snap/components/model-*/
 sherpa-snap/wheels/
 sherpa-snap/*.snap
 sherpa-snap/*.comp
+
+# Coverage artifacts (feature 006)
+client/target/coverage/
+server/.coverage*
+server/coverage-*.xml
+server/htmlcov/
+.coverage-work/

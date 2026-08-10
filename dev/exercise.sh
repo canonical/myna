@@ -55,14 +55,15 @@ fi
 
 start_server() { # <context> <socket>
   local context="$1" sock="$2"
-  # Direct venv binary, not `uv run`: a wrapper would fork the server as a
-  # grandchild our kill couldn't reach (same constraint as the e2e tests).
+  # Direct venv binary via `env -C`, not a subshell or `uv run`: wrappers
+  # fork the server as a child our kill can't reach (same constraint as the
+  # e2e tests) — $! must be the server process itself.
   local cov="$SERVER/.venv/bin/coverage"
   [ -x "$cov" ] || cov="coverage"
-  (cd "$SERVER" && "$cov" run --parallel-mode \
+  env -C "$SERVER" "$cov" run --parallel-mode \
     --data-file="$SERVER/.coverage.usecase-$context" "--context=usecase:$context" \
     -m myna.server --adapter fake --socket "$sock" \
-    >"$WORK/server-$context.log" 2>&1) &
+    >"$WORK/server-$context.log" 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 100); do [ -S "$sock" ] && return 0; sleep 0.1; done
   die "server ($context) did not bind $sock; log: $WORK/server-$context.log"
@@ -142,6 +143,7 @@ ls "$CLIENT"/target/llvm-cov-target/*.profraw >/dev/null 2>&1 \
 COV="$SERVER/.venv/bin/coverage"; [ -x "$COV" ] || COV=coverage
 (cd "$SERVER" && "$COV" combine .coverage.tests .coverage.usecase-* >/dev/null)
 (cd "$SERVER" && "$COV" xml -o coverage-merged.cobertura.xml >/dev/null)
+mkdir -p "$CLIENT/target/coverage"
 (cd "$CLIENT" && cargo llvm-cov report --cobertura \
   --output-path target/coverage/rust-merged.cobertura.xml >/dev/null)
 
