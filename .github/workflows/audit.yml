@@ -1,0 +1,25 @@
+# Weekly dependency-advisory audits (feature 006, FR-012): cargo audit
+# (RustSec) + pip-audit (Python lock) in the canonical Workshop environment.
+# Scheduled, not per-PR — a newly published advisory must be visible signal,
+# never a block on unrelated work.
+name: Audit
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Advisory audits (cargo audit + pip-audit)
+        run: workshop run myna audit

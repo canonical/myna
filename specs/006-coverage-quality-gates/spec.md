@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-26
 
-**Status**: Draft
+**Status**: Implemented (validation pending: fresh-Workshop actions, demo PRs, spread VM run)
 
 **Input**: User description: "Plan how to run the Rust and Python tests with coverage, exercise the program using real use-cases, and then see the dead code; ensure CI measures coverage for new changes; add any other useful static checks; evaluate the spread integration test framework."
 

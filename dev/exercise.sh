@@ -102,6 +102,7 @@ if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && command -v pw-loopback >/dev/null; th
   notice "scenario 3: myna-desktop --dbus publisher (virtual source)"
   SOCK="$WORK/desktop.sock"; rm -f "$SOCK"
   start_server desktop "$SOCK"
+  # shellcheck disable=SC2016  # late expansion of the injected $SOCK/$CLIENT is intentional
   dbus-run-session -- bash -c '
     set -euo pipefail
     pw-loopback -n myna-exercise-src --capture-props="media.class=Audio/Source" &

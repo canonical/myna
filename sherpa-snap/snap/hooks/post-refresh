@@ -1,5 +1,6 @@
 #!/bin/bash -eu
 
+# shellcheck disable=SC2034  # used via process substitution below
 tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
-exec 1> >(tee >(logger --tag=$tag))
-exec 2> >(logger --stderr --priority error --tag=$tag)
+exec 1> >(tee >(logger --tag="$tag"))
+exec 2> >(logger --stderr --priority error --tag="$tag")

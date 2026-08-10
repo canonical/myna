@@ -1,6 +1,17 @@
 # Myna Project Plan
 
-**Created:** 2026-06-12 · **Last updated:** 2026-07-30
+**Created:** 2026-06-12 · **Last updated:** 2026-08-10
+
+**Feature 006 (coverage & quality gates, 2026-08-10):** implemented on
+integration-220627 — one-command Rust/Python coverage (`workshop run myna
+cov` / `py-cov`), instrumented use-case exercise + merged populations and
+dead-code report (`exercise`, `deadcode`), self-hosted 80% patch-coverage
+gate per PR (`patch-cov`), static battery (fmt / machete / cargo-deny
+offline-invariant / ruff / mypy-strict-core / shellcheck / actionlint), weekly
+advisory audits, and the spread evaluation (verdict: **adopt**; decision
+record + confined-e2e suite + fake-backend test snap in `fake-snap/`,
+`spread.yaml`, `tests/spread/`, nightly `.github/workflows/spread.yml` —
+first VM/CI validation pending). Spec/tasks: `specs/006-coverage-quality-gates/`.
 **Status:** Living document — update task status in place as work lands.
 
 This plan turns IE114 (UbuSTT API), UD129 (Desktop STT Integration), and the

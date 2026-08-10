@@ -1,0 +1,65 @@
+# Confined end-to-end tests via spread (feature 006, US5; decision record:
+# specs/006-coverage-quality-gates/spread-decision.md).
+#
+# Nightly + on changes to the snap/packaging seams. Builds the client snap
+# and the fake-backend test snap, builds spread from a pinned upstream
+# commit (supply-chain choice recorded in the decision record), and runs the
+# confined-e2e suite on a clean qemu ubuntu-24.04-64 VM (hosted-runner KVM).
+#
+# Supersession plan: once this is green for two weeks, the bespoke smoke job
+# in snap.yml shrinks to build-only and its smoke assertions live here.
+name: Spread
+
+on:
+  schedule:
+    - cron: "41 4 * * *" # nightly 04:41 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "myna-snap/**"
+      - "fake-snap/**"
+      - "spread.yaml"
+      - "tests/spread/**"
+      - ".github/workflows/spread.yml"
+
+# Pinned upstream commit (decision record; bump deliberately).
+env:
+  SPREAD_COMMIT: 052d7a1 # matches latest/stable 2026.07.12-g052d7a1
+
+jobs:
+  confined-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: KVM available
+        run: |
+          if [ ! -w /dev/kvm ]; then echo "hosted runner lost KVM"; exit 1; fi
+          kvm-ok
+
+      - name: Stage + build client snap
+        run: myna-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: client
+        with:
+          path: myna-snap
+
+      - name: Stage + build fake-backend snap
+        run: fake-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: backend
+        with:
+          path: fake-snap
+
+      - name: Build spread (pinned commit)
+        run: |
+          sudo apt-get update && sudo apt-get install -y golang-go qemu-kvm
+          git clone https://github.com/snapcore/spread.git /tmp/spread
+          git -C /tmp/spread checkout "$SPREAD_COMMIT"
+          cd /tmp/spread && go build -o "$GITHUB_WORKSPACE/spread-bin" ./cmd/spread
+
+      - name: Run confined-e2e
+        env:
+          SPREAD_MYNA_SNAP: ${{ steps.client.outputs.snap }}
+          SPREAD_FAKE_BACKEND_SNAP: ${{ steps.backend.outputs.snap }}
+        run: ./spread-bin qemu:ubuntu-24.04-64:tests/spread/confined-e2e

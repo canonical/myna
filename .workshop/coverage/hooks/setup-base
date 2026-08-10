@@ -1,0 +1,36 @@
+#!/bin/bash
+# setup-base — runs as root at SDK install. Installs the pinned quality-gate
+# toolchain (feature 006) into /usr/local/cargo-bin (on PATH via the profile
+# drop-in below): prebuilt binaries via cargo-binstall, no per-user cargo
+# builds. Also shellcheck for the shell-lint gate; actionlint is fetched
+# prebuilt like the cargo tools.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+BIN=/usr/local/cargo-bin
+mkdir -p "$BIN"
+
+apt-get update
+apt-get install --yes --no-install-recommends shellcheck curl ca-certificates
+
+# cargo-binstall (bootstrap), then pinned prebuilt tool binaries.
+if [ ! -x "$BIN/cargo-binstall" ]; then
+  curl -fsSL https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
+    | CARGO_HOME=/usr/local/cargo-binstall BINSTALL_INSTALL_DIR="$BIN" bash
+fi
+
+export CARGO_HOME=/usr/local/cargo-binstall
+"$BIN/cargo-binstall" --no-confirm --no-symlinks --install-path "$BIN" \
+  cargo-llvm-cov@0.6.21 \
+  cargo-deny@0.18.2 \
+  cargo-machete@0.9.1 \
+  cargo-audit@0.21.2
+
+# actionlint (workflow-lint gate), pinned.
+ACTIONLINT_VERSION=1.7.7
+curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+  | tar -xz -C "$BIN" actionlint
+chmod +x "$BIN/actionlint"
+
+# On PATH for login shells (workshop run/exec).
+printf 'export PATH="%s:$PATH"\n' "$BIN" > /etc/profile.d/zz-myna-coverage.sh

@@ -38,3 +38,100 @@ jobs:
       # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
       - name: Python tests (pytest)
         run: workshop run myna py-test
+
+  # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
+  # violations; all run via the Workshop actions, same as locally.
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Rust format
+        run: workshop run myna fmt
+
+      - name: Rust unused dependencies
+        run: workshop run myna machete
+
+      # Offline invariant (constitution V): no HTTP/TLS/cloud client crates.
+      - name: Rust dependency policy
+        run: workshop run myna deny
+
+      - name: Python lint + format
+        run: workshop run myna py-lint
+
+      - name: Python types (myna/core, strict)
+        run: workshop run myna py-types
+
+      - name: Shell lint
+        run: workshop run myna shell-lint
+
+      - name: Workflow lint
+        run: workshop run myna workflow-lint
+
+  # Coverage (feature 006, FR-007): both languages measured in the Workshop
+  # environment, reports published as artifacts, and the self-hosted patch
+  # gate (FR-008) enforced on the PR's changed lines. Project-level coverage
+  # is informational (FR-009) until a project threshold is ratified.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — patch-cov needs the merge base.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Rust coverage (tests)
+        run: workshop run myna cov
+
+      - name: Python coverage (tests)
+        run: workshop run myna py-cov
+
+      - name: Use-case exercise (merged exports)
+        run: workshop run myna exercise
+
+      - name: Dead-code report
+        run: workshop run myna deadcode
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          retention-days: 14
+          path: |
+            client/target/coverage/
+            server/htmlcov/
+            server/coverage-*.xml
+
+      - name: Project coverage (informational)
+        run: |
+          {
+            echo "## Project coverage (informational, non-blocking)"
+            echo
+            python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          for name, path in [
+              ("Rust (merged)", "client/target/coverage/rust-merged.cobertura.xml"),
+              ("Python (merged)", "server/coverage-merged.cobertura.xml"),
+          ]:
+              rate = float(ET.parse(path).getroot().get("line-rate")) * 100
+              print(f"- {name}: {rate:.1f}% lines")
+          EOF
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Blocking gate (FR-008): 80% of changed coverable lines, 5-line floor,
+      # deletion-only and excluded paths cannot false-fail. Exit 2 = fail.
+      - name: Patch coverage gate
+        run: workshop run myna patch-cov --base "origin/${{ github.base_ref || 'main' }}"

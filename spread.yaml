@@ -1,0 +1,30 @@
+# Spread project for myna (feature 006, US5) — confined multi-system
+# end-to-end tests on clean systems. Decision record:
+# specs/006-coverage-quality-gates/spread-decision.md
+#
+# Run locally (needs KVM):   spread qemu:ubuntu-24.04-64:tests/spread/
+# Debug a failure:           spread -debug qemu:ubuntu-24.04-64:tests/spread/confined-e2e
+#
+# The snaps under test are prebuilt (CI builds them before invoking spread)
+# and their paths injected via environment:
+#   SPREAD_MYNA_SNAP          path to the myna client snap
+#   SPREAD_FAKE_BACKEND_SNAP  path to the myna-fake-backend snap
+project: myna
+
+path: /home/spread/myna
+
+backends:
+    qemu:
+        memory: 4G
+        systems:
+            - ubuntu-24.04-64:
+                username: ubuntu
+                password: ubuntu
+
+environment:
+    MYNA_SNAP: "$(HOST: echo ${SPREAD_MYNA_SNAP:-/nonexistent})"
+    FAKE_BACKEND_SNAP: "$(HOST: echo ${SPREAD_FAKE_BACKEND_SNAP:-/nonexistent})"
+
+suites:
+    tests/spread/:
+        summary: Confined end-to-end tests

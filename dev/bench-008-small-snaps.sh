@@ -44,7 +44,7 @@ run_sweep() {
         &
     SERVER_PID=$!
 
-    for i in $(seq 1 60); do
+    for _ in $(seq 1 60); do
         [ -S "$SOCKET" ] && break
         sleep 1
     done

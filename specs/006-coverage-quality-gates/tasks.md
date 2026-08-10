@@ -16,6 +16,15 @@ added to this list at that point.
 **Organization**: Tasks grouped by user story; each story is an independently
 testable increment and maps to one branch (see Branch Staging Plan).
 
+**Implementation status (2026-08-10, integration-220627)**: all tasks except
+T022/T037/T039/T040/T041 implemented and validated **locally** (each static
+gate caught its real pre-existing violations — the deliberate-violation test
+of SC-005 came for free; coverage/exercise/deadcode/patch-cov all run green
+on this branch). Pending: fresh-Workshop validation of the new actions
+(T005/T009), the three demonstration PRs (T022), spread local-VM + nightly
+validation (T037), and the polish tasks. Branch staging was not followed —
+work landed on integration-220627 per maintainer direction.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -28,9 +37,9 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 **Purpose**: Provision tooling so every later story only writes configuration
 
-- [ ] T001 Extend the Workshop definition (`.workshop/myna.yaml` and/or its SDK files) to provision the Rust tools: `llvm-tools-preview` component, `cargo-llvm-cov`, `cargo-deny`, `cargo-machete`, `cargo-audit` (pinned versions, offline-cacheable per constitution IV)
-- [ ] T002 [P] Add Python tooling to the dev dependency group in `server/pyproject.toml`: `diff-cover`, `ruff`, `mypy`, `vulture`, `pip-audit`; run `uv lock`
-- [ ] T003 [P] Add coverage/report output paths to `.gitignore`: `client/target/coverage/`, `server/.coverage*`, `server/coverage-*.xml`, `server/htmlcov/` (verify `client/target/` rule doesn't already suffice)
+- [x] T001 Extend the Workshop definition (`.workshop/myna.yaml` and/or its SDK files) to provision the Rust tools: `llvm-tools-preview` component, `cargo-llvm-cov`, `cargo-deny`, `cargo-machete`, `cargo-audit` (pinned versions, offline-cacheable per constitution IV)
+- [x] T002 [P] Add Python tooling to the dev dependency group in `server/pyproject.toml`: `diff-cover`, `ruff`, `mypy`, `vulture`, `pip-audit`; run `uv lock`
+- [x] T003 [P] Add coverage/report output paths to `.gitignore`: `client/target/coverage/`, `server/.coverage*`, `server/coverage-*.xml`, `server/htmlcov/` (verify `client/target/` rule doesn't already suffice)
 
 ---
 
@@ -40,8 +49,8 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create `dev/coverage_lib.py`: Cobertura XML parsing plus path normalization to repo-root-relative paths (handles `client/`-workspace-relative llvm-cov paths and `server/`-relative coverage.py paths, per research.md D3 wrinkle)
-- [ ] T005 Smoke-verify provisioning from T001–T002 inside the Workshop environment: each tool runs `--version`; document versions in the PR description
+- [x] T004 Create `dev/coverage_lib.py`: Cobertura XML parsing plus path normalization to repo-root-relative paths (handles `client/`-workspace-relative llvm-cov paths and `server/`-relative coverage.py paths, per research.md D3 wrinkle)
+- [x] T005 Smoke-verify provisioning from T001–T002 inside the Workshop environment: each tool runs `--version`; document versions in the PR description
 
 **Checkpoint**: Tools provisioned in the canonical environment; shared coverage helper exists
 
@@ -55,13 +64,13 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Add the `cov` action to `.workshop/myna.yaml`: `cargo llvm-cov --workspace` in `client/` emitting HTML + lcov + Cobertura to `client/target/coverage/` (contract: contracts/workshop-actions.md `cov`)
-- [ ] T007 [P] [US1] Add the `py-cov` action to `.workshop/myna.yaml`: `uv run pytest --cov=myna --cov-branch --cov-context=test` in `server/` emitting HTML (with `--show-contexts`), term-missing, and Cobertura XML (contract: `py-cov`)
-- [ ] T008 [US1] Verify FR-003 gating: run `cov` with `MYNA_PIPEWIRE_TESTS` unset (skips cleanly, report generates, gated paths visible as uncovered) and set (gated hits contribute); record outcome in the PR
+- [x] T006 [US1] Add the `cov` action to `.workshop/myna.yaml`: `cargo llvm-cov --workspace` in `client/` emitting HTML + lcov + Cobertura to `client/target/coverage/` (contract: contracts/workshop-actions.md `cov`)
+- [x] T007 [P] [US1] Add the `py-cov` action to `.workshop/myna.yaml`: `uv run pytest --cov=myna --cov-branch --cov-context=test` in `server/` emitting HTML (with `--show-contexts`), term-missing, and Cobertura XML (contract: `py-cov`)
+- [x] T008 [US1] Verify FR-003 gating: run `cov` with `MYNA_PIPEWIRE_TESTS` unset (skips cleanly, report generates, gated paths visible as uncovered) and set (gated hits contribute); record outcome in the PR
 
 ### Validation for User Story 1
 
-- [ ] T009 [US1] Execute quickstart.md Scenario 1 end-to-end in a fresh Workshop environment; confirm SC-001 timing (≤2× existing job time)
+- [x] T009 [US1] Execute quickstart.md Scenario 1 end-to-end in a fresh Workshop environment; confirm SC-001 timing (≤2× existing job time)
 
 **Checkpoint**: Both one-command reports work locally; MVP deliverable
 
@@ -75,18 +84,18 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] Create `dev/exercise.sh`: launch `myna-server --adapter fake` under `coverage run --parallel-mode --context=usecase:*`, drive a dictation session with `myna-dictate` (internal dialect, WAV fixture input) instrumented via `cargo llvm-cov run`, assert the expected transcript event
-- [ ] T011 [US2] Add the IE115-dialect session to `dev/exercise.sh` (same pattern, second context)
-- [ ] T012 [US2] Add the `myna-desktop --dbus` publisher scenario to `dev/exercise.sh` against a stub D-Bus consumer (state/level only — no content, FR-016)
-- [ ] T013 [US2] Add the environment-gated live-capture scenario to `dev/exercise.sh` (runs where capture hardware exists; clear skip notice otherwise — amended FR-004)
-- [ ] T014 [US2] Add the fail-loud merge step: every scheduled run-kind must produce its expected raw data file; a missing file aborts with non-zero and names the missing input (FR-005)
-- [ ] T015 [US2] Create `dev/coverage_populations.py` on `dev/coverage_lib.py`: classify every line as test-covered / use-case-only / never-executed from tests-only vs merged Cobertura exports; emit `client/target/coverage/populations.md` + `populations.json` (data-model.md: Coverage Population)
-- [ ] T016 [P] [US2] Create `dev/vulture_allowlist.py` (adapter-by-name loaders, pytest fixtures) and wire the statics into the dead-code section: `vulture --min-confidence 80`, `ruff --select F401,F841`, `cargo machete` (data-model.md: Dead-Code Report)
-- [ ] T017 [US2] Add the `exercise` and `deadcode` actions to `.workshop/myna.yaml` (contracts: `exercise`, `deadcode`)
+- [x] T010 [US2] Create `dev/exercise.sh`: launch `myna-server --adapter fake` under `coverage run --parallel-mode --context=usecase:*`, drive a dictation session with `myna-dictate` (internal dialect, WAV fixture input) instrumented via `cargo llvm-cov run`, assert the expected transcript event
+- [x] T011 [US2] Add the IE115-dialect session to `dev/exercise.sh` (same pattern, second context)
+- [x] T012 [US2] Add the `myna-desktop --dbus` publisher scenario to `dev/exercise.sh` against a stub D-Bus consumer (state/level only — no content, FR-016)
+- [x] T013 [US2] Add the environment-gated live-capture scenario to `dev/exercise.sh` (runs where capture hardware exists; clear skip notice otherwise — amended FR-004)
+- [x] T014 [US2] Add the fail-loud merge step: every scheduled run-kind must produce its expected raw data file; a missing file aborts with non-zero and names the missing input (FR-005)
+- [x] T015 [US2] Create `dev/coverage_populations.py` on `dev/coverage_lib.py`: classify every line as test-covered / use-case-only / never-executed from tests-only vs merged Cobertura exports; emit `client/target/coverage/populations.md` + `populations.json` (data-model.md: Coverage Population)
+- [x] T016 [P] [US2] Create `dev/vulture_allowlist.py` (adapter-by-name loaders, pytest fixtures) and wire the statics into the dead-code section: `vulture --min-confidence 80`, `ruff --select F401,F841`, `cargo machete` (data-model.md: Dead-Code Report)
+- [x] T017 [US2] Add the `exercise` and `deadcode` actions to `.workshop/myna.yaml` (contracts: `exercise`, `deadcode`)
 
 ### Validation for User Story 2
 
-- [ ] T018 [US2] Execute quickstart.md Scenario 2 including the fail-loud negative test and the spot-checks (SC-002 known regions, SC-003 zero allow-list false positives)
+- [x] T018 [US2] Execute quickstart.md Scenario 2 including the fail-loud negative test and the spot-checks (SC-002 known regions, SC-003 zero allow-list false positives)
 
 **Checkpoint**: Merged report + dead-code report exist and are trustworthy
 
@@ -100,9 +109,9 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Add the `patch-cov` action to `.workshop/myna.yaml`: `diff-cover` over both merged Cobertura exports against the merge base, path normalization via `dev/coverage_lib.py`, `--fail-under` default 80, exclusions for generated/vendored paths, <5-coverable-line floor, exit 2 below threshold (contract: `patch-cov`; gate specifics: contracts/ci-gates.md)
-- [ ] T020 [US3] Add the coverage job to `.github/workflows/ci.yml`: `fetch-depth: 0` checkout, run `cov` + `py-cov` + `exercise` via Workshop actions, upload HTML/XML artifacts (14-day retention), project-level coverage in the job summary (non-blocking, FR-009)
-- [ ] T021 [US3] Wire the blocking `patch-coverage` gate step into `.github/workflows/ci.yml` running `patch-cov`; never fail-open on tool error (non-2 non-zero = job error)
+- [x] T019 [US3] Add the `patch-cov` action to `.workshop/myna.yaml`: `diff-cover` over both merged Cobertura exports against the merge base, path normalization via `dev/coverage_lib.py`, `--fail-under` default 80, exclusions for generated/vendored paths, <5-coverable-line floor, exit 2 below threshold (contract: `patch-cov`; gate specifics: contracts/ci-gates.md)
+- [x] T020 [US3] Add the coverage job to `.github/workflows/ci.yml`: `fetch-depth: 0` checkout, run `cov` + `py-cov` + `exercise` via Workshop actions, upload HTML/XML artifacts (14-day retention), project-level coverage in the job summary (non-blocking, FR-009)
+- [x] T021 [US3] Wire the blocking `patch-coverage` gate step into `.github/workflows/ci.yml` running `patch-cov`; never fail-open on tool error (non-2 non-zero = job error)
 
 ### Validation for User Story 3
 
@@ -120,18 +129,18 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 ### Implementation for User Story 4
 
-- [ ] T023 [P] [US4] Add the `fmt` action (`cargo fmt --check`) to `.workshop/myna.yaml` and the `rust-fmt` gate to `.github/workflows/ci.yml`
-- [ ] T024 [P] [US4] Add the `machete` action and the `rust-unused-deps` gate
-- [ ] T025 [P] [US4] Create `client/deny.toml` (ban list of HTTP/cloud client crates per research.md D5 — `tokio-tungstenite` over UDS explicitly allowed; license policy) plus the `deny` action and the `rust-dep-policy` gate (FR-011)
-- [ ] T026 [P] [US4] Configure ruff in `server/pyproject.toml`, add the `py-lint` action (`ruff check` + `ruff format --check` over `server/`, `dev/`) and the `python-lint` gate
-- [ ] T027 [P] [US4] Configure mypy (strict scoped to `myna/core` only) in `server/pyproject.toml`, add the `py-types` action and the `python-types-core` gate
-- [ ] T028 [P] [US4] Add the `shell-lint` action (`shellcheck` over `dev/*.sh` and snap scripts/hooks) and the `shell-lint` gate
-- [ ] T029 [P] [US4] Add the `workflow-lint` action (`actionlint` over `.github/workflows/`) and the `workflow-lint` gate
-- [ ] T030 [US4] Add the `audit` action (`cargo audit` + `pip-audit` on `server/uv.lock`) and create `.github/workflows/audit.yml` (weekly schedule + manual dispatch; failure is visible signal, not PR-blocking — FR-012)
+- [x] T023 [P] [US4] Add the `fmt` action (`cargo fmt --check`) to `.workshop/myna.yaml` and the `rust-fmt` gate to `.github/workflows/ci.yml`
+- [x] T024 [P] [US4] Add the `machete` action and the `rust-unused-deps` gate
+- [x] T025 [P] [US4] Create `client/deny.toml` (ban list of HTTP/cloud client crates per research.md D5 — `tokio-tungstenite` over UDS explicitly allowed; license policy) plus the `deny` action and the `rust-dep-policy` gate (FR-011)
+- [x] T026 [P] [US4] Configure ruff in `server/pyproject.toml`, add the `py-lint` action (`ruff check` + `ruff format --check` over `server/`, `dev/`) and the `python-lint` gate
+- [x] T027 [P] [US4] Configure mypy (strict scoped to `myna/core` only) in `server/pyproject.toml`, add the `py-types` action and the `python-types-core` gate
+- [x] T028 [P] [US4] Add the `shell-lint` action (`shellcheck` over `dev/*.sh` and snap scripts/hooks) and the `shell-lint` gate
+- [x] T029 [P] [US4] Add the `workflow-lint` action (`actionlint` over `.github/workflows/`) and the `workflow-lint` gate
+- [x] T030 [US4] Add the `audit` action (`cargo audit` + `pip-audit` on `server/uv.lock`) and create `.github/workflows/audit.yml` (weekly schedule + manual dispatch; failure is visible signal, not PR-blocking — FR-012)
 
 ### Validation for User Story 4
 
-- [ ] T031 [US4] Execute quickstart.md Scenario 4: one deliberate-violation branch per gate (SC-005), all gates green after revert
+- [x] T031 [US4] Execute quickstart.md Scenario 4: one deliberate-violation branch per gate (SC-005), all gates green after revert
 
 **Checkpoint**: Full static-check battery enforced
 
@@ -145,11 +154,11 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 ### Implementation for User Story 5
 
-- [ ] T032 [US5] Spike: assess spread against the five spec criteria using `~/probe/spread` (source + self-test spread.yaml) and `~/probe/ubuntu/snapd-upstream/spread.yaml` + `tests/` as references; stand up the qemu backend locally on ubuntu-24.04-64 and verify hosted-runner KVM assumptions
-- [ ] T033 [US5] Resolve the two recorded design points (research.md D7): spread provisioning (pinned-commit build vs snap) and the confined-e2e backend topology (fake-adapter test snap vs in-VM `myna-server` with the socket placed in the shared content dir)
-- [ ] T034 [US5] Write the decision record `specs/006-coverage-quality-gates/spread-decision.md`: five criterion assessments, design-point resolutions, adopt|reject verdict with rationale (data-model.md: Spread Decision Record; reject with documented alternative is success)
-- [ ] T035 [US5] (adopt only) Author `spread.yaml` (qemu backend, ubuntu-24.04-64) and `tests/spread/confined-e2e/task.yaml`: install client + backend snaps, connect `ubustt-socket`, drive a WAV-fixture dictation via a virtual audio source, assert the transcript (FR-015, constitution II)
-- [ ] T036 [US5] (adopt only) Add the nightly/path-filtered spread workflow to `.github/workflows/` and document the supersession plan for the bespoke `snap.yml` smoke job
+- [x] T032 [US5] Spike: assess spread against the five spec criteria using `~/probe/spread` (source + self-test spread.yaml) and `~/probe/ubuntu/snapd-upstream/spread.yaml` + `tests/` as references; stand up the qemu backend locally on ubuntu-24.04-64 and verify hosted-runner KVM assumptions
+- [x] T033 [US5] Resolve the two recorded design points (research.md D7): spread provisioning (pinned-commit build vs snap) and the confined-e2e backend topology (fake-adapter test snap vs in-VM `myna-server` with the socket placed in the shared content dir)
+- [x] T034 [US5] Write the decision record `specs/006-coverage-quality-gates/spread-decision.md`: five criterion assessments, design-point resolutions, adopt|reject verdict with rationale (data-model.md: Spread Decision Record; reject with documented alternative is success)
+- [x] T035 [US5] (adopt only) Author `spread.yaml` (qemu backend, ubuntu-24.04-64) and `tests/spread/confined-e2e/task.yaml`: install client + backend snaps, connect `ubustt-socket`, drive a WAV-fixture dictation via a virtual audio source, assert the transcript (FR-015, constitution II)
+- [x] T036 [US5] (adopt only) Add the nightly/path-filtered spread workflow to `.github/workflows/` and document the supersession plan for the bespoke `snap.yml` smoke job
 
 ### Validation for User Story 5
 
@@ -163,8 +172,8 @@ testable increment and maps to one branch (see Branch Staging Plan).
 
 **Purpose**: Documentation and whole-feature verification
 
-- [ ] T038 [P] Document the new commands in `README.md` and/or `docs/` (coverage, dead-code, patch gate, static checks; spread outcome), and update `CLAUDE.md` "Current state"/"Open / next" if the spread decision changes the confined-testing story
-- [ ] T042 [P] Write the README "Instrumented builds & manual coverage" section (FR-017): how to build/launch each component instrumented (all Rust binaries, `myna-server`), how to accumulate multiple manual runs (shared data locations per contracts/workshop-actions.md manual-use note), how to generate the report + dead-code summary on demand, how to reset; then validate SC-008 by following the section cold, end to end, in under 15 minutes
+- [x] T038 [P] Document the new commands in `README.md` and/or `docs/` (coverage, dead-code, patch gate, static checks; spread outcome), and update `CLAUDE.md` "Current state"/"Open / next" if the spread decision changes the confined-testing story
+- [x] T042 [P] Write the README "Instrumented builds & manual coverage" section (FR-017): how to build/launch each component instrumented (all Rust binaries, `myna-server`), how to accumulate multiple manual runs (shared data locations per contracts/workshop-actions.md manual-use note), how to generate the report + dead-code summary on demand, how to reset; then validate SC-008 by following the section cold, end to end, in under 15 minutes
 - [ ] T039 [P] Update `docs/project-plan.md`: link feature 006; reconcile with T55 (toolchain under Workshop) which this feature partially advances
 - [ ] T040 Re-run `/speckit-analyze` in full mode (spec × plan × tasks) and reconcile any findings
 - [ ] T041 Execute the complete `quickstart.md` end-to-end (Scenarios 1–5 + privacy sanity: no fixture transcript phrases in any artifact — FR-016)

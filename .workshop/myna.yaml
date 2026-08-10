@@ -27,6 +27,11 @@ sdks:
   # .workshop/pipewire/sdk.yaml.
   - name: project-pipewire
 
+  # In-project SDK: coverage + quality-gate tooling (feature 006):
+  # cargo-llvm-cov / cargo-deny / cargo-machete / cargo-audit / shellcheck /
+  # actionlint. See .workshop/coverage/sdk.yaml.
+  - name: project-coverage
+
   # In-project SDK: GTK4 dev headers (the `ui-gtk` activity indicator) plus the
   # IBus daemon and xdg-desktop-portal GlobalShortcuts backend the desktop
   # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
@@ -54,3 +59,80 @@ actions:
   # state→visual-intent mapping + stub-proxy lifecycle. No Shell needed.
   gjs-test: |
     cd /project/extensions/myna-shell && for t in test/*.test.js; do gjs -m "$t" || exit 1; done
+
+  # --- feature 006: coverage, dead-code, quality gates -----------------------
+  # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
+  # The coverage SDK puts its tools in /usr/local/cargo-bin.
+
+  # Rust workspace coverage: tests, HTML + lcov + Cobertura (tests-only).
+  # Raw .profraw is left in place for `exercise` to merge against.
+  cov: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    rustup component add llvm-tools-preview 2>/dev/null || true
+    cd /project/client
+    mkdir -p target/coverage
+    cargo llvm-cov clean --workspace
+    cargo llvm-cov --workspace --cobertura --output-path target/coverage/rust-tests.cobertura.xml
+    cargo llvm-cov report --lcov --output-path target/coverage/rust.lcov
+    cargo llvm-cov report --html --output-dir target/coverage/html
+    cargo llvm-cov report --summary-only
+
+  # Python suite coverage: branch coverage + per-test contexts, HTML +
+  # term-missing + Cobertura (tests-only). Stashes .coverage for `exercise`.
+  py-cov: |
+    cd /project/server
+    uv sync -q
+    uv run pytest --cov=myna --cov-branch --cov-context=test \
+      --cov-report=html:htmlcov --cov-report=term-missing \
+      --cov-report=xml:coverage-tests.cobertura.xml "$@"
+    cp -f .coverage .coverage.tests
+
+  # Real use-cases under instrumentation (both dialects; gated scenarios skip
+  # cleanly), then merged (tests + use-cases) exports per language.
+  exercise: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    bash /project/dev/exercise.sh
+
+  # Populations (test-covered / use-case-only / never-executed) + dead-code
+  # report at client/target/coverage/populations.md (+ .json).
+  deadcode: |
+    cd /project/server && uv sync -q
+    cd /project && server/.venv/bin/python dev/coverage_populations.py
+
+  # Self-hosted patch-coverage gate (default 80%, 5-line floor). Needs a full
+  # checkout (merge base). Exit 2 = below threshold; other non-zero = error.
+  patch-cov: |
+    cd /project/server && uv sync -q
+    server/.venv/bin/python /project/dev/patch_cov.py "$@"
+
+  # --- static gates (FR-010/FR-011) ---
+  fmt: |
+    cd /project/client && cargo fmt --check
+  machete: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo machete
+  deny: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo deny check bans licenses
+  py-lint: |
+    cd /project/server && uv sync -q
+    uv run ruff check src tests ../dev && uv run ruff format --check src tests ../dev
+  py-types: |
+    cd /project/server && uv sync -q
+    uv run mypy src/myna/core
+  shell-lint: |
+    cd /project
+    shellcheck -x dev/*.sh \
+      myna-snap/dev/*.sh \
+      *-snap/scripts/*.sh *-snap/dev/*.sh \
+      *-snap/snap/hooks/* 2>/dev/null || \
+    shellcheck -x dev/*.sh myna-snap/dev/*.sh *-snap/scripts/*.sh *-snap/dev/*.sh
+  workflow-lint: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project && actionlint .github/workflows/*.yml
+
+  # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
+  audit: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo audit
+    cd /project/server && uv sync -q && uv run pip-audit
