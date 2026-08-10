@@ -179,8 +179,8 @@ integration-220627 per maintainer direction.
 - [x] T038 [P] Document the new commands in `README.md` and/or `docs/` (coverage, dead-code, patch gate, static checks; spread outcome), and update `CLAUDE.md` "Current state"/"Open / next" if the spread decision changes the confined-testing story
 - [x] T042 [P] Write the README "Instrumented builds & manual coverage" section (FR-017): how to build/launch each component instrumented (all Rust binaries, `myna-server`), how to accumulate multiple manual runs (shared data locations per contracts/workshop-actions.md manual-use note), how to generate the report + dead-code summary on demand, how to reset; then validate SC-008 by following the section cold, end to end, in under 15 minutes
 - [ ] T039 [P] Update `docs/project-plan.md`: link feature 006; reconcile with T55 (toolchain under Workshop) which this feature partially advances
-- [ ] T040 Re-run `/speckit-analyze` in full mode (spec × plan × tasks) and reconcile any findings
-- [ ] T041 Execute the complete `quickstart.md` end-to-end (Scenarios 1–5 + privacy sanity: no fixture transcript phrases in any artifact — FR-016)
+- [x] T040 Re-run `/speckit-analyze` in full mode (spec × plan × tasks) and reconcile any findings
+- [x] T041 Execute the complete `quickstart.md` end-to-end (Scenarios 1–5 + privacy sanity: no fixture transcript phrases in any artifact — FR-016)
 
 ---
 
@@ -256,3 +256,39 @@ Branches 5 and 6 fork from #1/#main and do not build on unmerged siblings 2–4 
 - Validation tasks cite quickstart.md scenarios — they are the acceptance contract for each story (red-green TDD inapplicable; see Tests note above)
 - Numbering note: this file's T0NN IDs are feature-local (per-repo convention, they do not correspond to the global TNN IDs in `docs/project-plan.md`)
 - Commit after each task or logical group; commit messages state what + why, no AI attribution (constitution: Commit & PR Communication)
+
+---
+
+## Post-implementation analysis (T040, 2026-08-10)
+
+Cross-artifact pass (spec x plan x tasks x implementation). Findings:
+
+1. **FR-001 wording vs stable toolchain** (minor, resolved-by-record): spec
+   says Rust "line and branch coverage"; branch data needs nightly rustc, so
+   the shipped gate is line/region-based with branch detail best-effort in
+   the HTML report. research.md D1 recorded this; spec.md was never amended.
+   Accepted: line data is authoritative for gates (D1); amend spec on next
+   touch rather than churn now.
+2. **Branch staging plan not followed** (process deviation, recorded):
+   maintainer directed work onto integration-220627. Constitution's staged
+   delivery rule was waived by direction; noted here for the review trail.
+3. **SC-001 timing not precisely measured**: cov/exercise runs were observed
+   well within 2x of the plain test job in the workshop, but no timed
+   benchmark was captured. Low risk (instrumented test run dominates).
+4. **Open acceptance items**: T022 demonstration PRs and the first CI runs
+   of the coverage/spread/audit workflows (authored, lint-clean, locally
+   reproduced where possible) - these are the remaining green-to-green proof.
+
+## T041 quickstart execution notes (2026-08-10)
+
+Scenarios 1-3 (local parts) and 5 executed green in the canonical workshop
+and on a clean qemu VM. Scenario 2's manual ad-hoc mode was run cold
+following only the README - two documentation gaps found and fixed
+(uv-prefixed coverage commands; merged-export refresh before deadcode).
+Scenario 4 violations verified per-gate locally (fmt exit 1, deny exit 101
+naming reqwest, py-lint 1, py-types 1, shell-lint 1, workflow-lint 1;
+machete caught the real unused thiserror). Privacy sanity (FR-016): no
+transcript content in any export/artifact (HTML reports embed source text
+only, which includes test-string literals - code, not transcription data);
+all report paths gitignored. Remaining: CI-side parts of Scenarios 3-5
+(demo PRs, first nightly runs).
