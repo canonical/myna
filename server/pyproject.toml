@@ -2,9 +2,10 @@
 name = "myna"
 version = "0.0.1"
 description = "Speech to text on Ubuntu — dictation client and candidate-adapter testbed"
-readme = "../README.md"
 requires-python = ">=3.12"
-license = { file = "../LICENSE" }
+# SPDX expression, not a file: hatchling refuses metadata paths outside the
+# project dir, and the licence text lives at the repo root (../LICENSE).
+license = "GPL-3.0-or-later"
 dependencies = [
     "websockets>=16.0",
 ]
