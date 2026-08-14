@@ -205,13 +205,19 @@ CORPUS = Path(__file__).parent.parent.parent.parent / "corpus" / "real" / "manif
 
 @pytest.fixture
 def streaming_adapter():
+    import torch
+
+    # The adapter loads with map_location="cuda"; without a driver the model
+    # still downloads and only inference fails, so check the device up front.
+    if not torch.cuda.is_available():
+        pytest.skip("Nemotron adapter needs CUDA; no GPU on this host")
     try:
         from nemo.collections.asr.models import ASRModel
 
         from myna.testbed.nemotron import DEFAULT_MODEL
 
         ASRModel.from_pretrained(model_name=DEFAULT_MODEL)
-    except Exception as exc:  # no network / no GPU / model unavailable
+    except Exception as exc:  # no network / model unavailable
         pytest.skip(f"Nemotron model unavailable: {exc}")
     return NemotronAdapter(streaming=True)
 
