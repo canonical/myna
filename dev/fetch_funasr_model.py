@@ -34,8 +34,7 @@ REVISION = "v1.0"
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--target", type=Path, default=None,
-        help="Output directory (default: ./funasr_model/)"
+        "--target", type=Path, default=None, help="Output directory (default: ./funasr_model/)"
     )
     args = parser.parse_args()
 
@@ -46,15 +45,15 @@ def main() -> int:
     except ImportError:
         print("modelscope not installed. Installing...", file=sys.stderr)
         import subprocess
+
         # Use uv if we're inside its venv (no pip module), pip otherwise.
-        installer = ["uv", "pip", "install", "--quiet", "modelscope>=1.34"]
+        package = "modelscope>=1.34"
+        installer = ["uv", "pip", "install", "--quiet", package]
         try:
             subprocess.check_call(installer, stdout=sys.stderr)
         except (FileNotFoundError, subprocess.CalledProcessError):
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "--break-system-packages", "modelscope>=1.34"],
-                stdout=sys.stderr,
-            )
+            pip = [sys.executable, "-m", "pip", "install", "--break-system-packages", package]
+            subprocess.check_call(pip, stdout=sys.stderr)
         from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
 
     print(f"⬇️  Downloading {MODELSCOPE_REPO}@{REVISION} from ModelScope...")
@@ -120,10 +119,12 @@ def main() -> int:
     # (already handled by the onnx_candidates loop above)
     quant_path = target / "model_quant.onnx"
     if quant_path.exists():
-        print(f"   model_quant.onnx present (int8, ~{quant_path.stat().st_size // (1024*1024)}MB)")
+        print(
+            f"   model_quant.onnx present (int8, ~{quant_path.stat().st_size // (1024 * 1024)}MB)"
+        )
     fp32_path = target / "model.onnx"
     if fp32_path.exists():
-        print(f"   model.onnx present (fp32, ~{fp32_path.stat().st_size // (1024*1024)}MB)")
+        print(f"   model.onnx present (fp32, ~{fp32_path.stat().st_size // (1024 * 1024)}MB)")
 
     print(f"✅ FunASR model staged to {target}")
     return 0

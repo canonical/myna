@@ -37,9 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-
-        help="model id/path; default per adapter (whisper: tiny, nemotron: streaming FastConformer; "
-        "sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
+        help="model id/path; default per adapter (whisper: tiny, nemotron: streaming "
+        "FastConformer; sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
     )
     parser.add_argument(
         "--device",
@@ -116,12 +115,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
     )
     parser.add_argument(
-        "--funasr-language", default="auto",
+        "--funasr-language",
+        default="auto",
         choices=("auto", "zh", "en", "yue", "ja", "ko"),
         help="language for SenseVoice decoding (default: auto)",
     )
     parser.add_argument(
-        "--funasr-textnorm", default="woitn",
+        "--funasr-textnorm",
+        default="woitn",
         choices=("woitn", "withitn"),
         help="ITN mode: woitn (readable text, default), withitn (digits/dates)",
     )

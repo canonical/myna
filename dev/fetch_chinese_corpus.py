@@ -69,11 +69,7 @@ def _download(name: str, cache: Path) -> Path:
         _install("huggingface_hub", "huggingface_hub>=0.24")
         from huggingface_hub import hf_hub_download  # type: ignore
 
-    return Path(
-        hf_hub_download(
-            REPO_ID, name, repo_type="dataset", cache_dir=str(cache)
-        )
-    )
+    return Path(hf_hub_download(REPO_ID, name, repo_type="dataset", cache_dir=str(cache)))
 
 
 def main() -> int:
@@ -136,33 +132,54 @@ def main() -> int:
             samples, sr = sf.read(BytesIO(data), dtype="float32", always_2d=True)
             if sr != RATE or info.channels != 1:
                 ffmpeg = subprocess.run(
-                    ["ffmpeg", "-loglevel", "error",
-                     "-f", "f32le", "-ar", str(sr), "-ac", str(info.channels),
-                     "-i", "pipe:0", "-ar", str(RATE), "-ac", "1",
-                     "-f", "s16le", "pipe:1"],
-                    input=samples.tobytes(), check=False, capture_output=True,
+                    [
+                        "ffmpeg",
+                        "-loglevel",
+                        "error",
+                        "-f",
+                        "f32le",
+                        "-ar",
+                        str(sr),
+                        "-ac",
+                        str(info.channels),
+                        "-i",
+                        "pipe:0",
+                        "-ar",
+                        str(RATE),
+                        "-ac",
+                        "1",
+                        "-f",
+                        "s16le",
+                        "pipe:1",
+                    ],
+                    input=samples.tobytes(),
+                    check=False,
+                    capture_output=True,
                 )
                 if ffmpeg.returncode != 0:
                     print(f"⚠️  ffmpeg failed for {clip_id}", file=sys.stderr)
                     continue
                 import numpy
+
                 pcm16 = numpy.frombuffer(ffmpeg.stdout, dtype=numpy.int16)
                 sf.write(str(wav_path), pcm16, RATE, subtype="PCM_16")
             else:
                 sf.write(str(wav_path), samples[:, 0], RATE, subtype="PCM_16")
 
-            clips.append({
-                "id": clip_id,
-                "path": f"audio/{clip_id}.wav",
-                "text": reference,
-                "language": "zh",
-                "category": "non-english",
-                "duration_seconds": round(duration_s, 2),
-                "sample_rate_hz": RATE,
-                "channels": 1,
-                "source": f"https://huggingface.co/datasets/{REPO_ID} (cmn_hans_cn test)",
-                "license": "CC-BY-4.0",
-            })
+            clips.append(
+                {
+                    "id": clip_id,
+                    "path": f"audio/{clip_id}.wav",
+                    "text": reference,
+                    "language": "zh",
+                    "category": "non-english",
+                    "duration_seconds": round(duration_s, 2),
+                    "sample_rate_hz": RATE,
+                    "channels": 1,
+                    "source": f"https://huggingface.co/datasets/{REPO_ID} (cmn_hans_cn test)",
+                    "license": "CC-BY-4.0",
+                }
+            )
             count += 1
             if count % 10 == 0:
                 print(f"   {count}/{args.n} clips...")

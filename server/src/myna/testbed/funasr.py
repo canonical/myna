@@ -40,9 +40,7 @@ from myna.core import (
 from myna.testbed.adapter import Candidate
 
 FUNASR_RATE = 16_000
-FUNASR_FORMAT = AudioFormat(
-    sample_rate_hz=FUNASR_RATE, channels=1, sample_width_bytes=2
-)
+FUNASR_FORMAT = AudioFormat(sample_rate_hz=FUNASR_RATE, channels=1, sample_width_bytes=2)
 
 # Language set matches SenseVoice's lid_dict.
 # https://github.com/FunAudioLLM/SenseVoice
@@ -73,11 +71,9 @@ def _default_model_dir() -> str:
     raises a bare string on failure, which is the TypeError seen when the
     dir doesn't exist locally. Mirrors sherpa.py's ``_default_model_dir``.
     """
-    cache = Path(
-        os.environ.get("MODELSCOPE_CACHE") or (Path.home() / ".cache" / "modelscope")
-    )
+    cache = Path(os.environ.get("MODELSCOPE_CACHE") or (Path.home() / ".cache" / "modelscope"))
     for pattern in (
-        "models/*SenseVoiceSmall*/snapshots/*",   # botaruibo--SenseVoiceSmall-onnx
+        "models/*SenseVoiceSmall*/snapshots/*",  # botaruibo--SenseVoiceSmall-onnx
         "models/*/SenseVoiceSmall*/snapshots/*",  # botaruibo/SenseVoiceSmall-onnx
     ):
         for snapshot in sorted(cache.glob(pattern), reverse=True):
@@ -101,13 +97,9 @@ class FunasrAdapter:
         num_threads: int = 4,
     ) -> None:
         if language not in _LANGUAGES:
-            raise ValueError(
-                f"language must be one of {_LANGUAGES}, got {language!r}"
-            )
+            raise ValueError(f"language must be one of {_LANGUAGES}, got {language!r}")
         if textnorm not in ("woitn", "withitn"):
-            raise ValueError(
-                f"textnorm must be 'woitn' or 'withitn', got {textnorm!r}"
-            )
+            raise ValueError(f"textnorm must be 'woitn' or 'withitn', got {textnorm!r}")
         self._model_dir = model_dir
         self._language = language
         self._textnorm = textnorm
@@ -126,9 +118,7 @@ class FunasrAdapter:
     @property
     def candidate(self) -> Candidate:
         label = (
-            os.path.basename(self._model_dir.rstrip("/"))
-            if self._model_dir
-            else "sensevoice-small"
+            os.path.basename(self._model_dir.rstrip("/")) if self._model_dir else "sensevoice-small"
         )
         return Candidate(
             model=label,
@@ -220,11 +210,7 @@ class FunasrAdapter:
     ) -> None:
         fmt = config.audio_format
         # Audio-push invariant (FR-002): reject off-format, never resample.
-        if (
-            fmt.channels != 1
-            or fmt.sample_width_bytes != 2
-            or fmt.sample_rate_hz != FUNASR_RATE
-        ):
+        if fmt.channels != 1 or fmt.sample_width_bytes != 2 or fmt.sample_rate_hz != FUNASR_RATE:
             await emit(
                 TranscriptionError(
                     code="unsupported_audio_format",
@@ -255,20 +241,18 @@ class FunasrAdapter:
             if buffered:
                 # Convert s16le → float32 ndarray, same path as sherpa/qwen.
                 samples = (
-                    np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32)
-                    / 32768.0
+                    np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
                 )
-                text = await asyncio.to_thread(
-                    self._decode, samples
-                )
+                text = await asyncio.to_thread(self._decode, samples)
 
             # Tag stripping (FR-005, SC-006): regex before any wire event.
             stripped = _strip_tags(text)
-            await emit(
-                TranscriptionFinal(
-                    text=stripped, disposition=Disposition.COMMITTED
-                )
-            )
+            # Silence decodes to control tags alone, leaving nothing to commit.
+            # An empty final is not harmless: the harness counts it as a
+            # committed segment and dates time_to_first_final from it. Same
+            # guard as the whisper/qwen/nemotron adapters.
+            if stripped:
+                await emit(TranscriptionFinal(text=stripped, disposition=Disposition.COMMITTED))
             await emit(TranscriptionDone(text=stripped))
         except Exception as exc:
             await emit(
@@ -299,6 +283,7 @@ class FunasrAdapter:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _strip_tags(text: str) -> str:
     """Remove SenseVoice rich-transcription control tags."""
