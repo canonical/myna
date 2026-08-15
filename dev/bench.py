@@ -24,6 +24,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -79,6 +80,24 @@ def select_clips(args: argparse.Namespace):
     return clips
 
 
+def session_error(record) -> dict | None:
+    """The backend's ``transcription.error``, if the session failed.
+
+    A backend that cannot run at all (missing runtime library, unloadable
+    weights) still terminates the session cleanly - it just emits an error
+    instead of a transcript. Scoring that as an empty hypothesis produces a
+    perfectly plausible 100% WER row, indistinguishable from a model that ran
+    and was terrible. Surface it instead.
+    """
+    for te in record.events:
+        if te.event.type == "transcription.error":
+            return {
+                "code": getattr(te.event, "code", None),
+                "message": getattr(te.event, "message", None),
+            }
+    return None
+
+
 async def bench_clip(args, clip):
     """Run one clip against the socket; return (record, wer, cer)."""
     source = clip.open_source(realtime=not args.batch)
@@ -98,7 +117,9 @@ async def bench_clip(args, clip):
 
 def to_line(args, clip, record, wer, cer) -> dict:
     m = record.metrics
+    error = session_error(record)
     return {
+        "error": error,
         "label": args.label,
         "cold": args.cold,
         "clip": clip.id,
@@ -176,6 +197,16 @@ async def main() -> None:
             " (e.g. hardware/engine metadata from the matrix runner)"
         ),
     )
+    parser.add_argument(
+        "--budget-seconds",
+        type=float,
+        default=None,
+        help=(
+            "wall-clock budget for the sweep; overrunning it stops early and"
+            " marks the run a usability failure (exit 2) rather than waiting out"
+            " a backend that is unusably slower than real time"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "bench.jsonl")
     args = parser.parse_args()
     if args.label is None:
@@ -216,10 +247,30 @@ async def main() -> None:
     tot_audio = 0.0
     finals: list[float] = []
     readys: list[float] = []
-    for clip in clips:
+    failed: list[dict] = []
+    overran = False
+    started = time.monotonic()
+    for index, clip in enumerate(clips):
+        if args.budget_seconds and time.monotonic() - started > args.budget_seconds:
+            # A backend slower than the budget is a usability verdict, not a
+            # datapoint worth waiting out. Stop here rather than being killed
+            # from outside, so the clips that did land still get written.
+            overran = True
+            print(
+                f"budget exceeded after {index}/{len(clips)} clips "
+                f"({time.monotonic() - started:.0f}s > {args.budget_seconds:.0f}s) - stopping"
+            )
+            break
         record, wer, cer = await bench_clip(args, clip)
         line = to_line(args, clip, record, wer, cer)
         lines.append(line)
+        if line["error"]:
+            # Not a 100%-WER data point: the backend never ran. Keep it out of
+            # the score entirely so a broken target can't masquerade as a bad
+            # model in the aggregate.
+            failed.append(line)
+            print(f"{clip.id:24} {clip.category:10} {'FAILED':>6} {line['error']['code']}")
+            continue
         tot_edits += wer.substitutions + wer.deletions + wer.insertions
         tot_words += wer.reference_length
         tot_audio += line["audio_seconds"]
@@ -236,9 +287,17 @@ async def main() -> None:
         )
 
     print("-" * 84)
-    micro_wer = (tot_edits / tot_words * 100) if tot_words else 0.0
+    if failed:
+        codes = ", ".join(sorted({ln["error"]["code"] for ln in failed}))
+        print(f"FAILED             : {len(failed)}/{len(clips)} clips  ({codes})")
+        print(f"  {failed[0]['error']['message']}")
     median_final = sorted(finals)[len(finals) // 2] if finals else None
-    print(f"micro-averaged WER : {micro_wer:.2f}%  ({tot_edits} edits / {tot_words} ref words)")
+    if tot_words:
+        micro_wer = tot_edits / tot_words * 100
+        print(f"micro-averaged WER : {micro_wer:.2f}%  ({tot_edits} edits / {tot_words} ref words)")
+    else:
+        # Printing "0.00%" here would be the friendliest possible lie.
+        print("micro-averaged WER : n/a  (no clip produced a transcript)")
     if readys:
         # The first clip carries the cold-load cost; report it distinctly.
         print(
@@ -253,6 +312,12 @@ async def main() -> None:
         + ("" if args.batch else "  (use --batch to skip real-time pacing)")
     )
 
+    if overran:
+        print(
+            f"USABILITY FAIL     : scored {len(lines) - len(failed)}/{len(clips)} clips"
+            f" within {args.budget_seconds:.0f}s"
+        )
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     run_started = datetime.now(UTC).isoformat()
     with args.out.open("a", encoding="utf-8") as fp:
@@ -260,12 +325,27 @@ async def main() -> None:
             record = {
                 "run_started": run_started,
                 "served_models": served_models,
+                # Stamped on every row of a truncated sweep: coverage travels
+                # with the data, so a partial WER can never be read as a full one.
+                "usability_fail": overran,
+                "clips_scored": len(lines) - len(failed),
+                "clips_requested": len(clips),
                 **line,
             }
             if provenance:
                 record["provenance"] = provenance
             fp.write(json.dumps(record) + "\n")
     print(f"wrote {len(lines)} records to {args.out}")
+
+    if failed and not tot_words:
+        # Every clip errored: the target is misconfigured, not bad. Fail the
+        # run so the matrix runner reports it instead of banking the rows.
+        raise SystemExit(f"{args.label}: every clip failed ({failed[0]['error']['code']})")
+    if overran:
+        # Exit 2, distinct from 1: the backend worked, it was just too slow.
+        budget = f"{args.budget_seconds:.0f}s"
+        print(f"{args.label}: sweep exceeded its {budget} budget", file=sys.stderr)
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

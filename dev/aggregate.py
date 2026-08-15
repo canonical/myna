@@ -36,6 +36,11 @@ def load_latest(path: Path) -> list[dict]:
         if not raw:
             continue
         rec = json.loads(raw)
+        if rec.get("error"):
+            # The backend errored instead of transcribing (missing runtime
+            # library, unloadable weights). Its empty hypothesis would score as
+            # a flawless 100% WER and drag the label's micro-average with it.
+            continue
         latest[(rec["label"], rec["clip"], bool(rec.get("cold", False)))] = rec
     return list(latest.values())
 
@@ -72,9 +77,12 @@ def summarize(records: list[dict]) -> dict[str, dict]:
         ref_chars = sum(r["ref_chars"] for r in warm)
         summary[label] = {
             "clips": len(warm),
+            # str(): provenance is written by whatever produced the records, and
+            # a structured value here used to kill the whole table at print time
+            # - after the sweep that earned it had already run.
             "machine": next(
                 (
-                    r["provenance"]["machine"]
+                    str(r["provenance"]["machine"])
                     for r in recs
                     if isinstance(r.get("provenance"), dict) and r["provenance"].get("machine")
                 ),
@@ -125,7 +133,10 @@ def print_overall(summary: dict[str, dict]) -> None:
     print("-" * (88 + (15 if show_machine else 0) + (20 if show_res else 0)))
     for label in sorted(summary):
         s = summary[label]
-        mc = f"{(s.get('machine') or '--'):14} " if show_machine else ""
+        # Truncated: the column is fixed width, and one long value would shear
+        # every other column out of alignment for the whole table.
+        machine = (s.get("machine") or "--")[:14]
+        mc = f"{machine:14} " if show_machine else ""
         rc = (
             f"{_f(s.get('peak_rss_mb'), '9.1f')} {_f(s.get('peak_vram_mb'), '9.1f')}"
             if show_res
