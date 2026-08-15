@@ -6,13 +6,33 @@ Real human speech with exact reference transcripts, so WER is trustworthy — th
 synthetic espeak tier is out-of-distribution and its WER is misleading across
 architectures (Nemotron ~0% on real voice vs ~45% on espeak; plan T09/T25).
 
-Source: LibriSpeech dev-clean (Panayotov et al., ICASSP 2015), CC-BY-4.0, real
-read English at 16 kHz. The ~337 MB download is cached under .cache/; the corpus
-is regenerated on demand, not committed (gitignored like fixtures/).
+Source: LibriSpeech (Panayotov et al., ICASSP 2015), CC-BY-4.0, real read English
+at 16 kHz. ``--subset`` picks the split: the ``-clean`` ones are well-recorded
+speech, the ``-other`` ones LibriSpeech's deliberately harder half (accented,
+noisier, lower-fidelity) - the pair papers quote WER on. One split per output
+dir, so an ``-other`` tier needs its own ``--out``. Each ~330 MB download is
+cached under .cache/; corpora are regenerated on demand, not committed
+(gitignored like fixtures/).
 
-Selection is deliberately trivial: the first N utterances in archive order,
-tagged "quiet" (clean read speech), plus a couple of seeded-noise variants.
-Speaker/accent diversity is a follow-up (needs an accent-labelled corpus).
+Two selection strategies (``--select``):
+
+``archive`` (the original, kept so ``manifest.json`` reproduces bit-for-bit)
+    the first N utterances in archive order. Cheap, but dev-clean's archive
+    order means all N land on *one* speaker - a WER computed over it measures
+    one voice, not the language.
+
+``balanced`` (use this for accuracy benchmarks)
+    round-robin over every speaker in the split (40 in dev-clean, 33 in
+    test-other), taking utterances in sorted order per speaker, so N clips
+    spread evenly across speakers and - since LibriSpeech's eval splits are
+    sex-balanced - roughly evenly across M/F.
+
+Either way a couple of seeded-noise variants are appended. Speaker id is
+recoverable from the clip id (``librispeech-<speaker>-<chapter>-<utt>``), so
+per-speaker WER can be broken out without extra manifest fields. Accent
+diversity beyond the ``-other`` splits is still a follow-up (LibriSpeech is
+overwhelmingly US English; it needs an accent-labelled corpus such as Common
+Voice or EdAcc).
 
 Requires ffmpeg (FLAC decode). Network is needed only for the download.
 """
@@ -39,23 +59,29 @@ from generate_fixtures import (  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RATE = 16_000
-URL = "https://www.openslr.org/resources/12/dev-clean.tar.gz"
-PREFIX = "LibriSpeech/dev-clean/"
+BASE_URL = "https://www.openslr.org/resources/12"
+# The LibriSpeech splits worth sweeping. "clean" is well-recorded read speech;
+# "other" is the deliberately harder half (accented, noisier, lower-fidelity
+# recordings) — the pair papers report WER on, so numbers here are comparable
+# to published figures.
+SUBSETS = ("dev-clean", "dev-other", "test-clean", "test-other")
 LICENSE = "CC-BY-4.0"
 N_NOISE = 2
 
-NOTICE = f"""\
+
+def notice_for(subset: str) -> str:
+    return f"""\
 Real recorded-speech corpus tier (T25)
 
-Derived from the LibriSpeech ASR corpus (dev-clean), redistributed under its
+Derived from the LibriSpeech ASR corpus ({subset}), redistributed under its
 original licence. Regenerate with: uv run python dev/fetch_real_corpus.py
 
-  Source:  {URL}
+  Source:  {BASE_URL}/{subset}.tar.gz
   Licence: CC-BY-4.0  (https://creativecommons.org/licenses/by/4.0/)
   Cite:    V. Panayotov, G. Chen, D. Povey, S. Khudanpur, "Librispeech: an ASR
            corpus based on public domain audio books", ICASSP 2015.
 
-Each clip's source utterance id and licence are in manifest.json. Audio is
+Each clip's source utterance id and licence are in the manifest. Audio is
 decoded to 16 kHz mono S16LE WAV; "noise" clips add seeded Gaussian noise at
 {NOISE_SNR_DB:.0f} dB SNR.
 """
@@ -65,7 +91,7 @@ def download(url: str, dest: Path) -> Path:
     if dest.exists() and dest.stat().st_size:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    print(f"downloading {url} (~337 MB)\n  -> {dest}")
+    print(f"downloading {url} (~330 MB per split)\n  -> {dest}")
     with urllib.request.urlopen(url) as resp, dest.open("wb") as out:  # noqa: S310
         while block := resp.read(1 << 20):
             out.write(block)
@@ -96,14 +122,14 @@ def decode_flac(data: bytes) -> array:
     return array("h", pcm)
 
 
-def collect(tar_path: Path, n: int) -> list[tuple[str, array, str]]:
+def collect(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]:
     """The first ``n`` utterances in archive order, with their transcripts."""
     pcm: dict[str, array] = {}
     text: dict[str, str] = {}
     with tarfile.open(tar_path, "r:gz") as tar:
         for member in tar:
             name = member.name
-            if not (member.isfile() and name.startswith(PREFIX)):
+            if not (member.isfile() and name.startswith(prefix)):
                 continue
             if name.endswith(".trans.txt"):
                 for line in tar.extractfile(member).read().decode().splitlines():
@@ -114,12 +140,98 @@ def collect(tar_path: Path, n: int) -> list[tuple[str, array, str]]:
     return [(uid, pcm[uid], text[uid]) for uid in pcm if uid in text]
 
 
-def build(out_dir: Path, tar_path: Path, n: int) -> Path:
+def _speaker(utt_id: str) -> str:
+    """``2277-149896-0026`` -> ``2277``."""
+    return utt_id.split("-", 1)[0]
+
+
+def _by_id(item: tuple[str, list[str]]) -> int:
+    """Sort speakers numerically, so 84 precedes 174 (str order would not)."""
+    return int(item[0])
+
+
+def _round_robin(by_speaker: dict[str, list[str]], n: int) -> list[str]:
+    """Take one utterance per speaker per pass, speakers in sorted id order.
+
+    Deterministic, and it degrades sanely: with fewer speakers than ``n`` it
+    wraps for a second (third, ...) utterance each; with more speakers than
+    ``n`` it takes one each from the lowest-numbered speakers.
+    """
+    picked: list[str] = []
+    depth = 0
+    while len(picked) < n:
+        row = [utts[depth] for utts in by_speaker.values() if depth < len(utts)]
+        if not row:  # exhausted every speaker
+            break
+        picked.extend(row[: n - len(picked)])
+        depth += 1
+    return picked
+
+
+def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]:
+    """``n`` utterances spread round-robin over every speaker in the split.
+
+    Two passes over the tarball: the first indexes utterance ids and
+    transcripts (cheap — no FLAC decode), the second decodes only the
+    selected members. A gzip stream can't be seeked, hence the reopen.
+    """
+    text: dict[str, str] = {}
+    by_speaker: dict[str, list[str]] = {}
+    with tarfile.open(tar_path, "r:gz") as tar:
+        for member in tar:
+            name = member.name
+            if not (member.isfile() and name.startswith(prefix)):
+                continue
+            if name.endswith(".trans.txt"):
+                for line in tar.extractfile(member).read().decode().splitlines():
+                    utt_id, _, transcript = line.partition(" ")
+                    text[utt_id] = transcript
+            elif name.endswith(".flac"):
+                utt_id = Path(name).stem
+                by_speaker.setdefault(_speaker(utt_id), []).append(utt_id)
+
+    by_speaker = {spk: sorted(utts) for spk, utts in sorted(by_speaker.items(), key=_by_id)}
+    wanted = [uid for uid in _round_robin(by_speaker, n) if uid in text]
+    print(f"selected {len(wanted)} clips across {len({_speaker(u) for u in wanted})} speakers")
+
+    remaining = set(wanted)
+    pcm: dict[str, array] = {}
+    with tarfile.open(tar_path, "r:gz") as tar:
+        for member in tar:
+            if not (member.isfile() and member.name.endswith(".flac")):
+                continue
+            utt_id = Path(member.name).stem
+            if utt_id in remaining:
+                pcm[utt_id] = decode_flac(tar.extractfile(member).read())
+                remaining.discard(utt_id)
+                if not remaining:
+                    break
+    return [(uid, pcm[uid], text[uid]) for uid in wanted if uid in pcm]
+
+
+def build(
+    out_dir: Path,
+    tar_path: Path,
+    n: int,
+    *,
+    subset: str = "dev-clean",
+    select: str = "archive",
+    manifest_name: str = "manifest.json",
+) -> Path:
+    prefix = f"LibriSpeech/{subset}/"
+    # UD129 category: the "-other" splits are LibriSpeech's harder half —
+    # accented and lower-fidelity recordings — so they land in "accent", not
+    # "quiet". Keeps `bench.py --category` honest across tiers.
+    category = "accent" if subset.endswith("-other") else "quiet"
     audio_dir = out_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    clips = collect(tar_path, n)
+    clips = (
+        collect_balanced(tar_path, n, prefix)
+        if select == "balanced"
+        else collect(tar_path, n, prefix)
+    )
     if not clips:
-        raise SystemExit("no clips selected — is this the LibriSpeech dev-clean tarball?")
+        raise SystemExit(f"no clips selected — is this the LibriSpeech {subset} tarball?")
 
     entries: list[dict] = []
 
@@ -146,8 +258,8 @@ def build(out_dir: Path, tar_path: Path, n: int) -> Path:
             f"librispeech-{utt_id}",
             samples,
             txt,
-            "quiet",
-            f"librispeech:dev-clean:{utt_id}",
+            category,
+            f"librispeech:{subset}:{utt_id}",
         )
     for utt_id, samples, txt in clips[:N_NOISE]:
         add(
@@ -155,11 +267,19 @@ def build(out_dir: Path, tar_path: Path, n: int) -> Path:
             mix_noise(samples, NOISE_SNR_DB, NOISE_SEED),
             txt,
             "noise",
-            f"librispeech:dev-clean:{utt_id}+noise",
+            f"librispeech:{subset}:{utt_id}+noise",
         )
 
-    (out_dir / "NOTICE").write_text(NOTICE, encoding="utf-8")
-    manifest = out_dir / "manifest.json"
+    # One split per output dir: the NOTICE carries the split's provenance, so
+    # mixing splits would silently overwrite one tier's attribution.
+    notice_path = out_dir / "NOTICE"
+    if notice_path.exists() and f"corpus ({subset})" not in notice_path.read_text(encoding="utf-8"):
+        raise SystemExit(
+            f"{out_dir} already holds a different LibriSpeech split "
+            f"(see its NOTICE) — pass --out for a separate {subset} tier"
+        )
+    notice_path.write_text(notice_for(subset), encoding="utf-8")
+    manifest = out_dir / manifest_name
     manifest.write_text(
         json.dumps(
             {
@@ -184,13 +304,47 @@ def main() -> int:
         "--tarball",
         type=Path,
         default=None,
-        help="use an already-downloaded dev-clean.tar.gz instead of fetching",
+        help="use an already-downloaded <subset>.tar.gz instead of fetching",
+    )
+    parser.add_argument(
+        "--subset",
+        choices=SUBSETS,
+        default="dev-clean",
+        help="LibriSpeech split to draw from (default dev-clean). The '-other'"
+        " splits are the harder, accented/low-fidelity half — give them their"
+        " own --out, one split per corpus dir",
     )
     parser.add_argument("-n", type=int, default=12, help="number of clean clips (default 12)")
+    parser.add_argument(
+        "--select",
+        choices=("archive", "balanced"),
+        default="archive",
+        help=(
+            "clip selection: 'archive' = first N in archive order (one speaker,"
+            " reproduces the original manifest.json); 'balanced' = round-robin"
+            " over every speaker in the split (use this for accuracy benchmarks)"
+        ),
+    )
+    parser.add_argument(
+        "--manifest-name",
+        default="manifest.json",
+        help="manifest filename inside --out (default manifest.json); use a"
+        " distinct name to add a tier alongside an existing one",
+    )
     args = parser.parse_args()
 
-    tar_path = args.tarball or download(URL, args.cache / "dev-clean.tar.gz")
-    print(f"\nwrote {build(args.out, tar_path, args.n)}")
+    tar_path = args.tarball or download(
+        f"{BASE_URL}/{args.subset}.tar.gz", args.cache / f"{args.subset}.tar.gz"
+    )
+    manifest = build(
+        args.out,
+        tar_path,
+        args.n,
+        subset=args.subset,
+        select=args.select,
+        manifest_name=args.manifest_name,
+    )
+    print(f"\nwrote {manifest}")
     return 0
 
 

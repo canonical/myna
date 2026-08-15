@@ -125,6 +125,7 @@ uv run pytest                                   # offline suite: contract + adap
 uv run python -m myna.testbed                   # demo: fake adapter over loopback
 uv run python ../dev/generate_fixtures.py       # synthetic corpus -> server/fixtures/
 uv run python ../dev/fetch_real_corpus.py       # real LibriSpeech corpus -> corpus/real/
+uv run python ../dev/fetch_chinese_corpus.py    # FLEURS Mandarin corpus  -> corpus/chinese/
 
 # serve a real adapter, then talk to it:
 uv run myna-server --adapter nemotron --socket /tmp/myna.sock
@@ -132,8 +133,9 @@ uv run python ../dev/capabilities.py --socket /tmp/myna.sock    # what can this 
 uv run python ../dev/transcribe.py --socket /tmp/myna.sock quiet-weather   # a fixture clip
 ```
 
-Both corpora are generated, not committed — run the builders once before
-corpus-backed runs.
+All corpora are generated, not committed - run the builders once before
+corpus-backed runs. See [Benchmarking](#benchmarking) for which real tier to
+sweep for which question.
 
 ## The dictation client
 
@@ -238,8 +240,33 @@ effect. See `specs/004-gnome-shell-indicator/quickstart.md`.
 ## Benchmarking
 
 The testbed replays a corpus through a backend and scores it offline. Accuracy is
-only trustworthy on the **real** corpus (`corpus/real/`); the synthetic espeak
-`server/fixtures/` exercise plumbing and latency only.
+only trustworthy on the **real** corpora (`corpus/real/`, `corpus/chinese/`); the
+synthetic espeak `server/fixtures/` exercise plumbing and latency only.
+
+The real tiers, and what each is for:
+
+| Manifest | Clips | Audio | Use it for |
+| --- | --- | --- | --- |
+| `corpus/real/manifest-balanced.json` | 82 | ~12 min | **English accuracy, clean.** Round-robin over all 40 LibriSpeech dev-clean speakers - the only English tier whose WER is a property of the language rather than of one voice. |
+| `corpus/librispeech-other/manifest-balanced.json` | 82 | ~13 min | **English accuracy, hard.** Same construction over LibriSpeech test-other: accented, noisier, lower-fidelity recordings. Report the clean/other pair together - the gap between them is what separates backends. |
+| `corpus/real/manifest.json` | 14 | ~1 min | Quick smoke runs, and continuity with older `results/*.jsonl` (single speaker, 2277). |
+| `corpus/real/manifest-streams.json` | 2 | ~55 s | Long-form streaming watermarks. **Frozen** - `results/streaming-watermarks.json` and the emission-invariant tests are baselined against these exact clips. |
+| `corpus/chinese/manifest.json` | 50 | ~9 min | Mandarin CER (FLEURS `cmn_hans_cn` test), for SenseVoice/FunASR against published figures. |
+
+Rebuild any of them from the cached downloads (no network needed once `.cache/`
+is populated):
+
+```shell
+uv run python dev/fetch_real_corpus.py --select balanced -n 80 \
+    --manifest-name manifest-balanced.json     # speaker-balanced English (clean)
+uv run python dev/fetch_real_corpus.py --subset test-other --select balanced -n 80 \
+    --out corpus/librispeech-other --manifest-name manifest-balanced.json  # (hard)
+uv run python dev/fetch_real_corpus.py                 # the original 14-clip tier
+uv run python dev/fetch_chinese_corpus.py -n 50        # Mandarin
+```
+
+One LibriSpeech split per corpus dir - the `NOTICE` carries that split's
+attribution, so the builder refuses to mix them.
 
 ```shell
 cd server
@@ -247,11 +274,11 @@ uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock &
 
 # sweep the real corpus, tagging the run (appends to results/bench.jsonl):
 uv run python ../dev/bench.py --socket /tmp/myna.sock \
-    --manifest ../corpus/real/manifest.json --label whisper-base/cpu --batch
+    --manifest ../corpus/real/manifest-balanced.json --label whisper-base/cpu --batch
 
 # streaming-mode runs (server needs --streaming) record extra metrics:
 uv run python ../dev/bench.py --socket /tmp/myna.sock --streaming \
-    --manifest ../corpus/real/manifest.json --label whisper-tiny/streaming
+    --manifest ../corpus/real/manifest-balanced.json --label whisper-tiny/streaming
 
 # collate every recorded run into a WER/CER matrix:
 uv run python ../dev/aggregate.py --by-category
