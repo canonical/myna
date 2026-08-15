@@ -8,6 +8,12 @@
 # The snaps under test are prebuilt and sent with the project:
 #   myna-snap/myna_*_amd64.snap              (myna-snap/dev/prepare.sh && snapcraft pack)
 #   fake-snap/myna-fake-backend_*_amd64.snap (fake-snap/dev/prepare.sh && snapcraft pack)
+#   whisper-snap/whisper_*_amd64.snap        (whisper-snap/dev/prepare.sh && snapcraft pack)
+#   whisper-snap/whisper+model-tiny.comp     (whisper-snap/dev/download-models.sh)
+#
+# confined-e2e uses the fake backend (no model, runs anywhere); adapter-smoke
+# uses the real whisper snap to prove a shipped adapter is wired up in both
+# emission modes. 4 GB of VM RAM is enough for whisper-tiny on CPU.
 project: myna
 
 path: /home/spread/myna
@@ -39,7 +45,19 @@ exclude:
     - .specify
     - .pi
     - .ruff_cache
-    - whisper-snap
+    # whisper-snap is *not* excluded wholesale: adapter-smoke needs the packed
+    # snap and the tiny component (161 MB + 76 MB). Its build trees and the
+    # larger components are dropped instead - shipping base/small/CUDA would add
+    # 2.3 GB to every send for no extra coverage.
+    - whisper-snap/parts
+    - whisper-snap/stage
+    - whisper-snap/prime
+    - whisper-snap/stage_packages
+    - whisper-snap/components
+    - whisper-snap/wheels
+    - whisper-snap/whisper+model-base.comp
+    - whisper-snap/whisper+model-small.comp
+    - whisper-snap/whisper+faster-whisper-cuda.comp
     - nemotron-snap
     - qwen-snap
     - sherpa-snap
