@@ -142,7 +142,19 @@ parts:
       [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
       target="$CRAFT_PART_INSTALL/site-packages"
       mkdir -p "$target"
-      pip3 install --target="$target" ./myna-0.0.1-py3-none-any.whl[nemotron]
+      # Prefer the local closure dev/prepare.sh staged into wheels/. That is
+      # where the weight is - torch plus the nvidia-* CUDA packages, several GB
+      # - and resolving it from PyPI here re-downloads on every fresh build
+      # instance, since pip's cache lives inside the instance and does not
+      # survive pruning the LXD pool.
+      #
+      # The index stays enabled deliberately: a few closure members (wget,
+      # nemo-toolkit) are sdist-only, and building those offline would need
+      # their PEP 517 build deps staged too. --find-links wins on everything
+      # that matters; PyPI covers the long tail.
+      pip3 install --target="$target" \
+        --find-links=. \
+        ./myna-0.0.1-py3-none-any.whl[nemotron]
       craftctl default
     organize:
       "*": (component/nemo-cuda)
