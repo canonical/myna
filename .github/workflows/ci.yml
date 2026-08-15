@@ -87,12 +87,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The use-case exercise dictates from a real LibriSpeech clip. Corpora are
+      # generated, not committed, so CI provisions the tier, cached on the
+      # generator's hash: the `corpus` action passes no selection args, so the
+      # generator (and the fixture writer it shares) is the whole input, and the
+      # same hash means the same clips. Only a cache miss pays the ~330 MB
+      # LibriSpeech download; the tier itself is a couple of MB, and the source
+      # tarball is deliberately not cached.
+      - name: Cache real-speech corpus
+        uses: actions/cache@v4
+        with:
+          path: corpus/real
+          key: corpus-real-${{ hashFiles('dev/fetch_real_corpus.py', 'dev/generate_fixtures.py') }}
+
       - uses: canonical/launch-workshop@v1
         with:
           workshop: myna
           cache: |
             rust:cargo-registry
             uv:cache
+
+      - name: Provision real-speech corpus
+        run: workshop run myna corpus
 
       - name: Rust coverage (tests)
         run: workshop run myna cov

@@ -37,6 +37,9 @@ skip() { printf '\033[33mSKIP\033[0m %s\n' "$*"; }
 die() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v cargo-llvm-cov >/dev/null || die "cargo-llvm-cov not installed (workshop provisions it)"
+# Corpora are generated, never committed: without this the dictation scenarios
+# fail deep inside the client as an opaque "audio device unavailable".
+[ -f "$CLIP" ] || die "missing $CLIP - provision the corpus first: workshop run myna corpus"
 
 # --- fail-loud prerequisite check (FR-005) -----------------------------------
 # Rust: the merged report needs the test-suite .profraw. If absent, run the

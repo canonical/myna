@@ -296,6 +296,30 @@ def build(
     return manifest
 
 
+def is_complete(out_dir: Path, manifest_name: str, n: int, subset: str) -> bool:
+    """True when ``out_dir`` already holds exactly the corpus these args build.
+
+    Lets a caller that only needs *a* corpus (CI, which restores one from a
+    cache) skip the ~330 MB download. Deliberately strict: a manifest from a
+    different split or clip count is not the corpus that was asked for, and a
+    missing WAV means a half-written tier, so both re-generate.
+    """
+    manifest = out_dir / manifest_name
+    if not manifest.is_file():
+        return False
+    try:
+        clips = json.loads(manifest.read_text(encoding="utf-8"))["clips"]
+    except (ValueError, KeyError):
+        return False
+    if len(clips) != n + N_NOISE:
+        return False
+    return all(
+        clip.get("source", "").startswith(f"librispeech:{subset}:")
+        and (out_dir / clip["path"]).is_file()
+        for clip in clips
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "corpus" / "real")
@@ -331,7 +355,18 @@ def main() -> int:
         help="manifest filename inside --out (default manifest.json); use a"
         " distinct name to add a tier alongside an existing one",
     )
+    parser.add_argument(
+        "--skip-complete",
+        action="store_true",
+        help="exit 0 without downloading when --out already holds exactly this"
+        " corpus (same split, clip count, and every WAV present); for CI, which"
+        " restores the tier from a cache",
+    )
     args = parser.parse_args()
+
+    if args.skip_complete and is_complete(args.out, args.manifest_name, args.n, args.subset):
+        print(f"{args.out} already holds this corpus; skipping fetch")
+        return 0
 
     tar_path = args.tarball or download(
         f"{BASE_URL}/{args.subset}.tar.gz", args.cache / f"{args.subset}.tar.gz"

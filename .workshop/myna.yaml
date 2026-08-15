@@ -90,8 +90,17 @@ actions:
       --cov-report=xml:coverage-tests.cobertura.xml "$@"
     cp -f .coverage .coverage.tests
 
+  # Real-speech corpus tier the `exercise` use-cases dictate from. Corpora are
+  # generated, never committed (.gitignore), so CI has to provision one; the
+  # default args reproduce the tier `exercise` expects, bit-for-bit. Idempotent:
+  # a corpus already on disk (restored from the CI cache) costs nothing, and the
+  # ~330 MB LibriSpeech download is skipped.
+  corpus: |
+    cd /project && python3 dev/fetch_real_corpus.py --skip-complete
+
   # Real use-cases under instrumentation (both dialects; gated scenarios skip
-  # cleanly), then merged (tests + use-cases) exports per language.
+  # cleanly), then merged (tests + use-cases) exports per language. Needs the
+  # `corpus` tier above.
   exercise: |
     export PATH=/usr/local/cargo-bin:$PATH
     bash /project/dev/exercise.sh

@@ -6,6 +6,8 @@
 #   - pkg-config          : libspa-sys/libpipewire-sys build.rs locate the libs
 #   - pipewire, wireplumber, pipewire-audio-client-libraries : runtime + pw-cli/wpctl
 #   - libpulse-dev        : PulseAudio compat headers for any pulse-path work
+#   - ffmpeg              : FLAC decode for the real-speech corpus tier
+#                           (dev/fetch_real_corpus.py, `workshop run myna corpus`)
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install --yes --no-install-recommends \
@@ -15,4 +17,5 @@ apt-get install --yes --no-install-recommends \
   pipewire \
   pipewire-audio-client-libraries \
   wireplumber \
-  libpulse-dev
+  libpulse-dev \
+  ffmpeg
