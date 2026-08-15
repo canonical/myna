@@ -37,23 +37,18 @@ pub const EVENT_DONE: &str = "transcription.done";
 pub const EVENT_ERROR: &str = "transcription.error";
 
 /// Disposition enum for streaming mode (T05, feature 007-streaming-mode)
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Disposition {
     /// Text is final, append-only, safe to inject into text field
+    #[default] // Backward-compatible default
     Committed,
     /// Text is provisional, may be revised or superseded
     Unstable,
 }
 
-impl Default for Disposition {
-    fn default() -> Self {
-        Self::Committed // Backward-compatible default
-    }
-}
-
 /// Streaming mode selector (T05, feature 007-streaming-mode)
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StreamingMode {
     /// Force streaming regardless of tier (user accepts potential latency)
@@ -61,13 +56,8 @@ pub enum StreamingMode {
     /// Force batch regardless of tier (user prefers all-at-once)
     Batch,
     /// Resolve to streaming or batch based on tier assessment (default)
+    #[default]
     Auto,
-}
-
-impl Default for StreamingMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 fn default_phase() -> String {

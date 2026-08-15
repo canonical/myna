@@ -313,16 +313,12 @@ impl DesktopController {
         // the rest (FR-014/FR-022, SC-007). A normal Release does NOT suppress
         // (the commit-drain tail is still ours to insert).
         let mut commits_suppressed = false;
-        // Buffered committed text not yet inserted. Consecutive `Final`s (a
+        // Committed text not yet inserted. Consecutive `Final`s (a
         // commit-on-finalize adapter emits them in one burst) are coalesced
         // here and inserted as ONE `CommitText`: rapid successive IBus commits
         // race and only the last lands, so we join the burst. Spaced streaming
         // finals still flush individually (see `route_event`).
-        let mut pending = String::new();
-        // Whether any text has been committed this utterance — drives the
-        // whitespace-aware separator between *separately flushed* commits
-        // (see `flush_commit`).
-        let mut committed_any = false;
+        let mut buffer = CommitBuffer::default();
 
         let outcome = loop {
             tokio::select! {
@@ -332,12 +328,12 @@ impl DesktopController {
                 // in order even when a release arrives mid-stream.
                 biased;
                 Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut pending, &mut committed_any).await;
+                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut buffer).await;
                 }
                 // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
-                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut pending, &mut committed_any).await;
+                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut buffer).await;
                     }
                     break result;
                 }
@@ -400,22 +396,12 @@ impl DesktopController {
                     myna_core::dbg_log!("ctrl", "utterance completed");
                     ensure_finalizing(&mut self.state);
                     // Safety flush: normally the terminal `done` already flushed
-                    // the buffered burst in `route_event` (leaving `pending`
+                    // the buffered burst in `route_event` (leaving the buffer
                     // empty); this catches a completed run whose last event was
                     // a `Final` with nothing after it. Never double-commits
-                    // (the flush takes the buffer).
-                    if !commits_suppressed && !pending.is_empty() {
-                        myna_core::dbg_log!(
-                            "inject",
-                            "flushing {} buffered chars on complete",
-                            pending.len()
-                        );
-                        let mut text = std::mem::take(&mut pending);
-                        if committed_any && !text.starts_with(char::is_whitespace) {
-                            text.insert(0, ' ');
-                        }
-                        let _ = self.injector.commit(&text).await;
-                    }
+                    // (the flush takes the buffer), and discards rather than
+                    // inserts when commits are suppressed.
+                    buffer.flush(&mut *self.injector, !commits_suppressed).await;
                     self.injector.set_activity(false).await;
                     self.injector.end().await;
                     self.indicator.set_state(IndicatorState::Hidden).await;
@@ -517,7 +503,7 @@ fn finalize_state(state: &mut DictationState, terminal: DictationState) {
 /// drive the indicator via [`event_to_indicator`]. Advances
 /// `Recording → Transcribing` on the first decoding event.
 ///
-/// Committed text is buffered in `pending` rather than inserted immediately:
+/// Committed text is buffered in [`CommitBuffer`] rather than inserted immediately:
 /// consecutive `Final`s (a commit-on-finalize adapter emits the whole utterance
 /// as a back-to-back burst) are joined and flushed as ONE `CommitText`. This is
 /// essential because rapid successive IBus commits race and only the last one
@@ -532,13 +518,12 @@ async fn route_event(
     state: &mut DictationState,
     commit_allowed: bool,
     preedit: bool,
-    pending: &mut String,
-    committed_any: &mut bool,
+    buffer: &mut CommitBuffer,
 ) {
     // A non-Final event is a boundary: flush the buffered final burst as one
     // commit before handling it (so ordering with `done`/indicator holds).
     if !matches!(event, OrchestratorEvent::Final(_)) {
-        flush_commit(injector, pending, commit_allowed, committed_any).await;
+        buffer.flush(injector, commit_allowed).await;
     }
 
     if let OrchestratorEvent::Transcribing = event {
@@ -559,16 +544,7 @@ async fn route_event(
             text.len()
         );
         if commit_allowed {
-            // Whitespace-aware join: servers whose segments carry natural
-            // (leading-space) whitespace concatenate verbatim (contract I2);
-            // stripped-segment servers get a separator — never a double space.
-            if !pending.is_empty()
-                && !pending.ends_with(char::is_whitespace)
-                && !text.starts_with(char::is_whitespace)
-            {
-                pending.push(' ');
-            }
-            pending.push_str(text);
+            buffer.push(text);
         }
     }
     if let OrchestratorEvent::Unstable(text) = &event {
@@ -586,38 +562,63 @@ async fn route_event(
     }
 }
 
-/// Insert the buffered committed text as a single `CommitText`, then clear the
-/// buffer. A no-op when empty; discards (does not insert) when commits are
-/// suppressed. A commit failure is best-effort.
+/// Committed text buffered for coalesced insertion, for one utterance.
 ///
-/// `committed_any` tracks whether this utterance has already inserted text:
-/// streaming commits flush *separately* (spaced by liveness/unstable events),
-/// so a later flush needs a separator from the text already in the field —
-/// prepended here, but only when the buffered text doesn't carry its own
-/// leading whitespace (contract I2 servers) — never a double space.
-async fn flush_commit(
-    injector: &mut dyn Injector,
-    pending: &mut String,
-    commit_allowed: bool,
-    committed_any: &mut bool,
-) {
-    if pending.is_empty() {
-        return;
+/// Consecutive `Final`s are joined here and inserted as ONE `CommitText`:
+/// rapid successive IBus commits race and only the last one lands in the
+/// target (the "only the last bit gets inserted" bug).
+#[derive(Default)]
+struct CommitBuffer {
+    /// Committed text not yet inserted.
+    pending: String,
+    /// Whether this utterance has already inserted text. Streaming commits
+    /// flush *separately* (spaced by liveness/unstable events), so a later
+    /// flush needs a separator from the text already in the field.
+    committed_any: bool,
+}
+
+impl CommitBuffer {
+    /// Append stable committed text to the buffer.
+    ///
+    /// Whitespace-aware join: servers whose segments carry natural
+    /// (leading-space) whitespace concatenate verbatim (contract I2);
+    /// stripped-segment servers get a separator - never a double space.
+    fn push(&mut self, text: &str) {
+        if !self.pending.is_empty()
+            && !self.pending.ends_with(char::is_whitespace)
+            && !text.starts_with(char::is_whitespace)
+        {
+            self.pending.push(' ');
+        }
+        self.pending.push_str(text);
     }
-    if commit_allowed {
-        let mut text = std::mem::take(pending);
-        if *committed_any && !text.starts_with(char::is_whitespace) {
-            text.insert(0, ' ');
+
+    /// Insert the buffered text as a single `CommitText`, then clear the
+    /// buffer. A no-op when empty; discards (does not insert) when commits are
+    /// suppressed. A commit failure is best-effort.
+    ///
+    /// The separator from already-inserted text is prepended here, but only
+    /// when the buffered text doesn't carry its own leading whitespace
+    /// (contract I2 servers) - never a double space.
+    async fn flush(&mut self, injector: &mut dyn Injector, commit_allowed: bool) {
+        if self.pending.is_empty() {
+            return;
         }
-        match injector.commit(&text).await {
-            Ok(()) => {
-                *committed_any = true;
-                myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text)
+        if commit_allowed {
+            let mut text = std::mem::take(&mut self.pending);
+            if self.committed_any && !text.starts_with(char::is_whitespace) {
+                text.insert(0, ' ');
             }
-            Err(e) => myna_core::dbg_log!("inject", "commit FAILED: {e}"),
+            match injector.commit(&text).await {
+                Ok(()) => {
+                    self.committed_any = true;
+                    myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text)
+                }
+                Err(e) => myna_core::dbg_log!("inject", "commit FAILED: {e}"),
+            }
+        } else {
+            self.pending.clear();
         }
-    } else {
-        pending.clear();
     }
 }
 
