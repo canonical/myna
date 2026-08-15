@@ -22,6 +22,11 @@ sdks:
   # Python tooling for the evaluation harness (`uv sync` / `uv run`).
   - name: uv
 
+  # In-project SDK: gives the workshop its own server/.venv, shadowing the
+  # host's with a mount. A venv records absolute paths, so the two sides cannot
+  # share the bind-mounted one. See .workshop/venv/sdk.yaml.
+  - name: project-venv
+
   # In-project SDK: libpipewire-0.3 dev headers + libclang (bindgen) + PipeWire
   # audio tooling, plus a host-sound custom-device plug. See
   # .workshop/pipewire/sdk.yaml.
@@ -48,6 +53,9 @@ actions:
   # Rust workspace: build + full test suite (hermetic + gated integration; the
   # PipeWire-gated tests skip cleanly when MYNA_PIPEWIRE_TESTS is unset).
   test: |
+    # The orchestrator e2e tests spawn the venv's myna-server and skip (never
+    # fail) when it is absent, so sync first or they silently stop testing.
+    (cd /project/server && uv sync -q)
     cd /project/client && cargo test --workspace "$@"
   # Rust lints as errors.
   lint: |
@@ -69,8 +77,8 @@ actions:
   cov: |
     export PATH=/usr/local/cargo-bin:$PATH
     rustup component add llvm-tools-preview 2>/dev/null || true
-    # The orchestrator e2e tests spawn server/.venv/bin/myna-server; sync it
-    # first or they skip silently (and Rust loses ~2 points of coverage).
+    # The orchestrator e2e tests spawn the venv's myna-server; sync it first or
+    # they skip silently (and Rust loses ~2 points of coverage).
     (cd /project/server && uv sync -q)
     cd /project/client
     mkdir -p target/coverage
