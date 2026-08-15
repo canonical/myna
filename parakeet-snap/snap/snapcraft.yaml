@@ -41,6 +41,14 @@ environment:
 apps:
   parakeet:
     command: bin/parakeet
+    plugs: &hook-plugs
+      # modelctl's hardware detection (lspci + /sys) backs `show-engine`,
+      # `use-engine` and `status`. This snap ships one CPU engine and its
+      # daemon does not need scoring to boot, but the modelctl surface is
+      # meant to answer uniformly on every inference snap - without these the
+      # CLI dies with "executing lspci: executable file not found".
+      - hardware-observe
+      - opengl
 
   server:
     command: bin/server.sh
@@ -50,8 +58,10 @@ apps:
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
 
 hooks:
-  install: {}
-  post-refresh: {}
+  install:
+    plugs: *hook-plugs
+  post-refresh:
+    plugs: *hook-plugs
   configure: {}
 
 # Expose the session socket to confined clients (T14c — the myna orchestrator
@@ -75,6 +85,14 @@ parts:
       # Named symlink so cobra picks up the snap command name
       ln --symbolic ./modelctl bin/parakeet
       craftctl default
+
+  # lspci, used by modelctl's hardware detection. Without it `use-engine --auto`
+  # dies with "executing lspci: executable file not found", leaving the snap
+  # with no active engine and a daemon that exits 1 on every start.
+  cli-lspci:
+    plugin: nil
+    stage-packages:
+      - pciutils
 
   server-app:
     # myna-server + onnxruntime in a venv. The myna wheel is staged into
