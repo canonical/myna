@@ -3,9 +3,9 @@
 tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
 
 # Redirect stdout to stdout+syslog
-exec 1> >(tee >(logger --tag=$tag))
+exec 1> >(tee >(logger --tag="$tag"))
 # Redirect stderr to stderr+syslog
-exec 2> >(logger --stderr --priority error --tag=$tag)
+exec 2> >(logger --stderr --priority error --tag="$tag")
 
 # Refresh the active engine: apply configuration changes and, if the active
 # engine has been removed, auto-select another (needs hardware info).

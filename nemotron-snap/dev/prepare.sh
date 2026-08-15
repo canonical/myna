@@ -29,7 +29,9 @@ uv build --wheel --out-dir "$wheels"
 
 if [ "${1:-}" = "--wheel-only" ]; then
     echo "staged the myna wheel only; dependency closure left as-is"
-    ls -l "$wheels" | head
+    # find, not `ls | head` (SC2012): the staged closure can be hundreds of
+    # wheels, so the listing stays capped.
+    find "$wheels" -maxdepth 1 -name '*.whl' -printf '%f\n' | sort | head
     exit 0
 fi
 
