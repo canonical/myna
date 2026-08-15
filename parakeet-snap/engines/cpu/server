@@ -17,14 +17,24 @@ stream_force_cut="${stream_force_cut:-$(modelctl get stream-force-cut-seconds)}"
 # to its single component directly.
 MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-parakeet-int8}"
 
-# --streaming: chunked progressive commit is this snap's reason to exist
-# (008 US3). Idle-unload (T27): drop the model after sleep-idle-seconds,
-# keep serving.
+# Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
+#
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# Defaults to true here: chunked progressive commit is this snap's reason to
+# exist (008 US3). It is a key rather than a hardcoded flag only so the batch
+# baseline is measurable on the same build.
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter parakeet \
     --model "$MODEL_DIR" \
-    --streaming \
+    "${stream_args[@]}" \
     --stream-arm-s "${stream_arm:-15}" \
     --stream-silence-cut-s "${stream_silence_cut:-0.5}" \
     --stream-force-cut-s "${stream_force_cut:-60}" \

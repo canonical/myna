@@ -17,6 +17,11 @@ modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 # 5 min keeps frequent dictation warm but frees GPU/RAM when you walk away.
 modelctl set --package sleep-idle-seconds="300"
+# Emission mode. false = commit-on-finalize (one final at end of audio),
+# true = progressive committed segments. A config key rather than a hardcoded
+# flag so the same build can be measured both ways; the benchmark runner treats
+# the presence of this key as the snap declaring it supports streaming at all.
+modelctl set --package streaming="false"
 
 #
 # Auto select an engine

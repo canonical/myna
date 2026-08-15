@@ -8,10 +8,19 @@ idle="$(modelctl get sleep-idle-seconds)"
 # Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
 # (Full process/VRAM release via socket activation is blocked upstream — see
 # docs/asr-inference-snap-design.md §4.)
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model tiny}" \
     --device cpu \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
+    "${stream_args[@]}" \
     "$@"

@@ -16,6 +16,11 @@ modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
 modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 modelctl set --package sleep-idle-seconds="300"
+# Emission mode. false = commit-on-finalize (one final at end of audio),
+# true = progressive committed segments. A config key rather than a hardcoded
+# flag so the same build can be measured both ways; the benchmark runner treats
+# the presence of this key as the snap declaring it supports streaming at all.
+modelctl set --package streaming="true"
 # SilenceCut chunked-commit defaults (seconds). Users can lower these with
 # `snap set parakeet stream-arm-seconds=5` etc.
 modelctl set --package stream-arm-seconds="15"
@@ -23,5 +28,13 @@ modelctl set --package stream-silence-cut-seconds="0.5"
 modelctl set --package stream-force-cut-seconds="60"
 
 #
-# CPU-only snap: no hardware auto-selection is needed. Only package config.
+# Activate the single engine.
 #
+# This snap ships exactly one engine and its daemon execs it directly, so
+# nothing here needs hardware scoring. The activation still matters: without an
+# active engine `modelctl show-engine` / `list-models` / `status` all fail, and
+# those are meant to answer on every inference snap. Selecting by name rather
+# than --auto keeps that true even where lspci or hardware-observe are
+# unavailable - there is only one possible answer.
+#
+modelctl use-engine cpu --assume-yes --no-restart
