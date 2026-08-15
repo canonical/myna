@@ -45,7 +45,10 @@ apps:
     plugs:
       - hardware-observe
       - opengl
-      - network
+      # No `network`: weights ship as components and modelctl has
+      # nothing to fetch at runtime. The plug contradicted this
+      # snap's own stated invariant (see the header) and the other
+      # inference snaps, which never had it.
 
   server:
     command: bin/server.sh

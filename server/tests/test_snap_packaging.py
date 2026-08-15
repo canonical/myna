@@ -128,6 +128,26 @@ def test_declares_every_engine_it_ships(snap) -> None:
         )
 
 
+def test_no_app_plugs_network(snap) -> None:
+    """The offline invariant, asserted rather than only asserted in prose.
+
+    Every one of these snaps states in its own header that weights ship as
+    components and there is no runtime download. qwen and nemotron nonetheless
+    plugged ``network`` on their CLI app, contradicting that text and their
+    siblings, with no comment saying why. ``network-bind`` on the daemon is a
+    different thing: snapd's seccomp gates listen() behind it even for a Unix
+    socket, so it is required and is allowed here.
+    """
+    _, name, recipe = snap
+    for app_name, app in (recipe.get("apps") or {}).items():
+        if not isinstance(app, dict):
+            continue
+        assert "network" not in set(app.get("plugs") or []), (
+            f"{name}: app {app_name!r} plugs `network`, but this snap ships its "
+            "weights as components and disclaims runtime downloads"
+        )
+
+
 def test_hooks_dir_holds_only_hooks(snap) -> None:
     """snap/hooks/ is a namespace snapd owns, not a scratch directory.
 

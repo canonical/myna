@@ -16,8 +16,7 @@
 # tier round-robins 40 LibriSpeech dev-clean speakers (fixtures/ is plumbing
 # only, and corpus/real/manifest.json is all speaker 2277). Swap in
 # corpus/librispeech-other/manifest-balanced.json for the hard split.
-#manifest: corpus/real/manifest-balanced.json
-manifest: corpus/real/manifest-tiny.json
+manifest: corpus/real/manifest-balanced.json
 out: results/bench.jsonl
 cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged --cold to measure model load
 # clips: []                              # warm sweep clips; omit = whole manifest
