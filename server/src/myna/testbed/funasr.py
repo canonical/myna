@@ -131,7 +131,7 @@ class FunasrAdapter:
             models=(self.candidate.model,),
             languages=_LANGUAGES,
             input_formats=(FUNASR_FORMAT,),
-            punctuation=False,  # FR-008: unpunctuated, sherpa-compatible
+            punctuation=False,  # FR-008: unpunctuated
             translation=False,
         )
 
