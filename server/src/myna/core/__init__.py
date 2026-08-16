@@ -34,7 +34,6 @@ from myna.core.session import (
     session_config_from_wire,
     session_config_to_wire,
 )
-from myna.core.streaming import SegmentAccumulator
 from myna.core.transport import (
     EventSink,
     LoopbackClient,
@@ -63,7 +62,6 @@ __all__ = [
     "LoopbackClient",
     "PcmChunk",
     "Segment",
-    "SegmentAccumulator",
     "SessionConfig",
     "SttClient",
     "SttService",

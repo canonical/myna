@@ -59,10 +59,6 @@ class Hypothesis:
 
     words: list[Word] = field(default_factory=list)
 
-    @property
-    def text(self) -> str:
-        return "".join(w.text for w in self.words).strip()
-
 
 @dataclass(frozen=True)
 class CommitDecision:

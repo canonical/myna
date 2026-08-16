@@ -94,8 +94,7 @@ def compute_metrics(
     first_unstable = terminal = None
     counts: dict[str, int] = {}
     committed_segments = 0
-    committed_texts: list[str] = []
-    commit_stability = True  # Assume stable unless we detect a retraction
+    commit_stability = True  # always True: the wire contract guarantees append-only
 
     for te in events:
         kind = te.event.type
@@ -116,19 +115,11 @@ def compute_metrics(
                 if first_committed is None:
                     first_committed = te.t
                 committed_segments += 1
-                # Track committed text for stability check
-                text = getattr(te.event, "text", "")
-                if text:
-                    committed_texts.append(text)
             elif disposition == "unstable":
                 if first_unstable is None:
                     first_unstable = te.t
         if kind in ("transcription.done", "transcription.error"):
             terminal = te.t
-
-    # Check commit stability: ensure all committed segments appear in final transcript
-    # (This is a simple check; a more sophisticated version would check ordering)
-    # For now, we just set it to True as the wire contract guarantees append-only
 
     finalize = terminal - audio_end_t if terminal is not None and audio_end_t is not None else None
     # Decode wall-time excludes the cold-load wait: measure from ready (or first
