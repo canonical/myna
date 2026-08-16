@@ -33,15 +33,39 @@ sweep_budget_seconds: 600
 # combination. Add `models: [tiny, base]` to a target to narrow the variant
 # axis - useful when a large weight is known to blow the budget and you only
 # want it measured occasionally.
+#
+# streaming_configs: optional list of {label, settings} dicts, applied only
+# when streaming=true. Each entry produces a separate row in the results with
+# the label suffixed "-<label>" (e.g. "streaming-arm3s"). Batch mode is always
+# run once, unaffected. Snaps without streaming_configs get a single streaming
+# row at whatever defaults the snap shipped with.
 targets:
   - snap: whisper
     dir: whisper-snap
+    # LocalAgreement re-decode: no user-facing latency dial. Commits when two
+    # consecutive 1 s-cadence decodes agree; TTFF is content-driven, not config.
 
   - snap: parakeet
     dir: parakeet-snap
+    # SilenceCut chunked-commit: stream-arm-seconds is the primary latency dial.
+    # The window must reach arm_s before silence detection activates, so arm_s
+    # sets the floor on TTFF. Sweep three points to expose the tradeoff curve;
+    # arm15s is the shipped default (murmure's proven constant).
+    streaming_configs:
+      - label: arm3s
+        settings:
+          stream-arm-seconds: "3"
+      - label: arm8s
+        settings:
+          stream-arm-seconds: "8"
+      - label: arm15s
+        settings:
+          stream-arm-seconds: "15"
 
   - snap: sherpa
     dir: sherpa-snap
+    # Native 480 ms transducer chunks: latency is baked into the ONNX export,
+    # no runtime knob.
 
   - snap: myna-funasr
     dir: funasr-snap
@@ -60,3 +84,15 @@ targets:
   # Uncomment on a machine with an NVIDIA card.
   # - snap: nemotron
   #   dir: nemotron-snap
+  #   # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
+  #   # "70,0" = lowest latency (no right context); "70,33" = most context.
+  #   # streaming_configs:
+  #   #   - label: ctx70.0
+  #   #     settings:
+  #   #       att-context-size: "70,0"
+  #   #   - label: ctx70.13
+  #   #     settings:
+  #   #       att-context-size: "70,13"
+  #   #   - label: ctx70.33
+  #   #     settings:
+  #   #       att-context-size: "70,33"

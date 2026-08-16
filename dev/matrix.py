@@ -262,6 +262,7 @@ class SnapTarget:
         self.engine: str | None = None
         self.model: str | None = None
         self.streaming = False
+        self.config_suffix: str = ""  # extra label segment for streaming config variants
 
     @property
     def label(self) -> str:
@@ -274,7 +275,10 @@ class SnapTarget:
         parts = [self.snap, self.engine or "unknown-engine"]
         if self.model:
             parts.append(self.model)
-        parts.append("streaming" if self.streaming else "batch")
+        mode = "streaming" if self.streaming else "batch"
+        if self.streaming and self.config_suffix:
+            mode = f"streaming-{self.config_suffix}"
+        parts.append(mode)
         return "/".join(parts)
 
     def purge(self) -> None:
@@ -415,10 +419,28 @@ class SnapTarget:
         value = "true" if streaming else "false"
         _run([self.cli, "set", "--assume-yes", "--no-restart", f"streaming={value}"])
         self.streaming = streaming
+        self.config_suffix = ""
         subprocess.run(["snap", "restart", self.service], capture_output=True, check=False)
         if not wait_for_socket(self.socket):
             mode = "streaming" if streaming else "batch"
             raise SystemExit(f"[{self.snap}] socket did not return after switching to {mode}")
+
+    def set_streaming_variant(self, settings: dict, suffix: str) -> None:
+        """Switch to streaming mode with specific config settings (single restart).
+
+        Combines the streaming toggle and any per-variant knobs (e.g.
+        stream-arm-seconds, att-context-size) into one ``set`` call so only one
+        restart is needed per streaming config variant.
+        """
+        set_args = ["streaming=true"] + [f"{k}={v}" for k, v in settings.items()]
+        _run([self.cli, "set", "--assume-yes", "--no-restart", *set_args])
+        self.streaming = True
+        self.config_suffix = suffix
+        subprocess.run(["snap", "restart", self.service], capture_output=True, check=False)
+        if not wait_for_socket(self.socket):
+            raise SystemExit(
+                f"[{self.snap}] socket did not return after switching to streaming-{suffix}"
+            )
 
     def use_model(self, model: str) -> None:
         """Switch weights and come back up cold.
@@ -778,9 +800,18 @@ def main() -> None:
             # adapter has no progressive path expose no key, and are batch only.
             togglable = target.supports_streaming()
             modes = [False, True] if togglable else [False]
+            # Per-target streaming config variants (e.g. arm3s/arm8s/arm15s for
+            # parakeet). Only applied when streaming=True; batch is always a
+            # single run at defaults.
+            streaming_configs: list[dict] = list(spec.get("streaming_configs") or [])
+            streaming_desc = (
+                [f"streaming-{sc['label']}" for sc in streaming_configs]
+                if streaming_configs
+                else (["streaming"] if togglable else [])
+            )
             print(
                 f"[{target.snap}] variants={variants or '(none reported)'} "
-                f"modes={['streaming' if m else 'batch' for m in modes]}"
+                f"modes={['batch'] + streaming_desc}"
             )
             for model in variants or [None]:
                 # One install, every weight the engine offers. `use-model`
@@ -793,21 +824,42 @@ def main() -> None:
                     # Only touch the key on snaps that have one. Setting it on a
                     # batch-only snap fails ("key not found") and would take the
                     # whole target down over a no-op.
-                    if togglable:
-                        target.set_streaming(streaming)
-                    _sweep_one(
-                        target=target,
-                        manifest=manifest,
-                        out=out,
-                        provenance=provenance,
-                        cold_clip=cold_clip,
-                        warm_clips=warm_clips,
-                        budget=budget,
-                        sample_resources=not args.no_resources,
-                        resources_path=resources_path,
-                        broken=broken,
-                        unusable=unusable,
-                    )
+                    if streaming and streaming_configs:
+                        # Sweep each config variant in a single restart each.
+                        for sc in streaming_configs:
+                            target.set_streaming_variant(
+                                settings=sc.get("settings") or {},
+                                suffix=sc["label"],
+                            )
+                            _sweep_one(
+                                target=target,
+                                manifest=manifest,
+                                out=out,
+                                provenance=provenance,
+                                cold_clip=cold_clip,
+                                warm_clips=warm_clips,
+                                budget=budget,
+                                sample_resources=not args.no_resources,
+                                resources_path=resources_path,
+                                broken=broken,
+                                unusable=unusable,
+                            )
+                    else:
+                        if togglable:
+                            target.set_streaming(streaming)
+                        _sweep_one(
+                            target=target,
+                            manifest=manifest,
+                            out=out,
+                            provenance=provenance,
+                            cold_clip=cold_clip,
+                            warm_clips=warm_clips,
+                            budget=budget,
+                            sample_resources=not args.no_resources,
+                            resources_path=resources_path,
+                            broken=broken,
+                            unusable=unusable,
+                        )
         except subprocess.CalledProcessError as exc:
             broken.append((target.label, f"exited {exc.returncode}"))
             print(f"[{target.label}] FAILED: exited {exc.returncode} - skipping target")
