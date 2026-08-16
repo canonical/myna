@@ -56,6 +56,14 @@ apps:
     plugs:
       # Weights are a component (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+      # ONNX Runtime reads /sys/devices/system/cpu/** for core topology and
+      # /sys/fs/cgroup/** for cpuset/quota info to correctly size and pin its
+      # thread pool. Without these reads it overcounts available CPUs, then
+      # sched_setaffinity returns EPERM when it tries to pin to a CPU outside
+      # the daemon's cpuset. hardware-observe covers /sys/devices/**;
+      # system-observe adds /sys/fs/cgroup/** and /proc/**.
+      - hardware-observe
+      - system-observe
 
 hooks:
   install:

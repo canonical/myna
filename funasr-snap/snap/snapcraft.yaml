@@ -44,6 +44,7 @@ apps:
     daemon: simple
     plugs:
       - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
       - opengl
       # Weights are a component (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets

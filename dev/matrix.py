@@ -316,10 +316,14 @@ class SnapTarget:
         """Connect the interfaces a sideloaded snap does not get automatically.
 
         `snap install --dangerous` carries no snap declaration, so manual-connect
-        plugs stay unconnected. `hardware-observe` is the one that matters: the
-        install hook checks `snapctl is-connected hardware-observe` before
-        running `use-engine --auto`, and without it the snap installs with *no
-        active engine* and the daemon exits 1 on every start.
+        plugs stay unconnected. Key ones that matter:
+        - `hardware-observe`: the install hook checks `snapctl is-connected
+          hardware-observe` before running `use-engine --auto`; without it the
+          snap installs with no active engine and the daemon exits 1 on every start.
+        - `system-observe`: lets the inference runtime (ONNX Runtime, etc.) read
+          /sys/fs/cgroup/** and /proc/** to correctly size and pin its thread pool;
+          without it sched_setaffinity returns EPERM and the runtime falls back to
+          unoptimised scheduling.
         """
         out = subprocess.run(
             ["snap", "connections", self.snap],

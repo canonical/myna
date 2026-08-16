@@ -48,6 +48,8 @@ apps:
     command: bin/server.sh
     daemon: simple
     plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
 
 hooks:

@@ -50,6 +50,7 @@ apps:
     daemon: simple
     plugs:
       - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
       - opengl
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
     environment:
