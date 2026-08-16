@@ -4,6 +4,10 @@ The recognizer itself (sherpa-onnx OnlineRecognizer) is exercised live by
 dev/bench.py; here we pin the adapter's disposition routing against a scripted
 stub: partials → unstable, endpoints → committed (I1/I2/I4), tail flush (I5),
 verbatim-concat spacing (I2), off-format rejection (audio-push invariant).
+
+Batch path tests (``_decode_oneshot``) are in the "Batch path" section below.
+The critical regression: endpoint fires mid-audio in batch mode → old code
+returned only the pre-endpoint text, silently dropping the tail segment.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from myna.core import (
     TranscriptionFinal,
 )
 from myna.testbed.sherpa import SherpaAdapter
+from test_emission_invariants import assert_batch_degenerate
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 
@@ -145,3 +150,144 @@ async def test_off_format_audio_rejected():
     events = await run(make_adapter([]), fmt=bad)
     assert type(events[0]).__name__ == "TranscriptionError"
     assert events[0].code == "unsupported_audio_format"
+
+
+# ─── Batch path ──────────────────────────────────────────────────────────────
+#
+# _decode_oneshot loops over endpoint boundaries and accumulates segment texts.
+# The regression (pre-fix): the ``while is_ready`` loop exits at the first
+# endpoint, so only the pre-endpoint text was returned — the tail was silently
+# dropped.  These stubs exercise that path without loading the ONNX model.
+
+
+class _BatchStream:
+    """Minimal stream stub for _decode_oneshot: each accept_waveform / input_finished
+    triggers one decode cycle on the parent recognizer."""
+
+    def __init__(self, recognizer):
+        self._rec = recognizer
+
+    def accept_waveform(self, rate, samples):
+        self._rec._ready = True
+
+    def input_finished(self):
+        self._rec._ready = True
+
+
+class _BatchRecognizer:
+    """Scripted OnlineRecognizer for _decode_oneshot multi-segment tests.
+
+    ``segments`` is a list of ``(text, fires_endpoint)`` tuples.  Each element
+    represents one fully-decoded cycle: when the loop calls ``decode_stream``,
+    readiness is consumed; when an endpoint fires and ``reset`` is called, the
+    recognizer advances to the next segment and becomes ready again.
+    """
+
+    def __init__(self, segments):
+        self._segs = list(segments)
+        self._idx = 0
+        self._ready = False
+
+    def create_stream(self):
+        return _BatchStream(self)
+
+    def is_ready(self, stream):
+        return self._ready and self._idx < len(self._segs)
+
+    def decode_stream(self, stream):
+        self._ready = False
+
+    def is_endpoint(self, stream):
+        return self._idx < len(self._segs) and self._segs[self._idx][1]
+
+    def get_result(self, stream):
+        return self._segs[self._idx][0] if self._idx < len(self._segs) else ""
+
+    def reset(self, stream):
+        self._idx += 1
+        if self._idx < len(self._segs):
+            self._ready = True
+
+
+def make_batch_adapter(segments) -> SherpaAdapter:
+    adapter = SherpaAdapter(streaming=False)
+    adapter._recognizer = _BatchRecognizer(segments)
+    return adapter
+
+
+# ── Unit tests for _decode_oneshot ───────────────────────────────────────────
+
+
+def test_decode_oneshot_single_segment_no_endpoint():
+    rec = _BatchRecognizer([("hello world", False)])
+    stream = rec.create_stream()
+    result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
+    assert result == "hello world"
+
+
+def test_decode_oneshot_accumulates_across_endpoint_regression():
+    """Regression: endpoint fires mid-audio in batch mode.
+
+    Before the fix, ``_decode_oneshot`` exited the ``while is_ready`` loop on
+    the first endpoint and returned only ``"he had never been"`` — the tail
+    segment was silently dropped.  After the fix, both segments are accumulated
+    and the full transcript is returned.
+    """
+    rec = _BatchRecognizer(
+        [("he had never been", True), ("father lover husband friend", False)]
+    )
+    stream = rec.create_stream()
+    result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
+    assert result == "he had never been father lover husband friend"
+
+
+def test_decode_oneshot_multiple_endpoint_segments():
+    rec = _BatchRecognizer([("one", True), ("two", True), ("three", False)])
+    stream = rec.create_stream()
+    result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
+    assert result == "one two three"
+
+
+def test_decode_oneshot_empty_endpoint_segment_excluded():
+    # A silence-induced endpoint producing empty text must not inject a
+    # spurious space into the concatenated result.
+    rec = _BatchRecognizer([("", True), ("hello", False)])
+    stream = rec.create_stream()
+    result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
+    assert result == "hello"
+
+
+def test_decode_oneshot_all_empty_returns_empty_string():
+    rec = _BatchRecognizer([("", True), ("", False)])
+    stream = rec.create_stream()
+    result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
+    assert result == ""
+
+
+# ── Session-level batch test (I7) ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_session_emits_complete_transcript_and_satisfies_i7():
+    """I7: batch mode = one committed segment, equal to the full transcript.
+
+    Also exercises the run_session dispatch path end-to-end (load → buffer
+    → _decode_oneshot → emit committed + done) with an endpoint that fires
+    mid-audio — the regression that triggered the batch fix.
+    """
+    adapter = make_batch_adapter(
+        [("he had never been", True), ("father lover husband friend", False)]
+    )
+    events = await run(adapter, audio_seconds=2.0)
+    assert_batch_degenerate(events)
+    done = events[-1]
+    assert done.text == "he had never been father lover husband friend"
+
+
+@pytest.mark.asyncio
+async def test_batch_session_empty_audio_emits_empty_done():
+    adapter = make_batch_adapter([])
+    events = await run(adapter, audio_seconds=0.0)
+    done = events[-1]
+    assert isinstance(done, TranscriptionDone)
+    assert done.text == ""

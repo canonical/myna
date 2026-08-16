@@ -2,7 +2,8 @@
 
 The decode port itself is exercised end-to-end by dev/bench.py against the
 staged int8 weights (671 MB — not a unit-test fixture); here we pin the pure
-text/vocab mechanics the emission loop depends on (I2 verbatim concat).
+text/vocab mechanics the emission loop depends on (I2 verbatim concat) and the
+session dispatch paths (batch I7, streaming strategy wiring).
 """
 
 from __future__ import annotations
@@ -19,6 +20,49 @@ from myna.testbed.parakeet import (
     _tokens_to_words,
 )
 from myna.testbed.streaming.strategies import SilenceCut
+from myna.core import (
+    AudioFormat,
+    Disposition,
+    PcmChunk,
+    SessionConfig,
+    TranscriptionDone,
+    TranscriptionFinal,
+)
+from test_emission_invariants import assert_batch_degenerate
+
+FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
+
+
+# ─── Shared helpers ──────────────────────────────────────────────────────────
+
+
+class _FakeParakeetModel:
+    """Minimal stub for _ParakeetOnnx: returns a fixed transcript without
+    loading any ONNX weights."""
+
+    def __init__(self, text: str = "hello world"):
+        self._text = text
+        self.calls: list[int] = []  # lengths of sample arrays passed in
+
+    def transcribe_text(self, samples) -> str:
+        self.calls.append(len(samples))
+        return self._text
+
+
+async def pcm_audio(seconds: float, chunk_s: float = 0.5):
+    for _ in range(int(seconds / chunk_s)):
+        yield PcmChunk(data=b"\x01\x00" * int(16_000 * chunk_s), format=FORMAT)
+
+
+async def run_session(adapter, audio_seconds: float = 2.0, fmt=FORMAT):
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    cfg = SessionConfig(audio_format=fmt, language="en")
+    await adapter.run_session(cfg, pcm_audio(audio_seconds), emit)
+    return events
 
 
 def test_detokenize_strips_leading_and_pre_punctuation_spaces():
@@ -121,3 +165,50 @@ def test_cli_wires_streaming_cut_constants():
     assert adapter._stream_arm_s == 2.5
     assert adapter._stream_silence_cut_s == 0.25
     assert adapter._stream_force_cut_s == 7.0
+
+
+# ─── Session dispatch tests ──────────────────────────────────────────────────
+#
+# These exercise the run_session hot path without loading the 671 MB ONNX
+# weights by pre-loading a _FakeParakeetModel stub on the adapter.
+
+
+@pytest.mark.asyncio
+async def test_batch_session_emits_complete_transcript_and_satisfies_i7():
+    """I7: batch mode = one committed final carrying the full transcript,
+    followed by TranscriptionDone.  Verifies the buffer-then-decode dispatch
+    path and that no audio is silently discarded."""
+    adapter = ParakeetAdapter(streaming=False)
+    model = _FakeParakeetModel("he had never been father lover husband friend")
+    adapter._model = model
+
+    events = await run_session(adapter, audio_seconds=2.0)
+
+    assert_batch_degenerate(events)
+    done = events[-1]
+    assert done.text == "he had never been father lover husband friend"
+    assert model.calls, "model.transcribe_text was never called"
+
+
+@pytest.mark.asyncio
+async def test_batch_session_empty_audio_emits_empty_done():
+    adapter = ParakeetAdapter(streaming=False)
+    adapter._model = _FakeParakeetModel("never called")
+
+    events = await run_session(adapter, audio_seconds=0.0)
+
+    done = events[-1]
+    assert isinstance(done, TranscriptionDone)
+    assert done.text == ""
+
+
+@pytest.mark.asyncio
+async def test_batch_session_off_format_rejected():
+    adapter = ParakeetAdapter(streaming=False)
+    adapter._model = _FakeParakeetModel("never called")
+    bad = AudioFormat(sample_rate_hz=8_000, channels=1, sample_width_bytes=2)
+
+    events = await run_session(adapter, fmt=bad)
+
+    assert type(events[0]).__name__ == "TranscriptionError"
+    assert events[0].code == "unsupported_audio_format"
