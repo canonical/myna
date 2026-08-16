@@ -40,6 +40,10 @@ sherpa = [
 funasr = [
     "funasr-onnx>=0.4.2",
 ]
+benchmarker = [
+    "psutil>=5",
+    "pyyaml>=6",
+]
 
 [project.scripts]
 myna-server = "myna.server.cli:main"

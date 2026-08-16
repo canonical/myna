@@ -1,0 +1,65 @@
+# Myna benchmarker config — edit this file and pass it to:
+#
+#   sudo python3 myna-bench.pyz run --config bench.yaml
+#
+# Download a corpus first (one-time, ~330 MB):
+#
+#   python3 myna-bench.pyz download-corpus --out ./corpus
+
+# Path to the corpus manifest produced by download-corpus or make-corpus.
+manifest: ./corpus/manifest.json
+
+# Results output file. Share this with the project team after the run.
+out: ./results.jsonl
+
+# Optional: one clip run first, tagged as a cold-load sample.
+# It measures the model-load wait (key release -> first dictation ready).
+# Must be a clip id present in the manifest; omit to skip cold sampling.
+# cold_clip: librispeech-84-121123-0000
+
+# Wall-clock budget for the warm sweep per target, in seconds.
+# A target that overruns is marked usability_fail in the results.
+sweep_budget_seconds: 600
+
+# One entry per snap to benchmark. List all .snap and .comp files you
+# downloaded. The snap and its components are installed and removed together.
+#
+# Optional per-target keys:
+#   cli:     snap CLI command (default: snap name, e.g. "whisper")
+#   service: snap service name (default: <snap>.server)
+#   socket:  UDS path (default: /var/snap/<snap>/common/run/ubustt.sock)
+#   models:  allowlist of model names to sweep (default: all available)
+#   streaming_configs: list of {label, settings} to sweep at multiple
+#            streaming knob values (only applied when streaming=true)
+targets:
+  - snap: whisper
+    files:
+      - ./snaps/whisper_<version>_amd64.snap
+      - ./snaps/whisper+cpu.comp
+      # - ./snaps/whisper+nvidia-gpu.comp  # uncomment if you have an NVIDIA GPU
+
+  - snap: parakeet
+    files:
+      - ./snaps/parakeet_<version>_amd64.snap
+      - ./snaps/parakeet+cpu.comp
+    streaming_configs:
+      - label: arm3s
+        settings:
+          stream-arm-seconds: "3"
+      - label: arm8s
+        settings:
+          stream-arm-seconds: "8"
+      - label: arm15s
+        settings:
+          stream-arm-seconds: "15"
+
+  - snap: sherpa
+    files:
+      - ./snaps/sherpa_<version>_amd64.snap
+      - ./snaps/sherpa+cpu.comp
+
+  - snap: myna-funasr
+    cli: myna-funasr.funasr
+    files:
+      - ./snaps/myna-funasr_<version>_amd64.snap
+      - ./snaps/myna-funasr+cpu.comp

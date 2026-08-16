@@ -2408,15 +2408,21 @@ name = "ml-dtypes"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
@@ -2671,6 +2677,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+benchmarker = [
+    { name = "psutil" },
+    { name = "pyyaml" },
+]
 funasr = [
     { name = "funasr-onnx" },
 ]
@@ -2710,10 +2720,12 @@ requires-dist = [
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'nemotron'", specifier = ">=2.0" },
     { name = "onnxruntime", marker = "extra == 'parakeet'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'sherpa'", specifier = ">=1.27,<1.28" },
+    { name = "psutil", marker = "extra == 'benchmarker'", specifier = ">=5" },
+    { name = "pyyaml", marker = "extra == 'benchmarker'", specifier = ">=6" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa'", specifier = ">=1.10" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["whisper", "nemotron", "parakeet", "sherpa", "funasr"]
+provides-extras = ["whisper", "nemotron", "parakeet", "sherpa", "funasr", "benchmarker"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3171,15 +3183,21 @@ name = "onnx"
 version = "1.19.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
@@ -3331,12 +3349,18 @@ name = "pandas"
 version = "2.3.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "numpy", marker = "python_full_version >= '3.14'" },
