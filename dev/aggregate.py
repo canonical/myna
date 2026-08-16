@@ -106,6 +106,19 @@ def _f(x, spec="6.2f"):
     return format(x, spec) if isinstance(x, (int, float)) else "    --"
 
 
+def _speed(rtf) -> str:
+    """Format RTF as a human-readable speed multiplier.
+
+    0.018 → '55x', 0.046 → '22x', 1.682 → '0.6x'.  Values >= 10x are
+    shown as integers; below that one decimal keeps enough resolution to
+    distinguish e.g. 5.2x from 4.8x.
+    """
+    if not isinstance(rtf, (int, float)) or rtf <= 0:
+        return "   --"
+    x = 1.0 / rtf
+    return f"{x:.0f}x" if x >= 10 else f"{x:.1f}x"
+
+
 def load_resources(path: Path) -> dict[str, dict]:
     """Read the matrix runner's peak RAM/VRAM sidecar (label -> peaks), last
     occurrence winning. Absent file -> empty (resource columns are then hidden).
@@ -124,13 +137,18 @@ def load_resources(path: Path) -> dict[str, dict]:
 def print_overall(summary: dict[str, dict]) -> None:
     show_machine = any(s.get("machine") for s in summary.values())
     show_res = any(s.get("peak_rss_mb") for s in summary.values())
+    # Sized to the data, not to a guess: labels grew from "cpu/small" to
+    # "whisper/cpu/base/streaming" when the runner started reporting the engine,
+    # model and mode it actually measured, and a fixed 20 sheared every column
+    # to the right of it.
+    lw = max(len("label"), *(len(label) for label in summary)) if summary else len("label")
     mh = f"{'machine':14} " if show_machine else ""
     rh = f"{'RSS MB':>9} {'VRAM MB':>9}" if show_res else ""
     print(
-        f"{'label':20} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'RTF':>6} "
+        f"{'label':{lw}} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'speed':>6} "
         f"{'med final':>10} {'p95 final':>10} {'cold load':>10} {rh}"
     )
-    print("-" * (88 + (15 if show_machine else 0) + (20 if show_res else 0)))
+    print("-" * (lw + 68 + (15 if show_machine else 0) + (20 if show_res else 0)))
     for label in sorted(summary):
         s = summary[label]
         # Truncated: the column is fixed width, and one long value would shear
@@ -143,13 +161,13 @@ def print_overall(summary: dict[str, dict]) -> None:
             else ""
         )
         print(
-            f"{label:20} {mc}{s['clips']:>5} "
+            f"{label:{lw}} {mc}{s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
-            f"{_f(s['rtf'], '6.2f')} "
+            f"{_speed(s['rtf']):>6} "
             f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "
             f"{_f(s['cold_ready'], '10.3f')} {rc}"
         )
-    print("\nmed/p95 final are seconds (end-of-audio -> committed text); RTF = decode/audio.")
+    print("\nmed/p95 final are seconds (end-of-audio -> committed text); speed = audio/decode (higher is faster).")
     print("cold load = model residency wait (session open -> ready), from --cold runs.")
     if show_res:
         print("RSS/VRAM = peak memory during the run (matrix runner, server provision).")
@@ -159,22 +177,26 @@ def print_by_category(records: list[dict]) -> None:
     records = [r for r in records if not r.get("cold", False)]  # warm only
     labels = sorted({r["label"] for r in records})
     cats = sorted({r["category"] for r in records})
-    # micro WER per (category, label)
+    # micro WER per (label, category)
     cell: dict[tuple[str, str], tuple[int, int]] = {}
     for r in records:
-        e, w = cell.get((r["category"], r["label"]), (0, 0))
-        cell[(r["category"], r["label"])] = (e + r["wer_edits"], w + r["ref_words"])
+        key = (r["label"], r["category"])
+        e, w = cell.get(key, (0, 0))
+        cell[key] = (e + r["wer_edits"], w + r["ref_words"])
 
+    # Labels on Y, categories on X. Column width from the widest category name.
+    lw = max(len("label"), *(len(lbl) for lbl in labels)) if labels else len("label")
+    cw = max(6, *(len(c) for c in cats)) if cats else 6
     print("\nWER% by category")
-    header = f"{'category':12} " + " ".join(f"{lbl:>16}" for lbl in labels)
+    header = f"{'label':{lw}} " + " ".join(f"{cat:>{cw}}" for cat in cats)
     print(header)
     print("-" * len(header))
-    for cat in cats:
-        row = f"{cat:12} "
-        for lbl in labels:
-            e, w = cell.get((cat, lbl), (0, 0))
-            row += f"{(e / w * 100) if w else 0.0:>16.1f}"
-        print(row)
+    for lbl in labels:
+        cells = []
+        for cat in cats:
+            e, w = cell.get((lbl, cat), (0, 0))
+            cells.append(f"{(e / w * 100) if w else 0.0:>{cw}.1f}")
+        print(f"{lbl:{lw}} " + " ".join(cells))
 
 
 def main() -> None:
