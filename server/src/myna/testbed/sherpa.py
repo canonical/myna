@@ -209,11 +209,31 @@ class SherpaAdapter:
 
     @staticmethod
     def _decode_oneshot(recognizer, stream, samples: np.ndarray) -> str:
+        """Push all audio and return the full transcript, accumulating across
+        any endpoint boundaries.
+
+        The recognizer is created with ``enable_endpoint_detection=True``
+        (needed by the streaming path); in batch mode an endpoint that fires
+        mid-audio (e.g. a noise-induced pause) would cause the ``is_ready``
+        loop to exit early and ``get_result`` to return only text up to that
+        endpoint, silently dropping the remainder. Looping over endpoints and
+        accumulating segments gives the same behaviour as the streaming
+        committed-segment concat (I2).
+        """
         stream.accept_waveform(SHERPA_RATE, samples)
         stream.input_finished()
+        segments: list[str] = []
         while recognizer.is_ready(stream):
             recognizer.decode_stream(stream)
-        return recognizer.get_result(stream).strip()
+            if recognizer.is_endpoint(stream):
+                seg = recognizer.get_result(stream).strip()
+                if seg:
+                    segments.append(seg)
+                recognizer.reset(stream)
+        tail = recognizer.get_result(stream).strip()
+        if tail:
+            segments.append(tail)
+        return " ".join(segments)
 
     async def _run_streaming_session(
         self,
@@ -286,6 +306,15 @@ class SherpaAdapter:
 
     @staticmethod
     def _flush(recognizer, stream) -> str:
+        """Drain any outstanding audio after the last audio chunk.
+
+        After an endpoint + reset mid-clip, the tail of the audio may be
+        shorter than one full encoder chunk (480 ms for this model). A brief
+        zero-pad gives the encoder the right-context frames it needs to emit
+        the final word; ``input_finished`` then flushes the remainder.
+        """
+        _TAIL_PAD_S = 0.32  # just over one 480 ms chunk's lookahead frames
+        stream.accept_waveform(SHERPA_RATE, np.zeros(int(_TAIL_PAD_S * SHERPA_RATE), dtype=np.float32))
         stream.input_finished()
         while recognizer.is_ready(stream):
             recognizer.decode_stream(stream)
