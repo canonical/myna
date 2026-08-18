@@ -11,10 +11,11 @@
 # Extra args are appended, e.g. `myna --target <node.name>`.
 #
 # Activation default is `control` (control socket + `myna.toggle`, bound via
-# `myna.install-shortcut`): the GlobalShortcuts portal on this stack is v1 —
-# it re-prompts with the bind sheet on EVERY daemon start (no persist/restore
-# token until v2, which ashpd 0.13 doesn't expose) and the grab didn't
-# register reliably on GNOME 50. `portal` stays opt-in while that shakes out.
+# `myna.install-shortcut`). `portal` (GlobalShortcuts) also works: on
+# xdg-desktop-portal-gnome 51 (GNOME Shell 51.alpha) the bind is auto-accepted
+# - no sheet, the grab registers with gnome-shell at daemon start (verified
+# 2026-08-18). Older portal backends may show a bind sheet once per start
+# (portal v1 has no persist/restore token; ashpd 0.13 doesn't expose v2's).
 set -eu
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then

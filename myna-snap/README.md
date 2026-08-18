@@ -52,11 +52,13 @@ again to stop. Two trigger transports:
   sends one. Any desktop can bind a custom shortcut to
   `/snap/bin/myna.toggle` (`myna.install-shortcut` does it for GNOME).
 - **GlobalShortcuts portal** (`MYNA_ACTIVATION=portal myna`) — the
-  sandboxed-native trigger. Caveats on this stack (portal v1): the bind
-  sheet re-prompts on *every* daemon start (persist/restore tokens are v2,
-  unexposed by ashpd 0.13). Once you confirm a key in the sheet it works —
-  press-to-toggle like everything else; `myna --hold` (or
-  `MYNA_ACTIVATION=portal myna --hold`) switches it to hold-to-talk.
+  sandboxed-native trigger. On xdg-desktop-portal-gnome 51 (GNOME Shell
+  51.alpha) the bind is auto-accepted: no sheet, the grab registers at
+  daemon start (verified 2026-08-18). Older backends may show a bind sheet
+  once per start - portal v1 has no persist/restore token, and ashpd 0.13
+  doesn't expose v2's. Either way it's press-to-toggle like everything
+  else; `myna --hold` (or `MYNA_ACTIVATION=portal myna --hold`) switches
+  it to hold-to-talk.
 
 `MYNA_ACTIVATION=stdin myna` drives from the terminal (debug; injects back
 into the terminal).
@@ -102,6 +104,23 @@ gdbus introspect --session --dest org.myna.Dictation \
     --object-path /org/myna/Dictation \
     --method org.freedesktop.DBus.Properties.Get org.myna.Dictation ErrorMessage`
   (a *capture_failed* usually means `myna:pipewire` isn't connected).
+- **A press "does nothing" - the session starts and dies silently** - with
+  the default `--dbus` wiring, ALL feedback (including errors) goes to
+  `org.myna.Dictation` properties; without the myna-shell extension nothing
+  renders it (notifications are only the fallback when the bus can't be
+  owned). Critical session errors are always printed to the daemon's
+  stderr, so run `myna` from a terminal and read them there. For the full
+  stage-by-stage trace add `MYNA_DEBUG=1` (`ctrl`/`capture`/`ws`/`inject`
+  lines - where the trail stops is the culprit). A
+  `pipewire: mod.client-node: detected old client version 5` journal line
+  at press time is benign: it's the snap-staged (older) libpipewire
+  connecting, and since capture starts only per press, it proves the
+  hotkey fired. Classic silent-death cause: `--socket` /
+  `MYNA_BACKEND_SOCKET` pointing at a backend snap's
+  `/var/snap/<snap>/common/run/...` directly - confinement denies it (the
+  `backend` content share exists precisely for this); the denial shows in
+  `sudo journalctl -k`. Live state without restarting: read the
+  `State`/`ErrorMessage` properties as above.
 - **`busctl` fails with "Operation not permitted" / "Access denied" against
   the session bus in general** — your shell's `DBUS_SESSION_BUS_ADDRESS`
   carries a stale `guid=` (a terminal/tmux server that survived a logout;
@@ -148,11 +167,10 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
   store upload.
-- **Portal hotkey (v1):** the bind sheet re-prompts every daemon start
-  (see Activation). If a confirmed key doesn't grab, diagnose with:
+- **Portal hotkey:** if a bound key doesn't grab, diagnose with:
   ```shell
   gdbus monitor --session --dest org.freedesktop.portal.Desktop &
-  MYNA_ACTIVATION=portal myna   # confirm the sheet, then press your key
+  MYNA_ACTIVATION=portal myna   # then press your key
   # org.freedesktop.portal.GlobalShortcuts Activated should appear on press;
   # nothing = the grab never registered (portal side)
   ```

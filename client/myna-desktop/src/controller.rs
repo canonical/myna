@@ -496,9 +496,7 @@ impl DesktopController {
         if cancelled {
             myna_core::dbg_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
-            self.indicator
-                .set_state(IndicatorState::critical("dictation target closed"))
-                .await;
+            report_critical(self.indicator.as_mut(), "dictation target closed").await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
@@ -533,17 +531,13 @@ impl DesktopController {
                 Ok(SessionOutcome::Failed { message, .. }) => {
                     myna_core::dbg_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
-                    self.indicator
-                        .set_state(IndicatorState::critical(message))
-                        .await;
+                    report_critical(self.indicator.as_mut(), message).await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
                 Err(err) => {
                     myna_core::dbg_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
-                    self.indicator
-                        .set_state(IndicatorState::critical(err.to_string()))
-                        .await;
+                    report_critical(self.indicator.as_mut(), err.to_string()).await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
             }
@@ -569,12 +563,23 @@ impl DesktopController {
         };
         myna_core::dbg_log!("ctrl", "acquire failed, aborting before capture: {message}");
         self.injector.cancel().await; // idempotent; releases if anything stuck
-        self.indicator
-            .set_state(IndicatorState::critical(message))
-            .await;
+        report_critical(self.indicator.as_mut(), message).await;
         advance(&mut self.state, DictationState::Error);
         advance(&mut self.state, DictationState::Idle);
     }
+}
+
+/// Surface a user-visible failure on stderr AND the indicator. The stderr copy
+/// matters because the indicator can be invisible: in `--dbus` mode it only
+/// updates `org.myna.Dictation` properties, which nothing renders unless the
+/// myna-shell extension is installed - a failed press then looks like "nothing
+/// happened" (the 2026-08-18 silent-death debug session). stderr always
+/// reaches the terminal/journal the daemon was started from. Recoverable
+/// notices ("No speech detected") are NOT printed - they are normal outcomes.
+async fn report_critical(indicator: &mut dyn Indicator, message: impl Into<String>) {
+    let message = message.into();
+    eprintln!("myna-desktop: {message}");
+    indicator.set_state(IndicatorState::critical(message)).await;
 }
 
 /// Enter `Finalizing` from an active state (idempotent — a no-op if already
