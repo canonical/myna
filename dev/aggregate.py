@@ -22,27 +22,40 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_latest(path: Path) -> list[dict]:
-    """Return one record per (label, clip, cold), last occurrence winning.
+def load_latest(path: Path) -> tuple[list[dict], dict[str, tuple[str, str]]]:
+    """Return (clip records, {label: (status, reason)}), last occurrence wins.
 
     Cold samples are keyed separately so a clip measured both cold and warm
     keeps both rows rather than the warm run clobbering the cold one.
+
+    Status records (``{"label", "status", "reason"}``, no "clip") come from
+    dev/matrix.py: "usability_fail" when a target ran out of its wall-clock
+    budget mid-sweep, "broken" when it crashed outright, "ok" on a clean
+    completion. A run that didn't finish leaves fewer clip records for that
+    label — indistinguishable, from clip records alone, from "this category
+    wasn't scheduled". The status record is the one durable signal that a
+    label's partial data means it *failed*, not that it scored a clean 0%;
+    last-occurrence-wins so a later clean rerun clears an earlier failure.
     """
     if not path.exists():
         raise SystemExit(f"no results at {path} — run dev/bench.py first")
     latest: dict[tuple[str, str, bool], dict] = {}
+    statuses: dict[str, tuple[str, str]] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if not raw:
             continue
         rec = json.loads(raw)
+        if "status" in rec and "clip" not in rec:
+            statuses[rec["label"]] = (rec["status"], rec.get("reason", ""))
+            continue
         if rec.get("error"):
             # The backend errored instead of transcribing (missing runtime
             # library, unloadable weights). Its empty hypothesis would score as
             # a flawless 100% WER and drag the label's micro-average with it.
             continue
         latest[(rec["label"], rec["clip"], bool(rec.get("cold", False)))] = rec
-    return list(latest.values())
+    return list(latest.values()), statuses
 
 
 def _pct(values: list[float], q: float) -> float | None:
@@ -134,7 +147,47 @@ def load_resources(path: Path) -> dict[str, dict]:
     return peaks
 
 
-def print_overall(summary: dict[str, dict]) -> None:
+# Ranking field per --sort choice. All of these are "lower is better" metrics
+# (error rate, RTF, latency), so ascending sort puts the best performer first
+# uniformly — no special-casing a "higher is better" field.
+RANK_FIELDS = {
+    "wer": "wer",
+    "cer": "cer",
+    "speed": "rtf",
+    "latency": "median_final",
+    "cold-load": "cold_ready",
+}
+
+
+def ranked_labels(
+    summary: dict[str, dict], sort: str, statuses: dict[str, tuple[str, str]]
+) -> list[str]:
+    """Labels ordered best-first by ``sort``; missing values sort last.
+
+    A label whose last recorded status is not "ok" (usability_fail or
+    broken) sinks below every clean completion regardless of metric value —
+    its WER/speed was measured on however many clips it got through before
+    failing, not the full sweep, so it is not a comparable data point and
+    must never rank as if it beat a target that actually finished.
+    """
+    failed = lambda label: statuses.get(label, ("ok", ""))[0] != "ok"  # noqa: E731
+    if sort == "label":
+        return sorted(summary, key=lambda label: (failed(label), label))
+    field = RANK_FIELDS[sort]
+    return sorted(
+        summary,
+        key=lambda label: (
+            failed(label),
+            summary[label].get(field) is None,
+            summary[label].get(field) or 0.0,
+            label,
+        ),
+    )
+
+
+def print_overall(
+    summary: dict[str, dict], order: list[str], statuses: dict[str, tuple[str, str]]
+) -> None:
     show_machine = any(s.get("machine") for s in summary.values())
     show_res = any(s.get("peak_rss_mb") for s in summary.values())
     # Sized to the data, not to a guess: labels grew from "cpu/small" to
@@ -145,12 +198,16 @@ def print_overall(summary: dict[str, dict]) -> None:
     mh = f"{'machine':14} " if show_machine else ""
     rh = f"{'RSS MB':>9} {'VRAM MB':>9}" if show_res else ""
     print(
-        f"{'label':{lw}} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'speed':>6} "
+        f"{'#':>3} {'label':{lw}} {'status':>13} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'speed':>6} "
         f"{'med final':>10} {'p95 final':>10} {'cold load':>10} {rh}"
     )
-    print("-" * (lw + 68 + (15 if show_machine else 0) + (20 if show_res else 0)))
-    for label in sorted(summary):
+    print("-" * (lw + 86 + (15 if show_machine else 0) + (20 if show_res else 0)))
+    for rank, label in enumerate(order, start=1):
         s = summary[label]
+        status, reason = statuses.get(label, ("--", ""))
+        status_col = status.upper() if status != "--" else "--"
+        if reason:
+            status_col = f"{status_col} ({reason[:20]})"
         # Truncated: the column is fixed width, and one long value would shear
         # every other column out of alignment for the whole table.
         machine = (s.get("machine") or "--")[:14]
@@ -161,7 +218,7 @@ def print_overall(summary: dict[str, dict]) -> None:
             else ""
         )
         print(
-            f"{label:{lw}} {mc}{s['clips']:>5} "
+            f"{rank:>3} {label:{lw}} {status_col:>13} {mc}{s['clips']:>5} "
             f"{_f(s['wer'] * 100, '7.2f')} {_f(s['cer'] * 100, '7.2f')} "
             f"{_speed(s['rtf']):>6} "
             f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "
@@ -169,13 +226,20 @@ def print_overall(summary: dict[str, dict]) -> None:
         )
     print("\nmed/p95 final are seconds (end-of-audio -> committed text); speed = audio/decode (higher is faster).")
     print("cold load = model residency wait (session open -> ready), from --cold runs.")
+    print(
+        "status: OK = clean full sweep; USABILITY_FAIL = ran out of budget mid-sweep (metrics"
+        " are partial, not comparable); BROKEN = crashed; -- = no matrix.py status record"
+        " (e.g. bench.py run directly). Failed/broken rows always sort last regardless of --sort."
+    )
     if show_res:
         print("RSS/VRAM = peak memory during the run (matrix runner, server provision).")
 
 
-def print_by_category(records: list[dict]) -> None:
+def print_by_category(
+    records: list[dict], order: list[str], statuses: dict[str, tuple[str, str]]
+) -> None:
     records = [r for r in records if not r.get("cold", False)]  # warm only
-    labels = sorted({r["label"] for r in records})
+    labels = [lbl for lbl in order if lbl in {r["label"] for r in records}]
     cats = sorted({r["category"] for r in records})
     # micro WER per (label, category)
     cell: dict[tuple[str, str], tuple[int, int]] = {}
@@ -187,16 +251,18 @@ def print_by_category(records: list[dict]) -> None:
     # Labels on Y, categories on X. Column width from the widest category name.
     lw = max(len("label"), *(len(lbl) for lbl in labels)) if labels else len("label")
     cw = max(6, *(len(c) for c in cats)) if cats else 6
-    print("\nWER% by category")
+    print("\nWER% by category ('--' = no clips scored in that category, not a 0% pass)")
     header = f"{'label':{lw}} " + " ".join(f"{cat:>{cw}}" for cat in cats)
     print(header)
     print("-" * len(header))
     for lbl in labels:
+        status, _ = statuses.get(lbl, ("--", ""))
         cells = []
         for cat in cats:
             e, w = cell.get((lbl, cat), (0, 0))
-            cells.append(f"{(e / w * 100) if w else 0.0:>{cw}.1f}")
-        print(f"{lbl:{lw}} " + " ".join(cells))
+            cells.append(f"{'--':>{cw}}" if not w else f"{e / w * 100:>{cw}.1f}")
+        marker = f" [{status.upper()}]" if status not in ("ok", "--") else ""
+        print(f"{lbl:{lw}} " + " ".join(cells) + marker)
 
 
 def main() -> None:
@@ -209,9 +275,16 @@ def main() -> None:
         action="store_true",
         help="also break WER down by UD129 category",
     )
+    parser.add_argument(
+        "--sort",
+        choices=(*RANK_FIELDS, "label"),
+        default="wer",
+        help="rank rows best-first by this metric (default: wer); 'label' for"
+        " alphabetical",
+    )
     args = parser.parse_args()
 
-    records = load_latest(args.infile)
+    records, statuses = load_latest(args.infile)
     summary = summarize(records)
     resources = load_resources(args.infile.parent / "matrix-resources.jsonl")
     for label, peaks in resources.items():
@@ -219,9 +292,10 @@ def main() -> None:
             summary[label]["peak_rss_mb"] = peaks.get("peak_rss_mb")
             summary[label]["peak_vram_mb"] = peaks.get("peak_vram_mb")
     print(f"{len(records)} records across {len(summary)} label(s) from {args.infile}\n")
-    print_overall(summary)
+    order = ranked_labels(summary, args.sort, statuses)
+    print_overall(summary, order, statuses)
     if args.by_category:
-        print_by_category(records)
+        print_by_category(records, order, statuses)
 
 
 if __name__ == "__main__":

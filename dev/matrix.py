@@ -90,6 +90,7 @@ PURGEABLE = frozenset(
         "nemotron",
         "myna-funasr",
         "myna-fake-backend",
+        "audio8",
     }
 )
 
@@ -185,6 +186,23 @@ class SweepOverran(Exception):
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kw)
+
+
+def _write_status(out: Path, label: str, status: str, reason: str = "") -> None:
+    """Append a status record so aggregate.py can tell "no data" from "failed".
+
+    A clip that never ran (usability_fail cut the sweep short, or the target
+    was broken outright) shows up as zero records for that label — which a
+    plain WER/count table cannot distinguish from a clean pass. This is the
+    one durable record of that outcome: printed console output from *this*
+    run is gone by the time someone re-aggregates results/bench.jsonl later,
+    which is exactly when it matters most. Written on success too (status
+    "ok"), so a later clean rerun of the same label overwrites (last
+    occurrence wins, same as clip records) a stale failure from an earlier
+    one instead of leaving it flagged forever.
+    """
+    with out.open("a", encoding="utf-8") as fp:
+        fp.write(json.dumps({"label": label, "status": status, "reason": reason}) + "\n")
 
 
 def _declared_components(snap_dir: Path) -> set[str]:
@@ -680,14 +698,17 @@ def _sweep_one(
             streaming=target.streaming,
             budget_s=budget,
         )
+        _write_status(out, label, "ok")
     except SweepOverran as exc:
         # Slower than the budget is a product verdict, not a datapoint to wait
         # out. Whatever clips landed before the deadline are kept and flagged,
         # so a partial WER cannot pass as a full sweep.
         unusable.append((label, str(exc)))
+        _write_status(out, label, "usability_fail", str(exc))
         print(f"[{label}] USABILITY FAIL: {exc}")
     except subprocess.CalledProcessError as exc:
         broken.append((label, f"exited {exc.returncode}"))
+        _write_status(out, label, "broken", f"exited {exc.returncode}")
         print(f"[{label}] FAILED: exited {exc.returncode} - skipping variant")
     finally:
         if sampler is not None:
@@ -866,9 +887,11 @@ def main() -> None:
                         )
         except subprocess.CalledProcessError as exc:
             broken.append((target.label, f"exited {exc.returncode}"))
+            _write_status(out, target.label, "broken", f"exited {exc.returncode}")
             print(f"[{target.label}] FAILED: exited {exc.returncode} - skipping target")
         except Exception as exc:  # noqa: BLE001 - one target must not kill the sweep
             broken.append((target.label, f"{type(exc).__name__}: {exc}"))
+            _write_status(out, target.label, "broken", f"{type(exc).__name__}: {exc}")
             print(f"[{target.label}] FAILED: {type(exc).__name__}: {exc} - skipping target")
         finally:
             target.stop()
