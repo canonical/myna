@@ -145,6 +145,12 @@ def _speaker(utt_id: str) -> str:
     return utt_id.split("-", 1)[0]
 
 
+def _chapter(utt_id: str) -> str:
+    """``2277-149896-0026`` -> ``2277-149896``."""
+    speaker, chapter, _ = utt_id.split("-", 2)
+    return f"{speaker}-{chapter}"
+
+
 def _by_id(item: tuple[str, list[str]]) -> int:
     """Sort speakers numerically, so 84 precedes 174 (str order would not)."""
     return int(item[0])
@@ -209,6 +215,113 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
     return [(uid, pcm[uid], text[uid]) for uid in wanted if uid in pcm]
 
 
+# Gap of digital silence spliced between concatenated utterances: long enough
+# to read as a natural pause (so a streaming adapter's endpointer sees a real
+# boundary, not a click), short enough not to inflate the target duration.
+LONG_FORM_GAP_SECONDS = 0.4
+
+
+def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) -> dict:
+    """One continuous clip: a whole LibriSpeech chapter, read in order.
+
+    Individual LibriSpeech utterances are single sentences (a few seconds
+    each) — no clip in the per-utterance tiers exercises a long dictation
+    session, and none is long enough to exercise rolling-window / buffer
+    invariants a streaming adapter only hits after minutes of audio. A
+    chapter is one speaker reading continuously, so concatenating its
+    utterances in order (utterance number == reading order) reproduces
+    that: real long-form speech with an exact reference transcript, rather
+    than one clip repeated or synthetic TTS stretched out.
+
+    Picks the chapter with the most utterances in the split (more headroom
+    to reach ``minutes``), decodes it in order, and stops as soon as the
+    accumulated audio reaches the target — never mid-utterance, so the
+    transcript is never truncated mid-word. A chapter shorter than the
+    target is used in full (warns rather than failing). Writes the WAV into
+    ``out_dir/audio`` and returns the manifest entry — callers own the
+    manifest (and NOTICE) file itself, so this drops into either a
+    standalone tier or as one more entry alongside the per-utterance ones.
+    """
+    prefix = f"LibriSpeech/{subset}/"
+    target_seconds = minutes * 60
+
+    text: dict[str, str] = {}
+    by_chapter: dict[str, list[str]] = {}
+    with tarfile.open(tar_path, "r:gz") as tar:
+        for member in tar:
+            name = member.name
+            if not (member.isfile() and name.startswith(prefix)):
+                continue
+            if name.endswith(".trans.txt"):
+                for line in tar.extractfile(member).read().decode().splitlines():
+                    utt_id, _, transcript = line.partition(" ")
+                    text[utt_id] = transcript
+            elif name.endswith(".flac"):
+                utt_id = Path(name).stem
+                by_chapter.setdefault(_chapter(utt_id), []).append(utt_id)
+
+    chapter_id, utt_ids = max(by_chapter.items(), key=lambda kv: len(kv[1]))
+    utt_ids = sorted(utt_ids)
+    print(f"longest chapter: {chapter_id} ({len(utt_ids)} utterances)")
+
+    pcm_by_id: dict[str, array] = {}
+    with tarfile.open(tar_path, "r:gz") as tar:
+        wanted = set(utt_ids)
+        for member in tar:
+            if not (member.isfile() and member.name.endswith(".flac")):
+                continue
+            utt_id = Path(member.name).stem
+            if utt_id in wanted:
+                pcm_by_id[utt_id] = decode_flac(tar.extractfile(member).read())
+                wanted.discard(utt_id)
+                if not wanted:
+                    break
+
+    gap = array("h", bytes(2 * int(LONG_FORM_GAP_SECONDS * RATE)))
+    samples = array("h")
+    texts: list[str] = []
+    used = 0
+    for utt_id in utt_ids:
+        if utt_id not in pcm_by_id or utt_id not in text:
+            continue
+        if samples:
+            samples.extend(gap)
+        samples.extend(pcm_by_id[utt_id])
+        texts.append(text[utt_id])
+        used += 1
+        if len(samples) / RATE >= target_seconds:
+            break
+    if not samples:
+        raise SystemExit(f"chapter {chapter_id} yielded no usable audio")
+    if len(samples) / RATE < target_seconds:
+        print(
+            f"warning: chapter {chapter_id} only has {len(samples) / RATE:.1f}s "
+            f"({used} utterances) — short of the {target_seconds:.0f}s target"
+        )
+
+    audio_dir = out_dir / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    clip_id = f"librispeech-{chapter_id}-longform"
+    duration = write_wav(audio_dir / f"{clip_id}.wav", samples, RATE)
+    print(f"  {clip_id:<30} long-form {duration:6.2f}s  ({used} utterances)")
+
+    return {
+        "id": clip_id,
+        "path": f"audio/{clip_id}.wav",
+        "text": " ".join(texts),
+        "language": "en",
+        "category": "long-form",
+        "duration_seconds": round(duration, 3),
+        "sample_rate_hz": RATE,
+        "channels": 1,
+        "source": (
+            f"librispeech:{subset}:{chapter_id} "
+            f"({used} utterances concatenated, {LONG_FORM_GAP_SECONDS}s silence gap)"
+        ),
+        "license": LICENSE,
+    }
+
+
 def build(
     out_dir: Path,
     tar_path: Path,
@@ -217,6 +330,7 @@ def build(
     subset: str = "dev-clean",
     select: str = "archive",
     manifest_name: str = "manifest.json",
+    long_form_minutes: float | None = None,
 ) -> Path:
     prefix = f"LibriSpeech/{subset}/"
     # UD129 category: the "-other" splits are LibriSpeech's harder half —
@@ -230,7 +344,7 @@ def build(
         if select == "balanced"
         else collect(tar_path, n, prefix)
     )
-    if not clips:
+    if not clips and not long_form_minutes:
         raise SystemExit(f"no clips selected — is this the LibriSpeech {subset} tarball?")
 
     entries: list[dict] = []
@@ -269,6 +383,9 @@ def build(
             "noise",
             f"librispeech:{subset}:{utt_id}+noise",
         )
+
+    if long_form_minutes:
+        entries.append(long_form_entry(out_dir, tar_path, long_form_minutes, subset))
 
     # One split per output dir: the NOTICE carries the split's provenance, so
     # mixing splits would silently overwrite one tier's attribution.
@@ -356,6 +473,17 @@ def main() -> int:
         " distinct name to add a tier alongside an existing one",
     )
     parser.add_argument(
+        "--long-form-minutes",
+        type=float,
+        default=None,
+        help="in addition to the -n per-utterance clips, concatenate one"
+        " whole LibriSpeech chapter (in reading order) into a single"
+        " continuous clip at least this many minutes long, category"
+        " 'long-form' — for rolling-window / buffer invariants that only"
+        " show up minutes into a session. Pass -n 0 for a manifest holding"
+        " only the long-form clip.",
+    )
+    parser.add_argument(
         "--skip-complete",
         action="store_true",
         help="exit 0 without downloading when --out already holds exactly this"
@@ -363,8 +491,13 @@ def main() -> int:
         " restores the tier from a cache",
     )
     args = parser.parse_args()
+    manifest_name = args.manifest_name
 
-    if args.skip_complete and is_complete(args.out, args.manifest_name, args.n, args.subset):
+    if (
+        not args.long_form_minutes
+        and args.skip_complete
+        and is_complete(args.out, manifest_name, args.n, args.subset)
+    ):
         print(f"{args.out} already holds this corpus; skipping fetch")
         return 0
 
@@ -377,7 +510,8 @@ def main() -> int:
         args.n,
         subset=args.subset,
         select=args.select,
-        manifest_name=args.manifest_name,
+        manifest_name=manifest_name,
+        long_form_minutes=args.long_form_minutes,
     )
     print(f"\nwrote {manifest}")
     return 0

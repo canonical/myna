@@ -16,16 +16,24 @@
 # tier round-robins 40 LibriSpeech dev-clean speakers (fixtures/ is plumbing
 # only, and corpus/real/manifest.json is all speaker 2277). Swap in
 # corpus/librispeech-other/manifest-balanced.json for the hard split.
+#
+# One entry is not an utterance but a whole chapter concatenated in reading
+# order (category "long-form", ~5 min) - regenerated alongside the rest by
+# `make bench-corpus` (dev/fetch_real_corpus.py --long-form-minutes). Rolling
+# windows, buffer growth, and drift only show up minutes into a session; no
+# individual utterance is long enough to exercise them.
 manifest: corpus/real/manifest-balanced.json
 out: results/bench.jsonl
 cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged --cold to measure model load
 # clips: []                              # warm sweep clips; omit = whole manifest
 
-# Wall clock for the warm sweep. The balanced tier is ~12 min of audio, so this
-# is roughly "must beat 0.83x real time end to end". A backend that overruns is
-# stamped usability_fail with the clips it managed - a product verdict, measured
-# per run on the actual hardware rather than predicted from a spec sheet.
-sweep_budget_seconds: 600
+# Wall clock for the warm sweep. The balanced tier is ~12 min of audio plus
+# the ~5 min long-form clip above (~17 min total), so this is roughly "must
+# beat 0.83x real time end to end" - unchanged from the pre-long-form bar,
+# just scaled to the larger corpus. A backend that overruns is stamped
+# usability_fail with the clips it managed - a product verdict, measured per
+# run on the actual hardware rather than predicted from a spec sheet.
+sweep_budget_seconds: 850
 
 # Each snap is swept across every model variant its selected engine offers
 # (`modelctl list-models`) x every emission mode it supports (batch, and
@@ -75,6 +83,11 @@ targets:
   # the finding.
   - snap: qwen
     dir: qwen-snap
+
+  # Audio8-ASR-0.1B ONNX (feature 010). Ships both cpu and nvidia-gpu engines
+  # (like whisper); auto-selection picks cpu on a GPU-less machine.
+  - snap: audio8
+    dir: audio8-snap
 
   # nemotron ships only an `nvidia-gpu` engine (devices: allof gpu vendor-id
   # 0x10de, runtime nemo-cuda), so auto-selection finds nothing on a CPU-only
