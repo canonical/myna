@@ -98,6 +98,15 @@ impl Trigger for ControlTrigger {
             }
         }
     }
+
+    /// Force `pressed` back to `false` (not-recording) without a socket
+    /// round-trip — called by the controller when an utterance ends for a
+    /// reason other than reading a matching `Release` off this trigger (e.g.
+    /// focus-loss), so the next real poke still delivers `Press` instead of a
+    /// stray `Release` (see the `Trigger::resync` doc comment).
+    async fn resync(&mut self) {
+        self.pressed = false;
+    }
 }
 
 /// Client side of `--toggle`: connect to the daemon's control socket and poke

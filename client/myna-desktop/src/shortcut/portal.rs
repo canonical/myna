@@ -72,6 +72,17 @@ impl Dedup {
         }
     }
 
+    /// Force `pressed` back to "not recording" — a no-op in `Hold` mode,
+    /// where `pressed` tracks the real physical key-down state (not session
+    /// state) and can't desync from the controller's own view of the
+    /// session; only `Toggle` mode's session-decoupled `pressed` bit needs
+    /// resyncing (see `Trigger::resync`'s doc comment).
+    fn resync(&mut self) {
+        if self.mode == ActivationMode::Toggle {
+            self.pressed = false;
+        }
+    }
+
     fn on(&mut self, signal: PortalSignal) -> Option<TriggerEdge> {
         match self.mode {
             ActivationMode::Hold => match signal {
@@ -230,6 +241,10 @@ impl Trigger for GlobalShortcutTrigger {
                 None => return None,
             }
         }
+    }
+
+    async fn resync(&mut self) {
+        self.dedup.resync();
     }
 }
 

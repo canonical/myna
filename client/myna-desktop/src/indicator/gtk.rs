@@ -57,7 +57,7 @@ fn state_label(state: &IndicatorState) -> Option<&'static str> {
         IndicatorState::Recording => Some("Dictation: listening"),
         IndicatorState::Transcribing => Some("Dictation: transcribing"),
         IndicatorState::Finalizing => Some("Dictation: finishing"),
-        IndicatorState::Error(_) => Some("Dictation: error"),
+        IndicatorState::Error { .. } => Some("Dictation: error"),
     }
 }
 
@@ -68,7 +68,7 @@ fn state_css_class(state: &IndicatorState) -> &'static str {
         IndicatorState::Recording => "recording",
         IndicatorState::Transcribing => "transcribing",
         IndicatorState::Finalizing => "finalizing",
-        IndicatorState::Error(_) => "error",
+        IndicatorState::Error { .. } => "error",
     }
 }
 
@@ -139,7 +139,11 @@ pub fn run_indicator_app(rx: async_channel::Receiver<IndicatorState>) -> glib::E
                         window_ref.set_visible(true);
 
                         // The error state also raises a desktop notification (FR-020).
-                        if let IndicatorState::Error(message) = &state {
+                        // `recoverable` (feature 004, 2026-07-30) is intentionally
+                        // ignored here: this indicator renders every error
+                        // identically regardless of severity (out of scope for
+                        // feature 004 — see plan.md Complexity Tracking).
+                        if let IndicatorState::Error { message, .. } = &state {
                             let msg = message.clone();
                             let _ = notify_rust::Notification::new()
                                 .summary("myna dictation")

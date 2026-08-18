@@ -98,7 +98,8 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `None` when the event drives no indicator change (commit-only text events).
 ///
 /// `Loading`/`Ready` both show `Recording` (a cold load is "listening, warming
-/// up"); `Done` hides the indicator; an `Error` shows its message.
+/// up"); `Done` hides the indicator unless nothing was captured (see
+/// [`completion_indicator_state`]); an `Error` shows its message.
 /// `Snippet`/`Final` carry transcript text and never touch the indicator
 /// (privacy, N8). The `Finalizing` state is controller-driven — set on the
 /// `Release`/focus-out edge, not derivable from an event — so it has no row
@@ -112,18 +113,90 @@ fn advance(state: &mut DictationState, to: DictationState) {
 /// `Finalizing` (finishing) after release. The internal
 /// `DictationState::Transcribing` still advances (see [`route_event`]); it just
 /// isn't projected to the indicator during capture. Lifecycle: Recording →
-/// [release] → Finalizing → Hidden.
-pub fn event_to_indicator(event: &OrchestratorEvent) -> Option<IndicatorState> {
+/// [release] → Finalizing → Hidden (or, since 2026-07-30, a recoverable
+/// `notice` — see below).
+///
+/// `state` is the controller's *current* `DictationState` at the moment this
+/// event is being routed (after any state advance `route_event` itself makes
+/// for this same event). `Loading`/`Ready`/`Transcribing` only project
+/// `Recording` while `state` is still `Recording` or `Transcribing` — i.e.
+/// while actually still capturing. Regression (manual test report,
+/// 2026-07-31): a `Transcribing` liveness ping can arrive in the event
+/// channel just *after* a `Release`/`FocusOut` has already moved `state` to
+/// `Finalizing` (the adapter's progress ping and the release edge race, and
+/// `events_rx.recv()` is polled with priority over the trigger/focus edges —
+/// see the `biased` select in [`DesktopController::run_one_utterance`]).
+/// Without this guard, that stale ping unconditionally remapped to
+/// `Recording`, briefly clobbering the correct `Finalizing` indicator state
+/// with a spurious `finalizing → recording → idle` flicker at the *end* of
+/// every utterance. `Loading`/`Ready` are guarded the same way — while less
+/// likely to race this way in practice, the same staleness argument applies.
+///
+/// `focus_lost` should be `true` when this utterance is ending because the
+/// injection target lost focus (`FocusEvent::FocusOut`) — it changes the
+/// message [`completion_indicator_state`] picks for an empty transcript (see
+/// there).
+pub fn event_to_indicator(
+    event: &OrchestratorEvent,
+    state: DictationState,
+    focus_lost: bool,
+) -> Option<IndicatorState> {
+    let still_listening = matches!(
+        state,
+        DictationState::Recording | DictationState::Transcribing
+    );
     match event {
-        OrchestratorEvent::Loading | OrchestratorEvent::Ready => Some(IndicatorState::Recording),
-        // Listening, not "working": stay on Recording while the user speaks.
-        OrchestratorEvent::Transcribing => Some(IndicatorState::Recording),
-        OrchestratorEvent::Done(_) => Some(IndicatorState::Hidden),
-        OrchestratorEvent::Error { message, .. } => Some(IndicatorState::Error(message.clone())),
+        OrchestratorEvent::Loading | OrchestratorEvent::Ready | OrchestratorEvent::Transcribing => {
+            // Listening, not "working": stay on Recording while the user
+            // speaks — but only while we ARE still listening (see doc
+            // comment above); a stale post-release ping must not clobber
+            // Finalizing (or any later state) with Recording.
+            still_listening.then_some(IndicatorState::Recording)
+        }
+        OrchestratorEvent::Done(text) => Some(completion_indicator_state(text, focus_lost)),
+        OrchestratorEvent::Error { message, .. } => Some(IndicatorState::critical(message.clone())),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
         | OrchestratorEvent::Unstable(_)
         | OrchestratorEvent::AudioDropped(_) => None,
+    }
+}
+
+/// The indicator state for a completed session's transcript (feature 004,
+/// 2026-07-30 HUD redesign, data-model E1a, research R13, contract C10/C11).
+///
+/// An empty/blank transcript means nothing was (usably) captured — a
+/// **recoverable**, non-blocking issue, not a failure: the session completed
+/// successfully, so this is NOT an `OrchestratorEvent::Error`. A non-empty
+/// transcript hides the indicator exactly as before.
+///
+/// `focus_lost` distinguishes *why* the transcript is empty: when the
+/// injection target lost focus mid-utterance (`FocusEvent::FocusOut`, see
+/// [`DesktopController`]'s focus-loss handling) the session was deliberately
+/// cut short, so "No speech detected" would misreport a focus change as
+/// silence (manual test report, 2026-07-31); the message becomes "Focus lost"
+/// instead. Without a focus-loss, an empty transcript means the user simply
+/// didn't speak, so it stays "No speech detected".
+///
+/// This single helper is called from **both** the live per-event path
+/// ([`event_to_indicator`]'s `Done` arm, above) and the finalize-block safety
+/// net (this module's `Ok(SessionOutcome::Completed{transcript})` handler,
+/// below) so the two can never disagree (C11) — whichever fires first
+/// publishes the state; the other's call is a no-op under
+/// `DbusIndicator::publish`'s existing per-wire-state dedup (C2). Both call
+/// sites are threaded the same `focus_lost` value for the same utterance.
+///
+/// This is an interim, client-inferred classification, not a true wire-level
+/// error disposition — that remains T31/T62's job (spec Assumptions).
+pub fn completion_indicator_state(transcript: &str, focus_lost: bool) -> IndicatorState {
+    if transcript.trim().is_empty() {
+        if focus_lost {
+            IndicatorState::recoverable("Focus lost")
+        } else {
+            IndicatorState::recoverable("No speech detected")
+        }
+    } else {
+        IndicatorState::Hidden
     }
 }
 
@@ -313,6 +386,15 @@ impl DesktopController {
         // the rest (FR-014/FR-022, SC-007). A normal Release does NOT suppress
         // (the commit-drain tail is still ours to insert).
         let mut commits_suppressed = false;
+        // Set only by `FocusEvent::FocusOut` — distinguishes an empty
+        // transcript caused by a deliberately-cut-short session (the target
+        // field lost focus) from one where the user simply said nothing, so
+        // the indicator can say "Focus lost" instead of misreporting it as
+        // "No speech detected" (manual test report, 2026-07-31). Deliberately
+        // NOT set by `TargetGone`, which already gets its own distinct
+        // "dictation target closed" message via the `cancelled` terminal
+        // branch below.
+        let mut focus_lost = false;
         // Committed text not yet inserted. Consecutive `Final`s (a
         // commit-on-finalize adapter emits them in one burst) are coalesced
         // here and inserted as ONE `CommitText`: rapid successive IBus commits
@@ -328,12 +410,28 @@ impl DesktopController {
                 // in order even when a release arrives mid-stream.
                 biased;
                 Some(ev) = events_rx.recv() => {
-                    route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut buffer).await;
+                    route_event(
+                        ev,
+                        injector.as_mut(),
+                        indicator.as_mut(),
+                        state,
+                        RouteFlags { commit_allowed: !commits_suppressed, focus_lost, preedit },
+                        &mut buffer,
+                    )
+                    .await;
                 }
                 // Session finished: drain any still-buffered events, then return.
                 result = &mut run => {
                     while let Some(ev) = events_rx.recv().await {
-                        route_event(ev, injector.as_mut(), indicator.as_mut(), state, !commits_suppressed, preedit, &mut buffer).await;
+                        route_event(
+                        ev,
+                        injector.as_mut(),
+                        indicator.as_mut(),
+                        state,
+                        RouteFlags { commit_allowed: !commits_suppressed, focus_lost, preedit },
+                        &mut buffer,
+                    )
+                    .await;
                     }
                     break result;
                 }
@@ -345,9 +443,19 @@ impl DesktopController {
                         myna_core::dbg_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
                         stop.stop();
                         commits_suppressed = true;
+                        focus_lost = true;
                         enter_finalizing(state, indicator.as_mut()).await;
                         // A lost target ends this utterance; leave later edges
-                        // for the next session.
+                        // for the next session. We never read a matching edge
+                        // off `trigger` for this utterance's end (unlike a
+                        // normal Release, which IS that edge), so the
+                        // trigger's own press/release parity would otherwise
+                        // be left desynced from the controller's Idle state —
+                        // resync it now so the next physical hotkey press
+                        // delivers Press, not a swallowed stray Release
+                        // (manual test report, 2026-07-31: "have to press the
+                        // hotkey twice").
+                        trigger.resync().await;
                         trigger_open = false;
                     }
                     Some(FocusEvent::TargetGone) => {
@@ -355,6 +463,8 @@ impl DesktopController {
                         stop.stop();
                         commits_suppressed = true;
                         cancelled = true;
+                        // Same trigger-parity resync as FocusOut, above.
+                        trigger.resync().await;
                         trigger_open = false;
                     }
                     None => focus_open = false,
@@ -387,12 +497,12 @@ impl DesktopController {
             myna_core::dbg_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
             self.indicator
-                .set_state(IndicatorState::Error("dictation target closed".into()))
+                .set_state(IndicatorState::critical("dictation target closed"))
                 .await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
-                Ok(SessionOutcome::Completed { .. }) => {
+                Ok(SessionOutcome::Completed { transcript }) => {
                     myna_core::dbg_log!("ctrl", "utterance completed");
                     ensure_finalizing(&mut self.state);
                     // Safety flush: normally the terminal `done` already flushed
@@ -404,7 +514,15 @@ impl DesktopController {
                     buffer.flush(&mut *self.injector, !commits_suppressed).await;
                     self.injector.set_activity(false).await;
                     self.injector.end().await;
-                    self.indicator.set_state(IndicatorState::Hidden).await;
+                    // C11: agrees with event_to_indicator's Done arm — both
+                    // call completion_indicator_state (with the same
+                    // focus_lost) so a Hidden vs. notice disagreement, or a
+                    // "No speech detected" vs. "Focus lost" disagreement, can
+                    // never happen; a redundant repeat here is a no-op under
+                    // DbusIndicator::publish's dedup (C2).
+                    self.indicator
+                        .set_state(completion_indicator_state(&transcript, focus_lost))
+                        .await;
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
                 Ok(SessionOutcome::Aborted) => {
@@ -416,7 +534,7 @@ impl DesktopController {
                     myna_core::dbg_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
                     self.indicator
-                        .set_state(IndicatorState::Error(message))
+                        .set_state(IndicatorState::critical(message))
                         .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
@@ -424,7 +542,7 @@ impl DesktopController {
                     myna_core::dbg_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
                     self.indicator
-                        .set_state(IndicatorState::Error(err.to_string()))
+                        .set_state(IndicatorState::critical(err.to_string()))
                         .await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
@@ -452,7 +570,7 @@ impl DesktopController {
         myna_core::dbg_log!("ctrl", "acquire failed, aborting before capture: {message}");
         self.injector.cancel().await; // idempotent; releases if anything stuck
         self.indicator
-            .set_state(IndicatorState::Error(message))
+            .set_state(IndicatorState::critical(message))
             .await;
         advance(&mut self.state, DictationState::Error);
         advance(&mut self.state, DictationState::Idle);
@@ -516,10 +634,14 @@ async fn route_event(
     injector: &mut dyn Injector,
     indicator: &mut dyn Indicator,
     state: &mut DictationState,
-    commit_allowed: bool,
-    preedit: bool,
+    flags: RouteFlags,
     buffer: &mut CommitBuffer,
 ) {
+    let RouteFlags {
+        commit_allowed,
+        focus_lost,
+        preedit,
+    } = flags;
     // A non-Final event is a boundary: flush the buffered final burst as one
     // commit before handling it (so ordering with `done`/indicator holds).
     if !matches!(event, OrchestratorEvent::Final(_)) {
@@ -531,7 +653,7 @@ async fn route_event(
             advance(state, DictationState::Transcribing);
         }
     }
-    if let Some(indicator_state) = event_to_indicator(&event) {
+    if let Some(indicator_state) = event_to_indicator(&event, *state, focus_lost) {
         indicator.set_state(indicator_state).await;
     }
     if let OrchestratorEvent::Final(text) = &event {
@@ -560,6 +682,21 @@ async fn route_event(
             injector.set_preedit(text).await;
         }
     }
+}
+
+/// The per-event routing decisions [`route_event`] needs, grouped so the
+/// signature stays readable (and so no call site can transpose two bare bools).
+#[derive(Clone, Copy)]
+struct RouteFlags {
+    /// Text may still be inserted. Cleared after focus-loss, when a commit
+    /// would land in the wrong surface (FR-014, SC-007).
+    commit_allowed: bool,
+    /// This utterance is ending because the target lost focus - see the
+    /// `focus_lost` local in `run_session` for why an empty transcript must be
+    /// reported differently in that case.
+    focus_lost: bool,
+    /// Streaming-preedit opt-in (R9).
+    preedit: bool,
 }
 
 /// Committed text buffered for coalesced insertion, for one utterance.
@@ -706,11 +843,15 @@ mod tests {
     #[test]
     fn loading_and_ready_map_to_recording() {
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Loading),
+            event_to_indicator(
+                &OrchestratorEvent::Loading,
+                DictationState::Recording,
+                false
+            ),
             Some(IndicatorState::Recording)
         );
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Ready),
+            event_to_indicator(&OrchestratorEvent::Ready, DictationState::Recording, false),
             Some(IndicatorState::Recording)
         );
     }
@@ -724,27 +865,165 @@ mod tests {
         // release edge (`Finalizing`). Internal state still advances to
         // Transcribing (see `route_event`), it just isn't shown here.
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Transcribing),
+            event_to_indicator(
+                &OrchestratorEvent::Transcribing,
+                DictationState::Recording,
+                false
+            ),
             Some(IndicatorState::Recording)
         );
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Transcribing,
+                DictationState::Transcribing,
+                false
+            ),
+            Some(IndicatorState::Recording),
+            "still listening once state has itself advanced to Transcribing"
+        );
+    }
+
+    /// Regression (manual test report, 2026-07-31): a `Loading`/`Ready`/
+    /// `Transcribing` liveness ping that arrives in the event channel AFTER a
+    /// `Release`/`FocusOut` has already moved `state` to `Finalizing` (a real
+    /// race — see the doc comment on `event_to_indicator`) must NOT clobber
+    /// the correct `Finalizing` indicator with `Recording`. This was causing a
+    /// spurious `finalizing → recording → idle` flicker at the end of every
+    /// utterance (present even before the 2026-07-31 focus-loss/trigger-parity
+    /// fixes — an independent, pre-existing bug).
+    #[test]
+    fn stale_liveness_events_after_finalizing_do_not_clobber_the_indicator() {
+        for event in [
+            OrchestratorEvent::Loading,
+            OrchestratorEvent::Ready,
+            OrchestratorEvent::Transcribing,
+        ] {
+            assert_eq!(
+                event_to_indicator(&event, DictationState::Finalizing, false),
+                None,
+                "{event:?} arriving once Finalizing must not touch the indicator"
+            );
+        }
     }
 
     #[test]
     fn done_maps_to_hidden() {
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Done("all done".into())),
+            event_to_indicator(
+                &OrchestratorEvent::Done("all done".into()),
+                DictationState::Finalizing,
+                false
+            ),
             Some(IndicatorState::Hidden)
+        );
+    }
+
+    /// T013/C10 (2026-07-30): a `Done` with an empty/blank transcript maps to
+    /// the recoverable notice, not `Hidden` — this is the live-event half of
+    /// the dual-call-site agreement (see `completion_indicator_state` tests
+    /// below and `tests/controller.rs` for the finalize-block half).
+    #[test]
+    fn done_with_empty_transcript_maps_to_recoverable_notice() {
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Done("".into()),
+                DictationState::Finalizing,
+                false
+            ),
+            Some(IndicatorState::recoverable("No speech detected"))
+        );
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Done("   ".into()),
+                DictationState::Finalizing,
+                false
+            ),
+            Some(IndicatorState::recoverable("No speech detected")),
+            "whitespace-only transcript counts as empty"
+        );
+    }
+
+    /// Regression (manual test report, 2026-07-31): a `Done` with an empty
+    /// transcript when the utterance ended via focus-loss must say "Focus
+    /// lost", not "No speech detected" — the session was cut short, the user
+    /// may well have been speaking.
+    #[test]
+    fn done_with_empty_transcript_and_focus_lost_maps_to_focus_lost_notice() {
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Done("".into()),
+                DictationState::Finalizing,
+                true
+            ),
+            Some(IndicatorState::recoverable("Focus lost"))
+        );
+    }
+
+    /// A non-empty transcript hides the indicator regardless of focus_lost —
+    /// text was successfully captured before the focus loss, so there's
+    /// nothing to report.
+    #[test]
+    fn done_with_nonempty_transcript_hides_regardless_of_focus_lost() {
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Done("hello".into()),
+                DictationState::Finalizing,
+                true
+            ),
+            Some(IndicatorState::Hidden)
+        );
+    }
+
+    /// T013: `completion_indicator_state` in isolation — empty/blank →
+    /// recoverable notice, non-empty → Hidden.
+    #[test]
+    fn completion_indicator_state_splits_on_empty_transcript() {
+        assert_eq!(
+            completion_indicator_state("", false),
+            IndicatorState::recoverable("No speech detected")
+        );
+        assert_eq!(
+            completion_indicator_state("   ", false),
+            IndicatorState::recoverable("No speech detected")
+        );
+        assert_eq!(
+            completion_indicator_state("hello", false),
+            IndicatorState::Hidden
+        );
+    }
+
+    /// Regression (manual test report, 2026-07-31): `focus_lost` overrides
+    /// the empty-transcript message.
+    #[test]
+    fn completion_indicator_state_focus_lost_overrides_empty_transcript_message() {
+        assert_eq!(
+            completion_indicator_state("", true),
+            IndicatorState::recoverable("Focus lost")
+        );
+        assert_eq!(
+            completion_indicator_state("   ", true),
+            IndicatorState::recoverable("Focus lost"),
+            "whitespace-only transcript still counts as empty"
+        );
+        assert_eq!(
+            completion_indicator_state("hello", true),
+            IndicatorState::Hidden,
+            "captured text hides the indicator even if focus was later lost"
         );
     }
 
     #[test]
     fn error_maps_to_error_with_message() {
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Error {
-                code: "x".into(),
-                message: "boom".into()
-            }),
-            Some(IndicatorState::Error("boom".into()))
+            event_to_indicator(
+                &OrchestratorEvent::Error {
+                    code: "x".into(),
+                    message: "boom".into()
+                },
+                DictationState::Recording,
+                false
+            ),
+            Some(IndicatorState::critical("boom"))
         );
     }
 
@@ -753,17 +1032,27 @@ mod tests {
         // Snippet/Final carry transcript text and must never drive the indicator
         // (privacy, N8); AudioDropped is a capture-side signal, not a UI state.
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Snippet("hi".into())),
+            event_to_indicator(
+                &OrchestratorEvent::Snippet("hi".into()),
+                DictationState::Recording,
+                false
+            ),
             None
         );
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Final("hello".into())),
+            event_to_indicator(
+                &OrchestratorEvent::Final("hello".into()),
+                DictationState::Recording,
+                false
+            ),
             None
         );
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::AudioDropped(
-                myna_orchestrator::DropReason::NotResident
-            )),
+            event_to_indicator(
+                &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotResident),
+                DictationState::Recording,
+                false
+            ),
             None
         );
     }

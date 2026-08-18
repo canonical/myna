@@ -15,7 +15,7 @@ use crate::indicator::{Indicator, IndicatorState};
 /// The `org.myna.Dictation` wire states (data-model E1; the additive string
 /// enum the extension switches on).
 pub mod wire_state {
-    /// No session; goop hidden.
+    /// No session; HUD pill hidden.
     pub const IDLE: &str = "idle";
     /// Cold model load in progress (the `Loading`-seen / `Ready`-not-yet
     /// window, R4/C5).
@@ -26,15 +26,23 @@ pub mod wire_state {
     pub const TRANSCRIBING: &str = "transcribing";
     /// Release seen; awaiting the terminal transcript.
     pub const FINALIZING: &str = "finalizing";
-    /// Failure / secure-field refusal.
+    /// A recoverable, non-blocking issue (2026-07-30, feature 004 HUD
+    /// redesign, data-model E1/E1a/R13) — e.g. a session that completed with
+    /// no speech captured. Additive: an unpatched extension build degrades
+    /// this to the neutral "active" treatment (FR-008), never a crash or a
+    /// stuck error.
+    pub const NOTICE: &str = "notice";
+    /// A critical failure / secure-field refusal.
     pub const ERROR: &str = "error";
 }
 
 /// Map an [`IndicatorState`] to the `org.myna.Dictation` `State` string
 /// (data-model E1 table). `ready_seen` splits `Recording` into the cold-load
-/// `loading` window vs post-`Ready` `recording` (R4/C5). Pure and total — the
-/// output is always one of the six wire states, so no transcript text can ever
-/// cross into the payload through this path (C3).
+/// `loading` window vs post-`Ready` `recording` (R4/C5). `Error{recoverable}`
+/// splits into `notice` (recoverable) vs `error` (critical) — the two are
+/// mutually exclusive per call (data-model E1a, R13, contract C10). Pure and
+/// total — the output is always one of the seven wire states, so no
+/// transcript text can ever cross into the payload through this path (C3).
 pub fn map_state(state: &IndicatorState, ready_seen: bool) -> &'static str {
     use wire_state::*;
     match state {
@@ -43,7 +51,12 @@ pub fn map_state(state: &IndicatorState, ready_seen: bool) -> &'static str {
         IndicatorState::Recording => LOADING,
         IndicatorState::Transcribing => TRANSCRIBING,
         IndicatorState::Finalizing => FINALIZING,
-        IndicatorState::Error(_) => ERROR,
+        IndicatorState::Error {
+            recoverable: true, ..
+        } => NOTICE,
+        IndicatorState::Error {
+            recoverable: false, ..
+        } => ERROR,
     }
 }
 
@@ -143,23 +156,27 @@ impl DbusIndicator {
     /// `ErrorMessage` + `State` property sets, each pushed to subscribers via
     /// `PropertiesChanged` (C2). `ErrorMessage` goes first so a client
     /// reacting to the `State` flip already reads the consistent reason.
+    /// `ErrorMessage` is shared by both problem states (`error` and, since
+    /// 2026-07-30, `notice` — data-model E3/contract §Members) rather than
+    /// renamed, to avoid an interface break.
     async fn publish(&mut self, state: &str, error_message: &str) {
         let current = (state.to_string(), error_message.to_string());
         if self.last.as_ref() == Some(&current) {
             return; // idempotent per wire state (Indicator seam contract)
         }
-        let leaving_error = matches!(&self.last, Some((s, _)) if s == wire_state::ERROR)
-            && state != wire_state::ERROR;
+        let is_problem = |s: &str| s == wire_state::ERROR || s == wire_state::NOTICE;
+        let leaving_problem =
+            matches!(&self.last, Some((s, _)) if is_problem(s)) && !is_problem(state);
         self.last = Some(current);
 
         let mut bus = self.bus.lock().await;
-        if state == wire_state::ERROR {
+        if is_problem(state) {
             bus.set_property(
                 "ErrorMessage",
                 PropertyValue::Str(error_message.to_string()),
             )
             .await;
-        } else if leaving_error {
+        } else if leaving_problem {
             bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
                 .await;
         }
@@ -172,7 +189,7 @@ impl DbusIndicator {
 impl Indicator for DbusIndicator {
     async fn set_state(&mut self, state: IndicatorState) {
         let error_message = match &state {
-            IndicatorState::Error(msg) => msg.clone(),
+            IndicatorState::Error { message, .. } => message.clone(),
             _ => String::new(),
         };
         let wire = map_state(&state, self.readiness.ready_seen());
@@ -205,7 +222,7 @@ mod tests {
         );
         assert_eq!(map_state(&IndicatorState::Finalizing, true), "finalizing");
         assert_eq!(
-            map_state(&IndicatorState::Error("refusing to type".into()), true),
+            map_state(&IndicatorState::critical("refusing to type"), true),
             "error"
         );
     }
@@ -218,16 +235,17 @@ mod tests {
         assert_eq!(map_state(&IndicatorState::Recording, true), "recording");
     }
 
-    /// C3: the mapping can only emit one of the six contract state strings —
+    /// C3: the mapping can only emit one of the seven contract state strings —
     /// no payload it produces can carry transcript text.
     #[test]
     fn mapping_outputs_are_content_free() {
-        const WIRE_STATES: [&str; 6] = [
+        const WIRE_STATES: [&str; 7] = [
             "idle",
             "loading",
             "recording",
             "transcribing",
             "finalizing",
+            "notice",
             "error",
         ];
         for ready in [false, true] {
@@ -236,11 +254,32 @@ mod tests {
                 IndicatorState::Recording,
                 IndicatorState::Transcribing,
                 IndicatorState::Finalizing,
-                IndicatorState::Error("a transcript would go here".into()),
+                IndicatorState::critical("a transcript would go here"),
+                IndicatorState::recoverable("a transcript would go here"),
             ] {
                 assert!(WIRE_STATES.contains(&map_state(&state, ready)));
             }
         }
+    }
+
+    /// T009/C10 (2026-07-30, R13): `Error{recoverable: true}` maps to the new
+    /// `notice` wire state; `recoverable: false` still maps to `error`. The
+    /// two are mutually exclusive per call.
+    #[test]
+    fn error_severity_splits_notice_from_error() {
+        assert_eq!(
+            map_state(&IndicatorState::recoverable("no speech detected"), true),
+            "notice"
+        );
+        assert_eq!(
+            map_state(&IndicatorState::critical("microphone unavailable"), true),
+            "error"
+        );
+        // Readiness must not affect the severity split either way.
+        assert_eq!(
+            map_state(&IndicatorState::recoverable("no speech detected"), false),
+            "notice"
+        );
     }
 
     /// R4: the tracker resets each session — a warm session (`Ready` seen)
@@ -276,5 +315,16 @@ mod tests {
         assert!(readiness.ready_seen(), "unrelated events don't touch it");
 
         assert_eq!(tee.inner.events.len(), 3, "every event forwarded");
+    }
+
+    /// P16: `notice` and `error` are mutually exclusive per `IndicatorState`
+    /// value — no input maps to both.
+    #[test]
+    fn notice_and_error_are_mutually_exclusive() {
+        let notice = map_state(&IndicatorState::recoverable("x"), true);
+        let error = map_state(&IndicatorState::critical("x"), true);
+        assert_ne!(notice, error);
+        assert_eq!(notice, "notice");
+        assert_eq!(error, "error");
     }
 }

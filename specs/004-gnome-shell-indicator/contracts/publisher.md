@@ -1,6 +1,6 @@
 # Contract: myna-desktop D-Bus publisher (Rust)
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
 
 The shipped Rust half: a `DbusIndicator` (`Indicator` backend) + a `DbusTrigger`
 (`Trigger` backend) + a `dbus` module serving `org.myna.Dictation`
@@ -17,6 +17,15 @@ implementation for hermetic tests (R11).
 | P3 | `hide()` publishes `idle`, zeroes `AudioRms`/`AudioPeak`, and clears `ErrorMessage`. | hermetic |
 | P4 | Error state carries the existing content-free message via the `ErrorMessage` property; never transcript (C3). | hermetic |
 | P5 | Is a drop-in `Indicator`: the controller wiring is unchanged; `DbusIndicator` composes with `NotifyIndicator` as fallback (both can run; D-Bus preferred). | hermetic + compile |
+| P16 | **(2026-07-30)** `map_state` publishes `notice` when `IndicatorState::Error{recoverable: true, ..}` and `error` when `recoverable: false` — the two are mutually exclusive per call (C10). | hermetic |
+
+## Completion severity (2026-07-30)
+
+| # | Guarantee | Test tier |
+|---|---|---|
+| P17 | `completion_indicator_state(transcript)` returns `IndicatorState::Error{message: "No speech detected", recoverable: true}` for an empty/blank transcript, and `IndicatorState::Hidden` otherwise. | hermetic (`controller.rs`) |
+| P18 | Both the live per-event path (`event_to_indicator`'s `Done(_)` arm) and the finalize-block safety net (`SessionOutcome::Completed{transcript}`) call `completion_indicator_state` with the same transcript and therefore always agree (C11) — asserted directly, not just by inspection. | hermetic (`controller.rs`) |
+| P19 | The `IndicatorState::Error` field addition (`recoverable: bool`) does not change `gtk::GtkIndicator` or `notify::NotifyIndicator` rendering for any existing `Error` case — both continue to render every error identically regardless of the new field's value. | hermetic (`indicator/gtk.rs`, `indicator/notify.rs`) |
 
 ## Level pump
 
@@ -48,3 +57,7 @@ implementation for hermetic tests (R11).
 - No transcript ever crosses the bus (only state + level + reason).
 - No settings/config surface (no model/mic/language over D-Bus — Out of Scope).
 - No auto-start / D-Bus activation of the daemon (lifecycle owned elsewhere).
+- **(2026-07-30)** No true wire-level error disposition/taxonomy — the
+  `recoverable`/`notice` classification is an interim, client-inferred stopgap
+  (T31/T62 remain the owners of that future work).
+

@@ -157,12 +157,23 @@ function makeWiredService(initialState = 'idle') {
     stub.proxy.emitState('error', 'no audio source available');
     eq('X8 error reason reaches the status', shown.at(-1)?.statusText,
         'Error — no audio source available');
-    check('X8 error descriptor flagged', shown.at(-1)?.isError === true);
+    check('X8 error descriptor flagged', shown.at(-1)?.severity === 'critical');
 
     // Audio level property changes are forwarded for the VU.
     stub.proxy.emitLevel(0.42, 0.6);
     eq('X8 level forwarded to the view', JSON.stringify(levels.at(-1)),
         JSON.stringify([0.42, 0.6]));
+
+    // A fresh level update is meaningful even when the quantized values are
+    // numerically identical: HudView uses arrival time for stale-decay. If the
+    // proxy deduplicates this update, a steady signal falsely decays to a flat
+    // VU floor after STALE_MS (the manual-test regression from 2026-07-30).
+    const beforeRepeat = levels.length;
+    stub.proxy.emitLevel(0.42, 0.6);
+    eq('X8 repeated fresh level refreshes VU timestamp',
+        levels.length, beforeRepeat + 1);
+    eq('X8 repeated level values are forwarded unchanged',
+        JSON.stringify(levels.at(-1)), JSON.stringify([0.42, 0.6]));
 
     stub.vanish();
     check('X8 vanished → unavailable', !service.available);
