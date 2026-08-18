@@ -18,6 +18,7 @@ on:
       - "client/**"
       - "myna-snap/**"
       - ".github/workflows/snap.yml"
+  workflow_dispatch:
 
 jobs:
   build:
