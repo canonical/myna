@@ -35,6 +35,9 @@ dist/
 # Testbed output
 results/
 
+# Generated benchmark zipapp - rebuild with dev/build-bench.sh
+myna-bench.pyz
+
 # Canonical Workshop per-project instance state (the .workshop/ definitions
 # are committed; the lock ties a launched instance to this checkout).
 .workshop.lock
