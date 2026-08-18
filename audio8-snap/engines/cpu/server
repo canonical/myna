@@ -1,0 +1,16 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get socket.path)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# AUDIO8_MODEL_DIR is exported from the active model.yaml and points at the
+# installed model component (bundle + engine source). Idle-unload (T27):
+# drop the model after sleep-idle-seconds, keep serving.
+exec "$SNAP/bin/myna-server" \
+    --adapter audio8 \
+    --socket "$socket_path" \
+    --model "${AUDIO8_MODEL_DIR:?AUDIO8_MODEL_DIR unset — is the model component installed? try: audio8 use-model audio8-asr-0.1b}" \
+    --device cpu \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

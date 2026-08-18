@@ -66,5 +66,11 @@ funasr-snap/components/model-*/
 funasr-snap/wheels/
 funasr-snap/*.snap
 funasr-snap/*.comp
+# Audio8 model + engine staged by dev/fetch_audio8_model.py (CC-BY-NC-4.0 —
+# must NOT enter the git tree; research.md Decision 2)
+audio8-snap/components/model-audio8-onnx/
+audio8-snap/wheels/
+audio8-snap/*.snap
+audio8-snap/*.comp
 # FunASR model staged by dev/fetch_funasr_model.py (default --target)
 funasr_model/

@@ -1,0 +1,12 @@
+# Audio8-ASR on CPU via the publisher's ONNX cache engine, serving the UbuSTT
+# session API. The CPU venv is baked into the base snap (server-app part with
+# the audio8 extra); the model bundle + engine source ship as a component
+# (no runtime download / network access).
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment: []
+
+components: []

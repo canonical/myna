@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -35,7 +35,7 @@ DEFAULT_CLIP_ID = "quiet-pangram"
 # Second clip gives longer audio with more varied sentences.
 EXTRA_CLIP_ID = "quiet-weather"
 
-ADAPTERS_DEFAULT = ["whisper", "sherpa", "parakeet", "funasr"]
+ADAPTERS_DEFAULT = ["whisper", "sherpa", "parakeet", "funasr", "audio8"]
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +61,10 @@ def _build_adapter(name: str, model: str | None):
     if name == "funasr":
         from myna.testbed.funasr import FunasrAdapter, _default_model_dir
         return FunasrAdapter(model_dir=model or _default_model_dir())
+
+    if name == "audio8":
+        from myna.testbed.audio8 import Audio8Adapter, _default_model_dir
+        return Audio8Adapter(model_dir=model or _default_model_dir())
 
     raise ValueError(f"unknown adapter: {name!r}")
 

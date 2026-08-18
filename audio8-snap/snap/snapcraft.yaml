@@ -1,0 +1,180 @@
+# Audio8-ASR inference snap (UbuSTT).
+#
+# Follows the whisper-snap pattern (engine/runtime/model manifests + modelctl v2).
+# Differences from whisper-snap:
+#   - the model is Audio8-ASR-0.1B via the publisher's self-contained ONNX cache
+#     engine (staged as data, specs/010-audio8-asr-backend/research.md Decision 2):
+#     batch-only, no streaming.
+#   - a single model component `model-audio8-onnx` carries BOTH the model bundle
+#     and the engine source (`asr_onnx_runtime.py` + `hotword/`), so the adapter
+#     loads from `AUDIO8_MODEL_DIR` with no HF cache and no network.
+#   - model weights are CC-BY-NC-4.0 (non-commercial): the component build
+#     script acknowledges the license explicitly; compliance is the integrator's
+#     responsibility (feature 010 clarification).
+name: audio8
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: Audio8-ASR-0.1B speech-to-text inference snap (Myna)
+description: |
+  Local, offline speech-to-text service exposing the Myna session API on a
+  Unix domain socket. Wraps Audio8-ASR-0.1B (a compact autoregressive ASR
+  model, multilingual en/zh/fr/de/ja/ko/yue) via the publisher's ONNX cache
+  engine, with hardware-based engine selection (cpu / nvidia-gpu).
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  audio8:
+    command: bin/audio8
+    plugs:
+      - hardware-observe
+      - opengl
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      - opengl
+      # Weights are components now (no runtime download), so no `network`.
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (myna orchestrator snap plugs
+# this). Writable content share, exactly the whisper-snap slot.
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      ln --symbolic ./modelctl bin/audio8
+      craftctl default
+
+  cli-lspci:
+    plugin: nil
+    stage-packages:
+      - pciutils # lspci, used by hardware detection
+
+  server-app:
+    # myna-server + audio8 extra in a venv. The myna wheel is staged into
+    # wheels/ by dev/prepare.sh before packing. The audio8 extra carries
+    # onnxruntime (CPU), tokenizers, transformers (feature extractor only),
+    # numpy, psutil — no torch.
+    plugin: python
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[audio8]
+    build-packages:
+      - python3-venv
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  # Model weights + engine source as a component. Populate components/ with
+  # dev/fetch_audio8_model.py (see components/README.md) before packing.
+  # The component carries the publisher's CC-BY-NC-4.0 bundle + runtime.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-audio8-onnx/*": (component/model-audio8-onnx)/
+    prime:
+      - -*
+
+  # onnxruntime-gpu CUDA runtime as a component (amd64-only; UNVERIFIED —
+  # scaffolded, build-verify on a CUDA box). Installs myna (base) + the GPU
+  # runtime + the same tokenizers/transformers deps under site-packages/,
+  # exposed via PYTHONPATH (see runtimes/audio8-onnx-cuda/runtime.yaml).
+  audio8-onnx-cuda:
+    plugin: nil
+    source: wheels
+    build-packages:
+      - python3
+      - python3-pip
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      pip3 install --target="$target" \
+        ./myna-0.0.1-py3-none-any.whl \
+        onnxruntime-gpu \
+        tokenizers \
+        transformers \
+        numpy \
+        psutil
+      craftctl default
+    organize:
+      "*": (component/audio8-onnx-cuda)
+    prime:
+      - -*
+
+components:
+  model-audio8-onnx:
+    type: standard
+    summary: Audio8-ASR-0.1B ONNX bundle + engine source (int8/int4)
+    description: |
+      Audio8-ASR-0.1B model bundle (int8 decoder default, int4 variant, int8
+      audio tower) plus the publisher's ONNX cache engine source, staged by
+      dev/fetch_audio8_model.py. License: CC-BY-NC-4.0 (non-commercial) —
+      compliance is the integrator's responsibility.
+  audio8-onnx-cuda:
+    type: standard
+    summary: onnxruntime-gpu CUDA runtime for Audio8
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + onnxruntime-gpu
+      (CUDA execution provider). amd64 only. UNVERIFIED on hardware.

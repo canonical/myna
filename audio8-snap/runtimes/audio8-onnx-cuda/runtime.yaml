@@ -1,0 +1,22 @@
+# Audio8-ASR on onnxruntime-gpu (CUDA execution provider) serving the UbuSTT
+# session API.
+#
+# UNVERIFIED on hardware — scaffolded. Unlike the cpu runtime (whose venv is
+# baked into the base snap), the GPU stack ships as a component: the
+# audio8-onnx-cuda part installs myna + onnxruntime-gpu + tokenizers/
+# transformers under site-packages/. We expose them via PYTHONPATH rather than
+# a relocatable venv (the base snap's python3.12 runs the module — see
+# engines/nvidia-gpu/server).
+#
+# NOTE: the python3.12 path tracks the core24 base; revisit if the base
+# changes.
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - PYTHONPATH=$SNAP_COMPONENTS/audio8-onnx-cuda/site-packages
+
+components:
+  - audio8-onnx-cuda

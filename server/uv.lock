@@ -2677,6 +2677,13 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+audio8 = [
+    { name = "numpy" },
+    { name = "onnxruntime" },
+    { name = "psutil" },
+    { name = "tokenizers" },
+    { name = "transformers" },
+]
 benchmarker = [
     { name = "psutil" },
     { name = "pyyaml" },
@@ -2718,14 +2725,19 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.2.1" },
     { name = "funasr-onnx", marker = "extra == 'funasr'", specifier = ">=0.4.2" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'nemotron'", specifier = ">=2.0" },
+    { name = "numpy", marker = "extra == 'audio8'", specifier = ">=1.26" },
+    { name = "onnxruntime", marker = "extra == 'audio8'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'parakeet'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'sherpa'", specifier = ">=1.27,<1.28" },
+    { name = "psutil", marker = "extra == 'audio8'", specifier = ">=5" },
     { name = "psutil", marker = "extra == 'benchmarker'", specifier = ">=5" },
     { name = "pyyaml", marker = "extra == 'benchmarker'", specifier = ">=6" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa'", specifier = ">=1.10" },
+    { name = "tokenizers", marker = "extra == 'audio8'", specifier = ">=0.22" },
+    { name = "transformers", marker = "extra == 'audio8'", specifier = ">=4.57" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["whisper", "nemotron", "parakeet", "sherpa", "funasr", "benchmarker"]
+provides-extras = ["whisper", "nemotron", "parakeet", "sherpa", "funasr", "audio8", "benchmarker"]
 
 [package.metadata.requires-dev]
 dev = [

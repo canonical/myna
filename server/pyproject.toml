@@ -40,6 +40,18 @@ sherpa = [
 funasr = [
     "funasr-onnx>=0.4.2",
 ]
+# Audio8-ASR batch adapter (feature 010): the publisher's self-contained ONNX
+# cache engine (staged at fetch time, research.md Decision 2), no torch, no
+# trust_remote_code. onnxruntime uses the project 1.27.x pin (VERS-node
+# hazard shared with sherpa/parakeet; upstream's 1.22 pin is soft).
+# transformers is needed only for WhisperFeatureExtractor (numpy-based).
+audio8 = [
+    "onnxruntime>=1.27,<1.28",
+    "tokenizers>=0.22",
+    "transformers>=4.57",
+    "numpy>=1.26",
+    "psutil>=5",
+]
 benchmarker = [
     "psutil>=5",
     "pyyaml>=6",

@@ -1,0 +1,20 @@
+#!/bin/bash -eu
+
+# UNVERIFIED on hardware — scaffolded, build-verify on a CUDA box. The
+# audio8-onnx-cuda runtime component provides myna + onnxruntime-gpu on
+# PYTHONPATH (see runtimes/audio8-onnx-cuda/runtime.yaml); we run the same
+# server module the cpu engine does, on the CUDA execution provider. The
+# adapter fails fast (FR-020) if the provider is unavailable — no silent
+# CPU fallback.
+
+socket_path="$(modelctl get socket.path)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+exec python3 -m myna.server \
+    --adapter audio8 \
+    --socket "$socket_path" \
+    --model "${AUDIO8_MODEL_DIR:?AUDIO8_MODEL_DIR unset — is the model component installed? try: audio8 use-model audio8-asr-0.1b}" \
+    --device cuda \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

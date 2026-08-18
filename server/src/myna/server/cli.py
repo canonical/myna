@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "fake"),
+        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "audio8", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -126,6 +126,25 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("woitn", "withitn"),
         help="ITN mode: woitn (readable text, default), withitn (digits/dates)",
     )
+    parser.add_argument(
+        "--audio8-language",
+        default="auto",
+        choices=("auto",),
+        help="Audio8 language selection (auto only — pinning is inert; "
+        "recognition covers en/zh/fr/de/ja/ko/yue)",
+    )
+    parser.add_argument(
+        "--audio8-precision",
+        default="int8",
+        choices=("int8", "int4"),
+        help="Audio8 decoder precision (default: int8)",
+    )
+    parser.add_argument(
+        "--audio8-max-new-tokens",
+        type=int,
+        default=256,
+        help="Audio8 generation cap (bounded decode, default: 256)",
+    )
     return parser
 
 
@@ -180,6 +199,19 @@ def build_adapter(args: argparse.Namespace):
             args.model,
             language=args.funasr_language,
             textnorm=args.funasr_textnorm,
+        )
+
+    if args.adapter == "audio8":
+        # --model is the staged runtime dir (engine source + model_bundle);
+        # absent = the HF cache snapshot (dev/fetch_audio8_model.py).
+        from myna.testbed.audio8 import Audio8Adapter
+
+        return Audio8Adapter(
+            args.model,
+            language=args.audio8_language,
+            cache_precision=args.audio8_precision,
+            max_new_tokens=args.audio8_max_new_tokens,
+            device=args.device or "cpu",
         )
 
     if args.adapter == "qwen-c":
