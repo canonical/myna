@@ -32,15 +32,13 @@ myna.core     <- shared vocabulary; depends on nothing else in myna
 myna.testbed  -> depends only on myna.core
 ```
 
-- `myna.core` — the **load-bearing shared contract**. Audio types
+- `myna.core` — the **shared contract**. Audio types
   (`AudioFormat`, `PcmChunk`), the IE115 event vocabulary (`events.py`,
   `wire_ie115.py`), session config, protocol version, capabilities discovery,
   transport abstraction (`SttClient`/`SttSession`/`SttService` protocols, the
   in-process `LoopbackClient`, and the `WsUnixIe115Client` WebSocket transport).
   Used by `myna.server`, every `myna.testbed` adapter, and the full test suite.
-  It is **not legacy and not to be collapsed** — it is the canonical Python
-  expression of the wire contract.
-- `myna.server` — the `myna-server` process that all three inference snaps ship.
+- `myna.server` — the `myna-server` process that all Myna inference snaps ship.
   Wraps the adapters behind the IE115 WebSocket transport.
 - `myna.testbed` — `Candidate`/`Adapter`, the permanent `FakeAdapter` regression
   fixture, audio sources (WAV, live-mic), the `Harness` with its
@@ -56,7 +54,7 @@ Interfaces are `typing.Protocol`s, not ABCs: adapters and backends are
 structural plug-ins and should not need to import a base class to conform.
 
 Model/engine dependencies (faster-whisper, NeMo, OpenBLAS/ctypes) are `uv`
-optional-dependency extras scoped per adapter (`[whisper]`, `[nemotron]`),
+optional-dependency extras scoped per adapter (`[whisper]`, `[nemotron]`, ...),
 never imported by `myna.core` or the harness.
 
 ### Rust side — `client/`
@@ -78,14 +76,13 @@ client/
   Rust peer of `myna.core`, not a duplicate to collapse. The two live in
   different processes and different language runtimes; they are kept consistent
   by the shared IE115 spec, not by shared code.
-- `myna-audio` — live microphone capture via a native `pipewire-rs` backend
-  (the sole live-capture path since T52; the `pw-record` subprocess was
-  retired). Exposes `AudioSource`/`CaptureBackend` traits so the FSM is
+- `myna-audio` — live microphone capture via a native `pipewire-rs` backend.
+  Exposes `AudioSource`/`CaptureBackend` traits so the FSM is
   transport-agnostic.
-- `myna-orchestrator` — push-to-talk session / residency FSM. Drives model
+- `myna-orchestrator` — session / residency FSM. Drives model
   loading, the `preparing` → `ready` → `transcribing` lifecycle, and
   multi-commit IE115 sessions. Wire-agnostic: speaks `myna-core` types.
-- `myna-cli` — the `myna-dictate` binary: the testbed/demo push-to-talk client
+- `myna-cli` — the `myna-dictate` binary: the testbed/demo client
   (WAV clip / corpus / live mic, stdin hotkey stand-in), wiring `myna-audio` +
   `myna-orchestrator` + the IE115 WebSocket transport together.
 - `myna-desktop` — the shipped `myna-desktop` dictation app (feature
