@@ -330,17 +330,3 @@ Consolidated; each is a thing code will force that paper left vague:
    remote backend ever lands, hold the connection open across presses *inside*
    its `BackendClient` (the IE115 server is already persistent multi-commit) —
    invisible to the FSM. Do not design for it before it exists.
-
-## 8. Implementation plan (this note is step 1)
-
-1. **This note** — frame contract + open questions. ✅
-2. **Python `myna-server`: IE115 codec + selectable dialect.** New module
-   (e.g. `myna.core.wire_ie115`) translating flat `myna.core` ↔ IE115 frames;
-   `transport_ws` dispatches dialect per §1. Internal vocab untouched. Wire-parity
-   test suite mirroring `tests/test_contract.py` (same semantics, IE115 frames). ✅
-3. **Rust: IE115 `BackendClient`** (T43) behind the FSM — a second backend, FSM
-   and driver unchanged. `--dialect ie115` on `myna-dictate`. ✅
-4. **IE115 loopback + demo** — Rust client ↔ Python server over IE115, across
-   whisper / nemotron / qwen; the base64-vs-binary append micro-benchmark (§5). ✅
-   (all three families, byte-identical transcripts; base64 cost measured — §5.)
-5. Fold decisions on §7 back into `IE115-resolution.md` and the spec comments.
