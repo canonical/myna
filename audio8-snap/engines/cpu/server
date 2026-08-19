@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 
 # AUDIO8_MODEL_DIR is exported from the active model.yaml and points at the

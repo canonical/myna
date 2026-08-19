@@ -1,5 +1,5 @@
 name: cpu
-summary: Streaming FastConformer transducer via sherpa-onnx on CPU
+summary: Streaming FastConformer transducer on sherpa-onnx, CPU
 description: |
   Runs a NeMo-family streaming FastConformer transducer (int8 ONNX) with
   sherpa-onnx's OnlineRecognizer on amd64 CPUs — native chunked streaming

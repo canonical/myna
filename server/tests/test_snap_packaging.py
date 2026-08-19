@@ -5,9 +5,12 @@ bugs that instead surfaced as a benchmark run dying halfway through:
 
 - parakeet and sherpa shipped no ``pciutils``, so ``modelctl use-engine`` died
   with "executing lspci: executable file not found in $PATH", leaving the snap
-  with no active engine and a daemon that exited 1 on every start;
+  with no active engine and a daemon that exited 1 on every start (fixed
+  upstream in v2.0.0-beta.6: modelctl now uses lscompute and reads /sys
+  directly, so staging pciutils is no longer needed - the assertion below now
+  guards against re-adding it);
 - their CLI app and install hook declared no ``hardware-observe`` plug, so even
-  with lspci present the hardware detection behind ``show-engine`` could not
+  with hardware detection present the scoring behind ``show-engine`` could not
   read ``/sys``.
 
 Both were invisible to the existing suites: the unit tests never look at
@@ -37,7 +40,13 @@ INFERENCE_SNAPS = {
     "funasr-snap": "myna-funasr",
     "qwen-snap": "qwen",
     "nemotron-snap": "nemotron",
+    "audio8-snap": "audio8",
 }
+
+# The inference-snaps-cli (modelctl) release every snap must pin. One version
+# across all snaps: manifest semantics (runtime `name`, model identifiers,
+# status entrypoints) move with the CLI, and a drifted snap breaks silently.
+MODELCTL_RELEASE = "v2.0.0-beta.12"
 
 
 def _recipe(snap_dir: str) -> dict:
@@ -67,14 +76,31 @@ def test_name_matches_the_directory_mapping(snap) -> None:
     )
 
 
-def test_ships_lspci_for_hardware_detection(snap) -> None:
-    """modelctl shells out to lspci; without it the CLI is dead on arrival."""
+def test_pins_the_shared_modelctl_release(snap) -> None:
+    """Every cli part pulls the same modelctl release tarball."""
+    snap_dir, name, recipe = snap
+    cli = (recipe.get("parts") or {}).get("cli") or {}
+    sources = cli.get("source") or []
+    urls = [s[f"on {arch}"] for s in sources for arch in ("amd64", "arm64") if f"on {arch}" in s]
+    assert urls, f"{name}: cli part has no per-arch source URLs"
+    for url in urls:
+        assert f"/download/{MODELCTL_RELEASE}/" in url, (
+            f"{name}: cli part does not pin {MODELCTL_RELEASE}: {url}"
+        )
+
+
+def test_no_lspci_leftover(snap) -> None:
+    """modelctl >= v2.0.0-beta.6 uses lscompute (/sys), not the lspci binary.
+
+    Staging pciutils is dead weight that looks load-bearing; the friendly
+    device names it provided come from the pci.ids database, not the binary.
+    """
     snap_dir, name, recipe = snap
     parts = recipe.get("parts") or {}
     staged = {pkg for part in parts.values() for pkg in (part.get("stage-packages") or [])}
-    assert "pciutils" in staged, (
-        f"{name}: no part stages pciutils, so `{name} use-engine` fails with "
-        '"executing lspci: executable file not found in $PATH"'
+    assert "pciutils" not in staged, (
+        f"{name}: a part still stages pciutils, but modelctl no longer shells "
+        "out to lspci - drop it"
     )
 
 
@@ -84,7 +110,7 @@ def test_cli_app_can_read_hardware(snap) -> None:
     plugs = set(app.get("plugs") or [])
     assert "hardware-observe" in plugs, (
         f"{name}: app {app_name!r} does not plug hardware-observe, so modelctl's "
-        "hardware detection cannot read /sys even with lspci staged"
+        "hardware detection cannot read /sys"
     )
 
 
@@ -167,6 +193,28 @@ def test_hooks_dir_holds_only_hooks(snap) -> None:
         if p.is_file() and not any(p.name == k or p.name.startswith(f"{k}-") for k in known)
     ]
     assert not stray, f"{name}: snap/hooks/ contains non-hook files: {stray}"
+
+
+def test_socket_config_key_is_ws_unix_socket(snap) -> None:
+    """`modelctl status` reports the session socket only under `ws.unix-socket`.
+
+    Since v2.0.0-beta.12 the entrypoint for a ws+unix runtime server is built
+    from that config key; the pre-beta.12 `socket.path` was snap-private and
+    invisible to status. The install hook must set the new key and engine
+    scripts must read it.
+    """
+    snap_dir, name, _ = snap
+    install = (REPO_ROOT / snap_dir / "snap" / "hooks" / "install").read_text(encoding="utf-8")
+    assert "ws.unix-socket" in install, (
+        f"{name}: the install hook does not set ws.unix-socket, so "
+        "`modelctl status` cannot report the UbuSTT entrypoint"
+    )
+    for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
+        script = server.read_text(encoding="utf-8")
+        assert "socket.path" not in script, (
+            f"{name}: engines/{server.parent.name}/server still reads the "
+            "retired socket.path key"
+        )
 
 
 def test_exposes_the_session_socket(snap) -> None:

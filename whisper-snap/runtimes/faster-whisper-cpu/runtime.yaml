@@ -1,6 +1,8 @@
 # faster-whisper (CTranslate2) on CPU, serving the UbuSTT session API.
 # The CPU venv is baked into the base snap (server-app part); model weights
 # ship as per-model components (T15), so no runtime download / network access.
+name: faster-whisper-cpu
+
 servers:
   ubustt:
     protocol: ws+unix

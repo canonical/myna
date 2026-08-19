@@ -21,11 +21,11 @@ Today **all** backend-snap configuration is reachable only through `modelctl`
 (the IE108 CLI vendored from `inference-snaps-cli`):
 
 - `modelctl set <key>=<value>` — **root-only** (`IsRootUser`) and prompts a
-  **snap restart** to apply. Three scopes: `--package` (hidden; `socket.path`,
+  **snap restart** to apply. Three scopes: `--package` (hidden; `ws.unix-socket`,
   `verbose`, `sleep-idle-seconds`, seeded by the install hook), `--engine`
   (hidden; the engine manifest's `configurations:` — e.g. `att-context-size`),
   and user config (validated against known keys).
-- `modelctl use-model <id>` / `use-engine [--auto]` — root; changes which model
+- `modelctl use-model <name|alias>` / `use-engine [--auto]` — root; changes which model
   the socket serves / which engine runs; pulls the needed components; restarts.
 - `modelctl get [<key>]` — unprivileged read of current values.
 
@@ -220,7 +220,7 @@ feasible (some models/runtimes genuinely need their own tweaks, e.g.
 
 - **A standard core vocabulary** — the same keys, names, types, and semantics on
   *every* inference snap: `model`, `engine`, `sleep-idle-seconds`, `verbose`,
-  `socket.path`. A UI renders these once and they mean the same thing everywhere.
+  `ws.unix-socket`. A UI renders these once and they mean the same thing everywhere.
 - **A small, clearly-marked backend-specific tail** — the genuinely
   model/runtime-specific knobs, in a bounded set, flagged so a UI can group them
   under "advanced" and not treat them as first-class.
@@ -522,7 +522,7 @@ pure STT scope nor pure platform scope — ownership must be explicitly assigned
 A tangible strawman of §3.4 for the team to react to: the JSON a UI would read
 to render a settings panel for one installed snap, without any hardcoded
 per-snap knowledge. Grounded in whisper-snap's **actual** keys (package:
-`socket.path`/`verbose`/`sleep-idle-seconds`; engine `configurations:`
+`ws.unix-socket`/`verbose`/`sleep-idle-seconds`; engine `configurations:`
 `compute-type` on nvidia-gpu; the `use-model`/`use-engine` selectors). Output of
 a proposed `modelctl describe-config --format=json` (unprivileged read, §3.5).
 
@@ -642,7 +642,7 @@ availability so the UI can show "installed / downloadable / incompatible"
       "privileged": true
     },
     {
-      "key": "socket.path",
+      "key": "ws.unix-socket",
       "title": "Session socket path",
       "type": "string",
       "scope": "package",

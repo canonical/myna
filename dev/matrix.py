@@ -395,21 +395,23 @@ class SnapTarget:
     def models(self) -> list[str]:
         """Model variants the active engine offers, in manifest order.
 
-        `list-models` prints one id per line (its --format flag is still a TODO
-        upstream), and lists exactly the active engine's `model.options` - so a
-        CPU engine and a GPU engine can legitimately offer different weights.
+        `list-models --format=json` lists exactly the active engine's
+        `model.options` - so a CPU engine and a GPU engine can legitimately
+        offer different weights. (The default table output, since modelctl
+        v2.0.0-beta.2, has a header row and a '*' on the active model; the
+        JSON is the machine-readable surface.)
         """
         try:
             out = subprocess.run(
-                [self.cli, "list-models"],
+                [self.cli, "list-models", "--format=json"],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 check=True,
             ).stdout
-        except (OSError, subprocess.SubprocessError):
+            found = [m["name"] for m in json.loads(out).get("models", [])]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             return []
-        found = [line.strip() for line in out.splitlines() if line.strip()]
         if not self.only_models:
             return found
         unknown = set(self.only_models) - set(found)

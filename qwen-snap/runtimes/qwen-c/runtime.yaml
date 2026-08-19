@@ -3,6 +3,8 @@
 # (qwen-c-runtime part); the QwenCAdapter loads it via ctypes using QWEN_ASR_LIB.
 # OpenBLAS (libopenblas0-pthread) is staged into the base for BLAS at runtime.
 # No component, no download — the parsimonious CPU runtime.
+name: qwen-c
+
 servers:
   ubustt:
     protocol: ws+unix

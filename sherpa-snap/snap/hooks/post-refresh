@@ -4,3 +4,14 @@
 tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
 exec 1> >(tee >(logger --tag="$tag"))
 exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# Migrate the socket-path config key: <= v2.0.0-beta.1 packaging used the
+# custom `socket.path`; modelctl's `status` now reads `ws.unix-socket` for
+# ws+unix servers. Copy the old value if the new key was never set.
+if ! modelctl get ws.unix-socket >/dev/null 2>&1; then
+    if old_socket="$(modelctl get socket.path 2>/dev/null)"; then
+        modelctl set --package ws.unix-socket="$old_socket"
+    else
+        modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
+    fi
+fi

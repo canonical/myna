@@ -95,8 +95,10 @@ Keep this as plan B, decide after T14a.
 The reference snaps bind HTTP on localhost TCP (`http.port`/`http.host`
 config). UbuSTT is a UDS service. Proposal:
 
-- Socket at `$SNAP_COMMON/run/ubustt.sock`; config key `socket.path` replaces
-  `http.port`/`http.host`.
+- Socket at `$SNAP_COMMON/run/ubustt.sock`; config key `ws.unix-socket`
+  replaces `http.port`/`http.host` (since modelctl v2.0.0-beta.12 that is the
+  key `status` builds a ws+unix entrypoint from; earlier packaging used the
+  snap-private `socket.path`, invisible to `status`).
 - Use snapd **socket activation** (`sockets:` with `listen-stream`) so the
   daemon starts on first connection, complementing idle unload — together
   they give IE114's warm/cold model lifecycle with near-zero idle cost.
@@ -114,9 +116,9 @@ config). UbuSTT is a UDS service. Proposal:
   (polkit-style checks on who may talk to the socket once connected) — the
   share itself is admin-gated only.
 - `runtime.yaml` `servers:` entry declares the endpoint, e.g.
-  `ubustt: {protocol: ws+unix, base-path: /v1}` — the field is free-form
-  enough today; flag to the inference-snaps-cli team that a UDS server type
-  is coming.
+  `ubustt: {protocol: ws+unix, base-path: /v1}`. **Resolved upstream
+  (v2.0.0-beta.12):** `ws+unix` is a first-class protocol in `status` /
+  entrypoints, so no schema flagging is needed anymore.
 
 ### 3.3 Confinement: no microphone
 
@@ -149,7 +151,7 @@ Intel (OpenVINO whisper) is plausible later; mirror gemma4's
 ### 3.5 Configuration keys
 
 Per-request parameters (language, prompt, timestamps) stay in the IE114
-session request. Snap config (via `modelctl`, IE108): `socket.path`,
+session request. Snap config (via `modelctl`, IE108): `ws.unix-socket`,
 `sleep-idle-seconds`, `verbose`, and engine `configurations` for inference
 tuning (`compute-type`, `beam-size`, streaming strategy knobs from T08).
 
@@ -174,11 +176,11 @@ needs minor updates for upstream's improved multi-model support (plan T53).
    steady-state pressure. T12 measurements stay useful as documented
    guidance/defaults, not gates.
 2. **UDS server declaration** in `runtime.yaml` `servers:` (see 3.2).
-   Verified on T14b: `modelctl status` (v2.0.0-beta.1) fails with
-   `unsupported protocol "ws+unix" for server "ubustt"` — the status command
-   only understands HTTP endpoints. Everything else (engine selection, model
-   selection, run) works; raise the protocol enum with the
-   inference-snaps-cli team.
+   **Resolved upstream (v2.0.0-beta.12, PR #412):** `ws+unix` is now a
+   supported status protocol and the status output carries an `entrypoints`
+   dictionary (replacing `endpoints`). Earlier finding, for the record:
+   `modelctl status` (v2.0.0-beta.1) fails with
+   `unsupported protocol "ws+unix" for server "ubustt"`.
 3. **Capabilities discovery** is CLI-only for now (matches IE114's
    "configuration via CLI initially"); the network API remains open (T24).
 4. **Socket activation is blocked by `modelctl run`** (found T28, 2026-06-14).
@@ -192,7 +194,8 @@ needs minor updates for upstream's improved multi-model support (plan T53).
    the listening fd + `LISTEN_PID`, the snap uses **in-process idle-unload**
    (`--idle-action unload`, T27) instead: frees the model weights (the bulk)
    after `sleep-idle-seconds`, leaving only the runtime process + CUDA context.
-   Raise with the inference-snaps-cli team.
+   Still fork-based as of v2.0.0-beta.12 (checked during T53); the ask stands:
+   raise with the inference-snaps-cli team.
 
 ## 5. Proposed whisper-snap structure
 

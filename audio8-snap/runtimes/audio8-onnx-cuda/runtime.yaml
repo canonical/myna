@@ -10,6 +10,8 @@
 #
 # NOTE: the python3.12 path tracks the core24 base; revisit if the base
 # changes.
+name: audio8-onnx-cuda
+
 servers:
   ubustt:
     protocol: ws+unix

@@ -72,6 +72,11 @@ jobs:
       - name: Shell lint
         run: workshop run myna shell-lint
 
+      # Snap engine/runtime/model manifest lint via modelctl itself (pinned
+      # release; the script fetches the CLI tarball - no Workshop toolchain).
+      - name: Snap manifest lint
+        run: ./dev/lint-packages.sh
+
       - name: Workflow lint
         run: workshop run myna workflow-lint
 

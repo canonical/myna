@@ -40,7 +40,10 @@ environment:
 apps:
   whisper:
     command: bin/whisper
+    completer: bin/snap-completer.bash
     plugs:
+      # modelctl's hardware detection (lscompute reading /sys, /proc) backs
+      # `use-engine --auto`, `show-engine` and `status`.
       - hardware-observe
       - opengl
 
@@ -79,19 +82,13 @@ parts:
   cli:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
-      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-arm64.tar.xz
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-arm64.tar.xz
     override-build: |
-      mkdir -p bin
-      mv cli bin/modelctl
-      # Named symlink so cobra picks up the snap command name
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
       ln --symbolic ./modelctl bin/whisper
       craftctl default
-
-  cli-lspci:
-    plugin: nil
-    stage-packages:
-      - pciutils # lspci, used by hardware detection
 
   server-app:
     # myna-server + faster-whisper in a venv. The myna wheel is staged into

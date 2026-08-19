@@ -10,6 +10,8 @@
 # NOTE: the python3.12 path below tracks the core24 base; revisit if the base
 # changes. The nvidia-*-cu12 wheels lay their .so files out under
 # site-packages/nvidia/<lib>/lib — CTranslate2 needs both on LD_LIBRARY_PATH.
+name: faster-whisper-cuda
+
 servers:
   ubustt:
     protocol: ws+unix

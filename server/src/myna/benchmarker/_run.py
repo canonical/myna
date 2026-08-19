@@ -211,7 +211,10 @@ class SnapTarget:
 
     def start(self) -> None:
         self.purge()
-        print(f"[{self.snap}] installing {len(self.files)} file(s): {[Path(f).name for f in self.files]}")
+        print(
+            f"[{self.snap}] installing {len(self.files)} file(s): "
+            f"{[Path(f).name for f in self.files]}"
+        )
         _run(["snap", "install", "--dangerous", *self.files])
         self._connect_plugs()
         subprocess.run(["snap", "stop", self.service], capture_output=True, check=False)
@@ -254,17 +257,18 @@ class SnapTarget:
         )
         if result.returncode == 0:
             return
-        # --auto failed (single-engine snaps without pciutils); try listing engines.
+        # --auto failed (hardware-observe disconnected, e.g. sideloaded snap);
+        # fall back to the first listed engine.
         try:
             out = subprocess.run(
-                [self.cli, "list-engines"],
+                [self.cli, "list-engines", "--format=json"],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 check=True,
             ).stdout
-            engines = [l.strip() for l in out.splitlines() if l.strip()]
-        except (OSError, subprocess.SubprocessError):
+            engines = [e["name"] for e in json.loads(out).get("engines", [])]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             engines = []
         if engines:
             print(f"[{self.snap}] --auto failed; selecting first engine: {engines[0]}")
@@ -280,15 +284,15 @@ class SnapTarget:
     def models(self) -> list[str]:
         try:
             out = subprocess.run(
-                [self.cli, "list-models"],
+                [self.cli, "list-models", "--format=json"],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 check=True,
             ).stdout
-        except (OSError, subprocess.SubprocessError):
+            found = [m["name"] for m in json.loads(out).get("models", [])]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             return []
-        found = [line.strip() for line in out.splitlines() if line.strip()]
         if not self.only_models:
             return found
         unknown = set(self.only_models) - set(found)
@@ -476,9 +480,7 @@ def _sweep_one(
             sampler.stop()
             rss = round(sampler.peak_rss_mb, 1)
             vram = round(sampler.peak_vram_mb, 1) if sampler.peak_vram_mb else None
-            print(
-                f"[{label}] peak RSS {rss} MB" + (f" / VRAM {vram} MB" if vram else " / VRAM --")
-            )
+            print(f"[{label}] peak RSS {rss} MB" + (f" / VRAM {vram} MB" if vram else " / VRAM --"))
             with resources_path.open("a", encoding="utf-8") as fp:
                 fp.write(
                     json.dumps(
@@ -568,8 +570,10 @@ def cmd_run(args) -> None:  # noqa: ANN001
     from myna.benchmarker.machine import collect as collect_machine
 
     machine = collect_machine()
-    print(f"\nmachine: {machine['hostname']}  cpu: {machine['cpu']}  ram: {machine['ram_gb']} GB"
-          + (f"  gpu: {machine['gpu']} {machine['gpu_vram_gb']} GB" if machine["gpu"] else ""))
+    print(
+        f"\nmachine: {machine['hostname']}  cpu: {machine['cpu']}  ram: {machine['ram_gb']} GB"
+        + (f"  gpu: {machine['gpu']} {machine['gpu_vram_gb']} GB" if machine["gpu"] else "")
+    )
     print(f"manifest: {manifest_path.name}  cold={len(clips_cold)} warm={len(clips_warm)} clips")
     print(f"warm-sweep budget: {budget:.0f}s per target")
     print(f"output: {out_path}\n")
@@ -609,7 +613,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
                 for model in variants or [None]:
                     if model:
                         target.use_model(model)
-                    for streaming in ([False, True] if togglable else [False]):
+                    for streaming in [False, True] if togglable else [False]:
                         if streaming and streaming_configs:
                             for sc in streaming_configs:
                                 target.set_streaming_variant(

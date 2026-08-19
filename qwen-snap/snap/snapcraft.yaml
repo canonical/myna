@@ -42,6 +42,7 @@ environment:
 apps:
   qwen:
     command: bin/qwen
+    completer: bin/snap-completer.bash
     plugs:
       - hardware-observe
       - opengl
@@ -84,17 +85,12 @@ parts:
   cli:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
     override-build: |
-      mkdir -p bin
-      mv cli bin/modelctl
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
       ln --symbolic ./modelctl bin/qwen
       craftctl default
-
-  cli-lspci:
-    plugin: nil
-    stage-packages:
-      - pciutils # lspci, used by hardware detection
 
   # myna-server in a base venv — bare wheel, NO extra: the C adapter needs only
   # ctypes (stdlib) + libqwen_asr.so, so the CPU engine carries no pip deps.

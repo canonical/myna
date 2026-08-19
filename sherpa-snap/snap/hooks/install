@@ -12,7 +12,9 @@ exec 2> >(logger --stderr --priority error --tag="$tag")
 # Set generic config
 #
 
-modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
+# The UbuSTT socket path, under the key modelctl's `status` reads for a
+# ws+unix runtime server (runtimes/*/runtime.yaml) to report the entrypoint.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
 modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 modelctl set --package sleep-idle-seconds="300"
@@ -29,7 +31,7 @@ modelctl set --package streaming="true"
 # nothing here needs hardware scoring. The activation still matters: without an
 # active engine `modelctl show-engine` / `list-models` / `status` all fail, and
 # those are meant to answer on every inference snap. Selecting by name rather
-# than --auto keeps that true even where lspci or hardware-observe are
+# than --auto keeps that true even where hardware-observe is
 # unavailable - there is only one possible answer.
 #
 modelctl use-engine cpu --assume-yes --no-restart

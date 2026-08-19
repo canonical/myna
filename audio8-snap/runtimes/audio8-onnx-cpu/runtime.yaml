@@ -2,6 +2,8 @@
 # session API. The CPU venv is baked into the base snap (server-app part with
 # the audio8 extra); the model bundle + engine source ship as a component
 # (no runtime download / network access).
+name: audio8-onnx-cpu
+
 servers:
   ubustt:
     protocol: ws+unix

@@ -6,7 +6,7 @@
 # this runs the base venv's myna-server directly.
 # Idle-unload (T27): free the C context after sleep-idle-seconds, keep serving.
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 
 exec "$SNAP/bin/myna-server" \

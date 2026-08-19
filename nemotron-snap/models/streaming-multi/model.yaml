@@ -1,10 +1,7 @@
-id: streaming-multi
 name: streaming-multi
 description: FastConformer hybrid large, cache-aware streaming, English
 model-card-url: https://huggingface.co/nvidia/stt_en_fastconformer_hybrid_large_streaming_multi
 quantization: fp32
-capabilities:
-  - en
 disk-size: 600M
 # Weights shipped as a snap component: the .nemo checkpoint downloaded by
 # dev/download-models.sh. The adapter restores it directly (no network).

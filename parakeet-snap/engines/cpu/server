@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 # `snap set parakeet stream-*=...` writes top-level snap config; modelctl's
 # package config holds the install-time defaults. Prefer the user-visible

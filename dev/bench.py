@@ -32,10 +32,10 @@ from pathlib import Path
 def detect_label() -> str:
     """Best-effort: tag the run with the snap's active engine name.
 
-    The socket itself can't tell us the engine, but the snap CLI can. The
-    active *model* is not exposed by modelctl v2.0.0-beta.1 (and `status`
-    trips on the ws+unix protocol gap), so pass --label cpu/small explicitly
-    when the model matters.
+    The socket itself can't tell us the engine, but the snap CLI can.
+    `show-model` exists since modelctl v2.0.0-beta.2 and `status` exposes the
+    model + ws+unix entrypoints since beta.12, but show-engine stays the
+    cheapest probe; pass --label cpu/small explicitly when the model matters.
     """
     try:
         out = subprocess.run(

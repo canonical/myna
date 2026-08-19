@@ -1,10 +1,7 @@
-id: base
 name: base
 description: Whisper base (74M params) — balanced speed and accuracy on CPU
 model-card-url: https://huggingface.co/Systran/faster-whisper-base
 quantization: float32
-capabilities:
-  - multilingual
 disk-size: 150M
 components:
   - model-base

@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 
 # MODEL_DIR normally comes from model.yaml when modelctl runs the engine. This

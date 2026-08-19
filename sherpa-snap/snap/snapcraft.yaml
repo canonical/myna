@@ -35,12 +35,12 @@ environment:
 apps:
   sherpa:
     command: bin/sherpa
+    completer: bin/snap-completer.bash
     plugs: &hook-plugs
-      # modelctl's hardware detection (lspci + /sys) backs `show-engine`,
-      # `use-engine` and `status`. This snap ships one CPU engine and its
-      # daemon does not need scoring to boot, but the modelctl surface is
-      # meant to answer uniformly on every inference snap - without these the
-      # CLI dies with "executing lspci: executable file not found".
+      # modelctl's hardware detection (lscompute reading /sys) backs
+      # `show-engine`, `use-engine` and `status`. This snap ships one CPU
+      # engine and its daemon does not need scoring to boot, but the modelctl
+      # surface is meant to answer uniformly on every inference snap.
       - hardware-observe
       - opengl
 
@@ -70,22 +70,13 @@ parts:
   cli:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-amd64.tar.xz
-      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.1/inference-snaps-cli-linux-arm64.tar.xz
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-arm64.tar.xz
     override-build: |
-      mkdir -p bin
-      mv cli bin/modelctl
-      # Named symlink so cobra picks up the snap command name
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
       ln --symbolic ./modelctl bin/sherpa
       craftctl default
-
-  # lspci, used by modelctl's hardware detection. Without it `use-engine --auto`
-  # dies with "executing lspci: executable file not found", leaving the snap
-  # with no active engine and a daemon that exits 1 on every start.
-  cli-lspci:
-    plugin: nil
-    stage-packages:
-      - pciutils
 
   server-app:
     # myna-server + sherpa-onnx + onnxruntime in a venv. The myna wheel is

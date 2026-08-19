@@ -4,7 +4,7 @@
 # the CUDA libraries on LD_LIBRARY_PATH (runtimes/nemo-cuda/runtime.yaml); we run
 # the same myna.server the testbed measures, as the nemotron adapter.
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 att="$(modelctl get att-context-size 2>/dev/null || true)"
 

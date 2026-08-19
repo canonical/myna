@@ -4,6 +4,8 @@
 # (myna[nemotron]: nemo_toolkit[asr] + torch). torch bundles its own CUDA libs
 # under site-packages/torch/lib and site-packages/nvidia/*/lib; expose them on
 # LD_LIBRARY_PATH. The python3.12 path tracks the core24 base.
+name: nemo-cuda
+
 servers:
   ubustt:
     protocol: ws+unix

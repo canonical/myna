@@ -7,7 +7,7 @@
 # adapter fails fast (FR-020) if the provider is unavailable — no silent
 # CPU fallback.
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
 
 exec python3 -m myna.server \

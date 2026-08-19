@@ -1,6 +1,8 @@
 # FunASR SenseVoice-Small ONNX on CPU, serving the UbuSTT session API.
 # The CPU venv is baked into the base snap (server-app part); model weights
 # ship as a component (model-sensevoice-onnx), so no runtime download.
+name: funasr-onnx-cpu
+
 servers:
   ubustt:
     protocol: ws+unix

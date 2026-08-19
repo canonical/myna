@@ -40,6 +40,10 @@ $(foreach dir,$(SNAP_DIRS),$(eval $(call snap_template,$(dir))))
 .PHONY: snaps
 snaps: $(SNAP_DIRS) ## Rebuild every snap (assumes models already fetched)
 
+.PHONY: lint-snaps
+lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
+	./dev/lint-packages.sh
+
 # ------------------------------------------------------------------------
 # snap model fetch — not uniform, kept explicit
 # ------------------------------------------------------------------------

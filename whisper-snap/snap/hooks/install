@@ -12,7 +12,9 @@ exec 2> >(logger --stderr --priority error --tag="$tag")
 # Set generic config
 #
 
-modelctl set --package socket.path="$SNAP_COMMON/run/ubustt.sock"
+# The UbuSTT socket path, under the key modelctl's `status` reads for a
+# ws+unix runtime server (runtimes/*/runtime.yaml) to report the entrypoint.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
 modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 # 5 min keeps frequent dictation warm but frees GPU/RAM when you walk away.

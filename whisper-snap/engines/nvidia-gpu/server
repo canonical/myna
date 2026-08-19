@@ -5,7 +5,7 @@
 # libraries on LD_LIBRARY_PATH (see runtimes/faster-whisper-cuda/runtime.yaml);
 # we run the same server module the cpu engine does, on the GPU.
 
-socket_path="$(modelctl get socket.path)"
+socket_path="$(modelctl get ws.unix-socket)"
 compute_type="$(modelctl get compute-type)"
 idle="$(modelctl get sleep-idle-seconds)"
 

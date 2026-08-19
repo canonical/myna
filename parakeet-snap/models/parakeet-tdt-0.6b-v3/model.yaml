@@ -1,10 +1,7 @@
-id: parakeet-tdt-0.6b-v3
 name: parakeet-tdt-0.6b-v3
 description: Parakeet TDT 0.6B v3 (multilingual, 25 languages, punctuation) — int8 ONNX
 model-card-url: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
 quantization: int8
-capabilities:
-  - multilingual
 disk-size: 812M
 # Weights shipped as a snap component (murmure's int8 ONNX export of NVIDIA's
 # Parakeet TDT 0.6B v3, CC-BY-4.0). modelctl installs it on use-model; the
