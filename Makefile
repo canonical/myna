@@ -126,25 +126,25 @@ bench-long-%: ## Run the long-form clip against an already-running <snap> (bench
 # (.workshop/myna.yaml; same actions CI runs)
 # ------------------------------------------------------------------------
 
-.PHONY: test
-test: ## Rust test suite (workshop: test)
+.PHONY: test-client
+test-client:
 	workshop run myna test
 
-.PHONY: py-test
-py-test: ## Python test suite (workshop: py-test)
+.PHONY: test-server
+test-server:
 	workshop run myna py-test
 
-.PHONY: lint
-lint: ## Rust lints as errors (workshop: lint)
+.PHONY: lint-client
+lint-client:
 	workshop run myna lint
 
-.PHONY: fmt
-fmt: ## Rust format check (workshop: fmt)
-	workshop run myna fmt
+.PHONY: lint-server
+lint-server:
+	workshop run myna lint-server
 
-.PHONY: py-lint
-py-lint: ## Python lint + format check (workshop: py-lint)
-	workshop run myna py-lint
+.PHONY: fmt
+fmt:
+	workshop run myna fmt
 
 .PHONY: cov
 cov: ## Rust coverage (workshop: cov)
@@ -155,10 +155,10 @@ py-cov: ## Python coverage (workshop: py-cov)
 	workshop run myna py-cov
 
 # Mirrors the `static` job in .github/workflows/ci.yml exactly (fmt, machete,
-# deny, py-lint, py-types, shell-lint, workflow-lint) — deliberately excludes
-# `lint`/`test`/`py-test`, which are the separate `workshop` CI job.
+# deny, lint-server, py-types, shell-lint, workflow-lint) — deliberately excludes
+# `lint-client`/`test`/`py-test`, which are the separate `workshop` CI job.
 .PHONY: check
-check: fmt py-lint ## All static gates from CI's `static` job
+check: fmt lint-server
 	workshop run myna machete
 	workshop run myna deny
 	workshop run myna py-types
