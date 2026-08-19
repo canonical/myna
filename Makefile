@@ -207,6 +207,43 @@ workshop-%: ## Run any workshop action directly (workshop-<action>)
 	workshop run myna $*
 
 # ------------------------------------------------------------------------
+# spread (local, confined e2e)
+#
+# Needs KVM (/dev/kvm). Prebuilt snaps must exist first:
+#   make myna-snap fake-snap whisper-snap-models whisper-snap
+# `make spread` primes the qemu image (~1 GB, one-time) and builds spread at
+# the commit pinned in .github/workflows/spread.yml (same as CI).
+# ------------------------------------------------------------------------
+
+.PHONY: spread
+spread: ## Run the confined e2e suite locally (primes image + builds spread as needed)
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/
+
+.PHONY: spread-smoke
+spread-smoke: ## Run only adapter-smoke (real whisper snap, batch + streaming)
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/adapter-smoke
+
+.PHONY: spread-e2e
+spread-e2e: ## Run only confined-e2e (fake backend)
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/confined-e2e
+
+.PHONY: spread-debug
+spread-debug: ## Debug adapter-smoke (keep the VM around after the run)
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread -debug qemu:ubuntu-24.04-64:tests/spread/adapter-smoke
+
+.PHONY: spread-image
+spread-image: ## Prime the qemu image for local spread runs (one-time, ~1 GB)
+	./dev/spread-image.sh
+
+# ------------------------------------------------------------------------
 # remote CI (GitHub Actions, current branch)
 # ------------------------------------------------------------------------
 

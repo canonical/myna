@@ -40,18 +40,20 @@ execute: |
     systemctl reset-failed snap.${SNAP_UNDER_TEST}.server.service || true
 
     # The modelctl surface must answer on a freshly installed snap. Asserted
-    # here because it silently did not: parakeet and sherpa shipped no pciutils
-    # and no hardware-observe plug, so every one of these commands died with
-    # "executing lspci: executable file not found in $PATH" - which nothing
-    # noticed until a benchmark run collapsed halfway through. The static
-    # counterpart is server/tests/test_snap_packaging.py; this is the version
-    # that proves it on a real install under confinement.
+    # here because it silently did not: parakeet and sherpa once shipped
+    # without a hardware-observe plug, so every one of these commands died
+    # when hardware detection could not read /sys - which nothing noticed
+    # until a benchmark run collapsed halfway through. The static counterpart
+    # is server/tests/test_snap_packaging.py; this is the version that proves
+    # it on a real install under confinement.
     ${SNAP_UNDER_TEST} show-machine --format=json > machine.json
     grep -q '"cpus"' machine.json
     ${SNAP_UNDER_TEST} use-engine --auto --assume-yes --no-restart
     ${SNAP_UNDER_TEST} show-engine --format=json > engine.json
     grep -q '"name"' engine.json
-    ${SNAP_UNDER_TEST} list-models | grep -qx "$MODEL"
+    # list-models is a table since modelctl v2.0.0-beta.2 (header row, '*' on
+    # the active model) - match on the stable JSON representation instead.
+    ${SNAP_UNDER_TEST} list-models --format=json | grep -q "\"name\": \"$MODEL\""
     ${SNAP_UNDER_TEST} use-model "$MODEL" --assume-yes
 
     snap install --dangerous "$MYNA_SNAP"
@@ -68,11 +70,32 @@ execute: |
         snap set ${SNAP_UNDER_TEST} streaming="$streaming"
         snap restart ${SNAP_UNDER_TEST}.server
 
+        # The server binds in its own $SNAP_COMMON/run (host-visible); the
+        # content share into the myna snap exists only inside myna's mount
+        # namespace, so the host-side wait must target the backend's own path.
         for _ in $(seq 1 90); do
-            [ -S /var/snap/myna/current/backend/run/ubustt.sock ] && break
+            [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ] && break
             sleep 1
         done
-        test -S /var/snap/myna/current/backend/run/ubustt.sock
+        if ! [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ]; then
+            echo "=== socket missing in $mode mode; daemon state ==="
+            snap services ${SNAP_UNDER_TEST}.server || true
+            snap logs -n 80 ${SNAP_UNDER_TEST}.server || true
+            echo "=== modelctl surface ==="
+            ${SNAP_UNDER_TEST} status 2>&1 || true
+            sudo ${SNAP_UNDER_TEST} get ws.unix-socket 2>&1 || true
+            sudo ${SNAP_UNDER_TEST} run -- echo run-ok 2>&1 || true
+        fi
+        test -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock
+
+        # The content share itself: assert from inside the myna snap's mount
+        # namespace (the path does not exist on the host at all).
+        if ! sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/run/ubustt.sock'; then
+            echo "=== content share not visible inside the myna snap ==="
+            snap connections myna || true
+            sudo snap run --shell myna.testbed -c 'ls -laR /var/snap/myna/current/backend/ 2>&1' || true
+            exit 1
+        fi
 
         # myna.testbed is stdin-triggered (Enter starts the utterance); feed it
         # one Enter and hold the pipe open while the clip plays out.

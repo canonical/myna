@@ -24,7 +24,10 @@ on:
 
 # Pinned upstream commit (decision record; bump deliberately).
 env:
-  SPREAD_COMMIT: 052d7a1 # matches latest/stable 2026.07.12-g052d7a1
+  # The 2026.07.12 tag (latest/stable at pinning time). Its original commit
+  # (052d7a1) is gone from the repo after an upstream force-push; pin the
+  # tag's current commit so the checkout actually resolves.
+  SPREAD_COMMIT: 32cad07bfd7fffb395f6c6134b68b1c24f9490c0
 
 jobs:
   confined-e2e:
@@ -96,10 +99,11 @@ jobs:
       - name: Build spread (pinned commit)
         run: |
           sudo apt-get install -y golang-go
-          git clone https://github.com/snapcore/spread.git /tmp/spread
-          git -C /tmp/spread checkout "$SPREAD_COMMIT"
-          cd /tmp/spread && go build -o "$GITHUB_WORKSPACE/spread-bin" ./cmd/spread
+          # Same script as local runs: pins the commit, applies the -cpu host
+          # patch (qemu64 lacks x86-64-v2; numpy/CTranslate2 refuse to run),
+          # caches at .cache/spread/spread.
+          ./dev/spread-build.sh
 
       # The task resolves the snaps from the project dir (sent to the VM).
       - name: Run confined-e2e
-        run: ./spread-bin qemu:ubuntu-24.04-64:tests/spread/confined-e2e
+        run: ./.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/confined-e2e

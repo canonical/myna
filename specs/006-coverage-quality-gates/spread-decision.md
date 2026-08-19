@@ -81,3 +81,17 @@ snap has no kvm plug and cannot run the qemu backend with KVM).
 
 First nightly CI run pending; revisit the verdict only if the hosted-KVM
 assumption breaks.
+
+**Update (2026-08-19, T53 validation).** adapter-smoke ran green locally for
+the first time (whisper at modelctl v2.0.0-beta.12, batch + streaming). Three
+latent bugs fixed to get there: (1) the `SPREAD_COMMIT` pin `052d7a1` no longer
+exists upstream (history rewrite) - re-pinned to the `2026.07.12` tag's current
+commit, so the CI build-spread step had been failing; (2) the task polled the
+content-share socket path from the *host*, where it never exists - the share
+lives only in the consuming snap's mount namespace, so the wait now targets
+the backend's own `$SNAP_COMMON/run` and asserts the share once via
+`snap run --shell myna.testbed`; (3) qemu's default CPU lacks x86-64-v2, which
+numpy 2.x requires - the local build of spread now patches in `-cpu host`
+(`dev/spread-build.sh`, applied by both local runs and CI). Local invocation
+moved to `make spread` / `spread-smoke` / `spread-e2e` / `spread-debug`
+(spread.yaml header).
