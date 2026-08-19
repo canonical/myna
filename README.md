@@ -391,14 +391,16 @@ The server extras and the inference snaps pacakged here install the **same** thi
 libraries two independent ways: `uv sync --extra <name>` puts them in your
 `.venv` for local runs; the snap build packages them into the snap. **You don't need to sync any extra for the snaps to build** — snapcraft resolves them from PyPI in its own build container.
 
-General procedure for packaging an inference snap,
+One target per snap, named for the model - it fetches the model weights into
+`components/` (large, but skipped if already there), stages the wheels and
+packs:
 
 ```shell
-cd whisper-snap
-./dev/prepare.sh            # uv build --wheel -> wheels/  (no extra sync needed)
-./dev/download-models.sh    # fetch model weights into components/  (large)
-snapcraft pack
+make snap-whisper           # or snap-parakeet, snap-qwen, snap-myna, snap-fake, ...
 ```
+
+That runs the snap's own `dev/prepare.sh` (`uv build --wheel` -> `wheels/`) and
+its model fetch; `make help` lists every snap target.
 
 The snaps have their own README's with further details.
 

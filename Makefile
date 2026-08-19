@@ -1,13 +1,23 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Model-backed inference snaps: prepare.sh + snapcraft pack is identical for
-# all of them (see `snap_template` below). Model-fetch is not, so it's kept
-# as explicit per-snap targets further down.
-MODEL_SNAP_DIRS := whisper-snap parakeet-snap nemotron-snap qwen-snap sherpa-snap funasr-snap audio8-snap
-# Everything else that also builds via prepare.sh + snapcraft pack.
-PLAIN_SNAP_DIRS := myna-snap fake-snap
-SNAP_DIRS       := $(MODEL_SNAP_DIRS) $(PLAIN_SNAP_DIRS)
+# Inference snaps, by short name: `make snap-whisper` fetches that snap's model
+# weights, stages its wheels and packs it. Fetch is idempotent (every fetcher
+# skips weights already staged under components/), so it is folded into the
+# build instead of being a separate target you have to remember.
+SNAPS := whisper parakeet nemotron qwen sherpa funasr audio8 myna fake
+
+# Model fetch, one per snap; empty for the snaps that carry no weights (myna,
+# fake). Five have their own dev/download-models.sh (whisper's fetches
+# tiny/base/small, qwen's 0.6B + 1.7B); the two ONNX ones are fetched by
+# repo-level scripts. audio8's weights are CC-BY-NC-4.0 (non-commercial).
+FETCH_whisper  := cd whisper-snap && ./dev/download-models.sh
+FETCH_parakeet := cd parakeet-snap && ./dev/download-models.sh
+FETCH_nemotron := cd nemotron-snap && ./dev/download-models.sh
+FETCH_qwen     := cd qwen-snap && ./dev/download-models.sh
+FETCH_sherpa   := cd sherpa-snap && ./dev/download-models.sh
+FETCH_funasr   := uv run ./dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
+FETCH_audio8   := uv run ./dev/fetch_audio8_model.py --profile snap --target ./audio8-snap/components/model-audio8-onnx --accept-license "CC-BY-NC-4.0"
 
 BRANCH := $(shell git branch --show-current)
 
@@ -20,70 +30,24 @@ help: ## List targets with descriptions
 	@grep -E '^[a-zA-Z0-9_.%-]+:.*## ' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "  Per-snap targets (generated, one per */dev/prepare.sh + snapcraft pack):"
-	@for d in $(SNAP_DIRS); do printf "  \033[36m%-22s\033[0m %s\n" "$$d" "Stage + snapcraft pack $$d"; done
-	@echo
-	@echo "  Fetch models + build in one step:"
-	@for d in $(MODEL_SNAP_DIRS); do printf "  \033[36m%-22s\033[0m %s\n" "$$d-all" "$$d-models + $$d"; done
+	@echo "  Per-snap targets (generated: fetch models, stage, snapcraft pack):"
+	@for s in $(SNAPS); do printf "  \033[36m%-22s\033[0m %s\n" "snap-$$s" "Build the $$s snap"; done
 
 # ------------------------------------------------------------------------
-# snaps — prepare + pack (uniform across every snap dir)
+# snaps - fetch + prepare + pack (uniform across every snap)
 # ------------------------------------------------------------------------
 
-define snap_template
-.PHONY: $(1)
-$(1): ## Stage + snapcraft pack $(1)
-	cd $(1) && ./dev/prepare.sh && snapcraft pack
+define snap_rule
+.PHONY: snap-$(1)
+snap-$(1):
+	$$(FETCH_$(1))
+	cd $(1)-snap && ./dev/prepare.sh && snapcraft pack
 endef
-$(foreach dir,$(SNAP_DIRS),$(eval $(call snap_template,$(dir))))
-
-.PHONY: snaps
-snaps: $(SNAP_DIRS) ## Rebuild every snap (assumes models already fetched)
+$(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
 
 .PHONY: lint-snaps
 lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
 	./dev/lint-packages.sh
-
-# ------------------------------------------------------------------------
-# snap model fetch — not uniform, kept explicit
-# ------------------------------------------------------------------------
-
-.PHONY: whisper-snap-models
-whisper-snap-models: ## Fetch whisper-snap model weights (tiny/base/small)
-	cd whisper-snap && ./dev/download-models.sh
-
-.PHONY: parakeet-snap-models
-parakeet-snap-models: ## Fetch parakeet-snap model weights
-	cd parakeet-snap && ./dev/download-models.sh
-
-.PHONY: nemotron-snap-models
-nemotron-snap-models: ## Fetch nemotron-snap model weights
-	cd nemotron-snap && ./dev/download-models.sh
-
-.PHONY: qwen-snap-models
-qwen-snap-models: ## Fetch qwen-snap model weights (0.6B + 1.7B)
-	cd qwen-snap && ./dev/download-models.sh
-
-.PHONY: sherpa-snap-models
-sherpa-snap-models: ## Fetch sherpa-snap model weights
-	cd sherpa-snap && ./dev/download-models.sh
-
-.PHONY: funasr-snap-models
-funasr-snap-models: ## Fetch funasr-snap (SenseVoice) model weights
-	uv run ./dev/fetch_funasr_model.py \
-		--target ./funasr-snap/components/model-sensevoice-onnx
-
-.PHONY: audio8-snap-models
-audio8-snap-models: ## Fetch audio8-snap model weights (CC-BY-NC-4.0, non-commercial)
-	uv run ./dev/fetch_audio8_model.py \
-		--profile snap --target ./audio8-snap/components/model-audio8-onnx \
-		--accept-license "CC-BY-NC-4.0"
-
-define snap_all_template
-.PHONY: $(1)-all
-$(1)-all: $(1)-models $(1) ## Fetch models + build $(1)
-endef
-$(foreach dir,$(MODEL_SNAP_DIRS),$(eval $(call snap_all_template,$(dir))))
 
 # ------------------------------------------------------------------------
 # client / server / bench
@@ -210,7 +174,7 @@ workshop-%: ## Run any workshop action directly (workshop-<action>)
 # spread (local, confined e2e)
 #
 # Needs KVM (/dev/kvm). Prebuilt snaps must exist first:
-#   make myna-snap fake-snap whisper-snap-models whisper-snap
+#   make snap-myna snap-fake snap-whisper
 # `make spread` primes the qemu image (~1 GB, one-time) and builds spread at
 # the commit pinned in .github/workflows/spread.yml (same as CI).
 # ------------------------------------------------------------------------

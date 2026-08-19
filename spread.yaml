@@ -13,7 +13,7 @@
 # The snaps under test are prebuilt and sent with the project:
 #   myna-snap/myna_*_amd64.snap              (myna-snap/dev/prepare.sh && snapcraft pack)
 #   fake-snap/myna-fake-backend_*_amd64.snap (fake-snap/dev/prepare.sh && snapcraft pack)
-#   whisper-snap/whisper_*_amd64.snap        (make whisper-snap-models whisper-snap)
+#   whisper-snap/whisper_*_amd64.snap        (make snap-whisper)
 #   whisper-snap/whisper+model-tiny.comp     (same; download-models.sh stages the weights)
 #
 # confined-e2e uses the fake backend (no model, runs anywhere); adapter-smoke

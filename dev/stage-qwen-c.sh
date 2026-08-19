@@ -24,7 +24,7 @@ OUT=$OUTDIR/libqwen_asr.so
 
 if [ ! -f "$SNAP" ]; then
     echo "no snap at $SNAP - build it first:" >&2
-    echo "  cd qwen-snap && ./dev/prepare.sh && snapcraft pack" >&2
+    echo "  make snap-qwen" >&2
     exit 1
 fi
 
