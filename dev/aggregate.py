@@ -198,7 +198,8 @@ def print_overall(
     mh = f"{'machine':14} " if show_machine else ""
     rh = f"{'RSS MB':>9} {'VRAM MB':>9}" if show_res else ""
     print(
-        f"{'#':>3} {'label':{lw}} {'status':>13} {mh}{'clips':>5} {'WER%':>7} {'CER%':>7} {'speed':>6} "
+        f"{'#':>3} {'label':{lw}} {'status':>13} {mh}{'clips':>5} "
+        f"{'WER%':>7} {'CER%':>7} {'speed':>6} "
         f"{'med final':>10} {'p95 final':>10} {'cold load':>10} {rh}"
     )
     print("-" * (lw + 86 + (15 if show_machine else 0) + (20 if show_res else 0)))
@@ -224,7 +225,10 @@ def print_overall(
             f"{_f(s['median_final'], '10.3f')} {_f(s['p95_final'], '10.3f')} "
             f"{_f(s['cold_ready'], '10.3f')} {rc}"
         )
-    print("\nmed/p95 final are seconds (end-of-audio -> committed text); speed = audio/decode (higher is faster).")
+    print(
+        "\nmed/p95 final are seconds (end-of-audio -> committed text); "
+        "speed = audio/decode (higher is faster)."
+    )
     print("cold load = model residency wait (session open -> ready), from --cold runs.")
     print(
         "status: OK = clean full sweep; USABILITY_FAIL = ran out of budget mid-sweep (metrics"
@@ -279,8 +283,7 @@ def main() -> None:
         "--sort",
         choices=(*RANK_FIELDS, "label"),
         default="wer",
-        help="rank rows best-first by this metric (default: wer); 'label' for"
-        " alphabetical",
+        help="rank rows best-first by this metric (default: wer); 'label' for alphabetical",
     )
     args = parser.parse_args()
 

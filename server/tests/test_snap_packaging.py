@@ -212,8 +212,7 @@ def test_socket_config_key_is_ws_unix_socket(snap) -> None:
     for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
         script = server.read_text(encoding="utf-8")
         assert "socket.path" not in script, (
-            f"{name}: engines/{server.parent.name}/server still reads the "
-            "retired socket.path key"
+            f"{name}: engines/{server.parent.name}/server still reads the retired socket.path key"
         )
 
 

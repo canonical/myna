@@ -6,7 +6,6 @@ The record schema is identical to dev/bench.py so dev/aggregate.py and the
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -221,6 +220,8 @@ async def run_clips(
         print(f"median finalize    : {median_final:.3f}s  (end-of-audio -> committed text)")
     print(f"audio streamed     : {tot_audio:.1f}s total")
     if overran:
-        print(f"USABILITY FAIL     : scored {scored}/{len(clips)} clips within {budget_seconds:.0f}s")
+        print(
+            f"USABILITY FAIL     : scored {scored}/{len(clips)} clips within {budget_seconds:.0f}s"
+        )
 
     return overran, scored

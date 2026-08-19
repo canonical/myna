@@ -12,6 +12,14 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
+from test_emission_invariants import assert_batch_degenerate
+
+from myna.core import (
+    AudioFormat,
+    PcmChunk,
+    SessionConfig,
+    TranscriptionDone,
+)
 from myna.server.cli import build_adapter, build_parser
 from myna.testbed.parakeet import (
     ParakeetAdapter,
@@ -20,15 +28,6 @@ from myna.testbed.parakeet import (
     _tokens_to_words,
 )
 from myna.testbed.streaming.strategies import SilenceCut
-from myna.core import (
-    AudioFormat,
-    Disposition,
-    PcmChunk,
-    SessionConfig,
-    TranscriptionDone,
-    TranscriptionFinal,
-)
-from test_emission_invariants import assert_batch_degenerate
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 

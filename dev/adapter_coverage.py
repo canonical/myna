@@ -48,22 +48,27 @@ def _build_adapter(name: str, model: str | None):
     """Instantiate the named adapter with its default (or supplied) model."""
     if name == "whisper":
         from myna.testbed.whisper import FasterWhisperAdapter
+
         return FasterWhisperAdapter(model or "tiny")
 
     if name == "sherpa":
         from myna.testbed.sherpa import SherpaAdapter, _default_model_dir
+
         return SherpaAdapter(model_dir=model or _default_model_dir())
 
     if name == "parakeet":
         from myna.testbed.parakeet import ParakeetAdapter, _default_model_dir
+
         return ParakeetAdapter(model_dir=model or _default_model_dir())
 
     if name == "funasr":
         from myna.testbed.funasr import FunasrAdapter, _default_model_dir
+
         return FunasrAdapter(model_dir=model or _default_model_dir())
 
     if name == "audio8":
         from myna.testbed.audio8 import Audio8Adapter, _default_model_dir
+
         return Audio8Adapter(model_dir=model or _default_model_dir())
 
     raise ValueError(f"unknown adapter: {name!r}")
@@ -149,8 +154,17 @@ def run_baseline_if_needed() -> None:
     print("[cov] .coverage.tests not found — running pytest … ", flush=True)
     cov = _cov_bin()
     r = subprocess.run(
-        [cov, "run", "--data-file=.coverage.tests", "--branch",
-         "--source=myna", "-m", "pytest", "-q", "--no-header"],
+        [
+            cov,
+            "run",
+            "--data-file=.coverage.tests",
+            "--branch",
+            "--source=myna",
+            "-m",
+            "pytest",
+            "-q",
+            "--no-header",
+        ],
         cwd=SERVER,
         capture_output=False,
     )
@@ -182,6 +196,7 @@ def merge_and_report(adapter_names: list[str]) -> None:
     # Protect the test baseline: coverage combine deletes inputs by default
     # and --keep is unreliable across versions. Copy it aside and restore.
     import shutil
+
     tests_backup: Path | None = None
     if tests_file.exists():
         tests_backup = SERVER / ".coverage.tests.bak"
@@ -190,7 +205,9 @@ def merge_and_report(adapter_names: list[str]) -> None:
     print(f"\n[cov] merging: {', '.join(data_files)}", flush=True)
     r = subprocess.run(
         [cov, "combine", "--keep"] + data_files,
-        cwd=SERVER, capture_output=True, text=True,
+        cwd=SERVER,
+        capture_output=True,
+        text=True,
     )
 
     # Restore baseline regardless of combine outcome
@@ -205,7 +222,8 @@ def merge_and_report(adapter_names: list[str]) -> None:
     # Export Cobertura for populations script
     subprocess.run(
         [cov, "xml", "-o", "coverage-merged.cobertura.xml"],
-        cwd=SERVER, capture_output=True,
+        cwd=SERVER,
+        capture_output=True,
     )
 
     # Human-readable terminal report
@@ -213,8 +231,12 @@ def merge_and_report(adapter_names: list[str]) -> None:
     print("MERGED COVERAGE (tests + adapter sessions)", flush=True)
     print("=" * 88, flush=True)
     subprocess.run(
-        [cov, "report", "--sort=cover",
-         "--include=*/testbed/*.py,*/testbed/streaming/*.py,*/server/*.py,*/core/*.py"],
+        [
+            cov,
+            "report",
+            "--sort=cover",
+            "--include=*/testbed/*.py,*/testbed/streaming/*.py,*/server/*.py,*/core/*.py",
+        ],
         cwd=SERVER,
     )
 
@@ -224,8 +246,13 @@ def merge_and_report(adapter_names: list[str]) -> None:
         print("TEST-ONLY COVERAGE (for comparison)", flush=True)
         print("=" * 88, flush=True)
         subprocess.run(
-            [cov, "report", "--data-file=.coverage.tests", "--sort=cover",
-             "--include=*/testbed/*.py,*/testbed/streaming/*.py,*/server/*.py,*/core/*.py"],
+            [
+                cov,
+                "report",
+                "--data-file=.coverage.tests",
+                "--sort=cover",
+                "--include=*/testbed/*.py,*/testbed/streaming/*.py,*/server/*.py,*/core/*.py",
+            ],
             cwd=SERVER,
         )
 
@@ -240,21 +267,27 @@ def merge_and_report(adapter_names: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--adapter", nargs="+", default=ADAPTERS_DEFAULT,
+        "--adapter",
+        nargs="+",
+        default=ADAPTERS_DEFAULT,
         metavar="NAME",
         help=f"adapters to run (default: {' '.join(ADAPTERS_DEFAULT)})",
     )
     parser.add_argument(
-        "--model", default=None,
+        "--model",
+        default=None,
         help="model override (applied to all adapters; use for quick tests)",
     )
     parser.add_argument(
-        "--clips", nargs="+", default=[DEFAULT_CLIP_ID, EXTRA_CLIP_ID],
+        "--clips",
+        nargs="+",
+        default=[DEFAULT_CLIP_ID, EXTRA_CLIP_ID],
         metavar="CLIP_ID",
         help="fixture clip IDs to feed to each adapter",
     )
     parser.add_argument(
-        "--skip-baseline", action="store_true",
+        "--skip-baseline",
+        action="store_true",
         help="skip running pytest even if .coverage.tests is absent",
     )
     args = parser.parse_args()
@@ -290,16 +323,20 @@ def main() -> int:
         # We invoke ourselves recursively with coverage run so the adapter
         # code (loaded as a library) is instrumented.
         cmd = [
-            cov, "run",
+            cov,
+            "run",
             f"--data-file={data_file}",
-            "--branch", "--source=myna",
+            "--branch",
+            "--source=myna",
             "--parallel-mode",
             f"--context=adapter:{adapter_name}",
             __file__,
-            "--adapter", adapter_name,
-            "--clips", *args.clips,
+            "--adapter",
+            adapter_name,
+            "--clips",
+            *args.clips,
             "--skip-baseline",  # inner run: don't nest pytest
-            "--_inner",         # signal: just run the session, no merge
+            "--_inner",  # signal: just run the session, no merge
         ]
         if args.model:
             cmd += ["--model", args.model]

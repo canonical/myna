@@ -51,8 +51,15 @@ CANONICAL = (AUDIO8_RATE, 1, 2)  # 16 kHz mono S16LE — the only accepted forma
 class _FakeEngine:
     """Minimal stand-in for the publisher's ``OnnxCacheAsrEngine``."""
 
-    def __init__(self, bundle_dir, *, provider=None, intra_op_num_threads=None,
-                 cache_precision="int8", audio_precision=None):
+    def __init__(
+        self,
+        bundle_dir,
+        *,
+        provider=None,
+        intra_op_num_threads=None,
+        cache_precision="int8",
+        audio_precision=None,
+    ):
         self.bundle_dir = bundle_dir
         self.provider = provider
         self.cache_precision = cache_precision
@@ -211,6 +218,7 @@ def test_strip_residual_collapses_whitespace():
 
 # --- WAV wrapping -----------------------------------------------------------
 
+
 def test_to_wav_bytes_produces_parseable_16k_mono_s16le_wav():
     import io
 
@@ -317,7 +325,9 @@ async def test_unload_releases_engine_and_is_idempotent(monkeypatch, tmp_path):
 
 async def test_rejects_wrong_sample_rate(monkeypatch, tmp_path):
     adapter = _loaded_adapter(monkeypatch, tmp_path)
-    config = SessionConfig(audio_format=AudioFormat(sample_rate_hz=8000, channels=1, sample_width_bytes=2))
+    config = SessionConfig(
+        audio_format=AudioFormat(sample_rate_hz=8000, channels=1, sample_width_bytes=2)
+    )
     events = await _drive_session(adapter, config, [])
     assert events and isinstance(events[0], TranscriptionError)
     assert events[0].code == "unsupported_audio_format"
@@ -325,7 +335,9 @@ async def test_rejects_wrong_sample_rate(monkeypatch, tmp_path):
 
 async def test_rejects_stereo(monkeypatch, tmp_path):
     adapter = _loaded_adapter(monkeypatch, tmp_path)
-    config = SessionConfig(audio_format=AudioFormat(sample_rate_hz=AUDIO8_RATE, channels=2, sample_width_bytes=2))
+    config = SessionConfig(
+        audio_format=AudioFormat(sample_rate_hz=AUDIO8_RATE, channels=2, sample_width_bytes=2)
+    )
     events = await _drive_session(adapter, config, [])
     assert events and isinstance(events[0], TranscriptionError)
     assert events[0].code == "unsupported_audio_format"
@@ -395,8 +407,9 @@ async def test_silence_skips_decode_and_emits_empty_done(monkeypatch, tmp_path):
     done = [e for e in events if isinstance(e, TranscriptionDone)]
     assert done and done[-1].text == ""
     # Warm-up (max_new_tokens=8) is the only call — the real decode (256) is gated.
-    assert not any(c["max_new_tokens"] == 256 for c in engine.calls), \
+    assert not any(c["max_new_tokens"] == 256 for c in engine.calls), (
         "silence must not reach the model"
+    )
 
 
 async def test_silence_gate_disabled_when_threshold_none(monkeypatch, tmp_path):

@@ -314,7 +314,8 @@ class SherpaAdapter:
         the final word; ``input_finished`` then flushes the remainder.
         """
         _TAIL_PAD_S = 0.32  # just over one 480 ms chunk's lookahead frames
-        stream.accept_waveform(SHERPA_RATE, np.zeros(int(_TAIL_PAD_S * SHERPA_RATE), dtype=np.float32))
+        pad = np.zeros(int(_TAIL_PAD_S * SHERPA_RATE), dtype=np.float32)
+        stream.accept_waveform(SHERPA_RATE, pad)
         stream.input_finished()
         while recognizer.is_ready(stream):
             recognizer.decode_stream(stream)

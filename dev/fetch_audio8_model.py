@@ -57,11 +57,13 @@ _BASE_PATTERNS = (
 
 _PROFILES: dict[str, tuple[str, ...]] = {
     "dev": _BASE_PATTERNS,
-    "snap": _BASE_PATTERNS + (
+    "snap": _BASE_PATTERNS
+    + (
         "model_bundle/lm_cache_prefill_int4.onnx*",
         "model_bundle/lm_cache_decode_int4.onnx*",
     ),
-    "full": _BASE_PATTERNS + (
+    "full": _BASE_PATTERNS
+    + (
         "model_bundle/audio_hidden.onnx",
         "model_bundle/lm_cache_prefill.onnx",
         "model_bundle/lm_cache_decode.onnx",
@@ -126,9 +128,7 @@ def main() -> int:
 
     allow = list(_PROFILES[args.profile])
     print(f"⬇️  Downloading {REPO_ID} (profile={args.profile}, {len(allow)} patterns)...")
-    snapshot_dir = Path(
-        snapshot_download(REPO_ID, allow_patterns=allow, repo_type="model")
-    )
+    snapshot_dir = Path(snapshot_download(REPO_ID, allow_patterns=allow, repo_type="model"))
     print(f"   Staged at: {snapshot_dir}")
 
     required = ("asr_onnx_runtime.py", "model_bundle/metadata.json", "model_bundle/tokenizer.json")

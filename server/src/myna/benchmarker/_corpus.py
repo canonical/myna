@@ -54,9 +54,18 @@ def _decode_flac(data: bytes) -> array.array:
     """Decode FLAC bytes to 16 kHz mono S16LE samples via ffmpeg (piped)."""
     pcm = subprocess.run(
         [
-            "ffmpeg", "-loglevel", "error",
-            "-i", "pipe:0",
-            "-ar", str(RATE), "-ac", "1", "-f", "s16le", "pipe:1",
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-ar",
+            str(RATE),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "pipe:1",
         ],
         input=data,
         stdout=subprocess.PIPE,
@@ -115,8 +124,7 @@ def _build_corpus(out_dir: Path, tar_path: Path, n: int, subset: str) -> Path:
                 by_speaker.setdefault(_speaker(utt_id), []).append(utt_id)
 
     by_speaker = {
-        spk: sorted(utts)
-        for spk, utts in sorted(by_speaker.items(), key=lambda item: int(item[0]))
+        spk: sorted(utts) for spk, utts in sorted(by_speaker.items(), key=lambda item: int(item[0]))
     }
     wanted = set(_round_robin(by_speaker, n)) & set(text)
     print(f"selected {len(wanted)} clips across {len({_speaker(u) for u in wanted})} speakers")
@@ -142,18 +150,20 @@ def _build_corpus(out_dir: Path, tar_path: Path, n: int, subset: str) -> Path:
         clip_id = f"librispeech-{utt_id}"
         wav_path = audio_dir / f"{clip_id}.wav"
         duration = _write_wav(wav_path, pcm[utt_id], RATE)
-        entries.append({
-            "id": clip_id,
-            "path": f"audio/{clip_id}.wav",
-            "text": text[utt_id],
-            "language": "en",
-            "category": category,
-            "duration_seconds": round(duration, 3),
-            "sample_rate_hz": RATE,
-            "channels": 1,
-            "source": f"librispeech:{subset}:{utt_id}",
-            "license": LICENSE,
-        })
+        entries.append(
+            {
+                "id": clip_id,
+                "path": f"audio/{clip_id}.wav",
+                "text": text[utt_id],
+                "language": "en",
+                "category": category,
+                "duration_seconds": round(duration, 3),
+                "sample_rate_hz": RATE,
+                "channels": 1,
+                "source": f"librispeech:{subset}:{utt_id}",
+                "license": LICENSE,
+            }
+        )
         print(f"  {clip_id:<44} {category}  {duration:.2f}s")
 
     notice = (
@@ -166,10 +176,15 @@ def _build_corpus(out_dir: Path, tar_path: Path, n: int, subset: str) -> Path:
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(
         json.dumps(
-            {"schema_version": SCHEMA_VERSION, "generator": "myna-bench download-corpus", "clips": entries},
+            {
+                "schema_version": SCHEMA_VERSION,
+                "generator": "myna-bench download-corpus",
+                "clips": entries,
+            },
             indent=2,
             ensure_ascii=False,
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
     return manifest_path
@@ -204,8 +219,8 @@ def cmd_download(args) -> None:  # noqa: ANN001
     # Check ffmpeg is available before downloading anything.
     try:
         subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except (OSError, subprocess.SubprocessError):
-        raise SystemExit("ffmpeg is required for FLAC decode: sudo apt install ffmpeg")
+    except (OSError, subprocess.SubprocessError) as err:
+        raise SystemExit("ffmpeg is required for FLAC decode: sudo apt install ffmpeg") from err
 
     tar_path = _download(f"{BASE_URL}/{subset}.tar.gz", cache_dir / f"{subset}.tar.gz")
     manifest = _build_corpus(out_dir, tar_path, n, subset)
@@ -252,18 +267,20 @@ def cmd_make(args) -> None:  # noqa: ANN001
 
         clip_id = wav.stem
         rel = wav.relative_to(out_dir) if wav.is_relative_to(out_dir) else Path(wav.name)
-        entries.append({
-            "id": clip_id,
-            "path": str(rel),
-            "text": text,
-            "language": language,
-            "category": category,
-            "duration_seconds": duration,
-            "sample_rate_hz": rate,
-            "channels": channels,
-            "source": f"user-provided:{wav.name}",
-            "license": "unknown",
-        })
+        entries.append(
+            {
+                "id": clip_id,
+                "path": str(rel),
+                "text": text,
+                "language": language,
+                "category": category,
+                "duration_seconds": duration,
+                "sample_rate_hz": rate,
+                "channels": channels,
+                "source": f"user-provided:{wav.name}",
+                "license": "unknown",
+            }
+        )
         print(f"  {clip_id:<40} {category}  {duration:.2f}s")
 
     if not entries:
@@ -275,10 +292,15 @@ def cmd_make(args) -> None:  # noqa: ANN001
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(
         json.dumps(
-            {"schema_version": SCHEMA_VERSION, "generator": "myna-bench make-corpus", "clips": entries},
+            {
+                "schema_version": SCHEMA_VERSION,
+                "generator": "myna-bench make-corpus",
+                "clips": entries,
+            },
             indent=2,
             ensure_ascii=False,
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
     print(f"\nadded {len(entries)} clips, skipped {len(skipped)}")

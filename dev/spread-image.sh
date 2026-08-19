@@ -38,7 +38,9 @@ cloud-localds seed.iso user-data meta-data
 
 QEMU=""
 cleanup() {
-    [ -n "$QEMU" ] && kill "$QEMU" 2>/dev/null || true
+    if [ -n "$QEMU" ]; then
+        kill "$QEMU" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 

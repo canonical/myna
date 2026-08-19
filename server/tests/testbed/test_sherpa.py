@@ -16,6 +16,8 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
+from test_emission_invariants import assert_batch_degenerate
+
 from myna.core import (
     AudioFormat,
     Disposition,
@@ -25,7 +27,6 @@ from myna.core import (
     TranscriptionFinal,
 )
 from myna.testbed.sherpa import SherpaAdapter
-from test_emission_invariants import assert_batch_degenerate
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 
@@ -233,9 +234,7 @@ def test_decode_oneshot_accumulates_across_endpoint_regression():
     segment was silently dropped.  After the fix, both segments are accumulated
     and the full transcript is returned.
     """
-    rec = _BatchRecognizer(
-        [("he had never been", True), ("father lover husband friend", False)]
-    )
+    rec = _BatchRecognizer([("he had never been", True), ("father lover husband friend", False)])
     stream = rec.create_stream()
     result = SherpaAdapter._decode_oneshot(rec, stream, np.zeros(16_000, dtype=np.float32))
     assert result == "he had never been father lover husband friend"
