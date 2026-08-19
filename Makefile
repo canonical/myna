@@ -127,23 +127,23 @@ bench-long-%: ## Run the long-form clip against an already-running <snap> (bench
 # ------------------------------------------------------------------------
 
 .PHONY: test-client
-test-client:
+test-client: ## Rust test suite (workshop: test)
 	workshop run myna test
 
 .PHONY: test-server
-test-server:
+test-server: ## Python test suite (workshop: py-test)
 	workshop run myna py-test
 
 .PHONY: lint-client
-lint-client:
+lint-client: ## Rust lints as errors (workshop: lint)
 	workshop run myna lint
 
 .PHONY: lint-server
-lint-server:
-	workshop run myna lint-server
+lint-server: ## Python lint + format check (workshop: py-lint)
+	workshop run myna py-lint
 
 .PHONY: fmt
-fmt:
+fmt: ## Rust format check (workshop: fmt)
 	workshop run myna fmt
 
 .PHONY: cov
