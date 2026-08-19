@@ -41,46 +41,22 @@ jobs:
           sudo apt-get update && sudo apt-get install -y cpu-checker && sudo kvm-ok
 
       # The qemu backend needs a primed image at ~/.spread/qemu/<system>.img
-      # (SSH on 22, ubuntu/ubuntu password auth). Built from the noble cloud
-      # image + a cloud-init seed, primed by booting once; cached by hash of
-      # this step. Mirrors the recorded local procedure.
+      # (SSH on 22, ubuntu/ubuntu password auth), built from the noble cloud
+      # image + a cloud-init seed and primed by booting once. Caching it saves
+      # the ~1 GB download and the boot; dev/spread-image.sh below does the
+      # work on a miss.
       - name: Cache qemu image
-        id: img-cache
         uses: actions/cache@v4
         with:
           path: ~/.spread/qemu
           key: spread-qemu-ubuntu-24.04-64-v1
 
+      # Same script `make spread` runs locally, and self-provisioning (it
+      # apt-installs qemu/cloud-image-utils when they are missing and exits
+      # early when the image is already primed), so the cache hit above simply
+      # makes it a no-op.
       - name: Build + prime qemu image
-        if: steps.img-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          sudo apt-get install -y qemu-system-x86 cloud-image-utils sshpass
-          mkdir -p ~/.spread/qemu && cd ~/.spread/qemu
-          wget -q https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img \
-            -O ubuntu-24.04-64.img
-          HASH=$(openssl passwd -6 ubuntu)
-          printf '#cloud-config\nssh_pwauth: true\nusers:\n  - name: ubuntu\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: %s\n' "$HASH" > user-data
-          printf 'instance-id: myna-spread-seed\nlocal-hostname: myna-spread\n' > meta-data
-          cloud-localds seed.iso user-data meta-data
-          qemu-system-x86_64 -enable-kvm -m 2G -smp 2 -nographic \
-            -drive file=ubuntu-24.04-64.img,if=virtio,format=qcow2 \
-            -drive file=seed.iso,if=virtio,format=raw \
-            -netdev user,id=n1,hostfwd=tcp::10022-:22 \
-            -device virtio-net-pci,netdev=n1 &
-          QEMU=$!
-          for _ in $(seq 1 90); do
-            if sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
-                 -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-                 -p 10022 ubuntu@localhost 'cloud-init status --wait' 2>/dev/null; then
-              break
-            fi
-            sleep 5
-          done
-          sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
-            -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-            -p 10022 ubuntu@localhost 'sudo poweroff' || true
-          wait $QEMU || true
+        run: ./dev/spread-image.sh
 
       - name: Stage + build client snap
         run: myna-snap/dev/prepare.sh
@@ -96,14 +72,8 @@ jobs:
         with:
           path: fake-snap
 
-      - name: Build spread (pinned commit)
-        run: |
-          sudo apt-get install -y golang-go
-          # Same script as local runs: pins the commit, applies the -cpu host
-          # patch (qemu64 lacks x86-64-v2; numpy/CTranslate2 refuse to run),
-          # caches at .cache/spread/spread.
-          ./dev/spread-build.sh
-
-      # The task resolves the snaps from the project dir (sent to the VM).
+      # The one command a developer runs for this suite: primes the image (a
+      # no-op after the step above), builds spread at the pinned commit, and
+      # runs confined-e2e. The task resolves the snaps from the project dir.
       - name: Run confined-e2e
-        run: ./.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/confined-e2e
+        run: make spread-e2e

@@ -22,4 +22,4 @@ jobs:
             uv:cache
 
       - name: Advisory audits (cargo audit + pip-audit)
-        run: workshop run myna audit
+        run: make workshop-audit

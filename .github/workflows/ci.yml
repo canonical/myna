@@ -30,18 +30,20 @@ jobs:
             uv:cache
 
       - name: Rust lint (clippy -D warnings)
-        run: workshop run myna lint
+        run: make lint-client
 
       - name: Rust tests (cargo test --workspace)
-        run: workshop run myna test
+        run: make test-client
 
       # Offline Python suite (fake-adapter contract + adapter logic; the
       # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
       - name: Python tests (pytest)
-        run: workshop run myna py-test
+        run: make test-server
 
   # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
-  # violations; all run via the Workshop actions, same as locally.
+  # violations. The battery is defined once, by `check` in the Makefile, and
+  # invoked here - listing the gates again in this file is what let the snap
+  # manifest lint exist in CI but not in `make check`.
   static:
     runs-on: ubuntu-latest
     steps:
@@ -53,32 +55,12 @@ jobs:
             rust:cargo-registry
             uv:cache
 
-      - name: Rust format
-        run: workshop run myna fmt
-
-      - name: Rust unused dependencies
-        run: workshop run myna machete
-
-      # Offline invariant (constitution V): no HTTP/TLS/cloud client crates.
-      - name: Rust dependency policy
-        run: workshop run myna deny
-
-      - name: Python lint + format
-        run: workshop run myna py-lint
-
-      - name: Python types (myna/core, strict)
-        run: workshop run myna py-types
-
-      - name: Shell lint
-        run: workshop run myna shell-lint
-
-      # Snap engine/runtime/model manifest lint via modelctl itself (pinned
-      # release; the script fetches the CLI tarball - no Workshop toolchain).
-      - name: Snap manifest lint
-        run: ./dev/lint-packages.sh
-
-      - name: Workflow lint
-        run: workshop run myna workflow-lint
+      # fmt, lint-server, lint-snaps, machete, deny, py-types, shell-lint,
+      # workflow-lint - see the `check` target for the authoritative list.
+      # Snap manifest lint runs modelctl itself (pinned release; the script
+      # fetches the CLI tarball, no Workshop toolchain).
+      - name: Static gates
+        run: make check
 
   # Coverage (feature 006, FR-007): both languages measured in the Workshop
   # environment, reports published as artifacts, and the self-hosted patch
@@ -113,19 +95,19 @@ jobs:
             uv:cache
 
       - name: Provision real-speech corpus
-        run: workshop run myna corpus
+        run: make workshop-corpus
 
       - name: Rust coverage (tests)
-        run: workshop run myna cov
+        run: make cov
 
       - name: Python coverage (tests)
-        run: workshop run myna py-cov
+        run: make py-cov
 
       - name: Use-case exercise (merged exports)
-        run: workshop run myna exercise
+        run: make workshop-exercise
 
       - name: Dead-code report
-        run: workshop run myna deadcode
+        run: make workshop-deadcode
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4

@@ -13,6 +13,12 @@ COMMIT="$(grep -oP 'SPREAD_COMMIT: \K[0-9a-f]+' "$REPO_ROOT/.github/workflows/sp
 BIN="$REPO_ROOT/.cache/spread/spread"
 SRC="$REPO_ROOT/.cache/spread/src"
 
+# Self-provisioning, like dev/spread-image.sh: a fresh CI runner has no Go.
+if ! command -v go >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y golang-go
+fi
+
 mkdir -p "$(dirname "$BIN")"
 if [ ! -d "$SRC/.git" ]; then
     git clone https://github.com/snapcore/spread.git "$SRC"

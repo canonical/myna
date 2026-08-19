@@ -154,11 +154,13 @@ cov: ## Rust coverage (workshop: cov)
 py-cov: ## Python coverage (workshop: py-cov)
 	workshop run myna py-cov
 
-# Mirrors the `static` job in .github/workflows/ci.yml exactly (fmt, machete,
-# deny, lint-server, py-types, shell-lint, workflow-lint) — deliberately excludes
-# `lint-client`/`test`/`py-test`, which are the separate `workshop` CI job.
+# The one definition of the static gate battery: CI's `static` job runs
+# `make check` and nothing else, so a gate added here is a gate CI enforces -
+# there is no second list in the workflow to keep in step. Deliberately
+# excludes lint-client/test-client/test-server, which are CI's separate
+# `workshop` job (and `make lint-client` etc. locally).
 .PHONY: check
-check: fmt lint-server
+check: fmt lint-server lint-snaps ## All static gates (CI's `static` job runs this)
 	workshop run myna machete
 	workshop run myna deny
 	workshop run myna py-types
