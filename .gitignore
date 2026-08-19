@@ -49,7 +49,11 @@ release/
 *.rs.bk
 *.rlib
 *.prof*
-Cargo.lock
+# Cargo.lock is deliberately tracked (client/): the workspace ships binaries,
+# and myna-snap builds them with `cargo install --locked`, which silently
+# resolves fresh versions when no lock is present. The two other lock files in
+# the tree sit under directories already ignored wholesale (reference/,
+# myna-snap/client/).
 # snap build artifacts (weights staged by dev/download-models.sh, wheels by dev/prepare.sh)
 parakeet-snap/components/model-*/
 parakeet-snap/wheels/
