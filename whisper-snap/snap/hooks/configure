@@ -1,0 +1,15 @@
+#!/bin/bash -eu
+
+# shellcheck disable=SC2034  # used via process substitution below
+tag="snap.$SNAP_INSTANCE_NAME.hook.configure"
+exec 1> >(tee >(logger --tag="$tag"))
+exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# Values are consumed by engines/*/server via `snapctl get` on the next
+# service start. Validate here so a bad `snap set` fails at config time rather
+# than taking the daemon down on the next restart.
+value="$(snapctl get streaming)"
+if [ -n "$value" ] && [ "$value" != "true" ] && [ "$value" != "false" ]; then
+    echo "streaming must be true or false (got '$value')"
+    exit 1
+fi
