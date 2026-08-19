@@ -57,7 +57,7 @@ impl BackendClient for WsUnixBackend {
             config,
         };
         write
-            .send(Message::Text(
+            .send(Message::text(
                 serde_json::to_string(&start).expect("serializable"),
             ))
             .await
@@ -145,7 +145,7 @@ async fn pump(
                 Some(Outbound::Audio(chunk)) => {
                     audio_frames += 1;
                     audio_bytes += chunk.data.len() as u64;
-                    if write.send(Message::Binary(chunk.data.to_vec())).await.is_err() {
+                    if write.send(Message::binary(chunk.data)).await.is_err() {
                         myna_core::dbg_log!("ws", "audio send failed after {audio_frames} frames");
                         break;
                     }
@@ -157,7 +157,7 @@ async fn pump(
                     );
                     let frame = serde_json::to_string(&ClientControl::SessionFinish)
                         .expect("serializable");
-                    if write.send(Message::Text(frame)).await.is_err() {
+                    if write.send(Message::text(frame)).await.is_err() {
                         break;
                     }
                 }

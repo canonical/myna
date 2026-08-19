@@ -20,9 +20,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytes = "1"
 base64 = "0.22"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "io-util", "io-std", "time", "process"] }
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.29"
 futures-util = { version = "0.3", features = ["sink"] }
 async-trait = "0.1"
 # Native PipeWire bindings (feature 002-native-pipewire-backend). Binds system

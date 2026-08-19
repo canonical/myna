@@ -134,7 +134,7 @@ impl BackendClient for WsUnixIe115Backend {
         if has_config || needs_shape_sniff {
             let frame = session_update_frame(&config);
             write
-                .send(Message::Text(frame.to_string()))
+                .send(Message::text(frame.to_string()))
                 .await
                 .map_err(|e| BackendError::Transport(e.to_string()))?;
         }
@@ -292,9 +292,9 @@ async fn pump(
             outbound = out_rx.recv(), if outbound_open => match outbound {
                 Some(Outbound::Audio(chunk)) => {
                     let msg = if base64_audio {
-                        Message::Text(append_frame(&chunk))
+                        Message::text(append_frame(&chunk))
                     } else {
-                        Message::Binary(chunk.data.to_vec())
+                        Message::binary(chunk.data)
                     };
                     if write.send(msg).await.is_err() {
                         break;
@@ -302,7 +302,7 @@ async fn pump(
                 }
                 Some(Outbound::Finish) => {
                     let frame = json!({ "type": INPUT_AUDIO_COMMIT }).to_string();
-                    if write.send(Message::Text(frame)).await.is_err() {
+                    if write.send(Message::text(frame)).await.is_err() {
                         break;
                     }
                 }
