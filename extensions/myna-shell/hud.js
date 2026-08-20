@@ -256,12 +256,6 @@ const WaveRibbonActor = GObject.registerClass(
 /** HudView — implements the view.js IndicatorView interface. */
 export class HudView {
     constructor() {
-        this._container = null;
-        this._box = null;
-        this._icon = null;
-        this._label = null;
-        this._ribbon = null;
-        this._dismissButton = null;
         this._holdTimer = 0;
         this._lastRms = 0;
         this._lastPeak = 0;
@@ -270,10 +264,17 @@ export class HudView {
         this._colorClass = null;
         // The single held-notice slot (R15): {severity, statusText} or null.
         this._held = null;
+        // Built here rather than on the first show(): actor construction, a
+        // Gio.Settings open and a full CSS resolve are not work to do in the
+        // frame the pill is trying to appear in. osdWindow.js builds its OSD
+        // at startup for the same reason. destroy() nulls these, and every
+        // entry point tolerates that.
+        this._buildActor();
     }
 
     show(descriptor) {
-        this._ensureActor();
+        if (this._box === null)
+            return;
         this._appear();
         this._applyDescriptor(descriptor);
     }
@@ -394,12 +395,9 @@ export class HudView {
         this._dismiss();
     }
 
-    // Runs at most once per enable(): the pill is reused for every session,
-    // so presenting it costs a fade and nothing else.
-    _ensureActor() {
-        if (this._box !== null)
-            return;
-
+    // Runs once per enable(): the pill is reused for every session, so
+    // presenting it costs a fade and nothing else.
+    _buildActor() {
         this._icon = new St.Icon({
             style_class: 'myna-hud-icon',
             icon_name: 'audio-input-microphone-symbolic',
@@ -481,8 +479,7 @@ export class HudView {
     }
 
     // A no-op when already on screen, so a burst of state changes never
-    // restarts the entrance and a show() mid-fade-out reverses that fade on
-    // the same actor instead of stacking a second pill over it.
+    // restarts the entrance.
     _appear() {
         if (this._shown || this._box === null)
             return;
@@ -492,15 +489,28 @@ export class HudView {
         // and an overlay appearing forces it in and out of that path.
         this._setUnredirectDisabled(true);
 
-        this._ribbon.reset(APPEAR_MS);
-        this._ribbon.setLevel(this._lastRms, this._lastPeak);
+        // Still on screen means a dismiss fade is in flight: pick the pill up
+        // from wherever that fade left it and carry it back to full, rather
+        // than re-running an entrance over an actor the user can still see.
+        // Re-seeding the scale would shrink it, and resetting the ribbon
+        // would collapse a live wave flat and re-unfold it.
+        const reversing = this._box.visible;
 
         this._box.remove_all_transitions();
-        this._box.show();
+        if (!reversing) {
+            this._ribbon.reset(APPEAR_MS);
+            this._ribbon.setLevel(this._lastRms, this._lastPeak);
+            this._box.set_scale(0.9, 0.9);
+            this._box.show();
+        }
         this._ribbon.startAnimation();
-        this._box.set_scale(0.9, 0.9);
+        // Clutter truncates rather than clamps the animated opacity, so only
+        // scale (a double) may overshoot.
+        this._box.ease_property('opacity', 255, {
+            duration: APPEAR_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
         this._box.ease({
-            opacity: 255,
             scale_x: 1.0,
             scale_y: 1.0,
             duration: APPEAR_MS,

@@ -40,6 +40,12 @@ jobs:
       - name: Python tests (pytest)
         run: make test-server
 
+      # GNOME Shell extension: the pure GJS contract suites, then the HUD's
+      # presentation driven against a real headless Shell. The latter skips
+      # cleanly where no Shell can run.
+      - name: Extension tests (gjs)
+        run: make test-extension
+
   # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
   # violations. The battery is defined once, by `check` in the Makefile, and
   # invoked here - listing the gates again in this file is what let the snap

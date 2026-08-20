@@ -73,17 +73,28 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   **not part of the shipped bundle** (see `dev-lab/README.md`).
 - `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
   everything above except `hud.js` itself.
+- `test/entrance-visual.sh` + `test/visual-driver/` - `hud.js`'s
+  *presentation*, driven against a real headless GNOME Shell. **Not part of
+  the shipped bundle.**
 
 ## Compositor behaviour
 
 `hud.js` runs on GNOME Shell's single main loop, the loop that composites
 every frame, so it follows the same rules `ui/osdWindow.js` does:
 
-- **The actor tree is built once** and reused for every session. `show()`/
-  `hide()` only fade opacity and flip `visible`. Rebuilding it per session
-  made the first frame of each pill pay for actor construction, a GSettings
-  open and a full CSS resolve, and let a `show()` landing inside the 200 ms
-  fade-out stack a *second* pill over the one still fading.
+- **The actor tree is built when the view is constructed**, at `enable()`,
+  and reused for every session. `show()`/`hide()` only fade opacity and flip
+  `visible`, and a `show()` landing inside the 200 ms fade-out picks the pill
+  up where that fade left it rather than re-running the entrance over an
+  actor the user can still see. Building it on the first `show()` instead put
+  actor construction, a GSettings open and a full CSS resolve in the very
+  frame the pill was trying to appear in; `ui/osdWindow.js` builds its OSD at
+  startup for the same reason.
+- **No overshooting easing mode on `opacity`.** Clutter's animatable path
+  feeds the interpolated value through `g_value_get_uint` into a `guint8`
+  setter, which truncates rather than clamps - so an `EASE_OUT_BACK` peak of
+  ~280 wraps to 24 and blanks the actor. Scale is a double and overshoots
+  safely, so the entrance eases the two on separate modes.
 - **The ribbon animates off the actor's frame clock** (a `Clutter.Timeline`
   bound to the actor), not a `GLib.timeout_add`. A fixed 24 Hz timer against
   a 60 Hz output beats against vsync and reads as juddering motion. The
@@ -102,36 +113,43 @@ every frame, so it follows the same rules `ui/osdWindow.js` does:
   The `new_sync` it replaced blocked the whole desktop on the daemon's
   initial `GetAll`, at exactly the moment the pill was about to appear.
 
-Verified against a real GNOME Shell 51 rather than asserted. A headless
-instance on a private bus, driven by a stand-in `org.myna.Dictation`
-publisher at the real 20 Hz pump cadence:
-
-```sh
-dbus-daemon --session --print-address --fork > bus.addr
-DBUS_SESSION_BUS_ADDRESS=$(cat bus.addr) \
-XDG_DATA_DIRS=/path/to/isolated/copy:/usr/share \
-  gnome-shell --headless --virtual-monitor 1280x800 --wayland-display=test
-```
-
-One pill actor and one construction across a burst of idle/recording flips
-landing inside the fade-out, a constant 24 px bottom gap as the pill's height
-changes, ~60 fps while shown and 0 while hidden, and no leaked chrome across
-repeated disable/enable.
+Verified against a real GNOME Shell rather than asserted, and the parts of
+that which are mechanical now run as `test/entrance-visual.sh` (below).
 
 ## Testing
 
 ```sh
 cd extensions/myna-shell
-for f in test/*.test.js; do gjs -m "$f"; done
+for f in test/*.test.js; do gjs -m "$f"; done   # pure logic, no Shell
+test/entrance-visual.sh                         # presentation, real Shell
 ```
+
+Both run in CI as `make test-extension`.
 
 Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
 `hud-logic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
 real headless-Cairo smoke check of `ribbon-paint.js` (an `ImageSurface`
-needs no display server). The actual widget tree in `hud.js` cannot be
-tested this way — GNOME Shell's Clutter fork aborts if you construct an
-actor outside a running compositor — so its rendering is manual-acceptance
-only; see `specs/004-gnome-shell-indicator/quickstart.md`.
+needs no display server). The widget tree in `hud.js` cannot be reached that
+way: GNOME Shell's Clutter fork aborts if you construct an actor outside a
+running compositor.
+
+So `test/entrance-visual.sh` brings a compositor. It stands up a headless
+GNOME Shell on a private bus with a virtual monitor, loads a driver
+(`test/visual-driver/`) that builds the real `HudView` out of the working
+tree, and samples the pill's opacity, visibility and scale once per presented
+frame. What it asserts is *presentation*: that the pill is built before it is
+needed, that its entrance never blanks, and that a session restarting inside
+the previous one's fade-out is picked up rather than re-entered. Everything
+private, torn down on exit, and safe to run on a desktop - it never touches
+the caller's session or dconf.
+
+It skips (exit 77) rather than failing where no Shell can run, or where the
+Shell is too starved to present enough frames to judge - an animation seen at
+three frames could hide a one-frame blank between them, and a guess there is
+worse than an honest skip.
+
+Geometry and colour stay manual-acceptance; see
+`specs/004-gnome-shell-indicator/quickstart.md`.
 
 ## Out of scope
 

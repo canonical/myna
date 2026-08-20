@@ -138,6 +138,10 @@ test-gated: ## Rust env-gated hardware suites, services stood up (workshop: test
 test-server: ## Python test suite (workshop: py-test)
 	workshop run myna py-test
 
+.PHONY: test-extension
+test-extension: ## GNOME Shell extension suites, incl. the headless-Shell presentation check (workshop: gjs-test)
+	workshop run myna gjs-test
+
 .PHONY: lint-client
 lint-client: ## Rust lints as errors (workshop: lint)
 	workshop run myna lint
