@@ -8,13 +8,30 @@ all report paths are repo-relative and gitignored.
 
 ## `cov` — Rust workspace coverage (FR-001)
 
-- **Runs**: `cargo llvm-cov` over `client/` full workspace test suite.
+- **Runs**: `cargo llvm-cov` over `client/` full workspace test suite, then the
+  env-gated hardware suites through `dev/gated-tests.sh`, and reports the two
+  merged.
   Honors existing gates (`MYNA_PIPEWIRE_TESTS`, desktop-session gates) — closed
-  gates skip cleanly, open gates contribute hits (FR-003).
+  gates skip cleanly, open gates contribute hits (FR-003). The gates are no
+  longer left closed by default: `gated-tests.sh` stands the services up (a
+  private PipeWire graph with a virtual mic, a private D-Bus session with its
+  own IBus daemon) and opens each gate only once its service answers, so a
+  runner without one falls back to the clean skip rather than a failure.
 - **Outputs**: `client/target/coverage/html/index.html` (browsable),
   `client/target/coverage/rust.lcov`,
   `client/target/coverage/rust-tests.cobertura.xml`.
 - **Exit**: non-zero if any test fails or report generation fails.
+
+## `test-gated` (env-gated hardware suites)
+
+- **Runs**: `dev/gated-tests.sh cargo test` over `pipewire_hw`, `ibus_hw` and
+  `dbus_hw`. The same suites `test` runs hermetically, with their services
+  present. `ibus_hw` drives the session-global input engine, so it runs
+  serially and inside a private session bus, never against the caller's
+  desktop.
+- **Outputs**: test results only; `cov` is what turns these runs into coverage.
+- **Exit**: non-zero if any test fails. A service that does not come up leaves
+  its gate closed and its suite skipping, which is a pass.
 
 ## `py-cov` — Python suite coverage (FR-002)
 

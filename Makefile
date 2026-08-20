@@ -130,6 +130,10 @@ bench-long-%: ## Run the long-form clip against an already-running <snap> (bench
 test-client: ## Rust test suite (workshop: test)
 	workshop run myna test
 
+.PHONY: test-gated
+test-gated: ## Rust env-gated hardware suites, services stood up (workshop: test-gated)
+	workshop run myna test-gated
+
 .PHONY: test-server
 test-server: ## Python test suite (workshop: py-test)
 	workshop run myna py-test

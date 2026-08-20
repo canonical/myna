@@ -57,6 +57,16 @@ actions:
     # fail) when it is absent, so sync first or they silently stop testing.
     (cd /project/server && uv sync -q)
     cd /project/client && cargo test --workspace "$@"
+  # The env-gated hardware suites, with their services stood up (features
+  # 002/003). `test` above stays hermetic; this is the same suites with the
+  # gates on, and it is what `cov` folds in.
+  test-gated: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client
+    /project/dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
+    /project/dev/gated-tests.sh cargo test \
+      -p myna-desktop --test ibus_hw --test dbus_hw -- --test-threads=1
+
   # Rust lints as errors.
   lint: |
     cd /project/client && cargo clippy --workspace --all-targets -- -D warnings
@@ -83,7 +93,19 @@ actions:
     cd /project/client
     mkdir -p target/coverage
     cargo llvm-cov clean --workspace
-    cargo llvm-cov --workspace --cobertura --output-path target/coverage/rust-tests.cobertura.xml
+    cargo llvm-cov --workspace --no-report
+    # The env-gated hardware suites (features 002/003) on top of the hermetic
+    # run. Their services are already in the SDKs, so leaving the gates unset
+    # only meant native.rs / devices.rs / ibus.rs never showed the coverage
+    # their own tests produce. gated-tests.sh stands each service up in a
+    # private instance and leaves a gate unset when its service did not come
+    # up, so a runner without one skips exactly as it does offline. ibus_hw
+    # drives the session-global input engine and must run serially.
+    /project/dev/gated-tests.sh cargo llvm-cov --no-report \
+      -p myna-audio --test pipewire_hw
+    /project/dev/gated-tests.sh cargo llvm-cov --no-report \
+      -p myna-desktop --test ibus_hw --test dbus_hw -- --test-threads=1
+    cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml
     cargo llvm-cov report --lcov --output-path target/coverage/rust.lcov
     cargo llvm-cov report --html --output-dir target/coverage/html
     cargo llvm-cov report --summary-only
