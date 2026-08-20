@@ -62,9 +62,9 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   reused unchanged by `ribbon.js`.
 - `ribbon.js` — pure wave-ribbon strand/control-point generation and the 5
   lifecycle-phase timing functions (unfold/flow/relax/morph/complete).
-- `accent.js` — pure accent-color/reduced-motion resolution from GNOME's
-  `org.gnome.desktop.interface` GSettings, plus the live `SystemPreferences`
-  reader.
+- `accent.js` — legacy pure palette helper retained for the standalone
+  `dev-lab/`; the shipped Shell HUD uses native `St.Settings` and CSS accent
+  colours instead.
 - `ribbon-paint.js` — the shared Cairo drawing function, toolkit-agnostic
   (no Shell/Gtk import) — used unmodified by both `hud.js` and `dev-lab/`.
 - `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
@@ -110,11 +110,10 @@ every frame, so it follows the same rules `ui/osdWindow.js` does:
 - **`global.compositor.disable_unredirect()` while the pill is on screen**,
   balanced on hide. Over a fullscreen window mutter may scan the window out
   directly, and an overlay appearing forces it in and out of that path.
-- **Nothing per-frame that isn't drawing.** The accent palette and
-  reduced-motion flag are cached in `accent.js` and refreshed from
-  `changed::`, and `_applyDescriptor` only writes an icon name, label or
-  style class when it actually changed (each write invalidates St's theme
-  node).
+- **Nothing per-frame that isn't drawing.** `St.Settings` invalidates the
+  native CSS accent colours and reduced-motion state only when they change,
+  and `_applyDescriptor` only writes an icon name, label or style class when
+  it actually changed (each write invalidates St's theme node).
 - **No synchronous D-Bus.** `dbus.js` builds its proxy with
   `Gio.DBusProxy.new`, cancelling an in-flight construction on `disable()`.
   The `new_sync` it replaced blocked the whole desktop on the daemon's

@@ -42,6 +42,13 @@
 }
 
 .myna-hud-ribbon {
+    /* Resolve from St's native palette rather than mapping GSettings accent
+     * names ourselves. This includes downstream accent choices such as
+     * Ubuntu's extra colour. hud.js reads these resolved colours for Cairo. */
+    -myna-ribbon-main-color: -st-accent-color;
+    -myna-ribbon-highlight-color: st-lighten(-st-accent-color, 28%);
+    -myna-ribbon-shadow-color: st-darken(-st-accent-color, 30%);
+
     /* min-height/min-width are a hard FLOOR only — the actor's actual width
      * comes from hud.js's `x_expand`/`x_align: FILL`, so it stretches to
      * fill whatever space its parent (`.myna-hud-content`) allocates,

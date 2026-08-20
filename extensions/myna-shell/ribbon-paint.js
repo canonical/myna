@@ -77,8 +77,15 @@ export function computeSafeScale() {
     return Math.min(1, (0.5 * OVERFLOW_BOOST) / worstCaseExtentFraction);
 }
 
-function hexToRgbFloat(hex) {
-    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+function colorToRgbFloat(color) {
+    if (typeof color !== 'string') {
+        return {
+            r: color.red / 255,
+            g: color.green / 255,
+            b: color.blue / 255,
+        };
+    }
+    const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
     if (!m)
         return {r: 1, g: 1, b: 1};
     const n = parseInt(m[1], 16);
@@ -322,8 +329,10 @@ function paintWisp(cr, voicePixelPoints, width, elapsedMs, rgb, baseAlpha, thick
  * @param {number} width
  * @param {number} height
  * @param {object} model - `ribbon.js`'s `computeRibbonModel` output.
- * @param {{main: string, highlight: string, darkerComplement: string,
- *     translucentAlpha: number}} palette - from `accent.js`.
+ * @param {{main: (string|object), highlight: (string|object),
+ *     darkerComplement: (string|object), translucentAlpha: number}} palette -
+ *     colors resolved by the caller. The Shell passes native CSS colours;
+ *     strings keep this shared painter usable by the standalone demo/tests.
  */
 export function paintRibbon(cr, width, height, model, palette) {
     if (width <= 0 || height <= 0)
@@ -339,12 +348,12 @@ export function paintRibbon(cr, width, height, model, palette) {
     const safeScale = computeSafeScale();
     const verticalScale = (height / 2) * BASE_CENTRELINE_FRACTION * safeScale;
 
-    const mainRgb = tint === 'amber' ? hexToRgbFloat(AMBER_MAIN) : hexToRgbFloat(palette.main);
-    const highlightRgb = tint === 'amber' ? hexToRgbFloat(AMBER_HIGHLIGHT) : hexToRgbFloat(palette.highlight);
+    const mainRgb = tint === 'amber' ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.main);
+    const highlightRgb = tint === 'amber' ? colorToRgbFloat(AMBER_HIGHLIGHT) : colorToRgbFloat(palette.highlight);
     // The darker/complement tone reads as a warm, smouldering-red shadow
     // undertone, not a bold second hue — blended most of the way toward
     // the main warm colour and then darkened toward the background.
-    const complementRgb = tint === 'amber' ? hexToRgbFloat(AMBER_MAIN) : hexToRgbFloat(palette.darkerComplement);
+    const complementRgb = tint === 'amber' ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.darkerComplement);
     const shadowRgb = darkenRgb(mixRgb(complementRgb, mainRgb, 0.6), 0.45);
 
     // How much audio is actually coming through right now, derived directly

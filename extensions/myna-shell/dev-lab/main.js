@@ -129,7 +129,7 @@ app.connect('activate', () => {
     });
     service.enable();
 
-    // ── Accent-color / reduced-motion (same SystemPreferences as hud.js) ──
+    // ── Accent-color / reduced-motion for the standalone GTK demo ──────────
     const prefs = new SystemPreferences();
     prefs.enable();
     let manualReducedMotion = null; // null = follow the system; else override

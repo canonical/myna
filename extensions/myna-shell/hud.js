@@ -30,7 +30,6 @@ import St from 'gi://St';
 import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {SystemPreferences} from './accent.js';
 import {
     iconForSeverity,
     ribbonPhaseForStateKey,
@@ -67,9 +66,9 @@ const FRAME_TIMELINE_MS = 1000;
 const MAX_FRAME_DT_MS = 100;
 const FIRST_FRAME_DT_MS = 1000 / 60;
 
-// A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, the
-// palette in accent.js, the drawing in ribbon-paint.js (shared with
-// dev-lab); this actor wires them together and owns the frame timeline.
+// A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, CSS
+// resolves the Shell's native colours, and ribbon-paint.js draws them (also
+// shared with dev-lab); this actor wires them together and owns the timeline.
 const WaveRibbonActor = GObject.registerClass(
     class WaveRibbonActor extends St.DrawingArea {
         _init() {
@@ -93,14 +92,18 @@ const WaveRibbonActor = GObject.registerClass(
             this._startedAt = 0;
             this._phaseStartedAt = 0;
 
-            this._prefs = new SystemPreferences({
-                onAccentChanged: () => this.queue_repaint(),
-                onMotionChanged: () => {
+            // St.Settings owns the desktop's accent palette and accessibility
+            // preferences. CSS resolves the actual colours, including any
+            // distribution-specific accent choices, from that shared state.
+            this._settings = St.Settings.get();
+            this._settingsSignalIds = [
+                this._settings.connect('notify::accent-color',
+                    () => this.queue_repaint()),
+                this._settings.connect('notify::reduced-motion', () => {
                     this._syncFrameTimeline();
                     this.queue_repaint();
-                },
-            });
-            this._prefs.enable();
+                }),
+            ];
 
             // Bound to this actor, so it ticks on the actor's frame clock:
             // one callback per presented frame, vblank-aligned.
@@ -160,7 +163,7 @@ const WaveRibbonActor = GObject.registerClass(
             // Under reduced motion the model is a static flat line, so a
             // per-frame repaint would redraw an identical picture forever.
             const shouldRun =
-                this._animating && this.mapped && !this._prefs.reducedMotion;
+                this._animating && this.mapped && !this._settings.reducedMotion;
             if (shouldRun && !this._frameTimeline.is_playing())
                 this._frameTimeline.start();
             else if (!shouldRun && this._frameTimeline.is_playing())
@@ -231,16 +234,35 @@ const WaveRibbonActor = GObject.registerClass(
                 elapsedMs: (now - this._startedAt) / 1000,
                 phase: this._phase,
                 phaseElapsedMs: (now - this._phaseStartedAt) / 1000,
-                reducedMotion: this._prefs.reducedMotion,
+                reducedMotion: this._settings.reducedMotion,
                 severityTint: this._severityTint,
             });
 
             const cr = this.get_context();
             try {
-                paintRibbon(cr, w, h, model, this._prefs.accentPalette);
+                const palette = this._getThemePalette();
+                if (palette !== null)
+                    paintRibbon(cr, w, h, model, palette);
             } finally {
                 cr.$dispose();
             }
+        }
+
+        _getThemePalette() {
+            const themeNode = this.get_theme_node();
+            const colors = [
+                '-myna-ribbon-main-color',
+                '-myna-ribbon-highlight-color',
+                '-myna-ribbon-shadow-color',
+            ].map(name => themeNode.lookup_color(name, false));
+            if (colors.some(([found]) => !found))
+                return null;
+            return {
+                main: colors[0][1],
+                highlight: colors[1][1],
+                darkerComplement: colors[2][1],
+                translucentAlpha: 0.35,
+            };
         }
 
         _onDestroy() {
@@ -249,7 +271,10 @@ const WaveRibbonActor = GObject.registerClass(
                 this._frameTimeline.set_actor(null);
                 this._frameTimeline = null;
             }
-            this._prefs.disable();
+            for (const id of this._settingsSignalIds)
+                this._settings.disconnect(id);
+            this._settingsSignalIds = [];
+            this._settings = null;
         }
     });
 
