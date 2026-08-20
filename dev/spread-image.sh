@@ -10,11 +10,11 @@ set -euo pipefail
 
 IMG="$HOME/.spread/qemu/ubuntu-24.04-64.img"
 TMP="$IMG.tmp"
-if [ -f "$IMG" ]; then
-    echo "spread image already primed: $IMG"
-    exit 0
-fi
-
+# Tools first, image second. A primed image says nothing about whether the
+# emulator is installed, and spread needs qemu-system-x86_64 on PATH to launch
+# the VM even when it has nothing left to build. Returning early on a primed
+# image before this check is why a *cache hit* failed CI with "qemu-system-x86_64:
+# executable file not found" while cache misses passed.
 missing=0
 for cmd in qemu-system-x86_64 cloud-localds sshpass wget openssl; do
     command -v "$cmd" >/dev/null || missing=1
@@ -22,6 +22,11 @@ done
 if [ "$missing" -eq 1 ]; then
     sudo apt-get update
     sudo apt-get install -y qemu-system-x86 cloud-image-utils sshpass wget openssl
+fi
+
+if [ -f "$IMG" ]; then
+    echo "spread image already primed: $IMG"
+    exit 0
 fi
 
 mkdir -p "$(dirname "$IMG")"
