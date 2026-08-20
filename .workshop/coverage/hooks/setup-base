@@ -2,8 +2,8 @@
 # setup-base — runs as root at SDK install. Installs the pinned quality-gate
 # toolchain (feature 006) into /usr/local/cargo-bin (on PATH via the profile
 # drop-in below): prebuilt binaries via cargo-binstall, no per-user cargo
-# builds. Also shellcheck for the shell-lint gate; actionlint is fetched
-# prebuilt like the cargo tools.
+# builds. shellcheck and actionlint are fetched prebuilt and pinned the same
+# way, so every tool this gate battery runs has its version stated here.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
@@ -11,7 +11,23 @@ BIN=/usr/local/cargo-bin
 mkdir -p "$BIN"
 
 apt-get update
-apt-get install --yes --no-install-recommends shellcheck curl ca-certificates
+apt-get install --yes --no-install-recommends curl ca-certificates xz-utils
+
+# ShellCheck for the shell-lint gate, pinned like every other tool here. It
+# used to come from apt, which left the gate's version as whatever the base
+# image happened to ship, stated nowhere in the repo. That is a real drift:
+# diagnostics move between releases, and 0.11 reports a trap-only function as
+# SC2329 where 0.9 reports its body as SC2317, so a script can lint clean
+# against a contributor's distro tool and still fail the gate. Pinning is what
+# makes `workshop run myna shell-lint` the single answer. Bumping the version
+# is a deliberate change, with the tree re-linted against it.
+#
+# (Capitalised above on purpose: a comment line opening with the lowercase
+# name is read as a directive and fails to parse.)
+SHELLCHECK_VERSION=0.9.0
+curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+  | tar -xJ -C "$BIN" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+chmod +x "$BIN/shellcheck"
 
 # cargo-binstall (bootstrap — its installer drops the binary in
 # $CARGO_HOME/bin), then pinned prebuilt tool binaries.
