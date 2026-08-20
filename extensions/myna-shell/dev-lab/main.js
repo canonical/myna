@@ -86,8 +86,12 @@ app.connect('activate', () => {
     // 'morph'/'complete' — otherwise the ribbon stays pinned at its
     // post-completion amplitude forever and never reacts to a second
     // session's real audio (bug found via live testing, 2026-07-30).
+    let unfoldTimer = 0;
     function armUnfoldAutoAdvance() {
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNFOLD_MS, () => {
+        if (unfoldTimer !== 0)
+            GLib.source_remove(unfoldTimer);
+        unfoldTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNFOLD_MS, () => {
+            unfoldTimer = 0;
             if (model.phase === 'unfold')
                 setPhase('flow');
             return GLib.SOURCE_REMOVE;
@@ -322,6 +326,10 @@ app.connect('activate', () => {
     win.set_content(toastOverlay);
 
     win.connect('close-request', () => {
+        if (unfoldTimer !== 0) {
+            GLib.source_remove(unfoldTimer);
+            unfoldTimer = 0;
+        }
         service.disable();
         prefs.disable();
         return false;
