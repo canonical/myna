@@ -22,11 +22,26 @@ if [ ! -x "$BINSTALL_HOME/bin/cargo-binstall" ]; then
 fi
 
 export CARGO_HOME="$BINSTALL_HOME"
-"$BINSTALL_HOME/bin/cargo-binstall" --no-confirm --no-symlinks --install-path "$BIN" \
+
+# --disable-strategies compile: all four publish prebuilt linux-gnu tarballs,
+# so a miss means the *fetch* hiccupped, not that the binary is unavailable.
+# Left enabled, binstall answers a hiccup by falling back to `cargo install`,
+# which (a) cannot work here - this hook runs as root, which has no cargo, by
+# design - and (b) rejects --install-path, so the whole batch dies on
+# "cargo-install does not support `--install-path`" with nothing about the
+# fetch that actually failed. Fail on the fetch instead, and retry it.
+binstall_attempt=0
+until "$BINSTALL_HOME/bin/cargo-binstall" --no-confirm --no-symlinks \
+  --disable-strategies compile --install-path "$BIN" \
   cargo-llvm-cov@0.6.21 \
   cargo-deny@0.20.2 \
   cargo-machete@0.9.1 \
-  cargo-audit@0.22.1
+  cargo-audit@0.22.1; do
+  binstall_attempt=$((binstall_attempt + 1))
+  [ "$binstall_attempt" -lt 3 ] || { echo "cargo-binstall failed 3 times" >&2; exit 1; }
+  echo "cargo-binstall attempt $binstall_attempt failed; retrying" >&2
+  sleep $((binstall_attempt * 5))
+done
 
 # actionlint (workflow-lint gate), pinned.
 ACTIONLINT_VERSION=1.7.7
@@ -41,4 +56,5 @@ for tool in cargo-llvm-cov cargo-deny cargo-machete cargo-audit; do
 done
 
 # On PATH for login shells (workshop run/exec).
+# shellcheck disable=SC2016  # $PATH must stay literal in the profile drop-in
 printf 'export PATH="%s:$PATH"\n' "$BIN" > /etc/profile.d/zz-myna-coverage.sh
