@@ -18,10 +18,12 @@ Usage: dev/patch_cov.py [--base <ref>] [--fail-under <pct>]
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 from coverage_lib import REPO_ROOT, all_lines, covered_lines, parse_cobertura
@@ -45,6 +47,7 @@ EXCLUDE_PREFIXES = (
 )
 
 FLOOR = 5  # coverable-line floor: smaller diffs pass unconditionally
+WORST_FILES = 15  # failure report: worst files listed, rest summarised
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -161,13 +164,22 @@ def main() -> int:
     elif verdict_ok:
         lines.append("verdict: PASS")
     else:
-        lines.append("verdict: FAIL — uncovered changed lines:")
-        by_file: dict[str, list[int]] = {}
-        for f, n in missed:
-            by_file.setdefault(f, []).append(n)
-        for f in sorted(by_file):
-            for n in by_file[f]:
-                lines.append(f"  {f}:{n}")
+        # Per file, worst first — not per line. A line-by-line dump of a large
+        # diff runs to thousands of lines, which buries the verdict and tells
+        # you nothing the HTML report does not show better.
+        missed_per_file = Counter(f for f, _ in missed)
+        changed_per_file = Counter(f for f, _ in coverable)
+        need = math.ceil(args.fail_under / 100.0 * total) - len(hit)
+        lines.append(
+            f"verdict: FAIL - {len(missed)} uncovered changed lines in "
+            f"{len(missed_per_file)} files; "
+            f"{need} more covered would reach {args.fail_under:.0f}%"
+        )
+        ranked = sorted(missed_per_file.items(), key=lambda kv: (-kv[1], kv[0]))
+        for f, n_missed in ranked[:WORST_FILES]:
+            lines.append(f"  {n_missed:>5} uncovered / {changed_per_file[f]:<5} changed  {f}")
+        if len(ranked) > WORST_FILES:
+            lines.append(f"  ... and {len(ranked) - WORST_FILES} more files (see the report)")
     lines.append(f"report: {html}")
     print("\n".join(lines))
     return 0 if verdict_ok else 2
