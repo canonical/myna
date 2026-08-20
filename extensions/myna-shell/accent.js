@@ -198,10 +198,8 @@ export function resolveReducedMotion(enableAnimations) {
 
 /**
  * Schema-existence-guarded lookup, never throwing even when the schema is
- * entirely absent (a pre-GNOME-47 shell) — the safe pattern research R18
- * establishes. Key existence is checked per key by the caller, so a shell
- * that has `enable-animations` but not `accent-color` still gets live
- * reduced-motion tracking (it previously lost both).
+ * absent (R18). Key existence is reported per key, so a shell with
+ * `enable-animations` but no `accent-color` still tracks reduced motion.
  *
  * @param {string} schemaId
  * @param {string[]} keys - keys to probe; those absent are reported so the
@@ -230,12 +228,9 @@ function lookupGuardedSettings(schemaId, keys) {
  * is stub-testable the same way, even though the shipped contract tests
  * (T052) exercise the pure resolvers directly rather than this class.
  *
- * The resolved palette and reduced-motion flag are CACHED and refreshed
- * only from `changed::` (2026-08-20 performance pass). They are read once
- * per repaint frame by `hud.js`'s ribbon, and a GSettings read plus the
- * hex→HSL→hex palette derivation on every frame is pure waste on the
- * compositor's main loop — these values change at most a few times per
- * session, never per frame.
+ * Both values are cached and refreshed only from `changed::`. hud.js reads
+ * them once per repaint frame, and they change at most a few times a
+ * session.
  */
 export class SystemPreferences {
     /**

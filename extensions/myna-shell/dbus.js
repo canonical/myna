@@ -22,6 +22,11 @@
 //
 // The Gio seams (_watchName/_unwatchName/_createProxy) are injectable so the
 // lifecycle is contract-testable headless against a stub (test/lifecycle.test.js).
+//
+// The proxy is built asynchronously. This runs on the compositor's main
+// loop, so a sync round trip stalls the whole desktop until the daemon
+// answers; `_createProxy` therefore takes `(cancellable, callback)` rather
+// than returning a proxy, and `disable()` cancels one in flight.
 
 import Gio from 'gi://Gio';
 
@@ -43,8 +48,7 @@ export class DictationService {
      *     `Gio.bus_unwatch_name`).
      * @param {function} [callbacks._createProxy] - test seam, called as
      *     `(cancellable, callback)`; must invoke `callback(proxy|null)` when
-     *     the proxy is ready (default: an async `Gio.DBusProxy` for the
-     *     interface — never a synchronous one, see the header).
+     *     the proxy is ready.
      */
     constructor({
         onStateChanged = null,
@@ -145,8 +149,7 @@ export class DictationService {
             this._available = true;
             this._onAvailabilityChanged(true);
             // Reflect the current State so a mid-session daemon start shows
-            // the right treatment immediately (X8). The proxy's initial
-            // GetAll has already populated the cache.
+            // the right treatment immediately (X8).
             this._reflectCached();
         });
     }

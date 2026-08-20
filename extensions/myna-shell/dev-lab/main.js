@@ -19,11 +19,10 @@
 // scope here); this tool is a passive dictation target plus a manual-
 // override tuning harness layered on top of the live connection.
 
-imports.gi.versions.Gtk = '4.0';
-imports.gi.versions.Adw = '1';
-
-import Adw from 'gi://Adw';
-import Gtk from 'gi://Gtk';
+// Versions go in the import specifier, not `imports.gi.versions`: ESM
+// imports are hoisted, so an assignment here runs after the modules load.
+import Adw from 'gi://Adw?version=1';
+import Gtk from 'gi://Gtk?version=4.0';
 import GLib from 'gi://GLib';
 
 import {DictationService} from '../dbus.js';

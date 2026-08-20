@@ -50,38 +50,26 @@ import {paintRibbon} from './ribbon-paint.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
-// 2026-07-31: no fixed RIBBON_WIDTH constant — the ribbon expands to fill
-// whatever horizontal space its parent actually allocates (see
-// WaveRibbonActor/contentBox below); a fixed width here was the bug (it
-// visibly stopped partway across the pill on real hardware instead of
-// reaching the right edge). stylesheet.css's `min-width: 160px` is the
-// only remaining width-related constant, and it's a floor, not a target.
+// No RIBBON_WIDTH: the ribbon fills whatever width its parent allocates.
+// stylesheet.css's `min-width` is a floor, not a target.
 const RIBBON_HEIGHT = 32;
 const APPEAR_MS = 180;
 const CLEAR_MS = 200;
 const RECOVERABLE_HOLD_MS = 3500; // matches the prior ERROR_HOLD_MS baseline
 
-// The frame-driver timeline's own duration is irrelevant (it loops forever
-// and nothing reads its progress); it exists only so the actor's frame clock
-// calls us back once per presented frame.
+// The frame driver loops forever and nothing reads its progress, so its
+// duration is arbitrary.
 const FRAME_TIMELINE_MS = 1000;
 
-// Ceiling on the per-frame delta fed to the envelope smoother. Without it,
-// the first frame after the HUD has been hidden for a minute would hand
-// `applyEnvelopeSmoothing` a dt of tens of seconds and snap the envelope
-// straight to its target — a visible pop on the very frame the pill appears.
+// Smoother dt bounds. The ceiling stops a long hidden stretch snapping the
+// envelope to its target on the first frame back; the floor stands in for a
+// missing previous frame, where a dt of 0 would snap for the same reason.
 const MAX_FRAME_DT_MS = 100;
-// The dt to assume for the very first frame after a reset, when there is no
-// previous frame to measure against. A nominal 60 Hz frame; passing 0 would
-// make `applyEnvelopeSmoothing` snap straight to the target instead of easing.
 const FIRST_FRAME_DT_MS = 1000 / 60;
 
-// A Cairo-drawn flowing wave ribbon (2026-07-30, R17) — replaces the prior
-// segmented bar meter entirely. Envelope/strand/phase-timing math lives in
-// ribbon.js, the accent-color/reduced-motion resolution in accent.js, and
-// the actual Cairo drawing in ribbon-paint.js (shared verbatim with the
-// standalone dev-lab tuning tool, R20); this actor only wires them together
-// and owns the frame-clock timeline.
+// A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, the
+// palette in accent.js, the drawing in ribbon-paint.js (shared with
+// dev-lab); this actor wires them together and owns the frame timeline.
 const WaveRibbonActor = GObject.registerClass(
     class WaveRibbonActor extends St.DrawingArea {
         _init() {
@@ -97,11 +85,7 @@ const WaveRibbonActor = GObject.registerClass(
             this._lastRms = 0;
             this._lastPeak = 0;
             this._lastLevelAt = 0;
-            // The SMOOTHED envelope actually driving the wave shape (~300 ms
-            // one-pole low-pass, 2026-07-30 refinement) — distinct from
-            // vumeter.js's arrival-time stale-decay above. Caller-maintained
-            // state, updated once per repaint frame via `applyEnvelopeSmoothing`
-            // so `ribbon.js` itself stays a pure function of its inputs.
+            // Caller-owned smoothing state, so ribbon.js stays pure.
             this._smoothedEnvelope = 0;
             this._lastDrawAt = 0;
             this._severityTint = null;
@@ -109,34 +93,25 @@ const WaveRibbonActor = GObject.registerClass(
             this._startedAt = 0;
             this._phaseStartedAt = 0;
 
-            // The accent palette and reduced-motion flag are cached by
-            // SystemPreferences and refreshed only from `changed::` — reading
-            // GSettings and re-deriving the palette on every repaint (what this
-            // used to do) is pure waste on the compositor's main loop.
             this._prefs = new SystemPreferences({
                 onAccentChanged: () => this.queue_repaint(),
-                onMotionChanged: () => this.queue_repaint(),
+                onMotionChanged: () => {
+                    this._syncFrameTimeline();
+                    this.queue_repaint();
+                },
             });
             this._prefs.enable();
 
-            // The frame driver. Binding the timeline to this actor makes it tick
-            // on the actor's own frame clock: exactly one callback per presented
-            // frame, vsynced, and automatically idle while the actor is unmapped
-            // — unlike the GLib timeout this replaces, which ran at a fixed
-            // 24 Hz out of phase with the display and at a GLib priority that
-            // preempted Clutter's own redraw.
+            // Bound to this actor, so it ticks on the actor's frame clock:
+            // one callback per presented frame, vblank-aligned.
             this._frameTimeline = new Clutter.Timeline({
                 actor: this,
                 duration: FRAME_TIMELINE_MS,
                 repeat_count: -1,
             });
             this._frameTimeline.connect('new-frame', () => this.queue_repaint());
-            // A timeline can only tick once its actor actually has a frame clock,
-            // which it only has while mapped. Gate on `mapped` rather than
-            // assuming show() has already taken effect, so the driver survives
-            // the actor being unmapped and remapped (monitor changes, the
-            // overview, a Shell restart) without anyone having to remember to
-            // restart it.
+            // An actor only has a frame clock while mapped, so gate on that
+            // rather than on anyone remembering to restart the driver.
             this._animating = false;
             this.connect('notify::mapped', () => this._syncFrameTimeline());
 
@@ -146,17 +121,21 @@ const WaveRibbonActor = GObject.registerClass(
         }
 
         /**
-         * Restart the ribbon for a fresh session: back to the brief `unfold`
-         * phase (FR-010a), with the smoothed envelope and frame clocks cleared
-         * so a new session never inherits the tail of the previous one. Called
-         * by HudView when the pill goes from hidden to shown — the actor itself
-         * is no longer rebuilt per session (see this file's header).
+         * Restart for a fresh session: back to `unfold`, state cleared so it
+         * never inherits the tail of the previous one (FR-010a).
+         *
+         * @param {number} [startDelayMs] - hold the unfold at zero progress
+         *     for this long first. The pill's entrance is a 180 ms fade and
+         *     scale, and an unfold running underneath it is both invisible
+         *     (still fading up) and resampled at a changing scale every
+         *     frame. Delaying it by the entrance keeps the ribbon alive on
+         *     its idle line, then unfolds once the pill is settled.
          */
-        reset() {
+        reset(startDelayMs = 0) {
             const now = GLib.get_monotonic_time();
             this._startedAt = now;
             this._phase = 'unfold';
-            this._phaseStartedAt = now;
+            this._phaseStartedAt = now + startDelayMs * 1000;
             this._lastDrawAt = 0;
             this._smoothedEnvelope = 0;
             this._severityTint = null;
@@ -169,16 +148,19 @@ const WaveRibbonActor = GObject.registerClass(
             this._syncFrameTimeline();
         }
 
-        /** Stop driving repaints (hidden HUD ⇒ zero per-frame cost). Idempotent. */
+        /** Stop driving repaints. Idempotent. */
         stopAnimation() {
             this._animating = false;
             this._syncFrameTimeline();
         }
 
         _syncFrameTimeline() {
-            if (this._frameTimeline === null)
+            if (!this._frameTimeline)
                 return;
-            const shouldRun = this._animating && this.mapped;
+            // Under reduced motion the model is a static flat line, so a
+            // per-frame repaint would redraw an identical picture forever.
+            const shouldRun =
+                this._animating && this.mapped && !this._prefs.reducedMotion;
             if (shouldRun && !this._frameTimeline.is_playing())
                 this._frameTimeline.start();
             else if (!shouldRun && this._frameTimeline.is_playing())
@@ -189,16 +171,12 @@ const WaveRibbonActor = GObject.registerClass(
             this._lastRms = rms;
             this._lastPeak = peak;
             this._lastLevelAt = GLib.get_monotonic_time();
-            // No queue_repaint() here: the frame timeline already repaints once
-            // per frame while visible, and levels arrive at ~20 Hz (two
-            // PropertiesChanged signals per pump tick), so asking for extra
-            // repaints only adds work that the frame clock would coalesce away.
+            // No queue_repaint(): the frame timeline already covers it.
         }
 
         /**
-         * Force a lifecycle-phase change (2026-07-30, R17). A no-op if already
-         * in that phase, so redundant calls (e.g. the same state repeating)
-         * never restart an in-flight phase animation.
+         * Force a lifecycle-phase change (R17). A no-op if already in that
+         * phase, so a repeated state never restarts an in-flight animation.
          *
          * @param {('unfold'|'flow'|'relax'|'morph'|'complete')} phase
          */
@@ -211,11 +189,9 @@ const WaveRibbonActor = GObject.registerClass(
         }
 
         /**
-         * Set the severity tint (2026-07-30 design refinement, R17a):
-         * `'recoverable'` keeps the ribbon visible, amber, and gently pulsing
-         * instead of hidden; `'critical'`/`null` render normally (a critical
-         * error hides the whole ribbon at the `HudView` level instead — see
-         * `hud-logic.js`'s `ribbonVisibleForSeverity`).
+         * Set the severity tint (R17a). `'recoverable'` keeps the ribbon
+         * visible, amber and gently pulsing; a critical error hides the whole
+         * ribbon at the HudView level instead.
          *
          * @param {(('recoverable'|'critical')|null)} tint
          */
@@ -233,9 +209,8 @@ const WaveRibbonActor = GObject.registerClass(
 
             const now = GLib.get_monotonic_time();
 
-            // unfold → flow advances on the frame clock rather than on its own
-            // GLib timer: one less source to own, cancel and leak, and the
-            // hand-off lands on a real frame boundary instead of between two.
+            // unfold → flow on the frame clock, so the hand-off lands on a
+            // real frame boundary and owns no timer.
             if (this._phase === 'unfold' &&
                 (now - this._phaseStartedAt) / 1000 >= UNFOLD_MS) {
                 this._phase = 'flow';
@@ -261,8 +236,11 @@ const WaveRibbonActor = GObject.registerClass(
             });
 
             const cr = this.get_context();
-            paintRibbon(cr, w, h, model, this._prefs.accentPalette);
-            cr.$dispose();
+            try {
+                paintRibbon(cr, w, h, model, this._prefs.accentPalette);
+            } finally {
+                cr.$dispose();
+            }
         }
 
         _onDestroy() {
@@ -301,23 +279,17 @@ export class HudView {
     }
 
     setLevel(rms, peak) {
-        // D-Bus levels may arrive before the State transition presents the
-        // HUD. Cache them so the first rendered frame is live instead of
-        // waiting for a numerically-different update.
+        // Levels can arrive before the State transition presents the HUD, so
+        // cache them and the first rendered frame is already live.
         this._lastRms = rms;
         this._lastPeak = peak;
         this._ribbon?.setLevel(rms, peak);
     }
 
     hide() {
-        // A held notice/error is never dismissed by a wire idle transition —
-        // it clears on its own timer (recoverable, FR-007a) or the user's
-        // explicit dismiss (critical, FR-007b) — never by this call. This
-        // includes the daemon-crash/vanished edge case (dbus.js's
-        // `_onVanished` synthesizes an idle transition): a still-functional
-        // dismiss button is not "frozen" (FR-007b's persistence is a
-        // deliberate, later, more specific requirement than the general
-        // crash-clears-to-idle edge case, which predates severity tiers).
+        // A held notice/error outlives a wire idle, including the synthesized
+        // one on daemon crash: it clears on its own timer (FR-007a) or the
+        // user's dismiss (FR-007b), never here.
         if (this._held !== null)
             return;
         this._dismiss();
@@ -354,23 +326,14 @@ export class HudView {
             if (severityAutoDismisses(severity))
                 this._armHoldTimer();
         } else {
-            // Bug (manual test report, 2026-07-31): leaving a held notice for
-            // ANY reason — not just being replaced by a new one — must also
-            // cancel any pending auto-dismiss timer. Without this, a stale
-            // `_holdTimer` armed by an earlier recoverable notice (e.g. "No
-            // speech detected") outlives that notice: if the state moves on
-            // to a plain `recording`/`loading` descriptor before the timer
-            // fires, the orphaned timer still calls `_dismiss()` ~3.5s later
-            // and tears down the pill even though a genuine recording is now
-            // in progress ("pill disappears while listening").
+            // Leaving a held notice for ANY reason cancels its timer. An
+            // orphaned one would tear the pill down mid-recording.
             this._held = null;
             this._cancelHoldTimer();
         }
 
-        // Every assignment below is guarded on an actual change. Writing an
-        // identical icon name, label or style class still invalidates St's
-        // cached theme node and queues a relayout/repaint of the pill, and
-        // these run on every state emission.
+        // Guarded on change: an identical write still invalidates St's theme
+        // node, and this runs on every state emission.
         const iconName = iconForSeverity(severity);
         if (this._icon.icon_name !== iconName)
             this._icon.icon_name = iconName;
@@ -380,9 +343,8 @@ export class HudView {
                 statusText ? `Dictation: ${statusText}` : 'Dictation');
         }
 
-        // Colour-code severity (orange recoverable, red critical) and the
-        // cold-load phase (warm tint) so the treatment reads at a glance, not
-        // just from the label text (2026-07-30 manual-test follow-up).
+        // Colour-code severity and the cold-load phase, so the treatment
+        // reads at a glance and not just from the label text.
         const colorClass = pillColorClass(descriptor);
         if (colorClass !== this._colorClass) {
             for (const cls of PILL_COLOR_CLASSES)
@@ -392,18 +354,14 @@ export class HudView {
             this._colorClass = colorClass;
         }
 
-        // 2026-07-30, R17a: only a critical error hides the ribbon; a
-        // recoverable notice keeps it visible, tinted amber and gently
-        // pulsing instead (hud-logic.js's `ribbonVisibleForSeverity`).
+        // Only a critical error hides the ribbon (R17a).
         const ribbonVisible = ribbonVisibleForSeverity(severity);
         if (this._ribbon.visible !== ribbonVisible)
             this._ribbon.visible = ribbonVisible;
         this._ribbon.setSeverityTint(severity);
 
-        // 2026-07-30, R17: force the ribbon into `morph`/`complete` for the
-        // two transitions that must visibly change its motion; every other
-        // key (recording/loading/...) leaves the ribbon's own internal
-        // unfold→flow phase alone (hud-logic.js's `ribbonPhaseForStateKey`).
+        // Only two transitions force the ribbon's motion to change; every
+        // other key leaves its own unfold→flow phase alone (R17).
         const forcedPhase = ribbonPhaseForStateKey(descriptor.key);
         if (forcedPhase !== null)
             this._ribbon.setPhase(forcedPhase);
@@ -431,16 +389,13 @@ export class HudView {
     }
 
     _onDismissClicked() {
-        // FR-007c/X22: pointer-reactive but never focusable — this handler
-        // only ever fires from a mouse click, never a keyboard event.
         this._cancelHoldTimer();
         this._held = null;
         this._dismiss();
     }
 
-    // Build the actor tree. Runs at most ONCE per enable(): the pill is
-    // reused for every session rather than rebuilt, so presenting it costs a
-    // fade and nothing else (see this file's header, rule 1).
+    // Runs at most once per enable(): the pill is reused for every session,
+    // so presenting it costs a fade and nothing else.
     _ensureActor() {
         if (this._box !== null)
             return;
@@ -457,10 +412,8 @@ export class HudView {
         });
         this._ribbon = new WaveRibbonActor();
         this._ribbon.setLevel(this._lastRms, this._lastPeak);
-        // The dismiss (×) control: the ONLY reactive/focusable-capable actor
-        // in this chrome. can_focus stays false even though it's clickable —
-        // that is the whole point (X11/FR-007c): a click can dismiss it
-        // without ever taking keyboard focus from the user's application.
+        // The only reactive actor in this chrome. `can_focus` stays false
+        // though it is clickable: that is the point (X11/FR-007c).
         this._dismissButton = new St.Icon({
             style_class: 'myna-hud-dismiss',
             icon_name: 'window-close-symbolic',
@@ -479,11 +432,9 @@ export class HudView {
             orientation: Clutter.Orientation.VERTICAL,
             reactive: false,
             can_focus: false,
-            // 2026-07-31 fix: claim the pill's leftover horizontal space
-            // (icon and dismiss button stay their natural/fixed size) and
-            // actually stretch into it, rather than collapsing to the
-            // label's natural (narrower) width — this is what the ribbon
-            // child needs from its parent to reach the pill's right edge.
+            // Claim and fill the pill's leftover width rather than
+            // collapsing to the label's; the ribbon needs this to reach the
+            // right edge.
             x_expand: true,
             x_align: Clutter.ActorAlign.FILL,
         });
@@ -498,11 +449,11 @@ export class HudView {
             width: PILL_WIDTH,
             opacity: 0,
             visible: false,
-            // Bottom-centre placement inside the constrained container
-            // below; the gap from the work area's bottom edge is
-            // stylesheet.css's `margin-bottom` on `.myna-hud-pill` (St
-            // implements CSS margins, and would overwrite anything we set
-            // on the actor by hand the next time the style resolves).
+            // The bottom gap is stylesheet.css's `margin-bottom`: St
+            // implements CSS margins by writing the actor's margin
+            // properties, so setting them here would be overwritten. The
+            // expand flags are load-bearing, not tidiness: without them
+            // alignment has no slack and `y_align: END` renders as centred.
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.END,
             x_expand: true,
@@ -514,12 +465,8 @@ export class HudView {
         this._box.add_child(contentBox);
         this._box.add_child(this._dismissButton);
 
-        // A non-reactive container spanning the primary monitor's WORK AREA
-        // (so the pill sits above a bottom dock/panel rather than under it),
-        // with the pill bottom-centred inside it. This is osdWindow.js's
-        // pattern, and it replaces the old hand-computed `set_position` that
-        // had to guess the pill's height — and the `monitors-changed`
-        // handler, which MonitorConstraint owns now.
+        // Spans the primary monitor's work area, so the pill clears a bottom
+        // dock. MonitorConstraint owns monitor changes.
         this._container = new Clutter.Actor({
             layout_manager: new Clutter.BinLayout(),
             reactive: false,
@@ -533,21 +480,19 @@ export class HudView {
         Main.layoutManager.addChrome(this._container);
     }
 
-    // Present the pill. A no-op when it is already on screen, so a burst of
-    // state changes never restarts the entrance animation, and a show()
-    // landing mid-fade-out reverses that fade on the SAME actor instead of
-    // building a second pill over it.
+    // A no-op when already on screen, so a burst of state changes never
+    // restarts the entrance and a show() mid-fade-out reverses that fade on
+    // the same actor instead of stacking a second pill over it.
     _appear() {
         if (this._shown || this._box === null)
             return;
         this._shown = true;
 
-        // Over a fullscreen window mutter may scan the window out directly;
-        // an overlay appearing forces it in and out of that path, which
-        // flickers. osdWindow.js guards its own OSD exactly this way.
+        // Over a fullscreen window mutter may scan the window out directly,
+        // and an overlay appearing forces it in and out of that path.
         this._setUnredirectDisabled(true);
 
-        this._ribbon.reset();
+        this._ribbon.reset(APPEAR_MS);
         this._ribbon.setLevel(this._lastRms, this._lastPeak);
 
         this._box.remove_all_transitions();
@@ -577,10 +522,8 @@ export class HudView {
             duration: CLEAR_MS,
             mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
             onComplete: () => {
-                // A show() during the fade flips _shown back to true and
-                // reverses this transition; onComplete then belongs to the
-                // *new* animation, so re-check before hiding for real.
-                // destroy() can also have run in the meantime.
+                // A show() during the fade, or a destroy(), can have run
+                // since; re-check before hiding for real.
                 if (this._shown || this._box === null)
                     return;
                 this._box.hide();
@@ -590,9 +533,8 @@ export class HudView {
         });
     }
 
-    // `disable_unredirect`/`enable_unredirect` are reference-counted in
-    // mutter, so they must balance exactly — including across destroy() with
-    // a fade still in flight.
+    // Ref-counted in mutter, so these must balance exactly, including across
+    // a destroy() with a fade still in flight.
     _setUnredirectDisabled(disabled) {
         if (disabled === this._unredirectDisabled)
             return;
