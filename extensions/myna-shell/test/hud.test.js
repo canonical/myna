@@ -1,6 +1,6 @@
 // hud.test.js — GJS contract test for the HUD pill's PURE logic (feature
 // 004-gnome-shell-indicator, 2026-07-30 HUD redesign; contracts extension.md
-// X19-X21). Exercises hud-logic.js only — no Shell, no Clutter/St. The
+// X19-X21). Exercises hudLogic.js only — no Shell, no Clutter/St. The
 // actor's compositor behavior (focus-safety X11, timing X12, per-state
 // treatments X13, bar rendering X14, dismiss click X22) is manual-acceptance
 // only (quickstart.md §5/5a/5b), same harness-tier split RibbonView had.
@@ -22,7 +22,7 @@ import {
     shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
-} from '../hud-logic.js';
+} from '../hudLogic.js';
 
 let failures = 0;
 

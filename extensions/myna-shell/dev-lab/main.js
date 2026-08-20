@@ -5,7 +5,7 @@
 // (excluded from ../metadata.json and the install step — see README.md).
 //
 // Shares the exact same pure/paint modules the shipped `hud.js` uses
-// (`../ribbon.js`, `../ribbon-paint.js`, `../accent.js`) and reuses
+// (`../ribbon.js`, `../ribbonPaint.js`, `../accent.js`) and reuses
 // `../dbus.js`'s `DictationService` UNMODIFIED for a genuinely live
 // `org.myna.Dictation` connection — confirmed zero Shell/St/Clutter
 // dependency (pure Gio/GLib), so it runs unchanged outside the Shell
@@ -26,7 +26,7 @@ import Gtk from 'gi://Gtk?version=4.0';
 import GLib from 'gi://GLib';
 
 import {DictationService} from '../dbus.js';
-import {ribbonPhaseForStateKey, ribbonVisibleForSeverity} from '../hud-logic.js';
+import {ribbonPhaseForStateKey, ribbonVisibleForSeverity} from '../hudLogic.js';
 import {
     applyEnvelopeSmoothing,
     computeEnvelope,
@@ -36,7 +36,7 @@ import {
     DEFAULT_POINTS_PER_STRAND,
     UNFOLD_MS,
 } from '../ribbon.js';
-import {paintRibbon} from '../ribbon-paint.js';
+import {paintRibbon} from '../ribbonPaint.js';
 import {SystemPreferences} from '../accent.js';
 
 const APP_ID = 'org.myna.RibbonLab';
@@ -168,7 +168,7 @@ app.connect('activate', () => {
     canvas.set_draw_func((_area, cr, width, height) => {
         // 2026-07-30, R17a: only 'critical' hides the ribbon entirely; a
         // simulated 'recoverable' severity stays visible, tinted amber and
-        // gently pulsing (mirrors hud-logic.js's ribbonVisibleForSeverity).
+        // gently pulsing (mirrors hudLogic.js's ribbonVisibleForSeverity).
         if (!ribbonVisibleForSeverity(model.simulatedSeverity))
             return;
         const now = GLib.get_monotonic_time();

@@ -7,7 +7,7 @@
 # exits 0 when every guarantee holds, 1 otherwise, 77 when it cannot run.
 #
 # The sibling `*.test.js` suites are pure logic under plain `gjs`: no stage, no
-# frame clock, no Clutter easing. That covers everything hud-logic.js decides
+# frame clock, no Clutter easing. That covers everything hudLogic.js decides
 # and nothing hud.js *presents*, which is where the 2026-08-20 flicker lived -
 # an `opacity` eased with EASE_OUT_BACK, whose overshoot past 255 wrapped a
 # guint8 to 24 and blanked the pill for the back half of its own entrance. The

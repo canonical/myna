@@ -38,14 +38,14 @@ import {
     shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
-} from './hud-logic.js';
+} from './hudLogic.js';
 import {
     applyEnvelopeSmoothing,
     computeEnvelope,
     computeRibbonModel,
     UNFOLD_MS,
 } from './ribbon.js';
-import {paintRibbon} from './ribbon-paint.js';
+import {paintRibbon} from './ribbonPaint.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
@@ -67,7 +67,7 @@ const MAX_FRAME_DT_MS = 100;
 const FIRST_FRAME_DT_MS = 1000 / 60;
 
 // A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, CSS
-// resolves the Shell's native colours, and ribbon-paint.js draws them (also
+// resolves the Shell's native colours, and ribbonPaint.js draws them (also
 // shared with dev-lab); this actor wires them together and owns the timeline.
 class WaveRibbonActor extends St.DrawingArea {
     static {

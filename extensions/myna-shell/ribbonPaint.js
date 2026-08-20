@@ -1,4 +1,4 @@
-// ribbon-paint.js — PURE Cairo drawing for the wave ribbon (feature
+// ribbonPaint.js — PURE Cairo drawing for the wave ribbon (feature
 // 004-gnome-shell-indicator, 2026-07-30 wave-ribbon redesign; visual
 // passes matching a reference mockup — a dense, glowing ribbon with soft,
 // wispy, "trailing smoke"-like edges rather than a crisp gradient-filled

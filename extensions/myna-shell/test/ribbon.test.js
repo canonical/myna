@@ -2,7 +2,7 @@
 // (feature 004-gnome-shell-indicator, 2026-07-30 wave-ribbon redesign,
 // refined per the "fabric in gentle airflow" design pass; contract
 // extension.md X24). No Shell / no D-Bus. Includes a headless Cairo smoke
-// check for `ribbon-paint.js` (an `ImageSurface` needs no display server,
+// check for `ribbonPaint.js` (an `ImageSurface` needs no display server,
 // so this is a genuine no-throw/sane-output check, not just a visual
 // claim).
 //
@@ -41,7 +41,7 @@ import {
     VOICE_THICKNESS_FRACTION,
     BASE_CENTRELINE_FRACTION,
     MAX_BODY_BILLOW,
-} from '../ribbon-paint.js';
+} from '../ribbonPaint.js';
 import {STALE_MS} from '../vumeter.js';
 
 let failures = 0;
@@ -137,7 +137,7 @@ check('X5 stale decays toward the floor',
 // --- 2026-07-31: amplitude response curve ("log scale" follow-up) --------
 // A mild logarithmic lift so quiet-but-real speech reads as clearly
 // present, while staying anchored at the same ceiling `computeSafeScale`
-// (ribbon-paint.js) already guards against — boundary-preserving and
+// (ribbonPaint.js) already guards against — boundary-preserving and
 // monotonic, so this can never reopen the cropping-bug fix.
 
 {
@@ -366,7 +366,7 @@ check('X5 stale decays toward the floor',
 // sync even if that formula or `VOICE_THICKNESS_FRACTION` are retuned
 // later (this test imports the REAL constants, not a hardcoded copy — a
 // stale local copy of `VOICE_THICKNESS_FRACTION` here previously drifted
-// out of sync with a `ribbon-paint.js` tuning change and went unnoticed).
+// out of sync with a `ribbonPaint.js` tuning change and went unnoticed).
 // Glow/wisp are deliberately NOT part of this budget at all (low-alpha
 // overlays, so their own overflow is far less visible than the body's).
 //
@@ -386,7 +386,7 @@ check('X5 stale decays toward the floor',
         safeScale > 0 && safeScale <= 1);
 
     // Recompute the intentional (boosted) budget using the REAL exported
-    // constants — if `ribbon-paint.js` retunes any of them, this recomputes
+    // constants — if `ribbonPaint.js` retunes any of them, this recomputes
     // to match rather than silently drifting.
     const unscaledOpaqueWorstCase =
         BASE_CENTRELINE_FRACTION +

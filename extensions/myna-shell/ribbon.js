@@ -19,7 +19,7 @@
 //           ↓
 //     Controlled wave amplitude + several offset strands (this module)
 //           ↓
-//     Left-to-right flowing ribbon         (ribbon-paint.js)
+//     Left-to-right flowing ribbon         (ribbonPaint.js)
 //
 // Deliberately NOT an oscilloscope: no raw audio samples, no pitch/
 // frequency input, no per-sample reproduction — only a single smoothed
@@ -92,7 +92,7 @@ const IDLE_AMPLITUDE = 0.025;
 // calibrated envelope specifically for the wave's visual amplitude: a mild
 // logarithmic lift so modest-but-real speech reads as clearly present
 // on-screen, while staying anchored at the same ceiling (env=1 → amplitude=1)
-// `computeSafeScale` (ribbon-paint.js) already guarantees never clips —
+// `computeSafeScale` (ribbonPaint.js) already guarantees never clips —
 // this curve reshapes what happens *below* that ceiling, never the ceiling
 // itself, so it cannot reopen the cropping bug. See `shapeAmplitude`.
 export const AMPLITUDE_CURVE_K = 5;
@@ -118,7 +118,7 @@ function clamp01(x) {
  * "higher at low energy, capped at highest energy" shape, matching a
  * conventional audio loudness/log-encoding curve. Boundary-preserving
  * (`0→0`, `1→1`) and strictly monotonic, so it never changes the ceiling
- * `computeSafeScale` (ribbon-paint.js) guards against — only what happens
+ * `computeSafeScale` (ribbonPaint.js) guards against — only what happens
  * below it.
  *
  * @param {number} env - the calibrated, smoothed envelope in [0,1].
@@ -416,7 +416,7 @@ export function computeRibbonModel({
         });
     }
 
-    // `elapsedMs` is echoed through so ribbon-paint.js can add its own
+    // `elapsedMs` is echoed through so ribbonPaint.js can add its own
     // time-based rendering-only effects (e.g. flowing "smoke" edge
     // turbulence) without needing new geometry fields on the strands
     // themselves — additive, doesn't change the strand contract X24 tests

@@ -154,7 +154,7 @@ export function derivePalette(mainHex, isOrange = false) {
         highlight: lighten(mainHex, 0.55),
         darkerComplement: isOrange ? UBUNTU_AUBERGINE : complement(mainHex),
         // The "translucent secondary strand" is the same main colour at
-        // reduced alpha, applied by ribbon-paint.js — not a separate hue.
+        // reduced alpha, applied by ribbonPaint.js — not a separate hue.
         translucentAlpha: 0.35,
     };
 }

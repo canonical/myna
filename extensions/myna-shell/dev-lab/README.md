@@ -17,7 +17,7 @@ only way to see a change to `hud.js` is a full session relogin. This app
 sidesteps that entirely — edit, relaunch, see the change in under a second —
 while still exercising the **real production code**, not a mock:
 
-- `ribbon.js`, `ribbon-paint.js`, and `accent.js` are imported **unmodified**
+- `ribbon.js`, `ribbonPaint.js`, and `accent.js` are imported **unmodified**
   from the parent directory — the exact same modules `hud.js`'s
   `WaveRibbonActor` uses. Tune here, the shipped extension draws
   pixel-identical output; there is no separate "port to the extension" step.
@@ -85,7 +85,7 @@ start/stop button.
 ## Iteration loop
 
 ```sh
-# edit ribbon.js / ribbon-paint.js / accent.js, then:
+# edit ribbon.js / ribbonPaint.js / accent.js, then:
 Ctrl+C
 gjs -m dev-lab/main.js
 ```
@@ -95,7 +95,7 @@ Sub-second relaunch, no extension install/reload/relogin needed. An
 e.g.:
 
 ```sh
-ls ../ribbon.js ../ribbon-paint.js ../accent.js main.js | entr -r gjs -m main.js
+ls ../ribbon.js ../ribbonPaint.js ../accent.js main.js | entr -r gjs -m main.js
 ```
 
 ## Scope

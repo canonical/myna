@@ -52,8 +52,8 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   severity, hidden}`); the stable, unit-tested contract layer.
 - `view.js` — the `IndicatorView` seam. A redesign replaces one file
   (`hud.js`) and this factory; nothing else moves.
-- `hud.js` + `hud-logic.js` — the current view: `hud.js` is the Shell/Clutter
-  actor; `hud-logic.js` is the pure, unit-tested logic factored out of it
+- `hud.js` + `hudLogic.js` — the current view: `hud.js` is the Shell/Clutter
+  actor; `hudLogic.js` is the pure, unit-tested logic factored out of it
   (icon/colour choice, auto-dismiss/replace-in-place rules, and which state
   transitions force a wave-ribbon phase change). Placement is not in either
   file any more: the pill is bottom-centred declaratively by a
@@ -65,7 +65,7 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
 - `accent.js` — legacy pure palette helper retained for the standalone
   `dev-lab/`; the shipped Shell HUD uses native `St.Settings` and CSS accent
   colours instead.
-- `ribbon-paint.js` — the shared Cairo drawing function, toolkit-agnostic
+- `ribbonPaint.js` — the shared Cairo drawing function, toolkit-agnostic
   (no Shell/Gtk import) — used unmodified by both `hud.js` and `dev-lab/`.
 - `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
   and high-contrast colour classes.
@@ -139,8 +139,8 @@ extension targets. Until the extension is ported backwards, the two need
 different bases.
 
 Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
-`hud-logic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
-real headless-Cairo smoke check of `ribbon-paint.js` (an `ImageSurface`
+`hudLogic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
+real headless-Cairo smoke check of `ribbonPaint.js` (an `ImageSurface`
 needs no display server). The widget tree in `hud.js` cannot be reached that
 way: GNOME Shell's Clutter fork aborts if you construct an actor outside a
 running compositor.

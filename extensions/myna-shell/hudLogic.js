@@ -1,4 +1,4 @@
-// hud-logic.js — PURE logic for the bottom-center HUD pill (feature
+// hudLogic.js — PURE logic for the bottom-center HUD pill (feature
 // 004-gnome-shell-indicator, 2026-07-30 HUD redesign; research R14/R15;
 // contracts extension.md X19-X21). No Shell/gi imports — unit-tested headless
 // by test/hud.test.js, the same split states.js/vumeter.js already establish

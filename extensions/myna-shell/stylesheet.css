@@ -77,7 +77,7 @@
  * a recoverable notice, red for a critical error, and a warm tint for the
  * cold-model-load phase — so the treatment reads at a glance, not just from
  * the label text (FR-005/006/007). Toggled in hud.js via
- * hud-logic.js's `pillColorClass`. */
+ * hudLogic.js's `pillColorClass`. */
 .myna-hud-pill.myna-hud-severity-recoverable {
     border: 1px solid rgba(245, 166, 35, 0.9);
     background-color: rgba(58, 40, 10, 0.88);
