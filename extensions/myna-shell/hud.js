@@ -96,14 +96,14 @@ const WaveRibbonActor = GObject.registerClass(
             // preferences. CSS resolves the actual colours, including any
             // distribution-specific accent choices, from that shared state.
             this._settings = St.Settings.get();
-            this._settingsSignalIds = [
-                this._settings.connect('notify::accent-color',
-                    () => this.queue_repaint()),
-                this._settings.connect('notify::reduced-motion', () => {
+            this._settings.connectObject(
+                'notify::accent-color',
+                () => this.queue_repaint(),
+                'notify::reduced-motion', () => {
                     this._syncFrameTimeline();
                     this.queue_repaint();
-                }),
-            ];
+                },
+                this);
 
             // Bound to this actor, so it ticks on the actor's frame clock:
             // one callback per presented frame, vblank-aligned.
@@ -112,7 +112,8 @@ const WaveRibbonActor = GObject.registerClass(
                 duration: FRAME_TIMELINE_MS,
                 repeat_count: -1,
             });
-            this._frameTimeline.connect('new-frame', () => this.queue_repaint());
+            this._frameTimeline.connectObject('new-frame',
+                () => this.queue_repaint(), this);
             // An actor only has a frame clock while mapped, so gate on that
             // rather than on anyone remembering to restart the driver.
             this._animating = false;
@@ -271,9 +272,6 @@ const WaveRibbonActor = GObject.registerClass(
                 this._frameTimeline.set_actor(null);
                 this._frameTimeline = null;
             }
-            for (const id of this._settingsSignalIds)
-                this._settings.disconnect(id);
-            this._settingsSignalIds = [];
             this._settings = null;
         }
     });
@@ -445,11 +443,6 @@ export class HudView {
             can_focus: false,
             visible: false,
         });
-        this._dismissButton.connect('button-press-event', () => {
-            this._onDismissClicked();
-            return Clutter.EVENT_STOP;
-        });
-
         const contentBox = new St.BoxLayout({
             style_class: 'myna-hud-content',
             orientation: Clutter.Orientation.VERTICAL,
@@ -487,6 +480,10 @@ export class HudView {
         this._box.add_child(this._icon);
         this._box.add_child(contentBox);
         this._box.add_child(this._dismissButton);
+        this._dismissButton.connectObject('button-press-event', () => {
+            this._onDismissClicked();
+            return Clutter.EVENT_STOP;
+        }, this._box);
 
         // Spans the primary monitor's work area, so the pill clears a bottom
         // dock. MonitorConstraint owns monitor changes.
