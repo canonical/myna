@@ -5,12 +5,16 @@
 // treatments X13, bar rendering X14, dismiss click X22) is manual-acceptance
 // only (quickstart.md §5/5a/5b), same harness-tier split RibbonView had.
 //
+// X21's bottom-centre placement is no longer arithmetic to test: hud.js
+// declares it with a `Layout.MonitorConstraint` + `y_align: END` +
+// stylesheet.css's `margin-bottom` (2026-08-20), so the former
+// `computePosition` unit tests were removed along with the function.
+//
 //     gjs -m test/hud.test.js        (from extensions/myna-shell/)
 
 import System from 'system';
 
 import {
-    computePosition,
     iconForSeverity,
     ribbonPhaseForStateKey,
     ribbonVisibleForSeverity,
@@ -18,7 +22,6 @@ import {
     shouldReplaceHeldNotice,
     pillColorClass,
     PILL_COLOR_CLASSES,
-    MARGIN,
 } from '../hud-logic.js';
 
 let failures = 0;
@@ -34,24 +37,6 @@ function check(name, condition) {
 
 function eq(name, actual, expected) {
     check(`${name} (got ${JSON.stringify(actual)})`, actual === expected);
-}
-
-// --- X21: bottom-center positioning, matching GNOME's native OSD -----------
-
-{
-    const monitor = {x: 0, y: 0, width: 1920, height: 1080};
-    const pos = computePosition(monitor, 400, 80);
-    eq('X21 horizontally centered', pos.x, Math.round((1920 - 400) / 2));
-    eq('X21 anchored to the bottom edge', pos.y, 1080 - 80 - MARGIN);
-    check('X21 not top-anchored (was the goop/ribbon placement)', pos.y > 1080 / 2);
-}
-
-// A non-origin (multi-monitor) monitor offset is respected.
-{
-    const monitor = {x: 1920, y: 100, width: 1280, height: 800};
-    const pos = computePosition(monitor, 300, 60);
-    eq('X21 multi-monitor: x offset by monitor.x', pos.x, 1920 + Math.round((1280 - 300) / 2));
-    eq('X21 multi-monitor: y offset by monitor.y', pos.y, 100 + 800 - 60 - MARGIN);
 }
 
 // --- X19: mic vs. mic-slash icon, contextual on severity --------------------

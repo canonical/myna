@@ -78,14 +78,14 @@ app.connect('activate', () => {
         model.phaseStartedAt = GLib.get_monotonic_time();
     }
 
-    // Same one-shot unfold→flow auto-advance hud.js's actor does at
-    // creation. hud.js gets this for free every session because HudView
-    // destroys and recreates a fresh WaveRibbonActor each time (phase
-    // resets to 'unfold' in its constructor); dev-lab uses one long-lived
-    // model for the app's whole lifetime instead, so it must explicitly
-    // re-arm this whenever a new session starts after a previous one
-    // reached 'morph'/'complete' — otherwise the ribbon stays pinned at
-    // its post-completion amplitude forever and never reacts to a second
+    // Same unfold→flow auto-advance hud.js's actor does. hud.js gets this
+    // per session from `WaveRibbonActor.reset()`, which HudView calls each
+    // time the pill goes from hidden to shown (2026-08-20: the actor is
+    // reused now, not rebuilt); dev-lab uses one long-lived model for the
+    // app's whole lifetime instead, so it must explicitly re-arm this
+    // whenever a new session starts after a previous one reached
+    // 'morph'/'complete' — otherwise the ribbon stays pinned at its
+    // post-completion amplitude forever and never reacts to a second
     // session's real audio (bug found via live testing, 2026-07-30).
     function armUnfoldAutoAdvance() {
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNFOLD_MS, () => {
@@ -197,7 +197,13 @@ app.connect('activate', () => {
     canvasFrame.set_child(canvas);
     content.append(canvasFrame);
 
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.floor(1000 / model.envelopeHz), () => {
+    // Redraw on GTK's FRAME CLOCK, not a fixed-Hz GLib timeout — the same
+    // change hud.js made (there via a Clutter.Timeline bound to the actor,
+    // 2026-08-20). A timer running at some rate other than the display's
+    // beats against vsync and shows up as judder, so tuning the ribbon
+    // against one would be tuning against motion the shipped extension
+    // never produces.
+    canvas.add_tick_callback(() => {
         canvas.queue_draw();
         return GLib.SOURCE_CONTINUE;
     });

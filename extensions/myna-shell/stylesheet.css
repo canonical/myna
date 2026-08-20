@@ -10,6 +10,14 @@
  */
 
 .myna-hud-pill {
+    /* The gap from the bottom of the primary monitor's work area (R14/X21).
+     * hud.js bottom-centres the pill inside a MonitorConstraint container
+     * rather than positioning it by hand, so this margin — not a JS
+     * constant — is the single place the bottom gap is defined. It has to
+     * live here because St implements CSS margins by writing
+     * `clutter_actor_set_margin_*`, overwriting anything JS sets, every time
+     * the style resolves. */
+    margin-bottom: 24px;
     padding: 10px 16px;
     spacing: 12px;
     background-color: rgba(20, 22, 28, 0.82);

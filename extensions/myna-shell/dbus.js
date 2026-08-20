@@ -41,8 +41,10 @@ export class DictationService {
      *     `Gio.bus_watch_name` on the session bus for org.myna.Dictation).
      * @param {function} [callbacks._unwatchName] - test seam (default
      *     `Gio.bus_unwatch_name`).
-     * @param {function} [callbacks._createProxy] - test seam (default a
-     *     `Gio.DBusProxy` for the interface).
+     * @param {function} [callbacks._createProxy] - test seam, called as
+     *     `(cancellable, callback)`; must invoke `callback(proxy|null)` when
+     *     the proxy is ready (default: an async `Gio.DBusProxy` for the
+     *     interface — never a synchronous one, see the header).
      */
     constructor({
         onStateChanged = null,
@@ -61,12 +63,25 @@ export class DictationService {
                 appeared, vanished));
         this._unwatchName = _unwatchName ?? Gio.bus_unwatch_name;
         this._createProxy = _createProxy ??
-            (() => Gio.DBusProxy.new_sync(
-                Gio.DBus.session, Gio.DBusProxyFlags.NONE, null,
-                BUS_NAME, OBJECT_PATH, BUS_NAME, null));
+            ((cancellable, callback) => {
+                Gio.DBusProxy.new(
+                    Gio.DBus.session, Gio.DBusProxyFlags.NONE, null,
+                    BUS_NAME, OBJECT_PATH, BUS_NAME, cancellable,
+                    (_source, result) => {
+                        let proxy = null;
+                        try {
+                            proxy = Gio.DBusProxy.new_finish(result);
+                        } catch (e) {
+                            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                                logError(e, 'myna-shell: org.myna.Dictation proxy failed');
+                        }
+                        callback(proxy);
+                    });
+            });
 
         this._watchId = 0;
         this._proxy = null;
+        this._proxyCancellable = null;
         this._proxySignalIds = [];
         this._state = 'idle';
         this._errorMessage = '';
@@ -113,19 +128,27 @@ export class DictationService {
 
     _onAppeared() {
         this._teardownProxy();
-        this._proxy = this._createProxy();
-        // State transitions and audio levels alike ride PropertiesChanged
-        // (the header explains why there is no custom signal to join).
-        this._proxySignalIds = [
-            this._proxy.connect('g-properties-changed',
-                () => this._reflectCached()),
-        ];
-        this._available = true;
-        this._onAvailabilityChanged(true);
-        // Reflect the current State so a mid-session daemon start shows the
-        // right treatment immediately (X8). The proxy's initial GetAll has
-        // already populated the cache.
-        this._reflectCached();
+        const cancellable = new Gio.Cancellable();
+        this._proxyCancellable = cancellable;
+        this._createProxy(cancellable, proxy => {
+            // disable()/vanish raced us to it, or construction failed.
+            if (this._proxyCancellable !== cancellable || proxy === null)
+                return;
+            this._proxyCancellable = null;
+            this._proxy = proxy;
+            // State transitions and audio levels alike ride PropertiesChanged
+            // (the header explains why there is no custom signal to join).
+            this._proxySignalIds = [
+                proxy.connect('g-properties-changed',
+                    () => this._reflectCached()),
+            ];
+            this._available = true;
+            this._onAvailabilityChanged(true);
+            // Reflect the current State so a mid-session daemon start shows
+            // the right treatment immediately (X8). The proxy's initial
+            // GetAll has already populated the cache.
+            this._reflectCached();
+        });
     }
 
     // Forward the cached snapshot, deduped — the publisher pushes every
@@ -174,6 +197,10 @@ export class DictationService {
     }
 
     _teardownProxy() {
+        if (this._proxyCancellable !== null) {
+            this._proxyCancellable.cancel();
+            this._proxyCancellable = null;
+        }
         if (this._proxy === null)
             return;
         for (const id of this._proxySignalIds)

@@ -89,9 +89,12 @@ function makeStubBus(initialState = 'idle') {
         unwatchName: _id => {
             calls.unwatched++;
         },
-        createProxy: () => {
+        // The proxy seam is asynchronous (dbus.js never blocks the
+        // compositor on a sync D-Bus round trip); the stub answers
+        // immediately, which is the interesting ordering for the contract.
+        createProxy: (_cancellable, callback) => {
             calls.proxyCreated++;
-            return proxy;
+            callback(proxy);
         },
         appear: () => appearedCb?.(null, 'org.myna.Dictation', ':1.42'),
         vanish: () => vanishedCb?.(null, 'org.myna.Dictation'),
@@ -227,6 +230,69 @@ function makeWiredService(initialState = 'idle') {
     eq('X10 fresh proxy on re-appear', stub.calls.proxyCreated, 2);
     eq('X10 reflects current State again', shown.at(-1)?.key, 'transcribing');
     service.disable();
+}
+
+// --- The proxy seam is ASYNC: a deferred answer still wires up, and a --
+// --- disable()/vanish that races it must never touch the late proxy. -----
+
+{
+    const stub = makeStubBus('recording');
+    const shown = [];
+    let pending = null;
+    const service = new DictationService({
+        onStateChanged: (state, errorMessage) =>
+            shown.push(stateToDescriptor(state, errorMessage)),
+        _watchName: stub.watchName,
+        _unwatchName: stub.unwatchName,
+        // A proxy that is NOT ready when _onAppeared returns — the real
+        // Gio.DBusProxy.new behaviour.
+        _createProxy: (_cancellable, callback) => {
+            stub.calls.proxyCreated++;
+            pending = () => callback(stub.proxy);
+        },
+    });
+
+    service.enable();
+    stub.appear();
+    eq('async proxy: construction started', stub.calls.proxyCreated, 1);
+    check('async proxy: not available until it is ready', !service.available);
+    eq('async proxy: nothing rendered yet', shown.length, 0);
+
+    pending();
+    check('async proxy: available once ready', service.available);
+    eq('async proxy: reflects current State on arrival', shown.at(-1)?.key, 'recording');
+    service.disable();
+}
+
+{
+    const stub = makeStubBus('recording');
+    const shown = [];
+    let pending = null;
+    const service = new DictationService({
+        onStateChanged: (state, errorMessage) =>
+            shown.push(stateToDescriptor(state, errorMessage)),
+        _watchName: stub.watchName,
+        _unwatchName: stub.unwatchName,
+        _createProxy: (_cancellable, callback) => {
+            stub.calls.proxyCreated++;
+            pending = () => callback(stub.proxy);
+        },
+    });
+
+    service.enable();
+    stub.appear();
+    service.disable();
+    const shownAtDisable = shown.length;
+    // The in-flight construction answers AFTER disable(): the extension is
+    // gone, so this must be dropped, not connected to (X9 — a late proxy
+    // that still drove the view would outlive disable()).
+    pending();
+    check('async proxy: a late answer after disable() is dropped',
+        !service.available);
+    eq('async proxy: a late answer never drives the view',
+        shown.length, shownAtDisable);
+    eq('async proxy: nothing was connected, so nothing to disconnect',
+        stub.calls.disconnected, 0);
 }
 
 print(failures === 0

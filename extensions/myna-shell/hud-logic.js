@@ -4,29 +4,15 @@
 // by test/hud.test.js, the same split states.js/vumeter.js already establish
 // between the *stable* pure layer and the *experimental* Shell-dependent
 // actor (`hud.js`, harness-tier — see plan.md Constitution Check). hud.js
-// owns all pixels; this file only decides positions, icon choice, and
-// auto-dismiss behavior.
-
-// Gap between the pill's bottom edge and the screen's bottom edge (R14).
-export const MARGIN = 24;
-
-/**
- * Bottom-center position for the pill on `monitor`, matching the placement of
- * GNOME's own volume/brightness OSD (R14, FR-004, X21) — not the prior
- * top-of-panel goop/ribbon placement.
- *
- * @param {{x: number, y: number, width: number, height: number}} monitor
- * @param {number} width - the pill's width.
- * @param {number} height - the pill's height.
- * @param {number} [margin] - gap from the monitor's bottom edge.
- * @returns {{x: number, y: number}}
- */
-export function computePosition(monitor, width, height, margin = MARGIN) {
-    return {
-        x: monitor.x + Math.round((monitor.width - width) / 2),
-        y: monitor.y + monitor.height - height - margin,
-    };
-}
+// owns all pixels; this file only decides icon choice, colour class, ribbon
+// phase, and auto-dismiss behavior.
+//
+// 2026-08-20: `computePosition`/`MARGIN` are gone. The pill is no longer
+// positioned by hand from a *guessed* height — hud.js bottom-centres it
+// inside a `Layout.MonitorConstraint`-constrained container (osdWindow.js's
+// pattern), so the work area, monitor changes and the pill's real height are
+// all handled declaratively, and the bottom gap is `stylesheet.css`'s
+// `margin-bottom` on `.myna-hud-pill`.
 
 /**
  * Icon choice for a descriptor's severity (X19): a mic-with-slash icon only

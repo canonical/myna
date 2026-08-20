@@ -197,23 +197,29 @@ export function resolveReducedMotion(enableAnimations) {
 }
 
 /**
- * Schema/key-existence-guarded lookup, never throwing even when the
- * schema or key is entirely absent (a pre-GNOME-47 shell) — the safe
- * pattern research R18 establishes.
+ * Schema-existence-guarded lookup, never throwing even when the schema is
+ * entirely absent (a pre-GNOME-47 shell) — the safe pattern research R18
+ * establishes. Key existence is checked per key by the caller, so a shell
+ * that has `enable-animations` but not `accent-color` still gets live
+ * reduced-motion tracking (it previously lost both).
  *
  * @param {string} schemaId
- * @param {string} key
- * @returns {(Gio.Settings|null)} a settings object scoped to that schema,
- *     or null if the schema/key doesn't exist.
+ * @param {string[]} keys - keys to probe; those absent are reported so the
+ *     caller can skip them rather than dropping the whole schema.
+ * @returns {({settings: Gio.Settings, has: object}|null)} the settings
+ *     object plus a `has[key]` map, or null if the schema doesn't exist.
  */
-function lookupGuardedSettings(schemaId, key) {
+function lookupGuardedSettings(schemaId, keys) {
     const source = Gio.SettingsSchemaSource.get_default();
     if (source === null)
         return null;
     const schema = source.lookup(schemaId, true);
-    if (schema === null || !schema.has_key(key))
+    if (schema === null)
         return null;
-    return new Gio.Settings({settings_schema: schema});
+    const has = {};
+    for (const key of keys)
+        has[key] = schema.has_key(key);
+    return {settings: new Gio.Settings({settings_schema: schema}), has};
 }
 
 /**
@@ -223,13 +229,20 @@ function lookupGuardedSettings(schemaId, key) {
  * (`_lookupSettings`) mirrors dbus.js's `DictationService` pattern so this
  * is stub-testable the same way, even though the shipped contract tests
  * (T052) exercise the pure resolvers directly rather than this class.
+ *
+ * The resolved palette and reduced-motion flag are CACHED and refreshed
+ * only from `changed::` (2026-08-20 performance pass). They are read once
+ * per repaint frame by `hud.js`'s ribbon, and a GSettings read plus the
+ * hex→HSL→hex palette derivation on every frame is pure waste on the
+ * compositor's main loop — these values change at most a few times per
+ * session, never per frame.
  */
 export class SystemPreferences {
     /**
      * @param {object} [callbacks]
      * @param {function((string|null)): void} [callbacks.onAccentChanged]
      * @param {function(boolean): void} [callbacks.onMotionChanged]
-     * @param {function(string, string): (Gio.Settings|null)} [callbacks._lookupSettings]
+     * @param {function(string, string[]): ({settings: Gio.Settings, has: object}|null)} [callbacks._lookupSettings]
      *     test seam (default `lookupGuardedSettings`).
      */
     constructor({
@@ -241,31 +254,47 @@ export class SystemPreferences {
         this._onMotionChanged = onMotionChanged ?? (() => {});
         this._lookupSettings = _lookupSettings ?? lookupGuardedSettings;
         this._settings = null;
+        this._has = {};
         this._signalIds = [];
+        this._palette = resolveAccentPalette(null);
+        this._reducedMotion = false;
     }
 
     /** Current accent palette, safe to call before/after enable(). */
     get accentPalette() {
-        return resolveAccentPalette(this._readAccentUserValue());
+        return this._palette;
     }
 
     /** Current reduced-motion boolean, safe to call before/after enable(). */
     get reducedMotion() {
-        return resolveReducedMotion(this._readMotionValue());
+        return this._reducedMotion;
     }
 
     /** Start watching both keys. Safe to call when the schema is absent. */
     enable() {
         if (this._settings !== null)
             return;
-        this._settings = this._lookupSettings(SCHEMA_ID, ACCENT_KEY);
-        if (this._settings === null)
+        const found = this._lookupSettings(SCHEMA_ID, [ACCENT_KEY, MOTION_KEY]);
+        if (found === null)
             return;
-        this._signalIds.push(
-            this._settings.connect(`changed::${ACCENT_KEY}`,
-                () => this._onAccentChanged(this._readAccentUserValue())),
-            this._settings.connect(`changed::${MOTION_KEY}`,
-                () => this._onMotionChanged(resolveReducedMotion(this._readMotionValue()))));
+        this._settings = found.settings;
+        this._has = found.has ?? {};
+        this._refreshAccent();
+        this._refreshMotion();
+        if (this._has[ACCENT_KEY]) {
+            this._signalIds.push(this._settings.connect(
+                `changed::${ACCENT_KEY}`, () => {
+                    this._refreshAccent();
+                    this._onAccentChanged(this._readAccentUserValue());
+                }));
+        }
+        if (this._has[MOTION_KEY]) {
+            this._signalIds.push(this._settings.connect(
+                `changed::${MOTION_KEY}`, () => {
+                    this._refreshMotion();
+                    this._onMotionChanged(this._reducedMotion);
+                }));
+        }
     }
 
     /** Tear down subscriptions. Safe when dormant. */
@@ -276,17 +305,26 @@ export class SystemPreferences {
             this._settings.disconnect(id);
         this._signalIds = [];
         this._settings = null;
+        this._has = {};
+    }
+
+    _refreshAccent() {
+        this._palette = resolveAccentPalette(this._readAccentUserValue());
+    }
+
+    _refreshMotion() {
+        this._reducedMotion = resolveReducedMotion(this._readMotionValue());
     }
 
     _readAccentUserValue() {
-        if (this._settings === null)
+        if (this._settings === null || !this._has[ACCENT_KEY])
             return null;
         const variant = this._settings.get_user_value(ACCENT_KEY);
         return variant === null ? null : variant.deep_unpack();
     }
 
     _readMotionValue() {
-        if (this._settings === null)
+        if (this._settings === null || !this._has[MOTION_KEY])
             return null;
         return this._settings.get_boolean(MOTION_KEY);
     }
