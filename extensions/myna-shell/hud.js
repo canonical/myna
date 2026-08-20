@@ -69,59 +69,62 @@ const FIRST_FRAME_DT_MS = 1000 / 60;
 // A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, CSS
 // resolves the Shell's native colours, and ribbon-paint.js draws them (also
 // shared with dev-lab); this actor wires them together and owns the timeline.
-const WaveRibbonActor = GObject.registerClass(
-    class WaveRibbonActor extends St.DrawingArea {
-        _init() {
-            super._init({
-                style_class: 'myna-hud-ribbon',
+class WaveRibbonActor extends St.DrawingArea {
+    static {
+        GObject.registerClass(this);
+    }
+
+    constructor() {
+        super({
+                styleClass: 'myna-hud-ribbon',
                 reactive: false,
-                can_focus: false,
+                canFocus: false,
                 height: RIBBON_HEIGHT,
-                x_expand: true,
-                x_align: Clutter.ActorAlign.FILL,
-                y_expand: false,
+                xExpand: true,
+                xAlign: Clutter.ActorAlign.FILL,
+                yExpand: false,
             });
-            this._lastRms = 0;
-            this._lastPeak = 0;
-            this._lastLevelAt = 0;
-            // Caller-owned smoothing state, so ribbon.js stays pure.
-            this._smoothedEnvelope = 0;
-            this._lastDrawAt = 0;
-            this._severityTint = null;
-            this._phase = 'unfold';
-            this._startedAt = 0;
-            this._phaseStartedAt = 0;
+        this._lastRms = 0;
+        this._lastPeak = 0;
+        this._lastLevelAt = 0;
+        // Caller-owned smoothing state, so ribbon.js stays pure.
+        this._smoothedEnvelope = 0;
+        this._lastDrawAt = 0;
+        this._severityTint = null;
+        this._phase = 'unfold';
+        this._startedAt = 0;
+        this._phaseStartedAt = 0;
 
-            // St.Settings owns the desktop's accent palette and accessibility
-            // preferences. CSS resolves the actual colours, including any
-            // distribution-specific accent choices, from that shared state.
-            this._settings = St.Settings.get();
-            this._settings.connectObject(
-                'notify::accent-color',
-                () => this.queue_repaint(),
-                'notify::reduced-motion', () => {
-                    this._syncFrameTimeline();
-                    this.queue_repaint();
-                },
-                this);
+        // St.Settings owns the desktop's accent palette and accessibility
+        // preferences. CSS resolves the actual colours, including any
+        // distribution-specific accent choices, from that shared state.
+        this._settings = St.Settings.get();
+        this._settings.connectObject(
+            'notify::accent-color',
+            () => this.queue_repaint(),
+            'notify::reduced-motion', () => {
+                this._syncFrameTimeline();
+                this.queue_repaint();
+            },
+            this);
 
-            // Bound to this actor, so it ticks on the actor's frame clock:
-            // one callback per presented frame, vblank-aligned.
-            this._frameTimeline = new Clutter.Timeline({
-                actor: this,
-                duration: FRAME_TIMELINE_MS,
-                repeat_count: -1,
-            });
-            this._frameTimeline.connectObject('new-frame',
-                () => this.queue_repaint(), this);
-            // An actor only has a frame clock while mapped, so gate on that
-            // rather than on anyone remembering to restart the driver.
-            this._animating = false;
-            this.connect('notify::mapped', () => this._syncFrameTimeline());
+        // Bound to this actor, so it ticks on the actor's frame clock:
+        // one callback per presented frame, vblank-aligned.
+        this._frameTimeline = new Clutter.Timeline({
+            actor: this,
+            duration: FRAME_TIMELINE_MS,
+            repeatCount: -1,
+        });
+        this._frameTimeline.connectObject('new-frame',
+            () => this.queue_repaint(), this);
+        // An actor only has a frame clock while mapped, so gate on that
+        // rather than on anyone remembering to restart the driver.
+        this._animating = false;
+        this.connect('notify::mapped', () => this._syncFrameTimeline());
 
-            this.reset();
-            this.connect('repaint', () => this._draw());
-        }
+        this.reset();
+        this.connect('repaint', () => this._draw());
+    }
 
         /**
          * Restart for a fresh session: back to `unfold`, state cleared so it
@@ -274,7 +277,7 @@ const WaveRibbonActor = GObject.registerClass(
             this._settings = null;
             super.destroy();
         }
-    });
+}
 
 /** HudView — implements the view.js IndicatorView interface. */
 export class HudView {
