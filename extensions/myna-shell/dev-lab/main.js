@@ -22,8 +22,10 @@
 // Versions go in the import specifier, not `imports.gi.versions`: ESM
 // imports are hoisted, so an assignment here runs after the modules load.
 import Adw from 'gi://Adw?version=1';
+import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk?version=4.0';
 import GLib from 'gi://GLib';
+import {programArgs, programInvocationName} from 'system';
 
 import {DictationService} from '../dbus.js';
 import {ribbonPhaseForStateKey, ribbonVisibleForSeverity} from '../hudLogic.js';
@@ -42,11 +44,128 @@ import {SystemPreferences} from '../accent.js';
 const APP_ID = 'org.myna.RibbonLab';
 const CANVAS_WIDTH = 420;
 const CANVAS_HEIGHT = 100;
+const BUS_NAME = 'org.myna.Dictation';
+const OBJECT_PATH = '/org/myna/Dictation';
+let serveDbus = false;
 
-const app = new Adw.Application({application_id: APP_ID});
+const DictationInterface = `
+<node>
+  <interface name="org.myna.Dictation">
+    <method name="Start">
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="error" direction="out"/>
+    </method>
+    <method name="Stop"/>
+    <method name="Toggle"/>
+    <property name="State" type="s" access="read"/>
+    <property name="AudioRms" type="d" access="read"/>
+    <property name="AudioPeak" type="d" access="read"/>
+    <property name="ErrorMessage" type="s" access="read"/>
+  </interface>
+</node>`;
+
+class DictationSimulator {
+    constructor() {
+        this._state = 'idle';
+        this._errorMessage = '';
+        this._rms = 0;
+        this._peak = 0;
+        this._dbusImpl = Gio.DBusExportedObject.wrapJSObject(
+            DictationInterface, this);
+        this._dbusImpl.export(Gio.DBus.session, OBJECT_PATH);
+        this._ownerId = Gio.bus_own_name_on_connection(
+            Gio.DBus.session, BUS_NAME, Gio.BusNameOwnerFlags.NONE, null, null);
+    }
+
+    get State() {
+        return this._state;
+    }
+
+    get ErrorMessage() {
+        return this._errorMessage;
+    }
+
+    get AudioRms() {
+        return this._rms;
+    }
+
+    get AudioPeak() {
+        return this._peak;
+    }
+
+    Start() {
+        this.setState('recording');
+        return [true, ''];
+    }
+
+    Stop() {
+        this.setState('idle');
+    }
+
+    Toggle() {
+        if (this._state === 'idle')
+            this.Start();
+        else
+            this.Stop();
+    }
+
+    setState(state, errorMessage = '') {
+        if (errorMessage !== this._errorMessage) {
+            this._errorMessage = errorMessage;
+            this._dbusImpl.emit_property_changed(
+                'ErrorMessage', new GLib.Variant('s', errorMessage));
+        }
+        if (state !== this._state) {
+            this._state = state;
+            this._dbusImpl.emit_property_changed(
+                'State', new GLib.Variant('s', state));
+        }
+        if (state === 'idle')
+            this.setLevel(0, 0);
+    }
+
+    setLevel(rms, peak) {
+        if (rms !== this._rms) {
+            this._rms = rms;
+            this._dbusImpl.emit_property_changed(
+                'AudioRms', new GLib.Variant('d', rms));
+        }
+        if (peak !== this._peak) {
+            this._peak = peak;
+            this._dbusImpl.emit_property_changed(
+                'AudioPeak', new GLib.Variant('d', peak));
+        }
+    }
+
+    destroy() {
+        Gio.bus_unown_name(this._ownerId);
+        this._dbusImpl.unexport();
+        this._dbusImpl = null;
+    }
+}
+
+const app = new Adw.Application({
+    application_id: APP_ID,
+    flags: Gio.ApplicationFlags.NON_UNIQUE,
+});
+app.add_main_option(
+    'serve-dbus',
+    0,
+    GLib.OptionFlags.NONE,
+    GLib.OptionArg.NONE,
+    'Serve org.myna.Dictation for testing a Shell extension',
+    null);
+app.set_option_context_parameter_string('- tune the Myna wave ribbon');
+app.set_option_context_summary(
+    'Launch the ribbon tuning app with an optional simulated D-Bus service.');
+app.connect('handle-local-options', (_app, options) => {
+    serveDbus = options.contains('serve-dbus');
+    return -1;
+});
 
 app.connect('activate', () => {
     Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK);
+    const simulator = serveDbus ? new DictationSimulator() : null;
 
     // ── Model state (mirrors hud.js's WaveRibbonActor, standalone) ────────
     const model = {
@@ -100,7 +219,7 @@ app.connect('activate', () => {
     armUnfoldAutoAdvance();
 
     // ── Live D-Bus connection (T060) — dbus.js reused verbatim ────────────
-    const service = new DictationService({
+    const service = serveDbus ? null : new DictationService({
         onStateChanged: (state, _errorMessage) => {
             statusLabel.set_label(`org.myna.Dictation: ${state}`);
             // A new session (loading/recording) arriving while the ribbon is
@@ -131,7 +250,8 @@ app.connect('activate', () => {
             }
         },
     });
-    service.enable();
+    if (service !== null)
+        service.enable();
 
     // ── Accent-color / reduced-motion for the standalone GTK demo ──────────
     const prefs = new SystemPreferences();
@@ -233,6 +353,8 @@ app.connect('activate', () => {
     });
     levelScale.connect('value-changed', scale => {
         model.manualLevel = scale.get_value() / 100;
+        if (simulator !== null)
+            simulator.setLevel(model.manualLevel, model.manualLevel);
     });
     overrideRow.append(new Gtk.Label({label: 'Manual level override:'}));
     overrideRow.append(overrideSwitch);
@@ -249,12 +371,39 @@ app.connect('activate', () => {
     content.append(new Gtk.Label({label: 'Lifecycle phase', halign: Gtk.Align.START, css_classes: ['heading']}));
     content.append(phaseRow);
 
+    if (simulator !== null) {
+        const stateRow = new Gtk.Box({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            spacing: 6,
+            homogeneous: true,
+        });
+        for (const state of ['idle', 'loading', 'recording', 'transcribing', 'finalizing']) {
+            const button = new Gtk.Button({label: state});
+            button.connect('clicked', () => simulator.setState(state));
+            stateRow.append(button);
+        }
+        content.append(new Gtk.Label({
+            label: 'D-Bus state simulator',
+            halign: Gtk.Align.START,
+            css_classes: ['heading'],
+        }));
+        content.append(stateRow);
+    }
+
     // Severity simulation buttons ----------------------------------------------
     const severityRow = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 6, homogeneous: true});
     for (const sev of ['recoverable', 'critical', 'clear']) {
         const button = new Gtk.Button({label: sev});
         button.connect('clicked', () => {
             model.simulatedSeverity = sev === 'clear' ? null : sev;
+            if (simulator !== null) {
+                const state = sev === 'clear' ? 'recording' : sev === 'recoverable'
+                    ? 'notice' : 'error';
+                const reason = sev === 'recoverable'
+                    ? 'No speech detected' : sev === 'critical'
+                        ? 'Microphone unavailable' : '';
+                simulator.setState(state, reason);
+            }
             canvas.queue_draw();
         });
         severityRow.append(button);
@@ -330,7 +479,10 @@ app.connect('activate', () => {
             GLib.source_remove(unfoldTimer);
             unfoldTimer = 0;
         }
-        service.disable();
+        if (service !== null)
+            service.disable();
+        if (simulator !== null)
+            simulator.destroy();
         prefs.disable();
         return false;
     });
@@ -339,4 +491,4 @@ app.connect('activate', () => {
     textView.grab_focus();
 });
 
-app.run([]);
+app.run([programInvocationName, ...programArgs]);

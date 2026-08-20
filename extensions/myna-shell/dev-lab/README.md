@@ -34,6 +34,21 @@ cd extensions/myna-shell
 gjs -m dev-lab/main.js
 ```
 
+Run `gjs -m dev-lab/main.js --help` to list command-line options.
+
+To simulate `myna-desktop --dbus` for a separately running Shell extension,
+run:
+
+```sh
+gjs -m dev-lab/main.js --serve-dbus
+```
+
+This owns `org.myna.Dictation` and exposes the real interface at
+`/org/myna/Dictation`. The state, severity, and manual-level controls publish
+the matching `State`, `ErrorMessage`, `AudioRms`, and `AudioPeak` properties.
+Do not use this mode while `myna-desktop --dbus` is running: both services
+cannot own the same session-bus name.
+
 No build step, no install, no packaging — just `gjs` running the file
 directly. Requires GTK4 + libadwaita GObject-introspection typelibs (present
 on any current GNOME desktop; verified in this project's dev environment
