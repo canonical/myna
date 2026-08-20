@@ -250,8 +250,7 @@ app.connect('activate', () => {
             }
         },
     });
-    if (service !== null)
-        service.enable();
+    service?.enable();
 
     // ── Accent-color / reduced-motion for the standalone GTK demo ──────────
     const prefs = new SystemPreferences();
@@ -302,9 +301,7 @@ app.connect('activate', () => {
         model.smoothedEnvelope = applyEnvelopeSmoothing(model.smoothedEnvelope, instantEnvelope, dtMs);
         model.lastDrawAt = now;
 
-        const reducedMotion = manualReducedMotion !== null
-            ? manualReducedMotion
-            : prefs.reducedMotion;
+        const reducedMotion = manualReducedMotion ?? prefs.reducedMotion;
         const ribbonModel = computeRibbonModel({
             envelope: model.smoothedEnvelope,
             elapsedMs: (now - model.startedAt) / 1000,
@@ -353,8 +350,7 @@ app.connect('activate', () => {
     });
     levelScale.connect('value-changed', scale => {
         model.manualLevel = scale.get_value() / 100;
-        if (simulator !== null)
-            simulator.setLevel(model.manualLevel, model.manualLevel);
+        simulator?.setLevel(model.manualLevel, model.manualLevel);
     });
     overrideRow.append(new Gtk.Label({label: 'Manual level override:'}));
     overrideRow.append(overrideSwitch);
@@ -479,10 +475,8 @@ app.connect('activate', () => {
             GLib.source_remove(unfoldTimer);
             unfoldTimer = 0;
         }
-        if (service !== null)
-            service.disable();
-        if (simulator !== null)
-            simulator.destroy();
+        service?.disable();
+        simulator?.destroy();
         prefs.disable();
         return false;
     });

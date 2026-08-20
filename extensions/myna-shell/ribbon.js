@@ -171,7 +171,7 @@ export function computeEnvelope(rms, peak, ageMs = 0) {
  */
 export function applyEnvelopeSmoothing(previous, target, dtMs, tauMs = undefined) {
     const clampedTarget = clamp01(target);
-    const tau = tauMs !== undefined ? tauMs : (clampedTarget > previous ? ATTACK_TAU_MS : RELEASE_TAU_MS);
+    const tau = tauMs ?? (clampedTarget > previous ? ATTACK_TAU_MS : RELEASE_TAU_MS);
     if (tau <= 0 || dtMs <= 0)
         return clampedTarget;
     const alpha = 1 - Math.exp(-dtMs / tau);

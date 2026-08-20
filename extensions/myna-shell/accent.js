@@ -315,7 +315,7 @@ export class SystemPreferences {
         if (this._settings === null || !this._has[ACCENT_KEY])
             return null;
         const variant = this._settings.get_user_value(ACCENT_KEY);
-        return variant === null ? null : variant.deep_unpack();
+        return variant?.deep_unpack() ?? null;
     }
 
     _readMotionValue() {
