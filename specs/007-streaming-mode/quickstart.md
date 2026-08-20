@@ -89,22 +89,34 @@ text is contradicted by a later event).
 **Purpose**: Prove our client handles a third-party IE115 server's streaming output.
 
 ```bash
-# Terminal 1: WhisperLive backend (docker, warm cache)
-sudo docker run --rm --name whisperlive \
-  -e OMP_NUM_THREADS=4 \
-  -v $HOME/.cache/whisper-live:/root/.cache/whisper-live \
-  -p 9090:9090 ghcr.io/collabora/whisperlive-cpu:latest
+# Terminal 1: WhisperLive backend. Docker needs root; a local venv does not,
+# and `reference/WhisperLive` is already checked out:
+cd reference/WhisperLive
+uv venv --python 3.12 .venv
+VIRTUAL_ENV=$PWD/.venv uv pip install --torch-backend=cpu \
+  faster-whisper==1.2.0 websockets 'onnxruntime>=1.20.0,<2' numba kaldialign \
+  soundfile scipy av 'numpy>=1.26.4,<2.5' openai-whisper==20250625 \
+  tokenizers==0.20.3 transformers torch sentencepiece librosa \
+  fastapi uvicorn python-multipart
+CUDA_VISIBLE_DEVICES="" ./.venv/bin/python run_server.py --port 9090 \
+  --backend faster_whisper --max_connection_time 3600 --omp_num_threads "$(nproc)"
+# (this checkout's run_server.py has no --host; the snap ships its own
+#  scripts/whisper-live-server.py wrapper that adds one. It binds 0.0.0.0.)
+# Docker equivalent, if you have root:
+#   sudo docker run --rm -p 9090:9090 ghcr.io/collabora/whisperlive-cpu:latest
 
 # Terminal 2: The Go adapter
 cd reference/whisper-snap
 go run ./cmd/whisperlive-adapter serve \
   --unix-socket /tmp/myna-adapter.sock \
-  --model small --language en \
+  --model base --language en \
   --allowed-models "small,base,tiny" --allowed-languages "auto,en"
 
-# Terminal 3: Our client
+# Terminal 3: Our client. NOTE: no --language. Sending one triggers their
+# unconditional backend reload and costs the first ~600ms of audio (gap 5/6).
 ./client/target/release/myna-dictate \
-  --socket /tmp/myna-adapter.sock --dialect ie115 --base64-audio --ws-path /ws \
+  --socket /tmp/myna-adapter.sock --dialect ie115 --base64-audio \
+  --ws-path /v1/realtime \
   --clip corpus/real/audio/librispeech-2277-149896-0005.wav
 
 # Expected: transcription completes (possibly with delta text shown progressively
@@ -116,6 +128,11 @@ go run ./cmd/whisperlive-adapter serve \
 6 interop fixes (ws-path, model.loaded mapping, empty-completed handling,
 session.update skip, model.unloaded mapping, empty-transcription omission) are
 exercised.
+
+> **Use a single-utterance clip.** Their `completed` fires per VAD segment, not
+> per commit, so any clip containing a pause ends our session early and truncates
+> the rest (2026-08-20, `docs/interop/canonical-whisper-snap-report.md`). A
+> multi-utterance clip is the reproducer for that finding, not a passing run.
 
 ## Scenario 5: Mode override setting
 
@@ -169,3 +186,8 @@ session completes; their deltas restate the growing hypothesis without a
 disposition field (backward-compat → committed) — the finding documented in
 docs/interop/canonical-whisper-snap-report.md. Re-run:
 `cargo test -p myna-cli --test interop_canonical -- --ignored`.
+
+Re-run 2026-08-20 against adapter HEAD `8ae643b`: still true, plus their
+endpoint moved to `/v1/realtime` and their `completed` turns out to be
+per-VAD-segment rather than per-commit, which truncates any dictation
+containing a pause. See the "Re-run" section of the same report.

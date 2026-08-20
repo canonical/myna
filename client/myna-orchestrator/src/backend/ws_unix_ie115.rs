@@ -74,7 +74,7 @@ impl WsUnixIe115Backend {
     }
 
     /// Override the WebSocket endpoint path (default `/`). The colleagues'
-    /// canonical/whisper-snap adapter serves at `/ws`.
+    /// canonical/whisper-snap adapter serves at `/v1/realtime`.
     pub fn ws_path(mut self, path: impl Into<String>) -> Self {
         self.ws_path = path.into();
         self

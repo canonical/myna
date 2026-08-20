@@ -12,6 +12,10 @@
 //! go run ./cmd/whisperlive-adapter serve --unix-socket /tmp/myna-adapter.sock ...
 //! cargo test -p myna-cli --test interop_canonical -- --ignored
 //! ```
+//!
+//! The clip must hold a single utterance: their `completed` fires per VAD
+//! segment, not per commit, so a pause ends the session early (2026-08-20,
+//! `docs/interop/canonical-whisper-snap-report.md`).
 
 use std::path::PathBuf;
 
@@ -49,7 +53,7 @@ async fn session_against_canonical_adapter_completes() {
 
     let backend = WsUnixIe115Backend::new(&socket)
         .base64_audio(true)
-        .ws_path("/ws");
+        .ws_path("/v1/realtime");
     let source = WavFileSource::new(&clip).unwrap();
     let mut sink = CollectingSink::default();
 

@@ -83,7 +83,7 @@ OPTIONS:
     --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
                        frames instead of raw binary (OpenAI parity)
     --ws-path <path>   (ie115) WebSocket endpoint path (default /; colleagues'
-                       adapter uses /ws)
+                       adapter uses /v1/realtime)
     --show-unstable    display unstable hypothesis deltas as `~` lines
                        (streaming mode; off by default — FR-007)
     --mode <mode>      transcription mode: `auto` (default; tier-gated),
