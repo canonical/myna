@@ -101,16 +101,45 @@ audio_is_flowing() {
 if [ "${1:-}" = "--inner" ]; then
     shift
 
-    if command -v ibus-daemon >/dev/null 2>&1; then
-        # --panel disable: no GUI panel to attach to in a headless session.
-        ibus-daemon --daemonize --panel disable --xim >/dev/null 2>&1
-        if wait_for 100 gdbus call --session --dest org.freedesktop.IBus \
-            --object-path /org/freedesktop/IBus \
-            --method org.freedesktop.DBus.Peer.Ping; then
+    # SCRATCH is exported by the outer phase, which also removes it on exit.
+    IBUS_DIR="$SCRATCH/ibus"
+    mkdir -p "$IBUS_DIR"
+    IBUS_PID=""
+    # Invoked via trap, which shellcheck cannot see.
+    # shellcheck disable=SC2329
+    inner_cleanup() {
+        [ -n "$IBUS_PID" ] && kill "$IBUS_PID" 2>/dev/null
+        [ -n "$IBUS_PID" ] && wait "$IBUS_PID" 2>/dev/null
+        return 0
+    }
+    trap inner_cleanup EXIT
+
+    if command -v ibus-daemon >/dev/null 2>&1 && command -v ibus >/dev/null 2>&1; then
+        # An explicit address, so clients never go looking for an address file:
+        # `--daemonize` forks and the parent exits, and if the child then dies
+        # it leaves a file naming a dead PID behind. IbusInjector reports that
+        # as "address file(s) present but the daemon looks gone (stale PID N)",
+        # which is precisely how this failed in CI.
+        #
+        # No --xim either. XIM needs an X server, and there is none here.
+        export IBUS_ADDRESS="unix:path=$IBUS_DIR/bus"
+        ibus-daemon --panel disable --address "$IBUS_ADDRESS" \
+            >"$SCRATCH/ibus.log" 2>&1 &
+        IBUS_PID=$!
+
+        # Probe the way a client connects, not the way a bystander looks. The
+        # previous check pinged org.freedesktop.IBus on the *session bus*,
+        # which D-Bus happily answers by activating a fresh service: it
+        # reported success while the daemon the tests would reach was already
+        # gone. `ibus list-engine` is a real libibus client opening a real
+        # connection to IBUS_ADDRESS, so it succeeds only when the daemon the
+        # suite is about to use is genuinely serving.
+        if wait_for 150 ibus list-engine; then
             export MYNA_IBUS_TESTS=1
-            echo "gated-tests: IBus daemon up (MYNA_IBUS_TESTS=1)" >&2
+            echo "gated-tests: IBus daemon serving on $IBUS_ADDRESS (MYNA_IBUS_TESTS=1)" >&2
         else
-            echo "gated-tests: IBus daemon did not answer; ibus_hw will skip" >&2
+            echo "gated-tests: IBus daemon never served; ibus_hw will skip" >&2
+            sed 's/^/gated-tests:   ibus: /' "$SCRATCH/ibus.log" >&2
         fi
     else
         echo "gated-tests: no ibus-daemon; ibus_hw will skip" >&2
@@ -128,6 +157,7 @@ fi
 # private session bus.
 # ---------------------------------------------------------------------------
 SCRATCH=$(mktemp -d)
+export SCRATCH
 PIDS=()
 
 cleanup() {
