@@ -44,50 +44,83 @@ wait_for() {
 VIRTUAL_MIC=myna-virtual-mic
 VIRTUAL_SPEAKER=myna-virtual-speaker
 
-# The virtual audio graph, written as a PipeWire config drop-in so the daemon
-# owns it from startup. `support.null-audio-sink` runs on a timer rather than a
-# hardware clock, which is what lets it clock a graph with no sound card in it.
+# The virtual audio graph, written as config drop-ins so the daemons own it
+# from startup.
 #
-# The sink is not there to play anything: a `pw-loopback` source carries no
-# clock of its own, so unless its other side lands on a driving sink, capture
-# from it stalls and myna-audio faults with "no audio is flowing". That applies
-# to the virtual mic here and to the named sources pipewire_hw spawns for its
-# own device-selection tests.
+# `support.null-audio-sink` is timer-driven rather than clocked by a sound
+# card, which is what lets it run on a machine with no audio hardware at all.
+# The catch is that the session manager suspends an idle node, and a virtual
+# device is idle by definition: nothing is playing to it. A suspended node
+# stops its timer and hands out an empty stream forever, which reads exactly
+# like a working device that happens to be silent. `node.pause-on-idle=false`
+# with `session.suspend-timeout-seconds=0` is what keeps it running, and
+# without those two lines every capture here returns a bare WAV header.
+#
+# The source is what the default-capture tests record from. The sink is what
+# drives the named `pw-loopback` sources pipewire_hw spawns for its own
+# device-selection tests: a loopback carries no clock of its own, so its
+# playback side has to land on a driving sink.
 write_virtual_audio_config() {
     mkdir -p "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d"
     cat > "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d/10-myna-virtual-audio.conf" <<CONF
 context.objects = [
   { factory = adapter
     args = {
-      factory.name     = support.null-audio-sink
-      node.name        = "$VIRTUAL_SPEAKER"
-      node.description = "$VIRTUAL_SPEAKER"
-      media.class      = Audio/Sink
-      audio.position   = [ FL FR ]
+      factory.name                    = support.null-audio-sink
+      node.name                       = "$VIRTUAL_MIC"
+      node.description                = "$VIRTUAL_MIC"
+      media.class                     = Audio/Source/Virtual
+      audio.position                  = [ FL FR ]
+      node.pause-on-idle              = false
+      session.suspend-timeout-seconds = 0
+    }
+  }
+  { factory = adapter
+    args = {
+      factory.name                    = support.null-audio-sink
+      node.name                       = "$VIRTUAL_SPEAKER"
+      node.description                = "$VIRTUAL_SPEAKER"
+      media.class                     = Audio/Sink
+      audio.position                  = [ FL FR ]
+      node.pause-on-idle              = false
+      session.suspend-timeout-seconds = 0
     }
   }
 ]
 CONF
+
+    # Hardware off. The suite builds every source it needs, so a real sound
+    # card only makes the graph vary by machine: this is why the suite passed
+    # on a developer desktop and skipped in CI, and why that gap went unnoticed
+    # for so long. With the monitors disabled a laptop reproduces the runner.
+    mkdir -p "$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d"
+    cat > "$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d/10-myna-no-hardware.conf" <<'CONF'
+wireplumber.profiles = {
+  main = {
+    monitor.alsa      = disabled
+    monitor.v4l2      = disabled
+    monitor.libcamera = disabled
+    monitor.bluez     = disabled
+  }
+}
+CONF
 }
 
-# True once the virtual mic is a node in the graph. A graph query, not
-# `wpctl status`: wireplumber files a pw-loopback source under Filters rather
-# than Sources, so the friendly listing claims there is no capture device while
-# the graph plainly holds one.
+# True once wireplumber has published the virtual mic in the graph.
 virtual_mic_in_graph() {
     pw-cli ls Node 2>/dev/null | grep -q "$VIRTUAL_MIC"
 }
 
-# Does capture actually deliver? Not "is there a node in the graph" - a
-# pw-loopback source appears in the graph and still stalls when nothing drives
-# it, and a null-audio-sink published as a source appears *and* hands out an
-# empty stream forever. Both look identical to a listing and neither can pass
-# pipewire_hw, which asserts on buffers arriving.
+# Does capture actually deliver? A present node proves nothing: a suspended
+# virtual device is still listed, still shows as the default, and hands out an
+# empty stream, which is indistinguishable from a working device in a quiet
+# room. pipewire_hw asserts on buffers arriving, so the gate is decided the
+# same way: record, and require a WAV bigger than its 44-byte header.
 #
-# So the gate is decided by recording: a WAV larger than its 44-byte header
-# means the graph carries data, and only then is MYNA_PIPEWIRE_TESTS worth
-# setting. Where it does not, the suite skips exactly as it does offline
-# instead of failing a build over an environment it never got.
+# Keeping this probe even though the graph above is now built to flow is the
+# point. It is what turns "the environment is wrong" into a skip instead of a
+# build failure, and it is what would have caught the config being silently
+# broken by a pipewire or wireplumber upgrade.
 audio_is_flowing() {
     local probe="$SCRATCH/probe.wav"
     rm -f "$probe"
@@ -105,8 +138,9 @@ if [ "${1:-}" = "--inner" ]; then
     IBUS_DIR="$SCRATCH/ibus"
     mkdir -p "$IBUS_DIR"
     IBUS_PID=""
-    # Invoked via trap, which shellcheck cannot see.
-    # shellcheck disable=SC2329
+    # Invoked via trap, which shellcheck cannot see. Older shellcheck flags the
+    # body as unreachable (SC2317), newer flags the function (SC2329).
+    # shellcheck disable=SC2317,SC2329
     inner_cleanup() {
         [ -n "$IBUS_PID" ] && kill "$IBUS_PID" 2>/dev/null
         [ -n "$IBUS_PID" ] && wait "$IBUS_PID" 2>/dev/null
@@ -174,17 +208,18 @@ trap cleanup EXIT
 export XDG_RUNTIME_DIR="$SCRATCH/run"
 export XDG_CONFIG_HOME="$SCRATCH/config"
 export XDG_CACHE_HOME="$SCRATCH/cache"
-mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+# Private state too: wireplumber remembers default-device choices across runs,
+# and inheriting the caller's would make the graph depend on their desktop.
+export XDG_STATE_HOME="$SCRATCH/state"
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 # No display: the desktop suites must not reach a real compositor, and IBus
 # picks its connection up from the session bus, not from X.
 unset WAYLAND_DISPLAY DISPLAY
 
-# PipeWire graph: the daemon, wireplumber to populate it, and a virtual mic fed
-# by the driving sink. wireplumber files a pw-loopback source under Filters
-# rather than Sources, so `wpctl status` will claim there is no capture device
-# even when there is one; the readiness check below records instead of asking.
+# PipeWire graph: the daemon plus wireplumber to publish the virtual devices
+# the config drop-in declares.
 if command -v pipewire >/dev/null 2>&1 && command -v wireplumber >/dev/null 2>&1; then
     write_virtual_audio_config
     pipewire >/dev/null 2>&1 &
@@ -192,13 +227,7 @@ if command -v pipewire >/dev/null 2>&1 && command -v wireplumber >/dev/null 2>&1
     if wait_for 100 test -S "$XDG_RUNTIME_DIR/pipewire-0"; then
         wireplumber >/dev/null 2>&1 &
         PIDS+=("$!")
-        if wait_for 100 pw-cli info 0 && command -v pw-loopback >/dev/null 2>&1; then
-            pw-loopback -C "$VIRTUAL_SPEAKER.monitor" \
-                --playback-props="media.class=Audio/Source node.name=$VIRTUAL_MIC node.description=$VIRTUAL_MIC" \
-                >/dev/null 2>&1 &
-            PIDS+=("$!")
-            wait_for 100 virtual_mic_in_graph
-        fi
+        wait_for 100 virtual_mic_in_graph
         if audio_is_flowing; then
             export MYNA_PIPEWIRE_TESTS=1
             export MYNA_PIPEWIRE_TARGET="$VIRTUAL_MIC"
