@@ -121,7 +121,6 @@ const WaveRibbonActor = GObject.registerClass(
 
             this.reset();
             this.connect('repaint', () => this._draw());
-            this.connect('destroy', () => this._onDestroy());
         }
 
         /**
@@ -266,13 +265,14 @@ const WaveRibbonActor = GObject.registerClass(
             };
         }
 
-        _onDestroy() {
+        destroy() {
             if (this._frameTimeline !== null) {
                 this._frameTimeline.stop();
                 this._frameTimeline.set_actor(null);
                 this._frameTimeline = null;
             }
             this._settings = null;
+            super.destroy();
         }
     });
 
