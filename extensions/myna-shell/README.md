@@ -9,7 +9,7 @@ last-mile that does. Contract and design history: `specs/004-gnome-shell-indicat
 ## Install (development)
 
 ```sh
-UUID=myna-shell@myna.dev
+UUID=myna-shell@canonical.com
 mkdir -p ~/.local/share/gnome-shell/extensions/$UUID
 cp -r extensions/myna-shell/* ~/.local/share/gnome-shell/extensions/$UUID/
 # dev-lab/ is a non-shipped development tool — never installed.
