@@ -230,12 +230,22 @@ export default class VisualDriverExtension {
         St.ThemeContext.get_for_stage(global.stage).get_theme()
             .load_stylesheet(Gio.File.new_for_path(`${src}/stylesheet.css`));
 
-        // Every assertion below is about an animation. If the session has
-        // animations off, ease() jumps straight to its target and the whole
-        // suite would pass without measuring anything.
-        // St.Settings, not a GSettings read: it is what ease() itself consults.
+        // Every assertion below is about an animation. With animations off,
+        // ease() jumps straight to its target and the whole suite would pass
+        // without measuring anything. St.Settings, not a GSettings read: it is
+        // what ease() itself consults.
+        //
+        // The Shell inhibits animations whenever it is rendering in software,
+        // which is every container and every hosted CI runner. That is a
+        // performance heuristic about the machine, not behaviour under test, so
+        // release it. The harness owns the enable-animations setting and sets
+        // it true, so an inhibit is the only thing that can be holding them
+        // off, and the count is therefore non-zero.
+        const settings = St.Settings.get();
+        if (!settings.enable_animations)
+            settings.uninhibit_animations();
         this._check('animations are enabled (the suite is meaningless without them)',
-            St.Settings.get().enable_animations);
+            settings.enable_animations);
 
         // ── V1: the actor tree is built at construction ──────────────────────
         // Not on the first show(). Actor construction, a Gio.Settings open and

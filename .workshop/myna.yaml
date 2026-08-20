@@ -73,20 +73,10 @@ actions:
   # Python offline suite (fake-adapter contract + adapter logic).
   py-test: |
     cd /project/server && uv run pytest "$@"
-  # GJS contract tests for the GNOME Shell extension (feature 004): the pure
-  # state→visual-intent mapping + stub-proxy lifecycle. No Shell needed.
-  #
-  # Then the HUD's *presentation* against a real headless Shell - Clutter
-  # easing on a real frame clock, which the pure suites above cannot see. It
-  # exits 77 when no Shell can run in this environment, which is a skip, not a
-  # failure (the script's header explains where it draws that line).
-  gjs-test: |
-    cd /project/extensions/myna-shell
-    for t in test/*.test.js; do gjs -m "$t" || exit 1; done
-    # `cmd; rc=$?` would never reach the assignment: the action runs under
-    # set -e, so a 77 aborts at the call itself.
-    rc=0; test/entrance-visual.sh || rc=$?
-    [ "$rc" -eq 0 ] || [ "$rc" -eq 77 ] || exit "$rc"
+  # The GNOME Shell extension's suites (feature 004) live in the `myna-shell`
+  # workshop, not this one: this base is ubuntu@24.04 because that is the
+  # snap's core24, and the extension targets a Shell no 24.04 archive has.
+  # See .workshop/myna-shell.yaml.
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.

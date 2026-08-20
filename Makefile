@@ -138,9 +138,12 @@ test-gated: ## Rust env-gated hardware suites, services stood up (workshop: test
 test-server: ## Python test suite (workshop: py-test)
 	workshop run myna py-test
 
+# Its own workshop, not `myna`: the Shell version a test can reach comes from
+# the workshop's base, and the extension targets a newer one than the core24
+# snap does. See .workshop/myna-shell.yaml.
 .PHONY: test-extension
-test-extension: ## GNOME Shell extension suites, incl. the headless-Shell presentation check (workshop: gjs-test)
-	workshop run myna gjs-test
+test-extension: ## GNOME Shell extension suites, incl. the headless-Shell presentation check (workshop myna-shell: gjs-test)
+	workshop run myna-shell gjs-test
 
 .PHONY: lint-client
 lint-client: ## Rust lints as errors (workshop: lint)

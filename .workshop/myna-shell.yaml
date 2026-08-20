@@ -1,0 +1,51 @@
+# Workshop for the GNOME Shell extension (extensions/myna-shell), separate
+# from the main `myna` workshop.
+#
+# It exists because of one line: `base`. A Workshop SDK cannot carry its own
+# base image, so the GNOME Shell version available to a test comes from the
+# workshop's base and nothing else, and this project has two shipping targets
+# that disagree about it:
+#
+#   - client/ + server/ ship in a snap on `core24`, so the main workshop's
+#     ubuntu@24.04 base is what we ship, and must stay there.
+#   - extensions/myna-shell ships to a GNOME desktop. Its metadata.json
+#     declares Shell 50/51, which no 24.04 archive has or can have (Shell 50
+#     wants mutter 50, gjs 1.86, glib 2.86). On 24.04's Shell 46,
+#     test/entrance-visual.sh correctly refuses to draw conclusions and skips,
+#     which means the presentation check never actually runs.
+#
+# So the extension gets a base that ships a Shell it supports, and the daemon
+# keeps the base it ships on. Porting the extension backwards to an older Shell
+# would collapse the two again; until then, this tests what we ship.
+name: myna-shell
+base: ubuntu@26.04
+sdks:
+  # In-project SDK: GJS + GNOME Shell. See .workshop/shell/sdk.yaml.
+  - name: project-shell
+
+# The extension's own suites. Mirrors the `myna` workshop's action style: bash,
+# run as the workshop user with the project mounted at /project.
+actions:
+  # The pure GJS contract tests (state to visual-intent mapping, stub-proxy
+  # lifecycle, ribbon/vumeter/accent maths) need no Shell at all. Then the
+  # HUD's *presentation* against a real headless Shell: Clutter easing on a
+  # real frame clock, which the pure suites above cannot see.
+  #
+  # entrance-visual.sh exits 77 when it cannot measure - no Shell, a Shell
+  # outside the extension's supported range, or one too starved to present
+  # enough frames to judge. That is a skip, not a failure; its header explains
+  # where it draws each of those lines.
+  gjs-test: |
+    cd /project/extensions/myna-shell
+    for t in test/*.test.js; do gjs -m "$t" || exit 1; done
+    # `cmd; rc=$?` would never reach the assignment: the action runs under
+    # set -e, so a 77 aborts at the call itself.
+    rc=0; test/entrance-visual.sh || rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 77 ] || exit "$rc"
+
+  # The Shell this base actually provides, against the range the extension
+  # declares. Worth a named action because a mismatch is what makes gjs-test
+  # skip its most valuable half, silently and without failing.
+  shell-version-probe: |
+    gnome-shell --version
+    sed -n 's/.*"shell-version": *\[\([^]]*\)\].*/\1/p' /project/extensions/myna-shell/metadata.json

@@ -15,14 +15,12 @@
 #                     and for feature 004's MYNA_DBUS_TESTS org.myna.Dictation
 #                     round-trip suite
 #   Feature 004 (GNOME Shell indicator):
-#   - gjs           : runs the extensions/myna-shell pure contract tests
-#                     (states/vumeter + stub-proxy lifecycle; no Shell needed)
-#   - gnome-shell, gnome-session : a GNOME Shell session for the extension
-#                     on-hardware acceptance (quickstart §4–§7). NOTE: this
-#                     SDK sits on ubuntu@24.04 (Shell 46); the extension's
-#                     metadata targets Shell 50/51 (Ubuntu 26.10), so the
-#                     install/enable acceptance happens on the 26.04 desktop —
-#                     these packages cover the tooling/validation path here.
+#   - gnome-session : the session bits the desktop last-mile's own gated
+#                     suites expect to find.
+# The extension's *test* dependencies are no longer here. This SDK sits on the
+# main workshop's ubuntu@24.04 base, which is the snap's core24 and cannot have
+# the Shell 50/51 the extension targets, so its suites moved to the `myna-shell`
+# workshop and the `shell` SDK - see .workshop/myna-shell.yaml.
 # zbus/ashpd are pure-Rust (no system -dev headers).
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -35,6 +33,4 @@ apt-get install --yes --no-install-recommends \
   xdg-desktop-portal-gnome \
   dbus \
   dbus-x11 \
-  gjs \
-  gnome-shell \
   gnome-session

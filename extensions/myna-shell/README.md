@@ -124,7 +124,13 @@ for f in test/*.test.js; do gjs -m "$f"; done   # pure logic, no Shell
 test/entrance-visual.sh                         # presentation, real Shell
 ```
 
-Both run in CI as `make test-extension`.
+Both run in CI as `make test-extension`, in their own Workshop
+(`.workshop/myna-shell.yaml`) rather than the main one. A Workshop SDK cannot
+carry its own base image, so the Shell version a test can reach comes from the
+workshop's base: the main workshop sits on ubuntu@24.04 because that is the
+snap's `core24`, and no 24.04 archive has - or can have - the Shell this
+extension targets. Until the extension is ported backwards, the two need
+different bases.
 
 Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
 `hud-logic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a

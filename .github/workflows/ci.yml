@@ -1,10 +1,12 @@
 # CI for myna — runs the build+test suite inside the *same* Canonical Workshop
-# environment developers use locally (.workshop/myna.yaml), so "green in CI"
+# environments developers use locally (.workshop/*.yaml), so "green in CI"
 # means "green in the environment you develop in" (constitution Principle IV).
 #
 # The launch-workshop action installs Workshop on the hosted runner and builds
-# the `myna` workshop (Rust toolchain + uv + the in-project pipewire SDK). The
-# named actions (`lint`, `test`, `py-test`) are defined in .workshop/myna.yaml.
+# one workshop per job. `myna` (Rust toolchain + uv + the in-project pipewire
+# SDK) carries the client/server suites; `myna-shell` carries the GNOME Shell
+# extension's, on a base new enough to run the Shell it targets. The named
+# actions (`lint`, `test`, `py-test`, `gjs-test`) are defined alongside each.
 name: CI
 
 on:
@@ -40,10 +42,24 @@ jobs:
       - name: Python tests (pytest)
         run: make test-server
 
-      # GNOME Shell extension: the pure GJS contract suites, then the HUD's
-      # presentation driven against a real headless Shell. The latter skips
-      # cleanly where no Shell can run.
-      - name: Extension tests (gjs)
+
+  # The GNOME Shell extension, in its own workshop and so its own job: the
+  # Shell version a test can reach comes from the workshop's base, and the
+  # extension targets a newer one than the core24 snap does. The pure GJS
+  # contract suites run first, then the HUD's presentation against a real
+  # headless Shell. See .workshop/myna-shell.yaml.
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # TODO(security): pin to a commit SHA before relying on this in anger -
+      # @v1 tracks the latest v1.* and can move under us.
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna-shell
+
+      - name: Extension tests (gjs + headless Shell)
         run: make test-extension
 
   # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
