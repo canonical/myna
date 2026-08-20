@@ -21,11 +21,18 @@
 # is both what the compositor would rasterize and far less flaky than diffing
 # frames.
 #
-# Everything is private and torn down on exit, so this is safe to run on a
-# desktop: a scratch XDG_RUNTIME_DIR/XDG_DATA_HOME/XDG_CONFIG_HOME, its own
-# session bus, its own Wayland display, and the keyfile GSettings backend so it
-# never writes to the caller's dconf. It does NOT touch the caller's real
-# session, and does not need - or want - the extension installed there.
+# Everything is private, so this is safe to run on a desktop: a scratch
+# XDG_RUNTIME_DIR/XDG_DATA_HOME/XDG_CONFIG_HOME, its own session bus, its own
+# Wayland display, and the keyfile GSettings backend so it never writes to the
+# caller's dconf. It does NOT touch the caller's real session, and does not
+# need - or want - the extension installed there.
+#
+# Teardown is by process group, on EXIT, TERM and INT, and a run that is
+# SIGKILLed is reaped by the next one. That is not belt-and-braces: an earlier
+# version killed only the `dbus-run-session` wrapper from an EXIT trap alone,
+# so every run that timed out orphaned a headless Shell - plus the portal,
+# notification server, ibus and calendar server its bus had activated - and
+# each one went on burning a few percent of a core indefinitely.
 #
 # A Shell that cannot run here at all - not installed, or a headless mutter
 # with no DRM device to fall back from - means skip, not fail (exit 77),
@@ -70,16 +77,62 @@ case " $SUPPORTED " in
         ;;
 esac
 
+# Carries this script's PID so a session can always be traced back to the run
+# that owns it, which is what makes reaping a previous run's leftovers safe.
+DISPLAY_NAME="myna-visual-check-$$"
+
+# Every headless session this script has ever started, alive, with a dead
+# owner. Nothing else can match: the owning PID is in the display name.
+stale_sessions() {
+    ps -eo pid=,args= 2>/dev/null |
+    sed -n 's/^ *\([0-9]\+\) .*--wayland-display myna-visual-check-\([0-9]\+\).*/\1 \2/p' |
+    while read -r pid owner; do
+        kill -0 "$owner" 2>/dev/null || echo "$pid"
+    done
+}
+
+# A SIGKILL leaves no chance to clean up, and an orphaned headless Shell keeps
+# rendering - forever, at a steady few percent of a core, alongside the portal,
+# notification server, ibus and calendar server its private bus activated. Reap
+# any that a previous run lost before adding another.
+for stale in $(stale_sessions); do
+    echo "entrance-visual: reaping orphaned session $stale from an earlier run" >&2
+    kill -KILL -- "-$(ps -o pgid= -p "$stale" 2>/dev/null | tr -d ' ')" 2>/dev/null ||
+        kill -KILL "$stale" 2>/dev/null
+done
+
 SCRATCH=$(mktemp -d)
-# Invoked by the EXIT trap below. Older shellcheck reads the body as
-# unreachable (SC2317), newer flags the function (SC2329).
+CLEANED=0
+# Invoked by the traps below. Older shellcheck reads the body as unreachable
+# (SC2317), newer flags the function (SC2329).
 # shellcheck disable=SC2317,SC2329
 cleanup() {
-    [ -n "${SHELL_PID:-}" ] && kill "$SHELL_PID" 2>/dev/null
-    [ -n "${SHELL_PID:-}" ] && wait "$SHELL_PID" 2>/dev/null
+    [ "$CLEANED" = 1 ] && return
+    CLEANED=1
+    # No group to kill means setsid did not do what it says above; fall back to
+    # the process itself so a Shell is never left behind either way.
+    [ -z "${SESSION_PGID:-}" ] && [ -n "${SHELL_PID:-}" ] &&
+        kill -KILL "$SHELL_PID" 2>/dev/null
+    # The whole process group, not just what we started. `dbus-run-session`
+    # execs the Shell, and the Shell has its private bus activate a portal, a
+    # notification server, ibus and a calendar server. Killing the wrapper
+    # alone orphans every one of them.
+    if [ -n "${SESSION_PGID:-}" ]; then
+        kill -TERM -- "-$SESSION_PGID" 2>/dev/null
+        for _ in $(seq 30); do
+            kill -0 -- "-$SESSION_PGID" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -KILL -- "-$SESSION_PGID" 2>/dev/null
+    fi
     rm -rf "$SCRATCH" 2>/dev/null
 }
+# EXIT alone is not enough. A SIGTERM - which is exactly what `timeout` sends,
+# and what CI sends on cancellation - kills the script without ever running an
+# EXIT trap, and that is precisely the run that would leak a Shell.
 trap cleanup EXIT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 130' INT
 
 # A private session, in every sense. XDG_RUNTIME_DIR especially: the caller's
 # holds `gnome-shell-disable-extensions`, and a second shell that finds that
@@ -134,9 +187,17 @@ EOF
 unset WAYLAND_DISPLAY DISPLAY
 
 LOG="$SCRATCH/shell.log"
-dbus-run-session -- gnome-shell --headless --virtual-monitor 1920x1080 \
-    --wayland-display myna-visual-check >"$LOG" 2>&1 &
+# `setsid` so the session is its own process group and can be killed whole. It
+# is not a group leader here (a script has no job control), so it calls
+# setsid() and execs in place, keeping this PID as the new group's ID.
+setsid dbus-run-session -- gnome-shell --headless --virtual-monitor 1920x1080 \
+    --wayland-display "$DISPLAY_NAME" >"$LOG" 2>&1 &
 SHELL_PID=$!
+SESSION_PGID=$(ps -o pgid= -p "$SHELL_PID" 2>/dev/null | tr -d ' ')
+# Only group-kill a group we actually own. Had setsid forked instead of
+# exec'ing, this would still be the script's own group, and killing that would
+# take the script with it.
+[ "$SESSION_PGID" = "$SHELL_PID" ] || SESSION_PGID=""
 
 # The driver prints `DONE <failures>` when it has finished every scenario.
 for _ in $(seq 400); do
