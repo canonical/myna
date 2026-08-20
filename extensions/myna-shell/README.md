@@ -100,6 +100,13 @@ every frame, so it follows the same rules `ui/osdWindow.js` does:
   a 60 Hz output beats against vsync and reads as juddering motion. The
   timeline also idles automatically whenever the ribbon is unmapped, so a
   hidden HUD and a critical error (which hides the ribbon) both cost nothing.
+- **Raised above its chrome siblings on every present.** Chrome paints in
+  insertion order, and the Ubuntu dock re-adds itself on every re-track, so
+  landing above it once proves nothing. With a bottom dock in its
+  non-reserving (intellihide) state the two overlap, and without the raise the
+  pill is completely hidden behind the dock. `osdWindow.js` raises itself the
+  same way, for the same reason. Placement stays on the *work area*, so a dock
+  that does reserve space is cleared rather than drawn over.
 - **`global.compositor.disable_unredirect()` while the pill is on screen**,
   balanced on hide. Over a fullscreen window mutter may scan the window out
   directly, and an overlay appearing forces it in and out of that path.

@@ -489,6 +489,12 @@ export class HudView {
         // and an overlay appearing forces it in and out of that path.
         this._setUnredirectDisabled(true);
 
+        // Chrome siblings paint in insertion order, and the Ubuntu dock
+        // re-adds itself on every re-track, so it can land above us at any
+        // time and hide the pill completely. Raise on each present, which is
+        // what osdWindow.js does and for the same reason.
+        this._container.get_parent()?.set_child_above_sibling(this._container, null);
+
         // Still on screen means a dismiss fade is in flight: pick the pill up
         // from wherever that fade left it and carry it back to full, rather
         // than re-running an entrance over an actor the user can still see.

@@ -333,6 +333,30 @@ export default class VisualDriverExtension {
         this._check('V3 still exactly one pill in the chrome',
             findPills().length === 1, `found ${findPills().length}`);
 
+        // ── V4: the pill is never buried under other chrome ─────────────────
+        // Chrome siblings paint in insertion order, so anything that assumes
+        // it was added last is wrong: the Ubuntu dock re-adds itself on every
+        // re-track, and with a bottom dock that does not reserve space (its
+        // intellihide state) the two overlap, so losing this puts the pill
+        // completely behind the dock. A plain chrome actor added after the
+        // view stands in for it, and needs no dock installed to do so.
+        const laterChrome = new Clutter.Actor({name: 'myna-visual-later-chrome'});
+        Main.layoutManager.addChrome(laterChrome);
+        this._view.hide();
+        await this._waitUntil(() => !box.visible, HIDE_TIMEOUT_MS);
+        this._view.show(RECORDING);
+        await this._waitUntil(() => this._settled(box), SETTLE_TIMEOUT_MS);
+
+        const siblings = [...Main.layoutManager.uiGroup];
+        const pillAt = siblings.indexOf(box.get_parent());
+        const otherAt = siblings.indexOf(laterChrome);
+        this._check('V4 presenting raises the pill above chrome added after it',
+            pillAt > otherAt && pillAt >= 0 && otherAt >= 0,
+            `pill at ${pillAt}, later chrome at ${otherAt}`);
+
+        Main.layoutManager.removeChrome(laterChrome);
+        laterChrome.destroy();
+
         // ── Teardown leaves nothing behind (X9) ──────────────────────────────
         this._view.destroy();
         this._view = null;
