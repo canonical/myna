@@ -14,17 +14,20 @@
 // all handled declaratively, and the bottom gap is `stylesheet.css`'s
 // `margin-bottom` on `.myna-hud-pill`.
 
+import {RibbonPhase} from './ribbon.js';
+import {DictationState, Severity} from './states.js';
+
 /**
  * Icon choice for a descriptor's severity (X19): a mic-with-slash icon only
  * for a critical error (the microphone genuinely may be at fault); every
  * other treatment — including a recoverable notice, where the microphone
  * itself isn't the problem — keeps the plain filled mic.
  *
- * @param {(string|null)} severity - `'recoverable' | 'critical' | null`.
+ * @param {(string|null)} severity - `Severity.RECOVERABLE | Severity.CRITICAL | null`.
  * @returns {string} a symbolic icon name.
  */
 export function iconForSeverity(severity) {
-    return severity === 'critical'
+    return severity === Severity.CRITICAL
         ? 'microphone-disabled-symbolic'
         : 'audio-input-microphone-symbolic';
 }
@@ -39,7 +42,7 @@ export function iconForSeverity(severity) {
  * @returns {boolean}
  */
 export function severityAutoDismisses(severity) {
-    return severity === 'recoverable';
+    return severity === Severity.RECOVERABLE;
 }
 
 /**
@@ -69,22 +72,22 @@ export function shouldReplaceHeldNotice(incomingSeverity) {
  * @returns {(string|null)} an St CSS class name, or null for no override.
  */
 export function pillColorClass({key, severity}) {
-    if (severity === 'recoverable')
+    if (severity === Severity.RECOVERABLE)
         return 'myna-hud-severity-recoverable';
-    if (severity === 'critical')
+    if (severity === Severity.CRITICAL)
         return 'myna-hud-severity-critical';
-    if (key === 'loading')
+    if (key === DictationState.LOADING)
         return 'myna-hud-phase-loading';
     return null;
 }
 
 // Every colour class pillColorClass can return, for a view to reset before
 // applying the current one (avoids stale classes lingering across states).
-export const PILL_COLOR_CLASSES = [
+export const PILL_COLOR_CLASSES = Object.freeze([
     'myna-hud-severity-recoverable',
     'myna-hud-severity-critical',
     'myna-hud-phase-loading',
-];
+]);
 
 /**
  * Which wave-ribbon lifecycle phase (ribbon.js) a state transition forces,
@@ -106,18 +109,18 @@ export const PILL_COLOR_CLASSES = [
  * phase.
  *
  * @param {string} key - the state's `key` (states.js's descriptor field).
- * @returns {('morph'|'complete'|'flow'|null)}
+ * @returns {(string|null)} a RibbonPhase value or null.
  */
 export function ribbonPhaseForStateKey(key) {
     switch (key) {
-    case 'transcribing':
-        return 'morph';
-    case 'finalizing':
-        return 'complete';
-    case 'loading':
-    case 'recording':
-    case 'active':
-        return 'flow';
+    case DictationState.TRANSCRIBING:
+        return RibbonPhase.MORPH;
+    case DictationState.FINALIZING:
+        return RibbonPhase.COMPLETE;
+    case DictationState.LOADING:
+    case DictationState.RECORDING:
+    case DictationState.ACTIVE:
+        return RibbonPhase.FLOW;
     default:
         return null;
     }
@@ -131,11 +134,11 @@ export function ribbonPhaseForStateKey(key) {
  * visible, tinted amber and gently pulsing rather than hidden — motion
  * "pauses" but never reads as dead. `descriptor.severity` is passed
  * straight through as `ribbon.js`'s `severityTint` input (the values
- * already match: `null | 'recoverable' | 'critical'`).
+ * already match: `null | Severity.RECOVERABLE | Severity.CRITICAL`).
  *
  * @param {(string|null)} severity
  * @returns {boolean}
  */
 export function ribbonVisibleForSeverity(severity) {
-    return severity !== 'critical';
+    return severity !== Severity.CRITICAL;
 }

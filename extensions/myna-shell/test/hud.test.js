@@ -23,6 +23,8 @@ import {
     pillColorClass,
     PILL_COLOR_CLASSES,
 } from '../hudLogic.js';
+import {RibbonPhase} from '../ribbon.js';
+import {DictationState, Severity} from '../states.js';
 
 let failures = 0;
 
@@ -42,9 +44,9 @@ function eq(name, actual, expected) {
 // --- X19: mic vs. mic-slash icon, contextual on severity --------------------
 
 {
-    eq('X19 critical → mic-slash', iconForSeverity('critical'), 'microphone-disabled-symbolic');
+    eq('X19 critical → mic-slash', iconForSeverity(Severity.CRITICAL), 'microphone-disabled-symbolic');
     eq('X19 recoverable → plain mic (mic itself is not at fault)',
-        iconForSeverity('recoverable'), 'audio-input-microphone-symbolic');
+        iconForSeverity(Severity.RECOVERABLE), 'audio-input-microphone-symbolic');
     eq('X19 no severity (loading/recording/...) → plain mic',
         iconForSeverity(null), 'audio-input-microphone-symbolic');
 }
@@ -52,8 +54,8 @@ function eq(name, actual, expected) {
 // --- FR-007a/FR-007b: auto-dismiss behavior by severity ---------------------
 
 {
-    check('recoverable notices auto-dismiss', severityAutoDismisses('recoverable') === true);
-    check('critical errors do not auto-dismiss', severityAutoDismisses('critical') === false);
+    check('recoverable notices auto-dismiss', severityAutoDismisses(Severity.RECOVERABLE) === true);
+    check('critical errors do not auto-dismiss', severityAutoDismisses(Severity.CRITICAL) === false);
     check('non-problem states have no auto-dismiss concept', severityAutoDismisses(null) === false);
 }
 
@@ -62,9 +64,9 @@ function eq(name, actual, expected) {
 
 {
     check('a recoverable notice replaces a held slot',
-        shouldReplaceHeldNotice('recoverable') === true);
+        shouldReplaceHeldNotice(Severity.RECOVERABLE) === true);
     check('a critical error replaces a held slot',
-        shouldReplaceHeldNotice('critical') === true);
+        shouldReplaceHeldNotice(Severity.CRITICAL) === true);
     check('a non-problem state does not "replace" (nothing to hold)',
         shouldReplaceHeldNotice(null) === false);
 }
@@ -73,15 +75,15 @@ function eq(name, actual, expected) {
 
 {
     eq('recoverable → orange colour class',
-        pillColorClass({key: 'notice', severity: 'recoverable'}),
+        pillColorClass({key: DictationState.NOTICE, severity: Severity.RECOVERABLE}),
         'myna-hud-severity-recoverable');
     eq('critical → red colour class',
-        pillColorClass({key: 'error', severity: 'critical'}),
+        pillColorClass({key: DictationState.ERROR, severity: Severity.CRITICAL}),
         'myna-hud-severity-critical');
     eq('loading → warm phase colour class',
-        pillColorClass({key: 'loading', severity: null}),
+        pillColorClass({key: DictationState.LOADING, severity: null}),
         'myna-hud-phase-loading');
-    for (const key of ['recording', 'transcribing', 'finalizing']) {
+    for (const key of [DictationState.RECORDING, DictationState.TRANSCRIBING, DictationState.FINALIZING]) {
         eq(`${key} → no colour override`,
             pillColorClass({key, severity: null}), null);
     }
@@ -95,17 +97,17 @@ function eq(name, actual, expected) {
 
 {
     eq('transcribing forces the ribbon into morph',
-        ribbonPhaseForStateKey('transcribing'), 'morph');
+        ribbonPhaseForStateKey(DictationState.TRANSCRIBING), RibbonPhase.MORPH);
     eq('finalizing forces the ribbon into complete (FR-010d)',
-        ribbonPhaseForStateKey('finalizing'), 'complete');
+        ribbonPhaseForStateKey(DictationState.FINALIZING), RibbonPhase.COMPLETE);
     // Live states pin the ribbon to flow — this is what recovers it after a
     // morph/complete, which was previously stuck until idle/a new session.
-    for (const key of ['loading', 'recording', 'active']) {
+    for (const key of [DictationState.LOADING, DictationState.RECORDING, DictationState.ACTIVE]) {
         eq(`${key} forces the ribbon into flow`,
-            ribbonPhaseForStateKey(key), 'flow');
+            ribbonPhaseForStateKey(key), RibbonPhase.FLOW);
     }
     // idle never shows; notice/error are carried by tint/visibility, not phase.
-    for (const key of ['idle', 'notice', 'error', 'unknown-state']) {
+    for (const key of [DictationState.IDLE, DictationState.NOTICE, DictationState.ERROR, 'unknown-state']) {
         eq(`${key} does not force a phase`,
             ribbonPhaseForStateKey(key), null);
     }
@@ -115,9 +117,9 @@ function eq(name, actual, expected) {
 
 {
     check('the ribbon stays visible for a recoverable notice (amber/paused instead of hidden)',
-        ribbonVisibleForSeverity('recoverable') === true);
+        ribbonVisibleForSeverity(Severity.RECOVERABLE) === true);
     check('the ribbon hides for a critical error',
-        ribbonVisibleForSeverity('critical') === false);
+        ribbonVisibleForSeverity(Severity.CRITICAL) === false);
     check('the ribbon stays visible for non-problem states',
         ribbonVisibleForSeverity(null) === true);
 }

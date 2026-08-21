@@ -39,10 +39,12 @@ import {
     pillColorClass,
     PILL_COLOR_CLASSES,
 } from './hudLogic.js';
+import {Severity} from './states.js';
 import {
     applyEnvelopeSmoothing,
     computeEnvelope,
     computeRibbonModel,
+    RibbonPhase,
     UNFOLD_MS,
 } from './ribbon.js';
 import {paintRibbon} from './ribbonPaint.js';
@@ -91,7 +93,7 @@ class WaveRibbonActor extends St.DrawingArea {
         this._smoothedEnvelope = 0;
         this._lastDrawAt = 0;
         this._severityTint = null;
-        this._phase = 'unfold';
+        this._phase = RibbonPhase.UNFOLD;
         this._startedAt = 0;
         this._phaseStartedAt = 0;
 
@@ -140,7 +142,7 @@ class WaveRibbonActor extends St.DrawingArea {
         reset(startDelayMs = 0) {
             const now = GLib.get_monotonic_time();
             this._startedAt = now;
-            this._phase = 'unfold';
+            this._phase = RibbonPhase.UNFOLD;
             this._phaseStartedAt = now + startDelayMs * 1000;
             this._lastDrawAt = 0;
             this._smoothedEnvelope = 0;
@@ -184,7 +186,7 @@ class WaveRibbonActor extends St.DrawingArea {
          * Force a lifecycle-phase change (R17). A no-op if already in that
          * phase, so a repeated state never restarts an in-flight animation.
          *
-         * @param {('unfold'|'flow'|'relax'|'morph'|'complete')} phase
+         * @param {string} phase - a RibbonPhase value.
          */
         setPhase(phase) {
             if (phase === this._phase)
@@ -192,7 +194,7 @@ class WaveRibbonActor extends St.DrawingArea {
             // The fresh-session unfold reveal hands off to flow on its own
             // (see _draw); a live descriptor arriving mid-unfold must not cut
             // it short by forcing flow early.
-            if (phase === 'flow' && this._phase === 'unfold')
+            if (phase === RibbonPhase.FLOW && this._phase === RibbonPhase.UNFOLD)
                 return;
             this._phase = phase;
             this._phaseStartedAt = GLib.get_monotonic_time();
@@ -200,11 +202,11 @@ class WaveRibbonActor extends St.DrawingArea {
         }
 
         /**
-         * Set the severity tint (R17a). `'recoverable'` keeps the ribbon
+         * Set the severity tint (R17a). Severity.RECOVERABLE keeps the ribbon
          * visible, amber and gently pulsing; a critical error hides the whole
          * ribbon at the HudView level instead.
          *
-         * @param {(('recoverable'|'critical')|null)} tint
+         * @param {(string|null)} tint - a Severity value or null.
          */
         setSeverityTint(tint) {
             if (tint === this._severityTint)
@@ -222,9 +224,9 @@ class WaveRibbonActor extends St.DrawingArea {
 
             // unfold → flow on the frame clock, so the hand-off lands on a
             // real frame boundary and owns no timer.
-            if (this._phase === 'unfold' &&
+            if (this._phase === RibbonPhase.UNFOLD &&
                 (now - this._phaseStartedAt) / 1000 >= UNFOLD_MS) {
-                this._phase = 'flow';
+                this._phase = RibbonPhase.FLOW;
                 this._phaseStartedAt = now;
             }
 
@@ -398,7 +400,7 @@ export class HudView {
         if (forcedPhase !== null)
             this._ribbon.setPhase(forcedPhase);
 
-        const dismissVisible = severity === 'critical';
+        const dismissVisible = severity === Severity.CRITICAL;
         if (this._dismissButton.visible !== dismissVisible)
             this._dismissButton.visible = dismissVisible;
     }

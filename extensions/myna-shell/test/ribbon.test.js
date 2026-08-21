@@ -22,6 +22,9 @@ import {
     relaxProgress,
     morphProgress,
     completeProgress,
+    RibbonPhase,
+    RibbonTint,
+    StrandRole,
     UNFOLD_MS,
     RELAX_MS,
     MORPH_MS,
@@ -33,6 +36,7 @@ import {
     DEFAULT_STRAND_COUNT,
     DEFAULT_POINTS_PER_STRAND,
 } from '../ribbon.js';
+import {Severity} from '../states.js';
 import {resolveAccentPalette} from '../accent.js';
 import {
     paintRibbon,
@@ -64,7 +68,7 @@ function maxAmplitude(strand) {
 }
 
 function voiceStrand(model) {
-    return model.strands.find(s => s.role === 'voice');
+    return model.strands.find(s => s.role === StrandRole.VOICE);
 }
 
 // --- X5 (delegated): instantaneous envelope reuses vumeter.js unchanged --
@@ -174,9 +178,9 @@ check('X5 stale decays toward the floor',
 // should match `shapeAmplitude(envelope)` (floored at the idle amplitude).
 {
     const envelope = 0.2;
-    const model = computeRibbonModel({envelope, elapsedMs: 0, phase: 'flow'});
-    const voiceStrand = model.strands.find(s => s.role === 'voice');
-    const observedAmplitude = Math.max(...voiceStrand.points.map(p => Math.abs(p.y)));
+    const model = computeRibbonModel({envelope, elapsedMs: 0, phase: RibbonPhase.FLOW});
+    const voice = model.strands.find(s => s.role === StrandRole.VOICE);
+    const observedAmplitude = Math.max(...voice.points.map(p => Math.abs(p.y)));
     const expectedAmplitude = shapeAmplitude(envelope);
     check(`computeRibbonModel's voice amplitude (${observedAmplitude.toFixed(4)}) reflects the shaped envelope (${expectedAmplitude.toFixed(4)}), not the raw one (${envelope})`,
         Math.abs(observedAmplitude - expectedAmplitude) < 0.01);
@@ -187,42 +191,42 @@ check('X5 stale decays toward the floor',
 // --- X24: layered strands (base/voice/secondary), deterministic ---------
 
 {
-    const a = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: 'flow'});
-    const b = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: 'flow'});
+    const a = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: RibbonPhase.FLOW});
+    const b = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: RibbonPhase.FLOW});
     eq('X24 default strand count', a.strands.length, DEFAULT_STRAND_COUNT);
-    check('X24 has a voice strand', a.strands.some(s => s.role === 'voice'));
-    check('X24 has a secondary strand', a.strands.some(s => s.role === 'secondary'));
-    check('X24 has a base strand', a.strands.some(s => s.role === 'base'));
+    check('X24 has a voice strand', a.strands.some(s => s.role === StrandRole.VOICE));
+    check('X24 has a secondary strand', a.strands.some(s => s.role === StrandRole.SECONDARY));
+    check('X24 has a base strand', a.strands.some(s => s.role === StrandRole.BASE));
     eq('X24 point count', voiceStrand(a).points.length, DEFAULT_POINTS_PER_STRAND);
     check('X24 point count within the 12-20 design range',
         voiceStrand(a).points.length >= 12 && voiceStrand(a).points.length <= 20);
     check('X24 deterministic: identical control points for identical inputs',
         JSON.stringify(a.strands) === JSON.stringify(b.strands));
 
-    const c = computeRibbonModel({envelope: 0.6, elapsedMs: 9999, phase: 'flow'});
+    const c = computeRibbonModel({envelope: 0.6, elapsedMs: 9999, phase: RibbonPhase.FLOW});
     check('X24 different elapsed time → different control points (it flows)',
         JSON.stringify(a.strands) !== JSON.stringify(c.strands));
     check('X24 strands differ from each other (per-strand phase/amplitude offsets)',
-        JSON.stringify(voiceStrand(a).points) !== JSON.stringify(a.strands.find(s => s.role === 'base').points));
+        JSON.stringify(voiceStrand(a).points) !== JSON.stringify(a.strands.find(s => s.role === StrandRole.BASE).points));
 
     // 3-5 strand range from the design doc.
-    const five = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: 'flow', strandCount: 5});
+    const five = computeRibbonModel({envelope: 0.6, elapsedMs: 1234, phase: RibbonPhase.FLOW, strandCount: 5});
     eq('strandCount=5 is honoured (design doc: "three to five")', five.strands.length, 5);
 }
 
 // --- Base strand stays "alive" nearly independent of the voice ----------
 
 {
-    const silent = computeRibbonModel({envelope: 0, elapsedMs: 500, phase: 'flow'});
-    const baseStrand = silent.strands.find(s => s.role === 'base');
+    const silent = computeRibbonModel({envelope: 0, elapsedMs: 500, phase: RibbonPhase.FLOW});
+    const base = silent.strands.find(s => s.role === StrandRole.BASE);
     check('base strand keeps moving/has amplitude even at zero envelope (never reads as off)',
-        maxAmplitude(baseStrand) > 0);
+        maxAmplitude(base) > 0);
 }
 
 // --- Crest highlighting: the voice strand reports per-point crest -------
 
 {
-    const loud = computeRibbonModel({envelope: 0.9, elapsedMs: 100, phase: 'flow'});
+    const loud = computeRibbonModel({envelope: 0.9, elapsedMs: 100, phase: RibbonPhase.FLOW});
     const voice = voiceStrand(loud);
     check('voice strand reports a crest factor per point', voice.crest.length === voice.points.length);
     check('crest factors are all within [0,1]', voice.crest.every(c => c >= 0 && c <= 1));
@@ -248,13 +252,13 @@ check('X5 stale decays toward the floor',
 // --- Phase-driven behavior (FR-010a) --------------------------------------
 
 {
-    const unfolding = computeRibbonModel({envelope: 0.8, elapsedMs: 0, phase: 'unfold', phaseElapsedMs: 0});
-    const unfolded = computeRibbonModel({envelope: 0.8, elapsedMs: 0, phase: 'unfold', phaseElapsedMs: UNFOLD_MS});
+    const unfolding = computeRibbonModel({envelope: 0.8, elapsedMs: 0, phase: RibbonPhase.UNFOLD, phaseElapsedMs: 0});
+    const unfolded = computeRibbonModel({envelope: 0.8, elapsedMs: 0, phase: RibbonPhase.UNFOLD, phaseElapsedMs: UNFOLD_MS});
     check('unfold starts near-flat and grows to full amplitude',
         maxAmplitude(voiceStrand(unfolding)) <= maxAmplitude(voiceStrand(unfolded)));
 
-    const speaking = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: 'flow'});
-    const relaxing = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: 'relax', phaseElapsedMs: RELAX_MS});
+    const speaking = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.FLOW});
+    const relaxing = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.RELAX, phaseElapsedMs: RELAX_MS});
     check('relax eases toward the idle floor, not an abrupt stop',
         maxAmplitude(voiceStrand(relaxing)) < maxAmplitude(voiceStrand(speaking)));
 }
@@ -262,11 +266,11 @@ check('X5 stale decays toward the floor',
 // --- Morph → travelling dots (contract: "contracts into a line or dots") -
 
 {
-    const morphing = computeRibbonModel({envelope: 0.9, elapsedMs: 500, phase: 'morph', phaseElapsedMs: MORPH_MS});
+    const morphing = computeRibbonModel({envelope: 0.9, elapsedMs: 500, phase: RibbonPhase.MORPH, phaseElapsedMs: MORPH_MS});
     check('morph produces travelling dots', Array.isArray(morphing.dots) && morphing.dots.length === 3);
     check('dots have valid x/alpha', morphing.dots.every(d =>
         d.x >= 0 && d.x <= 1 && d.alpha >= 0 && d.alpha <= 1));
-    const morphStart = computeRibbonModel({envelope: 0.9, elapsedMs: 500, phase: 'morph', phaseElapsedMs: 0});
+    const morphStart = computeRibbonModel({envelope: 0.9, elapsedMs: 500, phase: RibbonPhase.MORPH, phaseElapsedMs: 0});
     check('the wave fades out as morph progresses',
         maxAmplitude(voiceStrand(morphStart)) >= maxAmplitude(voiceStrand(morphing)));
 }
@@ -274,11 +278,11 @@ check('X5 stale decays toward the floor',
 // --- Complete → convergence + brightness pulse (FR-010d) -----------------
 
 {
-    const completing = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: 'complete', phaseElapsedMs: 100});
+    const completing = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.COMPLETE, phaseElapsedMs: 100});
     check('FR-010d: completion produces a convergence point', completing.convergence !== null);
     check('FR-010d: completion is a brightness boost, not a blocking state',
         completing.brightnessBoost > 0 && typeof completing.brightnessBoost === 'number');
-    const completeEnd = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: 'complete', phaseElapsedMs: COMPLETE_MS});
+    const completeEnd = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.COMPLETE, phaseElapsedMs: COMPLETE_MS});
     check('brightness pulse rises then falls (0→1→0), never stays pinned at max',
         completeEnd.brightnessBoost < 0.1);
     // Regression (2026-07-30, found via live testing): the convergence
@@ -308,12 +312,12 @@ check('X5 stale decays toward the floor',
 // --- 2026-07-30, R17a: recoverable severity → amber, paused, pulsing -----
 
 {
-    const recoverable = computeRibbonModel({envelope: 0.9, elapsedMs: 300, phase: 'flow', severityTint: 'recoverable'});
-    eq('recoverable severity tints the ribbon amber', recoverable.tint, 'amber');
+    const recoverable = computeRibbonModel({envelope: 0.9, elapsedMs: 300, phase: RibbonPhase.FLOW, severityTint: Severity.RECOVERABLE});
+    eq('recoverable severity tints the ribbon amber', recoverable.tint, RibbonTint.AMBER);
     check('recoverable severity ignores the loud envelope (motion "pauses")',
         maxAmplitude(voiceStrand(recoverable)) < 0.15);
-    const t1 = computeRibbonModel({envelope: 0.9, elapsedMs: 0, severityTint: 'recoverable'});
-    const t2 = computeRibbonModel({envelope: 0.9, elapsedMs: 900, severityTint: 'recoverable'});
+    const t1 = computeRibbonModel({envelope: 0.9, elapsedMs: 0, severityTint: Severity.RECOVERABLE});
+    const t2 = computeRibbonModel({envelope: 0.9, elapsedMs: 900, severityTint: Severity.RECOVERABLE});
     check('recoverable severity still gently pulses (not perfectly frozen)',
         maxAmplitude(voiceStrand(t1)) !== maxAmplitude(voiceStrand(t2)));
     check('normal (non-severity) model has no tint', computeRibbonModel({envelope: 0.5, elapsedMs: 0}).tint === null);
@@ -342,13 +346,13 @@ check('X5 stale decays toward the floor',
     try {
         const palette = resolveAccentPalette('orange');
         paintRibbon(cr, width, height,
-            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: 'flow'}), palette);
+            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: RibbonPhase.FLOW}), palette);
         paintRibbon(cr, width, height,
-            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: 'morph', phaseElapsedMs: 100}), palette);
+            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: RibbonPhase.MORPH, phaseElapsedMs: 100}), palette);
         paintRibbon(cr, width, height,
-            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: 'complete', phaseElapsedMs: 100}), palette);
+            computeRibbonModel({envelope: 0.7, elapsedMs: 500, phase: RibbonPhase.COMPLETE, phaseElapsedMs: 100}), palette);
         paintRibbon(cr, width, height,
-            computeRibbonModel({envelope: 0.7, elapsedMs: 500, severityTint: 'recoverable'}), palette);
+            computeRibbonModel({envelope: 0.7, elapsedMs: 500, severityTint: Severity.RECOVERABLE}), palette);
     } catch (e) {
         threw = true;
         logError(e);

@@ -24,7 +24,7 @@
 //   show(descriptor)   Make the indicator visible (if not already) and render
 //                      this semantic descriptor from states.js:
 //                      `{key, statusText, severity, hidden}` (severity is
-//                      `'recoverable' | 'critical' | null`, 2026-07-30). Never
+//                      `Severity.RECOVERABLE | Severity.CRITICAL | null`, 2026-07-30). Never
 //                      called with a hidden descriptor (the extension calls
 //                      hide() for idle).
 //   setLevel(rms, peak) Feed the latest normalized audio level in [0,1]
@@ -44,6 +44,10 @@
 
 import {HudView} from './hud.js';
 
+export const IndicatorViewType = Object.freeze({
+    HUD: 'hud',
+});
+
 /**
  * Construct the active IndicatorView. The single place a redesign is selected;
  * `name` leaves room for future user choice (settings/themes).
@@ -51,9 +55,9 @@ import {HudView} from './hud.js';
  * @param {string} [name] - view id; defaults to the bottom-center HUD pill.
  * @returns {object} an IndicatorView (see the interface above).
  */
-export function createView(name = 'hud') {
+export function createView(name = IndicatorViewType.HUD) {
     switch (name) {
-    case 'hud':
+    case IndicatorViewType.HUD:
     default:
         return new HudView();
     }

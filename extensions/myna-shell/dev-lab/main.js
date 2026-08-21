@@ -29,6 +29,7 @@ import {programArgs, programInvocationName} from 'system';
 
 import {DictationService} from '../dbus.js';
 import {ribbonPhaseForStateKey, ribbonVisibleForSeverity} from '../hudLogic.js';
+import {DictationState, Severity} from '../states.js';
 import {
     applyEnvelopeSmoothing,
     computeEnvelope,
@@ -36,6 +37,7 @@ import {
     DEFAULT_ENVELOPE_HZ,
     DEFAULT_STRAND_COUNT,
     DEFAULT_POINTS_PER_STRAND,
+    RibbonPhase,
     UNFOLD_MS,
 } from '../ribbon.js';
 import {paintRibbon} from '../ribbonPaint.js';
@@ -66,7 +68,7 @@ const DictationInterface = `
 
 class DictationSimulator {
     constructor() {
-        this._state = 'idle';
+        this._state = DictationState.IDLE;
         this._errorMessage = '';
         this._rms = 0;
         this._peak = 0;
@@ -94,16 +96,16 @@ class DictationSimulator {
     }
 
     Start() {
-        this.setState('recording');
+        this.setState(DictationState.RECORDING);
         return [true, ''];
     }
 
     Stop() {
-        this.setState('idle');
+        this.setState(DictationState.IDLE);
     }
 
     Toggle() {
-        if (this._state === 'idle')
+        if (this._state === DictationState.IDLE)
             this.Start();
         else
             this.Stop();
@@ -120,7 +122,7 @@ class DictationSimulator {
             this._dbusImpl.emit_property_changed(
                 'State', new GLib.Variant('s', state));
         }
-        if (state === 'idle')
+        if (state === DictationState.IDLE)
             this.setLevel(0, 0);
     }
 
@@ -180,13 +182,13 @@ app.connect('activate', () => {
         // applyEnvelopeSmoothing so ribbon.js itself stays pure.
         smoothedEnvelope: 0,
         lastDrawAt: 0,
-        phase: 'unfold',
+        phase: RibbonPhase.UNFOLD,
         phaseStartedAt: GLib.get_monotonic_time(),
         startedAt: GLib.get_monotonic_time(),
         strandCount: DEFAULT_STRAND_COUNT,
         pointCount: DEFAULT_POINTS_PER_STRAND,
         envelopeHz: DEFAULT_ENVELOPE_HZ,
-        simulatedSeverity: null, // null | 'recoverable' | 'critical'
+        simulatedSeverity: null, // null | Severity.RECOVERABLE | Severity.CRITICAL
     };
 
     function setPhase(phase) {
@@ -211,8 +213,8 @@ app.connect('activate', () => {
             GLib.source_remove(unfoldTimer);
         unfoldTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNFOLD_MS, () => {
             unfoldTimer = 0;
-            if (model.phase === 'unfold')
-                setPhase('flow');
+            if (model.phase === RibbonPhase.UNFOLD)
+                setPhase(RibbonPhase.FLOW);
             return GLib.SOURCE_REMOVE;
         });
     }
@@ -227,14 +229,18 @@ app.connect('activate', () => {
             // (morph/complete) means this is a fresh session starting, not
             // a continuation — replay the unfold, mirroring hud.js's
             // fresh-actor-per-session behaviour.
-            const isSessionStart = state === 'loading' || state === 'recording';
-            const isPostRecordingPhase = model.phase === 'morph' || model.phase === 'complete';
+            const isSessionStart = state === DictationState.LOADING || state === DictationState.RECORDING;
+            const isPostRecordingPhase =
+                model.phase === RibbonPhase.MORPH || model.phase === RibbonPhase.COMPLETE;
             if (isSessionStart && isPostRecordingPhase) {
-                setPhase('unfold');
+                setPhase(RibbonPhase.UNFOLD);
                 armUnfoldAutoAdvance();
             }
             const forced = ribbonPhaseForStateKey(state);
-            if (forced !== null)
+            // Mirror hud.js's setPhase guard: a forced `flow` must not cut the
+            // fresh-session unfold reveal short (it hands off to flow itself).
+            if (forced !== null &&
+                !(forced === RibbonPhase.FLOW && model.phase === RibbonPhase.UNFOLD))
                 setPhase(forced);
         },
         onAvailabilityChanged: available => {
@@ -359,7 +365,7 @@ app.connect('activate', () => {
 
     // Phase trigger buttons ---------------------------------------------------
     const phaseRow = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 6, homogeneous: true});
-    for (const phase of ['unfold', 'flow', 'relax', 'morph', 'complete']) {
+    for (const phase of Object.values(RibbonPhase)) {
         const button = new Gtk.Button({label: phase});
         button.connect('clicked', () => setPhase(phase));
         phaseRow.append(button);
@@ -373,7 +379,14 @@ app.connect('activate', () => {
             spacing: 6,
             homogeneous: true,
         });
-        for (const state of ['idle', 'loading', 'recording', 'transcribing', 'finalizing']) {
+        const simStates = [
+            DictationState.IDLE,
+            DictationState.LOADING,
+            DictationState.RECORDING,
+            DictationState.TRANSCRIBING,
+            DictationState.FINALIZING,
+        ];
+        for (const state of simStates) {
             const button = new Gtk.Button({label: state});
             button.connect('clicked', () => simulator.setState(state));
             stateRow.append(button);
@@ -388,15 +401,15 @@ app.connect('activate', () => {
 
     // Severity simulation buttons ----------------------------------------------
     const severityRow = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 6, homogeneous: true});
-    for (const sev of ['recoverable', 'critical', 'clear']) {
+    for (const sev of [Severity.RECOVERABLE, Severity.CRITICAL, 'clear']) {
         const button = new Gtk.Button({label: sev});
         button.connect('clicked', () => {
             model.simulatedSeverity = sev === 'clear' ? null : sev;
             if (simulator !== null) {
-                const state = sev === 'clear' ? 'recording' : sev === 'recoverable'
-                    ? 'notice' : 'error';
-                const reason = sev === 'recoverable'
-                    ? 'No speech detected' : sev === 'critical'
+                const state = sev === 'clear' ? DictationState.RECORDING : sev === Severity.RECOVERABLE
+                    ? DictationState.NOTICE : DictationState.ERROR;
+                const reason = sev === Severity.RECOVERABLE
+                    ? 'No speech detected' : sev === Severity.CRITICAL
                         ? 'Microphone unavailable' : '';
                 simulator.setState(state, reason);
             }

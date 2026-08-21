@@ -9,7 +9,7 @@
 import System from 'system';
 
 import {DictationService} from '../dbus.js';
-import {stateToDescriptor} from '../states.js';
+import {DictationState, Severity, stateToDescriptor} from '../states.js';
 
 let failures = 0;
 
@@ -34,7 +34,7 @@ function variant(value) {
 // Stub D-Bus world: an injectable name watch + a stub Dictation proxy that
 // records connect/disconnect and can be driven through property changes (the
 // publisher's only update channel — see dbus.js's header).
-function makeStubBus(initialState = 'idle') {
+function makeStubBus(initialState = DictationState.IDLE) {
     const calls = {watched: 0, unwatched: 0, proxyCreated: 0, disconnected: 0};
     let appearedCb = null;
     let vanishedCb = null;
@@ -103,7 +103,7 @@ function makeStubBus(initialState = 'idle') {
 
 // Wire a service exactly like extension.js does: state → intent → show/hide
 // on a spy indicator standing in for the goop actor.
-function makeWiredService(initialState = 'idle') {
+function makeWiredService(initialState = DictationState.IDLE) {
     const stub = makeStubBus(initialState);
     const shown = [];
     const levels = [];
@@ -146,21 +146,21 @@ function makeWiredService(initialState = 'idle') {
 // --- X8: name-appeared connects + reflects current State; vanished → idle --
 
 {
-    const {stub, service, shown, levels, hides} = makeWiredService('recording');
+    const {stub, service, shown, levels, hides} = makeWiredService(DictationState.RECORDING);
     service.enable();
     stub.appear();
     eq('X8 proxy created on appeared', stub.calls.proxyCreated, 1);
     check('X8 service reports available', service.available);
-    eq('X8 reflects current State', shown.at(-1)?.key, 'recording');
-    eq('X8 service state mirrors', service.state, 'recording');
+    eq('X8 reflects current State', shown.at(-1)?.key, DictationState.RECORDING);
+    eq('X8 service state mirrors', service.state, DictationState.RECORDING);
 
     // Live transitions flow through pushed property changes.
-    stub.proxy.emitState('transcribing');
-    eq('X8 pushed change drives the view', shown.at(-1)?.key, 'transcribing');
-    stub.proxy.emitState('error', 'no audio source available');
+    stub.proxy.emitState(DictationState.TRANSCRIBING);
+    eq('X8 pushed change drives the view', shown.at(-1)?.key, DictationState.TRANSCRIBING);
+    stub.proxy.emitState(DictationState.ERROR, 'no audio source available');
     eq('X8 error reason reaches the status', shown.at(-1)?.statusText,
         'Error — no audio source available');
-    check('X8 error descriptor flagged', shown.at(-1)?.severity === 'critical');
+    check('X8 error descriptor flagged', shown.at(-1)?.severity === Severity.CRITICAL);
 
     // Audio level property changes are forwarded for the VU.
     stub.proxy.emitLevel(0.42, 0.6);
@@ -180,7 +180,7 @@ function makeWiredService(initialState = 'idle') {
 
     stub.vanish();
     check('X8 vanished → unavailable', !service.available);
-    eq('X8 vanished clears to idle', service.state, 'idle');
+    eq('X8 vanished clears to idle', service.state, DictationState.IDLE);
     eq('X8 goop cleared on vanish', hides(), 1);
     service.disable();
 }
@@ -220,7 +220,7 @@ function makeWiredService(initialState = 'idle') {
 // --- X10: re-enable after disable re-establishes cleanly --------------------
 
 {
-    const {stub, service, shown} = makeWiredService('transcribing');
+    const {stub, service, shown} = makeWiredService(DictationState.TRANSCRIBING);
     service.enable();
     stub.appear();
     service.disable();
@@ -228,7 +228,7 @@ function makeWiredService(initialState = 'idle') {
     stub.appear();
     eq('X10 re-watched on re-enable', stub.calls.watched, 2);
     eq('X10 fresh proxy on re-appear', stub.calls.proxyCreated, 2);
-    eq('X10 reflects current State again', shown.at(-1)?.key, 'transcribing');
+    eq('X10 reflects current State again', shown.at(-1)?.key, DictationState.TRANSCRIBING);
     service.disable();
 }
 
@@ -236,7 +236,7 @@ function makeWiredService(initialState = 'idle') {
 // --- disable()/vanish that races it must never touch the late proxy. -----
 
 {
-    const stub = makeStubBus('recording');
+    const stub = makeStubBus(DictationState.RECORDING);
     const shown = [];
     let pending = null;
     const service = new DictationService({
@@ -260,12 +260,12 @@ function makeWiredService(initialState = 'idle') {
 
     pending();
     check('async proxy: available once ready', service.available);
-    eq('async proxy: reflects current State on arrival', shown.at(-1)?.key, 'recording');
+    eq('async proxy: reflects current State on arrival', shown.at(-1)?.key, DictationState.RECORDING);
     service.disable();
 }
 
 {
-    const stub = makeStubBus('recording');
+    const stub = makeStubBus(DictationState.RECORDING);
     const shown = [];
     let pending = null;
     const service = new DictationService({

@@ -26,25 +26,41 @@ import {gettext as _, N_} from './gettext.js';
 
 const {format} = imports.format;
 
+export const DictationState = Object.freeze({
+    IDLE: 'idle',
+    LOADING: 'loading',
+    RECORDING: 'recording',
+    TRANSCRIBING: 'transcribing',
+    FINALIZING: 'finalizing',
+    NOTICE: 'notice',
+    ERROR: 'error',
+    ACTIVE: 'active',
+});
+
+export const Severity = Object.freeze({
+    RECOVERABLE: 'recoverable',
+    CRITICAL: 'critical',
+});
+
 // The stable descriptor for each known State: a machine `key` (renderers switch
 // on this), a human, content-free `statusText` (shown to the user), and a
 // `severity` (`'recoverable' | 'critical' | null`). Additive: unknown states
 // fall through to ACTIVE, never throw (X2). Status msgids are marked with N_
 // (extraction-only) and translated at call time in stateToDescriptor().
 const DESCRIPTORS = {
-    loading: {key: 'loading', statusText: N_('Loading model…'), severity: null},
-    recording: {key: 'recording', statusText: N_('Listening'), severity: null},
-    transcribing: {key: 'transcribing', statusText: N_('Transcribing'), severity: null},
-    finalizing: {key: 'finalizing', statusText: N_('Finishing'), severity: null},
-    notice: {key: 'notice', statusText: N_('No speech detected'), severity: 'recoverable'},
-    error: {key: 'error', statusText: N_('Error'), severity: 'critical'},
+    [DictationState.LOADING]: {key: DictationState.LOADING, statusText: N_('Loading model…'), severity: null},
+    [DictationState.RECORDING]: {key: DictationState.RECORDING, statusText: N_('Listening'), severity: null},
+    [DictationState.TRANSCRIBING]: {key: DictationState.TRANSCRIBING, statusText: N_('Transcribing'), severity: null},
+    [DictationState.FINALIZING]: {key: DictationState.FINALIZING, statusText: N_('Finishing'), severity: null},
+    [DictationState.NOTICE]: {key: DictationState.NOTICE, statusText: N_('No speech detected'), severity: Severity.RECOVERABLE},
+    [DictationState.ERROR]: {key: DictationState.ERROR, statusText: N_('Error'), severity: Severity.CRITICAL},
 };
 
 // Unknown/extra states degrade to a neutral "active" descriptor (FR-008, X2).
-const ACTIVE = {key: 'active', statusText: N_('Active'), severity: null};
+const ACTIVE = {key: DictationState.ACTIVE, statusText: N_('Active'), severity: null};
 
 // idle → nothing shown (push-to-talk, FR-002, X3).
-const HIDDEN = {key: 'idle', statusText: '', hidden: true, severity: null};
+const HIDDEN = {key: DictationState.IDLE, statusText: '', hidden: true, severity: null};
 
 /**
  * Map an org.myna.Dictation State string to a semantic descriptor
@@ -60,15 +76,15 @@ const HIDDEN = {key: 'idle', statusText: '', hidden: true, severity: null};
  * @returns {{key: string, statusText: string, severity: (string|null), hidden: boolean}}
  */
 export function stateToDescriptor(state, reason = '') {
-    if (state === 'idle' || state === null || state === undefined)
+    if (state === DictationState.IDLE || state === null || state === undefined)
         return {...HIDDEN};
 
     const base = DESCRIPTORS[state] ?? ACTIVE;
     let statusText = _(base.statusText);
     if (reason !== '') {
-        if (base.key === 'error')
+        if (base.key === DictationState.ERROR)
             statusText = format.call(_('Error — %s'), reason);
-        else if (base.key === 'notice')
+        else if (base.key === DictationState.NOTICE)
             statusText = reason;
     }
     return {key: base.key, statusText, severity: base.severity, hidden: false};

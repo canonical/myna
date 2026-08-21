@@ -10,6 +10,8 @@
 
 import Cairo from 'gi://cairo';
 
+import {RibbonTint, StrandRole} from './ribbon.js';
+
 const AMBER_MAIN = '#F5A623';
 const AMBER_HIGHLIGHT = '#FFE0A6';
 
@@ -348,12 +350,12 @@ export function paintRibbon(cr, width, height, model, palette) {
     const safeScale = computeSafeScale();
     const verticalScale = (height / 2) * BASE_CENTRELINE_FRACTION * safeScale;
 
-    const mainRgb = tint === 'amber' ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.main);
-    const highlightRgb = tint === 'amber' ? colorToRgbFloat(AMBER_HIGHLIGHT) : colorToRgbFloat(palette.highlight);
+    const mainRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.main);
+    const highlightRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_HIGHLIGHT) : colorToRgbFloat(palette.highlight);
     // The darker/complement tone reads as a warm, smouldering-red shadow
     // undertone, not a bold second hue — blended most of the way toward
     // the main warm colour and then darkened toward the background.
-    const complementRgb = tint === 'amber' ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.darkerComplement);
+    const complementRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.darkerComplement);
     const shadowRgb = darkenRgb(mixRgb(complementRgb, mainRgb, 0.6), 0.45);
 
     // How much audio is actually coming through right now, derived directly
@@ -362,7 +364,7 @@ export function paintRibbon(cr, width, height, model, palette) {
     // to scale the billow/curl/wisp effects below so the ribbon reads
     // calmer and flatter at silence, and more alive the louder the voice
     // gets, rather than a fixed amount of motion regardless of level.
-    const voiceStrand = strands.find(s => s.role === 'voice');
+    const voiceStrand = strands.find(s => s.role === StrandRole.VOICE);
     const activity = voiceStrand
         ? clamp01(Math.max(0, ...voiceStrand.points.map(p => Math.abs(p.y))))
         : 1;
@@ -376,7 +378,7 @@ export function paintRibbon(cr, width, height, model, palette) {
     // Draw back-to-front: base (soft haze) → secondary (shadow depth) →
     // voice (the bright, glowing focal strand) — so the most important
     // strand sits on top.
-    const order = ['base', 'secondary', 'voice'];
+    const order = [StrandRole.BASE, StrandRole.SECONDARY, StrandRole.VOICE];
     for (const role of order) {
         // Below a small activity threshold, skip the depth layers entirely
         // rather than fading them — layering several near-flat strands'
@@ -387,7 +389,7 @@ export function paintRibbon(cr, width, height, model, palette) {
         // read as stripes. Gated on the same smoothed `effectStrength` as
         // the glow/feather/wisps below, so depth layers fade in/out rather
         // than popping in at a hard threshold.
-        if (role !== 'voice' && effectStrength <= 0)
+        if (role !== StrandRole.VOICE && effectStrength <= 0)
             continue;
         for (const strand of strands) {
             if (strand.role !== role)
@@ -396,19 +398,19 @@ export function paintRibbon(cr, width, height, model, palette) {
                 x: p.x * width,
                 y: centreY - p.y * verticalScale,
             }));
-            let baseRgb = role === 'secondary' ? shadowRgb : mainRgb;
+            let baseRgb = role === StrandRole.SECONDARY ? shadowRgb : mainRgb;
             if (brightnessBoost > 0)
                 baseRgb = lightenRgb(baseRgb, brightnessBoost * 0.6);
-            const thickness = height * (role === 'voice' ? VOICE_THICKNESS_FRACTION : role === 'secondary' ? 0.4 : 0.32) * safeScale;
+            const thickness = height * (role === StrandRole.VOICE ? VOICE_THICKNESS_FRACTION : role === StrandRole.SECONDARY ? 0.4 : 0.32) * safeScale;
             // The secondary/base depth layers fade out toward silence too
             // (not just thinner — dimmer), so a calm moment reads as one
             // thin, quiet ribbon rather than several faint parallel
             // stripes; the voice strand alone carries the idle "still
             // alive" motion.
-            const depthActivity = role === 'voice' ? 1 : effectStrength;
-            const alpha = (strand.alpha ?? 1) * (role === 'base' ? 0.5 : 1) * depthActivity;
+            const depthActivity = role === StrandRole.VOICE ? 1 : effectStrength;
+            const alpha = (strand.alpha ?? 1) * (role === StrandRole.BASE ? 0.5 : 1) * depthActivity;
 
-            if (role === 'voice') {
+            if (role === StrandRole.VOICE) {
                 voicePixelPoints = pixelPoints;
                 // The glow is several stacked stroke widths (a cheap fake
                 // blur, not a true one) — on a near-flat, near-static

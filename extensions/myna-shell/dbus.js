@@ -30,6 +30,8 @@
 
 import Gio from 'gi://Gio';
 
+import {DictationState} from './states.js';
+
 const BUS_NAME = 'org.myna.Dictation';
 const OBJECT_PATH = '/org/myna/Dictation';
 
@@ -87,7 +89,7 @@ export class DictationService {
         this._proxy = null;
         this._proxyCancellable = null;
         this._proxySignalIds = [];
-        this._state = 'idle';
+        this._state = DictationState.IDLE;
         this._errorMessage = '';
         this._rms = 0;
         this._peak = 0;
@@ -126,7 +128,7 @@ export class DictationService {
         }
         this._teardownProxy();
         this._available = false;
-        this._state = 'idle';
+        this._state = DictationState.IDLE;
         this._errorMessage = '';
     }
 
@@ -160,7 +162,7 @@ export class DictationService {
         if (this._proxy === null)
             return;
         const state = this._proxy.get_cached_property('State')?.deep_unpack() ??
-            'idle';
+            DictationState.IDLE;
         const errorMessage =
             this._proxy.get_cached_property('ErrorMessage')?.deep_unpack() ?? '';
         const rms = this._proxy.get_cached_property('AudioRms')?.deep_unpack() ?? 0;
@@ -185,7 +187,7 @@ export class DictationService {
         this._available = false;
         this._onAvailabilityChanged(false);
         // Daemon gone (crash/exit): clear the HUD pill to idle (X8).
-        this._setState('idle', '');
+        this._setState(DictationState.IDLE, '');
     }
 
     _setState(state, errorMessage) {

@@ -31,6 +31,40 @@
 // headless (test/ribbon.test.js), reusable verbatim by the dev-lab tool.
 
 import {levelsToIntensity} from './vumeter.js';
+import {Severity} from './states.js';
+
+// ── Lifecycle phases & strand roles ──────────────────────────────────────
+
+// The ribbon's lifecycle phases, as a frozen enum-like object (the string
+// values are the wire contract computeRibbonModel/setPhase compare on):
+//   - UNFOLD:   the brief reveal when a session starts.
+//   - FLOW:     the steady-state flowing wave (audio-reactive).
+//   - RELAX:    easing toward a thin idle line during a pause.
+//   - MORPH:    crossfade from the flowing wave into travelling dots.
+//   - COMPLETE: a brief convergence + brightness pulse before the pill clears.
+export const RibbonPhase = Object.freeze({
+    UNFOLD: 'unfold',
+    FLOW: 'flow',
+    RELAX: 'relax',
+    MORPH: 'morph',
+    COMPLETE: 'complete',
+});
+
+// The roles assigned to individual ribbon strands:
+//   - VOICE:     the primary, most-reactive strand tracking the voice loudness.
+//   - SECONDARY: delayed and softer strands adding depth behind the voice.
+//   - BASE:      slow, low-amplitude ambient sway that stays alive in silence.
+export const StrandRole = Object.freeze({
+    VOICE: 'voice',
+    SECONDARY: 'secondary',
+    BASE: 'base',
+});
+
+// The visual tints applied to the ribbon:
+//   - AMBER: recoverable issue (paused audio-reactivity, gentle pulse).
+export const RibbonTint = Object.freeze({
+    AMBER: 'amber',
+});
 
 // ── Tunables ────────────────────────────────────────────────────────────
 
@@ -262,10 +296,10 @@ function crestFactors(points, amplitude) {
  * @param {number} input.envelope - the SMOOTHED loudness envelope [0,1]
  *     (from `applyEnvelopeSmoothing`, not the raw instantaneous value).
  * @param {number} input.elapsedMs - elapsed time for the flow animation.
- * @param {('unfold'|'flow'|'relax'|'morph'|'complete')} [input.phase]
+ * @param {string} [input.phase] - a RibbonPhase value (defaults to RibbonPhase.FLOW).
  * @param {number} [input.phaseElapsedMs]
  * @param {boolean} [input.reducedMotion] - static single-strand model (FR-022a).
- * @param {(('recoverable'|'critical')|null)} [input.severityTint]
+ * @param {(string|null)} [input.severityTint] - Severity.RECOVERABLE / null.
  * @param {number} [input.strandCount] - defaults to DEFAULT_STRAND_COUNT (3-5 supported).
  * @param {number} [input.pointCount] - defaults to DEFAULT_POINTS_PER_STRAND.
  * @returns {{
@@ -273,13 +307,13 @@ function crestFactors(points, amplitude) {
  *   dots: ({x:number, alpha:number}[]|null),
  *   convergence: ({x:number, y:number, alpha:number}|null),
  *   brightnessBoost: number,
- *   tint: (('amber')|null),
+ *   tint: (string|null),
  * }}
  */
 export function computeRibbonModel({
     envelope,
     elapsedMs,
-    phase = 'flow',
+    phase = RibbonPhase.FLOW,
     phaseElapsedMs = 0,
     reducedMotion = false,
     severityTint = null,
@@ -294,24 +328,24 @@ export function computeRibbonModel({
         for (let i = 0; i < points; i++)
             flat.push({x: i / (points - 1), y: 0});
         return {
-            strands: [{role: 'voice', points: flat, crest: flat.map(() => 0), alpha: 1.0}],
+            strands: [{role: StrandRole.VOICE, points: flat, crest: flat.map(() => 0), alpha: 1.0}],
             dots: null,
             convergence: null,
             brightnessBoost: 0,
-            tint: severityTint === 'recoverable' ? 'amber' : null,
+            tint: severityTint === Severity.RECOVERABLE ? RibbonTint.AMBER : null,
             elapsedMs,
         };
     }
 
     // --- Recoverable severity: freeze audio-reactivity, gentle pulse -----
-    if (severityTint === 'recoverable') {
+    if (severityTint === Severity.RECOVERABLE) {
         const pulsePhase = (elapsedMs % RECOVERABLE_PULSE_MS) / RECOVERABLE_PULSE_MS;
         const pulse = (Math.sin(pulsePhase * Math.PI * 2) + 1) / 2; // 0..1..0
         const amplitude = IDLE_AMPLITUDE * (0.6 + 0.4 * pulse);
         const voicePoints = generateWavePoints(amplitude, elapsedMs, VOICE_PHASE, 0, points, BASE_SPEED_SCALE);
         return {
             strands: [{
-                role: 'voice',
+                role: StrandRole.VOICE,
                 points: voicePoints,
                 crest: crestFactors(voicePoints, amplitude),
                 alpha: 0.85,
@@ -319,7 +353,7 @@ export function computeRibbonModel({
             dots: null,
             convergence: null,
             brightnessBoost: 0,
-            tint: 'amber',
+            tint: RibbonTint.AMBER,
             elapsedMs,
         };
     }
@@ -330,15 +364,15 @@ export function computeRibbonModel({
     let convergence = null;
 
     switch (phase) {
-    case 'unfold':
+    case RibbonPhase.UNFOLD:
         env *= unfoldProgress(phaseElapsedMs);
         break;
-    case 'relax': {
+    case RibbonPhase.RELAX: {
         const p = relaxProgress(phaseElapsedMs);
         env = env * (1 - p) + Math.min(env, IDLE_AMPLITUDE) * p;
         break;
     }
-    case 'morph': {
+    case RibbonPhase.MORPH: {
         const p = morphProgress(phaseElapsedMs);
         env *= 1 - p;
         // Crossfade in 3 travelling dots as the wave fades out.
@@ -348,7 +382,7 @@ export function computeRibbonModel({
         });
         break;
     }
-    case 'complete': {
+    case RibbonPhase.COMPLETE: {
         const p = completeProgress(phaseElapsedMs);
         env = 0;
         brightnessBoost = Math.sin(clamp01(p) * Math.PI); // rises then falls, 0→1→0
@@ -361,7 +395,7 @@ export function computeRibbonModel({
         convergence = {x: 0.5, y: 0, alpha: brightnessBoost};
         break;
     }
-    case 'flow':
+    case RibbonPhase.FLOW:
     default:
         // Steady-state: amplitude tracks the smoothed envelope (through
         // shapeAmplitude's response curve, below).
@@ -371,7 +405,7 @@ export function computeRibbonModel({
     const voiceAmplitude = Math.max(IDLE_AMPLITUDE, shapeAmplitude(env));
     const voicePoints = generateWavePoints(voiceAmplitude, elapsedMs, VOICE_PHASE, 0, points);
     const layers = [{
-        role: 'voice',
+        role: StrandRole.VOICE,
         points: voicePoints,
         crest: crestFactors(voicePoints, voiceAmplitude),
         alpha: 0.95,
@@ -382,7 +416,7 @@ export function computeRibbonModel({
         const secondaryPoints = generateWavePoints(
             secondaryAmplitude, elapsedMs, SECONDARY_PHASE, SECONDARY_DELAY_MS, points);
         layers.push({
-            role: 'secondary',
+            role: StrandRole.SECONDARY,
             points: secondaryPoints,
             crest: secondaryPoints.map(() => 0),
             alpha: SECONDARY_ALPHA,
@@ -392,7 +426,7 @@ export function computeRibbonModel({
         const basePoints = generateWavePoints(
             BASE_AMPLITUDE, elapsedMs, BASE_PHASE, 0, points, BASE_SPEED_SCALE);
         layers.push({
-            role: 'base',
+            role: StrandRole.BASE,
             points: basePoints,
             crest: basePoints.map(() => 0),
             alpha: BASE_ALPHA,
@@ -409,7 +443,7 @@ export function computeRibbonModel({
             voiceAmplitude * Math.max(0.2, scale), elapsedMs, phaseOffset,
             SECONDARY_DELAY_MS * extra, points);
         layers.push({
-            role: 'secondary',
+            role: StrandRole.SECONDARY,
             points: extraPoints,
             crest: extraPoints.map(() => 0),
             alpha: SECONDARY_ALPHA * Math.max(0.4, 1 - (extra - 2) * 0.2),
