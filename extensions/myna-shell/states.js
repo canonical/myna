@@ -9,6 +9,11 @@
 // string plus an optional content-free reason; nothing here ever carries
 // transcript text (constitution V, X6).
 //
+// The user-facing `statusText` strings are wrapped with `_()` (gettext.js) so
+// they are translatable; the domain is `MynaShellExtension` (metadata.json).
+// gettext.js falls back to identity under the Shell-free test harness, so this
+// module stays pure and test/states.test.js keeps asserting the English source.
+//
 // 2026-07-30 HUD redesign (data-model E1a, research R13): the wire gained a
 // `notice` state alongside `error` — a **recoverable**, non-blocking issue
 // (e.g. "no speech detected") distinct from a **critical** error (e.g.
@@ -17,21 +22,26 @@
 // renderers can distinguish the two tiers; every other known state has
 // `severity: null`.
 
+import {gettext as _, N_} from './gettext.js';
+
+const {format} = imports.format;
+
 // The stable descriptor for each known State: a machine `key` (renderers switch
 // on this), a human, content-free `statusText` (shown to the user), and a
 // `severity` (`'recoverable' | 'critical' | null`). Additive: unknown states
-// fall through to ACTIVE, never throw (X2).
+// fall through to ACTIVE, never throw (X2). Status msgids are marked with N_
+// (extraction-only) and translated at call time in stateToDescriptor().
 const DESCRIPTORS = {
-    loading: {key: 'loading', statusText: 'Loading model…', severity: null},
-    recording: {key: 'recording', statusText: 'Listening', severity: null},
-    transcribing: {key: 'transcribing', statusText: 'Transcribing', severity: null},
-    finalizing: {key: 'finalizing', statusText: 'Finishing', severity: null},
-    notice: {key: 'notice', statusText: 'No speech detected', severity: 'recoverable'},
-    error: {key: 'error', statusText: 'Error', severity: 'critical'},
+    loading: {key: 'loading', statusText: N_('Loading model…'), severity: null},
+    recording: {key: 'recording', statusText: N_('Listening'), severity: null},
+    transcribing: {key: 'transcribing', statusText: N_('Transcribing'), severity: null},
+    finalizing: {key: 'finalizing', statusText: N_('Finishing'), severity: null},
+    notice: {key: 'notice', statusText: N_('No speech detected'), severity: 'recoverable'},
+    error: {key: 'error', statusText: N_('Error'), severity: 'critical'},
 };
 
 // Unknown/extra states degrade to a neutral "active" descriptor (FR-008, X2).
-const ACTIVE = {key: 'active', statusText: 'Active', severity: null};
+const ACTIVE = {key: 'active', statusText: N_('Active'), severity: null};
 
 // idle → nothing shown (push-to-talk, FR-002, X3).
 const HIDDEN = {key: 'idle', statusText: '', hidden: true, severity: null};
@@ -54,10 +64,10 @@ export function stateToDescriptor(state, reason = '') {
         return {...HIDDEN};
 
     const base = DESCRIPTORS[state] ?? ACTIVE;
-    let statusText = base.statusText;
+    let statusText = _(base.statusText);
     if (reason !== '') {
         if (base.key === 'error')
-            statusText = `Error — ${reason}`;
+            statusText = format.call(_('Error — %s'), reason);
         else if (base.key === 'notice')
             statusText = reason;
     }
