@@ -91,15 +91,22 @@ function eq(name, actual, expected) {
         PILL_COLOR_CLASSES.includes('myna-hud-phase-loading'));
 }
 
-// --- 2026-07-30, R17: which state keys force a ribbon phase change --------
+// --- 2026-07-30, R17 / 2026-08-21 fix: which state keys force a phase ------
 
 {
     eq('transcribing forces the ribbon into morph',
         ribbonPhaseForStateKey('transcribing'), 'morph');
     eq('finalizing forces the ribbon into complete (FR-010d)',
         ribbonPhaseForStateKey('finalizing'), 'complete');
-    for (const key of ['idle', 'loading', 'recording', 'notice', 'error', 'unknown-state']) {
-        eq(`${key} does not force a phase (the ribbon manages unfold/flow itself)`,
+    // Live states pin the ribbon to flow — this is what recovers it after a
+    // morph/complete, which was previously stuck until idle/a new session.
+    for (const key of ['loading', 'recording', 'active']) {
+        eq(`${key} forces the ribbon into flow`,
+            ribbonPhaseForStateKey(key), 'flow');
+    }
+    // idle never shows; notice/error are carried by tint/visibility, not phase.
+    for (const key of ['idle', 'notice', 'error', 'unknown-state']) {
+        eq(`${key} does not force a phase`,
             ribbonPhaseForStateKey(key), null);
     }
 }

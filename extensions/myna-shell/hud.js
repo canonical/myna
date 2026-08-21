@@ -189,6 +189,11 @@ class WaveRibbonActor extends St.DrawingArea {
         setPhase(phase) {
             if (phase === this._phase)
                 return;
+            // The fresh-session unfold reveal hands off to flow on its own
+            // (see _draw); a live descriptor arriving mid-unfold must not cut
+            // it short by forcing flow early.
+            if (phase === 'flow' && this._phase === 'unfold')
+                return;
             this._phase = phase;
             this._phaseStartedAt = GLib.get_monotonic_time();
             this.queue_repaint();
@@ -387,8 +392,8 @@ export class HudView {
             this._ribbon.visible = ribbonVisible;
         this._ribbon.setSeverityTint(severity);
 
-        // Only two transitions force the ribbon's motion to change; every
-        // other key leaves its own unfold→flow phase alone (R17).
+        // The live states pin the ribbon to their motion's phase (so leaving
+        // a terminal morph/complete recovers); notice/error/idle leave it be.
         const forcedPhase = ribbonPhaseForStateKey(descriptor.key);
         if (forcedPhase !== null)
             this._ribbon.setPhase(forcedPhase);

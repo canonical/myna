@@ -89,26 +89,38 @@ export const PILL_COLOR_CLASSES = [
 /**
  * Which wave-ribbon lifecycle phase (ribbon.js) a state transition forces,
  * or `null` when the ribbon manages its own phase internally (2026-07-30
- * wave-ribbon redesign, R17). Only the two transitions that must visibly
- * change the ribbon's motion are forced here:
+ * wave-ribbon redesign, R17; 2026-08-21 fix). The live states pin the ribbon
+ * to the phase their motion belongs in, so a transition *out of* a terminal
+ * phase visibly recovers instead of leaving the ribbon stuck in it:
  *   - `transcribing` → `morph` (FR-010a: session ended, simplified
  *     processing motion).
  *   - `finalizing` → `complete` (FR-010d: the brief quiet-success
  *     indication before the pill clears).
- * Every other key (including `recording`/`loading`) returns `null` so the
- * actor's own unfold→flow auto-transition (fired once, shortly after the
- * actor is created for a new session) is never interrupted by a redundant
- * external phase-set on the very first descriptor a fresh session receives.
+ *   - `loading`/`recording`/`active` → `flow` (the live flowing wave — also
+ *     what returns the ribbon to motion after a `morph`/`complete`, which was
+ *     previously unreachable without an idle/new session in between).
+ * `flow` requested during the fresh-session `unfold` reveal is a no-op in the
+ * actor (hud.js `setPhase`), so the reveal is never cut short.
+ * `idle`/`notice`/`error` (and any unknown key) return `null`: idle never
+ * shows, and notice/error are carried by the severity tint/visibility, not a
+ * phase.
  *
  * @param {string} key - the state's `key` (states.js's descriptor field).
- * @returns {('morph'|'complete'|null)}
+ * @returns {('morph'|'complete'|'flow'|null)}
  */
 export function ribbonPhaseForStateKey(key) {
-    if (key === 'transcribing')
+    switch (key) {
+    case 'transcribing':
         return 'morph';
-    if (key === 'finalizing')
+    case 'finalizing':
         return 'complete';
-    return null;
+    case 'loading':
+    case 'recording':
+    case 'active':
+        return 'flow';
+    default:
+        return null;
+    }
 }
 
 /**
