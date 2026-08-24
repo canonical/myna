@@ -24,6 +24,7 @@ The client and the fake backend are deliberately excluded; they have neither.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,14 @@ MODELCTL_RELEASE = "v2.0.0-beta.12"
 def _recipe(snap_dir: str) -> dict:
     path = REPO_ROOT / snap_dir / "snap" / "snapcraft.yaml"
     return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _daemon_app(recipe: dict) -> tuple[str, dict]:
+    """The server: the one app declaring `daemon`."""
+    for name, app in (recipe.get("apps") or {}).items():
+        if isinstance(app, dict) and "daemon" in app:
+            return name, app
+    raise AssertionError(f"{recipe.get('name')}: no daemon app")
 
 
 def _cli_app(recipe: dict) -> tuple[str, dict]:
@@ -243,3 +252,75 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
             f"{name}: engines/{server.parent.name}/server hardcodes --streaming; "
             "read the `streaming` config key instead so both modes are measurable"
         )
+
+
+# Snaps whose adapter runs ONNX Runtime *without* an explicit thread count, so
+# ORT sizes its own pool and therefore tries to pin it (T65). Deliberately not
+# derived from "uses ORT":
+#   - sherpa is ORT too, but sherpa-onnx forwards an explicit `num_threads`
+#     straight to intra_op_num_threads, which makes ORT skip affinity entirely;
+#     granting it process-control would be a broad privilege that does nothing;
+#   - whisper/nemotron/qwen are not ORT at all (CTranslate2, PyTorch, and a
+#     ctypes libqwen_asr.so), and none of them pins.
+ORT_PINNING_SNAPS = {"parakeet-snap", "funasr-snap", "audio8-snap"}
+
+
+def test_pinning_daemons_plug_process_control(snap) -> None:
+    """ORT can only pin its thread pool if seccomp's argument filter is lifted.
+
+    The default snapd template allows `sched_setaffinity 0 - -` - a *literal*
+    pid 0 - but glibc's pthread_setaffinity_np always passes the target's real
+    tid, even when a thread pins itself. So every pin is refused with EPERM and
+    the daemon logs a wall of "pthread_setaffinity_np failed ... Operation not
+    permitted" on each model load, silently running unpinned. `process-control`
+    drops the filter. Caught in the field on parakeet, 2026-08-24.
+    """
+    snap_dir, name, recipe = snap
+    daemon_name, daemon = _daemon_app(recipe)
+    plugs = set(daemon.get("plugs") or [])
+    if snap_dir in ORT_PINNING_SNAPS:
+        assert "process-control" in plugs, (
+            f"{name}: daemon app {daemon_name!r} does not plug process-control, so "
+            "ORT cannot pin its thread pool - seccomp refuses every "
+            "sched_setaffinity with EPERM and the snap runs unpinned"
+        )
+    else:
+        assert "process-control" not in plugs, (
+            f"{name}: daemon app {daemon_name!r} plugs process-control, but this snap "
+            "does not let ORT size its own pool, so nothing here ever pins - drop the "
+            "plug rather than grant a broad interface (kill/setscheduler/cgroup "
+            f"writes) that has no effect, or add {snap_dir!r} to ORT_PINNING_SNAPS"
+        )
+
+
+def test_no_adapter_hardcodes_a_thread_count() -> None:
+    """An explicit intra_op_num_threads silently disables ORT thread pinning.
+
+    ORT sets affinity only when it sizes the pool itself, so a hardcoded count
+    costs pinning *and* caps the snap below the machine it was installed on
+    (funasr and audio8 shipped at 4 threads regardless of core count, T65).
+    """
+    adapters = REPO_ROOT / "server" / "src" / "myna" / "testbed"
+    offenders = []
+    for path in sorted(adapters.glob("*.py")):
+        # Parse rather than grep: the string also appears in prose explaining
+        # why it is not passed, and a comment must not fail the build.
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "intra_op_num_threads":
+                    continue
+                # 0 means "ORT, size it yourself", which is the whole point and
+                # is not always omittable: funasr_onnx defaults the argument to
+                # 4, so leaving it out there caps the pool instead of freeing it.
+                if isinstance(kw.value, ast.Constant) and kw.value.value == 0:
+                    continue
+                offenders.append(path.name)
+                break
+    assert not offenders, (
+        f"{', '.join(offenders)}: pins intra_op_num_threads to a fixed count, which "
+        "makes ORT skip affinity and caps the pool below the machine - pass 0 (or "
+        "omit it, where the library default is already 0/None) so ORT sizes and pins"
+    )
