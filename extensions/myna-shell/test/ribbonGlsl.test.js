@@ -31,6 +31,7 @@ import {
     glslConstantDefines,
     MAX_DOTS,
     MAX_STRANDS,
+    packRibbonUniforms,
     PAINT_ORDER,
     RIBBON_UNIFORMS,
     ROLE_TAG,
@@ -217,6 +218,51 @@ for (const phase of Object.values(RibbonPhase)) {
     });
     check('the morph phase never emits more dots than the shader can hold',
         morph.dots !== null && morph.dots.length <= MAX_DOTS);
+}
+
+// --- The packed uniforms are complete and uploadable --------------------
+//
+// packRibbonUniforms is what the Shell actor, the headless render test and
+// the GPU dev-lab all upload, so a missing or wrong-length entry is a
+// blank ribbon in three places at once. A `set_uniform_float` with the
+// wrong count is also the exact failure that produced the
+// `size <= 4` assertion, so the shape is asserted rather than assumed.
+
+{
+    const palette = {
+        main: '#E95420', highlight: '#F5B7A0', darkerComplement: '#77216F',
+        translucentAlpha: 0.35,
+    };
+    for (const phase of Object.values(RibbonPhase)) {
+        const model = computeRibbonModel({
+            envelope: 0.7, elapsedMs: 1200, phase, phaseElapsedMs: 100,
+        });
+        const packed = packRibbonUniforms(360, 32, model, palette);
+        const wrong = RIBBON_UNIFORMS.filter(
+            u => !Array.isArray(packed[u.name]) ||
+                packed[u.name].length !== u.components);
+        eq(`${phase}: every uniform is packed to its declared width`,
+            wrong.map(u => u.name).join(',') || 'none', 'none');
+        const bad = Object.entries(packed).filter(
+            ([, vals]) => vals.some(v => !Number.isFinite(v)));
+        eq(`${phase}: every packed value is a finite number`,
+            bad.map(([n]) => n).join(',') || 'none', 'none');
+    }
+
+    // The shader composites strand slots in index order, so the sort is the
+    // only thing putting the bright voice strand on top.
+    const flow = computeRibbonModel({
+        envelope: 0.7, elapsedMs: 1200, phase: RibbonPhase.FLOW, phaseElapsedMs: 100,
+    });
+    const packed = packRibbonUniforms(360, 32, flow, palette);
+    const tags = Array.from({length: MAX_STRANDS}, (_, i) => packed[`uStrandStyle${i}`])
+        .filter(style => style[2] > 0.5)
+        .map(style => style[1]);
+    eq('the packed strands are ordered back-to-front, voice last',
+        tags[tags.length - 1], ROLE_TAG[StrandRole.VOICE]);
+    check('an unused strand slot is marked inactive rather than transparent',
+        Array.from({length: MAX_STRANDS}, (_, i) => packed[`uStrandStyle${i}`])
+            .every(style => style[2] > 0.5 || style.every(v => v === 0)));
 }
 
 // --- Regenerating the wave on the GPU matches the model's own points ----

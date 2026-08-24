@@ -80,8 +80,15 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   API. The shipped default; Shell-only (see below).
 - `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
   and high-contrast colour classes.
-- `dev-lab/` — a standalone GTK4+libadwaita tuning app for the wave ribbon,
-  **not part of the shipped bundle** (see `dev-lab/README.md`).
+- `dev-lab/` — a standalone GTK4+libadwaita tuning app for the Cairo wave
+  ribbon, **not part of the shipped bundle** (see `dev-lab/README.md`).
+- `dev-lab-gpu/` — the same for the GPU renderer: a Python `Gtk.GLArea` lab
+  plus a headless, display-free render check that compiles and rasterizes
+  the generated shader on a real driver. Python only because the raw GL
+  entry points a standalone GL area needs are not introspectable and so are
+  unreachable from gjs; JS still owns the shader, the model and the uniform
+  packing, handed over as JSON. **Not part of the shipped bundle** (see
+  `dev-lab-gpu/README.md`).
 - `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
   everything above except `hud.js` itself.
 - `test/gpu-probe.js` — checks the GPU path's toolkit API is reachable and

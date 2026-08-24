@@ -33,28 +33,18 @@ import {
     computeEnvelope,
     computeRibbonModel,
     RibbonPhase,
-    StrandRole,
     UNFOLD_MS,
 } from './ribbon.js';
 import {
     buildRibbonShader,
-    MAX_DOTS,
-    MAX_STRANDS,
-    PAINT_ORDER,
+    packRibbonUniforms,
     RIBBON_UNIFORMS,
-    ROLE_TAG,
 } from './ribbonGlsl.js';
-import {resolveRibbonPalette} from './ribbonPaint.js';
 
 const RIBBON_HEIGHT = 32;
 const FRAME_TIMELINE_MS = 1000;
 const MAX_FRAME_DT_MS = 100;
 const FIRST_FRAME_DT_MS = 1000 / 60;
-
-/** Uniform lookup by name, so the uploader can't drift from the shader's
- * own declarations (ribbonGlsl.test.js asserts the two agree). */
-const UNIFORM = Object.freeze(Object.fromEntries(
-    RIBBON_UNIFORMS.map(u => [u.name, u])));
 
 /**
  * The fragment shader itself. `vfunc_get_static_snippet` is called once per
@@ -76,7 +66,12 @@ class RibbonShaderEffect extends Clutter.ShaderEffect {
     }
 
     /**
-     * Push one frame's model to the GPU.
+     * Push one frame's model to the GPU. Every uniform is a scalar or a
+     * vec2/3/4 — never an array — because ClutterShaderFloat asserts
+     * `size <= 4`; see RIBBON_UNIFORMS. The trailing `total_count` argument
+     * is the array length (1 for all of ours), which GJS infers from the
+     * value array, so `components` is what distinguishes a vec4 from four
+     * floats.
      *
      * @param {number} width - actor width in pixels.
      * @param {number} height - actor height in pixels.
@@ -84,80 +79,13 @@ class RibbonShaderEffect extends Clutter.ShaderEffect {
      * @param {object} palette - the caller-resolved theme colours.
      */
     updateFromModel(width, height, model, palette) {
-        const {
-            strands = [], dots = null, convergence = null,
-            brightnessBoost = 0, elapsedMs = 0,
-        } = model;
-        const {mainRgb, highlightRgb, shadowRgb, activity, effectStrength} =
-            resolveRibbonPalette(model, palette);
-
-        this._setFloats('uSize', [width, height]);
-        this._setFloats('uElapsedMs', [elapsedMs]);
-        this._setFloats('uActivity', [activity]);
-        this._setFloats('uEffectStrength', [effectStrength]);
-        this._setFloats('uBrightnessBoost', [brightnessBoost]);
-
-        // Sorted back-to-front here rather than in the shader: the painter's
-        // order is a CPU-side fact, and pre-sorting lets the shader composite
-        // strand 0, 1, 2… in index order instead of running a role-matching
-        // pass per layer. Only the strands the shader has room for — the
-        // model never returns more, but clamping keeps a future strandCount
-        // bump from silently dropping off the end unnoticed.
-        const ordered = PAINT_ORDER
-            .flatMap(role => strands.filter(s => s.role === role))
-            .slice(0, MAX_STRANDS);
-
-        for (let i = 0; i < MAX_STRANDS; i++) {
-            const strand = ordered[i];
-            this._setFloats(`uStrandGeom${i}`, strand
-                ? [strand.amplitude ?? 0, strand.phaseOffset ?? 0,
-                    strand.delayMs ?? 0, strand.speedScale ?? 0]
-                : [0, 0, 0, 0]);
-            // The third component is the "active" flag: an absent strand is
-            // skipped outright rather than drawn at zero alpha, so it costs
-            // nothing and can never contribute a stray pixel.
-            this._setFloats(`uStrandStyle${i}`, strand
-                ? [strand.alpha ?? 1, ROLE_TAG[strand.role] ?? ROLE_TAG.base, 1]
-                : [0, 0, 0]);
-        }
-
-        // The wisps curl off the voice strand specifically, so its
-        // parameters are uploaded separately rather than searched for in
-        // the shader.
-        const voice = strands.find(s => s.role === StrandRole.VOICE);
-        this._setFloats('uVoice', voice
-            ? [voice.amplitude ?? 0, voice.phaseOffset ?? 0,
-                voice.delayMs ?? 0, voice.speedScale ?? 0]
-            : [0, 0, 0, 0]);
-
-        this._setFloats('uMain', [mainRgb.r, mainRgb.g, mainRgb.b]);
-        this._setFloats('uHighlight', [highlightRgb.r, highlightRgb.g, highlightRgb.b]);
-        this._setFloats('uShadow', [shadowRgb.r, shadowRgb.g, shadowRgb.b]);
-
-        const dotList = dots ?? [];
-        const dotX = Array.from({length: MAX_DOTS},
-            (_, i) => dotList[i]?.x ?? 0);
-        this._setFloats('uDotX', dotX);
-        this._setFloats('uDotAlpha', [dotList.length > 0 ? dotList[0].alpha : 0]);
-
-        this._setFloats('uConvergence', convergence
-            ? [convergence.x, convergence.y, convergence.alpha]
-            : [0, 0, 0]);
-    }
-
-    /**
-     * Upload one uniform. Every uniform is a scalar or a vec2/3/4 — never
-     * an array — because ClutterShaderFloat asserts `size <= 4`; see
-     * RIBBON_UNIFORMS. `total_count` is the array length (1 for all of
-     * ours), which GJS infers from the value array, so the components count
-     * is what distinguishes a vec4 from four floats.
-     *
-     * @param {string} name - the uniform's name.
-     * @param {number[]} values - exactly `components` floats.
-     */
-    _setFloats(name, values) {
-        const {components} = UNIFORM[name];
-        this.set_uniform_float(name, components, values);
+        // The packing itself is pure and lives in ribbonGlsl.js beside the
+        // shader it feeds, so the dev-lab and the headless render test
+        // upload byte-identical uniforms rather than a second hand-copied
+        // packing that could drift from this one.
+        const values = packRibbonUniforms(width, height, model, palette);
+        for (const {name, components} of RIBBON_UNIFORMS)
+            this.set_uniform_float(name, components, values[name]);
     }
 });
 

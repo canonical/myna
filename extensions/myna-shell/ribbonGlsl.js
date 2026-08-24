@@ -53,6 +53,7 @@ import {
     RIBBON_GRADIENT_STOPS,
     ROLE_ALPHA_SCALE,
     ROLE_THICKNESS_FRACTION,
+    resolveRibbonPalette,
     WISP,
     WISP_GRADIENT_STOPS,
     WISP_TENDRILS,
@@ -122,6 +123,84 @@ export const RIBBON_UNIFORMS = Object.freeze([
     Object.freeze({name: 'uDotAlpha', components: 1}),
     Object.freeze({name: 'uConvergence', components: 3}),
 ]);
+
+/**
+ * Pack a ribbon model into the shader's uniform values. Pure — no Clutter,
+ * no GL — so the Shell actor, the headless render test and the GPU dev-lab
+ * all upload the *same* numbers rather than three hand-copied packings.
+ * That matters more than it looks: the packing encodes the paint order and
+ * the role tags, so a second copy is exactly where the renderers would
+ * silently diverge.
+ *
+ * @param {number} width - actor width in pixels.
+ * @param {number} height - actor height in pixels.
+ * @param {object} model - `computeRibbonModel` output.
+ * @param {object} palette - caller-resolved colours, as
+ *     `resolveRibbonPalette` expects.
+ * @returns {object} uniform name → array of exactly `components` floats,
+ *     one entry per RIBBON_UNIFORMS member.
+ */
+export function packRibbonUniforms(width, height, model, palette) {
+    const {
+        strands = [], dots = null, convergence = null,
+        brightnessBoost = 0, elapsedMs = 0,
+    } = model;
+    const {mainRgb, highlightRgb, shadowRgb, activity, effectStrength} =
+        resolveRibbonPalette(model, palette);
+
+    const values = {
+        uSize: [width, height],
+        uElapsedMs: [elapsedMs],
+        uActivity: [activity],
+        uEffectStrength: [effectStrength],
+        uBrightnessBoost: [brightnessBoost],
+        uMain: [mainRgb.r, mainRgb.g, mainRgb.b],
+        uHighlight: [highlightRgb.r, highlightRgb.g, highlightRgb.b],
+        uShadow: [shadowRgb.r, shadowRgb.g, shadowRgb.b],
+    };
+
+    // Sorted back-to-front here rather than in the shader: the painter's
+    // order is a CPU-side fact, and pre-sorting lets the shader composite
+    // strand 0, 1, 2… in index order instead of running a role-matching
+    // pass per layer. The model never returns more strands than the shader
+    // has slots, but clamping keeps a future strandCount bump from silently
+    // dropping off the end unnoticed.
+    const ordered = PAINT_ORDER
+        .flatMap(role => strands.filter(s => s.role === role))
+        .slice(0, MAX_STRANDS);
+
+    for (let i = 0; i < MAX_STRANDS; i++) {
+        const strand = ordered[i];
+        values[`uStrandGeom${i}`] = strand
+            ? [strand.amplitude ?? 0, strand.phaseOffset ?? 0,
+                strand.delayMs ?? 0, strand.speedScale ?? 0]
+            : [0, 0, 0, 0];
+        // The third component is the "active" flag: an absent strand is
+        // skipped outright rather than drawn at zero alpha, so it costs
+        // nothing and can never contribute a stray pixel.
+        values[`uStrandStyle${i}`] = strand
+            ? [strand.alpha ?? 1, ROLE_TAG[strand.role] ?? ROLE_TAG[StrandRole.BASE], 1]
+            : [0, 0, 0];
+    }
+
+    // The wisps curl off the voice strand specifically, so its parameters
+    // are uploaded separately rather than searched for in the shader.
+    const voice = strands.find(s => s.role === StrandRole.VOICE);
+    values.uVoice = voice
+        ? [voice.amplitude ?? 0, voice.phaseOffset ?? 0,
+            voice.delayMs ?? 0, voice.speedScale ?? 0]
+        : [0, 0, 0, 0];
+
+    const dotList = dots ?? [];
+    values.uDotX = Array.from({length: MAX_DOTS}, (_, i) => dotList[i]?.x ?? 0);
+    values.uDotAlpha = [dotList.length > 0 ? dotList[0].alpha : 0];
+
+    values.uConvergence = convergence
+        ? [convergence.x, convergence.y, convergence.alpha]
+        : [0, 0, 0];
+
+    return values;
+}
 
 /** Emit a JS number as a GLSL float literal (GLSL has no implicit int→float
  * conversion in expressions like `1 / 2`, so integers need a decimal). */
