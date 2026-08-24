@@ -24,7 +24,9 @@ command -v uv >/dev/null || { echo "uv is required (resolves for the build's pyt
 
 snap_dirs=("$@")
 if [ ${#snap_dirs[@]} -eq 0 ]; then
-    mapfile -t snap_dirs < <(cd "$repo_root" && ls -d ./*-snap | sed 's|^\./||')
+    # A glob rather than `ls -d`, which shellcheck flags and which would
+    # mangle a name with whitespace in it.
+    mapfile -t snap_dirs < <(cd "$repo_root" && printf '%s\n' *-snap)
 fi
 
 for snap_dir in "${snap_dirs[@]}"; do
@@ -96,7 +98,7 @@ PY
     esac
 
     echo "== $snap_dir (base $base, python $py)"
-    echo "$specs" | sed 's/^/   /'
+    printf '   %s\n' "${specs//$'\n'/$'\n'   }"
     mkdir -p "$wheels/cache"
 
     # Two steps, because pip alone cannot do this. Asking pip to resolve for
