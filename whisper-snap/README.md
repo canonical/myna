@@ -1,10 +1,10 @@
 # whisper-snap
 
-Whisper speech-to-text inference snap (UbuSTT), following the
+Whisper speech-to-text inference snap for Myna, following the
 qwen3/gemma4 inference-snap pattern. Design rationale:
 [`docs/asr-inference-snap-design.md`](../docs/asr-inference-snap-design.md).
 
-The snap serves the UbuSTT session API (WebSocket over a Unix domain socket)
+The snap serves the Myna session API (WebSocket over a Unix domain socket)
 via `myna-server` — the same faster-whisper adapter the testbed harness
 measures. It has **no microphone access**: clients capture audio and push
 PCM frames.
@@ -33,29 +33,29 @@ install/refresh hook tries to fetch them from the store and fails
 
 ```shell
 sudo snap install --dangerous \
-    ./whisper_*.snap \
-    ./whisper+model-tiny.comp \
-    ./whisper+model-base.comp \
-    ./whisper+model-small.comp
-# (./whisper+faster-whisper-cuda.comp is the GPU stack — only on a CUDA box.)
+    ./myna-whisper_*.snap \
+    ./myna-whisper+model-tiny.comp \
+    ./myna-whisper+model-base.comp \
+    ./myna-whisper+model-small.comp
+# (./myna-whisper+faster-whisper-cuda.comp is the GPU stack — only on a CUDA box.)
 
-sudo snap connect whisper:hardware-observe
-sudo snap connect whisper:opengl   # if not auto-connected
+sudo snap connect myna-whisper:hardware-observe
+sudo snap connect myna-whisper:opengl   # if not auto-connected
 
 # Sideloaded snaps don't auto-connect interfaces before the install hook,
 # so select the engine manually once:
-sudo whisper use-engine --auto --assume-yes
-sudo snap restart whisper.server
+sudo myna-whisper use-engine --auto --assume-yes
+sudo snap restart myna-whisper.server
 ```
 
-Watch the server: `sudo snap logs -f whisper.server`. The socket appears at
-`/var/snap/whisper/common/run/ubustt.sock`.
+Watch the server: `sudo snap logs -f myna-whisper.server`. The socket appears at
+`/var/snap/myna-whisper/common/run/ubustt.sock`.
 
 Transcribe a fixture clip through the snap (from the repo root):
 
 ```shell
 uv run python dev/transcribe.py \
-    --socket /var/snap/whisper/common/run/ubustt.sock quiet-weather
+    --socket /var/snap/myna-whisper/common/run/ubustt.sock quiet-weather
 ```
 
 ## Confined clients (the `ubustt-socket` slot)
@@ -65,7 +65,7 @@ writable content share so strictly-confined clients — the `myna` dictation
 snap (`myna-snap/`) — can reach it:
 
 ```shell
-sudo snap connect myna:backend whisper:ubustt-socket
+sudo snap connect myna:backend myna-whisper:ubustt-socket
 ```
 
 The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
@@ -91,7 +91,7 @@ brief "loading…" via `progress.phase`). Tune or disable it:
 
 ```shell
 sudo whisper set sleep-idle-seconds=600   # default 300; 0 = never unload
-sudo snap restart whisper.server
+sudo snap restart myna-whisper.server
 ```
 
 Full process/VRAM release on idle (socket activation) is blocked upstream —

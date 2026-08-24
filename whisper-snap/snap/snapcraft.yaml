@@ -1,5 +1,3 @@
-# Whisper inference snap (UbuSTT).
-#
 # Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
 # v2 from inference-snaps-cli). Differences from the LLM snaps, per
 # docs/asr-inference-snap-design.md:
@@ -10,17 +8,17 @@
 #   - cpu engine venv is baked into the base snap (server-app part); the
 #     nvidia-gpu CUDA stack ships as the faster-whisper-cuda component
 #     (scaffolded in T15, build-verify on a CUDA box before relying on it).
-name: whisper
+name: myna-whisper
 base: core24
 version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
-summary: Whisper speech-to-text inference snap (UbuSTT)
+summary: Whisper speech-to-text inference snap for Myna
 description: |
-  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps Whisper models served via faster-whisper
   (CTranslate2), with hardware-based engine selection and switchable model
-  sizes via the IE108-compliant modelctl CLI.
+  sizes via the modelctl CLI.
 
   The service receives PCM audio pushed by clients; it has no access to the
   microphone or any audio hardware.
