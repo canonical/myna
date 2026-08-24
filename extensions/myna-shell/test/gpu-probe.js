@@ -14,6 +14,15 @@
 //     GI_TYPELIB_PATH=/opt/dev/GNOME/lib/mutter-51 \
 //     LD_LIBRARY_PATH=/opt/dev/GNOME/lib/mutter-51 \
 //     gjs -m test/gpu-probe.js
+//
+// Exit codes follow entrance-visual.sh: 0 pass, 1 fail, 77 cannot judge. A
+// Clutter that predates the CoglSnippet port is a skip, not a failure -
+// Shell 50 is half of metadata.json's declared range and hud.js is
+// *expected* to fall back to Cairo there, so failing would mean CI could
+// never run this at all. What still fails on such a Shell is
+// `ribbonShaderSupported()` disagreeing with what Clutter offers: that is
+// the gate itself being wrong, and it is the one thing this file can catch
+// that no other suite can.
 
 import System from 'system';
 
@@ -22,6 +31,7 @@ import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
 
 import {buildRibbonShader, RIBBON_UNIFORMS} from '../ribbonGlsl.js';
+import {ribbonShaderSupported} from '../ribbonShader.js';
 
 let failures = 0;
 
@@ -43,8 +53,12 @@ check('Cogl.Snippet.new is callable',
 check('Cogl.SnippetHook.FRAGMENT is defined',
     Cogl.SnippetHook.FRAGMENT !== undefined,
     `(= ${Cogl.SnippetHook.FRAGMENT})`);
-check('set_uniform_float is available (the variadic set_uniform is not usable from GJS)',
-    typeof Clutter.ShaderEffect.prototype.set_uniform_float === 'function');
+// Not a check but a capability: `set_uniform_float` arrived with the same
+// CoglSnippet port as the vfunc (the variadic `set_uniform` is not usable
+// from GJS at all), so its absence says "this is a Shell 50" - which is a
+// supported Shell, not a fault.
+print('     (info) set_uniform_float: ' +
+    `${typeof Clutter.ShaderEffect.prototype.set_uniform_float === 'function'}`);
 // NOT `'vfunc_get_static_snippet' in Clutter.ShaderEffect.prototype`: GJS's
 // resolve hook turns that `in` into a lookup of the base class's own
 // implementation and THROWS "Virtual function not implemented" even where
@@ -99,11 +113,24 @@ try {
     print('     (info) this Clutter predates the CoglSnippet port (mutter < 51);');
     print('     (info) hud.js falls back to the Cairo ribbon here.');
 }
-check('get_static_snippet is overridable as a vfunc', ProbeEffect !== null);
+// Also a capability rather than a check, and for the same reason as
+// set_uniform_float above: on Shell 50 the vfunc is absent by construction.
+print(`     (info) get_static_snippet overridable: ${ProbeEffect !== null}`);
+
+// The gate hud.js reads, exercised the way hud.js exercises it. The two have
+// to agree in both directions: a gate that says yes where the vfunc is
+// absent breaks the extension outright, and one that says no where it is
+// present silently costs every user the GPU path.
+check('ribbonShaderSupported() agrees with this Clutter',
+    ribbonShaderSupported() === (ProbeEffect !== null),
+    `(gate ${ribbonShaderSupported()}, probe ${ProbeEffect !== null})`);
 
 if (ProbeEffect === null) {
-    print(`FAIL gpu-probe.js (${failures})`);
-    System.exit(1);
+    // Nothing left to probe, but a disagreeing gate is still a failure.
+    print(failures === 0
+        ? 'SKIP gpu-probe.js'
+        : `FAIL gpu-probe.js (${failures})`);
+    System.exit(failures === 0 ? 77 : 1);
 }
 
 const effect = new ProbeEffect();
@@ -126,3 +153,4 @@ for (const {name, components} of RIBBON_UNIFORMS) {
 }
 
 print(failures === 0 ? 'PASS gpu-probe.js' : `FAIL gpu-probe.js (${failures})`);
+System.exit(failures === 0 ? 0 : 1);
