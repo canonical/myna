@@ -64,7 +64,6 @@ PUBLISH_HZ = 20
 PHASE_STATE = {
     "unfold": "recording",
     "flow": "recording",
-    "relax": "recording",
     "morph": "transcribing",
     "complete": "finalizing",
 }
@@ -105,11 +104,11 @@ SHELL_INTERNAL_PHASES = frozenset({"unfold"})
 # the round trip in the UI — the publisher itself never consults it.
 #
 # The mapping is lossy in both directions, and this is the side that shows
-# it: `relax` publishes `recording`, which the Shell renders as `flow`, so
-# selecting `relax` changes the lab's ribbon but not the Shell's. That is not
-# a gap in the bridge — no dictation state produces `relax` at all. It is
-# implemented and unit-tested in ribbon.js, but nothing in the shipped
-# extension ever selects it, so it is currently a lab-only phase.
+# it: several states collapse onto `flow`, so a phase can move the lab's
+# ribbon without moving the Shell's. Every phase currently round-trips or is
+# Shell-driven, but a phase added to ribbon.js that no state requests would
+# not, and the lab labels that rather than leaving it looking like a broken
+# link. (`relax` was exactly such a phase, and was removed 2026-08-24.)
 STATE_PHASE = {
     "loading": "flow",
     "recording": "flow",

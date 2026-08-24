@@ -45,6 +45,9 @@ from ribbon_gl import (  # noqa: E402
 RIBBON_WIDTH = 360
 RIBBON_HEIGHT = 32
 
+# The steady-state phase; what the lab is most useful showing on startup.
+DEFAULT_PHASE = "flow"
+
 
 class RibbonArea(Gtk.GLArea):
     """The `Gtk.GLArea` the ribbon shader renders into."""
@@ -155,7 +158,11 @@ class LabWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title="Myna ribbon — GPU lab")
         self.set_default_size(560, 420)
         self._shader = shader
-        self._state = LabState(shader["phases"][1])
+        # Named, not indexed: `phases` comes from RibbonPhase, whose members
+        # change (relax was removed from it), and an index silently selects
+        # a different default rather than failing.
+        self._state = LabState(DEFAULT_PHASE if DEFAULT_PHASE in shader["phases"]
+                               else shader["phases"][0])
         # Seeded from the startup snapshot so the window opens in the right
         # variant rather than flipping on the first rendered frame.
         self._state.last_desktop = shader["desktop"]

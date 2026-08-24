@@ -61,7 +61,7 @@ against GJS 1.88, GTK4 4.23, libadwaita 1.10).
 - **Manual level override** — a switch + slider to feed a fake RMS/peak
   level, for tuning without needing to actually speak into a live session.
   Off by default (the canvas follows the real live D-Bus level).
-- **Lifecycle phase buttons** — `unfold` / `flow` / `relax` / `morph` /
+- **Lifecycle phase buttons** — `unfold` / `flow` / `morph` /
   `complete` — jump straight to any phase on demand. A live session also
   drives these automatically (`transcribing` → `morph`, `finalizing` →
   `complete`, via the same `ribbonPhaseForStateKey` helper `hud.js` uses).

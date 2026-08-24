@@ -19,14 +19,12 @@ import {
     shapeAmplitude,
     AMPLITUDE_CURVE_K,
     unfoldProgress,
-    relaxProgress,
     morphProgress,
     completeProgress,
     RibbonPhase,
     RibbonTint,
     StrandRole,
     UNFOLD_MS,
-    RELAX_MS,
     MORPH_MS,
     COMPLETE_MS,
     ATTACK_TAU_MS,
@@ -35,6 +33,8 @@ import {
     PARTICLE_ONSET_THRESHOLD,
     DEFAULT_STRAND_COUNT,
     DEFAULT_POINTS_PER_STRAND,
+    DEFAULT_ENVELOPE_HZ,
+    IDLE_AMPLITUDE,
 } from '../ribbon.js';
 import {Severity} from '../states.js';
 import {resolveAccentPalette} from '../accent.js';
@@ -46,7 +46,7 @@ import {
     BASE_CENTRELINE_FRACTION,
     MAX_BODY_BILLOW,
 } from '../ribbonPaint.js';
-import {STALE_MS} from '../vumeter.js';
+import {FLOOR, STALE_MS} from '../vumeter.js';
 
 let failures = 0;
 
@@ -239,8 +239,6 @@ check('X5 stale decays toward the floor',
 {
     check('unfold progress rises from 0 toward 1', unfoldProgress(0) === 0 && unfoldProgress(UNFOLD_MS) === 1);
     check('unfold duration within the 150-200ms design range', UNFOLD_MS >= 150 && UNFOLD_MS <= 200);
-    check('relax progress rises from 0 toward 1', relaxProgress(0) === 0 && relaxProgress(RELAX_MS) === 1);
-    check('relax duration within the 400-600ms design range', RELAX_MS >= 400 && RELAX_MS <= 600);
     check('morph duration within the 200-250ms design range', MORPH_MS >= 200 && MORPH_MS <= 250);
     check('complete duration within the 300-500ms design range', COMPLETE_MS >= 300 && COMPLETE_MS <= 500);
     check('morph progress is a pure function of elapsed time',
@@ -257,10 +255,31 @@ check('X5 stale decays toward the floor',
     check('unfold starts near-flat and grows to full amplitude',
         maxAmplitude(voiceStrand(unfolding)) <= maxAmplitude(voiceStrand(unfolded)));
 
+    // FR-010a's pause behaviour. There is no RELAX phase to test (removed
+    // 2026-08-24 — it was never reachable, and a pause detector had no safe
+    // threshold; see the RibbonPhase note in ribbon.js), so what is asserted
+    // is the mechanism that actually delivers it: the envelope's release
+    // ballistics easing `flow` down on its own. Driven at the real 24Hz
+    // repaint cadence against a silent input, exactly as hud.js would.
     const speaking = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.FLOW});
-    const relaxing = computeRibbonModel({envelope: 0.9, elapsedMs: 0, phase: RibbonPhase.RELAX, phaseElapsedMs: RELAX_MS});
-    check('relax eases toward the idle floor, not an abrupt stop',
-        maxAmplitude(voiceStrand(relaxing)) < maxAmplitude(voiceStrand(speaking)));
+    const speakingAmplitude = maxAmplitude(voiceStrand(speaking));
+    const dtMs = 1000 / DEFAULT_ENVELOPE_HZ;
+    let pausedEnv = 0.9;
+    const eased = [];
+    for (let t = 0; t < 1500; t += dtMs) {
+        // FLOOR, not 0: vumeter.js never reports true silence while active.
+        pausedEnv = applyEnvelopeSmoothing(pausedEnv, FLOOR, dtMs);
+        eased.push(maxAmplitude(voiceStrand(
+            computeRibbonModel({envelope: pausedEnv, elapsedMs: t, phase: RibbonPhase.FLOW}))));
+    }
+    check('a pause eases the wave down without a step',
+        eased.every((a, i) => i === 0 || a <= eased[i - 1] + 1e-9));
+    check('a pause does not stop abruptly',
+        eased[0] < speakingAmplitude && eased[0] > eased[eased.length - 1]);
+    check('a pause settles toward a thin idle line',
+        eased[eased.length - 1] < speakingAmplitude * 0.25);
+    check('a pause never collapses below the idle floor',
+        eased[eased.length - 1] >= IDLE_AMPLITUDE);
 }
 
 // --- Morph → travelling dots (contract: "contracts into a line or dots") -

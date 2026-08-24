@@ -96,7 +96,7 @@ def call(proxy, method: str):
 def check_mapping() -> None:
     """The pure phase/severity → wire mapping."""
     for phase, expected in [("flow", "recording"), ("unfold", "recording"),
-                            ("relax", "recording"), ("morph", "transcribing"),
+                            ("morph", "transcribing"),
                             ("complete", "finalizing")]:
         state, reason = wire_state(phase, None)
         check(f"phase {phase} publishes {expected}", state == expected, state)
@@ -133,13 +133,14 @@ def check_round_trip() -> None:
     check("unfold comes back as flow", shell_phase("unfold", None) == "flow")
     check("unfold is marked as Shell-driven", "unfold" in SHELL_INTERNAL_PHASES)
 
-    # relax has no wire representation at all: ribbon.js implements it, but
-    # ribbonPhaseForStateKey never returns it and hud.js never selects it,
-    # so the Shell cannot show it however it is published.
-    check("relax cannot round-trip", shell_phase("relax", None) == "flow",
-          str(shell_phase("relax", None)))
-    check("relax is not claimed to be Shell-driven",
-          "relax" not in SHELL_INTERNAL_PHASES)
+    # A phase no state requests cannot round-trip, whatever it publishes.
+    # None exists today (relax, which did, was removed from ribbon.js), so
+    # this checks the labelling stays honest for one added later.
+    check("an unreachable phase is reported as not round-tripping",
+          shell_phase("some-future-phase", None) == "flow",
+          str(shell_phase("some-future-phase", None)))
+    check("an unreachable phase is not claimed to be Shell-driven",
+          "some-future-phase" not in SHELL_INTERNAL_PHASES)
 
     for tint in ["recoverable", "critical"]:
         check(f"a {tint} severity leaves the Shell's phase alone",

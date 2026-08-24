@@ -61,7 +61,7 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
 - `vumeter.js` — pure RMS/peak → calibrated loudness envelope + stale-decay;
   reused unchanged by `ribbon.js`.
 - `ribbon.js` — pure wave-ribbon strand/control-point generation and the 5
-  lifecycle-phase timing functions (unfold/flow/relax/morph/complete).
+  lifecycle-phase timing functions (unfold/flow/morph/complete).
 - `accent.js` — legacy pure palette helper retained for the standalone
   `dev-lab/`; the shipped Shell HUD uses native `St.Settings` and CSS accent
   colours instead.

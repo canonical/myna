@@ -39,13 +39,24 @@ import {Severity} from './states.js';
 // values are the wire contract computeRibbonModel/setPhase compare on):
 //   - UNFOLD:   the brief reveal when a session starts.
 //   - FLOW:     the steady-state flowing wave (audio-reactive).
-//   - RELAX:    easing toward a thin idle line during a pause.
 //   - MORPH:    crossfade from the flowing wave into travelling dots.
 //   - COMPLETE: a brief convergence + brightness pulse before the pill clears.
+//
+// There is deliberately no pause/relax phase. FR-010a's "relax smoothly
+// toward a thin idle line during pauses" is delivered by the envelope's
+// RELEASE_TAU_MS ballistics below, continuously and in proportion to the
+// actual audio, rather than by a phase: a phase needs a pause *detector*,
+// and there is no threshold that works. Trip it at ~400ms and it fires on
+// ordinary inter-word gaps (the VU reaches its floor after 300ms of
+// silence), so the ribbon would collapse and snap back mid-sentence; wait
+// ~1.5s to avoid that and the release curve has already done the job. A
+// RELAX phase also capped amplitude at the idle floor regardless of input,
+// so resuming speech mid-ramp was actively suppressed — something the
+// release curve cannot do. Removed 2026-08-24, having never been reachable:
+// `ribbonPhaseForStateKey` never returned it and `hud.js` never selected it.
 export const RibbonPhase = Object.freeze({
     UNFOLD: 'unfold',
     FLOW: 'flow',
-    RELAX: 'relax',
     MORPH: 'morph',
     COMPLETE: 'complete',
 });
@@ -83,13 +94,17 @@ export const DEFAULT_POINTS_PER_STRAND = 16;
 // for responsiveness — a near-immediate reaction to getting louder is
 // exactly what "more reactive" means, even though it departs from the
 // original symmetric range.
+//
+// RELEASE_TAU_MS is what satisfies FR-010a's pause behaviour now that the
+// RELAX phase is gone (see the RibbonPhase note above): a pause eases the
+// wave from a speaking amplitude toward roughly an eighth of it over ~1.5s,
+// smoothly and in proportion to the audio, with no threshold to misfire on.
 export const ATTACK_TAU_MS = 35;
 export const SMOOTHING_TAU_MS = 280; // the release/decay time constant
 export const RELEASE_TAU_MS = SMOOTHING_TAU_MS;
 
 // Lifecycle-phase durations (ms).
 export const UNFOLD_MS = 175; // 150-200ms
-export const RELAX_MS = 500; // 400-600ms
 export const MORPH_MS = 225; // 200-250ms ("a morph, not an abrupt replacement")
 export const COMPLETE_MS = 400; // 300-500ms ("fast enough not to delay the user")
 
@@ -238,11 +253,6 @@ function phaseProgress(elapsedMs, durationMs) {
 /** Unfold progress: the ribbon's brief reveal when a session starts. */
 export function unfoldProgress(elapsedMs) {
     return phaseProgress(elapsedMs, UNFOLD_MS);
-}
-
-/** Relax progress: easing toward a thin idle line during a pause. */
-export function relaxProgress(elapsedMs) {
-    return phaseProgress(elapsedMs, RELAX_MS);
 }
 
 /** Morph progress: crossfade from the flowing wave into travelling dots. */
@@ -424,11 +434,6 @@ export function computeRibbonModel({
     case RibbonPhase.UNFOLD:
         env *= unfoldProgress(phaseElapsedMs);
         break;
-    case RibbonPhase.RELAX: {
-        const p = relaxProgress(phaseElapsedMs);
-        env = env * (1 - p) + Math.min(env, IDLE_AMPLITUDE) * p;
-        break;
-    }
     case RibbonPhase.MORPH: {
         const p = morphProgress(phaseElapsedMs);
         env *= 1 - p;

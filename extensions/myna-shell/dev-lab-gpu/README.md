@@ -95,14 +95,14 @@ extension's own `hudLogic.ribbonPhaseForStateKey`:
 | input level | `AudioRms` / `AudioPeak` |
 | the switch, off | the name is released — the extension goes dormant |
 
-The wire is lossy, so not every phase survives the trip, and the phase row
-says which: **`relax` is lab-only.** `ribbon.js` implements it and
-`test/ribbon.test.js` covers it, but `hudLogic.ribbonPhaseForStateKey` never
-returns it and `hud.js` never selects it, so no dictation state can ask for
-it — selecting it moves the lab's ribbon and leaves the Shell's in `flow`.
-That is the shipped extension's behaviour, not a gap in the bridge.
-`unfold` is a softer case: the Shell does play it, but on its own clock when
-the pill appears, rather than because anything on the wire requested it.
+The wire is lossy — several states collapse onto `flow` — so the phase row
+says what the Shell will actually render for each entry. Every phase
+round-trips today, except `unfold`: the Shell does play it, but on its own
+clock when the pill appears, rather than because anything on the wire asked
+for it. A phase added to `ribbon.js` that no dictation state requests would
+not round-trip at all, and the row would say so instead of leaving it
+looking like a broken bridge. (`relax` was such a phase, and was removed
+from `ribbon.js` once the lab made its unreachability visible.)
 
 Two details that are easy to get wrong and would make the Shell disagree
 with the lab's own window:
