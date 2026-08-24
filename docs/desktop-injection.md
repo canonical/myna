@@ -115,8 +115,9 @@ default; when on it prints transcript text (`myna_core::debug`).
   ours; restore on `end`/`cancel` (idempotent, restore-once).
 - **Commit**: buffer `Final` segments and emit the engine's `CommitText` signal
   with a serialized `IBusText` (`(sa{sv}sv)`) **once per burst** (see commit
-  coalescing above). Commit-only by default; with `--preedit` the engine also
-  drives `UpdatePreeditText`/`HidePreeditText` (see *Streaming preedit* below).
+  coalescing above). Commit-only in batch mode; when preedit is on the engine
+  also drives `UpdatePreeditText`/`HidePreeditText` (see *Streaming preedit*
+  below).
 - **Focus/secure (R4/R5)**: `FocusOut` → a `FocusEvent::FocusOut` on the focus
   stream (controller ends safely, suppresses further commits). The stream is a
   **broadcast** — every utterance subscribes its own receiver, so focus-loss
@@ -155,12 +156,11 @@ the full register→activate→commit→restore cycle against an isolated IBus d
 (`dbus-run-session`) via the gated `ibus_hw` suite. Injection into a focused GUI
 field is the manual spoken-run / gated-suite acceptance on hardware.
 
-## Streaming preedit (`--preedit`, R9)
+## Streaming preedit (R9)
 
-Opt-in partials in the field: with `myna-desktop --preedit` (and a streaming
-server, e.g. `myna-server --adapter whisper --streaming`), each `Unstable`
-hypothesis is rendered in the target's **preedit region** — the same
-volatile-text channel IMEs use — instead of waiting silently for commits:
+Partials in the field: each `Unstable` hypothesis is rendered in the target's
+**preedit region** — the same volatile-text channel IMEs use — instead of
+waiting silently for commits:
 
 - **Render**: `UpdatePreeditText(IBusText, cursor, visible, mode)` — note the
   **four** args: the daemon parses the engine signal strictly as `(vubu)`
@@ -190,13 +190,28 @@ volatile-text channel IMEs use — instead of waiting silently for commits:
 
 This is the R9 extension the `Injector` seam was shaped for
 (`set_preedit`/`supports_preedit`): no FSM or wire change — the controller
-routes `OrchestratorEvent::Unstable` → `set_preedit` only when the flag is on
+routes `OrchestratorEvent::Unstable` → `set_preedit` only when preedit is on
 AND the backend reports `supports_preedit()` (IBus: yes; a future uinput/wtype
 fallback: no). FR-012's commit-only guarantee is relaxed **only for the
-preedit region** and **only under the opt-in**; every other injection
-invariant stands. The flag is off by default because in-field hypothesis
-display is still design-contested (UD136) — `--preedit` exists to evaluate it
-live.
+preedit region**; every other injection invariant stands.
+
+### When it is on (resolved, not asked)
+
+Hypotheses only exist in streaming mode, so "show them in the field" is not a
+separate preference — `myna-desktop` derives it from the persisted
+`streaming_mode` through the RTF tier gate (`myna_core::effective_mode`, see
+`docs/streaming-mode-settings.md`), with no server round-trip. Batch-resolving
+machines stay commit-only; a batch-only backend never emits `Unstable` anyway,
+so the two gates agree by construction.
+
+`--preedit` / `--no-preedit` force it either way for debugging.
+
+> **⚠ Open (UD136 / plan T64):** this makes in-field partials the default
+> *wherever the tier gate opens streaming*, which is the substance of T64(a).
+> What T64 still owns is (b) the differentiating formatting: on GNOME/Wayland
+> the text-input-v3 path strips IBus preedit attributes, so the underline is
+> app/toolkit-dependent and a cross-app-consistent "unstable look" may have to
+> come from the shell extension instead. Nothing here settles that.
 
 **Styling reality (for the design meeting, plan T64).** The preedit *text*
 is delivered and replaced/committed correctly everywhere (probe-verified),
@@ -229,7 +244,7 @@ focus. Three mechanisms, behind the reused `Trigger` seam:
   shortcut bound to `myna-desktop --toggle` (via `--install-shortcut`, gsettings)
   fires it globally. Works for an unsandboxed binary: no terminal focus, no
   portal, no app id. This is the works-today path on GNOME/Wayland.
-- **GlobalShortcuts portal (`--portal`, R2).** `shortcut::portal::
+- **GlobalShortcuts portal (portal activation, R2).** `shortcut::portal::
   GlobalShortcutTrigger::bind(id, preferred_trigger)` — real hold-to-talk
   (`Activated`→`Press`, `Deactivated`→`Release`), autorepeat collapsed by the
   hermetic-tested `Dedup` state machine (FR-008). **But** GNOME's backend refuses
@@ -336,10 +351,10 @@ rather than the "obvious" solution.
   backend only serves callers with an **app identity** (Flatpak/snap or a
   `.desktop` launch), so a bare unsandboxed binary is refused.
 - *This one is essentially settled:* the portal is the right interface; the only
-  friction is app-identity. Hence the default ships the **GNOME custom
-  keybinding** (gsettings → `--toggle`) for the unsandboxed dev binary and
-  `--portal` for the packaged build. Once packaged (snap), the portal is the
-  correct path with no workaround.
+  friction is app-identity. Hence the daemon resolves activation from
+  packaging rather than asking: `$SNAP` set → portal; otherwise the **GNOME
+  custom keybinding** (gsettings → `--toggle`) for the unsandboxed dev binary.
+  `--portal` / `--control` / `--stdin` force one.
 
 **Net:** activation is solved (portal, modulo packaging); injection is solved on
 GNOME via IBus with a clean seam for the wlroots path and no portable successor
@@ -373,7 +388,8 @@ becomes the norm for assistive input.
 - **Focus-safe overlay** is compositor-dependent (survey §2): a `gtk4-layer-shell`
   backend would serve KDE/wlroots; GNOME needs a Shell extension or the
   notification floor. Kept behind the `Indicator` seam.
-- **Streaming preedit**: **landed** (2026-07-27) as the opt-in `--preedit`
-  flag — see *Streaming preedit* above. The remaining piece is deciding whether
-  in-field partials graduate from opt-in to default once the UD136
-  hypothesis-display question is settled with design.
+- **Streaming preedit**: **landed** (2026-07-27), and since 2026-08-24 no
+  longer opt-in — it follows the streaming tier gate (see *Streaming preedit*
+  above). The remaining piece is the UD136 hypothesis-*display* question
+  (T64(b)): what differentiating formatting is achievable when Wayland's
+  text-input-v3 strips preedit attributes.

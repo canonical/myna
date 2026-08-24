@@ -92,7 +92,7 @@ gjs -m dev-lab/main.js
 **Expected**: a small libadwaita window opens with the wave-ribbon canvas, the
 manual-override tuning controls (fake level slider, per-phase trigger buttons,
 reduced-motion toggle, tunable sliders), and a plain text area. With
-`myna-desktop --dbus` running, the ribbon reacts to genuinely live audio/state
+`myna-desktop` running, the ribbon reacts to genuinely live audio/state
 (the tool reuses `dbus.js`'s `DictationService` unmodified — no simulated
 data). Focus the text area and trigger a real session via the configured
 hotkey to verify a spoken transcript lands there (confirms IBus injection
@@ -116,13 +116,13 @@ gnome-extensions enable $UUID
 gnome-extensions info $UUID        # → State: ENABLED
 ```
 
-**Expected**: extension enabled, dormant (no overlay) because `myna-desktop --dbus`
+**Expected**: extension enabled, dormant (no overlay) because `myna-desktop`
 is not yet running (X7).
 
 ## 5. End-to-end spoken run (the on-hardware acceptance)
 
 ```sh
-myna-desktop --dbus --socket /tmp/myna.sock --language en &   # serves org.myna.Dictation
+myna-desktop --socket /tmp/myna.sock --language en &   # serves org.myna.Dictation
 myna-desktop --install-shortcut '<Super>t>'                              # once: binds a shortcut (feature 003)
 # focus a text field (GNOME Text Editor), then:
 #   tap the shortcut  → HUD pill appears bottom-center (loading treatment if cold, then listening)
@@ -205,7 +205,7 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
 
 With the panel button enabled: click it → a session starts (HUD pill appears); click
 again → it stops and commits, identical to the hotkey (X16, SC-010). With
-`myna-desktop --dbus` not running, the button is dimmed (unavailable).
+`myna-desktop` not running, the button is dimmed (unavailable).
 
 ## 7. Robustness spot-checks (edge cases)
 

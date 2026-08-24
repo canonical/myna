@@ -36,5 +36,7 @@ pub use events::{
 };
 pub use protocol::{is_supported, PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS};
 pub use session::SessionConfig;
-pub use settings::{resolve_mode, Settings};
-pub use tier::{streaming_viable, TierAssessment, TierTable, DEFAULT_RTF_THRESHOLD};
+pub use settings::{effective_mode, hardware_tier, resolve_mode, tier_table, Settings};
+pub use tier::{
+    streaming_viable, streaming_viable_here, TierAssessment, TierTable, DEFAULT_RTF_THRESHOLD,
+};

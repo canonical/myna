@@ -7,24 +7,37 @@
 //! ## Activation
 //!
 //! Dictation must inject into *another* app, so activation must not depend on
-//! terminal focus. The default is **toggle-to-talk via a GNOME custom keyboard
-//! shortcut**: `myna-desktop` runs as a background daemon listening on a control
-//! socket, and a GNOME shortcut bound to `myna-desktop --toggle` pokes it (press
-//! = start, press again = stop). This works for a plain unsandboxed binary on
-//! GNOME/Wayland — no terminal focus, no portal, no app id. Run
-//! `myna-desktop --install-shortcut '<Super>t'` once to bind a shortcut for you.
+//! terminal focus. Two transports, and **the daemon picks between them itself**
+//! ([`Activation::resolve`]) — which one is correct is a property of how the
+//! binary was packaged, not a preference a user can hold:
 //!
-//! Alternatives: `--portal` (GlobalShortcuts hold-to-talk — only works packaged
-//! as a snap/flatpak, which GNOME grants an app identity); `--stdin` (terminal
-//! debug — injects back into the terminal); `--overlay` (GTK activity overlay,
-//! experimental: the window can steal focus on Wayland and cut the session).
+//! - **GlobalShortcuts portal** — the sandboxed-native trigger, and the default
+//!   whenever `$SNAP` is set. GNOME only grants a portal app identity to a
+//!   packaged app, so this is available exactly when packaged.
+//! - **Control socket** — the default unpackaged. `myna-desktop` listens on a
+//!   control socket and a GNOME custom shortcut bound to `myna-desktop --toggle`
+//!   pokes it. Run `myna-desktop --install-shortcut '<Super>t'` once to bind it.
+//!
+//! Both are press-to-toggle: tap to start, tap again to stop. `--portal` /
+//! `--control` force one; `--hold` switches the portal to hold-to-talk;
+//! `--stdin` is terminal debug (injects back into the terminal); `--overlay` is
+//! the experimental GTK activity overlay (the window can steal focus on Wayland
+//! and cut the session).
 //!
 //! ```text
 //!   myna-server --adapter whisper --socket /tmp/myna.sock &
-//!   myna-desktop --install-shortcut '<Super>t'      # once: binds a shortcut
+//!   myna-desktop --install-shortcut '<Super>t'      # once, unpackaged: bind a key
 //!   myna-desktop --socket /tmp/myna.sock --language en   # the daemon
 //!   # focus a text field, tap the shortcut, speak, tap again → text is injected
 //! ```
+//!
+//! ## Things that are resolved, not asked
+//!
+//! Three switches used to be the user's problem and are now the daemon's:
+//! the indicator bus (`org.myna.Dictation` is always served, falling back to
+//! notifications by itself), the activation transport (above), and streaming
+//! preedit ([`resolve_preedit`]). Each still has an explicit override for
+//! debugging, but a correct setup requires none of them.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -56,29 +69,66 @@ USAGE:
 Focus a text field, tap the shortcut to start, speak, tap again to stop. The
 committed transcript is injected via IBus into that field.
 
+The daemon always serves org.myna.Dictation for the GNOME Shell extension,
+picks its activation transport from how it was packaged, and decides streaming
+preedit from your persisted mode preference. A correct setup needs none of the
+overrides below.
+
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server (required for daemon)
     --language <lang>  language hint sent in the session config (e.g. en)
     --target <node>    PipeWire node.name to capture from (default: system default)
-    --control <path>   control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
+    --control-socket <path>
+                       control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
     --toggle           poke the running daemon (bind this to a GNOME shortcut)
     --install-shortcut bind a GNOME custom keybinding to <accel>
                        (e.g. '<Super>t'), then exit
-    --portal           activate via the GlobalShortcuts portal (packaged only);
-                       press-to-toggle by default (tap = start, tap = stop)
-    --shortcut <accel> preferred trigger for --portal mode (the portal's bind
+    --shortcut <accel> preferred trigger in portal activation (the portal's bind
                        dialog may still let you pick a different key)
-    --hold             with --portal: hold-to-talk instead (hold = record)
-    --stdin            DEBUG: drive from the terminal (injects into the terminal)
+    --hold             portal activation: hold-to-talk instead (hold = record)
     --overlay          show the GTK activity overlay (experimental; may steal focus)
-    --preedit          show the in-flight hypothesis in the field's preedit region
-                       (experimental; IBus only — volatile, underlined, replaced
-                       as it updates, cleared on commit; never committed text).
-                       Needs a streaming server (myna-server --streaming)
-    --dbus             serve org.myna.Dictation on the session bus for the GNOME
-                       Shell extension (falls back to notifications if no bus)
+
+ACTIVATION (default: portal when packaged — $SNAP set — else control socket):
+    --portal           force the GlobalShortcuts portal (packaged builds only)
+    --control          force the control socket (poke it with --toggle)
+    --stdin            DEBUG: drive from the terminal (injects into the terminal)
+
+OVERRIDES (for debugging; the daemon resolves all three by itself):
+    --preedit          force the in-flight hypothesis into the field's preedit
+    --no-preedit       force commit-only, even in streaming mode
+    --no-dbus          do not serve org.myna.Dictation (notifications only)
+
     -h, --help         show this help
 ";
+
+/// How a press reaches the daemon. Which one is correct follows from how the
+/// binary was packaged, so [`Args::activation`] holds `None` ("resolve it")
+/// unless the user forced one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Activation {
+    /// GlobalShortcuts portal — needs the app identity only a packaged build has.
+    Portal,
+    /// Control socket + a desktop custom shortcut bound to `--toggle`.
+    Control,
+    /// DEBUG: Enter on stdin; injects back into the launching terminal.
+    Stdin,
+}
+
+impl Activation {
+    /// The portal only serves apps the compositor can identify, which on GNOME
+    /// means a packaged one — so `$SNAP` *is* the availability test, not a
+    /// heuristic. Unpackaged builds get the control socket, which needs no app
+    /// identity.
+    fn resolve(forced: Option<Activation>) -> Activation {
+        forced.unwrap_or({
+            if std::env::var_os("SNAP").is_some() {
+                Activation::Portal
+            } else {
+                Activation::Control
+            }
+        })
+    }
+}
 
 #[derive(Debug, Default)]
 struct Args {
@@ -89,12 +139,13 @@ struct Args {
     shortcut: Option<String>,
     toggle: bool,
     install_shortcut: Option<String>,
-    portal: bool,
+    /// `None` = resolve from packaging; `Some` = the user forced one.
+    activation: Option<Activation>,
     hold: bool,
-    stdin: bool,
     overlay: bool,
-    preedit: bool,
-    dbus: bool,
+    /// `None` = resolve from the persisted streaming mode; `Some` = forced.
+    preedit: Option<bool>,
+    no_dbus: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -114,22 +165,63 @@ fn parse_args_from(
             "--socket" => a.socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
             "--language" => a.language = Some(next(&mut it, "--language")?),
             "--target" => a.target = Some(next(&mut it, "--target")?),
-            "--control" => a.control = Some(PathBuf::from(next(&mut it, "--control")?)),
+            "--control-socket" => {
+                a.control = Some(PathBuf::from(next(&mut it, "--control-socket")?))
+            }
             "--shortcut" => a.shortcut = Some(next(&mut it, "--shortcut")?),
             "--toggle" => a.toggle = true,
             "--install-shortcut" => {
                 a.install_shortcut = Some(next(&mut it, "--install-shortcut")?);
             }
-            "--portal" => a.portal = true,
+            "--portal" => set_activation(&mut a, Activation::Portal)?,
+            "--control" => set_activation(&mut a, Activation::Control)?,
+            "--stdin" => set_activation(&mut a, Activation::Stdin)?,
             "--hold" => a.hold = true,
-            "--stdin" => a.stdin = true,
             "--overlay" => a.overlay = true,
-            "--preedit" => a.preedit = true,
-            "--dbus" => a.dbus = true,
+            "--preedit" => a.preedit = Some(true),
+            "--no-preedit" => a.preedit = Some(false),
+            "--no-dbus" => a.no_dbus = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
+    // `--hold` is a portal concept (the portal reports press and release; the
+    // control socket only ever delivers a single poke). Reject it against a
+    // resolved non-portal transport rather than ignoring it, so "hold-to-talk
+    // silently does nothing" is not a mode a user can end up in.
+    if a.hold && Activation::resolve(a.activation) != Activation::Portal {
+        return Err("--hold only applies to portal activation (add --portal)".into());
+    }
     Ok(a)
+}
+
+/// The activation flags are mutually exclusive: silently letting the last one
+/// win would make `--portal --stdin` look like it worked.
+fn set_activation(a: &mut Args, mode: Activation) -> Result<(), String> {
+    match a.activation {
+        Some(existing) if existing != mode => Err(format!(
+            "conflicting activation flags: {existing:?} and {mode:?} (pick one)"
+        )),
+        _ => {
+            a.activation = Some(mode);
+            Ok(())
+        }
+    }
+}
+
+/// Streaming preedit (R9) is a consequence of the transcription mode, not a
+/// separate preference: hypotheses only exist in streaming mode, so "show
+/// them in the field" is decided by the same tier gate that decides streaming
+/// ([`myna_core::effective_mode`]) — no server round-trip needed, and a
+/// batch-only backend simply never emits `Unstable` anyway.
+///
+/// The injector still has the final say downstream: the controller renders a
+/// preedit only where the backend has a real preedit region
+/// (`Injector::supports_preedit`).
+fn resolve_preedit(forced: Option<bool>) -> bool {
+    forced.unwrap_or_else(|| {
+        myna_core::effective_mode(myna_core::Settings::load().streaming_mode)
+            == myna_core::StreamingMode::Streaming
+    })
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -229,27 +321,27 @@ async fn run_controller(
         .injector(injector)
         .indicator(indicator)
         .session(make_session(&args, readiness, pump_bus))
-        .preedit(args.preedit);
+        .preedit(resolve_preedit(args.preedit));
 
-    let mut controller = if args.stdin {
-        builder.trigger(StdinTrigger::new()).build()
-    } else if args.portal {
-        let mode = if args.hold {
-            ActivationMode::Hold
-        } else {
-            ActivationMode::Toggle
-        };
-        match GlobalShortcutTrigger::bind("dictate", args.shortcut.as_deref(), mode).await {
-            Ok(trigger) => builder.trigger(trigger).build(),
-            Err(e) => {
-                eprintln!("cannot bind the GlobalShortcuts portal: {e}");
-                eprintln!("  (the portal only serves packaged apps; drop --portal to use the");
-                eprintln!("   control-socket + GNOME custom shortcut instead)");
-                return ExitCode::FAILURE;
+    let mut controller = match Activation::resolve(args.activation) {
+        Activation::Stdin => builder.trigger(StdinTrigger::new()).build(),
+        Activation::Portal => {
+            let mode = if args.hold {
+                ActivationMode::Hold
+            } else {
+                ActivationMode::Toggle
+            };
+            match GlobalShortcutTrigger::bind("dictate", args.shortcut.as_deref(), mode).await {
+                Ok(trigger) => builder.trigger(trigger).build(),
+                Err(e) => {
+                    eprintln!("cannot bind the GlobalShortcuts portal: {e}");
+                    eprintln!("  (the portal only serves packaged apps; pass --control to use the");
+                    eprintln!("   control socket + a desktop custom shortcut instead)");
+                    return ExitCode::FAILURE;
+                }
             }
         }
-    } else {
-        match ControlTrigger::bind(control_path(&args)) {
+        Activation::Control => match ControlTrigger::bind(control_path(&args)) {
             Ok(trigger) => builder.trigger(trigger).build(),
             Err(e) => {
                 eprintln!(
@@ -258,7 +350,7 @@ async fn run_controller(
                 );
                 return ExitCode::FAILURE;
             }
-        }
+        },
     };
 
     controller.run().await;
@@ -271,23 +363,27 @@ fn banner(args: &Args) {
         .as_ref()
         .map(|s| s.display().to_string())
         .unwrap_or_default();
-    if args.stdin {
-        println!(
+    match Activation::resolve(args.activation) {
+        Activation::Stdin => println!(
             "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
-        );
-    } else if args.portal {
-        let verb = if args.hold { "hold" } else { "tap" };
-        let key = args.shortcut.as_deref().unwrap_or("your chosen shortcut");
-        println!("myna-desktop → {sock} — {verb} {key} to talk (portal)");
-    } else {
-        println!(
-            "myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop."
-        );
-        println!("  if you haven't bound one yet: `myna-desktop --install-shortcut '<Super>t>'");
-        println!(
-            "  or bind a GNOME custom shortcut to: `{}`",
-            toggle_command()
-        );
+        ),
+        Activation::Portal => {
+            let verb = if args.hold { "hold" } else { "tap" };
+            let key = args.shortcut.as_deref().unwrap_or("your chosen shortcut");
+            println!("myna-desktop → {sock} — {verb} {key} to talk (portal)");
+        }
+        Activation::Control => {
+            println!(
+                "myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop."
+            );
+            println!(
+                "  if you haven't bound one yet: `myna-desktop --install-shortcut '<Super>t>'"
+            );
+            println!(
+                "  or bind a GNOME custom shortcut to: `{}`",
+                toggle_command()
+            );
+        }
     }
 }
 
@@ -421,19 +517,20 @@ fn run_headless(args: Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let code = if args.dbus {
-        rt.block_on(run_headless_dbus(args))
-    } else {
+    let code = if args.no_dbus {
         rt.block_on(run_controller(args, NotifyIndicator::new(), None, None))
+    } else {
+        rt.block_on(run_headless_dbus(args))
     };
     println!("bye");
     code
 }
 
-/// `--dbus`: serve `org.myna.Dictation` and use the D-Bus publisher as the
-/// indicator (feature 004 — the GNOME Shell extension consumes it). Falls back
-/// to desktop notifications when the session bus is unreachable or the name
-/// can't be owned — dictation itself never hard-fails (P15).
+/// The default indicator path: serve `org.myna.Dictation` and publish through
+/// it (feature 004 — the GNOME Shell extension consumes it). Falls back to
+/// desktop notifications by itself when the session bus is unreachable or the
+/// name can't be owned, which is why this needs no flag — dictation never
+/// hard-fails on it (P15). `--no-dbus` forces the notification path.
 async fn run_headless_dbus(args: Args) -> ExitCode {
     match ZbusBus::serve().await {
         Ok(bus) => {
@@ -537,6 +634,107 @@ mod tests {
         let result = parse_args_from(args(&["--portal", "--socket", "/tmp/x.sock"]));
         assert!(result.is_ok());
         assert_eq!(result.unwrap().shortcut, None);
+    }
+
+    // ── resolved-not-asked switches ─────────────────────────────────────────
+
+    #[test]
+    fn activation_defaults_to_unforced() {
+        // No activation flag must stay `None` so `Activation::resolve` — not
+        // the parser — decides, and the same argv resolves differently packaged
+        // vs not.
+        let a = parse_args_from(args(&["--socket", "/tmp/x.sock"])).unwrap();
+        assert_eq!(a.activation, None);
+    }
+
+    #[test]
+    fn activation_resolves_from_packaging() {
+        // $SNAP is the portal's availability test: GNOME grants a portal app
+        // identity only to a packaged app.
+        assert_eq!(Activation::resolve(None), {
+            if std::env::var_os("SNAP").is_some() {
+                Activation::Portal
+            } else {
+                Activation::Control
+            }
+        });
+        // An explicit flag always wins over the packaging default.
+        assert_eq!(
+            Activation::resolve(Some(Activation::Stdin)),
+            Activation::Stdin
+        );
+    }
+
+    #[test]
+    fn conflicting_activation_flags_are_rejected() {
+        // Last-one-wins would make `--portal --stdin` look like it worked.
+        let err =
+            parse_args_from(args(&["--portal", "--stdin", "--socket", "/tmp/x.sock"])).unwrap_err();
+        assert!(err.contains("conflicting activation flags"), "{err}");
+        // Repeating the same flag is harmless, not a conflict.
+        assert!(
+            parse_args_from(args(&["--portal", "--portal", "--socket", "/tmp/x.sock"])).is_ok()
+        );
+    }
+
+    #[test]
+    fn hold_requires_portal_activation() {
+        // hold-to-talk needs press *and* release; the control socket only ever
+        // delivers a single poke, so this must fail loudly rather than no-op.
+        let err =
+            parse_args_from(args(&["--control", "--hold", "--socket", "/tmp/x.sock"])).unwrap_err();
+        assert!(err.contains("--hold only applies to portal"), "{err}");
+        assert!(parse_args_from(args(&["--portal", "--hold", "--socket", "/tmp/x.sock"])).is_ok());
+    }
+
+    #[test]
+    fn dbus_is_the_default_and_no_dbus_opts_out() {
+        // The bus is served unless explicitly refused: it degrades to
+        // notifications on its own, so there is nothing for a user to choose.
+        assert!(
+            !parse_args_from(args(&["--socket", "/tmp/x.sock"]))
+                .unwrap()
+                .no_dbus
+        );
+        assert!(
+            parse_args_from(args(&["--no-dbus", "--socket", "/tmp/x.sock"]))
+                .unwrap()
+                .no_dbus
+        );
+        // The old `--dbus` spelling is gone, not silently accepted.
+        assert!(parse_args_from(args(&["--dbus", "--socket", "/tmp/x.sock"])).is_err());
+    }
+
+    #[test]
+    fn preedit_is_tri_state() {
+        // Unset means "resolve from the persisted mode", which is distinct from
+        // an explicit off — `--no-preedit` must survive a streaming tier.
+        assert_eq!(
+            parse_args_from(args(&["--socket", "/tmp/x.sock"]))
+                .unwrap()
+                .preedit,
+            None
+        );
+        assert_eq!(
+            parse_args_from(args(&["--preedit", "--socket", "/tmp/x.sock"]))
+                .unwrap()
+                .preedit,
+            Some(true)
+        );
+        assert_eq!(
+            parse_args_from(args(&["--no-preedit", "--socket", "/tmp/x.sock"]))
+                .unwrap()
+                .preedit,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn forced_preedit_skips_the_tier_gate() {
+        // Overrides must not consult settings/tier state at all — that is what
+        // makes them usable for debugging on any machine.
+        assert!(resolve_preedit(Some(true)));
+        assert!(!resolve_preedit(Some(false)));
     }
 
     #[test]

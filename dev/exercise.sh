@@ -13,7 +13,7 @@
 # with a clear notice and are recorded as unexercised, never as failures):
 #   1. fake-adapter dictation, internal dialect (WAV clip)
 #   2. fake-adapter dictation, IE115 dialect (WAV clip)
-#   3. myna-desktop --dbus publisher path   [gated: MYNA_PIPEWIRE_TESTS]
+#   3. myna-desktop org.myna.Dictation publisher   [gated: MYNA_PIPEWIRE_TESTS]
 #   4. live capture                          [gated: MYNA_LIVE_TESTS]
 #
 # Prerequisites: `workshop run myna cov py-cov` first (or this script runs the
@@ -100,9 +100,9 @@ stop_server
 grep -qF "$EXPECTED" "$WORK/ie115.out" \
   || die "IE115-dialect session missed expected transcript (see $WORK/ie115.out)"
 
-# --- Scenario 3: desktop --dbus publisher (gated) ------------------------------
+# --- Scenario 3: desktop bus publisher (gated) ---------------------------------
 if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && command -v pw-loopback >/dev/null; then
-  notice "scenario 3: myna-desktop --dbus publisher (virtual source)"
+  notice "scenario 3: myna-desktop org.myna.Dictation publisher (virtual source)"
   SOCK="$WORK/desktop.sock"; rm -f "$SOCK"
   start_server desktop "$SOCK"
   # shellcheck disable=SC2016  # late expansion of the injected $SOCK/$CLIENT is intentional
@@ -115,11 +115,11 @@ if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && command -v pw-loopback >/dev/null; th
     # toggle on, let a session run, toggle off; transcript goes to stdout
     ( sleep 2; printf "\n"; sleep 4; printf "\n"; sleep 2 ) | \
       cargo llvm-cov run --no-report --bin myna-desktop -- \
-        --dbus --stdin --socket "'"$SOCK"'" --target myna-exercise-src
+        --stdin --socket "'"$SOCK"'" --target myna-exercise-src
   ' | tee "$WORK/desktop.out" || die "desktop publisher scenario failed"
   stop_server
 else
-  skip "scenario 3 (desktop --dbus publisher): needs MYNA_PIPEWIRE_TESTS=1 and pw-loopback"
+  skip "scenario 3 (desktop bus publisher): needs MYNA_PIPEWIRE_TESTS=1 and pw-loopback"
 fi
 
 # --- Scenario 4: live capture (gated) ------------------------------------------

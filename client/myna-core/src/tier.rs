@@ -57,6 +57,17 @@ pub fn streaming_viable(table: &TierTable, model: &str, hardware: &str, threshol
     }
 }
 
+/// The same gate with the model axis left open: which model the server serves
+/// is not knowable before a session opens, so take the most permissive outcome
+/// over every model measured on this hardware. Safe because the server gates
+/// itself as well - a batch-only backend simply never emits `Unstable`.
+pub fn streaming_viable_here(table: &TierTable, hardware: &str, threshold: f64) -> bool {
+    table
+        .assessments
+        .iter()
+        .any(|a| a.hardware == hardware && a.rtf < threshold)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +151,31 @@ mod tests {
             }],
         };
         assert!(!streaming_viable(&t, "m", "h", DEFAULT_RTF_THRESHOLD));
+    }
+
+    #[test]
+    fn any_measured_model_on_this_hardware_opens_the_gate() {
+        // whisper-small is batch on cpu-i5 but streaming on gpu-rtx; with the
+        // model unknown, gpu-rtx is viable and cpu-i5 is not.
+        assert!(streaming_viable_here(
+            &table(),
+            "gpu-rtx",
+            DEFAULT_RTF_THRESHOLD
+        ));
+        assert!(!streaming_viable_here(
+            &table(),
+            "cpu-i5",
+            DEFAULT_RTF_THRESHOLD
+        ));
+    }
+
+    #[test]
+    fn unmeasured_hardware_stays_batch() {
+        assert!(!streaming_viable_here(
+            &table(),
+            "unmeasured",
+            DEFAULT_RTF_THRESHOLD
+        ));
     }
 
     #[test]

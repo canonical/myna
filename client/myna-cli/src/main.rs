@@ -356,39 +356,6 @@ impl<T: TextSink> TextSink for BatchDisplay<T> {
     }
 }
 
-/// T042/T043 (feature 007): load the RTF tier table and resolve the requested
-/// mode through the gate. Hardware fingerprinting is deliberately coarse
-/// (arch + env override for the lab); the model axis uses the table's entries
-/// for this hardware — an exact model match isn't knowable pre-session.
-fn resolve_display_mode(requested: myna_core::StreamingMode) -> myna_core::StreamingMode {
-    use myna_core::{resolve_mode, StreamingMode, TierTable};
-    if requested != StreamingMode::Auto {
-        return requested;
-    }
-    let hardware = std::env::var("MYNA_HARDWARE_TIER")
-        .unwrap_or_else(|_| format!("{}-cpu-generic", std::env::consts::ARCH));
-    let table_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../results/streaming-tiers.json");
-    let table = std::fs::read_to_string(&table_path)
-        .ok()
-        .and_then(|text| TierTable::from_json(&text).ok())
-        .unwrap_or_default();
-    // Model is server-side; resolve against every measured model on this
-    // hardware and take the most permissive outcome — if ANY measured model
-    // streams here, auto allows streaming (the server gates itself too).
-    let viable = table
-        .assessments
-        .iter()
-        .filter(|a| a.hardware == hardware)
-        .any(|a| a.rtf < myna_core::DEFAULT_RTF_THRESHOLD);
-    let _ = resolve_mode; // gate semantics pinned by unit tests in myna-core
-    if viable {
-        StreamingMode::Streaming
-    } else {
-        StreamingMode::Batch
-    }
-}
-
 /// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
 /// the meter and session events don't overprint each other.
 struct MicMeterSink(StdoutSink);
@@ -420,7 +387,7 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let plural = if n == 1 { "" } else { "s" };
     println!("dictating {n} clip{plural} to {}", args.socket.display());
 
-    let resolved = resolve_display_mode(args.mode);
+    let resolved = myna_core::effective_mode(args.mode);
     println!("mode: {:?}", resolved);
     let mut streaming_sink = UnstableFilter {
         inner: StdoutSink,

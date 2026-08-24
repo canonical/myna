@@ -1,21 +1,18 @@
 #!/bin/sh
-# myna daemon launcher (snap): the shipped default wiring for myna-desktop —
-# GlobalShortcuts-portal hotkey + the org.myna.Dictation publisher for the
-# GNOME Shell indicator, against the backend socket shared over the
-# `backend` content interface.
+# myna daemon launcher (snap): the shipped default wiring for myna-desktop
+# against the backend socket shared over the `backend` content interface.
+#
+# The launcher deliberately passes no activation, indicator or preedit flags:
+# myna-desktop resolves all three itself (portal activation because $SNAP is
+# set, org.myna.Dictation always served with a notification fallback, preedit
+# from the persisted streaming mode). Anything this script "helpfully" pinned
+# here would be a default the user cannot see and cannot change.
 #
 # Env knobs (all optional):
 #   MYNA_BACKEND_SOCKET  backend socket path (default: the content share)
-#   MYNA_ACTIVATION      control (default) | portal | stdin
 #   MYNA_LANGUAGE        language hint for the session config
-# Extra args are appended, e.g. `myna --target <node.name>`.
-#
-# Activation default is `control` (control socket + `myna.toggle`, bound via
-# `myna.install-shortcut`). `portal` (GlobalShortcuts) also works: on
-# xdg-desktop-portal-gnome 51 (GNOME Shell 51.alpha) the bind is auto-accepted
-# - no sheet, the grab registers with gnome-shell at daemon start (verified
-# 2026-08-18). Older portal backends may show a bind sheet once per start
-# (portal v1 has no persist/restore token; ashpd 0.13 doesn't expose v2's).
+# Extra args go straight to myna-desktop, e.g. `myna --target <node.name>` or
+# `myna --control` to force control-socket activation on a non-portal desktop.
 set -eu
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -36,17 +33,7 @@ if [ ! -S "$socket" ]; then
     exit 1
 fi
 
-activation="${MYNA_ACTIVATION:-control}"
-args="--socket $socket --dbus"
-case "$activation" in
-    portal) args="$args --portal" ;;
-    control) ;; # control-socket daemon: poke it with `myna.toggle`
-    stdin) args="$args --stdin" ;;
-    *)
-        echo "myna: unknown MYNA_ACTIVATION=$activation (portal|control|stdin)" >&2
-        exit 1
-        ;;
-esac
+args="--socket $socket"
 if [ -n "${MYNA_LANGUAGE:-}" ]; then
     args="$args --language $MYNA_LANGUAGE"
 fi

@@ -25,16 +25,19 @@ sudo snap install --dangerous ./myna_*.snap
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
 sudo snap connect myna:backend whisper:ubustt-socket     # the backend session socket
 
-# 3. Bind your dictation key (writes <accel> → /snap/bin/myna.toggle via dconf)
-myna.install-shortcut '<Super>t>'                 # or any other accel string
-
-# 4. Run the daemon (leave it running; autostart is a known gap below)
+# 3. Run the daemon (leave it running; autostart is a known gap below)
 myna
 
-# 5. Focus a text field, tap the key, speak, tap again → transcript injected.
+# 4. Focus a text field, tap the key the portal bound, speak, tap again →
+#    transcript injected.
 ```
 
-That's it. If step 5 misbehaves, jump to **Troubleshooting**.
+That's it. If step 4 misbehaves, jump to **Troubleshooting**.
+
+No activation, indicator or preedit flags: packaged, `myna` uses the
+GlobalShortcuts portal, always serves `org.myna.Dictation`, and turns
+streaming preedit on only where the tier gate says this machine streams. See
+**Activation** for forcing any of them.
 
 The `backend` plug is a writable content share of the backend snap's
 `$SNAP_COMMON/run` (T14c): after connecting, the session socket appears at
@@ -45,29 +48,38 @@ exist (`sudo snap start whisper.server`).
 
 ## Activation
 
-Everything is **press-to-toggle** by default: tap the key to start, tap
-again to stop. Two trigger transports:
+Everything is **press-to-toggle**: tap the key to start, tap again to stop.
+Two trigger transports, and the daemon picks between them itself - the
+portal only serves apps the compositor can identify, so `$SNAP` being set
+*is* the availability test:
 
-- **Control socket (default)** — `myna` listens for pokes; `myna.toggle`
-  sends one. Any desktop can bind a custom shortcut to
-  `/snap/bin/myna.toggle` (`myna.install-shortcut` does it for GNOME).
-- **GlobalShortcuts portal** (`MYNA_ACTIVATION=portal myna`) — the
+- **GlobalShortcuts portal (default here, because this is a snap)** — the
   sandboxed-native trigger. On xdg-desktop-portal-gnome 51 (GNOME Shell
   51.alpha) the bind is auto-accepted: no sheet, the grab registers at
   daemon start (verified 2026-08-18). Older backends may show a bind sheet
   once per start - portal v1 has no persist/restore token, and ashpd 0.13
-  doesn't expose v2's. Either way it's press-to-toggle like everything
-  else; `myna --hold` (or `MYNA_ACTIVATION=portal myna --hold`) switches
-  it to hold-to-talk.
+  doesn't expose v2's. `myna --hold` switches it to hold-to-talk.
+- **Control socket** (`myna --control`) — for a desktop with no working
+  GlobalShortcuts backend. `myna` listens for pokes; `myna.toggle` sends
+  one. Bind a custom shortcut to `/snap/bin/myna.toggle`
+  (`myna.install-shortcut '<Super>t'` does it for GNOME).
 
-`MYNA_ACTIVATION=stdin myna` drives from the terminal (debug; injects back
-into the terminal).
+`myna --stdin` drives from the terminal (debug; injects back into the
+terminal). The three activation flags are mutually exclusive.
 
-**Indicator**: the launcher always serves `org.myna.Dictation` for the
-myna-shell GNOME extension; desktop notifications are the fallback. The
-experimental GTK overlay is `--overlay`.
+**Indicator**: `org.myna.Dictation` is always served for the myna-shell
+GNOME extension, falling back to desktop notifications by itself when the
+session bus is unreachable - so there is no flag to set. `myna --no-dbus`
+forces the notification path for debugging. The experimental GTK overlay is
+`--overlay`.
 
-**Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_ACTIVATION`, `MYNA_LANGUAGE`.
+**Preedit**: in-field unstable hypotheses are on exactly when this machine
+resolves to streaming (your persisted `streaming_mode` through the RTF tier
+gate - see `docs/streaming-mode-settings.md`) *and* the injector has a real
+preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
+
+**Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_LANGUAGE`. (`MYNA_ACTIVATION` is
+gone - use `--portal` / `--control` / `--stdin`.)
 
 ## Apps
 
@@ -97,16 +109,17 @@ gdbus introspect --session --dest org.myna.Dictation \
 
 - **`myna` says "no backend socket"** — connect the backend plug (step 2)
   and make sure the backend daemon has run (`snap logs whisper.server`).
-- **`myna.toggle` can't reach the daemon** — `myna` isn't running (or it's
-  running with a different `MYNA_ACTIVATION`; control mode is required).
+- **`myna.toggle` can't reach the daemon** — `myna` isn't running, or it's
+  running in the default portal activation; `myna.toggle` needs
+  `myna --control`.
 - **Nothing is injected, state shows `error`** — read the reason:
   `gdbus call --session --dest org.myna.Dictation \
     --object-path /org/myna/Dictation \
     --method org.freedesktop.DBus.Properties.Get org.myna.Dictation ErrorMessage`
   (a *capture_failed* usually means `myna:pipewire` isn't connected).
-- **A press "does nothing" - the session starts and dies silently** - with
-  the default `--dbus` wiring, ALL feedback (including errors) goes to
-  `org.myna.Dictation` properties; without the myna-shell extension nothing
+- **A press "does nothing" - the session starts and dies silently** - the
+  daemon serves `org.myna.Dictation` by default, so ALL feedback (including
+  errors) goes to its properties; without the myna-shell extension nothing
   renders it (notifications are only the fallback when the bus can't be
   owned). Critical session errors are always printed to the daemon's
   stderr, so run `myna` from a terminal and read them there. For the full
@@ -170,7 +183,7 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 - **Portal hotkey:** if a bound key doesn't grab, diagnose with:
   ```shell
   gdbus monitor --session --dest org.freedesktop.portal.Desktop &
-  MYNA_ACTIVATION=portal myna   # then press your key
+  myna --portal                 # then press your key
   # org.freedesktop.portal.GlobalShortcuts Activated should appear on press;
   # nothing = the grab never registered (portal side)
   ```

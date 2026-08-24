@@ -5,6 +5,15 @@
 //! `$XDG_CONFIG_HOME/myna/settings.json` (default `~/.config/myna/`). The
 //! desktop app can re-bind the same enum onto dconf/snap config (T54) without
 //! touching the enum or resolution logic.
+//!
+//! Two layers, deliberately separated:
+//!
+//! - [`resolve_mode`] is pure - table, model, hardware in, mode out - and is
+//!   where the gate semantics are pinned by unit tests.
+//! - [`effective_mode`] is the host-side wrapper every *binary* should call:
+//!   it finds the shipped baseline ([`tier_table`]), fingerprints the machine
+//!   ([`hardware_tier`]), and resolves without needing a server connection.
+//!   One implementation, so the CLI and the desktop daemon cannot drift.
 
 use std::path::PathBuf;
 
@@ -66,6 +75,67 @@ pub fn resolve_mode(
         StreamingMode::Streaming | StreamingMode::Batch => preference,
         StreamingMode::Auto => {
             if crate::streaming_viable(table, model, hardware, crate::DEFAULT_RTF_THRESHOLD) {
+                StreamingMode::Streaming
+            } else {
+                StreamingMode::Batch
+            }
+        }
+    }
+}
+
+/// Coarse hardware fingerprint used as the tier table's `hardware` key.
+///
+/// Deliberately coarse: the lab pins a machine with `MYNA_HARDWARE_TIER` when
+/// recording a baseline, and anything unrecognised falls through to the batch
+/// default rather than guessing.
+pub fn hardware_tier() -> String {
+    std::env::var("MYNA_HARDWARE_TIER")
+        .unwrap_or_else(|_| format!("{}-cpu-generic", std::env::consts::ARCH))
+}
+
+/// The shipped RTF baseline, searched in this order:
+///
+/// 1. `$MYNA_TIER_TABLE` - explicit override for the lab and for tests
+/// 2. `$SNAP/usr/share/myna/streaming-tiers.json` - the packaged copy
+/// 3. `/usr/share/myna/streaming-tiers.json` - a system install
+///
+/// Missing or unparseable yields an empty table, which gates `Auto` to batch
+/// (FR-010). A baseline is measured data, never inferred: an absent file must
+/// read as "unmeasured", not as "assume it streams".
+pub fn tier_table() -> crate::TierTable {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(explicit) = std::env::var_os("MYNA_TIER_TABLE") {
+        candidates.push(PathBuf::from(explicit));
+    }
+    if let Some(snap) = std::env::var_os("SNAP") {
+        candidates.push(PathBuf::from(snap).join("usr/share/myna/streaming-tiers.json"));
+    }
+    candidates.push(PathBuf::from("/usr/share/myna/streaming-tiers.json"));
+
+    candidates
+        .iter()
+        .find_map(|path| {
+            let text = std::fs::read_to_string(path).ok()?;
+            crate::TierTable::from_json(&text).ok()
+        })
+        .unwrap_or_default()
+}
+
+/// The mode this machine will actually use, with no server connection needed.
+///
+/// `Streaming`/`Batch` are the user's explicit choice and pass straight
+/// through; `Auto` goes through the tier gate. The model axis stays open
+/// (see [`crate::streaming_viable_here`]) because the active model is
+/// server-side and not knowable before a session opens.
+pub fn effective_mode(preference: StreamingMode) -> StreamingMode {
+    match preference {
+        StreamingMode::Streaming | StreamingMode::Batch => preference,
+        StreamingMode::Auto => {
+            if crate::streaming_viable_here(
+                &tier_table(),
+                &hardware_tier(),
+                crate::DEFAULT_RTF_THRESHOLD,
+            ) {
                 StreamingMode::Streaming
             } else {
                 StreamingMode::Batch

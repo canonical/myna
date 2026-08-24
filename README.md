@@ -210,16 +210,20 @@ cd client && cargo build --release && cd ..
 # focus a text field, tap the shortcut, speak, tap -> transcript injected there
 ```
 
-Alternatives: `--portal` (supports hold-to-talk via the GlobalShortcuts portal — packaged
-snap/flatpak only), `--stdin` (terminal debug), `--dbus` (also serve
-`org.myna.Dictation` for the GNOME Shell indicator below). See
+The daemon resolves its own wiring: activation follows packaging (control
+socket here, the GlobalShortcuts portal when `$SNAP` is set, since only a
+packaged app gets a portal app identity), `org.myna.Dictation` is always
+served for the indicator below with a notification fallback, and in-field
+preedit follows the streaming tier gate. Force any of them with `--portal` /
+`--control` / `--stdin`, `--no-dbus`, `--preedit` / `--no-preedit`;
+`--hold` makes portal activation hold-to-talk. See
 `docs/desktop-injection.md`.
 
 ### The GNOME Shell indicator
 
 On GNOME/Wayland a normal client can't show an always-on-top, focus-safe overlay,
 so the animated dictation indicator lives in a GJS extension that runs inside the
-compositor and reads state + audio level from `myna-desktop --dbus` over D-Bus
+compositor and reads state + audio level from `myna-desktop` over D-Bus
 (`org.myna.Dictation`). It never captures, transcribes, or injects. Install it
 by symlinking the source tree into the extensions directory (the directory name
 must match the extension `uuid` in `extensions/myna-shell/metadata.json`):

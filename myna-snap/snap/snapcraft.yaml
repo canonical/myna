@@ -25,10 +25,10 @@ description: |
   (whisper, nemotron, or qwen) over a Unix socket; nothing leaves the
   machine and no audio is persisted.
 
-  Activation is hold/toggle-to-talk via the GlobalShortcuts portal; state
-  and the live audio level are published on org.myna.Dictation for the
-  myna-shell GNOME extension indicator. Feedback falls back to desktop
-  notifications.
+  Activation is tap-to-toggle via the GlobalShortcuts portal (--hold switches
+  it to hold-to-talk); state and the live audio level are published on
+  org.myna.Dictation for the myna-shell GNOME extension indicator. Feedback
+  falls back to desktop notifications.
 grade: devel
 confinement: strict
 compression: lzo
@@ -46,6 +46,9 @@ environment:
 
 apps:
   # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
+  # The launcher passes only --socket/--language: activation (portal, because
+  # $SNAP is set), the org.myna.Dictation indicator, and streaming preedit are
+  # all resolved by myna-desktop itself rather than pinned here.
   # NOTE: deliberately NO `gnome` extension — its build env points
   # LD_LIBRARY_PATH at the core22-based gnome-46-2404-sdk, whose older glibc
   # breaks every noble-linked build tool (rustup/cargo/ld: GLIBC_PRIVATE
@@ -65,15 +68,17 @@ apps:
     slots:
       - dictation # org.myna.Dictation for the GNOME Shell indicator
 
-  # Poke the running daemon (control-socket activation mode):
-  # bind `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
+  # Poke the running daemon. Only meaningful under control-socket activation
+  # (`myna --control`), which a packaged build does not default to: bind
+  # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
   toggle:
     command: bin/myna-desktop --toggle
 
-  # Bind <accel> → `myna.toggle` via dconf (control-socket activation mode;
-  # not needed with the default portal activation). Uses dconf because the
-  # GNOME schemas are not visible inside the snap's core24 /usr — dconf
-  # writes need no schema, and the gsettings interface grants them.
+  # Bind <accel> → `myna.toggle` via dconf. Only needed under `myna --control`
+  # — packaged, the daemon defaults to the GlobalShortcuts portal, which owns
+  # its own binding. Uses dconf because the GNOME schemas are not visible
+  # inside the snap's core24 /usr — dconf writes need no schema, and the
+  # gsettings interface grants them.
   install-shortcut:
     command: bin/myna-install-shortcut
     plugs:
