@@ -267,7 +267,7 @@ app.connect('activate', () => {
     const win = new Adw.ApplicationWindow({
         application: app,
         title: 'Myna Ribbon Lab',
-        default_width: 600,
+        default_width: 750,
         default_height: 840,
     });
 
