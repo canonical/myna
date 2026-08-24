@@ -48,7 +48,7 @@ import {
     UNFOLD_MS,
 } from './ribbon.js';
 import {paintRibbon} from './ribbonPaint.js';
-import {ShaderRibbonActor} from './ribbonShader.js';
+import {ribbonShaderSupported, ShaderRibbonActor} from './ribbonShader.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
@@ -77,9 +77,16 @@ const FIRST_FRAME_DT_MS = 1000 / 60;
 const USE_CAIRO_RIBBON = GLib.getenv('MYNA_SHELL_CAIRO_RIBBON') === '1';
 
 /** Build the ribbon actor for the active rasterization path. Both expose
- * the same API, so nothing downstream needs to know which one it got. */
+ * the same API, so nothing downstream needs to know which one it got.
+ *
+ * Cairo is also the automatic answer where the GPU path cannot run at all:
+ * `Clutter.ShaderEffect`'s snippet vfunc only exists from mutter 51.alpha,
+ * and metadata.json still declares Shell 50. `ribbonShaderSupported()` is
+ * what decides, and it logs once when it says no. */
 function createRibbonActor() {
-    return USE_CAIRO_RIBBON ? new WaveRibbonActor() : new ShaderRibbonActor();
+    if (USE_CAIRO_RIBBON || !ribbonShaderSupported())
+        return new WaveRibbonActor();
+    return new ShaderRibbonActor();
 }
 
 // A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, CSS

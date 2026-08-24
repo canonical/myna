@@ -113,6 +113,16 @@ MYNA_SHELL_CAIRO_RIBBON=1
 **Cairo remains the reference implementation**, and is kept rather than
 deleted because:
 
+- **GNOME Shell 50 has no GPU path at all.** `ribbonShader.js` overrides
+  `ClutterShaderEffectClass::get_static_snippet`, which arrived in mutter
+  51.alpha (`2d5bc0fbff`, "clutter/shader-effect: Port to CoglSnippet"); the
+  same commit added `clutter_shader_effect_set_uniform_float`, the only
+  introspectable way to push a `vec2`/`vec3`/`vec4` from GJS. On mutter 50
+  neither exists, so `hud.js` selects Cairo automatically —
+  `ribbonShaderSupported()` registers the effect subclass behind a try/catch
+  and logs once when it cannot. That registration is deliberately *lazy*: at
+  module scope the throw would abort the `import` and take the whole
+  extension down, before `MYNA_SHELL_CAIRO_RIBBON` could ever be read.
 - `dev-lab/` cannot use the GPU path. GTK4's `GskGLShader` was deprecated in
   4.16 and no longer renders at all — both its Cairo and GPU paths now fill
   the node with hot pink (`#FF69B4`) as a "missing shader" marker. Its

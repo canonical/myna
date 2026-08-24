@@ -15,6 +15,8 @@
 //     LD_LIBRARY_PATH=/opt/dev/GNOME/lib/mutter-51 \
 //     gjs -m test/gpu-probe.js
 
+import System from 'system';
+
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
@@ -43,8 +45,12 @@ check('Cogl.SnippetHook.FRAGMENT is defined',
     `(= ${Cogl.SnippetHook.FRAGMENT})`);
 check('set_uniform_float is available (the variadic set_uniform is not usable from GJS)',
     typeof Clutter.ShaderEffect.prototype.set_uniform_float === 'function');
-check('get_static_snippet is overridable as a vfunc',
-    'vfunc_get_static_snippet' in Clutter.ShaderEffect.prototype);
+// NOT `'vfunc_get_static_snippet' in Clutter.ShaderEffect.prototype`: GJS's
+// resolve hook turns that `in` into a lookup of the base class's own
+// implementation and THROWS "Virtual function not implemented" even where
+// the vfunc exists and is perfectly overridable. Registering a subclass is
+// the only honest test, so section 3 does it in a try/catch and this check
+// reports what that found.
 
 // ShellGLSLEffect was removed in gnome-shell 30f545eb00 ("Remove GLSLEffect
 // — now that everything uses ClutterShaderEffect"); confirm we did not
@@ -69,14 +75,36 @@ check('Cogl accepted the generated snippet', snippet !== null);
 
 // --- 3. The effect subclass registers and takes every uniform ----------
 
-const ProbeEffect = GObject.registerClass(
-class ProbeEffect extends Clutter.ShaderEffect {
-    vfunc_get_static_snippet() {
-        const s = Cogl.Snippet.new(Cogl.SnippetHook.FRAGMENT, declarations, null);
-        s.set_replace(code);
-        return s;
+// `get_static_snippet` only exists from mutter 51.alpha (2d5bc0fbff,
+// "clutter/shader-effect: Port to CoglSnippet"). On anything older GJS cannot
+// hook the override up and registerClass throws — which is precisely the
+// condition this probe exists to report, so catch it rather than dying on it.
+// hud.js does the same, via ribbonShader.js's `ribbonShaderSupported()`.
+let ProbeEffect = null;
+try {
+    class Probe extends Clutter.ShaderEffect {
+        static {
+            GObject.registerClass(this);
+        }
+
+        vfunc_get_static_snippet() {
+            const s = Cogl.Snippet.new(Cogl.SnippetHook.FRAGMENT, declarations, null);
+            s.set_replace(code);
+            return s;
+        }
     }
-});
+    ProbeEffect = Probe;
+} catch (e) {
+    print(`     (info) ${e.message}`);
+    print('     (info) this Clutter predates the CoglSnippet port (mutter < 51);');
+    print('     (info) hud.js falls back to the Cairo ribbon here.');
+}
+check('get_static_snippet is overridable as a vfunc', ProbeEffect !== null);
+
+if (ProbeEffect === null) {
+    print(`FAIL gpu-probe.js (${failures})`);
+    System.exit(1);
+}
 
 const effect = new ProbeEffect();
 check('the shader effect subclass instantiates', effect instanceof Clutter.ShaderEffect);

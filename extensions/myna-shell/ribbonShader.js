@@ -46,56 +46,116 @@ const FRAME_TIMELINE_MS = 1000;
 const MAX_FRAME_DT_MS = 100;
 const FIRST_FRAME_DT_MS = 1000 / 60;
 
+// # Why the subclass is registered lazily
+//
+// `ClutterShaderEffectClass::get_static_snippet` only exists from mutter
+// 51.alpha (2d5bc0fbff, "clutter/shader-effect: Port to CoglSnippet"), and
+// metadata.json declares Shell 50 as well. On mutter 50 the vfunc is simply
+// absent, so GJS cannot hook the override up and `GObject.registerClass`
+// throws. A class declared at module scope registers as the module is
+// evaluated — a `static {}` block is no help, it runs then too — so the
+// throw would land during `import` and take the WHOLE EXTENSION down: not
+// merely the ribbon, and not even recoverable via hud.js's
+// `MYNA_SHELL_CAIRO_RIBBON` opt-out, since the import runs long before any
+// flag is read. Declaring the class inside a function is what defers it.
+//
+// There is no viable GPU path to fall back to on 50: the pre-snippet API
+// wants a whole legacy GLSL program from `get_static_shader_source`, and
+// `clutter_shader_effect_set_uniform_float` — the only introspectable way to
+// push a vec2/3/4 — was added by that same port commit. So 50 gets Cairo,
+// which is the reference implementation anyway.
+let RibbonShaderEffect = null;
+let shaderEffectSupported = null;
+
+/**
+ * Whether the GPU ribbon can run on the Shell we are loaded into. Registers
+ * the effect subclass on first call and memoizes the outcome, failure
+ * included, so the error is reported at most once per Shell session.
+ *
+ * @returns {boolean} true when `ShaderRibbonActor` is safe to construct.
+ */
+export function ribbonShaderSupported() {
+    if (shaderEffectSupported === null) {
+        try {
+            RibbonShaderEffect = registerRibbonShaderEffect();
+            shaderEffectSupported = true;
+        } catch (e) {
+            logError(e, 'myna: GPU ribbon unavailable on this Shell, ' +
+                'falling back to the Cairo ribbon');
+            RibbonShaderEffect = null;
+            shaderEffectSupported = false;
+        }
+    }
+    return shaderEffectSupported;
+}
+
 /**
  * The fragment shader itself. `vfunc_get_static_snippet` is called once per
  * subclass no matter how many instances exist, so the source is generated
  * once, here.
+ *
+ * @returns {GObject.Class} the registered `Clutter.ShaderEffect` subclass.
  */
-const RibbonShaderEffect = GObject.registerClass(
-class RibbonShaderEffect extends Clutter.ShaderEffect {
-    vfunc_get_static_snippet() {
-        const {declarations, code} = buildRibbonShader();
-        const snippet = Cogl.Snippet.new(
-            Cogl.SnippetHook.FRAGMENT, declarations, null);
-        // `replace` rather than `post`: the ribbon is generated entirely
-        // from uniforms, so Cogl's own fragment output (the actor's
-        // offscreen texture, which is just the placeholder background) is
-        // deliberately discarded.
-        snippet.set_replace(code);
-        return snippet;
+function registerRibbonShaderEffect() {
+    class RibbonShaderEffect extends Clutter.ShaderEffect {
+        static {
+            GObject.registerClass(this);
+        }
+
+        vfunc_get_static_snippet() {
+            const {declarations, code} = buildRibbonShader();
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT, declarations, null);
+            // `replace` rather than `post`: the ribbon is generated entirely
+            // from uniforms, so Cogl's own fragment output (the actor's
+            // offscreen texture, which is just the placeholder background) is
+            // deliberately discarded.
+            snippet.set_replace(code);
+            return snippet;
+        }
+
+        /**
+         * Push one frame's model to the GPU. Every uniform is a scalar or a
+         * vec2/3/4 — never an array — because ClutterShaderFloat asserts
+         * `size <= 4`; see RIBBON_UNIFORMS. The trailing `total_count` argument
+         * is the array length (1 for all of ours), which GJS infers from the
+         * value array, so `components` is what distinguishes a vec4 from four
+         * floats.
+         *
+         * @param {number} width - actor width in pixels.
+         * @param {number} height - actor height in pixels.
+         * @param {object} model - `computeRibbonModel` output.
+         * @param {object} palette - the caller-resolved theme colours.
+         */
+        updateFromModel(width, height, model, palette) {
+            // The packing itself is pure and lives in ribbonGlsl.js beside the
+            // shader it feeds, so the dev-lab and the headless render test
+            // upload byte-identical uniforms rather than a second hand-copied
+            // packing that could drift from this one.
+            const values = packRibbonUniforms(width, height, model, palette);
+            for (const {name, components} of RIBBON_UNIFORMS)
+                this.set_uniform_float(name, components, values[name]);
+        }
     }
 
-    /**
-     * Push one frame's model to the GPU. Every uniform is a scalar or a
-     * vec2/3/4 — never an array — because ClutterShaderFloat asserts
-     * `size <= 4`; see RIBBON_UNIFORMS. The trailing `total_count` argument
-     * is the array length (1 for all of ours), which GJS infers from the
-     * value array, so `components` is what distinguishes a vec4 from four
-     * floats.
-     *
-     * @param {number} width - actor width in pixels.
-     * @param {number} height - actor height in pixels.
-     * @param {object} model - `computeRibbonModel` output.
-     * @param {object} palette - the caller-resolved theme colours.
-     */
-    updateFromModel(width, height, model, palette) {
-        // The packing itself is pure and lives in ribbonGlsl.js beside the
-        // shader it feeds, so the dev-lab and the headless render test
-        // upload byte-identical uniforms rather than a second hand-copied
-        // packing that could drift from this one.
-        const values = packRibbonUniforms(width, height, model, palette);
-        for (const {name, components} of RIBBON_UNIFORMS)
-            this.set_uniform_float(name, components, values[name]);
-    }
-});
+    return RibbonShaderEffect;
+}
 
 /**
  * A GPU-rasterized flowing wave ribbon. Mirrors hud.js's `WaveRibbonActor`
- * API exactly.
+ * API exactly. Only construct it when `ribbonShaderSupported()` is true.
  */
-export const ShaderRibbonActor = GObject.registerClass(
-class ShaderRibbonActor extends St.Widget {
+export class ShaderRibbonActor extends St.Widget {
+    static {
+        GObject.registerClass(this);
+    }
+
     constructor() {
+        if (!ribbonShaderSupported()) {
+            throw new Error(
+                'ShaderRibbonActor: Clutter.ShaderEffect.get_static_snippet ' +
+                'is unavailable; use the Cairo ribbon on this Shell');
+        }
         super({
             styleClass: 'myna-hud-ribbon myna-hud-ribbon-gpu',
             reactive: false,
@@ -304,4 +364,4 @@ class ShaderRibbonActor extends St.Widget {
         this._settings = null;
         super.destroy();
     }
-});
+}
