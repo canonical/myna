@@ -8,8 +8,14 @@
 # from the persisted streaming mode). Anything this script "helpfully" pinned
 # here would be a default the user cannot see and cannot change.
 #
+# The backend, by contrast, is *not* resolved: exactly one must be connected.
+# snapd de-duplicates content targets by suffix, so a second connected backend
+# lands at backend/run-2, and a hardcoded backend/run would silently dictate
+# through whichever snap happened to connect first - and swap under you when a
+# backend is reinstalled.
+#
 # Env knobs (all optional):
-#   MYNA_BACKEND_SOCKET  backend socket path (default: the content share)
+#   MYNA_BACKEND_SOCKET  backend socket path (bypasses the check below)
 #   MYNA_LANGUAGE        language hint for the session config
 # Extra args go straight to myna-desktop, e.g. `myna --target <node.name>` or
 # `myna --control` to force control-socket activation on a non-portal desktop.
@@ -22,15 +28,43 @@ fi
 # PipeWire/Wayland compat symlinks (see bin/myna-runtime-links).
 . "$SNAP/bin/myna-runtime-links"
 
-# snapd appends the slot's source basename to the content target, so the
-# share of $SNAP_COMMON/run lands at $SNAP_DATA/backend/run.
-socket="${MYNA_BACKEND_SOCKET:-$SNAP_DATA/backend/run/ubustt.sock}"
-if [ ! -S "$socket" ]; then
-    echo "myna: no backend socket at $socket" >&2
-    echo "  install + connect a backend snap, e.g.:" >&2
-    echo "    sudo snap connect myna:backend whisper:ubustt-socket" >&2
-    echo "  (or point MYNA_BACKEND_SOCKET at a session socket)" >&2
-    exit 1
+if [ -n "${MYNA_BACKEND_SOCKET:-}" ]; then
+    socket="$MYNA_BACKEND_SOCKET"
+    if [ ! -S "$socket" ]; then
+        echo "myna: MYNA_BACKEND_SOCKET is not a socket: $socket" >&2
+        exit 1
+    fi
+else
+    # snapd appends the slot's source basename to the content target, so the
+    # share of $SNAP_COMMON/run lands at $SNAP_DATA/backend/run (and run-2,
+    # run-3, … for further connections).
+    socket=""
+    found=0
+    for candidate in "$SNAP_DATA"/backend/run*/ubustt.sock; do
+        [ -S "$candidate" ] || continue
+        found=$((found + 1))
+        socket="$candidate"
+    done
+
+    if [ "$found" -eq 0 ]; then
+        echo "myna: no backend is connected" >&2
+        echo "  install a backend snap and connect it, e.g.:" >&2
+        echo "    sudo snap connect myna:backend myna-whisper" >&2
+        echo "  (or point MYNA_BACKEND_SOCKET at a session socket)" >&2
+        exit 1
+    fi
+
+    if [ "$found" -gt 1 ]; then
+        echo "myna: $found backends are connected; myna dictates through one." >&2
+        echo "  Which one answers would be decided by the order they were" >&2
+        echo "  connected - not by you, and it can change when you reinstall" >&2
+        echo "  a backend - so this is an error rather than a guess." >&2
+        echo "  Confinement hides which snap is behind which mount, so list" >&2
+        echo "  them and disconnect all but the one you want:" >&2
+        echo "    snap connections myna" >&2
+        echo "    sudo snap disconnect myna:backend <snap>:ubustt-socket" >&2
+        exit 1
+    fi
 fi
 
 args="--socket $socket"
