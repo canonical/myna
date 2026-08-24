@@ -218,6 +218,11 @@ impl GlobalShortcutTrigger {
             });
         let signals = stream::select(activated, deactivated).boxed();
 
+        myna_core::info_log!(
+            "portal",
+            "bound '{shortcut_id}' (preferred {}, {mode:?}); session live",
+            preferred_trigger.unwrap_or("portal default")
+        );
         Ok(Self {
             signals,
             dedup: Dedup::with_mode(mode),
@@ -234,11 +239,16 @@ impl Trigger for GlobalShortcutTrigger {
         loop {
             match self.signals.next().await {
                 Some(sig) => {
+                    myna_core::dbg_log!("portal", "signal {sig:?}");
                     if let Some(edge) = self.dedup.on(sig) {
+                        myna_core::info_log!("portal", "activation -> {edge:?}");
                         return Some(edge);
                     }
                 }
-                None => return None,
+                None => {
+                    myna_core::info_log!("portal", "signal stream ended; shortcut is gone");
+                    return None;
+                }
             }
         }
     }

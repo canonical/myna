@@ -343,7 +343,7 @@ impl DesktopController {
     /// Run exactly one Press→(Release|terminal|focus-loss) utterance.
     async fn run_one_utterance(&mut self) {
         advance(&mut self.state, DictationState::Starting);
-        myna_core::dbg_log!("ctrl", "press: starting utterance");
+        myna_core::info_log!("ctrl", "press: starting utterance");
 
         // Acquire the target focused *now*. Secure/no-target/unavailable →
         // surface an error and abort without ever capturing audio (FR-021/023).
@@ -440,7 +440,7 @@ impl DesktopController {
                 // before the trigger so focus-loss takes precedence (end safely).
                 fe = focus.next(), if focus_open => match fe {
                     Some(FocusEvent::FocusOut) => {
-                        myna_core::dbg_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
+                        myna_core::info_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
                         stop.stop();
                         commits_suppressed = true;
                         focus_lost = true;
@@ -459,7 +459,7 @@ impl DesktopController {
                         trigger_open = false;
                     }
                     Some(FocusEvent::TargetGone) => {
-                        myna_core::dbg_log!("ctrl", "TargetGone: cancelling utterance");
+                        myna_core::info_log!("ctrl", "TargetGone: cancelling utterance");
                         stop.stop();
                         commits_suppressed = true;
                         cancelled = true;
@@ -473,7 +473,7 @@ impl DesktopController {
                 // means the trigger ended — stop capture and quit after.
                 edge = trigger.next_edge(), if trigger_open => match edge {
                     Some(TriggerEdge::Release) => {
-                        myna_core::dbg_log!("ctrl", "release: graceful stop, finalizing");
+                        myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
                         // Stop reading the trigger for this utterance: any
@@ -494,14 +494,14 @@ impl DesktopController {
 
         // Terminal disposition.
         if cancelled {
-            myna_core::dbg_log!("ctrl", "utterance cancelled: dictation target closed");
+            myna_core::info_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
             report_critical(self.indicator.as_mut(), "dictation target closed").await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
                 Ok(SessionOutcome::Completed { transcript }) => {
-                    myna_core::dbg_log!("ctrl", "utterance completed");
+                    myna_core::info_log!("ctrl", "utterance completed");
                     ensure_finalizing(&mut self.state);
                     // Safety flush: normally the terminal `done` already flushed
                     // the buffered burst in `route_event` (leaving the buffer
@@ -524,18 +524,18 @@ impl DesktopController {
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
                 Ok(SessionOutcome::Aborted) => {
-                    myna_core::dbg_log!("ctrl", "utterance aborted");
+                    myna_core::info_log!("ctrl", "utterance aborted");
                     self.injector.cancel().await;
                     finalize_state(&mut self.state, DictationState::Cancelled);
                 }
                 Ok(SessionOutcome::Failed { message, .. }) => {
-                    myna_core::dbg_log!("ctrl", "utterance FAILED: {message}");
+                    myna_core::info_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
                     report_critical(self.indicator.as_mut(), message).await;
                     finalize_state(&mut self.state, DictationState::Error);
                 }
                 Err(err) => {
-                    myna_core::dbg_log!("ctrl", "utterance backend ERROR: {err}");
+                    myna_core::info_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
                     report_critical(self.indicator.as_mut(), err.to_string()).await;
                     finalize_state(&mut self.state, DictationState::Error);
@@ -561,7 +561,7 @@ impl DesktopController {
             InjectError::NoTarget => "no text field is focused".to_string(),
             other => other.to_string(),
         };
-        myna_core::dbg_log!("ctrl", "acquire failed, aborting before capture: {message}");
+        myna_core::info_log!("ctrl", "acquire failed, aborting before capture: {message}");
         self.injector.cancel().await; // idempotent; releases if anything stuck
         report_critical(self.indicator.as_mut(), message).await;
         advance(&mut self.state, DictationState::Error);
@@ -756,7 +756,7 @@ impl CommitBuffer {
                     self.committed_any = true;
                     myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text)
                 }
-                Err(e) => myna_core::dbg_log!("inject", "commit FAILED: {e}"),
+                Err(e) => myna_core::info_log!("inject", "commit FAILED: {e}"),
             }
         } else {
             self.pending.clear();

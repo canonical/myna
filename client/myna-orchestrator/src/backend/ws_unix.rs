@@ -43,9 +43,15 @@ impl WsUnixBackend {
 #[async_trait::async_trait]
 impl BackendClient for WsUnixBackend {
     async fn open_session(&self, config: SessionConfig) -> Result<BackendHandle, BackendError> {
-        let stream = UnixStream::connect(&self.socket_path)
-            .await
-            .map_err(|e| BackendError::Connect(format!("{}: {e}", self.socket_path.display())))?;
+        let stream = UnixStream::connect(&self.socket_path).await.map_err(|e| {
+            myna_core::info_log!(
+                "backend",
+                "connect FAILED: {}: {e}",
+                self.socket_path.display()
+            );
+            BackendError::Connect(format!("{}: {e}", self.socket_path.display()))
+        })?;
+        myna_core::info_log!("backend", "connected to {}", self.socket_path.display());
         let (ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
             .await
             .map_err(|e| BackendError::Handshake(e.to_string()))?;
