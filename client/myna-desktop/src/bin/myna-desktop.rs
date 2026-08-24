@@ -45,7 +45,7 @@ use std::process::ExitCode;
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
-use myna_desktop::dbus::serve::ZbusBus;
+use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
@@ -96,7 +96,9 @@ ACTIVATION (default: portal when packaged — $SNAP set — else control socket)
 OVERRIDES (for debugging; the daemon resolves all three by itself):
     --preedit          force the in-flight hypothesis into the field's preedit
     --no-preedit       force commit-only, even in streaming mode
-    --no-dbus          do not serve org.myna.Dictation (notifications only)
+    --no-dbus          do not serve org.myna.Dictation (notifications only).
+                       Also opts out of the one-daemon-at-a-time guard, which
+                       is that name: two daemons split the hotkey from the UI
 
     -h, --help         show this help
 ";
@@ -353,7 +355,9 @@ async fn run_controller(
         },
     };
 
+    banner(&args);
     controller.run().await;
+    println!("bye");
     ExitCode::SUCCESS
 }
 
@@ -491,7 +495,6 @@ fn main() -> ExitCode {
         eprintln!("--socket is required to run the daemon\n\n{USAGE}");
         return ExitCode::FAILURE;
     }
-    banner(&args);
 
     // The GTK overlay (opt-in) needs the GLib main loop on the process main
     // thread; everything else runs headless with desktop notifications.
@@ -517,13 +520,11 @@ fn run_headless(args: Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let code = if args.no_dbus {
+    if args.no_dbus {
         rt.block_on(run_controller(args, NotifyIndicator::new(), None, None))
     } else {
         rt.block_on(run_headless_dbus(args))
-    };
-    println!("bye");
-    code
+    }
 }
 
 /// The default indicator path: serve `org.myna.Dictation` and publish through
@@ -541,10 +542,21 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
             eprintln!("serving org.myna.Dictation on the session bus");
             run_controller(args, indicator, Some(readiness), Some(pump_bus)).await
         }
-        Err(e) => {
+        Err(ServeError::AlreadyRunning { owner_pid }) => {
+            let who = owner_pid
+                .map(|pid| format!(" (pid {pid})"))
+                .unwrap_or_default();
+            eprintln!("a myna-desktop daemon is already running{who} - not starting a second one.");
+            eprintln!("  a second daemon is worse than none: the GlobalShortcuts portal keeps the");
+            eprintln!("  hotkey with whoever bound it first, so this process would never see a");
+            eprintln!("  press while shadowing the running one.");
+            eprintln!("  stop it first, or run this one with --no-dbus for a deliberate second.");
+            ExitCode::FAILURE
+        }
+        Err(ServeError::Bus(e)) => {
             eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
             eprintln!(
-                "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale — e.g. a tmux/screen"
+                "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
             run_controller(args, NotifyIndicator::new(), None, None).await
@@ -573,9 +585,7 @@ fn run_with_overlay(args: Args) -> ExitCode {
     });
 
     let _gtk_code = run_indicator_app(rx);
-    let code = worker.join().unwrap_or(ExitCode::FAILURE);
-    println!("bye");
-    code
+    worker.join().unwrap_or(ExitCode::FAILURE)
 }
 
 #[cfg(test)]

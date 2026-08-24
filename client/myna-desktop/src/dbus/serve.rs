@@ -7,13 +7,39 @@
 //! connection drops at shutdown (P13/P14; the gated round-trip suite proves
 //! it). Method handling (`Start`/`Stop`/`Toggle`) lands with `DbusTrigger`
 //! (US4).
+//!
+//! The name doubles as the daemon's **singleton lock**: exactly one
+//! `myna-desktop` may own it, and failing to get it is fatal rather than a
+//! degrade (see [`ServeError::AlreadyRunning`]).
 
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use zbus::fdo::{DBusProxy, RequestNameFlags, RequestNameReply};
+use zbus::names::BusName;
 use zbus::Connection;
 
 use crate::dbus::{Bus, PropertyValue, BUS_NAME, OBJECT_PATH};
+
+/// Why [`ZbusBus::serve`] failed. The two arms have opposite dispositions:
+/// [`Self::Bus`] degrades to notifications, [`Self::AlreadyRunning`] must not.
+#[derive(Debug, thiserror::Error)]
+pub enum ServeError {
+    /// Another `myna-desktop` owns the name. A second daemon can never be a
+    /// working daemon: the GlobalShortcuts portal keeps the hotkey with
+    /// whoever bound it first, while the indicator name would go to whoever
+    /// started last, so the process holding the key and the process holding
+    /// the UI are different ones and every press looks like nothing happened.
+    #[error("another myna-desktop already owns {BUS_NAME}")]
+    AlreadyRunning {
+        /// PID of the owner, when the bus will tell us.
+        owner_pid: Option<u32>,
+    },
+    /// The session bus is unreachable or unusable - fall back to
+    /// notifications (P15).
+    #[error(transparent)]
+    Bus(#[from] zbus::Error),
+}
 
 /// The served property values (the `org.myna.Dictation` members — the
 /// interface defines no signals; every update is pushed via the standard
@@ -92,10 +118,11 @@ impl std::fmt::Debug for ZbusBus {
 }
 
 impl ZbusBus {
-    /// Connect to the session bus, serve `/org/myna/Dictation`, and request
-    /// the well-known name (C1). `Err` when the bus is unreachable — the
-    /// caller falls back to `NotifyIndicator` (P15).
-    pub async fn serve() -> zbus::Result<Self> {
+    /// Connect to the session bus, serve `/org/myna/Dictation`, and take the
+    /// well-known name (C1). [`ServeError::Bus`] means the bus is unreachable
+    /// and the caller falls back to `NotifyIndicator` (P15);
+    /// [`ServeError::AlreadyRunning`] means a second daemon and is fatal.
+    pub async fn serve() -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
         conn.object_server()
@@ -106,8 +133,39 @@ impl ZbusBus {
                 },
             )
             .await?;
-        conn.request_name(BUS_NAME).await?;
-        Ok(Self { conn, served })
+        // `DoNotQueue` alone. zbus's default is all three flags, which makes
+        // the name last-writer-wins in both directions: without
+        // `AllowReplacement` a later daemon cannot take the indicator from
+        // us, and without `ReplaceExisting` we cannot take it from an
+        // earlier one - the request just reports who is already there.
+        //
+        // "Already there" arrives two ways: zbus turns the bus's `Exists`
+        // reply into `Error::NameTaken`, and a queued request (impossible
+        // under `DoNotQueue`, but the reply shape allows it) says the same.
+        // Both are the singleton violation, not a bus fault.
+        let reply = match conn
+            .request_name_with_flags(BUS_NAME, RequestNameFlags::DoNotQueue.into())
+            .await
+        {
+            Ok(reply) => reply,
+            Err(zbus::Error::NameTaken) => {
+                return Err(ServeError::AlreadyRunning {
+                    owner_pid: name_owner_pid(&conn).await,
+                })
+            }
+            Err(e) => return Err(ServeError::Bus(e)),
+        };
+        match reply {
+            RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner => {
+                myna_core::info_log!("dbus", "acquired {BUS_NAME}");
+                Ok(Self { conn, served })
+            }
+            RequestNameReply::Exists | RequestNameReply::InQueue => {
+                Err(ServeError::AlreadyRunning {
+                    owner_pid: name_owner_pid(&conn).await,
+                })
+            }
+        }
     }
 
     /// The connection, for components that need it (the method-serving
@@ -115,6 +173,18 @@ impl ZbusBus {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
+}
+
+/// PID of whoever currently owns [`BUS_NAME`], for the "already running"
+/// message. Best-effort: the answer is advice to a human, not control flow.
+async fn name_owner_pid(conn: &Connection) -> Option<u32> {
+    let name = BusName::try_from(BUS_NAME).ok()?;
+    DBusProxy::new(conn)
+        .await
+        .ok()?
+        .get_connection_unix_process_id(name)
+        .await
+        .ok()
 }
 
 /// Connect to the session bus, recovering from a stale `guid=` in
