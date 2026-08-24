@@ -19,11 +19,32 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
 import logging
 import time
 from collections.abc import AsyncIterator
 
 from myna.core import EventSink, PcmChunk, SessionConfig
+
+
+def _malloc_trim() -> bool:
+    """Hand freed heap back to the OS. True if glibc's malloc_trim ran.
+
+    Dropping the model frees the weights inside the process, but glibc parks
+    them in its per-thread arenas rather than returning them: an idle parakeet
+    sat at 1.08 GB RSS for hours after a successful unload, and a malloc_trim
+    took it to 68 MB. Non-main arenas (one per ORT/BLAS worker thread, and the
+    weights land in them) are only ever trimmed on request, so an unload that
+    the user can see in `free -m` has to ask.
+    """
+    try:
+        trim = ctypes.CDLL(None).malloc_trim
+    except (OSError, AttributeError):  # not glibc (musl has no malloc_trim)
+        return False
+    trim.argtypes = (ctypes.c_size_t,)
+    trim.restype = ctypes.c_int
+    trim(0)
+    return True
 
 
 class LifecycleService:
@@ -69,6 +90,8 @@ class LifecycleService:
         unload = getattr(self._service, "unload", None)
         if unload is not None:
             await unload()
+        # Off-loop: trim walks every arena holding the malloc lock.
+        await asyncio.to_thread(_malloc_trim)
 
     async def maybe_release(
         self, action: str, stop: asyncio.Event, log: logging.Logger | None = None

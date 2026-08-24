@@ -1,9 +1,14 @@
 """Idle-unload / socket-activation lifecycle (T27/T28). No model or sockets."""
 
 import asyncio
+import platform
 import socket
+from unittest import mock
+
+import pytest
 
 from myna.core import SessionConfig, WsUnixClient, serve_unix, systemd_socket
+from myna.server import lifecycle
 from myna.server.lifecycle import LifecycleService, idle_monitor
 from myna.testbed import FakeAdapter, Harness, SilenceSource
 from myna.testbed.adapter import Candidate
@@ -63,6 +68,24 @@ async def test_unload_action_releases_once_then_rearms():
     await _run_one(life)  # a fresh session re-arms
     await life.maybe_release("unload", stop)
     assert stub.unloaded == 2
+
+
+async def test_unload_trims_the_heap_after_the_adapter_releases():
+    """Freed weights sit in glibc's arenas until trimmed, so the trim must
+    happen, and only once the adapter has actually dropped them."""
+    stub = StubService()
+    life = LifecycleService(stub)
+    seen = []
+    with mock.patch.object(lifecycle, "_malloc_trim", lambda: seen.append(stub.unloaded)):
+        await life.unload()
+    assert seen == [1]
+
+
+@pytest.mark.skipif(platform.libc_ver()[0] != "glibc", reason="malloc_trim is glibc-only")
+async def test_malloc_trim_runs_on_glibc():
+    """Guards the ctypes lookup: a rename or a bad symbol would fall into the
+    'not glibc' branch and silently stop returning memory."""
+    assert lifecycle._malloc_trim() is True
 
 
 async def test_exit_action_sets_stop_does_not_unload():
