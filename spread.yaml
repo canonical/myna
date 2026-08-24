@@ -75,7 +75,16 @@ exclude:
     - sherpa-snap
     - parakeet-snap
     - audio8-snap
-    - funasr-snap
+    # funasr-snap is *not* excluded wholesale: thread-pinning needs the packed
+    # snap and its model component (62 MB + 229 MB). It is the smallest ORT
+    # snap, which is the only property that test needs - parakeet and audio8
+    # behave identically and would add 750 MB+ each.
+    - funasr-snap/parts
+    - funasr-snap/stage
+    - funasr-snap/prime
+    - funasr-snap/stage_packages
+    - funasr-snap/components
+    - funasr-snap/wheels
     - fake-snap/stage
     - fake-snap/prime
     - fake-snap/parts

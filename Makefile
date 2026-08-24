@@ -210,6 +210,12 @@ spread-e2e: ## Run only confined-e2e (fake backend)
 	./dev/spread-build.sh
 	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/confined-e2e
 
+.PHONY: spread-pinning
+spread-pinning: ## Run only thread-pinning (real funasr snap, ORT affinity under confinement)
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/thread-pinning
+
 .PHONY: spread-debug
 spread-debug: ## Debug adapter-smoke (keep the VM around after the run)
 	./dev/spread-image.sh
