@@ -11,6 +11,7 @@ and it is never installed.
 python3 main.py                      # interactive lab
 python3 render_headless.py           # no display needed; exits non-zero on failure
 python3 render_headless.py --profile es300 --out /tmp/ribbon.png
+python3 dbus_headless.py             # no display needed; exits non-zero on failure
 ```
 
 ## Why this is Python and the other lab is JS
@@ -69,6 +70,71 @@ startup is ~50ms but a request/reply over the pipe is well under a
 millisecond, so slider drags stay responsive while every frame still comes
 from the real JS model.
 
+## Driving a live Shell HUD
+
+The lab shows the ribbon. The switch under **GNOME Shell** shows the whole
+*HUD*: turn it on and the lab claims `org.myna.Dictation`, the bus name the
+extension watches, so a live session draws its real pill — real label, real
+icon, real placement, real severity colours — driven by these sliders.
+
+That makes the lab a stand-in for `myna-desktop --dbus`, which is otherwise
+the only way to see the HUD react at all, and which needs a microphone, a
+loaded model and something worth transcribing before it will show you a
+`notice`. Here, `notice` is one combo entry away.
+
+The mapping lives in `dictation_service.py` and is the inverse of the
+extension's own `hudLogic.ribbonPhaseForStateKey`:
+
+| lab control | wire property |
+|---|---|
+| phase `unfold`/`flow`/`relax` | `State = recording` |
+| phase `morph` | `State = transcribing` |
+| phase `complete` | `State = finalizing` |
+| severity `recoverable` | `State = notice` (outranks the phase) |
+| severity `critical` | `State = error` + a content-free `ErrorMessage` |
+| input level | `AudioRms` / `AudioPeak` |
+| the switch, off | the name is released — the extension goes dormant |
+
+The wire is lossy, so not every phase survives the trip, and the phase row
+says which: **`relax` is lab-only.** `ribbon.js` implements it and
+`test/ribbon.test.js` covers it, but `hudLogic.ribbonPhaseForStateKey` never
+returns it and `hud.js` never selects it, so no dictation state can ask for
+it — selecting it moves the lab's ribbon and leaves the Shell's in `flow`.
+That is the shipped extension's behaviour, not a gap in the bridge.
+`unfold` is a softer case: the Shell does play it, but on its own clock when
+the pill appears, rather than because anything on the wire requested it.
+
+Two details that are easy to get wrong and would make the Shell disagree
+with the lab's own window:
+
+- **The level slider is not the wire value.** The slider is the *smoothed
+  envelope* the ribbon consumes, while the wire carries raw RMS, which the
+  extension pushes back through `vumeter.js`'s calibrated dBFS curve.
+  `envelope_to_levels()` inverts that curve so both ribbons sit at the same
+  amplitude for the same setting; `dbus_headless.py` checks the round trip
+  against a transcribed copy of `boostLevel`, so the constants cannot drift
+  apart unnoticed.
+- **Levels stop when recording stops**, rather than being held or zeroed
+  every tick. That is what a real daemon does — nothing is captured during
+  `transcribing` — and it lets the extension's stale-decay ease the VU to
+  its floor exactly as it does at the end of a real session.
+
+Updates go out at 20 Hz, matching the contract's ~15–20 Hz cadence rather
+than the lab's ~60 fps render loop, so the extension sees the update rate it
+was tuned against.
+
+The name is **never** taken by force (`BusNameOwnerFlags.NONE`): if
+`myna-desktop` is already running, the row says so instead of silently
+displacing the real daemon. The interface's `Start`/`Stop`/`Toggle` methods
+are implemented too — the extension never calls them, but they make the lab
+drivable from a terminal, and `Stop` publishes `idle`, which is the case
+that clears the pill entirely:
+
+```sh
+gdbus call --session -d org.myna.Dictation \
+    -o /org/myna/Dictation -m org.myna.Dictation.Toggle
+```
+
 ## `render_headless.py`
 
 `../test/ribbonGlsl.test.js` already checks the generated GLSL with
@@ -112,6 +178,11 @@ JS test.
 - `ribbon_gl.py` — compile, upload, draw. Knows nothing about ribbons.
 - `main.py` — the interactive `Gtk.GLArea` lab.
 - `render_headless.py` — the surfaceless render check.
+- `dictation_service.py` — the `org.myna.Dictation` publisher and the
+  lab-look → wire-state mapping.
+- `dbus_headless.py` — checks that publisher against the contract on a
+  private bus of its own, so it can never collide with a real
+  `myna-desktop`.
 
 ## Requirements
 

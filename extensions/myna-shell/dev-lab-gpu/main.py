@@ -28,6 +28,12 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from OpenGL import GL  # noqa: E402
 
 from bridge import BridgeError, RibbonModel, load_shader  # noqa: E402
+from dictation_service import (  # noqa: E402
+    DictationPublisher,
+    SHELL_INTERNAL_PHASES,
+    shell_phase,
+    wire_state,
+)
 from ribbon_gl import (  # noqa: E402
     PROFILE_ES300,
     QuadDrawer,
@@ -181,6 +187,7 @@ class LabWindow(Adw.ApplicationWindow):
         box.append(frame)
         box.append(self._info)
         box.append(controls)
+        box.append(self._shell_group())
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.append(Adw.HeaderBar())
@@ -211,19 +218,59 @@ class LabWindow(Adw.ApplicationWindow):
         row = Adw.ComboRow(title="Lifecycle phase",
                            model=Gtk.StringList.new(phases))
         row.set_selected(phases.index(self._state.phase))
-        row.connect("notify::selected",
-                    lambda r, _p: self._state.set_phase(phases[r.get_selected()]))
+
+        def on_selected(r, _p=None):
+            phase = phases[r.get_selected()]
+            self._state.set_phase(phase)
+            r.set_subtitle(self._phase_subtitle(phase))
+
+        row.connect("notify::selected", on_selected)
+        row.set_subtitle(self._phase_subtitle(self._state.phase))
+        self._phase_combo = row
         return row
 
+    def _phase_subtitle(self, phase: str) -> str:
+        """Say what the Shell will do with this phase, if anything.
+
+        The lab can select phases the wire cannot express — `relax` is
+        implemented in ribbon.js but no dictation state ever requests it —
+        and without this the only symptom is a phase that moves the lab's
+        ribbon and leaves the Shell's alone, which reads as a broken bridge
+        rather than as the shipped extension never using it.
+        """
+        state, _ = wire_state(phase, self._state.severity_tint)
+        rendered = shell_phase(phase, self._state.severity_tint)
+        if rendered is None:
+            return f"publishes {state}; the Shell's ribbon keeps its phase"
+        if rendered == phase:
+            return f"publishes {state}; the Shell renders it the same way"
+        if phase in SHELL_INTERNAL_PHASES:
+            return (f"publishes {state}; the Shell plays {phase} itself when "
+                    f"the pill appears, then settles into {rendered}")
+        return (f"publishes {state}, which the Shell renders as {rendered} — "
+                f"{phase} is lab-only, no dictation state requests it")
+
     def _tint_row(self) -> Adw.ComboRow:
-        # None is spelled "none" for the combo; the bridge wants a real null.
-        tints = ["none", "amber"]
-        row = Adw.ComboRow(title="Severity tint",
-                           subtitle="Amber marks a recoverable problem",
-                           model=Gtk.StringList.new(tints))
-        row.connect("notify::selected", lambda r, _p: setattr(
-            self._state, "severity_tint",
-            None if r.get_selected() == 0 else tints[r.get_selected()]))
+        # The values are the real `Severity` strings ribbon.js compares
+        # against, not display labels: this row used to pass "amber", which
+        # is the *tint* name (RibbonTint.AMBER) rather than the severity, so
+        # `severityTint === Severity.RECOVERABLE` never matched and the
+        # option silently did nothing. Publishing on D-Bus made that visible
+        # — the wire needs the severity anyway.
+        labels = ["none", "recoverable (notice)", "critical (error)"]
+        values = [None, "recoverable", "critical"]
+        row = Adw.ComboRow(title="Severity",
+                           subtitle="Amber pulse for a notice; the pill goes "
+                                    "red and the ribbon hides for an error",
+                           model=Gtk.StringList.new(labels))
+        def on_selected(r, _p=None):
+            self._state.severity_tint = values[r.get_selected()]
+            # A severity outranks the phase on the wire, so the phase row's
+            # explanation of what the Shell will show changes with it.
+            self._phase_combo.set_subtitle(
+                self._phase_subtitle(self._state.phase))
+
+        row.connect("notify::selected", on_selected)
         return row
 
     def _switch_row(self, title, subtitle, on_change, default=False) -> Adw.ActionRow:
@@ -233,6 +280,38 @@ class LabWindow(Adw.ApplicationWindow):
         row.add_suffix(switch)
         row.set_activatable_widget(switch)
         return row
+
+    def _shell_group(self) -> Adw.PreferencesGroup:
+        """Drive a live GNOME Shell HUD from these same controls."""
+        group = Adw.PreferencesGroup(
+            title="GNOME Shell",
+            description="Claim org.myna.Dictation and publish the state "
+                        "these controls describe, so the real HUD pill "
+                        "follows the lab. Stop myna-desktop first — the "
+                        "name is not taken by force.")
+        self._publisher = DictationPublisher(self._state.request)
+        self._publisher.on_status_changed = self._on_publish_status
+        self._publish_row = Adw.ActionRow(
+            title="Publish on the session bus",
+            subtitle="off — the extension sees no daemon and stays dormant")
+        switch = Gtk.Switch(active=False, valign=Gtk.Align.CENTER)
+        switch.connect("notify::active", lambda s, _p: (
+            self._publisher.start() if s.get_active() else self._publisher.stop()))
+        self._publish_row.add_suffix(switch)
+        self._publish_row.set_activatable_widget(switch)
+        group.add(self._publish_row)
+        # Released explicitly on close: without this the name would linger
+        # until the process actually exits, and a Shell watching it would
+        # keep showing a pill for a lab that is already gone.
+        self.connect("close-request", lambda _w: (self._publisher.stop(), False)[1])
+        return group
+
+    def _on_publish_status(self, status: str) -> None:
+        self._publish_row.set_subtitle({
+            "off": "off — the extension sees no daemon and stays dormant",
+            "connecting": "claiming the name…",
+            "publishing": "publishing — the HUD pill now follows these controls",
+        }.get(status, status))
 
     def _on_tick(self, _widget, clock) -> bool:
         now_us = clock.get_frame_time()
@@ -246,11 +325,17 @@ class LabWindow(Adw.ApplicationWindow):
         info = self._state.last_info
         accent = self._state.last_desktop.get("palette", {}).get("main", "?")
         error = getattr(self._area, "_error", None)
+        # The published State is shown here rather than in the D-Bus row so
+        # the model facts and the wire value sit side by side: if the pill
+        # in the Shell disagrees with the ribbon in this window, this line
+        # is where the two stories diverge.
+        wire = (f" · wire {self._publisher.state}"
+                if self._publisher.status == "publishing" else "")
         self._info.set_text(
             f"shader error: {error}" if error else
             f"{info.get('strands', 0)} strands · {info.get('dots', 0)} dots · "
             f"tint {info.get('tint') or 'none'} · accent {accent} · "
-            f"t={self._state.elapsed_ms / 1000:.1f}s")
+            f"t={self._state.elapsed_ms / 1000:.1f}s{wire}")
         return GLib.SOURCE_CONTINUE
 
     def _apply_color_scheme(self, scheme: str | None) -> None:

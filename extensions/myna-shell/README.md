@@ -84,11 +84,13 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   ribbon, **not part of the shipped bundle** (see `dev-lab/README.md`).
 - `dev-lab-gpu/` — the same for the GPU renderer: a Python `Gtk.GLArea` lab
   plus a headless, display-free render check that compiles and rasterizes
-  the generated shader on a real driver. Python only because the raw GL
-  entry points a standalone GL area needs are not introspectable and so are
-  unreachable from gjs; JS still owns the shader, the model and the uniform
-  packing, handed over as JSON. **Not part of the shipped bundle** (see
-  `dev-lab-gpu/README.md`).
+  the generated shader on a real driver. It can also publish
+  `org.myna.Dictation` itself, so the sliders drive the **real HUD** in a
+  live session without a microphone or a model. Python only because the raw
+  GL entry points a standalone GL area needs are not introspectable and so
+  are unreachable from gjs; JS still owns the shader, the model and the
+  uniform packing, handed over as JSON. **Not part of the shipped bundle**
+  (see `dev-lab-gpu/README.md`).
 - `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
   everything above except `hud.js` itself.
 - `test/gpu-probe.js` — checks the GPU path's toolkit API is reachable and
