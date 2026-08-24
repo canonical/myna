@@ -110,18 +110,25 @@ PY
         --python-version "$py" --no-header --no-annotate - \
         | grep -vE '^[[:space:]]*#|^[[:space:]]*$|^[./]')
 
+    # pip's stdout is left alone: the CUDA wheels are hundreds of MB each and
+    # its progress bar is the only sign the run is alive. Errors go to stderr
+    # and are dropped, because a missing wheel is expected and summarised below.
+    total=$(echo "$pinned" | wc -w)
     cached=0
+    n=0
     skipped=""
     for pkg in $pinned; do
-        if (cd "$wheels" && pip3 download --quiet --no-deps --dest cache \
-                --only-binary=:all: --python-version "$py" "$pkg") >/dev/null 2>&1; then
+        n=$((n + 1))
+        echo "   [$n/$total] $pkg"
+        if (cd "$wheels" && pip3 download --no-deps --dest cache \
+                --only-binary=:all: --python-version "$py" "$pkg") 2>/dev/null; then
             cached=$((cached + 1))
         else
             skipped="$skipped $pkg"
         fi
     done
 
-    echo "   cached $cached of $(echo "$pinned" | wc -w) ($(du -sh "$wheels/cache" | cut -f1))"
+    echo "   cached $cached of $total ($(du -sh "$wheels/cache" | cut -f1))"
     # Never fatal: PIP_FIND_LINKS is additive, so anything missing here is just
     # fetched from PyPI at build time, exactly as it is today.
     [ -n "$skipped" ] && echo "   no python-$py wheel, left to the build:$skipped"
