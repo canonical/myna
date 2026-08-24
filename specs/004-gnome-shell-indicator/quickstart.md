@@ -104,19 +104,30 @@ acceptance criteria (X1–X28) and has no pass/fail gate of its own.
 
 ## 4. Install & enable the extension — GNOME session
 
+The UUID is listed in `enabledExtensions` of the `ubuntu` session mode
+(`/usr/share/gnome-shell/modes/ubuntu.json`, from `gnome-shell-common`), so the
+Shell loads it from the *system* datadir only - a `~/.local/share` copy is found
+and skipped ("not loading … as part of session mode"). Install where the deb
+lands, and remove the symlink before installing the real package:
+
 ```sh
-UUID=myna-shell@myna.dev
-mkdir -p ~/.local/share/gnome-shell/extensions/$UUID
-cp -r extensions/myna-shell/* ~/.local/share/gnome-shell/extensions/$UUID/
-# dev-lab/ is a non-shipped development tool (R20) — never installed as
-# part of the extension bundle.
-rm -rf ~/.local/share/gnome-shell/extensions/$UUID/dev-lab
+UUID=myna-shell@canonical.com
+sudo ln -sfn "$PWD/extensions/myna-shell" /usr/share/gnome-shell/extensions/$UUID
+# dev-lab/ is a non-shipped development tool (R20) - never part of the
+# packaged bundle (the symlink exposes it; `cp -r` + `rm -rf $UUID/dev-lab`
+# mirrors the package layout exactly).
 # Wayland: log out/in to reload the Shell (Alt+F2 r is X11-only).
-gnome-extensions enable $UUID
-gnome-extensions info $UUID        # → State: ENABLED
 ```
 
-**Expected**: extension enabled, dormant (no overlay) because `myna-desktop`
+Session-mode extensions are force-enabled: `gnome-extensions enable` is not
+needed, and `gnome-extensions info $UUID` reports it as nonexistent rather than
+listing it. Confirm it loaded with:
+
+```sh
+journalctl --user -b 0 -o cat | grep -i myna-shell   # no load errors
+```
+
+**Expected**: extension loaded, dormant (no overlay) because `myna-desktop`
 is not yet running (X7).
 
 ## 5. End-to-end spoken run (the on-hardware acceptance)

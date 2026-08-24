@@ -224,22 +224,19 @@ preedit follows the streaming tier gate. Force any of them with `--portal` /
 On GNOME/Wayland a normal client can't show an always-on-top, focus-safe overlay,
 so the animated dictation indicator lives in a GJS extension that runs inside the
 compositor and reads state + audio level from `myna-desktop` over D-Bus
-(`org.myna.Dictation`). It never captures, transcribes, or injects. Install it
-by symlinking the source tree into the extensions directory (the directory name
-must match the extension `uuid` in `extensions/myna-shell/metadata.json`):
+(`org.myna.Dictation`). It never captures, transcribes, or injects.
+
+To iterate on the extension without rebuilding the package, put the symlink
+where the package would land - and remove it before installing the real deb,
+which claims the same path:
 
 ```shell
-mkdir -p ~/.local/share/gnome-shell/extensions
-ln -s "$PWD/extensions/myna-shell" ~/.local/share/gnome-shell/extensions/myna-shell@myna.dev
+sudo ln -sfn "$PWD/extensions/myna-shell" \
+    /usr/share/gnome-shell/extensions/myna-shell@canonical.com
 # restart the shell: log out/in (Wayland)
-gnome-extensions enable myna-shell@myna.dev
-gnome-extensions info myna-shell@myna.dev    # state should be ACTIVE
 ```
 
-The metadata declares shell-version `["50", "51"]`; on other Shell versions add
-yours or `gnome-extensions enable --force`. Code changes under
-`extensions/myna-shell/` need a shell restart to take
-effect. See `specs/004-gnome-shell-indicator/quickstart.md`.
+See also `specs/004-gnome-shell-indicator/quickstart.md`.
 
 ## Benchmarking
 
