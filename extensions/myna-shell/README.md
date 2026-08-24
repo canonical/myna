@@ -239,6 +239,10 @@ container has neither, so the Shell dies before the driver loads and the
 presentation check skips rather than fails. Set `MYNA_SHELL_NEXT_KEEP=1` to
 keep the container.
 
+CI runs it as `extension-next`, `continue-on-error` - it tracks a
+development series and a beta Shell, so it reports when the GPU path breaks
+without gating a merge on someone else's upload.
+
 Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
 `hudLogic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
 real headless-Cairo smoke check of `ribbonPaint.js` (an `ImageSurface`
