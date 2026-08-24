@@ -10,9 +10,10 @@ Reads are unprivileged (`snap run <backend> get|status|list-*`, systemd
 accounting, the session bus). Writes go through pkexec and are always shown as
 literal commands before they run.
 
-    ./dev/config-ui.py
+    ./dev/config-ui.py --font-size 14     # or Ctrl +/- / Ctrl-0 at runtime
 """
 
+import argparse
 import json
 import os
 import pathlib
@@ -20,7 +21,23 @@ import queue
 import subprocess
 import threading
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
+
+# Every Tk named font is rescaled against TkDefaultFont, so one number drives
+# the whole window (Text widgets included) and the relative sizes hold.
+SCALED_FONTS = (
+    "TkDefaultFont",
+    "TkTextFont",
+    "TkFixedFont",
+    "TkMenuFont",
+    "TkHeadingFont",
+    "TkCaptionFont",
+    "TkSmallCaptionFont",
+    "TkIconFont",
+    "TkTooltipFont",
+)
+FONT_RANGE = (7, 30)
 
 TIMEOUT = 8
 FAST_POLL = 2.0
@@ -560,19 +577,37 @@ class ClientTab(ttk.Frame):
 
 
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, font_size=None):
         super().__init__()
         self.title("Myna configuration (prototype)")
         self.results = queue.Queue()
         self.geometry("980x760")
         self.total_ram = mem_total()
 
+        self.base_sizes = {
+            name: abs(tkfont.nametofont(name).cget("size")) or 10 for name in SCALED_FONTS
+        }
+        self.headline_font = tkfont.Font(name="MynaHeadline", exists=False)
+        self.headline_font.configure(weight="bold")
+        self.font_size = tk.IntVar(value=font_size or self.base_sizes["TkDefaultFont"])
+        self.rescale()
+        for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+            self.bind_all(seq, lambda _e: self.bump(1))
+        for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
+            self.bind_all(seq, lambda _e: self.bump(-1))
+        self.bind_all("<Control-0>", lambda _e: self.bump(0))
+
         head = ttk.Frame(self, padding=(8, 6))
         head.pack(fill="x")
         self.headline = tk.StringVar(value="probing...")
-        ttk.Label(head, textvariable=self.headline, font=("", 11, "bold")).pack(side="left")
+        ttk.Label(head, textvariable=self.headline, font=self.headline_font).pack(side="left")
         self.footprint = ttk.Progressbar(head, maximum=max(self.total_ram, 1), length=260)
-        self.footprint.pack(side="right")
+        self.footprint.pack(side="right", padx=(8, 0))
+        zoom = ttk.Frame(head)
+        zoom.pack(side="right")
+        ttk.Button(zoom, text="A-", width=3, command=lambda: self.bump(-1)).pack(side="left")
+        ttk.Label(zoom, textvariable=self.font_size, width=3, anchor="center").pack(side="left")
+        ttk.Button(zoom, text="A+", width=3, command=lambda: self.bump(1)).pack(side="left")
 
         self.book = ttk.Notebook(self)
         self.book.pack(fill="both", expand=True, padx=6, pady=6)
@@ -612,6 +647,21 @@ class App(tk.Tk):
         text.insert("end", "\n\n".join(chunks))
         text.configure(state="disabled")
         return frame
+
+    def bump(self, step):
+        """Ctrl +/-; Ctrl-0 restores the desktop's own size."""
+        base = self.base_sizes["TkDefaultFont"]
+        target = base if step == 0 else self.font_size.get() + step
+        self.font_size.set(max(FONT_RANGE[0], min(FONT_RANGE[1], target)))
+        self.rescale()
+
+    def rescale(self):
+        """Resize every named font proportionally to the requested base size."""
+        base = self.base_sizes["TkDefaultFont"]
+        ratio = self.font_size.get() / base
+        for name, size in self.base_sizes.items():
+            tkfont.nametofont(name).configure(size=max(FONT_RANGE[0], round(size * ratio)))
+        self.headline_font.configure(size=round(self.font_size.get() * 1.15))
 
     def say(self, line):
         self.log.insert("end", line.rstrip() + "\n")
@@ -691,5 +741,18 @@ class App(tk.Tk):
         self.spawn(work, done)
 
 
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--font-size",
+        type=int,
+        metavar="PT",
+        help="base font size in points (default: the desktop's own). "
+        "Ctrl+plus / Ctrl+minus / Ctrl+0 adjust it live.",
+    )
+    args = parser.parse_args()
+    App(font_size=args.font_size).mainloop()
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    main()

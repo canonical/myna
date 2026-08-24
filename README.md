@@ -414,7 +414,8 @@ snaps: what is actually configurable today, what a Settings panel has to guess
 in the absence of a config schema, and what the running system costs.
 
 ```shell
-./dev/config-ui.py          # stdlib only, no deps beyond python3-tk
+./dev/config-ui.py                  # stdlib only, no deps beyond python3-tk
+./dev/config-ui.py --font-size 16   # or Ctrl+plus / Ctrl+minus / Ctrl+0 live
 ```
 
 It discovers backends by their `ubustt-socket` content slot, reads them
