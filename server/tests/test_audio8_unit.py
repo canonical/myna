@@ -62,6 +62,7 @@ class _FakeEngine:
     ):
         self.bundle_dir = bundle_dir
         self.provider = provider
+        self.intra_op_num_threads = intra_op_num_threads
         self.cache_precision = cache_precision
         self.audio_precision = audio_precision
         self.max_audio_seconds = 30.0
@@ -273,9 +274,12 @@ def test_default_model_dir_error_names_the_fetch_script(monkeypatch, tmp_path):
 
 async def test_load_model_constructs_engine_from_staged_dir(monkeypatch, tmp_path):
     _stub_runtime(monkeypatch)
-    adapter = Audio8Adapter(str(_staged_model(tmp_path)), num_threads=2)
+    adapter = Audio8Adapter(str(_staged_model(tmp_path)))
     engine = await adapter._load_model()
     assert isinstance(engine, _FakeEngine)
+    # No thread count: an explicit intra_op_num_threads makes ORT skip
+    # affinity, so passing one would silently cost us thread pinning.
+    assert engine.intra_op_num_threads is None
     assert adapter._max_audio_seconds == 30.0
 
 

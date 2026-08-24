@@ -94,7 +94,6 @@ class FunasrAdapter:
         *,
         language: str = "auto",
         textnorm: str = "woitn",
-        num_threads: int = 4,
     ) -> None:
         if language not in _LANGUAGES:
             raise ValueError(f"language must be one of {_LANGUAGES}, got {language!r}")
@@ -103,7 +102,6 @@ class FunasrAdapter:
         self._model_dir = model_dir
         self._language = language
         self._textnorm = textnorm
-        self._num_threads = num_threads
         self._model = None
         self._model_lock = asyncio.Lock()
 
@@ -158,7 +156,10 @@ class FunasrAdapter:
                 model_dir=model_dir,
                 device_id="-1",
                 quantize=quantize,
-                intra_op_num_threads=self._num_threads,
+                # 0 is ORT's "you size the pool", which also lets it pin.
+                # Not omitted: funasr_onnx's own default is 4, so leaving
+                # this out caps us at 4 threads and silently loses pinning.
+                intra_op_num_threads=0,
             )
         return self._model
 

@@ -50,6 +50,13 @@ apps:
     plugs:
       - hardware-observe
       - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      # Thread pinning: the default seccomp template allows only
+      # `sched_setaffinity 0 - -` (a literal pid 0), but glibc's
+      # pthread_setaffinity_np always passes the target's real tid, so every
+      # ORT pin is refused with EPERM. process-control drops that filter.
+      # NOT auto-connect: `snap connect <snap>:process-control`, else ORT
+      # logs the failures on each model load and runs unpinned.
+      - process-control
       - opengl
       # Weights are components now (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets

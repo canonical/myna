@@ -214,10 +214,13 @@ def _fake_funasr_onnx(monkeypatch):
 async def test_load_prefers_int8_export_when_present(monkeypatch, tmp_path):
     captured = _fake_funasr_onnx(monkeypatch)
     snapshot = _staged_model(tmp_path, quantized=True)
-    await FunasrAdapter(str(snapshot), num_threads=2)._load_model()
+    await FunasrAdapter(str(snapshot))._load_model()
     assert captured["quantize"] is True
     assert captured["device_id"] == "-1"  # CPU inference
-    assert captured["intra_op_num_threads"] == 2
+    # 0 = "ORT, size the pool yourself", which is also what lets it pin.
+    # Must be passed explicitly: funasr_onnx's own default is 4, so omitting
+    # this caps us at 4 threads and silently loses pinning.
+    assert captured["intra_op_num_threads"] == 0
 
 
 async def test_load_falls_back_to_fp32_export(monkeypatch, tmp_path):

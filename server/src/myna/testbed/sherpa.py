@@ -75,11 +75,15 @@ class SherpaAdapter:
         model_dir: str | None = None,
         *,
         streaming: bool = False,
-        num_threads: int = 2,
+        num_threads: int | None = None,
     ) -> None:
         self._model_dir = model_dir
         self._streaming = streaming
-        self._num_threads = num_threads
+        # sherpa-onnx has no "let ORT size the pool" setting: it forwards this
+        # straight to intra_op_num_threads, and its own default is 2. Default to
+        # every CPU we are actually allowed (sched_getaffinity, not cpu_count,
+        # so a cgroup cpuset is honoured).
+        self._num_threads = num_threads or len(os.sched_getaffinity(0))
         self._recognizer = None
         self._model_lock = asyncio.Lock()
 

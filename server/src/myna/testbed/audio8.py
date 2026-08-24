@@ -161,7 +161,6 @@ class Audio8Adapter:
         cache_precision: str = "int8",
         audio_precision: str = "int8",
         max_new_tokens: int = _DEFAULT_MAX_NEW_TOKENS,
-        num_threads: int = 4,
         device: str = "cpu",
         silence_threshold: float | None = _DEFAULT_SILENCE_THRESHOLD,
         punctuation: bool = True,
@@ -183,7 +182,6 @@ class Audio8Adapter:
         self._cache_precision = cache_precision
         self._audio_precision = audio_precision
         self._max_new_tokens = max_new_tokens
-        self._num_threads = num_threads
         self._device = device
         self._silence_threshold = silence_threshold
         self._punctuation = punctuation  # spike-confirmed True (T005, FR-007)
@@ -252,7 +250,8 @@ class Audio8Adapter:
                 engine_cls,
                 str(model_dir / "model_bundle"),
                 provider=provider,
-                intra_op_num_threads=self._num_threads,
+                # No thread count: ORT sets affinity only when it sizes the
+                # pool itself, so an explicit count would cost us pinning.
                 cache_precision=self._cache_precision,
                 audio_precision=self._audio_precision,
             )
