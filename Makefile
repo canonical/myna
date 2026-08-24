@@ -1,10 +1,6 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Inference snaps, by short name: `make snap-whisper` fetches that snap's model
-# weights, stages its wheels and packs it. Fetch is idempotent (every fetcher
-# skips weights already staged under components/), so it is folded into the
-# build instead of being a separate target you have to remember.
 SNAPS := whisper parakeet nemotron qwen sherpa funasr audio8 myna fake
 
 # Model fetch, one per snap; empty for the snaps that carry no weights (myna,
