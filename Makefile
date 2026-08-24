@@ -152,6 +152,10 @@ test-server: ## Python test suite (workshop: py-test)
 test-extension: ## GNOME Shell extension suites, incl. the headless-Shell presentation check (workshop myna-shell: gjs-test)
 	workshop run myna-shell gjs-test
 
+.PHONY: test-extension-next
+test-extension-next: ## The same suites against the NEXT GNOME Shell, in a throwaway LXD container
+	extensions/myna-shell/test/next-shell.sh
+
 .PHONY: lint-client
 lint-client: ## Rust lints as errors (workshop: lint)
 	workshop run myna lint

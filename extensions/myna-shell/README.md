@@ -221,6 +221,24 @@ snap's `core24`, and no 24.04 archive has - or can have - the Shell this
 extension targets. Until the extension is ported backwards, the two need
 different bases.
 
+### Testing the next Shell
+
+`workshop init` accepts no base newer than ubuntu@26.04, so the workshop
+above is pinned to Shell 50 - the half where `hud.js` falls back to Cairo.
+On its own it never rasterizes a shader, which is how the GPU path came to
+ship broken on Shell 50.
+
+```sh
+make test-extension-next
+```
+
+`test/next-shell.sh` runs the same `run-suite.sh` inside a throwaway LXD
+container of Ubuntu 26.10, which carries Shell 51. LXD and not Docker:
+GNOME Shell reaches logind over the system bus at startup, and a Docker
+container has neither, so the Shell dies before the driver loads and the
+presentation check skips rather than fails. Set `MYNA_SHELL_NEXT_KEEP=1` to
+keep the container.
+
 Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
 `hudLogic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
 real headless-Cairo smoke check of `ribbonPaint.js` (an `ImageSurface`
