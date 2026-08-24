@@ -168,11 +168,8 @@ actions:
       myna-snap/dev/*.sh \
       extensions/myna-shell/test/*.sh \
       .workshop/*/hooks/* \
-      *-snap/scripts/*.sh *-snap/dev/*.sh \
-      *-snap/snap/hooks/* 2>/dev/null || \
-    shellcheck -x dev/*.sh myna-snap/dev/*.sh \
-      extensions/myna-shell/test/*.sh .workshop/*/hooks/* \
-      *-snap/scripts/*.sh *-snap/dev/*.sh
+      *-snap/scripts/* *-snap/dev/*.sh \
+      *-snap/snap/hooks/*
   workflow-lint: |
     export PATH=/usr/local/cargo-bin:$PATH
     cd /project && actionlint .github/workflows/*.yml

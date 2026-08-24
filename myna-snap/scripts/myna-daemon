@@ -26,6 +26,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 # PipeWire/Wayland compat symlinks (see bin/myna-runtime-links).
+# shellcheck source=/dev/null  # generated inside the snap at runtime
 . "$SNAP/bin/myna-runtime-links"
 
 if [ -n "${MYNA_BACKEND_SOCKET:-}" ]; then
