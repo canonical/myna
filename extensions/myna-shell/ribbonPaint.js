@@ -25,6 +25,13 @@ export const BASE_CENTRELINE_FRACTION = 0.82; // paintRibbon's un-clamped vertic
 export const MAX_BODY_BILLOW = 1 + (0.12 + 0.32 * 1); // bodyThickness()'s ceiling (activity=1)
 export const WISP_THICKNESS_FRACTION = 0.5; // paintRibbon's own wispThickness (scales with safeScale, not part of its budget)
 
+// ── Tables shared with the GPU path ────────────────────────────────────────
+// ribbonGlsl.js bakes every one of these into the generated shader, so the
+// Cairo and GLSL renderers are driven by ONE set of numbers. They are two
+// genuinely different rasterization algorithms (scanline fills/strokes vs.
+// a per-pixel distance field), so their *code* can't be shared — but their
+// tuning must be, since that is exactly where the two would silently drift.
+
 /** Per-role body thickness, as a fraction of the canvas height. */
 export const ROLE_THICKNESS_FRACTION = Object.freeze({
     [StrandRole.VOICE]: VOICE_THICKNESS_FRACTION,

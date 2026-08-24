@@ -71,15 +71,71 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   passes, billow/taper shapes, per-role thickness and alpha) that the GPU
   path bakes into its shader, so both renderers are driven by one set of
   numbers.
+- `ribbonGlsl.js` — **generates** the GPU path's GLSL fragment shader from
+  those same tables (the default renderer, see below). A generator rather
+  than a `.glsl` file so the constants are read from the one place they are
+  defined; no build step, it is an ordinary ES module returning a string.
+- `ribbonShader.js` — `ShaderRibbonActor`, a `Clutter.ShaderEffect`-based
+  drop-in for `hud.js`'s Cairo `WaveRibbonActor`, exposing the identical
+  API. The shipped default; Shell-only (see below).
 - `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
   and high-contrast colour classes.
 - `dev-lab/` — a standalone GTK4+libadwaita tuning app for the wave ribbon,
   **not part of the shipped bundle** (see `dev-lab/README.md`).
 - `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
   everything above except `hud.js` itself.
+- `test/gpu-probe.js` — checks the GPU path's toolkit API is reachable and
+  that Cogl accepts the generated shader. Needs mutter's typelibs, so it is
+  run manually rather than as part of the headless suite.
 - `test/entrance-visual.sh` + `test/visual-driver/` - `hud.js`'s
   *presentation*, driven against a real headless GNOME Shell. **Not part of
   the shipped bundle.**
+
+## GPU rasterization
+
+The Shell HUD rasterizes the ribbon on the GPU (`ribbonShader.js`) as a
+per-pixel distance field. Fall back to the Cairo painter with an environment
+variable:
+
+```sh
+MYNA_SHELL_CAIRO_RIBBON=1
+```
+
+**Cairo remains the reference implementation**, and is kept rather than
+deleted because:
+
+- `dev-lab/` cannot use the GPU path. GTK4's `GskGLShader` was deprecated in
+  4.16 and no longer renders at all — both its Cairo and GPU paths now fill
+  the node with hot pink (`#FF69B4`) as a "missing shader" marker. Its
+  replacement, `GtkGLArea`, needs raw `epoxy`/`glCreateShader` calls that
+  are not introspectable and so are unreachable from `gjs`. The Cairo
+  painter is therefore the only renderer the tuning app can share.
+- The headless tests paint into a real `Cairo.ImageSurface`; GLSL has no
+  equivalent that runs without a GL context.
+- On llvmpipe (VMs, some installs) the "GPU" path is still the CPU, so the
+  fallback is also the escape hatch if the shader ever misbehaves on a
+  particular driver.
+
+Only *rasterization* moves. `computeRibbonModel` — the phase state machine,
+the envelope smoothing, the amplitude response curve — stays pure JS and
+stays the single authority for what to draw. The shader regenerates each
+strand's sine analytically from the parameters the model now reports
+(`amplitude`/`phaseOffset`/`delayMs`/`speedScale`) rather than from
+constants of its own, and `test/ribbonGlsl.test.js` asserts both that those
+regenerated points match the model's own and that every `#define` still
+equals its JS original — so a retune of either renderer cannot silently
+desynchronize them.
+
+It also gets a *better* result for the soft passes: `paintGlow`'s stacked
+strokes exist only because "Cairo has no native blur", and its own comments
+note they band visibly on a near-flat curve. The shader evaluates them as
+summed Gaussians, which is what the stack was approximating.
+
+`Shell.GLSLEffect` is **not** used — it was removed from gnome-shell in
+`30f545eb00` ("Remove GLSLEffect — now that everything uses
+ClutterShaderEffect"). `Clutter.ShaderEffect` + `Cogl.Snippet` is the
+supported path, and is what the Shell's own `js/ui/lightbox.js` vignette
+uses from JS.
 
 ## Compositor behaviour
 

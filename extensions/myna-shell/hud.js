@@ -48,6 +48,7 @@ import {
     UNFOLD_MS,
 } from './ribbon.js';
 import {paintRibbon} from './ribbonPaint.js';
+import {ShaderRibbonActor} from './ribbonShader.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
@@ -67,6 +68,19 @@ const FRAME_TIMELINE_MS = 1000;
 // missing previous frame, where a dt of 0 would snap for the same reason.
 const MAX_FRAME_DT_MS = 100;
 const FIRST_FRAME_DT_MS = 1000 / 60;
+
+// The GPU rasterization path (ribbonShader.js) is the default. Opt back out
+// to Cairo with `MYNA_SHELL_CAIRO_RIBBON=1` in the Shell's environment —
+// Cairo remains the reference implementation, it is the one the headless
+// tests exercise, and it is the one dev-lab shares (GJS cannot reach the GL
+// calls GtkGLArea needs, so the tuning app has no GPU equivalent).
+const USE_CAIRO_RIBBON = GLib.getenv('MYNA_SHELL_CAIRO_RIBBON') === '1';
+
+/** Build the ribbon actor for the active rasterization path. Both expose
+ * the same API, so nothing downstream needs to know which one it got. */
+function createRibbonActor() {
+    return USE_CAIRO_RIBBON ? new WaveRibbonActor() : new ShaderRibbonActor();
+}
 
 // A Cairo-drawn flowing wave ribbon (R17). The math lives in ribbon.js, CSS
 // resolves the Shell's native colours, and ribbonPaint.js draws them (also
@@ -441,7 +455,7 @@ export class HudView {
             text: '',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._ribbon = new WaveRibbonActor();
+        this._ribbon = createRibbonActor();
         this._ribbon.setLevel(this._lastRms, this._lastPeak);
         // The only reactive actor in this chrome. `can_focus` stays false
         // though it is clickable: that is the point (X11/FR-007c).

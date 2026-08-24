@@ -65,6 +65,15 @@
     min-width: 160px;
 }
 
+/* The GPU rasterization path (ribbonShader.js). A ClutterShaderEffect is an
+ * offscreen effect: the actor must actually paint something for the effect
+ * to have a target to run over. The shader uses Cogl's `replace` hook and
+ * therefore discards whatever was painted, so this background exists purely
+ * to guarantee that paint happens — its colour is never visible. */
+.myna-hud-ribbon-gpu {
+    background-color: rgba(0, 0, 0, 0.004);
+}
+
 .myna-hud-dismiss {
     color: rgba(255, 255, 255, 0.75);
 }
