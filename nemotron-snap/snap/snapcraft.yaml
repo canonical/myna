@@ -134,6 +134,12 @@ parts:
   # confinement + LD_LIBRARY_PATH is the expected iteration point).
   nemo-cuda:
     plugin: nil
+    # Host-side wheel cache (dev/download-wheels.sh). snapcraft's build VM is
+    # thrown away each run, so pip's own cache never survives; this points pip
+    # at wheels/cache/ when it exists. Never --no-index: a missing or partial
+    # cache must fall back to PyPI, not fail the build.
+    build-environment:
+      - PIP_FIND_LINKS: $CRAFT_PART_BUILD/cache
     source: wheels
     build-packages:
       - python3
