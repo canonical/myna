@@ -20,6 +20,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
+command -v uv >/dev/null || { echo "uv is required (resolves for the build's python)" >&2; exit 1; }
+
 snap_dirs=("$@")
 if [ ${#snap_dirs[@]} -eq 0 ]; then
     mapfile -t snap_dirs < <(cd "$repo_root" && ls -d ./*-snap | sed 's|^\./||')
@@ -84,11 +86,8 @@ PY
         continue
     fi
 
-    # Resolve for the *build* interpreter, not this host's. core24 builds on
-    # python 3.12; a bare `pip download` here fetches wheels for whatever the
-    # host runs (3.14 at the time of writing), which can never install in the
-    # build. --python-version implies --only-binary, so an sdist-only
-    # dependency will fail loudly rather than cache something unusable.
+    # Resolve for the *build* interpreter, not this host's: core24 builds on
+    # python 3.12, and wheels fetched for a 3.14 host could never install there.
     base=$(python3 -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))['base'])" "$recipe")
     case "$base" in
         core24) py=3.12 ;;
@@ -99,8 +98,30 @@ PY
     echo "== $snap_dir (base $base, python $py)"
     echo "$specs" | sed 's/^/   /'
     mkdir -p "$wheels/cache"
-    # Run from wheels/ so the relative ./myna-*.whl specs resolve.
-    (cd "$wheels" && echo "$specs" | xargs pip3 download \
-        --only-binary=:all: --python-version "$py" --dest cache)
-    echo "   cached $(find "$wheels/cache" -name '*.whl' | wc -l) wheels ($(du -sh "$wheels/cache" | cut -f1))"
+
+    # Two steps, because pip alone cannot do this. Asking pip to resolve for
+    # another interpreter forces --only-binary=:all:, so one sdist-only
+    # dependency (funasr pulls jieba) fails the entire run. uv resolves from
+    # metadata without building anything, giving a pinned set we then fetch one
+    # at a time - so the packages that do have wheels still get cached.
+    pinned=$(cd "$wheels" && echo "$specs" | uv pip compile \
+        --python-version "$py" --no-header --no-annotate - \
+        | grep -vE '^[[:space:]]*#|^[[:space:]]*$|^[./]')
+
+    cached=0
+    skipped=""
+    for pkg in $pinned; do
+        if (cd "$wheels" && pip3 download --quiet --no-deps --dest cache \
+                --only-binary=:all: --python-version "$py" "$pkg") >/dev/null 2>&1; then
+            cached=$((cached + 1))
+        else
+            skipped="$skipped $pkg"
+        fi
+    done
+
+    echo "   cached $cached of $(echo "$pinned" | wc -w) ($(du -sh "$wheels/cache" | cut -f1))"
+    # Never fatal: PIP_FIND_LINKS is additive, so anything missing here is just
+    # fetched from PyPI at build time, exactly as it is today.
+    [ -n "$skipped" ] && echo "   no python-$py wheel, left to the build:$skipped"
+
 done
