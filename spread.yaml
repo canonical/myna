@@ -13,8 +13,8 @@
 # The snaps under test are prebuilt and sent with the project:
 #   myna-snap/myna_*_amd64.snap              (myna-snap/dev/prepare.sh && snapcraft pack)
 #   fake-snap/myna-fake-backend_*_amd64.snap (fake-snap/dev/prepare.sh && snapcraft pack)
-#   whisper-snap/whisper_*_amd64.snap        (make snap-whisper)
-#   whisper-snap/whisper+model-tiny.comp     (same; download-models.sh stages the weights)
+#   whisper-snap/myna-whisper_*_amd64.snap   (make snap-whisper)
+#   whisper-snap/myna-whisper+model-tiny.comp (same; download-models.sh stages the weights)
 #
 # confined-e2e uses the fake backend (no model, runs anywhere); adapter-smoke
 # uses the real whisper snap to prove a shipped adapter is wired up in both
@@ -67,9 +67,9 @@ exclude:
     - whisper-snap/stage_packages
     - whisper-snap/components
     - whisper-snap/wheels
-    - whisper-snap/whisper+model-base.comp
-    - whisper-snap/whisper+model-small.comp
-    - whisper-snap/whisper+faster-whisper-cuda.comp
+    - whisper-snap/myna-whisper+model-base.comp
+    - whisper-snap/myna-whisper+model-small.comp
+    - whisper-snap/myna-whisper+faster-whisper-cuda.comp
     - nemotron-snap
     - qwen-snap
     - sherpa-snap

@@ -13,22 +13,29 @@
 summary: Transcribe a clip through the whisper snap in batch and streaming modes
 
 environment:
-    SNAP_UNDER_TEST: whisper
+    SNAP_UNDER_TEST: myna-whisper
+    # Project directory, which does NOT track the snap name (the snap was
+    # renamed to myna-whisper in d46ba9b; the directory stayed whisper-snap).
+    SNAP_DIR: whisper-snap
+    # The modelctl entry point. Not $SNAP_UNDER_TEST: the app is named
+    # `whisper` inside a snap named `myna-whisper`, so snapd exposes it as
+    # `myna-whisper.whisper`.
+    MODELCTL: myna-whisper.whisper
     MODEL: tiny
 
 prepare: |
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_UNDER_TEST}-snap/${SNAP_UNDER_TEST}_*_amd64.snap)
-    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_UNDER_TEST}-snap/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
-    test -f "$ADAPTER_SNAP" || { echo "adapter snap missing: build ${SNAP_UNDER_TEST}-snap first"; exit 1; }
+    test -f "$ADAPTER_SNAP" || { echo "adapter snap missing: build ${SNAP_DIR} first"; exit 1; }
     test -f "$COMPONENT" || { echo "model component missing: ./dev/download-models.sh"; exit 1; }
 
 execute: |
     set -x
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_UNDER_TEST}-snap/${SNAP_UNDER_TEST}_*_amd64.snap)
-    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_UNDER_TEST}-snap/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
 
     # Sideloading carries no snap declaration, so hardware-observe stays
     # unconnected and the install hook skips `use-engine --auto`, leaving no
@@ -46,15 +53,15 @@ execute: |
     # until a benchmark run collapsed halfway through. The static counterpart
     # is server/tests/test_snap_packaging.py; this is the version that proves
     # it on a real install under confinement.
-    ${SNAP_UNDER_TEST} show-machine --format=json > machine.json
+    ${MODELCTL} show-machine --format=json > machine.json
     grep -q '"cpus"' machine.json
-    ${SNAP_UNDER_TEST} use-engine --auto --assume-yes --no-restart
-    ${SNAP_UNDER_TEST} show-engine --format=json > engine.json
+    ${MODELCTL} use-engine --auto --assume-yes --no-restart
+    ${MODELCTL} show-engine --format=json > engine.json
     grep -q '"name"' engine.json
     # list-models is a table since modelctl v2.0.0-beta.2 (header row, '*' on
     # the active model) - match on the stable JSON representation instead.
-    ${SNAP_UNDER_TEST} list-models --format=json | grep -q "\"name\": \"$MODEL\""
-    ${SNAP_UNDER_TEST} use-model "$MODEL" --assume-yes
+    ${MODELCTL} list-models --format=json | grep -q "\"name\": \"$MODEL\""
+    ${MODELCTL} use-model "$MODEL" --assume-yes
 
     snap install --dangerous "$MYNA_SNAP"
     snap connect myna:backend ${SNAP_UNDER_TEST}:ubustt-socket
@@ -82,9 +89,9 @@ execute: |
             snap services ${SNAP_UNDER_TEST}.server || true
             snap logs -n 80 ${SNAP_UNDER_TEST}.server || true
             echo "=== modelctl surface ==="
-            ${SNAP_UNDER_TEST} status 2>&1 || true
-            sudo ${SNAP_UNDER_TEST} get ws.unix-socket 2>&1 || true
-            sudo ${SNAP_UNDER_TEST} run -- echo run-ok 2>&1 || true
+            ${MODELCTL} status 2>&1 || true
+            sudo ${MODELCTL} get ws.unix-socket 2>&1 || true
+            sudo ${MODELCTL} run -- echo run-ok 2>&1 || true
         fi
         test -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock
 

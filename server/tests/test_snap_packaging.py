@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # dir -> snap name. Kept explicit rather than globbed: a new inference snap
 # should be a deliberate addition here, not something that silently opts out.
 INFERENCE_SNAPS = {
-    "whisper-snap": "whisper",
+    "whisper-snap": "myna-whisper",
     "parakeet-snap": "parakeet",
     "sherpa-snap": "sherpa",
     "funasr-snap": "myna-funasr",
