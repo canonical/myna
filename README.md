@@ -405,6 +405,41 @@ its model fetch; `make help` lists every snap target.
 
 The snaps have their own README's with further details.
 
+## Configuration UI prototype
+
+`dev/config-ui.py` is a **throwaway Tkinter prototype**, not a shipped surface
+and not a design commitment. It exists to explore the questions in
+[docs/configuration-api.md](docs/configuration-api.md) against real installed
+snaps: what is actually configurable today, what a Settings panel has to guess
+in the absence of a config schema, and what the running system costs.
+
+```shell
+./dev/config-ui.py          # stdlib only, no deps beyond python3-tk
+```
+
+It discovers backends by their `ubustt-socket` content slot, reads them
+unprivileged (`<backend> get|status|list-models|list-engines`), shows live
+service state, resident/peak memory, CPU time and on-disk size per backend
+alongside the client's dictation state from `org.myna.Dictation`, and writes
+through `pkexec`, always displaying the literal command first.
+
+What it surfaces, and what a real config API would have to answer:
+
+- No machine-readable schema exists, so every control is rendered from the
+  *current value*: types are inferred, and ranges, defaults, titles and
+  restart-required flags are guessed. This is the case for `describe-config`
+  (config-api §3.4, Appendix A) in one screen.
+- The uniform-vocabulary split is already visible: parakeet exposes four
+  `stream-*` keys that funasr does not, and nothing distinguishes "not
+  applicable here" from "not implemented yet".
+- There is no *active backend* concept. Several backends can be connected to
+  the client's single `backend` plug, and an unconnected backend still runs and
+  holds its model resident. Connection state is configuration, and it lives on
+  the client snap rather than on the inference snaps.
+- Residency reads better as intent next to a live number ("2.6G resident, idle
+  since 13:27") than as `sleep-idle-seconds`, which supports the `intent`
+  presets sketched in Appendix A.
+
 ## Contributing
 
 Development is spec-driven (spec-kit, adopted mid-2026): new features are
