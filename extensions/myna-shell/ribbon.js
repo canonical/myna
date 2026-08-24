@@ -113,12 +113,16 @@ const BASE_ALPHA = 0.28;
 const BASE_AMPLITUDE = 0.05;
 const BASE_SPEED_SCALE = 0.35;
 
-const FLOW_SPEED = 0.0032;
-const SPATIAL_FREQUENCY = 1.6;
+// Exported because the GPU path (ribbonGlsl.js) regenerates this exact
+// wave in GLSL rather than consuming the sampled points, and bakes these
+// into the shader as `#define`s — so the two evaluate the same sine
+// instead of two hand-copied literals that can drift apart.
+export const FLOW_SPEED = 0.0032;
+export const SPATIAL_FREQUENCY = 1.6;
 
 // Never fully flat while active — reads as "alive, quiet", not "off"
 // (same philosophy as vumeter.js's FLOOR).
-const IDLE_AMPLITUDE = 0.025;
+export const IDLE_AMPLITUDE = 0.025;
 
 // The amplitude RESPONSE CURVE (2026-07-31, "log scale" follow-up) — distinct
 // from vumeter.js's dBFS calibration, which decides what counts as
@@ -274,6 +278,46 @@ function crestFactors(points, amplitude) {
 }
 
 /**
+ * Build one strand: its sampled points plus the *parameters* that
+ * generated them. The parameters are echoed out so a renderer that
+ * evaluates the wave itself — ribbonGlsl.js's GPU path regenerates this
+ * exact sine per-pixel in GLSL — reproduces it from the same numbers that
+ * produced `points`, rather than from a hand-copied second set of
+ * constants that could drift. Additive: consumers reading only
+ * `role`/`points`/`crest`/`alpha` (the X24 contract) are unaffected.
+ *
+ * @param {object} spec
+ * @param {string} spec.role - a StrandRole value.
+ * @param {number} spec.amplitude - peak |y| of the sine, in [0,1] units.
+ * @param {number} spec.elapsedMs
+ * @param {number} spec.phaseOffset - fixed per-strand radian offset.
+ * @param {number} spec.delayMs - fixed per-strand time delay.
+ * @param {number} spec.pointCount
+ * @param {number} spec.alpha
+ * @param {number} [spec.speedScale]
+ * @param {boolean} [spec.withCrest] - compute real crest factors (the
+ *     voice strand) rather than a zero-filled array (depth strands).
+ * @returns {object} the strand.
+ */
+function makeStrand({
+    role, amplitude, elapsedMs, phaseOffset, delayMs, pointCount, alpha,
+    speedScale = 1, withCrest = false,
+}) {
+    const points = generateWavePoints(
+        amplitude, elapsedMs, phaseOffset, delayMs, pointCount, speedScale);
+    return {
+        role,
+        points,
+        crest: withCrest ? crestFactors(points, amplitude) : points.map(() => 0),
+        alpha,
+        amplitude,
+        phaseOffset,
+        delayMs,
+        speedScale,
+    };
+}
+
+/**
  * Compute the full ribbon model from an already-smoothed envelope value.
  * Four conceptual layers (design doc's "layered construction"):
  *   - `base` strand: slow, low-amplitude sway, nearly independent of the
@@ -328,7 +372,16 @@ export function computeRibbonModel({
         for (let i = 0; i < points; i++)
             flat.push({x: i / (points - 1), y: 0});
         return {
-            strands: [{role: StrandRole.VOICE, points: flat, crest: flat.map(() => 0), alpha: 1.0}],
+            strands: [{
+                role: StrandRole.VOICE,
+                points: flat,
+                crest: flat.map(() => 0),
+                alpha: 1.0,
+                amplitude: 0,
+                phaseOffset: 0,
+                delayMs: 0,
+                speedScale: 0,
+            }],
             dots: null,
             convergence: null,
             brightnessBoost: 0,
@@ -342,14 +395,18 @@ export function computeRibbonModel({
         const pulsePhase = (elapsedMs % RECOVERABLE_PULSE_MS) / RECOVERABLE_PULSE_MS;
         const pulse = (Math.sin(pulsePhase * Math.PI * 2) + 1) / 2; // 0..1..0
         const amplitude = IDLE_AMPLITUDE * (0.6 + 0.4 * pulse);
-        const voicePoints = generateWavePoints(amplitude, elapsedMs, VOICE_PHASE, 0, points, BASE_SPEED_SCALE);
         return {
-            strands: [{
+            strands: [makeStrand({
                 role: StrandRole.VOICE,
-                points: voicePoints,
-                crest: crestFactors(voicePoints, amplitude),
+                amplitude,
+                elapsedMs,
+                phaseOffset: VOICE_PHASE,
+                delayMs: 0,
+                pointCount: points,
                 alpha: 0.85,
-            }],
+                speedScale: BASE_SPEED_SCALE,
+                withCrest: true,
+            })],
             dots: null,
             convergence: null,
             brightnessBoost: 0,
@@ -403,34 +460,39 @@ export function computeRibbonModel({
     }
 
     const voiceAmplitude = Math.max(IDLE_AMPLITUDE, shapeAmplitude(env));
-    const voicePoints = generateWavePoints(voiceAmplitude, elapsedMs, VOICE_PHASE, 0, points);
-    const layers = [{
+    const layers = [makeStrand({
         role: StrandRole.VOICE,
-        points: voicePoints,
-        crest: crestFactors(voicePoints, voiceAmplitude),
+        amplitude: voiceAmplitude,
+        elapsedMs,
+        phaseOffset: VOICE_PHASE,
+        delayMs: 0,
+        pointCount: points,
         alpha: 0.95,
-    }];
+        withCrest: true,
+    })];
 
     if (strands >= 2) {
-        const secondaryAmplitude = voiceAmplitude * SECONDARY_AMPLITUDE_SCALE;
-        const secondaryPoints = generateWavePoints(
-            secondaryAmplitude, elapsedMs, SECONDARY_PHASE, SECONDARY_DELAY_MS, points);
-        layers.push({
+        layers.push(makeStrand({
             role: StrandRole.SECONDARY,
-            points: secondaryPoints,
-            crest: secondaryPoints.map(() => 0),
+            amplitude: voiceAmplitude * SECONDARY_AMPLITUDE_SCALE,
+            elapsedMs,
+            phaseOffset: SECONDARY_PHASE,
+            delayMs: SECONDARY_DELAY_MS,
+            pointCount: points,
             alpha: SECONDARY_ALPHA,
-        });
+        }));
     }
     if (strands >= 3) {
-        const basePoints = generateWavePoints(
-            BASE_AMPLITUDE, elapsedMs, BASE_PHASE, 0, points, BASE_SPEED_SCALE);
-        layers.push({
+        layers.push(makeStrand({
             role: StrandRole.BASE,
-            points: basePoints,
-            crest: basePoints.map(() => 0),
+            amplitude: BASE_AMPLITUDE,
+            elapsedMs,
+            phaseOffset: BASE_PHASE,
+            delayMs: 0,
+            pointCount: points,
             alpha: BASE_ALPHA,
-        });
+            speedScale: BASE_SPEED_SCALE,
+        }));
     }
     // Strand counts beyond 3 (up to the design's "three to five") add
     // extra secondary-like depth strands, cycling the same fixed offsets
@@ -438,16 +500,15 @@ export function computeRibbonModel({
     // envelope, never independent state.
     for (let extra = 3; extra < strands; extra++) {
         const scale = SECONDARY_AMPLITUDE_SCALE * (1 - (extra - 2) * 0.15);
-        const phaseOffset = SECONDARY_PHASE + extra * 0.9;
-        const extraPoints = generateWavePoints(
-            voiceAmplitude * Math.max(0.2, scale), elapsedMs, phaseOffset,
-            SECONDARY_DELAY_MS * extra, points);
-        layers.push({
+        layers.push(makeStrand({
             role: StrandRole.SECONDARY,
-            points: extraPoints,
-            crest: extraPoints.map(() => 0),
+            amplitude: voiceAmplitude * Math.max(0.2, scale),
+            elapsedMs,
+            phaseOffset: SECONDARY_PHASE + extra * 0.9,
+            delayMs: SECONDARY_DELAY_MS * extra,
+            pointCount: points,
             alpha: SECONDARY_ALPHA * Math.max(0.4, 1 - (extra - 2) * 0.2),
-        });
+        }));
     }
 
     // `elapsedMs` is echoed through so ribbonPaint.js can add its own

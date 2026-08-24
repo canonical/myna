@@ -67,6 +67,10 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   colours instead.
 - `ribbonPaint.js` — the shared Cairo drawing function, toolkit-agnostic
   (no Shell/Gtk import) — used unmodified by both `hud.js` and `dev-lab/`.
+  Also owns the **shared tuning tables** (gradient stops, glow/feather
+  passes, billow/taper shapes, per-role thickness and alpha) that the GPU
+  path bakes into its shader, so both renderers are driven by one set of
+  numbers.
 - `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
   and high-contrast colour classes.
 - `dev-lab/` — a standalone GTK4+libadwaita tuning app for the wave ribbon,

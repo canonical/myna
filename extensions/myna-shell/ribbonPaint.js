@@ -12,8 +12,8 @@ import Cairo from 'gi://cairo';
 
 import {RibbonTint, StrandRole} from './ribbon.js';
 
-const AMBER_MAIN = '#F5A623';
-const AMBER_HIGHLIGHT = '#FFE0A6';
+export const AMBER_MAIN = '#F5A623';
+export const AMBER_HIGHLIGHT = '#FFE0A6';
 
 // Ceilings the paint functions below actually reach at full loudness/
 // activity — referenced by `computeSafeScale` so the overflow guard stays
@@ -23,7 +23,103 @@ const AMBER_HIGHLIGHT = '#FFE0A6';
 export const VOICE_THICKNESS_FRACTION = 0.85; // paintRibbon's own per-role thickness
 export const BASE_CENTRELINE_FRACTION = 0.82; // paintRibbon's un-clamped verticalScale factor
 export const MAX_BODY_BILLOW = 1 + (0.12 + 0.32 * 1); // bodyThickness()'s ceiling (activity=1)
-const WISP_THICKNESS_FRACTION = 0.5; // paintRibbon's own wispThickness (scales with safeScale, not part of its budget)
+export const WISP_THICKNESS_FRACTION = 0.5; // paintRibbon's own wispThickness (scales with safeScale, not part of its budget)
+
+/** Per-role body thickness, as a fraction of the canvas height. */
+export const ROLE_THICKNESS_FRACTION = Object.freeze({
+    [StrandRole.VOICE]: VOICE_THICKNESS_FRACTION,
+    [StrandRole.SECONDARY]: 0.4,
+    [StrandRole.BASE]: 0.32,
+});
+
+/** Per-role extra alpha multiplier (the base strand reads as soft haze). */
+export const ROLE_ALPHA_SCALE = Object.freeze({
+    [StrandRole.VOICE]: 1,
+    [StrandRole.SECONDARY]: 1,
+    [StrandRole.BASE]: 0.5,
+});
+
+/**
+ * The left→right ribbon gradient: shifts tone (shadow → main → highlight →
+ * main → shadow) while fading alpha in/out at the ends. `tone` indexes the
+ * resolved palette rather than naming a colour, so the amber-tint and
+ * accent-coloured paths reuse the identical stop positions.
+ */
+export const RIBBON_GRADIENT_STOPS = Object.freeze([
+    Object.freeze({pos: 0.0, tone: 'shadow', alpha: 0}),
+    Object.freeze({pos: 0.08, tone: 'shadow', alpha: 0.45}),
+    Object.freeze({pos: 0.32, tone: 'main', alpha: 0.9}),
+    Object.freeze({pos: 0.52, tone: 'highlight', alpha: 0.95}),
+    Object.freeze({pos: 0.72, tone: 'main', alpha: 0.85}),
+    Object.freeze({pos: 0.92, tone: 'shadow', alpha: 0.35}),
+    Object.freeze({pos: 1.0, tone: 'shadow', alpha: 0}),
+]);
+
+/**
+ * The glow passes. Cairo fakes a bloom by stacking this many progressively
+ * wider, fainter round strokes ("Cairo has no native blur"); the shader
+ * evaluates the same table as that many summed Gaussians, which is what
+ * the stack was approximating in the first place.
+ */
+export const GLOW_PASSES = Object.freeze([
+    Object.freeze({scale: 4.6, alphaScale: 0.10}),
+    Object.freeze({scale: 2.8, alphaScale: 0.17}),
+    Object.freeze({scale: 1.6, alphaScale: 0.24}),
+]);
+
+/** The body-edge feathering passes (same idea, applied to each edge curve). */
+export const FEATHER_PASSES = Object.freeze([
+    Object.freeze({scale: 2.2, alphaScale: 0.12}),
+    Object.freeze({scale: 1.3, alphaScale: 0.18}),
+]);
+
+/** The two wisp tendrils curling off the voice strand. */
+export const WISP_TENDRILS = Object.freeze([
+    Object.freeze({seed: 0.7, alpha: 0.5, timeOffsetMs: 0, mix: 0.4, fromShadow: false}),
+    Object.freeze({seed: 1.9, alpha: 0.35, timeOffsetMs: 240, mix: 0.5, fromShadow: true}),
+]);
+
+/** The wisp's own left→right alpha gradient (fades in and out along x). */
+export const WISP_GRADIENT_STOPS = Object.freeze([
+    Object.freeze({pos: 0.0, alpha: 0}),
+    Object.freeze({pos: 0.25, alpha: 0.5}),
+    Object.freeze({pos: 0.55, alpha: 0.32}),
+    Object.freeze({pos: 1.0, alpha: 0}),
+]);
+
+/** The wisp tendril's curl magnitude, drift wave and stroke width. */
+export const WISP = Object.freeze({
+    curlMin: 0.12,
+    curlActivity: 1.5,
+    tailFloor: 0.25,
+    freqBase: 4.4,
+    freqSeed: 1.3,
+    speedBase: 0.0017,
+    speedSeed: 0.0004,
+    phaseSeed: 2.1,
+    alphaMin: 0.12,
+    alphaActivity: 0.88,
+    lineWidthFraction: 0.16,
+});
+
+/** `bodyThickness`'s billow shape, and the drift wave that produces it. */
+export const BILLOW = Object.freeze({
+    minAmount: 0.12,
+    activityAmount: 0.32,
+    freq: 2.3,
+    speed: 0.0009,
+    phase: 0.6,
+    taperFloor: 0.32,
+});
+
+/** `edgeTaper`'s raised-cosine in/out widths. */
+export const EDGE_TAPER = Object.freeze({inWidth: 0.16, outWidth: 0.3});
+
+/** `activityRamp`'s smoothstep bounds. */
+export const ACTIVITY_RAMP = Object.freeze({lo: 0.08, hi: 0.3});
+
+/** The amber palette used when a recoverable notice tints the ribbon. */
+export const AMBER_PALETTE = Object.freeze({main: AMBER_MAIN, highlight: AMBER_HIGHLIGHT});
 
 // How much intentional overflow to allow beyond the guaranteed-no-clip
 // budget (2026-07-31, "give more room to base/voice" follow-up) — `1` keeps
@@ -117,7 +213,7 @@ function darkenRgb({r, g, b}, amount) {
  * middle — "new audio activity appears near the microphone ... before
  * gently dissolving." A raised-cosine shape rather than a linear ramp, so
  * there's no visible kink where the taper begins. */
-function edgeTaper(t, inWidth = 0.16, outWidth = 0.3) {
+function edgeTaper(t, inWidth = EDGE_TAPER.inWidth, outWidth = EDGE_TAPER.outWidth) {
     let v = 1;
     if (t < inWidth)
         v = Math.min(v, (1 - Math.cos((t / inWidth) * Math.PI)) / 2);
@@ -130,7 +226,7 @@ function edgeTaper(t, inWidth = 0.16, outWidth = 0.3) {
  * between (no kink) — used to fade the glow/feather/wisp effects in as
  * activity rises, rather than a hard on/off that would visibly "pop" as
  * the level crosses a threshold in real-time animation. */
-function activityRamp(activity, lo = 0.08, hi = 0.3) {
+function activityRamp(activity, lo = ACTIVITY_RAMP.lo, hi = ACTIVITY_RAMP.hi) {
     if (activity <= lo)
         return 0;
     if (activity >= hi)
@@ -170,14 +266,11 @@ function catmullRomTo(cr, points, moveToFirst = true) {
  * main → shadow) and fades alpha in/out at the ends. */
 function buildRibbonGradient(width, shadowRgb, mainRgb, highlightRgb, alpha) {
     const gradient = new Cairo.LinearGradient(0, 0, width, 0);
-    const stop = (pos, rgb, a) => gradient.addColorStopRGBA(pos, rgb.r, rgb.g, rgb.b, clamp01(a * alpha));
-    stop(0.0, shadowRgb, 0);
-    stop(0.08, shadowRgb, 0.45);
-    stop(0.32, mainRgb, 0.9);
-    stop(0.52, highlightRgb, 0.95);
-    stop(0.72, mainRgb, 0.85);
-    stop(0.92, shadowRgb, 0.35);
-    stop(1.0, shadowRgb, 0);
+    const tones = {shadow: shadowRgb, main: mainRgb, highlight: highlightRgb};
+    for (const {pos, tone, alpha: a} of RIBBON_GRADIENT_STOPS) {
+        const rgb = tones[tone];
+        gradient.addColorStopRGBA(pos, rgb.r, rgb.g, rgb.b, clamp01(a * alpha));
+    }
     return gradient;
 }
 
@@ -191,10 +284,12 @@ function buildRibbonGradient(width, shadowRgb, mainRgb, highlightRgb, alpha) {
  * alive the louder the voice gets — "more reactive to the audio."
  */
 function bodyThickness(t, elapsedMs, baseThickness, activity = 1) {
-    const billowAmount = 0.12 + 0.32 * activity;
-    const billow = 1 + billowAmount * driftWave(t, elapsedMs, 2.3, 0.0009, 0.6);
+    const billowAmount = BILLOW.minAmount + BILLOW.activityAmount * activity;
+    const billow = 1 + billowAmount *
+        driftWave(t, elapsedMs, BILLOW.freq, BILLOW.speed, BILLOW.phase);
     const activityScale = 0.5 + 0.5 * activity;
-    return baseThickness * activityScale * (0.32 + 0.68 * edgeTaper(t)) * billow;
+    const taper = BILLOW.taperFloor + (1 - BILLOW.taperFloor) * edgeTaper(t);
+    return baseThickness * activityScale * taper * billow;
 }
 
 /**
@@ -231,12 +326,7 @@ function paintRibbonBody(cr, pixelPoints, baseRgb, highlightRgb, shadowRgb, alph
  * native blur, but a handful of soft, wide strokes reads as bloom at HUD
  * scale. */
 function paintGlow(cr, pixelPoints, width, shadowRgb, mainRgb, highlightRgb, alpha, strokeWidth) {
-    const passes = [
-        {scale: 4.6, alphaScale: 0.10},
-        {scale: 2.8, alphaScale: 0.17},
-        {scale: 1.6, alphaScale: 0.24},
-    ];
-    for (const pass of passes) {
+    for (const pass of GLOW_PASSES) {
         cr.save();
         const gradient = buildRibbonGradient(width, shadowRgb, mainRgb, highlightRgb, alpha * pass.alphaScale);
         cr.setSource(gradient);
@@ -260,16 +350,12 @@ function paintFeatheredEdges(cr, pixelPoints, thickness, elapsedMs, rgb, alpha, 
     const n = pixelPoints.length;
     if (n < 2)
         return;
-    const passes = [
-        {scale: 2.2, alphaScale: 0.12},
-        {scale: 1.3, alphaScale: 0.18},
-    ];
     for (const edgeSign of [-1, 1]) {
         const edge = pixelPoints.map((p, i) => {
             const t = i / (n - 1);
             return {x: p.x, y: p.y + edgeSign * bodyThickness(t, elapsedMs, thickness, activity) / 2};
         });
-        for (const pass of passes) {
+        for (const pass of FEATHER_PASSES) {
             cr.save();
             const gradient = buildRibbonGradient(width, rgb, rgb, rgb, alpha * pass.alphaScale);
             cr.setSource(gradient);
@@ -296,31 +382,76 @@ function paintWisp(cr, voicePixelPoints, width, elapsedMs, rgb, baseAlpha, thick
     // More pronounced curling overall, and scaled by how much audio is
     // actually coming through: barely-there at idle, a bold curl at full
     // voice — "more reactive to the audio."
-    const curlMagnitude = thickness * (0.12 + 1.5 * activity);
+    const curlMagnitude = thickness * (WISP.curlMin + WISP.curlActivity * activity);
     const wispPoints = voicePixelPoints.map((p, i) => {
         const t = i / (n - 1);
         // Curls away perpendicular-ish to the flow (a pure vertical offset
         // reads convincingly at this aspect ratio/scale) with its own,
         // higher-frequency drift, dissipating further toward the tail (t→1)
         // in addition to the shared edgeTaper.
-        const curl = driftWave(t, elapsedMs, 4.4 + seed * 1.3, 0.0017 + seed * 0.0004, seed * 2.1) *
-            curlMagnitude * (0.25 + 0.75 * t);
+        const curl = driftWave(t, elapsedMs,
+            WISP.freqBase + seed * WISP.freqSeed,
+            WISP.speedBase + seed * WISP.speedSeed,
+            seed * WISP.phaseSeed) *
+            curlMagnitude * (WISP.tailFloor + (1 - WISP.tailFloor) * t);
         return {x: p.x, y: p.y + curl};
     });
-    const wispAlpha = baseAlpha * (0.12 + 0.88 * activity);
+    const wispAlpha = baseAlpha * (WISP.alphaMin + WISP.alphaActivity * activity);
     cr.save();
     const gradient = new Cairo.LinearGradient(0, 0, width, 0);
-    gradient.addColorStopRGBA(0.0, rgb.r, rgb.g, rgb.b, 0);
-    gradient.addColorStopRGBA(0.25, rgb.r, rgb.g, rgb.b, clamp01(wispAlpha * 0.5));
-    gradient.addColorStopRGBA(0.55, rgb.r, rgb.g, rgb.b, clamp01(wispAlpha * 0.32));
-    gradient.addColorStopRGBA(1.0, rgb.r, rgb.g, rgb.b, 0);
+    for (const {pos, alpha} of WISP_GRADIENT_STOPS)
+        gradient.addColorStopRGBA(pos, rgb.r, rgb.g, rgb.b, clamp01(wispAlpha * alpha));
     cr.setSource(gradient);
-    cr.setLineWidth(thickness * 0.16);
+    cr.setLineWidth(thickness * WISP.lineWidthFraction);
     cr.setLineCap(1);
     cr.setLineJoin(1);
     catmullRomTo(cr, wispPoints, true);
     cr.stroke();
     cr.restore();
+}
+
+/**
+ * Resolve a model + caller palette into the concrete tones and activity
+ * scalars a renderer needs. Shared by the Cairo painter below and the GPU
+ * path (`ribbonShader.js` uploads the result as uniforms), so the amber
+ * tint substitution, the shadow-tone blend and the `activity` /
+ * `effectStrength` ramps are computed in exactly one place.
+ *
+ * @param {object} model - `computeRibbonModel` output.
+ * @param {object} palette - caller-resolved colours (CSS or hex strings).
+ * @returns {{mainRgb: object, highlightRgb: object, shadowRgb: object,
+ *     activity: number, effectStrength: number}}
+ */
+export function resolveRibbonPalette(model, palette) {
+    const {strands = [], tint = null} = model;
+    const mainRgb = tint === RibbonTint.AMBER
+        ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.main);
+    const highlightRgb = tint === RibbonTint.AMBER
+        ? colorToRgbFloat(AMBER_HIGHLIGHT) : colorToRgbFloat(palette.highlight);
+    // The darker/complement tone reads as a warm, smouldering-red shadow
+    // undertone, not a bold second hue — blended most of the way toward
+    // the main warm colour and then darkened toward the background.
+    const complementRgb = tint === RibbonTint.AMBER
+        ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.darkerComplement);
+    const shadowRgb = darkenRgb(mixRgb(complementRgb, mainRgb, 0.6), 0.45);
+
+    // How much audio is actually coming through right now, derived directly
+    // from the voice strand's own amplitude (already normalized ~0 at idle
+    // to ~1 at loud, since that's exactly what drives its geometry) — used
+    // to scale the billow/curl/wisp effects so the ribbon reads calmer and
+    // flatter at silence, and more alive the louder the voice gets.
+    const voiceStrand = strands.find(s => s.role === StrandRole.VOICE);
+    const activity = voiceStrand
+        ? clamp01(Math.max(0, ...voiceStrand.points.map(p => Math.abs(p.y))))
+        : 1;
+    return {
+        mainRgb, highlightRgb, shadowRgb,
+        activity,
+        // A smoothed 0-1 ramp of `activity` used to fade the glow/feather/
+        // wisp embellishments in/out — see `activityRamp` for why a hard
+        // on/off would visibly "pop".
+        effectStrength: activityRamp(activity),
+    };
 }
 
 /**
@@ -341,7 +472,7 @@ export function paintRibbon(cr, width, height, model, palette) {
         return;
     const {
         strands = [], dots = null, convergence = null, brightnessBoost = 0,
-        tint = null, elapsedMs = 0,
+        elapsedMs = 0,
     } = model;
     const centreY = height / 2;
     // 2026-07-31: `safeScale` (≤1) keeps the centerline + thickness + glow
@@ -350,28 +481,8 @@ export function paintRibbon(cr, width, height, model, palette) {
     const safeScale = computeSafeScale();
     const verticalScale = (height / 2) * BASE_CENTRELINE_FRACTION * safeScale;
 
-    const mainRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.main);
-    const highlightRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_HIGHLIGHT) : colorToRgbFloat(palette.highlight);
-    // The darker/complement tone reads as a warm, smouldering-red shadow
-    // undertone, not a bold second hue — blended most of the way toward
-    // the main warm colour and then darkened toward the background.
-    const complementRgb = tint === RibbonTint.AMBER ? colorToRgbFloat(AMBER_MAIN) : colorToRgbFloat(palette.darkerComplement);
-    const shadowRgb = darkenRgb(mixRgb(complementRgb, mainRgb, 0.6), 0.45);
-
-    // How much audio is actually coming through right now, derived directly
-    // from the voice strand's own amplitude (already normalized ~0 at idle
-    // to ~1 at loud, since that's exactly what drives its geometry) — used
-    // to scale the billow/curl/wisp effects below so the ribbon reads
-    // calmer and flatter at silence, and more alive the louder the voice
-    // gets, rather than a fixed amount of motion regardless of level.
-    const voiceStrand = strands.find(s => s.role === StrandRole.VOICE);
-    const activity = voiceStrand
-        ? clamp01(Math.max(0, ...voiceStrand.points.map(p => Math.abs(p.y))))
-        : 1;
-    // A smoothed 0-1 ramp of `activity` used to fade the glow/feather/wisp
-    // embellishments in/out — see `activityRamp`'s doc comment for why a
-    // hard on/off would visibly "pop."
-    const effectStrength = activityRamp(activity);
+    const {mainRgb, highlightRgb, shadowRgb, activity, effectStrength} =
+        resolveRibbonPalette(model, palette);
 
     let voicePixelPoints = null;
 
@@ -401,14 +512,14 @@ export function paintRibbon(cr, width, height, model, palette) {
             let baseRgb = role === StrandRole.SECONDARY ? shadowRgb : mainRgb;
             if (brightnessBoost > 0)
                 baseRgb = lightenRgb(baseRgb, brightnessBoost * 0.6);
-            const thickness = height * (role === StrandRole.VOICE ? VOICE_THICKNESS_FRACTION : role === StrandRole.SECONDARY ? 0.4 : 0.32) * safeScale;
+            const thickness = height * ROLE_THICKNESS_FRACTION[role] * safeScale;
             // The secondary/base depth layers fade out toward silence too
             // (not just thinner — dimmer), so a calm moment reads as one
             // thin, quiet ribbon rather than several faint parallel
             // stripes; the voice strand alone carries the idle "still
             // alive" motion.
             const depthActivity = role === StrandRole.VOICE ? 1 : effectStrength;
-            const alpha = (strand.alpha ?? 1) * (role === StrandRole.BASE ? 0.5 : 1) * depthActivity;
+            const alpha = (strand.alpha ?? 1) * ROLE_ALPHA_SCALE[role] * depthActivity;
 
             if (role === StrandRole.VOICE) {
                 voicePixelPoints = pixelPoints;
@@ -438,10 +549,13 @@ export function paintRibbon(cr, width, height, model, palette) {
     // fade in smoothly with activity rather than a hard cutoff.
     if (voicePixelPoints !== null && effectStrength > 0) {
         const wispThickness = height * WISP_THICKNESS_FRACTION * safeScale;
-        paintWisp(cr, voicePixelPoints, width, elapsedMs,
-            mixRgb(mainRgb, highlightRgb, 0.4), 0.5 * effectStrength, wispThickness, 0.7, activity);
-        paintWisp(cr, voicePixelPoints, width, elapsedMs + 240,
-            mixRgb(shadowRgb, mainRgb, 0.5), 0.35 * effectStrength, wispThickness, 1.9, activity);
+        for (const tendril of WISP_TENDRILS) {
+            const rgb = tendril.fromShadow
+                ? mixRgb(shadowRgb, mainRgb, tendril.mix)
+                : mixRgb(mainRgb, highlightRgb, tendril.mix);
+            paintWisp(cr, voicePixelPoints, width, elapsedMs + tendril.timeOffsetMs,
+                rgb, tendril.alpha * effectStrength, wispThickness, tendril.seed, activity);
+        }
     }
 
     if (dots !== null) {
