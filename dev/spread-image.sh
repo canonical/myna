@@ -9,6 +9,7 @@
 set -euo pipefail
 
 IMG="$HOME/.spread/qemu/ubuntu-24.04-64.img"
+DISK_SIZE="${SPREAD_DISK_SIZE:-16G}"
 TMP="$IMG.tmp"
 # Tools first, image second. A primed image says nothing about whether the
 # emulator is installed, and spread needs qemu-system-x86_64 on PATH to launch
@@ -35,6 +36,13 @@ cd "$(dirname "$IMG")"
 if [ ! -f "$TMP" ]; then
     wget -q https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -O "$TMP"
 fi
+
+# The cloud image ships a 3.5G disk, which the base system plus the snaps a
+# task installs will fill (adapter-smoke and thread-pinning each sideload a
+# real inference snap and its model component). qcow2 is sparse, so the extra
+# virtual size costs nothing until it is used; cloud-init's growpart expands
+# the root partition on first boot.
+qemu-img resize "$TMP" "$DISK_SIZE"
 
 HASH=$(openssl passwd -6 ubuntu)
 printf '#cloud-config\nssh_pwauth: true\nusers:\n  - name: ubuntu\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: %s\n' "$HASH" > user-data

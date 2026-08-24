@@ -11,6 +11,7 @@ COMMIT="$(grep -oP 'SPREAD_COMMIT: \K[0-9a-f]+' "$REPO_ROOT/.github/workflows/sp
 [ -n "$COMMIT" ] || { echo "no SPREAD_COMMIT pin in .github/workflows/spread.yml"; exit 1; }
 
 BIN="$REPO_ROOT/.cache/spread/spread"
+SPREAD_SMP="${SPREAD_SMP:-4}"
 SRC="$REPO_ROOT/.cache/spread/src"
 
 # Self-provisioning, like dev/spread-image.sh: a fresh CI runner has no Go.
@@ -39,7 +40,17 @@ if ! grep -q '"-cpu", "host"' "$SRC/spread/qemu.go"; then
     sed -i 's|"-enable-kvm",|"-enable-kvm",\n\t\t"-cpu", "host",|' "$SRC/spread/qemu.go"
 fi
 
-MARK="$COMMIT+cpu-host"
+# Local patch 2: give the guest more than one core. Upstream passes no -smp, so
+# qemu defaults to a single vCPU - on which ONNX Runtime spawns no extra
+# intra-op threads and therefore never calls sched_setaffinity at all. That
+# makes thread pinning untestable (tests/spread/thread-pinning) and quietly
+# unrepresentative of any machine the snaps actually run on. Not sent upstream
+# as of 2026-08-24; the guard makes re-application idempotent.
+if ! grep -q '"-smp"' "$SRC/spread/qemu.go"; then
+    sed -i "s|\"-cpu\", \"host\",|\"-cpu\", \"host\",\n\t\t\"-smp\", \"$SPREAD_SMP\",|" "$SRC/spread/qemu.go"
+fi
+
+MARK="$COMMIT+cpu-host+smp$SPREAD_SMP"
 if [ -x "$BIN" ] && [ -f "$REPO_ROOT/.cache/spread/commit" ] \
     && [ "$(cat "$REPO_ROOT/.cache/spread/commit")" = "$MARK" ]; then
     echo "spread already built at $MARK"
