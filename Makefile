@@ -45,6 +45,13 @@ snap-$(1):
 endef
 $(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
 
+# Every snap in one go. Kept serial even under `make -j`: the per-snap builds
+# each want the whole machine (snapcraft's build VM/container, multi-GB model
+# fetches) and interleaving them thrashes rather than parallelises.
+.NOTPARALLEL: snaps
+.PHONY: snaps
+snaps: $(SNAPS:%=snap-%) ## Build every snap (all the snap-* targets below), in order
+
 .PHONY: lint-snaps
 lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
 	./dev/lint-packages.sh
