@@ -205,11 +205,15 @@ that which are mechanical now run as `test/entrance-visual.sh` (below).
 
 ```sh
 cd extensions/myna-shell
-for f in test/*.test.js; do gjs -m "$f"; done   # pure logic, no Shell
-test/entrance-visual.sh                         # presentation, real Shell
+test/run-suite.sh          # everything below, in one go
 ```
 
-Both run in CI as `make test-extension`, in their own Workshop
+`test/run-suite.sh` runs the pure GJS suites (`test/*.test.js`, no Shell),
+then `test/gpu-probe.sh` (mutter's typelibs), then `test/entrance-visual.sh`
+(a real headless Shell). The last two exit 77 when they cannot judge, which
+the runner treats as a skip.
+
+It runs in CI as `make test-extension`, in its own Workshop
 (`.workshop/myna-shell.yaml`) rather than the main one. A Workshop SDK cannot
 carry its own base image, so the Shell version a test can reach comes from the
 workshop's base: the main workshop sits on ubuntu@24.04 because that is the

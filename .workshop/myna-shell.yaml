@@ -28,20 +28,16 @@ sdks:
 actions:
   # The pure GJS contract tests (state to visual-intent mapping, stub-proxy
   # lifecycle, ribbon/vumeter/accent maths) need no Shell at all. Then the
-  # HUD's *presentation* against a real headless Shell: Clutter easing on a
-  # real frame clock, which the pure suites above cannot see.
+  # ribbon's GPU path against mutter's own typelibs, and the HUD's
+  # *presentation* against a real headless Shell: Clutter easing on a real
+  # frame clock, which the pure suites above cannot see.
   #
   # entrance-visual.sh exits 77 when it cannot measure - no Shell, a Shell
   # outside the extension's supported range, or one too starved to present
   # enough frames to judge. That is a skip, not a failure; its header explains
   # where it draws each of those lines.
   gjs-test: |
-    cd /project/extensions/myna-shell
-    for t in test/*.test.js; do gjs -m "$t" || exit 1; done
-    # `cmd; rc=$?` would never reach the assignment: the action runs under
-    # set -e, so a 77 aborts at the call itself.
-    rc=0; test/entrance-visual.sh || rc=$?
-    [ "$rc" -eq 0 ] || [ "$rc" -eq 77 ] || exit "$rc"
+    /project/extensions/myna-shell/test/run-suite.sh
 
   # The Shell this base actually provides, against the range the extension
   # declares. Worth a named action because a mismatch is what makes gjs-test
