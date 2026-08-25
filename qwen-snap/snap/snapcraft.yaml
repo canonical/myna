@@ -96,12 +96,11 @@ parts:
   # ctypes (stdlib) + libqwen_asr.so, so the CPU engine carries no pip deps.
   server-app:
     plugin: python
-    # Host-side wheel cache (dev/download-wheels.sh). snapcraft's build VM is
-    # thrown away each run, so pip's own cache never survives; this points pip
-    # at wheels/cache/ when it exists. Never --no-index: a missing or partial
-    # cache must fall back to PyPI, not fail the build.
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
     build-environment:
-      - PIP_FIND_LINKS: $CRAFT_PART_BUILD/cache
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
     source: wheels
     python-packages:
       - ./myna-0.0.1-py3-none-any.whl

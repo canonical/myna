@@ -134,12 +134,11 @@ parts:
   # confinement + LD_LIBRARY_PATH is the expected iteration point).
   nemo-cuda:
     plugin: nil
-    # Host-side wheel cache (dev/download-wheels.sh). snapcraft's build VM is
-    # thrown away each run, so pip's own cache never survives; this points pip
-    # at wheels/cache/ when it exists. Never --no-index: a missing or partial
-    # cache must fall back to PyPI, not fail the build.
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
     build-environment:
-      - PIP_FIND_LINKS: $CRAFT_PART_BUILD/cache
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
     source: wheels
     build-packages:
       - python3
@@ -148,16 +147,14 @@ parts:
       [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
       target="$CRAFT_PART_INSTALL/site-packages"
       mkdir -p "$target"
-      # Prefer the local closure dev/prepare.sh staged into wheels/. That is
-      # where the weight is - torch plus the nvidia-* CUDA packages, several GB
-      # - and resolving it from PyPI here re-downloads on every fresh build
-      # instance, since pip's cache lives inside the instance and does not
-      # survive pruning the LXD pool.
+      # The closure dev/prepare.sh staged into wheels/ is the offline path:
+      # find-links only wins when the index has no such version, so it is
+      # PIP_CACHE_DIR above that keeps the weight - torch plus the nvidia-*
+      # CUDA packages, several GB - off the network on a rebuild.
       #
       # The index stays enabled deliberately: a few closure members (wget,
       # nemo-toolkit) are sdist-only, and building those offline would need
-      # their PEP 517 build deps staged too. --find-links wins on everything
-      # that matters; PyPI covers the long tail.
+      # their PEP 517 build deps staged too.
       pip3 install --target="$target" \
         --find-links=. \
         ./myna-0.0.1-py3-none-any.whl[nemotron]

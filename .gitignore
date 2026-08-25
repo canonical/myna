@@ -11,6 +11,10 @@ corpus/
 .cache/
 
 # Snap build artifacts
+# .pip-cache/ is the persistent pip cache each snapcraft.yaml points
+# PIP_CACHE_DIR at; it is meant to outlive the build VM, so it is not
+# swept by `make clean-snaps`.
+.pip-cache/
 whisper-snap/wheels/
 whisper-snap/.hf-cache/
 nemotron-snap/wheels/
