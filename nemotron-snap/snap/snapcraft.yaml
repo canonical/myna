@@ -162,6 +162,22 @@ parts:
       pip3 install --target="$target" \
         --find-links=. \
         ./myna-0.0.1-py3-none-any.whl[nemotron]
+      # nemo_toolkit[asr] pulls the whole training stack. What goes here is
+      # training-side only for a cache-aware streaming transcribe:
+      #   triton    torch.compile/inductor codegen. NeMo names it only in the
+      #             k2 loss, the n-gram LM decoders and context biasing - none
+      #             on this adapter's greedy streaming path.
+      #   numba +   RNNT *loss* kernels, SpecAugment (gated off by
+      #   llvmlite  use_numba_spec_augment=False) and perturb's phase vocoder.
+      #             Nothing in rnnt_greedy_decoding touches them.
+      #   wandb,    experiment tracking and training visualisation, in a snap
+      #   tensorb.  with no `network` plug.
+      # pyarrow, pandas, sklearn, sympy and scipy all failed this same test -
+      # NeMo reaches them while importing - so they stay. So do nvidia/nccl,
+      # nvshmem and cusparselt: libtorch_cuda NEEDs all three.
+      export PRUNE_DROP="triton numba llvmlite wandb tensorboard tensorboard_data_server"
+      export PRUNE_GATE="import torch; from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer; assert CacheAwareStreamingAudioBuffer"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
       craftctl default
     organize:
       "*": (component/nemo-cuda)
