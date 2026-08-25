@@ -153,6 +153,16 @@ parts:
       - libpipewire-0.3-modules
       - libgtk-4-1 # the ui-gtk overlay (staged from noble; see the apps note)
       - libglib2.0-bin # gsettings, for reference/debug inside the snap
+    prime:
+      # libxml2 is the only consumer of ICU here, and it needs just libicuuc
+      # (which pulls libicudata). ICU's i18n/io/tool/test libraries arrive
+      # with the package and nothing links them.
+      - -usr/lib/*/libicui18n.so*
+      - -usr/lib/*/libicuio.so*
+      - -usr/lib/*/libicutest.so*
+      - -usr/lib/*/libicutu.so*
+      - -usr/share/doc
+      - -usr/share/man
 
   # PipeWire client config (client.conf & friends). In noble these ship in
   # pipewire-bin (libpipewire-0.3-common is docs-only); pw_context_new treats
