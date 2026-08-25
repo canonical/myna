@@ -641,7 +641,12 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
             eprintln!("  hotkey with whoever bound it first, so this process would never see a");
             eprintln!("  press while shadowing the running one.");
             eprintln!("  stop it first, or run this one with --no-dbus for a deliberate second.");
-            ExitCode::FAILURE
+            // Exit 0: "someone else already did the job" is the *success* of a
+            // start request, and it has to be, because more than one thing can
+            // legitimately issue one - the unit, a D-Bus activation, a manual
+            // `snap run`. Failing here would make a supervised unit restart
+            // into the same benign condition until systemd gave up on it.
+            ExitCode::SUCCESS
         }
         Err(ServeError::Bus(e)) => {
             eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
