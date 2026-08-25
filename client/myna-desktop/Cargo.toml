@@ -15,9 +15,10 @@ name = "myna-desktop"
 path = "src/bin/myna-desktop.rs"
 
 [features]
-# The GTK4 activity-indicator overlay. On by default for the shipped app; the
-# hermetic test suite builds `--no-default-features` so it never links GTK.
-default = ["ui-gtk"]
+# The GTK4 activity-indicator overlay. Opt-in: it drags the whole GTK stack
+# (~13 MB packaged) in for one label window, and the myna-shell extension is
+# the real indicator on GNOME. Build with `--features ui-gtk` to get it.
+default = []
 ui-gtk = ["dep:gtk4", "dep:glib", "dep:async-channel"]
 
 [dependencies]

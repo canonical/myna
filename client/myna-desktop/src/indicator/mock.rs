@@ -2,7 +2,7 @@
 //!
 //! Records the `IndicatorState` sequence (and `hide()`) so controller tests can
 //! assert the state timeline (Recording→Transcribing→Finalizing→Hidden, error
-//! states) with no GTK and no display. Built with the `ui-gtk` feature off
+//! states) with no GTK and no display. Built without the `ui-gtk` feature
 //! (contract indicator.md N-mapping tests).
 
 use std::sync::{Arc, Mutex};

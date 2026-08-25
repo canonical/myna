@@ -6,7 +6,8 @@
 //! the GTK main thread and the tokio controller pushes states to it over an
 //! `async-channel`; the error state also raises a `notify-rust` toast (FR-020).
 //!
-//! Gated behind the `ui-gtk` feature so the hermetic suite never links GTK.
+//! Gated behind the opt-in `ui-gtk` feature; packaged builds omit it, so
+//! neither the shipped snap nor the hermetic suite links GTK.
 //! Visual/latency/AT-SPI behavior is proven by the env-gated display suite
 //! (`tests/indicator_hw.rs`, T028) on hardware; the state timeline itself is
 //! covered hermetically via `MockIndicator` (T027).

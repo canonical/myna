@@ -2,8 +2,8 @@
 //!
 //! A persistent, screen-reader-perceivable surface showing recording /
 //! transcribing / finalizing / error — so the user always knows dictation is
-//! live. [`gtk::GtkIndicator`] (feature `ui-gtk`, branch 003d) is the shipped
-//! overlay; [`notify::NotifyIndicator`] is the headless/error fallback;
+//! live. [`notify::NotifyIndicator`] is the shipped default;
+//! [`gtk::GtkIndicator`] (opt-in feature `ui-gtk`, branch 003d) is the overlay;
 //! [`mock::MockIndicator`] is the hermetic test fixture. See
 //! `specs/003-desktop-injection/contracts/indicator.md`.
 
