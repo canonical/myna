@@ -183,7 +183,9 @@ impl GlobalShortcutTrigger {
         use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
         use futures_util::future;
 
-        let shortcuts = GlobalShortcuts::with_connection(conn)
+        // Cloned, not moved: `portal_owner_changed` below needs the same
+        // connection (a zbus `Connection` clone is a handle to the one socket).
+        let shortcuts = GlobalShortcuts::with_connection(conn.clone())
             .await
             .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
         let session = shortcuts
@@ -216,7 +218,18 @@ impl GlobalShortcutTrigger {
             .filter_map(move |e| {
                 future::ready((e.shortcut_id() == id_d).then_some(PortalSignal::Deactivated))
             });
-        let signals = stream::select(activated, deactivated).boxed();
+        // The portal can restart under a long-lived daemon (a package
+        // upgrade, a crash, `systemctl --user restart`). Its session dies with
+        // it, but these are *bus-level* signal matches, so the streams above
+        // stay happily open and this trigger would go on listening to a
+        // session that no longer exists: the hotkey silently stops working and
+        // nothing says so. Ending the stream when the portal's bus name
+        // changes owner turns that into a plain rebind, which
+        // `retry::RetryingTrigger` already knows how to do.
+        let restarted = portal_owner_changed(&conn).await?;
+        let signals = stream::select(activated, deactivated)
+            .take_until(restarted)
+            .boxed();
 
         myna_core::info_log!(
             "portal",
@@ -229,6 +242,36 @@ impl GlobalShortcutTrigger {
             _keepalive: Keepalive::Portal(shortcuts, session),
         })
     }
+}
+
+/// The bus name the portal serves on; owning it is what makes a portal *the*
+/// portal, so a change of owner is exactly "the portal I bound against is not
+/// the portal any more".
+#[cfg(not(test))]
+const PORTAL_BUS_NAME: &str = "org.freedesktop.portal.Desktop";
+
+/// A future that resolves the first time `org.freedesktop.portal.Desktop`
+/// changes owner. Both halves of a restart (owner lost, then owner acquired)
+/// resolve it; either is a good enough reason to rebind, and the rebind's own
+/// backoff absorbs the race with a portal that is still starting.
+#[cfg(not(test))]
+async fn portal_owner_changed(
+    conn: &zbus::Connection,
+) -> Result<impl std::future::Future<Output = ()>, TriggerError> {
+    let dbus = zbus::fdo::DBusProxy::new(conn)
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    let mut changes = dbus
+        .receive_name_owner_changed_with_args(&[(0, PORTAL_BUS_NAME)])
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    Ok(async move {
+        let _ = changes.next().await;
+        myna_core::info_log!(
+            "portal",
+            "{PORTAL_BUS_NAME} changed owner; session is stale"
+        );
+    })
 }
 
 #[async_trait]
