@@ -110,6 +110,14 @@ parts:
       - ./myna-0.0.1-py3-none-any.whl
     build-packages:
       - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # This snap's Python side is just the session server; inference is the
+      # qwen-c-runtime part. Only build-time payloads go.
+      export PRUNE_GATE="import myna.core, websockets"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip*
 
   # The pure-C runtime, built from antirez/qwen-asr (MIT) into libqwen_asr.so
   # and baked into the base snap (it is tiny). OpenBLAS provides BLAS at runtime.
