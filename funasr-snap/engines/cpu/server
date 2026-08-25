@@ -9,7 +9,7 @@ idle="$(modelctl get sleep-idle-seconds)"
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter funasr \
-    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: funasr use-model sensevoice}" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-funasr.funasr use-model sensevoice}" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
     "$@"

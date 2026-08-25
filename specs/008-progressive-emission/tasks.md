@@ -87,14 +87,14 @@
 
 **Goal**: A strictly confined, int8-ONNX Parakeet snap serves progressive committed dictation on CPU-only hardware at ≤ 25 % of the full NeMo snap's size
 
-**Independent Test**: `snap install --dangerous parakeet_*.snap`, dictate a multi-sentence realtime clip through the confined socket — `»` segments arrive mid-utterance; installed size meets SC-005 (quickstart S3)
+**Independent Test**: `snap install --dangerous myna-parakeet_*.snap`, dictate a multi-sentence realtime clip through the confined socket — `»` segments arrive mid-utterance; installed size meets SC-005 (quickstart S3)
 
 - [X] T023 [US3] Stage Parakeet TDT 0.6B v3 int8 ONNX weights via `dev/fetch_parakeet_onnx.py`
 - [X] T024 [US3] Port the greedy TDT decode loop to numpy/onnxruntime in `server/src/myna/testbed/parakeet.py`
 - [X] T025 [US3] Implement Parakeet `run_session` with SilenceCut chunked commit, capabilities, ready gating, and off-format rejection
 - [X] T026 [US3] Validate Parakeet against the invariant harness and real-corpus WER; record watermarks
 - [X] T027 [US3] Create the CPU-only, strictly confined `parakeet-snap` (model component, `ws+unix` socket, idle-unload, no `hardware-observe`)
-- [X] T028 [US3] Validate confined end-to-end streaming through `/var/snap/parakeet/common/run/ubustt.sock`; make SilenceCut cadence configurable via `stream-arm-seconds`, `stream-silence-cut-seconds`, and `stream-force-cut-seconds`
+- [X] T028 [US3] Validate confined end-to-end streaming through `/var/snap/myna-parakeet/common/run/ubustt.sock`; make SilenceCut cadence configurable via `stream-arm-seconds`, `stream-silence-cut-seconds`, and `stream-force-cut-seconds`
 
 **Checkpoint**: US3 functional — small confined transducer snap streaming on CPU
 

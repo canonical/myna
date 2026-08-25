@@ -15,6 +15,21 @@ FETCH_sherpa   := cd sherpa-snap && ./dev/download-models.sh
 FETCH_funasr   := uv run ./dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
 FETCH_audio8   := uv run ./dev/fetch_audio8_model.py --profile snap --target ./audio8-snap/components/model-audio8-onnx --accept-license "CC-BY-NC-4.0"
 
+# Short name -> packaged snap name. The two differ everywhere: the directory and
+# these targets are keyed on the adapter, while the snap itself is namespaced
+# `myna-*` for the store. Targets that talk to an *installed* snap (sockets,
+# services, matrix targets) need the packaged name, so map it once here rather
+# than making the caller remember which spelling a given target wants.
+SNAPNAME_whisper  := myna-whisper
+SNAPNAME_parakeet := myna-parakeet
+SNAPNAME_nemotron := myna-nemotron
+SNAPNAME_qwen     := myna-qwen
+SNAPNAME_sherpa   := myna-sherpa
+SNAPNAME_funasr   := myna-funasr
+SNAPNAME_audio8   := myna-audio8
+SNAPNAME_myna     := myna
+SNAPNAME_fake     := myna-fake-backend
+
 BRANCH := $(shell git branch --show-current)
 
 # ------------------------------------------------------------------------
@@ -90,7 +105,7 @@ bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps)
 # Safe to re-run the same snap too: aggregate.py dedups by (label, clip),
 # newest wins.
 bench-run-%: bench-corpus ## Matrix sweep scoped to one snap (bench-run-<snap>, e.g. bench-run-whisper)
-	sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml --only $* --keep-results
+	sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results
 
 .PHONY: bench-aggregate
 bench-aggregate: ## Re-print the comparison table from the last matrix run
@@ -121,8 +136,8 @@ bench-corpus-long: ## (Re)generate a standalone ~5min long-form clip (corpus/rea
 # does not install/purge like bench-run does).
 bench-long-%: ## Run the long-form clip against an already-running <snap> (bench-long-<snap>)
 	cd server && uv run python ../dev/bench.py \
-		--socket /var/snap/$*/common/run/ubustt.sock \
-		--manifest ../corpus/real/manifest-long.json --label $*/long-form
+		--socket /var/snap/$(SNAPNAME_$*)/common/run/ubustt.sock \
+		--manifest ../corpus/real/manifest-long.json --label $(SNAPNAME_$*)/long-form
 
 # ------------------------------------------------------------------------
 # tests / lint / coverage — delegate to the canonical Workshop environment

@@ -95,7 +95,7 @@ apps:
 
 # The backend session socket, shared by an inference snap (whisper /
 # nemotron / qwen). Manual connect (different publishers):
-#   sudo snap connect myna:backend whisper:ubustt-socket
+#   sudo snap connect myna:backend myna-whisper:ubustt-socket
 # snapd appends the slot's source basename, so the socket lands at
 # $SNAP_DATA/backend/run/ubustt.sock. One active backend at a time;
 # multi-backend discovery/selection is T48.

@@ -22,10 +22,10 @@ environment:
     SNAP_UNDER_TEST: myna-funasr
     # Project directory, which does NOT track the snap name.
     SNAP_DIR: funasr-snap
-    # The modelctl entry point. Not $SNAP_UNDER_TEST: this snap's app is named
-    # `funasr` inside a snap named `myna-funasr`, so snapd exposes it as
-    # `myna-funasr.funasr`. whisper only gets away with the bare name because
-    # its app and snap names happen to match.
+    # The modelctl entry point. Never $SNAP_UNDER_TEST: every inference snap
+    # names its CLI app after the *adapter* while the snap itself is namespaced
+    # `myna-*`, so snapd always exposes it as `<snap>.<adapter>` - here
+    # `myna-funasr.funasr`.
     MODELCTL: myna-funasr.funasr
     MODEL: sensevoice
 

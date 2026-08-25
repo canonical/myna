@@ -36,21 +36,21 @@ Model + runtime are components, so sideload them in the same `snap install`:
 
 ```shell
 sudo snap install --dangerous \
-    ./nemotron_*.snap \
-    ./nemotron+model-streaming-multi.comp \
-    ./nemotron+nemo-cuda.comp
+    ./myna-nemotron_*.snap \
+    ./myna-nemotron+model-streaming-multi.comp \
+    ./myna-nemotron+nemo-cuda.comp
 
-sudo snap connect nemotron:hardware-observe
-sudo snap connect nemotron:opengl
-sudo nemotron use-engine --auto --assume-yes
-sudo snap restart nemotron.server
+sudo snap connect myna-nemotron:hardware-observe
+sudo snap connect myna-nemotron:opengl
+sudo myna-nemotron.nemotron use-engine --auto --assume-yes
+sudo snap restart myna-nemotron.server
 ```
 
-Watch it: `sudo snap logs -f nemotron.server`; the socket appears at
-`/var/snap/nemotron/common/run/ubustt.sock`. Transcribe / dictate from the repo:
+Watch it: `sudo snap logs -f myna-nemotron.server`; the socket appears at
+`/var/snap/myna-nemotron/common/run/ubustt.sock`. Transcribe / dictate from the repo:
 
 ```shell
-uv run python dev/dictate.py --socket /var/snap/nemotron/common/run/ubustt.sock
+uv run python dev/dictate.py --socket /var/snap/myna-nemotron/common/run/ubustt.sock
 ```
 
 ## Confined clients (the `ubustt-socket` slot)
@@ -60,7 +60,7 @@ share for strictly-confined clients — the `myna` dictation snap
 (`myna-snap/`):
 
 ```shell
-sudo snap connect myna:backend nemotron:ubustt-socket
+sudo snap connect myna:backend myna-nemotron:ubustt-socket
 ```
 
 The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
@@ -71,10 +71,10 @@ snap to get it.
 ## The latency dial
 
 ```shell
-sudo nemotron set att-context-size=70,0    # lowest latency
-sudo nemotron set att-context-size=70,33   # most context / accuracy
-sudo nemotron set att-context-size=        # NeMo default
-sudo snap restart nemotron.server
+sudo myna-nemotron.nemotron set att-context-size=70,0    # lowest latency
+sudo myna-nemotron.nemotron set att-context-size=70,33   # most context / accuracy
+sudo myna-nemotron.nemotron set att-context-size=        # NeMo default
+sudo snap restart myna-nemotron.server
 ```
 
 ## Idle behaviour

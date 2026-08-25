@@ -102,7 +102,7 @@ Paths follow the project structure from `plan.md`:
 - [x] T023 [P] [US3] Create `audio8-snap/engines/nvidia-gpu/engine.yaml` + `audio8-snap/runtimes/audio8-onnx-cuda/runtime.yaml`: GPU engine installing `onnxruntime-gpu` wheels and selecting the CUDA execution provider (research.md Decision 11); engine startup MUST fail fast with a clear error when the CUDA provider is unavailable (FR-020) — verify by running the engine selection on non-GPU hardware and asserting the error, never silent CPU fallback.
 - [ ] T024 [US3] Populate `audio8-snap/components/model-audio8-onnx/`: run `dev/fetch_audio8_model.py --profile snap --accept-license "CC-BY-NC-4.0"` into the component directory (int8+int4 decoder graphs, int8 audio tower, shared weights, engine source; fp32 graphs EXCLUDED — Decision 10, ≈ 886 MB). Include the staged `asr_onnx_runtime.py` + `hotword/` so the snap's adapter loads the engine from the component (Decision 2). Component ships the LICENSE file from the upstream repo for integrator visibility.
 
-**Checkpoint**: `sudo snap install --dangerous audio8_*.snap audio8+model-audio8-onnx.comp` → confined dictation works offline; engine switching works. Quickstart S7 passes.
+**Checkpoint**: `sudo snap install --dangerous myna-audio8_*.snap myna-audio8+model-audio8-onnx.comp` → confined dictation works offline; engine switching works. Quickstart S7 passes.
 
 ---
 

@@ -18,8 +18,9 @@ Murmure's re-quantized encoder decodes every probed length fully
 (22 s collapse) — murmure's is the only fully robust int8 encoder found.
 
 Model: NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0), 25 languages, punctuation +
-capitalisation. Cached under XDG_CACHE_HOME/myna/models; re-running verifies
-the checksum and skips the download (offline-safe once staged).
+capitalisation. Cached under XDG_CACHE_HOME/myna/models and stamped with the
+release it came from; re-running skips the download only when that stamp
+matches the pin (offline-safe once staged, restaged when the pin moves).
 """
 
 from __future__ import annotations
@@ -34,10 +35,19 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+# Pinned upstream release. Unlike the Hugging Face fetchers this one never
+# floated - the URL names a release tag and the zip is sha256-verified - but
+# staging was still presence-only, so a cache left from an older release
+# survived a pin move unnoticed. STAMP records what a staged directory came
+# from; see dev/model-pin.sh for the same mechanism on the bash side.
+RELEASE = "1.2.0"
 URL = (
-    "https://github.com/Kieirra/murmure-model/releases/download/1.2.0/parakeet-tdt-0.6b-v3-int8.zip"
+    f"https://github.com/Kieirra/murmure-model/releases/download/{RELEASE}"
+    "/parakeet-tdt-0.6b-v3-int8.zip"
 )
 SHA256 = "2adb3e2e6feaace71119eed506cb18401ac41b8daef1b6411a9e0ca5f12cacfe"
+STAMP = f"murmure-model {RELEASE}"
+STAMP_FILE = "UPSTREAM_REVISION"
 MODEL_FILES = (
     "encoder-model.int8.onnx",
     "decoder_joint-model.int8.onnx",
@@ -75,7 +85,16 @@ def _download(url: str, dest: Path) -> None:
 
 
 def staged(out_dir: Path) -> bool:
-    return all((out_dir / f).exists() for f in MODEL_FILES)
+    """Whether ``out_dir`` holds this release - not merely *a* release.
+
+    Presence alone would let a cache staged from an older pin sit there
+    forever: the files exist, so the download is skipped and the sha256 that
+    would have caught the drift is never computed.
+    """
+    if not all((out_dir / f).exists() for f in MODEL_FILES):
+        return False
+    stamp = out_dir / STAMP_FILE
+    return stamp.exists() and stamp.read_text(encoding="utf-8").strip() == STAMP
 
 
 def stage(out_dir: Path) -> Path:
@@ -95,6 +114,7 @@ def stage(out_dir: Path) -> Path:
         out_dir.mkdir(exist_ok=True)
         for name in MODEL_FILES:
             shutil.move(str(extracted / name), out_dir / name)
+    (out_dir / STAMP_FILE).write_text(f"{STAMP}\n", encoding="utf-8")
     return out_dir
 
 

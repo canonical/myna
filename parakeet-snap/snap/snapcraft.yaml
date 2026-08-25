@@ -10,7 +10,7 @@
 # SilenceCut): the streaming-class UX is this snap's reason to exist. Weights
 # ship as a component: run ./dev/download-models.sh before packing. No
 # `network` plug.
-name: parakeet
+name: myna-parakeet
 base: core24
 version: 0.1.0-dev
 assumes:
@@ -67,7 +67,7 @@ apps:
       # but glibc's pthread_setaffinity_np always passes the target's real tid
       # so every ORT pin is refused with EPERM. process-control drops the
       # argument filter. NOT auto-connect: `snap connect
-      # parakeet:process-control`, else ORT logs the failures and runs unpinned.
+      # myna-parakeet:process-control`, else ORT logs the failures and runs unpinned.
       - process-control
 
 hooks:

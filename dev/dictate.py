@@ -1,6 +1,6 @@
 """Speak into the microphone and see the transcription (live demo).
 
-    uv run python dev/dictate.py --socket /var/snap/whisper/common/run/ubustt.sock
+    uv run python dev/dictate.py --socket /var/snap/myna-whisper/common/run/ubustt.sock
 
 Push-to-talk against a running UbuSTT snap: press Enter to start listening,
 speak, press Enter again to transcribe. Ctrl-C to quit. This is the audio-push

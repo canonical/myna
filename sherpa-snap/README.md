@@ -20,12 +20,12 @@ snapcraft pack
 
 ```bash
 sudo snap install --dangerous \
-    ./sherpa_*.snap \
-    ./sherpa+model-fastconformer-480ms.comp
+    ./myna-sherpa_*.snap \
+    ./myna-sherpa+model-fastconformer-480ms.comp
 ```
 
 The snap is CPU-only and does not require `hardware-observe`. Session socket:
 
 ```text
-/var/snap/sherpa/common/run/ubustt.sock
+/var/snap/myna-sherpa/common/run/ubustt.sock
 ```

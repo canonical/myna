@@ -18,7 +18,7 @@ stream_args=()
 
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
-    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: whisper use-model tiny}" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-whisper.whisper use-model tiny}" \
     --device cpu \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \

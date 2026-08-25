@@ -11,7 +11,7 @@
 #   - model weights are CC-BY-NC-4.0 (non-commercial): the component build
 #     script acknowledges the license explicitly; compliance is the integrator's
 #     responsibility (feature 010 clarification).
-name: audio8
+name: myna-audio8
 base: core24
 version: 0.1.0-dev
 assumes:

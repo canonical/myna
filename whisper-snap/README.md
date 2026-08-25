@@ -44,7 +44,7 @@ sudo snap connect myna-whisper:opengl   # if not auto-connected
 
 # Sideloaded snaps don't auto-connect interfaces before the install hook,
 # so select the engine manually once:
-sudo myna-whisper use-engine --auto --assume-yes
+sudo myna-whisper.whisper use-engine --auto --assume-yes
 sudo snap restart myna-whisper.server
 ```
 
@@ -75,9 +75,9 @@ T17. Unconfined clients keep using the socket path directly.
 ## Model selection
 
 ```shell
-whisper list-models               # tiny / base / small
-sudo whisper use-model base       # installs the model component, restarts server
-whisper show-engine               # active engine + model options
+myna-whisper.whisper list-models               # tiny / base / small
+sudo myna-whisper.whisper use-model base       # installs the model component, restarts server
+myna-whisper.whisper show-engine               # active engine + model options
 ```
 
 Switching a model installs that model's component (weights are already in the
@@ -90,7 +90,7 @@ memory (and most of the GPU VRAM); the next request reloads it (you'll see a
 brief "loading…" via `progress.phase`). Tune or disable it:
 
 ```shell
-sudo whisper set sleep-idle-seconds=600   # default 300; 0 = never unload
+sudo myna-whisper.whisper set sleep-idle-seconds=600   # default 300; 0 = never unload
 sudo snap restart myna-whisper.server
 ```
 

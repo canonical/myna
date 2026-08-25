@@ -6,7 +6,7 @@
 # custom decode loop. Follows the parakeet-snap/whisper-snap pattern
 # (modelctl v2 + one cpu engine + weights as a component). Weights: run
 # ./dev/download-models.sh before packing. No `network` plug.
-name: sherpa
+name: myna-sherpa
 base: core24
 version: 0.1.0-dev
 assumes:

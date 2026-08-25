@@ -24,7 +24,7 @@ stream_args=()
 exec python3 -m myna.server \
     --adapter nemotron \
     --socket "$socket_path" \
-    --model "${MODEL_PATH:?MODEL_PATH unset — is the model component installed? try: nemotron use-model streaming-multi}" \
+    --model "${MODEL_PATH:?MODEL_PATH unset — is the model component installed? try: myna-nemotron.nemotron use-model streaming-multi}" \
     --device cuda \
     "${att_args[@]}" \
     --sleep-idle-seconds "${idle:-0}" \

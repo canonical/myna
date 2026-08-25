@@ -12,13 +12,13 @@ Config format (bench.yaml):
     sweep_budget_seconds: 600              # optional, default 600
 
     targets:
-      - snap: whisper
+      - snap: myna-whisper
         files:
-          - ./snaps/whisper_1.0_amd64.snap
-          - ./snaps/whisper+cpu.comp
-          - ./snaps/whisper+nvidia-gpu.comp
-        # cli: whisper          # optional: snap CLI command (default: snap name)
-        # service: whisper.server  # optional (default: <snap>.server)
+          - ./snaps/myna-whisper_1.0_amd64.snap
+          - ./snaps/myna-whisper+cpu.comp
+          - ./snaps/myna-whisper+nvidia-gpu.comp
+        cli: myna-whisper.whisper  # modelctl command (default: the snap name)
+        # service: myna-whisper.server  # optional (default: <snap>.server)
         # socket: /var/snap/...    # optional (default: standard path)
         # models: [tiny, base]     # optional model allowlist
         streaming_configs:         # optional: sweep streaming at multiple settings

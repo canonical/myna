@@ -71,7 +71,7 @@ whisper-snap|nemotron-snap|qwen-snap/snap/snapcraft.yaml  # ubustt-socket slot
 1. `cargo test --workspace` + clippy.
 2. `snapcraft pack` myna-snap; `snap install --dangerous`.
 3. Rebuild + reinstall `whisper` with the slot; connect
-   `myna:backend ← whisper:ubustt-socket`, `myna:pipewire`.
+   `myna:backend ← myna-whisper:ubustt-socket`, `myna:pipewire`.
 4. Confined round-trip: `myna.testbed --socket …/ubustt.sock --clip <wav>`.
 5. Daemon: `--dbus` name ownership on the bus; portal bind attempted;
    control mode + `myna.toggle` toggle cycle.

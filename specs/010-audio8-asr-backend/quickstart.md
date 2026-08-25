@@ -74,14 +74,14 @@ and RTF; 100% of clips accounted for. Check the comparison into `results/`.
 
 ```bash
 # build + install audio8-snap and its model component, connect the myna client snap
-sudo snap install --dangerous audio8_*.snap audio8+model-*.comp
-sudo snap connect myna:session audio8:session   # content-shared socket
-sudo snap disconnect audio8:network 2>/dev/null || true   # prove offline (no network plug exists)
+sudo snap install --dangerous myna-audio8_*.snap myna-audio8+model-*.comp
+sudo snap connect myna:session myna-audio8:session   # content-shared socket
+sudo snap disconnect myna-audio8:network 2>/dev/null || true   # prove offline (no network plug exists)
 ```
 
 Expected: full dictation session succeeds with networking disabled; standard
 `preparing → ready` lifecycle; idle-unload via model control; peak memory
 within the small-model watermark tolerance. On GPU hardware:
-`sudo audio8 use-engine nvidia-gpu` serves via the CUDA provider and bench
+`sudo myna-audio8.audio8 use-engine nvidia-gpu` serves via the CUDA provider and bench
 runs take the `audio8/nvidia-gpu` label; selecting it without a GPU fails
 fast with a clear error (FR-020).

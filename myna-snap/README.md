@@ -15,7 +15,7 @@ backend snaps only receive PCM on a socket. It deliberately has **no
 ```shell
 # 0. A backend snap must be installed and serving, e.g. whisper (see
 #    whisper-snap/README.md); check with:
-snap logs -n5 whisper.server
+snap logs -n5 myna-whisper.server
 
 # 1. Build + install this snap
 ./dev/prepare.sh && snapcraft pack
@@ -23,7 +23,7 @@ sudo snap install --dangerous ./myna_*.snap
 
 # 2. Connect the two manual interfaces
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
-sudo snap connect myna:backend whisper:ubustt-socket     # the backend session socket
+sudo snap connect myna:backend myna-whisper:ubustt-socket     # the backend session socket
 
 # 3. Run the daemon (leave it running; autostart is a known gap below)
 myna
@@ -44,7 +44,7 @@ The `backend` plug is a writable content share of the backend snap's
 `/var/snap/myna/current/backend/run/ubustt.sock`. One backend at a time
 (whisper / nemotron / qwen provide the same slot; multi-backend selection
 is T48). The backend daemon must have run at least once for the socket to
-exist (`sudo snap start whisper.server`).
+exist (`sudo snap start myna-whisper.server`).
 
 ## Activation
 
@@ -108,7 +108,7 @@ gdbus introspect --session --dest org.myna.Dictation \
 ## Troubleshooting
 
 - **`myna` says "no backend socket"** — connect the backend plug (step 2)
-  and make sure the backend daemon has run (`snap logs whisper.server`).
+  and make sure the backend daemon has run (`snap logs myna-whisper.server`).
 - **`myna.toggle` can't reach the daemon** — `myna` isn't running, or it's
   running in the default portal activation; `myna.toggle` needs
   `myna --control`.

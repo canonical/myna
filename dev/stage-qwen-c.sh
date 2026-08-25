@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SNAP=$REPO_ROOT/qwen-snap/qwen_0.1.0-dev_amd64.snap
+SNAP=$REPO_ROOT/qwen-snap/myna-qwen_0.1.0-dev_amd64.snap
 OUTDIR=$REPO_ROOT/.cache/qwen-c
 OUT=$OUTDIR/libqwen_asr.so
 

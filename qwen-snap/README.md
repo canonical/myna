@@ -35,11 +35,11 @@ MYNA_MODEL_SRC=/path/to/models ./dev/download-models.sh 0.6B
 ```
 
 The `cpu` engine builds from source (gcc + `libopenblas-dev`) at pack time. No
-network/GPU components — `snapcraft pack` produces `qwen_*.snap` +
-`qwen+model-0-6b.comp`.
+network/GPU components — `snapcraft pack` produces `myna-qwen_*.snap` +
+`myna-qwen+model-0-6b.comp`.
 
 Model IDs are `0-6b` / `1-7b` (component names can't contain dots): e.g.
-`qwen use-model 0-6b`.
+`myna-qwen.qwen use-model 0-6b`.
 
 ## Confined clients (the `ubustt-socket` slot)
 
@@ -48,7 +48,7 @@ share for strictly-confined clients — the `myna` dictation snap
 (`myna-snap/`):
 
 ```shell
-sudo snap connect myna:backend qwen:ubustt-socket
+sudo snap connect myna:backend myna-qwen:ubustt-socket
 ```
 
 The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.

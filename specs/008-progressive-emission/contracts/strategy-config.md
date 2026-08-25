@@ -29,11 +29,11 @@ myna-server --adapter sherpa   --streaming   # native recognizer endpointing
 Parakeet exposes the SilenceCut knobs through snapd config:
 
 ```sh
-sudo snap set parakeet \
+sudo snap set myna-parakeet \
     stream-arm-seconds=5 \
     stream-silence-cut-seconds=0.5 \
     stream-force-cut-seconds=60
-sudo snap restart parakeet.server
+sudo snap restart myna-parakeet.server
 ```
 
 The packaged defaults are 15 / 0.5 / 60 seconds. Sherpa's endpointing is

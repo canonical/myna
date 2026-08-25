@@ -2,7 +2,7 @@
 
 socket_path="$(modelctl get ws.unix-socket)"
 idle="$(modelctl get sleep-idle-seconds)"
-# `snap set parakeet stream-*=...` writes top-level snap config; modelctl's
+# `snap set myna-parakeet stream-*=...` writes top-level snap config; modelctl's
 # package config holds the install-time defaults. Prefer the user-visible
 # snapd value, then fall back to the package default.
 stream_arm="$(snapctl get stream-arm-seconds 2>/dev/null || true)"

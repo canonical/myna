@@ -15,7 +15,7 @@
 # As with the other snaps the server is myna-server on a Unix socket (no mic,
 # no TCP), weights ship as per-model components (run ./dev/download-models.sh
 # before packing), and there is no runtime download / `network`.
-name: qwen
+name: myna-qwen
 base: core24
 version: 0.1.0-dev
 assumes:

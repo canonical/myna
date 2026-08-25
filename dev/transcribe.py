@@ -1,6 +1,7 @@
 """Transcribe a fixture clip (or any WAV) against a running UbuSTT socket.
 
-    uv run python dev/transcribe.py --socket /var/snap/whisper/common/run/ubustt.sock quiet-weather
+    uv run python dev/transcribe.py \
+        --socket /var/snap/myna-whisper/common/run/ubustt.sock quiet-weather
     uv run python dev/transcribe.py --socket /tmp/ubustt.sock --wav some.wav
 
 Verification client for the whisper snap / myna-server: streams the audio at
@@ -45,7 +46,10 @@ async def main() -> None:
     source, reference = pick_source(args)
     pace = "as fast as possible" if args.batch else "at real-time pace"
     print(f"streaming audio {pace} to {args.socket} — events:")
-    print("(a cold server may download/load the model first; watch `snap logs -f whisper.server`)")
+    print(
+        "(a cold server may download/load the model first; "
+        "watch `snap logs -f myna-whisper.server`)"
+    )
 
     def show(te) -> None:
         ev = te.event

@@ -19,14 +19,14 @@ snapcraft pack
 
 ```bash
 sudo snap install --dangerous \
-    ./parakeet_*.snap \
-    ./parakeet+model-parakeet-int8.comp
+    ./myna-parakeet_*.snap \
+    ./myna-parakeet+model-parakeet-int8.comp
 ```
 
 The snap is CPU-only and does not require `hardware-observe`. Session socket:
 
 ```text
-/var/snap/parakeet/common/run/ubustt.sock
+/var/snap/myna-parakeet/common/run/ubustt.sock
 ```
 
 ## Streaming cadence
@@ -40,8 +40,8 @@ Defaults:
 Example for earlier chunks:
 
 ```bash
-sudo snap set parakeet stream-arm-seconds=5
-sudo snap restart parakeet.server
+sudo snap set myna-parakeet stream-arm-seconds=5
+sudo snap restart myna-parakeet.server
 ```
 
 Lower values commit sooner but decode more often and use less right context.

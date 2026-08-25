@@ -81,7 +81,7 @@ Paths follow the project structure from `plan.md`:
 - [x] T016 [US2] Create `funasr-snap/engines/cpu/engine.yaml` and runtimes/funasr-onnx-cpu/runtime.yaml`: modelctl engine manifest declaring the CPU engine, and runtime manifest declaring the Python venv as the runtime. Follow the `whisper-snap/engines/cpu/` and `whisper-snap/runtimes/faster-whisper-cpu/` patterns exactly, substituting `funasr-onnx-cpu` for `faster-whisper-cpu`.
 - [x] T017 [US2] Populate `funasr-snap/components/model-sensevoice-onnx/`: run `dev/fetch_funasr_model.py` with output directed to the component directory. Include `model.onnx` (or `model_quant.onnx`), `config.yaml`, `am.mvn`, `chn_jpn_yue_eng_ko_spectok.bpe.model`. Ensure the flat file layout matches what `SenseVoiceSmall(model_dir=...)` expects.
 
-**Checkpoint**: `sudo snap install --dangerous funasr_*.snap funasr+model-sensevoice-onnx.comp` → confined dictation works. Quickstart S6–S7 pass.
+**Checkpoint**: `sudo snap install --dangerous myna-funasr_*.snap myna-funasr+model-sensevoice-onnx.comp` → confined dictation works. Quickstart S6–S7 pass.
 
 ---
 

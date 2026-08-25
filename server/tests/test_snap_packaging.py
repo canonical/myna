@@ -36,12 +36,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # should be a deliberate addition here, not something that silently opts out.
 INFERENCE_SNAPS = {
     "whisper-snap": "myna-whisper",
-    "parakeet-snap": "parakeet",
-    "sherpa-snap": "sherpa",
+    "parakeet-snap": "myna-parakeet",
+    "sherpa-snap": "myna-sherpa",
     "funasr-snap": "myna-funasr",
-    "qwen-snap": "qwen",
-    "nemotron-snap": "nemotron",
-    "audio8-snap": "audio8",
+    "qwen-snap": "myna-qwen",
+    "nemotron-snap": "myna-nemotron",
+    "audio8-snap": "myna-audio8",
 }
 
 # The inference-snaps-cli (modelctl) release every snap must pin. One version
@@ -82,6 +82,39 @@ def test_name_matches_the_directory_mapping(snap) -> None:
     assert recipe["name"] == expected, (
         f"{snap_dir} builds {recipe['name']!r}; the benchmark runner and spread "
         f"tasks resolve artifacts by name and would look for {expected!r}"
+    )
+
+
+def test_name_is_namespaced_after_the_directory(snap) -> None:
+    """Every inference snap packs as ``myna-<adapter>``.
+
+    The mapping above is hand-maintained, so on its own it would happily
+    record a snap that dropped out of the namespace. Deriving the expected
+    name from the directory makes the invariant the thing under test: the
+    directory stays ``<adapter>-snap`` (it is where the adapter's sources
+    live), the snap is namespaced for the store.
+    """
+    snap_dir, expected, _ = snap
+    adapter = snap_dir.removesuffix("-snap")
+    assert expected == f"myna-{adapter}", (
+        f"{snap_dir} maps to {expected!r}, not 'myna-{adapter}' - inference "
+        "snaps are namespaced myna-* so they do not collide in the store"
+    )
+
+
+def test_cli_app_is_named_after_the_adapter(snap) -> None:
+    """modelctl answers on ``<snap>.<adapter>``, never on the bare snap name.
+
+    snapd exposes an app under its bare snap name only when the two match,
+    and namespacing means they never do. Spread's MODELCTL, the benchmark
+    configs' `cli:`, and every README invocation are spelled that way; this
+    is what stops a snap renaming its app and silently breaking all three.
+    """
+    snap_dir, name, recipe = snap
+    app_name, _ = _cli_app(recipe)
+    assert app_name == snap_dir.removesuffix("-snap"), (
+        f"{name}: modelctl app is {app_name!r}, so its entry point is "
+        f"{name}.{app_name} - callers expect {name}.{snap_dir.removesuffix('-snap')}"
     )
 
 

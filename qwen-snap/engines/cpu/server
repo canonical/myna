@@ -12,7 +12,7 @@ idle="$(modelctl get sleep-idle-seconds)"
 exec "$SNAP/bin/myna-server" \
     --adapter qwen-c \
     --socket "$socket_path" \
-    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: qwen use-model 0-6b}" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-qwen.qwen use-model 0-6b}" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
     "$@"

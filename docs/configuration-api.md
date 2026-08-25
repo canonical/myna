@@ -102,7 +102,7 @@ not on TCP.
 ### 3.2 CLI first; specify the shape a UI will later consume
 
 Per the meeting ("Configuration UI · Start with a CLI"), v1 is literally
-`modelctl` (aliased per-snap, e.g. `whisper set …`, `whisper use-model base`).
+`modelctl` (aliased per-snap, e.g. `myna-whisper.whisper set …`, `myna-whisper.whisper use-model base`).
 But we specify the *shape* of the eventual programmatic surface now so the CLI
 and a later programmatic API converge instead of diverging. The CLI is the first
 consumer of the same schema (§3.4) a GUI will later consume.
@@ -647,7 +647,7 @@ availability so the UI can show "installed / downloadable / incompatible"
       "type": "string",
       "scope": "package",
       "default": "$SNAP_COMMON/run/ubustt.sock",
-      "current": "/var/snap/whisper/common/run/ubustt.sock",
+      "current": "/var/snap/myna-whisper/common/run/ubustt.sock",
       "restart_required": true,
       "privileged": true,
       "advanced": true

@@ -13,7 +13,7 @@ idle="$(modelctl get sleep-idle-seconds)"
 exec python3 -m myna.server \
     --adapter audio8 \
     --socket "$socket_path" \
-    --model "${AUDIO8_MODEL_DIR:?AUDIO8_MODEL_DIR unset — is the model component installed? try: audio8 use-model audio8-asr-0.1b}" \
+    --model "${AUDIO8_MODEL_DIR:?AUDIO8_MODEL_DIR unset — is the model component installed? try: myna-audio8.audio8 use-model audio8-asr-0.1b}" \
     --device cuda \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \

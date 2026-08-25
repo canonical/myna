@@ -14,12 +14,12 @@ summary: Transcribe a clip through the whisper snap in batch and streaming modes
 
 environment:
     SNAP_UNDER_TEST: myna-whisper
-    # Project directory, which does NOT track the snap name (the snap was
-    # renamed to myna-whisper in d46ba9b; the directory stayed whisper-snap).
+    # Project directory, which does NOT track the snap name: the snaps are
+    # namespaced `myna-*`, the directories stayed `<adapter>-snap`.
     SNAP_DIR: whisper-snap
-    # The modelctl entry point. Not $SNAP_UNDER_TEST: the app is named
-    # `whisper` inside a snap named `myna-whisper`, so snapd exposes it as
-    # `myna-whisper.whisper`.
+    # The modelctl entry point. Never $SNAP_UNDER_TEST: every inference snap
+    # names its CLI app after the *adapter*, so snapd always exposes it as
+    # `<snap>.<adapter>` - here `myna-whisper.whisper`.
     MODELCTL: myna-whisper.whisper
     MODEL: tiny
 

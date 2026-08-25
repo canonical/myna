@@ -28,7 +28,14 @@ import sys
 from pathlib import Path
 
 MODELSCOPE_REPO = "botaruibo/SenseVoiceSmall-onnx"
+# Pinned upstream revision - see dev/model-pin.sh for why every fetcher does
+# this. A ModelScope tag rather than a commit: the hub does not expose a stable
+# commit id the way HF does, so this is the strongest identifier available.
+# Unlike the other fetchers there is no presence-skip to defeat here (this one
+# always re-resolves the snapshot and copies on size mismatch); the stamp below
+# is provenance, so a packed component can say what it carries.
 REVISION = "v1.0"
+STAMP_FILE = "UPSTREAM_REVISION"
 
 
 def main() -> int:
@@ -126,6 +133,7 @@ def main() -> int:
     if fp32_path.exists():
         print(f"   model.onnx present (fp32, ~{fp32_path.stat().st_size // (1024 * 1024)}MB)")
 
+    (target / STAMP_FILE).write_text(f"{MODELSCOPE_REPO}@{REVISION}\n", encoding="utf-8")
     print(f"✅ FunASR model staged to {target}")
     return 0
 

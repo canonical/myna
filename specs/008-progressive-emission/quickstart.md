@@ -40,16 +40,16 @@ pattern pinned in `results/spike-s2-nemo-streaming.md`.
 
 ```sh
 sudo snap install --dangerous \
-    parakeet_*.snap parakeet+model-parakeet-int8.comp
+    myna-parakeet_*.snap myna-parakeet+model-parakeet-int8.comp
 sudo snap install --dangerous \
-    sherpa_*.snap sherpa+model-fastconformer-480ms.comp
+    myna-sherpa_*.snap myna-sherpa+model-fastconformer-480ms.comp
 ```
 
 Parakeet:
 
 ```sh
 ./client/target/release/myna-dictate \
-    --socket /var/snap/parakeet/common/run/ubustt.sock \
+    --socket /var/snap/myna-parakeet/common/run/ubustt.sock \
     --mode streaming --clip <real clip>
 ```
 
@@ -57,15 +57,15 @@ Expected: committed `»` chunks after the configured arm plus a pause; no `~`
 partials. Default arm is 15 s; adjust with:
 
 ```sh
-sudo snap set parakeet stream-arm-seconds=5
-sudo snap restart parakeet.server
+sudo snap set myna-parakeet stream-arm-seconds=5
+sudo snap restart myna-parakeet.server
 ```
 
 Sherpa:
 
 ```sh
 ./client/target/release/myna-dictate \
-    --socket /var/snap/sherpa/common/run/ubustt.sock \
+    --socket /var/snap/myna-sherpa/common/run/ubustt.sock \
     --mode streaming --show-unstable --clip <real clip>
 ```
 

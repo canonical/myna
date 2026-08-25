@@ -20,7 +20,7 @@ the shape of the trade-off:
 Labels come out as ``<snap>/<engine>/<model>/<mode>``.
 
     sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml
-    sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml --only whisper
+    sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml --only myna-whisper
     uv run python dev/matrix.py --config dev/matrix.yaml --dry-run
 
 Call ``server/.venv``'s interpreter directly rather than going through
@@ -83,14 +83,14 @@ DEFAULT_SWEEP_BUDGET_S = 600.0
 # builds. Anything else on the machine is off limits, whatever the config says.
 PURGEABLE = frozenset(
     {
-        "whisper",
-        "parakeet",
-        "sherpa",
-        "qwen",
-        "nemotron",
+        "myna-whisper",
+        "myna-parakeet",
+        "myna-sherpa",
+        "myna-qwen",
+        "myna-nemotron",
         "myna-funasr",
         "myna-fake-backend",
-        "audio8",
+        "myna-audio8",
     }
 )
 
@@ -209,7 +209,7 @@ def _declared_components(snap_dir: Path) -> set[str]:
     """Component names from the project's snapcraft.yaml.
 
     The .comp files on disk are not authoritative: a directory accumulates
-    artifacts from branches and renames (qwen+qwen-vllm.comp outlived the vLLM
+    artifacts from branches and renames (myna-qwen+qwen-vllm.comp outlived the vLLM
     branch by two months). Installing an undeclared component fails, so trust
     the manifest and ignore the debris.
     """

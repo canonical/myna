@@ -1,7 +1,7 @@
 """Sweep fixture clips against a running UbuSTT socket and score them.
 
     # whichever engine the snap has active is what you measure — label it:
-    uv run python dev/bench.py --socket /var/snap/whisper/common/run/ubustt.sock \
+    uv run python dev/bench.py --socket /var/snap/myna-whisper/common/run/ubustt.sock \
         --label nvidia-gpu/small
 
     uv run python dev/bench.py --socket /tmp/ubustt.sock --category quiet quiet-weather
@@ -13,7 +13,7 @@ record per clip to a results file (default: results/bench.jsonl).
 
 The socket does not reveal which engine/model served the request, so the run
 is tagged with whatever you pass to --label. Switch the snap's engine
-(`sudo whisper use-engine cpu|nvidia-gpu`) and re-run with a new label to
+(`sudo myna-whisper.whisper use-engine cpu|nvidia-gpu`) and re-run with a new label to
 compare. This is the seed of the T11 matrix runner.
 """
 

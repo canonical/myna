@@ -9,7 +9,7 @@
 #     on a CUDA box and expect to iterate on LD_LIBRARY_PATH (torch bundles its
 #     own CUDA libs).
 #   - model ships as a .nemo checkpoint component (no runtime download).
-name: nemotron
+name: myna-nemotron
 base: core24
 version: 0.1.0-dev
 assumes:

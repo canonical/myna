@@ -4,7 +4,7 @@
         [--profile dev|snap|full] [--target DIR]
 
 Downloads the publisher's self-contained ONNX runtime release from Hugging Face
-(``Audio8/Audio8-ASR-0.1B-onnx-runtime``) — the engine source
+(``Audio8/Audio8-ASR-0.1B-onnx-runtime``, pinned to REVISION) — the engine source
 (``asr_onnx_runtime.py`` + ``hotword/``) AND the ``model_bundle/`` graphs. The
 adapter loads the engine from the staged directory (``AUDIO8_MODEL_DIR`` env
 override, else the HF cache snapshot); nothing CC-BY-NC-licensed is committed
@@ -32,6 +32,12 @@ import sys
 from pathlib import Path
 
 REPO_ID = "Audio8/Audio8-ASR-0.1B-onnx-runtime"
+# Pinned upstream revision. Unpinned, snapshot_download resolves the repo's
+# current main at fetch time, so the same command months apart can stage
+# different graphs under one snap version - see dev/model-pin.sh. The publisher
+# ships the engine *source* alongside the weights here, so a floating pin moves
+# executable code too, not just tensors.
+REVISION = "5b6d058a54853700223dd23cb4fe466b86c8fece"
 LICENSE = "CC-BY-NC-4.0"
 
 # Engine source + license + bundle metadata/tokenizer, required by every profile.
@@ -127,8 +133,13 @@ def main() -> int:
     from huggingface_hub import snapshot_download
 
     allow = list(_PROFILES[args.profile])
-    print(f"⬇️  Downloading {REPO_ID} (profile={args.profile}, {len(allow)} patterns)...")
-    snapshot_dir = Path(snapshot_download(REPO_ID, allow_patterns=allow, repo_type="model"))
+    print(
+        f"⬇️  Downloading {REPO_ID}@{REVISION[:12]} "
+        f"(profile={args.profile}, {len(allow)} patterns)..."
+    )
+    snapshot_dir = Path(
+        snapshot_download(REPO_ID, revision=REVISION, allow_patterns=allow, repo_type="model")
+    )
     print(f"   Staged at: {snapshot_dir}")
 
     required = ("asr_onnx_runtime.py", "model_bundle/metadata.json", "model_bundle/tokenizer.json")
@@ -146,6 +157,7 @@ def main() -> int:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 if not dst.exists() or dst.stat().st_size != src.stat().st_size:
                     shutil.copy2(src, dst)
+        (args.target / "UPSTREAM_REVISION").write_text(f"{REVISION}\n", encoding="utf-8")
         print(f"✅ Audio8 runtime + bundle copied to {args.target}")
     else:
         print(f"✅ Audio8 runtime + bundle ready at {snapshot_dir}")

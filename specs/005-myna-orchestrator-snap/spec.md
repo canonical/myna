@@ -82,7 +82,7 @@ writable shares (the named-socket case in snapd's content interface).
 **Acceptance Scenarios**:
 
 1. **Given** the rebuilt `whisper` snap installed and serving, **When**
-   `myna:backend` connects to `whisper:ubustt-socket`, **Then**
+   `myna:backend` connects to `myna-whisper:ubustt-socket`, **Then**
    `$SNAP_DATA/backend/run/ubustt.sock` is the live session socket and a session
    round-trips.
 2. **Given** any of whisper/nemotron/qwen providing the slot, **When** the
@@ -160,7 +160,7 @@ CI, not on a developer machine.
 
 - **SC-001**: `snapcraft pack` produces `myna_0.1.0-dev_amd64.snap`; it
   installs `--dangerous` with strict confinement.
-- **SC-002**: With `myna:pipewire` and `myna:backend ← whisper:ubustt-socket`
+- **SC-002**: With `myna:pipewire` and `myna:backend ← myna-whisper:ubustt-socket`
   connected, a confined session against the whisper snap completes end to
   end (testbed WAV clip round-trip; daemon trigger path exercised).
 - **SC-003**: `org.myna.Dictation` is owned and updates live while the

@@ -12,7 +12,7 @@
 # faster-whisper-cuda component installed.
 set -euo pipefail
 
-SOCKET="${1:-/var/snap/whisper/common/run/ubustt.sock}"
+SOCKET="${1:-/var/snap/myna-whisper/common/run/ubustt.sock}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO_ROOT/results/bench.jsonl"
 
@@ -41,9 +41,9 @@ rm -f "$OUT"
 for cfg in "${CONFIGS[@]}"; do
   read -r engine model <<<"$cfg"
   echo "=== $engine/$model ==="
-  sudo whisper use-engine "$engine" --assume-yes
-  sudo whisper use-model "$model" --assume-yes
-  sudo snap restart whisper.server
+  sudo myna-whisper.whisper use-engine "$engine" --assume-yes
+  sudo myna-whisper.whisper use-model "$model" --assume-yes
+  sudo snap restart myna-whisper.server
   wait_for_socket
   # Cold sample: the very first request loads the model. Captured as its own
   # tagged record (--cold) so it doesn't pollute the warm sweep.

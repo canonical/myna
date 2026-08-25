@@ -25,23 +25,27 @@ sweep_budget_seconds: 600
 # downloaded. The snap and its components are installed and removed together.
 #
 # Optional per-target keys:
-#   cli:     snap CLI command (default: snap name, e.g. "whisper")
+#   cli:     modelctl command (default: the snap name). Every Myna inference
+#            snap names its CLI app after the adapter, not the snap, so the
+#            default never applies here: spell it out as "<snap>.<adapter>".
 #   service: snap service name (default: <snap>.server)
 #   socket:  UDS path (default: /var/snap/<snap>/common/run/ubustt.sock)
 #   models:  allowlist of model names to sweep (default: all available)
 #   streaming_configs: list of {label, settings} to sweep at multiple
 #            streaming knob values (only applied when streaming=true)
 targets:
-  - snap: whisper
+  - snap: myna-whisper
+    cli: myna-whisper.whisper
     files:
-      - ./snaps/whisper_<version>_amd64.snap
-      - ./snaps/whisper+cpu.comp
-      # - ./snaps/whisper+nvidia-gpu.comp  # uncomment if you have an NVIDIA GPU
+      - ./snaps/myna-whisper_<version>_amd64.snap
+      - ./snaps/myna-whisper+cpu.comp
+      # - ./snaps/myna-whisper+nvidia-gpu.comp  # uncomment if you have an NVIDIA GPU
 
-  - snap: parakeet
+  - snap: myna-parakeet
+    cli: myna-parakeet.parakeet
     files:
-      - ./snaps/parakeet_<version>_amd64.snap
-      - ./snaps/parakeet+cpu.comp
+      - ./snaps/myna-parakeet_<version>_amd64.snap
+      - ./snaps/myna-parakeet+cpu.comp
     streaming_configs:
       - label: arm3s
         settings:
@@ -53,10 +57,11 @@ targets:
         settings:
           stream-arm-seconds: "15"
 
-  - snap: sherpa
+  - snap: myna-sherpa
+    cli: myna-sherpa.sherpa
     files:
-      - ./snaps/sherpa_<version>_amd64.snap
-      - ./snaps/sherpa+cpu.comp
+      - ./snaps/myna-sherpa_<version>_amd64.snap
+      - ./snaps/myna-sherpa+cpu.comp
 
   - snap: myna-funasr
     cli: myna-funasr.funasr
