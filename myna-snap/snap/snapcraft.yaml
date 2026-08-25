@@ -56,6 +56,37 @@ apps:
   # data that came with it.
   myna:
     command: bin/myna-daemon
+    # A per-user systemd service, started at login and supervised
+    # (`WantedBy=default.target`, `Restart=on-failure`, `RestartSec=1s`).
+    # Reachable as `snap services|start|stop|logs myna`.
+    #
+    # INSTALL PRECONDITION: snapd rejects the *install* of any snap declaring a
+    # user daemon unless `experimental.user-daemons` is set or the snap-id is on
+    # the hardcoded allowlist in overlord/snapstate/snapstate.go:82 (checked at
+    # :561, snapd 2.77). A local or `--dangerous` install has no snap-id at all,
+    # so dev and CI need:
+    #
+    #   sudo snap set system experimental.user-daemons=true
+    #
+    # The store path is a snapd PR adding this snap's id to that list, which
+    # needs the name registered and uploaded first.
+    #
+    # NOT `activates-on: [dictation]`: that omits the [Install] section
+    # entirely (wrappers/internal/service_unit_gen.go:214), making the unit
+    # on-demand only. Nothing would hold the global hotkey until something
+    # addressed org.myna.Dictation, and the only natural poker is the
+    # myna-shell extension, which is not packaged. The hotkey IS the entry
+    # point, so it has to be held from login.
+    #
+    # Starting against `default.target` means PAM login - before the
+    # compositor, PipeWire, IBus and the portal (the `graphical-session.target`
+    # ordering for desktop-plugging user daemons was added in snapd 2.74 and
+    # reverted in 2.74.1, LP #2141607). That is safe because myna-desktop
+    # treats all four as things that come and go: it binds activation with
+    # backoff, connects IBus at the first press, and resolves the backend
+    # socket per press. See docs/deployment-architecture.md §2a and §4.
+    daemon: simple
+    daemon-scope: user
     plugs:
       - pipewire # mic capture — snapd gates it: `snap connect myna:pipewire`
       - desktop # portals (GlobalShortcuts hotkey) + desktop notifications

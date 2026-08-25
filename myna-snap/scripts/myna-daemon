@@ -1,6 +1,12 @@
 #!/bin/sh
-# myna daemon launcher (snap): the shipped default wiring for myna-desktop
-# against the backend socket shared over the `backend` content interface.
+# myna daemon launcher (snap): the ExecStart of the per-user systemd service
+# (`daemon: simple` + `daemon-scope: user`), wiring myna-desktop up against the
+# backend socket shared over the `backend` content interface.
+#
+# The unit starts at PAM login, which is before the compositor, PipeWire, IBus
+# and the portal exist. Nothing here waits for them and nothing here checks for
+# them: myna-desktop treats all four as things that come and go, so the only
+# job left for this script is to say *where* things are.
 #
 # The launcher deliberately passes no activation, indicator or preedit flags:
 # myna-desktop resolves all three itself (portal activation because $SNAP is
@@ -8,17 +14,22 @@
 # from the persisted streaming mode). Anything this script "helpfully" pinned
 # here would be a default the user cannot see and cannot change.
 #
-# The backend, by contrast, is *not* resolved: exactly one must be connected.
-# snapd de-duplicates content targets by suffix, so a second connected backend
-# lands at backend/run-2, and a hardcoded backend/run would silently dictate
-# through whichever snap happened to connect first - and swap under you when a
-# backend is reinstalled.
+# The backend is handed over as a *directory*, not a socket. snapd appends the
+# slot's source basename to the content target, so the share lands at
+# $SNAP_DATA/backend/run (and run-2, run-3, … for further connections), a
+# `snap refresh` of the backend re-creates it, and before the first
+# `snap connect` there is nothing there at all. myna-desktop re-resolves it at
+# every press, so a backend installed, connected or refreshed *after* login
+# needs no restart, and "no backend yet" shows on the indicator instead of
+# taking the daemon down. Deciding it here, once, would have made the daemon's
+# whole lifetime hostage to the state of the mount at login.
 #
 # Env knobs (all optional):
-#   MYNA_BACKEND_SOCKET  backend socket path (bypasses the check below)
+#   MYNA_BACKEND_SOCKET  exact backend socket path (bypasses the share)
 #   MYNA_LANGUAGE        language hint for the session config
-# Extra args go straight to myna-desktop, e.g. `myna --target <node.name>` or
-# `myna --control` to force control-socket activation on a non-portal desktop.
+# Extra args go straight to myna-desktop. As a daemon app this has no
+# /snap/bin entry (wrappers/binaries.go:218 skips services), so pass them with
+# `snap stop myna && snap run myna --stdin`, or via the unit's environment.
 set -eu
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -30,48 +41,13 @@ fi
 . "$SNAP/bin/myna-runtime-links"
 
 if [ -n "${MYNA_BACKEND_SOCKET:-}" ]; then
-    socket="$MYNA_BACKEND_SOCKET"
-    if [ ! -S "$socket" ]; then
-        echo "myna: MYNA_BACKEND_SOCKET is not a socket: $socket" >&2
-        exit 1
-    fi
+    set -- --socket "$MYNA_BACKEND_SOCKET" "$@"
 else
-    # snapd appends the slot's source basename to the content target, so the
-    # share of $SNAP_COMMON/run lands at $SNAP_DATA/backend/run (and run-2,
-    # run-3, … for further connections).
-    socket=""
-    found=0
-    for candidate in "$SNAP_DATA"/backend/run*/ubustt.sock; do
-        [ -S "$candidate" ] || continue
-        found=$((found + 1))
-        socket="$candidate"
-    done
-
-    if [ "$found" -eq 0 ]; then
-        echo "myna: no backend is connected" >&2
-        echo "  install a backend snap and connect it, e.g.:" >&2
-        echo "    sudo snap connect myna:backend myna-whisper" >&2
-        echo "  (or point MYNA_BACKEND_SOCKET at a session socket)" >&2
-        exit 1
-    fi
-
-    if [ "$found" -gt 1 ]; then
-        echo "myna: $found backends are connected; myna dictates through one." >&2
-        echo "  Which one answers would be decided by the order they were" >&2
-        echo "  connected - not by you, and it can change when you reinstall" >&2
-        echo "  a backend - so this is an error rather than a guess." >&2
-        echo "  Confinement hides which snap is behind which mount, so list" >&2
-        echo "  them and disconnect all but the one you want:" >&2
-        echo "    snap connections myna" >&2
-        echo "    sudo snap disconnect myna:backend <snap>:ubustt-socket" >&2
-        exit 1
-    fi
+    set -- --backend-dir "$SNAP_DATA/backend" "$@"
 fi
 
-args="--socket $socket"
 if [ -n "${MYNA_LANGUAGE:-}" ]; then
-    args="$args --language $MYNA_LANGUAGE"
+    set -- --language "$MYNA_LANGUAGE" "$@"
 fi
 
-# shellcheck disable=SC2086
-exec "$SNAP/bin/myna-desktop" $args "$@"
+exec "$SNAP/bin/myna-desktop" "$@"
