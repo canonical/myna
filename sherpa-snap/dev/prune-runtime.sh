@@ -11,13 +11,15 @@
 # regression surfaces here instead of on a user's first transcribe.
 set -euo pipefail
 
-site="$1"
-python="$2"
+# `:?` rather than a bare assignment: every rm below builds a path from $site,
+# and an empty one would aim them at /.
+site="${1:?site directory required}"
+python="${2:?python interpreter required}"
 
 drop() {
 	local p
 	for p in "$@"; do
-		rm -rf "$site/$p" "$site/${p}-"*.dist-info
+		rm -rf "${site:?}/$p" "${site:?}/${p}-"*.dist-info
 	done
 }
 
@@ -36,7 +38,10 @@ rm -rf "$site"/onnxruntime/transformers "$site"/onnxruntime/quantization \
 	"$site"/onnxruntime/tools "$site"/onnxruntime/datasets \
 	"$site"/onnxruntime/backend
 
-drop ${PRUNE_DROP:-}
+# PRUNE_DROP is a space-separated list from the calling snapcraft part, so it
+# has to split - through an array, not by leaving an expansion unquoted.
+read -ra extra_drops <<<"${PRUNE_DROP:-}"
+drop "${extra_drops[@]}"
 
 PYTHONPATH="$site${PYTHONPATH:+:$PYTHONPATH}" "$python" -c "${PRUNE_GATE:?gate required}"
 echo "prune-runtime: gate passed"

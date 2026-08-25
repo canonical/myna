@@ -618,11 +618,7 @@ class BackendTab(Scrollable):
         if not cmds:
             messagebox.showinfo("Nothing to apply", "No values changed.")
             return
-        note = (
-            "\n\nmodelctl restarts the backend; the socket drops briefly."
-            if restart
-            else ""
-        )
+        note = "\n\nmodelctl restarts the backend; the socket drops briefly." if restart else ""
         self.app.privileged(
             cmds, f"Apply {len(cmds)} change(s) to {self.snap}{note}", after=self.reload
         )

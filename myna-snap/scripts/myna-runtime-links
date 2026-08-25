@@ -7,10 +7,9 @@
 # symlink to the host path, which the pipewire interface allows. Sourced
 # (not exec'd) by the app wrappers. wayland-0 was linked here too until the
 # GTK overlay left: nothing in the snap draws any more.
-for sock in pipewire-0; do
-    host="$XDG_RUNTIME_DIR/../$sock"
-    link="$XDG_RUNTIME_DIR/$sock"
-    if [ -S "$host" ] && [ ! -e "$link" ]; then
-        ln -s "$host" "$link" 2>/dev/null || true
-    fi
-done
+sock=pipewire-0
+host="$XDG_RUNTIME_DIR/../$sock"
+link="$XDG_RUNTIME_DIR/$sock"
+if [ -S "$host" ] && [ ! -e "$link" ]; then
+    ln -s "$host" "$link" 2>/dev/null || true
+fi
