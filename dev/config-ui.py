@@ -58,7 +58,9 @@ ADVANCED = {"ws.unix-socket", "verbose"}
 
 def run(cmd, timeout=TIMEOUT):
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
+        )
         return p.returncode, p.stdout, p.stderr
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         return 127, "", str(exc)
@@ -607,17 +609,17 @@ class BackendTab(Scrollable):
             if new == current or new == "":
                 continue
             if kind == "selector":
-                cmds.append(self.cli() + [verb, str(new)])
+                cmds.append(self.cli() + [verb, str(new), "--assume-yes"])
                 restart = True
             else:
                 literal = str(new).lower() if isinstance(new, bool) else str(new)
-                cmds.append(self.cli() + ["set", f"{key}={literal}"])
+                cmds.append(self.cli() + ["set", f"{key}={literal}", "--assume-yes"])
                 restart = restart or key not in NO_RESTART
         if not cmds:
             messagebox.showinfo("Nothing to apply", "No values changed.")
             return
         note = (
-            "\n\nThe configure hook restarts the backend; the socket drops briefly."
+            "\n\nmodelctl restarts the backend; the socket drops briefly."
             if restart
             else ""
         )
