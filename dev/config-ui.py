@@ -627,19 +627,26 @@ class BackendTab(Scrollable):
 
     # -- live poll -------------------------------------------------------
     def update_live(self, live):
+        """One dict keyed by STATUS_FIELDS, so a renamed field cannot leave the
+        writer pointing at a label that no longer exists."""
         self.live = live
         st = self.data.get("status") or {}
         entry = (st.get("entrypoints") or {}).get("ubustt") or {}
         svc = ", ".join(f"{k}={v}" for k, v in (st.get("services") or {}).items())
-        self.status_labels["service"].set(f"{live.get('state', '?')}  ({svc or 'no services'})")
-        self.status_labels["engine"].set(st.get("engine", "-"))
-        self.status_labels["model"].set((self.data.get("models") or {}).get("active-model", "-"))
-        self.status_labels["socket"].set(entry.get("unix-socket", "-"))
-        self.status_labels["memory"].set(human_bytes(live.get("mem")))
-        self.status_labels["peak"].set(human_bytes(live.get("peak")))
-        self.status_labels["cpu time"].set(f"{live.get('cpu', 0) / 1e9:.0f}s")
-        self.status_labels["disk"].set(human_bytes(live.get("disk")))
-        self.status_labels["since"].set(live.get("since", "-") or "-")
+        values = {
+            "service": f"{live.get('state', '?')}  ({svc or 'no services'})",
+            "engine": st.get("engine", "-"),
+            "model": (self.data.get("models") or {}).get("active-model", "-"),
+            "socket": entry.get("unix-socket", "-"),
+            "memory": human_bytes(live.get("mem")),
+            "peak": human_bytes(live.get("peak")),
+            "cpu": f"{live.get('cpu', 0) / 1e9:.0f}s",
+            "disk": human_bytes(live.get("disk")),
+            "up": live.get("since", "-") or "-",
+        }
+        assert set(values) == set(self.STATUS_FIELDS), "status fields drifted from their writer"
+        for key, value in values.items():
+            self.status_labels[key].set(value)
 
 
 class ClientTab(Scrollable):
