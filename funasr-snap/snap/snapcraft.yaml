@@ -118,6 +118,12 @@ parts:
       cp "$CRAFT_PROJECT_DIR/shims/librosa.py" "$CRAFT_PROJECT_DIR/shims/jieba.py" "$site/"
       # Fail the build loudly if the prune/shim didn't land (no set -e here).
       test -f "$site/librosa.py" && test -f "$site/jieba.py" && test ! -d "$site/llvmlite"
+      # onnxruntime stays - it is the runtime. This takes its build-time
+      # tooling and numpy's tests, and gates the shims above by importing
+      # through them.
+      export PRUNE_GATE="import funasr_onnx, onnxruntime; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PRIME/bin/python3"
+      rm -f "$CRAFT_PRIME"/bin/pip* "$CRAFT_PRIME"/bin/onnxruntime_test
 
   engines:
     plugin: dump
