@@ -106,6 +106,16 @@ parts:
       - ./myna-0.0.1-py3-none-any.whl[whisper]
     build-packages:
       - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # faster-whisper declares onnxruntime (and so protobuf/flatbuffers) only
+      # to run the bundled Silero VAD, lazily from vad.py. The adapter passes
+      # vad_filter=False streaming and takes this default when batching.
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/onnxruntime_test "$CRAFT_PART_INSTALL"/bin/pip*
 
   engines:
     plugin: dump
@@ -170,11 +180,26 @@ parts:
       [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
       target="$CRAFT_PART_INSTALL/site-packages"
       mkdir -p "$target"
+      # No nvidia-cudnn-cu12: CTranslate2 4.8's CUDA backend is cuBLAS-only.
+      # It carries no DT_NEEDED, no dlopen name and not one "cudnn" string,
+      # and the wheel declares no CUDA deps at all. cuBLAS pulls NVRTC itself.
       pip3 install --target="$target" \
         ./myna-0.0.1-py3-none-any.whl[whisper] \
         ctranslate2 \
-        nvidia-cublas-cu12 \
-        nvidia-cudnn-cu12
+        nvidia-cublas-cu12
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
+      nvidia="$target/nvidia"
+      # The .alt NVRTC is a second codegen build nothing here dlopens - the
+      # only binary naming it is itself. libnvrtc.so.12 stays; cuBLASLt JITs
+      # through it, and it wants the matching non-alt builtins.
+      rm -f "$nvidia"/cuda_nvrtc/lib/libnvrtc.alt.so.* \
+            "$nvidia"/cuda_nvrtc/lib/libnvrtc-builtins.alt.so.*
+      # A LD_PRELOAD BLAS interposer for unmodified Fortran binaries, and
+      # headers for compiling against the stack. Neither has a runtime caller.
+      rm -f "$nvidia"/cublas/lib/libnvblas.so.*
+      rm -rf "$nvidia"/*/include
       craftctl default
     organize:
       "*": (component/faster-whisper-cuda)
