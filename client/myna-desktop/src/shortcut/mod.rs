@@ -9,5 +9,6 @@
 pub mod control;
 pub mod dbus;
 pub mod portal;
+pub mod retry;
 
 pub use myna_orchestrator::{Trigger, TriggerEdge};

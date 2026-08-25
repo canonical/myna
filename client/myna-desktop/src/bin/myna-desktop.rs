@@ -50,9 +50,11 @@ use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
-use myna_desktop::inject::ibus::IbusInjector;
+use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
-use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger};
+use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
+use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
+use myna_desktop::shortcut::Trigger;
 use myna_desktop::{DesktopController, Indicator};
 use myna_orchestrator::{
     run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
@@ -342,29 +344,81 @@ fn no_backend(e: myna_desktop::backend::ResolveError) -> (SessionRun, StopHandle
     (run, StopHandle::default())
 }
 
+/// Binds the portal shortcut, re-binding whenever the portal goes away.
+struct PortalRebind {
+    shortcut: Option<String>,
+    mode: ActivationMode,
+}
+
+#[async_trait::async_trait]
+impl Rebind for PortalRebind {
+    async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+        GlobalShortcutTrigger::bind("dictate", self.shortcut.as_deref(), self.mode)
+            .await
+            .map(|t| Box::new(t) as Box<dyn Trigger>)
+            .map_err(|e| match e {
+                // The request never reached a backend - retry quickly.
+                TriggerError::PortalUnavailable(_) => BindFailure::Unavailable(e.to_string()),
+                // BindShortcuts itself came back without a grant, which on
+                // GNOME means the user dismissed (or ignored) the confirm
+                // sheet. Asking again straight away just re-raises it.
+                TriggerError::BindRejected(_) => BindFailure::Refused(e.to_string()),
+            })
+    }
+}
+
+/// Binds the control socket. Retried too: `$XDG_RUNTIME_DIR` is created by
+/// pam_systemd, so a daemon that starts early can find it not there yet.
+struct ControlRebind {
+    path: PathBuf,
+}
+
+#[async_trait::async_trait]
+impl Rebind for ControlRebind {
+    async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+        // Always `Unavailable`: a socket bind has no user-facing step to
+        // refuse, so every failure is "not there yet" and worth retrying fast.
+        ControlTrigger::bind(&self.path)
+            .map(|t| Box::new(t) as Box<dyn Trigger>)
+            .map_err(|e| {
+                BindFailure::Unavailable(format!(
+                    "cannot bind control socket {}: {e}",
+                    self.path.display()
+                ))
+            })
+    }
+}
+
 /// Build and run the controller with the given indicator (tokio side).
+///
+/// Nothing here is allowed to end the process. Every boundary this composes -
+/// IBus, the portal, the control socket, the backend - is a thing that comes
+/// and goes independently of the daemon: IBus restarts on an input-source
+/// change, `xdg-desktop-portal` restarts, the backend socket is re-created by
+/// `snap refresh`, and at PAM login none of them exist yet. Treating any of
+/// them as a startup precondition turned "start before the compositor" into
+/// five restarts in five seconds and then a permanently failed unit, which is
+/// the *normal* boot for a user daemon, not a corner case.
+///
+/// So: connect the injector lazily ([`LazyInjector`], at the Press that needs
+/// it), retry activation forever ([`RetryingTrigger`]), resolve the backend
+/// per Press ([`no_backend`]) - and let each of them report itself on the
+/// indicator instead.
 async fn run_controller(
     args: Args,
     indicator: impl Indicator + 'static,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> ExitCode {
-    let injector = match IbusInjector::connect().await {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("cannot connect to IBus: {e}");
-            eprintln!("  (is an IBus daemon running? try `ibus restart` / check `ibus address`)");
-            return ExitCode::FAILURE;
-        }
-    };
-
     let builder = DesktopController::builder()
-        .injector(injector)
+        .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
-        .session(make_session(&args, readiness, pump_bus))
+        .session(make_session(&args, readiness, pump_bus.clone()))
         .preedit(resolve_preedit(args.preedit));
 
     let mut controller = match Activation::resolve(args.activation) {
+        // Debug only, and the one trigger whose end is a real user intent:
+        // Ctrl-D means "stop", so it is not retried.
         Activation::Stdin => builder.trigger(StdinTrigger::new()).build(),
         Activation::Portal => {
             let mode = if args.hold {
@@ -372,32 +426,33 @@ async fn run_controller(
             } else {
                 ActivationMode::Toggle
             };
-            match GlobalShortcutTrigger::bind("dictate", args.shortcut.as_deref(), mode).await {
-                Ok(trigger) => builder.trigger(trigger).build(),
-                Err(e) => {
-                    eprintln!("cannot bind the GlobalShortcuts portal: {e}");
-                    eprintln!("  (the portal only serves packaged apps; pass --control to use the");
-                    eprintln!("   control socket + a desktop custom shortcut instead)");
-                    return ExitCode::FAILURE;
-                }
-            }
+            let trigger = RetryingTrigger::new(PortalRebind {
+                shortcut: args.shortcut.clone(),
+                mode,
+            });
+            builder.trigger(with_status(trigger, pump_bus)).build()
         }
-        Activation::Control => match ControlTrigger::bind(control_path(&args)) {
-            Ok(trigger) => builder.trigger(trigger).build(),
-            Err(e) => {
-                eprintln!(
-                    "cannot bind control socket {}: {e}",
-                    control_path(&args).display()
-                );
-                return ExitCode::FAILURE;
-            }
-        },
+        Activation::Control => {
+            let trigger = RetryingTrigger::new(ControlRebind {
+                path: control_path(&args),
+            });
+            builder.trigger(with_status(trigger, pump_bus)).build()
+        }
     };
 
     banner(&args);
     controller.run().await;
     println!("bye");
     ExitCode::SUCCESS
+}
+
+/// Publish the "hotkey not bound yet" reason on `org.myna.Dictation` where
+/// there is a bus to publish it on.
+fn with_status(trigger: RetryingTrigger, bus: Option<SharedBus>) -> RetryingTrigger {
+    match bus {
+        Some(bus) => trigger.status_on(bus),
+        None => trigger,
+    }
 }
 
 fn banner(args: &Args) {

@@ -43,3 +43,8 @@ gtk4 = { version = "0.11", optional = true, features = ["v4_10"] }
 glib = { version = "0.22", optional = true }
 # Channel bridging the tokio controller to the GTK main-thread indicator loop.
 async-channel = { version = "2", optional = true }
+
+[dev-dependencies]
+# `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens
+# of seconds, so the tests advance tokio's clock instead of the wall clock.
+tokio = { workspace = true, features = ["test-util"] }

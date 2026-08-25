@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use futures_util::stream::BoxStream;
 
 pub mod ibus;
+pub mod lazy;
 pub mod mock;
 
 /// An opaque handle to the surface focused when the session started. Carries the
