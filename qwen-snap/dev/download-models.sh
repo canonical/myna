@@ -25,7 +25,7 @@ declare -A REVISIONS=(
 )
 
 # Reuse an already-downloaded model tree if MYNA_MODEL_SRC points at one
-# (expects $MYNA_MODEL_SRC/Qwen3-ASR-<size>/model.safetensors). Otherwise `hf
+# (expects $MYNA_MODEL_SRC/Qwen3-ASR-<size>/ to hold the weights). Otherwise `hf
 # download --local-dir` fetches straight into the component directory: it keeps
 # its own resume ledger under $out/.cache, but it does NOT dedup against
 # HF_HOME, so MYNA_MODEL_SRC is the only thing that saves the multi-GB download
@@ -41,18 +41,21 @@ for name in "${models[@]}"; do
     [ -n "$rev" ] || { echo "error: no pinned revision for Qwen3-ASR-${name}" >&2; exit 1; }
 
     out="$dest/Qwen3-ASR-${name}"
-    if [ -f "$out/model.safetensors" ]; then
+    # 0.6B ships one model.safetensors, 1.7B an index plus shards, so what marks
+    # a directory complete is the stamp pin_stamp writes after a good download.
+    staged="$(pin_revision_of "$out")"
+    if [ -n "$staged" ]; then
         if pin_is_current "$out" "$rev"; then
             echo "Qwen3-ASR-${name}: already present at $out — skipping"
             continue
         fi
-        staged="$(pin_revision_of "$out")"
-        echo "Qwen3-ASR-${name}: staged at ${staged:-an unpinned revision}, pin moved to ${rev:0:12} — restaging"
+        echo "Qwen3-ASR-${name}: staged at $staged, pin moved to ${rev:0:12} — restaging"
         rm -rf "$out"
     fi
 
     src="${src_root:+$src_root/Qwen3-ASR-${name}}"
-    if [ -n "$src" ] && [ -f "$src/model.safetensors" ]; then
+    if [ -n "$src" ] && { [ -f "$src/model.safetensors" ] ||
+                         [ -f "$src/model.safetensors.index.json" ]; }; then
         pin_check_source "$src" "$rev" "$0"
         echo "Qwen3-ASR-${name}: reusing local copy at $src (no download)"
         mkdir -p "$out"
