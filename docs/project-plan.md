@@ -1,86 +1,14 @@
 # Myna Project Plan
 
-**Created:** 2026-06-12 · **Last updated:** 2026-08-25
-
-**Feature 006 (coverage & quality gates, 2026-08-10):** implemented on
-integration-220627 — one-command Rust/Python coverage (`workshop run myna
-cov` / `py-cov`), instrumented use-case exercise + merged populations and
-dead-code report (`exercise`, `deadcode`), self-hosted 80% patch-coverage
-gate per PR (`patch-cov`), static battery (fmt / machete / cargo-deny
-offline-invariant / ruff / mypy-strict-core / shellcheck / actionlint), weekly
-advisory audits, and the spread evaluation (verdict: **adopt**; decision
-record + confined-e2e suite + fake-backend test snap in `fake-snap/`,
-`spread.yaml`, `tests/spread/`, nightly `.github/workflows/spread.yml` —
-first VM/CI validation pending). Spec/tasks: `specs/006-coverage-quality-gates/`.
-**Status:** Living document — update task status in place as work lands.
-
-This plan turns IE114 (UbuSTT API), UD129 (Desktop STT Integration), and the
-testbed phasing from CLAUDE.md into assignable tasks. Task IDs are stable;
-reference them in branches and PRs (e.g. `t02-fake-adapter`).
-
-**IE115 (2026-06-17):** a competing braindump proposing a WebSocket API shaped
-on OpenAI's Realtime API has appeared (`IE115-spec.txt`). It does *not* yet
-supersede IE114 — it is still a braindump. It happens to ratify the two pivots
-we already made against IE114 (audio-push + WebSocket), but imports a lot of
-OpenAI speech-to-speech baggage that a local transcriber doesn't want.
-Reconciliation is **Workstream F**; our push-backs live in
-`docs/IE115-deviations.md`.
-
-**Update (2026-07-01):** Workstream F is resolved. The team decided IE115 will be
-a *suitable subset* of OpenAI's Realtime API (compatibility + remote-backend +
-industry-contribution reasons), extended with additive events. Our liveness event
-and capabilities discovery were adopted; the flat-profile and drop-conversation-
-item push-backs were overruled for compatibility; translation is out of scope.
-Full mapping in `docs/IE115-resolution.md`; async lifecycle diagrams in
-`docs/architecture/ie115-lifecycle.md`. Remaining open: error taxonomy (T31 —
-with the recorded requirement that the disposition ride the wire, see the T31
-row), backend discovery / model selection (T48), overload-lag signal, GPU
-memory pressure. Versioning (T35) is now settled *including* the IE115 dialect
-(2026-07-06): the vocabulary is additive on both dialects (unknown events are
-ignored, version bumps reserved for semantic changes), IE115 is declared
-unversioned-additive, and the server announces its `protocol_version` on the
-`session.created` greeting it sends on every connect (`ie115-wire.md` §1).
-Next focus shifts to the **orchestrator subsystem** (Charles) and the
-inference snap server (Ivano).
-
-**Update (2026-07-26):** the UD136 UX spec (*Ubuntu Desktop Speech-to-text UX*,
-Juan Ruitiña, drafting / under review) lands the product direction for the
-desktop experience: an accessibility-first keyboard trigger (KEY_DICTATE/
-XF86Dictate hardware key preferred, a configurable default combo — Super+J
-suggested), OSK / context-menu / app-triggered entry points (the latter two
-post-MVP), a state-cue model with visual + **sound** feedback, an explicit
-error-state list, and — the big engineering consequence — **transcription
-visible as the user speaks**. That reverses the earlier "unstable partials
-dropped as confusing" stance: a **streaming mode ships alongside batch mode**,
-user-configurable and **gated on hardware tier**. The review thread steers the
-display semantics toward **chunks of committed text** shown progressively (not
-last-wins rewritten hypotheses), which ratifies the append-only revision
-contract T08's design note recommended; the spec body still shows an
-uncommitted in-field "hypothesis" with differentiating formatting — contested
-in review, to close with design. Also reviewed 2026-07-26: the colleagues'
-**canonical/whisper-snap** (Go IE115 adapter + Collabora WhisperLive, snap
-packaging in PR #2) — a live IE115 **streaming** peer we can experiment
-against before our server grows streaming; findings folded into T08/T63.
-Folded in: T08 (streaming, now a requirement), new tasks T58–T62 (D, from
-UD136), T63 (F, interop fixture).
-
-Open spec questions (transport, event vocabulary, capabilities discovery,
-error model, performance contract) are tracked as tasks in workstream E so
-they get owners instead of lingering.
+Living project plan for Myna. Task IDs are stable.
 
 ## Workstreams
 
-- **A — Testbed** (phases 0–4): produce the evaluation matrix and
-  reference-hardware tiers.
-- **B — Inference snap**: an IE114-conformant ASR inference snap, modelled on
-  the qwen3/gemma4 snaps in `reference/`.
-- **C — Transport**: the real IE114 wire protocol, behind the existing
-  abstraction.
-- **D — Desktop client**: the UD129 dictation experience, UX specified by
-  **UD136** (2026-07-22, under review — implications folded into T58–T62).
-  Taken over by Charles (2026-07-07), starting with the audio adapter as a
-  Rust crate (T49–T52).
-- **E — Spec work**: feed findings back into IE114/UD129.
+- **A — Testbed**  benchmarking and evaluation hardness.
+- **B — Inference snaps**: snap architecture for speech-to-text.
+- **C — Transport**: the wire protocol design.
+- **D — Desktop client**: the end-user system to interact with Myna.
+- **E — Spec work**: Canonical discussions and review.
 - **F — IE115 reconciliation**: integrate the IE115 WebSocket proposal where it
   improves on IE114, and document where we deviate from its OpenAI-Realtime
   lineage. Feeds E (it *is* spec work, but kept separate so the IE115 decisions
@@ -189,7 +117,6 @@ Design decisions (2026-07-07):
 | T52 | **Native `pipewire-rs` backend** behind the same `CaptureBackend` seam | done | Charles | T51 | **Done via the spec-kit flow (feature `002-native-pipewire-backend`, 2026-07-15).** `PipeWireBackend` (`myna-audio::native`): a dedicated PipeWire main-loop thread owns a capture `Stream`; the `process` callback pushes PCM straight into the ring (never blocks), a ≤100 ms stop-poll timer honors graceful-stop/abort within the §5 promptness bound. Requests **S16LE at the negotiated rate/channels** so the graph resamples/downmixes (§7, FR-003); node selection by stable `node.name` via `PW_KEY_TARGET_OBJECT` + `DONT_RECONNECT` (a chosen device that vanishes faults; a *bogus* target falls back to default — documented platform limitation, pw-record did the same); **channel pick/downmix** = request `max(idx)+1` graph channels then interleaved-S16 select+average to the negotiated layout. **Live device enumeration** is a sibling API `InputDevices` (registry watch on its own loop thread, `list()` + `watch::Receiver<Vec<InputDevice>>`); `myna-dictate --list-devices` shows it live (verified: two internal mics, then AirPods Pro appearing). `myna-cli --mic` switched to the native backend. **Verified on live PipeWire (this machine):** 10 env-gated integration tests (`MYNA_PIPEWIRE_TESTS=1`, `tests/pipewire_hw.rs`) — default capture + graph-side 48 kHz/stereo conversion + prompt stop + clean abort + named-target select + 4-ch channel-select + enumerate/observe-add-remove + capture-path watermark — all green; plus channel-mix unit tests; full workspace + clippy clean. Constitution: TDD throughout, dual-env integration suite (skips offline, runs unchanged on VM/hardware), watermark baseline, `.workshop/` Workshop definition added (Principle IV; validated by `workshop launch myna` + in-env `cargo build`/`cargo test`), privacy/offline preserved. **Remaining (shared with T51's close-out — a human voice):** one spoken run through `--adapter whisper` asserting an exact transcript; then delete `pw_record.rs` (feature T033, staged last so `--mic` never breaks on `main`) |
 | T55 | **Bring the rest of the toolchain under Workshop** — extend `.workshop/myna.yaml` with the Python testbed extras (`whisper`, `nemotron`) and a CUDA/GPU SDK so the whole build+test+bench matrix runs in the canonical environment, not just the Rust audio crate | todo | Charles | T52 | **Follow-up (opened 2026-07-19).** The initial `.workshop/` definition (T52/feature 002) deliberately scoped to what `myna-audio` needs (Rust + uv + the in-project `pipewire` SDK) and CI runs the Rust suite + offline `pytest` there (`.github/workflows/ci.yml`). Next: (a) an in-project or store SDK that `uv sync --extra whisper --extra nemotron` (torch/CUDA/NeMo — multi-GB; decide cache-mount strategy), (b) a CUDA/GPU SDK + a GPU-runner CI lane for the model adapters and `dev/matrix.py`, (c) fold the snap-build deps (`dev/prepare.sh`, snapcraft) in if we want reproducible snap builds under Workshop. Keep it composable — one SDK per concern, opt-in per workflow. |
 | T56 | **GNOME Shell indicator accessibility (screen-reader announcements)** — the `myna-shell` extension's HUD pill (feature 004) conveys dictation state purely visually (icon + colour + a content-free status label); a screen-reader user gets no proactive cue as state advances. Spec + build an AT-SPI/live-region announcer so state transitions (listening / finishing / error) are spoken. | todo (spec later) | Charles | T22 | **Opened 2026-07-20**, carried forward through the 2026-07-30 HUD redesign (top-of-panel ribbon → bottom-center pill) — the gap is unchanged and still deliberately out of scope. The indicator is deliberately non-focusable chrome (X11/SC-001), and its `St.Label` text updates silently — Orca won't announce transitions, and it's unverified whether AT-SPI even surfaces the chrome. **Likely shape:** drive announcements from the state transitions in `extension.js` (the *stable* side of the `view.js` seam, so it's independent of whichever view is active), not from a view — e.g. an accessibility notification / live-region utterance per `stateToDescriptor` change, content-free (constitution V: state labels only, never transcript text). Also revisit reachability of the label to AT and whether the Rust `myna-desktop` GTK indicator (T22) needs the parallel treatment. Spec it out before building. |
-
 | T57 | **Ship the orchestrator as a snap** — package `myna-desktop` + `myna-dictate` as the strictly-confined `myna` snap; expose the backend socket to confined clients (T14c content-share half); CI snap build | done (human acceptance left) | Claude | T21, T22, T14b | **Done 2026-07-23 (feature `005-myna-orchestrator-snap`, branch `005-myna-orchestrator-snap`).** `myna-snap/` (core24, strict, **no `network` plug** — every boundary is a Unix socket or the session bus): apps `myna` (daemon, portal hotkey + `--dbus` publisher by default), `myna.toggle`, `myna.install-shortcut` (dconf-based — GNOME schemas are invisible inside the base), `myna.testbed`. **T14c resolved for confined clients:** each inference snap now slots `$SNAP_COMMON/run` as a *writable* content share (`ubustt-socket`) — the case snapd's content interface explicitly supports named sockets for; `myna:backend` plugs it (socket at `$SNAP_DATA/backend/run/ubustt.sock`). Identity/polkit access control remains T17; one backend at a time until T48. **Confinement fixes in the client:** IBus address discovery searches the real home via `/etc/passwd` when `$SNAP` is set (+unit tests); `--install-shortcut` writes `/snap/bin/<instance>.toggle` not a revisioned exe path. **Packaging findings:** (1) the `gnome` extension is unusable for Rust builds — its `LD_LIBRARY_PATH` points at the core22 gnome-46-2404-sdk whose older glibc breaks every noble-linked build tool; GTK4 is staged from noble instead; (2) snapcraft's `rust` plugin env-validation is chicken-and-egg with rustup 1.29 (`rustup dump-testament` fails before a toolchain exists) — nil `rust-deps` part + explicit toolchain instead; (3) a confined PipeWire client needs the full staged set (lib + `libpipewire-0.3-modules` + `libspa-0.2-modules` + `pipewire-bin`'s `client.conf` + `SPA_PLUGIN_DIR`/`PIPEWIRE_MODULE_DIR`/`PIPEWIRE_CONFIG_DIR`) AND a compat symlink `$XDG_RUNTIME_DIR/pipewire-0 → ../pipewire-0` (snapd scopes XDG_RUNTIME_DIR; the desktop-launch pattern — wrappers do it). **Verified live, confined** (polkit session install, no sudo): testbed WAV round-trip through the shared socket (exact transcript, whisper small); `--list-devices` over the pipewire plug; IBus connect; `org.myna.Dictation` owned with live State/Error props; portal bind succeeds; control-mode `myna.toggle` cycle; dconf write. **Left for human acceptance:** the literal Super+D press (no uinput access for synthesis) and a spoken injection run; nemotron/qwen rebuilds with the slot (yamls done); autostart-on-login (snapd user daemons still experimental); store registration of the name `myna` (free as of tonight). CI: `.github/workflows/snap.yml` builds + smoke-tests the snap on client/packaging changes. |
 | T58 | **UD136 trigger alignment**: default shortcut choice (we ship Super+D; UD136 suggests Super+J after a clash audit — Super+V taken by clipboard managers), KEY_DICTATE/XF86Dictate hardware-key support when present, Escape-ends-transcription | todo (discuss) | Charles | T21 | UD136 trigger section: hardware dictate key primary where available; a clash-free default combo; user-rebindable (shipped via the portal dialog, T21); opt-in push-to-talk (shipped) and double-tap-Ctrl (hard — mutter-level, not MVP). **Escape-to-end is excluded from MVP** by review (the STT client doesn't own key focus; the focused widget may have its own Escape handling). Decision needed: keep Super+D or move to the design's Super+J before MVP ships |
 | T59 | **Silence auto-stop**: end transcription automatically after ~15 s of no voice input (UD136) | todo | Charles | T52 | UD136: "Transcription should end automatically after 15 seconds of no voice input" (benchmarks: Windows/macOS ~30 s, Android ~5 s — reviewers want it tuned from real-world performance, so make the value configurable and measure). Client-side energy gate on the existing `AudioStats` tap (RMS/peak) in `myna-audio` — no model VAD; the hotkey stays the primary turn signal. Watch the interaction with T29 residency: a long pause shouldn't idle-unload the model mid-utterance |
@@ -283,73 +210,3 @@ invariants: never persist audio, bounded in-memory buffering, no content logged.
 | T41 | **P3** — boundary mocks + demo bin: `AudioSource` trait + `WavFileSource` (real-time paced, `corpus/real`), `Trigger` (stdin), `TextSink` (stdout); wired into the `myna-cli` orchestrator binary end-to-end against the real Python server | done | Charles | T39, T40, T20 | **Done 2026-07-01.** Three boundary traits, each with a mock, matching the audio-adapter API so real impls drop in: `audio::AudioSource` (§3 signature: `format()` + `capture()→Stream`, `CaptureError` §4) + `WavFileSource` (minimal RIFF parser, real-time pacing, graceful `StopHandle` per §5); `trigger::Trigger` (+`StdinTrigger` two-Enter flow / `ScriptedTrigger`) for the T21 hotkey; `sink::TextSink` (+`StdoutSink` / `CollectingSink`) for the T22 injector. `runner::run_dictation` composes source→FSM driver→sink for one utterance (clean end→`EndOfAudio`/finalize, fault→`Abort`; negotiates the source format into the config). `myna-dictate` binary wires them for push-to-talk (`--socket`/`--clip`/`--corpus`), Release→graceful-stop via `select!`. The runner **gates capture on the first `ready`** (holds the pump until residency, `notify_one`-based, aborts on session end so a load-time error can't hang) — so a paced/replayable source can't drain into a closed accept-gate during a slow cold load (the client half of ie115-lifecycle §3A; pairs with T42's adapter-emits-`ready`). **Verified end-to-end against a live Python `myna-server`** — `--adapter fake` (`tests/dictation_e2e.rs`, skip-friendly like T39) *and* `--adapter whisper --model base` manually (exact real-speech transcript, zero dropped audio). 29 orchestrator tests + clippy clean. Independent of the audio-adapter crate (the T49–T52 `myna-audio` crate replaces `WavFileSource` behind the same trait) |
 | T42 | Adapters emit `ready` after load, before consuming audio, so the residency accept-gate opens over the wire (fake **and** every real adapter) | done | Charles | T02 | **Done 2026-07-01 — was a correctness bug, not just mock fidelity.** Manual `myna-dictate`→whisper runs surfaced a **deadlock**: the whisper/nemotron/qwen adapters emitted `preparing` heartbeats during load but only emitted `transcribing`/`final` *after* receiving audio, while the client's accept-gate (T40) drops audio until it sees `ready` — so no audio ever flowed and the session finalized empty. Per *fix-the-adapter-not-the-harness*: all three real adapters now `emit(TranscriptionProgress(phase=PHASE_READY))` right after `_load_model_with_heartbeat`, before the `async for chunk in audio` loop; the fake adapter's `default_script` opens with `preparing→ready` too. Also re-exported `PHASE_READY` from `myna.core` (was defined in `events` but not surfaced). Vocab (the `ready` phase) had already landed. Second half in T41: the runner now **holds capture until the first `ready`** so a slow cold load can't drain a paced source into the closed gate. Regression: `fake.rs::runner_gates_all_audio_until_ready` (probe backend asserting no audio precedes `ready`); verified live end-to-end against `whisper --model base` (exact transcript, zero drops). 103 py + 28 orch tests green |
 | T43 | **P4** — IE115 `BackendClient` (Rust): a second backend speaking IE115 names (`session.update`/`input_audio_buffer.append`/`conversation.item.input_audio_transcription.*`/`STATUS`) behind the wire-agnostic FSM; `--dialect ie115` on `myna-dictate` | done | Charles | T40, T45 | **Done 2026-07-02.** `backend::ws_unix_ie115::WsUnixIe115Backend` — a second `BackendClient` behind the *unchanged* FSM (the trait boundary held: only the backend swapped). Sends `session.update` eagerly, PCM as binary by default / base64 `append` with `.base64_audio(true)`, `input_audio_buffer.commit` on finish; `Decoder` maps STATUS→progress, `completed`→final, `error`→terminal, synthesises `done` on close. `--dialect internal\|ie115` + `--base64-audio` on `myna-dictate` (generic run loop over both backends). 5 unit tests + workspace clippy clean; verified against live whisper/nemotron/qwen-c (see T46) |
-
----
-
-T33 (audio sample-encoding) is the audio half of this reconciliation — IE115's
-fixed 24 kHz mandate makes the "negotiate format via `input_formats`, don't
-hardcode" position concrete. T31 (error-code taxonomy) is unchanged by IE115:
-IE115's `error` has `type`/`code`/`message` but, like IE114, defines no code
-set — same gap.
-
----
-
-## Measured findings (synthetic fixture tier, 2026-06-14)
-
-First model×hardware matrix on the synthetic espeak corpus (13 clips, commit-on-finalize).
-Latency is content-independent and **trustworthy**; WER is **directional only** and, as
-point 3 shows, actively misleading across architectures.
-
-| config | WER% | median finalize | cold load | note |
-|---|---|---|---|---|
-| `nvidia-gpu/small` | 11.07 | 0.150s | 0.91s | only config meeting both accuracy + UD129 latency |
-| `cpu/small` | 11.07 | 1.685s | 2.21s | p90 3.4s > UD129 1–2s target — `small` not viable on CPU for live |
-| `cpu/tiny` | 37.27 | 0.295s | 0.51s | fast but inaccurate |
-| `nemotron` (default ctx) | 59.04 | 0.027s | — | native transducer — fastest by far; synthetic WER unreliable (point 3) |
-
-1. **Native transducer wins latency decisively.** Nemotron finalize ~0.027s (each frame
-   processed once, no end-of-utterance re-decode) vs AED Whisper 0.15s (GPU) / 1.7s (CPU).
-2. **Whisper CPU vs GPU WER is identical** (11.07%, bit-for-bit per category): GPU is a pure
-   latency play, not accuracy.
-3. **Synthetic audio cannot fairly compare architectures.** Nemotron scores 59% WER on
-   espeak yet transcribes real human speech perfectly (verified via `dev/dictate.py`). espeak
-   is severely OOD for models trained on real speech; Whisper's web-scale training masks this.
-   → real WER claims need a recorded-speech corpus (**T25, now critical path**); synthetic tier
-   stays valid for plumbing + latency only.
-4. Nemotron is **English-only** (`non-english-german` 100%, as predicted).
-
-## Real-corpus finding (LibriSpeech tier, 2026-06-14)
-
-First run on the **real recorded-speech** tier (T25, `corpus/real/`), Nemotron,
-commit-on-finalize, vs the synthetic espeak tier under the *same model and code path*:
-
-| tier | clips | mean WER% |
-|---|---|---|
-| real (LibriSpeech dev-clean, clean read speech) | 6 | **0.0** |
-| synthetic (espeak, quiet + long-form) | 3 | **44.6** |
-
-The gap is the whole point of T25: the synthetic-tier WER (44.6%, incl. 100% / empty
-output on the pangram) is an artefact of espeak being out-of-distribution, **not** a
-model deficiency — the same model is flawless on real voice. WER claims must come from
-the real tier; the synthetic tier remains valid for plumbing + latency only. (Accents
-still uncovered — clean read speech only; Common Voice/VCTK is the follow-up.)
-
-## Milestones
-
-1. **M0 — Contract verified (done, 2026-06-12):** T01–T02. Fake adapter +
-   harness over loopback; contract tests green.
-2. **M1 — Real audio, real model:** T03–T07. One real candidate measured
-   end-to-end on fixture audio.
-3. **M2 — Streaming matrix:** T08–T11. Streaming candidates compared;
-   evaluation matrix produced.
-4. **M3 — Spec convergence:** T16, T18, T19, T12. IE114 updated with
-   transport, events, and measured performance contract.
-5. **M4 — End-to-end dictation:** T14a–T14c, T20–T22. Hotkey → speech → text
-   in a GNOME app via the whisper snap.
-6. **M5 — Orchestrator loop (Rust):** T38–T42. Trigger → WAV → transcription
-   through the wire-agnostic FSM against the real Python server; IE115 wire (T43)
-   follows once Ivano's server lands.
-7. **M6 — Dual-mode streaming:** T08, T63. Streaming alongside batch,
-   user-configurable and hardware-tier gated. Whisper local-agreement and
-   Parakeet chunked commit are shipped; sherpa is packaged; nemotron native
-   streaming and the concluding report remain.
