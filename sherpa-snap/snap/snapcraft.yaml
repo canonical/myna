@@ -98,13 +98,18 @@ parts:
       - python3-venv
     override-prime: |
       craftctl default
-      # sherpa-onnx's native module NEEDs libonnxruntime.so with the
-      # VERS_1.27.0 version node but the wheel doesn't bundle it — link the
-      # pip onnxruntime's lib into sherpa_onnx.libs (on its RPATH). Relative
-      # symlink, valid inside the packed snap.
-      sp="$CRAFT_PRIME/lib/python3.12/site-packages"
-      ln -sf ../onnxruntime/capi/libonnxruntime.so.1.27.0 \
-        "$sp/sherpa_onnx.libs/libonnxruntime.so"
+      site=$(echo "$CRAFT_PRIME"/lib/python3*/site-packages)
+      # The wheel now ships its own VERS_1.27.0 libonnxruntime.so beside
+      # _sherpa_onnx, and $ORIGIN leads that module's RPATH, so the pip
+      # onnxruntime is never the copy the loader picks - it and its protobuf
+      # chain are dead weight here. Nothing in this snap imports onnxruntime
+      # from Python either; sherpa_onnx drives the native lib. The gate
+      # re-reads /proc/self/maps to confirm which copy actually mapped, so a
+      # wheel that goes back to unbundling fails the build.
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import sherpa_onnx; assert sherpa_onnx.OnlineRecognizer; assert any('sherpa_onnx/lib/libonnxruntime' in l for l in open('/proc/self/maps')), 'sherpa-onnx stopped bundling libonnxruntime'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PRIME/bin/python3"
+      rm -f "$CRAFT_PRIME"/bin/pip* "$CRAFT_PRIME"/bin/onnxruntime_test
 
   engines:
     plugin: dump
