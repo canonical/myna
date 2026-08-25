@@ -101,6 +101,10 @@ parts:
     # loses to the index whenever the version ties.
     build-environment:
       - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
     source: wheels
     python-packages:
       - ./myna-0.0.1-py3-none-any.whl[audio8]
@@ -155,6 +159,10 @@ parts:
     # loses to the index whenever the version ties.
     build-environment:
       - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
     source: wheels
     build-packages:
       - python3
