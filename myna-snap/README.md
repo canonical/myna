@@ -17,27 +17,76 @@ backend snaps only receive PCM on a socket. It deliberately has **no
 #    whisper-snap/README.md); check with:
 snap logs -n5 myna-whisper.server
 
-# 1. Build + install this snap
+# 1. `myna` is a user daemon, and snapd gates those behind an experimental
+#    flag unless the snap-id is allowlisted. Without this the INSTALL fails.
+sudo snap set system experimental.user-daemons=true
+
+# 2. Build + install this snap
 ./dev/prepare.sh && snapcraft pack
 sudo snap install --dangerous ./myna_*.snap
 
-# 2. Connect the two manual interfaces
+# 3. Connect the two manual interfaces
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
 sudo snap connect myna:backend myna-whisper:ubustt-socket     # the backend session socket
 
-# 3. Run the daemon (leave it running; autostart is a known gap below)
-myna
-
-# 4. Focus a text field, tap the key the portal bound, speak, tap again →
+# 4. Focus a text field, tap the key, speak, tap again →
 #    transcript injected.
 ```
 
-That's it. If step 4 misbehaves, jump to **Troubleshooting**.
+The daemon is already running: installing enabled and started it, and it comes
+back at every login. Nothing to launch - `snap services myna` should read
+`enabled / active`. The very first start raises the portal's shortcut sheet
+once; accept it and pick a key. If step 4 misbehaves, jump to
+**Troubleshooting**.
 
 No activation, indicator or preedit flags: packaged, `myna` uses the
 GlobalShortcuts portal, always serves `org.myna.Dictation`, and turns
 streaming preedit on only where the tier gate says this machine streams. See
 **Activation** for forcing any of them.
+
+## The daemon
+
+`myna` is a **per-user systemd service** (`daemon: simple` +
+`daemon-scope: user`). snapd generates
+`/etc/systemd/user/snap.myna.myna.service` with `WantedBy=default.target` and
+`Restart=on-failure`, so it starts at login for every logged-in user and is
+restarted if it dies.
+
+```shell
+snap services myna                       # enabled / active
+sudo snap restart myna                   # stop/start also work
+journalctl --user -u snap.myna.myna -f   # `snap logs myna` needs sudo for user units
+```
+
+**Install precondition.** snapd rejects the *install* of any snap declaring a
+user daemon unless `experimental.user-daemons` is set, or the snap-id is on the
+hardcoded allowlist in `overlord/snapstate/snapstate.go:82`. A `--dangerous`
+install has no snap-id at all, so dev and CI always need the flag (step 1
+above); the store path is a snapd PR adding this snap's id, which needs the
+name registered and uploaded first.
+
+**It starts before the desktop does.** `default.target` is PAM login: no
+compositor, no PipeWire, no IBus, no portal. (`graphical-session.target`
+ordering for `desktop`-plugging user daemons was added in snapd 2.74 and
+reverted in 2.74.1, LP #2141607 - there is no knob for it.) So the daemon
+treats all four as things that come and go rather than as preconditions:
+
+- activation is bound with backoff and **re-bound** if the portal restarts;
+- IBus is connected at the first press that needs it, and reconnected after an
+  `ibus restart`;
+- the backend socket is re-resolved at every press, so `snap connect` and
+  `snap refresh myna-whisper` need no restart here;
+- a second `myna` finds the bus name taken and exits 0.
+
+Nothing in that list is a reason to exit, which matters more than it sounds:
+the generated unit has no `StartLimitBurst` override, so five exits in ten
+seconds would leave the unit permanently `failed`.
+
+There is no `/snap/bin/myna` - snapd skips wrappers for service apps
+(`wrappers/binaries.go:218`). To drive it by hand:
+`sudo snap stop myna && snap run myna --stdin`.
+
+## The backend socket
 
 The `backend` plug is a writable content share of the backend snap's
 `$SNAP_COMMON/run` (T14c): after connecting, the session socket appears at
@@ -54,11 +103,14 @@ portal only serves apps the compositor can identify, so `$SNAP` being set
 *is* the availability test:
 
 - **GlobalShortcuts portal (default here, because this is a snap)** — the
-  sandboxed-native trigger. On xdg-desktop-portal-gnome 51 (GNOME Shell
-  51.alpha) the bind is auto-accepted: no sheet, the grab registers at
-  daemon start (verified 2026-08-18). Older backends may show a bind sheet
-  once per start - portal v1 has no persist/restore token, and ashpd 0.13
-  doesn't expose v2's. `myna --hold` switches it to hold-to-talk.
+  sandboxed-native trigger. On xdg-desktop-portal-gnome 51~alpha the **first**
+  bind raises a shortcut sheet; accept it and pick a key. It is remembered
+  after that - later daemon starts and portal restarts re-bind silently in
+  ~50ms (measured 2026-08-25, correcting an earlier "auto-accepted, no sheet"
+  note from 2026-08-18). An unanswered sheet leaves the bind pending
+  *indefinitely*: the portal resolves it on a `Response` signal, so no D-Bus
+  call timeout applies. The daemon bounds that at 120s and retries.
+  `myna --hold` switches it to hold-to-talk.
 - **Control socket** (`myna --control`) — for a desktop with no working
   GlobalShortcuts backend. `myna` listens for pokes; `myna.toggle` sends
   one. Bind a custom shortcut to `/snap/bin/myna.toggle`
@@ -78,14 +130,14 @@ resolves to streaming (your persisted `streaming_mode` through the RTF tier
 gate - see `docs/streaming-mode-settings.md`) *and* the injector has a real
 preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 
-**Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_LANGUAGE`. (`MYNA_ACTIVATION` is
-gone - use `--portal` / `--control` / `--stdin`.)
+**Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_LANGUAGE`.
+(`MYNA_ACTIVATION` is gone - use `--portal` / `--control` / `--stdin`.)
 
 ## Apps
 
 | app | what |
 |---|---|
-| `myna` | the dictation daemon (launcher around `myna-desktop`) |
+| `myna` | the dictation daemon - a user service, so no `/snap/bin` entry |
 | `myna.toggle` | poke the daemon's control socket (start/stop) |
 | `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf) |
 | `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
@@ -107,8 +159,17 @@ gdbus introspect --session --dest org.myna.Dictation \
 
 ## Troubleshooting
 
-- **`myna` says "no backend socket"** — connect the backend plug (step 2)
-  and make sure the backend daemon has run (`snap logs myna-whisper.server`).
+- **A press reports "no backend is connected"** - connect the backend plug
+  (step 2) and make sure the backend daemon has run (`snap logs
+  myna-whisper.server`). The daemon does not need restarting afterwards: the
+  socket is re-resolved at every press.
+- **The hotkey does nothing right after login** - read `ErrorMessage` (below),
+  or `journalctl --user -u snap.myna.myna`. `dictation hotkey unavailable: …`
+  means activation is not bound; it clears itself once it is. Two retry
+  speeds, by cause: the portal not being up yet is retried at 1s doubling to
+  30s, while a refused or unanswered shortcut sheet waits 5 minutes - retrying
+  that one fast would just re-raise the dialog. Dismissed the sheet by
+  accident? `sudo snap restart myna` brings it straight back.
 - **`myna.toggle` can't reach the daemon** — `myna` isn't running, or it's
   running in the default portal activation; `myna.toggle` needs
   `myna --control`.
@@ -174,8 +235,12 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 
 ## Known gaps (tracked)
 
-- No autostart on login yet (snapd user daemons are still experimental);
-  start `myna` from a terminal or Startup Applications.
+- `experimental.user-daemons` is a manual step until the snap-id is
+  allowlisted upstream (see **The daemon**).
+- No `configure` hook, so `snap set myna …` does nothing; activation mode,
+  language and hotkey are still flags and env vars.
+- No `default-provider` on the `backend` plug, so installing a backend is a
+  separate step rather than an install prerequisite.
 - Socket access control is "an admin connected the plug" — identity/polkit
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
