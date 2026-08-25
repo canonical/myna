@@ -23,6 +23,7 @@
 //! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS` / a display gate); the hermetic
 //! suite drives the controller through the mocks.
 
+pub mod backend;
 pub mod controller;
 pub mod dbus;
 pub mod indicator;

@@ -44,6 +44,7 @@ use std::process::ExitCode;
 
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
+use myna_desktop::backend::BackendSocket;
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, SharedBus};
@@ -54,7 +55,7 @@ use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlT
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger};
 use myna_desktop::{DesktopController, Indicator};
 use myna_orchestrator::{
-    run_dictation, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
+    run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
 };
 use tokio::sync::mpsc;
 
@@ -75,7 +76,10 @@ preedit from your persisted mode preference. A correct setup needs none of the
 overrides below.
 
 OPTIONS:
-    --socket <path>    Unix socket of a running myna-server (required for daemon)
+    --socket <path>    Unix socket of a running myna-server
+    --backend-dir <d>  directory to find the backend socket under, re-checked at
+                       every press (<d>/*/ubustt.sock - how the snap wires the
+                       `backend` content share). One of these two is required.
     --language <lang>  language hint sent in the session config (e.g. en)
     --target <node>    PipeWire node.name to capture from (default: system default)
     --control-socket <path>
@@ -135,6 +139,7 @@ impl Activation {
 #[derive(Debug, Default)]
 struct Args {
     socket: Option<PathBuf>,
+    backend_dir: Option<PathBuf>,
     language: Option<String>,
     target: Option<String>,
     control: Option<PathBuf>,
@@ -165,6 +170,7 @@ fn parse_args_from(
                 std::process::exit(0);
             }
             "--socket" => a.socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
+            "--backend-dir" => a.backend_dir = Some(PathBuf::from(next(&mut it, "--backend-dir")?)),
             "--language" => a.language = Some(next(&mut it, "--language")?),
             "--target" => a.target = Some(next(&mut it, "--target")?),
             "--control-socket" => {
@@ -192,6 +198,9 @@ fn parse_args_from(
     // silently does nothing" is not a mode a user can end up in.
     if a.hold && Activation::resolve(a.activation) != Activation::Portal {
         return Err("--hold only applies to portal activation (add --portal)".into());
+    }
+    if a.socket.is_some() && a.backend_dir.is_some() {
+        return Err("--socket and --backend-dir are alternatives (pick one)".into());
     }
     Ok(a)
 }
@@ -234,6 +243,20 @@ fn control_path(args: &Args) -> PathBuf {
     args.control.clone().unwrap_or_else(default_socket_path)
 }
 
+impl Args {
+    /// Where to look for the backend, or `None` when neither form was given.
+    /// Deliberately *not* resolved here: the socket a content share supplies
+    /// can appear, move and vanish under a `snap refresh` of the backend, so
+    /// the daemon must not bake a path in at startup (see [`BackendSocket`]).
+    fn backend(&self) -> Option<BackendSocket> {
+        match (&self.socket, &self.backend_dir) {
+            (Some(path), _) => Some(BackendSocket::Fixed(path.clone())),
+            (_, Some(dir)) => Some(BackendSocket::Search(dir.clone())),
+            _ => None,
+        }
+    }
+}
+
 /// Build the per-Press session factory: a fresh backend connection + live
 /// capture source, run through the orchestrator (capture-at-press, ready-gated).
 ///
@@ -245,10 +268,16 @@ fn make_session(
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
-    let socket = args.socket.clone().expect("daemon requires --socket");
+    let backend_socket = args.backend().expect("daemon requires a backend");
     let language = args.language.clone();
     let target = args.target.clone();
     move |events: mpsc::Sender<OrchestratorEvent>| {
+        // Re-resolved per Press, so a backend connected (or refreshed, or
+        // swapped) after the daemon started is picked up without a restart.
+        let socket = match backend_socket.resolve() {
+            Ok(socket) => socket,
+            Err(e) => return no_backend(e),
+        };
         let backend = WsUnixBackend::new(&socket);
         let mut builder = CaptureSource::builder(AudioFormat::default());
         if let Some(node) = &target {
@@ -301,6 +330,16 @@ fn make_session(
         });
         (run, stop)
     }
+}
+
+/// The session a Press gets when no backend is connected: it fails
+/// immediately, which the controller reports on the indicator exactly like any
+/// other backend error. Not exiting matters - "no backend yet" is the normal
+/// state between `snap install myna` and the first `snap connect`, and it is a
+/// state the user fixes without touching the daemon.
+fn no_backend(e: myna_desktop::backend::ResolveError) -> (SessionRun, StopHandle) {
+    let run: SessionRun = Box::pin(async move { Err(BackendError::Connect(e.to_string())) });
+    (run, StopHandle::default())
 }
 
 /// Build and run the controller with the given indicator (tokio side).
@@ -362,11 +401,7 @@ async fn run_controller(
 }
 
 fn banner(args: &Args) {
-    let sock = args
-        .socket
-        .as_ref()
-        .map(|s| s.display().to_string())
-        .unwrap_or_default();
+    let sock = args.backend().map(|b| b.describe()).unwrap_or_default();
     match Activation::resolve(args.activation) {
         Activation::Stdin => println!(
             "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
@@ -491,8 +526,8 @@ fn main() -> ExitCode {
         };
     }
 
-    if args.socket.is_none() {
-        eprintln!("--socket is required to run the daemon\n\n{USAGE}");
+    if args.backend().is_none() {
+        eprintln!("--socket or --backend-dir is required to run the daemon\n\n{USAGE}");
         return ExitCode::FAILURE;
     }
 
