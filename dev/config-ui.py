@@ -293,33 +293,108 @@ def client_state():
 # --------------------------------------------------------------------------
 
 
-class BackendTab(ttk.Frame):
+def em(chars):
+    """Width of `chars` digits in the current base font: the only unit this UI
+    lays out in, so a font-size change moves everything together."""
+    return tkfont.nametofont("TkDefaultFont").measure("0") * chars
+
+
+def line_height():
+    return tkfont.nametofont("TkDefaultFont").metrics("linespace")
+
+
+def scrolled_text(master, height, wrap="none"):
+    """A Text with both scrollbars: long output must stay reachable at any size."""
+    frame = ttk.Frame(master)
+    text = tk.Text(frame, height=height, wrap=wrap, width=1)
+    ybar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+    xbar = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
+    text.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+    text.grid(row=0, column=0, sticky="nsew")
+    ybar.grid(row=0, column=1, sticky="ns")
+    xbar.grid(row=1, column=0, sticky="ew")
+    frame.rowconfigure(0, weight=1)
+    frame.columnconfigure(0, weight=1)
+    return frame, text
+
+
+class Scrollable(ttk.Frame):
+    """Vertically scrollable tab body.
+
+    Fonts grow, the window does not: without this a larger font simply pushes
+    controls off the bottom. Labels registered as elastic re-wrap to a fraction
+    of the visible width instead of forcing the body wider than the canvas.
+    """
+
+    def __init__(self, master, padding=8):
+        super().__init__(master)
+        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
+        bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=bar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        bar.grid(row=0, column=1, sticky="ns")
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+
+        self.body = ttk.Frame(self.canvas, padding=padding)
+        self.window = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self.elastic = []
+        self.body.bind(
+            "<Configure>",
+            lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+        )
+        self.canvas.bind("<Configure>", self.fit)
+
+    def fit(self, event=None):
+        width = event.width if event else self.canvas.winfo_width()
+        self.canvas.itemconfigure(self.window, width=width)
+        self.rewrap(width)
+
+    def rewrap(self, width=None):
+        width = width or self.canvas.winfo_width()
+        for label, fraction in self.elastic:
+            label.configure(wraplength=max(em(12), int(width * fraction) - em(4)))
+
+    def stretchy(self, label, fraction=1.0):
+        self.elastic.append((label, fraction))
+        return label
+
+    def scroll(self, units):
+        self.canvas.yview_scroll(units, "units")
+
+
+class BackendTab(Scrollable):
+    STATUS_FIELDS = ("service", "engine", "model", "socket", "memory", "peak", "cpu", "disk", "up")
+    PAIRS_PER_ROW = 2
+
     def __init__(self, master, app, snap):
-        super().__init__(master, padding=8)
+        super().__init__(master)
         self.app, self.snap = app, snap
         self.widgets = {}
         self.data = {}
         self.live = {}
 
-        status = ttk.LabelFrame(self, text="Status", padding=6)
+        status = ttk.LabelFrame(self.body, text="Status", padding=6)
         status.pack(fill="x")
         self.status_labels = {}
-        for row, key in enumerate(
-            ("service", "engine", "model", "socket", "memory", "peak", "cpu time", "disk", "since")
-        ):
+        for index, key in enumerate(self.STATUS_FIELDS):
+            row, col = divmod(index, self.PAIRS_PER_ROW)
             ttk.Label(status, text=key + ":").grid(
-                row=row // 3, column=(row % 3) * 2, sticky="e", padx=(8, 2), pady=1
+                row=row, column=col * 2, sticky="ne", padx=(0, 6), pady=1
             )
             var = tk.StringVar(value="...")
-            ttk.Label(status, textvariable=var, width=34, anchor="w").grid(
-                row=row // 3, column=(row % 3) * 2 + 1, sticky="w"
-            )
+            label = ttk.Label(status, textvariable=var, anchor="w", justify="left")
+            label.grid(row=row, column=col * 2 + 1, sticky="ew")
+            self.stretchy(label, 1.0 / self.PAIRS_PER_ROW)
             self.status_labels[key] = var
+        for col in range(self.PAIRS_PER_ROW):
+            status.columnconfigure(col * 2 + 1, weight=1)
 
-        self.knobs = ttk.LabelFrame(self, text="Configuration", padding=6)
+        self.knobs = ttk.LabelFrame(self.body, text="Configuration", padding=6)
         self.knobs.pack(fill="both", expand=True, pady=(8, 0))
+        self.knobs.columnconfigure(1, weight=1)
 
-        actions = ttk.Frame(self)
+        actions = ttk.Frame(self.body)
         actions.pack(fill="x", pady=6)
         ttk.Button(actions, text="Apply changes", command=self.apply).pack(side="left")
         ttk.Button(actions, text="Reload", command=self.reload).pack(side="left", padx=4)
@@ -330,10 +405,11 @@ class BackendTab(ttk.Frame):
                 [["snap", "restart", self.snap]], f"Restart {self.snap}"
             ),
         ).pack(side="left")
+
         self.gap_var = tk.StringVar()
-        ttk.Label(
-            self, textvariable=self.gap_var, foreground="#a05000", wraplength=880, justify="left"
-        ).pack(fill="x")
+        gap = ttk.Label(self.body, textvariable=self.gap_var, foreground="#a05000", justify="left")
+        gap.pack(fill="x")
+        self.stretchy(gap)
 
     # -- rendering -------------------------------------------------------
     def reload(self):
@@ -343,6 +419,7 @@ class BackendTab(ttk.Frame):
         self.data = data
         for child in self.knobs.winfo_children():
             child.destroy()
+        self.elastic = [(w, f) for w, f in self.elastic if w.winfo_exists()]
         self.widgets.clear()
 
         eng_keys = engine_keys(data)
@@ -376,54 +453,59 @@ class BackendTab(ttk.Frame):
 
         if data.get("config_error"):
             ttk.Label(self.knobs, text=data["config_error"], foreground="red").grid(
-                row=row, column=0, columnspan=5, sticky="w"
+                row=row, column=0, columnspan=3, sticky="w"
             )
 
         guessed = len(data.get("config", {}))
         self.gap_var.set(
             f"Schema gaps: {guessed} keys rendered with types inferred from their current "
             "values. No titles, descriptions, ranges, enums, defaults, restart flags or "
-            "per-option availability are exposed by the snap; the restart column below is a "
+            "per-option availability are exposed by the snap; the restart marks above are a "
             "hardcoded guess. This is exactly what `describe-config` would supply."
         )
+        self.rewrap()
+
+    def meta(self, row, parts):
+        """The type/scope/restart column, one wrapping label rather than three
+        fixed ones: at 24pt three columns push the controls off the canvas."""
+        label = ttk.Label(
+            self.knobs, text="  ·  ".join(p for p in parts if p), foreground="#666", justify="left"
+        )
+        label.grid(row=row, column=2, sticky="w", padx=(8, 0))
+        self.stretchy(label, 0.35)
 
     def selector(self, row, key, verb, current, options, notes):
         options = [o for o in options if o]
         if not options:
             return row
-        ttk.Label(self.knobs, text=key).grid(row=row, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(self.knobs, text=key).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=2)
         var = tk.StringVar(value=current or "")
-        box = ttk.Combobox(self.knobs, textvariable=var, values=options, state="readonly", width=32)
-        box.grid(row=row, column=1, sticky="w")
-        ttk.Label(self.knobs, text=notes.get(current, ""), foreground="#666").grid(
-            row=row, column=2, sticky="w", padx=6
+        ttk.Combobox(self.knobs, textvariable=var, values=options, state="readonly", width=1).grid(
+            row=row, column=1, sticky="ew", pady=2
         )
-        ttk.Label(self.knobs, text="selector", foreground="#666").grid(
-            row=row, column=3, sticky="w"
-        )
-        ttk.Label(self.knobs, text="restart", foreground="#a05000").grid(
-            row=row, column=4, sticky="w"
-        )
+        self.meta(row, ["selector", "restart", notes.get(current, "")])
         self.widgets[key] = ("selector", var, current or "", verb)
         return row + 1
 
     def knob(self, row, key, value, scope):
         label = key + ("  (advanced)" if key in ADVANCED else "")
-        ttk.Label(self.knobs, text=label).grid(row=row, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(self.knobs, text=label).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=2)
         if isinstance(value, bool):
             var = tk.BooleanVar(value=value)
-            ttk.Checkbutton(self.knobs, variable=var).grid(row=row, column=1, sticky="w")
+            ttk.Checkbutton(self.knobs, variable=var).grid(row=row, column=1, sticky="w", pady=2)
         else:
             var = tk.StringVar(value=str(value))
-            ttk.Entry(self.knobs, textvariable=var, width=35).grid(row=row, column=1, sticky="w")
-        kind = type(value).__name__
-        ttk.Label(self.knobs, text=f"inferred {kind}", foreground="#666").grid(
-            row=row, column=2, sticky="w", padx=6
+            ttk.Entry(self.knobs, textvariable=var, width=1).grid(
+                row=row, column=1, sticky="ew", pady=2
+            )
+        self.meta(
+            row,
+            [
+                f"inferred {type(value).__name__}",
+                scope,
+                "" if key in NO_RESTART else "restart",
+            ],
         )
-        ttk.Label(self.knobs, text=scope, foreground="#666").grid(row=row, column=3, sticky="w")
-        ttk.Label(
-            self.knobs, text="" if key in NO_RESTART else "restart", foreground="#a05000"
-        ).grid(row=row, column=4, sticky="w")
         self.widgets[key] = ("set", var, value, None)
         return row + 1
 
@@ -477,48 +559,56 @@ class BackendTab(ttk.Frame):
         self.status_labels["since"].set(live.get("since", "-") or "-")
 
 
-class ClientTab(ttk.Frame):
+class ClientTab(Scrollable):
     MODES = ("auto", "streaming", "batch")
 
     def __init__(self, master, app, wiring):
-        super().__init__(master, padding=8)
+        super().__init__(master)
         self.app = app
 
-        box = ttk.LabelFrame(self, text=f"Dictation client ({CLIENT_SNAP})", padding=6)
+        box = ttk.LabelFrame(self.body, text=f"Dictation client ({CLIENT_SNAP})", padding=6)
         box.pack(fill="x")
+        box.columnconfigure(1, weight=1)
         self.vars = {}
         for row, key in enumerate(("state", "audio", "error", "processes", "client RSS")):
-            ttk.Label(box, text=key + ":").grid(row=row, column=0, sticky="e", padx=(0, 6))
+            ttk.Label(box, text=key + ":").grid(row=row, column=0, sticky="ne", padx=(0, 6))
             var = tk.StringVar(value="...")
-            ttk.Label(box, textvariable=var, anchor="w", width=60).grid(
-                row=row, column=1, sticky="w"
-            )
+            label = ttk.Label(box, textvariable=var, anchor="w", justify="left")
+            label.grid(row=row, column=1, sticky="ew")
+            self.stretchy(label, 0.7)
             self.vars[key] = var
-        self.level = ttk.Progressbar(box, maximum=1.0, length=220)
-        self.level.grid(row=1, column=2, padx=8)
+        self.level = ttk.Progressbar(box, maximum=1.0)
+        self.level.grid(row=1, column=2, padx=8, sticky="e")
+        app.bars.append((self.level, 18))
 
-        mode = ttk.LabelFrame(self, text="streaming_mode (settings.json, unprivileged)", padding=6)
+        mode = ttk.LabelFrame(
+            self.body, text="streaming_mode (settings.json, unprivileged)", padding=6
+        )
         mode.pack(fill="x", pady=8)
+        choices = ttk.Frame(mode)
+        choices.pack(fill="x")
         self.mode = tk.StringVar(value="auto")
         for value in self.MODES:
-            ttk.Radiobutton(mode, text=value, value=value, variable=self.mode).pack(
-                side="left", padx=6
+            ttk.Radiobutton(choices, text=value, value=value, variable=self.mode).pack(
+                side="left", padx=(0, 8)
             )
-        ttk.Button(mode, text="Save", command=self.save_mode).pack(side="left", padx=12)
+        ttk.Button(choices, text="Save", command=self.save_mode).pack(side="left", padx=8)
         self.mode_note = tk.StringVar()
-        ttk.Label(mode, textvariable=self.mode_note, foreground="#666").pack(side="left")
+        note = ttk.Label(mode, textvariable=self.mode_note, foreground="#666", justify="left")
+        note.pack(fill="x", pady=(4, 0))
+        self.stretchy(note)
 
-        wire = ttk.LabelFrame(self, text="Backend wiring (snap connections)", padding=6)
+        wire = ttk.LabelFrame(self.body, text="Backend wiring (snap connections)", padding=6)
         wire.pack(fill="both", expand=True)
         buttons = ttk.Frame(wire)
         buttons.pack(fill="x")
-        self.wire = tk.Text(wire, height=10, wrap="none")
-        self.wire.pack(fill="both", expand=True)
+        frame, self.wire = scrolled_text(wire, height=10)
+        frame.pack(fill="both", expand=True)
 
         connected = [w for w in wiring if w[0] != "-"]
         unconnected = [w for w in wiring if w[0] == "-"]
-        for plug, slot, note in connected:
-            self.wire.insert("end", f"{plug:28} -> {slot:28} {note}\n")
+        for plug, slot, note_text in connected:
+            self.wire.insert("end", f"{plug:28} -> {slot:28} {note_text}\n")
         for _, slot, _ in unconnected:
             self.wire.insert(
                 "end", f"{'(unconnected)':28}    {slot:28} backend is installed but unwired\n"
@@ -531,6 +621,13 @@ class ClientTab(ttk.Frame):
                     f"Wire {CLIENT_SNAP} to {s}",
                 ),
             ).pack(side="left", padx=(0, 6))
+
+        if not wiring:
+            self.wire.insert(
+                "end",
+                "No inference snap is installed. Install one (whisper, parakeet, funasr, ...) "
+                "and connect it: snap connect myna:backend <snap>:ubustt-socket\n",
+            )
 
         plugs = [w[0] for w in connected]
         if len(plugs) != len(set(plugs)):
@@ -581,8 +678,8 @@ class App(tk.Tk):
         super().__init__()
         self.title("Myna configuration (prototype)")
         self.results = queue.Queue()
-        self.geometry("980x760")
         self.total_ram = mem_total()
+        self.bars = []
 
         self.base_sizes = {
             name: abs(tkfont.nametofont(name).cget("size")) or 10 for name in SCALED_FONTS
@@ -590,30 +687,46 @@ class App(tk.Tk):
         self.headline_font = tkfont.Font(name="MynaHeadline", exists=False)
         self.headline_font.configure(weight="bold")
         self.font_size = tk.IntVar(value=font_size or self.base_sizes["TkDefaultFont"])
-        self.rescale()
+        self.rescale(resize_window=False)
         for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
             self.bind_all(seq, lambda _e: self.bump(1))
         for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
             self.bind_all(seq, lambda _e: self.bump(-1))
         self.bind_all("<Control-0>", lambda _e: self.bump(0))
+        self.bind_all("<Button-4>", lambda e: self.wheel(e, -3))
+        self.bind_all("<Button-5>", lambda e: self.wheel(e, 3))
+        self.bind_all("<MouseWheel>", lambda e: self.wheel(e, -3 if e.delta > 0 else 3))
+        self.geometry(
+            f"{min(em(88), int(self.winfo_screenwidth() * 0.7))}x"
+            f"{min(line_height() * 40, int(self.winfo_screenheight() * 0.8))}"
+        )
 
         head = ttk.Frame(self, padding=(8, 6))
         head.pack(fill="x")
+        head.columnconfigure(0, weight=1)
         self.headline = tk.StringVar(value="probing...")
-        ttk.Label(head, textvariable=self.headline, font=self.headline_font).pack(side="left")
-        self.footprint = ttk.Progressbar(head, maximum=max(self.total_ram, 1), length=260)
-        self.footprint.pack(side="right", padx=(8, 0))
+        self.headline_label = ttk.Label(
+            head, textvariable=self.headline, font=self.headline_font, justify="left"
+        )
+        self.headline_label.grid(row=0, column=0, sticky="w")
         zoom = ttk.Frame(head)
-        zoom.pack(side="right")
+        zoom.grid(row=0, column=1, sticky="e", padx=8)
         ttk.Button(zoom, text="A-", width=3, command=lambda: self.bump(-1)).pack(side="left")
         ttk.Label(zoom, textvariable=self.font_size, width=3, anchor="center").pack(side="left")
         ttk.Button(zoom, text="A+", width=3, command=lambda: self.bump(1)).pack(side="left")
+        self.footprint = ttk.Progressbar(head, maximum=max(self.total_ram, 1))
+        self.footprint.grid(row=0, column=2, sticky="e")
+        self.bars.append((self.footprint, 22))
+        head.bind(
+            "<Configure>",
+            lambda e: self.headline_label.configure(wraplength=max(em(20), e.width - em(34))),
+        )
 
         self.book = ttk.Notebook(self)
         self.book.pack(fill="both", expand=True, padx=6, pady=6)
 
-        self.log = tk.Text(self, height=7, wrap="none")
-        self.log.pack(fill="x", padx=6, pady=(0, 6))
+        log_frame, self.log = scrolled_text(self, height=5)
+        log_frame.pack(fill="x", padx=6, pady=(0, 6))
         self.say("reads are unprivileged; every write is shown before it runs")
 
         self.backends, wiring = discover()
@@ -633,8 +746,8 @@ class App(tk.Tk):
 
     def build_system(self):
         frame = ttk.Frame(self.book, padding=8)
-        text = tk.Text(frame, wrap="none")
-        text.pack(fill="both", expand=True)
+        inner, text = scrolled_text(frame, height=20)
+        inner.pack(fill="both", expand=True)
         chunks = []
         for snap in self.backends:
             rc, out, _ = run(modelctl(snap) + ["show-machine"])
@@ -648,6 +761,15 @@ class App(tk.Tk):
         text.configure(state="disabled")
         return frame
 
+    def wheel(self, event, units):
+        """Scroll whichever tab body the pointer is over."""
+        widget = event.widget
+        while widget is not None:
+            if isinstance(widget, Scrollable):
+                widget.scroll(units)
+                return
+            widget = getattr(widget, "master", None)
+
     def bump(self, step):
         """Ctrl +/-; Ctrl-0 restores the desktop's own size."""
         base = self.base_sizes["TkDefaultFont"]
@@ -655,13 +777,21 @@ class App(tk.Tk):
         self.font_size.set(max(FONT_RANGE[0], min(FONT_RANGE[1], target)))
         self.rescale()
 
-    def rescale(self):
-        """Resize every named font proportionally to the requested base size."""
+    def rescale(self, resize_window=True):
+        """Resize every named font proportionally to the requested base size,
+        then re-derive everything measured in pixels from the new font."""
         base = self.base_sizes["TkDefaultFont"]
         ratio = self.font_size.get() / base
         for name, size in self.base_sizes.items():
             tkfont.nametofont(name).configure(size=max(FONT_RANGE[0], round(size * ratio)))
         self.headline_font.configure(size=round(self.font_size.get() * 1.15))
+        for bar, chars in self.bars:
+            bar.configure(length=em(chars))
+        if not resize_window:
+            return
+        for tab in list(getattr(self, "tabs", {}).values()) + [getattr(self, "client_tab", None)]:
+            if tab is not None:
+                tab.fit()
 
     def say(self, line):
         self.log.insert("end", line.rstrip() + "\n")
@@ -732,10 +862,12 @@ class App(tk.Tk):
             self.client_tab.update_live(client)
             self.footprint["value"] = min(total, self.total_ram)
             share = 100.0 * total / self.total_ram if self.total_ram else 0
-            self.headline.set(
-                f"{len(self.backends)} backend(s): {', '.join(self.backends)}   "
-                f"resident {human_bytes(total)} ({share:.1f}% of RAM)"
+            found = (
+                f"{len(self.backends)} backend(s): {', '.join(self.backends)}"
+                if self.backends
+                else "no backend snap found (nothing offers a ubustt-socket slot)"
             )
+            self.headline.set(f"{found}   resident {human_bytes(total)} ({share:.1f}% of RAM)")
             self.after(int(FAST_POLL * 1000), self.poll)
 
         self.spawn(work, done)
