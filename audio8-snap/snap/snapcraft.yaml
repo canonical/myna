@@ -110,6 +110,15 @@ parts:
       - ./myna-0.0.1-py3-none-any.whl[audio8]
     build-packages:
       - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # onnxruntime, transformers and tokenizers all stay - the cpu engine
+      # runs on them. Only build-time tooling and numpy's tests go.
+      export PRUNE_GATE="import onnxruntime, transformers, tokenizers, numpy; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip* "$CRAFT_PART_INSTALL"/bin/onnxruntime_test
+      "$CRAFT_PROJECT_DIR/dev/prune-transformers.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
 
   engines:
     plugin: dump
@@ -178,6 +187,9 @@ parts:
         transformers \
         numpy \
         psutil
+      export PRUNE_GATE="import onnxruntime, transformers, tokenizers, numpy; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
+      "$CRAFT_PROJECT_DIR/dev/prune-transformers.sh" "$target" python3
       craftctl default
     organize:
       "*": (component/audio8-onnx-cuda)
