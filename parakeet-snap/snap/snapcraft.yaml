@@ -116,6 +116,14 @@ parts:
       - ./myna-0.0.1-py3-none-any.whl[parakeet]
     build-packages:
       - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # onnxruntime itself stays - it is this snap's whole runtime. Only its
+      # build-time tooling and numpy's test suite go.
+      export PRUNE_GATE="import onnxruntime, numpy; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip* "$CRAFT_PART_INSTALL"/bin/onnxruntime_test
 
   engines:
     plugin: dump
