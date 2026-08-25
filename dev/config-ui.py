@@ -14,7 +14,9 @@ literal commands before they run.
 """
 
 import argparse
+import array
 import json
+import math
 import os
 import pathlib
 import queue
@@ -250,6 +252,87 @@ def engine_keys(data):
         if engine.get("name") == active:
             return engine.get("configurations") or {}
     return {}
+
+
+def audio_sources():
+    """PipeWire capture nodes, for the device knob a Settings panel needs.
+
+    Device selection exists today only as `myna-desktop --target <node.name>`:
+    it is in no settings file and in no snap config, so nothing persists it.
+    """
+    rc, out, _ = run(["pw-dump"], timeout=6)
+    try:
+        nodes = json.loads(out)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    sources = []
+    for node in nodes:
+        props = ((node.get("info") or {}).get("props")) or {}
+        if props.get("media.class") not in ("Audio/Source", "Audio/Duplex"):
+            continue
+        name = props.get("node.name")
+        if name:
+            sources.append((name, props.get("node.description") or name))
+    return sources
+
+
+class MicProbe:
+    """Reads the microphone directly through `pw-record`, independent of Myna.
+
+    Deliberately opt-in and never auto-started: a settings panel that opens the
+    mic is a privacy surface in its own right (and, confined, would need its own
+    `pipewire` plug). Levels are computed here and discarded; no audio is kept.
+    """
+
+    RATE = 16000
+    CHUNK = 800  # 50 ms of mono s16
+
+    def __init__(self):
+        self.proc = None
+        self.level = (0.0, 0.0)
+        self.error = ""
+
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self, target=None):
+        self.stop()
+        self.error = ""
+        cmd = ["pw-record", "--raw", "--rate", str(self.RATE), "--channels", "1", "--format", "s16"]
+        if target:
+            cmd += ["--target", target]
+        try:
+            self.proc = subprocess.Popen(
+                cmd + ["-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            )
+        except (OSError, FileNotFoundError) as exc:
+            self.error = f"pw-record unavailable: {exc}"
+            return
+        threading.Thread(target=self.pump, args=(self.proc,), daemon=True).start()
+
+    def pump(self, proc):
+        while proc.poll() is None:
+            data = proc.stdout.read(self.CHUNK * 2)
+            if not data:
+                break
+            samples = array.array("h")
+            samples.frombytes(data[: len(data) // 2 * 2])
+            if not samples:
+                continue
+            rms = math.sqrt(sum(s * s for s in samples) / len(samples)) / 32768
+            peak = max(abs(s) for s in samples) / 32768
+            self.level = (min(rms, 1.0), min(peak, 1.0))
+        self.level = (0.0, 0.0)
+
+    def stop(self):
+        if self.proc is not None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+            self.proc = None
+        self.level = (0.0, 0.0)
 
 
 def client_state():
@@ -580,6 +663,16 @@ class ClientTab(Scrollable):
         self.level = ttk.Progressbar(box, maximum=1.0)
         self.level.grid(row=1, column=2, padx=8, sticky="e")
         app.bars.append((self.level, 18))
+        published = ttk.Label(
+            box,
+            text="AudioRms/AudioPeak are published only while a dictation session is live, and "
+            "zeroed when it ends (pump.rs P7). At idle this meter reads zero by contract, and "
+            "with no myna-desktop running there is nothing on the bus at all.",
+            foreground="#666",
+            justify="left",
+        )
+        published.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self.stretchy(published)
 
         mode = ttk.LabelFrame(
             self.body, text="streaming_mode (settings.json, unprivileged)", padding=6
@@ -597,6 +690,40 @@ class ClientTab(Scrollable):
         note = ttk.Label(mode, textvariable=self.mode_note, foreground="#666", justify="left")
         note.pack(fill="x", pady=(4, 0))
         self.stretchy(note)
+
+        mic = ttk.LabelFrame(self.body, text="Microphone (independent of Myna)", padding=6)
+        mic.pack(fill="x", pady=(0, 8))
+        mic.columnconfigure(0, weight=1)
+        self.probe = MicProbe()
+        self.sources = audio_sources()
+        self.source = tk.StringVar()
+        picker = ttk.Frame(mic)
+        picker.grid(row=0, column=0, columnspan=2, sticky="ew")
+        picker.columnconfigure(0, weight=1)
+        ttk.Combobox(
+            picker,
+            textvariable=self.source,
+            values=[f"{desc}  ({name})" for name, desc in self.sources],
+            state="readonly",
+            width=1,
+        ).grid(row=0, column=0, sticky="ew")
+        self.test_button = ttk.Button(picker, text="Test mic", command=self.toggle_mic)
+        self.test_button.grid(row=0, column=1, padx=(8, 0))
+        if self.sources:
+            self.source.set(f"{self.sources[0][1]}  ({self.sources[0][0]})")
+
+        self.mic_level = ttk.Progressbar(mic, maximum=1.0)
+        self.mic_level.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        app.bars.append((self.mic_level, 30))
+        self.mic_note = tk.StringVar(
+            value="Opens the mic directly through pw-record, so it answers 'is my microphone "
+            "working' without Myna installed. Device choice is a real config knob with no home: "
+            "it exists only as `myna-desktop --target <node.name>`, persisted nowhere."
+        )
+        note_label = ttk.Label(mic, textvariable=self.mic_note, foreground="#666", justify="left")
+        note_label.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.stretchy(note_label)
+        self.tick()
 
         wire = ttk.LabelFrame(self.body, text="Backend wiring (snap connections)", padding=6)
         wire.pack(fill="both", expand=True)
@@ -646,6 +773,29 @@ class ClientTab(Scrollable):
                 "knobs: it is the difference between a configured backend and a used one.\n",
             )
         self.wire.configure(state="disabled")
+
+    def toggle_mic(self):
+        if self.probe.running():
+            self.probe.stop()
+            self.test_button.configure(text="Test mic")
+            return
+        selected = self.source.get()
+        target = selected.rsplit("(", 1)[-1].rstrip(")") if "(" in selected else None
+        self.probe.start(target)
+        self.test_button.configure(text="Stop test")
+        if self.probe.error:
+            self.mic_note.set(self.probe.error)
+            self.test_button.configure(text="Test mic")
+
+    def tick(self):
+        """A VU needs a faster cadence than the 2 s system poll."""
+        rms, peak = self.probe.level
+        self.mic_level["value"] = peak
+        if self.probe.running():
+            self.mic_note.set(f"live: rms {rms:.3f}  peak {peak:.3f}  (pw-record, 16 kHz mono)")
+        elif self.test_button["text"] == "Stop test":
+            self.test_button.configure(text="Test mic")
+        self.after(100, self.tick)
 
     def save_mode(self):
         try:
@@ -741,8 +891,13 @@ class App(tk.Tk):
         self.system_tab = self.build_system()
         self.book.add(self.system_tab, text="machine")
 
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.drain()
         self.after(200, self.poll)
+
+    def close(self):
+        self.client_tab.probe.stop()
+        self.destroy()
 
     def build_system(self):
         frame = ttk.Frame(self.book, padding=8)

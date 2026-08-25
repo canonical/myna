@@ -437,6 +437,11 @@ What it surfaces, and what a real config API would have to answer:
   the client's single `backend` plug, and an unconnected backend still runs and
   holds its model resident. Connection state is configuration, and it lives on
   the client snap rather than on the inference snaps.
+- The client's `AudioRms`/`AudioPeak` are published only during a live session,
+  so a settings panel cannot use them to answer "is my microphone working". The
+  panel opens the mic itself (opt-in, `pw-record`) to make the point that mic
+  verification and device choice are settings concerns, and that device choice
+  (`myna-desktop --target <node.name>`) is persisted nowhere today.
 - Residency reads better as intent next to a live number ("2.6G resident, idle
   since 13:27") than as `sleep-idle-seconds`, which supports the `intent`
   presets sketched in Appendix A.
