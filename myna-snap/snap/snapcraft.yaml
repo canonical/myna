@@ -49,12 +49,11 @@ apps:
   # The launcher passes only --socket/--language: activation (portal, because
   # $SNAP is set), the org.myna.Dictation indicator, and streaming preedit are
   # all resolved by myna-desktop itself rather than pinned here.
-  # NOTE: deliberately NO `gnome` extension — its build env points
-  # LD_LIBRARY_PATH at the core22-based gnome-46-2404-sdk, whose older glibc
-  # breaks every noble-linked build tool (rustup/cargo/ld: GLIBC_PRIVATE
-  # symbol errors). GTK4 is staged from noble instead (consistent glibc);
-  # the overlay is opt-in/experimental, and on GNOME the myna-shell
-  # extension is the real indicator anyway.
+  # NOTE: deliberately NO `gnome` extension and no GTK at all. The packaged
+  # build omits myna-desktop's opt-in `ui-gtk` feature, so feedback is the
+  # org.myna.Dictation indicator (myna-shell) with a notification fallback:
+  # no toolkit to ship, and none of the GTK stack, icon themes and emoji
+  # data that came with it.
   myna:
     command: bin/myna-daemon
     plugs:
@@ -62,8 +61,6 @@ apps:
       - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
       - desktop-legacy # the IBus daemon's private socket (text injection)
       - gsettings # dconf write for --install-shortcut (control mode)
-      - wayland
-      - x11
       - backend # content share → the backend snap's session socket
     slots:
       - dictation # org.myna.Dictation for the GNOME Shell indicator
@@ -126,8 +123,7 @@ parts:
 
   # The Rust workspace (client/), staged into this project by dev/prepare.sh
   # (craft-parts local sources must live inside the project dir). Builds the
-  # shipped app (ui-gtk default feature: GTK4 overlay available) + the
-  # testbed CLI.
+  # shipped app (no `ui-gtk`: see the apps note) + the testbed CLI.
   client:
     plugin: nil
     after: [rust-deps]
@@ -139,47 +135,123 @@ parts:
       - pkg-config
       - libclang-dev # bindgen, for pipewire-sys
       - libpipewire-0.3-dev
-      - libgtk-4-dev # ui-gtk (default feature of myna-desktop)
     override-build: |
       toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
       export PATH="$toolchain/bin:$PATH"
       cargo install -f --locked --path myna-desktop --root "$CRAFT_PART_INSTALL"
       cargo install -f --locked --path myna-cli --root "$CRAFT_PART_INSTALL"
       rm -f "$CRAFT_PART_INSTALL"/.crates.toml "$CRAFT_PART_INSTALL"/.crates2.json
+      # DWARF is ~30% of a release Rust binary and no user of a strict snap
+      # can run a debugger against it anyway. --strip-debug, not --strip-all:
+      # the symbol table is what makes a panic backtrace readable.
+      strip --strip-debug "$CRAFT_PART_INSTALL"/bin/*
     stage-packages:
       - libpipewire-0.3-0
       # protocol-native & friends: mandatory modules loaded by pw_context_new
       # (PIPEWIRE_MODULE_DIR). libspa-0.2-modules comes in as a dependency.
       - libpipewire-0.3-modules
-      - libgtk-4-1 # the ui-gtk overlay (staged from noble; see the apps note)
-      - libglib2.0-bin # gsettings, for reference/debug inside the snap
     prime:
-      # libxml2 is the only consumer of ICU here, and it needs just libicuuc
-      # (which pulls libicudata). ICU's i18n/io/tool/test libraries arrive
-      # with the package and nothing links them.
-      - -usr/lib/*/libicui18n.so*
-      - -usr/lib/*/libicuio.so*
-      - -usr/lib/*/libicutest.so*
-      - -usr/lib/*/libicutu.so*
       - -usr/share/doc
       - -usr/share/man
+      - -usr/share/lintian
+      - -usr/share/bug
+      - -usr/share/doc-base
+    override-prime: |
+      craftctl default
+      cd "$CRAFT_PRIME"
+      lib="usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR"
+
+      # libpipewire-0.3-modules ships ~40 modules; pw_context_new loads the
+      # six named in client.conf and nothing dlopens the rest. The keep-list
+      # is spelled out here rather than read out of client.conf: that file is
+      # primed by another part, with no ordering guarantee between them.
+      modules="protocol-native client-node client-device adapter metadata session-manager"
+      for so in "$lib"/pipewire-0.3/libpipewire-module-*.so; do
+        name=$(basename "$so" .so)
+        case " $modules " in
+          *" ${name#libpipewire-module-} "*) ;;
+          *) rm -f "$so" ;;
+        esac
+      done
+
+      # Likewise for SPA: client.conf's context.spa-libs maps audioconvert
+      # and support and nothing else. Devices (alsa, v4l2, bluez5) are opened
+      # by the host daemon, never here: this snap is a PipeWire *client*.
+      find "$lib"/spa-0.2 -mindepth 1 -maxdepth 1 -type d \
+        ! -name audioconvert ! -name support -exec rm -rf {} +
+
+      # gio's proxy/TLS modules, glib-pacrunner and session-migration would
+      # otherwise be honoured as roots by the sweep below, and they are what
+      # drags libproxy -> libcurl -> libssh/libldap/libsasl2 into a snap that
+      # has no `network` plug at all.
+      rm -f "$lib"/gio/modules/libgiolibproxy.so \
+            "$lib"/gio/modules/libgiognomeproxy.so \
+            "$lib"/gio/modules/libgiognutls.so \
+            usr/libexec/glib-pacrunner usr/bin/session-migration
+
+      # Now drop every library the snap cannot reach. Deleting those modules
+      # orphans the apt dependencies they came with - roc, pulse, avahi,
+      # libcurl and every audio codec - and that list churns with each
+      # pipewire release, so walk the ELF closure from the real entry points
+      # instead of chasing it by hand. Roots: the shipped binaries, plus the
+      # plugin directories, which are dlopened and so have no NEEDED edge
+      # pointing at them. Over-pruning is not silent: snapcraft's `library`
+      # linter reports anything left with a missing dependency.
+      keep=$(mktemp) todo=$(mktemp) next=$(mktemp)
+      { ls bin/myna-desktop bin/myna-dictate usr/bin/* usr/libexec/* 2>/dev/null
+        find "$lib"/pipewire-0.3 "$lib"/spa-0.2 "$lib"/gio -name '*.so' 2>/dev/null
+      } > "$todo" || true
+      while [ -s "$todo" ]; do
+        : > "$next"
+        while read -r f; do
+          real=$(readlink -f "$f") || continue
+          grep -qxF "$real" "$keep" && continue
+          echo "$real" >> "$keep"
+          objdump -p "$real" 2>/dev/null | awk '/NEEDED/ {print $2}' |
+            while read -r n; do find usr/lib -name "$n" >> "$next"; done
+        done < "$todo"
+        cp "$next" "$todo"
+      done
+      find usr/lib -name '*.so*' -type f |
+        while read -r f; do
+          grep -qxF "$(readlink -f "$f")" "$keep" || rm -f "$f"
+        done
+      find usr/lib -xtype l -delete
+      find usr/lib -type d -empty -delete
+      rm -f "$keep" "$todo" "$next"
+
+      # Data and unit/service files left behind by the libraries the sweep
+      # took out. The systemd user units and the PACRunner D-Bus service are
+      # doubly dead: the host never reads a snap's, and they now name
+      # binaries this part just deleted.
+      rm -rf usr/share/X11 usr/share/alsa usr/share/GConf usr/share/upstart \
+             usr/share/session-migration usr/share/glib-2.0 \
+             usr/share/bash-completion usr/lib/systemd "$lib"/avahi \
+             etc/pulse usr/share/dbus-1/services/org.gtk.GLib.PACRunner.service
 
   # PipeWire client config (client.conf & friends). In noble these ship in
   # pipewire-bin (libpipewire-0.3-common is docs-only); pw_context_new treats
-  # a missing client.conf as fatal. Keep ONLY the config dir — not the
-  # pipewire daemon binaries the package also carries.
+  # a missing client.conf as fatal. Keep ONLY client.conf: not the daemon
+  # binaries the package also carries, nor the daemon/JACK/AES67/AVB configs
+  # sitting beside it.
   pipewire-config:
     plugin: nil
     stage-packages:
       - pipewire-bin
-    prime:
-      - usr/share/pipewire
+    # Filter at *stage*, not prime: pipewire-bin's dependency tree overlaps
+    # the client part's (libcurl-gnutls & co.) and craft-parts refuses to
+    # stage the same path from two parts. Nothing here is wanted anyway.
+    stage:
+      - usr/share/pipewire/client.conf
 
   scripts:
     plugin: dump
     source: scripts
     stage-packages:
       - dconf-cli # dconf write, for myna-install-shortcut
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
     organize:
       "myna-daemon": bin/myna-daemon
       "myna-testbed": bin/myna-testbed
