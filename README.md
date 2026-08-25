@@ -330,17 +330,32 @@ One command per language in the Workshop environment (same commands in CI):
 ```shell
 workshop run myna cov        # Rust: HTML + lcov + Cobertura under client/target/coverage/
 workshop run myna py-cov     # Python: htmlcov/ + term-missing + Cobertura
-workshop run myna exercise   # real use-cases (both wire dialects) instrumented, merged exports
-workshop run myna deadcode   # populations + dead-code report: client/target/coverage/populations.md
+workshop run myna exercise   # real use-cases instrumented (CLI, desktop daemon, capture), merged exports
+workshop run myna deadcode   # populations + dead-code report, digest on stdout
 ```
 
-`deadcode`'s report classifies every line as **test-covered**,
+`deadcode` classifies every coverable line as **test-covered**,
 **use-case-only** (an integration-test gap, not dead code), or
-**never-executed**, and appends static findings (`cargo machete`, vulture,
-ruff F401/F841). CI additionally enforces a **patch-coverage gate** on every
-PR: 80% of changed coverable lines (5-line floor; deletion-only PRs can't
-false-fail), self-hosted - no external service (`workshop run myna patch-cov`
-locally). Whole-project coverage is reported informationally only.
+**never-executed**, and adds static findings (`cargo machete`, vulture,
+ruff F401/F841). It prints a digest - totals per language, debt per component
+ranked by never-executed lines, the hot-spot files, and how many functions no
+run ever enters - and writes three files under `client/target/coverage/`:
+
+| file | what it is |
+|---|---|
+| `populations-summary.md` | the digest; CI appends it to the job summary |
+| `populations.md` | full report: every never-entered function by name, never-executed line spans per file, raw static output |
+| `populations.json` | machine-readable, for trend tooling |
+
+Numbers are only as fresh as the exports they came from, so the digest warns
+when the exports name files the tree no longer has, or when sources changed
+after they were written. `--top N` widens the hot-spot list; `--no-statics`
+skips the static tools.
+
+CI additionally enforces a **patch-coverage gate** on every PR: 80% of changed
+coverable lines (5-line floor; deletion-only PRs can't false-fail), self-hosted
+- no external service (`workshop run myna patch-cov` locally). Whole-project
+coverage is reported informationally only.
 
 ### Instrumented builds & manual coverage
 

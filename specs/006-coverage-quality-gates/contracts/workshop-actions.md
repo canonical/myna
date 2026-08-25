@@ -42,11 +42,26 @@ all report paths are repo-relative and gitignored.
 
 ## `exercise` — use-case runs under instrumentation (FR-004)
 
-- **Runs** `dev/exercise.sh`: fake-adapter `myna-server` + `myna-dictate`
-  sessions in internal and IE115 dialects (recorded/WAV input), plus the
-  `myna-desktop --dbus` publisher path against a stub consumer; live-mic
-  scenario only when explicitly gated open. Both toolchains instrumented
-  (coverage.py parallel mode + contexts; llvm-cov run).
+- **Runs** `dev/exercise.sh`, which re-executes itself under
+  `dev/gated-tests.sh` so the services its scenarios need are present rather
+  than waited for: fake-adapter `myna-server` + `myna-dictate` sessions in
+  internal and IE115 dialects and from a corpus manifest (recorded/WAV input);
+  the packaged `myna-desktop` daemon against the virtual capture source, a
+  private session bus and a private IBus daemon; capture from that source
+  through the native backend; and the one-shot entry points (`--help`,
+  rejected argument combinations, `--toggle`, `--install-shortcut`). Both
+  toolchains instrumented (coverage.py parallel mode + contexts; llvm-cov run).
+  `MYNA_LIVE_TESTS=1` aims the capture scenario at the machine's default
+  device instead of the virtual one; `MYNA_EXERCISE_NO_GATES=1` skips the
+  re-exec and leaves the service-dependent scenarios skipping.
+- **Clean exits are load-bearing**: an instrumented binary writes its `.profraw`
+  from an `atexit` handler, so every scenario quits its binary through EOF on
+  stdin. A scenario that killed one with a signal would score as zero coverage
+  while still passing.
+- **Why the wrapper**: the desktop scenario used to gate on `MYNA_PIPEWIRE_TESTS`
+  being exported by hand, which nothing did, so it had never run and every
+  `myna-desktop` entry point read as dead code. `cov` already stood the same
+  services up through `gated-tests.sh`; `exercise` now does too.
 - **Outputs**: raw coverage data merged into the same locations as `cov` /
   `py-cov` (merged = tests + use-cases), plus merged exports
   `client/target/coverage/rust-merged.cobertura.xml`,
@@ -71,12 +86,25 @@ merges into one report.
 - **Runs** `dev/coverage_populations.py` over the tests-only and merged
   Cobertura exports; appends static findings (`cargo machete`, vulture with
   `dev/vulture_allowlist.py`, `ruff --select F401,F841`).
-- **Outputs**: `client/target/coverage/populations.md` — per-language,
-  per-component tables of test-covered / use-case-only / never-executed, and
-  the dead-code section; `client/target/coverage/populations.json`
-  (machine-readable).
+- **Outputs**: a digest on **stdout** — per-language population totals with
+  percentages, per-component debt ranked by never-executed lines, the
+  never-executed hot-spot files, the never-entered function count, and a
+  one-line verdict per static tool. The same digest as markdown at
+  `client/target/coverage/populations-summary.md` (CI appends it to the job
+  summary, so the debt number is visible on every run without downloading an
+  artifact); the full report — digest plus every never-entered function by
+  name, never-executed line spans per file, and raw static output — at
+  `client/target/coverage/populations.md`; `client/target/coverage/populations.json`
+  (machine-readable, including totals and the never-entered functions).
+- **Staleness**: exports naming files the tree no longer has are excluded, and
+  both that and "sources changed since the exports were written" are reported
+  as warnings at the top of the digest — a stale report otherwise describes
+  debt that is already gone.
+- **Options**: `--top N` (hot-spot files in the digest, default 15),
+  `--no-statics` (skip the static tools).
 - **Exit**: non-zero if required exports are missing; the report itself is
-  advisory (never fails on findings at introduction).
+  advisory (never fails on findings at introduction). A static tool that is
+  not installed is reported as "not run", never as clean.
 
 ## `patch-cov` — self-hosted patch gate (FR-008; CI-oriented, locally runnable)
 

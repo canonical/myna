@@ -86,7 +86,18 @@ actions:
   # Raw .profraw is left in place for `exercise` to merge against.
   cov: |
     export PATH=/usr/local/cargo-bin:$PATH
-    rustup component add llvm-tools-preview 2>/dev/null || true
+    # cargo-llvm-cov needs llvm-tools. Without it, it offers to install the
+    # component from an interactive prompt - which on a CI runner is a hang,
+    # not an error, and locally reports the network as a rustup prompt failing
+    # rather than as the download it was. Install it up front and fail with the
+    # reason. Idempotent: an installed component costs one rustup query.
+    if ! rustup component list --installed | grep -q '^llvm-tools'; then
+      rustup component add llvm-tools-preview || {
+        echo "cov: llvm-tools-preview install failed (see rustup's error above);" \
+             "cargo-llvm-cov cannot instrument without it" >&2
+        exit 1
+      }
+    fi
     # The orchestrator e2e tests spawn the venv's myna-server; sync it first or
     # they skip silently (and Rust loses ~2 points of coverage).
     (cd /project/server && uv sync -q)
@@ -136,7 +147,11 @@ actions:
     bash /project/dev/exercise.sh
 
   # Populations (test-covered / use-case-only / never-executed) + dead-code
-  # report at client/target/coverage/populations.md (+ .json).
+  # report. Prints the digest - per-language totals, per-component debt, the
+  # never-executed hot spots, never-entered function counts, static verdicts -
+  # to stdout, and writes the full report to client/target/coverage/
+  # populations.md, the same digest to populations-summary.md (what CI appends
+  # to the job summary), and populations.json.
   deadcode: |
     cd /project/server && uv sync -q
     cd /project && /project/server/.venv/bin/python dev/coverage_populations.py

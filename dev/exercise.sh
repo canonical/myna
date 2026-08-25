@@ -9,12 +9,20 @@
 #           server/.coverage.usecase-* files, combined with the test-suite
 #           data below.
 #
-# Scenarios (each fails loudly on a broken assertion; gated scenarios skip
-# with a clear notice and are recorded as unexercised, never as failures):
+# Scenarios (each fails loudly on a broken assertion; a scenario whose service
+# did not come up skips with a clear notice, never a failure):
 #   1. fake-adapter dictation, internal dialect (WAV clip)
 #   2. fake-adapter dictation, IE115 dialect (WAV clip)
-#   3. myna-desktop org.myna.Dictation publisher   [gated: MYNA_PIPEWIRE_TESTS]
-#   4. live capture                          [gated: MYNA_LIVE_TESTS]
+#   3. myna-desktop, the packaged daemon's own entry path       [needs the graph]
+#   4. capture from a real PipeWire source                      [needs the graph]
+#   5. fake-adapter dictation from a corpus manifest (multi-clip)
+#   6. entry-point surfaces: --help, argument errors, --toggle, shortcut install
+#
+# Scenarios 3 and 4 need a PipeWire graph, a session bus and an IBus daemon.
+# This script stands them up the way `cov` does, by re-executing itself under
+# dev/gated-tests.sh, rather than testing a gate a developer has to remember to
+# export: the gate approach meant scenario 3 had never run once, and every
+# myna-desktop entry point read as dead code in the populations report.
 #
 # Prerequisites: `workshop run myna cov py-cov` first (or this script runs the
 # suites itself when their raw data is missing). Run from anywhere; paths are
@@ -40,6 +48,18 @@ command -v cargo-llvm-cov >/dev/null || die "cargo-llvm-cov not installed (works
 # Corpora are generated, never committed: without this the dictation scenarios
 # fail deep inside the client as an opaque "audio device unavailable".
 [ -f "$CLIP" ] || die "missing $CLIP - provision the corpus first: workshop run myna corpus"
+
+# --- stand the services up (features 002/003) --------------------------------
+# gated-tests.sh publishes a private PipeWire graph with a virtual mic that
+# carries audio, a private session bus and a private IBus daemon, exports a
+# gate per service that came up, and re-execs us inside all of it. Everything
+# it touches is scratch: a developer running this on their desktop keeps their
+# own audio graph and input method. A service that does not come up leaves its
+# gate unset and its scenario skipping, exactly as it does offline.
+if [ -z "${MYNA_EXERCISE_GATED:-}" ] && [ "${MYNA_EXERCISE_NO_GATES:-}" != "1" ]; then
+  export MYNA_EXERCISE_GATED=1
+  exec "$REPO_ROOT/dev/gated-tests.sh" "${BASH_SOURCE[0]}" "$@"
+fi
 
 # --- fail-loud prerequisite check (FR-005) -----------------------------------
 # Rust: the merged report needs the test-suite .profraw. If absent, run the
@@ -100,44 +120,130 @@ stop_server
 grep -qF "$EXPECTED" "$WORK/ie115.out" \
   || die "IE115-dialect session missed expected transcript (see $WORK/ie115.out)"
 
-# --- Scenario 3: desktop bus publisher (gated) ---------------------------------
-if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && command -v pw-loopback >/dev/null; then
-  notice "scenario 3: myna-desktop org.myna.Dictation publisher (virtual source)"
+# --- Scenario 3: myna-desktop, the packaged daemon's entry path ----------------
+# This is the binary the snap ships. Running it is the only way its argument
+# parsing, banner, activation wiring and controller loop are executed at all:
+# the unit suite reaches parse_args_from(), never main().
+if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && [ "${MYNA_DBUS_TESTS:-}" = "1" ]; then
+  notice "scenario 3: myna-desktop --stdin against $MYNA_PIPEWIRE_TARGET"
   SOCK="$WORK/desktop.sock"; rm -f "$SOCK"
   start_server desktop "$SOCK"
-  # shellcheck disable=SC2016  # late expansion of the injected $SOCK/$CLIENT is intentional
-  dbus-run-session -- bash -c '
-    set -euo pipefail
-    pw-loopback -n myna-exercise-src --capture-props="media.class=Audio/Source" &
-    LOOPBACK=$!; trap "kill $LOOPBACK 2>/dev/null || true" EXIT
-    sleep 1
-    cd "'"$CLIENT"'"
-    # toggle on, let a session run, toggle off; transcript goes to stdout
-    ( sleep 2; printf "\n"; sleep 4; printf "\n"; sleep 2 ) | \
-      cargo llvm-cov run --no-report --bin myna-desktop -- \
-        --stdin --socket "'"$SOCK"'" --target myna-exercise-src
-  ' | tee "$WORK/desktop.out" || die "desktop publisher scenario failed"
+  # Toggle on, let a session run, toggle off, then EOF to quit. The quit has to
+  # be a clean exit: the instrumented binary writes its .profraw from an atexit
+  # handler, and a signal would kill it first and score the whole run as zero.
+  ( sleep 2; printf '\n'; sleep 5; printf '\n'; sleep 3 ) | \
+  (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-desktop -- \
+    --stdin --socket "$SOCK" --target "$MYNA_PIPEWIRE_TARGET") \
+    | tee "$WORK/desktop.out" || die "desktop scenario failed (see $WORK/desktop.out)"
   stop_server
+  # The transcript is injected into IBus, not printed, so there is nothing on
+  # stdout to match: what this asserts is that the daemon reached its run loop
+  # with a working injector. The publish and the injection themselves are the
+  # dbus_hw / ibus_hw suites' assertions, which `cov` runs against these same
+  # services.
+  grep -q "myna-desktop" "$WORK/desktop.out" \
+    || die "myna-desktop printed no banner (see $WORK/desktop.out)"
+  if grep -q "cannot connect to IBus" "$WORK/desktop.out"; then
+    die "myna-desktop could not reach the IBus daemon (see $WORK/desktop.out)"
+  fi
 else
-  skip "scenario 3 (desktop bus publisher): needs MYNA_PIPEWIRE_TESTS=1 and pw-loopback"
+  skip "scenario 3 (myna-desktop): needs a PipeWire graph and a session bus"
 fi
 
-# --- Scenario 4: live capture (gated) ------------------------------------------
+# --- Scenario 4: capture from a real PipeWire source ---------------------------
+# The virtual mic gated-tests.sh publishes is a real capture path through
+# myna-audio's native backend - the only thing hardware adds is the driver
+# underneath it. MYNA_LIVE_TESTS=1 aims the same scenario at the machine's
+# default device instead, for a maintainer with a microphone in front of them.
+MIC_TARGET=()
+MIC_WHAT=""
 if [ "${MYNA_LIVE_TESTS:-}" = "1" ]; then
-  notice "scenario 4: live capture from the default source"
+  MIC_WHAT="the default device"
+elif [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ]; then
+  MIC_TARGET=(--target "$MYNA_PIPEWIRE_TARGET")
+  MIC_WHAT="$MYNA_PIPEWIRE_TARGET"
+fi
+if [ -n "$MIC_WHAT" ]; then
+  notice "scenario 4: live capture from $MIC_WHAT"
   SOCK="$WORK/live.sock"; rm -f "$SOCK"
   start_server live "$SOCK"
-  (cd "$CLIENT" && timeout 20 cargo llvm-cov run --no-report --bin myna-dictate -- \
-    --socket "$SOCK" --mic) || die "live-capture scenario failed"
+  ( sleep 1; printf '\n'; sleep 5; printf '\n'; sleep 2 ) | \
+  (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+    --socket "$SOCK" --mic "${MIC_TARGET[@]}") \
+    | tee "$WORK/live.out" || die "live-capture scenario failed (see $WORK/live.out)"
   stop_server
 else
-  skip "scenario 4 (live capture): needs MYNA_LIVE_TESTS=1 and capture hardware"
+  skip "scenario 4 (live capture): needs a PipeWire graph, or MYNA_LIVE_TESTS=1"
 fi
+
+# --- Scenario 5: corpus manifest (multi-clip session) --------------------------
+# `--corpus` is how the evaluation harness drives the CLI, and it is a distinct
+# path from `--clip`: a manifest read, then several utterances in one session.
+# The manifest is written here rather than pointed at corpus/real/manifest.json
+# so the scenario costs two utterances whatever tier is provisioned.
+notice "scenario 5: fake-adapter dictation from a corpus manifest"
+CORPUS_DIR="$WORK/corpus"; rm -rf "$CORPUS_DIR"; mkdir -p "$CORPUS_DIR"
+cp "$CLIP" "$CORPUS_DIR/clip.wav"
+cat >"$CORPUS_DIR/manifest.json" <<JSON
+{"clips": [{"path": "clip.wav", "text": "$EXPECTED"},
+           {"path": "clip.wav", "text": "$EXPECTED"}]}
+JSON
+SOCK="$WORK/corpus.sock"; rm -f "$SOCK"
+start_server corpus "$SOCK"
+( sleep 1; printf '\n'; sleep 6; printf '\n'; sleep 6 ) | \
+(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+  --socket "$SOCK" --corpus "$CORPUS_DIR") | tee "$WORK/corpus.out"
+stop_server
+grep -qF "$EXPECTED" "$WORK/corpus.out" \
+  || die "corpus session missed expected transcript (see $WORK/corpus.out)"
+
+# --- Scenario 6: entry-point surfaces ------------------------------------------
+# The one-shot modes and the argument-error paths. Each is a real invocation of
+# a shipped binary, which is the point: --help, a rejected combination and the
+# shortcut installer are all reachable only through main(). Every one of these
+# is expected to exit non-zero at least some of the time, so none of them may
+# fail the run - the assertion is on what they printed.
+notice "scenario 6: entry-point surfaces (--help, argument errors, --toggle)"
+run_cli() { # <binary> <outfile> <args...>
+  local bin="$1" out="$2"; shift 2
+  (cd "$CLIENT" && cargo llvm-cov run --no-report --bin "$bin" -- "$@") \
+    >"$WORK/$out" 2>&1 || true
+}
+
+run_cli myna-dictate cli-help.out --help
+grep -qi "usage" "$WORK/cli-help.out" || die "myna-dictate --help printed no usage"
+
+# Mutually exclusive selection: the validation in parse_args, not parse_args_from.
+run_cli myna-dictate cli-badargs.out --socket "$WORK/none.sock" --mic --clip "$CLIP"
+grep -qF -- "--mic and --clip/--corpus are mutually exclusive" "$WORK/cli-badargs.out" \
+  || die "myna-dictate accepted --mic with --clip (see $WORK/cli-badargs.out)"
+
+run_cli myna-desktop desktop-help.out --help
+grep -qi "usage" "$WORK/desktop-help.out" || die "myna-desktop --help printed no usage"
+
+# No --socket: the daemon must refuse rather than start half-configured.
+run_cli myna-desktop desktop-nosocket.out --stdin
+grep -qF -- "--socket is required" "$WORK/desktop-nosocket.out" \
+  || die "myna-desktop started without --socket (see $WORK/desktop-nosocket.out)"
+
+# --toggle with nothing listening: exercises control_path + the client leg.
+run_cli myna-desktop desktop-toggle.out --toggle --control-socket "$WORK/absent.sock"
+
+# The shortcut installer shells out to gsettings. Under gated-tests.sh both
+# XDG_CONFIG_HOME and the session bus are scratch, so the dconf write lands in
+# a temporary directory and the developer's real keybindings are untouched. It
+# reports failure cleanly where the GNOME schemas are absent, which is a path
+# worth covering too.
+run_cli myna-desktop desktop-shortcut.out --install-shortcut '<Super>t'
+grep -qiE "bound|failed to set" "$WORK/desktop-shortcut.out" \
+  || die "myna-desktop --install-shortcut said nothing (see $WORK/desktop-shortcut.out)"
 
 # --- fail-loud merge (FR-005) --------------------------------------------------
 notice "merging coverage data"
 # coverage --parallel-mode suffixes each --data-file with host.pid.random
-for want in internal ie115; do
+# Scenario 5 always runs, so its server data is required too; the gated
+# scenarios are not listed - a graph that did not come up is a skip.
+for want in internal ie115 corpus; do
   ls "$SERVER"/.coverage.usecase-"$want".* >/dev/null 2>&1 \
     || die "missing raw Python coverage for usecase:$want (server crashed? see $WORK/server-$want.log)"
 done

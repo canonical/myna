@@ -149,8 +149,13 @@ jobs:
       - name: Use-case exercise (merged exports)
         run: make workshop-exercise
 
+      # The digest (populations, per-component debt, hot spots, never-entered
+      # functions, static findings) goes to the job summary, so the number is
+      # read on every run rather than only when someone downloads the artifact.
       - name: Dead-code report
-        run: make workshop-deadcode
+        run: |
+          make workshop-deadcode
+          cat client/target/coverage/populations-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
@@ -161,22 +166,6 @@ jobs:
             client/target/coverage/
             server/htmlcov/
             server/coverage-*.xml
-
-      - name: Project coverage (informational)
-        run: |
-          {
-            echo "## Project coverage (informational, non-blocking)"
-            echo
-            python3 - <<'EOF'
-          import xml.etree.ElementTree as ET
-          for name, path in [
-              ("Rust (merged)", "client/target/coverage/rust-merged.cobertura.xml"),
-              ("Python (merged)", "server/coverage-merged.cobertura.xml"),
-          ]:
-              rate = float(ET.parse(path).getroot().get("line-rate")) * 100
-              print(f"- {name}: {rate:.1f}% lines")
-          EOF
-          } >> "$GITHUB_STEP_SUMMARY"
 
       # Blocking gate (FR-008): 80% of changed coverable lines, 5-line floor,
       # deletion-only and excluded paths cannot false-fail. Exit 2 = fail.
