@@ -54,6 +54,29 @@ def _iso639_1(language: str | None) -> str | None:
     return language.split("-")[0] if language else None
 
 
+# Whisper decodes near-silence into training-data boilerplate — our shipped
+# whisper-tiny weights return "You" for pure digital silence, and a dictation
+# is near-silence whenever the hotkey is tapped twice or a single short word
+# lands in a 30 s window. faster-whisper's silence gate is
+#
+#     should_skip = no_speech_prob > no_speech_threshold
+#     if avg_logprob > log_prob_threshold:
+#         should_skip = False        # "logprob high enough, keep it anyway"
+#
+# and the default -1.0 is loose enough that a confidently-decoded "You"
+# un-skips the segment. Raising it to -0.5 makes the skip stick.
+#
+# Measured 2026-08-26 (dev/lab/whisper_silence_probe.py, 12 empty-reference
+# inputs: silence, -70 dBFS dither, -45 dBFS room tone, -50 dBFS hum, at
+# 1/5/30 s): 5/12 -> 0/12 on tiny and 6/12 -> 0/12 on base, with WER unchanged
+# on the balanced tier (6.21%) and on speech padded with 3 s of silence.
+#
+# Note this is the *opposite* sign to the whisper.cpp constant it was derived
+# from; see docs/whisper-quantization-and-decoding.md §3. `vad_filter=True`
+# also reaches 0/12 but costs accuracy on base and strips pause-heavy speech,
+# so it is deliberately not used here.
+_LOG_PROB_THRESHOLD = -0.5
+
 _PROGRESS_INTERVAL_SECONDS = 1.0
 # Heartbeat cadence while the model loads. A cold load is a few seconds from
 # disk but can be minutes on first use (weight download), during which there
@@ -270,6 +293,7 @@ class FasterWhisperAdapter:
                 beam_size=self._stream_beam_size,
                 word_timestamps=True,
                 vad_filter=False,
+                log_prob_threshold=_LOG_PROB_THRESHOLD,
             )
             words: list[Word] = []
             for seg in segments:  # drain the generator (we're in a thread)
@@ -298,5 +322,6 @@ class FasterWhisperAdapter:
             samples,
             language=_iso639_1(config.language),
             initial_prompt=config.prompt,
+            log_prob_threshold=_LOG_PROB_THRESHOLD,
         )
         return list(segments)  # drain the generator while still in the thread
