@@ -29,6 +29,17 @@ pub mod wire {
     pub const FINALIZING: &str = "finalizing";
     pub const NOTICE: &str = "notice";
     pub const ERROR: &str = "error";
+
+    /// Every defined wire value, for exhaustive iteration in tests.
+    pub const ALL: [&str; 7] = [
+        IDLE,
+        LOADING,
+        RECORDING,
+        TRANSCRIBING,
+        FINALIZING,
+        NOTICE,
+        ERROR,
+    ];
 }
 
 /// Problem-tier classification (data-model E1a): a **recoverable** notice
