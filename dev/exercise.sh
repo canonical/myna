@@ -221,10 +221,10 @@ grep -qF -- "--mic and --clip/--corpus are mutually exclusive" "$WORK/cli-badarg
 run_cli myna-desktop desktop-help.out --help
 grep -qi "usage" "$WORK/desktop-help.out" || die "myna-desktop --help printed no usage"
 
-# No --socket: the daemon must refuse rather than start half-configured.
+# No backend at all: the daemon must refuse rather than start half-configured.
 run_cli myna-desktop desktop-nosocket.out --stdin
-grep -qF -- "--socket is required" "$WORK/desktop-nosocket.out" \
-  || die "myna-desktop started without --socket (see $WORK/desktop-nosocket.out)"
+grep -qF -- "is required to run the daemon" "$WORK/desktop-nosocket.out" \
+  || die "myna-desktop started with no backend (see $WORK/desktop-nosocket.out)"
 
 # --toggle with nothing listening: exercises control_path + the client leg.
 run_cli myna-desktop desktop-toggle.out --toggle --control-socket "$WORK/absent.sock"
