@@ -1204,6 +1204,7 @@ dependencies = [
 name = "myna-hud"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "gettext-rs",
  "gl",
  "gtk4",
