@@ -21,8 +21,10 @@ pub const FLOOR: f64 = 0.04;
 // noise ≈ -80 dBFS, normal speech RMS ≈ -41 dBFS / peak ≈ -32 dBFS,
 // strong speech RMS ≈ -32 dBFS / peak ≈ -23 dBFS. Map that useful acoustic
 // range onto the full meter instead of applying a shallow linear gain.
-const DB_FLOOR: f64 = -67.0;
-const DB_CEILING: f64 = -14.0;
+// Public: the simulator inverts this exact window so its slider drives the
+// HUD 1:1 (a deliberate transcription that catches calibration drift).
+pub const DB_FLOOR: f64 = -67.0;
+pub const DB_CEILING: f64 = -14.0;
 const PEAK_WEIGHT: f64 = 0.55;
 
 /// Clamp to `[0,1]`; NaN collapses to 0 (X5's NaN-safety).
