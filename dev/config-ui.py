@@ -7,8 +7,9 @@ no config schema exists yet (docs/configuration-api.md 3.4), and puts the live
 status and resource cost of each backend next to those knobs.
 
 Reads are unprivileged (`snap run <backend> get|status|list-*`, systemd
-accounting, the session bus). Writes go through pkexec and are always shown as
-literal commands before they run.
+accounting, the session bus, `gsettings`). Backend writes go through pkexec and
+are always shown as literal commands before they run; the client's own settings
+live in GSettings, which needs no privilege at all.
 
     ./dev/config-ui.py --font-size 14     # or Ctrl +/- / Ctrl-0 at runtime
 """
@@ -44,11 +45,13 @@ FONT_RANGE = (7, 30)
 TIMEOUT = 8
 FAST_POLL = 2.0
 CLIENT_SNAP = "myna"
-SETTINGS = (
-    pathlib.Path(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")))
-    / "myna"
-    / "settings.json"
-)
+# The client settings store is GSettings, not a file: ~/.config/myna/settings.json
+# was on the wrong side of the snap's confinement and nothing has read it since
+# the store moved. Reached here through the host CLI, which lands in the same
+# dconf database the confined daemon reads ($XDG_CONFIG_HOME is pointed at
+# $SNAP_REAL_HOME/.config for exactly that).
+SCHEMA = "org.myna.dictation"
+KEY_STREAMING_MODE = "streaming-mode"
 
 # Keys a real `describe-config` would flag itself. Guessed here, and the guess
 # is displayed as a guess: that is the point of the panel.
@@ -64,6 +67,20 @@ def run(cmd, timeout=TIMEOUT):
         return p.returncode, p.stdout, p.stderr
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         return 127, "", str(exc)
+
+
+def streaming_mode():
+    """The persisted streaming-mode preference, plus an error to display.
+
+    A missing schema is not a fault: it is only installed by `make
+    install-schema` until the extension deb carries it, and the daemon then
+    reads the same built-in defaults this reports.
+    """
+    rc, out, err = run(["gsettings", "get", SCHEMA, KEY_STREAMING_MODE], timeout=3)
+    if rc != 0:
+        detail = (err.strip().splitlines() or [""])[-1]
+        return "", detail or f"no {SCHEMA} schema (defaults apply; make install-schema)"
+    return out.strip().strip("'"), ""
 
 
 def jrun(cmd):
@@ -338,7 +355,7 @@ class MicProbe:
 
 
 def client_state():
-    state = {"dbus": {}, "rss": 0, "pids": [], "settings": {}, "settings_error": ""}
+    state = {"dbus": {}, "rss": 0, "pids": [], "streaming_mode": "", "settings_error": ""}
     for prop in ("State", "AudioRms", "AudioPeak", "ErrorMessage"):
         rc, out, _ = run(
             [
@@ -364,12 +381,7 @@ def client_state():
         if len(parts) == 2:
             state["pids"].append(parts[0])
             state["rss"] += int(parts[1]) * 1024
-    try:
-        state["settings"] = json.loads(SETTINGS.read_text())
-    except FileNotFoundError:
-        state["settings_error"] = "no settings.json (defaults apply)"
-    except (OSError, json.JSONDecodeError) as exc:
-        state["settings_error"] = str(exc)
+    state["streaming_mode"], state["settings_error"] = streaming_mode()
     return state
 
 
@@ -680,7 +692,9 @@ class ClientTab(Scrollable):
         self.stretchy(published)
 
         mode = ttk.LabelFrame(
-            self.body, text="streaming_mode (settings.json, unprivileged)", padding=6
+            self.body,
+            text=f"{KEY_STREAMING_MODE} (GSettings {SCHEMA}, unprivileged)",
+            padding=6,
         )
         mode.pack(fill="x", pady=8)
         choices = ttk.Frame(mode)
@@ -803,16 +817,18 @@ class ClientTab(Scrollable):
         self.after(100, self.tick)
 
     def save_mode(self):
-        try:
-            SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-            doc = {}
-            if SETTINGS.exists():
-                doc = json.loads(SETTINGS.read_text())
-            doc["streaming_mode"] = self.mode.get()
-            SETTINGS.write_text(json.dumps(doc, indent=2) + "\n")
-            self.mode_note.set(f"written to {SETTINGS}; takes effect on next dictation run")
-        except (OSError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Save failed", str(exc))
+        cmd = ["gsettings", "set", SCHEMA, KEY_STREAMING_MODE, self.mode.get()]
+        rc, _, err = run(cmd, timeout=3)
+        if rc != 0:
+            messagebox.showerror("Save failed", err.strip() or " ".join(cmd))
+            return
+        # Resolved once in myna-desktop's `Resolved::new`, so a running daemon
+        # keeps the old value until it is restarted - the old "takes effect on
+        # next dictation run" was wrong about both the store and the moment.
+        self.mode_note.set(
+            f"set {KEY_STREAMING_MODE}={self.mode.get()}; the daemon reads it at startup: "
+            "systemctl --user restart snap.myna.myna.service"
+        )
 
     def update_live(self, state):
         dbus = state.get("dbus") or {}
@@ -824,8 +840,8 @@ class ClientTab(Scrollable):
         self.vars["processes"].set(", ".join(state.get("pids") or []) or "not running")
         self.vars["client RSS"].set(human_bytes(state.get("rss")))
         if not self.mode_note.get():
-            self.mode.set((state.get("settings") or {}).get("streaming_mode", "auto"))
-            self.mode_note.set(state.get("settings_error") or f"loaded from {SETTINGS}")
+            self.mode.set(state.get("streaming_mode") or "auto")
+            self.mode_note.set(state.get("settings_error") or f"loaded from {SCHEMA}")
 
 
 class App(tk.Tk):
