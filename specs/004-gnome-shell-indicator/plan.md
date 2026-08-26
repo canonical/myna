@@ -102,8 +102,12 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
 
 **Primary Dependencies**:
 - Renderer (`client/myna-hud`, new crate): `gtk4` (GLArea, settings),
-  `libadwaita` (application/style manager/color), `gl` (raw GL via
-  `load_with(gdk's get_proc_address)` for the shader wrapper), `zbus`
+  `libadwaita` (application/style manager/color), `gl` (GL **types and
+  constants**; the T101 spike found Ubuntu's libepoxy exports no generic
+  `epoxy_get_proc_address`, only per-function dispatch *pointers* — so the
+  renderer declares those `epoxy_gl*` symbols as extern statics, which is
+  what epoxy's own C headers dereference and what auto-selects GL vs GLES
+  per context, rather than using a `load_with` loader), `zbus`
   (consumer proxy — already vendored family), `gettext-rs` (domain `myna`,
   `gettext-system`), plus a tiny surfaceless-EGL check dependency behind an
   env-gated test feature. No network, no audio.
