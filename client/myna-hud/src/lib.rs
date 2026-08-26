@@ -32,6 +32,7 @@ pub mod dbus_consumer;
 pub mod hud_logic;
 pub mod input_region;
 pub mod motion;
+pub mod notice_slot;
 pub mod ribbon;
 pub mod shader;
 pub mod simulator;
