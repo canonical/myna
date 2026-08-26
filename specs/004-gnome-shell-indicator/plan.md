@@ -90,9 +90,10 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
 **Language/Version**:
 - `myna-hud` renderer: **Rust** (stable, workspace edition 2021,
   `rust-version = 1.75`), GTK4 + libadwaita via the gtk-rs bindings
-  (`gtk4` 0.11 with the `v4_22` feature for
-  `gtk-interface-reduced-motion`; `libadwaita` 0.9 with `v1_7`+ for the
-  accent-color API — `AdwStyleManager`'s accent properties are Since 1.7).
+  (`gtk4` 0.11 `v4_10`, `libadwaita` 0.9 — **no version-gated features**:
+  the newer surfaces are read dynamically at runtime via GObject property
+  lookup, which needs no cargo feature and no per-environment build matrix;
+  see Primary Dependencies).
 - Extension host: **GJS**, GNOME Shell 50 and 51, using the public extension
   API plus mutter's introspected `Meta.WaylandClient`/`Meta.Window` APIs
   (verified present in both `Meta-18.gir` (mutter 50) and `Meta-51.gir`
@@ -103,9 +104,27 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
 - Renderer (`client/myna-hud`, new crate): `gtk4` (GLArea, settings),
   `libadwaita` (application/style manager/color), `gl` (raw GL via
   `load_with(gdk's get_proc_address)` for the shader wrapper), `zbus`
-  (consumer proxy — already vendored family), `gettext-rs` (domain `myna`),
-  plus a tiny surfaceless-EGL check dependency behind an env-gated test
-  feature. No network, no audio.
+  (consumer proxy — already vendored family), `gettext-rs` (domain `myna`,
+  `gettext-system`), plus a tiny surfaceless-EGL check dependency behind an
+  env-gated test feature. No network, no audio.
+  **Version matrix (2026-08-26, corrected against the snap's SDK)**: the
+  packaged binary builds and runs against the
+  [gnome-46-2404 SDK](https://github.com/ubuntu/gnome-sdk/blob/gnome-46-2404-sdk/snapcraft.yaml)
+  (GTK 4.18.6, libadwaita 1.7.7 — Ubuntu-patched to expose the **Yaru accent
+  colors**), not the noble archive; the client workshop's ubuntu@24.04 base
+  carries GTK 4.14/libadwaita 1.5; 26.04 dev hosts carry GTK 4.22/1.9.
+  Therefore no `gtk4/v4_22`/`libadwaita/v1_7` compile-time features: the
+  newer surfaces are consumed via runtime GObject property lookup —
+  `gtk-interface-reduced-motion` (absent in the snap's GTK 4.18 → the
+  `enable-animations` GSettings fallback is the shipping path there) and
+  `AdwStyleManager:accent-color-rgba` (present in the snap's 1.7.7) read as
+  a boxed `gdk::RGBA` rather than the `AdwAccentColor` enum, because
+  Ubuntu's Yaru patches add enum values the upstream Rust enum does not know.
+  An **optional cargo feature** (off for the 24.04 workshop, on for snap
+  builds) was considered and rejected: runtime property lookup already
+  covers every stack with zero per-environment build flags, and simply
+  bumping the workshop base to 26.04 later removes even the fallback paths
+  without any code change.
 - Extension host: Shell platform modules only — `Meta` (WaylandClient,
   Window), `Gio`/`GLib` (presence name via `Gio.bus_own_name`; **no
   `org.myna.Dictation` proxy at all**). ESM modules; no bundler.
@@ -148,8 +167,12 @@ is never touched by any deliverable.
   Workshop definitions in the same PR (constitution IV).
 
 **Target Platform**: Ubuntu Desktop 26.04+ on Wayland, GNOME Shell 50/51
-(mutter ABI 18 / 51); session D-Bus present; GTK ≥ 4.22 and libadwaita ≥ 1.7
-(Ubuntu 26.04 carries 4.22/1.9). Older GNOME and non-GNOME desktops are out
+(mutter ABI 18 / 51); session D-Bus present. The toolkit floor is
+environment-dependent: the snap carries its own GTK 4.18/libadwaita 1.7.7
+(gnome-46-2404 SDK), 26.04 hosts carry 4.22/1.9, and the 24.04 workshop
+carries 4.14/1.5 — the renderer probes the newer surfaces at runtime and
+degrades to the documented fallbacks, so no single floor applies (see
+Primary Dependencies). Older GNOME and non-GNOME desktops are out
 of scope (notification fallback; the layer-shell backend is contract-ready
 follow-up).
 
@@ -256,7 +279,8 @@ specs/004-gnome-shell-indicator/
 ```text
 client/
 ├── myna-hud/                   # NEW CRATE — the renderer application (shipped Rust)
-│   ├── Cargo.toml              #   gtk4 (v4_22), libadwaita (v1_7+), zbus, gl, gettext-rs
+│   ├── Cargo.toml              #   gtk4 (v4_10), libadwaita (no version features —
+│   │                           #     runtime property probing, R26), zbus, gl, gettext-rs
 │   ├── src/
 │   │   ├── main.rs             #   adw::Application; modes: hosted / --lab / --serve-dbus
 │   │   ├── states.rs           #   wire state → descriptor (port of states.js; i18n: domain `myna`)

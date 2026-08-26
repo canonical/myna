@@ -1060,27 +1060,48 @@ the GL path that now matters).
 **Decision**: Accent color (FR-010b, amending R18's mechanism): the **source
 of truth is libadwaita's `Adw.StyleManager`** (`system_supports_accent_colors`
 → `accent_color` → RGBA) — the platform's color manager, as the app no longer
-runs inside the Shell where `St.Settings` applied. The product rule survives
-verbatim: consult `org.gnome.desktop.interface` `accent-color`'s **user
-value** (GSettings, read inside the app) — `null` (never actively written,
-including the untouched default) or unsupported system → fixed Ubuntu-orange
-fallback; a genuine choice → the libadwaita accent palette. Derived tones
+runs inside the Shell where `St.Settings` applied. **(2026-08-26, corrected
+against the snap's SDK)** the runtime matrix spans three stacks: the snap
+builds and runs against the gnome-46-2404 SDK (libadwaita **1.7.7**,
+Ubuntu-patched to expose the **Yaru accent colors** — extra `AdwAccentColor`
+enum values plus `accent-color-rgba`), the client workshop's 24.04 base
+carries 1.5, and 26.04 hosts carry 1.9. Consequences: (a) no
+`libadwaita/v1_7` compile-time feature (24.04 pkg-config would reject it) —
+the accent surfaces are consumed via runtime GObject property lookup; an
+**optional cargo feature** (off for the 24.04 workshop, on for snap builds)
+was considered and rejected: property lookup needs neither features nor a
+per-environment build matrix, and the same code adapts unchanged when the
+workshop base is eventually bumped to 26.04; (b) the
+primary read is the boxed **`accent-color-rgba` property** (Since 1.7,
+present in the snap), NOT the `AdwAccentColor` enum — Ubuntu's Yaru patches
+add enum values the upstream Rust enum would only surface as `__Unknown`,
+and the RGBA sidesteps that entirely (and picks up the exact Yaru tint);
+(c) older stacks (workshop's 1.5) fall back to the fixed hex-table path.
+The product rule survives verbatim: consult `org.gnome.desktop.interface`
+`accent-color`'s **user value** (GSettings, read inside the app) — `null`
+(never actively written, including the untouched default) or unsupported
+system → fixed Ubuntu-orange fallback; a genuine choice → the resolved
+accent palette. (On Ubuntu the patched libadwaita's *default* accent is
+itself orange — `accent-color-Return-return-orange-as-default-color.patch` —
+so the untouched-default rule and the platform default converge there; the
+rule still needs the GSettings user-value read, unchanged.) Derived tones
 (highlight / darker-complement / translucent secondary; aubergine instead of
-complement when orange) remain pure, tested logic; the hand-rolled 9-entry
-hex table for the *main* color is no longer needed (libadwaita resolves it),
-though the derivation logic is kept. Reduced motion (**amended**): the
-primary source is GTK's `GtkSettings:gtk-interface-reduced-motion` (GTK ≥ 4.22,
-populated by GDK from the settings portal's `org.freedesktop.appearance
-reduced-motion`, absent-safe with a `no-preference` default; libadwaita's
-style manager tracks the same property), falling back to the old inverted
-`enable-animations` GSettings key (schema-guarded, R19) on older GTK.
-**Explicitly rejected: reading the new `org.gnome.desktop.a11y.interface
-reduced-motion` GSettings key directly** — the key is new in
-gsettings-desktop-schemas and absent on older systems, and an unguarded
-settings read against a missing schema/key aborts the process
+complement when orange) remain pure, tested logic. Reduced motion
+(**amended**): the primary source is GTK's
+`GtkSettings:gtk-interface-reduced-motion` (GTK ≥ 4.22, populated by GDK
+from the settings portal's `org.freedesktop.appearance reduced-motion`,
+absent-safe with a `no-preference` default; libadwaita's style manager
+tracks the same property), falling back to the old inverted
+`enable-animations` GSettings key (schema-guarded, R19) on older GTK —
+note the snap's GTK 4.18 does **not** have the 4.22 property, so the
+fallback is the shipping path inside the snap and the property lights up on
+26.04 hosts; here too the probe is runtime (`find_property`), not a
+compile-time feature. **Explicitly rejected: reading the new
+`org.gnome.desktop.a11y.interface reduced-motion` GSettings key directly** —
+the key is new in gsettings-desktop-schemas and absent on older systems, and
+an unguarded settings read against a missing schema/key aborts the process
 (crash-on-start risk, flagged 2026-08-26). Both accent color and motion
-re-resolve live; no wire change. (gtk4-rs note: the property needs the
-`v4_22` crate feature — recorded in the plan's Technical Context.)
+re-resolve live; no wire change.
 
 **Rationale**: User direction 2026-08-26 ("introduce libadwaita for the color
 manager … since we don't have anymore st-settings"); keeps FR-010b's
