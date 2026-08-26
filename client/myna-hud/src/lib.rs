@@ -29,6 +29,7 @@
 
 pub mod accent;
 pub mod dbus_consumer;
+pub mod gl;
 pub mod hud_logic;
 pub mod input_region;
 pub mod motion;
