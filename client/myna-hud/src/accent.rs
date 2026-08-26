@@ -26,26 +26,52 @@
 
 use crate::shader::{hex_to_rgb, Rgb, RibbonPalette};
 
-/// The 9-value libadwaita `Adw.AccentColor` palette (GNOME 47+), from
-/// libadwaita's `_colors.scss` / `adw_accent_color_to_rgba`.
+/// The 9-value accent palette, using **Ubuntu's patched libadwaita values**
+/// rather than upstream's.
+///
+/// Ubuntu carries `debian/patches/ubuntu/accent-color-*` on libadwaita,
+/// which makes `adw_accent_color_to_rgba` return Yaru's own tints for every
+/// accent name when running under Yaru — so the same name means a
+/// different colour on the desktops myna ships to. This table therefore
+/// carries the Yaru values (upstream's, for reference, in the trailing
+/// comments); the untouched-default orange is `#e95420`, which is precisely
+/// [`UBUNTU_ORANGE`], so the fallback and the default rule now name one
+/// colour instead of two that merely looked alike.
+///
+/// This table is only the **fallback**: when libadwaita ≥ 1.7 is present,
+/// [`crate::platform::probe_platform_accent`] reads
+/// `AdwStyleManager:accent-color-rgba` and *that* is authoritative — it
+/// already returns these values on Ubuntu, and it is the only thing that
+/// can report accents outside this list at all (Yaru's `wartybrown` is
+/// `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, deliberately
+/// outside upstream's enumeration, which is why that property is read as a
+/// boxed RGBA and never as the enum).
 pub fn accent_hex(name: &str) -> Option<&'static str> {
     match name {
-        "blue" => Some("#3584e4"),
-        "teal" => Some("#2190a4"),
-        "green" => Some("#3a944a"),
-        "yellow" => Some("#c88800"),
-        "orange" => Some("#ed5b00"),
-        "red" => Some("#e62d42"),
-        "pink" => Some("#d56199"),
-        "purple" => Some("#9141ac"),
-        "slate" => Some("#6f8396"),
+        "blue" => Some("#0073e5"),   // upstream #3584e4
+        "teal" => Some("#308280"),   // upstream #2190a4
+        "green" => Some("#4b8501"),  // upstream #3a944a
+        "yellow" => Some("#c88800"), // unchanged by Yaru
+        "orange" => Some("#e95420"), // upstream #ed5b00 — Ubuntu orange
+        "red" => Some("#da3450"),    // upstream #e62d42
+        "pink" => Some("#b34cb3"),   // upstream #d56199
+        "purple" => Some("#7764d8"), // upstream #9141ac
+        "slate" => Some("#657b69"),  // upstream #6f8396
+        // Yaru's `wartybrown`, exposed to the accent-color setting as
+        // "brown". Ubuntu-only: upstream libadwaita has no brown accent at
+        // all, and the patch gives it the deliberately out-of-range enum
+        // value ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100. The
+        // hex is the same in the Yaru and non-Yaru branches.
+        "brown" => Some("#b39169"),
         _ => None,
     }
 }
 
 /// Every accent name the table knows, for exhaustive iteration in tests.
-pub const ACCENT_NAMES: [&str; 9] = [
+pub const ACCENT_NAMES: [&str; 10] = [
     "blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "slate",
+    // Ubuntu-only (Yaru's wartybrown); see [`accent_hex`].
+    "brown",
 ];
 
 /// Fallback when the user has not actively chosen an accent colour

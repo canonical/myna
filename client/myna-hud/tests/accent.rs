@@ -182,3 +182,54 @@ fn converts_to_the_ribbon_palette() {
     );
     assert!((0.0..=1.0).contains(&ribbon.translucent_alpha));
 }
+
+// --- The table carries Ubuntu's patched values, not upstream's ----------
+// Ubuntu patches libadwaita (debian/patches/ubuntu/accent-color-*) so that
+// `adw_accent_color_to_rgba` returns Yaru's tints for every accent name
+// under Yaru. The same name is therefore a different colour on the
+// desktops myna ships to, and a well-meaning "sync this table with
+// upstream libadwaita" would silently re-tint the ribbon on every Ubuntu
+// machine. These are the Yaru values.
+
+#[test]
+fn the_table_uses_ubuntus_patched_accent_values() {
+    for (name, yaru, upstream) in [
+        ("blue", "#0073e5", "#3584e4"),
+        ("teal", "#308280", "#2190a4"),
+        ("green", "#4b8501", "#3a944a"),
+        ("orange", "#e95420", "#ed5b00"),
+        ("red", "#da3450", "#e62d42"),
+        ("pink", "#b34cb3", "#d56199"),
+        ("purple", "#7764d8", "#9141ac"),
+        ("slate", "#657b69", "#6f8396"),
+    ] {
+        assert_eq!(
+            accent_hex(name),
+            Some(yaru),
+            "{name} uses the Yaru value, not upstream's {upstream}"
+        );
+    }
+    // Yellow is the one accent Yaru leaves alone.
+    assert_eq!(accent_hex("yellow"), Some("#c88800"));
+
+    // Yaru's wartybrown, which upstream libadwaita does not have at all —
+    // its enum value is deliberately out of upstream's range, so it can
+    // only ever reach us by name or as a resolved RGBA, never as an enum.
+    assert_eq!(
+        accent_hex("brown"),
+        Some("#b39169"),
+        "the Ubuntu-only brown accent resolves"
+    );
+}
+
+#[test]
+fn the_fallback_orange_and_the_untouched_default_are_one_colour() {
+    // Ubuntu also patches the DEFAULT accent to orange, and Yaru's orange
+    // is Ubuntu orange — so the "user chose orange" path and the "user
+    // never chose" path now name the same colour rather than two that
+    // merely looked alike.
+    assert_eq!(
+        accent_hex("orange").map(str::to_ascii_lowercase),
+        Some(UBUNTU_ORANGE.to_ascii_lowercase()),
+    );
+}
