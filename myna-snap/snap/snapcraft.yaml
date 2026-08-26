@@ -102,7 +102,7 @@ apps:
     # reverted in 2.74.1, LP #2141607). That is safe because myna-desktop
     # treats all four as things that come and go: it binds activation with
     # backoff, connects IBus at the first press, and resolves the backend
-    # socket per press. See docs/deployment-architecture.md §2a and §4.
+    # socket per press.
     daemon: simple
     daemon-scope: user
     plugs:
