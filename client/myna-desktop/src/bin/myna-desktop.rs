@@ -93,6 +93,8 @@ OPTIONS:
     --target <node>    PipeWire node.name to capture from (default: system default)
     --control-socket <path>
                        control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
+    --status           print what this daemon has resolved, what the running one
+                       is doing, and whether the backend is reachable, then exit
     --toggle           poke the running daemon (bind this to a GNOME shortcut)
     --install-shortcut bind a GNOME custom keybinding to <accel>
                        (e.g. '<Super>t'), then exit
@@ -329,6 +331,7 @@ struct Args {
     control: Option<PathBuf>,
     shortcut: Option<String>,
     toggle: bool,
+    status: bool,
     install_shortcut: Option<String>,
     /// `None` = resolve from packaging; `Some` = the user forced one.
     activation: Option<Activation>,
@@ -362,6 +365,7 @@ fn parse_args_from(
             }
             "--shortcut" => a.shortcut = Some(next(&mut it, "--shortcut")?),
             "--toggle" => a.toggle = true,
+            "--status" => a.status = true,
             "--install-shortcut" => {
                 a.install_shortcut = Some(next(&mut it, "--install-shortcut")?);
             }
@@ -755,6 +759,180 @@ fn install_shortcut(accel: &str) -> ExitCode {
     }
 }
 
+/// `--status`: one screen answering "what state is dictation in, and why".
+///
+/// Every line of this was previously somewhere else - the persisted values in
+/// `gsettings`, what they resolved to and why in a journal line printed once at
+/// startup, the live state on the bus, the backend socket nowhere at all - so
+/// answering the question meant knowing all four places and how they compose.
+/// The composition is what this prints: not just the value in force, but where
+/// it came from, because "I set that and nothing happened" is the question
+/// being asked most of the time.
+fn print_status(args: &Args) -> ExitCode {
+    let store = myna_core::settings::Store::open();
+    let settings = myna_core::Settings::load();
+    let system = SystemDefaults::from_env();
+    let resolved = Resolved::new(args, &settings, &system);
+
+    println!(
+        "settings   {} ({})",
+        myna_core::settings::SCHEMA_ID,
+        match store {
+            Some(_) => "schema installed",
+            // The daemon reads defaults in this state, so say so here rather
+            // than printing those defaults as if they were someone's choice.
+            None => "schema NOT installed - every value below is the built-in default",
+        }
+    );
+    let row = |key: &str, persisted: String, in_force: String, from: &str| {
+        println!("  {key:<15} {persisted:<12} -> {in_force:<22} [{from}]");
+    };
+    row(
+        "activation",
+        opt(&settings.activation),
+        // Packaging is the built-in, and it is the one value that can differ
+        // between this invocation and the daemon it is reporting on - an
+        // unpackaged `--status` against a running snap resolves Control while
+        // the daemon holds Portal. Naming the reason makes that legible
+        // instead of looking like a contradiction.
+        match (
+            resolved.activation,
+            args.activation
+                .or(nick(&settings.activation))
+                .or(nick(&system.activation)),
+        ) {
+            (activation, None) if std::env::var_os("SNAP").is_some() => {
+                format!("{activation:?} (packaged)")
+            }
+            (activation, None) => format!("{activation:?} (unpackaged)"),
+            (activation, Some(_)) => format!("{activation:?}"),
+        },
+        source(
+            args.activation.is_some(),
+            settings.activation.is_some(),
+            system.activation.is_some(),
+        ),
+    );
+    row(
+        "language",
+        opt(&settings.language),
+        resolved
+            .language
+            .clone()
+            .unwrap_or_else(|| "(backend default)".into()),
+        source(
+            args.language.is_some(),
+            settings.language.is_some(),
+            system.language.is_some(),
+        ),
+    );
+    row(
+        "hotkey",
+        opt(&settings.hotkey),
+        resolved
+            .hotkey
+            .clone()
+            .unwrap_or_else(|| "(portal default)".into()),
+        source(
+            args.shortcut.is_some(),
+            settings.hotkey.is_some(),
+            system.hotkey.is_some(),
+        ),
+    );
+    row(
+        "streaming-mode",
+        format!("{:?}", settings.streaming_mode).to_lowercase(),
+        format!("preedit {}", resolved.preedit),
+        source(args.preedit.is_some(), store.is_some(), false),
+    );
+    println!(
+        "  {:<15} {}",
+        "",
+        preedit_reason(args.preedit, settings.streaming_mode)
+    );
+
+    println!("\nbackend");
+    match args.backend() {
+        None => println!(
+            "  {:<15} (none - pass --socket or --backend-dir)",
+            "configured"
+        ),
+        Some(backend) => {
+            println!("  {:<15} {}", "configured", backend.describe());
+            match backend.resolve() {
+                Ok(path) => println!("  {:<15} {}", "resolves to", path.display()),
+                Err(e) => {
+                    println!("  {:<15} NOT reachable: {e}", "resolves to");
+                    // The share is a bind mount inside the snap's namespace,
+                    // so an unconfined `--status` cannot see the socket a
+                    // perfectly healthy packaged daemon is using. Say that,
+                    // rather than reporting someone else's working setup as
+                    // broken.
+                    if std::env::var_os("SNAP").is_none()
+                        && backend.describe().starts_with("/var/snap/")
+                    {
+                        println!(
+                            "  {:<15} (a content share is only visible inside the snap - \
+                             `myna.status` reports what the daemon sees)",
+                            ""
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    println!("\ndaemon     {}", myna_desktop::dbus::BUS_NAME);
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("cannot start async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match rt.block_on(myna_desktop::dbus::status::read()) {
+        Ok(status) => {
+            println!("  {:<15} {}", "state", status.state);
+            println!(
+                "  {:<15} {}",
+                "error",
+                if status.error.is_empty() {
+                    "(none)".into()
+                } else {
+                    status.error
+                }
+            );
+        }
+        // Not running is the common case for someone debugging, and it is an
+        // answer, not a failure - so it reads as one and still exits 0.
+        Err(e) => println!("  {:<15} not reachable ({e})", "state"),
+    }
+    ExitCode::SUCCESS
+}
+
+/// Which plane a resolved value came from - the same order as [`Resolved`].
+fn source(flag: bool, user: bool, system: bool) -> &'static str {
+    if flag {
+        "flag"
+    } else if user {
+        "gsettings"
+    } else if system {
+        "snap set"
+    } else {
+        "built-in"
+    }
+}
+
+/// A settings/`snap set` activation nick, where it names one. Used only to ask
+/// "did anything *choose* this, or is it packaging?".
+fn nick(value: &Option<String>) -> Option<Activation> {
+    value.as_deref().and_then(Activation::from_nick)
+}
+
+fn opt(value: &Option<String>) -> String {
+    value.clone().unwrap_or_else(|| "(unset)".into())
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -767,6 +945,9 @@ fn main() -> ExitCode {
     // Non-daemon subcommands first (no IBus / server needed).
     if let Some(accel) = &args.install_shortcut {
         return install_shortcut(accel);
+    }
+    if args.status {
+        return print_status(&args);
     }
     if args.toggle {
         let path = control_path(&args);
@@ -1139,6 +1320,25 @@ mod tests {
         );
         // The old `--dbus` spelling is gone, not silently accepted.
         assert!(parse_args_from(args(&["--dbus", "--socket", "/tmp/x.sock"])).is_err());
+    }
+
+    /// `--status` reports *which* plane won, so the attribution has to be the
+    /// same order `Resolved` applies - a status line that says "gsettings"
+    /// where a flag actually won is worse than no status line.
+    #[test]
+    fn the_reported_source_follows_the_precedence() {
+        assert_eq!(source(true, true, true), "flag");
+        assert_eq!(source(false, true, true), "gsettings");
+        assert_eq!(source(false, false, true), "snap set");
+        assert_eq!(source(false, false, false), "built-in");
+    }
+
+    #[test]
+    fn status_is_a_subcommand_not_a_daemon_flag() {
+        // It must parse without --socket/--backend-dir: the state worth
+        // reporting includes "no backend configured".
+        assert!(parse_args_from(args(&["--status"])).unwrap().status);
+        assert!(!parse_args_from(args(&["--toggle"])).unwrap().status);
     }
 
     #[test]

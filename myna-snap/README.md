@@ -174,9 +174,40 @@ preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 | app | what |
 |---|---|
 | `myna` | the dictation daemon - a user service, so no `/snap/bin` entry |
+| `myna.status` | what state dictation is in, and why - start here |
 | `myna.toggle` | poke the daemon's control socket (start/stop) |
 | `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf) |
 | `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
+
+### `myna.status`
+
+The four planes that answer "why is it doing that" used to be four places: the
+persisted values in `gsettings`, what they resolved to in a journal line
+printed once at startup, the backend socket nowhere at all, and the live state
+on the bus. This prints the composition, including *which* plane won each value
+- because "I set that and nothing happened" is the question being asked.
+
+```
+settings   org.myna.dictation (schema installed)
+  activation      (unset)      -> Portal (packaged)      [built-in]
+  language        (unset)      -> (backend default)      [built-in]
+  hotkey          (unset)      -> (portal default)       [built-in]
+  streaming-mode  auto         -> preedit false          [gsettings]
+                  streaming-mode Auto resolves to Batch on tier x86_64-cpu-generic
+
+backend
+  configured      /var/snap/myna/current/backend/*/ubustt.sock
+  resolves to     /var/snap/myna/current/backend/run/ubustt.sock
+
+daemon     org.myna.Dictation
+  state           idle
+  error           (none)
+```
+
+Run it confined (`myna.status`, not a local build): `$SNAP` decides activation,
+and the backend share is a bind mount that exists only inside the snap, so an
+unpackaged `--status` reports a healthy packaged daemon's backend as
+unreachable. It says so when it notices.
 
 ## Verify (confined, end to end)
 

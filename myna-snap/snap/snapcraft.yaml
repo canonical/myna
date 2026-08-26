@@ -141,6 +141,33 @@ apps:
     plugs:
       - gsettings
 
+  # One screen of "what is dictation doing, and why": the persisted settings,
+  # what they resolved to and which plane won, whether the backend socket is
+  # reachable, and what the running daemon publishes on the bus. Those four
+  # answers lived in four places (gsettings, a journal line printed once at
+  # startup, the content share, D-Bus), which is a lot to know before you can
+  # ask a simple question.
+  #
+  # An app rather than a flag on a wrapper the user never sees, and confined
+  # rather than unpackaged, because the answer depends on where it is asked
+  # from: `$SNAP` decides activation, and the backend share is a bind mount
+  # that only exists in this namespace.
+  status:
+    command: bin/myna-status
+    plugs:
+      # Two plugs, three capabilities. `gsettings` reads the host's dconf
+      # database (see `environment:`) and, because it pulls in AppArmor's
+      # dbus-session-strict abstraction, is also what grants the session bus
+      # socket; the base template then allows D-Bus to peers in the same snap
+      # ("Allow apps from the same package to communicate with each other via
+      # DBus"), so reading the daemon's published state needs no `dbus` plug of
+      # its own - verified against the generated profile, which contains no
+      # rule naming org.myna.Dictation at all. `backend` makes the socket line
+      # the truth rather than a guess: the content share is a bind mount that
+      # exists only in this namespace.
+      - gsettings
+      - backend
+
   # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
   # dialect selection. `home` lets it read clips from the user's files.
   testbed:
@@ -326,6 +353,7 @@ parts:
       - -usr/share/man
     organize:
       "myna-daemon": bin/myna-daemon
+      "myna-status": bin/myna-status
       "myna-testbed": bin/myna-testbed
       "myna-install-shortcut": bin/myna-install-shortcut
       "myna-runtime-links": bin/myna-runtime-links

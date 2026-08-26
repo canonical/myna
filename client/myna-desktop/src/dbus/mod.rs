@@ -12,6 +12,7 @@
 
 pub mod pump;
 pub mod serve;
+pub mod status;
 
 /// Well-known bus name owned by `myna-desktop --dbus` (contract §Bus topology).
 pub const BUS_NAME: &str = "org.myna.Dictation";
