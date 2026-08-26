@@ -59,6 +59,9 @@ $(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
 # Every snap in one go. Kept serial even under `make -j`: the per-snap builds
 # each want the whole machine (snapcraft's build VM/container, multi-GB model
 # fetches) and interleaving them thrashes rather than parallelises.
+#
+# Budget ~60 GiB in the LXD `default` pool for a full run, or expect to call
+# `clean-build-containers` partway through - see that target for why.
 .NOTPARALLEL: snaps
 .PHONY: snaps
 snaps: $(SNAPS:%=snap-%) ## Build every snap (all the snap-* targets below), in order
@@ -292,6 +295,29 @@ clean-snaps: ## Remove built snap/component artifacts and staged wheels/models
 	rm -rf */wheels
 	rm -f */*.snap */*.comp
 	rm -rf */components/model-*
+
+# snapcraft keeps one LXD build container per *project directory*, forever, and
+# never reclaims them. Nine snaps is nine containers; two checkouts is
+# eighteen. They live in the `default` storage pool, which is a fixed-size ZFS
+# image shared with any long-lived dev containers, so a full `make snaps` can
+# fill it - after which every build fails in about three seconds with
+# `No space left on device` or `saving config file for the container failed`,
+# neither of which names the real cause.
+#
+# The containers are caches: snapcraft recreates one on demand, paying only the
+# copy from the base instance (which this deliberately keeps). Reclaim ours by
+# the project-directory inode snapcraft names them after, so a parallel
+# checkout's containers - and every non-snapcraft container - are left alone.
+.PHONY: clean-build-containers
+clean-build-containers: ## Delete this checkout's snapcraft LXD build containers (they are caches)
+	@for d in $(SNAPS); do \
+		inode=$$(stat -c '%i' "$$d-snap" 2>/dev/null) || continue; \
+		name=$$(lxc list --project snapcraft -c n --format csv 2>/dev/null | grep -- "-$$inode$$") || continue; \
+		echo "reclaiming $$name"; \
+		lxc stop --project snapcraft -f "$$name" >/dev/null 2>&1 || true; \
+		lxc delete --project snapcraft -f "$$name" || true; \
+	done
+	@lxc storage info default 2>/dev/null | grep -E 'space used|total space' || true
 
 .PHONY: clean
 clean: clean-snaps ## clean-snaps + Rust/Python build and coverage output
