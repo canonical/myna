@@ -39,9 +39,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# The import below needs this path first, which is what E402 is waived for.
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
 
-from myna.testbed.metrics import character_error_rate, word_error_rate
+from myna.testbed.metrics import character_error_rate, word_error_rate  # noqa: E402
 
 # Named decode configurations. "baseline" is exactly what the shipped adapter
 # passes today; the rest are the hypotheses under test.
@@ -119,9 +120,7 @@ def read_wav(path: Path):
     return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def load_clips(
-    manifest: Path, limit: int | None, exclude_categories: set[str] = frozenset()
-):
+def load_clips(manifest: Path, limit: int | None, exclude_categories: set[str] = frozenset()):
     """Load clips, optionally dropping whole categories.
 
     Excluding ``long-form`` makes a run directly comparable with
@@ -137,9 +136,7 @@ def load_clips(
     return [(c, read_wav(root / c["path"])) for c in clips]
 
 
-def sweep(
-    model_size, compute_type, decode_name, clips, download_root, threads, excluded=""
-):
+def sweep(model_size, compute_type, decode_name, clips, download_root, threads, excluded=""):
     from faster_whisper import WhisperModel
 
     t0 = time.perf_counter()
@@ -203,22 +200,16 @@ def main() -> int:
     p.add_argument("--models", nargs="+", default=["tiny"])
     p.add_argument("--compute-types", nargs="+", default=["float32", "int8"])
     p.add_argument("--decode-configs", nargs="+", default=["baseline"])
-    p.add_argument(
-        "--limit", type=int, default=None, help="first N clips only (smoke runs)"
-    )
+    p.add_argument("--limit", type=int, default=None, help="first N clips only (smoke runs)")
     p.add_argument(
         "--exclude-categories",
         nargs="*",
         default=[],
         help="corpus categories to skip (see load_clips)",
     )
-    p.add_argument(
-        "--threads", type=int, default=0, help="cpu_threads (0 = CTranslate2 default)"
-    )
+    p.add_argument("--threads", type=int, default=0, help="cpu_threads (0 = CTranslate2 default)")
     p.add_argument("--download-root", default=None)
-    p.add_argument(
-        "--out", type=Path, default=REPO_ROOT / "results/whisper-decode-sweep.jsonl"
-    )
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "results/whisper-decode-sweep.jsonl")
     args = p.parse_args()
 
     for name in args.decode_configs:

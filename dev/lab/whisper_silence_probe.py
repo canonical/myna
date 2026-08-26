@@ -42,14 +42,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# The import below needs this path first, which is what E402 is waived for.
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
 
-from myna.testbed.metrics import word_error_rate
+from myna.testbed.metrics import word_error_rate  # noqa: E402
 
 # Shared with dev/lab/whisper_decode_sweep.py; kept in one place so a config
 # named in one tool means the same thing in the other.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from whisper_decode_sweep import DECODE_CONFIGS
+from whisper_decode_sweep import DECODE_CONFIGS  # noqa: E402
 
 RATE = 16_000
 
@@ -109,9 +110,7 @@ def build_padded_cases(manifest: Path, count: int, pad_seconds: float):
         with wave.open(str(manifest.parent / c["path"]), "rb") as w:
             pcm = w.readframes(w.getnframes())
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        out.append(
-            (f"padded-{c['id']}", np.concatenate([pad, samples, pad]), c["text"])
-        )
+        out.append((f"padded-{c['id']}", np.concatenate([pad, samples, pad]), c["text"]))
     return out
 
 
@@ -147,17 +146,13 @@ def main() -> int:
         default=REPO_ROOT / "corpus/real/manifest-balanced.json",
     )
     p.add_argument("--seed", type=int, default=20260826)
-    p.add_argument(
-        "--out", type=Path, default=REPO_ROOT / "results/whisper-silence-probe.json"
-    )
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "results/whisper-silence-probe.json")
     args = p.parse_args()
 
     from faster_whisper import WhisperModel
 
     empty_cases = build_empty_cases(args.durations, args.seed)
-    padded_cases = build_padded_cases(
-        args.manifest, args.padded_clips, args.pad_seconds
-    )
+    padded_cases = build_padded_cases(args.manifest, args.padded_clips, args.pad_seconds)
     print(
         f"{len(empty_cases)} empty-reference cases, {len(padded_cases)} padded-speech cases",
         file=sys.stderr,
@@ -222,10 +217,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2))
 
-    hdr = (
-        f"{'decode config':<32} {'empty->text':>12} {'chars':>7} "
-        f"{'padded WER':>11} {'+words':>7}"
-    )
+    hdr = f"{'decode config':<32} {'empty->text':>12} {'chars':>7} {'padded WER':>11} {'+words':>7}"
     print("\n" + hdr)
     print("-" * len(hdr))
     for r in report["rows"]:

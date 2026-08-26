@@ -36,9 +36,10 @@ import wave
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# The import below needs this path first, which is what E402 is waived for.
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
 
-from myna.testbed.metrics import character_error_rate, word_error_rate
+from myna.testbed.metrics import character_error_rate, word_error_rate  # noqa: E402
 
 W8A8_REPO = "RedHatAI/whisper-tiny-quantized.w8a8"
 BASE_REPO = "openai/whisper-tiny"
@@ -98,9 +99,7 @@ def run_transformers(repo: str, clips, cache_dir: str | None, decompress: bool =
         if decompress:
             from transformers import CompressedTensorsConfig
 
-            kwargs["quantization_config"] = CompressedTensorsConfig(
-                run_compressed=False
-            )
+            kwargs["quantization_config"] = CompressedTensorsConfig(run_compressed=False)
         model = WhisperForConditionalGeneration.from_pretrained(
             repo, cache_dir=cache_dir, dtype=torch.float32, **kwargs
         )
@@ -116,23 +115,17 @@ def run_transformers(repo: str, clips, cache_dir: str | None, decompress: bool =
     dtypes: dict[str, int] = {}
     for p in model.parameters():
         dtypes[str(p.dtype)] = dtypes.get(str(p.dtype), 0) + p.numel()
-    out["param_dtypes"] = {
-        k: v for k, v in sorted(dtypes.items(), key=lambda kv: -kv[1])
-    }
+    out["param_dtypes"] = {k: v for k, v in sorted(dtypes.items(), key=lambda kv: -kv[1])}
     out["quant_config"] = str(getattr(model.config, "quantization_config", None))[:400]
 
     wer_edits = wer_ref = cer_edits = cer_ref = 0
     audio_seconds = decode_seconds = 0.0
     try:
         for clip, samples in clips:
-            feats = processor(
-                samples, sampling_rate=16_000, return_tensors="pt"
-            ).input_features
+            feats = processor(samples, sampling_rate=16_000, return_tensors="pt").input_features
             t0 = time.perf_counter()
             with torch.no_grad():
-                ids = model.generate(
-                    feats, language="en", task="transcribe", max_new_tokens=200
-                )
+                ids = model.generate(feats, language="en", task="transcribe", max_new_tokens=200)
             decode_seconds += time.perf_counter() - t0
             audio_seconds += clip["duration_seconds"]
             text = processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
@@ -216,9 +209,7 @@ def main() -> int:
         default=["long-form"],
         help="corpus categories to skip (see load_clips)",
     )
-    p.add_argument(
-        "--cache-dir", default=None, help="HF cache dir (defaults to HF_HOME)"
-    )
+    p.add_argument("--cache-dir", default=None, help="HF cache dir (defaults to HF_HOME)")
     p.add_argument(
         "--ct2-dir",
         type=Path,
@@ -270,9 +261,7 @@ def main() -> int:
     if args.ct2_dir:
         for q in ("int8", "float32"):
             print(f"--- ct2 convert {q}", file=sys.stderr, flush=True)
-            report["sizes"][f"ct2-{q}"] = convert_ct2(
-                args.ct2_dir / f"tiny-{q}", q, args.cache_dir
-            )
+            report["sizes"][f"ct2-{q}"] = convert_ct2(args.ct2_dir / f"tiny-{q}", q, args.cache_dir)
             write_report(report, args.out)
 
     write_report(report, args.out)
