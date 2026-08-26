@@ -1,78 +1,74 @@
-# Contract: GNOME Shell extension (GJS)
+# Contract: GNOME Shell extension (GJS) — the overlay host
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30)
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30; rewritten as host contract: 2026-08-26)
 
-The consumer half: `extensions/myna-shell/`. Harness-tier (Complexity Tracking) —
-the **pure mapping/lifecycle** guarantees below are GJS-unit-tested against a stub;
-the **compositor/animation/focus** guarantees are verified by the manual
-on-hardware acceptance (`quickstart.md`). Consumes `org.myna.Dictation`
-(`contracts/dbus-interface.md`). **(2026-07-30)**: the "goop"/`RibbonView`
-presentation is replaced by a bottom-center HUD pill (`hud.js`); `states.js`'s
-descriptor is reshaped from `{key, statusText, isError, hidden}` to `{key,
-statusText, severity, hidden}` (data-model E1a). **(2026-07-30, R17)**: the
-segmented bar meter (`BarMeterActor`) is replaced by a flowing wave ribbon
-(`WaveRibbonActor`), colored from the desktop's accent-color preference (E2a)
-with a reduced-motion fallback (E2b) — both sourced locally from GSettings, not
-the D-Bus contract, which is unchanged.
+**(2026-08-26 architecture revision)** The extension no longer draws anything
+and no longer consumes `org.myna.Dictation`. It is a **thin window-management
+host** for the renderer application (`myna-hud`, Rust GTK4 — `contracts/`
+sibling guarantees live in the publisher/renderer tasks; the rendering
+guarantees X11–X31 previously listed here move to the renderer application's
+own test suite in `client/myna-hud`): it launches the binary through the
+compositor's Wayland-client API, adopts its window, makes it a focus-safe
+overlay, positions it, supervises the process, and owns the `org.myna.Shell`
+presence name (`contracts/dbus-interface.md` §Presence). The pure
+mapping/rendering guarantees (formerly X1–X6, X19, X24–X26) are re-homed
+verbatim as Rust unit tests of `myna-hud`'s ported pure modules; the
+visual/focus acceptance guarantees (formerly X11–X18, X20–X23, X27–X31) remain
+manual on-hardware acceptance items, now exercised through the hosted window.
+The guarantees below are the **host's** own.
 
-## Pure, unit-tested (GJS contract test, `test/states.test.js`)
+Harness-tier note: the host is GJS by platform necessity (an extension cannot
+be another language), but it is a *thin shim* — launch/adopt/position/supervise
+— with no drawing, no animation, and no dictation data crossing it. Its logic
+is factored into pure modules so everything except live compositor behavior is
+GJS-unit-tested without a Shell; the compositor behavior is verified by the
+manual acceptance plus a headless-Shell integration test where available.
 
-| # | Guarantee | Spec |
-|---|---|---|
-| X1 | `states.js` maps every known `State` to its visual-intent record (icon choice + severity + a11y label) per data-model E-mapping. | FR-005 |
-| X2 | An **unknown** `State` maps to the neutral "active" intent (`severity: null`) and never throws. | FR-008 |
-| X3 | `idle` maps to "hidden" (no actor). | FR-002 |
-| X4 | `loading` and `recording` map to distinct intents (FR-006). | FR-006 |
-| X5 | `ribbon.js`'s envelope smoothing (reusing `vumeter.js`'s `boostLevel`/stale-decay unchanged) maps RMS+peak `[0,1]` to an intensity monotonically (in the calibrated speech range), clamps out-of-range/NaN, and **decays to floor** when the last update is older than the stale window (~300 ms) — regardless of whether the repeated value is numerically identical to the previous one (R16a). | FR-010/011, SC-004 |
-| X6 | No mapping output contains transcript text — inputs are state + level only (privacy). | constitution V |
-| X19 | **(2026-07-30)** `notice` maps to `severity: 'recoverable'` and `error` maps to `severity: 'critical'`; the two are mutually exclusive and each carries a distinct icon choice (mic-with-slash for `critical` only). | FR-007, data-model E1a |
-| X24 | **(2026-07-30, R17/R17a)** `ribbon.js` generates layered strands (`base`/`voice`/`secondary` roles, 3-5 total) from a single SMOOTHED envelope value (a ~300 ms one-pole low-pass over the calibrated instantaneous envelope, `applyEnvelopeSmoothing`) with fixed per-strand phase/delay/amplitude offsets, deterministically (same smoothed envelope + elapsed time → same control points), and each of the lifecycle phases (unfold/flow/morph/complete) is a pure, independently-callable timing function. **(2026-08-24)** Was 5 phases: `relax` is removed. It was never reachable — `ribbonPhaseForStateKey` never returned it and `hud.js` never selected it — and a pause detector to reach it has no safe threshold (it fires on ordinary inter-word gaps at ~400 ms, and by ~1.5 s the envelope's `RELEASE_TAU_MS` release has already eased the wave to within a hair of it). FR-010a's pause behaviour is delivered by those release ballistics instead, continuously and in proportion to the audio; `ribbon.test.js` asserts it there. | FR-010/FR-010a |
-| X25 | **(2026-07-30, R18)** `accent.js` resolves a chosen accent-color name to a derived palette (main/highlight/darker-complement/translucent) via the fixed 9-entry hex table — the darker-complement tone is a computed colour complement, **except for orange, whose darker-complement is a fixed aubergine tone** — and falls back to the fixed Ubuntu-orange palette when the resolved user-value is `null` (never actively set, including the untouched default) or the schema/key is absent — never throwing. | FR-010b |
-| X26 | **(2026-07-30, R19)** The reduced-motion query resolves to a boolean without throwing when the schema/key is absent (defaults to full motion in that case). | FR-022a |
-
-## Lifecycle, tested against a stub proxy
+## Pure, unit-tested (GJS contract tests, no Shell required)
 
 | # | Guarantee | Spec |
 |---|---|---|
-| X7 | On `enable()` with the name absent, the extension stays dormant (no actor, no error surfaced). | FR-018, US1-5 |
-| X8 | On name-appeared it connects and reflects the current `State`; on name-vanished it clears the HUD pill to idle. | FR-018, edge cases |
-| X9 | On `disable()` it disconnects the proxy, removes the name watch, destroys actors, and cancels all timers/transitions (no leaks). | FR-021 |
-| X10 | Re-`enable()` after `disable()` re-establishes cleanly (Shell restart / relogin). | FR-021, edge cases |
-| X20 | **(2026-07-30)** A second `notice` while one is showing replaces the held reason in place and **restarts** the auto-dismiss timer in full; a second `error` while one is undismissed replaces the reason in place without waiving or restarting the dismiss requirement (no timer exists for `error`). Neither stacks or queues a second concurrent notice. | FR-007a/FR-007d, R15 |
+| XH1 | The bottom-center placement math maps (monitor work-area geometry, window size, bottom margin) → the window's target frame position; it centers horizontally, respects the work area's bottom edge, never produces off-screen coordinates for any tested monitor layout, and recomputes correctly when any input changes (monitors-changed / work-area change / window size change). | FR-004, FR-024 |
+| XH2 | The binary-resolution order is `$MYNA_HUD_BINARY` → `/snap/bin/myna-hud` → `/usr/bin/myna-hud`; a missing/unlaunchable binary produces a bounded, non-spamming failure state (never a crash loop faster than the backoff floor, never an unhandled exception in `enable()`). | FR-027, FR-026 |
+| XH3 | The respawn policy is a pure function of exit history: unexpected exit while enabled → restart after a bounded backoff (with a restart budget so a permanently-crashing binary stops being retried and the extension degrades to dormant, logging once); normal `disable()` → no restart. | FR-026, FR-021 |
+| XH4 | Adoption is idempotent: `window-created` events for windows the client does not own are ignored; exactly one adoption happens for the hosted window; a second window from the same client (a lab window, a dialog) is not adopted. | FR-024 |
+| XH5 | The presence-name lifecycle maps 1:1 onto `enable()`/`disable()`: name owned while enabled, released on disable, re-acquired on re-enable; owning fails soft (extension keeps hosting even if the bus is unavailable — presence is advisory, not load-bearing). | FR-017a, FR-021 |
 
-## Compositor behaviour, manual on-hardware acceptance
+## Lifecycle, tested against a stub bus / fake client
 
 | # | Guarantee | Spec |
 |---|---|---|
-| X11 | The HUD pill is added as Shell chrome and **never takes keyboard focus**: typing continues to land in the focused app while it is visible — including when the critical-error dismiss (×) control is clicked. | FR-001/FR-007c, SC-001 |
-| X12 | It becomes visible within the activation-latency target after `recording` and clears within the teardown target after `idle`. | FR-003, SC-003 |
-| X13 | Each state/severity shows a visually distinct treatment; a viewer can identify loading/listening/transcribing/finalizing/recoverable-notice/critical-error without seeing transcript. | FR-005/006/007, SC-002 |
-| X14 | **(2026-07-30, R17)** The wave ribbon tracks captured level (calibrated to real speech, not raw linear gain — R16a), unfolds on start, relaxes toward a thin idle line on pause/stale, morphs into a simplified processing motion on stop, and shows nothing when idle. | FR-010/010a/011, SC-004 |
-| X15 | Animations look smooth (≈60 fps) and don't accumulate across rapid start/stop cycles. | FR-009, SC-007 |
-| X16 | The optional panel button (if enabled) toggles a session equivalently to the hotkey, preserving commit-only behaviour, and dims when the daemon is absent. | FR-013/014, SC-010 |
-| X17 | The HUD pill is legible in high-contrast mode. (Screen-reader/AT-SPI announcement of state transitions is tracked separately as T56 — not a guarantee of this contract.) | FR-022 |
-| X18 | Loads on GNOME 50/51 (per `metadata.json` `shell-version`) and refuses to load on unsupported versions. **(2026-08-24)** On 50 this requires the ribbon to fall back to Cairo: `Clutter.ShaderEffect`'s snippet vfunc only exists from mutter 51.alpha, and registering the subclass eagerly would abort the extension's `import`. See `ribbonShaderSupported()`. | FR-020, SC-008 |
-| X21 | **(2026-07-30)** The HUD pill renders bottom-center of the primary monitor (matching GNOME's native volume/brightness OSD position), repositioning correctly across `monitors-changed`, and does not appear off-screen on any tested monitor layout. | FR-004 |
-| X22 | **(2026-07-30)** The critical-error pill's dismiss (×) control is clickable with the mouse and clears the notice immediately; it never receives keyboard focus at any point. | FR-007b/FR-007c |
-| X27 | **(2026-07-30, R17/R18)** The ribbon is visibly rendered in the user's chosen system accent color (verified across at least 3 chosen colors) or the fixed Ubuntu-orange default when none is actively chosen (including the untouched default), and re-colors live if the accent color is changed while a session is active. | FR-010b, SC-011 |
-| X28 | **(2026-07-30, R19)** With the system reduced-motion preference enabled, the HUD pill shows the static/minimal-motion alternative instead of the flowing ribbon, while still reflecting state/level. | FR-022a, SC-012 |
-| X29 | **(new)** On a session that completes successfully, the ribbon briefly shows a quiet success indication before the pill clears, and this never delays the pill's dismissal or a new session starting. | FR-010d |
-| X30 | **(2026-07-30, R17a)** During a `morph` phase (transcribing), the ribbon crossfades from the flowing wave into 3 travelling dots rather than switching abruptly. During `complete`, it converges toward a single centred point with a brightness pulse. | FR-010a, FR-010d |
-| X31 | **(2026-07-30, R17a)** A recoverable notice keeps the ribbon **visible**, tinted amber (matching the pill's existing amber treatment) with audio-reactivity paused (a gentle idle pulse, not frozen), rather than hidden; a critical error still hides the ribbon entirely. | FR-010e, SC-014 |
+| XH6 | On `enable()` the extension acquires `org.myna.Shell`, spawns `myna-hud` via `Meta.WaylandClient.new_subprocess`, and begins supervision; on `disable()` it terminates the subprocess (or its window), releases the name, disconnects all signals, and clears all timers (no leaks, no orphans). | FR-021, FR-026 |
+| XH7 | Re-`enable()` after `disable()` re-establishes cleanly (Shell restart / relogin): fresh spawn, fresh adoption, name re-acquired. | FR-021 |
+| XH8 | If the subprocess exits while enabled, respawn follows XH3's policy; the extension never surfaces a user-facing error for this. | FR-026 |
+| XH9 | On Shell shutdown the subprocess does not outlive the session (termination is requested; an orphaned window must not remain on screen). | FR-021 |
+
+## Compositor behaviour (manual on-hardware acceptance; headless-Shell test where available)
+
+| # | Guarantee | Spec |
+|---|---|---|
+| XH10 | The adopted window is dock-typed, hidden from dash/alt-tab/window lists, shown on all workspaces, kept above normal windows, and never takes keyboard focus on map — typing in the focused application is uninterrupted by the indicator appearing. | FR-001, FR-024, SC-001 |
+| XH11 | The window is positioned bottom-center of the primary monitor's work area, follows monitor/work-area changes and the window's own size changes without flicker loops (programmatic moves do not re-trigger themselves). | FR-004 |
+| XH12 | Clicks on the indicator pass through to the application underneath (empty input region, client-side — R22), except on the critical-error dismiss control. | FR-025, SC-015 |
+| XH13 | The extension declares `shell-version: ["50", "51"]` and refuses to load elsewhere; both target mutter ABI generations (18/51) expose the host APIs it uses. | FR-020, SC-008 |
 
 ## Constraints
 
-- No network; no audio capture; renders/logs/persists no transcript content
-  (privacy, constitution V — FR-019).
-- `metadata.json` declares `shell-version: ["50", "51"]`, a unique `uuid`, and no
-  settings schema (no picker — Out of Scope).
+- No network; no audio capture; the host never reads, renders, logs, or
+  persists dictation state, levels, or transcript content — its only bus
+  surface is the member-less presence name (privacy, constitution V — FR-019).
+- `metadata.json` declares `shell-version: ["50", "51"]`, a unique `uuid`, and
+  no settings schema (no picker — Out of Scope).
 - Bundle is directly loadable at
-  `~/.local/share/gnome-shell/extensions/<uuid>/` (no build step).
-- **(2026-07-30)** `RibbonView`/`indicator.js` is deleted, not retained as a
-  selectable alternate view (spec Assumptions).
-- **(2026-07-30, R17/R20)** `extensions/myna-shell/dev-lab/` (a standalone
-  GTK4/libadwaita app sharing `accent.js`/`ribbon.js`/`ribbon-paint.js`/`dbus.js`
-  with the extension) is **not** part of this bundle: excluded from
-  `metadata.json`'s file set and the install step in `quickstart.md` step 4;
-  it carries none of this contract's guarantees as its own obligations.
-
+  `~/.local/share/gnome-shell/extensions/<uuid>/` (no build step); it carries
+  no drawing assets (no CSS for the pill, no ribbon modules — those live in
+  `myna-hud`).
+- **(2026-08-26)** The former in-extension renderer files (`hud.js`,
+  `hudLogic.js`, `view.js`, `states.js`, `vumeter.js`, `ribbon.js`,
+  `ribbonPaint.js`, `ribbonGlsl.js`, `ribbonShader.js`, `accent.js`,
+  `stylesheet.css`), the `dbus.js` proxy, the gettext shim, `dev-lab/`,
+  `dev-lab-gpu/`, and their tests are **deleted outright** (spec Assumptions)
+  — not retained behind a flag.
+- The host MUST NOT depend on private Shell UI internals (no `OsdWindow`, no
+  `Main.wm._checkDimming`-style injections): the permitted surface is the
+  public extension API plus the mutter window/Wayland-client APIs named above.
