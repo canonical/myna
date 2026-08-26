@@ -37,7 +37,9 @@
   Tracking in the plan — not as a design choice leaking into requirements. D-Bus is named
   as the integration boundary because the project's transport/IPC contract is part of the
   problem domain (feature 003 already exposes desktop boundaries), and the exact member
-  signatures are deferred to planning.
+  signatures are deferred to planning. *(2026-08-26: this constraint now applies to the
+  thin window-management host only — the renderer is a standalone Rust application; the
+  Assumptions section reflects the shrunken carve-out.)*
 - **2026-07-30 revision (HUD redesign)**: spec updated to replace the "goop" visual design
   with a bottom-center, OSD-styled pill; added the recoverable-vs-critical error severity
   distinction (US2a, FR-007/007a-c, FR-017) as an interim client-inferred classification
@@ -108,3 +110,20 @@
   per the existing harness-tier split); SC-014 measurable/technology-agnostic; scope
   (particle deferral, behavior-change confirmation) explicitly bounded. All 16 items remain
   passing.
+- **2026-08-26 architecture revision (renderer → GTK app; extension → thin host)**: spec
+  updated with the 2026-08-26 clarification session (9 Q&As) and the derived changes:
+  new FR-024–FR-027 (overlay-window behavior, click-through input region, supervision,
+  well-known binary), FR-017a (`org.myna.Shell` presence), FR-016/018 consumer re-homing,
+  FR-021 teardown of the hosted process, FR-023 fallback selection + `ui-gtk` removal;
+  three new Key Entities (Shell presence, Hosted overlay window, Renderer application);
+  new SC-015/SC-016; edge cases for renderer crash/extension disable; Assumptions rewritten
+  (renderer application, supervision model, well-known binary, localization under the
+  `myna` domain, lab/simulator inside the binary); Out of Scope updated (contract-only
+  non-GNOME path; rasterizer choice removed). Re-checked against all four sections: the
+  renderer application and GTK are named where they define *what* the system is (the
+  deliverable shape), not how to build it — the same treatment the checklist already grants
+  D-Bus/GJS as platform boundaries; FR-024–FR-027 are testable user-observable window
+  behaviors (no window-list entry, all workspaces, above normal windows, click-through,
+  auto-restart); SC-015/SC-016 measurable and technology-agnostic; acceptance scenarios and
+  edge cases cover the new failure modes. All 16 items remain passing (16/16 → 16/16); no
+  regressions, no `[NEEDS CLARIFICATION]` markers (all questions resolved in the session).
