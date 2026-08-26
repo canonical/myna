@@ -7,3 +7,6 @@ components:
   - model-small
 environment:
   - MODEL_DIR=$SNAP_COMPONENTS/model-small
+  # Measured 2026-08-26 on corpus/real/manifest-balanced.json:
+  # See base. Re-measure before changing.
+  - MODEL_COMPUTE_TYPE=float32

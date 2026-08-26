@@ -1,7 +1,7 @@
 name: tiny
 description: Whisper tiny (39M params) — fastest, lowest accuracy
 model-card-url: https://huggingface.co/Systran/faster-whisper-tiny
-quantization: float32
+quantization: int8
 disk-size: 80M
 # Weights shipped as a snap component (CTranslate2 conversion of
 # Systran/faster-whisper-tiny, MIT). modelctl installs it on use-model; the
@@ -10,3 +10,6 @@ components:
   - model-tiny
 environment:
   - MODEL_DIR=$SNAP_COMPONENTS/model-tiny
+  # Measured 2026-08-26 on corpus/real/manifest-balanced.json:
+  # 6.33% -> 6.21% WER, RTF 0.047 -> 0.030 (1.57x). Free.
+  - MODEL_COMPUTE_TYPE=int8
