@@ -1084,7 +1084,22 @@ system → fixed Ubuntu-orange fallback; a genuine choice → the resolved
 accent palette. (On Ubuntu the patched libadwaita's *default* accent is
 itself orange — `accent-color-Return-return-orange-as-default-color.patch` —
 so the untouched-default rule and the platform default converge there; the
-rule still needs the GSettings user-value read, unchanged.) Derived tones
+rule still needs the GSettings user-value read, unchanged.) **The fallback
+name-to-hex table carries Ubuntu's patched values, not upstream's**
+(`debian/patches/ubuntu/accent-color-*`): under Yaru, Ubuntu's libadwaita
+returns Yaru's own tints for every accent name, so the same name is a
+different colour on the desktops myna ships to (blue `#0073e5`, teal
+`#308280`, green `#4b8501`, orange `#e95420`, red `#da3450`, pink
+`#b34cb3`, purple `#7764d8`, slate `#657b69`; yellow alone is unchanged).
+Ubuntu's orange is exactly the untouched-default `UBUNTU_ORANGE`, so the
+two paths now name one colour instead of two that merely looked alike. The
+table also carries the Ubuntu-only **`brown`** accent (Yaru's
+`wartybrown`, `#b39169`), whose enum value is deliberately outside
+upstream's range (`ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`)
+— the concrete reason `accent-color-rgba` is read as a boxed RGBA and never
+as the enum. Yaru *theme-name* parsing is explicitly NOT reimplemented: it
+exists in libadwaita only to serve older apps, and the resolved RGBA is
+authoritative here.) Derived tones
 (highlight / darker-complement / translucent secondary; aubergine instead of
 complement when orange) remain pure, tested logic. Reduced motion
 (**amended**): the primary source is GTK's
