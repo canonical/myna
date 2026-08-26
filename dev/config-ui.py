@@ -822,12 +822,10 @@ class ClientTab(Scrollable):
         if rc != 0:
             messagebox.showerror("Save failed", err.strip() or " ".join(cmd))
             return
-        # Resolved once in myna-desktop's `Resolved::new`, so a running daemon
-        # keeps the old value until it is restarted - the old "takes effect on
-        # next dictation run" was wrong about both the store and the moment.
+        # A running daemon watches the store, so this applies to the next
+        # hypothesis - no restart, and no "takes effect on the next run".
         self.mode_note.set(
-            f"set {KEY_STREAMING_MODE}={self.mode.get()}; the daemon reads it at startup: "
-            "systemctl --user restart snap.myna.myna.service"
+            f"set {KEY_STREAMING_MODE}={self.mode.get()}; a running daemon applies it live"
         )
 
     def update_live(self, state):

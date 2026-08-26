@@ -17,7 +17,7 @@ use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::indicator::IndicatorState;
 use myna_desktop::inject::mock::{AcquireOutcome, MockInjector};
-use myna_desktop::{DesktopController, DictationState};
+use myna_desktop::{DesktopController, DictationState, Live};
 use myna_orchestrator::{
     run_dictation, FakeBackend, OrchestratorEvent, ScriptedTrigger, SessionOutcome, StopHandle,
     TriggerEdge,
@@ -828,6 +828,58 @@ fn build_preedit(
         .session(session)
         .preedit(true)
         .build()
+}
+
+/// The preedit opt-in follows a setting the user can change while the daemon
+/// runs, so it is read per event, not captured at startup. Switching it on
+/// mid-utterance has to reach the *next* hypothesis: anything coarser (per
+/// press, per process) is a restart wearing a different name.
+#[tokio::test]
+async fn a_live_preedit_switch_reaches_the_next_hypothesis() {
+    let injector = MockInjector::new().with_preedit_support();
+    let inject_log = injector.log();
+    let preedit = Live::new(false);
+
+    let mut slot = Some(preedit.clone());
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let switch = slot.take().expect("single-use session");
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Unstable("before".into())).await;
+            // The controller's select is biased to drain events before polling
+            // this future, so one yield is exactly "the event above has been
+            // routed" - no sleep, no race.
+            tokio::task::yield_now().await;
+            switch.set(true);
+            let _ = tx.send(OrchestratorEvent::Unstable("after".into())).await;
+            let _ = tx.send(OrchestratorEvent::Final("after".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("after".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "after".into(),
+            })
+        });
+        (run, StopHandle::default())
+    };
+
+    let mut controller = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .preedit(preedit)
+        .build();
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.preedits,
+        vec!["after"],
+        "the hypothesis before the switch must not be shown, the one after must be"
+    );
+    assert_eq!(log.commits, vec!["after"], "commits are unaffected");
+    assert_eq!(controller.state(), DictationState::Idle);
 }
 
 #[tokio::test]

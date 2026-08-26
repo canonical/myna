@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 
 use crate::indicator::{Indicator, IndicatorState};
 use crate::inject::{FocusEvent, InjectError, Injector};
+use crate::live::Live;
 use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
@@ -248,8 +249,10 @@ pub struct DesktopController {
     session: Box<dyn SessionFactory>,
     state: DictationState,
     /// Opt-in (R9): route `Unstable` hypotheses to the injector's preedit
-    /// region. Default false — commit-only (FR-012).
-    preedit: bool,
+    /// region. Default false — commit-only (FR-012). Live, because the user
+    /// can change the streaming mode it follows from without restarting the
+    /// daemon; read per event, so a change lands mid-utterance.
+    preedit: Live<bool>,
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
@@ -260,7 +263,7 @@ pub struct DesktopControllerBuilder {
     injector: Option<Box<dyn Injector>>,
     indicator: Option<Box<dyn Indicator>>,
     session: Option<Box<dyn SessionFactory>>,
-    preedit: bool,
+    preedit: Live<bool>,
 }
 
 impl DesktopControllerBuilder {
@@ -288,8 +291,11 @@ impl DesktopControllerBuilder {
     /// the target's preedit region (volatile, replaced per update, cleared by
     /// the next commit) when the injector `supports_preedit()`. Off by default
     /// — the commit-only guarantee (FR-012) holds unless explicitly relaxed.
-    pub fn preedit(mut self, on: bool) -> Self {
-        self.preedit = on;
+    ///
+    /// Takes a plain `bool` where the answer is fixed (every test), or a
+    /// [`Live<bool>`] where it can change under a running daemon.
+    pub fn preedit(mut self, on: impl Into<Live<bool>>) -> Self {
+        self.preedit = on.into();
         self
     }
 
@@ -374,7 +380,10 @@ impl DesktopController {
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
-        let preedit = self.preedit;
+        // Cloned handle, not a value: read at each event below so a settings
+        // change mid-utterance is honored by the next hypothesis rather than
+        // at the next press.
+        let preedit = self.preedit.clone();
 
         tokio::pin!(run);
         let mut trigger_open = true;
@@ -415,7 +424,11 @@ impl DesktopController {
                         injector.as_mut(),
                         indicator.as_mut(),
                         state,
-                        RouteFlags { commit_allowed: !commits_suppressed, focus_lost, preedit },
+                        RouteFlags {
+                            commit_allowed: !commits_suppressed,
+                            focus_lost,
+                            preedit: preedit.get(),
+                        },
                         &mut buffer,
                     )
                     .await;
@@ -428,7 +441,11 @@ impl DesktopController {
                         injector.as_mut(),
                         indicator.as_mut(),
                         state,
-                        RouteFlags { commit_allowed: !commits_suppressed, focus_lost, preedit },
+                        RouteFlags {
+                            commit_allowed: !commits_suppressed,
+                            focus_lost,
+                            preedit: preedit.get(),
+                        },
                         &mut buffer,
                     )
                     .await;

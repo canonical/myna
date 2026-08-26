@@ -62,7 +62,7 @@ use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlT
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
-use myna_desktop::{DesktopController, Indicator};
+use myna_desktop::{DesktopController, Indicator, Live};
 use myna_orchestrator::{
     run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
 };
@@ -160,7 +160,7 @@ impl Activation {
 /// snapd's configuration is per *snap*, not per user, so it can only ever be a
 /// default: an admin (or an image build) setting `language=fr` must not
 /// overrule a user who set their own. See [`Resolved`] for the order.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct SystemDefaults {
     activation: Option<String>,
     language: Option<String>,
@@ -223,7 +223,104 @@ fn pick(flag: &Option<String>, user: &Option<String>, system: &Option<String>) -
         .or_else(|| system.clone())
 }
 
-#[derive(Debug, Default)]
+/// The part of [`Resolved`] the daemon keeps re-reading while it runs.
+///
+/// Resolving once at startup made a restart the price of every settings
+/// change, for every writer there is (`gsettings`, `myna-dictate`, a Settings
+/// page, another snap - T54). The precedence does not move: a change re-runs
+/// [`Resolved::new`] with the same flags and system defaults, so a `--language`
+/// on the command line still outranks a GSettings write made an hour later, and
+/// only the answer lands in these cells.
+///
+/// The two keys here are the two whose readers ask for them again anyway -
+/// preedit at each transcript event, language at each press. `activation` and
+/// `hotkey` are bound into the trigger at startup and are *not* live; a change
+/// to either says so in the journal instead of pretending to apply.
+#[derive(Clone)]
+struct LiveSettings {
+    preedit: Live<bool>,
+    language: Live<Option<String>>,
+}
+
+impl LiveSettings {
+    fn new(resolved: &Resolved) -> Self {
+        Self {
+            preedit: Live::new(resolved.preedit),
+            language: Live::new(resolved.language.clone()),
+        }
+    }
+
+    /// Subscribe to the settings store, writing every change through these
+    /// cells. The returned watch must outlive the controller - dropping it
+    /// ends the subscription.
+    fn follow(&self, args: &Args, startup: &Resolved) -> Option<myna_core::SettingsWatch> {
+        // Read once, not per change: snapd configuration reaches this process
+        // as environment, and the launcher sets it before exec.
+        let system = SystemDefaults::from_env();
+        let (activation, hotkey) = (startup.activation, startup.hotkey.clone());
+        let watch = myna_core::settings::watch({
+            let (args, live, system) = (args.clone(), self.clone(), system.clone());
+            move |settings| {
+                let now = Resolved::new(&args, &settings, &system);
+                live.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
+                if now.activation != activation || now.hotkey != hotkey {
+                    myna_core::info_log!(
+                        "settings",
+                        "activation/hotkey changed ({:?}, {}) - both are bound at startup, so restart to apply",
+                        now.activation,
+                        now.hotkey.as_deref().unwrap_or("(portal default)")
+                    );
+                }
+            }
+        });
+        if watch.is_some() {
+            // The value this daemon started from was read before the
+            // subscription existed. Re-read once now that it does, so a change
+            // made in that window is applied instead of waiting for the next
+            // one - a daemon started at login races anything the session
+            // autostarts alongside it.
+            let settings = myna_core::Settings::load();
+            let now = Resolved::new(args, &settings, &system);
+            self.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
+        } else {
+            // Not a failure: the same missing schema that makes `Settings::load`
+            // read defaults. Said out loud because "my change did nothing" is
+            // otherwise indistinguishable from a bug in the watch.
+            myna_core::info_log!(
+                "settings",
+                "no {} schema installed - settings are startup-only",
+                myna_core::settings::SCHEMA_ID
+            );
+        }
+        watch
+    }
+
+    /// Write the new resolution through, logging only what actually moved -
+    /// GSettings notifies per key, so most changes touch neither of these.
+    ///
+    /// A change that resolves to the value already in force is the interesting
+    /// *silent* case (a flag outranks it, or the tier gate refuses it), so it
+    /// is logged too - at the debug tier, where it explains "I changed it and
+    /// nothing happened" without filling a long-lived daemon's journal.
+    fn apply(&self, resolved: &Resolved, reason: &str) {
+        if self.preedit.get() != resolved.preedit {
+            myna_core::info_log!("settings", "preedit -> {} ({reason})", resolved.preedit);
+            self.preedit.set(resolved.preedit);
+        } else {
+            myna_core::dbg_log!("settings", "preedit stays {} ({reason})", resolved.preedit);
+        }
+        if self.language.get() != resolved.language {
+            myna_core::info_log!(
+                "settings",
+                "language -> {} (live, from the next press)",
+                resolved.language.as_deref().unwrap_or("(backend default)")
+            );
+            self.language.set(resolved.language.clone());
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 struct Args {
     socket: Option<PathBuf>,
     backend_dir: Option<PathBuf>,
@@ -309,20 +406,28 @@ fn set_activation(a: &mut Args, mode: Activation) -> Result<(), String> {
 /// preedit only where the backend has a real preedit region
 /// (`Injector::supports_preedit`).
 fn resolve_preedit(forced: Option<bool>, preference: myna_core::StreamingMode) -> bool {
-    if let Some(forced) = forced {
-        myna_core::info_log!("settings", "preedit forced {forced} by flag");
-        return forced;
+    forced.unwrap_or_else(|| {
+        myna_core::effective_mode(preference) == myna_core::StreamingMode::Streaming
+    })
+}
+
+/// Why preedit came out the way it did, for the journal.
+///
+/// It is the one setting nobody typed, so "why are partials not showing" has
+/// to be answerable from the log alone: either a flag forced it, or the
+/// persisted preference met the tier gate. Kept separate from
+/// [`resolve_preedit`] so that resolving - which now happens again on every
+/// settings change - stays silent, and only the startup line and an actual
+/// change say anything.
+fn preedit_reason(forced: Option<bool>, preference: myna_core::StreamingMode) -> String {
+    match forced {
+        Some(forced) => format!("forced {forced} by flag"),
+        None => format!(
+            "streaming-mode {preference:?} resolves to {:?} on tier {}",
+            myna_core::effective_mode(preference),
+            myna_core::hardware_tier()
+        ),
     }
-    // Logged because it is the one setting nobody typed: "why are partials not
-    // showing" is answered by the persisted preference and the tier gate, and
-    // this is where both become visible in the journal.
-    let resolved = myna_core::effective_mode(preference);
-    myna_core::info_log!(
-        "settings",
-        "streaming-mode {preference:?} resolves to {resolved:?} on tier {}",
-        myna_core::hardware_tier()
-    );
-    resolved == myna_core::StreamingMode::Streaming
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -355,12 +460,12 @@ impl Args {
 /// accept the default 16 kHz s16le mono, so the MVP uses it directly.
 fn make_session(
     args: &Args,
-    resolved: &Resolved,
+    live: &LiveSettings,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
     let backend_socket = args.backend().expect("daemon requires a backend");
-    let language = resolved.language.clone();
+    let language = live.language.clone();
     let target = args.target.clone();
     move |events: mpsc::Sender<OrchestratorEvent>| {
         // Re-resolved per Press, so a backend connected (or refreshed, or
@@ -377,7 +482,10 @@ fn make_session(
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let stop = source.stop_handle();
         let config = SessionConfig {
-            language: language.clone(),
+            // Read here rather than captured above, for the same reason the
+            // backend socket is: a value changed after login applies at the
+            // next press, without a restart.
+            language: language.get(),
             ..Default::default()
         };
         // --dbus: pump the capture level meter onto org.myna.Dictation for the
@@ -500,11 +608,16 @@ async fn run_controller(
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> ExitCode {
+    let live = LiveSettings::new(&resolved);
+    // Held for the controller's whole life, and no longer: the subscription
+    // exists to serve this controller, and dropping the handle stops it.
+    let _settings_watch = live.follow(&args, &resolved);
+
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
-        .session(make_session(&args, &resolved, readiness, pump_bus.clone()))
-        .preedit(resolved.preedit);
+        .session(make_session(&args, &live, readiness, pump_bus.clone()))
+        .preedit(live.preedit.clone());
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -678,11 +791,8 @@ fn main() -> ExitCode {
 
     // Everything resolvable, resolved once: flags, then the user's GSettings,
     // then `snap set myna …`, then the built-in.
-    let resolved = Resolved::new(
-        &args,
-        &myna_core::Settings::load(),
-        &SystemDefaults::from_env(),
-    );
+    let settings = myna_core::Settings::load();
+    let resolved = Resolved::new(&args, &settings, &SystemDefaults::from_env());
     // `--hold` is a portal concept (the portal reports press and release; the
     // control socket only ever delivers a single poke). Rejected against the
     // *resolved* transport rather than ignored, so "hold-to-talk silently does
@@ -693,10 +803,12 @@ fn main() -> ExitCode {
     }
     myna_core::info_log!(
         "settings",
-        "activation {:?}, language {}, hotkey {}",
+        "activation {:?}, language {}, hotkey {}, preedit {} ({})",
         resolved.activation,
         resolved.language.as_deref().unwrap_or("(backend default)"),
-        resolved.hotkey.as_deref().unwrap_or("(portal default)")
+        resolved.hotkey.as_deref().unwrap_or("(portal default)"),
+        resolved.preedit,
+        preedit_reason(args.preedit, settings.streaming_mode)
     );
 
     // The GTK overlay (opt-in) needs the GLib main loop on the process main
@@ -1110,7 +1222,12 @@ mod tests {
             &myna_core::Settings::default(),
             &SystemDefaults::default(),
         );
-        let mut factory = make_session(&args, &resolved, Some(readiness.clone()), None);
+        let mut factory = make_session(
+            &args,
+            &LiveSettings::new(&resolved),
+            Some(readiness.clone()),
+            None,
+        );
         let (events_tx, _events_rx) = mpsc::channel(1);
         // Calling the factory is synchronous; `run` below is deliberately
         // never polled/awaited, proving the reset can't be hiding inside it.

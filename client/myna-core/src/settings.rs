@@ -82,13 +82,19 @@ impl Settings {
     /// defaults (Auto) - a broken settings store must never break dictation.
     pub fn load() -> Self {
         match Store::open() {
-            Some(store) => Self {
-                streaming_mode: store.streaming_mode(),
-                language: store.text(KEY_LANGUAGE),
-                activation: store.text(KEY_ACTIVATION).filter(|a| a != "auto"),
-                hotkey: store.text(KEY_HOTKEY),
-            },
+            Some(store) => Self::from_store(&store),
             None => Self::default(),
+        }
+    }
+
+    /// Read every key out of an open store. One reader, so [`load`](Self::load)
+    /// at startup and [`watch`] on every change cannot answer differently.
+    fn from_store(store: &Store) -> Self {
+        Self {
+            streaming_mode: store.streaming_mode(),
+            language: store.text(KEY_LANGUAGE),
+            activation: store.text(KEY_ACTIVATION).filter(|a| a != "auto"),
+            hotkey: store.text(KEY_HOTKEY),
         }
     }
 
@@ -124,6 +130,14 @@ impl Store {
         })
     }
 
+    /// Wrap the `gio::Settings` a signal handed back. The same GObject, one
+    /// reference further on, so it stays on the thread that made it.
+    fn from_settings(settings: &gio::Settings) -> Self {
+        Self {
+            settings: settings.clone(),
+        }
+    }
+
     /// The persisted preference; an unset key reads the schema default (Auto).
     pub fn streaming_mode(&self) -> StreamingMode {
         mode_from_nick(self.settings.string(KEY_STREAMING_MODE).as_str()).unwrap_or_default()
@@ -145,6 +159,104 @@ impl Store {
             .map_err(|e| SettingsError::Write(KEY_STREAMING_MODE, e))?;
         gio::Settings::sync();
         Ok(())
+    }
+}
+
+/// A live subscription to the store: every change re-reads the whole
+/// [`Settings`] value and hands it to the callback.
+///
+/// Reading the settings once at startup made a *restart* the only way to be
+/// heard, for every writer there is - `gsettings`, `myna-dictate`, a Settings
+/// page, another snap growing a configuration API (T54). GSettings already
+/// broadcasts its changes, so the subscription belongs next to the store
+/// rather than in each writer, which would otherwise need the daemon's unit
+/// name and the right to restart it.
+///
+/// Dropping this stops the watch and joins its thread.
+pub struct SettingsWatch {
+    context: glib::MainContext,
+    main_loop: glib::MainLoop,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for SettingsWatch {
+    fn drop(&mut self) {
+        // Queued into the context rather than called directly: `quit` before
+        // `run` is a no-op, and the thread has only reached `run` *after*
+        // reporting itself ready - so calling it here could hang the join on
+        // a loop that started a moment later.
+        let main_loop = self.main_loop.clone();
+        self.context.invoke(move || main_loop.quit());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Watch the settings store, calling `on_change` with the new value whenever
+/// any key changes. `None` when the schema is not installed - the same
+/// condition under which [`Settings::load`] reads defaults, and equally not a
+/// failure: there is simply nothing to watch.
+///
+/// Returning implies the subscription is live, so a change made immediately
+/// after this call cannot be missed.
+pub fn watch(on_change: impl Fn(Settings) + Send + 'static) -> Option<SettingsWatch> {
+    watch_with(Store::open, on_change)
+}
+
+/// The watcher proper, over an injectable store so the tests can drive a
+/// memory backend instead of the machine's dconf.
+///
+/// The thread exists because of what the notification needs: GSettings
+/// delivers `changed` into the GLib main context that was thread-default when
+/// the object was made, and the daemon's main thread is a tokio runtime with
+/// no GLib loop on it. [`Store`] is not `Send`, so the thread opens its own
+/// rather than being handed one.
+fn watch_with(
+    open: impl FnOnce() -> Option<Store> + Send + 'static,
+    on_change: impl Fn(Settings) + Send + 'static,
+) -> Option<SettingsWatch> {
+    let context = glib::MainContext::new();
+    let main_loop = glib::MainLoop::new(Some(&context), false);
+    // Rendezvous, not a queue: `watch` promises a live subscription, so it
+    // waits here until the handler is connected (or the store turned out not
+    // to exist).
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<bool>(0);
+
+    let thread = std::thread::Builder::new()
+        .name("myna-settings".into())
+        .spawn({
+            let (context, main_loop) = (context.clone(), main_loop.clone());
+            move || {
+                // The context has to be this thread's default *around* both
+                // the `Settings` construction and the loop, which is exactly
+                // the scope `with_thread_default` gives. Failing to acquire it
+                // drops `ready_tx` unsent, which `watch_with` reads as "no
+                // watch" - the same answer as a missing schema.
+                let _ = context.with_thread_default(move || {
+                    let Some(store) = open() else {
+                        let _ = ready_tx.send(false);
+                        return;
+                    };
+                    store.settings.connect_changed(None, move |settings, key| {
+                        crate::dbg_log!("settings", "{key} changed");
+                        on_change(Settings::from_store(&Store::from_settings(settings)));
+                    });
+                    let _ = ready_tx.send(true);
+                    main_loop.run();
+                });
+            }
+        })
+        .ok()?;
+
+    match ready_rx.recv() {
+        Ok(true) => Some(SettingsWatch {
+            context,
+            main_loop,
+            thread: Some(thread),
+        }),
+        // The thread is already returning; nothing to join against.
+        _ => None,
     }
 }
 
@@ -254,6 +366,8 @@ pub fn effective_mode(preference: StreamingMode) -> StreamingMode {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{TierAssessment, TierTable};
 
@@ -319,25 +433,46 @@ mod tests {
         );
     }
 
-    /// A store on the compiled schema from `build.rs`, with a memory backend:
-    /// no dconf, no user state, nothing shared between tests. The production
-    /// path differs only in where the schema and the backend come from.
-    fn test_store() -> Store {
-        let source = gio::SettingsSchemaSource::from_directory(
+    fn test_schema() -> gio::SettingsSchema {
+        gio::SettingsSchemaSource::from_directory(
             std::path::Path::new(env!("MYNA_TEST_SCHEMA_DIR")),
             None,
             true,
         )
-        .expect("compiled test schema (build.rs)");
-        let schema = source
-            .lookup(SCHEMA_ID, true)
-            .expect("the shipped schema declares SCHEMA_ID");
+        .expect("compiled test schema (build.rs)")
+        .lookup(SCHEMA_ID, true)
+        .expect("the shipped schema declares SCHEMA_ID")
+    }
+
+    /// A store of its own: no dconf, no user state, nothing shared between
+    /// tests. The production path differs only in where the schema and the
+    /// backend come from.
+    fn test_store() -> Store {
         Store {
             settings: gio::Settings::new_full(
-                &schema,
+                &test_schema(),
                 Some(&gio::functions::memory_settings_backend_new()),
                 None,
             ),
+        }
+    }
+
+    /// A store over a keyfile at `path`, which is how the watcher test gets
+    /// *two* stores over one set of values: a memory backend is private to the
+    /// object that made it, and a `SettingsBackend` is a GObject that cannot
+    /// cross to the watcher thread anyway. Two independent backends over one
+    /// file is also the shape production has - two processes over one dconf
+    /// database - rather than one object shared behind a mutex.
+    fn store_on(path: &std::path::Path) -> Store {
+        let backend = gio::functions::keyfile_settings_backend_new(
+            path.to_str().expect("utf-8 temp path"),
+            "/org/myna/dictation/",
+            // A group is required: with none, the keyfile backend treats keys
+            // sitting directly under the root path as readonly.
+            Some("dictation"),
+        );
+        Store {
+            settings: gio::Settings::new_full(&test_schema(), Some(&backend), None),
         }
     }
 
@@ -398,5 +533,51 @@ mod tests {
         let source = gio::SettingsSchemaSource::from_directory(&empty, None, true);
         assert!(source.is_err() || source.unwrap().lookup(SCHEMA_ID, true).is_none());
         std::fs::remove_dir_all(&empty).ok();
+    }
+
+    /// The point of the watch: a value written by *another* holder of the same
+    /// store reaches a running daemon, with no restart and no polling.
+    #[test]
+    fn a_write_by_another_holder_reaches_the_watcher() {
+        let path = std::env::temp_dir().join(format!("myna-watch-{}.ini", std::process::id()));
+        std::fs::remove_file(&path).ok();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let watch = watch_with(
+            {
+                let path = path.clone();
+                move || Some(store_on(&path))
+            },
+            move |settings| {
+                let _ = tx.send(settings);
+            },
+        )
+        .expect("the test schema is always installed");
+
+        store_on(&path)
+            .set_streaming_mode(StreamingMode::Batch)
+            .unwrap();
+        let seen = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the change is delivered");
+        assert_eq!(seen.streaming_mode, StreamingMode::Batch);
+
+        // Dropping the handle ends the subscription (and joins the thread,
+        // which is what would hang here if `quit` had raced `run`).
+        drop(watch);
+        store_on(&path)
+            .set_streaming_mode(StreamingMode::Streaming)
+            .unwrap();
+        assert!(
+            rx.recv_timeout(Duration::from_millis(250)).is_err(),
+            "a dropped watch must stop delivering"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// No schema is not a failure, it is "nothing to watch" - and the caller
+    /// has to hear that rather than block on a thread that already gave up.
+    #[test]
+    fn without_a_store_there_is_no_watch() {
+        assert!(watch_with(|| None, |_| unreachable!()).is_none());
     }
 }

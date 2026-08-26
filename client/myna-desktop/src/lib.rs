@@ -28,6 +28,7 @@ pub mod controller;
 pub mod dbus;
 pub mod indicator;
 pub mod inject;
+pub mod live;
 pub mod shortcut;
 
 pub use controller::{
@@ -36,4 +37,5 @@ pub use controller::{
 };
 pub use indicator::{Indicator, IndicatorState};
 pub use inject::{FocusEvent, InjectError, InjectionTarget, Injector};
+pub use live::Live;
 pub use shortcut::{Trigger, TriggerEdge};

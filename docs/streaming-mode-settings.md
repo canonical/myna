@@ -66,9 +66,15 @@ gsettings set org.myna.dictation streaming-mode batch
 gsettings get org.myna.dictation streaming-mode
 ```
 
-The setting takes effect on the next run and survives restarts
-(T046-verified). Unpackaged builds need the schema on the host first -
-`make install-schema` - since without it every read is the default (`auto`).
+A running `myna-desktop` picks the change up live - it subscribes to the store
+rather than reading it once at startup, so in-field partials appear (or stop)
+from the next hypothesis, with no restart. `activation` and `hotkey` are the
+exception: both are bound into the trigger at startup, and a change to either
+says so in the journal instead of pretending to apply.
+
+Unpackaged builds need the schema on the host first - `make install-schema` -
+since without it every read is the default (`auto`) and there is nothing to
+subscribe to.
 
 ## Where the setting lives (2026-08-26)
 
