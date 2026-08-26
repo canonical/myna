@@ -1096,7 +1096,16 @@ tracks the same property), falling back to the old inverted
 note the snap's GTK 4.18 does **not** have the 4.22 property, so the
 fallback is the shipping path inside the snap and the property lights up on
 26.04 hosts; here too the probe is runtime (`find_property`), not a
-compile-time feature. **Explicitly rejected: reading the new
+compile-time feature. **The property is a `GtkReducedMotion` *enum*
+(`no_preference` = 0, `reduce` = 1), not the boolean its name suggests**
+(verified against GTK 4.22.4, 2026-08-26): reading it as a `gboolean` fails
+and is indistinguishable from "the property is absent", which silently
+forfeits the primary source on exactly the systems that ship it — while the
+fallback keeps producing a plausible answer, so the loss is invisible. It is
+therefore read via `g_value_get_enum` (no bound Rust enum type exists
+without the forbidden `v4_22` feature), treating any value other than
+`no_preference` as reduced motion so a future stronger level errs toward
+less animation. **Explicitly rejected: reading the new
 `org.gnome.desktop.a11y.interface reduced-motion` GSettings key directly** —
 the key is new in gsettings-desktop-schemas and absent on older systems, and
 an unguarded settings read against a missing schema/key aborts the process
