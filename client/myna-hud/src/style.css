@@ -1,0 +1,98 @@
+/* style.css — the HUD pill's chrome (feature 004, T112), ported from the
+ * extension's stylesheet.css. St's CSS subset became real GTK4 CSS: the
+ * class names, colours and radii are carried over unchanged so the pill
+ * looks identical, but the layout properties St implemented by writing
+ * Clutter margins (`spacing`, the pill's `margin-bottom`) are now the
+ * widgets' own spacing and the HOST's placement respectively — the window
+ * no longer positions itself (R21), so the bottom gap belongs to place.js.
+ */
+
+/* The window itself must be transparent: only the pill is visible. */
+window.myna-hud-window,
+window.myna-hud-window > * {
+    background-color: transparent;
+}
+
+.myna-hud-pill {
+    padding: 10px 16px;
+    background-color: rgba(20, 22, 28, 0.82);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.myna-hud-icon {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.myna-hud-label {
+    font-size: 11pt;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+/* The ribbon's floor. Its actual width comes from hexpand, so it reaches the
+ * pill's right edge instead of stopping at a fixed width; the floor only
+ * guards against the box squeezing the GLArea to near-zero, which is what
+ * once made the meter read as permanently flat regardless of the real audio
+ * level (R16a/R17). */
+.myna-hud-ribbon {
+    min-height: 32px;
+    min-width: 160px;
+}
+
+.myna-hud-dismiss {
+    color: rgba(255, 255, 255, 0.75);
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 2px;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.myna-hud-dismiss:hover {
+    color: rgba(255, 255, 255, 1.0);
+}
+
+/* Severity/phase colour-coding: orange for a recoverable notice, red for a
+ * critical error, and a warm tint for the cold-model-load phase — so the
+ * treatment reads at a glance, not just from the label text
+ * (FR-005/006/007). Toggled via hud_logic::pill_color_class. */
+.myna-hud-pill.myna-hud-severity-recoverable {
+    border: 1px solid rgba(245, 166, 35, 0.9);
+    background-color: rgba(58, 40, 10, 0.88);
+}
+
+.myna-hud-pill.myna-hud-severity-recoverable .myna-hud-icon,
+.myna-hud-pill.myna-hud-severity-recoverable .myna-hud-label {
+    color: rgb(245, 166, 35);
+}
+
+.myna-hud-pill.myna-hud-severity-critical {
+    border: 1px solid rgba(224, 64, 64, 0.9);
+    background-color: rgba(58, 12, 12, 0.88);
+}
+
+.myna-hud-pill.myna-hud-severity-critical .myna-hud-icon,
+.myna-hud-pill.myna-hud-severity-critical .myna-hud-label {
+    color: rgb(224, 90, 90);
+}
+
+.myna-hud-pill.myna-hud-phase-loading {
+    border: 1px solid rgba(245, 166, 35, 0.55);
+}
+
+.myna-hud-pill.myna-hud-phase-loading .myna-hud-icon,
+.myna-hud-pill.myna-hud-phase-loading .myna-hud-label {
+    color: rgb(245, 190, 110);
+}
+
+/* High-contrast legibility (FR-022): a brighter border/background so the
+ * pill stays distinguishable from busy wallpaper without relying on the
+ * shadow alone. */
+.myna-hud-pill.myna-hud-high-contrast {
+    background-color: rgba(0, 0, 0, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+}
