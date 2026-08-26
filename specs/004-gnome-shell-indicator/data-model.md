@@ -98,13 +98,22 @@ Rules:
 
 | Field | Type / Source | Notes |
 |---|---|---|
-| chosen | `string \| null` | `org.gnome.desktop.interface` `accent-color` **user value** (GSettings, read inside the renderer application), key-existence guarded (R18/R26) | `null` only when never actively written by the user — including the untouched factory default (itself `'blue'`) |
-| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | main color from the platform color manager (libadwaita `Adw.StyleManager` accent — R26), or a fixed Ubuntu-orange (`#E95420`) fallback when `chosen == null` or the system does not support accent colors; derived tones are pure, tested logic. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange, where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement |
+| themeAccent | `RGBA \| null` | the **theme's own accent**: a widget styled `color: @accent_bg_color`, read back with `gtk_widget_get_color()` (R26). The named colour exists since libadwaita 1.0, so no version probing is needed, and Yaru's tints and variants — including `wartybrown`, which has no upstream enum member — resolve by construction | `null` only when no styled widget is rooted yet |
+| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | main color = `themeAccent`, falling back to `AdwStyleManager:accent-color-rgba`, then to the `accent-color` setting's **resolved** value through the hex table, then to a fixed Ubuntu-orange (`#E95420`). Derived tones are pure, tested logic. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange** (`#e95420` or `#ed5b00`), **where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement — keyed on the colour, since the theme path has no settings name |
 
 Rules:
+- **No "did the user actively choose" test (amended 2026-08-26).** The
+  earlier rule treated an untouched default as "not chosen" and forced
+  Ubuntu orange, using the GSettings *user value*. Its premise was false —
+  `ubuntu-settings` ships a gschema override making the effective default
+  `'orange'`, so the resolved value was already correct — and the gate
+  misfired on Yaru accent variants, re-tinting a visibly olive desktop back
+  to orange. The theme reports what the desktop is actually using; that is
+  what the ribbon uses.
 - Read live (`changed::accent-color` on the same settings object; libadwaita
-  style-manager change notification), so an in-session accent-color change
-  re-colors the ribbon without restart.
+  style-manager change notification; re-resolved when the ribbon is mapped),
+  so an in-session accent-color change re-colors the ribbon without
+  restart.
 - Sourced entirely from the desktop environment, not from `myna-desktop` or
   the D-Bus contract — no wire change (data-model E2/dbus-interface.md
   unaffected).

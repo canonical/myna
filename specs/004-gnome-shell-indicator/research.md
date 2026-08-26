@@ -749,12 +749,12 @@ regression check against a since-changed design decision.
 color is sourced from the platform's own color machinery — libadwaita's
 `Adw.StyleManager` (`system_supports_accent_colors` / `accent_color` → RGBA) —
 replacing the `St.Settings`/hand-rolled-table reasoning below (that API's
-in-compositor constraint no longer applies). **The product rule is unchanged**
-(FR-010b): the "untouched default is treated as not chosen" distinction still
-needs the `org.gnome.desktop.interface` `accent-color` *user value* (read via
-GSettings inside the app — libadwaita exposes the resolved accent but not
-whether the user actively chose it), and the orange→aubergine shadow-tone
-override is retained. See R26 for the consolidated 2026-08-26 sourcing decision.
+in-compositor constraint no longer applies). **Superseded 2026-08-26** (see R26): the
+"untouched default is treated as not chosen" distinction — and with it the
+`accent-color` *user value* read — is retired; the accent is taken from the
+theme, which reports what the desktop is actually using. The
+orange→aubergine shadow-tone override is retained, now keyed on the colour
+rather than on the settings name. See R26 for the consolidated 2026-08-26 sourcing decision.
 
 **Decision**: `Gio.Settings` against the `org.gnome.desktop.interface` schema's
 `accent-color` key (a 9-value enum: blue/teal/green/yellow/orange/red/pink/
@@ -789,7 +789,12 @@ the selected accent colour... or the default Ubuntu orange if the accent
 colour is not set") together with the explicit product decision that an
 *untouched* default must be treated the same as "not set," even though its
 resolved value (`'blue'`) is indistinguishable from a deliberate choice of
-blue without `get_user_value`. Read live via `changed::accent-color` on the
+blue without `get_user_value`. **The premise of that last clause was wrong
+and the rule is retired (2026-08-26, R26)**: `ubuntu-settings` ships a
+gschema *override* setting `org.gnome.desktop.interface accent-color =
+'orange'`, so an untouched Ubuntu desktop resolves to `'orange'`, not
+`'blue'` — the resolved value was already correct, and there was nothing to
+disambiguate. Read live via `changed::accent-color` on the
 same `Gio.Settings` object so the ribbon re-colors if the user changes their
 accent color while a session is active — no restart required.
 
@@ -1077,14 +1082,29 @@ present in the snap), NOT the `AdwAccentColor` enum — Ubuntu's Yaru patches
 add enum values the upstream Rust enum would only surface as `__Unknown`,
 and the RGBA sidesteps that entirely (and picks up the exact Yaru tint);
 (c) older stacks (workshop's 1.5) fall back to the fixed hex-table path.
-The product rule survives verbatim: consult `org.gnome.desktop.interface`
-`accent-color`'s **user value** (GSettings, read inside the app) — `null`
-(never actively written, including the untouched default) or unsupported
-system → fixed Ubuntu-orange fallback; a genuine choice → the resolved
-accent palette. (On Ubuntu the patched libadwaita's *default* accent is
-itself orange — `accent-color-Return-return-orange-as-default-color.patch` —
-so the untouched-default rule and the platform default converge there; the
-rule still needs the GSettings user-value read, unchanged.) **The fallback
+**Amended 2026-08-26 — the accent is read from the THEME, and the
+user-value rule is retired.** A widget styled `color: @accent_bg_color` is
+asked for its computed colour (`gtk_widget_get_color`), which is the direct
+analogue of the extension's `-st-accent-color`. This beats every
+alternative: the named colour has existed since libadwaita 1.0, so it needs
+no version probing and covers the whole runtime matrix; it resolves Yaru's
+tints and variants — including `wartybrown`, which upstream has no enum
+member for — by construction; and it was measured identical to
+`accent-color-rgba` for every accent (`#ed5b00`, `#9141ac`, `#3a944a`).
+Resolution order: theme CSS → `accent-color-rgba` → the `accent-color`
+setting's **resolved** value through the hex table → Ubuntu orange.
+
+The old rule ("untouched default is not a choice, so use Ubuntu orange")
+rested on the premise that an untouched Ubuntu desktop reads as `'blue'`
+while looking orange. That is false: `ubuntu-settings` ships a gschema
+override setting `accent-color = 'orange'`. The resolved value was already
+correct, `get_user_value()` was solving a non-problem, and the gate actively
+misfired — it re-tinted a Yaru-variant desktop (say `Yaru-olive`) back to
+plain orange because the user had never written the key. Reading the theme
+removes the question entirely: there is no "did the user choose" to answer,
+only "what colour is the desktop using". Orangeness for the aubergine
+override is now decided by the colour (Ubuntu's `#e95420` or upstream's
+`#ed5b00`) rather than by the name. **The fallback
 name-to-hex table carries Ubuntu's patched values, not upstream's**
 (`debian/patches/ubuntu/accent-color-*`): under Yaru, Ubuntu's libadwaita
 returns Yaru's own tints for every accent name, so the same name is a
