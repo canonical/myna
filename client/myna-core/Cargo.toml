@@ -12,3 +12,4 @@ serde_json.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 futures-util.workspace = true
+gio.workspace = true

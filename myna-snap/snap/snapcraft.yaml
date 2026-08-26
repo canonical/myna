@@ -43,6 +43,24 @@ environment:
   SPA_PLUGIN_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/spa-0.2
   PIPEWIRE_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pipewire-0.3
   PIPEWIRE_CONFIG_DIR: $SNAP/usr/share/pipewire
+  # Client settings live in GSettings (org.myna.dictation), which needs two
+  # things the base cannot supply: our own compiled schema, and the dconf
+  # backend module. glib comes from core24, so it looks for gio modules in the
+  # *base's* /usr/lib/.../gio/modules - empty - rather than the snap's, and
+  # without the backend every write would land in a memory backend and be lost
+  # at exit. See myna_core::settings.
+  GSETTINGS_SCHEMA_DIR: $SNAP/usr/share/glib-2.0/schemas
+  GIO_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/gio/modules
+  # ...and the *host's* dconf database, which is the point of using GSettings
+  # at all: the store has to be the one `gsettings set` and a Settings panel
+  # write. libdconf derives that path from XDG_CONFIG_HOME (else $HOME/.config)
+  # and snapd points $HOME at $SNAP_USER_DATA, so without this the daemon reads
+  # a database nothing writes and every key is its schema default. The
+  # `gsettings` interface already grants read on the real one; writes never went
+  # through the file anyway (the dconf service performs those over D-Bus).
+  # Also the first place myna-desktop looks for the IBus address file, which is
+  # under the real home too.
+  XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
 
 apps:
   # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
@@ -166,6 +184,7 @@ parts:
       - pkg-config
       - libclang-dev # bindgen, for pipewire-sys
       - libpipewire-0.3-dev
+      - libglib2.0-dev # gio-sys links glib/gio; brings glib-compile-schemas
     override-build: |
       toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
       export PATH="$toolchain/bin:$PATH"
@@ -176,6 +195,10 @@ parts:
       # can run a debugger against it anyway. --strip-debug, not --strip-all:
       # the symbol table is what makes a panic backtrace readable.
       strip --strip-debug "$CRAFT_PART_INSTALL"/bin/*
+      # The settings store, from the same XML the host and the (future) deb
+      # install - one schema, three kinds of writer (myna_core::settings).
+      install -Dm644 data/glib-2.0/schemas/org.myna.dictation.gschema.xml \
+          "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/org.myna.dictation.gschema.xml"
     stage-packages:
       - libpipewire-0.3-0
       # protocol-native & friends: mandatory modules loaded by pw_context_new
@@ -256,9 +279,16 @@ parts:
       # doubly dead: the host never reads a snap's, and they now name
       # binaries this part just deleted.
       rm -rf usr/share/X11 usr/share/alsa usr/share/GConf usr/share/upstart \
-             usr/share/session-migration usr/share/glib-2.0 \
+             usr/share/session-migration \
              usr/share/bash-completion usr/lib/systemd "$lib"/avahi \
              etc/pulse usr/share/dbus-1/services/org.gtk.GLib.PACRunner.service
+
+      # usr/share/glib-2.0 survives that sweep for exactly one file, the
+      # settings schema. Everything a stage-package left beside it goes, and
+      # what remains is compiled: glib reads gschemas.compiled, never the XML.
+      find usr/share/glib-2.0 -type f ! -name 'org.myna.*.gschema.xml' -delete
+      find usr/share/glib-2.0 -mindepth 1 -type d -empty -delete
+      glib-compile-schemas usr/share/glib-2.0/schemas
 
   # PipeWire client config (client.conf & friends). In noble these ship in
   # pipewire-bin (libpipewire-0.3-common is docs-only); pw_context_new treats

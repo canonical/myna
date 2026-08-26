@@ -213,7 +213,7 @@ gdbus introspect --session --dest org.myna.Dictation \
 | `pipewire` | native PipeWire capture (`/run/user/*/pipewire-0`) |
 | `desktop` | GlobalShortcuts portal + desktop notifications |
 | `desktop-legacy` | the IBus daemon's private socket (text injection) |
-| `gsettings` | dconf write for `myna.install-shortcut` |
+| `gsettings` | the client settings store (`org.myna.dictation`) and the dconf write for `myna.install-shortcut` |
 | `wayland`, `x11` | the GTK indicator window |
 | `backend` (content) | the backend session socket |
 | slot `org.myna.Dictation` (dbus) | the indicator publisher (state + level only) |
@@ -233,12 +233,58 @@ extension subscribes and gets the fast push path confined or not — no
 polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 §Confinement).
 
+## Settings
+
+Two planes, and the order between them is the whole design:
+
+```shell
+gsettings set org.myna.dictation streaming-mode streaming   # per user
+sudo snap set myna language=fr                              # per machine
+```
+
+**A flag beats the user's GSettings value, which beats `snap set`, which beats
+the built-in.** snapd's configuration is per *snap*, not per user, so it can
+only ever be a default: an admin (or an image build) presetting a language must
+not overrule an account that chose its own.
+
+| key | gsettings | snap set | effect |
+|---|---|---|---|
+| `streaming-mode` | `auto` \| `streaming` \| `batch` | - | emission mode, and with it in-field partials |
+| `language` | any short code | `language=fr` | session language hint |
+| `activation` | `auto` \| `portal` \| `control` | `activation=control` | how a press reaches the daemon |
+| `hotkey` | `'<Super>d'` | `hotkey='<Super>d'` | the accelerator offered to the portal |
+
+Settings are read once, at start:
+
+```shell
+sudo snap restart myna
+journalctl --user -u snap.myna.myna | grep settings:
+#  settings: streaming-mode Auto resolves to Streaming on tier x86_64-cpu-generic
+#  settings: activation Portal, language (backend default), hotkey (portal default)
+```
+
+`snap set` validates: a bad value fails the `snap set` itself rather than
+landing a setting the daemon would have to ignore.
+
+The snap carries its own compiled copy of the schema, so `gsettings` works
+against it with nothing installed on the host; a host *tool* needs the schema
+installed (`make install-schema`, until the extension deb carries it). Reads and
+writes cross confinement because `XDG_CONFIG_HOME` points at
+`$SNAP_REAL_HOME/.config`: libdconf derives the database path from it, and
+snapd's `$HOME` would otherwise send the daemon to a database nothing writes.
+
+`auto` gates on a measured RTF baseline, and the snap ships none - so `auto`
+means batch today. That is the safe end of the failure, and the reason is
+recorded in T77: the tier key is the architecture alone, so shipping one
+machine's measurement would promise streaming to every machine of that arch.
+
 ## Known gaps (tracked)
 
 - `experimental.user-daemons` is a manual step until the snap-id is
   allowlisted upstream (see **The daemon**).
-- No `configure` hook, so `snap set myna …` does nothing; activation mode,
-  language and hotkey are still flags and env vars.
+- No RTF baseline is installed, so `streaming-mode=auto` gates to batch
+  everywhere. The tier key is architecture-only, which makes a shipped
+  measurement a promise about machines nobody measured (T77).
 - No `default-provider` on the `backend` plug, so installing a backend is a
   separate step rather than an install prerequisite.
 - Socket access control is "an admin connected the plug" — identity/polkit

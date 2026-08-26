@@ -38,6 +38,13 @@
 //! notifications by itself), the activation transport (above), and streaming
 //! preedit ([`resolve_preedit`]). Each still has an explicit override for
 //! debugging, but a correct setup requires none of them.
+//!
+//! What *is* configurable is resolved in one place, [`Resolved`], with one
+//! order: a command-line flag, then the user's GSettings value
+//! (`org.myna.dictation`), then the system default a `snap set myna …` wrote,
+//! then the built-in. The user's own store outranks the system one on purpose -
+//! snapd configuration is per snap, not per user, so an admin setting a
+//! language must not overrule an account that chose its own.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -127,15 +134,93 @@ impl Activation {
     /// means a packaged one — so `$SNAP` *is* the availability test, not a
     /// heuristic. Unpackaged builds get the control socket, which needs no app
     /// identity.
-    fn resolve(forced: Option<Activation>) -> Activation {
-        forced.unwrap_or({
-            if std::env::var_os("SNAP").is_some() {
-                Activation::Portal
-            } else {
-                Activation::Control
-            }
-        })
+    fn from_packaging() -> Activation {
+        if std::env::var_os("SNAP").is_some() {
+            Activation::Portal
+        } else {
+            Activation::Control
+        }
     }
+
+    /// Parse a settings/`snap set` value. `auto` is absent by construction
+    /// (`Settings` filters it), so anything unrecognised here is a typo, and
+    /// answering `None` means it falls through to packaging rather than
+    /// silently selecting a transport nobody asked for.
+    fn from_nick(nick: &str) -> Option<Activation> {
+        match nick {
+            "portal" => Some(Activation::Portal),
+            "control" => Some(Activation::Control),
+            _ => None,
+        }
+    }
+}
+
+/// System-wide defaults from `snap set myna …`, handed over by the launcher.
+///
+/// snapd's configuration is per *snap*, not per user, so it can only ever be a
+/// default: an admin (or an image build) setting `language=fr` must not
+/// overrule a user who set their own. See [`Resolved`] for the order.
+#[derive(Debug, Default, PartialEq)]
+struct SystemDefaults {
+    activation: Option<String>,
+    language: Option<String>,
+    hotkey: Option<String>,
+}
+
+impl SystemDefaults {
+    fn from_env() -> Self {
+        let read = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
+        Self {
+            activation: read("MYNA_CFG_ACTIVATION"),
+            language: read("MYNA_CFG_LANGUAGE"),
+            hotkey: read("MYNA_CFG_HOTKEY"),
+        }
+    }
+}
+
+/// Everything the daemon works out for itself, resolved once at startup.
+///
+/// One order throughout, most specific first:
+///
+/// 1. **a command-line flag** — someone is debugging, and meant it;
+/// 2. **the user's GSettings value** (`org.myna.dictation`) — the desktop's own
+///    per-user store, which is what a Settings page writes;
+/// 3. **the system default** from `snap set myna …` — per machine, root-set;
+/// 4. **the built-in** — packaging for activation, the tier gate for preedit.
+#[derive(Debug, PartialEq)]
+struct Resolved {
+    activation: Activation,
+    language: Option<String>,
+    hotkey: Option<String>,
+    preedit: bool,
+}
+
+impl Resolved {
+    fn new(args: &Args, settings: &myna_core::Settings, system: &SystemDefaults) -> Self {
+        let activation = args
+            .activation
+            .or_else(|| {
+                settings
+                    .activation
+                    .as_deref()
+                    .and_then(Activation::from_nick)
+            })
+            .or_else(|| system.activation.as_deref().and_then(Activation::from_nick))
+            .unwrap_or_else(Activation::from_packaging);
+        Self {
+            activation,
+            language: pick(&args.language, &settings.language, &system.language),
+            hotkey: pick(&args.shortcut, &settings.hotkey, &system.hotkey),
+            preedit: resolve_preedit(args.preedit, settings.streaming_mode),
+        }
+    }
+}
+
+/// The precedence rule itself, in one place so every knob obeys the same one.
+fn pick(flag: &Option<String>, user: &Option<String>, system: &Option<String>) -> Option<String> {
+    flag.clone()
+        .or_else(|| user.clone())
+        .or_else(|| system.clone())
 }
 
 #[derive(Debug, Default)]
@@ -194,13 +279,6 @@ fn parse_args_from(
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
-    // `--hold` is a portal concept (the portal reports press and release; the
-    // control socket only ever delivers a single poke). Reject it against a
-    // resolved non-portal transport rather than ignoring it, so "hold-to-talk
-    // silently does nothing" is not a mode a user can end up in.
-    if a.hold && Activation::resolve(a.activation) != Activation::Portal {
-        return Err("--hold only applies to portal activation (add --portal)".into());
-    }
     if a.socket.is_some() && a.backend_dir.is_some() {
         return Err("--socket and --backend-dir are alternatives (pick one)".into());
     }
@@ -230,11 +308,21 @@ fn set_activation(a: &mut Args, mode: Activation) -> Result<(), String> {
 /// The injector still has the final say downstream: the controller renders a
 /// preedit only where the backend has a real preedit region
 /// (`Injector::supports_preedit`).
-fn resolve_preedit(forced: Option<bool>) -> bool {
-    forced.unwrap_or_else(|| {
-        myna_core::effective_mode(myna_core::Settings::load().streaming_mode)
-            == myna_core::StreamingMode::Streaming
-    })
+fn resolve_preedit(forced: Option<bool>, preference: myna_core::StreamingMode) -> bool {
+    if let Some(forced) = forced {
+        myna_core::info_log!("settings", "preedit forced {forced} by flag");
+        return forced;
+    }
+    // Logged because it is the one setting nobody typed: "why are partials not
+    // showing" is answered by the persisted preference and the tier gate, and
+    // this is where both become visible in the journal.
+    let resolved = myna_core::effective_mode(preference);
+    myna_core::info_log!(
+        "settings",
+        "streaming-mode {preference:?} resolves to {resolved:?} on tier {}",
+        myna_core::hardware_tier()
+    );
+    resolved == myna_core::StreamingMode::Streaming
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -267,11 +355,12 @@ impl Args {
 /// accept the default 16 kHz s16le mono, so the MVP uses it directly.
 fn make_session(
     args: &Args,
+    resolved: &Resolved,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
     let backend_socket = args.backend().expect("daemon requires a backend");
-    let language = args.language.clone();
+    let language = resolved.language.clone();
     let target = args.target.clone();
     move |events: mpsc::Sender<OrchestratorEvent>| {
         // Re-resolved per Press, so a backend connected (or refreshed, or
@@ -406,6 +495,7 @@ impl Rebind for ControlRebind {
 /// indicator instead.
 async fn run_controller(
     args: Args,
+    resolved: Resolved,
     indicator: impl Indicator + 'static,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
@@ -413,10 +503,10 @@ async fn run_controller(
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
-        .session(make_session(&args, readiness, pump_bus.clone()))
-        .preedit(resolve_preedit(args.preedit));
+        .session(make_session(&args, &resolved, readiness, pump_bus.clone()))
+        .preedit(resolved.preedit);
 
-    let mut controller = match Activation::resolve(args.activation) {
+    let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
         // Ctrl-D means "stop", so it is not retried.
         Activation::Stdin => builder.trigger(StdinTrigger::new()).build(),
@@ -427,7 +517,7 @@ async fn run_controller(
                 ActivationMode::Toggle
             };
             let trigger = RetryingTrigger::new(PortalRebind {
-                shortcut: args.shortcut.clone(),
+                shortcut: resolved.hotkey.clone(),
                 mode,
             });
             builder.trigger(with_status(trigger, pump_bus)).build()
@@ -440,7 +530,7 @@ async fn run_controller(
         }
     };
 
-    banner(&args);
+    banner(&args, &resolved);
     controller.run().await;
     println!("bye");
     ExitCode::SUCCESS
@@ -455,15 +545,15 @@ fn with_status(trigger: RetryingTrigger, bus: Option<SharedBus>) -> RetryingTrig
     }
 }
 
-fn banner(args: &Args) {
+fn banner(args: &Args, resolved: &Resolved) {
     let sock = args.backend().map(|b| b.describe()).unwrap_or_default();
-    match Activation::resolve(args.activation) {
+    match resolved.activation {
         Activation::Stdin => println!(
             "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
         ),
         Activation::Portal => {
             let verb = if args.hold { "hold" } else { "tap" };
-            let key = args.shortcut.as_deref().unwrap_or("your chosen shortcut");
+            let key = resolved.hotkey.as_deref().unwrap_or("your chosen shortcut");
             println!("myna-desktop → {sock} — {verb} {key} to talk (portal)");
         }
         Activation::Control => {
@@ -586,23 +676,46 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Everything resolvable, resolved once: flags, then the user's GSettings,
+    // then `snap set myna …`, then the built-in.
+    let resolved = Resolved::new(
+        &args,
+        &myna_core::Settings::load(),
+        &SystemDefaults::from_env(),
+    );
+    // `--hold` is a portal concept (the portal reports press and release; the
+    // control socket only ever delivers a single poke). Rejected against the
+    // *resolved* transport rather than ignored, so "hold-to-talk silently does
+    // nothing" is not a mode a user can end up in.
+    if args.hold && resolved.activation != Activation::Portal {
+        eprintln!("--hold only applies to portal activation (add --portal)");
+        return ExitCode::FAILURE;
+    }
+    myna_core::info_log!(
+        "settings",
+        "activation {:?}, language {}, hotkey {}",
+        resolved.activation,
+        resolved.language.as_deref().unwrap_or("(backend default)"),
+        resolved.hotkey.as_deref().unwrap_or("(portal default)")
+    );
+
     // The GTK overlay (opt-in) needs the GLib main loop on the process main
     // thread; everything else runs headless with desktop notifications.
     #[cfg(feature = "ui-gtk")]
     if args.overlay {
-        return run_with_overlay(args);
+        return run_with_overlay(args, resolved);
     }
     #[cfg(not(feature = "ui-gtk"))]
     if args.overlay {
         eprintln!("note: this build has no ui-gtk feature; using notifications");
     }
 
-    run_headless(args)
+    run_headless(args, resolved)
 }
 
 /// Default path: a plain tokio runtime + desktop-notification feedback (no
 /// focus-perturbing window).
-fn run_headless(args: Args) -> ExitCode {
+fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
@@ -611,9 +724,15 @@ fn run_headless(args: Args) -> ExitCode {
         }
     };
     if args.no_dbus {
-        rt.block_on(run_controller(args, NotifyIndicator::new(), None, None))
+        rt.block_on(run_controller(
+            args,
+            resolved,
+            NotifyIndicator::new(),
+            None,
+            None,
+        ))
     } else {
-        rt.block_on(run_headless_dbus(args))
+        rt.block_on(run_headless_dbus(args, resolved))
     }
 }
 
@@ -622,7 +741,7 @@ fn run_headless(args: Args) -> ExitCode {
 /// desktop notifications by itself when the session bus is unreachable or the
 /// name can't be owned, which is why this needs no flag — dictation never
 /// hard-fails on it (P15). `--no-dbus` forces the notification path.
-async fn run_headless_dbus(args: Args) -> ExitCode {
+async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
     match ZbusBus::serve().await {
         Ok(bus) => {
             let readiness = Readiness::new();
@@ -630,7 +749,7 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
             let indicator = DbusIndicator::new(service.bus(), readiness.clone());
             let pump_bus = service.bus();
             eprintln!("serving org.myna.Dictation on the session bus");
-            run_controller(args, indicator, Some(readiness), Some(pump_bus)).await
+            run_controller(args, resolved, indicator, Some(readiness), Some(pump_bus)).await
         }
         Err(ServeError::AlreadyRunning { owner_pid }) => {
             let who = owner_pid
@@ -654,7 +773,7 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            run_controller(args, NotifyIndicator::new(), None, None).await
+            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
         }
     }
 }
@@ -664,7 +783,7 @@ async fn run_headless_dbus(args: Args) -> ExitCode {
 /// `async-channel`. When the session loop ends the sender drops, closing the
 /// channel, which quits the GTK app (see `run_indicator_app`).
 #[cfg(feature = "ui-gtk")]
-fn run_with_overlay(args: Args) -> ExitCode {
+fn run_with_overlay(args: Args, resolved: Resolved) -> ExitCode {
     use myna_desktop::indicator::gtk::{run_indicator_app, GtkIndicator};
 
     let (tx, rx) = async_channel::unbounded();
@@ -676,7 +795,13 @@ fn run_with_overlay(args: Args) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        rt.block_on(run_controller(args, GtkIndicator::new(tx), None, None))
+        rt.block_on(run_controller(
+            args,
+            resolved,
+            GtkIndicator::new(tx),
+            None,
+            None,
+        ))
     });
 
     let _gtk_code = run_indicator_app(rx);
@@ -745,28 +870,116 @@ mod tests {
 
     #[test]
     fn activation_defaults_to_unforced() {
-        // No activation flag must stay `None` so `Activation::resolve` — not
-        // the parser — decides, and the same argv resolves differently packaged
-        // vs not.
+        // No activation flag must stay `None` so `Resolved` — not the parser —
+        // decides, and the same argv resolves differently packaged vs not.
         let a = parse_args_from(args(&["--socket", "/tmp/x.sock"])).unwrap();
         assert_eq!(a.activation, None);
+    }
+
+    /// Settings as they read on a machine where nobody set anything.
+    fn unset() -> myna_core::Settings {
+        myna_core::Settings::default()
+    }
+
+    fn resolved(args: &Args, settings: &myna_core::Settings, system: &SystemDefaults) -> Resolved {
+        Resolved::new(args, settings, system)
     }
 
     #[test]
     fn activation_resolves_from_packaging() {
         // $SNAP is the portal's availability test: GNOME grants a portal app
         // identity only to a packaged app.
-        assert_eq!(Activation::resolve(None), {
-            if std::env::var_os("SNAP").is_some() {
-                Activation::Portal
-            } else {
-                Activation::Control
-            }
-        });
-        // An explicit flag always wins over the packaging default.
+        let a = Args::default();
         assert_eq!(
-            Activation::resolve(Some(Activation::Stdin)),
+            resolved(&a, &unset(), &SystemDefaults::default()).activation,
+            {
+                if std::env::var_os("SNAP").is_some() {
+                    Activation::Portal
+                } else {
+                    Activation::Control
+                }
+            }
+        );
+        // An explicit flag always wins over the packaging default.
+        let forced = Args {
+            activation: Some(Activation::Stdin),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolved(&forced, &unset(), &SystemDefaults::default()).activation,
             Activation::Stdin
+        );
+    }
+
+    // ── flag > user setting > `snap set` > built-in ─────────────────────────
+
+    #[test]
+    fn the_users_setting_beats_the_system_default() {
+        // `snap set myna language=fr` is one admin choosing for every account
+        // on the machine; a user who set their own language must keep it.
+        let settings = myna_core::Settings {
+            language: Some("en".into()),
+            ..Default::default()
+        };
+        let system = SystemDefaults {
+            language: Some("fr".into()),
+            ..Default::default()
+        };
+        let r = resolved(&Args::default(), &settings, &system);
+        assert_eq!(r.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn the_system_default_applies_where_the_user_set_nothing() {
+        // …and it has to, or `snap set` on an image build would do nothing.
+        let system = SystemDefaults {
+            language: Some("fr".into()),
+            hotkey: Some("<Super>d".into()),
+            activation: Some("control".into()),
+        };
+        let r = resolved(&Args::default(), &unset(), &system);
+        assert_eq!(r.language.as_deref(), Some("fr"));
+        assert_eq!(r.hotkey.as_deref(), Some("<Super>d"));
+        assert_eq!(r.activation, Activation::Control);
+    }
+
+    #[test]
+    fn a_flag_beats_both() {
+        let a = Args {
+            language: Some("de".into()),
+            shortcut: Some("<Super>x".into()),
+            activation: Some(Activation::Stdin),
+            ..Default::default()
+        };
+        let settings = myna_core::Settings {
+            language: Some("en".into()),
+            hotkey: Some("<Super>t".into()),
+            activation: Some("portal".into()),
+            ..Default::default()
+        };
+        let system = SystemDefaults {
+            language: Some("fr".into()),
+            hotkey: Some("<Super>d".into()),
+            activation: Some("control".into()),
+        };
+        let r = resolved(&a, &settings, &system);
+        assert_eq!(r.language.as_deref(), Some("de"));
+        assert_eq!(r.hotkey.as_deref(), Some("<Super>x"));
+        assert_eq!(r.activation, Activation::Stdin);
+    }
+
+    #[test]
+    fn an_unparseable_activation_falls_through_to_packaging() {
+        // A typo in `snap set myna activation=portl` must not silently select a
+        // transport: the hotkey doing nothing is the worst failure this daemon
+        // has, and packaging is the answer that is always right.
+        let settings = myna_core::Settings {
+            activation: Some("portl".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolved(&Args::default(), &settings, &SystemDefaults::default()).activation,
+            Activation::from_packaging()
         );
     }
 
@@ -785,11 +998,17 @@ mod tests {
     #[test]
     fn hold_requires_portal_activation() {
         // hold-to-talk needs press *and* release; the control socket only ever
-        // delivers a single poke, so this must fail loudly rather than no-op.
-        let err =
-            parse_args_from(args(&["--control", "--hold", "--socket", "/tmp/x.sock"])).unwrap_err();
-        assert!(err.contains("--hold only applies to portal"), "{err}");
-        assert!(parse_args_from(args(&["--portal", "--hold", "--socket", "/tmp/x.sock"])).is_ok());
+        // delivers a single poke. The check moved out of the parser when
+        // settings gained an activation key - it is the *resolved* transport
+        // that decides, and the parser cannot see settings.
+        let control = parse_args_from(args(&["--control", "--hold", "--socket", "/tmp/x.sock"]))
+            .expect("parsing no longer rejects this");
+        let r = resolved(&control, &unset(), &SystemDefaults::default());
+        assert!(control.hold && r.activation != Activation::Portal);
+        let portal = parse_args_from(args(&["--portal", "--hold", "--socket", "/tmp/x.sock"]))
+            .expect("portal + hold parses");
+        let r = resolved(&portal, &unset(), &SystemDefaults::default());
+        assert!(portal.hold && r.activation == Activation::Portal);
     }
 
     #[test]
@@ -838,8 +1057,11 @@ mod tests {
     fn forced_preedit_skips_the_tier_gate() {
         // Overrides must not consult settings/tier state at all — that is what
         // makes them usable for debugging on any machine.
-        assert!(resolve_preedit(Some(true)));
-        assert!(!resolve_preedit(Some(false)));
+        assert!(resolve_preedit(Some(true), myna_core::StreamingMode::Batch));
+        assert!(!resolve_preedit(
+            Some(false),
+            myna_core::StreamingMode::Streaming
+        ));
     }
 
     #[test]
@@ -883,7 +1105,12 @@ mod tests {
             "test setup: readiness should start warm"
         );
 
-        let mut factory = make_session(&args, Some(readiness.clone()), None);
+        let resolved = Resolved::new(
+            &args,
+            &myna_core::Settings::default(),
+            &SystemDefaults::default(),
+        );
+        let mut factory = make_session(&args, &resolved, Some(readiness.clone()), None);
         let (events_tx, _events_rx) = mpsc::channel(1);
         // Calling the factory is synchronous; `run` below is deliberately
         // never polled/awaited, proving the reset can't be hiding inside it.

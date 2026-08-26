@@ -39,10 +39,16 @@ Missing or unparseable yields an empty table, so `auto` resolves to **batch**
 (FR-010). A baseline is measured data and is never inferred: absent must read
 as "unmeasured", not as "assume it streams".
 
-> **⚠ Open:** the lab (`dev/matrix.py`) writes `results/streaming-tiers.json`,
-> and nothing yet promotes that file into an installed location, so `auto`
-> currently resolves to batch everywhere unless `$MYNA_TIER_TABLE` is set.
-> Staging it into the snap is the open packaging task.
+> **⚠ Open (T77): the tier key is not a sensible comparison.**
+> `hardware_tier()` returns `<arch>-cpu-generic`, so an RTF measured on one
+> machine would be applied to *every* machine of that architecture - a 16-thread
+> Ryzen with AVX-512/VNNI and a two-core netbook read as the same tier. A
+> baseline was promoted and staged into the snap on 2026-08-26 and then dropped
+> the same day for exactly that reason: the RTF is measured, but the claim that
+> your machine matches it is inference, and invisible inference at that.
+> So nothing installs a baseline today and `auto` means batch everywhere, which
+> is the safe end of the failure. The direction under investigation is measuring
+> the machine you are actually on rather than classifying it; see T77.
 
 ## Testbed client (`myna-dictate`)
 
@@ -56,29 +62,56 @@ myna-dictate --socket /path/to.sock --mode batch --clip clip.wav
 Persistent preference (used when `--mode` is absent):
 
 ```sh
-# $XDG_CONFIG_HOME/myna/settings.json (default ~/.config/myna/settings.json)
-{ "streaming_mode": "batch" }
+gsettings set org.myna.dictation streaming-mode batch
+gsettings get org.myna.dictation streaming-mode
 ```
 
-Edit the file directly; the setting takes effect on the next run and survives
-restarts (T046-verified).
+The setting takes effect on the next run and survives restarts
+(T046-verified). Unpackaged builds need the schema on the host first -
+`make install-schema` - since without it every read is the default (`auto`).
+
+## Where the setting lives (2026-08-26)
+
+GSettings, schema `org.myna.dictation`, key `streaming-mode`; the source is
+`client/data/glib-2.0/schemas/`. It was a JSON file at
+`~/.config/myna/settings.json` until 2026-08-26, and that could not work: the
+store has to be writable by the confined snap, by unconfined host tools, and
+later by other snaps with configuration APIs (T54), while inside the snap
+`$HOME` is `$SNAP_USER_DATA` and the `home` interface grants no top-level
+dotfiles - so the packaged daemon could never read what the CLI wrote.
+
+There is no automatic migration, deliberately: the only reader the old file
+ever had was an unpackaged build, so the one-line `gsettings set` above is the
+whole migration.
+
+Two things make it work under confinement, both in `myna-snap/snap/snapcraft.yaml`:
+the snap ships and compiles its own copy of the schema
+(`GSETTINGS_SCHEMA_DIR`) plus the dconf backend module (`GIO_MODULE_DIR`,
+because glib comes from the base and would otherwise scan the base's empty
+module dir), and `XDG_CONFIG_HOME` points at `$SNAP_REAL_HOME/.config` so
+libdconf opens the *host's* database rather than a snap-private one nothing
+writes. Reads and writes were verified in both directions on 2026-08-26.
 
 ## Desktop client (`myna-desktop`)
 
-The desktop app reads the same `streaming_mode` key from the same
-`settings.json`, and the resolved mode does double duty: it also decides
+The desktop app reads the same `streaming-mode` key from the same schema,
+and the resolved mode does double duty: it also decides
 **streaming preedit** (in-field unstable hypotheses). Resolving to `streaming`
 turns preedit on wherever the injector has a real preedit region; resolving to
 `batch` leaves injection commit-only. `myna-desktop --preedit` /
 `--no-preedit` override that for debugging. See `docs/desktop-injection.md`
 §Streaming preedit.
 
-> **⚠ Open (T54):** the intended snap-confined path is snap config —
-> `sudo snap set myna streaming-mode=batch`. That is **not wired**:
-> `myna-snap/snap/snapcraft.yaml` declares no `configure` hook, so `snap set
-> myna ...` is currently a no-op. Until it lands, edit `settings.json` (under
-> the snap's `$SNAP_USER_DATA`) or export `MYNA_TIER_TABLE` for the gate. The
-> config-hook work is tracked in `docs/deployment-architecture.md` §5.
+The daemon logs what it resolved at every start, so "why are partials not
+showing" is answerable from the journal:
+
+```
+settings: streaming-mode Auto resolves to Batch on tier x86_64-cpu-generic
+```
+
+`snap set myna streaming-mode=…` is deliberately *not* a key: the emission mode
+is a per-user preference, and snapd configuration is per snap and root-set. The
+system-wide plane covers `activation`, `language` and `hotkey` only.
 
 The GTK settings UI exposing this key is a follow-up (UD136 design thread).
 

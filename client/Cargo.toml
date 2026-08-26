@@ -30,3 +30,8 @@ async-trait = "0.1"
 # v0_3_44 enables PW_KEY_TARGET_OBJECT for node selection by name (T021); the
 # host runs libpipewire 1.6.x, so the API is present.
 pipewire = { version = "0.10", features = ["v0_3_44"] }
+# GSettings, for the client settings store (`myna_core::Settings`). Binds the
+# system glib/gio via pkg-config, which is why libglib2.0-dev is a build
+# dependency everywhere the workspace is built. Kept at the gtk-rs release the
+# optional `ui-gtk` GTK4 stack already pins, so there is one glib in the tree.
+gio = "0.22"

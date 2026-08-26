@@ -75,6 +75,17 @@ lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-p
 client: ## Build the Rust client workspace (release)
 	cd client && cargo build --release
 
+# The client settings store is GSettings (org.myna.dictation), so an
+# *unpackaged* build needs the schema on the host to read or write anything -
+# the snap carries its own copy, and the gnome-shell-extension deb will carry
+# the host's once it exists (T74). Until then this is that install.
+.PHONY: install-schema
+install-schema: ## Install the client GSettings schema on the host (needs sudo)
+	sudo install -Dm644 client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml \
+		/usr/share/glib-2.0/schemas/org.myna.dictation.gschema.xml
+	sudo glib-compile-schemas /usr/share/glib-2.0/schemas
+	@echo "installed org.myna.dictation; read it with: gsettings get org.myna.dictation streaming-mode"
+
 .PHONY: server
 server: ## Sync the Python server env
 	cd server && uv sync

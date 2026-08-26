@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Myna client settings.
+
+  This schema is the shared store the settings live in, and it is shared on
+  purpose: the confined `myna` snap reads it over the `gsettings` interface,
+  unconfined host tools (the myna-dictate CLI, `gsettings set`, a future
+  Settings page) write it directly, and further snaps growing configuration
+  APIs can plug the same interface.
+
+  Installed twice from this one source: into the snap at
+  $SNAP/usr/share/glib-2.0/schemas (myna-snap/snap/snapcraft.yaml), and onto
+  the host by `make install-schema` until the extension deb carries it.
+-->
+<schemalist>
+  <enum id="org.myna.dictation.Activation">
+    <value nick="auto" value="0"/>
+    <value nick="portal" value="1"/>
+    <value nick="control" value="2"/>
+  </enum>
+
+  <enum id="org.myna.dictation.StreamingMode">
+    <value nick="auto" value="0"/>
+    <value nick="streaming" value="1"/>
+    <value nick="batch" value="2"/>
+  </enum>
+
+  <schema id="org.myna.dictation" path="/org/myna/dictation/">
+    <key name="streaming-mode" enum="org.myna.dictation.StreamingMode">
+      <default>'auto'</default>
+      <summary>How transcripts are emitted</summary>
+      <description>
+        streaming: partial hypotheses appear in the field as you speak.
+        batch: the transcript is injected once, when the utterance ends.
+        auto: resolved per machine against the measured RTF tier table, which
+        is also what decides whether in-field partials are shown at all.
+      </description>
+    </key>
+
+    <key name="language" type="s">
+      <default>''</default>
+      <summary>Language hint sent to the backend</summary>
+      <description>
+        A BCP-47-ish code (en, fr, zh) passed to the inference backend as a
+        session hint. Empty means "let the backend decide", which is what a
+        multilingual model does best.
+      </description>
+    </key>
+
+    <key name="activation" enum="org.myna.dictation.Activation">
+      <default>'auto'</default>
+      <summary>How a press reaches the daemon</summary>
+      <description>
+        auto: the portal where the app is packaged (the compositor can only
+        identify a packaged app), the control socket otherwise. portal and
+        control force one - a wrong choice here means the hotkey does nothing,
+        so auto is nearly always right.
+      </description>
+    </key>
+
+    <key name="hotkey" type="s">
+      <default>''</default>
+      <summary>Preferred shortcut offered to the portal</summary>
+      <description>
+        An accelerator such as '&lt;Super&gt;d'. It is a *preference*: under
+        portal activation the desktop's own bind dialog owns the final choice,
+        and empty means "offer no preference".
+      </description>
+    </key>
+  </schema>
+</schemalist>
