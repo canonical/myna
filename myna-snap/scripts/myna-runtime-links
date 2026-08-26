@@ -13,3 +13,26 @@ link="$XDG_RUNTIME_DIR/$sock"
 if [ -S "$host" ] && [ ! -e "$link" ]; then
     ln -s "$host" "$link" 2>/dev/null || true
 fi
+
+# dconf, for the same reason and with sharper consequences. libdconf keeps its
+# *staleness flag* - one byte per database, written by the session's
+# dconf-service when a value changes - under $XDG_RUNTIME_DIR, while the
+# database itself is the file $XDG_CONFIG_HOME/dconf/user that the snap already
+# shares with the host. Split the flag and the two halves disagree: opening the
+# database reads correct values, and every read after that returns what was
+# mapped at open, forever. The daemon's settings watch then does the worst
+# possible thing - takes the dconf change signal off the bus and re-reads stale
+# data (found live, 2026-08-26; the signal crosses confinement fine, the
+# invalidation does not).
+#
+# Linking the session's directory in puts both halves back on one file. The
+# `owner @{run}/user/*/dconf/user rw` rule in AppArmor's dconf abstraction is
+# written against the resolved host path, so this is permitted, not a hole. If
+# the session has not created that directory yet the link is skipped and the
+# daemon behaves as it did before: correct values at startup, no live reload.
+if [ -d "$XDG_RUNTIME_DIR/../dconf" ] && [ ! -L "$XDG_RUNTIME_DIR/dconf" ]; then
+    # A real directory here is this snap's own private flag from an earlier
+    # run, and nothing else writes it.
+    rm -rf "$XDG_RUNTIME_DIR/dconf"
+    ln -s ../dconf "$XDG_RUNTIME_DIR/dconf" 2>/dev/null || true
+fi
