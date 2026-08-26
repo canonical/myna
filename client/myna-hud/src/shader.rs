@@ -1136,27 +1136,67 @@ pub enum GlProfile {
     Es300,
 }
 
+/// The vertex attribute carrying the fullscreen quad's corners, in `[0, 1]`.
+/// Bound to location 0 so the renderer needs no attribute query.
+pub const POSITION_ATTRIBUTE: &str = "aPosition";
+
+/// The varying carrying the quad's `[0, 1]` UV to the fragment stage, where
+/// it feeds `cogl_tex_coord_in[0]` — the coordinate Cogl used to supply.
+const UV_VARYING: &str = "vUv";
+
+/// The vertex shader for a [`standalone_shader`] fragment: a fullscreen quad
+/// whose corners double as the UV Cogl used to hand the snippet.
+///
+/// The quad is drawn in `[0, 1]` space (mapped to clip space here) so `vUv`
+/// is the position unmodified — matching the former Python GPU lab's
+/// `ribbon_gl.py`, and therefore the orientation the ribbon was tuned in.
+pub fn vertex_shader(profile: GlProfile) -> String {
+    let (preamble, attribute, varying_out) = match profile {
+        GlProfile::Gl120 => ("#version 120", "attribute", "varying"),
+        GlProfile::Es100 => ("#version 100", "attribute", "varying"),
+        GlProfile::Es300 => ("#version 300 es", "in", "out"),
+    };
+    format!(
+        "{preamble}\n\
+         {attribute} vec2 {POSITION_ATTRIBUTE};\n\
+         {varying_out} vec2 {UV_VARYING};\n\
+         void main() {{\n\
+         {UV_VARYING} = {POSITION_ATTRIBUTE};\n\
+         gl_Position = vec4({POSITION_ATTRIBUTE} * 2.0 - 1.0, 0.0, 1.0);\n\
+         }}\n"
+    )
+}
+
 /// Wrap the generated snippet in the surrounding declarations Cogl itself
 /// provided, so the fragment is a complete, compilable shader for the target
 /// profile. (`cogl_color_in` is declared but unused — the original had it
 /// too; glslang does not warn by default.)
+///
+/// Crucially this also *feeds* `cogl_tex_coord_in[0]` from the vertex
+/// stage's UV. Cogl spliced that assignment in itself; without it the
+/// snippet still compiles — every strand simply samples x = 0 and the ribbon
+/// renders as a degenerate smear — so the wrapper must supply it, and
+/// [`vertex_shader`] must be the paired vertex stage.
 pub fn standalone_shader(source: &ShaderSource, profile: GlProfile) -> String {
-    let (preamble, out_assignment) = match profile {
+    let (preamble, varying_in, out_assignment) = match profile {
         GlProfile::Gl120 => (
             "#version 120".to_string(),
+            format!("varying vec2 {UV_VARYING};"),
             "gl_FragColor = cogl_color_out;".to_string(),
         ),
         GlProfile::Es100 => (
             "#version 100\nprecision highp float;".to_string(),
+            format!("varying vec2 {UV_VARYING};"),
             "gl_FragColor = cogl_color_out;".to_string(),
         ),
         GlProfile::Es300 => (
             "#version 300 es\nprecision highp float;\nout vec4 myna_frag_color;".to_string(),
+            format!("in vec2 {UV_VARYING};"),
             "myna_frag_color = cogl_color_out;".to_string(),
         ),
     };
     format!(
-        "{preamble}\nvec4 cogl_color_out;\nvec4 cogl_color_in;\nvec4 cogl_tex_coord_in[4];\n{declarations}\nvoid main() {{\n{code}\n{out_assignment}\n}}\n",
+        "{preamble}\n{varying_in}\nvec4 cogl_color_out;\nvec4 cogl_color_in;\nvec4 cogl_tex_coord_in[4];\n{declarations}\nvoid main() {{\ncogl_tex_coord_in[0] = vec4({UV_VARYING}, 0.0, 1.0);\n{code}\n{out_assignment}\n}}\n",
         declarations = source.declarations,
         code = source.code,
     )

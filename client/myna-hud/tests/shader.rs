@@ -16,9 +16,9 @@ use myna_hud::ribbon::{
 };
 use myna_hud::shader::{
     activity_ramp, build_ribbon_shader, compute_safe_scale, glsl_constant_defines,
-    pack_ribbon_uniforms, ribbon_uniforms, role_tag, standalone_shader, GlProfile, RibbonPalette,
-    ACTIVITY_RAMP, BILLOW, EDGE_TAPER, MAX_DOTS, MAX_STRANDS, PAINT_ORDER, RIBBON_GRADIENT_STOPS,
-    WISP, WISP_THICKNESS_FRACTION,
+    pack_ribbon_uniforms, ribbon_uniforms, role_tag, standalone_shader, vertex_shader, GlProfile,
+    RibbonPalette, ACTIVITY_RAMP, BILLOW, EDGE_TAPER, MAX_DOTS, MAX_STRANDS, PAINT_ORDER,
+    RIBBON_GRADIENT_STOPS, WISP, WISP_THICKNESS_FRACTION,
 };
 use myna_hud::states::Severity;
 
@@ -479,6 +479,106 @@ fn which_glslang() -> Option<std::path::PathBuf> {
     std::env::split_paths(&path)
         .map(|dir| dir.join("glslangValidator"))
         .find(|p| p.is_file())
+}
+
+// --- The vertex stage and the UV feed ------------------------------------
+// Cogl spliced the `cogl_tex_coord_in[0]` assignment in itself. Outside the
+// Shell the wrapper must supply it — and its absence does NOT fail
+// compilation: every strand would sample x = 0 and the ribbon would render
+// as a degenerate smear. These pin the plumbing that only a rendered pixel
+// would otherwise catch.
+
+#[test]
+fn the_wrapper_feeds_the_texture_coordinate() {
+    let shader = build_ribbon_shader();
+    for profile in [GlProfile::Gl120, GlProfile::Es100, GlProfile::Es300] {
+        let source = standalone_shader(&shader, profile);
+        assert!(
+            source.contains("cogl_tex_coord_in[0] = vec4(vUv"),
+            "{profile:?} feeds the UV Cogl used to supply"
+        );
+        let assignment = source.find("cogl_tex_coord_in[0] =").expect("assignment");
+        let body = source.find("void main()").expect("main");
+        assert!(assignment > body, "{profile:?} feeds it inside main()");
+        // ...and before the generated code reads it.
+        let first_read = source[assignment + 1..]
+            .find("cogl_tex_coord_in[0]")
+            .map(|i| i + assignment + 1);
+        if let Some(read) = first_read {
+            assert!(read > assignment, "{profile:?} feeds it before any read");
+        }
+    }
+}
+
+#[test]
+fn the_vertex_stage_matches_the_fragment_varying() {
+    let shader = build_ribbon_shader();
+    for profile in [GlProfile::Gl120, GlProfile::Es100, GlProfile::Es300] {
+        let vertex = vertex_shader(profile);
+        let fragment = standalone_shader(&shader, profile);
+        assert!(
+            vertex.contains("vUv") && fragment.contains("vUv"),
+            "{profile:?} shares the varying name"
+        );
+        assert!(
+            vertex.contains("aPosition"),
+            "{profile:?} declares the position attribute the renderer binds"
+        );
+        // The quad is drawn in [0,1] so the UV is the position unmodified —
+        // the orientation the ribbon was tuned in.
+        assert!(
+            vertex.contains("vUv = aPosition"),
+            "{profile:?} passes the corner through as the UV"
+        );
+        assert!(
+            vertex.contains("aPosition * 2.0 - 1.0"),
+            "{profile:?} maps the [0,1] quad into clip space"
+        );
+        // ES 3.00 must use in/out, not the deprecated attribute/varying.
+        if profile == GlProfile::Es300 {
+            assert!(
+                !vertex.contains("attribute ") && !vertex.contains("varying "),
+                "ES 3.00 uses in/out"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_vertex_stage_compiles_under_glslang() {
+    let Some(glslang) = which_glslang() else {
+        eprintln!("     (skip) glslangValidator not installed");
+        return;
+    };
+    for (profile, label) in [
+        (GlProfile::Gl120, "GLSL 1.20"),
+        (GlProfile::Es100, "GLSL ES 1.00"),
+        (GlProfile::Es300, "GLSL ES 3.00"),
+    ] {
+        let source = vertex_shader(profile);
+        let path = std::env::temp_dir().join(format!(
+            "myna-vertex-test-{}-{:?}.vert",
+            std::process::id(),
+            profile
+        ));
+        std::fs::write(&path, &source).expect("write temp shader");
+        let output = Command::new(&glslang)
+            .arg("-S")
+            .arg("vert")
+            .arg(&path)
+            .output()
+            .expect("run glslang");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.status.success() && !text.contains("ERROR"),
+            "vertex stage compiles as {label}:\n{text}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 // --- Palette resolution sanity (amber override + activity) ----------------
