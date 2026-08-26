@@ -50,6 +50,18 @@ window.myna-hud-window {
  * once made the meter read as permanently flat regardless of the real audio
  * level (R16a/R17). */
 .myna-hud-ribbon {
+    /* The accent, resolved by the THEME rather than mapped from a settings
+     * name — the direct analogue of the extension's
+     * `-myna-ribbon-main-color: -st-accent-color`. The renderer reads this
+     * back with gtk_widget_get_color(); see platform::probe_css_accent.
+     *
+     * `@accent_bg_color` (the named colour, defined since libadwaita 1.0)
+     * rather than `var(--accent-bg-color)` (GTK 4.16+) so the whole runtime
+     * matrix is covered, and `accent_bg_color` rather than `accent_color`:
+     * the latter is the standalone/foreground variant, darkened for
+     * contrast, and can even fall outside sRGB. */
+    color: @accent_bg_color;
+
     min-height: 32px;
     min-width: 160px;
 }

@@ -165,7 +165,10 @@ impl HudWindow {
             phase_since: Instant::now(),
             started: Instant::now(),
             reduced_motion: platform::probe_reduced_motion(),
-            palette: platform::probe_accent_palette().as_ribbon_palette(),
+            // No styled widget is rooted yet, so this is the fallback
+            // palette; refresh_palette() re-resolves it from CSS as soon as
+            // the ribbon is mapped.
+            palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
         }));
 
         let renderer: Rc<RefCell<Option<RibbonRenderer>>> = Rc::default();
@@ -183,6 +186,7 @@ impl HudWindow {
         });
 
         hud.connect_renderer();
+        hud.connect_palette();
         hud.connect_clock();
         hud.connect_dismiss();
         hud.connect_preferences();
@@ -272,6 +276,17 @@ impl HudWindow {
 
     // ── Wiring ──────────────────────────────────────────────────────────
 
+    /// Resolve the accent once the ribbon is rooted, and again whenever the
+    /// theme recomputes its style (an accent change restyles the widget).
+    fn connect_palette(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        self.ribbon.connect_map(move |_| {
+            if let Some(this) = this.upgrade() {
+                this.refresh_palette();
+            }
+        });
+    }
+
     fn connect_renderer(self: &Rc<Self>) {
         let renderer = self.renderer.clone();
         self.ribbon.connect_realize(move |area| {
@@ -355,16 +370,25 @@ impl HudWindow {
         });
     }
 
+    /// Re-resolve the ribbon's palette from the live theme.
+    ///
+    /// The accent comes from the ribbon widget's own computed CSS colour
+    /// (`color: @accent_bg_color` in `style.css`), which is only meaningful
+    /// once the widget is rooted — hence the refresh on map as well as on
+    /// every preference change.
+    fn refresh_palette(&self) {
+        let palette = platform::probe_accent_palette(Some(&self.ribbon)).as_ribbon_palette();
+        self.state.borrow_mut().palette = palette;
+        self.ribbon.queue_render();
+    }
+
     fn connect_preferences(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
         // Re-resolve accent + motion whenever the desktop changes either.
         let watch = platform::watch_preferences(move || {
             let Some(this) = this.upgrade() else { return };
-            let mut state = this.state.borrow_mut();
-            state.reduced_motion = platform::probe_reduced_motion();
-            state.palette = platform::probe_accent_palette().as_ribbon_palette();
-            drop(state);
-            this.ribbon.queue_render();
+            this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
+            this.refresh_palette();
         });
         *self.preferences.borrow_mut() = Some(watch);
     }

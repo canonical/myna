@@ -6,8 +6,8 @@
 // two-safe-sources design.
 
 use myna_hud::accent::{
-    accent_hex, derive_palette, resolve_accent_palette, resolve_platform_accent_palette,
-    AccentPalette, ACCENT_NAMES, UBUNTU_AUBERGINE, UBUNTU_ORANGE,
+    accent_hex, derive_palette, resolve_accent_palette, resolve_theme_accent_palette, ACCENT_NAMES,
+    UBUNTU_AUBERGINE, UBUNTU_ORANGE,
 };
 use myna_hud::shader::Rgb;
 
@@ -105,82 +105,65 @@ fn derive_palette_shape() {
 // reports its default).
 
 #[test]
-fn platform_accent_used_for_genuine_choices() {
-    // The palette keeps the hex-string shape, so the platform color comes
-    // back quantized to 1/255 steps — compare with that tolerance.
-    fn close(a: Rgb, b: Rgb) -> bool {
-        (a.r - b.r).abs() < 1.0 / 255.0
-            && (a.g - b.g).abs() < 1.0 / 255.0
-            && (a.b - b.b).abs() < 1.0 / 255.0
-    }
+fn the_theme_accent_is_used_as_is() {
+    // Yaru magenta — a tint the fixed table cannot name at all.
     let yaru_magenta = Rgb {
-        r: 0.7,
-        g: 0.2,
-        b: 0.6,
+        r: 0.702,
+        g: 0.298,
+        b: 0.702,
     };
-    let palette = resolve_platform_accent_palette(Some("magenta"), yaru_magenta);
-    assert!(
-        close(palette.main_rgb(), yaru_magenta),
-        "unknown name + platform → the platform color"
-    );
-
-    let palette = resolve_platform_accent_palette(
-        Some("blue"),
-        Rgb {
-            r: 0.1,
-            g: 0.2,
-            b: 0.9,
-        },
-    );
-    assert!(
-        close(
-            palette.main_rgb(),
-            Rgb {
-                r: 0.1,
-                g: 0.2,
-                b: 0.9
-            }
-        ),
-        "known name + platform → the platform color"
-    );
-
+    let palette = resolve_theme_accent_palette(yaru_magenta);
     assert_eq!(
-        resolve_platform_accent_palette(
-            None,
-            Rgb {
-                r: 0.1,
-                g: 0.2,
-                b: 0.9
-            }
-        )
-        .main,
-        UBUNTU_ORANGE,
-        "untouched default → orange even when the platform reports its default"
+        palette.main.to_ascii_lowercase(),
+        "#b34cb3",
+        "the colour the theme reports becomes main, unmodified"
+    );
+    assert_ne!(
+        palette.darker_complement.to_ascii_lowercase(),
+        UBUNTU_AUBERGINE.to_ascii_lowercase(),
+        "a non-orange accent gets a computed complement"
     );
 }
 
 #[test]
-fn platform_orange_keeps_the_aubergine_override() {
-    let palette = resolve_platform_accent_palette(
-        Some("orange"),
+fn the_theme_path_asks_no_question_about_user_choice() {
+    // The old rule discarded the platform colour unless the user had
+    // "genuinely chosen" — which re-tinted an untouched Ubuntu desktop
+    // running a Yaru variant back to plain orange. There is no such gate
+    // now: whatever the theme reports is what the ribbon uses.
+    let yaru_olive = Rgb {
+        r: 0.294,
+        g: 0.522,
+        b: 0.004,
+    };
+    let palette = resolve_theme_accent_palette(yaru_olive);
+    assert_eq!(palette.main.to_ascii_lowercase(), "#4b8501");
+}
+
+#[test]
+fn theme_orange_still_gets_the_aubergine_complement() {
+    // Orangeness used to be decided by the settings NAME; with no name in
+    // play it is decided by the colour itself — for both Ubuntu's orange
+    // and upstream libadwaita's.
+    for orange in [
         Rgb {
-            r: 0.93,
-            g: 0.36,
+            r: 0.914,
+            g: 0.329,
+            b: 0.125,
+        }, // #e95420
+        Rgb {
+            r: 0.929,
+            g: 0.357,
             b: 0.0,
-        },
-    );
-    assert_eq!(palette.darker_complement, UBUNTU_AUBERGINE);
-}
-
-#[test]
-fn converts_to_the_ribbon_palette() {
-    let palette: AccentPalette = resolve_accent_palette(Some("blue"));
-    let ribbon = palette.as_ribbon_palette();
-    assert_eq!(
-        ribbon.main,
-        myna_hud::shader::hex_to_rgb(accent_hex("blue").unwrap())
-    );
-    assert!((0.0..=1.0).contains(&ribbon.translucent_alpha));
+        }, // #ed5b00
+    ] {
+        let palette = resolve_theme_accent_palette(orange);
+        assert_eq!(
+            palette.darker_complement.to_ascii_lowercase(),
+            UBUNTU_AUBERGINE.to_ascii_lowercase(),
+            "orange keeps the fixed aubergine secondary"
+        );
+    }
 }
 
 // --- The table carries Ubuntu's patched values, not upstream's ----------

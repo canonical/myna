@@ -10,20 +10,29 @@
 //! wiring; the reduced-motion resolution that used to live here moved to
 //! [`crate::motion`] with E2b's two-safe-sources design.
 //!
-//! CRITICAL correctness rule (R18): the GSettings **user value**, not the
-//! resolved value, is what lets "the user genuinely chose blue" and "the
-//! user never touched this setting" (also `'blue'`, GNOME's factory
-//! default) be told apart — both read identically any other way. The
-//! caller therefore passes the *user value* (`None` = never written),
-//! never the resolved setting.
+//! Resolution order (the application layer probes; see
+//! [`crate::platform::probe_accent_palette`]):
 //!
-//! R26 adds the platform path: when the runtime libadwaita is ≥ 1.7, the
-//! style manager's `accent-color-rgba` property resolves the accent
-//! (including Ubuntu's Yaru tints, which the fixed table cannot name); a
-//! genuine user choice then uses that color as `main` via
-//! [`resolve_platform_accent_palette`]. The untouched-default rule still
-//! wins over platform resolution.
-
+//! 1. **The theme** — `@accent_bg_color` read back from a styled widget
+//!    ([`resolve_theme_accent_palette`]). Direct, needs no version probing,
+//!    and correct for Yaru's tints and variants by construction. This is
+//!    the analogue of the extension's `-st-accent-color`.
+//! 2. `AdwStyleManager:accent-color-rgba` (libadwaita ≥ 1.7) — measured
+//!    identical to (1) for every accent.
+//! 3. The `accent-color` setting's **resolved value** through
+//!    [`accent_hex`] ([`resolve_accent_palette`]).
+//! 4. Ubuntu orange.
+//!
+//! **Superseded (R18)**: this module used to require the GSettings *user
+//! value* (`None` = never written) so that "genuinely chose blue" and
+//! "never touched this setting" could be told apart, the latter being
+//! re-tinted to Ubuntu orange. That distinction rested on the premise that
+//! an untouched Ubuntu desktop reads as `'blue'` while looking orange —
+//! which is false: `ubuntu-settings` ships a gschema override setting
+//! `accent-color = 'orange'`, so the resolved value is already right, and
+//! reading the theme is righter still (it also covers Yaru variants and
+//! accents that have no settings name at all).
+//!
 use crate::shader::{hex_to_rgb, Rgb, RibbonPalette};
 
 /// The 9-value accent palette, using **Ubuntu's patched libadwaita values**
@@ -239,17 +248,28 @@ fn ubuntu_orange_palette() -> AccentPalette {
     derive_palette(UBUNTU_ORANGE, true)
 }
 
-/// Resolve the ribbon's palette from the *result* of reading the
-/// `accent-color` GSettings **user value** — a GNOME accent name string if
-/// the user has genuinely set one, or `None` if they never have (including
-/// sitting on the untouched factory default, itself `'blue'` — R18's core
-/// distinction) or the schema/key is unavailable.
+/// **Last resort only** — used when the theme cannot be read at all (no
+/// styled widget, no style manager). Prefer
+/// [`resolve_theme_accent_palette`].
+///
+/// Resolve the ribbon's palette from the `accent-color` setting's
+/// **resolved value** — the name the desktop is actually using — or `None`
+/// when the schema/key is unavailable.
+///
+/// This deliberately takes the *resolved* value and not the user value.
+/// R18 originally read `g_settings_get_user_value()` to tell "genuinely
+/// chose blue" from "never touched, also blue", on the belief that an
+/// untouched Ubuntu desktop reads as `'blue'` while looking orange. It does
+/// not: `ubuntu-settings` ships a gschema **override** setting
+/// `org.gnome.desktop.interface accent-color = 'orange'`, so the resolved
+/// value is already correct on Ubuntu, and the distinction the user-value
+/// read existed to draw does not need drawing.
 ///
 /// Never panics: an unrecognized name also falls back to Ubuntu orange.
 ///
 /// Port of `accent.js`'s `resolveAccentPalette`.
-pub fn resolve_accent_palette(user_value: Option<&str>) -> AccentPalette {
-    let Some(name) = user_value else {
+pub fn resolve_accent_palette(resolved_value: Option<&str>) -> AccentPalette {
+    let Some(name) = resolved_value else {
         return ubuntu_orange_palette();
     };
     match accent_hex(name) {
@@ -258,25 +278,32 @@ pub fn resolve_accent_palette(user_value: Option<&str>) -> AccentPalette {
     }
 }
 
-/// The R26 platform path: a genuine user choice plus the style manager's
-/// own resolved accent (`AdwStyleManager:accent-color-rgba`, libadwaita
-/// ≥ 1.7 — picks up Ubuntu's Yaru tints, which the fixed table cannot
-/// name). The user value still gates everything: `None` (untouched default)
-/// is Ubuntu orange regardless of what the platform reports as its default.
+/// The two hexes that count as "orange" for the aubergine override: Yaru's
+/// (= [`UBUNTU_ORANGE`]) and upstream libadwaita's.
 ///
-/// Orangeness for the aubergine override is by name ("orange") — the one
-/// case the design brief calls out.
-pub fn resolve_platform_accent_palette(user_value: Option<&str>, platform: Rgb) -> AccentPalette {
-    let Some(name) = user_value else {
-        return ubuntu_orange_palette();
-    };
-    let is_orange = name == "orange";
-    // The platform-resolved color becomes main (as hex, keeping the
-    // palette's string shape), with the dependent tones derived from it.
+/// Orangeness used to be decided by the settings *name*; resolving the
+/// accent from the theme means there is no name to consult, so it is
+/// decided by the colour itself.
+pub fn is_orange_hex(hex: &str) -> bool {
+    let hex = hex.to_ascii_lowercase();
+    hex == UBUNTU_ORANGE.to_ascii_lowercase() || hex == "#ed5b00"
+}
+
+/// Resolve the palette from the accent **the theme itself reports**
+/// (`@accent_bg_color`, read back through
+/// [`crate::platform::probe_css_accent`]).
+///
+/// This is the primary path, and it needs no notion of "did the user
+/// choose": the theme reports what the desktop is actually using — Ubuntu
+/// orange on an untouched Ubuntu, blue on untouched stock GNOME, a Yaru
+/// variant where one is in use, and a deliberate choice where one was
+/// made.
+pub fn resolve_theme_accent_palette(accent: Rgb) -> AccentPalette {
     let main_hex = rgb255_to_hex(
-        (platform.r * 255.0).round() as u32,
-        (platform.g * 255.0).round() as u32,
-        (platform.b * 255.0).round() as u32,
+        (accent.r * 255.0).round() as u32,
+        (accent.g * 255.0).round() as u32,
+        (accent.b * 255.0).round() as u32,
     );
+    let is_orange = is_orange_hex(&main_hex);
     derive_palette(&main_hex, is_orange)
 }

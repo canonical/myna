@@ -13,10 +13,22 @@
 //! 1.9). A compile-time feature would either raise the floor or forfeit the
 //! newer source; `find_property` costs nothing and degrades exactly.
 //!
-//! `AdwStyleManager:accent-color-rgba` is read as a **boxed `gdk::RGBA`**,
-//! deliberately never as the `AdwAccentColor` enum: Ubuntu's Yaru patches
-//! add accent values outside upstream's enumeration, and mapping an unknown
-//! enum member would panic or mis-name a colour the RGBA reports exactly.
+//! The **accent is read from CSS**, not from the settings name: a widget
+//! styled `color: @accent_bg_color` is asked for its computed colour
+//! ([`probe_css_accent`]). That is the direct analogue of the extension's
+//! `-st-accent-color`, and it beats every alternative — the named colour
+//! has existed since libadwaita 1.0, so it needs no version probing at all
+//! and covers the whole runtime matrix; it resolves Ubuntu's Yaru tints
+//! (including `wartybrown`, which upstream has no enum member for)
+//! automatically; and it was measured identical to
+//! `AdwStyleManager:accent-color-rgba` for every accent.
+//!
+//! `AdwStyleManager:accent-color-rgba` remains as a fallback for stacks
+//! where the CSS lookup yields nothing, read as a **boxed `gdk::RGBA`** and
+//! deliberately never as the `AdwAccentColor` enum: Yaru adds
+//! `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, outside
+//! upstream's enumeration, so mapping the enum would abort or mis-name a
+//! colour the RGBA reports exactly.
 //!
 //! ## Crash guard (E2b)
 //!
@@ -33,7 +45,7 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use crate::accent::{resolve_accent_palette, resolve_platform_accent_palette, AccentPalette};
+use crate::accent::{resolve_accent_palette, resolve_theme_accent_palette, AccentPalette};
 use crate::motion::{reduced_motion, MotionReadings};
 use crate::shader::Rgb;
 
@@ -116,14 +128,45 @@ pub fn probe_reduced_motion() -> bool {
     })
 }
 
-/// The accent's **user value** — `None` when the user never wrote the key
-/// (R18's critical distinction: an untouched default and a deliberate
-/// `'blue'` read identically any other way, and only the former may be
-/// re-tinted to Ubuntu orange).
-pub fn probe_accent_user_value() -> Option<String> {
+/// The accent setting's **resolved value** — the name the desktop is
+/// actually using — or `None` when the schema/key is unavailable.
+///
+/// Deliberately not `g_settings_get_user_value()`. R18 read the user value
+/// to distinguish "genuinely chose blue" from "never touched, also blue",
+/// believing an untouched Ubuntu desktop read as `'blue'` while looking
+/// orange. It does not: `ubuntu-settings` ships a gschema override setting
+/// `org.gnome.desktop.interface accent-color = 'orange'`, so the resolved
+/// value is already correct there — and this path is only a fallback for
+/// when the theme cannot be read at all.
+pub fn probe_accent_value() -> Option<String> {
     let settings = settings_for_schema_key(INTERFACE_SCHEMA, ACCENT_KEY)?;
-    let user_value = settings.user_value(ACCENT_KEY)?;
-    user_value.get::<String>()
+    Some(settings.string(ACCENT_KEY).to_string())
+}
+
+/// The accent as the **theme** resolves it, read back from `widget`'s
+/// computed CSS `color` (the widget must be styled `color:
+/// @accent_bg_color` — see `style.css`'s `.myna-hud-ribbon`).
+///
+/// This is the primary source: no version probing, no name table, and
+/// correct on Yaru by construction. The widget must have a computed style
+/// (i.e. be in a rooted hierarchy) for this to mean anything.
+///
+/// Components are clamped to `[0, 1]`: GTK's standalone accent variants can
+/// legitimately fall outside sRGB (`@accent_color` was measured at
+/// `b = -0.29`), and while `@accent_bg_color` is in gamut, the shader's
+/// uniform space is not the place to discover otherwise.
+pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
+    let color = widget.as_ref().color();
+    // A fully transparent colour means "no accent resolved" rather than a
+    // real black; treat it as absent so the fallbacks get their turn.
+    if color.alpha() <= 0.0 {
+        return None;
+    }
+    Some(Rgb {
+        r: color.red().clamp(0.0, 1.0) as f64,
+        g: color.green().clamp(0.0, 1.0) as f64,
+        b: color.blue().clamp(0.0, 1.0) as f64,
+    })
 }
 
 /// The platform-resolved accent from libadwaita ≥ 1.7's style manager, read
@@ -142,17 +185,25 @@ pub fn probe_platform_accent() -> Option<Rgb> {
     })
 }
 
-/// The ribbon's palette for the current desktop: the fixed table when
-/// libadwaita cannot resolve the accent, the platform colour when it can.
+/// The ribbon's palette for the current desktop, resolved from the theme
+/// where possible and from the fixed table only as a last resort.
 ///
 /// The untouched-default rule (Ubuntu orange) wins over platform resolution
 /// in both paths — that decision lives in [`crate::accent`].
-pub fn probe_accent_palette() -> AccentPalette {
-    let user_value = probe_accent_user_value();
-    match probe_platform_accent() {
-        Some(platform) => resolve_platform_accent_palette(user_value.as_deref(), platform),
-        None => resolve_accent_palette(user_value.as_deref()),
+/// `accent_widget` is the widget carrying `color: @accent_bg_color`; pass
+/// `None` where no styled widget is available yet.
+///
+/// Order: the theme, then the style manager, then the settings name, then
+/// Ubuntu orange. The first two report the colour the desktop is actually
+/// using, so neither needs to guess whether the user "chose" anything.
+pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> AccentPalette {
+    if let Some(accent) = accent_widget
+        .and_then(probe_css_accent)
+        .or_else(probe_platform_accent)
+    {
+        return resolve_theme_accent_palette(accent);
     }
+    resolve_accent_palette(probe_accent_value().as_deref())
 }
 
 /// Call `on_change` whenever either preference may have changed: the accent
