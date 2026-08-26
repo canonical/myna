@@ -7,10 +7,22 @@
  * no longer positions itself (R21), so the bottom gap belongs to place.js.
  */
 
-/* The window itself must be transparent: only the pill is visible. */
-window.myna-hud-window,
-window.myna-hud-window > * {
+/* The window itself must be transparent: only the pill is visible.
+ *
+ * Scoped to the window NODE alone — deliberately not `> *`. A descendant
+ * form like `window.myna-hud-window > *` has specificity (0,1,1), which
+ * outranks `.myna-hud-pill` (0,1,0) and silently erases the pill's own
+ * background, while still losing to the two-class severity rules (0,2,0).
+ * The result is a pill that is see-through when idle/listening but
+ * correctly tinted for a notice or an error — which is exactly the bug this
+ * comment exists to prevent recurring.
+ *
+ * `background: none` (not just `background-color`) so a theme's
+ * background-image cannot show through either. */
+window.myna-hud-window {
+    background: none;
     background-color: transparent;
+    box-shadow: none;
 }
 
 .myna-hud-pill {
