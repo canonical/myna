@@ -1,0 +1,63 @@
+[package]
+name = "myna-hud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "GTK4 renderer application for the myna dictation indicator — the HUD pill and GPU wave ribbon (feature 004, 2026-08-26 architecture revision)."
+
+[lib]
+name = "myna_hud"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myna-hud"
+path = "src/main.rs"
+
+[dependencies]
+# The pure logic modules (states/vumeter/ribbon/shader/hud_logic/
+# input_region/accent/motion/simulator) are std-only; the application half
+# links the toolkit stack.
+#
+# Version strategy (R26; runtime matrix per the snap's SDK — the packaged
+# binary builds and runs against ubuntu/gnome-sdk's gnome-46-2404 stack,
+# NOT the noble archive):
+#   - Workshop / client CI (ubuntu@24.04 base): GTK 4.14, libadwaita 1.5.
+#   - The myna snap (T160; snapcraft `gnome` extension on core24): GTK
+#     4.18.6, libadwaita 1.7.7 — Ubuntu-patched to expose the Yaru accent
+#     colors (extra AdwAccentColor values and accent-color-rgba).
+#   - Dev/host desktops (26.04+, Shell 50/51): GTK 4.22, libadwaita 1.9+.
+# So neither gtk4/v4_22 nor libadwaita/v1_7 compile-time features can be
+# enabled (the workshop's 24.04 pkg-config would reject them). The newer
+# surfaces are consumed through RUNTIME GObject property lookup
+# (find_property + property_value):
+#   - reduced motion: GtkSettings:gtk-interface-reduced-motion (GTK ≥ 4.22;
+#     absent in the snap's 4.18 → the enable-animations GSettings fallback
+#     is the shipping path there, and the probe lights up on 26.04 hosts).
+#   - accent color: AdwStyleManager:accent-color-rgba (libadwaita ≥ 1.7,
+#     present in the snap's 1.7.7) — read as a boxed gdk::RGBA rather than
+#     the AdwAccentColor enum, because Ubuntu's Yaru patches add enum values
+#     the upstream Rust enum does not know; older stacks (workshop's 1.5)
+#     fall back to the fixed hex table.
+# v4_10 matches myna-desktop's former ui-gtk feature for workspace feature
+# unification.
+gtk4 = { version = "0.11", features = ["v4_10"] }
+libadwaita = { version = "0.9" }
+# The org.myna.Dictation consumer (name watch + PropertiesChanged) and the
+# --serve-dbus simulator's publisher. Same crate family as myna-desktop.
+zbus = "5"
+# Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
+# uniform upload) — loaded via GDK's get_proc_address (R23).
+gl = "0.14"
+# Status-string localization, domain `myna` (R25). gettext-system: link the
+# platform's gettext (glibc provides the runtime symbols) instead of
+# building the vendored gnu gettext, which does not build cleanly in
+# minimal containers. With no bound domain gettext is the identity
+# function, so pure-module tests assert English.
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+
+# cargo-machete false-positive: gettext-rs is used in src/main.rs (the
+# `gettextrs::TextDomain` binding for R25 localization), but machete does not
+# trace it through the gettext-system feature's platform gettext linkage.
+[package.metadata.cargo-machete]
+ignored = ["gettext-rs"]
