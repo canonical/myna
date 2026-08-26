@@ -31,6 +31,7 @@ pub mod hud_logic;
 pub mod input_region;
 pub mod motion;
 pub mod ribbon;
+pub mod shader;
 pub mod simulator;
 pub mod states;
 pub mod vumeter;
