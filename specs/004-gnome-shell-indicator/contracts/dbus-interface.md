@@ -1,18 +1,22 @@
 # Contract: `org.myna.Dictation` (session bus)
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; architecture revision: 2026-08-26)
 
-The single seam between `myna-desktop` (publisher, Rust/`zbus`) and the GNOME
-Shell extension (consumer, GJS/`Gio.DBusProxy`). State + level only — never
-transcript content (constitution V). This contract is defined here and encoded as
-executable tests on both sides before implementation.
+The single seam between `myna-desktop` (publisher, Rust/`zbus`) and the dictation
+indicator. **(2026-08-26)** The consumer is now the renderer application
+(`myna-hud`, Rust) rather than the GNOME Shell extension — the extension no
+longer holds any `org.myna.Dictation` proxy; every guarantee below is unchanged
+and simply re-homed. State + level only — never transcript content (constitution
+V). This contract is defined here and encoded as executable tests on both sides
+before implementation. See §Presence for the companion (member-less)
+`org.myna.Shell` name.
 
 ## Bus topology
 
 - **Bus**: session bus.
 - **Well-known name**: `org.myna.Dictation` (owned by `myna-desktop` when run with
-  `--dbus`). Absence of an owner = daemon not running → extension stays dormant
-  (FR-018).
+  `--dbus`). Absence of an owner = daemon not running → the indicator stays
+  dormant (FR-018).
 - **Object path**: `/org/myna/Dictation`.
 - **Interface**: `org.myna.Dictation`.
 
@@ -58,6 +62,31 @@ change already reads the consistent reason.
 | C9 | With no owner, a client sees the name absent and no signals; when `myna-desktop` starts/stops, name-appeared/vanished fire. | env-gated + extension lifecycle test |
 | C10 | **(2026-07-30)** A session that completes with an empty/blank transcript publishes `notice` (not `idle`), with a fixed content-free `ErrorMessage` reason; a non-empty completion publishes `idle` exactly as before. | hermetic `dbus_indicator.rs` + `controller.rs` (empty vs. non-empty transcript cases) |
 | C11 | **(2026-07-30)** The live per-event path (`event_to_indicator`'s `Done(_)` arm) and the finalize-block safety net (`SessionOutcome::Completed`) always agree on `notice` vs. `idle` for the same transcript — both route through one shared `completion_indicator_state()` helper, so they can never publish conflicting states, and a redundant second call is a no-op under C2's per-wire-state dedup. | hermetic `controller.rs` (asserts both call sites produce identical `IndicatorState` for the same transcript) |
+
+## Presence: `org.myna.Shell` (2026-08-26, R24)
+
+The companion seam for **surface selection** — which indicator is active:
+
+- **Well-known name**: `org.myna.Shell` on the session bus, owned by the GNOME
+  Shell extension (the myna-shell host) for exactly as long as it is enabled
+  and able to host the renderer application's window (FR-017a).
+- **Members: none.** No properties, signals, or methods. Name ownership is the
+  entire contract — consumers use standard name watching
+  (`NameOwnerChanged`/`NameHasOwner`), which needs nothing beyond bus-daemon
+  mediation and is therefore available to strictly-confined consumers (the
+  `§Confinement` analysis does not constrain the *owner* here anyway: it is the
+  unconfined Shell process).
+- **Consumers**: `myna-desktop`'s launcher policy (name present → suppress the
+  notification fallback, the hosted renderer is the indicator; absent →
+  notification floor). Future non-GNOME backends select themselves the same
+  way (spec Out of Scope).
+- The name carries **no data of any kind** — not even state; privacy-trivial
+  by construction.
+
+| # | Guarantee | Verified by |
+|---|---|---|
+| C12 | **(2026-08-26)** The extension owns `org.myna.Shell` while enabled and releases it on disable; a standard name watcher sees appeared/vanished accordingly (no members exist to call). | extension host lifecycle test (stub bus) + `MYNA_DBUS_TESTS`-gated round-trip |
+| C13 | **(2026-08-26)** `myna-desktop`'s launcher policy suppresses its fallback notification indicator while `org.myna.Shell` has an owner and restores it when the name vanishes — with no other behavior change. | hermetic `myna-desktop` policy tests (fake presence) |
 
 ## Confinement (why properties only)
 
