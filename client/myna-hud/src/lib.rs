@@ -28,6 +28,7 @@
 //! ever sees, renders, logs, or persists transcript content; no network.
 
 pub mod accent;
+pub mod dbus_consumer;
 pub mod hud_logic;
 pub mod input_region;
 pub mod motion;
