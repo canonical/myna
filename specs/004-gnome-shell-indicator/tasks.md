@@ -59,14 +59,14 @@ app), the host phases realize US1's focus-safety/positioning (FR-024–FR-027).
 | T001–T008 (setup, Bus seam, base mappings) | **Complete, kept** — publisher infra unaffected by the revision |
 | T009–T017 (severity split) | **Complete, kept** — wire contract unchanged; `gtk.rs` site deleted by T150 |
 | T018–T020 (publisher activation, dbus.js proxy) | Publisher half **kept**; `dbus.js` **deleted** with the old bundle (its port is T111/T124) |
-| T021–T025, T026–T028, T029–T035 (HUD actor, state/severity treatments in GJS) | **Superseded** — logic ports to `myna-hud` (T101–T106, T113–T118); the St/Clutter actors are deleted (T160) |
+| T021–T025, T026–T028, T029–T035 (HUD actor, state/severity treatments in GJS) | **Superseded** — logic ports to `myna-hud` (T102–T109 pure ports, T112–T114 app wiring); the St/Clutter actors are deleted (T170) |
 | T036–T039a (level pump, calibrated envelope) | Level pump **kept**; envelope math **ported** (T102) |
 | T051–T058a, T056a–T056k (wave ribbon + refinements) | **Superseded** — pure logic ports 1:1 (T102–T104); Cairo painter dropped (GPU-only, R23); the GLSL generator ports with its conformance tests (T104) |
-| T059–T064 (dev-lab) | **Superseded** — replaced by the app's `--lab` mode (T131–T133); files deleted (T160) |
+| T059–T064 (dev-lab) | **Superseded** — replaced by the app's `--lab` mode (T131–T133); files deleted (T170) |
 | T040–T043 (US4 panel toggle / DbusTrigger) | **Still open, unchanged** — carried forward as T140–T141 (panel button now belongs to the host/extension side; `DbusTrigger` unchanged) |
 | T044–T046 (gated round-trip, watermarks) | T044 **kept**; T045 **extended** (C12/C13 — T151); T046 **kept** + renderer watermarks (T152) |
 | T047–T048 (high-contrast, version gate) | **Carried forward** as T153–T154 (now app-side CSS / host-side gate) |
-| T049–T050a (docs, acceptance) | T049 **superseded** by T161 (docs rewrite for the revision); T050/T050a **carried forward** as T170–T171 |
+| T049–T050a (docs, acceptance) | T049 **superseded** by T171 (docs rewrite for the revision); T050/T050a **carried forward** as T180–T181 |
 
 ---
 
@@ -154,7 +154,7 @@ decision says otherwise (R23: no Cairo painter; R26: accent sourcing).
 
 - [ ] T153 [P] High-contrast legibility (app CSS): contrast variant; severity never color-only (T047 re-homed).
 - [ ] T154 [P] Version-gate verification: `metadata.json` `shell-version: ["50","51"]` loads on both (workshop + `next-shell.sh`); mutter ABI 18/51 host APIs asserted by T101a/T125 (T048 re-homed).
-- [ ] T180 Run quickstart end-to-end (§1–§8): hermetic + gated suites, host contract tests, lab/simulator, install, the **on-hardware hosted spoken run** (focus never stolen — including the × click; clicks pass through; no window-list entry; all workspaces; always-on-top; states legible; ribbon correct incl. accent/fallback and reduced-motion no-crash; transcript injected unchanged), severity walkthroughs, renderer-crash respawn + budgeted dormancy, disable teardown, watermarks (SC-001–SC-016).
+- [ ] T180 Run quickstart end-to-end (§1–§8): hermetic + gated suites, host contract tests, lab/simulator, install, the **on-hardware hosted spoken run** (focus never stolen — including the × click; clicks pass through; no window-list entry; all workspaces; always-on-top; not movable/minimizable/closable via ordinary window management; states legible; ribbon correct incl. accent/fallback and reduced-motion no-crash; transcript injected unchanged), severity walkthroughs, renderer-crash respawn + budgeted dormancy, disable teardown, watermarks (SC-001–SC-016).
 - [ ] T181 [P] SC-013 structured comparison (carried from T050a): GPU ribbon vs. a recording of the prior implementation, ≥3 observers, majority-verdict recorded.
 
 ---

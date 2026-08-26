@@ -12,7 +12,7 @@ deliverables and both severities.
 ## Prerequisites
 
 - Ubuntu 26.04+ on **Wayland**, GNOME Shell **50 or 51** (`gnome-shell --version`),
-  GTK ≥ 4.22, libadwaita ≥ 1.6.
+  GTK ≥ 4.22, libadwaita ≥ 1.7 (the accent-color style-manager API).
   Dev-loop note (2026-07-21, verified on Shell 50.2): mutter **removed the
   nested backend** — there is no `gnome-shell --nested`, plain `--wayland` does
   not nest, and the `--devkit` viewer (`mutter-devkit`) is not shipped by
@@ -159,12 +159,13 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
   the feature.*
 - **Clicks pass through**: click where the pill is — the click lands in the
   app underneath, not on the pill (XH12, FR-025, SC-015).
-- The pill has no taskbar/alt-tab entry, shows on every workspace, and stays
-  above normal windows (XH10, FR-024, SC-015); it sits bottom-center of the
+- The pill has no taskbar/alt-tab entry, shows on every workspace, stays
+  above normal windows, and cannot be moved, minimized, or closed by ordinary
+  window-management means (XH10, FR-024, SC-015); it sits bottom-center of the
   primary monitor matching GNOME's own OSD position, including after monitor
   changes (XH11).
 - States are distinct: a cold model load shows the **loading** treatment, not
-  the listening treatment (X13→renderer, FR-006).
+  the listening treatment (renderer guarantee — FR-006, SC-002).
 - The wave ribbon unfolds smoothly as the session starts, flows fuller/
   brighter as you speak at normal volume (calibrated to real speech — R16a),
   relaxes to a thin idle line on a pause, and morphs into a few travelling
@@ -178,7 +179,7 @@ myna-desktop --install-shortcut '<Super>t>'                              # once:
   by a static/minimally-animated alternative (FR-022a, SC-012) — and toggling
   it must never crash the app (E2b's absent-safe sourcing).
 - The injected transcript matches what you said (feature 003 unchanged).
-- No transcript text ever appears in the pill or in logs (X6, SC-005).
+- No transcript text ever appears in the pill or in logs (FR-012, SC-005).
 
 ## 5a. Recoverable-issue walkthrough (US2a)
 
@@ -192,7 +193,7 @@ detected") with the filled mic icon; the ribbon stays **visible**, tinted
 amber, gently pulsing (FR-010e, SC-014); the notice clears on its own after
 ~3.5 s; a new session starts immediately without being blocked; a second
 "no speech" while the first is showing replaces in place and restarts the
-timer (X20/R15). Clicks outside the (absent) dismiss control pass through.
+timer (FR-007a/FR-007d, R15). Clicks outside the (absent) dismiss control pass through.
 
 ## 5b. Critical-error walkthrough (US2a)
 
@@ -210,12 +211,12 @@ Keep a text field focused while clicking the ×: typing continues to land in
 the field (FR-007c — the window never takes keyboard focus; if this ever
 regresses, the documented fallback is a visual-only × with dismiss via a new
 session/`Stop()`, R22). A second critical error replaces in place without
-waiving the dismiss (X20).
+waiving the dismiss (FR-007d, R15).
 
 ## 6. Panel toggle (optional, P3 — unchanged, future)
 
 With the panel button enabled: click it → a session starts (HUD pill appears); click
-again → it stops and commits, identical to the hotkey (X16, SC-010). With
+again → it stops and commits, identical to the hotkey (FR-014, SC-010). With
 `myna-desktop` not running, the button is dimmed (unavailable).
 
 ## 7. Robustness spot-checks (edge cases)

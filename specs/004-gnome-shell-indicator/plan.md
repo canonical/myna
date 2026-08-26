@@ -91,8 +91,8 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
 - `myna-hud` renderer: **Rust** (stable, workspace edition 2021,
   `rust-version = 1.75`), GTK4 + libadwaita via the gtk-rs bindings
   (`gtk4` 0.11 with the `v4_22` feature for
-  `gtk-interface-reduced-motion`; `libadwaita` 0.9 with `v1_6`+ for the
-  accent-color API).
+  `gtk-interface-reduced-motion`; `libadwaita` 0.9 with `v1_7`+ for the
+  accent-color API — `AdwStyleManager`'s accent properties are Since 1.7).
 - Extension host: **GJS**, GNOME Shell 50 and 51, using the public extension
   API plus mutter's introspected `Meta.WaylandClient`/`Meta.Window` APIs
   (verified present in both `Meta-18.gir` (mutter 50) and `Meta-51.gir`
@@ -148,7 +148,7 @@ is never touched by any deliverable.
   Workshop definitions in the same PR (constitution IV).
 
 **Target Platform**: Ubuntu Desktop 26.04+ on Wayland, GNOME Shell 50/51
-(mutter ABI 18 / 51); session D-Bus present; GTK ≥ 4.22 and libadwaita ≥ 1.6
+(mutter ABI 18 / 51); session D-Bus present; GTK ≥ 4.22 and libadwaita ≥ 1.7
 (Ubuntu 26.04 carries 4.22/1.9). Older GNOME and non-GNOME desktops are out
 of scope (notification fallback; the layer-shell backend is contract-ready
 follow-up).
@@ -256,7 +256,7 @@ specs/004-gnome-shell-indicator/
 ```text
 client/
 ├── myna-hud/                   # NEW CRATE — the renderer application (shipped Rust)
-│   ├── Cargo.toml              #   gtk4 (v4_22), libadwaita (v1_6+), zbus, gl, gettext-rs
+│   ├── Cargo.toml              #   gtk4 (v4_22), libadwaita (v1_7+), zbus, gl, gettext-rs
 │   ├── src/
 │   │   ├── main.rs             #   adw::Application; modes: hosted / --lab / --serve-dbus
 │   │   ├── states.rs           #   wire state → descriptor (port of states.js; i18n: domain `myna`)
