@@ -46,6 +46,9 @@ libadwaita = { version = "0.9" }
 # The org.myna.Dictation consumer (name watch + PropertiesChanged) and the
 # --serve-dbus simulator's publisher. Same crate family as myna-desktop.
 zbus = "5"
+# The bus worker -> GTK main-thread bridge (T124): glib's own channel is
+# deprecated, and this is executor-agnostic.
+async-channel = "2"
 # Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
 # uniform upload) — loaded via GDK's get_proc_address (R23).
 gl = "0.14"

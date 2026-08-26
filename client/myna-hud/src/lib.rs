@@ -28,10 +28,12 @@
 //! ever sees, renders, logs, or persists transcript content; no network.
 
 pub mod accent;
+pub mod bus;
 pub mod dbus_consumer;
 pub mod gl;
 pub mod hud_logic;
 pub mod input_region;
+pub mod lab;
 pub mod motion;
 pub mod notice_slot;
 pub mod platform;
@@ -40,3 +42,4 @@ pub mod shader;
 pub mod simulator;
 pub mod states;
 pub mod vumeter;
+pub mod window;
