@@ -1,11 +1,23 @@
 # Phase 0 Research: GNOME Shell Extension for Myna Dictation UI
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (architecture revision: 2026-08-26)
 
 Resolves the Technical-Context unknowns and the spec's deferred design axes. Each
 entry: Decision / Rationale / Alternatives considered.
 
 ## R1 — In-compositor overlay mechanism (the core problem)
+
+**SUPERSEDED (2026-08-26, architecture revision)** — the focus-safe overlay no
+longer requires drawing inside the compositor. The extension remains, but as a
+**thin host** that launches the renderer application (Rust, GTK4 — R21) through
+the compositor's Wayland-client API, adopts its window, re-types it as a
+dock-type always-above all-workspaces surface hidden from window lists, keeps it
+click-through (R22), and positions it bottom-center. The user-visible guarantees
+(never steals keyboard focus, never blocks the app being typed into) are
+preserved; the rejection of *layer-shell* stands (Mutter still does not implement
+it — the extension-hosted window achieves the same result without the protocol).
+See R21 for the decision that replaces this one; the text below is kept for
+context.
 
 **Decision**: A GNOME Shell extension (GJS), running inside Mutter, owning an
 `St`/`Clutter` actor added to `Main.layoutManager` (a `Chrome` actor, not a
@@ -261,6 +273,11 @@ mapping untested-first (violates I).
 enable`). Public distribution (extensions.gnome.org review, Ubuntu archive, or
 bundling in a snap alongside `myna-desktop`) is noted as **follow-up**, not
 delivered here.
+
+**(2026-08-26 amendment)** The renderer application ships in the **myna snap**
+(via the snapcraft GNOME extension — R27); the extension bundle itself keeps the
+in-tree + manual-install story for development. EGO/archive distribution remains
+follow-up.
 
 **Rationale**: The feature's value is the working focus-safe UI; EGO review and
 archive packaging are independent release concerns. In-tree + manual install
@@ -727,6 +744,18 @@ regression check against a since-changed design decision.
 
 ## R18 — Accent-color source
 
+**AMENDED (2026-08-26)** — the *mechanism* changes with the renderer relocation
+(R21): the renderer application is a GTK4/libadwaita process, so the accent
+color is sourced from the platform's own color machinery — libadwaita's
+`Adw.StyleManager` (`system_supports_accent_colors` / `accent_color` → RGBA) —
+replacing the `St.Settings`/hand-rolled-table reasoning below (that API's
+in-compositor constraint no longer applies). **The product rule is unchanged**
+(FR-010b): the "untouched default is treated as not chosen" distinction still
+needs the `org.gnome.desktop.interface` `accent-color` *user value* (read via
+GSettings inside the app — libadwaita exposes the resolved accent but not
+whether the user actively chose it), and the orange→aubergine shadow-tone
+override is retained. See R26 for the consolidated 2026-08-26 sourcing decision.
+
 **Decision**: `Gio.Settings` against the `org.gnome.desktop.interface` schema's
 `accent-color` key (a 9-value enum: blue/teal/green/yellow/orange/red/pink/
 purple/slate; GSetting added GNOME 47). Read via
@@ -781,6 +810,16 @@ paint itself, kept identical to the extension's).
 
 ## R19 — Reduced-motion source
 
+**AMENDED (2026-08-26)** — the *rule* stands (system-wide motion preference
+drives a static/minimal-motion alternative); the *mechanism* moves with the
+renderer relocation (R21/R26): primary source is GTK's
+`gtk-interface-reduced-motion` (absent-safe via GDK's portal mapping), with
+the `enable-animations` key below retained only as the older-GTK fallback —
+and the *new* `org.gnome.desktop.a11y.interface reduced-motion` GSettings key
+must never be read directly (absent on older systems; unguarded read =
+crash on start). See R26 for the consolidated decision. Text below kept for
+context.
+
 **Decision**: `org.gnome.desktop.interface`'s `enable-animations` boolean
 (existing GNOME-wide setting, not new). When `false`, the ribbon renders a
 static level line or a gently-scaling microphone indicator — still driven by
@@ -799,6 +838,13 @@ already honors for its animations, so following it keeps the ribbon
 consistent with the rest of the desktop's motion behavior.
 
 ## R20 — Standalone developer tuning tool (`dev-lab`)
+
+**SUPERSEDED (2026-08-26, architecture revision)** — with rendering relocated to
+the GTK4 application (R21), the separate GJS `dev-lab/` and the Python
+`dev-lab-gpu/` labs are deleted; their capabilities become modes of the shipped
+binary (`--lab` manual-controls mode and `--serve-dbus` simulator), driving the
+*identical* renderer modules with no Shell required at all. See R25 for the
+replacement decision. The text below is kept for context.
 
 **Decision**: A small, non-shipped GTK4 + libadwaita (`Adw.Application`) GJS
 application under `extensions/myna-shell/dev-lab/`, launched directly
@@ -845,17 +891,254 @@ currently-stubbed `DbusTrigger` so the lab could start/stop sessions itself
 — a materially larger, separate, TDD-bound piece of Rust scope (US4);
 deferred, hotkey-driven start/stop is sufficient for this tool's purpose.
 
+## R21 — Renderer relocation: GTK4 application + extension as overlay host (2026-08-26)
+
+**Decision**: The HUD pill's drawing moves out of the compositor into a
+standalone **Rust GTK4 + libadwaita application** — new workspace crate
+`client/myna-hud`, binary `myna-hud`. The GNOME Shell extension remains as a
+**thin host** and draws nothing:
+
+- **Launch**: on `enable()` the extension spawns `myna-hud` via mutter's
+  `Meta.WaylandClient.new_subprocess(global.context, launcher, argv)` — the
+  desktop-icons-ng pattern — so the child connects to the compositor through
+  the compositor's own Wayland client plumbing and the extension *structurally
+  knows* which windows are its child's (`client.owns_window(window)`), no
+  bus-name/PID matching needed for the primary path.
+- **Adopt**: on `window-created`, a window owned by the client is adopted once:
+  `set_type(Meta.WindowType.DOCK)` (never takes focus on map; on-all-workspaces
+  by mutter's DOCK handling), `hide_from_window_list()` (no dash/alt-tab — the
+  snapd-prompting pattern), keep-above normal windows.
+- **Position**: `move_frame(user_op=false, x, y)` bottom-center of the primary
+  monitor's work area, recomputed on monitors-changed/workarea/size-changed,
+  with the extension's own move handlers disconnected around each programmatic
+  move (anti-feedback loop; both reference extensions' pattern).
+- **Supervise**: respawn with bounded backoff if the subprocess exits
+  unexpectedly while enabled; terminate it on `disable()`.
+- **Presence**: the extension owns the well-known session-bus name
+  `org.myna.Shell` while enabled (R24), so `myna-desktop` can select the
+  indicator surface without any registration protocol.
+
+All host APIs verified present and introspected in **both** target girs —
+mutter 50 (`Meta-18.gir`, `libmutter_api_version = '18'`) and mutter 51
+(`Meta-51.gir`) — in this environment; `window_state_on_map` in mutter 50.4 and
+51 both force `takes_focus = FALSE` for `META_WINDOW_DOCK`.
+
+**Rationale**: One rendering path (GPU/GLSL — R23) instead of two rasterizers
+kept in pixel-lockstep; the renderer is a **shipped Rust component** (the
+project language rule) instead of harness-tier GJS, shrinking the
+constitutional GJS carve-out to a thin window-management shim; the same binary
+is the tuning lab and backend simulator with no Shell running (R25); accent
+color comes from the platform style manager (R26). The prior "no sanctioned
+way for a normal client to show an always-on-top, non-focus-stealing overlay"
+survey finding (R1 / docs/desktop-injection.md §2) remains true for
+*unassisted* clients — the extension provides exactly the minimal assistance
+(window typing, stacking, positioning, click-through) that a Wayland client
+cannot provide for itself.
+
+**Alternatives considered**: (a) Keep in-compositor drawing — rejected (dual
+rasterizer drift, GJS tier, no live-reload, Shell-50 fallback complexity);
+(b) `gtk4-layer-shell` — still not implemented by Mutter, so it remains
+rejected on GNOME; the extension-hosted window achieves the same user
+guarantees without the protocol; (c) Identify a client-spawned window by
+bus-name/PID only (the snapd-prompting approach) without owning the spawn —
+rejected as the primary path (identification is fragile — the reference
+extension carries an open FIXME about it); owning the spawn makes
+identification structural. PID/`get_sandboxed_app_id()` matching is retained
+only as the fallback if the snap launcher breaks the Wayland-client fd
+handoff (R27); (d) A window-registration D-Bus API (app announces its window)
+— rejected: strictly more protocol for less certainty than owning the spawn.
+
+## R22 — Input passthrough: client-side empty input region (2026-08-26)
+
+**Decision**: The renderer application declares its own input region via GDK's
+public `gdk_surface_set_input_region` (Wayland: `wl_surface_set_input_region`):
+an **empty region** — fully click-through — in every state, re-applied after
+map and after size-allocate (the toolkit can invalidate it); during a
+**critical error** the region covers exactly the dismiss (×) control's
+rectangle so FR-007b's explicit dismiss still works. The extension does not
+touch input at all — `MetaSurfaceActor.set_input_region` is not public
+introspectable extension API, and the client-side region is the platform's own
+mechanism for this exact use.
+
+**Rationale**: Click-through must hold wherever the pill is (FR-025); an empty
+input region is deterministic and needs no compositor cooperation. Focus
+safety of the × click: the window is DOCK-typed and never *takes* focus on
+map; a click on its one interactive control can still focus it under
+click-to-focus (a Wayland DOCK window is focusable on explicit click) —
+bounded risk, accepted as before: critical errors imply no active dictation
+session, and the controller's existing focus-loss policy recovers the
+session state. Verified in acceptance (quickstart 5b); documented fallback if
+it ever bites in practice: make the × visual-only and dismiss via a new
+session / `Stop()`.
+
+**Alternatives considered**: Compositor-side input-region override from the
+extension — not available to GJS extensions (not introspected); making the
+pill entirely non-interactive — loses FR-007b's explicit dismiss; keyboard
+dismiss (Esc) — would require focus, violating FR-001.
+
+## R23 — GPU-only rendering: Gtk.GLArea + the ported GLSL path (2026-08-26)
+
+**Decision**: `myna-hud` renders the wave ribbon in a `Gtk.GLArea` using the
+generated fragment shader ported from `ribbonGlsl.js` (the same per-pixel
+distance-field shader, tuning tables baked as constants), compiled through a
+dual-profile wrapper ported from `dev-lab-gpu/ribbon_gl.py` (desktop GL 1.20 /
+ES 3.00 — GLArea's context is ES on Wayland/GLES and desktop-GL elsewhere).
+The Cairo rasterizer (`ribbonPaint.js`), the Cairo/GLSL lockstep test
+apparatus, and the Shell-50 Cairo fallback (`MYNA_SHELL_CAIRO_RIBBON`,
+`ribbonShaderSupported()`) are **deleted outright** (user decision 2026-08-26)
+— one rendering path everywhere. Verification, two tiers: (a) contract tests
+assert every shader `#define` matches the Rust tuning constants and that
+uniform packing agrees with the model (port of `ribbonGlsl.test.js`); (b) an
+env-gated headless EGL render check (port of `render_headless.py`) compiles
+the shader on a real driver and rasterizes non-blank, non-flooded, per-phase
+distinct frames — no display needed.
+
+**Rationale**: The dual rasterizer existed because Cairo was the only option
+on Shell 50 inside the Shell; outside the Shell, GLArea+GL is available
+wherever GTK4 runs (the same lab already proved the es300 profile with this
+exact shader). Deleting Cairo removes the entire drift surface the lockstep
+tests guarded. `GskGLShader` was already rejected upstream-adjacent
+(deprecated, non-rendering — recorded in the extension README).
+
+**Alternatives considered**: Keep Cairo as a fallback rasterizer — rejected
+(the drift risk is the thing being removed; a software-GL fallback covers
+headless/virtual machines better anyway); render via Cairo in GTK
+(`Gtk.DrawingArea`) — same dual-path problem, slower.
+
+## R24 — Presence and launch policy: `org.myna.Shell` (2026-08-26)
+
+**Decision**: The extension owns the well-known session-bus name
+`org.myna.Shell` for exactly as long as it is enabled — **no** properties,
+methods, or signals; ownership is the entire contract (FR-017a). `myna-desktop`
+gains a launcher policy around a name watch: name present → the hosted
+renderer is the indicator (suppress the notification fallback); absent → the
+existing notification floor. On non-GNOME sessions the policy documents how
+`myna-desktop` would spawn `myna-hud` standalone (well-known binary, same
+D-Bus consumption) — **contract only this pass**: without a layer-shell
+backend the standalone app would be a focus-stealing toplevel, so it is not
+spawned yet; the future backend lands behind the same seams (spec Out of
+Scope).
+
+**Rationale**: Presence-by-name-watching is the idiomatic, zero-surface
+mechanism; it keeps the confinement story trivial (the name's owner is the
+unconfined Shell process, and watchers need only bus-daemon broadcasts /
+`NameHasOwner`, both available to confined consumers). No registration API is
+needed because the extension owns the spawn (R21).
+
+**Alternatives considered**: A registration interface where the app announces
+its window — rejected (R21d); the client probing the extension by unique-name
+convention — brittle; `myg`-style D-Bus activation of `myna-hud` — rejected
+(lifecycle owned by the extension/client, and activation would race the
+supervisor).
+
+## R25 — Dev labs move into the application (2026-08-26)
+
+**Decision**: `dev-lab/` (GJS GTK4 tuning app) and `dev-lab-gpu/` (Python
+GLArea lab + `org.myna.Dictation` simulator) are deleted; their capabilities
+become **modes of the shipped binary**: `--lab` (manual controls — state,
+severity, level, reduced-motion, plus a dictation-target text view — driving
+the identical renderer modules with **no backend required**) and
+`--serve-dbus` (the simulator that owns `org.myna.Dictation`, port of
+`dictation_service.py`, so the real hosted indicator can be driven without
+`myna-desktop`). Localization moves with the app: gettext domain **`myna`**
+(previously the extension's own domain), catalog under `client/myna-hud/po/`.
+
+**Rationale**: With rendering outside the Shell there is exactly one place to
+tune — the app itself; the JSON bridge (`bridge.js`/`bridge.py`) existed only
+because gjs cannot reach libepoxy from `Gtk.GLArea`, which is no longer
+relevant in Rust; running without a backend was an explicit user requirement
+("I want to be able to run the application without the actual backend, for
+being able to simulate things").
+
+**Alternatives considered**: Keep the Python lab alongside the Rust app —
+rejected (three languages for one ribbon, and the bridge was the whole
+problem); keep a separate GJS lab — rejected (same, plus it cannot exercise
+the GL path that now matters).
+
+## R26 — Accent color and reduced motion inside the renderer (2026-08-26)
+
+**Decision**: Accent color (FR-010b, amending R18's mechanism): the **source
+of truth is libadwaita's `Adw.StyleManager`** (`system_supports_accent_colors`
+→ `accent_color` → RGBA) — the platform's color manager, as the app no longer
+runs inside the Shell where `St.Settings` applied. The product rule survives
+verbatim: consult `org.gnome.desktop.interface` `accent-color`'s **user
+value** (GSettings, read inside the app) — `null` (never actively written,
+including the untouched default) or unsupported system → fixed Ubuntu-orange
+fallback; a genuine choice → the libadwaita accent palette. Derived tones
+(highlight / darker-complement / translucent secondary; aubergine instead of
+complement when orange) remain pure, tested logic; the hand-rolled 9-entry
+hex table for the *main* color is no longer needed (libadwaita resolves it),
+though the derivation logic is kept. Reduced motion (**amended**): the
+primary source is GTK's `GtkSettings:gtk-interface-reduced-motion` (GTK ≥ 4.22,
+populated by GDK from the settings portal's `org.freedesktop.appearance
+reduced-motion`, absent-safe with a `no-preference` default; libadwaita's
+style manager tracks the same property), falling back to the old inverted
+`enable-animations` GSettings key (schema-guarded, R19) on older GTK.
+**Explicitly rejected: reading the new `org.gnome.desktop.a11y.interface
+reduced-motion` GSettings key directly** — the key is new in
+gsettings-desktop-schemas and absent on older systems, and an unguarded
+settings read against a missing schema/key aborts the process
+(crash-on-start risk, flagged 2026-08-26). Both accent color and motion
+re-resolve live; no wire change. (gtk4-rs note: the property needs the
+`v4_22` crate feature — recorded in the plan's Technical Context.)
+
+**Rationale**: User direction 2026-08-26 ("introduce libadwaita for the color
+manager … since we don't have anymore st-settings"); keeps FR-010b's
+untouched-default rule without the extension-era constraint that forced
+hand-rolled tables.
+
+**Alternatives considered**: Resolve everything from libadwaita and drop the
+untouched-default rule — rejected (it is a product decision, not a mechanism
+artifact); keep the full hand-rolled hex table — rejected for the main color
+(the platform now provides it), retained only where derivation adds value.
+
+## R27 — Packaging: `myna-hud` in the myna snap (2026-08-26)
+
+**Decision**: `myna-hud` ships inside the **myna snap** via the snapcraft
+`gnome` extension (GTK4 + libadwaita staged; the ~13 MB toolkit cost is
+accepted — this inverts T69's demotion, which was about a one-label window,
+not the shipped renderer), exposed as the well-known command
+`/snap/bin/myna-hud`. The extension resolves the binary in a fixed order:
+`$MYNA_HUD_BINARY` (developer override) → `/snap/bin/myna-hud` →
+`/usr/bin/myna-hud`. **Known risk (spike)**: `Meta.WaylandClient`'s child
+receives the compositor's Wayland socket as an inherited fd
+(`WAYLAND_SOCKET`); the snap command wrapper re-executes through
+snap-confine, which may not preserve that fd. Fallback (verified pattern):
+launch as a plain subprocess (the child connects via the session's normal
+Wayland display, inherited from the Shell process env) and identify the
+window via `get_sandboxed_app_id()`/PID instead of `owns_window()` — DIN
+ships exactly this fallback shape for older shells.
+
+**Rationale**: The well-known-path story (`/snap/bin/myna-hud`) is what makes
+"launched by the shell extension or by the client elsewhere" (user direction
+2026-08-26) work with zero discovery. T69's slim-snap audit was correct for
+what `ui-gtk` was (a `GtkLabel` window duplicating the extension); the
+renderer application is the real indicator, so the toolkit cost is now the
+product.
+
+**Alternatives considered**: Ship `myna-hud` as a deb/flatpak beside the snap
+— fragments the well-known-path guarantee across packaging formats; keep the
+snap slim and render nothing when hosted — rejected (that is the status quo
+this change exists to replace).
+
 ## Open items carried to the plan / future
 
 - Whether the constitution should explicitly name **GJS UI shims** as an
   evaluation-harness-tier carve-out (today argued by analogy to the Python
-  testbed) — a possible constitution PATCH follow-up, not blocking.
+  testbed) — a possible constitution PATCH follow-up, not blocking. **(2026-08-26)**
+  The question shrinks with the architecture revision: the remaining GJS is a
+  thin window-management host, not a UI renderer.
 - Public distribution channel (R12) — follow-up.
-- A future non-GNOME focus-safe overlay (`gtk4-layer-shell` for wlroots/KDE)
-  behind the same `org.myna.Dictation` contract — out of scope, contract-ready.
+- A non-GNOME focus-safe overlay backend (`gtk4-layer-shell` for wlroots/KDE)
+  behind the same contracts — **(2026-08-26)** now a backend swap for the
+  existing renderer application (R24 delivers the presence/launch policy and
+  well-known binary; the layer-shell backend itself is follow-up, no longer a
+  new feature).
 - A true wire-level error disposition/taxonomy (T31/T62) that would let R13's
   interim, client-inferred severity classification be replaced by a real
   disposition carried end-to-end from the inference backend — this feature's
   classification is a stopgap, not that taxonomy.
+- Re-verify the snap-confine/Wayland-socket fd handoff (R27's spike) on real
+  hardware once the snap stages `myna-hud`.
 
 
