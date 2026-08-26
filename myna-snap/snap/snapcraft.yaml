@@ -105,6 +105,17 @@ apps:
     # socket per press.
     daemon: simple
     daemon-scope: user
+    # A refresh stops this unit in *every* user manager and starts it again on
+    # the new revision - measured, not assumed (2026-08-26: x3 -> x4, new pids
+    # in both a graphical session and a lingering headless one). Stated rather
+    # than left to the default, because the alternative is a real choice:
+    # `endure` keeps an in-flight utterance alive at the price of running the
+    # old revision until the user logs out, which on a laptop that only ever
+    # suspends is weeks. An utterance lasts seconds, so the window a refresh
+    # can land in is tiny and the cost when it does is that one utterance;
+    # activation rebinds by itself afterwards. Fixes landing promptly is worth
+    # more.
+    refresh-mode: restart
     plugs:
       - pipewire # mic capture — snapd gates it: `snap connect myna:pipewire`
       - desktop # portals (GlobalShortcuts hotkey) + desktop notifications

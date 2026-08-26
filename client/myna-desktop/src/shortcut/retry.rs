@@ -100,6 +100,12 @@ pub struct RetryingTrigger {
     inner: Option<Box<dyn Trigger>>,
     backoff: Duration,
     status: Option<SharedBus>,
+    /// The failure last reported at the operational tier, so an unchanging one
+    /// is stated once instead of every backoff step. A user daemon on a
+    /// machine with no compositor never binds, and at the 30 s ceiling that
+    /// was ~2,900 identical journal lines a day (measured 2026-08-26 in a
+    /// lingering session with no graphical session).
+    last_reason: Option<String>,
 }
 
 impl RetryingTrigger {
@@ -111,6 +117,7 @@ impl RetryingTrigger {
             inner: None,
             backoff: BACKOFF_START,
             status: None,
+            last_reason: None,
         }
     }
 
@@ -152,18 +159,44 @@ impl RetryingTrigger {
                     myna_core::info_log!("trigger", "activation bound");
                     self.publish("").await;
                     self.inner = Some(trigger);
+                    // Cleared, so a later failure is reported again rather
+                    // than being mistaken for one already on record.
+                    self.last_reason = None;
                     return;
                 }
                 Err(failure) => {
-                    let delay = match failure {
-                        BindFailure::Unavailable(_) => self.backoff,
-                        BindFailure::Refused(_) => REFUSED_BACKOFF,
+                    // The cadence is part of the message because the message
+                    // is now printed once: "retrying in 1s" alone, with
+                    // nothing after it for hours, reads as a daemon that gave
+                    // up after one go.
+                    let (delay, cadence) = match failure {
+                        BindFailure::Unavailable(_) => (
+                            self.backoff,
+                            format!("backing off to every {BACKOFF_MAX:?}"),
+                        ),
+                        BindFailure::Refused(_) => {
+                            (REFUSED_BACKOFF, format!("every {REFUSED_BACKOFF:?}"))
+                        }
                     };
-                    myna_core::info_log!(
-                        "trigger",
-                        "cannot bind activation ({}); retrying in {delay:?}",
-                        failure.reason()
-                    );
+                    // Said once, in full - including that it keeps trying, so
+                    // a single line is not read as "gave up" - and then only
+                    // when the reason changes. The unchanging repeats drop to
+                    // the debug tier; the current reason stays continuously
+                    // readable on `ErrorMessage` below, which is the surface
+                    // meant for "what is wrong right now" anyway.
+                    let reason = failure.reason().to_string();
+                    if self.last_reason.as_deref() == Some(reason.as_str()) {
+                        myna_core::dbg_log!(
+                            "trigger",
+                            "still cannot bind activation ({reason}); retrying in {delay:?}"
+                        );
+                    } else {
+                        myna_core::info_log!(
+                            "trigger",
+                            "cannot bind activation ({reason}); retrying in {delay:?}, {cadence}"
+                        );
+                        self.last_reason = Some(reason);
+                    }
                     self.publish(&format!(
                         "dictation hotkey unavailable: {}",
                         failure.reason()

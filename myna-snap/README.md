@@ -82,6 +82,42 @@ Nothing in that list is a reason to exit, which matters more than it sounds:
 the generated unit has no `StartLimitBurst` override, so five exits in ten
 seconds would leave the unit permanently `failed`.
 
+**It starts in every user manager, and that is left alone (decided
+2026-08-26).** `WantedBy=default.target` is per *user*, not per session, so the
+unit is reached by any `systemd --user` instance: a graphical login, an SSH
+login, a lingering headless account, the gdm greeter. Measured rather than
+argued:
+
+- **the greeter never runs it.** gdm's home is `/var/lib/gdm`, outside `/home`,
+  and `snap run` refuses to start there ("home directories outside of /home
+  needs configuration"). The unit fails five times, hits systemd's restart
+  limit and stops - ten journal lines per greeter start, and no daemon.
+- **a headless account runs it healthily**: `active`, `NRestarts=0`, 4.6 MB
+  cgroup memory and 188 ms of CPU over its first half-minute, all of that
+  startup. What it does not have is a portal, so it re-attempts the bind at the
+  30 s ceiling forever.
+
+So there is no guard, because there is nothing worth guarding against and
+nothing sound to guard *with*: at PAM login "no compositor yet" and "no
+compositor ever" are the same observation, which is exactly why snapd's own
+`graphical-session.target` ordering for `desktop`-plugging user daemons was
+reverted in 2.74.1 (LP #2141607). A daemon that guessed would be dead in the
+normal case it guessed wrong about.
+
+The one real cost was the retry log - ~2,900 identical lines a day on a machine
+with no compositor. A bind failure is now reported once at the operational
+tier, again only when the reason changes, and the repeats go to `MYNA_DEBUG`;
+the current reason is continuously readable on
+`org.myna.Dictation.ErrorMessage`, which is the surface for "what is wrong
+right now".
+
+**What `snap refresh myna` does.** It stops and restarts the unit in every user
+manager, on the new revision (`refresh-mode: restart`, stated explicitly in
+`snapcraft.yaml`). A refresh landing mid-utterance costs that utterance;
+activation rebinds by itself. Snapd's refresh-app-awareness does not apply -
+it holds back refreshes for running *apps*, and a daemon is never one, so
+there is nothing to opt into.
+
 There is no `/snap/bin/myna` - snapd skips wrappers for service apps
 (`wrappers/binaries.go:218`). To drive it by hand:
 `sudo snap stop myna && snap run myna --stdin`.
