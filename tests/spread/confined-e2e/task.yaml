@@ -5,6 +5,10 @@
 summary: Install myna + fake backend snaps, connect, dictate a WAV clip
 
 prepare: |
+    # `myna` declares a user daemon, and snapd rejects the *install* of one
+    # unless this is set or the snap-id is allowlisted upstream - a sideload
+    # has no snap-id at all (docs/deployment-architecture.md §2a, T74).
+    snap set system experimental.user-daemons=true
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }

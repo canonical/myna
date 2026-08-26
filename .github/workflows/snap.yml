@@ -51,14 +51,23 @@ jobs:
         with:
           name: myna-snap
 
+      # snapd refuses to *install* any snap declaring a user daemon unless the
+      # flag is set or the snap-id is on its hardcoded allowlist, and a
+      # sideload has no snap-id at all (T57; docs/deployment-architecture.md
+      # §2a). Dropped once the id lands in `userDaemonsOverrides` (T74).
+      - name: Allow user daemons
+        run: sudo snap set system experimental.user-daemons=true
+
       # Strict confinement, sideloaded (store review interfaces like
       # `pipewire` stay disconnected — nothing here needs them).
       - name: Install the snap
         run: sudo snap install --dangerous ./myna_*_amd64.snap
 
+      # `myna` is a service app, and snapd writes no /snap/bin wrapper for
+      # those (wrappers/binaries.go), so the daemon is reached with `snap run`.
       - name: Binaries run confined
         run: |
-          myna --help
+          snap run myna --help
           myna.testbed --help
 
       - name: Offline invariant — no network plug in the manifest
