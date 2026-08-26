@@ -6,11 +6,12 @@
 # stops being a claim about mocks (T71b/T71c, decision recorded in
 # myna-snap/README.md 2026-08-26).
 #
-# Three properties, each of which has been broken in this repo before:
+# Four properties, each of which has been broken in this repo before:
 #   1. it stays up rather than exiting into systemd's restart limit;
 #   2. it says why once, not on every backoff step;
-#   3. a refresh restarts it onto the new revision.
-summary: The user daemon survives a session with no desktop, quietly, across a refresh
+#   3. it does not *start* the desktop services it is missing;
+#   4. a refresh restarts it onto the new revision.
+summary: The user daemon survives a session with no desktop, quietly, without waking it
 
 environment:
     USER_NAME: mynaspread
@@ -25,6 +26,10 @@ prepare: |
     # account whose home is outside it, which is exactly why the gdm greeter
     # never runs this daemon.
     useradd --create-home --shell /bin/bash "$USER_NAME"
+    # Property 3 needs the portal to be *startable*, or "it did not start"
+    # proves nothing. Nothing here ever starts it: there is no compositor, and
+    # the unit is D-Bus activation only.
+    apt-get install -y xdg-desktop-portal
 
 execute: |
     set -x
@@ -51,17 +56,33 @@ execute: |
 
     # 2. Quiet. With no portal the bind never succeeds, so the retry runs
     # forever; the operational tier states that once and the repeats drop to
-    # MYNA_DEBUG. Before that change the backoff (1,2,4,8,16,30,30...) put
-    # seven-plus identical lines in this window and ~2,900 a day thereafter.
-    # The bound is 2 rather than 1 because a first attempt made before the
-    # session bus is up can fail with a different reason than the ones after
-    # it, and a *changed* reason is meant to be reported.
+    # MYNA_DEBUG. The daemon is parked on `NameOwnerChanged` rather than
+    # polling, so in this window there is one attempt and one line, not one of
+    # each per retry tick. The bound is 2
+    # rather than 1 because a first attempt made before the session bus is up
+    # can fail with a different reason than the ones after it, and a *changed*
+    # reason is meant to be reported.
     journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
         | grep -c "cannot bind activation" > lines.out || true
     cat lines.out
     test "$(cat lines.out)" -le 2
 
-    # 3. A refresh restarts it onto the new revision, in a user manager that
+    # 3. It waits for a portal instead of launching one. Every D-Bus call is
+    # auto-starting, so the daemon used to bring `xdg-desktop-portal` up itself
+    # - and a portal started before the compositor exports
+    # `XDG_CURRENT_DESKTOP` picks `gtk.portal` for every interface and never
+    # `gnome.portal`, killing GlobalShortcuts for the whole session (found
+    # 2026-08-26 on a real login). The reason string is asserted too: an
+    # unowned name is the gate's own answer, not the bus's failure to activate.
+    systemctl --user -M "$USER_NAME@" show-environment > env.out
+    ! grep -q "^XDG_CURRENT_DESKTOP=" env.out
+    journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
+        | grep -q "nothing owns org.freedesktop.portal.Desktop yet"
+    systemctl --user -M "$USER_NAME@" is-active xdg-desktop-portal.service > portal.out || true
+    cat portal.out
+    grep -qx "inactive" portal.out
+
+    # 4. A refresh restarts it onto the new revision, in a user manager that
     # nobody is logged into. Re-installing the same file is the sideload form
     # of a refresh: it makes a new revision and moves the unit to it.
     PID_BEFORE=$(systemctl --user -M "$USER_NAME@" show snap.myna.myna.service -p MainPID --value)

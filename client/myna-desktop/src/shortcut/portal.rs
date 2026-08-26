@@ -30,6 +30,12 @@ pub enum TriggerError {
     /// The portal rejected the bind request.
     #[error("shortcut bind rejected: {0}")]
     BindRejected(String),
+    /// Nothing owns the portal's bus name, and this daemon will not be the one
+    /// to start it (see [`portal_is_up`]). Distinct from
+    /// [`Self::PortalUnavailable`] because nobody was asked for anything: it
+    /// costs one bus round trip and is worth re-checking often.
+    #[error("no portal running yet: {0}")]
+    PortalNotRunning(String),
 }
 
 /// A raw portal activation edge (before dedup). Public so the hermetic test can
@@ -183,6 +189,12 @@ impl GlobalShortcutTrigger {
         use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
         use futures_util::future;
 
+        if !portal_is_up(&conn).await? {
+            return Err(TriggerError::PortalNotRunning(format!(
+                "nothing owns {PORTAL_BUS_NAME}; waiting rather than starting one"
+            )));
+        }
+
         // Cloned, not moved: `portal_owner_changed` below needs the same
         // connection (a zbus `Connection` clone is a handle to the one socket).
         let shortcuts = GlobalShortcuts::with_connection(conn.clone())
@@ -249,6 +261,91 @@ impl GlobalShortcutTrigger {
 /// the portal any more".
 #[cfg(not(test))]
 const PORTAL_BUS_NAME: &str = "org.freedesktop.portal.Desktop";
+
+/// Whether a portal is already running.
+///
+/// Not a courtesy check. Every call below auto-starts `xdg-desktop-portal` if
+/// nothing owns the name, and a portal started before the compositor has
+/// exported `XDG_CURRENT_DESKTOP` resolves its backends against an empty
+/// desktop: `gtk.portal` as a last-resort fallback for every interface, never
+/// `gnome.portal`, which is the only one implementing GlobalShortcuts. That
+/// map is cached for the life of the session and breaks the portal for every
+/// app on the desktop, not just this one. A user daemon is reached by
+/// `default.target`, which is inside exactly that window.
+///
+/// So wait for a portal instead of asking for one: an unowned name is
+/// [`TriggerError::PortalUnavailable`], which [`crate::shortcut::retry`]
+/// already treats as the ordinary PAM-login race.
+#[cfg(not(test))]
+async fn portal_is_up(conn: &zbus::Connection) -> Result<bool, TriggerError> {
+    let name = zbus::names::BusName::try_from(PORTAL_BUS_NAME)
+        .expect("PORTAL_BUS_NAME is a valid bus name");
+    zbus::fdo::DBusProxy::new(conn)
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?
+        .name_has_owner(name)
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))
+}
+
+/// Wait for a portal to appear, or give up after `limit`.
+///
+/// The counterpart to [`portal_is_up`]: having declined to start a portal, the
+/// daemon has to find out when someone else does. Polling for that is what it
+/// looks like to have no answer - and on a machine whose desktop is never
+/// coming, polling is the whole cost of running here at all. The bus already
+/// offers the answer as a signal, so take it and sleep.
+///
+/// Subscribe *first*, then re-check: a portal that appears between the caller's
+/// [`portal_is_up`] and the match being installed would otherwise be missed,
+/// and the next thing to wake this daemon would be `limit` - the exact stall
+/// this exists to remove.
+#[cfg(not(test))]
+pub async fn await_portal(limit: std::time::Duration) {
+    use futures_util::future::{select, Either};
+
+    let conn = match crate::dbus::serve::connect_session().await {
+        Ok(conn) => conn,
+        // No session bus to watch. The caller's next attempt fails the same
+        // way this one did, so a plain sleep is the whole of the fallback.
+        Err(_) => return tokio::time::sleep(limit).await,
+    };
+    let appeared = async {
+        let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
+        let mut changes = dbus
+            .receive_name_owner_changed_with_args(&[(0, PORTAL_BUS_NAME)])
+            .await?;
+        if portal_is_up(&conn).await.unwrap_or(false) {
+            return Ok(());
+        }
+        while let Some(change) = changes.next().await {
+            // Owner *lost* also arrives here (a portal restarting sends both
+            // halves); only an acquisition means there is something to bind.
+            if let Ok(args) = change.args() {
+                if args.new_owner().is_some() {
+                    myna_core::info_log!("portal", "{PORTAL_BUS_NAME} appeared");
+                    return Ok(());
+                }
+            }
+        }
+        Err(zbus::Error::InvalidReply)
+    };
+    futures_util::pin_mut!(appeared);
+    match select(appeared, Box::pin(tokio::time::sleep(limit))).await {
+        // A portal appeared, or the net expired. Either way, try again now.
+        Either::Left((Ok(()), _)) | Either::Right(_) => {}
+        // The watch itself broke. Serve out the net rather than returning:
+        // this function is the retry loop's entire delay, so an early return
+        // here is an unbounded spin against a bus that just failed us.
+        Either::Left((Err(e), net)) => {
+            myna_core::dbg_log!(
+                "portal",
+                "cannot watch for a portal ({e}); falling back to the net"
+            );
+            net.await;
+        }
+    }
+}
 
 /// A future that resolves the first time `org.freedesktop.portal.Desktop`
 /// changes owner. Both halves of a restart (owner lost, then owner acquired)

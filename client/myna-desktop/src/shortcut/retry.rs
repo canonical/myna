@@ -10,7 +10,8 @@
 //!
 //! Both halves of that are handled here, and they are the same fix:
 //!
-//! - a bind that fails is retried with backoff instead of exiting;
+//! - a bind that fails is retried instead of exiting - at a flat second while
+//!   the service is merely absent, with backoff once it is answering badly;
 //! - an inner trigger that *ends* (portal session closed - `xdg-desktop-portal`
 //!   restarted, or the compositor replaced) is rebound rather than treated as
 //!   "the user is done", which is what ended the process before.
@@ -33,6 +34,14 @@ const BACKOFF_START: Duration = Duration::from_secs(1);
 /// cheap without becoming so rare that the hotkey is dead for a minute after
 /// the portal appears.
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+/// Ceiling on the wait while the service is simply not running yet. This is a
+/// *safety net*, not the mechanism: [`Rebind::wait_before_retry`] parks on the
+/// service appearing and returns the moment it does, so a daemon on a machine
+/// with no desktop sleeps rather than polls, and one whose desktop arrives
+/// binds in milliseconds. The net only matters if that notification is ever
+/// missed, which is why it is finite at all.
+const ABSENT_RECHECK: Duration = Duration::from_secs(30);
 
 /// How long one bind attempt may take before it is abandoned and retried.
 ///
@@ -67,9 +76,16 @@ const REFUSED_BACKOFF: Duration = Duration::from_secs(300);
 /// fast and the user is buried in portal dialogs.
 #[derive(Debug)]
 pub enum BindFailure {
-    /// The activation backend could not be reached at all - the portal is not
-    /// up yet, `$XDG_RUNTIME_DIR` does not exist yet. This is the PAM-login
-    /// race and nobody is being interrupted, so retry quickly.
+    /// The service is not running and this daemon declined to start it (see
+    /// `portal::portal_is_up`). Nothing was asked of anyone, the answer flips
+    /// exactly once - when the desktop comes up - and the check is a single
+    /// bus round trip, so poll for it at a flat second rather than backing
+    /// off away from the moment we are waiting for.
+    NotYet(String),
+    /// The activation backend was reachable and still could not serve us - a
+    /// portal with no GlobalShortcuts implementation, `$XDG_RUNTIME_DIR` not
+    /// there yet. Real work for someone else each time, so retry quickly at
+    /// first and then back away.
     Unavailable(String),
     /// The request reached the backend and came back without a grant - the
     /// user dismissed the confirm sheet, or never answered it. Retrying fast
@@ -80,7 +96,7 @@ pub enum BindFailure {
 impl BindFailure {
     fn reason(&self) -> &str {
         match self {
-            Self::Unavailable(r) | Self::Refused(r) => r,
+            Self::NotYet(r) | Self::Unavailable(r) | Self::Refused(r) => r,
         }
     }
 }
@@ -91,6 +107,25 @@ impl BindFailure {
 pub trait Rebind: Send {
     /// Bind, or explain why not (the message the user sees while degraded).
     async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure>;
+
+    /// Wait before the next attempt, returning early if something makes an
+    /// earlier attempt worthwhile.
+    ///
+    /// Timing out is the fallback, not the design. "The portal is not running"
+    /// is an *event* the bus will tell us about, and polling for it is how a
+    /// daemon with no desktop to wait for burns CPU forever. Only the rebinder
+    /// knows what its own arrival looks like, so the loop delegates the wait
+    /// rather than owning a timer; the default is a plain sleep, which is
+    /// right for anything with nothing to subscribe to.
+    ///
+    /// This hook is the loop's *entire* delay between attempts. An
+    /// implementation that can fail on its own account - a bus that will not
+    /// connect, a signal match that will not install - must still serve out
+    /// `delay` before returning, or the retry becomes an unbounded spin at
+    /// exactly the moment the system is least able to take one.
+    async fn wait_before_retry(&mut self, delay: Duration) {
+        tokio::time::sleep(delay).await;
+    }
 }
 
 /// A [`Trigger`] that binds through a [`Rebind`] factory and survives its
@@ -169,13 +204,19 @@ impl RetryingTrigger {
                     // is now printed once: "retrying in 1s" alone, with
                     // nothing after it for hours, reads as a daemon that gave
                     // up after one go.
-                    let (delay, cadence) = match failure {
+                    let (delay, cadence, advance) = match failure {
+                        BindFailure::NotYet(_) => (
+                            ABSENT_RECHECK,
+                            "waiting for it to appear".to_string(),
+                            false,
+                        ),
                         BindFailure::Unavailable(_) => (
                             self.backoff,
                             format!("backing off to every {BACKOFF_MAX:?}"),
+                            true,
                         ),
                         BindFailure::Refused(_) => {
-                            (REFUSED_BACKOFF, format!("every {REFUSED_BACKOFF:?}"))
+                            (REFUSED_BACKOFF, format!("every {REFUSED_BACKOFF:?}"), true)
                         }
                     };
                     // Said once, in full - including that it keeps trying, so
@@ -205,8 +246,14 @@ impl RetryingTrigger {
                     // Under the tests' `start_paused` clock tokio auto-advances
                     // whenever every task is parked on a timer, so the real
                     // backoff sequence runs in no wall-clock time.
-                    tokio::time::sleep(delay).await;
-                    self.backoff = (self.backoff * 2).min(BACKOFF_MAX);
+                    self.rebind.wait_before_retry(delay).await;
+                    // Waiting for a desktop that has not arrived is not
+                    // evidence about how the backend behaves, so it leaves the
+                    // backoff alone: the first real failure after the portal
+                    // shows up still gets the full fast-then-gentle sequence.
+                    if advance {
+                        self.backoff = (self.backoff * 2).min(BACKOFF_MAX);
+                    }
                 }
             }
         }
@@ -358,6 +405,83 @@ mod tests {
             Some(PropertyValue::Str(
                 "dictation hotkey unavailable: global-shortcuts portal unavailable".into()
             ))
+        );
+    }
+
+    /// Never finds the service running, and is told when one appears - the
+    /// daemon on a machine whose desktop has not started (or never will).
+    struct AbsentBind {
+        attempts: Arc<AtomicUsize>,
+        waits: Arc<AtomicUsize>,
+        /// Resolves when the "service appeared" event fires.
+        appeared: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait]
+    impl Rebind for AbsentBind {
+        async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            Err(BindFailure::NotYet("nothing owns the bus name".into()))
+        }
+
+        async fn wait_before_retry(&mut self, delay: Duration) {
+            self.waits.fetch_add(1, Ordering::SeqCst);
+            tokio::select! {
+                _ = self.appeared.notified() => {}
+                _ = tokio::time::sleep(delay) => {}
+            }
+        }
+    }
+
+    fn absent() -> (RetryingTrigger, Arc<AtomicUsize>, Arc<tokio::sync::Notify>) {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let appeared = Arc::new(tokio::sync::Notify::new());
+        let trigger = RetryingTrigger::new(AbsentBind {
+            attempts: Arc::clone(&attempts),
+            waits: Arc::new(AtomicUsize::new(0)),
+            appeared: Arc::clone(&appeared),
+        });
+        (trigger, attempts, appeared)
+    }
+
+    /// An absent service is an *event*, not a thing to poll for. A daemon on a
+    /// machine with no desktop must sleep through the whole wait: polling for
+    /// a portal that is never coming was measured at 73 ms of CPU a minute,
+    /// ~105 s a day, for nothing.
+    #[tokio::test(start_paused = true)]
+    async fn an_absent_service_is_waited_on_not_polled() {
+        let (mut trigger, attempts, _appeared) = absent();
+
+        let _ = tokio::time::timeout(Duration::from_secs(600), trigger.next_edge()).await;
+
+        // Ten minutes: one attempt per 30 s net, not one per second. The
+        // failing shape here is a flat poll, which would be ~600.
+        let n = attempts.load(Ordering::SeqCst);
+        assert!(
+            (19..=22).contains(&n),
+            "expected ~20 attempts in 10 min, got {n}"
+        );
+    }
+
+    /// ...and the point of the event is that the wait *ends* on it. The net is
+    /// 30 s; being told at 2 s has to mean binding at 2 s, or the hotkey is
+    /// dead for the rest of a minute of a desktop that is plainly working.
+    #[tokio::test(start_paused = true)]
+    async fn being_told_the_service_appeared_ends_the_wait() {
+        let (mut trigger, attempts, appeared) = absent();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            appeared.notify_waiters();
+        });
+        let _ = tokio::time::timeout(Duration::from_secs(3), trigger.next_edge()).await;
+
+        // t=0 fails, the wait ends at t=2 rather than t=30, so a second
+        // attempt happened inside the window.
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            2,
+            "the wait did not end when the service appeared"
         );
     }
 

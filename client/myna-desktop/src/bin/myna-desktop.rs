@@ -549,16 +549,41 @@ fn no_backend(e: myna_desktop::backend::ResolveError) -> (SessionRun, StopHandle
 struct PortalRebind {
     shortcut: Option<String>,
     mode: ActivationMode,
+    /// The last attempt failed because there was no portal to talk to, so the
+    /// next wait can be spent asleep on the bus telling us one arrived.
+    awaiting_portal: bool,
 }
 
 #[async_trait::async_trait]
 impl Rebind for PortalRebind {
+    /// Nothing to poll for: park until a portal appears, with `delay` as the
+    /// net. On a machine whose desktop never comes this is where the daemon
+    /// spends its life, and it costs a signal match on a connection it already
+    /// holds - measurably nothing.
+    async fn wait_before_retry(&mut self, delay: std::time::Duration) {
+        if self.awaiting_portal {
+            myna_desktop::shortcut::portal::await_portal(delay).await;
+        } else {
+            tokio::time::sleep(delay).await;
+        }
+    }
+
     async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+        self.awaiting_portal = false;
         GlobalShortcutTrigger::bind("dictate", self.shortcut.as_deref(), self.mode)
             .await
             .map(|t| Box::new(t) as Box<dyn Trigger>)
             .map_err(|e| match e {
-                // The request never reached a backend - retry quickly.
+                // No portal to reach, and we decline to conjure one. Nothing
+                // was asked of anyone, so check again in a second: the answer
+                // flips when the desktop comes up and the hotkey should be
+                // live then, not half a minute later.
+                TriggerError::PortalNotRunning(_) => {
+                    self.awaiting_portal = true;
+                    BindFailure::NotYet(e.to_string())
+                }
+                // The request reached a portal and it could not serve us -
+                // retry quickly at first, then back away.
                 TriggerError::PortalUnavailable(_) => BindFailure::Unavailable(e.to_string()),
                 // BindShortcuts itself came back without a grant, which on
                 // GNOME means the user dismissed (or ignored) the confirm
@@ -636,6 +661,7 @@ async fn run_controller(
             let trigger = RetryingTrigger::new(PortalRebind {
                 shortcut: resolved.hotkey.clone(),
                 mode,
+                awaiting_portal: false,
             });
             builder.trigger(with_status(trigger, pump_bus)).build()
         }

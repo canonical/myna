@@ -94,8 +94,7 @@ argued:
   limit and stops - ten journal lines per greeter start, and no daemon.
 - **a headless account runs it healthily**: `active`, `NRestarts=0`, 4.6 MB
   cgroup memory and 188 ms of CPU over its first half-minute, all of that
-  startup. What it does not have is a portal, so it re-attempts the bind at the
-  30 s ceiling forever.
+  startup. What it does not have is a portal, so it re-checks for one forever.
 
 So there is no guard, because there is nothing worth guarding against and
 nothing sound to guard *with*: at PAM login "no compositor yet" and "no
@@ -103,6 +102,61 @@ compositor ever" are the same observation, which is exactly why snapd's own
 `graphical-session.target` ordering for `desktop`-plugging user daemons was
 reverted in 2.74.1 (LP #2141607). A daemon that guessed would be dead in the
 normal case it guessed wrong about.
+
+**Starting early is allowed; *waking* the desktop's services is not (decided
+2026-08-26).** Ordering was the wrong lever, but starting first still has a
+cost, and it has to be paid inside the daemon: every D-Bus call is
+auto-starting. Binding activation before the compositor had exported
+`XDG_CURRENT_DESKTOP` launched `xdg-desktop-portal` *itself*, and a portal
+started in that window resolves its backends against an empty desktop -
+`gtk.portal` as a last-resort fallback for every interface, never
+`gnome.portal`, which is the only implementation of GlobalShortcuts. That map
+is cached for the life of the session, so the hotkey stays dead until
+`systemctl --user restart xdg-desktop-portal`, and so does every *other* app's
+file chooser. Observed on a GNOME 49 Wayland login: the daemon started at
+45.55 s, activated the portal at 45.83 s, and gnome-session only began at
+45.89 s.
+
+So the bind first asks whether anything already owns
+`org.freedesktop.portal.Desktop` and reports the ordinary unavailable failure
+if not (`shortcut/portal.rs::portal_is_up`), letting the existing backoff wait
+for a portal rather than conjuring one. Whoever starts it in a real session
+does so with the right environment. The rule generalises: a daemon that runs
+before the desktop may *join* the desktop's services and must never summon
+them.
+
+**A missing desktop is waited on, never polled for.** "No portal yet" is the
+one bind failure with its own disposition (`BindFailure::NotYet`), because it
+is the only one that is not a failure at all - nothing was asked of anyone, and
+the answer flips exactly once, when the desktop arrives. The daemon subscribes
+to `NameOwnerChanged` for the portal's name and parks
+(`portal::await_portal`), so it is asleep between login and the compositor, and
+asleep forever on a machine where the compositor is never coming. The 30 s
+`ABSENT_RECHECK` is a safety net for a missed notification, not the mechanism.
+
+The alternative was polling, and it was measured before being rejected: at one
+`NameHasOwner` a second it cost **73 ms of CPU per minute** with the portal
+masked so nothing could start it, which is ~105 s of CPU a day in a lingering
+headless account, forever, for a daemon with nothing to bind to. Waiting on the
+event costs a signal match on a connection the daemon already holds:
+**2 ms of CPU per minute** in the same conditions, which is the
+`ABSENT_RECHECK` net firing twice and little else, and it binds *faster*: 55 ms
+from the portal taking its bus name to `activation bound`, against 0.64 s when
+polling.
+
+Note what this is *not*: it is not detecting whether a desktop exists. That
+cannot be done soundly, which is why there is no guard - and the portal bug
+above is the proof rather than the theory. At 45.83 s into a real GNOME login,
+in a session that was working perfectly well, `XDG_CURRENT_DESKTOP` was not yet
+in the user manager's environment. Any check for "is there a desktop here"
+would have answered no, on a laptop that was two seconds from a full GNOME
+session. Waiting costs nothing and needs no such answer, so there is nothing
+left to detect.
+
+One consequence worth stating: waiting proves nothing about how the backend
+behaves, so it does not spend the backoff. A daemon that waited out a long
+login still meets the portal's first real failure at the bottom of the
+1/2/4...30 s ladder rather than at its ceiling.
 
 The one real cost was the retry log - ~2,900 identical lines a day on a machine
 with no compositor. A bind failure is now reported once at the operational
