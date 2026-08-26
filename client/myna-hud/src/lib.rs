@@ -27,6 +27,7 @@
 //! Privacy invariant (constitution V): state + level only — nothing here
 //! ever sees, renders, logs, or persists transcript content; no network.
 
+pub mod accent;
 pub mod hud_logic;
 pub mod input_region;
 pub mod motion;
