@@ -1,11 +1,15 @@
 # Phase 1 Data Model: GNOME Shell Extension for Myna Dictation UI
 
-**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30)
+**Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; architecture revision: 2026-08-26)
 
-The entities crossing the extension↔`myna-desktop` seam and the extension's own
+The entities crossing the indicator↔`myna-desktop` seam and the indicator's own
 transient state. Nothing here is persisted; audio is never represented (only
 derived level). Cross-refs to spec Key Entities and the D-Bus contract
-(`contracts/dbus-interface.md`).
+(`contracts/dbus-interface.md`). **(2026-08-26)**: the indicator surface is now
+the window of the renderer application (`myna-hud`); the entities below move
+across that split — dictation-facing entities (E1–E3, E5) are consumed by the
+renderer application (previously the extension); the extension's own transient
+state is the hosted-window bookkeeping (E7) and the presence name (E6).
 
 ## E1 — DictationState (the wire state string)
 
@@ -24,8 +28,8 @@ The single source of truth for the HUD pill's treatment. String enum on the
 
 Rules:
 - Additive/forward-compatible: an **unknown** value (including `notice` seen by
-  an unpatched extension build) MUST map to a neutral "active" visual intent on
-  the extension side, never an exception (spec FR-008, R3).
+  an unpatched consumer build) MUST map to a neutral "active" visual intent on
+  the consumer (renderer) side, never an exception (spec FR-008, R3).
 - Privacy: the value is a state label only — never transcript text (constitution
   V; the `Error`/`Notice` message is a user-facing reason string, still
   content-free). The empty-transcript check that produces `notice` happens
@@ -90,30 +94,38 @@ Rules:
   oscilloscope-like reproduction of the envelope tick-by-tick.
 - Carries energy only — never samples, never content (constitution V, R5).
 
-## E2a — AccentColorPreference (extension-side, sourced from the desktop, 2026-07-30)
+## E2a — AccentColorPreference (renderer-side, sourced from the desktop, 2026-07-30; mechanism amended 2026-08-26)
 
-| Field | Type | Source | Notes |
-|---|---|---|---|
-| chosen | `string \| null` | `Gio.Settings.get_user_value('accent-color')` on `org.gnome.desktop.interface`, schema/key-existence guarded (R18) | `null` only when never actively written by the user — including the untouched factory default (itself `'blue'`) |
-| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | 9-entry libadwaita hex table (R18) keyed by `chosen`, or a fixed Ubuntu-orange (`#E95420`) fallback when `chosen == null` or the schema/key is absent | drives the ribbon's strand colors in `ribbon-paint.js`. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange, where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement |
+| Field | Type / Source | Notes |
+|---|---|---|
+| chosen | `string \| null` | `org.gnome.desktop.interface` `accent-color` **user value** (GSettings, read inside the renderer application), key-existence guarded (R18/R26) | `null` only when never actively written by the user — including the untouched factory default (itself `'blue'`) |
+| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | main color from the platform color manager (libadwaita `Adw.StyleManager` accent — R26), or a fixed Ubuntu-orange (`#E95420`) fallback when `chosen == null` or the system does not support accent colors; derived tones are pure, tested logic. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange, where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement |
 
 Rules:
-- Read live via `changed::accent-color`, so an in-session accent-color change
+- Read live (`changed::accent-color` on the same settings object; libadwaita
+  style-manager change notification), so an in-session accent-color change
   re-colors the ribbon without restart.
 - Sourced entirely from the desktop environment, not from `myna-desktop` or
   the D-Bus contract — no wire change (data-model E2/dbus-interface.md
   unaffected).
-- Safe on pre-GNOME-47 shells (schema/key absent): degrades to the same
-  Ubuntu-orange fallback, never an exception (R18).
+- Safe where accent colors are unsupported: degrades to the same
+  Ubuntu-orange fallback, never an exception (R18/R26).
 
-## E2b — MotionPreference (extension-side, sourced from the desktop, 2026-07-30)
+## E2b — MotionPreference (renderer-side, sourced from the desktop, 2026-07-30; mechanism amended 2026-08-26)
 
-| Field | Type | Source | Notes |
-|---|---|---|---|
-| reducedMotion | `boolean` | `org.gnome.desktop.interface`'s `enable-animations` (inverted), schema/key-existence guarded (R19) | when `true`, the ribbon renders a static level line / gently-scaling mic indicator instead of the flowing wave (FR-022a) |
+| Field | Type / Source | Notes |
+|---|---|---|
+| reducedMotion | `boolean` | primary source: GTK's `GtkSettings:gtk-interface-reduced-motion` (enum `GtkReducedMotion`: `no-preference`/`reduce`; GTK ≥ 4.22), which GDK populates from the settings portal (`org.freedesktop.appearance reduced-motion`) with a safe default when absent. Fallback when the GTK property doesn't exist (older GTK): the old `org.gnome.desktop.interface` `enable-animations` key (inverted), schema/key-existence guarded as before (R19/R26) | when `true`, the ribbon renders a static level line / gently-scaling mic indicator instead of the flowing wave (FR-022a) |
 
 Rules:
-- Read live via `changed::enable-animations`, same pattern as E2a.
+- **Never read `org.gnome.desktop.a11y.interface`'s `reduced-motion` key
+  directly** — it is a *new* key (gsettings-desktop-schemas, 2026 cycle) and
+  is absent on older systems; an unguarded `Gio.Settings`/`gio::Settings`
+  construction or read against a missing schema/key aborts the process.
+  Going through `GtkSettings` (or, at minimum, the same schema+key existence
+  guard R18 established) is mandatory (crash-on-start risk, flagged 2026-08-26).
+- Read live (`notify::gtk-interface-reduced-motion` on the settings object;
+  libadwaita's style manager tracks the same property), same pattern as E2a.
 - Drives only the *rendering* choice (static vs. flowing) — the underlying
   level/state inputs (E2) are unaffected either way (FR-022a: "still conveys
   state and level").
@@ -130,48 +142,84 @@ into a password field", "inference backend unavailable" (critical/`error`), or
 (2026-07-30) from `completion_indicator_state()`'s fixed reason for the
 empty-transcript case.
 
-## E4 — IndicatorSurface (extension-side, transient)
+## E4 — IndicatorSurface (renderer-side, transient; rewritten 2026-08-26)
 
-The extension's in-memory view; not on the wire.
+The renderer application's in-memory view; not on the wire. (Previously the
+extension's actor state; the same fields move with the drawing — plus the
+window/input-region state the windowed surface adds.)
 
 | Aspect | Description |
 |---|---|
 | current state | last `DictationState` received (default `idle`) |
 | current level | last `AudioLevel` + a timestamp (for stale-decay) |
-| HUD pill actor | the bottom-center `St.Widget` (2026-07-30: replaces the top-of-panel ribbon/goop) added via `Main.layoutManager.addChrome`; exists only while state ≠ `idle`; its level sub-actor is `WaveRibbonActor` (2026-07-30, R17 — replaces `BarMeterActor`), painted via the shared `ribbon-paint.js` |
-| held notice slot | **(2026-07-30)** one severity-scoped slot (reason + optional dismiss-timer handle) implementing the replace-in-place/restart-timer rules (R15) |
-| dismiss control | **(2026-07-30)** the critical-error pill's × button: pointer-reactive (`reactive: true`), never keyboard-focusable (`can_focus: false`) — FR-007c |
-| ribbon severity tint | **(2026-07-30, R17a)** `descriptor.severity` passed straight through to the ribbon as its `severityTint` (`null \| 'recoverable' \| 'critical'`); the ribbon stays visible/amber/paused-pulsing for `'recoverable'`, hidden for `'critical'` (FR-010e, `hud-logic.js`'s `ribbonVisibleForSeverity`) |
-| panel button | optional `PanelMenu.Button`; reflects availability + Toggle (R8) — unaffected by this redesign |
-| availability | whether `org.myna.Dictation` currently has a bus name owner (R9) |
-| a11y label | `accessible_name` = human state label, updated per state (R10) |
+| HUD pill window | the application's single borderless toplevel; mapped/visible only while state ≠ `idle` (the hosted overlay window of spec Key Entities); contains the pill layout, status label, mic/mic-slash icon, dismiss control, and the GLArea ribbon |
+| ribbon rendering | the wave ribbon renders via the GPU shader path only (R23) in a GLArea driven by the frame clock, gated on mapped + not reduced-motion |
+| input region | per-state: empty (fully click-through) except during a critical error, where it covers exactly the dismiss control's rectangle (R22); re-applied on map and size-allocate |
+| held notice slot | one severity-scoped slot (reason + optional dismiss-timer handle) implementing the replace-in-place/restart-timer rules (R15) |
+| dismiss control | the critical-error pill's × button: pointer-reactive within its input-region rectangle, never keyboard-focusable — FR-007c |
+| ribbon severity tint | `descriptor.severity` passed straight through to the ribbon as its `severityTint` (`null \| 'recoverable' \| 'critical'`); the ribbon stays visible/amber/paused-pulsing for `'recoverable'`, hidden for `'critical'` (FR-010e) |
+| a11y | the window and its children expose accessible labels/roles via the toolkit's accessibility bridge, updated per state (R10's parity requirement, now native to the app) |
 | accent color | current `AccentColorPreference` (E2a), re-read live; colors the ribbon strands |
 | motion preference | current `MotionPreference` (E2b), re-read live; selects flowing vs. static ribbon rendering |
+| panel button | optional `PanelMenu.Button` remains an extension-side future affordance (R8, US4) — unaffected, not part of the renderer application |
 
 Rules:
-- No actor while `idle` (push-to-talk, spec FR-002); actors + timers + transitions
-  torn down on `idle`, on name-vanished, and on `disable()` (spec FR-021 — no leaks).
+- No mapped window while `idle` (push-to-talk, spec FR-002); window content +
+  timers + transitions torn down on `idle`, on name-vanished, and on app exit
+  (spec FR-021 — no leaks).
 - Nothing rendered, logged, or stored carries transcript content (constitution V).
-- **(2026-07-30)** A second `notice`/`error` of the same severity while one is
-  showing updates the held slot in place; it never creates a second concurrent
-  actor/notice (R15 — no stacking or queuing).
+- A second `notice`/`error` of the same severity while one is showing updates
+  the held slot in place; it never creates a second concurrent
+  notice (R15 — no stacking or queuing).
 
-## E5 — Availability (extension-side, transient)
+## E5 — Availability (renderer-side, transient; moved 2026-08-26)
 
-Boolean derived from `Gio.bus_watch_name` on `org.myna.Dictation`
+Boolean derived from name-watching `org.myna.Dictation`
 (name-appeared → available; name-vanished → unavailable). Drives dormancy: while
-unavailable, the extension shows no overlay and surfaces no error (spec FR-018,
-US1-5), and clears any HUD pill to idle on transition to unavailable (crash mid-session
-edge case).
+unavailable, the renderer shows no window and surfaces no error (spec FR-018,
+US1-5), and clears any HUD pill to idle on transition to unavailable (crash
+mid-session edge case). Previously extension-side; semantics unchanged.
+
+## E6 — ShellPresence (extension-side, transient; new 2026-08-26)
+
+| Field | Type | Source | Notes |
+|---|---|---|---|
+| owned | `boolean` | whether the extension currently owns the session-bus name `org.myna.Shell` (R24) | owned for exactly as long as `enable()`…`disable()`; no properties, methods, or signals — ownership is the signal (FR-017a) |
+
+Rules:
+- Watched by `myna-desktop`'s launcher policy: present → suppress the
+  notification fallback; absent → notification floor.
+- Carries no data of any kind (privacy-trivial by construction).
+
+## E7 — HostedWindow (extension-side, transient; new 2026-08-26)
+
+The extension host's bookkeeping for the renderer application's window; not on
+the wire.
+
+| Aspect | Description |
+|---|---|
+| wayland client | the `Meta.WaylandClient` handle created at `enable()` by spawning `myna-hud` (R21) |
+| subprocess | the spawned process handle (for exit watching / forced termination) |
+| adopted window | the `Meta.Window` owned by the client (identified via `owns_window()`; fallback `get_sandboxed_app_id()`/PID if the snap path requires it, R27) — re-typed DOCK, hidden from window lists, kept above, all workspaces |
+| position | bottom-center of the primary monitor's work area (R21's placement math, pure + unit-tested); recomputed on monitors/workarea/size changes with anti-feedback-loop guards |
+| supervision | respawn state: last exit time, bounded backoff, restart budget (FR-026) |
+| adopted state | whether adoption completed (window exists + typed + positioned); the indicator is not considered up until then |
+
+Rules:
+- One renderer process per enabled extension; terminated on `disable()` and on
+  `unmanaged` teardown paths (no orphans; spec FR-021).
+- The host never reads dictation state or levels — it has no
+  `org.myna.Dictation` proxy at all; its only bus surface is E6.
 
 ## State → visual-intent mapping (pure; contract-tested)
 
-Lives in `extensions/myna-shell/states.js` and is unit-testable without a Shell
-(R11). Maps `DictationState` → a visual-intent record consumed by the HUD:
-**(2026-07-30)** the descriptor shape is reshaped from `{key, statusText,
-isError, hidden}` to `{key, statusText, severity, hidden}`, where `severity` is
-`'recoverable' | 'critical' | null` (replacing the old boolean `isError`) so
-the HUD can distinguish the two problem tiers.
+**(2026-08-26)** Lives in the renderer application (Rust, `myna-hud`'s pure
+state module — ported 1:1 from `extensions/myna-shell/states.js`) and is
+unit-testable without a display (R11's split, relocated). Maps
+`DictationState` → a visual-intent record consumed by the HUD:
+the descriptor shape is `{key, statusText, severity, hidden}`, where `severity`
+is `'recoverable' | 'critical' | null`. Status strings are translatable under
+the `myna` gettext domain (R25).
 
 | State | icon | severity | a11y label |
 |---|---|---|---|
