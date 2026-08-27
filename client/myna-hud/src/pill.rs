@@ -227,12 +227,20 @@ impl Pill {
             self.pill.add_css_class(class);
         }
 
+        // The ribbon is hidden when a critical error collapses it OR when
+        // the whole pill is hidden at idle — the latter matters because the
+        // frame clock only queues a render while the ribbon is visible, so
+        // hiding it here is what makes idle cost no GPU.
         self.ribbon
-            .set_visible(ribbon_visible_for_severity(descriptor.severity));
+            .set_visible(!descriptor.hidden && ribbon_visible_for_severity(descriptor.severity));
 
         // Nothing is shown at idle (FR-002/X3) — push-to-talk means the
-        // resting state is an absent HUD, not an empty one.
-        self.pill.set_visible(!descriptor.hidden);
+        // resting state is an absent HUD, not an empty one. The pill keeps
+        // its footprint (so the overlay window stays a stable size for the
+        // host); it is the WINDOW's opacity that makes it vanish — see
+        // `HudWindow::apply_descriptor` — and in the embedded lab preview
+        // there is no window, so the pill is simply left empty at idle.
+        // Either way the ribbon above is hidden, so nothing draws.
 
         // Announce the change to assistive technology: the status text is
         // the accessible description, and it is content-free by contract.

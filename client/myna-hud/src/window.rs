@@ -133,6 +133,15 @@ impl HudWindow {
     /// the host adopts exactly once for the renderer's whole life.
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         self.pill.apply_descriptor(descriptor);
+        // Make the whole overlay vanish at idle by setting opacity on the
+        // WINDOW, not the pill: the pill (and its fixed-size holder) keep
+        // their footprint so the mapped window never collapses under the
+        // host, while opacity 0 on the toplevel guarantees nothing in the
+        // surface composites — not the pill, not the holder, not the window
+        // chrome. The window stays mapped throughout (the host adopts it
+        // once), so this is what "hidden at idle" means for the overlay.
+        self.window
+            .set_opacity(if self.pill.is_hidden() { 0.0 } else { 1.0 });
         self.apply_input_region();
     }
 
