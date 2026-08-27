@@ -148,6 +148,23 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" \
          "$XDG_CONFIG_HOME/glib-2.0/settings"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# No IBus in the private session. A Wayland gnome-shell starts one
+# unconditionally, and the `ibus-extension-gtk3` it pulls in aborts on a GLib
+# assertion when this throwaway session is torn down under it - leaving an
+# apport report in /var/crash and an Ubuntu crash dialog on the desktop of
+# whoever ran the suite. Nothing here tests input methods (the driver builds a
+# HudView and samples its opacity), and the Shell treats a missing ibus-daemon
+# as a warning it carries on from, so hiding it costs the test nothing and
+# keeps the "safe to run on a desktop" promise in this file's header true.
+#
+# A PATH shim rather than a config switch because the Shell has no off switch
+# for this: `js/misc/ibusManager.js` spawns it whenever it is a Wayland
+# compositor, which headless still is.
+mkdir -p "$SCRATCH/bin"
+printf '#!/bin/sh\nexit 0\n' > "$SCRATCH/bin/ibus-daemon"
+chmod +x "$SCRATCH/bin/ibus-daemon"
+export PATH="$SCRATCH/bin:$PATH"
+
 # Only the driver is enabled. It constructs the one HudView under test and
 # owns its lifecycle; the real extension enabled alongside would build a second
 # pill and drive it from a bus nobody is publishing on. The driver loads hud.js
