@@ -16,13 +16,23 @@
  * in this bundle's range — so the fallback is safe rather than merely old.
  * Note the inversion: animations *enabled* is reduced motion *off*.
  *
+ * The modern reader coerces because the property changed type inside the
+ * range without changing name: a boolean when it arrived, and the
+ * `St.ReducedMotion` enum (NO_PREFERENCE=0, REDUCE=1) from Shell 51. Both
+ * spell "suppress motion" as the truthy value, so `Boolean` covers them and
+ * any later member; passing the raw enum on would hand ribbon.js a number.
+ *
  * @param {{reducedMotion: boolean}} caps - from `stSettingsCapabilities()`.
  * @returns {{signal: string, read: function(object): boolean}} the signal to
  *     connect and a reader returning true when motion should be suppressed.
  */
 export function motionSource(caps) {
-    if (caps.reducedMotion)
-        return {signal: 'notify::reduced-motion', read: s => s.reducedMotion};
+    if (caps.reducedMotion) {
+        return {
+            signal: 'notify::reduced-motion',
+            read: s => Boolean(s.reducedMotion),
+        };
+    }
     return {signal: 'notify::enable-animations', read: s => !s.enableAnimations};
 }
 

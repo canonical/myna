@@ -36,6 +36,15 @@ eq('modern Shell reports reduced motion when set',
 eq('modern Shell reports normal motion when unset',
     modern.read({reducedMotion: false}), false);
 
+// Shell 51 kept the name and changed the type: `reduced-motion` is now the
+// St.ReducedMotion enum, so the property reads as a number. 0 is falsy and
+// would have limped along; REDUCE=1 is truthy but not `true`, and the value
+// travels as far as ribbon.js.
+eq('modern Shell reads St.ReducedMotion.REDUCE as reduced motion',
+    modern.read({reducedMotion: 1}), true);
+eq('modern Shell reads St.ReducedMotion.NO_PREFERENCE as normal motion',
+    modern.read({reducedMotion: 0}), false);
+
 // --- Pre-`reduced-motion` Shells (46): `enable-animations`, INVERTED -------
 // The inversion is the bug this file exists to catch: getting it backwards
 // runs the wave ribbon's full animation for the users who asked for none,
@@ -62,6 +71,7 @@ eq('the legacy reader ignores a missing reduced-motion property',
 // the value on as `reducedMotion`, where a non-boolean would reach ribbon.js.
 for (const [label, source, settings] of [
     ['modern', modern, {reducedMotion: true}],
+    ['modern (enum)', modern, {reducedMotion: 1}],
     ['legacy', legacy, {enableAnimations: true}],
 ]) {
     check(`${label} reader returns a boolean`,
