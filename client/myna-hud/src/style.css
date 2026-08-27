@@ -30,7 +30,12 @@ window.myna-hud-window {
     background-color: rgba(20, 22, 28, 0.82);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    /* No drop shadow. The window hugs the pill exactly, so a shadow has
+     * nowhere to fade into: it is clipped by the surface edge and reads as
+     * a hard grey band around the pill rather than a soft shadow — plainly
+     * visible against a light desktop. Restoring it would mean growing the
+     * window with a transparent margin, which also moves the overlay's
+     * extent and therefore the gap the host places it at (R21/R22). */
 }
 
 .myna-hud-icon {
