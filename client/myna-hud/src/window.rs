@@ -81,18 +81,26 @@ impl HudWindow {
         window.set_can_focus(false);
 
         // The pill lives inside a fixed-size holder rather than being the
-        // window's direct child. At idle the pill hides — which stops its
-        // ribbon drawing entirely (no idle GPU cost), since the frame clock
-        // only queues a render while the ribbon is visible — but a hidden
-        // direct child would collapse the window toward GTK's 200x200
-        // fallback and resize the adopted surface under the host. The holder
-        // reserves the window's footprint independently of the pill's
-        // visibility, so the window stays a stable size while the pill draws
-        // nothing.
+        // window's direct child, so the mapped window keeps a stable size
+        // even when the pill hides (the host adopts the window once and must
+        // not have it resized under it — see the never-unmap design).
         let holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         holder.set_size_request(PILL_WIDTH, RESTING_HEIGHT);
         holder.append(pill.widget());
         window.set_child(Some(&holder));
+
+        // The window's OPACITY is the single source of truth for "is the HUD
+        // showing". The pill widget's visibility is *bound* to it: when the
+        // overlay is hidden at idle (opacity 0) the pill — and therefore its
+        // ribbon — is made invisible, which stops the frame clock queuing
+        // renders, so idle costs no GPU. Hiding via opacity (not
+        // `window.set_visible(false)`) keeps the surface mapped for the
+        // host; the binding then removes the manual visibility bookkeeping.
+        window
+            .bind_property("opacity", pill.widget(), "visible")
+            .transform_to(|_, opacity: f64| Some(opacity > 0.0))
+            .sync_create()
+            .build();
 
         let hud = Rc::new(Self { window, pill });
 
@@ -109,7 +117,7 @@ impl HudWindow {
         });
 
         hud.connect_x11_hints();
-        hud.pill_visibility_follows_window();
+        hud.reapply_input_region_on_map();
         hud
     }
 
@@ -132,16 +140,14 @@ impl HudWindow {
     /// transparent, click-through area) while the window stays mapped, so
     /// the host adopts exactly once for the renderer's whole life.
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
+        let hidden = descriptor.hidden;
         self.pill.apply_descriptor(descriptor);
-        // Make the whole overlay vanish at idle by setting opacity on the
-        // WINDOW, not the pill: the pill (and its fixed-size holder) keep
-        // their footprint so the mapped window never collapses under the
-        // host, while opacity 0 on the toplevel guarantees nothing in the
-        // surface composites — not the pill, not the holder, not the window
-        // chrome. The window stays mapped throughout (the host adopts it
-        // once), so this is what "hidden at idle" means for the overlay.
-        self.window
-            .set_opacity(if self.pill.is_hidden() { 0.0 } else { 1.0 });
+        // Opacity on the WINDOW is the single control for "shown": it makes
+        // the whole surface composite nothing at idle while staying mapped
+        // for the host, and the pill's visibility is bound to it (see
+        // `new`), so hiding here also stops the ribbon rendering.
+        println!("HUD: set_opacity({})", if hidden { 0.0 } else { 1.0 });
+        self.window.set_opacity(if hidden { 0.0 } else { 1.0 });
         self.apply_input_region();
     }
 
@@ -173,9 +179,9 @@ impl HudWindow {
         });
     }
 
-    /// Re-apply the (empty) input region whenever the pill maps, since the
-    /// toolkit can reset it across a map.
-    fn pill_visibility_follows_window(self: &Rc<Self>) {
+    /// Re-apply the (empty) input region whenever the ribbon maps, since the
+    /// toolkit can reset the surface's input region across a map.
+    fn reapply_input_region_on_map(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
         self.pill.ribbon().connect_map(move |_| {
             if let Some(this) = this.upgrade() {

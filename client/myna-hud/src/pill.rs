@@ -182,16 +182,11 @@ impl Pill {
         &self.ribbon
     }
 
-    /// Whether the current descriptor hides the pill entirely (idle).
-    pub fn is_hidden(&self) -> bool {
-        self.state.borrow().descriptor.hidden
-    }
-
     // ── State in ────────────────────────────────────────────────────────
 
     /// Apply a state descriptor: label, icon, colour class, ribbon phase,
     /// held notice, and visibility. Positioning/input-region are the
-    /// window's concern and observed via [`Pill::is_hidden`].
+    /// window's concern (its opacity is bound to the pill's visibility).
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let now = self.now_ms();
         {
