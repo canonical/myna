@@ -45,7 +45,7 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use crate::accent::{resolve_accent_palette, resolve_theme_accent_palette, AccentPalette};
+use crate::accent::{fallback_palette, resolve_theme_accent_palette, AccentPalette};
 use crate::motion::{reduced_motion, MotionReadings};
 use crate::shader::Rgb;
 
@@ -53,6 +53,8 @@ use crate::shader::Rgb;
 /// `enable-animations` fallback.
 const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
 const ACCENT_KEY: &str = "accent-color";
+/// Watched because a Yaru accent variant is selected by theme name.
+const GTK_THEME_KEY: &str = "gtk-theme";
 const ANIMATIONS_KEY: &str = "enable-animations";
 
 /// `GtkSettings`' reduced-motion property (GTK ≥ 4.22).
@@ -128,21 +130,6 @@ pub fn probe_reduced_motion() -> bool {
     })
 }
 
-/// The accent setting's **resolved value** — the name the desktop is
-/// actually using — or `None` when the schema/key is unavailable.
-///
-/// Deliberately not `g_settings_get_user_value()`. R18 read the user value
-/// to distinguish "genuinely chose blue" from "never touched, also blue",
-/// believing an untouched Ubuntu desktop read as `'blue'` while looking
-/// orange. It does not: `ubuntu-settings` ships a gschema override setting
-/// `org.gnome.desktop.interface accent-color = 'orange'`, so the resolved
-/// value is already correct there — and this path is only a fallback for
-/// when the theme cannot be read at all.
-pub fn probe_accent_value() -> Option<String> {
-    let settings = settings_for_schema_key(INTERFACE_SCHEMA, ACCENT_KEY)?;
-    Some(settings.string(ACCENT_KEY).to_string())
-}
-
 /// The accent as the **theme** resolves it, read back from `widget`'s
 /// computed CSS `color` (the widget must be styled `color:
 /// @accent_bg_color` — see `style.css`'s `.myna-hud-ribbon`).
@@ -193,9 +180,11 @@ pub fn probe_platform_accent() -> Option<Rgb> {
 /// `accent_widget` is the widget carrying `color: @accent_bg_color`; pass
 /// `None` where no styled widget is available yet.
 ///
-/// Order: the theme, then the style manager, then the settings name, then
-/// Ubuntu orange. The first two report the colour the desktop is actually
-/// using, so neither needs to guess whether the user "chose" anything.
+/// Order: the theme, then the style manager, then Ubuntu orange. The first
+/// two report the colour the desktop is actually *using*, so neither needs
+/// to guess whether the user "chose" anything — and between them there is
+/// no accent a GTK application can see that they miss, which is why the
+/// `accent-color` name table is gone.
 pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> AccentPalette {
     if let Some(accent) = accent_widget
         .and_then(probe_css_accent)
@@ -203,7 +192,7 @@ pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> Ac
     {
         return resolve_theme_accent_palette(accent);
     }
-    resolve_accent_palette(probe_accent_value().as_deref())
+    fallback_palette()
 }
 
 /// Call `on_change` whenever either preference may have changed: the accent
@@ -215,10 +204,15 @@ pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> Ac
 pub fn watch_preferences<F: Fn() + 'static + Clone>(on_change: F) -> PreferenceWatch {
     let mut settings_handles = Vec::new();
 
-    if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, ACCENT_KEY) {
-        let cb = on_change.clone();
-        settings.connect_changed(Some(ACCENT_KEY), move |_, _| cb());
-        settings_handles.push(settings);
+    // Watched as a change TRIGGER only — the value is never read from here
+    // (the theme is the source). Same for the theme name, which is how a
+    // Yaru accent variant changes.
+    for key in [ACCENT_KEY, GTK_THEME_KEY] {
+        if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, key) {
+            let cb = on_change.clone();
+            settings.connect_changed(Some(key), move |_, _| cb());
+            settings_handles.push(settings);
+        }
     }
     if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY) {
         let cb = on_change.clone();

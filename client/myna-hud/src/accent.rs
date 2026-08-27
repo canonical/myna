@@ -19,73 +19,24 @@
 //!    the analogue of the extension's `-st-accent-color`.
 //! 2. `AdwStyleManager:accent-color-rgba` (libadwaita ≥ 1.7) — measured
 //!    identical to (1) for every accent.
-//! 3. The `accent-color` setting's **resolved value** through
-//!    [`accent_hex`] ([`resolve_accent_palette`]).
-//! 4. Ubuntu orange.
+//! 3. [`fallback_palette`] (Ubuntu orange), only if the desktop reports no
+//!    accent whatsoever.
 //!
-//! **Superseded (R18)**: this module used to require the GSettings *user
-//! value* (`None` = never written) so that "genuinely chose blue" and
-//! "never touched this setting" could be told apart, the latter being
-//! re-tinted to Ubuntu orange. That distinction rested on the premise that
-//! an untouched Ubuntu desktop reads as `'blue'` while looking orange —
-//! which is false: `ubuntu-settings` ships a gschema override setting
-//! `accent-color = 'orange'`, so the resolved value is already right, and
-//! reading the theme is righter still (it also covers Yaru variants and
-//! accents that have no settings name at all).
+//! **Removed (R18, 2026-08-26)**: the `accent-color` *name* table and the
+//! GSettings read that fed it. Both existed to map a settings name onto a
+//! colour ourselves, and the theme already answers that question — better,
+//! since it also covers Yaru variants and `wartybrown`, which has no
+//! upstream enum member. The associated "untouched default is not a
+//! choice" rule went with it: its premise (that an untouched Ubuntu
+//! desktop reads `'blue'` while looking orange) was false —
+//! `ubuntu-settings` ships a gschema override setting
+//! `accent-color = 'orange'` — and the rule mis-tinted Yaru accent
+//! variants back to plain orange.
 //!
 use crate::shader::{hex_to_rgb, Rgb, RibbonPalette};
 
-/// The 9-value accent palette, using **Ubuntu's patched libadwaita values**
-/// rather than upstream's.
-///
-/// Ubuntu carries `debian/patches/ubuntu/accent-color-*` on libadwaita,
-/// which makes `adw_accent_color_to_rgba` return Yaru's own tints for every
-/// accent name when running under Yaru — so the same name means a
-/// different colour on the desktops myna ships to. This table therefore
-/// carries the Yaru values (upstream's, for reference, in the trailing
-/// comments); the untouched-default orange is `#e95420`, which is precisely
-/// [`UBUNTU_ORANGE`], so the fallback and the default rule now name one
-/// colour instead of two that merely looked alike.
-///
-/// This table is only the **fallback**: when libadwaita ≥ 1.7 is present,
-/// [`crate::platform::probe_platform_accent`] reads
-/// `AdwStyleManager:accent-color-rgba` and *that* is authoritative — it
-/// already returns these values on Ubuntu, and it is the only thing that
-/// can report accents outside this list at all (Yaru's `wartybrown` is
-/// `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, deliberately
-/// outside upstream's enumeration, which is why that property is read as a
-/// boxed RGBA and never as the enum).
-pub fn accent_hex(name: &str) -> Option<&'static str> {
-    match name {
-        "blue" => Some("#0073e5"),   // upstream #3584e4
-        "teal" => Some("#308280"),   // upstream #2190a4
-        "green" => Some("#4b8501"),  // upstream #3a944a
-        "yellow" => Some("#c88800"), // unchanged by Yaru
-        "orange" => Some("#e95420"), // upstream #ed5b00 — Ubuntu orange
-        "red" => Some("#da3450"),    // upstream #e62d42
-        "pink" => Some("#b34cb3"),   // upstream #d56199
-        "purple" => Some("#7764d8"), // upstream #9141ac
-        "slate" => Some("#657b69"),  // upstream #6f8396
-        // Yaru's `wartybrown`, exposed to the accent-color setting as
-        // "brown". Ubuntu-only: upstream libadwaita has no brown accent at
-        // all, and the patch gives it the deliberately out-of-range enum
-        // value ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100. The
-        // hex is the same in the Yaru and non-Yaru branches.
-        "brown" => Some("#b39169"),
-        _ => None,
-    }
-}
-
-/// Every accent name the table knows, for exhaustive iteration in tests.
-pub const ACCENT_NAMES: [&str; 10] = [
-    "blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "slate",
-    // Ubuntu-only (Yaru's wartybrown); see [`accent_hex`].
-    "brown",
-];
-
-/// Fallback when the user has not actively chosen an accent colour
-/// (untouched default, or the schema/key is unavailable on an older stack) —
-/// the design decision doc's "default Ubuntu orange".
+/// The last-resort colour, used only when the desktop reports no accent at
+/// all — the design decision doc's "default Ubuntu orange".
 pub const UBUNTU_ORANGE: &str = "#E95420";
 
 /// The design decision doc's specific override: when the ribbon's primary
@@ -244,38 +195,9 @@ pub fn derive_palette(main_hex: &str, is_orange: bool) -> AccentPalette {
     }
 }
 
-fn ubuntu_orange_palette() -> AccentPalette {
+/// The palette used when the desktop reports no accent at all.
+pub fn fallback_palette() -> AccentPalette {
     derive_palette(UBUNTU_ORANGE, true)
-}
-
-/// **Last resort only** — used when the theme cannot be read at all (no
-/// styled widget, no style manager). Prefer
-/// [`resolve_theme_accent_palette`].
-///
-/// Resolve the ribbon's palette from the `accent-color` setting's
-/// **resolved value** — the name the desktop is actually using — or `None`
-/// when the schema/key is unavailable.
-///
-/// This deliberately takes the *resolved* value and not the user value.
-/// R18 originally read `g_settings_get_user_value()` to tell "genuinely
-/// chose blue" from "never touched, also blue", on the belief that an
-/// untouched Ubuntu desktop reads as `'blue'` while looking orange. It does
-/// not: `ubuntu-settings` ships a gschema **override** setting
-/// `org.gnome.desktop.interface accent-color = 'orange'`, so the resolved
-/// value is already correct on Ubuntu, and the distinction the user-value
-/// read existed to draw does not need drawing.
-///
-/// Never panics: an unrecognized name also falls back to Ubuntu orange.
-///
-/// Port of `accent.js`'s `resolveAccentPalette`.
-pub fn resolve_accent_palette(resolved_value: Option<&str>) -> AccentPalette {
-    let Some(name) = resolved_value else {
-        return ubuntu_orange_palette();
-    };
-    match accent_hex(name) {
-        Some(hex) => derive_palette(hex, name == "orange"),
-        None => ubuntu_orange_palette(),
-    }
 }
 
 /// The two hexes that count as "orange" for the aubergine override: Yaru's

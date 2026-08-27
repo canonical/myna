@@ -70,10 +70,6 @@ fn main() {
                 myna_hud::platform::probe_css_accent(&w)
             );
             println!(
-                "  accent setting value     -> {:?}",
-                myna_hud::platform::probe_accent_value()
-            );
-            println!(
                 "  probe_accent_palette     -> {:?}",
                 myna_hud::platform::probe_accent_palette(Some(&w)).main
             );

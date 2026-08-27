@@ -44,10 +44,6 @@ fn main() {
         );
         println!("--- accent (R18/R26) ---");
         println!(
-            "accent setting value : {:?}   (RESOLVED, not user value)",
-            platform::probe_accent_value()
-        );
-        println!(
             "adw resolved rgba    : {:?}   (None = libadwaita < 1.7)",
             platform::probe_platform_accent()
         );
