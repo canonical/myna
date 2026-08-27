@@ -28,20 +28,10 @@ if ! command -v gjs >/dev/null 2>&1; then
     exit 77
 fi
 
-# Newest first, so a machine with several installed probes the one a Shell
-# started here would actually load.
-# An unmatched glob stays literal, so each candidate is filtered by -d.
-PRIVATE_DIRS=$(printf '%s\n' /usr/lib/*/mutter-* /usr/lib/mutter-* \
-                              /usr/lib/*/gnome-shell /usr/lib/gnome-shell |
-               while read -r dir; do
-                   [ -d "$dir" ] && printf '%s\n' "$dir"
-               done | sort -rV | tr '\n' ':')
-if [ -z "$PRIVATE_DIRS" ]; then
+. "$HERE/shell-typelibs.sh"
+if ! shell_typelibs_export; then
     echo "gpu-probe: no mutter/gnome-shell typelibs found; skipping" >&2
     exit 77
 fi
-
-export GI_TYPELIB_PATH="${PRIVATE_DIRS}${GI_TYPELIB_PATH:-}"
-export LD_LIBRARY_PATH="${PRIVATE_DIRS}${LD_LIBRARY_PATH:-}"
 
 gjs -m "$HERE/gpu-probe.js"

@@ -49,6 +49,11 @@ import {
 } from './ribbon.js';
 import {paintRibbon} from './ribbonPaint.js';
 import {ribbonShaderSupported, ShaderRibbonActor} from './ribbonShader.js';
+import {
+    boxOrientation,
+    DisplayPreferences,
+    setUnredirectDisabled,
+} from './shellCompat.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const PILL_WIDTH = 360;
@@ -118,18 +123,18 @@ class WaveRibbonActor extends St.DrawingArea {
         this._startedAt = 0;
         this._phaseStartedAt = 0;
 
-        // St.Settings owns the desktop's accent palette and accessibility
-        // preferences. CSS resolves the actual colours, including any
-        // distribution-specific accent choices, from that shared state.
-        this._settings = St.Settings.get();
-        this._settings.connectObject(
-            'notify::accent-color',
-            () => this.queue_repaint(),
-            'notify::reduced-motion', () => {
+        // The desktop's accent palette and accessibility preferences.
+        // Where the Shell has them natively CSS resolves the colours from
+        // that shared state, including any distribution-specific accent
+        // choice; where it does not (pre-47), shellCompat.js resolves them
+        // and `_getThemePalette` paints its palette instead.
+        this._prefs = new DisplayPreferences({
+            onAccentChanged: () => this.queue_repaint(),
+            onMotionChanged: () => {
                 this._syncFrameTimeline();
                 this.queue_repaint();
             },
-            this);
+        });
 
         // Bound to this actor, so it ticks on the actor's frame clock:
         // one callback per presented frame, vblank-aligned.
@@ -189,7 +194,7 @@ class WaveRibbonActor extends St.DrawingArea {
             // Under reduced motion the model is a static flat line, so a
             // per-frame repaint would redraw an identical picture forever.
             const shouldRun =
-                this._animating && this.mapped && !this._settings.reducedMotion;
+                this._animating && this.mapped && !this._prefs.reducedMotion;
             if (shouldRun && !this._frameTimeline.is_playing())
                 this._frameTimeline.start();
             else if (!shouldRun && this._frameTimeline.is_playing())
@@ -265,7 +270,7 @@ class WaveRibbonActor extends St.DrawingArea {
                 elapsedMs: (now - this._startedAt) / 1000,
                 phase: this._phase,
                 phaseElapsedMs: (now - this._phaseStartedAt) / 1000,
-                reducedMotion: this._settings.reducedMotion,
+                reducedMotion: this._prefs.reducedMotion,
                 severityTint: this._severityTint,
             });
 
@@ -280,6 +285,14 @@ class WaveRibbonActor extends St.DrawingArea {
         }
 
         _getThemePalette() {
+            // Pre-47 the stylesheet's `-st-accent-color` cannot resolve, so
+            // don't ask once per frame — and don't make St re-parse a value
+            // it has no keyword for. shellCompat.js already has the palette,
+            // and ribbonPaint.js's `colorToRgbFloat` takes its hex as
+            // readily as a resolved colour object.
+            const resolved = this._prefs.accentPalette;
+            if (resolved !== null)
+                return resolved;
             const themeNode = this.get_theme_node();
             const colors = [
                 '-myna-ribbon-main-color',
@@ -302,7 +315,8 @@ class WaveRibbonActor extends St.DrawingArea {
                 this._frameTimeline.set_actor(null);
                 this._frameTimeline = null;
             }
-            this._settings = null;
+            this._prefs?.destroy();
+            this._prefs = null;
             super.destroy();
         }
 }
@@ -476,7 +490,7 @@ export class HudView {
         });
         const contentBox = new St.BoxLayout({
             style_class: 'myna-hud-content',
-            orientation: Clutter.Orientation.VERTICAL,
+            ...boxOrientation(true),
             reactive: false,
             can_focus: false,
             // Claim and fill the pill's leftover width rather than
@@ -490,7 +504,7 @@ export class HudView {
 
         this._box = new St.BoxLayout({
             style_class: 'myna-hud-pill',
-            orientation: Clutter.Orientation.HORIZONTAL,
+            ...boxOrientation(false),
             reactive: false,
             can_focus: false,
             width: PILL_WIDTH,
@@ -608,10 +622,7 @@ export class HudView {
         if (disabled === this._unredirectDisabled)
             return;
         this._unredirectDisabled = disabled;
-        if (disabled)
-            global.compositor.disable_unredirect();
-        else
-            global.compositor.enable_unredirect();
+        setUnredirectDisabled(disabled);
     }
 
     _stopTimers() {

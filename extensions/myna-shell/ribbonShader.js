@@ -40,6 +40,7 @@ import {
     packRibbonUniforms,
     RIBBON_UNIFORMS,
 } from './ribbonGlsl.js';
+import {DisplayPreferences} from './shellCompat.js';
 
 const RIBBON_HEIGHT = 32;
 const FRAME_TIMELINE_MS = 1000;
@@ -179,14 +180,13 @@ export class ShaderRibbonActor extends St.Widget {
         this._effect = new RibbonShaderEffect();
         this.add_effect(this._effect);
 
-        this._settings = St.Settings.get();
-        this._settings.connectObject(
-            'notify::accent-color', () => this._updateUniforms(),
-            'notify::reduced-motion', () => {
+        this._prefs = new DisplayPreferences({
+            onAccentChanged: () => this._updateUniforms(),
+            onMotionChanged: () => {
                 this._syncFrameTimeline();
                 this._updateUniforms();
             },
-            this);
+        });
 
         this._frameTimeline = new Clutter.Timeline({
             actor: this,
@@ -247,7 +247,7 @@ export class ShaderRibbonActor extends St.Widget {
         // Under reduced motion the model is a static flat line, so a
         // per-frame update would push identical uniforms forever.
         const shouldRun =
-            this._animating && this.mapped && !this._settings.reducedMotion;
+            this._animating && this.mapped && !this._prefs.reducedMotion;
         if (shouldRun && !this._frameTimeline.is_playing())
             this._frameTimeline.start();
         else if (!shouldRun && this._frameTimeline.is_playing())
@@ -329,7 +329,7 @@ export class ShaderRibbonActor extends St.Widget {
             elapsedMs: (now - this._startedAt) / 1000,
             phase: this._phase,
             phaseElapsedMs: (now - this._phaseStartedAt) / 1000,
-            reducedMotion: this._settings.reducedMotion,
+            reducedMotion: this._prefs.reducedMotion,
             severityTint: this._severityTint,
         });
 
@@ -338,6 +338,11 @@ export class ShaderRibbonActor extends St.Widget {
     }
 
     _getThemePalette() {
+        // See hud.js's twin: pre-47 there is no `-st-accent-color` for St to
+        // resolve, so take shellCompat.js's palette without asking.
+        const resolved = this._prefs.accentPalette;
+        if (resolved !== null)
+            return resolved;
         const themeNode = this.get_theme_node();
         const colors = [
             '-myna-ribbon-main-color',
@@ -361,7 +366,8 @@ export class ShaderRibbonActor extends St.Widget {
             this._frameTimeline = null;
         }
         this._effect = null;
-        this._settings = null;
+        this._prefs?.destroy();
+        this._prefs = null;
         super.destroy();
     }
 }

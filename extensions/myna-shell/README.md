@@ -2,7 +2,9 @@
 
 The focus-safe dictation indicator for GNOME (feature 004). A bottom-center
 HUD pill, styled after GNOME's own volume/brightness OSD, that visualizes
-`myna-desktop`'s dictation state and audio level. Pure UI: it never captures
+`myna-desktop`'s dictation state and audio level. Supports **GNOME Shell 46
+(Ubuntu 24.04 LTS) through 51** from one bundle — see "Shell compatibility"
+below for what varies across that range and how. Pure UI: it never captures
 audio, transcribes, or injects text — see `docs/desktop-injection.md` for the
 last-mile that does. Contract and design history: `specs/004-gnome-shell-indicator/`.
 
@@ -62,9 +64,18 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
   reused unchanged by `ribbon.js`.
 - `ribbon.js` — pure wave-ribbon strand/control-point generation and the 5
   lifecycle-phase timing functions (unfold/flow/morph/complete).
-- `accent.js` — legacy pure palette helper retained for the standalone
-  `dev-lab/`; the shipped Shell HUD uses native `St.Settings` and CSS accent
-  colours instead.
+- `shellCompat.js` — the Shell-version-varying API surface, in one place:
+  the accent palette, the reduced-motion preference, `St.BoxLayout`'s
+  direction property and unredirect control all moved between 46 and 51.
+  Everything is resolved by *capability* detection, never a version number.
+- `shellCompatLogic.js` — its pure half, split out for the reason
+  `hudLogic.js` was: the seam imports `St` and `Meta`, which live in
+  mutter's and gnome-shell's private typelibs and so are unreachable from
+  the headless suite.
+- `accent.js` — pure accent palette resolution from GSettings. On Shell 47+
+  the shipped HUD uses native `St.Settings` and CSS accent colours instead;
+  on 46, where neither exists, `shellCompat.js` resolves the palette through
+  this. Also used by the standalone `dev-lab/`.
 - `ribbonPaint.js` — the shared Cairo drawing function, toolkit-agnostic
   (no Shell/Gtk import) — used unmodified by both `hud.js` and `dev-lab/`.
   Also owns the **shared tuning tables** (gradient stops, glow/feather
@@ -94,8 +105,11 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
 - `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
   everything above except `hud.js` itself.
 - `test/gpu-probe.js` — checks the GPU path's toolkit API is reachable and
-  that Cogl accepts the generated shader. Needs mutter's typelibs, so it is
-  run manually rather than as part of the headless suite.
+  that Cogl accepts the generated shader. Needs mutter's typelibs, which
+  `test/shell-typelibs.sh` locates.
+- `test/compat-probe.js` — checks `shellCompat.js`'s capability detection
+  against the same real typelibs. See "Testing" below for why it cannot be
+  a headless unit test.
 - `test/entrance-visual.sh` + `test/visual-driver/` - `hud.js`'s
   *presentation*, driven against a real headless GNOME Shell. **Not part of
   the shipped bundle.**
@@ -113,12 +127,12 @@ MYNA_SHELL_CAIRO_RIBBON=1
 **Cairo remains the reference implementation**, and is kept rather than
 deleted because:
 
-- **GNOME Shell 50 has no GPU path at all.** `ribbonShader.js` overrides
+- **GNOME Shell 46 and 50 have no GPU path at all.** `ribbonShader.js` overrides
   `ClutterShaderEffectClass::get_static_snippet`, which arrived in mutter
   51.alpha (`2d5bc0fbff`, "clutter/shader-effect: Port to CoglSnippet"); the
   same commit added `clutter_shader_effect_set_uniform_float`, the only
-  introspectable way to push a `vec2`/`vec3`/`vec4` from GJS. On mutter 50
-  neither exists, so `hud.js` selects Cairo automatically —
+  introspectable way to push a `vec2`/`vec3`/`vec4` from GJS. On mutter 46
+  and 50 neither exists, so `hud.js` selects Cairo automatically —
   `ribbonShaderSupported()` registers the effect subclass behind a try/catch
   and logs once when it cannot. That registration is deliberately *lazy*: at
   module scope the throw would abort the `import` and take the whole
@@ -156,6 +170,42 @@ ClutterShaderEffect"). `Clutter.ShaderEffect` + `Cogl.Snippet` is the
 supported path, and is what the Shell's own `js/ui/lightbox.js` vignette
 uses from JS.
 
+## Shell compatibility
+
+One bundle covers Shell 46 → 51. Four APIs move inside that range, and
+`shellCompat.js` owns all four. Each is chosen by asking the toolkit what it
+has — `'accentColor' in St.Settings.get()`, `'orientation' in
+St.BoxLayout.prototype` — rather than by comparing `Config.PACKAGE_VERSION`,
+because downstreams backport and a property that is there is there.
+
+| What | 46 | 47+ |
+| --- | --- | --- |
+| Accent palette | no `accent-color` anywhere — `accent.js` resolves it from GSettings, landing on the documented Ubuntu orange | `St.Settings.accent-color`, resolved by CSS's `-st-accent-color` |
+| Reduced motion | `enable-animations` (inverted) | `reduced-motion` |
+| `St.BoxLayout` direction | `vertical: bool` | `orientation: Clutter.Orientation` |
+| Unredirect | `Meta.{disable,enable}_unredirect_for_display(global.display)` | `global.compositor.{disable,enable}_unredirect()` |
+
+Two of these fail *loudly and totally* rather than degrading, which is why
+the seam exists at all: connecting to `notify::accent-color` on a 46
+`St.Settings`, or passing `orientation` to a 46 `St.BoxLayout`, throws out of
+the ribbon actor's constructor — so the pill is never built and the HUD is
+simply absent, with only a backtrace in the journal to say why.
+
+The accent one is quieter and worth spelling out. `_getThemePalette()` asks
+the theme node for `-myna-ribbon-*-color`, which the stylesheet defines in
+terms of `-st-accent-color`; where St has no such keyword the lookup reports
+not-found, and the pre-fix behaviour was to return `null` and paint
+*nothing*. A ribbon-shaped hole, no error. Pre-47 the actors now skip that
+lookup entirely — it cannot succeed, and asking once per frame would also
+make St re-parse a value it has no keyword for — and take
+`shellCompat.js`'s palette instead. Both renderers accept it without
+conversion: `ribbonPaint.js`'s `colorToRgbFloat` already took hex as
+readily as a resolved colour object.
+
+The GPU ribbon is a fifth difference, but it predates this and handles
+itself: `ribbonShaderSupported()` finds no `get_static_snippet` vfunc on
+mutter 46 and falls back to Cairo. See "GPU rasterization" above.
+
 ## Compositor behaviour
 
 `hud.js` runs on GNOME Shell's single main loop, the loop that composites
@@ -186,9 +236,10 @@ every frame, so it follows the same rules `ui/osdWindow.js` does:
   pill is completely hidden behind the dock. `osdWindow.js` raises itself the
   same way, for the same reason. Placement stays on the *work area*, so a dock
   that does reserve space is cleared rather than drawn over.
-- **`global.compositor.disable_unredirect()` while the pill is on screen**,
-  balanced on hide. Over a fullscreen window mutter may scan the window out
-  directly, and an overlay appearing forces it in and out of that path.
+- **Unredirect disabled while the pill is on screen**, balanced on hide
+  (`shellCompat.js` picks the spelling this Shell has). Over a fullscreen
+  window mutter may scan the window out directly, and an overlay appearing
+  forces it in and out of that path.
 - **Nothing per-frame that isn't drawing.** `St.Settings` invalidates the
   native CSS accent colours and reduced-motion state only when they change,
   and `_applyDescriptor` only writes an icon name, label or style class when
@@ -209,17 +260,30 @@ test/run-suite.sh          # everything below, in one go
 ```
 
 `test/run-suite.sh` runs the pure GJS suites (`test/*.test.js`, no Shell),
-then `test/gpu-probe.sh` (mutter's typelibs), then `test/entrance-visual.sh`
-(a real headless Shell). The last two exit 77 when they cannot judge, which
-the runner treats as a skip.
+then `test/compat-probe.sh` and `test/gpu-probe.sh` (mutter's typelibs), then
+`test/entrance-visual.sh` (a real headless Shell). The last three exit 77 when
+they cannot judge, which the runner treats as a skip.
+
+`test/compat-probe.sh` is the counterpart to the compatibility table above: it
+checks that `shellCompat.js`'s detection agrees with the `St` and `Meta` on the
+machine running it, and that whichever signal and property each branch picked
+really exist there. Only a real typelib can catch a detection that says "yes"
+on a Shell that means "no", and that mistake does not degrade — it throws
+inside the ribbon actor's constructor. `test/shellCompat.test.js` covers the
+pure choices headlessly; the two together are why `shellCompatLogic.js` is a
+separate file.
 
 It runs in CI as `make test-extension`, in its own Workshop
 (`.workshop/myna-shell.yaml`) rather than the main one. A Workshop SDK cannot
 carry its own base image, so the Shell version a test can reach comes from the
 workshop's base: the main workshop sits on ubuntu@24.04 because that is the
-snap's `core24`, and no 24.04 archive has - or can have - the Shell this
-extension targets. Until the extension is ported backwards, the two need
-different bases.
+snap's `core24`, and 24.04's Shell 46 cannot reach the GPU ribbon at all. The
+extension's workshop therefore keeps a newer base.
+
+Since 46 became supported, running `test/run-suite.sh` on a 24.04 desktop
+exercises a branch CI does not otherwise see — the Cairo ribbon, `vertical`
+BoxLayouts, and the pre-47 accent palette. Worth doing by hand on an LTS
+machine after touching `hud.js` or `shellCompat.js`.
 
 ### Testing the next Shell
 

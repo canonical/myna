@@ -8,15 +8,19 @@
 #
 #   - client/ + server/ ship in a snap on `core24`, so the main workshop's
 #     ubuntu@24.04 base is what we ship, and must stay there.
-#   - extensions/myna-shell ships to a GNOME desktop. Its metadata.json
-#     declares Shell 50/51, which no 24.04 archive has or can have (Shell 50
-#     wants mutter 50, gjs 1.86, glib 2.86). On 24.04's Shell 46,
-#     test/entrance-visual.sh correctly refuses to draw conclusions and skips,
-#     which means the presentation check never actually runs.
+#   - extensions/myna-shell ships to a GNOME desktop, and its metadata.json
+#     declares Shell 46/50/51. 24.04 has 46 (the 2026-08-27 backport added
+#     it), so the presentation check does now run there - but only against
+#     the Cairo half. The GPU ribbon needs the CoglSnippet ShaderEffect API,
+#     which arrived in mutter 51.alpha and which no 24.04 archive has or can
+#     have (Shell 50 wants mutter 50, gjs 1.86, glib 2.86).
 #
-# So the extension gets a base that ships a Shell it supports, and the daemon
-# keeps the base it ships on. Porting the extension backwards to an older Shell
-# would collapse the two again; until then, this tests what we ship.
+# So the extension gets a base that ships a Shell close enough to reach the
+# GPU path's half of the code, and the daemon keeps the base it ships on.
+# Note what this base does NOT cover any more: since 46 became supported,
+# `entrance-visual.sh` on a 24.04 host exercises a genuinely different branch
+# of hud.js (Cairo ribbon, `vertical` BoxLayouts, the pre-47 accent palette).
+# CI only sees that branch where a developer runs the suite on an LTS desktop.
 name: myna-shell
 base: ubuntu@26.04
 sdks:
