@@ -25,12 +25,12 @@ export class ShellPresence {
      * @param {function(string, function(): void, function(): void): number} [deps.ownName]
      *     test seam: (name, onAcquired, onLost) → an owner id.
      * @param {function(number): void} [deps.unownName] test seam.
-     * @param {function(string): void} [deps.logWarning] test seam.
+     * @param {function(string): void} [deps.log] test seam (informational logger).
      */
-    constructor({ownName = null, unownName = null, logWarning = null} = {}) {
+    constructor({ownName = null, unownName = null, log = null} = {}) {
         this._ownName = ownName;
         this._unownName = unownName;
-        this._logWarning = logWarning ?? (message => console.warn(message));
+        this._log = log ?? (message => console.log(message));
         this._ownerId = 0;
         this._owned = false;
     }
@@ -45,7 +45,7 @@ export class ShellPresence {
         if (this._ownerId !== 0)
             return;
         if (this._ownName === null) {
-            this._logWarning(
+            this._log(
                 `myna-shell: no bus available; ${PRESENCE_NAME} not advertised`);
             return;
         }
@@ -62,7 +62,7 @@ export class ShellPresence {
             // Presence is advisory: hosting continues without it.
             this._ownerId = 0;
             this._owned = false;
-            this._logWarning(`myna-shell: could not own ${PRESENCE_NAME}: ${e}`);
+            this._log(`myna-shell: could not own ${PRESENCE_NAME}: ${e}`);
         }
     }
 

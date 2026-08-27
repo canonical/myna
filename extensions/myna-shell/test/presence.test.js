@@ -37,7 +37,7 @@ function stubBus({failOwn = false} = {}) {
             return id;
         },
         unownName: id => calls.unowned.push(id),
-        logWarning: message => calls.warnings.push(message),
+        log: message => calls.warnings.push(message),
     });
     return {presence, calls};
 }
@@ -94,7 +94,7 @@ function stubBus({failOwn = false} = {}) {
 // --- XH5: no bus at all (no ownName seam) ------------------------------
 
 {
-    const presence = new ShellPresence({logWarning: () => {}});
+    const presence = new ShellPresence({log: () => {}});
     let threw = false;
     try {
         presence.enable();
