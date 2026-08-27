@@ -53,6 +53,7 @@ export class OverlayHost {
         this._log = log;
 
         this._client = null;         // Meta.WaylandClient
+        this._subprocess = null;     // its GSubprocess (for force_exit)
         this._window = null;         // the adopted Meta.Window
         this._restartState = initialState();
         this._dormant = false;
@@ -104,14 +105,23 @@ export class OverlayHost {
             global.window_manager.disconnect(this._mapId);
             this._mapId = 0;
         }
-        // Terminating the client kills its subprocess and reaps the adopted
-        // window with it.
+        // Kill the renderer process. Meta.WaylandClient has NO destroy() (it
+        // only exposes get_subprocess/owns_window), so terminating the
+        // subprocess is what stops the renderer and reaps its window; the
+        // wait was cancelled above, so this exit does not schedule a
+        // respawn. force_exit is a hard kill — the renderer is a HUD with no
+        // unsaved state, and a graceful SIGTERM would only delay teardown.
         try {
-            this._client?.destroy();
+            this._subprocess?.force_exit();
         } catch (e) {
-            logError(e, '[myna-shell] error tearing down renderer client');
+            logError(e, '[myna-shell] error terminating renderer');
         }
+        this._subprocess = null;
         this._client = null;
+        if (this._unmanagedId && this._window) {
+            this._window.disconnect(this._unmanagedId);
+            this._unmanagedId = 0;
+        }
         this._window = null;
     }
 
@@ -168,7 +178,8 @@ export class OverlayHost {
         // handed — so a superseded wait never confuses the current one.
         const cancellable = new Gio.Cancellable();
         this._cancellable = cancellable;
-        this._watchExit(client.get_subprocess(), cancellable);
+        this._subprocess = client.get_subprocess();
+        this._watchExit(this._subprocess, cancellable);
     }
 
     async _watchExit(subprocess, cancellable) {
@@ -418,6 +429,7 @@ export class OverlayHost {
         }
         this._window = null;
         this._client = null;
+        this._subprocess = null;
         this._scheduleRestart(/* expected= */ false, uptimeMs);
     }
 
