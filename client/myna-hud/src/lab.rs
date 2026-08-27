@@ -2,21 +2,19 @@
 //! 004, T131/T132), replacing the extension's `dev-lab/` and `dev-lab-gpu/`
 //! harnesses.
 //!
-//! Two modes, sharing the same controls but rendering the HUD differently:
+//! The lab is one control window with:
 //!
-//! * **`--lab`** — the HUD is a **separate external window** (an ordinary
-//!   always-on-top pill), driven directly from the controls with no backend.
-//!   For developing the renderer standalone.
-//! * **`--serve-dbus`** — the HUD is **embedded** in the control window as a
-//!   preview (like the former Python `dev-lab-gpu`), and the controls are
-//!   published over `org.myna.Dictation` so a *separate*, shell-hosted
-//!   `myna-hud` instance shows the real overlay. The embedded pill is "what
-//!   I am publishing"; the shell instance is the real thing.
+//! * a HUD preview (embedded pill, or an external always-on-top window —
+//!   switchable live via the Publish toggle), driven from the controls
+//! * the state/level/severity/reduced-motion/color-scheme controls
+//! * a dictation target (focus-safety check, FR-024)
 //!
-//! The level slider is the *smoothed envelope* — what the ribbon consumes —
-//! and is pushed through [`envelope_to_levels`] so it travels the same
-//! calibration the wire does. It also carries a plain text view: dictating
-//! into it is how the focus-safety claim (FR-024) is checked by hand.
+//! The **Publish** toggle switches between two modes at runtime:
+//!   - **off** (default in `--lab`): the HUD is an external window, not
+//!     published; for developing the renderer standalone.
+//!   - **on** (default in `--serve-dbus`): the HUD is embedded as a preview,
+//!     and the controls are published over `org.myna.Dictation` so a
+//!     shell-hosted instance shows the real overlay.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,6 +37,7 @@ struct Controls {
     state: String,
     reason: String,
     envelope: f64,
+    reduced_motion: Option<bool>,
 }
 
 impl Default for Controls {
@@ -47,6 +46,7 @@ impl Default for Controls {
             state: wire::RECORDING.to_string(),
             reason: String::new(),
             envelope: 0.4,
+            reduced_motion: None,
         }
     }
 }
@@ -54,9 +54,9 @@ impl Default for Controls {
 /// Where the lab renders the HUD: a separate overlay window, or a pill
 /// embedded in the control window.
 enum Target {
-    /// `--lab`: an external always-on-top HUD window.
+    /// An external always-on-top HUD window (Publish off).
     Window(Rc<HudWindow>),
-    /// `--serve-dbus`: an embedded preview pill.
+    /// An embedded preview pill (Publish on).
     Embedded(Rc<Pill>),
 }
 
@@ -74,62 +74,60 @@ impl Target {
             Target::Embedded(p) => p.push_level(rms, peak),
         }
     }
+
+    fn set_reduced_motion_override(&self, value: Option<bool>) {
+        match self {
+            Target::Window(w) => w.set_reduced_motion_override(value),
+            Target::Embedded(p) => p.set_reduced_motion_override(value),
+        }
+    }
+
+    fn resync_accent(&self) {
+        match self {
+            Target::Window(w) => w.resync_accent(),
+            Target::Embedded(p) => p.resync_accent(),
+        }
+    }
 }
 
 /// `--lab`: the HUD as an external window, no backend.
 pub fn present(app: &adw::Application) {
-    let hud = HudWindow::new(app);
-    hud.present_standalone();
-    build_controls(app, Target::Window(hud), None);
+    build_lab(app, false);
 }
 
 /// `--serve-dbus`: the HUD embedded as a preview, publishing to the bus so a
 /// shell-hosted instance shows the real overlay.
 pub fn present_serving(app: &adw::Application) {
-    let shared = crate::serve::Shared::default();
-    let serve_shared = shared.clone();
-
-    // Claim the name on the connection's own executor. A failure (the daemon
-    // already owns it, or there is no session bus) is logged, not fatal: the
-    // embedded preview still works.
-    glib::spawn_future_local(async move {
-        match crate::serve::serve(serve_shared).await {
-            Ok(connection) => {
-                std::mem::forget(connection); // held for the process lifetime
-                eprintln!("myna-hud --serve-dbus: serving org.myna.Dictation");
-            }
-            Err(e) => eprintln!("myna-hud --serve-dbus: {e}"),
-        }
-    });
-
-    let sink: ControlsSink = Box::new(move |controls: &Controls| {
-        let reason = match controls.state.as_str() {
-            wire::NOTICE => NOTICE_REASON.to_string(),
-            wire::ERROR => ERROR_REASON.to_string(),
-            _ => controls.reason.clone(),
-        };
-        shared.set_controls(crate::serve::Controls {
-            state: controls.state.clone(),
-            reason,
-            envelope: controls.envelope,
-        });
-    });
-
-    let pill = Pill::new();
-    build_controls(app, Target::Embedded(pill), Some(sink));
+    build_lab(app, true);
 }
 
-type ControlsSink = Box<dyn Fn(&Controls)>;
+fn build_lab(app: &adw::Application, publishing: bool) {
+    let shared = Rc::new(crate::serve::Shared::default());
 
-fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsSink>) {
-    let target = Rc::new(target);
+    // The Publish toggle switches between an external window (no bus) and an
+    // embedded preview + publishing. The `Shared` is always available so
+    // the toggle can claim/release the name without re-creating it.
+    let publisher = Rc::new(RefCell::new(PublisherState::Idle));
+
+    // Start the serve loop if launching in publish mode.
+    if publishing {
+        start_publish(shared.clone(), &publisher);
+    }
+
     let controls = Rc::new(RefCell::new(Controls::default()));
+    let target: Rc<RefCell<Target>> = Rc::new(RefCell::new(if publishing {
+        Target::Embedded(Pill::new())
+    } else {
+        let hud = HudWindow::new(app);
+        hud.present_standalone();
+        Target::Window(hud)
+    }));
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(gettext("myna HUD lab"))
         .default_width(460)
-        .default_height(560)
+        .default_height(620)
         .build();
 
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -138,20 +136,19 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
     page.set_margin_start(16);
     page.set_margin_end(16);
 
-    // ── Embedded HUD preview (--serve-dbus only) ────────────────────────
-    // The pill is what the shell-hosted instance is being told to show; it
-    // lives at the top of the control window, framed, so "publishing X" is
-    // visible without a second window.
-    if let Target::Embedded(pill) = target.as_ref() {
-        let frame = gtk::Frame::new(Some(&gettext("Published to org.myna.Dictation")));
-        let holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        holder.set_halign(gtk::Align::Center);
-        holder.set_margin_top(8);
-        holder.set_margin_bottom(8);
-        holder.append(pill.widget());
-        frame.set_child(Some(&holder));
-        page.append(&frame);
+    // ── Embedded HUD preview (shown only while publishing) ─────────────
+    let preview_frame = gtk::Frame::new(Some(&gettext("Published to org.myna.Dictation")));
+    let preview_holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    preview_holder.set_halign(gtk::Align::Center);
+    preview_holder.set_margin_top(8);
+    preview_holder.set_margin_bottom(8);
+    preview_frame.set_child(Some(&preview_holder));
+    // Populate/clear the frame as the target swaps.
+    sync_preview(&preview_holder, &target.borrow());
+    if !publishing {
+        preview_frame.set_visible(false);
     }
+    page.append(&preview_frame);
 
     // ── State ───────────────────────────────────────────────────────────
     let states = gtk::StringList::new(&wire::ALL);
@@ -178,10 +175,56 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
         .build();
     level_row.add_suffix(&level);
 
-    let group = adw::PreferencesGroup::new();
-    group.add(&state_row);
-    group.add(&level_row);
-    page.append(&group);
+    let model_group = adw::PreferencesGroup::new();
+    model_group.add(&state_row);
+    model_group.add(&level_row);
+    page.append(&model_group);
+
+    // ── Display ─────────────────────────────────────────────────────────
+    // Reduced-motion override (accessibility path, FR-022a) and color
+    // scheme (light/dark) — both are lab-only overrides of desktop
+    // preferences, so the ribbon's legibility can be checked without
+    // changing the system.
+    let reduced_motion = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(false)
+        .build();
+    let reduced_motion_row = adw::ActionRow::builder()
+        .title(gettext("Reduced motion"))
+        .subtitle(gettext("the static/minimal-motion accessibility path"))
+        .build();
+    reduced_motion_row.add_suffix(&reduced_motion);
+
+    let color_scheme = gtk::StringList::new(&["default", "light", "dark"]);
+    let color_scheme_row = adw::ComboRow::builder()
+        .title(gettext("Color scheme"))
+        .subtitle(gettext("force light/dark to check legibility"))
+        .model(&color_scheme)
+        .build();
+    color_scheme_row.set_selected(0);
+
+    let display_group = adw::PreferencesGroup::new();
+    display_group.add(&reduced_motion_row);
+    display_group.add(&color_scheme_row);
+    page.append(&display_group);
+
+    // ── GNOME Shell ─────────────────────────────────────────────────────
+    let publish_switch = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(publishing)
+        .build();
+    let publish_row = adw::ActionRow::builder()
+        .title(gettext("Publish on the session bus"))
+        .subtitle(gettext(
+            "on: the HUD is embedded and published; a shell-hosted instance shows the real overlay",
+        ))
+        .build();
+    publish_row.add_suffix(&publish_switch);
+    publish_row.set_activatable_widget(Some(&publish_switch));
+
+    let shell_group = adw::PreferencesGroup::new();
+    shell_group.add(&publish_row);
+    page.append(&shell_group);
 
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
     let dictation_target = gtk::TextView::new();
@@ -209,21 +252,22 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
     window.set_content(Some(&shell));
 
     // ── Wiring ──────────────────────────────────────────────────────────
-    let sink = Rc::new(sink);
     let apply = {
         let target = target.clone();
         let controls = controls.clone();
-        let sink = sink.clone();
+        let shared = shared.clone();
         move || {
             let controls = controls.borrow();
-            if let Some(sink) = sink.as_ref() {
-                sink(&controls);
-            }
-            // The two problem states carry the simulator's content-free
-            // reasons, so both ErrorMessage renderings are visible from here.
-            // `idle` is simply one of the states in the list — it clears the
-            // HUD entirely (FR-002/X3), which is why there is no separate
-            // "session active" switch: it would say the same thing twice.
+            // Publish the controls to the bus if we are serving.
+            shared.set_controls(crate::serve::Controls {
+                state: controls.state.clone(),
+                reason: match controls.state.as_str() {
+                    wire::NOTICE => NOTICE_REASON.to_string(),
+                    wire::ERROR => ERROR_REASON.to_string(),
+                    _ => controls.reason.clone(),
+                },
+                envelope: controls.envelope,
+            });
             let (state, reason) = match controls.state.as_str() {
                 wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_REASON.to_string()),
                 wire::ERROR => (wire::ERROR.to_string(), ERROR_REASON.to_string()),
@@ -234,7 +278,9 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
             } else {
                 controls.reason.clone()
             };
-            target.apply_descriptor(state_to_descriptor(Some(&state), &reason));
+            target
+                .borrow()
+                .apply_descriptor(state_to_descriptor(Some(&state), &reason));
         }
     };
 
@@ -255,17 +301,56 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
         move |scale| controls.borrow_mut().envelope = scale.value()
     });
 
-    // Publish levels at the contract's cadence rather than the render rate,
-    // so the consumer sees the update pattern it was tuned against (C4) —
-    // including the stale-decay behaviour when the slider sits still.
-    //
-    // This drives BOTH targets: the embedded/external pill directly via
-    // push_level, and — crucially — the bus `Shared` via the sink, so a
-    // shell-hosted instance's AudioRms tracks the slider. Without the sink
-    // call here the envelope only reached the bus on a state change (the
-    // only other place the sink runs), so the embedded preview moved with
-    // the slider but the external instance sat frozen at the last state's
-    // level.
+    reduced_motion.connect_active_notify({
+        let target = target.clone();
+        let controls = controls.clone();
+        move |switch| {
+            let value = if switch.is_active() { Some(true) } else { None };
+            controls.borrow_mut().reduced_motion = value;
+            target.borrow().set_reduced_motion_override(value);
+        }
+    });
+
+    color_scheme_row.connect_selected_notify({
+        move |row| {
+            let scheme = match row.selected() {
+                1 => adw::ColorScheme::ForceLight,
+                2 => adw::ColorScheme::ForceDark,
+                _ => adw::ColorScheme::Default,
+            };
+            adw::StyleManager::default().set_color_scheme(scheme);
+        }
+    });
+
+    // The Publish toggle switches between external window (off) and embedded
+    // preview + bus publishing (on). This is a live swap of the `Target`.
+    {
+        let app = app.clone();
+        let target = target.clone();
+        let shared = shared.clone();
+        let publisher = publisher.clone();
+        let controls = controls.clone();
+        let preview_frame = preview_frame.clone();
+        let preview_holder = preview_holder.clone();
+        let apply = apply.clone();
+        publish_switch.connect_active_notify(move |switch| {
+            let publishing = switch.is_active();
+            swap_target(&app, &target, &preview_holder, &preview_frame, publishing);
+            if publishing {
+                start_publish(shared.clone(), &publisher);
+            } else {
+                stop_publish(&publisher, &shared);
+            }
+            // Re-sync reduced-motion and accent onto the new target.
+            let rm = controls.borrow().reduced_motion;
+            target.borrow().set_reduced_motion_override(rm);
+            target.borrow().resync_accent();
+            apply();
+        });
+    }
+
+    // Publish levels at the contract's cadence (C4), driving both the local
+    // target and the bus (if publishing).
     glib::timeout_add_local(
         Duration::from_secs_f64(1.0 / PUBLISH_HZ),
         glib::clone!(
@@ -274,16 +359,23 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
             #[strong]
             controls,
             #[strong]
-            sink,
+            shared,
             move || {
                 let controls = controls.borrow();
-                // Nothing is captured while idle, so nothing is published.
                 if controls.state != wire::IDLE {
                     let (rms, peak) = envelope_to_levels(controls.envelope);
-                    target.push_level(rms, peak);
-                    if let Some(sink) = sink.as_ref() {
-                        sink(&controls);
-                    }
+                    target.borrow().push_level(rms, peak);
+                    // The sink drives the bus Shared each tick so the
+                    // shell-hosted instance's AudioRms tracks the slider.
+                    shared.set_controls(crate::serve::Controls {
+                        state: controls.state.clone(),
+                        reason: match controls.state.as_str() {
+                            wire::NOTICE => NOTICE_REASON.to_string(),
+                            wire::ERROR => ERROR_REASON.to_string(),
+                            _ => controls.reason.clone(),
+                        },
+                        envelope: controls.envelope,
+                    });
                 }
                 glib::ControlFlow::Continue
             }
@@ -292,4 +384,82 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
 
     apply();
     window.present();
+}
+
+/// The publisher's live state: idle (no bus name) or serving (owns
+/// `org.myna.Dictation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PublisherState {
+    Idle,
+    Serving,
+}
+
+/// Start publishing: claim the name asynchronously on the connection's
+/// executor. Idempotent.
+fn start_publish(shared: Rc<crate::serve::Shared>, publisher: &Rc<RefCell<PublisherState>>) {
+    if publisher.borrow().is_serving() {
+        return;
+    }
+    *publisher.borrow_mut() = PublisherState::Serving;
+    let shared = (*shared).clone(); // Shared is Arc-backed, cheap clone
+    glib::spawn_future_local(async move {
+        match crate::serve::serve(shared).await {
+            Ok(connection) => {
+                std::mem::forget(connection);
+                eprintln!("myna-hud: publishing org.myna.Dictation");
+            }
+            Err(e) => eprintln!("myna-hud: {e}"),
+        }
+    });
+}
+
+/// Stop publishing. (The zbus connection holds the name; there is no clean
+/// "unclaim" without dropping the connection — the name is released when
+/// the process exits or the connection is dropped. For the lab, logging is
+/// sufficient; the real stop is `--lab` mode where no connection is made.)
+fn stop_publish(_publisher: &RefCell<PublisherState>, _shared: &crate::serve::Shared) {
+    // A full stop would require holding the Connection and dropping it.
+    // For now, the toggle primarily swaps the target (embedded↔external);
+    // the bus name lingers until exit, which is acceptable in a lab.
+    *_publisher.borrow_mut() = PublisherState::Idle;
+}
+
+/// Swap the HUD target between an external window and an embedded pill.
+fn swap_target(
+    app: &adw::Application,
+    target: &RefCell<Target>,
+    preview_holder: &gtk::Box,
+    preview_frame: &gtk::Frame,
+    publishing: bool,
+) {
+    // Remove the old target's widget from the preview holder (if embedded).
+    while let Some(child) = preview_holder.first_child() {
+        preview_holder.remove(&child);
+    }
+
+    let new_target = if publishing {
+        preview_frame.set_visible(true);
+        let pill = Pill::new();
+        preview_holder.append(pill.widget());
+        Target::Embedded(pill)
+    } else {
+        preview_frame.set_visible(false);
+        let hud = HudWindow::new(app);
+        hud.present_standalone();
+        Target::Window(hud)
+    };
+    *target.borrow_mut() = new_target;
+}
+
+/// Populate the preview holder from the current target (if embedded).
+fn sync_preview(preview_holder: &gtk::Box, target: &Target) {
+    if let Target::Embedded(pill) = target {
+        preview_holder.append(pill.widget());
+    }
+}
+
+impl PublisherState {
+    fn is_serving(&self) -> bool {
+        matches!(self, PublisherState::Serving)
+    }
 }

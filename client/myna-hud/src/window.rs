@@ -142,6 +142,11 @@ impl HudWindow {
         self.pill.resync_accent();
     }
 
+    /// Override reduced-motion for lab testing; `None` returns to the desktop.
+    pub fn set_reduced_motion_override(&self, value: Option<bool>) {
+        self.pill.set_reduced_motion_override(value);
+    }
+
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and

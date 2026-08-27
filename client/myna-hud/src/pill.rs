@@ -73,6 +73,9 @@ struct PillState {
     phase_since: Instant,
     started: Instant,
     reduced_motion: bool,
+    /// Lab override: when `Some`, replaces the desktop-derived
+    /// `reduced_motion` and is not clobbered by a live preference change.
+    reduced_motion_override: Option<bool>,
     palette: crate::shader::RibbonPalette,
     /// The accent last read from the theme, so the palette is rebuilt only
     /// when the colour genuinely changes rather than every frame.
@@ -147,6 +150,7 @@ impl Pill {
             phase_since: Instant::now(),
             started: Instant::now(),
             reduced_motion: platform::probe_reduced_motion(),
+            reduced_motion_override: None,
             // No styled widget is rooted yet, so this is the fallback
             // palette; sync_palette() re-resolves from the theme once the
             // ribbon is mapped.
@@ -348,8 +352,13 @@ impl Pill {
         let watch = platform::watch_preferences(move |readiness| {
             let Some(this) = this.upgrade() else { return };
             // Motion comes straight from its own sources, so it is always
-            // read now.
-            this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
+            // read now — unless the lab has pinned it.
+            {
+                let mut state = this.state.borrow_mut();
+                if state.reduced_motion_override.is_none() {
+                    state.reduced_motion = platform::probe_reduced_motion();
+                }
+            }
 
             // The accent is a computed CSS colour, readable immediately only
             // on libadwaita's own notification (it reloads the accent
@@ -364,6 +373,20 @@ impl Pill {
     }
 
     /// Force a re-read of the theme's accent at the next frame.
+    /// Override the reduced-motion mode (the lab's accessibility toggle).
+    /// `None` returns to the desktop preference.
+    pub fn set_reduced_motion_override(&self, value: Option<bool>) {
+        let mut state = self.state.borrow_mut();
+        state.reduced_motion_override = value;
+        if let Some(v) = value {
+            state.reduced_motion = v;
+        } else {
+            state.reduced_motion = platform::probe_reduced_motion();
+        }
+        drop(state);
+        self.ribbon.queue_render();
+    }
+
     pub fn resync_accent(self: &Rc<Self>) {
         self.schedule_accent_resync();
     }
@@ -409,7 +432,9 @@ fn build_model(state: &PillState) -> crate::ribbon::RibbonModel {
         elapsed_ms,
         phase: state.phase,
         phase_elapsed_ms: state.phase_since.elapsed().as_secs_f64() * 1000.0,
-        reduced_motion: state.reduced_motion,
+        reduced_motion: state
+            .reduced_motion_override
+            .unwrap_or(state.reduced_motion),
         severity_tint: state.notice.severity(),
         ..Default::default()
     })
