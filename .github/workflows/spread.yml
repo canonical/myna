@@ -47,11 +47,19 @@ jobs:
 
       # Hosted runners do have KVM, but ship /dev/kvm as root:kvm 0660 with the
       # runner user outside the kvm group, so it is present and unwritable.
-      # snapd widens it the same way (.github/workflows/spread-vfs.yaml).
+      # snapd widens it with a chmod (.github/workflows/spread-vfs.yaml); this
+      # needs a rule, because a chmod does not survive the rest of the job.
+      # `apt-get install` in dev/spread-image.sh takes whatever the archive has
+      # moved on to, and when that includes a library systemd links (libssl3t64,
+      # 2026-08-26) needrestart restarts systemd-udevd, which re-applies
+      # 50-udev-default.rules and puts the device back at 0660. 99- beats 50-,
+      # so this widening survives that.
       - name: KVM available
         run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm-writable.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
-          sudo chmod -v 666 /dev/kvm
           if [ ! -w /dev/kvm ]; then echo "hosted runner lost KVM"; exit 1; fi
           sudo apt-get update && sudo apt-get install -y cpu-checker && sudo kvm-ok
 
@@ -86,6 +94,17 @@ jobs:
         id: backend
         with:
           path: fake-snap
+
+      # Losing /dev/kvm is invisible from inside spread: qemu exits on "Could
+      # not access KVM kernel module", spread discards its stderr, and the only
+      # symptom is a hostfwd port that never opens - five minutes of "connection
+      # refused" per allocation attempt, twice, then an aborted task. Three days
+      # of runs failed that way before the rule above. Assert it here instead,
+      # after everything that apt-installs.
+      - name: KVM still writable
+        run: |
+          ls -l /dev/kvm
+          test -w /dev/kvm
 
       # The one command a developer runs for this suite: primes the image (a
       # no-op after the step above), builds spread at the pinned commit, and
