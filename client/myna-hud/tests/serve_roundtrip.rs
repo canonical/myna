@@ -50,13 +50,20 @@ fn serve_publishes_and_answers_over_the_bus() {
 
         let _server = serve(shared.clone()).await.expect("claim the name");
 
-        // A separate connection, as a real client would be.
         let client = zbus::Connection::session().await.expect("client bus");
         let proxy = DictationProxy::new(&client).await.expect("proxy");
-
-        // --- C1: the name is owned and its properties are observable ------
-        // Give the publish loop a couple of ticks to populate the cache.
         async_io::Timer::after(Duration::from_millis(200)).await;
+
+        // --- Launching with a non-idle control publishes IMMEDIATELY ------
+        // No Start/Toggle needed: the control set already implies a live
+        // session (the lab's state selector is its session control). This is
+        // the property that was missing when `--serve-dbus` showed nothing
+        // until the user manually called Toggle over the bus.
+        assert_eq!(
+            proxy.state().await.expect("State"),
+            wire::RECORDING,
+            "a non-idle control set publishes on launch, with no Toggle"
+        );
 
         // --- C6: Start begins a session and reports success ---------------
         let (ok, reason) = proxy.start().await.expect("Start");

@@ -56,8 +56,18 @@ pub struct Shared {
 
 impl Shared {
     /// Replace the live controls (called by the lab UI).
+    ///
+    /// The lab's state selector is its "what is showing" control, so it also
+    /// drives the session: any non-`idle` choice means a live session,
+    /// `idle` means stopped. Without this the lab would publish nothing
+    /// until a session was separately started (via the bus `Start`/`Toggle`
+    /// method or a hotkey) — surprising, since the lab has no other session
+    /// control. External `Start`/`Stop`/`Toggle` callers drive the same
+    /// flag, so a `gdbus … Toggle` still works too.
     pub fn set_controls(&self, controls: Controls) {
+        let active = controls.state != wire::IDLE;
         *self.controls.lock().unwrap() = controls;
+        self.session.lock().unwrap().set_active(active);
     }
 
     /// The `(State, ErrorMessage, rms, peak)` to publish right now, from the

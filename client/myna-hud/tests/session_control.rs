@@ -103,3 +103,19 @@ fn an_inactive_session_publishes_idle() {
     let (state, _) = wire_state("flow", None, session.is_active());
     assert_eq!(state, wire::IDLE, "Stop clears the pill to idle");
 }
+
+// --- The lab's chosen state implies the session (set_active) ------------
+// The lab has no separate "start a session" control — its state dropdown is
+// its whole intent. So a non-idle selection must mean a live session, or
+// `--serve-dbus` would publish nothing until the operator separately called
+// `Toggle` on the bus (which is exactly the surprise this pins against).
+
+#[test]
+fn a_non_idle_selection_implies_an_active_session() {
+    let mut session = Session::default();
+    assert!(!session.is_active(), "starts idle");
+    session.set_active(true);
+    assert!(session.is_active());
+    session.set_active(false);
+    assert!(!session.is_active(), "an idle selection stops the session");
+}

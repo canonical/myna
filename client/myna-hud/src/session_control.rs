@@ -44,6 +44,16 @@ impl Session {
         self.active
     }
 
+    /// Set the session flag directly.
+    ///
+    /// Used by the simulator when the lab's chosen state implies the session
+    /// (a non-idle selection is a live session). The `Start`/`Stop`/`Toggle`
+    /// methods remain the contract surface; this is the lab driving the same
+    /// flag from the other side.
+    pub fn set_active(&mut self, active: bool) {
+        self.active = active;
+    }
+
     /// `Start`: begin a session, or report that one is already running.
     ///
     /// Idempotent by contract (C6): a second `Start` does not begin a second
