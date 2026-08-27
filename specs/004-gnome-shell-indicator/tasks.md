@@ -118,7 +118,7 @@ driver. **Phase B complete (2026-08-26).**
 ## Phase D: Lab & simulator modes (R25)
 
 - [X] T131 [P] `--lab` UI (`lab.rs`): manual controls (state, severity, level slider, reduced-motion toggle, phase triggers) + a plain `Gtk.TextView` dictation target, driving the identical renderer modules with **no backend** (T124's mode dispatch). *(Done 2026-08-26: state/level/session controls + dictation target; publishes at the contract cadence.)*
-- [ ] T132 `--serve-dbus` (`simulator.rs` serving): claim `org.myna.Dictation` (never by force; clean release), publish State/ErrorMessage/AudioRms/AudioPeak at ~20 Hz from the lab controls, implement Start/Stop/Toggle (port of `dictation_service.py` + `dbus_headless.py`'s contract checks as a hermetic test over the fake `Bus`-style seam).
+- [X] T132 `--serve-dbus` (`simulator.rs` serving): claim `org.myna.Dictation` (never by force; clean release), publish State/ErrorMessage/AudioRms/AudioPeak at ~20 Hz from the lab controls, implement Start/Stop/Toggle (port of `dictation_service.py` + `dbus_headless.py`'s contract checks as a hermetic test over the fake `Bus`-style seam). *(Done 2026-08-26: `session_control.rs` (7 tests, C6 dedup) + `serve.rs` (zbus server, ~20Hz publish, Start/Stop/Toggle); `tests/serve_roundtrip.rs` claims the real name and round-trips over `dbus-run-session` — State/levels/methods/stand-down; `--serve-dbus` wired via `lab::present_serving`.)*
 - [ ] T133 [P] i18n move: `client/myna-hud/po/` (domain `myna`; `POTFILES.in` from Rust sources via xgettext), replacing `extensions/myna-shell/po/`.
 
 **Checkpoint**: quickstart §3a/§3b usable — the lab renders with no backend; the simulator drives a hosted indicator end-to-end.

@@ -131,8 +131,8 @@ fn activate_lab(app: &adw::Application) {
     myna_hud::lab::present(app);
 }
 
-/// The simulated publisher (T132 fills in the served interface; for now it
-/// presents the lab so the mode is not a dead end).
+/// The simulated publisher: the lab, plus a real `org.myna.Dictation` on the
+/// session bus so the hosted path can be exercised without the daemon.
 fn activate_serve_dbus(app: &adw::Application) {
-    myna_hud::lab::present(app);
+    myna_hud::lab::present_serving(app);
 }

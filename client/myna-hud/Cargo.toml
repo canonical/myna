@@ -65,7 +65,7 @@ gl = "0.14"
 # function, so pure-module tests assert English.
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 gdk4-x11 = "0.11"
-
+async-io = "2"
 
 # cargo-machete false-positive: gettext-rs is used in src/main.rs (the
 # `gettextrs::TextDomain` binding for R25 localization), but machete does not

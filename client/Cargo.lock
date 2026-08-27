@@ -1230,6 +1230,7 @@ name = "myna-hud"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-io",
  "gdk4-x11",
  "gettext-rs",
  "gl",

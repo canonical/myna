@@ -51,6 +51,54 @@ impl Default for Controls {
 
 /// Build and show the lab: the HUD itself plus its control window.
 pub fn present(app: &adw::Application) {
+    present_with(app, None);
+}
+
+/// The lab plus a live `org.myna.Dictation` on the session bus, fed by the
+/// same controls (`--serve-dbus`, T132). The HUD still renders directly from
+/// the controls — the lab must stay usable even if no bus is available — but
+/// a real name now exists for the hosted path or an external consumer to
+/// read, and `Start`/`Stop`/`Toggle` are answerable from a terminal.
+pub fn present_serving(app: &adw::Application) {
+    let shared = crate::serve::Shared::default();
+    let serve_shared = shared.clone();
+
+    // Claim the name on the connection's own executor. A failure (the daemon
+    // already owns it, or there is no session bus) is logged, not fatal: the
+    // lab keeps working as a pure renderer.
+    glib::spawn_future_local(async move {
+        match crate::serve::serve(serve_shared).await {
+            Ok(_connection) => {
+                // Held for the process lifetime; the executor drives it.
+                std::mem::forget(_connection);
+                eprintln!("myna-hud --serve-dbus: serving org.myna.Dictation");
+            }
+            Err(e) => eprintln!("myna-hud --serve-dbus: {e}"),
+        }
+    });
+
+    present_with(
+        app,
+        Some(Box::new(move |controls: &Controls, active: bool| {
+            let _ = active;
+            // The two problem states carry the simulator's content-free reasons.
+            let reason = match controls.state.as_str() {
+                wire::NOTICE => NOTICE_REASON.to_string(),
+                wire::ERROR => ERROR_REASON.to_string(),
+                _ => controls.reason.clone(),
+            };
+            shared.set_controls(crate::serve::Controls {
+                state: controls.state.clone(),
+                reason,
+                envelope: controls.envelope,
+            });
+        })),
+    );
+}
+
+type ControlsSink = Box<dyn Fn(&Controls, bool)>;
+
+fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
     let hud = HudWindow::new(app);
     hud.present_standalone();
 
@@ -126,11 +174,16 @@ pub fn present(app: &adw::Application) {
     window.set_content(Some(&shell));
 
     // ── Wiring ──────────────────────────────────────────────────────────
+    let sink = Rc::new(sink);
     let apply = {
         let hud = hud.clone();
         let controls = controls.clone();
+        let sink = sink.clone();
         move || {
             let controls = controls.borrow();
+            if let Some(sink) = sink.as_ref() {
+                sink(&controls, controls.state != wire::IDLE);
+            }
             // The two problem states carry the simulator's content-free
             // reasons, so both ErrorMessage renderings ("No speech detected"
             // from the state module's own default, and the "Error — %s"
