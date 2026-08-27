@@ -66,13 +66,9 @@ impl HudWindow {
             .decorated(false)
             .build();
         window.add_css_class("myna-hud-window");
-        // The window stays mapped for the renderer's whole life (idle just
-        // hides the pill inside it), so the host adopts it exactly once. A
-        // fixed default size keeps it from collapsing to GTK's 200x200
-        // fallback when the pill is hidden at idle — which would resize the
-        // adopted surface under the host and squeeze the ribbon below its
-        // 160px minimum on the way back. The pill grows the window past this
-        // for a wrapped error; this is only the resting/idle floor.
+        // The default size keeps the window from remapping at GTK's 200x200
+        // fallback on a return from idle. The pill grows the window past
+        // this for a wrapped error; this is only the resting floor.
         window.set_default_size(PILL_WIDTH, RESTING_HEIGHT);
         // The HUD must never take focus from the app being dictated into.
         // The host also enforces this by DOCK-typing the window (mutter
@@ -81,26 +77,14 @@ impl HudWindow {
         window.set_can_focus(false);
 
         // The pill lives inside a fixed-size holder rather than being the
-        // window's direct child, so the mapped window keeps a stable size
-        // even when the pill hides (the host adopts the window once and must
-        // not have it resized under it — see the never-unmap design).
+        // window's direct child, so that on a return from idle the window
+        // remaps at its resting size instead of GTK's 200x200 fallback,
+        // which would resize the adopted surface under the host on every
+        // recording→idle→recording cycle.
         let holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         holder.set_size_request(PILL_WIDTH, RESTING_HEIGHT);
         holder.append(pill.widget());
         window.set_child(Some(&holder));
-
-        // The window's OPACITY is the single source of truth for "is the HUD
-        // showing". The pill widget's visibility is *bound* to it: when the
-        // overlay is hidden at idle (opacity 0) the pill — and therefore its
-        // ribbon — is made invisible, which stops the frame clock queuing
-        // renders, so idle costs no GPU. Hiding via opacity (not
-        // `window.set_visible(false)`) keeps the surface mapped for the
-        // host; the binding then removes the manual visibility bookkeeping.
-        window
-            .bind_property("opacity", pill.widget(), "visible")
-            .transform_to(|_, opacity: f64| Some(opacity > 0.0))
-            .sync_create()
-            .build();
 
         let hud = Rc::new(Self { window, pill });
 
@@ -131,23 +115,20 @@ impl HudWindow {
         self.window.present();
     }
 
-    /// Apply a state descriptor to the pill and refresh the input region.
-    ///
-    /// The window is **never unmapped**, not even at idle. Unmapping would
-    /// destroy the Wayland surface, and the host would then have to re-adopt
-    /// the fresh window on every return from idle — fragile, and it lost the
-    /// window in practice. Instead the pill itself hides (an empty,
-    /// transparent, click-through area) while the window stays mapped, so
-    /// the host adopts exactly once for the renderer's whole life.
+    /// Apply a state descriptor to the pill, then map/unmap the overlay for
+    /// the idle transition, and refresh the input region.
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let hidden = descriptor.hidden;
         self.pill.apply_descriptor(descriptor);
-        // Opacity on the WINDOW is the single control for "shown": it makes
-        // the whole surface composite nothing at idle while staying mapped
-        // for the host, and the pill's visibility is bound to it (see
-        // `new`), so hiding here also stops the ribbon rendering.
-        println!("HUD: set_opacity({})", if hidden { 0.0 } else { 1.0 });
-        self.window.set_opacity(if hidden { 0.0 } else { 1.0 });
+        // UNMAP at idle, do not merely go transparent: a compositor is free
+        // to ignore surface opacity on a toplevel (mutter does — the window
+        // reports opacity 0 but stays fully shown), so opacity cannot hide a
+        // window. `set_visible(false)` unmaps the surface, which the
+        // compositor cannot show. The window stays owned by the same
+        // Meta.WaylandClient across the unmap/remap, and the host re-asserts
+        // the overlay on the `map` signal, so a return from idle is
+        // re-adopted rather than lost.
+        self.window.set_visible(!hidden);
         self.apply_input_region();
     }
 
