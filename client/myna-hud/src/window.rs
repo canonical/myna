@@ -273,9 +273,19 @@ impl HudWindow {
         self.dismiss
             .set_visible(descriptor.severity == Some(Severity::Critical));
 
-        // The pill is hidden entirely at idle (FR-002/X3) — push-to-talk
-        // means "nothing shown" is the resting state.
+        // Nothing is shown at idle (FR-002/X3) — push-to-talk means the
+        // resting state is an absent HUD, not an empty one.
+        //
+        // The WINDOW is hidden, not just the pill: with its only child
+        // hidden the window has no natural size and falls back to GTK's
+        // 200x200 default, leaving an empty surface that still counts as
+        // the overlay's extent for the host's placement and input region.
+        //
+        // The host must therefore expect the surface to come and go, and
+        // adopt on every map rather than only the first — which it has to
+        // do anyway, since the renderer can be respawned under it (R21).
         self.pill.set_visible(!descriptor.hidden);
+        self.window.set_visible(!descriptor.hidden);
 
         // Announce the change to assistive technology: the status text is
         // the accessible description, and it is content-free by contract.

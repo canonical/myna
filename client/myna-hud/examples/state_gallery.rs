@@ -20,9 +20,12 @@ fn main() {
         .build();
     app.connect_activate(move |app| {
         let hud = HudWindow::new(app);
+        // Present first, then apply — the order the running app uses, and
+        // the one that lets `idle` actually hide the window rather than
+        // being undone by a later present().
+        hud.window().present();
         hud.apply_descriptor(state_to_descriptor(Some(&state), &reason));
         hud.push_level(0.35, 0.6);
-        hud.window().present();
     });
     app.run_with_args::<&str>(&[]);
 }
