@@ -137,17 +137,39 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     page.set_margin_end(16);
 
     // ── Embedded HUD preview (shown only while publishing) ─────────────
+    // Placed directly below the publish row — it is "what the toggle is
+    // doing", not a separate section. Declared here but appended after the
+    // publish row.
     let preview_frame = gtk::Frame::new(Some(&gettext("Published to org.myna.Dictation")));
     let preview_holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     preview_holder.set_halign(gtk::Align::Center);
     preview_holder.set_margin_top(8);
     preview_holder.set_margin_bottom(8);
     preview_frame.set_child(Some(&preview_holder));
-    // Populate/clear the frame as the target swaps.
     sync_preview(&preview_holder, &target.borrow());
     if !publishing {
         preview_frame.set_visible(false);
     }
+
+    // ── GNOME Shell ─────────────────────────────────────────────────────
+    // First control group: the publish toggle and its preview, so the
+    // "am I driving the bus?" question is answered before the model inputs.
+    let publish_switch = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(publishing)
+        .build();
+    let publish_row = adw::ActionRow::builder()
+        .title(gettext("Publish on the session bus"))
+        .subtitle(gettext(
+            "on: the HUD is embedded and published; a shell-hosted instance shows the real overlay",
+        ))
+        .build();
+    publish_row.add_suffix(&publish_switch);
+    publish_row.set_activatable_widget(Some(&publish_switch));
+
+    let shell_group = adw::PreferencesGroup::new();
+    shell_group.add(&publish_row);
+    page.append(&shell_group);
     page.append(&preview_frame);
 
     // ── State ───────────────────────────────────────────────────────────
@@ -207,24 +229,6 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     display_group.add(&reduced_motion_row);
     display_group.add(&color_scheme_row);
     page.append(&display_group);
-
-    // ── GNOME Shell ─────────────────────────────────────────────────────
-    let publish_switch = gtk::Switch::builder()
-        .valign(gtk::Align::Center)
-        .active(publishing)
-        .build();
-    let publish_row = adw::ActionRow::builder()
-        .title(gettext("Publish on the session bus"))
-        .subtitle(gettext(
-            "on: the HUD is embedded and published; a shell-hosted instance shows the real overlay",
-        ))
-        .build();
-    publish_row.add_suffix(&publish_switch);
-    publish_row.set_activatable_widget(Some(&publish_switch));
-
-    let shell_group = adw::PreferencesGroup::new();
-    shell_group.add(&publish_row);
-    page.append(&shell_group);
 
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
     let dictation_target = gtk::TextView::new();
@@ -388,40 +392,43 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
 /// The publisher's live state: idle (no bus name) or serving (owns
 /// `org.myna.Dictation`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum PublisherState {
     Idle,
-    Serving,
+    Serving(Option<zbus::Connection>),
 }
 
-/// Start publishing: claim the name asynchronously on the connection's
-/// executor. Idempotent.
+/// Start publishing: claim the name asynchronously. The connection is held
+/// in the state so stop_publish can drop it (releasing the name). Idempotent.
 fn start_publish(shared: Rc<crate::serve::Shared>, publisher: &Rc<RefCell<PublisherState>>) {
     if publisher.borrow().is_serving() {
         return;
     }
-    *publisher.borrow_mut() = PublisherState::Serving;
+    *publisher.borrow_mut() = PublisherState::Serving(None);
+    let publisher = publisher.clone();
     let shared = (*shared).clone(); // Shared is Arc-backed, cheap clone
     glib::spawn_future_local(async move {
         match crate::serve::serve(shared).await {
             Ok(connection) => {
-                std::mem::forget(connection);
                 eprintln!("myna-hud: publishing org.myna.Dictation");
+                // Store the connection so stop_publish can drop it.
+                if let Ok(PublisherState::Serving(slot)) = publisher.try_borrow_mut().as_deref_mut()
+                {
+                    *slot = Some(connection);
+                }
             }
-            Err(e) => eprintln!("myna-hud: {e}"),
+            Err(e) => {
+                eprintln!("myna-hud: {e}");
+                *publisher.borrow_mut() = PublisherState::Idle;
+            }
         }
     });
 }
 
-/// Stop publishing. (The zbus connection holds the name; there is no clean
-/// "unclaim" without dropping the connection — the name is released when
-/// the process exits or the connection is dropped. For the lab, logging is
-/// sufficient; the real stop is `--lab` mode where no connection is made.)
-fn stop_publish(_publisher: &RefCell<PublisherState>, _shared: &crate::serve::Shared) {
-    // A full stop would require holding the Connection and dropping it.
-    // For now, the toggle primarily swaps the target (embedded↔external);
-    // the bus name lingers until exit, which is acceptable in a lab.
-    *_publisher.borrow_mut() = PublisherState::Idle;
+/// Stop publishing: drop the connection, which releases the bus name so a
+/// re-toggle can reclaim it cleanly.
+fn stop_publish(publisher: &Rc<RefCell<PublisherState>>, _shared: &crate::serve::Shared) {
+    *publisher.borrow_mut() = PublisherState::Idle;
 }
 
 /// Swap the HUD target between an external window and an embedded pill.
@@ -432,9 +439,18 @@ fn swap_target(
     preview_frame: &gtk::Frame,
     publishing: bool,
 ) {
-    // Remove the old target's widget from the preview holder (if embedded).
-    while let Some(child) = preview_holder.first_child() {
-        preview_holder.remove(&child);
+    // Tear down the old target: remove the embedded pill's widget, or
+    // CLOSE the external HUD window (otherwise it lingers, still showing,
+    // while the preview takes over — two HUDs on screen).
+    match &*target.borrow() {
+        Target::Embedded(_) => {
+            while let Some(child) = preview_holder.first_child() {
+                preview_holder.remove(&child);
+            }
+        }
+        Target::Window(hud) => {
+            hud.window().close();
+        }
     }
 
     let new_target = if publishing {
@@ -460,6 +476,6 @@ fn sync_preview(preview_holder: &gtk::Box, target: &Target) {
 
 impl PublisherState {
     fn is_serving(&self) -> bool {
-        matches!(self, PublisherState::Serving)
+        matches!(self, PublisherState::Serving(_))
     }
 }
