@@ -124,7 +124,7 @@ UUID=myna-shell@canonical.com
 sudo ln -sfn "$PWD/extensions/myna-shell" /usr/share/gnome-shell/extensions/$UUID
 # The renderer binary must be resolvable. For a dev build:
 export MYNA_HUD_BINARY="$PWD/client/target/debug/myna-hud"
-# (installed snap: /snap/bin/myna-hud — resolved automatically; deb: /usr/bin/myna-hud)
+# (installed snap: `snap run myna.hud` — resolved automatically; dev: $MYNA_HUD_BINARY)
 # Wayland: log out/in to reload the Shell (Alt+F2 r is X11-only).
 ```
 

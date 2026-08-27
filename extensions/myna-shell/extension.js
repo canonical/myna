@@ -1,42 +1,49 @@
 // extension.js — GNOME Shell entry point for the Myna dictation indicator
-// (feature 004-gnome-shell-indicator; contract extension.md X7–X12).
+// (feature 004-gnome-shell-indicator, 2026-08-26 architecture revision;
+// contract extension.md XH1–XH12).
 //
-// The stable wiring: watch org.myna.Dictation (dbus.js), turn each State into a
-// semantic descriptor (states.js), and drive whatever IndicatorView the
-// factory hands us (view.js) — plus feed it the live audio level. The *look*
-// lives entirely behind createView(); swapping/redesigning it never touches
-// this file, the proxy, the states, or the contract.
+// The extension is now a thin OVERLAY HOST, not a renderer. It no longer
+// draws the HUD or consumes org.myna.Dictation itself — the standalone
+// myna-hud application does both. This file:
 //
-// The HUD pill is Shell chrome, never a window, so it can never steal keyboard
-// focus (X11/SC-001). disable() drops the proxy + name watch and destroys the
-// view — no leaks (X9); re-enable re-establishes cleanly (X10).
+//   * launches and hosts that application's window as a focus-safe overlay
+//     (host.js — spawn, adopt, dock-type, position, supervise), and
+//   * owns org.myna.Shell for as long as it is enabled (presence.js), so
+//     myna-desktop can suppress its own fallback notification indicator
+//     while the shell is presenting the HUD (C12/C13).
+//
+// It deliberately does NOT touch the dictation state: the renderer reads it
+// directly. disable() tears the host and the presence name down with no
+// leaks (XH7); re-enable re-establishes cleanly.
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {DictationService} from './dbus.js';
-import {stateToDescriptor} from './states.js';
-import {createView} from './view.js';
+import {OverlayHost} from './host.js';
+import {ShellPresence} from './presence.js';
 
 export default class MynaShellExtension extends Extension {
     enable() {
-        this._view = createView();
-        this._service = new DictationService({
-            onStateChanged: (state, errorMessage) => {
-                const descriptor = stateToDescriptor(state, errorMessage);
-                if (descriptor.hidden)
-                    this._view?.hide();
-                else
-                    this._view?.show(descriptor);
+        this._presence = new ShellPresence();
+        this._presence.enable();
+
+        this._host = new OverlayHost({
+            // The primary monitor's work area, so the pill sits above the
+            // dock/panel rather than under them (place.js owns the maths).
+            getMonitorWorkArea: () => {
+                const index = Main.layoutManager.primaryIndex;
+                if (index < 0)
+                    return null;
+                return Main.layoutManager.getWorkAreaForMonitor(index);
             },
-            onLevel: (rms, peak) => this._view?.setLevel(rms, peak),
         });
-        this._service.enable();
+        this._host.enable();
     }
 
     disable() {
-        this._service?.disable();
-        this._service = null;
-        this._view?.destroy();
-        this._view = null;
+        this._host?.disable();
+        this._host = null;
+        this._presence?.disable();
+        this._presence = null;
     }
 }

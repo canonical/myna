@@ -1207,10 +1207,14 @@ artifact); keep the full hand-rolled hex table — rejected for the main color
 **Decision**: `myna-hud` ships inside the **myna snap** via the snapcraft
 `gnome` extension (GTK4 + libadwaita staged; the ~13 MB toolkit cost is
 accepted — this inverts T69's demotion, which was about a one-label window,
-not the shipped renderer), exposed as the well-known command
-`/snap/bin/myna-hud`. The extension resolves the binary in a fixed order:
-`$MYNA_HUD_BINARY` (developer override) → `/snap/bin/myna-hud` →
-`/usr/bin/myna-hud`. **Risk reassessed low (2026-08-26)**: `Meta.WaylandClient`'s child receives
+not the shipped renderer), exposed as the snap **app** `myna.hud` (`<snap>.<app>`). The extension
+resolves the launch in a fixed order: `$MYNA_HUD_BINARY` (developer
+override, an absolute path to a build tree) → **`snap run myna.hud`** (the
+packaged command). The packaged renderer is launched *through* `snap run`
+rather than by exec'ing a path (`/snap/bin/…`), so snap-confine sets up the
+sandbox and hands the child the Wayland socket it needs; there is no bare
+`/usr/bin/myna-hud` fallback, since a stray unconfined system binary would
+be an unversioned surprise, not a supported install. **Risk reassessed low (2026-08-26)**: `Meta.WaylandClient`'s child receives
 the compositor's Wayland socket as an inherited fd (`WAYLAND_SOCKET`), and a
 confined GTK/snap app normally *does* receive that socket through the
 snap-confine wrapper — that is precisely how every snapped GTK app connects
@@ -1224,7 +1228,7 @@ connects via the session's normal Wayland display, inherited from the Shell
 process env) and identify the window via `get_sandboxed_app_id()`/PID — DIN
 ships exactly this fallback shape for older shells.
 
-**Rationale**: The well-known-path story (`/snap/bin/myna-hud`) is what makes
+**Rationale**: The well-known-command story (`snap run myna.hud`) is what makes
 "launched by the shell extension or by the client elsewhere" (user direction
 2026-08-26) work with zero discovery. T69's slim-snap audit was correct for
 what `ui-gtk` was (a `GtkLabel` window duplicating the extension); the

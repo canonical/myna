@@ -50,7 +50,7 @@ host is up; contract-only seam for a future non-GNOME layer-shell backend).
 `myna-hud` ships in the myna snap (snapcraft `gnome` extension — the
 ~13 MB GTK staging cost is accepted, inverting T69's demotion which was about
 a one-label window, not the shipped renderer), exposed as the well-known
-`/snap/bin/myna-hud`.
+the snap app `myna.hud` (via `snap run`).
 
 Three deliverables, two contracts between them:
 1. **`myna-hud` renderer application** (Rust, TDD, shipped component — the
@@ -137,7 +137,7 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
   fake for hermetic tests).
 - Snap packaging: snapcraft `gnome` extension (stages GTK4 + libadwaita);
   `myna-hud` exposed as the `myna-hud` snap command (well-known
-  `/snap/bin/myna-hud`).
+  the snap app `myna.hud`).
 
 **Storage**: N/A. No settings store in scope. The renderer keeps in-memory
 transient state (current dictation state + last level); the host keeps
@@ -380,7 +380,7 @@ generator and its conformance tests are the one source of truth (R23).
 | **New top-level `extensions/` tree outside the Cargo workspace** | The GJS bundle has no place in a Rust workspace and follows GNOME's fixed extension layout (`metadata.json` + ESM modules at the bundle root). | Nesting it under a crate would fight both `cargo` and the GNOME extension loader (which expects the bundle as-is under `~/.local/share/gnome-shell/extensions/<uuid>/`). A sibling top-level tree keeps each toolchain clean. |
 | **New Workshop deps** *(amended 2026-08-26)*: GTK4/libadwaita dev headers + `glslang-tools` + EGL for the renderer's tests; snapcraft `gnome` extension for packaging | Constitution IV mandates the Workshop definition gain deps in the introducing PR. | Deferring violates IV; scoped as a foundational task extending the Workshop definitions. |
 | **(2026-07-30, historical) `IndicatorState::Error` field addition ripples across 6 files** | The recoverable/critical severity distinction needed to reach `DbusIndicator::map_state` without fabricating a fake "error" transition for a successful, empty-transcript completion; shared helper across both call sites. | *(Historical row — unchanged by the revision; `gtk.rs` is since deleted, which removes one of the six sites.)* (a) A new top-level variant — same ripple, less coherent; (b) side-channel past the trait object — non-idiomatic; (c) a separate `ErrorSeverity` property + synthesized error — semantically wrong for a success path. |
-| **(2026-08-26) GTK4 + libadwaita re-staged into the myna snap (~13 MB + icon themes)** — inverts the T69 demotion | The shipped indicator is now the GTK application itself; the toolkit cost buys the real product (GPU ribbon, accent color, lab/simulator modes), not a duplicate one-label window. | (a) Keep the snap slim and ship `myna-hud` as a deb/flatpak — fragments the well-known-`/snap/bin/myna-hud` path across formats and complicates the extension's resolution order; (b) render nothing when hosted — that is the status quo this change replaces. T69's audit remains correct *for what `ui-gtk` was*; recorded as inverted, not wrong. |
+| **(2026-08-26) GTK4 + libadwaita re-staged into the myna snap (~13 MB + icon themes)** — inverts the T69 demotion | The shipped indicator is now the GTK application itself; the toolkit cost buys the real product (GPU ribbon, accent color, lab/simulator modes), not a duplicate one-label window. | (a) Keep the snap slim and ship `myna-hud` as a deb/flatpak — fragments the well-known `snap run myna.hud` command across formats and complicates the extension's resolution order; (b) render nothing when hosted — that is the status quo this change replaces. T69's audit remains correct *for what `ui-gtk` was*; recorded as inverted, not wrong. |
 | **(2026-08-26) Renderer visuals verified by manual acceptance + env-gated EGL check, not pixel-unit tests** | The pill's composited look (GLArea output, animations, entrance feel) is a GPU/display property; the *decisions* are unit-tested (model, shader conformance, uniform packing), and the EGL check proves the shader rasterizes non-degenerate frames on real drivers without a display. | Pixel-diff golden tests would pin the renderer to incidental driver output and flake across Mesa/GLES versions; the old Cairo lockstep tests existed only because two rasterizers had to agree — with one rasterizer (R23) there is nothing to keep in lockstep. |
 
 ## Constitution re-check (post-design)

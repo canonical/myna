@@ -1,49 +1,67 @@
-// resolve.js — PURE renderer-binary resolution (feature
+// resolve.js — PURE renderer-launch resolution (feature
 // 004-gnome-shell-indicator, 2026-08-26 architecture revision; research
 // R21/R27; contract extension.md XH2). No Shell/gi imports: the caller
 // supplies the environment and an "is this executable?" predicate, so the
 // order and the failure states are unit-testable headless
 // (test/resolve.test.js).
 //
-// The host launches the renderer by a well-known path (FR-027) — there is
-// no discovery protocol, on purpose: the snap ships the binary as a snap
-// command, distributions ship it in the system path, and a developer points
-// the override at a build tree.
+// The host launches the renderer with no discovery protocol, on purpose:
+//
+//   1. `$MYNA_HUD_BINARY` — the developer override. An absolute path to a
+//      build tree's binary (`…/target/debug/myna-hud`); when set and
+//      executable it wins over everything, so a packaged snap can never
+//      shadow the build under test.
+//   2. `snap run myna.hud` — the packaged command (R27/FR-027). The snap
+//      exposes the renderer as the app `myna.hud`; it is launched THROUGH
+//      `snap run`, not by exec'ing a path, so snap-confine sets up the
+//      sandbox and passes the Wayland socket the child needs. (The dotted
+//      `myna.hud` is the snap app name — `<snap>.<app>` — not a filesystem
+//      path.)
+//
+// There is deliberately no bare `/usr/bin/myna-hud` fallback: the renderer
+// ships in the snap, and a stray system binary would be an unconfined,
+// unversioned surprise rather than a supported install.
 
-/** Resolution order (first hit wins). `$MYNA_HUD_BINARY` is the developer
- * override — a cargo target dir during development; `/snap/bin/myna-hud` is
- * the packaged command (R27); `/usr/bin/myna-hud` is the distribution path. */
-export const CANDIDATE_PATHS = ['/snap/bin/myna-hud', '/usr/bin/myna-hud'];
-
-/** The environment variable that overrides the search entirely. */
+/** The environment variable that overrides the launch entirely — an
+ * absolute path to a locally built renderer. */
 export const OVERRIDE_ENV = 'MYNA_HUD_BINARY';
 
+/** The launcher used for the packaged renderer, and the snap app it runs. */
+export const SNAP_LAUNCHER = 'snap';
+export const SNAP_APP = 'myna.hud';
+
 /**
- * Resolve the renderer binary.
+ * Resolve the argv that launches the renderer.
  *
  * @param {object} deps
  * @param {function(string): (string|null)} deps.getenv - environment lookup.
  * @param {function(string): boolean} deps.isExecutable - existence +
- *     executability predicate.
- * @returns {{path: (string|null), source: string}} the resolved path and
- *     where it came from (`'override'`, `'candidate'`, or `'missing'`).
- *     `path` is null only when nothing was found — the host then stays
- *     dormant and logs once, rather than throwing (XH2).
+ *     executability predicate. Used for the override path and to confirm
+ *     `snap` itself is present (looked up on `PATH` by the caller's
+ *     predicate, or as `/usr/bin/snap`).
+ * @returns {{argv: (string[]|null), source: string}} the launch argv and
+ *     where it came from (`'override'`, `'snap'`, or `'missing'`).
+ *     `argv` is null only when nothing can be launched — the host then
+ *     stays dormant and logs once, rather than throwing (XH2).
  */
-export function resolveHudBinary({getenv, isExecutable}) {
+export function resolveHudLaunch({getenv, isExecutable}) {
     const override = getenv(OVERRIDE_ENV);
     if (override !== null && override !== undefined && override !== '') {
         // An override that does not exist is a *configuration error*, not a
-        // reason to silently fall back to a packaged binary the developer
-        // did not ask for: report it as missing so the host logs the path
-        // the user actually set.
+        // reason to silently fall back to the packaged snap the developer
+        // did not ask for: report it missing so the host logs the path the
+        // user actually set.
         return isExecutable(override)
-            ? {path: override, source: 'override'}
-            : {path: null, source: 'missing'};
+            ? {argv: [override], source: 'override'}
+            : {argv: null, source: 'missing'};
     }
-    for (const candidate of CANDIDATE_PATHS) {
-        if (isExecutable(candidate))
-            return {path: candidate, source: 'candidate'};
+    // The packaged path: `snap run myna.hud`. We can only confirm the
+    // launcher exists, not stat the confined app — but if `snap` is present
+    // the snap is the supported install, and `snap run` reports its own
+    // clean error if the app is absent (which the exit-watch treats as a
+    // failed launch, XH3).
+    if (isExecutable(SNAP_LAUNCHER) || isExecutable(`/usr/bin/${SNAP_LAUNCHER}`)) {
+        return {argv: [SNAP_LAUNCHER, 'run', SNAP_APP], source: 'snap'};
     }
-    return {path: null, source: 'missing'};
+    return {argv: null, source: 'missing'};
 }
