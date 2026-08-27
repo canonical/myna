@@ -1091,8 +1091,18 @@ no version probing and covers the whole runtime matrix; it resolves Yaru's
 tints and variants — including `wartybrown`, which upstream has no enum
 member for — by construction; and it was measured identical to
 `accent-color-rgba` for every accent (`#ed5b00`, `#9141ac`, `#3a944a`).
-Resolution order: theme CSS → `accent-color-rgba` → the `accent-color`
-setting's **resolved** value through the hex table → Ubuntu orange.
+Resolution order: theme CSS → `accent-color-rgba` → Ubuntu orange. The
+`accent-color` name table and the GSettings read that fed it are **removed**
+— they existed to map a name onto a colour ourselves, which is exactly what
+the theme does, and the theme also covers what a name cannot (Yaru variants,
+and `wartybrown`, which has no upstream enum member). The keys remain
+*watched* as change triggers only.
+
+The read is taken **at frame time, not in the settings handler**: a computed
+CSS colour is still the previous one when `changed::` fires (libadwaita
+listens to the same key with no defined ordering, and GTK recomputes styles
+lazily for the next frame anyway), so each trigger schedules a one-shot
+re-read on the next frame — correct styling with no per-repaint cost.
 
 The old rule ("untouched default is not a choice, so use Ubuntu orange")
 rested on the premise that an untouched Ubuntu desktop reads as `'blue'`

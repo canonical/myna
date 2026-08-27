@@ -99,7 +99,7 @@ Rules:
 | Field | Type / Source | Notes |
 |---|---|---|
 | themeAccent | `RGBA \| null` | the **theme's own accent**: a widget styled `color: @accent_bg_color`, read back with `gtk_widget_get_color()` (R26). The named colour exists since libadwaita 1.0, so no version probing is needed, and Yaru's tints and variants — including `wartybrown`, which has no upstream enum member — resolve by construction | `null` only when no styled widget is rooted yet |
-| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | main color = `themeAccent`, falling back to `AdwStyleManager:accent-color-rgba`, then to the `accent-color` setting's **resolved** value through the hex table, then to a fixed Ubuntu-orange (`#E95420`). Derived tones are pure, tested logic. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange** (`#e95420` or `#ed5b00`), **where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement — keyed on the colour, since the theme path has no settings name |
+| resolvedColor | derived palette (main / highlight / darker-complement / translucent secondary) | main color = `themeAccent`, falling back to `AdwStyleManager:accent-color-rgba`, then to a fixed Ubuntu-orange (`#E95420`). The `accent-color` **name table is gone** (2026-08-26): it mapped a settings name onto a colour ourselves, which the theme already does — and does better, covering Yaru variants and `wartybrown`, which has no upstream enum member. The `accent-color`/`gtk-theme` keys are still *watched*, purely as change triggers. Derived tones are pure, tested logic. The darker-complement tone is a computed colour complement of the main colour, **except when the main colour is orange** (`#e95420` or `#ed5b00`), **where it is a fixed aubergine tone** (matching the reference design decision) rather than a generic computed complement — keyed on the colour, since the theme path has no settings name |
 
 Rules:
 - **No "did the user actively choose" test (amended 2026-08-26).** The
@@ -110,10 +110,15 @@ Rules:
   misfired on Yaru accent variants, re-tinting a visibly olive desktop back
   to orange. The theme reports what the desktop is actually using; that is
   what the ribbon uses.
-- Read live (`changed::accent-color` on the same settings object; libadwaita
-  style-manager change notification; re-resolved when the ribbon is mapped),
-  so an in-session accent-color change re-colors the ribbon without
-  restart.
+- Read live, but **at frame time, not in the settings handler**. The accent
+  is a *computed* CSS colour, and reading it from a `changed::` handler
+  returns the previous value: libadwaita listens to the same key with no
+  defined handler ordering, and GTK recomputes styles lazily for the next
+  frame regardless. Each trigger (`changed::accent-color`,
+  `changed::gtk-theme`, `notify::gtk-theme-name`, the style manager's
+  notifications, and the ribbon being mapped) therefore schedules a
+  **one-shot** re-read on the next frame — current styling, and no
+  per-repaint cost.
 - Sourced entirely from the desktop environment, not from `myna-desktop` or
   the D-Bus contract — no wire change (data-model E2/dbus-interface.md
   unaffected).

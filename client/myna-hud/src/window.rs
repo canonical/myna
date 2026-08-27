@@ -54,6 +54,9 @@ pub const PILL_WIDTH: i32 = 360;
 /// The ribbon's height, matching the extension's `RIBBON_HEIGHT`.
 pub const RIBBON_HEIGHT: i32 = 32;
 
+/// Object-data key under which the window owns its [`HudWindow`].
+const SELF_KEY: &str = "myna-hud-instance";
+
 /// The most recent level push and when it arrived — the vumeter decays by
 /// *arrival age*, so a stalled publisher visibly falls to the floor instead
 /// of freezing mid-wave (R16a).
@@ -75,6 +78,9 @@ struct HudState {
     started: Instant,
     reduced_motion: bool,
     palette: crate::shader::RibbonPalette,
+    /// The accent last read from the theme, so the palette is rebuilt only
+    /// when the colour genuinely changes rather than every frame.
+    accent: Option<crate::shader::Rgb>,
 }
 
 /// The HUD pill window.
@@ -169,6 +175,7 @@ impl HudWindow {
             // palette; refresh_palette() re-resolves it from CSS as soon as
             // the ribbon is mapped.
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
+            accent: None,
         }));
 
         let renderer: Rc<RefCell<Option<RibbonRenderer>>> = Rc::default();
@@ -183,6 +190,24 @@ impl HudWindow {
             state,
             renderer,
             preferences: RefCell::new(None),
+        });
+
+        // Tie our lifetime to the window's. Every callback below holds a
+        // WEAK reference (a strong one would keep the struct alive through
+        // its own widgets forever), so without this the caller's `Rc` is
+        // the only owner — and the moment it drops, the frame clock stops
+        // while the widgets carry on being displayed: a HUD that is still
+        // on screen but frozen, with no animation, no notice expiry and no
+        // accent updates. That is a silent failure, and it bit both the
+        // gallery and the accent-change example before this existed.
+        //
+        // The reference cycle this creates (window -> data -> Rc<Self> ->
+        // window) is broken on destroy.
+        unsafe {
+            hud.window.set_data(SELF_KEY, hud.clone());
+        }
+        hud.window.connect_destroy(|window| unsafe {
+            let _ = window.steal_data::<Rc<HudWindow>>(SELF_KEY);
         });
 
         hud.connect_renderer();
@@ -282,7 +307,7 @@ impl HudWindow {
         let this = Rc::downgrade(self);
         self.ribbon.connect_map(move |_| {
             if let Some(this) = this.upgrade() {
-                this.refresh_palette();
+                this.schedule_accent_resync();
             }
         });
     }
@@ -370,15 +395,58 @@ impl HudWindow {
         });
     }
 
-    /// Re-resolve the ribbon's palette from the live theme.
+    /// Force a re-read of the theme's accent at the next frame.
     ///
-    /// The accent comes from the ribbon widget's own computed CSS colour
-    /// (`color: @accent_bg_color` in `style.css`), which is only meaningful
-    /// once the widget is rooted — hence the refresh on map as well as on
-    /// every preference change.
-    fn refresh_palette(&self) {
-        let palette = platform::probe_accent_palette(Some(&self.ribbon)).as_ribbon_palette();
-        self.state.borrow_mut().palette = palette;
+    /// Public because a host (or a test) may know the styling changed for a
+    /// reason none of the watched preferences covers — a stylesheet swapped
+    /// at runtime, say. In the ordinary case the resync is scheduled
+    /// automatically from the accent/theme settings and the style manager.
+    pub fn resync_accent(self: &Rc<Self>) {
+        self.schedule_accent_resync();
+    }
+
+    /// Re-resolve the ribbon's palette from the theme, **once**, at the next
+    /// frame.
+    ///
+    /// The accent is the ribbon's *computed* CSS colour (`color:
+    /// @accent_bg_color` in `style.css`), and a computed style is only
+    /// meaningful once the toolkit has recomputed it. Reading straight from
+    /// a settings handler returns the **previous** accent: libadwaita
+    /// listens to the same key with no defined handler ordering between us,
+    /// and GTK recomputes styles lazily for the next frame regardless.
+    ///
+    /// A one-shot tick callback is exactly the right moment — the style is
+    /// current for the frame being drawn — and it costs nothing in the
+    /// steady state, unlike re-reading on every repaint. (GTK 4's
+    /// `css_changed` vfunc would be the direct signal, but gtk4-rs 0.11
+    /// does not expose it for overriding.)
+    fn schedule_accent_resync(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        self.ribbon.add_tick_callback(move |_area, _clock| {
+            if let Some(this) = this.upgrade() {
+                this.sync_palette();
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    /// Read the theme's accent and rebuild the palette if it changed.
+    fn sync_palette(&self) {
+        let Some(accent) = platform::probe_css_accent(&self.ribbon) else {
+            // No accent from the theme: fall back (style manager, then
+            // Ubuntu orange) and leave it there.
+            let palette = platform::probe_accent_palette(Some(&self.ribbon)).as_ribbon_palette();
+            self.state.borrow_mut().palette = palette;
+            self.ribbon.queue_render();
+            return;
+        };
+        let mut state = self.state.borrow_mut();
+        if state.accent == Some(accent) {
+            return;
+        }
+        state.accent = Some(accent);
+        state.palette = crate::accent::resolve_theme_accent_palette(accent).as_ribbon_palette();
+        drop(state);
         self.ribbon.queue_render();
     }
 
@@ -387,8 +455,12 @@ impl HudWindow {
         // Re-resolve accent + motion whenever the desktop changes either.
         let watch = platform::watch_preferences(move || {
             let Some(this) = this.upgrade() else { return };
+            // Motion comes straight from its own sources, so it is read
+            // now. The accent is NOT: its source is a computed CSS colour
+            // that is still the old one at this point, so it is picked up
+            // at the next frame instead (see schedule_accent_resync).
             this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
-            this.refresh_palette();
+            this.schedule_accent_resync();
         });
         *self.preferences.borrow_mut() = Some(watch);
     }
