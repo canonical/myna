@@ -335,6 +335,7 @@ gdbus introspect --session --dest org.myna.Dictation \
 | `desktop` | GlobalShortcuts portal + desktop notifications |
 | `desktop-legacy` | the IBus daemon's private socket (text injection) |
 | `gsettings` | the client settings store (`org.myna.dictation`) and the dconf write for `myna.install-shortcut` |
+| `network-bind` | seccomp `bind(2)` for the control socket - no outbound reach, and no other interface grants it |
 | `wayland`, `x11` | the GTK indicator window |
 | `backend` (content) | the backend session socket |
 | slot `org.myna.Dictation` (dbus) | the indicator publisher (state + level only) |

@@ -1,0 +1,158 @@
+# Control-socket activation under confinement (found 2026-08-27, Ubuntu 24.04).
+#
+# The default snapd seccomp template grants `listen` but not `bind`, and the
+# only interface carrying `bind(2)` is `network-bind`. Without it every attempt
+# to bind the control socket is refused with EPERM - abstract, pathname and
+# /tmp alike, since the family cannot be filtered on - and the daemon logs
+# "cannot bind control socket ... Operation not permitted (os error 1)"
+# forever. AppArmor is not involved: the profile already grants
+# `owner /run/user/[0-9]*/snap.myna/** mrwklix` and logs no denial, which is
+# exactly what made this hard to read from the journal.
+#
+# That made the *documented fallback* unusable in a packaged install. Control
+# mode exists for desktops with no GlobalShortcuts backend, and Ubuntu 24.04 is
+# one: xdg-desktop-portal-gnome 46 ships no
+# `org.freedesktop.impl.portal.GlobalShortcuts`, so the portal frontend never
+# exports the interface and portal activation cannot bind either. A user on
+# this release had both paths dead at once, which is how it was found. Nothing
+# caught it before because control mode had only ever been exercised
+# unpackaged, where there is no seccomp filter at all.
+#
+# Both directions, as in thread-pinning. Here the positive half asserts a
+# *presence* (the socket exists, the toggle reaches it), so unlike that test it
+# cannot pass vacuously; the negative half is what pins the cause to the
+# interface rather than to something incidental about the VM.
+#
+# No desktop is needed and none is installed: control mode is the path that
+# asks nothing of the session, so a lingering headless user is a faithful host
+# (same setup as user-daemon-session).
+summary: Control-socket activation binds its socket once network-bind is connected
+
+environment:
+    # Deliberately not user-daemon-session's `mynaspread`: spread runs every
+    # task of a suite in the same VM, so a sibling whose restore failed would
+    # otherwise turn into a confusing `useradd` collision here.
+    USER_NAME: mynactl
+
+prepare: |
+    # A sideloaded snap has no snap-id, and snapd rejects the install of any
+    # user daemon that is neither allowlisted nor covered by this.
+    snap set system experimental.user-daemons=true
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
+    # `snap run` refuses to start for an account whose home is outside /home.
+    useradd --create-home --shell /bin/bash "$USER_NAME"
+
+execute: |
+    set -x
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    snap install --dangerous "$MYNA_SNAP"
+
+    # The plug must exist to be connectable at all - the failure mode this
+    # guards is a snapcraft.yaml that quietly dropped it.
+    snap connections myna | grep -q "network-bind .*myna:network-bind"
+
+    # Control activation is a per-machine setting; the daemon reads it once, at
+    # start, so every check below restarts it.
+    snap set myna activation=control
+
+    USER_UID=$(id -u "$USER_NAME")
+    SOCK="/run/user/$USER_UID/snap.myna/myna-desktop.sock"
+
+    # Lingering starts a user manager with no session behind it.
+    loginctl enable-linger "$USER_NAME"
+    for i in $(seq 1 30); do
+        systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service && break
+        sleep 1
+    done
+
+    # Seccomp filters are installed at exec, so a running daemon keeps the
+    # profile it started with: connect/disconnect *then* restart.
+    restart_daemon() {
+        rm -f "$SOCK"
+        systemctl --user -M "$USER_NAME@" restart snap.myna.myna.service
+        for i in $(seq 1 30); do
+            systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service && break
+            sleep 1
+        done
+    }
+
+    await_socket() {
+        for i in $(seq 1 "$1"); do
+            [ -S "$SOCK" ] && return 0
+            sleep 1
+        done
+        return 1
+    }
+
+    daemon_log() {
+        journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --since "$1" --no-pager
+    }
+
+    # --- without network-bind: seccomp must refuse the bind ------------------
+    snap disconnect myna:network-bind
+    before=$(date '+%Y-%m-%d %H:%M:%S')
+    sleep 1
+    restart_daemon
+    if await_socket 15; then
+        echo "FAIL: the control socket bound with network-bind disconnected."
+        echo "  Either snapd's base template now grants bind(2) - in which case the"
+        echo "  plug is no longer what makes this work and the positive half below"
+        echo "  proves nothing about it - or the daemon stopped using a pathname"
+        echo "  socket. Re-read the comment at the top before deleting either half."
+        exit 1
+    fi
+    daemon_log "$before" | grep -q "cannot bind control socket"
+    # ...and it retries rather than dying: the bind failure is a boundary that
+    # comes and goes, not a fatal error (same contract as user-daemon-session).
+    systemctl --user -M "$USER_NAME@" show snap.myna.myna.service -p ActiveState -p NRestarts > denied.out
+    cat denied.out
+    grep -qx "ActiveState=active" denied.out
+    grep -qx "NRestarts=0" denied.out
+
+    # --- with network-bind: the socket appears and the toggle reaches it -----
+    snap connect myna:network-bind
+    before=$(date '+%Y-%m-%d %H:%M:%S')
+    sleep 1
+    restart_daemon
+    if ! await_socket 30; then
+        echo "FAIL: the control socket never appeared with network-bind connected"
+        daemon_log "$before" | tail -40
+        exit 1
+    fi
+
+    # The setting actually resolved to control activation - a daemon that fell
+    # back to the portal would leave no socket, but say so for the next reader.
+    daemon_log "$before" | grep -q "activation Control"
+    denials=$(daemon_log "$before" | grep -c "cannot bind control socket" || true)
+    test "$denials" -eq 0
+
+    # The end a user actually presses. `myna.toggle` is a *separate* confined
+    # app that connects to the same path; snapd scopes XDG_RUNTIME_DIR for it,
+    # so the host passes the unscoped one. Poked twice: the listener has to
+    # survive the first connection to deliver a second edge (press, release).
+    for poke in 1 2; do
+        if sudo -u "$USER_NAME" env "XDG_RUNTIME_DIR=/run/user/$USER_UID" \
+            /snap/bin/myna.toggle > "toggle-$poke.out" 2>&1; then rc=0; else rc=$?; fi
+        cat "toggle-$poke.out"
+        if [ "$rc" -ne 0 ] || grep -q "cannot reach the myna-desktop daemon" "toggle-$poke.out"; then
+            echo "FAIL: poke $poke did not reach the daemon (rc=$rc)"
+            daemon_log "$before" | tail -40
+            exit 1
+        fi
+    done
+
+    # A poke with no microphone, no backend and no desktop behind it must not
+    # take the daemon down - the press path is another boundary that is allowed
+    # to be absent.
+    sleep 5
+    systemctl --user -M "$USER_NAME@" show snap.myna.myna.service -p ActiveState -p NRestarts > pressed.out
+    cat pressed.out
+    grep -qx "ActiveState=active" pressed.out
+    grep -qx "NRestarts=0" pressed.out
+
+restore: |
+    loginctl disable-linger "$USER_NAME" || true
+    snap remove --purge myna || true
+    userdel --remove "$USER_NAME" || true
+    rm -f denied.out pressed.out toggle-1.out toggle-2.out

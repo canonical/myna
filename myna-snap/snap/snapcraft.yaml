@@ -8,7 +8,10 @@
 # slot `ubustt-socket`), bind-mounted here at $SNAP_DATA/backend.
 #
 # Deliberately NO `network` plug: dictation is local and offline; every
-# boundary is a Unix socket or the session bus (constitution V).
+# boundary is a Unix socket or the session bus (constitution V). `network-bind`
+# is the one concession, and it buys no outbound reach: it is the only
+# interface carrying seccomp `bind(2)`, which the AF_UNIX control socket needs
+# as much as an inet listener would.
 #
 # Build:  ./dev/prepare.sh && snapcraft pack
 name: myna
@@ -121,6 +124,7 @@ apps:
       - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
       - desktop-legacy # the IBus daemon's private socket (text injection)
       - gsettings # dconf write for --install-shortcut (control mode)
+      - network-bind # seccomp bind(2) for the control socket - no other interface grants it
       - backend # content share → the backend snap's session socket
     slots:
       - dictation # org.myna.Dictation for the GNOME Shell indicator

@@ -252,6 +252,12 @@ spread-pinning: ## Run only thread-pinning (real funasr snap, ORT affinity under
 	./dev/spread-build.sh
 	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/thread-pinning
 
+.PHONY: spread-control
+spread-control: ## Run only control-socket (client snap, network-bind seccomp bind(2))
+	./dev/spread-image.sh
+	./dev/spread-build.sh
+	.cache/spread/spread qemu:ubuntu-24.04-64:tests/spread/control-socket
+
 .PHONY: spread-debug
 spread-debug: ## Debug adapter-smoke (keep the VM around after the run)
 	./dev/spread-image.sh

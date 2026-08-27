@@ -4,7 +4,9 @@
 # Nightly + on changes to the snap/packaging seams. Builds the client snap
 # and the fake-backend test snap, builds spread from a pinned upstream
 # commit (supply-chain choice recorded in the decision record), and runs the
-# confined-e2e suite on a clean qemu ubuntu-24.04-64 VM (hosted-runner KVM).
+# confined-e2e and control-socket tasks on a clean qemu ubuntu-24.04-64 VM
+# (hosted-runner KVM). The other two tasks stay local-only: they need the
+# funasr snap and its model component.
 #
 # Supersession plan: once this is green for two weeks, the bespoke smoke job
 # in snap.yml shrinks to build-only and its smoke assertions live here.
@@ -17,6 +19,14 @@ on:
   pull_request:
     paths:
       - "myna-snap/**"
+      # The client sources the snap is built from. Broad on purpose, and it
+      # does mean a VM boot on every Rust PR: the tasks here assert on the
+      # *packaged* daemon, so the seams they guard - seccomp, AppArmor, the
+      # user manager - are invisible to `cargo test`, and a change that breaks
+      # one of them arrives through this directory, not through myna-snap/.
+      # Control-socket activation reached a user broken for exactly that
+      # reason. Nightly would catch it a day later; this catches it in review.
+      - "client/**"
       - "fake-snap/**"
       - "spread.yaml"
       - "tests/spread/**"
@@ -82,3 +92,12 @@ jobs:
       # runs confined-e2e. The task resolves the snaps from the project dir.
       - name: Run confined-e2e
         run: make spread-e2e
+
+      # Runs here rather than local-only (as user-daemon-session and
+      # thread-pinning do) because it needs no snap beyond the client one built
+      # above: the image is primed, spread is built, so the marginal cost is
+      # two daemon restarts. It guards a seccomp gap that reached a user -
+      # control-socket activation cannot bind without `network-bind`, and
+      # nothing unpackaged can notice, since there is no seccomp filter there.
+      - name: Run control-socket
+        run: make spread-control
