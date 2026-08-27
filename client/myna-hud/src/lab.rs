@@ -107,7 +107,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     // The Publish toggle switches between an external window (no bus) and an
     // embedded preview + publishing. The `Shared` is always available so
     // the toggle can claim/release the name without re-creating it.
-    let publisher = Rc::new(RefCell::new(PublisherState::Idle));
+    let publisher = Rc::new(RefCell::new(PublisherState::Unclaimed));
 
     // Start the serve loop if launching in publish mode.
     if publishing {
@@ -343,7 +343,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             if publishing {
                 start_publish(shared.clone(), &publisher);
             } else {
-                stop_publish(&publisher, &shared);
+                stop_publish(&shared, &publisher);
             }
             // Re-sync reduced-motion and accent onto the new target.
             let rm = controls.borrow().reduced_motion;
@@ -394,41 +394,42 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 /// `org.myna.Dictation`).
 #[derive(Debug)]
 enum PublisherState {
-    Idle,
-    Serving(Option<zbus::Connection>),
+    /// Never claimed the name (no bus, or --lab).
+    Unclaimed,
+    /// The name is owned; `publishing` gates whether the loop emits live
+    /// state or forces idle.
+    Claimed,
 }
 
-/// Start publishing: claim the name asynchronously. The connection is held
-/// in the state so stop_publish can drop it (releasing the name). Idempotent.
+/// Claim the bus name once. The connection is held for the process
+/// lifetime (releasing and re-claiming in the same process races — the
+/// detached publish loop keeps the old connection alive). Instead,
+/// publishing is gated via `Shared::set_publishing`, which makes the
+/// snapshot force idle when off — the same observable effect as releasing
+/// the name, without the race.
 fn start_publish(shared: Rc<crate::serve::Shared>, publisher: &Rc<RefCell<PublisherState>>) {
-    if publisher.borrow().is_serving() {
-        return;
+    if !matches!(*publisher.borrow(), PublisherState::Unclaimed) {
+        return; // already claimed or claiming
     }
-    *publisher.borrow_mut() = PublisherState::Serving(None);
-    let publisher = publisher.clone();
-    let shared = (*shared).clone(); // Shared is Arc-backed, cheap clone
+    *publisher.borrow_mut() = PublisherState::Claimed;
+    shared.set_publishing(true);
+    let shared = (*shared).clone();
     glib::spawn_future_local(async move {
         match crate::serve::serve(shared).await {
             Ok(connection) => {
+                std::mem::forget(connection); // held for process lifetime
                 eprintln!("myna-hud: publishing org.myna.Dictation");
-                // Store the connection so stop_publish can drop it.
-                if let Ok(PublisherState::Serving(slot)) = publisher.try_borrow_mut().as_deref_mut()
-                {
-                    *slot = Some(connection);
-                }
             }
             Err(e) => {
                 eprintln!("myna-hud: {e}");
-                *publisher.borrow_mut() = PublisherState::Idle;
             }
         }
     });
 }
 
-/// Stop publishing: drop the connection, which releases the bus name so a
-/// re-toggle can reclaim it cleanly.
-fn stop_publish(publisher: &Rc<RefCell<PublisherState>>, _shared: &crate::serve::Shared) {
-    *publisher.borrow_mut() = PublisherState::Idle;
+/// Stop publishing: gate the snapshot to idle without releasing the name.
+fn stop_publish(shared: &crate::serve::Shared, _publisher: &Rc<RefCell<PublisherState>>) {
+    shared.set_publishing(false);
 }
 
 /// Swap the HUD target between an external window and an embedded pill.
@@ -471,11 +472,5 @@ fn swap_target(
 fn sync_preview(preview_holder: &gtk::Box, target: &Target) {
     if let Target::Embedded(pill) = target {
         preview_holder.append(pill.widget());
-    }
-}
-
-impl PublisherState {
-    fn is_serving(&self) -> bool {
-        matches!(self, PublisherState::Serving(_))
     }
 }

@@ -48,13 +48,40 @@ impl Default for Controls {
 
 /// The shared state between the lab UI, the publish loop and the method
 /// handlers.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Shared {
     controls: Arc<Mutex<Controls>>,
     session: Arc<Mutex<Session>>,
+    publishing: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Default for Shared {
+    fn default() -> Self {
+        // Publishing defaults to true: Shared represents a live publisher.
+        // The lab toggles it via set_publishing(false); the tests assume it.
+        Self {
+            controls: Arc::new(Mutex::new(Controls::default())),
+            session: Arc::new(Mutex::new(Session::default())),
+            publishing: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        }
+    }
 }
 
 impl Shared {
+    /// Whether the publish loop should emit live state.
+    pub fn is_publishing(&self) -> bool {
+        self.publishing.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Gate publishing without releasing the bus name. When false, the
+    /// snapshot forces idle so consumers see the HUD go quiet — the same
+    /// observable effect as releasing the name, without the async
+    /// name-release/re-claim race that calling `serve()` twice produces.
+    pub fn set_publishing(&self, publishing: bool) {
+        self.publishing
+            .store(publishing, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Replace the live controls (called by the lab UI).
     ///
     /// The lab's state selector is its "what is showing" control, so it also
@@ -76,16 +103,15 @@ impl Shared {
     pub fn snapshot(&self) -> (String, String, f64, f64) {
         let controls = self.controls.lock().unwrap().clone();
         let active = self.session.lock().unwrap().is_active();
-        // A stopped session forces idle regardless of the lab's chosen
-        // state — Stop/Toggle clear the pill (dbus_headless.py). Otherwise
-        // the lab's wire state is published verbatim.
+        // When not publishing (the lab toggle is off), force idle so
+        // consumers see the HUD go quiet — the observable effect of
+        // "unpublish" without the name-release race.
+        let active = active && self.is_publishing();
         let (state, reason) = if active {
             (controls.state.clone(), controls.reason.clone())
         } else {
             (wire::IDLE.to_string(), String::new())
         };
-        // Levels are silent unless a session is live AND the state is one
-        // that carries audio.
         let (rms, peak) = if active && state != wire::IDLE {
             envelope_to_levels(controls.envelope)
         } else {
