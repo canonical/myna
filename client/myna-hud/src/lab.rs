@@ -37,7 +37,6 @@ struct Controls {
     state: String,
     reason: String,
     envelope: f64,
-    session_active: bool,
 }
 
 impl Default for Controls {
@@ -46,7 +45,6 @@ impl Default for Controls {
             state: wire::RECORDING.to_string(),
             reason: String::new(),
             envelope: 0.4,
-            session_active: true,
         }
     }
 }
@@ -97,21 +95,9 @@ pub fn present(app: &adw::Application) {
         .build();
     level_row.add_suffix(&level);
 
-    // ── Session ─────────────────────────────────────────────────────────
-    let session = gtk::Switch::builder()
-        .active(true)
-        .valign(gtk::Align::Center)
-        .build();
-    let session_row = adw::ActionRow::builder()
-        .title(gettext("Session active"))
-        .subtitle(gettext("off publishes idle — the pill clears entirely"))
-        .build();
-    session_row.add_suffix(&session);
-
     let group = adw::PreferencesGroup::new();
     group.add(&state_row);
     group.add(&level_row);
-    group.add(&session_row);
     page.append(&group);
 
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
@@ -145,20 +131,17 @@ pub fn present(app: &adw::Application) {
         let controls = controls.clone();
         move || {
             let controls = controls.borrow();
-            // Ending the session publishes idle — the case that clears the
-            // pill entirely (FR-002/X3), reachable from the lab on purpose.
-            let (state, reason) = if !controls.session_active {
-                (wire::IDLE.to_string(), String::new())
-            } else {
-                // The two problem states carry the simulator's content-free
-                // reasons, so both ErrorMessage renderings ("No speech
-                // detected" from the state module's own default, and the
-                // "Error — %s" prefix) are visible from here.
-                match controls.state.as_str() {
-                    wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_REASON.to_string()),
-                    wire::ERROR => (wire::ERROR.to_string(), ERROR_REASON.to_string()),
-                    other => (other.to_string(), String::new()),
-                }
+            // The two problem states carry the simulator's content-free
+            // reasons, so both ErrorMessage renderings ("No speech detected"
+            // from the state module's own default, and the "Error — %s"
+            // prefix) are visible from here. `idle` is simply one of the
+            // states in the list — it clears the HUD entirely (FR-002/X3),
+            // which is why there is no separate "session active" switch:
+            // it would publish idle too, saying the same thing twice.
+            let (state, reason) = match controls.state.as_str() {
+                wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_REASON.to_string()),
+                wire::ERROR => (wire::ERROR.to_string(), ERROR_REASON.to_string()),
+                other => (other.to_string(), String::new()),
             };
             let reason = if controls.reason.is_empty() {
                 reason
@@ -181,15 +164,6 @@ pub fn present(app: &adw::Application) {
         }
     });
 
-    session.connect_active_notify({
-        let controls = controls.clone();
-        let apply = apply.clone();
-        move |switch| {
-            controls.borrow_mut().session_active = switch.is_active();
-            apply();
-        }
-    });
-
     level.connect_value_changed({
         let controls = controls.clone();
         move |scale| controls.borrow_mut().envelope = scale.value()
@@ -207,7 +181,8 @@ pub fn present(app: &adw::Application) {
             controls,
             move || {
                 let controls = controls.borrow();
-                if controls.session_active {
+                // Nothing is captured while idle, so nothing is published.
+                if controls.state != wire::IDLE {
                     let (rms, peak) = envelope_to_levels(controls.envelope);
                     hud.push_level(rms, peak);
                 }
