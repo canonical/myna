@@ -70,7 +70,13 @@ jobs:
           snap run myna --help
           myna.testbed --help
 
-      - name: Offline invariant — no network plug in the manifest
+      # Matched whole rather than as a prefix: `network-bind` carries seccomp
+      # bind(2) for the control socket and nothing else - its AppArmor snippet
+      # has no `network inet` rule, so there is still no outbound reach - and a
+      # prefix match cannot tell the two apart. Extracted to a file first so a
+      # failing unsquashfs cannot pass as an empty match.
+      - name: Offline invariant - no network plug in the manifest
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
-          ! unsquashfs -no-progress -cat ./myna_*_amd64.snap meta/snap.yaml | grep -q -- "- network"
+          unsquashfs -no-progress -cat ./myna_*_amd64.snap meta/snap.yaml >manifest.yaml
+          ! grep -qE '^[[:space:]]*(- network|network:|interface: network)$' manifest.yaml
