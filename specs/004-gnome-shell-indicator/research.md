@@ -1091,7 +1091,19 @@ no version probing and covers the whole runtime matrix; it resolves Yaru's
 tints and variants — including `wartybrown`, which upstream has no enum
 member for — by construction; and it was measured identical to
 `accent-color-rgba` for every accent (`#ed5b00`, `#9141ac`, `#3a944a`).
-Resolution order: theme CSS → `accent-color-rgba` → Ubuntu orange. The
+Resolution order: `AdwStyleManager:accent-color-rgba` → theme CSS
+(`@accent_bg_color`) → Ubuntu orange. The style manager leads because it is
+a plain value read (the property behind
+`adw_style_manager_get_accent_color_rgba()`) with no dependence on a widget
+being rooted or on when its style was last recomputed, and because Ubuntu's
+patches feed Yaru accent *variants* — selected by theme name — into that
+same property, so a `Yaru-olive` desktop reports olive there. The typed
+getter itself is `Since: 1.6` and is deliberately **not** used: it would
+require the `libadwaita/v1_6` compile-time feature, and the 24.04 workshop
+that builds this workspace has libadwaita 1.5. Probing the property by name
+costs nothing and degrades to the CSS path on such a stack — which is also
+the path that catches a stylesheet defining its own `@accent_bg_color`
+independently of the accent preference. The
 `accent-color` name table and the GSettings read that fed it are **removed**
 — they existed to map a name onto a colour ourselves, which is exactly what
 the theme does, and the theme also covers what a name cannot (Yaru variants,

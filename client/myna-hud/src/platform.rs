@@ -180,15 +180,30 @@ pub fn probe_platform_accent() -> Option<Rgb> {
 /// `accent_widget` is the widget carrying `color: @accent_bg_color`; pass
 /// `None` where no styled widget is available yet.
 ///
-/// Order: the theme, then the style manager, then Ubuntu orange. The first
-/// two report the colour the desktop is actually *using*, so neither needs
-/// to guess whether the user "chose" anything — and between them there is
-/// no accent a GTK application can see that they miss, which is why the
-/// `accent-color` name table is gone.
+/// Order: the style manager's accent, then the theme's `@accent_bg_color`,
+/// then Ubuntu orange.
+///
+/// The style manager comes first because it is a plain value read —
+/// `AdwStyleManager:accent-color-rgba`, equivalent to
+/// `adw_style_manager_get_accent_color_rgba()` — with no dependence on a
+/// widget being rooted or on when its style was last recomputed. It is also
+/// complete on Ubuntu: the Yaru patches feed accent *variants* (selected by
+/// theme name) into the same `accent-color` property, so a `Yaru-olive`
+/// desktop reports olive here.
+///
+/// (The typed getter is `Since: 1.6`, and using it would mean enabling
+/// `libadwaita/v1_6` — a compile-time floor the runtime matrix cannot take,
+/// since the 24.04 workshop that builds this workspace has libadwaita 1.5.
+/// Probing the property by name costs nothing and degrades to the CSS path
+/// there instead.)
+///
+/// The theme is the fallback for exactly that case, and for a stylesheet
+/// that defines its own `@accent_bg_color` independently of the accent
+/// preference. Neither path needs to guess whether the user "chose"
+/// anything, which is why the `accent-color` name table is gone.
 pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> AccentPalette {
-    if let Some(accent) = accent_widget
-        .and_then(probe_css_accent)
-        .or_else(probe_platform_accent)
+    if let Some(accent) =
+        probe_platform_accent().or_else(|| accent_widget.and_then(probe_css_accent))
     {
         return resolve_theme_accent_palette(accent);
     }

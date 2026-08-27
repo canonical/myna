@@ -430,22 +430,16 @@ impl HudWindow {
         });
     }
 
-    /// Read the theme's accent and rebuild the palette if it changed.
+    /// Read the desktop's accent and rebuild the palette if it changed.
     fn sync_palette(&self) {
-        let Some(accent) = platform::probe_css_accent(&self.ribbon) else {
-            // No accent from the theme: fall back (style manager, then
-            // Ubuntu orange) and leave it there.
-            let palette = platform::probe_accent_palette(Some(&self.ribbon)).as_ribbon_palette();
-            self.state.borrow_mut().palette = palette;
-            self.ribbon.queue_render();
-            return;
-        };
+        let palette = platform::probe_accent_palette(Some(&self.ribbon));
+        let accent = palette.main_rgb();
         let mut state = self.state.borrow_mut();
         if state.accent == Some(accent) {
             return;
         }
         state.accent = Some(accent);
-        state.palette = crate::accent::resolve_theme_accent_palette(accent).as_ribbon_palette();
+        state.palette = palette.as_ribbon_palette();
         drop(state);
         self.ribbon.queue_render();
     }
