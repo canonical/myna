@@ -60,8 +60,15 @@ export class OverlayHost {
         this._layoutHandlerIds = [];     // monitors/work-area
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
-        this._exitCancellable = null;    // cancels the subprocess wait
         this._enabled = false;
+
+        // Cancels the current subprocess wait. A fresh Cancellable is made
+        // for each spawn rather than reset()-ing one (reset is discouraged
+        // and error-prone once an operation has touched it); disable()
+        // cancels whichever is current. _watchExit captures its own
+        // instance, so a stale wait can never act on a newer generation's
+        // cancellable.
+        this._cancellable = null;
     }
 
     /** Launch the renderer and begin hosting. Idempotent-safe: a second
@@ -83,12 +90,11 @@ export class OverlayHost {
         this._disconnectLayout();
         this._disconnectWindow();
 
-        // Cancel the subprocess wait so its promise rejects as cancelled
-        // rather than resolving into _onRendererExited after we have torn
-        // down — no late respawn, and the rejection is logged as cancelled,
-        // not as an error.
-        this._exitCancellable?.cancel();
-        this._exitCancellable = null;
+        // Cancel the current subprocess wait so its promise rejects as
+        // cancelled rather than resolving into _onRendererExited after we
+        // have torn down — no late respawn.
+        this._cancellable?.cancel();
+        this._cancellable = null;
 
         if (this._windowCreatedId) {
             global.display.disconnect(this._windowCreatedId);
@@ -146,11 +152,13 @@ export class OverlayHost {
         this._windowCreatedId = global.display.connect(
             'window-created', (_display, window) => this._onWindowCreated(window));
 
-        // Watch the subprocess so an exit drives the respawn policy. The
-        // cancellable lets disable() abort the wait (its promise then rejects
-        // as cancelled), rather than leaving a late callback to guard against.
-        this._exitCancellable = new Gio.Cancellable();
-        this._watchExit(client.get_subprocess(), this._exitCancellable);
+        // Watch the subprocess so an exit drives the respawn policy. A fresh
+        // Cancellable per spawn, captured by this wait: disable() cancels
+        // whatever is current, and _watchExit checks the very instance it was
+        // handed — so a superseded wait never confuses the current one.
+        const cancellable = new Gio.Cancellable();
+        this._cancellable = cancellable;
+        this._watchExit(client.get_subprocess(), cancellable);
     }
 
     async _watchExit(subprocess, cancellable) {
