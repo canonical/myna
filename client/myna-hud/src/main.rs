@@ -93,7 +93,12 @@ The myna dictation HUD renderer.
 /// The shipping path: render whatever the publisher reports.
 fn activate_hosted(app: &adw::Application) {
     let hud = HudWindow::new(app);
-    hud.window().present();
+    // Start idle → the window stays UNMAPPED and shows nothing until the
+    // first non-idle state maps it, at which point the host adopts it (the
+    // host adopts on map, and re-adopts on every subsequent map across the
+    // idle unmap/remap cycle). Presenting an empty window at startup would
+    // otherwise flash a static, empty pill before the first bus event.
+    hud.apply_descriptor(state_to_descriptor(None, ""));
 
     let (sender, receiver) = async_channel::unbounded::<BusEvent>();
     bus::spawn(sender);
