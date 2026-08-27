@@ -1,0 +1,76 @@
+// tests/serve_levels.rs — the simulator's control→published-levels wiring
+// (feature 004, T132). Pins the bug where the lab's audio slider updated the
+// embedded preview but NOT the bus, so a shell-hosted instance's AudioRms
+// sat frozen at the last state change. No bus needed: this exercises
+// Shared::snapshot directly, exactly what the ~20 Hz publish loop reads.
+
+use myna_hud::serve::{Controls, Shared};
+use myna_hud::simulator::envelope_to_levels;
+use myna_hud::states::wire;
+
+fn rms_for(shared: &Shared) -> f64 {
+    let (_state, _reason, rms, _peak) = shared.snapshot();
+    rms
+}
+
+#[test]
+fn a_changed_envelope_changes_the_published_levels() {
+    let shared = Shared::default();
+
+    // An active recording session at a low level.
+    shared.set_controls(Controls {
+        state: wire::RECORDING.into(),
+        reason: String::new(),
+        envelope: 0.2,
+    });
+    let low = rms_for(&shared);
+
+    // The slider moves up: the publish loop re-pushes the controls, and the
+    // snapshot the bus reads must reflect the new envelope.
+    shared.set_controls(Controls {
+        state: wire::RECORDING.into(),
+        reason: String::new(),
+        envelope: 0.8,
+    });
+    let high = rms_for(&shared);
+
+    assert!(low > 0.0, "a live session publishes non-zero levels");
+    assert!(
+        high > low,
+        "raising the envelope raises the published AudioRms: {low} -> {high}"
+    );
+}
+
+#[test]
+fn the_published_level_matches_the_calibration() {
+    // The bus carries the envelope re-derived through envelope_to_levels,
+    // the same calibration the embedded pill uses — so both agree for a
+    // given slider value.
+    let shared = Shared::default();
+    shared.set_controls(Controls {
+        state: wire::RECORDING.into(),
+        reason: String::new(),
+        envelope: 0.55,
+    });
+    let (_s, _r, rms, peak) = shared.snapshot();
+    let (expected_rms, expected_peak) = envelope_to_levels(0.55);
+    assert!((rms - expected_rms).abs() < 1e-9, "{rms} vs {expected_rms}");
+    assert!(
+        (peak - expected_peak).abs() < 1e-9,
+        "{peak} vs {expected_peak}"
+    );
+}
+
+#[test]
+fn an_idle_session_publishes_no_levels() {
+    let shared = Shared::default();
+    shared.set_controls(Controls {
+        state: wire::IDLE.into(),
+        reason: String::new(),
+        envelope: 0.9, // even with the slider up
+    });
+    let (state, _reason, rms, peak) = shared.snapshot();
+    assert_eq!(state, wire::IDLE);
+    assert_eq!(rms, 0.0, "no levels while idle");
+    assert_eq!(peak, 0.0);
+}

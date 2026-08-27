@@ -258,6 +258,14 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
     // Publish levels at the contract's cadence rather than the render rate,
     // so the consumer sees the update pattern it was tuned against (C4) —
     // including the stale-decay behaviour when the slider sits still.
+    //
+    // This drives BOTH targets: the embedded/external pill directly via
+    // push_level, and — crucially — the bus `Shared` via the sink, so a
+    // shell-hosted instance's AudioRms tracks the slider. Without the sink
+    // call here the envelope only reached the bus on a state change (the
+    // only other place the sink runs), so the embedded preview moved with
+    // the slider but the external instance sat frozen at the last state's
+    // level.
     glib::timeout_add_local(
         Duration::from_secs_f64(1.0 / PUBLISH_HZ),
         glib::clone!(
@@ -265,12 +273,17 @@ fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsS
             target,
             #[strong]
             controls,
+            #[strong]
+            sink,
             move || {
                 let controls = controls.borrow();
                 // Nothing is captured while idle, so nothing is published.
                 if controls.state != wire::IDLE {
                     let (rms, peak) = envelope_to_levels(controls.envelope);
                     target.push_level(rms, peak);
+                    if let Some(sink) = sink.as_ref() {
+                        sink(&controls);
+                    }
                 }
                 glib::ControlFlow::Continue
             }

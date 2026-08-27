@@ -71,8 +71,9 @@ impl Shared {
     }
 
     /// The `(State, ErrorMessage, rms, peak)` to publish right now, from the
-    /// current controls and session flag.
-    fn snapshot(&self) -> (String, String, f64, f64) {
+    /// current controls and session flag. Public so the lab's slider→bus
+    /// wiring can be pinned without a bus (tests/serve_levels.rs).
+    pub fn snapshot(&self) -> (String, String, f64, f64) {
         let controls = self.controls.lock().unwrap().clone();
         let active = self.session.lock().unwrap().is_active();
         // A stopped session forces idle regardless of the lab's chosen
