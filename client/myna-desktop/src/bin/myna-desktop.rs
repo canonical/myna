@@ -95,9 +95,13 @@ OPTIONS:
                        control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
     --status           print what this daemon has resolved, what the running one
                        is doing, and whether the backend is reachable, then exit
-    --toggle           poke the running daemon (bind this to a GNOME shortcut)
-    --install-shortcut bind a GNOME custom keybinding to <accel>
-                       (e.g. '<Super>t'), then exit
+    --toggle           poke the running daemon over the control socket. Control
+                       activation only - a portal daemon has no control socket
+                       and is driven by its portal shortcut instead.
+    --install-shortcut bind a GNOME custom keybinding to --toggle (e.g.
+                       '<Super>t'), then exit. Control activation only: on a
+                       portal daemon it would shadow the portal's own binding,
+                       so it refuses. Rebind there in Settings → Keyboard.
     --shortcut <accel> preferred trigger in portal activation (the portal's bind
                        dialog may still let you pick a different key)
     --hold             portal activation: hold-to-talk instead (hold = record)
@@ -442,6 +446,48 @@ fn control_path(args: &Args) -> PathBuf {
     args.control.clone().unwrap_or_else(default_socket_path)
 }
 
+/// What to say when `--toggle` cannot reach the daemon.
+///
+/// "is `myna-desktop --socket <path>` running?" is only true advice under
+/// control activation. A portal daemon takes its trigger from the portal and
+/// never opens a control socket, so a *perfectly healthy* packaged daemon
+/// fails `--toggle` every single time - and the old hint sent people hunting
+/// for a dead process instead of pointing at their keyboard.
+///
+/// Resolved locally, like `--status`: this process is not the daemon, so under
+/// an unpackaged `--toggle` against a packaged daemon the two can disagree.
+/// That is the same caveat `--status` already carries, and the answer is still
+/// better than a fixed string that is wrong for the shipped default.
+fn toggle_failure_hint(args: &Args) -> Vec<String> {
+    let settings = myna_core::Settings::load();
+    let resolved = Resolved::new(args, &settings, &SystemDefaults::from_env());
+    toggle_hint_for(resolved.activation, resolved.hotkey.as_deref())
+}
+
+fn toggle_hint_for(activation: Activation, hotkey: Option<&str>) -> Vec<String> {
+    match activation {
+        Activation::Portal => vec![
+            "activation is Portal: the daemon takes its trigger from the GlobalShortcuts \
+             portal and opens no control socket, so --toggle cannot reach it."
+                .into(),
+            match hotkey {
+                Some(key) => format!("press {key} instead."),
+                None => "press your dictation shortcut instead (Settings → Keyboard lists \
+                         it under myna)."
+                    .into(),
+            },
+            "to poke the daemon from a script or a custom keybinding, run it with --control."
+                .into(),
+        ],
+        Activation::Stdin => vec![
+            "activation is Stdin (debug): the daemon reads Enter from its own terminal and \
+             opens no control socket."
+                .into(),
+        ],
+        Activation::Control => vec!["(is `myna-desktop --socket <path>` running?)".into()],
+    }
+}
+
 impl Args {
     /// Where to look for the backend, or `None` when neither form was given.
     /// Deliberately *not* resolved here: the socket a content share supplies
@@ -733,11 +779,46 @@ fn toggle_command() -> String {
     format!("{} --toggle", exe_path())
 }
 
+/// Why `--install-shortcut` must not run, where that is the case.
+///
+/// A custom keybinding to `--toggle` is the *control*-activation setup. Run it
+/// against a portal daemon and it does two bad things at once: the binding is
+/// inert (a portal daemon opens no control socket), and `gsd-media-keys`
+/// serves both custom keybindings and the portal's global shortcuts, so a
+/// custom binding on the same accel **shadows the portal's own** - i.e. it
+/// breaks the hotkey that was working. Since portal is the packaged default,
+/// following the README's `myna.install-shortcut '<Super>t'` on a snap install
+/// was a reliable way to disable your own dictation key, with no feedback
+/// beyond a control-socket error naming a socket that was never going to exist.
+fn shortcut_install_refusal(activation: Activation, accel: &str) -> Option<String> {
+    (activation == Activation::Portal).then(|| {
+        format!(
+            "refusing to bind {accel}: activation is Portal.\n  \
+             A portal daemon takes its key from the GlobalShortcuts portal and opens no \
+             control socket, so this binding would do nothing.\n  \
+             Worse, GNOME serves both from gsd-media-keys, so it would shadow the portal's \
+             own binding and stop the key that already works.\n  \
+             Change the key in Settings → Keyboard (it is listed under myna), or pass \
+             --shortcut {accel} to the daemon to offer it as the portal's preferred trigger."
+        )
+    })
+}
+
 /// `--install-shortcut <accel>`: bind a GNOME custom keybinding to
 /// `myna-desktop --toggle`, appending to any existing custom keybindings
 /// (never clobbering).
-fn install_shortcut(accel: &str) -> ExitCode {
+///
+/// Refuses under portal activation - see [`shortcut_install_refusal`].
+fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
     use std::process::Command;
+
+    let settings = myna_core::Settings::load();
+    let resolved = Resolved::new(args, &settings, &SystemDefaults::from_env());
+    if let Some(refusal) = shortcut_install_refusal(resolved.activation, accel) {
+        eprintln!("{refusal}");
+        return ExitCode::FAILURE;
+    }
+
     const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
     const PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/";
     let kb_schema = format!("{SCHEMA}.custom-keybinding:{PATH}");
@@ -839,6 +920,16 @@ fn print_status(args: &Args) -> ExitCode {
             system.activation.is_some(),
         ),
     );
+    // The shipped default makes `myna.toggle` inert, and nothing used to say
+    // so - the only feedback was a control-socket error naming a socket the
+    // daemon was never going to open. Say it where someone debugging looks.
+    if resolved.activation == Activation::Portal {
+        println!(
+            "  {:<15} no control socket in this mode - `--toggle` does nothing; press {}",
+            "",
+            resolved.hotkey.as_deref().unwrap_or("your shortcut")
+        );
+    }
     row(
         "language",
         opt(&settings.language),
@@ -970,7 +1061,7 @@ fn main() -> ExitCode {
 
     // Non-daemon subcommands first (no IBus / server needed).
     if let Some(accel) = &args.install_shortcut {
-        return install_shortcut(accel);
+        return install_shortcut(&args, accel);
     }
     if args.status {
         return print_status(&args);
@@ -985,7 +1076,9 @@ fn main() -> ExitCode {
                     "cannot reach the myna-desktop daemon at {}: {e}",
                     path.display()
                 );
-                eprintln!("  (is `myna-desktop --socket <path>` running?)");
+                for line in toggle_failure_hint(&args) {
+                    eprintln!("  {line}");
+                }
                 ExitCode::FAILURE
             }
         };
@@ -1465,5 +1558,59 @@ mod tests {
              returns, before the controller's next set_state(Recording) \
              call — not lazily inside the unpolled session future"
         );
+    }
+
+    // A portal daemon never opens a control socket, so `--toggle` failing is
+    // its *healthy* behaviour. The hint has to say that instead of blaming a
+    // missing process, and it has to name the key that does work.
+    #[test]
+    fn portal_toggle_hint_points_at_the_hotkey_not_a_missing_daemon() {
+        let hint = toggle_hint_for(Activation::Portal, Some("<Super>t")).join(" ");
+        assert!(
+            hint.contains("<Super>t"),
+            "should name the bound key: {hint}"
+        );
+        assert!(
+            !hint.contains("--socket"),
+            "must not send the user looking for a dead daemon: {hint}"
+        );
+    }
+
+    // Unbound is the shipped state (the daemon offers no preferred trigger),
+    // so the no-hotkey branch still has to give somewhere to look.
+    #[test]
+    fn portal_toggle_hint_without_a_hotkey_says_where_to_find_one() {
+        let hint = toggle_hint_for(Activation::Portal, None).join(" ");
+        assert!(
+            hint.contains("Keyboard"),
+            "should point at Settings: {hint}"
+        );
+    }
+
+    // Control activation is the one case the old advice was right for.
+    #[test]
+    fn control_toggle_hint_still_asks_whether_the_daemon_is_running() {
+        let hint = toggle_hint_for(Activation::Control, None).join(" ");
+        assert!(hint.contains("--socket"), "{hint}");
+    }
+
+    // The regression that started this: `myna.install-shortcut '<Super>t'` on a
+    // snap (portal by default) installed an inert custom keybinding that
+    // *shadowed* the portal's working one, silently killing dictation.
+    #[test]
+    fn install_shortcut_refuses_under_portal_activation() {
+        let refusal = shortcut_install_refusal(Activation::Portal, "<Super>t")
+            .expect("portal activation must refuse");
+        assert!(refusal.contains("<Super>t"), "{refusal}");
+        assert!(
+            refusal.contains("shadow"),
+            "must say why it is destructive, not just that it is useless: {refusal}"
+        );
+    }
+
+    // Control activation is what the flag is *for*; it must stay usable.
+    #[test]
+    fn install_shortcut_allowed_under_control_activation() {
+        assert!(shortcut_install_refusal(Activation::Control, "<Super>t").is_none());
     }
 }

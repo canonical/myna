@@ -201,10 +201,18 @@ portal only serves apps the compositor can identify, so `$SNAP` being set
   *indefinitely*: the portal resolves it on a `Response` signal, so no D-Bus
   call timeout applies. The daemon bounds that at 120s and retries.
   `myna --hold` switches it to hold-to-talk.
+
+  To change the key afterwards: **Settings → Keyboard**, where it is listed
+  under myna. Do *not* bind a GNOME custom shortcut to `myna.toggle` for this -
+  `gsd-media-keys` serves custom keybindings and portal global shortcuts alike,
+  so a custom binding on the same accel shadows the portal's own and the key
+  stops working. `myna.install-shortcut` refuses under portal activation for
+  exactly this reason.
 - **Control socket** (`myna --control`) — for a desktop with no working
   GlobalShortcuts backend. `myna` listens for pokes; `myna.toggle` sends
   one. Bind a custom shortcut to `/snap/bin/myna.toggle`
-  (`myna.install-shortcut '<Super>t'` does it for GNOME).
+  (`myna.install-shortcut '<Super>t'` does it for GNOME). Both commands are
+  control-activation only; under the default they are inert and say so.
 
 `myna --stdin` drives from the terminal (debug; injects back into the
 terminal). The three activation flags are mutually exclusive.
@@ -229,8 +237,8 @@ preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 |---|---|
 | `myna` | the dictation daemon - a user service, so no `/snap/bin` entry |
 | `myna.status` | what state dictation is in, and why - start here |
-| `myna.toggle` | poke the daemon's control socket (start/stop) |
-| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf) |
+| `myna.toggle` | poke the daemon's control socket (start/stop). **Control activation only** - the default (portal) daemon has no control socket |
+| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf). **Control activation only** - refuses under portal, where it would shadow the portal's own binding |
 | `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
 
 ### `myna.status`

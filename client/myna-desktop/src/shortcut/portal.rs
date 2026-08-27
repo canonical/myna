@@ -57,6 +57,19 @@ pub enum ActivationMode {
     Hold,
 }
 
+impl ActivationMode {
+    /// How to *use* the key, in the words the portal shows the user next to it
+    /// (GNOME's Settings → Keyboard list, and the bind dialog). Derived from
+    /// the mode rather than written out once, because a fixed string told
+    /// every user to hold a key the daemon was treating as a toggle.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Toggle => "myna dictation (tap to start/stop)",
+            Self::Hold => "myna dictation (hold to talk)",
+        }
+    }
+}
+
 /// The autorepeat-dedup state machine. Hold: first `Activated` wins until a
 /// `Deactivated`; repeats in between are ignored (FR-008). Toggle: the first
 /// `Activated` of each physical press flips the session edge; `Deactivated`
@@ -205,8 +218,8 @@ impl GlobalShortcutTrigger {
             .await
             .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
 
-        let shortcut = NewShortcut::new(shortcut_id, "myna dictation (hold to talk)")
-            .preferred_trigger(preferred_trigger);
+        let shortcut =
+            NewShortcut::new(shortcut_id, mode.describe()).preferred_trigger(preferred_trigger);
         shortcuts
             .bind_shortcuts(&session, &[shortcut], None, Default::default())
             .await
@@ -533,5 +546,15 @@ mod tests {
         ]))
         .await;
         assert_eq!(edges, vec![TriggerEdge::Press]);
+    }
+
+    // The portal shows this string next to the key in Settings → Keyboard, so
+    // it has to describe the gesture the daemon actually implements. A fixed
+    // "hold to talk" told every Toggle user (the default) the wrong thing.
+    #[test]
+    fn description_matches_the_gesture_the_mode_implements() {
+        assert!(ActivationMode::Toggle.describe().contains("tap"));
+        assert!(ActivationMode::Hold.describe().contains("hold"));
+        assert!(!ActivationMode::Toggle.describe().contains("hold"));
     }
 }
