@@ -39,7 +39,6 @@
 //! [`settings_for_schema_key`], which consults the schema source first.
 
 use glib::translate::ToGlibPtr;
-use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
@@ -61,7 +60,8 @@ const ANIMATIONS_KEY: &str = "enable-animations";
 const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
 /// `GtkReducedMotion.no_preference` — the one value meaning "full motion".
 const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
-/// `AdwStyleManager`'s resolved accent (libadwaita ≥ 1.7).
+/// `AdwStyleManager`'s resolved accent — notified after the stylesheet is
+/// updated, so the theme is already current when it fires.
 const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
 
 /// Build a [`gio::Settings`] for `schema` only if the schema **and** `key`
@@ -156,19 +156,24 @@ pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
     })
 }
 
-/// The platform-resolved accent from libadwaita ≥ 1.7's style manager, read
-/// as a boxed RGBA so Ubuntu's Yaru accents (outside upstream's enum) come
-/// through exactly. `None` on older libadwaita.
+/// The desktop's accent as libadwaita resolves it.
+///
+/// `adw_style_manager_get_accent_color_rgba()` (libadwaita ≥ 1.6, the
+/// crate's floor) — a plain value read, needing no widget and no notion of
+/// when a style was last recomputed. On Ubuntu it is also complete: the
+/// Yaru patches feed accent *variants*, which are selected by theme name
+/// rather than by the `accent-color` key, into this same property, so a
+/// `Yaru-olive` desktop reports olive here.
+///
+/// Read as a `gdk::RGBA`, never as `AdwAccentColor`: Yaru adds
+/// `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, outside
+/// upstream's enumeration, which the Rust enum cannot represent.
 pub fn probe_platform_accent() -> Option<Rgb> {
-    let manager = adw::StyleManager::default();
-    let property = manager
-        .find_property(ADW_ACCENT_RGBA_PROPERTY)
-        .map(|p| p.name().to_string())?;
-    let rgba = manager.property_value(&property).get::<gdk::RGBA>().ok()?;
+    let rgba = adw::StyleManager::default().accent_color_rgba();
     Some(Rgb {
-        r: rgba.red() as f64,
-        g: rgba.green() as f64,
-        b: rgba.blue() as f64,
+        r: rgba.red().clamp(0.0, 1.0) as f64,
+        g: rgba.green().clamp(0.0, 1.0) as f64,
+        b: rgba.blue().clamp(0.0, 1.0) as f64,
     })
 }
 
@@ -260,17 +265,16 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
     }
 
     let manager = adw::StyleManager::default();
-    let mut adw_handle = None;
-    if manager.find_property(ADW_ACCENT_RGBA_PROPERTY).is_some() {
+    let adw_handle = {
         let cb = on_change.clone();
         // libadwaita reloads the accent provider before emitting this, so
         // the theme already reports the new colour here.
-        adw_handle = Some(
+        Some(
             manager.connect_notify_local(Some(ADW_ACCENT_RGBA_PROPERTY), move |_, _| {
                 cb(AccentReadiness::Current)
             }),
-        );
-    }
+        )
+    };
 
     let mut gtk_handle = None;
     let gtk_settings = gtk::Settings::default();

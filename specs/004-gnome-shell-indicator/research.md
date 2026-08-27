@@ -1097,13 +1097,18 @@ a plain value read (the property behind
 `adw_style_manager_get_accent_color_rgba()`) with no dependence on a widget
 being rooted or on when its style was last recomputed, and because Ubuntu's
 patches feed Yaru accent *variants* — selected by theme name — into that
-same property, so a `Yaru-olive` desktop reports olive there. The typed
-getter itself is `Since: 1.6` and is deliberately **not** used: it would
-require the `libadwaita/v1_6` compile-time feature, and the 24.04 workshop
-that builds this workspace has libadwaita 1.5. Probing the property by name
-costs nothing and degrades to the CSS path on such a stack — which is also
-the path that catches a stylesheet defining its own `@accent_bg_color`
-independently of the accent preference. The
+same property, so a `Yaru-olive` desktop reports olive there. `adw_style_manager_get_accent_color_rgba()` is called
+directly (`Since: 1.6`), not probed by property name: the binding floor is
+set by what the **snap** ships, and the snap's toolkit comes from the
+snapcraft `gnome` extension's gnome-46-2404 SDK (libadwaita 1.7.7), not from
+core24 — so `libadwaita/v1_6` is safe everywhere the binary actually runs.
+The only obstacle was the 24.04 workshop's libadwaita 1.5, which modelled a
+stack no user runs; `.workshop/myna.yaml` moves to `ubuntu@26.04`
+accordingly. **GTK does not follow**: the snap is on 4.18, so 4.22's
+`gtk-interface-reduced-motion` remains a runtime property lookup and the
+`gtk4` feature stays at `v4_10`. The theme's `@accent_bg_color` remains the
+fallback, and is what catches a stylesheet defining its own accent
+independently of the preference. The
 `accent-color` name table and the GSettings read that fed it are **removed**
 — they existed to map a name onto a colour ourselves, which is exactly what
 the theme does, and the theme also covers what a name cannot (Yaru variants,

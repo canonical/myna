@@ -13,7 +13,21 @@
 # the `project-` prefix. Extend `sdks:` with further SDKs (CUDA, extras) as
 # those workflows are brought under Workshop.
 name: myna
-base: ubuntu@24.04
+# Raised from ubuntu@24.04 for the HUD renderer (client/myna-hud, feature
+# 004). The binding floor this workspace builds against is set by what the
+# SNAP ships, and the snap's toolkit does NOT come from core24: the
+# snapcraft `gnome` extension supplies the gnome-46-2404 SDK (GTK 4.18.6,
+# libadwaita 1.7.7). core24's own libadwaita is 1.5, so a 24.04 base modelled
+# a stack no user ever runs, and it was the only thing preventing the crate
+# from using the libadwaita 1.6 accent API directly instead of probing for it
+# by property name.
+#
+# The base only has to be at or above the floor the cargo features declare
+# (see client/myna-hud/Cargo.toml): libadwaita v1_6, gtk4 v4_10. GTK
+# deliberately does NOT follow the base — the snap is on 4.18, so anything
+# newer (4.22's `gtk-interface-reduced-motion`) stays a runtime property
+# lookup rather than a compile-time feature.
+base: ubuntu@26.04
 sdks:
   # Workspace toolchain (client/Cargo.toml: rust-version = 1.75) — cargo, clippy,
   # rustfmt.
