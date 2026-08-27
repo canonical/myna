@@ -55,7 +55,7 @@ export class OverlayHost {
         this._restartState = initialState();
         this._dormant = false;
 
-        this._windowCreatedId = 0;
+        this._mapId = 0;
         this._positionHandlerIds = [];   // on the adopted window
         this._layoutHandlerIds = [];     // monitors/work-area
         this._restartTimeoutId = 0;
@@ -96,9 +96,9 @@ export class OverlayHost {
         this._cancellable?.cancel();
         this._cancellable = null;
 
-        if (this._windowCreatedId) {
-            global.display.disconnect(this._windowCreatedId);
-            this._windowCreatedId = 0;
+        if (this._mapId) {
+            global.window_manager.disconnect(this._mapId);
+            this._mapId = 0;
         }
         // Terminating the client kills its subprocess and reaps the adopted
         // window with it.
@@ -148,9 +148,15 @@ export class OverlayHost {
         this._launchedAtMs = GLib.get_monotonic_time() / 1000;
         this._log(`launched renderer via ${launch.source}: ${launch.argv.join(' ')}`);
 
-        // Adopt the window when it appears.
-        this._windowCreatedId = global.display.connect(
-            'window-created', (_display, window) => this._onWindowCreated(window));
+        // Adopt the window on MAP, not on `window-created`. window-created
+        // fires before the surface is committed, when owns_window() cannot
+        // yet match reliably; the window_manager `map` signal fires once the
+        // actor exists, which is what DIN (desktop-icons-ng) uses. It also
+        // handles the renderer hiding at idle and re-showing: every re-map
+        // re-checks ownership, so a window that unmaps and maps again is
+        // re-adopted rather than missed.
+        this._mapId = global.window_manager.connect_after(
+            'map', (_wm, actor) => this._onWindowMapped(actor.get_meta_window()));
 
         // Watch the subprocess so an exit drives the respawn policy. A fresh
         // Cancellable per spawn, captured by this wait: disable() cancels
@@ -182,12 +188,33 @@ export class OverlayHost {
 
     // ── Adoption (XH4) ──────────────────────────────────────────────────
 
-    _onWindowCreated(window) {
-        // Ignore windows we do not own, and adopt exactly once — a second
-        // window from the same client (a dialog) is not the HUD.
-        if (this._window)
+    _onWindowMapped(window) {
+        if (!window)
             return;
-        if (!this._client?.owns_window(window))
+        // Already adopted: the renderer hid at idle and re-mapped. It is the
+        // same Meta.Window, so re-assert the overlay treatment (mutter can
+        // reset some of it across an unmap) and reposition, but do not
+        // re-run the one-time wiring.
+        if (window === this._window) {
+            this._makeOverlay(window);
+            this._position();
+            return;
+        }
+        if (this._window)
+            return;   // a different, second window (a dialog) — not the HUD
+
+        // owns_window() throws on an X11 window (e.g. anything via XWayland),
+        // so guard it: an unrelated window mapping must never take the host
+        // down, and a renderer that connected over XWayland instead of the
+        // injected Wayland socket simply is not ours.
+        let owns = false;
+        try {
+            owns = this._client?.owns_window(window) ?? false;
+        } catch (e) {
+            // X11 window (or the client is gone) — not ours.
+            return;
+        }
+        if (!owns)
             return;
 
         this._window = window;
@@ -297,9 +324,9 @@ export class OverlayHost {
         const uptimeMs = GLib.get_monotonic_time() / 1000 - this._launchedAtMs;
         this._disconnectWindow();
         this._disconnectLayout();
-        if (this._windowCreatedId) {
-            global.display.disconnect(this._windowCreatedId);
-            this._windowCreatedId = 0;
+        if (this._mapId) {
+            global.window_manager.disconnect(this._mapId);
+            this._mapId = 0;
         }
         this._window = null;
         this._client = null;
