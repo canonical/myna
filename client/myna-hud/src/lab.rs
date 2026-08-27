@@ -1,21 +1,22 @@
-//! lab — the development lab (feature 004, T131), replacing the extension's
-//! `dev-lab/` and `dev-lab-gpu/` harnesses.
+//! lab — the development lab and the simulator's control surface (feature
+//! 004, T131/T132), replacing the extension's `dev-lab/` and `dev-lab-gpu/`
+//! harnesses.
 //!
-//! A control window driving the **identical** renderer modules with no
-//! backend at all: every state, severity, level and phase the HUD can show
-//! is reachable by hand, so the pill can be judged without a microphone, a
-//! model, or the Python daemon.
+//! Two modes, sharing the same controls but rendering the HUD differently:
+//!
+//! * **`--lab`** — the HUD is a **separate external window** (an ordinary
+//!   always-on-top pill), driven directly from the controls with no backend.
+//!   For developing the renderer standalone.
+//! * **`--serve-dbus`** — the HUD is **embedded** in the control window as a
+//!   preview (like the former Python `dev-lab-gpu`), and the controls are
+//!   published over `org.myna.Dictation` so a *separate*, shell-hosted
+//!   `myna-hud` instance shows the real overlay. The embedded pill is "what
+//!   I am publishing"; the shell instance is the real thing.
 //!
 //! The level slider is the *smoothed envelope* — what the ribbon consumes —
-//! and is pushed through [`crate::simulator::envelope_to_levels`] so it
-//! travels the same calibration the wire does. Driving `push_level`
-//! directly would make the lab's ribbon and the hosted ribbon sit at
-//! different amplitudes for the same setting (and would hide any drift
-//! between the vumeter and the simulator).
-//!
-//! It also carries a plain text view: dictating into it is how the
-//! focus-safety claim (FR-024 — the HUD must never steal the caret) gets
-//! checked by hand.
+//! and is pushed through [`envelope_to_levels`] so it travels the same
+//! calibration the wire does. It also carries a plain text view: dictating
+//! into it is how the focus-safety claim (FR-024) is checked by hand.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,6 +28,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::pill::Pill;
 use crate::simulator::{envelope_to_levels, ERROR_REASON, NOTICE_REASON, PUBLISH_HZ};
 use crate::states::{state_to_descriptor, wire};
 use crate::window::HudWindow;
@@ -49,66 +51,85 @@ impl Default for Controls {
     }
 }
 
-/// Build and show the lab: the HUD itself plus its control window.
-pub fn present(app: &adw::Application) {
-    present_with(app, None);
+/// Where the lab renders the HUD: a separate overlay window, or a pill
+/// embedded in the control window.
+enum Target {
+    /// `--lab`: an external always-on-top HUD window.
+    Window(Rc<HudWindow>),
+    /// `--serve-dbus`: an embedded preview pill.
+    Embedded(Rc<Pill>),
 }
 
-/// The lab plus a live `org.myna.Dictation` on the session bus, fed by the
-/// same controls (`--serve-dbus`, T132). The HUD still renders directly from
-/// the controls — the lab must stay usable even if no bus is available — but
-/// a real name now exists for the hosted path or an external consumer to
-/// read, and `Start`/`Stop`/`Toggle` are answerable from a terminal.
+impl Target {
+    fn apply_descriptor(&self, descriptor: crate::states::Descriptor) {
+        match self {
+            Target::Window(w) => w.apply_descriptor(descriptor),
+            Target::Embedded(p) => p.apply_descriptor(descriptor),
+        }
+    }
+
+    fn push_level(&self, rms: f64, peak: f64) {
+        match self {
+            Target::Window(w) => w.push_level(rms, peak),
+            Target::Embedded(p) => p.push_level(rms, peak),
+        }
+    }
+}
+
+/// `--lab`: the HUD as an external window, no backend.
+pub fn present(app: &adw::Application) {
+    let hud = HudWindow::new(app);
+    hud.present_standalone();
+    build_controls(app, Target::Window(hud), None);
+}
+
+/// `--serve-dbus`: the HUD embedded as a preview, publishing to the bus so a
+/// shell-hosted instance shows the real overlay.
 pub fn present_serving(app: &adw::Application) {
     let shared = crate::serve::Shared::default();
     let serve_shared = shared.clone();
 
     // Claim the name on the connection's own executor. A failure (the daemon
     // already owns it, or there is no session bus) is logged, not fatal: the
-    // lab keeps working as a pure renderer.
+    // embedded preview still works.
     glib::spawn_future_local(async move {
         match crate::serve::serve(serve_shared).await {
-            Ok(_connection) => {
-                // Held for the process lifetime; the executor drives it.
-                std::mem::forget(_connection);
+            Ok(connection) => {
+                std::mem::forget(connection); // held for the process lifetime
                 eprintln!("myna-hud --serve-dbus: serving org.myna.Dictation");
             }
             Err(e) => eprintln!("myna-hud --serve-dbus: {e}"),
         }
     });
 
-    present_with(
-        app,
-        Some(Box::new(move |controls: &Controls, active: bool| {
-            let _ = active;
-            // The two problem states carry the simulator's content-free reasons.
-            let reason = match controls.state.as_str() {
-                wire::NOTICE => NOTICE_REASON.to_string(),
-                wire::ERROR => ERROR_REASON.to_string(),
-                _ => controls.reason.clone(),
-            };
-            shared.set_controls(crate::serve::Controls {
-                state: controls.state.clone(),
-                reason,
-                envelope: controls.envelope,
-            });
-        })),
-    );
+    let sink: ControlsSink = Box::new(move |controls: &Controls| {
+        let reason = match controls.state.as_str() {
+            wire::NOTICE => NOTICE_REASON.to_string(),
+            wire::ERROR => ERROR_REASON.to_string(),
+            _ => controls.reason.clone(),
+        };
+        shared.set_controls(crate::serve::Controls {
+            state: controls.state.clone(),
+            reason,
+            envelope: controls.envelope,
+        });
+    });
+
+    let pill = Pill::new();
+    build_controls(app, Target::Embedded(pill), Some(sink));
 }
 
-type ControlsSink = Box<dyn Fn(&Controls, bool)>;
+type ControlsSink = Box<dyn Fn(&Controls)>;
 
-fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
-    let hud = HudWindow::new(app);
-    hud.present_standalone();
-
+fn build_controls(app: &adw::Application, target: Target, sink: Option<ControlsSink>) {
+    let target = Rc::new(target);
     let controls = Rc::new(RefCell::new(Controls::default()));
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(gettext("myna HUD lab"))
         .default_width(460)
-        .default_height(520)
+        .default_height(560)
         .build();
 
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -117,6 +138,21 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
     page.set_margin_start(16);
     page.set_margin_end(16);
 
+    // ── Embedded HUD preview (--serve-dbus only) ────────────────────────
+    // The pill is what the shell-hosted instance is being told to show; it
+    // lives at the top of the control window, framed, so "publishing X" is
+    // visible without a second window.
+    if let Target::Embedded(pill) = target.as_ref() {
+        let frame = gtk::Frame::new(Some(&gettext("Published to org.myna.Dictation")));
+        let holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        holder.set_halign(gtk::Align::Center);
+        holder.set_margin_top(8);
+        holder.set_margin_bottom(8);
+        holder.append(pill.widget());
+        frame.set_child(Some(&holder));
+        page.append(&frame);
+    }
+
     // ── State ───────────────────────────────────────────────────────────
     let states = gtk::StringList::new(&wire::ALL);
     let state_row = adw::ComboRow::builder()
@@ -124,7 +160,6 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
         .subtitle(gettext("the wire value the publisher would send"))
         .model(&states)
         .build();
-    // Start on `recording`, the state the ribbon is most alive in.
     state_row.set_selected(
         wire::ALL
             .iter()
@@ -149,13 +184,13 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
     page.append(&group);
 
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
-    let target = gtk::TextView::new();
-    target.set_wrap_mode(gtk::WrapMode::WordChar);
-    target.buffer().set_text(&gettext(
+    let dictation_target = gtk::TextView::new();
+    dictation_target.set_wrap_mode(gtk::WrapMode::WordChar);
+    dictation_target.buffer().set_text(&gettext(
         "Type here while the HUD is showing: the caret must never move to the HUD.",
     ));
     let scroller = gtk::ScrolledWindow::builder()
-        .child(&target)
+        .child(&dictation_target)
         .vexpand(true)
         .has_frame(true)
         .build();
@@ -165,9 +200,9 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
     page.append(&target_label);
     page.append(&scroller);
 
-    // Composed by hand rather than with adw::ToolbarView, which would
-    // require a libadwaita 1.4 compile-time feature; the runtime matrix
-    // keeps this crate's adw feature floor at 1.0 (R26).
+    // Composed by hand rather than with adw::ToolbarView, which would require
+    // a libadwaita 1.4 compile-time feature; the runtime matrix keeps this
+    // crate's adw feature floor at 1.0 (R26).
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
     shell.append(&adw::HeaderBar::new());
     shell.append(&page);
@@ -176,21 +211,19 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
     // ── Wiring ──────────────────────────────────────────────────────────
     let sink = Rc::new(sink);
     let apply = {
-        let hud = hud.clone();
+        let target = target.clone();
         let controls = controls.clone();
         let sink = sink.clone();
         move || {
             let controls = controls.borrow();
             if let Some(sink) = sink.as_ref() {
-                sink(&controls, controls.state != wire::IDLE);
+                sink(&controls);
             }
             // The two problem states carry the simulator's content-free
-            // reasons, so both ErrorMessage renderings ("No speech detected"
-            // from the state module's own default, and the "Error — %s"
-            // prefix) are visible from here. `idle` is simply one of the
-            // states in the list — it clears the HUD entirely (FR-002/X3),
-            // which is why there is no separate "session active" switch:
-            // it would publish idle too, saying the same thing twice.
+            // reasons, so both ErrorMessage renderings are visible from here.
+            // `idle` is simply one of the states in the list — it clears the
+            // HUD entirely (FR-002/X3), which is why there is no separate
+            // "session active" switch: it would say the same thing twice.
             let (state, reason) = match controls.state.as_str() {
                 wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_REASON.to_string()),
                 wire::ERROR => (wire::ERROR.to_string(), ERROR_REASON.to_string()),
@@ -201,7 +234,7 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
             } else {
                 controls.reason.clone()
             };
-            hud.apply_descriptor(state_to_descriptor(Some(&state), &reason));
+            target.apply_descriptor(state_to_descriptor(Some(&state), &reason));
         }
     };
 
@@ -229,7 +262,7 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
         Duration::from_secs_f64(1.0 / PUBLISH_HZ),
         glib::clone!(
             #[strong]
-            hud,
+            target,
             #[strong]
             controls,
             move || {
@@ -237,7 +270,7 @@ fn present_with(app: &adw::Application, sink: Option<ControlsSink>) {
                 // Nothing is captured while idle, so nothing is published.
                 if controls.state != wire::IDLE {
                     let (rms, peak) = envelope_to_levels(controls.envelope);
-                    hud.push_level(rms, peak);
+                    target.push_level(rms, peak);
                 }
                 glib::ControlFlow::Continue
             }

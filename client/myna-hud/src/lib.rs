@@ -36,6 +36,7 @@ pub mod input_region;
 pub mod lab;
 pub mod motion;
 pub mod notice_slot;
+pub mod pill;
 pub mod platform;
 pub mod ribbon;
 pub mod serve;
