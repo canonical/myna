@@ -49,7 +49,7 @@ manual acceptance plus a headless-Shell integration test where available.
 |---|---|---|
 | XH10 | The adopted window is dock-typed, hidden from dash/alt-tab/window lists, shown on all workspaces, kept above normal windows, and never takes keyboard focus on map — typing in the focused application is uninterrupted by the indicator appearing. | FR-001, FR-024, SC-001 |
 | XH11 | The window is positioned bottom-center of the primary monitor's work area, follows monitor/work-area changes and the window's own size changes without flicker loops (programmatic moves do not re-trigger themselves). | FR-004 |
-| XH12 | Clicks on the indicator pass through to the application underneath (empty input region, client-side — R22), except on the critical-error dismiss control. | FR-025, SC-015 |
+| XH12 | Clicks on the indicator pass through to the application underneath in **every** state (empty input region, client-side — R22). **(2026-08-26)** There is no longer any exception: the dismiss control is gone, the HUD takes no pointer input, and a critical error is cleared by the client publishing a new state. | FR-025, SC-015 |
 | XH13 | The extension declares `shell-version: ["50", "51"]` and refuses to load elsewhere; both target mutter ABI generations (18/51) expose the host APIs it uses. | FR-020, SC-008 |
 
 ## Constraints

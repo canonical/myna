@@ -13,6 +13,11 @@
 //! override is not introspectable extension API anyway.
 //!
 //! This module is the pure decision (state → rects); the window applies it.
+//!
+//! **Amended 2026-08-26**: the region is now empty in every state. It
+//! previously punched a hole for a critical error's dismiss (×) control,
+//! which no longer exists — the HUD receives no events, and the client
+//! clears an error by publishing a new state.
 
 use crate::states::Severity;
 
@@ -25,23 +30,17 @@ pub struct Rect {
     pub height: f64,
 }
 
-/// The interactive rectangles for the current state:
-/// - **Any non-critical state** (idle, loading, recording, transcribing,
-///   finalizing, notice, active): *none* — the window is fully
-///   click-through; pointer events pass to the application underneath.
-/// - **Critical error**: exactly the dismiss control's rectangle, when its
-///   layout is known (`Some`); still empty before layout so nothing is
-///   accidentally interactive.
+/// The interactive rectangles for the current state: **none, in every
+/// state** (FR-025).
 ///
-/// `dismiss_allocation` is the dismiss (×) control's current
-/// surface-local rectangle as computed by the window's layout (`None` until
-/// laid out or while the control is not shown).
-pub fn input_region_rects(
-    severity: Option<Severity>,
-    dismiss_allocation: Option<Rect>,
-) -> Vec<Rect> {
-    match severity {
-        Some(Severity::Critical) => dismiss_allocation.into_iter().collect(),
-        _ => Vec::new(),
-    }
+/// The HUD takes no pointer input at all. It is an overlay that reports
+/// what the dictation session is doing; it is never a target, and it
+/// carries no control to click — a critical error is cleared by the client
+/// publishing a new state, not by the user dismissing it.
+///
+/// The severity is still taken, so the call site says which state is being
+/// made click-through and the test below can assert that the answer does
+/// not vary with it.
+pub fn input_region_rects(_severity: Option<Severity>) -> Vec<Rect> {
+    Vec::new()
 }

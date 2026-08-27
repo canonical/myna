@@ -54,7 +54,7 @@ themselves (E1) — not a separate D-Bus property. Backed in Rust by
 | Severity | Wire `State` | UX treatment | Auto-dismiss? | Wave ribbon (2026-07-30, R17a) |
 |---|---|---|---|---|
 | `recoverable` | `notice` | Non-blocking notice; a new session may start while it's showing | Yes — ~3.5 s hold, restarts in full if a new recoverable notice arrives while one is showing (R15) | **Visible**, tinted amber, audio-reactivity paused (gentle idle pulse) — not hidden |
-| `critical` | `error` | Persistent notice with a dismiss (×) control | No — remains until the user dismisses it; a new critical error while one is undismissed replaces the reason in place without waiving the dismiss requirement (R15) | Hidden (the pill's icon/border/message carry the state instead) |
+| `critical` | `error` | Persistent notice, no control of any kind **(2026-08-26)** | No — remains until the **client** publishes a different state; a new critical error while one is showing replaces the reason in place and still never auto-clears (R15) | Hidden (the pill's icon/border/message carry the state instead) |
 
 This is an **interim, client-inferred classification** (spec Assumptions;
 research R13) pending T31/T62's wire-level error taxonomy — not itself that
@@ -167,11 +167,11 @@ window/input-region state the windowed surface adds.)
 |---|---|
 | current state | last `DictationState` received (default `idle`) |
 | current level | last `AudioLevel` + a timestamp (for stale-decay) |
-| HUD pill window | the application's single borderless toplevel; mapped/visible only while state ≠ `idle` (the hosted overlay window of spec Key Entities); contains the pill layout, status label, mic/mic-slash icon, dismiss control, and the GLArea ribbon |
+| HUD pill window | the application's single borderless toplevel; mapped/visible only while state ≠ `idle` (the hosted overlay window of spec Key Entities); contains the pill layout, status label, mic/mic-slash icon, and the GLArea ribbon. No interactive control **(2026-08-26)** |
 | ribbon rendering | the wave ribbon renders via the GPU shader path only (R23) in a GLArea driven by the frame clock, gated on mapped + not reduced-motion |
-| input region | per-state: empty (fully click-through) except during a critical error, where it covers exactly the dismiss control's rectangle (R22); re-applied on map and size-allocate |
+| input region | empty (fully click-through) in **every** state, with no exception **(2026-08-26, R22)**; re-applied on map |
 | held notice slot | one severity-scoped slot (reason + optional dismiss-timer handle) implementing the replace-in-place/restart-timer rules (R15) |
-| dismiss control | the critical-error pill's × button: pointer-reactive within its input-region rectangle, never keyboard-focusable — FR-007c |
+| ~~dismiss control~~ | **Removed 2026-08-26.** The HUD takes no pointer input; a critical error is cleared by the client publishing a different state (FR-007b as amended, FR-025) |
 | ribbon severity tint | `descriptor.severity` passed straight through to the ribbon as its `severityTint` (`null \| 'recoverable' \| 'critical'`); the ribbon stays visible/amber/paused-pulsing for `'recoverable'`, hidden for `'critical'` (FR-010e) |
 | a11y | the window and its children expose accessible labels/roles via the toolkit's accessibility bridge, updated per state (R10's parity requirement, now native to the app) |
 | accent color | current `AccentColorPreference` (E2a), re-read live; colors the ribbon strands |

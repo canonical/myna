@@ -19,17 +19,17 @@
 //!
 //! ## Click-through (R22/T114)
 //!
-//! The surface's input region is emptied so pointer events reach whatever
-//! is underneath — the HUD is an overlay, not a target. The single
-//! exception is the dismiss control during a critical error, whose
-//! rectangle is punched back in. The region is re-applied whenever the
-//! state or the layout changes, because both move that rectangle.
+//! The surface's input region is empty in **every** state, so pointer
+//! events always reach whatever is underneath — the HUD is an overlay, not
+//! a target, and carries no interactive control at all. A critical error is
+//! cleared by the client publishing a new state, not by the user clicking
+//! the pill.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use gettextrs::gettext;
+use gdk4_x11 as gdkx11;
 use gtk::cairo;
 use gtk::gdk;
 use gtk::glib;
@@ -42,15 +42,30 @@ use crate::hud_logic::{
     icon_for_severity, pill_color_class, ribbon_phase_for_state_key, ribbon_visible_for_severity,
     PILL_COLOR_CLASSES,
 };
-use crate::input_region::{input_region_rects, Rect};
+use crate::input_region::input_region_rects;
 use crate::notice_slot::NoticeSlot;
 use crate::platform;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
-use crate::states::{Descriptor, Severity};
+use crate::states::Descriptor;
 use crate::vumeter::levels_to_intensity;
 
-/// The pill's fixed width, matching the extension's `PILL_WIDTH`.
+/// The pill's resting width, matching the extension's `PILL_WIDTH`. It is a
+/// FLOOR, not a fixed size: a long error reason grows the pill up to
+/// [`PILL_MAX_WIDTH`] and wraps beyond that.
 pub const PILL_WIDTH: i32 = 360;
+
+/// The label's wrap width, in characters — what actually keeps the pill at
+/// [`PILL_WIDTH`] when a long reason arrives.
+///
+/// GTK offers no pixel maximum for a widget, and the alternatives do not
+/// work here (all measured): `AdwClamp` bounds the child's *allocation*, not
+/// the window's natural size, so the window grew to 700px; a
+/// `GtkScrolledWindow` hands its child unlimited width, so the label stops
+/// wrapping altogether and the window reached 1280px. `max-width-chars` is
+/// the lever that does bound a wrapping label, and holding the pill to one
+/// width — rather than letting it grow to some larger ceiling — also stops
+/// the overlay changing width underneath the user as messages change.
+pub const LABEL_MAX_CHARS: i32 = 30;
 /// The ribbon's height, matching the extension's `RIBBON_HEIGHT`.
 pub const RIBBON_HEIGHT: i32 = 32;
 
@@ -90,7 +105,6 @@ pub struct HudWindow {
     icon: gtk::Image,
     label: gtk::Label,
     ribbon: gtk::GLArea,
-    dismiss: gtk::Button,
     state: Rc<RefCell<HudState>>,
     renderer: Rc<RefCell<Option<RibbonRenderer>>>,
     /// Owns the accent/reduced-motion subscriptions; dropped with the
@@ -131,22 +145,31 @@ impl HudWindow {
 
         let label = gtk::Label::new(None);
         label.add_css_class("myna-hud-label");
-        label.set_xalign(0.0);
-        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        // Centred: with the mic on the left and nothing on the right, a
+        // left-aligned line sits off-centre in the pill, and a wrapped
+        // reason reads as ragged rather than as a balanced block.
+        label.set_xalign(0.5);
+        label.set_justify(gtk::Justification::Center);
+        // Wrap rather than ellipsize: a critical error's reason is the one
+        // piece of text the user actually needs to read, and "Microphone
+        // unavailable — check…" helps nobody. The width is bounded by the
+        // pill instead (PILL_MAX_WIDTH), so wrapping is what absorbs a long
+        // reason.
+        label.set_wrap(true);
+        label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        label.set_natural_wrap_mode(gtk::NaturalWrapMode::Word);
+        label.set_max_width_chars(LABEL_MAX_CHARS);
 
         let ribbon = gtk::GLArea::new();
         ribbon.add_css_class("myna-hud-ribbon");
         ribbon.set_height_request(RIBBON_HEIGHT);
         ribbon.set_hexpand(true);
 
-        let dismiss = gtk::Button::from_icon_name("window-close-symbolic");
-        dismiss.add_css_class("myna-hud-dismiss");
-        dismiss.set_valign(gtk::Align::Center);
-        dismiss.set_visible(false);
-        dismiss.set_tooltip_text(Some(&gettext("Dismiss")));
-
         let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
         content.set_hexpand(true);
+        // A critical error hides the ribbon, leaving the label alone in a
+        // box that would otherwise pack it against the top edge.
+        content.set_valign(gtk::Align::Center);
         content.append(&label);
         content.append(&ribbon);
 
@@ -160,7 +183,6 @@ impl HudWindow {
         pill.set_size_request(PILL_WIDTH, -1);
         pill.append(&icon);
         pill.append(&content);
-        pill.append(&dismiss);
         window.set_child(Some(&pill));
 
         let state = Rc::new(RefCell::new(HudState {
@@ -186,7 +208,6 @@ impl HudWindow {
             icon,
             label,
             ribbon,
-            dismiss,
             state,
             renderer,
             preferences: RefCell::new(None),
@@ -210,10 +231,10 @@ impl HudWindow {
             let _ = window.steal_data::<Rc<HudWindow>>(SELF_KEY);
         });
 
+        hud.connect_x11_hints();
         hud.connect_renderer();
         hud.connect_palette();
         hud.connect_clock();
-        hud.connect_dismiss();
         hud.connect_preferences();
         hud.apply_descriptor(crate::states::state_to_descriptor(None, ""));
         hud
@@ -233,7 +254,7 @@ impl HudWindow {
 
     /// Apply a state descriptor: label, icon, colour class, ribbon phase,
     /// held notice, visibility and input region.
-    pub fn apply_descriptor(&self, descriptor: Descriptor) {
+    pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let now = self.now_ms();
         {
             let mut state = self.state.borrow_mut();
@@ -242,7 +263,7 @@ impl HudWindow {
                     .notice
                     .hold(descriptor.severity, &descriptor.status_text, now);
             } else {
-                state.notice.dismiss();
+                state.notice.clear();
             }
             if let Some(phase) = ribbon_phase_for_state_key(descriptor.key) {
                 // `flow` during the fresh-session unfold reveal is a no-op,
@@ -270,8 +291,6 @@ impl HudWindow {
 
         self.ribbon
             .set_visible(ribbon_visible_for_severity(descriptor.severity));
-        self.dismiss
-            .set_visible(descriptor.severity == Some(Severity::Critical));
 
         // Nothing is shown at idle (FR-002/X3) — push-to-talk means the
         // resting state is an absent HUD, not an empty one.
@@ -318,6 +337,33 @@ impl HudWindow {
         self.ribbon.connect_map(move |_| {
             if let Some(this) = this.upgrade() {
                 this.schedule_accent_resync();
+            }
+        });
+    }
+
+    /// Ask an X11 window manager to keep the overlay out of the taskbar and
+    /// the pager.
+    ///
+    /// On the shipping path this is redundant: the session is Wayland and
+    /// the `myna-shell` host dock-types the window and hides it from the
+    /// window list itself (R21). X11 is the lab/fallback case, where there
+    /// is no host and the WM would otherwise list the HUD as an ordinary
+    /// window.
+    ///
+    /// Note that **always-on-top has no GDK4 equivalent** — the X11 surface
+    /// API exposes skip-taskbar, skip-pager, urgency and desktop placement,
+    /// but nothing for `_NET_WM_STATE_ABOVE`. Stacking is the host's job on
+    /// Wayland (`make_above` plus the DOCK type); doing it on X11 would mean
+    /// setting the property through xlib directly.
+    fn connect_x11_hints(self: &Rc<Self>) {
+        self.window.connect_realize(|window| {
+            let Some(surface) = window.surface() else {
+                return;
+            };
+            // Fails cleanly on Wayland: the surface simply is not an X11 one.
+            if let Some(x11) = surface.downcast_ref::<gdkx11::X11Surface>() {
+                x11.set_skip_taskbar_hint(true);
+                x11.set_skip_pager_hint(true);
             }
         });
     }
@@ -384,7 +430,7 @@ impl HudWindow {
                 state.notice.severity().is_some() && !state.notice.is_showing(now)
             };
             if expired {
-                this.state.borrow_mut().notice.dismiss();
+                this.state.borrow_mut().notice.clear();
                 this.apply_input_region();
             }
 
@@ -393,65 +439,6 @@ impl HudWindow {
             }
             glib::ControlFlow::Continue
         });
-    }
-
-    fn connect_dismiss(self: &Rc<Self>) {
-        let this = Rc::downgrade(self);
-        self.dismiss.connect_clicked(move |_| {
-            let Some(this) = this.upgrade() else { return };
-            this.state.borrow_mut().notice.dismiss();
-            // An explicit dismiss returns the pill to its resting state.
-            this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
-        });
-    }
-
-    /// Force a re-read of the theme's accent at the next frame.
-    ///
-    /// Public because a host (or a test) may know the styling changed for a
-    /// reason none of the watched preferences covers — a stylesheet swapped
-    /// at runtime, say. In the ordinary case the resync is scheduled
-    /// automatically from the accent/theme settings and the style manager.
-    pub fn resync_accent(self: &Rc<Self>) {
-        self.schedule_accent_resync();
-    }
-
-    /// Re-resolve the ribbon's palette from the theme, **once**, at the next
-    /// frame.
-    ///
-    /// The accent is the ribbon's *computed* CSS colour (`color:
-    /// @accent_bg_color` in `style.css`), and a computed style is only
-    /// meaningful once the toolkit has recomputed it. Reading straight from
-    /// a settings handler returns the **previous** accent: libadwaita
-    /// listens to the same key with no defined handler ordering between us,
-    /// and GTK recomputes styles lazily for the next frame regardless.
-    ///
-    /// A one-shot tick callback is exactly the right moment — the style is
-    /// current for the frame being drawn — and it costs nothing in the
-    /// steady state, unlike re-reading on every repaint. (GTK 4's
-    /// `css_changed` vfunc would be the direct signal, but gtk4-rs 0.11
-    /// does not expose it for overriding.)
-    fn schedule_accent_resync(self: &Rc<Self>) {
-        let this = Rc::downgrade(self);
-        self.ribbon.add_tick_callback(move |_area, _clock| {
-            if let Some(this) = this.upgrade() {
-                this.sync_palette();
-            }
-            glib::ControlFlow::Break
-        });
-    }
-
-    /// Read the desktop's accent and rebuild the palette if it changed.
-    fn sync_palette(&self) {
-        let palette = platform::probe_accent_palette(Some(&self.ribbon));
-        let accent = palette.main_rgb();
-        let mut state = self.state.borrow_mut();
-        if state.accent == Some(accent) {
-            return;
-        }
-        state.accent = Some(accent);
-        state.palette = palette.as_ribbon_palette();
-        drop(state);
-        self.ribbon.queue_render();
     }
 
     fn connect_preferences(self: &Rc<Self>) {
@@ -476,28 +463,63 @@ impl HudWindow {
         *self.preferences.borrow_mut() = Some(watch);
     }
 
-    /// Empty the surface's input region so the HUD is click-through,
-    /// punching back only the dismiss control during a critical error
-    /// (R22/T114).
+    /// Make the surface fully click-through, in every state (R22/FR-025).
+    ///
+    /// The HUD is an overlay, never a target: it takes no pointer input at
+    /// all, so the region is empty and stays empty. There is deliberately no
+    /// interactive control on it — a critical error is cleared by the client
+    /// publishing a new state, not by the user clicking the pill.
+    /// Force a re-read of the theme's accent at the next frame.
+    ///
+    /// Public because a host (or a test) may know the styling changed for a
+    /// reason none of the watched preferences covers — a stylesheet swapped
+    /// at runtime, say. In the ordinary case the resync is scheduled
+    /// automatically from the accent/theme settings and the style manager.
+    pub fn resync_accent(self: &Rc<Self>) {
+        self.schedule_accent_resync();
+    }
+
+    /// Re-resolve the ribbon's palette from the desktop, **once**, at the
+    /// next frame.
+    ///
+    /// Used for triggers with no ordering guarantee (a raw GSettings key,
+    /// the theme name, the initial map): the accent may still be the old
+    /// one when they fire, and GTK recomputes styles lazily for the next
+    /// frame anyway. Costs nothing in the steady state, unlike re-reading on
+    /// every repaint.
+    fn schedule_accent_resync(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        self.ribbon.add_tick_callback(move |_area, _clock| {
+            if let Some(this) = this.upgrade() {
+                this.sync_palette();
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    /// Read the desktop's accent and rebuild the palette if it changed.
+    fn sync_palette(&self) {
+        let palette = platform::probe_accent_palette(Some(&self.ribbon));
+        let accent = palette.main_rgb();
+        let mut state = self.state.borrow_mut();
+        if state.accent == Some(accent) {
+            return;
+        }
+        state.accent = Some(accent);
+        state.palette = palette.as_ribbon_palette();
+        drop(state);
+        self.ribbon.queue_render();
+    }
+
     fn apply_input_region(&self) {
         let Some(surface) = self.window.surface() else {
             return;
         };
-        let severity = self.state.borrow().descriptor.severity;
-
-        let allocation = if self.dismiss.is_visible() {
-            let bounds = self.dismiss.compute_bounds(&self.window);
-            bounds.map(|b| Rect {
-                x: b.x() as f64,
-                y: b.y() as f64,
-                width: b.width() as f64,
-                height: b.height() as f64,
-            })
-        } else {
-            None
-        };
-
-        let rects = input_region_rects(severity, allocation);
+        let rects = input_region_rects(self.state.borrow().descriptor.severity);
+        debug_assert!(
+            rects.is_empty(),
+            "the HUD takes no pointer input in any state"
+        );
         let region = cairo::Region::create();
         for rect in rects {
             let r = cairo::RectangleInt::new(

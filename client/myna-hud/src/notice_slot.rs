@@ -42,7 +42,7 @@ impl NoticeSlot {
     /// slot, so a new session always starts clean.
     pub fn hold(&mut self, severity: Option<Severity>, reason: &str, now_ms: f64) {
         match severity {
-            None => self.dismiss(),
+            None => self.clear(),
             Some(severity) => {
                 self.severity = Some(severity);
                 self.reason = reason.to_string();
@@ -55,9 +55,12 @@ impl NoticeSlot {
         }
     }
 
-    /// The user's explicit dismiss (the × control), or a live state
-    /// superseding the notice.
-    pub fn dismiss(&mut self) {
+    /// Clear the slot: a live state has superseded the notice.
+    ///
+    /// There is no user-facing dismiss control — the HUD takes no pointer
+    /// input at all — so this is driven entirely by the client publishing a
+    /// new state.
+    pub fn clear(&mut self) {
         self.severity = None;
         self.reason.clear();
         self.expires_at = None;

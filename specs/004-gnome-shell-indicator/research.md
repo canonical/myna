@@ -362,8 +362,10 @@ place rather than stacking:
   timer in full (fresh ~3.5 s window) — so a second "no speech detected"
   right after the first doesn't clear on the original's now-stale schedule.
 - **`critical`**: replaces the reason but there is no timer to restart — it
-  simply remains persistent until the user dismisses it; the dismiss
-  requirement is never waived by a replacement.
+  simply remains until the client publishes a different state; a replacement
+  never turns it into something that expires by itself. **(2026-08-26)** The
+  earlier wording said "until the user dismisses it"; there is no dismiss
+  control any more (R22), so the clearing party is the client.
 
 **Rationale**: Directly encodes the two clarify-pass decisions (concurrent
 critical errors → replace-in-place; concurrent recoverable notices →
@@ -955,31 +957,40 @@ handoff (R27); (d) A window-registration D-Bus API (app announces its window)
 
 ## R22 — Input passthrough: client-side empty input region (2026-08-26)
 
-**Decision**: The renderer application declares its own input region via GDK's
-public `gdk_surface_set_input_region` (Wayland: `wl_surface_set_input_region`):
-an **empty region** — fully click-through — in every state, re-applied after
-map and after size-allocate (the toolkit can invalidate it); during a
-**critical error** the region covers exactly the dismiss (×) control's
-rectangle so FR-007b's explicit dismiss still works. The extension does not
-touch input at all — `MetaSurfaceActor.set_input_region` is not public
-introspectable extension API, and the client-side region is the platform's own
-mechanism for this exact use.
+**Decision** (**amended 2026-08-26**): The renderer application declares its
+own input region via GDK's public `gdk_surface_set_input_region` (Wayland:
+`wl_surface_set_input_region`): an **empty region — fully click-through — in
+every state, with no exception**. The pill carries no interactive control at
+all. The extension does not touch input —
+`MetaSurfaceActor.set_input_region` is not public introspectable extension
+API, and the client-side region is the platform's own mechanism for this use.
 
-**Rationale**: Click-through must hold wherever the pill is (FR-025); an empty
-input region is deterministic and needs no compositor cooperation. Focus
-safety of the × click: the window is DOCK-typed and never *takes* focus on
-map; a click on its one interactive control can still focus it under
-click-to-focus (a Wayland DOCK window is focusable on explicit click) —
-bounded risk, accepted as before: critical errors imply no active dictation
-session, and the controller's existing focus-loss policy recovers the
-session state. Verified in acceptance (quickstart 5b); documented fallback if
-it ever bites in practice: make the × visual-only and dismiss via a new
-session / `Stop()`.
+The superseded version punched a hole for the critical error's dismiss (×)
+control. That is withdrawn: the HUD receives no events, and a critical error
+is cleared by the client publishing a new state (FR-007b as amended). Note
+this is exactly the "make the pill entirely non-interactive" option the
+original alternatives list rejected for losing the explicit dismiss — with
+the dismiss requirement itself gone, the objection no longer applies.
+
+**Rationale**: Click-through must hold wherever the pill is (FR-025); an
+empty input region is deterministic and needs no compositor cooperation.
+Removing the one interactive control also **eliminates** a risk this section
+previously accepted rather than mitigating it: a click on the × could focus
+the DOCK window under click-to-focus, and the fallback on record was to make
+the × visual-only anyway. A window with an empty input region cannot be
+clicked at all, so FR-001 holds by construction instead of by argument.
+
+**Implementation note**: the region must be applied *after* layout. A
+control's allocation does not exist while the state is still being applied —
+measured, asking then returned a placeholder 4x4 rectangle at (-2, -2) — so
+a region derived from widget bounds lands in the wrong place entirely. With
+the region now unconditionally empty this cannot bite, but it is why the
+dismiss control was unclickable before it was removed.
 
 **Alternatives considered**: Compositor-side input-region override from the
-extension — not available to GJS extensions (not introspected); making the
-pill entirely non-interactive — loses FR-007b's explicit dismiss; keyboard
-dismiss (Esc) — would require focus, violating FR-001.
+extension — not available to GJS extensions (not introspected); a
+pointer-reactive dismiss control — withdrawn, see above; keyboard dismiss
+(Esc) — would require focus, violating FR-001.
 
 ## R23 — GPU-only rendering: Gtk.GLArea + the ported GLSL path (2026-08-26)
 

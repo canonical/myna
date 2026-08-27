@@ -193,7 +193,7 @@ detected") with the filled mic icon; the ribbon stays **visible**, tinted
 amber, gently pulsing (FR-010e, SC-014); the notice clears on its own after
 ~3.5 s; a new session starts immediately without being blocked; a second
 "no speech" while the first is showing replaces in place and restarts the
-timer (FR-007a/FR-007d, R15). Clicks outside the (absent) dismiss control pass through.
+timer (FR-007a/FR-007d, R15). Clicks anywhere on the pill pass through.
 
 ## 5b. Critical-error walkthrough (US2a)
 
@@ -203,11 +203,11 @@ timer (FR-007a/FR-007d, R15). Clicks outside the (absent) dismiss control pass t
 ```
 
 **Expected / assert**: a persistent notice appears with a clear, content-free
-reason, a mic-with-slash icon, a visible dismiss (×) control, and the ribbon
-**hidden** (FR-010e). The notice does not clear on its own. **Only** the × is
-clickable (the input region covers exactly its rectangle — clicks elsewhere on
-the pill pass through, FR-025); clicking it clears the notice immediately.
-Keep a text field focused while clicking the ×: typing continues to land in
+reason, a mic-with-slash icon, and the ribbon **hidden** (FR-010e). It carries
+no dismiss control **(2026-08-26)** and does not clear on a timer; publishing
+a different state clears it. **Every** pixel of the pill is click-through
+(FR-025) — click straight through the notice onto whatever is beneath it, and
+confirm the click lands there. Keep a text field focused while doing so: typing continues to land in
 the field (FR-007c — the window never takes keyboard focus; if this ever
 regresses, the documented fallback is a visual-only × with dismiss via a new
 session/`Stop()`, R22). A second critical error replaces in place without
@@ -258,8 +258,8 @@ reference hardware.
   correctly, and accent-color/reduced-motion behaving per FR-010b/FR-022a
   (including the no-crash check when motion settings are toggled or absent).
 - Steps 5a/5b pass: the recoverable notice auto-dismisses and never blocks a
-  new session; the critical error persists until dismissed, its × control is
-  the only interactive pixel, and it never steals focus.
+  new session; the critical error persists until the client publishes another
+  state, no pixel of the pill is interactive, and it never steals focus.
 - Step 7 passes: renderer crash → bounded respawn (or budgeted dormancy);
   disable → clean teardown, no orphaned windows or processes.
 - `docs/desktop-injection.md` §2 and Future updated to record the

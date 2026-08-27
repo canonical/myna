@@ -30,9 +30,11 @@ fn recoverable_notice_auto_dismisses() {
 }
 
 // --- FR-007b: a critical error never auto-clears -------------------------
+// It stays until the CLIENT publishes a different state. There is no user
+// dismiss control: the HUD takes no pointer input (FR-025).
 
 #[test]
-fn critical_error_persists_until_dismissed() {
+fn critical_error_persists_until_the_client_clears_it() {
     let mut slot = NoticeSlot::default();
     slot.hold(Some(Severity::Critical), "Microphone unavailable", 0.0);
     assert_eq!(slot.expires_at(), None, "no timer at all");
@@ -40,8 +42,11 @@ fn critical_error_persists_until_dismissed() {
         slot.is_showing(HOLD_MS * 100.0),
         "still showing long past any recoverable hold"
     );
-    slot.dismiss();
-    assert!(!slot.is_showing(0.0), "an explicit dismiss clears it");
+    slot.clear();
+    assert!(
+        !slot.is_showing(0.0),
+        "a new state from the client clears it"
+    );
 }
 
 // --- X20/FR-007a: a second recoverable replaces in place AND restarts ----
@@ -64,10 +69,10 @@ fn recoverable_replacement_restarts_the_hold() {
     );
 }
 
-// --- X20/FR-007d: a second critical replaces without waiving the dismiss --
+// --- X20/FR-007d: a second critical replaces and still does not expire ---
 
 #[test]
-fn critical_replacement_keeps_requiring_a_dismiss() {
+fn critical_replacement_still_never_auto_clears() {
     let mut slot = NoticeSlot::default();
     slot.hold(Some(Severity::Critical), "first", 0.0);
     slot.hold(Some(Severity::Critical), "second", 500.0);
