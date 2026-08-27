@@ -29,7 +29,11 @@ window.myna-hud-window {
     padding: 10px 16px;
     background-color: rgba(20, 22, 28, 0.82);
     border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    /* Legible against a busy or light wallpaper. The severity states draw a
+     * strong coloured border, and at 0.08 the ordinary states read as an
+     * edgeless dark blob by comparison — the pill needs a defined edge in
+     * every state, not just the alarming ones. */
+    border: 1px solid rgba(255, 255, 255, 0.28);
     /* No drop shadow. The window hugs the pill exactly, so a shadow has
      * nowhere to fade into: it is clipped by the surface edge and reads as
      * a hard grey band around the pill rather than a soft shadow — plainly
