@@ -14,6 +14,7 @@
 // Meta.WaylandClient, Meta.Window and the Shell's signals, and holds the
 // live handles so disable() can tear everything down (XH7).
 
+import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
@@ -58,11 +59,14 @@ export class OverlayHost {
         this._restartState = initialState();
         this._dormant = false;
 
-        this._mapId = 0;
-        this._unmanagedId = 0;
-        this._positionHandlerIds = [];   // on the adopted window
-        this._layoutHandlerIds = [];     // monitors/work-area
-        this._overviewIds = [];          // overview showing/hidden
+        // Signals are tracked with connectObject()/disconnectObject(): host-
+        // lifetime signals (the map watch, the overview) use `this` as the
+        // tracker owner and are dropped in disable(); window-scoped signals
+        // (position/size/unmanaged) use a separate per-adoption token so
+        // they can be dropped when a window unmanages at idle without
+        // touching the host-lifetime ones.
+        this._windowSignals = null;
+
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
         this._enabled = false;
@@ -92,8 +96,13 @@ export class OverlayHost {
     disable() {
         this._enabled = false;
         this._cancelPendingRestart();
-        this._disconnectLayout();
-        this._disconnectWindow();
+
+        // Drop every tracked signal: the host-lifetime ones (map watch,
+        // overview) keyed on `this`, and the window-scoped ones keyed on the
+        // per-adoption token.
+        global.window_manager.disconnectObject(this);
+        Main.overview.disconnectObject(this);
+        this._disconnectWindowSignals();
 
         // Cancel the current subprocess wait so its promise rejects as
         // cancelled rather than resolving into _onRendererExited after we
@@ -101,10 +110,10 @@ export class OverlayHost {
         this._cancellable?.cancel();
         this._cancellable = null;
 
-        if (this._mapId) {
-            global.window_manager.disconnect(this._mapId);
-            this._mapId = 0;
-        }
+        // Return the actor to the window group before we drop the window, so
+        // it is never orphaned above the overview.
+        this._raiseAboveOverview(false);
+
         // Kill the renderer process. Meta.WaylandClient has NO destroy() (it
         // only exposes get_subprocess/owns_window), so terminating the
         // subprocess is what stops the renderer and reaps its window; the
@@ -118,10 +127,6 @@ export class OverlayHost {
         }
         this._subprocess = null;
         this._client = null;
-        if (this._unmanagedId && this._window) {
-            this._window.disconnect(this._unmanagedId);
-            this._unmanagedId = 0;
-        }
         this._window = null;
     }
 
@@ -169,8 +174,11 @@ export class OverlayHost {
         // handles the renderer hiding at idle and re-showing: every re-map
         // re-checks ownership, so a window that unmaps and maps again is
         // re-adopted rather than missed.
-        this._mapId = global.window_manager.connect_after(
-            'map', (_wm, actor) => this._onWindowMapped(actor.get_meta_window()));
+        global.window_manager.connectObject(
+            'map',
+            (_wm, actor) => this._onWindowMapped(actor.get_meta_window()),
+            GObject.ConnectFlags.AFTER,
+            this);
 
         // Watch the subprocess so an exit drives the respawn policy. A fresh
         // Cancellable per spawn, captured by this wait: disable() cancels
@@ -245,33 +253,52 @@ export class OverlayHost {
         this._window = window;
         this._log('adopted renderer window');
         this._makeOverlay(window);
-        this._position();
-        this._connectLayout();
-        this._connectWindowPosition(window);
         this._connectOverview();
 
-        // When the HUD hides at idle, GTK destroys the surface and the
-        // window is unmanaged; clear our tracking so the fresh window that
-        // maps on the next non-idle state is adopted rather than rejected as
-        // a "second window". This is what makes the never-track-loss work
-        // across the unmap/remap the renderer does at idle.
-        this._unmanagedId = window.connect('unmanaged', () => this._onWindowUnmanaged(window));
+        // Window-scoped signals, keyed on a fresh per-adoption token so they
+        // can be dropped when this window unmanages at idle without touching
+        // the host-lifetime signals. `unmanaged` clears our tracking so the
+        // fresh window that maps on the next non-idle state is adopted rather
+        // than rejected as a "second window" — the never-track-loss across
+        // the idle unmap/remap. `size-changed`/`position-changed` recentre
+        // the pill as its content changes (idle→active, wrapping errors).
+        this._windowSignals = {};
+        window.connectObject(
+            'unmanaged', () => this._onWindowUnmanaged(window),
+            'size-changed', () => this._position(),
+            'position-changed', () => this._position(),
+            this._windowSignals);
+
+        // Layout changes that move the target, keyed on `this` (host
+        // lifetime — they outlive any single adopted window).
+        global.display.connectObject(
+            'workareas-changed', () => this._position(), this);
+        const monitorManager = global.backend.get_monitor_manager?.();
+        monitorManager?.connectObject(
+            'monitors-changed', () => this._position(), this);
+
+        this._position();
     }
 
     _onWindowUnmanaged(window) {
         if (window !== this._window)
             return;
         this._disconnectOverview();
-        this._disconnectWindow();
-        this._disconnectLayout();
-        if (this._unmanagedId) {
-            window.disconnect(this._unmanagedId);
-            this._unmanagedId = 0;
-        }
+        this._disconnectWindowSignals();
+        global.display.disconnectObject(this);
+        global.backend.get_monitor_manager?.()?.disconnectObject(this);
         this._window = null;
         // The renderer is still running (this is an idle hide, not an exit);
         // the next non-idle state maps a fresh window that _onWindowMapped
         // adopts.
+    }
+
+    /** Drop the window-scoped signals (position/size/unmanaged). */
+    _disconnectWindowSignals() {
+        if (this._windowSignals) {
+            this._window?.disconnectObject(this._windowSignals);
+            this._windowSignals = null;
+        }
     }
 
     /** Dock-typed, hidden from the window list, on all workspaces, above
@@ -297,9 +324,10 @@ export class OverlayHost {
      * the window group. This is the mechanism docks use for the same need.
      */
     _connectOverview() {
-        const showing = Main.overview.connect('showing', () => this._raiseAboveOverview(true));
-        const hidden = Main.overview.connect('hidden', () => this._raiseAboveOverview(false));
-        this._overviewIds = [showing, hidden];
+        Main.overview.connectObject(
+            'showing', () => this._raiseAboveOverview(true),
+            'hidden', () => this._raiseAboveOverview(false),
+            this);
         // If enabled while the overview is already open, apply immediately.
         if (Main.overview.visible)
             this._raiseAboveOverview(true);
@@ -327,15 +355,13 @@ export class OverlayHost {
         // Make sure the actor is back in the window group before we stop
         // tracking, or it would be orphaned above the overview.
         this._raiseAboveOverview(false);
-        for (const id of this._overviewIds ?? [])
-            Main.overview.disconnect(id);
-        this._overviewIds = [];
+        Main.overview.disconnectObject(this);
     }
 
     // ── Positioning (XH1) ───────────────────────────────────────────────
 
     _position() {
-        if (!this._window)
+        if (!this._window || this._positioning)
             return;
         const workArea = this._getMonitorWorkArea();
         if (!workArea)
@@ -349,59 +375,17 @@ export class OverlayHost {
             return;
 
         // Anti-feedback: our own move fires size/position signals, which
-        // would re-enter _position(). Mute the window handlers around the
-        // programmatic move.
-        this._disconnectWindow();
+        // would re-enter _position(). A guard flag is enough now that the
+        // handlers are owner-tracked (previously we disconnected/reconnected
+        // them around the move).
+        this._positioning = true;
         try {
             this._window.move_frame(false, target.x, target.y);
         } catch (e) {
             logError(e, '[myna-shell] error positioning overlay window');
+        } finally {
+            this._positioning = false;
         }
-        this._connectWindowPosition(this._window);
-    }
-
-    _connectLayout() {
-        // monitors-changed / work-area changes move the target.
-        this._layoutHandlerIds.push([
-            global.display,
-            global.display.connect('workareas-changed', () => this._position()),
-        ]);
-        const monitorManager = global.backend.get_monitor_manager?.();
-        if (monitorManager) {
-            this._layoutHandlerIds.push([
-                monitorManager,
-                monitorManager.connect('monitors-changed', () => this._position()),
-            ]);
-        }
-    }
-
-    _connectWindowPosition(window) {
-        // The renderer resizes as its content changes (idle→active,
-        // wrapping errors); recentre when it does.
-        this._positionHandlerIds.push([
-            window, window.connect('size-changed', () => this._position()),
-        ]);
-        this._positionHandlerIds.push([
-            window, window.connect('position-changed', () => this._position()),
-        ]);
-    }
-
-    _disconnectWindow() {
-        for (const [obj, id] of this._positionHandlerIds) {
-            try {
-                obj.disconnect(id);
-            } catch (_e) { /* window may be gone */ }
-        }
-        this._positionHandlerIds = [];
-    }
-
-    _disconnectLayout() {
-        for (const [obj, id] of this._layoutHandlerIds) {
-            try {
-                obj.disconnect(id);
-            } catch (_e) { /* ignore */ }
-        }
-        this._layoutHandlerIds = [];
     }
 
     // ── Supervision (XH3) ───────────────────────────────────────────────
@@ -416,17 +400,14 @@ export class OverlayHost {
         if (!this._enabled)
             return;   // disable() terminated it; not an incident
         const uptimeMs = GLib.get_monotonic_time() / 1000 - this._launchedAtMs;
+        // Drop all tracked signals for this dead renderer. _spawn()
+        // reconnects the map watch for the respawn, so it is dropped here too
+        // rather than left dangling on the exited process's would-be windows.
         this._disconnectOverview();
-        this._disconnectWindow();
-        this._disconnectLayout();
-        if (this._unmanagedId && this._window) {
-            this._window.disconnect(this._unmanagedId);
-            this._unmanagedId = 0;
-        }
-        if (this._mapId) {
-            global.window_manager.disconnect(this._mapId);
-            this._mapId = 0;
-        }
+        this._disconnectWindowSignals();
+        global.display.disconnectObject(this);
+        global.backend.get_monitor_manager?.()?.disconnectObject(this);
+        global.window_manager.disconnectObject(this);
         this._window = null;
         this._client = null;
         this._subprocess = null;
