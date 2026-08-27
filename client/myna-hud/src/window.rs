@@ -30,11 +30,16 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::input_region::input_region_rects;
-use crate::pill::{Pill, PILL_WIDTH};
+use crate::pill::{Pill, PILL_WIDTH, RIBBON_HEIGHT};
 use crate::states::Descriptor;
 
 /// Object-data key under which the window owns its [`HudWindow`].
 const SELF_KEY: &str = "myna-hud-instance";
+
+/// The window's resting height: the pill's natural height for a one-line
+/// status (ribbon + label + padding). A stable floor so the mapped window
+/// does not collapse when the pill hides at idle.
+const RESTING_HEIGHT: i32 = RIBBON_HEIGHT + 44;
 
 /// The HUD pill overlay window.
 pub struct HudWindow {
@@ -61,20 +66,33 @@ impl HudWindow {
             .decorated(false)
             .build();
         window.add_css_class("myna-hud-window");
-        // Without this the window falls back to GTK's 200x200 default
-        // whenever it has no natural size of its own — the case at idle,
-        // since the pill (its only child) is hidden then. The next state
-        // would be allocated into that 200px window before it could grow,
-        // squeezing the ribbon below its 160px minimum and producing a burst
-        // of Gtk-CRITICAL allocation warnings on the way back from idle.
-        // Height stays natural (-1): only the width has a floor.
-        window.set_default_size(PILL_WIDTH, -1);
+        // The window stays mapped for the renderer's whole life (idle just
+        // hides the pill inside it), so the host adopts it exactly once. A
+        // fixed default size keeps it from collapsing to GTK's 200x200
+        // fallback when the pill is hidden at idle — which would resize the
+        // adopted surface under the host and squeeze the ribbon below its
+        // 160px minimum on the way back. The pill grows the window past this
+        // for a wrapped error; this is only the resting/idle floor.
+        window.set_default_size(PILL_WIDTH, RESTING_HEIGHT);
         // The HUD must never take focus from the app being dictated into.
         // The host also enforces this by DOCK-typing the window (mutter
         // forces takes_focus = FALSE), but a renderer that asked for focus
         // would still steal it in lab mode.
         window.set_can_focus(false);
-        window.set_child(Some(pill.widget()));
+
+        // The pill lives inside a fixed-size holder rather than being the
+        // window's direct child. At idle the pill hides — which stops its
+        // ribbon drawing entirely (no idle GPU cost), since the frame clock
+        // only queues a render while the ribbon is visible — but a hidden
+        // direct child would collapse the window toward GTK's 200x200
+        // fallback and resize the adopted surface under the host. The holder
+        // reserves the window's footprint independently of the pill's
+        // visibility, so the window stays a stable size while the pill draws
+        // nothing.
+        let holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        holder.set_size_request(PILL_WIDTH, RESTING_HEIGHT);
+        holder.append(pill.widget());
+        window.set_child(Some(&holder));
 
         let hud = Rc::new(Self { window, pill });
 
@@ -105,16 +123,16 @@ impl HudWindow {
         self.window.present();
     }
 
-    /// Apply a state descriptor to the pill, then reflect idle onto the
-    /// window (hidden entirely at idle) and refresh the input region.
+    /// Apply a state descriptor to the pill and refresh the input region.
+    ///
+    /// The window is **never unmapped**, not even at idle. Unmapping would
+    /// destroy the Wayland surface, and the host would then have to re-adopt
+    /// the fresh window on every return from idle — fragile, and it lost the
+    /// window in practice. Instead the pill itself hides (an empty,
+    /// transparent, click-through area) while the window stays mapped, so
+    /// the host adopts exactly once for the renderer's whole life.
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         self.pill.apply_descriptor(descriptor);
-        // The window is hidden, not just the pill: with its child hidden the
-        // window has no natural size and falls back to GTK's 200x200 default,
-        // leaving an empty surface that still counts as the overlay's extent.
-        // The host adopts on every map, so a surface that comes and goes is
-        // expected (R21).
-        self.window.set_visible(!self.pill.is_hidden());
         self.apply_input_region();
     }
 
