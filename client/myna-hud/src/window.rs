@@ -132,6 +132,15 @@ impl HudWindow {
             .build();
 
         window.add_css_class("myna-hud-window");
+        // Without this the window falls back to GTK's 200x200 default
+        // whenever it has no natural size of its own — which is exactly the
+        // case at idle, since the pill (its only child) is hidden then. The
+        // next state would be allocated into that 200px window before it
+        // could grow, squeezing the ribbon below its 160px minimum and
+        // producing a burst of Gtk-CRITICAL allocation warnings on the way
+        // back from every idle. Height stays natural (-1): only the width
+        // has a floor.
+        window.set_default_size(PILL_WIDTH, -1);
         // The HUD must never take focus away from the app being dictated
         // into. The host also enforces this by DOCK-typing the window
         // (mutter forces takes_focus = FALSE), but a renderer that asked
