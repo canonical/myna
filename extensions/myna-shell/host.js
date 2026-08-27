@@ -17,11 +17,15 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
-import Shell from 'gi://Shell';
 
 import {computePlacement, placementChanged} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
+
+// Await the subprocess with a Cancellable instead of a bare callback, so
+// disable() can cancel the wait rather than relying on a flag to ignore a
+// late callback. Promisified once at module load (idempotent).
+Gio._promisify(Gio.Subprocess.prototype, 'wait_async', 'wait_finish');
 
 /** A GLib-style env predicate: the file exists and is executable, OR it is a
  * bare command name found on PATH (for `snap`). */
@@ -56,6 +60,7 @@ export class OverlayHost {
         this._layoutHandlerIds = [];     // monitors/work-area
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
+        this._exitCancellable = null;    // cancels the subprocess wait
         this._enabled = false;
     }
 
@@ -78,23 +83,25 @@ export class OverlayHost {
         this._disconnectLayout();
         this._disconnectWindow();
 
+        // Cancel the subprocess wait so its promise rejects as cancelled
+        // rather than resolving into _onRendererExited after we have torn
+        // down — no late respawn, and the rejection is logged as cancelled,
+        // not as an error.
+        this._exitCancellable?.cancel();
+        this._exitCancellable = null;
+
         if (this._windowCreatedId) {
             global.display.disconnect(this._windowCreatedId);
             this._windowCreatedId = 0;
         }
-        if (this._client) {
-            // The pending wait_async callback still fires after this, but it
-            // routes through _onRendererExited, which no-ops once _enabled is
-            // false (set above) — so terminating here does not schedule a
-            // respawn. Killing the client reaps its subprocess and the
-            // adopted window with it.
-            try {
-                this._client.destroy();
-            } catch (e) {
-                this._log(`error tearing down client: ${e}`);
-            }
-            this._client = null;
+        // Terminating the client kills its subprocess and reaps the adopted
+        // window with it.
+        try {
+            this._client?.destroy();
+        } catch (e) {
+            logError(e, '[myna-shell] error tearing down renderer client');
         }
+        this._client = null;
         this._window = null;
     }
 
@@ -126,7 +133,7 @@ export class OverlayHost {
             client = Meta.WaylandClient.new_subprocess(
                 global.context, launcher, launch.argv);
         } catch (e) {
-            this._log(`failed to launch renderer (${launch.source}): ${e}`);
+            logError(e, `[myna-shell] failed to launch renderer (${launch.source})`);
             this._scheduleRestart(/* expected= */ false, /* uptimeMs= */ 0);
             return;
         }
@@ -139,18 +146,30 @@ export class OverlayHost {
         this._windowCreatedId = global.display.connect(
             'window-created', (_display, window) => this._onWindowCreated(window));
 
-        // Watch the subprocess so an exit drives the respawn policy.
-        const subprocess = client.get_subprocess();
-        if (subprocess) {
-            subprocess.wait_async(null, (proc, result) => {
-                try {
-                    proc.wait_finish(result);
-                } catch (_e) {
-                    // ignore — we only care that it exited
-                }
-                this._onRendererExited();
-            });
+        // Watch the subprocess so an exit drives the respawn policy. The
+        // cancellable lets disable() abort the wait (its promise then rejects
+        // as cancelled), rather than leaving a late callback to guard against.
+        this._exitCancellable = new Gio.Cancellable();
+        this._watchExit(client.get_subprocess(), this._exitCancellable);
+    }
+
+    async _watchExit(subprocess, cancellable) {
+        if (!subprocess)
+            return;
+        try {
+            await subprocess.wait_async(cancellable);
+        } catch (e) {
+            // A cancelled wait is the disable() path, not a failure. Anything
+            // else is a genuine error worth surfacing.
+            if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                logError(e, '[myna-shell] error awaiting renderer exit');
+            return;
         }
+        // Any exit — clean or not — is unexpected while still enabled, and
+        // drives the respawn policy. Once cancelled, disable() terminated the
+        // renderer itself, so it is not an incident.
+        if (!cancellable.is_cancelled())
+            this._onRendererExited();
     }
 
     // ── Adoption (XH4) ──────────────────────────────────────────────────
@@ -160,7 +179,7 @@ export class OverlayHost {
         // window from the same client (a dialog) is not the HUD.
         if (this._window)
             return;
-        if (!this._client || !this._client.owns_window(window))
+        if (!this._client?.owns_window(window))
             return;
 
         this._window = window;
@@ -180,7 +199,7 @@ export class OverlayHost {
             window.stick();            // all workspaces
             window.make_above();       // above normal windows
         } catch (e) {
-            this._log(`error configuring overlay: ${e}`);
+            logError(e, '[myna-shell] error configuring overlay window');
         }
     }
 
@@ -207,7 +226,7 @@ export class OverlayHost {
         try {
             this._window.move_frame(false, target.x, target.y);
         } catch (e) {
-            this._log(`error positioning overlay: ${e}`);
+            logError(e, '[myna-shell] error positioning overlay window');
         }
         this._connectWindowPosition(this._window);
     }
@@ -258,6 +277,12 @@ export class OverlayHost {
 
     // ── Supervision (XH3) ───────────────────────────────────────────────
 
+    /** Any renderer exit while the host is still enabled — clean OR crashing
+     * — is unexpected and drives the respawn policy (XH3). We never asked it
+     * to quit: the host owns the renderer's lifetime, so `exit(0)` is as much
+     * a surprise as a segfault. The only expected exit is the one disable()
+     * causes, and that path is suppressed upstream (the wait is cancelled).
+     */
     _onRendererExited() {
         if (!this._enabled)
             return;   // disable() terminated it; not an incident

@@ -11,6 +11,8 @@
 //
 //     gjs -m test/host.test.js        (from extensions/myna-shell/)
 
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import System from 'system';
 
 import {computePlacement, placementChanged} from '../place.js';
@@ -86,5 +88,40 @@ function eq(name, a, b) {
     check('a permanently-crashing renderer goes dormant, not into a crash loop', dormant);
 }
 
-print(failures === 0 ? 'PASS host.test.js' : `FAIL host.test.js: ${failures} failure(s)`);
-System.exit(failures === 0 ? 0 : 1);
+// --- The cancellable exit-watch pattern host.js uses ---------------------
+// host.js imports gi://Meta so it cannot be imported here, but its
+// subprocess supervision is a small, self-contained pattern worth pinning:
+// a normal exit fires the respawn path, and a wait cancelled by disable()
+// rejects as CANCELLED and does NOT.
+
+Gio._promisify(Gio.Subprocess.prototype, 'wait_async', 'wait_finish');
+
+async function watchExit(subprocess, cancellable) {
+    try {
+        await subprocess.wait_async(cancellable);
+    } catch (e) {
+        if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+            throw e;
+        return false;
+    }
+    return !cancellable.is_cancelled();
+}
+
+const loop = new GLib.MainLoop(null, false);
+(async () => {
+    const proc = Gio.Subprocess.new(['sh', '-c', 'exit 0'], Gio.SubprocessFlags.NONE);
+    check('a normal renderer exit drives the respawn path',
+        await watchExit(proc, new Gio.Cancellable()));
+
+    const sleeper = Gio.Subprocess.new(['sleep', '30'], Gio.SubprocessFlags.NONE);
+    const cancellable = new Gio.Cancellable();
+    const pending = watchExit(sleeper, cancellable);
+    cancellable.cancel();       // the disable() path
+    check('a wait cancelled on disable does NOT drive respawn', !(await pending));
+    sleeper.force_exit();
+
+    print(failures === 0 ? 'PASS host.test.js' : `FAIL host.test.js: ${failures} failure(s)`);
+    loop.quit();
+    System.exit(failures === 0 ? 0 : 1);
+})();
+loop.run();
