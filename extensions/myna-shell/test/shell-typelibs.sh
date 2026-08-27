@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # shell-typelibs.sh - locate mutter's and gnome-shell's private typelibs.
 #
 # Sourced, not executed:

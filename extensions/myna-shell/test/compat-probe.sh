@@ -18,6 +18,7 @@ if ! command -v gjs >/dev/null 2>&1; then
     exit 77
 fi
 
+# shellcheck source-path=SCRIPTDIR source=shell-typelibs.sh
 . "$HERE/shell-typelibs.sh"
 if ! shell_typelibs_export; then
     echo "compat-probe: no mutter/gnome-shell typelibs found; skipping" >&2
