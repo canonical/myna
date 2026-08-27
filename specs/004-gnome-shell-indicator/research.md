@@ -1210,13 +1210,18 @@ accepted — this inverts T69's demotion, which was about a one-label window,
 not the shipped renderer), exposed as the well-known command
 `/snap/bin/myna-hud`. The extension resolves the binary in a fixed order:
 `$MYNA_HUD_BINARY` (developer override) → `/snap/bin/myna-hud` →
-`/usr/bin/myna-hud`. **Known risk (spike)**: `Meta.WaylandClient`'s child
-receives the compositor's Wayland socket as an inherited fd
-(`WAYLAND_SOCKET`); the snap command wrapper re-executes through
-snap-confine, which may not preserve that fd. Fallback (verified pattern):
-launch as a plain subprocess (the child connects via the session's normal
-Wayland display, inherited from the Shell process env) and identify the
-window via `get_sandboxed_app_id()`/PID instead of `owns_window()` — DIN
+`/usr/bin/myna-hud`. **Risk reassessed low (2026-08-26)**: `Meta.WaylandClient`'s child receives
+the compositor's Wayland socket as an inherited fd (`WAYLAND_SOCKET`), and a
+confined GTK/snap app normally *does* receive that socket through the
+snap-confine wrapper — that is precisely how every snapped GTK app connects
+to the display, so inheriting it via `new_subprocess` is the expected case
+rather than a doubtful one. Validation is therefore by hosting a real
+snap-packaged GTK app (available in the maintainer's test environment) as a
+stand-in HUD and confirming adoption end-to-end (T101b), not a bespoke
+minimal-snap spike. Fallback if `owns_window()` nonetheless fails under
+confinement (verified pattern): launch as a plain subprocess (the child
+connects via the session's normal Wayland display, inherited from the Shell
+process env) and identify the window via `get_sandboxed_app_id()`/PID — DIN
 ships exactly this fallback shape for older shells.
 
 **Rationale**: The well-known-path story (`/snap/bin/myna-hud`) is what makes
