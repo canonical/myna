@@ -18,6 +18,8 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
 import {computePlacement, placementChanged} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
@@ -58,6 +60,7 @@ export class OverlayHost {
         this._mapId = 0;
         this._positionHandlerIds = [];   // on the adopted window
         this._layoutHandlerIds = [];     // monitors/work-area
+        this._overviewIds = [];          // overview showing/hidden
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
         this._enabled = false;
@@ -223,6 +226,7 @@ export class OverlayHost {
         this._position();
         this._connectLayout();
         this._connectWindowPosition(window);
+        this._connectOverview();
     }
 
     /** Dock-typed, hidden from the window list, on all workspaces, above
@@ -236,6 +240,51 @@ export class OverlayHost {
         } catch (e) {
             logError(e, '[myna-shell] error configuring overlay window');
         }
+    }
+
+    /** Keep the overlay visible when the overview opens.
+     *
+     * The overview hides ordinary compositor windows (ours included) behind
+     * its own UI. A dictation indicator must persist there — you may open the
+     * overview mid-session to find a window — so the window's actor is
+     * reparented into `Main.layoutManager.uiGroup`, which draws above the
+     * overview, for the duration the overview is showing, then returned to
+     * the window group. This is the mechanism docks use for the same need.
+     */
+    _connectOverview() {
+        const showing = Main.overview.connect('showing', () => this._raiseAboveOverview(true));
+        const hidden = Main.overview.connect('hidden', () => this._raiseAboveOverview(false));
+        this._overviewIds = [showing, hidden];
+        // If enabled while the overview is already open, apply immediately.
+        if (Main.overview.visible)
+            this._raiseAboveOverview(true);
+    }
+
+    _raiseAboveOverview(above) {
+        const actor = this._window?.get_compositor_private();
+        if (!actor)
+            return;
+        try {
+            const parent = actor.get_parent();
+            const target = above ? Main.layoutManager.uiGroup : global.window_group;
+            if (parent === target)
+                return;
+            parent?.remove_child(actor);
+            target.add_child(actor);
+            if (above)
+                Main.layoutManager.uiGroup.set_child_above_sibling(actor, null);
+        } catch (e) {
+            logError(e, '[myna-shell] error raising overlay over the overview');
+        }
+    }
+
+    _disconnectOverview() {
+        // Make sure the actor is back in the window group before we stop
+        // tracking, or it would be orphaned above the overview.
+        this._raiseAboveOverview(false);
+        for (const id of this._overviewIds ?? [])
+            Main.overview.disconnect(id);
+        this._overviewIds = [];
     }
 
     // ── Positioning (XH1) ───────────────────────────────────────────────
@@ -322,6 +371,7 @@ export class OverlayHost {
         if (!this._enabled)
             return;   // disable() terminated it; not an incident
         const uptimeMs = GLib.get_monotonic_time() / 1000 - this._launchedAtMs;
+        this._disconnectOverview();
         this._disconnectWindow();
         this._disconnectLayout();
         if (this._mapId) {
