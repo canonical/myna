@@ -195,13 +195,35 @@ pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> Ac
     fallback_palette()
 }
 
-/// Call `on_change` whenever either preference may have changed: the accent
-/// key, the style manager's resolved accent, the animations key, and the
-/// GtkSettings property when present.
+/// When a trigger fires, whether the theme's accent can be trusted to be
+/// current *already*.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccentReadiness {
+    /// The new styling is already installed, so the accent may be read
+    /// straight away.
+    ///
+    /// Emitted for libadwaita's own notification, where the ordering is
+    /// guaranteed by construction: `notify_accent_color_cb()` calls
+    /// `update_stylesheet (self, UPDATE_ACCENT_COLOR)` — which reloads the
+    /// provider holding `@accent_bg_color` — *before* notifying
+    /// `accent-color`/`accent-color-rgba` (libadwaita
+    /// `src/adw-style-manager.c`).
+    Current,
+    /// Something changed, but the styling may not have caught up: against a
+    /// raw GSettings key we have no ordering guarantee versus libadwaita's
+    /// own handler for that same key, and GTK recomputes styles lazily. The
+    /// accent must be re-read at the next frame.
+    NextFrame,
+}
+
+/// Call `on_change` whenever a preference that affects the HUD may have
+/// changed, telling it whether the accent is readable yet.
 ///
 /// The returned guard owns the subscriptions; dropping it disconnects
 /// everything, so no callback can outlive the window.
-pub fn watch_preferences<F: Fn() + 'static + Clone>(on_change: F) -> PreferenceWatch {
+pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
+    on_change: F,
+) -> PreferenceWatch {
     let mut settings_handles = Vec::new();
 
     // Watched as a change TRIGGER only — the value is never read from here
@@ -210,13 +232,15 @@ pub fn watch_preferences<F: Fn() + 'static + Clone>(on_change: F) -> PreferenceW
     for key in [ACCENT_KEY, GTK_THEME_KEY] {
         if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, key) {
             let cb = on_change.clone();
-            settings.connect_changed(Some(key), move |_, _| cb());
+            settings.connect_changed(Some(key), move |_, _| cb(AccentReadiness::NextFrame));
             settings_handles.push(settings);
         }
     }
     if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY) {
         let cb = on_change.clone();
-        settings.connect_changed(Some(ANIMATIONS_KEY), move |_, _| cb());
+        settings.connect_changed(Some(ANIMATIONS_KEY), move |_, _| {
+            cb(AccentReadiness::NextFrame)
+        });
         settings_handles.push(settings);
     }
 
@@ -224,8 +248,13 @@ pub fn watch_preferences<F: Fn() + 'static + Clone>(on_change: F) -> PreferenceW
     let mut adw_handle = None;
     if manager.find_property(ADW_ACCENT_RGBA_PROPERTY).is_some() {
         let cb = on_change.clone();
-        adw_handle =
-            Some(manager.connect_notify_local(Some(ADW_ACCENT_RGBA_PROPERTY), move |_, _| cb()));
+        // libadwaita reloads the accent provider before emitting this, so
+        // the theme already reports the new colour here.
+        adw_handle = Some(
+            manager.connect_notify_local(Some(ADW_ACCENT_RGBA_PROPERTY), move |_, _| {
+                cb(AccentReadiness::Current)
+            }),
+        );
     }
 
     let mut gtk_handle = None;
@@ -237,7 +266,9 @@ pub fn watch_preferences<F: Fn() + 'static + Clone>(on_change: F) -> PreferenceW
         {
             let cb = on_change.clone();
             gtk_handle = Some(
-                settings.connect_notify_local(Some(GTK_REDUCED_MOTION_PROPERTY), move |_, _| cb()),
+                settings.connect_notify_local(Some(GTK_REDUCED_MOTION_PROPERTY), move |_, _| {
+                    cb(AccentReadiness::NextFrame)
+                }),
             );
         }
     }

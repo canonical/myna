@@ -1098,11 +1098,18 @@ the theme does, and the theme also covers what a name cannot (Yaru variants,
 and `wartybrown`, which has no upstream enum member). The keys remain
 *watched* as change triggers only.
 
-The read is taken **at frame time, not in the settings handler**: a computed
-CSS colour is still the previous one when `changed::` fires (libadwaita
-listens to the same key with no defined ordering, and GTK recomputes styles
-lazily for the next frame anyway), so each trigger schedules a one-shot
-re-read on the next frame — correct styling with no per-repaint cost.
+The read is **never taken in a raw GSettings handler**: a computed CSS
+colour is still the previous one there, since libadwaita listens to the same
+key with no defined ordering between it and us. The primary trigger is
+therefore libadwaita's own `AdwStyleManager::notify::accent-color-rgba`,
+where the ordering is guaranteed by construction — `notify_accent_color_cb()`
+calls `update_stylesheet (self, UPDATE_ACCENT_COLOR)`, reloading the provider
+that defines `@accent_bg_color`, *before* it notifies
+(`src/adw-style-manager.c`) — so the accent is read immediately there. The
+remaining triggers (`changed::accent-color`, `changed::gtk-theme`,
+`notify::gtk-theme-name`, and the ribbon being mapped) carry no such
+guarantee and schedule a one-shot re-read on the next frame instead. Either
+way there is no per-repaint cost.
 
 The old rule ("untouched default is not a choice, so use Ubuntu orange")
 rested on the premise that an untouched Ubuntu desktop reads as `'blue'`

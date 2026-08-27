@@ -453,14 +453,21 @@ impl HudWindow {
     fn connect_preferences(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
         // Re-resolve accent + motion whenever the desktop changes either.
-        let watch = platform::watch_preferences(move || {
+        let watch = platform::watch_preferences(move |readiness| {
             let Some(this) = this.upgrade() else { return };
-            // Motion comes straight from its own sources, so it is read
-            // now. The accent is NOT: its source is a computed CSS colour
-            // that is still the old one at this point, so it is picked up
-            // at the next frame instead (see schedule_accent_resync).
+            // Motion comes straight from its own sources, so it is always
+            // read now.
             this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
-            this.schedule_accent_resync();
+
+            // The accent is a computed CSS colour, so it is only readable
+            // once the new styling is installed. libadwaita's own
+            // notification guarantees that (it reloads the accent provider
+            // before notifying), so read straight away; anything else has
+            // to wait for the next frame.
+            match readiness {
+                platform::AccentReadiness::Current => this.sync_palette(),
+                platform::AccentReadiness::NextFrame => this.schedule_accent_resync(),
+            }
         });
         *self.preferences.borrow_mut() = Some(watch);
     }

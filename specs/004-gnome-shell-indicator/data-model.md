@@ -110,15 +110,16 @@ Rules:
   misfired on Yaru accent variants, re-tinting a visibly olive desktop back
   to orange. The theme reports what the desktop is actually using; that is
   what the ribbon uses.
-- Read live, but **at frame time, not in the settings handler**. The accent
-  is a *computed* CSS colour, and reading it from a `changed::` handler
-  returns the previous value: libadwaita listens to the same key with no
-  defined handler ordering, and GTK recomputes styles lazily for the next
-  frame regardless. Each trigger (`changed::accent-color`,
-  `changed::gtk-theme`, `notify::gtk-theme-name`, the style manager's
-  notifications, and the ribbon being mapped) therefore schedules a
-  **one-shot** re-read on the next frame — current styling, and no
-  per-repaint cost.
+- Read live, but **never from a raw GSettings handler**: the accent is a
+  *computed* CSS colour, and there it is still the previous value, since
+  libadwaita listens to the same key with no defined ordering between it and
+  us. The primary trigger is libadwaita's own
+  `AdwStyleManager::notify::accent-color-rgba`, which by construction is
+  emitted *after* the provider defining `@accent_bg_color` is reloaded, so
+  the accent is read immediately there. Triggers without that guarantee
+  (`changed::accent-color`, `changed::gtk-theme`, `notify::gtk-theme-name`,
+  the ribbon being mapped) schedule a **one-shot** re-read on the next frame.
+  Neither path costs anything per repaint.
 - Sourced entirely from the desktop environment, not from `myna-desktop` or
   the D-Bus contract — no wire change (data-model E2/dbus-interface.md
   unaffected).
