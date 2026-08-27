@@ -58,6 +58,7 @@ export class OverlayHost {
         this._dormant = false;
 
         this._mapId = 0;
+        this._unmanagedId = 0;
         this._positionHandlerIds = [];   // on the adopted window
         this._layoutHandlerIds = [];     // monitors/work-area
         this._overviewIds = [];          // overview showing/hidden
@@ -194,17 +195,23 @@ export class OverlayHost {
     _onWindowMapped(window) {
         if (!window)
             return;
-        // Already adopted: the renderer hid at idle and re-mapped. It is the
-        // same Meta.Window, so re-assert the overlay treatment (mutter can
-        // reset some of it across an unmap) and reposition, but do not
-        // re-run the one-time wiring.
+        // Already tracking this exact window — a spurious re-map of the one
+        // we hold. Re-assert the overlay treatment (mutter can reset some of
+        // it) and reposition, but do not re-run the one-time wiring.
         if (window === this._window) {
             this._makeOverlay(window);
             this._position();
             return;
         }
+        // A window is already adopted and this is a different one: on Wayland
+        // a GTK hide/show at idle destroys and recreates the surface, so the
+        // remapped HUD is a NEW Meta.Window. We must only skip *additional*
+        // windows of an already-live one — but the old one is unmanaged when
+        // its surface is destroyed (see _adopt), which clears this._window,
+        // so reaching here with this._window set means a genuine second
+        // window (a dialog), not the re-mapped HUD.
         if (this._window)
-            return;   // a different, second window (a dialog) — not the HUD
+            return;
 
         // owns_window() throws on an X11 window (e.g. anything via XWayland),
         // so guard it: an unrelated window mapping must never take the host
@@ -220,6 +227,10 @@ export class OverlayHost {
         if (!owns)
             return;
 
+        this._adopt(window);
+    }
+
+    _adopt(window) {
         this._window = window;
         this._log('adopted renderer window');
         this._makeOverlay(window);
@@ -227,6 +238,29 @@ export class OverlayHost {
         this._connectLayout();
         this._connectWindowPosition(window);
         this._connectOverview();
+
+        // When the HUD hides at idle, GTK destroys the surface and the
+        // window is unmanaged; clear our tracking so the fresh window that
+        // maps on the next non-idle state is adopted rather than rejected as
+        // a "second window". This is what makes the never-track-loss work
+        // across the unmap/remap the renderer does at idle.
+        this._unmanagedId = window.connect('unmanaged', () => this._onWindowUnmanaged(window));
+    }
+
+    _onWindowUnmanaged(window) {
+        if (window !== this._window)
+            return;
+        this._disconnectOverview();
+        this._disconnectWindow();
+        this._disconnectLayout();
+        if (this._unmanagedId) {
+            window.disconnect(this._unmanagedId);
+            this._unmanagedId = 0;
+        }
+        this._window = null;
+        // The renderer is still running (this is an idle hide, not an exit);
+        // the next non-idle state maps a fresh window that _onWindowMapped
+        // adopts.
     }
 
     /** Dock-typed, hidden from the window list, on all workspaces, above
@@ -374,6 +408,10 @@ export class OverlayHost {
         this._disconnectOverview();
         this._disconnectWindow();
         this._disconnectLayout();
+        if (this._unmanagedId && this._window) {
+            this._window.disconnect(this._unmanagedId);
+            this._unmanagedId = 0;
+        }
         if (this._mapId) {
             global.window_manager.disconnect(this._mapId);
             this._mapId = 0;
