@@ -31,10 +31,10 @@ export default class MynaShellExtension extends Extension {
             // The primary monitor's work area, so the pill sits above the
             // dock/panel rather than under them (place.js owns the maths).
             getMonitorWorkArea: () => {
-                const index = Main.layoutManager.primaryIndex;
-                if (index < 0)
+                const { primaryIndex } = Main.layoutManager;
+                if (primaryIndex < 0)
                     return null;
-                return Main.layoutManager.getWorkAreaForMonitor(index);
+                return Main.layoutManager.getWorkAreaForMonitor(primaryIndex);
             },
         });
         this._host.enable();
