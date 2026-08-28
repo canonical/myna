@@ -1,9 +1,9 @@
-//! `DbusTrigger` — a [`Trigger`] backend fed by the `org.myna.Dictation`
+//! `DbusTrigger` — a [`Trigger`] backend fed by the `com.canonical.Myna.Dictation`
 //! `Start`/`Stop`/`Toggle` D-Bus methods (feature 004, contract publisher.md
 //! P9–P12), sibling to `ControlTrigger` with the same alternation/dedup so the
 //! panel button is equivalent to the hotkey (C6).
 //!
-//! The served `org.myna.Dictation` object holds a [`DbusTriggerSource`] and
+//! The served `com.canonical.Myna.Dictation` object holds a [`DbusTriggerSource`] and
 //! calls [`Start`](DbusTriggerSource::start)/[`Stop`](DbusTriggerSource::stop)
 //! /[`Toggle`](DbusTriggerSource::toggle) in its method handlers; each call
 //! maps to a [`TriggerEdge`] with the same Press/Release alternation and

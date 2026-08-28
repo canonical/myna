@@ -588,7 +588,7 @@ impl DesktopController {
 
 /// Surface a user-visible failure on stderr AND the indicator. The stderr copy
 /// matters because the indicator can be invisible: in `--dbus` mode it only
-/// updates `org.myna.Dictation` properties, which nothing renders unless the
+/// updates `com.canonical.Myna.Dictation` properties, which nothing renders unless the
 /// myna-shell extension is installed - a failed press then looks like "nothing
 /// happened" (the 2026-08-18 silent-death debug session). stderr always
 /// reaches the terminal/journal the daemon was started from. Recoverable

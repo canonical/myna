@@ -63,7 +63,7 @@ whisper-snap|nemotron-snap|qwen-snap/snap/snapcraft.yaml  # ubustt-socket slot
 | Backend socket | writable content share (`source: write`) | snapd adds AppArmor `mrwklix` on the shared dir *precisely* so named sockets work (content.go comment). `system-files` would be super-privileged + store-review; polkit/identity stays T17. |
 | Text injection | `desktop-legacy` | carries the IBus daemon socket rules (`~/.cache/ibus/dbus-*`, address file under `~/.config/ibus/bus`). |
 | Hotkey | `desktop` → GlobalShortcuts portal | portals only serve packaged apps — the README's "packaged only" path; control-socket mode kept as fallback. |
-| Indicator | `org.myna.Dictation` dbus slot + `desktop` notifications | confined name ownership needs the slot declaration. |
+| Indicator | `com.canonical.Myna.Dictation` dbus slot + `desktop` notifications | confined name ownership needs the slot declaration. |
 | GTK overlay | `gnome` extension (gnome-46-2404) | standard core24 GTK4 story; overlay stays opt-in (`--overlay`). |
 
 ## Verification plan (tonight, this machine)

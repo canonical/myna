@@ -3,12 +3,12 @@
 // contract extension.md XH1–XH12).
 //
 // The extension is now a thin OVERLAY HOST, not a renderer. It no longer
-// draws the HUD or consumes org.myna.Dictation itself — the standalone
+// draws the HUD or consumes com.canonical.Myna.Dictation itself — the standalone
 // myna-hud application does both. This file:
 //
 //   * launches and hosts that application's window as a focus-safe overlay
 //     (host.js — spawn, adopt, dock-type, position, supervise), and
-//   * owns org.myna.Shell for as long as it is enabled (presence.js), so
+//   * owns com.canonical.Myna.Shell for as long as it is enabled (presence.js), so
 //     myna-desktop can suppress its own fallback notification indicator
 //     while the shell is presenting the HUD (C12/C13).
 //

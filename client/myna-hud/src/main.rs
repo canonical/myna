@@ -2,13 +2,13 @@
 //!
 //! Three modes, one binary:
 //!
-//! * **hosted** (default) — consume `org.myna.Dictation` and render the
+//! * **hosted** (default) — consume `com.canonical.Myna.Dictation` and render the
 //!   pill. Under GNOME the `myna-shell` extension launches this through a
 //!   `Meta.WaylandClient` and owns the window's placement (R21); elsewhere
 //!   it is an ordinary always-on-top window.
 //! * `--lab` — the development lab: manual controls driving the identical
 //!   renderer modules with no backend at all.
-//! * `--serve-dbus` — publish a simulated `org.myna.Dictation` so the real
+//! * `--serve-dbus` — publish a simulated `com.canonical.Myna.Dictation` so the real
 //!   hosted path can be exercised without the Python daemon.
 //!
 //! GTK owns the main thread; the bus worker talks to it over a channel.
@@ -24,7 +24,7 @@ use myna_hud::i18n::DOMAIN;
 use myna_hud::states::state_to_descriptor;
 use myna_hud::window::HudWindow;
 
-const APP_ID: &str = "org.myna.Hud";
+const APP_ID: &str = "com.canonical.Myna.Hud";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
@@ -96,9 +96,9 @@ Usage: myna-hud [OPTION]
 
 The myna dictation HUD renderer.
 
-  (no option)    consume org.myna.Dictation and render the HUD
+  (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --lab          development lab: manual controls, no backend
-  --serve-dbus   publish a simulated org.myna.Dictation
+  --serve-dbus   publish a simulated com.canonical.Myna.Dictation
   --version      print the version and exit
   -h, --help     print this help and exit";
 
@@ -148,7 +148,7 @@ fn activate_lab(app: &adw::Application) {
     myna_hud::lab::present(app);
 }
 
-/// The simulated publisher: the lab, plus a real `org.myna.Dictation` on the
+/// The simulated publisher: the lab, plus a real `com.canonical.Myna.Dictation` on the
 /// session bus so the hosted path can be exercised without the daemon.
 fn activate_serve_dbus(app: &adw::Application) {
     myna_hud::lab::present_serving(app);

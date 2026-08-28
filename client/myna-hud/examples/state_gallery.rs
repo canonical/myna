@@ -16,7 +16,7 @@ fn main() {
         .unwrap_or_else(|| "recording".into());
     let reason = std::env::args().nth(2).unwrap_or_default();
     let app = adw::Application::builder()
-        .application_id("org.myna.StateGallery")
+        .application_id("com.canonical.Myna.StateGallery")
         .build();
     app.connect_activate(move |app| {
         let hud = HudWindow::new(app);

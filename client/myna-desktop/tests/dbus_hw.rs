@@ -1,4 +1,4 @@
-//! Env-gated `org.myna.Dictation` integration suite (`MYNA_DBUS_TESTS=1`) -
+//! Env-gated `com.canonical.Myna.Dictation` integration suite (`MYNA_DBUS_TESTS=1`) -
 //! feature 004-gnome-shell-indicator, contracts publisher.md P13-P15 /
 //! dbus-interface.md C1/C9.
 //!
@@ -75,7 +75,7 @@ async fn the_name_is_a_singleton_lock() {
     }
 }
 
-/// C12/C13 round-trip: myna-desktop's presence probe sees `org.myna.Shell`
+/// C12/C13 round-trip: myna-desktop's presence probe sees `com.canonical.Myna.Shell`
 /// appear and vanish, and its surface decision suppresses the notification
 /// fallback while the host is up (P20) and restores it when it goes (P21).
 ///
@@ -90,7 +90,7 @@ async fn shell_presence_round_trips_and_suppresses_the_fallback() {
     // Absent first: the fallback is restored.
     assert!(
         !myna_desktop::policy::probe_shell_presence().await,
-        "no org.myna.Shell owner yet"
+        "no com.canonical.Myna.Shell owner yet"
     );
     let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(false);
     assert!(decision.uses_notify_fallback, "P21: fallback restored");
@@ -100,7 +100,7 @@ async fn shell_presence_round_trips_and_suppresses_the_fallback() {
     connection
         .request_name(myna_desktop::policy::PRESENCE_NAME)
         .await
-        .expect("claim org.myna.Shell");
+        .expect("claim com.canonical.Myna.Shell");
 
     assert!(
         myna_desktop::policy::probe_shell_presence().await,
@@ -124,9 +124,9 @@ async fn shell_presence_round_trips_and_suppresses_the_fallback() {
 
 /// A minimal consumer proxy for the served interface's methods.
 #[zbus::proxy(
-    interface = "org.myna.Dictation",
-    default_service = "org.myna.Dictation",
-    default_path = "/org/myna/Dictation"
+    interface = "com.canonical.Myna.Dictation",
+    default_service = "com.canonical.Myna.Dictation",
+    default_path = "/com/canonical/Myna/Dictation"
 )]
 trait DictationMethods {
     fn start(&self) -> zbus::Result<(bool, String)>;

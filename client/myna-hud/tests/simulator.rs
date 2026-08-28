@@ -1,5 +1,5 @@
 // tests/simulator.rs — hermetic test for the --serve-dbus simulator's pure
-// mapping (lab controls → org.myna.Dictation wire properties), ported from
+// mapping (lab controls → com.canonical.Myna.Dictation wire properties), ported from
 // dev-lab-gpu/dictation_service.py's mapping tables (the drift checks come
 // from dbus_headless.py's deliberate boostLevel transcription — the
 // round-trip through the REAL vumeter math is what catches calibration

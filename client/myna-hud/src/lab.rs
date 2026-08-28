@@ -13,7 +13,7 @@
 //!   - **off** (default in `--lab`): the HUD is an external window, not
 //!     published; for developing the renderer standalone.
 //!   - **on** (default in `--serve-dbus`): the HUD is embedded as a preview,
-//!     and the controls are published over `org.myna.Dictation` so a
+//!     and the controls are published over `com.canonical.Myna.Dictation` so a
 //!     shell-hosted instance shows the real overlay.
 
 use std::cell::RefCell;
@@ -157,7 +157,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     // Placed directly below the publish row — it is "what the toggle is
     // doing", not a separate section. Declared here but appended after the
     // publish row.
-    let preview_frame = gtk::Frame::new(Some(&gettext("Published to org.myna.Dictation")));
+    let preview_frame =
+        gtk::Frame::new(Some(&gettext("Published to com.canonical.Myna.Dictation")));
     let preview_holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     preview_holder.set_halign(gtk::Align::Center);
     preview_holder.set_margin_top(8);
@@ -460,7 +461,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 }
 
 /// The publisher's live state: idle (no bus name) or serving (owns
-/// `org.myna.Dictation`).
+/// `com.canonical.Myna.Dictation`).
 #[derive(Debug)]
 enum PublisherState {
     /// Never claimed the name (no bus, or --lab).
@@ -490,7 +491,7 @@ fn start_publish(shared: Rc<crate::serve::Shared>, publisher: &Rc<RefCell<Publis
             match crate::serve::serve(shared).await {
                 Ok(connection) => {
                     std::mem::forget(connection); // held for process lifetime
-                    eprintln!("myna-hud: publishing org.myna.Dictation");
+                    eprintln!("myna-hud: publishing com.canonical.Myna.Dictation");
                 }
                 Err(e) => {
                     eprintln!("myna-hud: {e}");

@@ -57,9 +57,9 @@ MYNA_DBUS_TESTS=1 dbus-run-session -- cargo test -p myna-desktop dbus_hw   # C1,
 MYNA_HUD_GL_TESTS=1 cargo test -p myna-hud --test render_gl               # surfaceless-EGL shader check
 ```
 
-**Expected**: `myna-desktop` claims `org.myna.Dictation`, a `zbus` client
+**Expected**: `myna-desktop` claims `com.canonical.Myna.Dictation`, a `zbus` client
 observes `PropertiesChanged` + properties, name-appeared/vanished fire, and
-the presence seam round-trips `org.myna.Shell` ownership; the render check
+the presence seam round-trips `com.canonical.Myna.Shell` ownership; the render check
 compiles the generated shader on the real driver and rasterizes non-blank,
 non-flooded, per-phase-distinct frames (port of the former Python
 `render_headless.py`). Runs identically on the desktop VM and hardware
@@ -101,11 +101,11 @@ acceptance weight of its own.
 
 ```sh
 cd client
-cargo run -p myna-hud -- --serve-dbus    # claims org.myna.Dictation
+cargo run -p myna-hud -- --serve-dbus    # claims com.canonical.Myna.Dictation
 ```
 
 **Expected**: with the extension installed (step 4) and the simulator owning
-`org.myna.Dictation`, the hosted pill reacts to the simulator's state/level
+`com.canonical.Myna.Dictation`, the hosted pill reacts to the simulator's state/level
 controls — the full extension→spawn→adopt→position→render→consume chain is
 exercised with zero backend. The simulator never takes the name by force and
 releases it cleanly on exit (port of the former `dictation_service.py`
@@ -133,17 +133,17 @@ needed. Confirm it loaded with:
 
 ```sh
 journalctl --user -b 0 -o cat | grep -i myna-shell   # no load errors
-busctl --user status org.myna.Shell >/dev/null && echo "presence: up"
+busctl --user status com.canonical.Myna.Shell >/dev/null && echo "presence: up"
 pgrep -af myna-hud                                    # the host spawned the renderer
 ```
 
-**Expected**: extension loaded, `org.myna.Shell` owned, `myna-hud` running
+**Expected**: extension loaded, `com.canonical.Myna.Shell` owned, `myna-hud` running
 with no visible window (idle → nothing shown, XH6/XH8 dormant path).
 
 ## 5. End-to-end spoken run (the on-hardware acceptance)
 
 ```sh
-myna-desktop --socket /tmp/myna.sock --language en &   # serves org.myna.Dictation
+myna-desktop --socket /tmp/myna.sock --language en &   # serves com.canonical.Myna.Dictation
 myna-desktop --install-shortcut '<Super>t>'                              # once: binds a shortcut (feature 003)
 # focus a text field (GNOME Text Editor), then:
 #   tap the shortcut  → HUD pill appears bottom-center (loading treatment if cold, then listening)

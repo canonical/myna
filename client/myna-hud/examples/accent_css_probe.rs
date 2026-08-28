@@ -31,7 +31,7 @@ fn probe(window: &gtk::ApplicationWindow, css: &str, label: &str) {
 
 fn main() {
     let app = adw::Application::builder()
-        .application_id("org.myna.AccentCss")
+        .application_id("com.canonical.Myna.AccentCss")
         .build();
     app.connect_activate(|app| {
         let win = gtk::ApplicationWindow::builder().application(app).build();

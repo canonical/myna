@@ -157,5 +157,5 @@ The server-side adapters (Whisper via chunked re-decode, Nemotron via native tra
 - Whisper streaming (chunked re-decode / LocalAgreement) is known-viable from upstream (WhisperLive, whisper_streaming); the engineering challenge is integrating it into our adapter with the committed-only contract (coarser segments, higher latency per commit, but never retracted).
 - The UD136 design review's contested "uncommitted hypothesis in-field with differentiating formatting" is deferred: this spec delivers the wire and server infrastructure; hypothesis display is a follow-up feature gated on design sign-off (FR-007).
 - The canonical/whisper-snap team is receptive to protocol alignment feedback — they named their project "Myna Adapter" and target our wire.
-- The `org.myna.Dictation` D-Bus publisher (used by the GNOME extension) will need a streaming-state signal; this is a follow-up integration task, not a blocker for the core streaming work.
+- The `com.canonical.Myna.Dictation` D-Bus publisher (used by the GNOME extension) will need a streaming-state signal; this is a follow-up integration task, not a blocker for the core streaming work.
 - Audio format negotiation (T33) and error taxonomy (T31) are independent work items; this spec assumes they proceed in parallel and does not block on them.

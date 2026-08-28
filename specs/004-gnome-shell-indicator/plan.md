@@ -37,8 +37,8 @@ it spawns the binary through `Meta.WaylandClient` (so it structurally knows
 its child's window), adopts that window as a dock-typed, window-list-hidden,
 all-workspaces, always-above, never-focusable overlay, positions it
 bottom-center, supervises the process (bounded-backoff respawn), and owns the
-member-less **`org.myna.Shell` presence name**. The renderer application
-becomes the consumer of the existing `org.myna.Dictation` contract (unchanged
+member-less **`com.canonical.Myna.Shell` presence name**. The renderer application
+becomes the consumer of the existing `com.canonical.Myna.Dictation` contract (unchanged
 wire), reads accent color via libadwaita's color manager and reduced motion
 via GTK's absent-safe `gtk-interface-reduced-motion` (never a direct read of
 the new a11y key — crash guard), and doubles as the developer lab
@@ -57,7 +57,7 @@ Three deliverables, two contracts between them:
    *new* logic-bearing half): pure modules ported 1:1 from the extension
    (state mapping, VU envelope, ribbon model + GLSL generator, HUD logic,
    position math is host-side), the GTK window/pill UI with a `GLArea`
-   GPU renderer (dual GL profile), the `org.myna.Dictation` consumer
+   GPU renderer (dual GL profile), the `com.canonical.Myna.Dictation` consumer
    (name-watch + PropertiesChanged, injectable proxy seam), per-state input
    region (empty; dismiss rect during critical error), accent/reduced-motion
    tracking, and the `--lab`/`--serve-dbus` modes.
@@ -65,14 +65,14 @@ Three deliverables, two contracts between them:
    than before): launch (`Meta.WaylandClient`), adopt + overlay-typing
    (DOCK/hide-from-window-list/stick/above), position + reposition
    (anti-feedback), supervision (respawn/terminate), presence name
-   (`org.myna.Shell`). No drawing, no dictation data, no `St`/`Clutter`
+   (`com.canonical.Myna.Shell`). No drawing, no dictation data, no `St`/`Clutter`
    rendering modules.
 3. **`myna-desktop` D-Bus publisher + launcher policy** (Rust, TDD, shipped
    — existing): unchanged `DbusIndicator`/`DbusTrigger`/level-pump contract;
    adds the presence watch and fallback suppression; removes
    `ui-gtk`/`GtkIndicator`.
 
-The indicator remains **pure UI**: state + levels over `org.myna.Dictation`,
+The indicator remains **pure UI**: state + levels over `com.canonical.Myna.Dictation`,
 never transcript; IBus injection stays in `myna-desktop` (feature 003). The
 recoverable/critical severity split (R13, 2026-07-30) is unchanged by this
 revision — the renderer inherits both tiers verbatim. On GNOME the hosted
@@ -131,7 +131,7 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
   without any code change.
 - Extension host: Shell platform modules only — `Meta` (WaylandClient,
   Window), `Gio`/`GLib` (presence name via `Gio.bus_own_name`; **no
-  `org.myna.Dictation` proxy at all**). ESM modules; no bundler.
+  `com.canonical.Myna.Dictation` proxy at all**). ESM modules; no bundler.
 - Publisher: unchanged (`zbus` 5.x); the launcher policy adds a name-watch
   seam (zbus `SignalStream`/`NameOwnerChanged` or a `Bus` trait extension —
   fake for hermetic tests).
@@ -270,7 +270,7 @@ specs/004-gnome-shell-indicator/
 ├── data-model.md        # Phase 1 output (E6/E7 new; E4 rewritten)
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
-│   ├── dbus-interface.md #   org.myna.Dictation (unchanged wire) + org.myna.Shell presence
+│   ├── dbus-interface.md #   com.canonical.Myna.Dictation (unchanged wire) + com.canonical.Myna.Shell presence
 │   ├── publisher.md      #   DbusIndicator/DbusTrigger + launcher policy (Rust)
 │   └── extension.md      #   the thin host's guarantees (GJS, rewritten 2026-08-26)
 ├── checklists/
@@ -299,7 +299,7 @@ client/
 │   │   │                       #     (R26; GSettings user-value guard)
 │   │   ├── motion.rs           #   gtk-interface-reduced-motion + enable-animations fallback
 │   │   │                       #     (absent-safe — never read the new a11y key directly)
-│   │   ├── dbus_consumer.rs    #   org.myna.Dictation proxy: name watch + PropertiesChanged,
+│   │   ├── dbus_consumer.rs    #   com.canonical.Myna.Dictation proxy: name watch + PropertiesChanged,
 │   │   │                       #     injectable seam for hermetic tests (port of dbus.js)
 │   │   ├── window.rs           #   the pill window: layout, input region per state (R22),
 │   │   │                       #     appear/dismiss animation, a11y labels
@@ -339,7 +339,7 @@ extensions/
     │                           #     anti-feedback reposition, respawn supervisor
     ├── place.js                #   PURE placement math (bottom-center of work area) —
     │                           #     the GJS-testable core (XH1)
-    ├── presence.js             #   org.myna.Shell name ownership (XH5)
+    ├── presence.js             #   com.canonical.Myna.Shell name ownership (XH5)
     ├── respawn.js              #   PURE respawn policy (XH3)
     ├── resolve.js              #   PURE binary resolution order (XH2)
     └── test/
@@ -360,9 +360,9 @@ modes). The extension bundle keeps its top-level `extensions/myna-shell/`
 location (the GNOME loader demands the fixed layout) but shrinks to host
 modules only; its logic is factored into pure GJS modules (`place.js`,
 `respawn.js`, `resolve.js`, `presence.js`) so everything except live
-compositor calls is headlessly testable. The member-less `org.myna.Shell`
+compositor calls is headlessly testable. The member-less `com.canonical.Myna.Shell`
 presence name is the single seam between host and client policy; the
-unchanged `org.myna.Dictation` contract is the seam between publisher and
+unchanged `com.canonical.Myna.Dictation` contract is the seam between publisher and
 renderer. Deleting the extension's drawing modules (and the two labs)
 removes the entire Cairo/GLSL lockstep apparatus — `myna-hud`'s shader
 generator and its conformance tests are the one source of truth (R23).

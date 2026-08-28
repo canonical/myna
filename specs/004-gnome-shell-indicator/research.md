@@ -38,7 +38,7 @@ not applicable on Wayland and still focus-fragile.
 
 ## R2 — Extension ↔ myna-desktop transport
 
-**Decision**: A **session-bus D-Bus interface** `org.myna.Dictation`, served by
+**Decision**: A **session-bus D-Bus interface** `com.canonical.Myna.Dictation`, served by
 `myna-desktop`, consumed by the extension via `Gio.DBusProxy`. State as a `State`
 property (+ `ErrorMessage`), every update pushed with the standard
 `PropertiesChanged` — the interface defines no custom signals, because
@@ -52,7 +52,7 @@ property-caching + signal subscription for free. `myna-desktop` already vendors
 `zbus` (feature 003 IBus engine) and already computes levels
 (`myna_audio::AudioStats` behind a `watch::Receiver`) and owns the FSM state — so
 the publisher is a thin adapter over existing seams, no new dependency. Matches
-the landscape brief's `org.myna.Dictation` sketch.
+the landscape brief's `com.canonical.Myna.Dictation` sketch.
 
 **Alternatives considered**: (a) The existing Unix control socket
 (`ControlTrigger`) extended to carry state/levels — bespoke framing, no
@@ -194,7 +194,7 @@ integrated with the goop.
 ## R8 — Panel presence & trigger (spec FR-013/014, US4/P3)
 
 **Decision**: An optional subtle `PanelMenu.Button` (a small symbolic mic/goop
-glyph) that (a) reflects availability (dimmed when `org.myna.Dictation` is absent)
+glyph) that (a) reflects availability (dimmed when `com.canonical.Myna.Dictation` is absent)
 and (b) on click calls `Toggle()`. It follows GNOME HIG for panel buttons. The
 goop overlay itself is separate and only shows during a session. If the button is
 judged too intrusive it can be disabled by default (a one-line switch); the MVP
@@ -210,7 +210,7 @@ Optional panel button is the compromise the spec's FR-013 "MAY" invites.
 ## R9 — Availability / lifecycle robustness (spec FR-018, US1-5, edge cases)
 
 **Decision**: The extension uses `Gio.DBusProxy` with `G_NAME_OWNER` watching
-(`Gio.bus_watch_name`): dormant (no overlay) when `org.myna.Dictation` has no
+(`Gio.bus_watch_name`): dormant (no overlay) when `com.canonical.Myna.Dictation` has no
 owner; activates on name-appeared; clears the goop to idle on name-vanished
 (myna-desktop crash/exit). On `disable()` it disconnects the proxy, removes the
 watch, destroys actors, and cancels all timers/transitions (spec FR-021 — no
@@ -858,7 +858,7 @@ application under `extensions/myna-shell/dev-lab/`, launched directly
 (`gjs -m dev-lab/main.js`, no install/build step) for fast iteration on the
 ribbon's look and feel. It reuses `dbus.js`'s `DictationService` **verbatim**
 (confirmed zero `St`/`Clutter`/Shell dependency — pure `Gio`/`GLib`) for a
-genuinely live `org.myna.Dictation` connection, and the same shared
+genuinely live `com.canonical.Myna.Dictation` connection, and the same shared
 `accent.js`/`ribbon.js`/`ribbon-paint.js` pure modules the shipped `hud.js`
 uses, so there is no separate "port to the extension" step — both consume
 identical code from day one. Adds: a `Gtk.DrawingArea` painted via the shared
@@ -870,7 +870,7 @@ non-secure `GtkTextView` needs no special handling — the injector
 (`client/myna-desktop/src/inject/ibus.rs`) has no app/toolkit special-casing
 and only refuses `GtkInputPurpose` PASSWORD/PIN) so a real end-to-end session,
 through IBus injection, can be exercised in the same window. Session
-start/stop stays hotkey-driven (`DbusTrigger`/`org.myna.Dictation`
+start/stop stays hotkey-driven (`DbusTrigger`/`com.canonical.Myna.Dictation`
 `Start`/`Stop`/`Toggle` remain unimplemented stubs, US4 — out of scope here).
 `Adw.StyleManager`'s own `accent_color_rgba`/`system_supports_accent_colors`
 is used only to tint the app's own libadwaita chrome (header bar, buttons) as
@@ -922,7 +922,7 @@ standalone **Rust GTK4 + libadwaita application** — new workspace crate
 - **Supervise**: respawn with bounded backoff if the subprocess exits
   unexpectedly while enabled; terminate it on `disable()`.
 - **Presence**: the extension owns the well-known session-bus name
-  `org.myna.Shell` while enabled (R24), so `myna-desktop` can select the
+  `com.canonical.Myna.Shell` while enabled (R24), so `myna-desktop` can select the
   indicator surface without any registration protocol.
 
 All host APIs verified present and introspected in **both** target girs —
@@ -1021,10 +1021,10 @@ tests guarded. `GskGLShader` was already rejected upstream-adjacent
 headless/virtual machines better anyway); render via Cairo in GTK
 (`Gtk.DrawingArea`) — same dual-path problem, slower.
 
-## R24 — Presence and launch policy: `org.myna.Shell` (2026-08-26)
+## R24 — Presence and launch policy: `com.canonical.Myna.Shell` (2026-08-26)
 
 **Decision**: The extension owns the well-known session-bus name
-`org.myna.Shell` for exactly as long as it is enabled — **no** properties,
+`com.canonical.Myna.Shell` for exactly as long as it is enabled — **no** properties,
 methods, or signals; ownership is the entire contract (FR-017a). `myna-desktop`
 gains a launcher policy around a name watch: name present → the hosted
 renderer is the indicator (suppress the notification fallback); absent → the
@@ -1050,11 +1050,11 @@ supervisor).
 ## R25 — Dev labs move into the application (2026-08-26)
 
 **Decision**: `dev-lab/` (GJS GTK4 tuning app) and `dev-lab-gpu/` (Python
-GLArea lab + `org.myna.Dictation` simulator) are deleted; their capabilities
+GLArea lab + `com.canonical.Myna.Dictation` simulator) are deleted; their capabilities
 become **modes of the shipped binary**: `--lab` (manual controls — state,
 severity, level, reduced-motion, plus a dictation-target text view — driving
 the identical renderer modules with **no backend required**) and
-`--serve-dbus` (the simulator that owns `org.myna.Dictation`, port of
+`--serve-dbus` (the simulator that owns `com.canonical.Myna.Dictation`, port of
 `dictation_service.py`, so the real hosted indicator can be driven without
 `myna-desktop`). Localization moves with the app: gettext domain **`myna`**
 (previously the extension's own domain), catalog under `client/myna-hud/po/`.

@@ -22,7 +22,7 @@ msgid "myna HUD lab"
 msgstr ""
 
 #: src/lab.rs:151
-msgid "Published to org.myna.Dictation"
+msgid "Published to com.canonical.Myna.Dictation"
 msgstr ""
 
 #: src/lab.rs:170

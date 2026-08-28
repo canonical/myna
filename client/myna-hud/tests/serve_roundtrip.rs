@@ -18,9 +18,9 @@ fn have_session_bus() -> bool {
 
 /// A minimal consumer proxy for the served interface.
 #[zbus::proxy(
-    interface = "org.myna.Dictation",
-    default_service = "org.myna.Dictation",
-    default_path = "/org/myna/Dictation"
+    interface = "com.canonical.Myna.Dictation",
+    default_service = "com.canonical.Myna.Dictation",
+    default_path = "/com/canonical/Myna/Dictation"
 )]
 trait Dictation {
     #[zbus(property)]

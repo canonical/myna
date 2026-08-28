@@ -1,5 +1,5 @@
-//! The real `zbus`-backed [`Bus`]: serves `org.myna.Dictation` at
-//! `/org/myna/Dictation` on the session bus (feature 004, contract
+//! The real `zbus`-backed [`Bus`]: serves `com.canonical.Myna.Dictation` at
+//! `/com/canonical/Myna/Dictation` on the session bus (feature 004, contract
 //! dbus-interface.md §Bus topology). State + level only — the property shapes
 //! are `s`/`d`, so no transcript-bearing value can cross (C3).
 //!
@@ -41,7 +41,7 @@ pub enum ServeError {
     Bus(#[from] zbus::Error),
 }
 
-/// The served property values (the `org.myna.Dictation` members — the
+/// The served property values (the `com.canonical.Myna.Dictation` members — the
 /// interface defines no signals; every update is pushed via the standard
 /// `PropertiesChanged`, the one broadcast that crosses snap confinement to
 /// unconfined subscribers, contract §Confinement). `State` starts `idle`,
@@ -64,7 +64,7 @@ impl ServedState {
     }
 }
 
-/// The `org.myna.Dictation` object. Properties read the shared [`ServedState`]
+/// The `com.canonical.Myna.Dictation` object. Properties read the shared [`ServedState`]
 /// (updated by the publisher through the [`Bus`] seam); the `Start`/`Stop`/
 /// `Toggle` methods feed a [`DbusTriggerSource`] when one is attached (the
 /// panel-button activation path, P9–P12/C6), and are otherwise no-ops.
@@ -73,7 +73,7 @@ struct DictationObject {
     trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
 }
 
-#[zbus::interface(name = "org.myna.Dictation")]
+#[zbus::interface(name = "com.canonical.Myna.Dictation")]
 impl DictationObject {
     /// `Start`: begin a session (a Press edge for the trigger — C6).
     async fn start(&self) -> (bool, String) {
@@ -146,7 +146,7 @@ impl std::fmt::Debug for ZbusBus {
 }
 
 impl ZbusBus {
-    /// Connect to the session bus, serve `/org/myna/Dictation`, and take the
+    /// Connect to the session bus, serve `/com/canonical/Myna/Dictation`, and take the
     /// well-known name (C1). [`ServeError::Bus`] means the bus is unreachable
     /// and the caller falls back to `NotifyIndicator` (P15);
     /// [`ServeError::AlreadyRunning`] means a second daemon and is fatal.

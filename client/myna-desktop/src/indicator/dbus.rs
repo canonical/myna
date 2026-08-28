@@ -1,5 +1,5 @@
 //! `DbusIndicator` — an [`Indicator`] backend that publishes dictation state
-//! onto `org.myna.Dictation` for the GNOME Shell extension (feature 004,
+//! onto `com.canonical.Myna.Dictation` for the GNOME Shell extension (feature 004,
 //! contract publisher.md P1–P5). Composes with `NotifyIndicator` as the
 //! fallback when the session bus is unavailable (P15).
 
@@ -12,7 +12,7 @@ use myna_orchestrator::{OrchestratorEvent, TextSink};
 use crate::dbus::{PropertyValue, SharedBus};
 use crate::indicator::{Indicator, IndicatorState};
 
-/// The `org.myna.Dictation` wire states (data-model E1; the additive string
+/// The `com.canonical.Myna.Dictation` wire states (data-model E1; the additive string
 /// enum the extension switches on).
 pub mod wire_state {
     /// No session; HUD pill hidden.
@@ -36,7 +36,7 @@ pub mod wire_state {
     pub const ERROR: &str = "error";
 }
 
-/// Map an [`IndicatorState`] to the `org.myna.Dictation` `State` string
+/// Map an [`IndicatorState`] to the `com.canonical.Myna.Dictation` `State` string
 /// (data-model E1 table). `ready_seen` splits `Recording` into the cold-load
 /// `loading` window vs post-`Ready` `recording` (R4/C5). `Error{recoverable}`
 /// splits into `notice` (recoverable) vs `error` (critical) — the two are
@@ -212,7 +212,7 @@ mod tests {
     use super::*;
 
     /// Contract publisher.md P1 / data-model E1: every IndicatorState maps to
-    /// the org.myna.Dictation State string of the E1 table.
+    /// the com.canonical.Myna.Dictation State string of the E1 table.
     #[test]
     fn indicator_state_maps_to_wire_state() {
         assert_eq!(map_state(&IndicatorState::Hidden, false), "idle");

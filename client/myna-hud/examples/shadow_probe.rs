@@ -8,7 +8,7 @@ use myna_hud::window::HudWindow;
 
 fn main() {
     let app = adw::Application::builder()
-        .application_id("org.myna.ShadowProbe")
+        .application_id("com.canonical.Myna.ShadowProbe")
         .build();
     app.connect_activate(|app| {
         let hud = HudWindow::new(app);

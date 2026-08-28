@@ -40,7 +40,7 @@ environment:
   SPA_PLUGIN_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/spa-0.2
   PIPEWIRE_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pipewire-0.3
   PIPEWIRE_CONFIG_DIR: $SNAP/usr/share/pipewire
-  # Client settings live in GSettings (org.myna.dictation), which needs two
+  # Client settings live in GSettings (com.canonical.Myna.Dictation), which needs two
   # things the base cannot supply: our own compiled schema, and the dconf
   # backend module. glib comes from core24, so it looks for gio modules in the
   # *base's* /usr/lib/.../gio/modules - empty - rather than the snap's, and
@@ -68,7 +68,7 @@ apps:
   # This re-stages the toolkit that T69 had pruned for the one-label ui-gtk
   # overlay — now justified by the real product. The myna snap itself stays
   # 4.9 MB; this is the `gnome` extension's ~13 MB cost.
-  myna-hud:
+  hud:
     command: bin/myna-hud
     extensions: [gnome]
     plugs:
@@ -80,11 +80,11 @@ apps:
 
   # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
   # The launcher passes only --socket/--language: activation (portal, because
-  # $SNAP is set), the org.myna.Dictation indicator, and streaming preedit are
+  # $SNAP is set), the com.canonical.Myna.Dictation indicator, and streaming preedit are
   # all resolved by myna-desktop itself rather than pinned here.
   # NOTE: deliberately NO `gnome` extension for the daemon itself and no GTK
   # at all there. The packaged build omits myna-desktop's removed `ui-gtk`
-  # overlay, so feedback is the org.myna.Dictation indicator (myna-shell)
+  # overlay, so feedback is the com.canonical.Myna.Dictation indicator (myna-shell)
   # with a notification fallback: no toolkit to ship there, and none of the
   # GTK stack that came with it.
   myna:
@@ -107,7 +107,7 @@ apps:
     # NOT `activates-on: [dictation]`: that omits the [Install] section
     # entirely (wrappers/internal/service_unit_gen.go:214), making the unit
     # on-demand only. Nothing would hold the global hotkey until something
-    # addressed org.myna.Dictation, and the only natural poker is the
+    # addressed com.canonical.Myna.Dictation, and the only natural poker is the
     # myna-shell extension, which is not packaged. The hotkey IS the entry
     # point, so it has to be held from login.
     #
@@ -139,7 +139,7 @@ apps:
       - network-bind # seccomp bind(2) for the control socket - no other interface grants it
       - backend # content share → the backend snap's session socket
     slots:
-      - dictation # org.myna.Dictation for the GNOME Shell indicator
+      - dictation # com.canonical.Myna.Dictation for the GNOME Shell indicator
 
   # Poke the running daemon. Only meaningful under control-socket activation
   # (`myna --control`), which a packaged build does not default to: bind
@@ -178,7 +178,7 @@ apps:
       # ("Allow apps from the same package to communicate with each other via
       # DBus"), so reading the daemon's published state needs no `dbus` plug of
       # its own - verified against the generated profile, which contains no
-      # rule naming org.myna.Dictation at all. `backend` makes the socket line
+      # rule naming com.canonical.Myna.Dictation at all. `backend` makes the socket line
       # the truth rather than a guess: the content share is a bind mount that
       # exists only in this namespace.
       - gsettings
@@ -209,7 +209,7 @@ slots:
   dictation:
     interface: dbus
     bus: session
-    name: org.myna.Dictation
+    name: com.canonical.Myna.Dictation
 
 parts:
   # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:
@@ -257,8 +257,8 @@ parts:
       strip --strip-debug "$CRAFT_PART_INSTALL"/bin/*
       # The settings store, from the same XML the host and the (future) deb
       # install - one schema, three kinds of writer (myna_core::settings).
-      install -Dm644 data/glib-2.0/schemas/org.myna.dictation.gschema.xml \
-          "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/org.myna.dictation.gschema.xml"
+      install -Dm644 data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml \
+          "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml"
     stage-packages:
       - libpipewire-0.3-0
       # protocol-native & friends: mandatory modules loaded by pw_context_new
@@ -346,7 +346,7 @@ parts:
       # usr/share/glib-2.0 survives that sweep for exactly one file, the
       # settings schema. Everything a stage-package left beside it goes, and
       # what remains is compiled: glib reads gschemas.compiled, never the XML.
-      find usr/share/glib-2.0 -type f ! -name 'org.myna.*.gschema.xml' -delete
+      find usr/share/glib-2.0 -type f ! -name 'com.canonical.Myna*.gschema.xml' -delete
       find usr/share/glib-2.0 -mindepth 1 -type d -empty -delete
       glib-compile-schemas usr/share/glib-2.0/schemas
 

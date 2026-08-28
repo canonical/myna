@@ -214,7 +214,7 @@ cd client && cargo build --release && cd ..
 
 The daemon resolves its own wiring: activation follows packaging (control
 socket here, the GlobalShortcuts portal when `$SNAP` is set, since only a
-packaged app gets a portal app identity), `org.myna.Dictation` is always
+packaged app gets a portal app identity), `com.canonical.Myna.Dictation` is always
 served for the indicator below with a notification fallback, and in-field
 preedit follows the streaming tier gate. Force any of them with `--portal` /
 `--control` / `--stdin`, `--no-dbus`, `--preedit` / `--no-preedit`;
@@ -444,7 +444,7 @@ in the absence of a config schema, and what the running system costs.
 It discovers backends by their `ubustt-socket` content slot, reads them
 unprivileged (`<backend> get|status|list-models|list-engines`), shows live
 service state, resident/peak memory, CPU time and on-disk size per backend
-alongside the client's dictation state from `org.myna.Dictation`, and writes
+alongside the client's dictation state from `com.canonical.Myna.Dictation`, and writes
 through `pkexec`, always displaying the literal command first.
 
 What it surfaces, and what a real config API would have to answer:

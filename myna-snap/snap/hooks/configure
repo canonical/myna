@@ -3,7 +3,7 @@
 #
 # Two planes, deliberately:
 #
-#   gsettings set org.myna.dictation …   per user, unprivileged, what a
+#   gsettings set com.canonical.Myna.Dictation …   per user, unprivileged, what a
 #                                        Settings page writes
 #   snap set myna …                      per machine, root, what an image build
 #                                        or an admin presets

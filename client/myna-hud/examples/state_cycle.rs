@@ -15,7 +15,7 @@ use myna_hud::window::HudWindow;
 
 fn main() {
     let app = adw::Application::builder()
-        .application_id("org.myna.StateCycle")
+        .application_id("com.canonical.Myna.StateCycle")
         .build();
     app.connect_activate(|app| {
         let hud = HudWindow::new(app);

@@ -1,4 +1,4 @@
-//! The `org.myna.Dictation` D-Bus publisher boundary (feature
+//! The `com.canonical.Myna.Dictation` D-Bus publisher boundary (feature
 //! 004-gnome-shell-indicator).
 //!
 //! `myna-desktop` publishes dictation **state + level only** (never transcript
@@ -7,7 +7,7 @@
 //! dbus-interface.md`. All publisher logic is written against the small [`Bus`]
 //! seam so the mapping/throttling is hermetic-testable over [`FakeBus`]
 //! (research R11); the real `zbus`-backed implementation that owns the
-//! well-known name and serves `/org/myna/Dictation` lands in the polish phase
+//! well-known name and serves `/com/canonical/Myna/Dictation` lands in the polish phase
 //! (contract publisher.md P13–P15).
 
 pub mod pump;
@@ -15,11 +15,11 @@ pub mod serve;
 pub mod status;
 
 /// Well-known bus name owned by `myna-desktop --dbus` (contract §Bus topology).
-pub const BUS_NAME: &str = "org.myna.Dictation";
+pub const BUS_NAME: &str = "com.canonical.Myna.Dictation";
 /// Object path the interface is served at.
-pub const OBJECT_PATH: &str = "/org/myna/Dictation";
+pub const OBJECT_PATH: &str = "/com/canonical/Myna/Dictation";
 /// Interface name (identical to the bus name for the MVP).
-pub const INTERFACE: &str = "org.myna.Dictation";
+pub const INTERFACE: &str = "com.canonical.Myna.Dictation";
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,7 @@ pub trait Bus: Send {
 /// trigger). Cloning shares the same underlying bus.
 pub type SharedBus = Arc<tokio::sync::Mutex<dyn Bus>>;
 
-/// The served `org.myna.Dictation` object: owns the [`Bus`] handle the
+/// The served `com.canonical.Myna.Dictation` object: owns the [`Bus`] handle the
 /// `DbusIndicator` (state), the level pump (levels), and the `DbusTrigger`
 /// (methods) all publish through, plus the bus-name lifecycle (request on
 /// start, release on shutdown — C1/C9). The zbus serve lands with the gated

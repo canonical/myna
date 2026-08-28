@@ -1,4 +1,4 @@
-// presence.test.js — GJS contract test for the org.myna.Shell presence name
+// presence.test.js — GJS contract test for the com.canonical.Myna.Shell presence name
 // lifecycle (feature 004-gnome-shell-indicator, 2026-08-26 architecture
 // revision; contract dbus-interface.md C12, extension.md XH5). The bus is a
 // stub: no session bus needed.

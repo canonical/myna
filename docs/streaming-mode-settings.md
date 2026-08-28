@@ -62,8 +62,8 @@ myna-dictate --socket /path/to.sock --mode batch --clip clip.wav
 Persistent preference (used when `--mode` is absent):
 
 ```sh
-gsettings set org.myna.dictation streaming-mode batch
-gsettings get org.myna.dictation streaming-mode
+gsettings set com.canonical.Myna.Dictation streaming-mode batch
+gsettings get com.canonical.Myna.Dictation streaming-mode
 ```
 
 A running `myna-desktop` picks the change up live - it subscribes to the store
@@ -78,7 +78,7 @@ subscribe to.
 
 ## Where the setting lives (2026-08-26)
 
-GSettings, schema `org.myna.dictation`, key `streaming-mode`; the source is
+GSettings, schema `com.canonical.Myna.Dictation`, key `streaming-mode`; the source is
 `client/data/glib-2.0/schemas/`. It was a JSON file at
 `~/.config/myna/settings.json` until 2026-08-26, and that could not work: the
 store has to be writable by the confined snap, by unconfined host tools, and

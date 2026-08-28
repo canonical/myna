@@ -17,7 +17,7 @@ use myna_hud::window::HudWindow;
 
 fn main() {
     let app = adw::Application::builder()
-        .application_id("org.myna.AccentChange")
+        .application_id("com.canonical.Myna.AccentChange")
         .build();
     app.connect_activate(|app| {
         let hud = HudWindow::new(app);

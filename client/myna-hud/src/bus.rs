@@ -21,7 +21,7 @@ use zbus::zvariant::OwnedValue;
 use crate::dbus_consumer::{Snapshot, BUS_NAME, OBJECT_PATH};
 
 /// The interface whose properties carry the whole UI state (E1–E3).
-const INTERFACE: &str = "org.myna.Dictation";
+const INTERFACE: &str = "com.canonical.Myna.Dictation";
 
 /// What the worker observed. The rules live in the consumer.
 #[derive(Clone, Debug)]

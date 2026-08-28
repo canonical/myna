@@ -2,7 +2,7 @@
 //! machine (feature 004, T132; contract `dbus-interface.md` C6/C7), ported
 //! from `dictation_service.py`'s `_on_method_call`.
 //!
-//! This is the pure half of the served `org.myna.Dictation` interface's
+//! This is the pure half of the served `com.canonical.Myna.Dictation` interface's
 //! methods: `Start`, `Stop`, `Toggle`. It owns the one rule that has teeth —
 //! **there is exactly one session, and duplicate `Start`/`Toggle` calls
 //! never stack a second one** (C6, mirroring the controller's own

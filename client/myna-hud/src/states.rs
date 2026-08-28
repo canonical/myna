@@ -1,6 +1,6 @@
 //! states — PURE dictation-state → *semantic descriptor* (feature
 //! 004-gnome-shell-indicator; data-model E1/E1a). This is the STABLE layer:
-//! it maps the `org.myna.Dictation` wire `State` to a content-free,
+//! it maps the `com.canonical.Myna.Dictation` wire `State` to a content-free,
 //! presentation-free descriptor. It says *what* the system is doing — never
 //! how to draw it. Renderers own all pixels: colour, geometry, animation,
 //! icon choice. Swapping the look never touches this file.

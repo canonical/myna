@@ -1,6 +1,6 @@
 //! Read the daemon's published state from *outside* the daemon.
 //!
-//! The serving side of `org.myna.Dictation` is [`crate::dbus::serve`]; this is
+//! The serving side of `com.canonical.Myna.Dictation` is [`crate::dbus::serve`]; this is
 //! the other end of the same interface, and it exists because the interface is
 //! the only place the running daemon's state is legible at all. Everything
 //! else about a dictation session is either in the journal (historical) or in

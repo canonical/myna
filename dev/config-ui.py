@@ -50,7 +50,7 @@ CLIENT_SNAP = "myna"
 # the store moved. Reached here through the host CLI, which lands in the same
 # dconf database the confined daemon reads ($XDG_CONFIG_HOME is pointed at
 # $SNAP_REAL_HOME/.config for exactly that).
-SCHEMA = "org.myna.dictation"
+SCHEMA = "com.canonical.Myna.Dictation"
 KEY_STREAMING_MODE = "streaming-mode"
 
 # Keys a real `describe-config` would flag itself. Guessed here, and the guess
@@ -363,9 +363,9 @@ def client_state():
                 "--user",
                 "--json=short",
                 "get-property",
-                "org.myna.Dictation",
-                "/org/myna/Dictation",
-                "org.myna.Dictation",
+                "com.canonical.Myna.Dictation",
+                "/com/canonical/Myna/Dictation",
+                "com.canonical.Myna.Dictation",
                 prop,
             ],
             timeout=3,
@@ -830,7 +830,9 @@ class ClientTab(Scrollable):
 
     def update_live(self, state):
         dbus = state.get("dbus") or {}
-        self.vars["state"].set(dbus.get("State", "no org.myna.Dictation on the session bus"))
+        self.vars["state"].set(
+            dbus.get("State", "no com.canonical.Myna.Dictation on the session bus")
+        )
         rms, peak = dbus.get("AudioRms", 0.0) or 0.0, dbus.get("AudioPeak", 0.0) or 0.0
         self.vars["audio"].set(f"rms {rms:.3f}  peak {peak:.3f}")
         self.level["value"] = peak

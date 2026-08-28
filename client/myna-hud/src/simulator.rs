@@ -1,5 +1,5 @@
 //! simulator — the `--serve-dbus` mode's PURE mapping (lab controls →
-//! `org.myna.Dictation` wire properties). Ported from
+//! `com.canonical.Myna.Dictation` wire properties). Ported from
 //! `dev-lab-gpu/dictation_service.py`'s mapping tables (deleted with the old
 //! bundle; this is now the single source of truth — the zbus publisher that
 //! consumes it is T132).

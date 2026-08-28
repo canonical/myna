@@ -3,12 +3,12 @@
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; architecture revision: 2026-08-26)
 
 The shipped Rust half: a `DbusIndicator` (`Indicator` backend) + a `DbusTrigger`
-(`Trigger` backend) + a `dbus` module serving `org.myna.Dictation`
+(`Trigger` backend) + a `dbus` module serving `com.canonical.Myna.Dictation`
 (`contracts/dbus-interface.md`). All guarantees encoded as tests before code
 (constitution I). Boundary to the bus is a small `Bus` seam with a fake
 implementation for hermetic tests (R11). **(2026-08-26)** adds the indicator-
 surface **launcher policy** (§Launcher policy): `myna-desktop` watches the
-`org.myna.Shell` presence name and suppresses its notification fallback while
+`com.canonical.Myna.Shell` presence name and suppresses its notification fallback while
 the extension host is up; and the old experimental `ui-gtk`/`GtkIndicator`
 overlay is **removed** (superseded by the `myna-hud` renderer application —
 spec FR-023; its guarantees were never listed here and its files are deleted).
@@ -53,7 +53,7 @@ spec FR-023; its guarantees were never listed here and its files are deleted).
 
 | # | Guarantee | Test tier |
 |---|---|---|
-| P13 | `myna-desktop --dbus` requests `org.myna.Dictation` on the session bus and serves `/org/myna/Dictation`; a real client sees it (C1/C9). | env-gated `MYNA_DBUS_TESTS=1` |
+| P13 | `myna-desktop --dbus` requests `com.canonical.Myna.Dictation` on the session bus and serves `/com/canonical/Myna/Dictation`; a real client sees it (C1/C9). | env-gated `MYNA_DBUS_TESTS=1` |
 | P14 | On shutdown the name is released so watchers see name-vanished (C9). | env-gated |
 | P15 | The `--dbus` mode falls back to `NotifyIndicator` when the session bus is unavailable (never a hard failure of dictation). | hermetic (bus-open error path) |
 
@@ -64,8 +64,8 @@ rendering its own:
 
 | # | Guarantee | Test tier |
 |---|---|---|
-| P20 | While `org.myna.Shell` has an owner, the fallback notification indicator is suppressed (no duplicate indicator beside the hosted renderer); dictation behavior is otherwise unchanged. | hermetic (fake presence seam) |
-| P21 | When `org.myna.Shell` vanishes (extension disabled/removed/Shell crash), the fallback notification indicator is restored. | hermetic (fake presence seam) |
+| P20 | While `com.canonical.Myna.Shell` has an owner, the fallback notification indicator is suppressed (no duplicate indicator beside the hosted renderer); dictation behavior is otherwise unchanged. | hermetic (fake presence seam) |
+| P21 | When `com.canonical.Myna.Shell` vanishes (extension disabled/removed/Shell crash), the fallback notification indicator is restored. | hermetic (fake presence seam) |
 | P22 | Presence watching never blocks or fails dictation: a bus error degrades to the fallback surface, never an abort. | hermetic (bus-open error path) |
 | P23 | The non-GNOME spawn path (launch `myna-hud` standalone where a focus-safe overlay backend exists) is **contract only**: the policy hook exists behind a seam, no backend ships this pass (spec Out of Scope). | seam + unit test of the policy function |
 

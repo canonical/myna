@@ -14,7 +14,7 @@ pub mod dbus;
 pub mod mock;
 pub mod notify;
 
-/// The shipped no-op surface: when the myna-shell host owns `org.myna.Shell`
+/// The shipped no-op surface: when the myna-shell host owns `com.canonical.Myna.Shell`
 /// (policy P20), the hosted HUD is the indicator, so the fallback
 /// notification surface is deliberately nothing. Distinct from
 /// [`mock::MockIndicator`] (a test fixture) — this is a real, honest "no

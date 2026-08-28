@@ -13,20 +13,20 @@
   the host by `make install-schema` until the extension deb carries it.
 -->
 <schemalist>
-  <enum id="org.myna.dictation.Activation">
+  <enum id="com.canonical.Myna.Dictation.Activation">
     <value nick="auto" value="0"/>
     <value nick="portal" value="1"/>
     <value nick="control" value="2"/>
   </enum>
 
-  <enum id="org.myna.dictation.StreamingMode">
+  <enum id="com.canonical.Myna.Dictation.StreamingMode">
     <value nick="auto" value="0"/>
     <value nick="streaming" value="1"/>
     <value nick="batch" value="2"/>
   </enum>
 
-  <schema id="org.myna.dictation" path="/org/myna/dictation/">
-    <key name="streaming-mode" enum="org.myna.dictation.StreamingMode">
+  <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
+    <key name="streaming-mode" enum="com.canonical.Myna.Dictation.StreamingMode">
       <default>'auto'</default>
       <summary>How transcripts are emitted</summary>
       <description>
@@ -47,7 +47,7 @@
       </description>
     </key>
 
-    <key name="activation" enum="org.myna.dictation.Activation">
+    <key name="activation" enum="com.canonical.Myna.Dictation.Activation">
       <default>'auto'</default>
       <summary>How a press reaches the daemon</summary>
       <description>

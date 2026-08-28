@@ -40,7 +40,7 @@ impl Policy for FakePresence {
     }
 }
 
-// --- P20: while org.myna.Shell has an owner, the notification fallback is
+// --- P20: while com.canonical.Myna.Shell has an owner, the notification fallback is
 // suppressed --------------------------------------------------------------
 
 #[test]
@@ -55,7 +55,7 @@ fn p20_shell_present_suppresses_the_notify_fallback() {
     );
 }
 
-// --- P21: when org.myna.Shell vanishes, the fallback is restored ---------
+// --- P21: when com.canonical.Myna.Shell vanishes, the fallback is restored ---------
 
 #[test]
 fn p21_shell_vanished_restores_the_notify_fallback() {
@@ -108,12 +108,12 @@ fn p22_bus_error_degrades_to_fallback() {
 // The name watched is exactly the extension host's presence name.
 #[test]
 fn p20_watches_org_myna_shell() {
-    assert_eq!(PRESENCE_NAME, "org.myna.Shell");
+    assert_eq!(PRESENCE_NAME, "com.canonical.Myna.Shell");
     let presence = FakePresence::default();
     presence.set_present(true);
     assert!(
         presence.shell_present(),
-        "the fake reports the org.myna.Shell owner state"
+        "the fake reports the com.canonical.Myna.Shell owner state"
     );
 }
 

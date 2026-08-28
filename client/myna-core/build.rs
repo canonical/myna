@@ -1,6 +1,6 @@
 //! Compile the GSettings schema into `OUT_DIR` for the settings tests.
 //!
-//! `Settings` reads `org.myna.dictation` out of whatever schema source the
+//! `Settings` reads `com.canonical.Myna.Dictation` out of whatever schema source the
 //! machine has installed; the tests must not depend on that, so they build
 //! their own source from a directory this compiles here. Shipping is a
 //! separate matter: the snap compiles the same XML into

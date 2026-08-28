@@ -5,7 +5,7 @@
 //!
 //! ## Where it lives, and why that is not a file
 //!
-//! The store is **GSettings**, schema `org.myna.dictation`
+//! The store is **GSettings**, schema `com.canonical.Myna.Dictation`
 //! (`client/data/glib-2.0/schemas/`). Three kinds of writer have to reach the
 //! same values: the confined `myna` snap (over the `gsettings` interface),
 //! unconfined host tools (`gsettings set`, `myna-dictate`, a future Settings
@@ -36,7 +36,7 @@ use gio::prelude::SettingsExt;
 use crate::StreamingMode;
 
 /// The schema every myna client settings key lives under.
-pub const SCHEMA_ID: &str = "org.myna.dictation";
+pub const SCHEMA_ID: &str = "com.canonical.Myna.Dictation";
 
 /// The persisted streaming-mode preference.
 pub const KEY_STREAMING_MODE: &str = "streaming-mode";
@@ -67,7 +67,7 @@ pub struct Settings {
 /// Why a settings write did not happen.
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
-    /// No `org.myna.dictation` in any installed schema source. Packaged, the
+    /// No `com.canonical.Myna.Dictation` in any installed schema source. Packaged, the
     /// snap ships its own; unpackaged, `make install-schema` puts it on the
     /// host.
     #[error("GSettings schema {SCHEMA_ID} is not installed")]
@@ -466,7 +466,7 @@ mod tests {
     fn store_on(path: &std::path::Path) -> Store {
         let backend = gio::functions::keyfile_settings_backend_new(
             path.to_str().expect("utf-8 temp path"),
-            "/org/myna/dictation/",
+            "/com/canonical/myna/dictation/",
             // A group is required: with none, the keyfile backend treats keys
             // sitting directly under the root path as readonly.
             Some("dictation"),

@@ -16,7 +16,7 @@
 //!   restarted, or the compositor replaced) is rebound rather than treated as
 //!   "the user is done", which is what ended the process before.
 //!
-//! While unbound, the reason is published on `org.myna.Dictation.ErrorMessage`
+//! While unbound, the reason is published on `com.canonical.Myna.Dictation.ErrorMessage`
 //! so the degraded state is inspectable (`gdbus`, the shell extension) rather
 //! than only being a line in the journal.
 
@@ -157,7 +157,7 @@ impl RetryingTrigger {
     }
 
     /// Publish the degraded reason (and its clearing) on
-    /// `org.myna.Dictation.ErrorMessage`.
+    /// `com.canonical.Myna.Dictation.ErrorMessage`.
     pub fn status_on(mut self, bus: SharedBus) -> Self {
         self.status = Some(bus);
         self

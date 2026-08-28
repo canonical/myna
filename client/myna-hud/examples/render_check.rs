@@ -30,7 +30,7 @@ const HEIGHT: i32 = 64;
 
 fn main() {
     let app = gtk::Application::builder()
-        .application_id("org.myna.HudRenderCheck")
+        .application_id("com.canonical.Myna.HudRenderCheck")
         .build();
 
     app.connect_activate(|app| {

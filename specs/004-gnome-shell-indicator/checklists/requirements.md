@@ -113,7 +113,7 @@
 - **2026-08-26 architecture revision (renderer → GTK app; extension → thin host)**: spec
   updated with the 2026-08-26 clarification session (9 Q&As) and the derived changes:
   new FR-024–FR-027 (overlay-window behavior, click-through input region, supervision,
-  well-known binary), FR-017a (`org.myna.Shell` presence), FR-016/018 consumer re-homing,
+  well-known binary), FR-017a (`com.canonical.Myna.Shell` presence), FR-016/018 consumer re-homing,
   FR-021 teardown of the hosted process, FR-023 fallback selection + `ui-gtk` removal;
   three new Key Entities (Shell presence, Hosted overlay window, Renderer application);
   new SC-015/SC-016; edge cases for renderer crash/extension disable; Assumptions rewritten

@@ -10,7 +10,7 @@
 #
 # The launcher deliberately passes no activation, indicator or preedit flags:
 # myna-desktop resolves all three itself (portal activation because $SNAP is
-# set, org.myna.Dictation always served with a notification fallback, preedit
+# set, com.canonical.Myna.Dictation always served with a notification fallback, preedit
 # from the persisted streaming mode). Anything this script "helpfully" pinned
 # here would be a default the user cannot see and cannot change.
 #

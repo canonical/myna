@@ -34,14 +34,14 @@
 //! ## Things that are resolved, not asked
 //!
 //! Three switches used to be the user's problem and are now the daemon's:
-//! the indicator bus (`org.myna.Dictation` is always served, falling back to
+//! the indicator bus (`com.canonical.Myna.Dictation` is always served, falling back to
 //! notifications by itself), the activation transport (above), and streaming
 //! preedit ([`resolve_preedit`]). Each still has an explicit override for
 //! debugging, but a correct setup requires none of them.
 //!
 //! What *is* configurable is resolved in one place, [`Resolved`], with one
 //! order: a command-line flag, then the user's GSettings value
-//! (`org.myna.dictation`), then the system default a `snap set myna …` wrote,
+//! (`com.canonical.Myna.Dictation`), then the system default a `snap set myna …` wrote,
 //! then the built-in. The user's own store outranks the system one on purpose -
 //! snapd configuration is per snap, not per user, so an admin setting a
 //! language must not overrule an account that chose its own.
@@ -81,7 +81,7 @@ USAGE:
 Focus a text field, tap the shortcut to start, speak, tap again to stop. The
 committed transcript is injected via IBus into that field.
 
-The daemon always serves org.myna.Dictation for the GNOME Shell extension,
+The daemon always serves com.canonical.Myna.Dictation for the GNOME Shell extension,
 picks its activation transport from how it was packaged, and decides streaming
 preedit from your persisted mode preference. A correct setup needs none of the
 overrides below.
@@ -116,7 +116,7 @@ ACTIVATION (default: portal when packaged — $SNAP set — else control socket)
 OVERRIDES (for debugging; the daemon resolves all three by itself):
     --preedit          force the in-flight hypothesis into the field's preedit
     --no-preedit       force commit-only, even in streaming mode
-    --no-dbus          do not serve org.myna.Dictation (notifications only).
+    --no-dbus          do not serve com.canonical.Myna.Dictation (notifications only).
                        Also opts out of the one-daemon-at-a-time guard, which
                        is that name: two daemons split the hotkey from the UI
 
@@ -190,7 +190,7 @@ impl SystemDefaults {
 /// One order throughout, most specific first:
 ///
 /// 1. **a command-line flag** — someone is debugging, and meant it;
-/// 2. **the user's GSettings value** (`org.myna.dictation`) — the desktop's own
+/// 2. **the user's GSettings value** (`com.canonical.Myna.Dictation`) — the desktop's own
 ///    per-user store, which is what a Settings page writes;
 /// 3. **the system default** from `snap set myna …` — per machine, root-set;
 /// 4. **the built-in** — packaging for activation, the tier gate for preedit.
@@ -537,7 +537,7 @@ fn make_session(
             language: language.get(),
             ..Default::default()
         };
-        // --dbus: pump the capture level meter onto org.myna.Dictation for the
+        // --dbus: pump the capture level meter onto com.canonical.Myna.Dictation for the
         // session's lifetime (the pump ends when the source drops its stats
         // sender at session end). Grab the receiver before the source moves.
         let pump = pump_bus.clone().map(|bus| (bus, source.stats()));
@@ -724,7 +724,7 @@ async fn run_controller(
     ExitCode::SUCCESS
 }
 
-/// Publish the "hotkey not bound yet" reason on `org.myna.Dictation` where
+/// Publish the "hotkey not bound yet" reason on `com.canonical.Myna.Dictation` where
 /// there is a bus to publish it on.
 fn with_status(trigger: RetryingTrigger, bus: Option<SharedBus>) -> RetryingTrigger {
     match bus {
@@ -1136,7 +1136,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
     }
 }
 
-/// The default indicator path: serve `org.myna.Dictation` and publish through
+/// The default indicator path: serve `com.canonical.Myna.Dictation` and publish through
 /// it (feature 004 — the GNOME Shell extension consumes it). Falls back to
 /// desktop notifications by itself when the session bus is unreachable or the
 /// name can't be owned, which is why this needs no flag — dictation never
@@ -1148,7 +1148,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             let service = DictationService::new(bus);
             let indicator = DbusIndicator::new(service.bus(), readiness.clone());
             let pump_bus = service.bus();
-            eprintln!("serving org.myna.Dictation on the session bus");
+            eprintln!("serving com.canonical.Myna.Dictation on the session bus");
             run_controller(args, resolved, indicator, Some(readiness), Some(pump_bus)).await
         }
         Err(ServeError::AlreadyRunning { owner_pid }) => {
@@ -1168,12 +1168,12 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(ServeError::Bus(e)) => {
-            eprintln!("cannot serve org.myna.Dictation ({e}); falling back");
+            eprintln!("cannot serve com.canonical.Myna.Dictation ({e}); falling back");
             eprintln!(
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            // P20: if the shell host owns org.myna.Shell, the hosted HUD is
+            // P20: if the shell host owns com.canonical.Myna.Shell, the hosted HUD is
             // the indicator — suppress the notification fallback (no
             // duplicate surface). Otherwise restore it (P21).
             let decision = SurfaceDecision::for_shell_presence(probe_shell_presence().await);

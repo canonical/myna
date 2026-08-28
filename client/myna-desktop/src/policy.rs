@@ -1,10 +1,10 @@
 //! policy — the launcher policy for the indicator surface (feature 004,
 //! T151; contract publisher.md P20–P23).
 //!
-//! `myna-desktop` always serves `org.myna.Dictation` (the myna-shell
+//! `myna-desktop` always serves `com.canonical.Myna.Dictation` (the myna-shell
 //! extension consumes it). The policy decides the FALLBACK surface:
 //!
-//! * while `org.myna.Shell` has an owner (the extension host is up and
+//! * while `com.canonical.Myna.Shell` has an owner (the extension host is up and
 //!   hosting the `myna-hud` overlay), the `NotifyIndicator` fallback is
 //!   **suppressed** — there is already a hosted HUD, a second notification
 //!   would be a duplicate (P20);
@@ -17,13 +17,13 @@
 //!   exists, no backend ships this pass (P23).
 //!
 //! The [`Policy`] trait is the seam: the real implementation watches the
-//! session bus for `org.myna.Shell`, and tests inject a fake presence. The
+//! session bus for `com.canonical.Myna.Shell`, and tests inject a fake presence. The
 //! decision is a pure function of "is the shell host present", so it is
 //! trivially hermetic.
 
 /// The presence name the extension host owns while enabled (contract
 /// dbus-interface.md C12/C13).
-pub const PRESENCE_NAME: &str = "org.myna.Shell";
+pub const PRESENCE_NAME: &str = "com.canonical.Myna.Shell";
 
 /// What to do with the indicator surface given the shell-host presence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl SurfaceDecision {
 /// changes. The real implementation queries the session bus; tests use a
 /// fake.
 pub trait Policy: Send {
-    /// Whether `org.myna.Shell` currently has an owner. An unreachable bus
+    /// Whether `com.canonical.Myna.Shell` currently has an owner. An unreachable bus
     /// returns `false` (P22 — degrade to the fallback, never abort).
     fn shell_present(&self) -> bool;
 

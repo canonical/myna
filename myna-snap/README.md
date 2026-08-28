@@ -40,7 +40,7 @@ once; accept it and pick a key. If step 4 misbehaves, jump to
 **Troubleshooting**.
 
 No activation, indicator or preedit flags: packaged, `myna` uses the
-GlobalShortcuts portal, always serves `org.myna.Dictation`, and turns
+GlobalShortcuts portal, always serves `com.canonical.Myna.Dictation`, and turns
 streaming preedit on only where the tier gate says this machine streams. See
 **Activation** for forcing any of them.
 
@@ -162,7 +162,7 @@ The one real cost was the retry log - ~2,900 identical lines a day on a machine
 with no compositor. A bind failure is now reported once at the operational
 tier, again only when the reason changes, and the repeats go to `MYNA_DEBUG`;
 the current reason is continuously readable on
-`org.myna.Dictation.ErrorMessage`, which is the surface for "what is wrong
+`com.canonical.Myna.Dictation.ErrorMessage`, which is the surface for "what is wrong
 right now".
 
 **What `snap refresh myna` does.** It stops and restarts the unit in every user
@@ -217,7 +217,7 @@ portal only serves apps the compositor can identify, so `$SNAP` being set
 `myna --stdin` drives from the terminal (debug; injects back into the
 terminal). The three activation flags are mutually exclusive.
 
-**Indicator**: `org.myna.Dictation` is always served for the myna-shell
+**Indicator**: `com.canonical.Myna.Dictation` is always served for the myna-shell
 GNOME extension, falling back to desktop notifications by itself when the
 session bus is unreachable - so there is no flag to set. `myna --no-dbus`
 forces the notification path for debugging. The experimental GTK `--overlay`
@@ -250,7 +250,7 @@ on the bus. This prints the composition, including *which* plane won each value
 - because "I set that and nothing happened" is the question being asked.
 
 ```
-settings   org.myna.dictation (schema installed)
+settings   com.canonical.Myna.Dictation (schema installed)
   activation      (unset)      -> Portal (packaged)      [built-in]
   language        (unset)      -> (backend default)      [built-in]
   hotkey          (unset)      -> (portal default)       [built-in]
@@ -261,7 +261,7 @@ backend
   configured      /var/snap/myna/current/backend/*/ubustt.sock
   resolves to     /var/snap/myna/current/backend/run/ubustt.sock
 
-daemon     org.myna.Dictation
+daemon     com.canonical.Myna.Dictation
   state           idle
   error           (none)
 ```
@@ -281,9 +281,9 @@ myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
 # 2. device enumeration over the confined PipeWire socket
 myna.testbed --list-devices
 
-# 3. daemon + bus: org.myna.Dictation is owned while `myna` runs
-gdbus introspect --session --dest org.myna.Dictation \
-    --object-path /org/myna/Dictation
+# 3. daemon + bus: com.canonical.Myna.Dictation is owned while `myna` runs
+gdbus introspect --session --dest com.canonical.Myna.Dictation \
+    --object-path /com/canonical/Myna/Dictation
 ```
 
 ## Troubleshooting
@@ -303,12 +303,12 @@ gdbus introspect --session --dest org.myna.Dictation \
   running in the default portal activation; `myna.toggle` needs
   `myna --control`.
 - **Nothing is injected, state shows `error`** — read the reason:
-  `gdbus call --session --dest org.myna.Dictation \
-    --object-path /org/myna/Dictation \
-    --method org.freedesktop.DBus.Properties.Get org.myna.Dictation ErrorMessage`
+  `gdbus call --session --dest com.canonical.Myna.Dictation \
+    --object-path /com/canonical/Myna/Dictation \
+    --method org.freedesktop.DBus.Properties.Get com.canonical.Myna.Dictation ErrorMessage`
   (a *capture_failed* usually means `myna:pipewire` isn't connected).
 - **A press "does nothing" - the session starts and dies silently** - the
-  daemon serves `org.myna.Dictation` by default, so ALL feedback (including
+  daemon serves `com.canonical.Myna.Dictation` by default, so ALL feedback (including
   errors) goes to its properties; without the myna-shell extension nothing
   renders it (notifications are only the fallback when the bus can't be
   owned). Critical session errors are always printed to the daemon's
@@ -342,17 +342,17 @@ gdbus introspect --session --dest org.myna.Dictation \
 | `pipewire` | native PipeWire capture (`/run/user/*/pipewire-0`) |
 | `desktop` | GlobalShortcuts portal + desktop notifications |
 | `desktop-legacy` | the IBus daemon's private socket (text injection) |
-| `gsettings` | the client settings store (`org.myna.dictation`) and the dconf write for `myna.install-shortcut` |
+| `gsettings` | the client settings store (`com.canonical.Myna.Dictation`) and the dconf write for `myna.install-shortcut` |
 | `network-bind` | seccomp `bind(2)` for the control socket - no outbound reach, and no other interface grants it |
 | `wayland`, `x11` | the GTK indicator window |
 | `backend` (content) | the backend session socket |
-| slot `org.myna.Dictation` (dbus) | the indicator publisher (state + level only) |
+| slot `com.canonical.Myna.Dictation` (dbus) | the indicator publisher (state + level only) |
 
 The IBus injector finds the daemon's address file under your *real* home
 even though snapd redirects `$HOME` (feature-005 discovery fix); the
 control socket lives under the snap-scoped `$XDG_RUNTIME_DIR`.
 
-**Confinement note (indicator bus):** `org.myna.Dictation` is properties-only
+**Confinement note (indicator bus):** `com.canonical.Myna.Dictation` is properties-only
 by design. snapd's `dbus` slot AppArmor policy denies broadcasting *custom*
 signals to unconfined subscribers (and can't be safely widened — AppArmor
 dbus rules can't discriminate message types), but it does allow
@@ -368,7 +368,7 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 Two planes, and the order between them is the whole design:
 
 ```shell
-gsettings set org.myna.dictation streaming-mode streaming   # per user
+gsettings set com.canonical.Myna.Dictation streaming-mode streaming   # per user
 sudo snap set myna language=fr                              # per machine
 ```
 

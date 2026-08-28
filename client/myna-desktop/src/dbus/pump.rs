@@ -1,6 +1,6 @@
 //! The audio-level pump (feature 004, contract publisher.md P6–P8): a tokio
 //! task that reads `myna_audio`'s `AudioStats` `watch` and publishes the
-//! normalized `AudioRms`/`AudioPeak` to `org.myna.Dictation` at a bounded
+//! normalized `AudioRms`/`AudioPeak` to `com.canonical.Myna.Dictation` at a bounded
 //! cadence while a session is active, zeroing them when it ends.
 //!
 //! It only *reads* the existing stats watch and emits — no new work on the

@@ -14,7 +14,7 @@ state is the hosted-window bookkeeping (E7) and the presence name (E6).
 ## E1 — DictationState (the wire state string)
 
 The single source of truth for the HUD pill's treatment. String enum on the
-`org.myna.Dictation.State` property (updates pushed via `PropertiesChanged`).
+`com.canonical.Myna.Dictation.State` property (updates pushed via `PropertiesChanged`).
 
 | Value | Meaning | Derived in myna-desktop from |
 |---|---|---|
@@ -189,7 +189,7 @@ Rules:
 
 ## E5 — Availability (renderer-side, transient; moved 2026-08-26)
 
-Boolean derived from name-watching `org.myna.Dictation`
+Boolean derived from name-watching `com.canonical.Myna.Dictation`
 (name-appeared → available; name-vanished → unavailable). Drives dormancy: while
 unavailable, the renderer shows no window and surfaces no error (spec FR-018,
 US1-5), and clears any HUD pill to idle on transition to unavailable (crash
@@ -199,7 +199,7 @@ mid-session edge case). Previously extension-side; semantics unchanged.
 
 | Field | Type | Source | Notes |
 |---|---|---|---|
-| owned | `boolean` | whether the extension currently owns the session-bus name `org.myna.Shell` (R24) | owned for exactly as long as `enable()`…`disable()`; no properties, methods, or signals — ownership is the signal (FR-017a) |
+| owned | `boolean` | whether the extension currently owns the session-bus name `com.canonical.Myna.Shell` (R24) | owned for exactly as long as `enable()`…`disable()`; no properties, methods, or signals — ownership is the signal (FR-017a) |
 
 Rules:
 - Watched by `myna-desktop`'s launcher policy: present → suppress the
@@ -224,7 +224,7 @@ Rules:
 - One renderer process per enabled extension; terminated on `disable()` and on
   `unmanaged` teardown paths (no orphans; spec FR-021).
 - The host never reads dictation state or levels — it has no
-  `org.myna.Dictation` proxy at all; its only bus surface is E6.
+  `com.canonical.Myna.Dictation` proxy at all; its only bus surface is E6.
 
 ## State → visual-intent mapping (pure; contract-tested)
 

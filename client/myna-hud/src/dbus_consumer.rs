@@ -1,4 +1,4 @@
-//! dbus_consumer — the `org.myna.Dictation` consumer (feature 004; contracts
+//! dbus_consumer — the `com.canonical.Myna.Dictation` consumer (feature 004; contracts
 //! `dbus-interface.md` / `extension.md` X7–X10, re-homed to the renderer by
 //! the 2026-08-26 architecture revision). Ported from
 //! `extensions/myna-shell/dbus.js`.
@@ -30,8 +30,8 @@
 //! the zbus wiring (T124) drives it.
 
 /// The bus name and object the consumer watches.
-pub const BUS_NAME: &str = "org.myna.Dictation";
-pub const OBJECT_PATH: &str = "/org/myna/Dictation";
+pub const BUS_NAME: &str = "com.canonical.Myna.Dictation";
+pub const OBJECT_PATH: &str = "/com/canonical/Myna/Dictation";
 
 /// A snapshot of the interface's four properties, as read from the proxy's
 /// cache (E1/E2/E3).
@@ -89,7 +89,7 @@ impl DictationServiceBuilder {
     }
 }
 
-/// Consumes `org.myna.Dictation` and reports state/level/availability to the
+/// Consumes `com.canonical.Myna.Dictation` and reports state/level/availability to the
 /// application.
 pub struct DictationService {
     on_state_changed: Option<StateCallback>,

@@ -3,13 +3,13 @@
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30; rewritten as host contract: 2026-08-26)
 
 **(2026-08-26 architecture revision)** The extension no longer draws anything
-and no longer consumes `org.myna.Dictation`. It is a **thin window-management
+and no longer consumes `com.canonical.Myna.Dictation`. It is a **thin window-management
 host** for the renderer application (`myna-hud`, Rust GTK4 — `contracts/`
 sibling guarantees live in the publisher/renderer tasks; the rendering
 guarantees X11–X31 previously listed here move to the renderer application's
 own test suite in `client/myna-hud`): it launches the binary through the
 compositor's Wayland-client API, adopts its window, makes it a focus-safe
-overlay, positions it, supervises the process, and owns the `org.myna.Shell`
+overlay, positions it, supervises the process, and owns the `com.canonical.Myna.Shell`
 presence name (`contracts/dbus-interface.md` §Presence). The pure
 mapping/rendering guarantees (formerly X1–X6, X19, X24–X26) are re-homed
 verbatim as Rust unit tests of `myna-hud`'s ported pure modules; the
@@ -38,7 +38,7 @@ manual acceptance plus a headless-Shell integration test where available.
 
 | # | Guarantee | Spec |
 |---|---|---|
-| XH6 | On `enable()` the extension acquires `org.myna.Shell`, spawns `myna-hud` via `Meta.WaylandClient.new_subprocess`, and begins supervision; on `disable()` it terminates the subprocess (or its window), releases the name, disconnects all signals, and clears all timers (no leaks, no orphans). | FR-021, FR-026 |
+| XH6 | On `enable()` the extension acquires `com.canonical.Myna.Shell`, spawns `myna-hud` via `Meta.WaylandClient.new_subprocess`, and begins supervision; on `disable()` it terminates the subprocess (or its window), releases the name, disconnects all signals, and clears all timers (no leaks, no orphans). | FR-021, FR-026 |
 | XH7 | Re-`enable()` after `disable()` re-establishes cleanly (Shell restart / relogin): fresh spawn, fresh adoption, name re-acquired. | FR-021 |
 | XH8 | If the subprocess exits while enabled, respawn follows XH3's policy; the extension never surfaces a user-facing error for this. | FR-026 |
 | XH9 | On Shell shutdown the subprocess does not outlive the session (termination is requested; an orphaned window must not remain on screen). | FR-021 |

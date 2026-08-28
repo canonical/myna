@@ -2,7 +2,7 @@
 // 004-gnome-shell-indicator, 2026-08-26 architecture revision; research R24;
 // contract dbus-interface.md §Presence C12, extension.md XH5).
 //
-// `org.myna.Shell` has NO members: ownership itself is the whole contract.
+// `com.canonical.Myna.Shell` has NO members: ownership itself is the whole contract.
 // `myna-desktop` watches the name to decide which indicator surface is
 // live — present means the hosted renderer is the indicator and the
 // client's notification fallback stays quiet; absent means the fallback
@@ -14,7 +14,7 @@
 // lifecycle is testable headlessly (test/presence.test.js).
 
 /** The well-known name. Consumers only ever watch it. */
-export const PRESENCE_NAME = 'org.myna.Shell';
+export const PRESENCE_NAME = 'com.canonical.Myna.Shell';
 
 /**
  * Owns [PRESENCE_NAME] for exactly as long as it is enabled.

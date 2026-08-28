@@ -1,4 +1,4 @@
-//! serve — the `--serve-dbus` simulator: a fake `org.myna.Dictation`
+//! serve — the `--serve-dbus` simulator: a fake `com.canonical.Myna.Dictation`
 //! publisher (feature 004, T132; contract `dbus-interface.md`), the Rust
 //! port of the former Python GPU lab's `dictation_service.py`.
 //!
@@ -121,7 +121,7 @@ impl Shared {
     }
 }
 
-/// The served `org.myna.Dictation` object.
+/// The served `com.canonical.Myna.Dictation` object.
 pub struct Dictation {
     shared: Shared,
     state: String,
@@ -143,7 +143,7 @@ impl Dictation {
     }
 }
 
-#[interface(name = "org.myna.Dictation")]
+#[interface(name = "com.canonical.Myna.Dictation")]
 impl Dictation {
     /// `Start`: begin a session (equivalent to a hotkey Press). The
     /// simulator never fails, so `ok` is always true (C7 shape preserved).
@@ -189,7 +189,7 @@ impl Dictation {
 /// the publish loop lives on the connection's executor.
 ///
 /// The name is requested *without* replacement: if `myna-desktop` already
-/// owns `org.myna.Dictation`, the simulator refuses rather than fighting the
+/// owns `com.canonical.Myna.Dictation`, the simulator refuses rather than fighting the
 /// real daemon (the lab is a stand-in, never an override).
 pub async fn serve(shared: Shared) -> zbus::Result<zbus::Connection> {
     use zbus::fdo::RequestNameFlags;

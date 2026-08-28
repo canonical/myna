@@ -1,7 +1,7 @@
 {
   "uuid": "myna-shell@canonical.com",
   "name": "Myna Dictation Indicator",
-  "description": "Focus-safe dictation activity indicator for myna-desktop, driven by org.myna.Dictation. State and audio level only - never transcript content.",
+  "description": "Focus-safe dictation activity indicator for myna-desktop, driven by com.canonical.Myna.Dictation. State and audio level only - never transcript content.",
   "shell-version": ["46", "50", "51"],
   "gettext-domain": "MynaShellExtension",
   "version": 1,

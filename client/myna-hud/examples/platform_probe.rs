@@ -13,7 +13,7 @@ use myna_hud::platform;
 
 fn main() {
     let app = adw::Application::builder()
-        .application_id("org.myna.HudPlatformProbe")
+        .application_id("com.canonical.Myna.HudPlatformProbe")
         .build();
 
     app.connect_activate(|app| {

@@ -23,7 +23,7 @@
 
 - [x] T005 `myna-snap/snap/snapcraft.yaml`: rust plugin (gnome extension),
   apps `myna`/`toggle`/`install-shortcut`/`testbed`, `backend` content plug,
-  `org.myna.Dictation` dbus slot, no `network`
+  `com.canonical.Myna.Dictation` dbus slot, no `network`
 - [x] T006 `scripts/myna-daemon` launcher (portal + `--dbus` defaults,
   actionable no-socket error) + `scripts/myna-install-shortcut` (dconf)
 - [x] T007 `dev/prepare.sh` client staging + `.gitignore`

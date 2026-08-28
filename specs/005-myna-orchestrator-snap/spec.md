@@ -57,7 +57,7 @@ installed: `snap install --dangerous myna_*.snap`, connect `pipewire` +
 Under confinement the client still: finds the IBus daemon's address file
 (snapd redirects `$HOME`, the daemon writes under the real home), places its
 control socket where AppArmor allows (`$XDG_RUNTIME_DIR/snap.myna/`), owns
-`org.myna.Dictation` on the session bus (for the myna-shell indicator), and
+`com.canonical.Myna.Dictation` on the session bus (for the myna-shell indicator), and
 activates via the GlobalShortcuts portal (which only serves packaged apps).
 
 **Acceptance Scenarios**:
@@ -66,7 +66,7 @@ activates via the GlobalShortcuts portal (which only serves packaged apps).
    daemon starts, **Then** injection connects (no "no IBus socket dir"
    error) — verified live, with the discovery covered by unit tests.
 2. **Given** the daemon running with `--dbus`, **When** a client reads the
-   session bus, **Then** `org.myna.Dictation` is owned and state/level
+   session bus, **Then** `com.canonical.Myna.Dictation` is owned and state/level
    properties update during a session (the feature-004 contract, confined).
 3. **Given** control-socket activation (`MYNA_ACTIVATION=control`), **When**
    `myna.toggle` runs, **Then** it reaches the daemon's control socket under
@@ -128,7 +128,7 @@ CI, not on a developer machine.
 - **FR-003**: The daemon app MUST plug `pipewire` (capture), `desktop`
   (portals + notifications), `desktop-legacy` (IBus private socket),
   `wayland`/`x11`/`gsettings`, and the `backend` content plug.
-- **FR-004**: The snap MUST slot `org.myna.Dictation` on the session bus so
+- **FR-004**: The snap MUST slot `com.canonical.Myna.Dictation` on the session bus so
   the confined daemon can serve the feature-004 contract.
 - **FR-005**: Each inference snap MUST expose `$SNAP_COMMON/run` as a
   writable content slot `ubustt-socket`; the client plug targets
@@ -163,7 +163,7 @@ CI, not on a developer machine.
 - **SC-002**: With `myna:pipewire` and `myna:backend ← myna-whisper:ubustt-socket`
   connected, a confined session against the whisper snap completes end to
   end (testbed WAV clip round-trip; daemon trigger path exercised).
-- **SC-003**: `org.myna.Dictation` is owned and updates live while the
+- **SC-003**: `com.canonical.Myna.Dictation` is owned and updates live while the
   confined daemon runs `--dbus`.
 - **SC-004**: Full workspace `cargo test` + `clippy -D warnings` green.
 - **SC-005**: The CI snap workflow is green on this branch.

@@ -2,7 +2,7 @@
 
 A thin GNOME Shell extension that hosts the **myna-hud** renderer
 application as a focus-safe overlay (feature 004). It does **not** draw the
-HUD or consume `org.myna.Dictation` itself — the standalone
+HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
 `myna-hud` binary (see `client/myna-hud`) does both. This extension:
 
 - launches the renderer (`Meta.WaylandClient.new_subprocess`, so the child
@@ -13,7 +13,7 @@ HUD or consume `org.myna.Dictation` itself — the standalone
   of an auto-hide bottom dash-to-dock via `Main.layoutManager.dashToDockStruts`),
 - supervises it (respawn on unexpected exit with bounded backoff, terminate
   on disable), and
-- owns `org.myna.Shell` for as long as it is enabled, so `myna-desktop` can
+- owns `com.canonical.Myna.Shell` for as long as it is enabled, so `myna-desktop` can
   suppress its own fallback notification indicator (C12/C13).
 
 The HUD pill itself, its GPU wave ribbon, accent colour, reduced-motion
@@ -39,11 +39,11 @@ update, `gnome-extensions disable "$UUID" && gnome-extensions enable "$UUID"`
 only refreshes `metadata.json`; a **log out / log back in** is required to
 load changed module code. To iterate on the renderer without the extension,
 run `client/myna-hud` directly (`--lab` for a standalone HUD, `--serve-dbus`
-to publish a simulated `org.myna.Dictation`).
+to publish a simulated `com.canonical.Myna.Dictation`).
 
 ## What the hosted overlay shows
 
-Driven entirely by `org.myna.Dictation` (served by `myna-desktop`):
+Driven entirely by `com.canonical.Myna.Dictation` (served by `myna-desktop`):
 
 - **Idle**: nothing — push-to-talk, no persistent overlay.
 - **Loading / Recording / Transcribing / Finishing**: a bottom-centre pill
@@ -61,7 +61,7 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop`):
 
 ## Layout
 
-- `extension.js` — entry point: wires the host and the `org.myna.Shell`
+- `extension.js` — entry point: wires the host and the `com.canonical.Myna.Shell`
   presence name.
 - `host.js` — the stateful glue: spawn, adopt, dock-type, position,
   supervise. Composes the pure modules below.
@@ -69,7 +69,7 @@ Driven entirely by `org.myna.Dictation` (served by `myna-desktop`):
 - `resolve.js` — pure launch resolution (`$MYNA_HUD_BINARY` →
   `snap run myna.hud`).
 - `respawn.js` — pure respawn policy (bounded backoff → dormancy).
-- `presence.js` — owns `org.myna.Shell` for exactly as long as enabled,
+- `presence.js` — owns `com.canonical.Myna.Shell` for exactly as long as enabled,
   fail-soft.
 - `dockStrutsConsumer.js` — follows `Main.layoutManager.dashToDockStruts`
   (the dash-to-dock reserved-extent export) so the pill is never covered by
