@@ -39,6 +39,7 @@ struct Controls {
     reason: String,
     envelope: f64,
     reduced_motion: Option<bool>,
+    high_contrast: Option<bool>,
 }
 
 impl Default for Controls {
@@ -48,6 +49,7 @@ impl Default for Controls {
             reason: String::new(),
             envelope: 0.4,
             reduced_motion: None,
+            high_contrast: None,
         }
     }
 }
@@ -94,6 +96,13 @@ impl Target {
         match self {
             Target::Window(w) => w.set_accent_override(hex),
             Target::Embedded(p) => p.set_accent_override(hex),
+        }
+    }
+
+    fn set_high_contrast_override(&self, value: Option<bool>) {
+        match self {
+            Target::Window(w) => w.set_high_contrast_override(value),
+            Target::Embedded(p) => p.set_high_contrast_override(value),
         }
     }
 }
@@ -211,10 +220,9 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     page.append(&model_group);
 
     // ── Display ─────────────────────────────────────────────────────────
-    // Reduced-motion override (accessibility path, FR-022a) and color
-    // scheme (light/dark) — both are lab-only overrides of desktop
-    // preferences, so the ribbon's legibility can be checked without
-    // changing the system.
+    // Reduced-motion override (accessibility path, FR-022a), color scheme,
+    // high-contrast (FR-022) and accent — all lab-only overrides of desktop
+    // preferences, so legibility can be checked without changing the system.
     let reduced_motion = gtk::Switch::builder()
         .valign(gtk::Align::Center)
         .active(false)
@@ -224,6 +232,16 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .subtitle(gettext("the static/minimal-motion accessibility path"))
         .build();
     reduced_motion_row.add_suffix(&reduced_motion);
+
+    let high_contrast = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(false)
+        .build();
+    let high_contrast_row = adw::ActionRow::builder()
+        .title(gettext("High contrast"))
+        .subtitle(gettext("bright border / background for busy wallpaper"))
+        .build();
+    high_contrast_row.add_suffix(&high_contrast);
 
     let color_scheme = gtk::StringList::new(&["default", "light", "dark"]);
     let color_scheme_row = adw::ComboRow::builder()
@@ -255,6 +273,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
     let display_group = adw::PreferencesGroup::new();
     display_group.add(&reduced_motion_row);
+    display_group.add(&high_contrast_row);
     display_group.add(&color_scheme_row);
     display_group.add(&accent_row);
     page.append(&display_group);
@@ -353,6 +372,16 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         }
     });
 
+    high_contrast.connect_active_notify({
+        let target = target.clone();
+        let controls = controls.clone();
+        move |switch| {
+            let value = if switch.is_active() { Some(true) } else { None };
+            controls.borrow_mut().high_contrast = value;
+            target.borrow().set_high_contrast_override(value);
+        }
+    });
+
     color_scheme_row.connect_selected_notify({
         move |row| {
             let scheme = match row.selected() {
@@ -383,9 +412,11 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             } else {
                 stop_publish(&shared, &publisher);
             }
-            // Re-sync reduced-motion and accent onto the new target.
+            // Re-sync reduced-motion, high-contrast and accent onto the new target.
             let rm = controls.borrow().reduced_motion;
             target.borrow().set_reduced_motion_override(rm);
+            let hc = controls.borrow().high_contrast;
+            target.borrow().set_high_contrast_override(hc);
             target.borrow().resync_accent();
             apply();
         });

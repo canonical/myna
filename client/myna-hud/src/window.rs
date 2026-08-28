@@ -152,6 +152,11 @@ impl HudWindow {
         self.pill.set_accent_override(hex);
     }
 
+    /// Force high-contrast for the lab; `None` returns to the desktop.
+    pub fn set_high_contrast_override(&self, value: Option<bool>) {
+        self.pill.set_high_contrast_override(value);
+    }
+
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and

@@ -89,6 +89,10 @@ struct PillState {
     /// desktop's — libadwaita has no public runtime accent setter (it is a
     /// desktop preference), so the lab forces the palette directly.
     accent_override: Option<String>,
+    /// Lab override: when `Some`, forces high-contrast on/off instead of the
+    /// desktop's `gtk-interface-contrast` / `Adw.StyleManager:high-contrast`.
+    /// Like reduced-motion, this survives live preference changes while set.
+    high_contrast_override: Option<bool>,
 }
 
 /// The HUD pill: a `gtk::Box` styled `.myna-hud-pill`, self-driving.
@@ -166,6 +170,7 @@ impl Pill {
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
             accent: None,
             accent_override: None,
+            high_contrast_override: None,
         }));
 
         let this = Rc::new(Self {
@@ -371,9 +376,16 @@ impl Pill {
                 }
             }
 
-            // High contrast is a plain GtkSettings read, so it is always
-            // current now.
-            this.sync_high_contrast();
+            // High contrast is a plain setting too — unless the lab has
+            // pinned it, re-read the desktop preference live.
+            // (The override survives while set, like reduced-motion.)
+            let high_changed = {
+                let state = this.state.borrow();
+                state.high_contrast_override.is_none()
+            };
+            if high_changed {
+                this.sync_high_contrast_inner(None);
+            }
 
             // The accent is a computed CSS colour, readable immediately only
             // on libadwaita's own notification (it reloads the accent
@@ -394,7 +406,20 @@ impl Pill {
     /// critical error), so contrast mode never reduces legibility to colour
     /// alone.
     fn sync_high_contrast(&self) {
-        let high = platform::probe_high_contrast();
+        self.sync_high_contrast_inner(None);
+    }
+
+    fn sync_high_contrast_inner(&self, forced: Option<bool>) {
+        let high = if let Some(v) = forced {
+            v
+        } else {
+            let state = self.state.borrow();
+            if let Some(v) = state.high_contrast_override {
+                v
+            } else {
+                platform::probe_high_contrast()
+            }
+        };
         if high {
             self.pill.add_css_class(HIGH_CONTRAST_CLASS);
         } else {
@@ -424,6 +449,15 @@ impl Pill {
     pub fn set_accent_override(&self, hex: Option<String>) {
         self.state.borrow_mut().accent_override = hex;
         self.sync_palette();
+    }
+
+    /// Force high-contrast on/off for the lab; `None` returns to the desktop
+    /// preference (GtkSettings `gtk-interface-contrast` with libadwaita
+    /// `high-contrast` fallback). Works on any libadwaita 1.x — the
+    /// `high-contrast` property existed before `gtk-interface-contrast`.
+    pub fn set_high_contrast_override(&self, value: Option<bool>) {
+        self.state.borrow_mut().high_contrast_override = value;
+        self.sync_high_contrast_inner(value);
     }
 
     pub fn resync_accent(self: &Rc<Self>) {

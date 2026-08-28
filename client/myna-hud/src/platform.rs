@@ -60,10 +60,6 @@ const ANIMATIONS_KEY: &str = "enable-animations";
 const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
 /// `GtkReducedMotion.no_preference` — the one value meaning "full motion".
 const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
-/// `GtkSettings`' contrast property (GTK ≥ 4.22).
-const GTK_INTERFACE_CONTRAST_PROPERTY: &str = "gtk-interface-contrast";
-/// `GtkInterfaceContrast.more` — the only "high contrast" level.
-const GTK_INTERFACE_CONTRAST_MORE: i32 = 2;
 /// `AdwStyleManager`'s resolved accent — notified after the stylesheet is
 /// updated, so the theme is already current when it fires.
 const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
@@ -126,34 +122,25 @@ pub fn probe_enable_animations() -> Option<bool> {
     Some(settings.boolean(ANIMATIONS_KEY))
 }
 
-/// Whether the desktop requests a higher-contrast UI (FR-022), from
-/// `GtkSettings:gtk-interface-contrast` — a **`GtkInterfaceContrast` enum**
-/// (`unsupported = 0`, `no_preference = 1`, `more = 2`), not a boolean. Read
-/// the same way as reduced-motion (via `g_value_get_enum`) so it degrades
-/// cleanly when the property is absent (older GTK) and tolerates additive
-/// values.
+/// Whether the desktop requests a higher-contrast UI (FR-022).
 ///
-/// `false` when the property is missing or reports anything but `more` (the
-/// only "high contrast" level GTK defines); the pill then uses its normal
-/// styling.
+/// `Adw.StyleManager:high-contrast` — a plain bool libadwaita exposes (and
+/// itself derives from `GtkSettings:gtk-interface-contrast` where available,
+/// i.e. `gtk-interface-contrast` is just the GTK plumbing Adw builds on).
+/// Looked up by runtime property name so the same binary works on older
+/// libadwaita; `false` when the property is missing.
 pub fn probe_high_contrast() -> bool {
-    let settings = gtk::Settings::default();
-    let Some(settings) = settings else {
+    let manager = adw::StyleManager::default();
+    let Some(property) = manager
+        .find_property("high-contrast")
+        .map(|p| p.name().to_string())
+    else {
         return false;
     };
-    let property = settings
-        .find_property(GTK_INTERFACE_CONTRAST_PROPERTY)
-        .map(|p| p.name().to_string());
-    let Some(property) = property else {
-        return false;
-    };
-    let value = settings.property_value(&property);
-    if value.type_().is_a(glib::Type::ENUM) {
-        // SAFETY: the GValue is known to hold an enum.
-        let raw = unsafe { glib::gobject_ffi::g_value_get_enum(value.to_glib_none().0) };
-        return raw == GTK_INTERFACE_CONTRAST_MORE;
-    }
-    false
+    manager
+        .property_value(&property)
+        .get::<bool>()
+        .unwrap_or(false)
 }
 
 /// The live reduced-motion preference, resolved through both safe sources.
@@ -325,19 +312,18 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
                 }),
             );
         }
-        // High contrast (GTK ≥ 4.22).
-        if settings
-            .find_property(GTK_INTERFACE_CONTRAST_PROPERTY)
-            .is_some()
-        {
-            let cb = on_change.clone();
-            gtk_handles.push(
-                settings
-                    .connect_notify_local(Some(GTK_INTERFACE_CONTRAST_PROPERTY), move |_, _| {
-                        cb(AccentReadiness::NextFrame)
-                    }),
-            );
-        }
+    }
+
+    // High contrast — Adw tracks it (and itself follows
+    // GtkSettings:gtk-interface-contrast where it exists).
+    let mut adw_high_contrast_handle = None;
+    if manager.find_property("high-contrast").is_some() {
+        let cb = on_change.clone();
+        adw_high_contrast_handle = Some(
+            manager.connect_notify_local(Some("high-contrast"), move |_, _| {
+                cb(AccentReadiness::NextFrame)
+            }),
+        );
     }
 
     PreferenceWatch {
@@ -346,6 +332,7 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
         adw_handle,
         gtk_settings,
         gtk_handles,
+        adw_high_contrast_handle,
     }
 }
 
@@ -356,11 +343,15 @@ pub struct PreferenceWatch {
     adw_handle: Option<glib::SignalHandlerId>,
     gtk_settings: Option<gtk::Settings>,
     gtk_handles: Vec<glib::SignalHandlerId>,
+    adw_high_contrast_handle: Option<glib::SignalHandlerId>,
 }
 
 impl Drop for PreferenceWatch {
     fn drop(&mut self) {
         if let Some(handle) = self.adw_handle.take() {
+            self.manager.disconnect(handle);
+        }
+        if let Some(handle) = self.adw_high_contrast_handle.take() {
             self.manager.disconnect(handle);
         }
         if let Some(settings) = &self.gtk_settings {
