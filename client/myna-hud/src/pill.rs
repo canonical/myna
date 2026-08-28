@@ -202,6 +202,33 @@ impl Pill {
         &self.ribbon
     }
 
+    /// Current descriptor (for lab sync when the HUD auto-dismisses locally).
+    pub fn current_descriptor(&self) -> crate::states::Descriptor {
+        self.state.borrow().descriptor.clone()
+    }
+
+    /// Current wire state string (e.g. "idle", "notice", "error") for lab sync.
+    pub fn current_wire_state(&self) -> String {
+        let d = self.state.borrow().descriptor.clone();
+        // Reverse of `states::state_to_descriptor` — only needed for lab sync
+        // where the HUD may have returned to idle locally without a bus
+        // publish (notifier-side timeout).
+        match d.key {
+            crate::states::DictationState::Idle => crate::states::wire::IDLE.to_string(),
+            crate::states::DictationState::Loading => crate::states::wire::LOADING.to_string(),
+            crate::states::DictationState::Recording => crate::states::wire::RECORDING.to_string(),
+            crate::states::DictationState::Transcribing => {
+                crate::states::wire::TRANSCRIBING.to_string()
+            }
+            crate::states::DictationState::Finalizing => {
+                crate::states::wire::FINALIZING.to_string()
+            }
+            crate::states::DictationState::Notice => crate::states::wire::NOTICE.to_string(),
+            crate::states::DictationState::Error => crate::states::wire::ERROR.to_string(),
+            crate::states::DictationState::Active => "active".to_string(),
+        }
+    }
+
     // ── State in ────────────────────────────────────────────────────────
 
     /// Apply a state descriptor: label, icon, colour class, ribbon phase,

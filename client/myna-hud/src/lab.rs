@@ -105,6 +105,13 @@ impl Target {
             Target::Embedded(p) => p.set_high_contrast_override(value),
         }
     }
+
+    fn current_wire_state(&self) -> String {
+        match self {
+            Target::Window(w) => w.current_wire_state(),
+            Target::Embedded(p) => p.current_wire_state(),
+        }
+    }
 }
 
 /// `--lab`: the HUD as an external window, no backend.
@@ -457,6 +464,40 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     );
 
     apply();
+
+    // Keep lab combo in sync when HUD auto-dismisses locally (notifier-side
+    // timeout). The HUD's NoticeSlot returns to idle after its dynamic hold
+    // without a new bus publish; the lab's Controls and combo must follow
+    // so the next publish is idle and the UI reflects reality.
+    glib::timeout_add_local(
+        Duration::from_millis(200),
+        glib::clone!(
+            #[strong]
+            target,
+            #[strong]
+            controls,
+            #[strong]
+            state_row,
+            move || {
+                let current = target.borrow().current_wire_state();
+                if controls.borrow().state != current {
+                    if let Some(pos) = wire::ALL.iter().position(|s| *s == current) {
+                        let cur_sel = state_row.selected() as usize;
+                        if cur_sel != pos {
+                            controls.borrow_mut().state = current.clone();
+                            state_row.set_selected(pos as u32);
+                        } else {
+                            controls.borrow_mut().state = current;
+                        }
+                    } else {
+                        controls.borrow_mut().state = current;
+                    }
+                }
+                glib::ControlFlow::Continue
+            }
+        ),
+    );
+
     window.present();
 }
 
