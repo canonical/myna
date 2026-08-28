@@ -845,10 +845,11 @@ async fn a_live_preedit_switch_reaches_the_next_hypothesis() {
         let switch = slot.take().expect("single-use session");
         let run: SessionRun = Box::pin(async move {
             let _ = tx.send(OrchestratorEvent::Unstable("before".into())).await;
-            // The controller's select is biased to drain events before polling
-            // this future, so one yield is exactly "the event above has been
-            // routed" - no sleep, no race.
-            tokio::task::yield_now().await;
+            // A small sleep lets the controller's select poll `events_rx` and
+            // route "before" (with preedit=false) before the switch flips.
+            // `yield_now` is not sufficient without `biased` because the
+            // select may re-poll `run` before `events_rx`.
+            tokio::time::sleep(Duration::from_millis(10)).await;
             switch.set(true);
             let _ = tx.send(OrchestratorEvent::Unstable("after".into())).await;
             let _ = tx.send(OrchestratorEvent::Final("after".into())).await;

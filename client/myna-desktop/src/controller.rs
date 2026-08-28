@@ -413,48 +413,19 @@ impl DesktopController {
 
         let outcome = loop {
             tokio::select! {
-                // Biased: drain buffered orchestrator events (commit `Final`, drive
-                // the indicator) before noticing a coincident Release/focus edge,
-                // so liveness is never dropped and the indicator walks its states
-                // in order even when a release arrives mid-stream.
                 biased;
-                Some(ev) = events_rx.recv() => {
-                    route_event(
-                        ev,
-                        injector.as_mut(),
-                        indicator.as_mut(),
-                        state,
-                        RouteFlags {
-                            commit_allowed: !commits_suppressed,
-                            focus_lost,
-                            preedit: preedit.get(),
-                        },
-                        &mut buffer,
-                    )
-                    .await;
-                }
-                // Session finished: drain any still-buffered events, then return.
-                result = &mut run => {
-                    while let Some(ev) = events_rx.recv().await {
-                        route_event(
-                        ev,
-                        injector.as_mut(),
-                        indicator.as_mut(),
-                        state,
-                        RouteFlags {
-                            commit_allowed: !commits_suppressed,
-                            focus_lost,
-                            preedit: preedit.get(),
-                        },
-                        &mut buffer,
-                    )
-                    .await;
-                    }
-                    break result;
-                }
-                // A focus-loss event: FocusOut finalizes safely (no more
-                // commits); TargetGone cancels (discard uncommitted). Checked
-                // before the trigger so focus-loss takes precedence (end safely).
+                // `FocusOut`/`TargetGone` must be observed before the trigger's
+                // next edge: the `focus_out_protection_holds_for_every_utterance`
+                // regression showed a second `Press` being consumed inside the
+                // first utterance when the order was random, losing the next
+                // utterance's `Press`.  Biasing `focus` → `trigger` preserves
+                // that precedence without re-introducing the original portal
+                // latency bug (which was `events_rx` starving `trigger` when
+                // `events_rx` was first).  Now `focus`/`trigger` are checked
+                // before the hot `events_rx` (Transcribing pings at 15-20 Hz),
+                // so press→release latency is not starved, while the
+                // `still_listening` guard in `event_to_indicator` handles stale
+                // post-release pings without requiring event ordering.
                 fe = focus.next(), if focus_open => match fe {
                     Some(FocusEvent::FocusOut) => {
                         myna_core::info_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
@@ -506,6 +477,40 @@ impl DesktopController {
                         enter_finalizing(state, indicator.as_mut()).await;
                     }
                 },
+                Some(ev) = events_rx.recv() => {
+                    route_event(
+                        ev,
+                        injector.as_mut(),
+                        indicator.as_mut(),
+                        state,
+                        RouteFlags {
+                            commit_allowed: !commits_suppressed,
+                            focus_lost,
+                            preedit: preedit.get(),
+                        },
+                        &mut buffer,
+                    )
+                    .await;
+                }
+                // Session finished: drain any still-buffered events, then return.
+                result = &mut run => {
+                    while let Some(ev) = events_rx.recv().await {
+                        route_event(
+                        ev,
+                        injector.as_mut(),
+                        indicator.as_mut(),
+                        state,
+                        RouteFlags {
+                            commit_allowed: !commits_suppressed,
+                            focus_lost,
+                            preedit: preedit.get(),
+                        },
+                        &mut buffer,
+                    )
+                    .await;
+                    }
+                    break result;
+                }
             }
         };
 
