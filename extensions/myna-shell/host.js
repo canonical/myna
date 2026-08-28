@@ -24,6 +24,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {computePlacement, placementChanged, shrinkWorkAreaForDock} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
+import {DictationAnnouncer} from './announcer.js';
 
 // Await the subprocess with a Cancellable instead of a bare callback, so
 // disable() can cancel the wait rather than relying on a flag to ignore a
@@ -80,6 +81,7 @@ export class OverlayHost {
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
         this._enabled = false;
+        this._announcer = null;
 
         // Cancels the current subprocess wait. A fresh Cancellable is made
         // for each spawn rather than reset()-ing one (reset is discouraged
@@ -105,6 +107,8 @@ export class OverlayHost {
      * (XH7). Safe to call when never enabled or already disabled. */
     disable() {
         this._enabled = false;
+        this._announcer?.disable();
+        this._announcer = null;
         this._cancelPendingRestart();
 
         // Drop every tracked signal: the host-lifetime ones (map watch,
@@ -269,6 +273,12 @@ export class OverlayHost {
     _adopt(window) {
         this._window = window;
         this._log('adopted renderer window');
+        // Announcer lives exactly as long as the adopted window — no window,
+        // no a11y speech (passive, no RegisterClient).
+        if (!this._announcer) {
+            this._announcer = new DictationAnnouncer({log: this._log});
+            this._announcer.enable();
+        }
         this._makeOverlay(window);
         this._connectOverview();
 
@@ -305,6 +315,8 @@ export class OverlayHost {
         global.display.disconnectObject(this);
         global.backend.get_monitor_manager?.()?.disconnectObject(this);
         this._window = null;
+        this._announcer?.disable();
+        this._announcer = null;
         // The renderer is still running (this is an idle hide, not an exit);
         // the next non-idle state maps a fresh window that _onWindowMapped
         // adopts.
@@ -435,6 +447,8 @@ export class OverlayHost {
         this._window = null;
         this._client = null;
         this._subprocess = null;
+        this._announcer?.disable();
+        this._announcer = null;
         this._scheduleRestart(/* expected= */ false, uptimeMs);
     }
 
