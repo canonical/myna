@@ -50,7 +50,7 @@ fn toast_text(state: &IndicatorState) -> Option<(String, String)> {
         // severity (out of scope for feature 004 — see plan.md Complexity
         // Tracking).
         IndicatorState::Error { message, .. } => {
-            Some(("⚠ Dictation error".into(), message.clone()))
+            Some(("⚠️ Dictation error".into(), message.clone()))
         }
     }
 }
@@ -58,7 +58,7 @@ fn toast_text(state: &IndicatorState) -> Option<(String, String)> {
 impl NotifyIndicator {
     pub fn new() -> Self {
         Self {
-            app_name: "myna dictation".to_string(),
+            app_name: "Myna".to_string(),
             id: None,
         }
     }
