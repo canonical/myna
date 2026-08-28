@@ -57,7 +57,9 @@ use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::notify::NotifyIndicator;
+use myna_desktop::indicator::SilentIndicator;
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::policy::{probe_shell_presence, SurfaceDecision};
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
@@ -1166,12 +1168,20 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(ServeError::Bus(e)) => {
-            eprintln!("cannot serve org.myna.Dictation ({e}); falling back to notifications");
+            eprintln!("cannot serve org.myna.Dictation ({e}); falling back");
             eprintln!(
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
+            // P20: if the shell host owns org.myna.Shell, the hosted HUD is
+            // the indicator — suppress the notification fallback (no
+            // duplicate surface). Otherwise restore it (P21).
+            let decision = SurfaceDecision::for_shell_presence(probe_shell_presence().await);
+            if decision.uses_notify_fallback {
+                run_controller(args, resolved, NotifyIndicator::new(), None, None).await
+            } else {
+                run_controller(args, resolved, SilentIndicator, None, None).await
+            }
         }
     }
 }

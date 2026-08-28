@@ -14,6 +14,21 @@ pub mod dbus;
 pub mod mock;
 pub mod notify;
 
+/// The shipped no-op surface: when the myna-shell host owns `org.myna.Shell`
+/// (policy P20), the hosted HUD is the indicator, so the fallback
+/// notification surface is deliberately nothing. Distinct from
+/// [`mock::MockIndicator`] (a test fixture) — this is a real, honest "no
+/// surface here" implementation.
+#[derive(Clone, Debug, Default)]
+pub struct SilentIndicator;
+
+#[async_trait]
+impl Indicator for SilentIndicator {
+    async fn set_state(&mut self, _state: IndicatorState) {}
+
+    async fn hide(&mut self) {}
+}
+
 /// The distinct, screen-reader-perceivable indicator states (FR-017/019). Never
 /// carries transcript text (commit-only, privacy — N8).
 #[derive(Debug, Clone, PartialEq, Eq)]

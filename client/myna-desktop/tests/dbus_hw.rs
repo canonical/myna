@@ -74,3 +74,50 @@ async fn the_name_is_a_singleton_lock() {
         Err(other) => panic!("expected NameTaken, got {other}"),
     }
 }
+
+/// C12/C13 round-trip: myna-desktop's presence probe sees `org.myna.Shell`
+/// appear and vanish, and its surface decision suppresses the notification
+/// fallback while the host is up (P20) and restores it when it goes (P21).
+///
+/// One test, not two: owning the well-known name is process-wide, and the
+/// probe must be the only observer of its appear/vanished.
+#[tokio::test]
+async fn shell_presence_round_trips_and_suppresses_the_fallback() {
+    if !dbus_enabled() {
+        return;
+    }
+
+    // Absent first: the fallback is restored.
+    assert!(
+        !myna_desktop::policy::probe_shell_presence().await,
+        "no org.myna.Shell owner yet"
+    );
+    let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(false);
+    assert!(decision.uses_notify_fallback, "P21: fallback restored");
+
+    // Claim the presence name the way the extension host does.
+    let connection = zbus::Connection::session().await.expect("session bus");
+    connection
+        .request_name(myna_desktop::policy::PRESENCE_NAME)
+        .await
+        .expect("claim org.myna.Shell");
+
+    assert!(
+        myna_desktop::policy::probe_shell_presence().await,
+        "C12: the probe sees the shell host"
+    );
+    let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(true);
+    assert!(
+        !decision.uses_notify_fallback,
+        "P20: fallback suppressed while the host is up"
+    );
+
+    // Release: the probe sees it vanish.
+    drop(connection);
+    // Give the bus a moment to process the name release.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        !myna_desktop::policy::probe_shell_presence().await,
+        "C13: the probe sees the name vanish"
+    );
+}
