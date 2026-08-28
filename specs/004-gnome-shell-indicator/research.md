@@ -922,7 +922,7 @@ standalone **Rust GTK4 + libadwaita application** — new workspace crate
 - **Supervise**: respawn with bounded backoff if the subprocess exits
   unexpectedly while enabled; terminate it on `disable()`.
 - **Presence**: the extension owns the well-known session-bus name
-  `com.canonical.Myna.Shell` while enabled (R24), so `myna-desktop` can select the
+  `RegisterClient` client set while enabled, so `myna-desktop` can select the
   indicator surface without any registration protocol.
 
 All host APIs verified present and introspected in **both** target girs —
@@ -1021,10 +1021,10 @@ tests guarded. `GskGLShader` was already rejected upstream-adjacent
 headless/virtual machines better anyway); render via Cairo in GTK
 (`Gtk.DrawingArea`) — same dual-path problem, slower.
 
-## R24 — Presence and launch policy: `com.canonical.Myna.Shell` (2026-08-26)
+## R24 — Presence and launch policy: `RegisterClient` client set (replaces `com.canonical.Myna.Shell`)
 
 **Decision**: The extension owns the well-known session-bus name
-`com.canonical.Myna.Shell` for exactly as long as it is enabled — **no** properties,
+RegisterClient set for exactly as long as a HUD is registered — **no** presence name,
 methods, or signals; ownership is the entire contract (FR-017a). `myna-desktop`
 gains a launcher policy around a name watch: name present → the hosted
 renderer is the indicator (suppress the notification fallback); absent → the

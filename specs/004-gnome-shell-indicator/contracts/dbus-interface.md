@@ -8,8 +8,8 @@ indicator. **(2026-08-26)** The consumer is now the renderer application
 longer holds any `com.canonical.Myna.Dictation` proxy; every guarantee below is unchanged
 and simply re-homed. State + level only — never transcript content (constitution
 V). This contract is defined here and encoded as executable tests on both sides
-before implementation. See §Presence for the companion (member-less)
-`com.canonical.Myna.Shell` name.
+before implementation. `com.canonical.Myna.Shell` presence name is no longer
+exposed — fallback suppression now uses `RegisterClient` client set (C14/C15).
 
 ## Bus topology
 
@@ -71,30 +71,9 @@ change already reads the consistent reason.
 
 - **Well-known name**: `com.canonical.Myna.Hud` on the session bus, owned by the `myna-hud` `Adw.Application` singleton. Not watched directly for fallback — the HUD registers via `RegisterClient` on `com.canonical.Myna.Dictation` and the publisher's client set is authoritative.
 
-## Presence: `com.canonical.Myna.Shell` (2026-08-26, R24) — legacy
+## Presence: `com.canonical.Myna.Shell` — removed
 
-The companion seam for **surface selection** — which indicator is active:
-
-- **Well-known name**: `com.canonical.Myna.Shell` on the session bus, owned by the GNOME
-  Shell extension (the myna-shell host) for exactly as long as it is enabled
-  and able to host the renderer application's window (FR-017a).
-- **Members: none.** No properties, signals, or methods. Name ownership is the
-  entire contract — consumers use standard name watching
-  (`NameOwnerChanged`/`NameHasOwner`), which needs nothing beyond bus-daemon
-  mediation and is therefore available to strictly-confined consumers (the
-  `§Confinement` analysis does not constrain the *owner* here anyway: it is the
-  unconfined Shell process).
-- **Consumers**: `myna-desktop`'s launcher policy (name present → suppress the
-  notification fallback, the hosted renderer is the indicator; absent →
-  notification floor). Future non-GNOME backends select themselves the same
-  way (spec Out of Scope).
-- The name carries **no data of any kind** — not even state; privacy-trivial
-  by construction.
-
-| # | Guarantee | Verified by |
-|---|---|---|
-| C12 | **(2026-08-26)** The extension owns `com.canonical.Myna.Shell` while enabled and releases it on disable; a standard name watcher sees appeared/vanished accordingly (no members exist to call). | extension host lifecycle test (stub bus) + `MYNA_DBUS_TESTS`-gated round-trip |
-| C13 | **(2026-08-26)** `myna-desktop`'s launcher policy suppresses its fallback notification indicator while `com.canonical.Myna.Shell` has an owner and restores it when the name vanishes — with no other behavior change. | hermetic `myna-desktop` policy tests (fake presence) |
+`com.canonical.Myna.Shell` was the 2026-08-26 companion presence name for surface selection (FR-017a, C12/C13, R24) — a member-less well-known name owned by the Shell extension while enabled. It is no longer exposed or watched; fallback suppression now uses the `RegisterClient` client set (C14/C15). Retained here for history; new code must not watch it.
 
 ## Confinement (why properties only)
 

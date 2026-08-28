@@ -4,30 +4,23 @@
 //
 // The extension is now a thin OVERLAY HOST, not a renderer. It no longer
 // draws the HUD or consumes com.canonical.Myna.Dictation itself — the standalone
-// myna-hud application does both. This file:
-//
-//   * launches and hosts that application's window as a focus-safe overlay
-//     (host.js — spawn, adopt, dock-type, position, supervise), and
-//   * owns com.canonical.Myna.Shell for as long as it is enabled (presence.js), so
-//     myna-desktop can suppress its own fallback notification indicator
-//     while the shell is presenting the HUD (C12/C13).
+// myna-hud application does both. This file launches and hosts that
+// application's window as a focus-safe overlay (host.js — spawn, adopt,
+// dock-type, position, supervise).
 //
 // It deliberately does NOT touch the dictation state: the renderer reads it
-// directly. disable() tears the host and the presence name down with no
-// leaks (XH7); re-enable re-establishes cleanly.
+// directly. Fallback suppression uses `com.canonical.Myna.Dictation`
+// `RegisterClient`/`NameOwnerChanged` pruning instead. disable() tears the
+// host down with no leaks (XH7); re-enable re-establishes cleanly.
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {watchDashToDockStruts} from './dockStrutsConsumer.js';
 import {OverlayHost} from './host.js';
-import {ShellPresence} from './presence.js';
 
 export default class MynaShellExtension extends Extension {
     enable() {
-        this._presence = new ShellPresence();
-        this._presence.enable();
-
         this._host = new OverlayHost({
             // The primary monitor's work area, so the pill sits above the
             // dock/panel rather than under them (place.js owns the maths).
@@ -71,7 +64,5 @@ export default class MynaShellExtension extends Extension {
         this._dockExtent = null;
         this._host?.disable();
         this._host = null;
-        this._presence?.disable();
-        this._presence = null;
     }
 }

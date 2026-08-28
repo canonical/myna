@@ -9,7 +9,9 @@ derived level). Cross-refs to spec Key Entities and the D-Bus contract
 the window of the renderer application (`myna-hud`); the entities below move
 across that split — dictation-facing entities (E1–E3, E5) are consumed by the
 renderer application (previously the extension); the extension's own transient
-state is the hosted-window bookkeeping (E7) and the presence name (E6).
+state is the hosted-window bookkeeping (E7). `com.canonical.Myna.Shell`
+presence (E6) is removed — fallback suppression now uses the `RegisterClient`
+client set.
 
 ## E1 — DictationState (the wire state string)
 
@@ -195,16 +197,7 @@ unavailable, the renderer shows no window and surfaces no error (spec FR-018,
 US1-5), and clears any HUD pill to idle on transition to unavailable (crash
 mid-session edge case). Previously extension-side; semantics unchanged.
 
-## E6 — ShellPresence (extension-side, transient; new 2026-08-26)
-
-| Field | Type | Source | Notes |
-|---|---|---|---|
-| owned | `boolean` | whether the extension currently owns the session-bus name `com.canonical.Myna.Shell` (R24) | owned for exactly as long as `enable()`…`disable()`; no properties, methods, or signals — ownership is the signal (FR-017a) |
-
-Rules:
-- Watched by `myna-desktop`'s launcher policy: present → suppress the
-  notification fallback; absent → notification floor.
-- Carries no data of any kind (privacy-trivial by construction).
+## E6 — removed: `com.canonical.Myna.Shell` presence name (was R24/FR-017a, 2026-08-26) is no longer exposed. Fallback suppression uses the `RegisterClient` client set on `com.canonical.Myna.Dictation` instead.
 
 ## E7 — HostedWindow (extension-side, transient; new 2026-08-26)
 

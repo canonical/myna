@@ -7,11 +7,13 @@ The shipped Rust half: a `DbusIndicator` (`Indicator` backend) + a `DbusTrigger`
 (`contracts/dbus-interface.md`). All guarantees encoded as tests before code
 (constitution I). Boundary to the bus is a small `Bus` seam with a fake
 implementation for hermetic tests (R11). **(2026-08-26)** adds the indicator-
-surface **launcher policy** (§Launcher policy): `myna-desktop` watches the
-`com.canonical.Myna.Shell` presence name and suppresses its notification fallback while
-the extension host is up; and the old experimental `ui-gtk`/`GtkIndicator`
-overlay is **removed** (superseded by the `myna-hud` renderer application —
-spec FR-023; its guarantees were never listed here and its files are deleted).
+surface **launcher policy** (§Launcher policy): `myna-desktop` suppresses its
+notification fallback while any `myna-hud` client is registered via
+`RegisterClient` and restores it when the last client leaves; and the old
+experimental `ui-gtk`/`GtkIndicator` overlay is **removed** (superseded by the
+`myna-hud` renderer application — spec FR-023; its guarantees were never listed
+here and its files are deleted). `com.canonical.Myna.Shell` presence is no
+longer exposed or watched (see `dbus-interface.md` §Presence — removed).
 
 ## DbusIndicator (implements `indicator::Indicator`)
 
@@ -57,26 +59,28 @@ spec FR-023; its guarantees were never listed here and its files are deleted).
 | P14 | On shutdown the name is released so watchers see name-vanished (C9). | env-gated |
 | P15 | The `--dbus` mode falls back to `NotifyIndicator` when the session bus is unavailable (never a hard failure of dictation). | hermetic (bus-open error path) |
 
-## Launcher policy (2026-08-26, R24; C13)
+## Launcher policy (2026-08-26, R24; C13 → C14/C15)
 
-`myna-desktop` selects the indicator surface from the presence name instead of
-rendering its own:
+`myna-desktop` selects the indicator surface from the `RegisterClient` client set
+instead of rendering its own. `com.canonical.Myna.Shell` is no longer watched.
 
 | # | Guarantee | Test tier |
 |---|---|---|
-| P20 | While `com.canonical.Myna.Shell` has an owner, the fallback notification indicator is suppressed (no duplicate indicator beside the hosted renderer); dictation behavior is otherwise unchanged. | hermetic (fake presence seam) |
-| P21 | When `com.canonical.Myna.Shell` vanishes (extension disabled/removed/Shell crash), the fallback notification indicator is restored. | hermetic (fake presence seam) |
-| P22 | Presence watching never blocks or fails dictation: a bus error degrades to the fallback surface, never an abort. | hermetic (bus-open error path) |
+| P20 | While at least one `myna-hud` client is registered (`RegisterClient` + `NameOwnerChanged` pruning), the fallback notification indicator is suppressed (no duplicate indicator beside the hosted renderer); dictation behavior is otherwise unchanged. | hermetic (fake ClientRegistry) + `dynamic.rs` |
+| P21 | When the last client leaves (`UnregisterClient` or vanished), the fallback notification indicator is restored. | hermetic (fake ClientRegistry) + `dynamic.rs` |
+| P22 | Client-set watching never blocks or fails dictation: a bus error degrades to the fallback surface, never an abort. | hermetic (bus-open error path) |
 | P23 | The non-GNOME spawn path (launch `myna-hud` standalone where a focus-safe overlay backend exists) is **contract only**: the policy hook exists behind a seam, no backend ships this pass (spec Out of Scope). | seam + unit test of the policy function |
 
-## Removals (2026-08-26)
+## Removals (2026-08-26) / Evolutions
 
 - `indicator::gtk::GtkIndicator` and the `ui-gtk` cargo feature are deleted
   (superseded by the `myna-hud` renderer application; spec FR-023). The
   `Indicator` trait and its `DbusIndicator`/`NotifyIndicator` backends are
   unchanged; `--overlay` mode is removed from the binary's CLI.
-- No new wire members accompany the architecture revision — the presence name
-  is member-less (C12/C13) and the dictation interface is untouched.
+- `com.canonical.Myna.Shell` presence name is removed — fallback suppression
+  now uses the `RegisterClient` client set (C14/C15). New wire members
+  `RegisterClient`/`UnregisterClient` are added to `com.canonical.Myna.Dictation`
+  (additive, see `dbus-interface.md` §Members).
 
 ## Non-goals (publisher)
 

@@ -15,7 +15,8 @@ mapping/rendering guarantees (formerly X1–X6, X19, X24–X26) are re-homed
 verbatim as Rust unit tests of `myna-hud`'s ported pure modules; the
 visual/focus acceptance guarantees (formerly X11–X18, X20–X23, X27–X31) remain
 manual on-hardware acceptance items, now exercised through the hosted window.
-The guarantees below are the **host's** own.
+`com.canonical.Myna.Shell` presence is no longer used — the host is pure
+window-management. The guarantees below are the **host's** own.
 
 Harness-tier note: the host is GJS by platform necessity (an extension cannot
 be another language), but it is a *thin shim* — launch/adopt/position/supervise
@@ -32,13 +33,13 @@ manual acceptance plus a headless-Shell integration test where available.
 | XH2 | The launch-resolution order is `$MYNA_HUD_BINARY` (an absolute path to a locally built renderer) → `snap run myna.hud` (the packaged snap app, **2026-08-26**). There is no bare `/usr/bin` fallback: the renderer ships in the snap, and the packaged path launches *through* `snap run` (not by exec'ing a file) so snap-confine sets up the sandbox and the Wayland socket. A missing/unlaunchable renderer produces a bounded, non-spamming failure state (never a crash loop faster than the backoff floor, never an unhandled exception in `enable()`). | FR-027, FR-026 |
 | XH3 | The respawn policy is a pure function of exit history: unexpected exit while enabled → restart after a bounded backoff (with a restart budget so a permanently-crashing binary stops being retried and the extension degrades to dormant, logging once); normal `disable()` → no restart. | FR-026, FR-021 |
 | XH4 | Adoption is idempotent **per window, and happens on every map**: `window-created` events for windows the client does not own are ignored; a given window is adopted exactly once; a second window from the same client (a lab window, a dialog) is not adopted. The renderer **hides its window entirely at idle** (FR-002/X3 — the resting state is an absent HUD, not an empty one), so the surface legitimately comes and goes across sessions, and the host must adopt, dock-type and place each new one. It must do so before the window is first presented, so the pill never appears briefly at an unplaced position. This is the same path a respawn takes (XH3), not a special case. | FR-024, FR-002, FR-026 |
-| XH5 | The presence-name lifecycle maps 1:1 onto `enable()`/`disable()`: name owned while enabled, released on disable, re-acquired on re-enable; owning fails soft (extension keeps hosting even if the bus is unavailable — presence is advisory, not load-bearing). | FR-017a, FR-021 |
+| XH5 | *(Removed: `com.canonical.Myna.Shell` presence name is no longer exposed; fallback suppression now uses `com.canonical.Myna.Dictation` client set. Kept for history.)* | — |
 
 ## Lifecycle, tested against a stub bus / fake client
 
 | # | Guarantee | Spec |
 |---|---|---|
-| XH6 | On `enable()` the extension acquires `com.canonical.Myna.Shell`, spawns `myna-hud` via `Meta.WaylandClient.new_subprocess`, and begins supervision; on `disable()` it terminates the subprocess (or its window), releases the name, disconnects all signals, and clears all timers (no leaks, no orphans). | FR-021, FR-026 |
+| XH6 | On `enable()` the extension spawns `myna-hud` via `Meta.WaylandClient.new_subprocess` and begins supervision; on `disable()` it terminates the subprocess (or its window), disconnects all signals, and clears all timers (no leaks, no orphans). | FR-021, FR-026 |
 | XH7 | Re-`enable()` after `disable()` re-establishes cleanly (Shell restart / relogin): fresh spawn, fresh adoption, name re-acquired. | FR-021 |
 | XH8 | If the subprocess exits while enabled, respawn follows XH3's policy; the extension never surfaces a user-facing error for this. | FR-026 |
 | XH9 | On Shell shutdown the subprocess does not outlive the session (termination is requested; an orphaned window must not remain on screen). | FR-021 |
@@ -56,8 +57,8 @@ manual acceptance plus a headless-Shell integration test where available.
 ## Constraints
 
 - No network; no audio capture; the host never reads, renders, logs, or
-  persists dictation state, levels, or transcript content — its only bus
-  surface is the member-less presence name (privacy, constitution V — FR-019).
+  persists dictation state, levels, or transcript content — it has no bus
+  surface at all (privacy, constitution V — FR-019).
 - `metadata.json` declares `shell-version: ["50", "51"]`, a unique `uuid`, and
   no settings schema (no picker — Out of Scope).
 - Bundle is directly loadable at

@@ -37,7 +37,7 @@ it spawns the binary through `Meta.WaylandClient` (so it structurally knows
 its child's window), adopts that window as a dock-typed, window-list-hidden,
 all-workspaces, always-above, never-focusable overlay, positions it
 bottom-center, supervises the process (bounded-backoff respawn), and owns the
-member-less **`com.canonical.Myna.Shell` presence name**. The renderer application
+`com.canonical.Myna.Shell` presence name (removed — now `RegisterClient` client set). The renderer application
 becomes the consumer of the existing `com.canonical.Myna.Dictation` contract (unchanged
 wire), reads accent color via libadwaita's color manager and reduced motion
 via GTK's absent-safe `gtk-interface-reduced-motion` (never a direct read of
@@ -65,7 +65,7 @@ Three deliverables, two contracts between them:
    than before): launch (`Meta.WaylandClient`), adopt + overlay-typing
    (DOCK/hide-from-window-list/stick/above), position + reposition
    (anti-feedback), supervision (respawn/terminate), presence name
-   (`com.canonical.Myna.Shell`). No drawing, no dictation data, no `St`/`Clutter`
+   (`com.canonical.Myna.Shell` — removed). No drawing, no dictation data, no `St`/`Clutter`
    rendering modules.
 3. **`myna-desktop` D-Bus publisher + launcher policy** (Rust, TDD, shipped
    — existing): unchanged `DbusIndicator`/`DbusTrigger`/level-pump contract;
@@ -270,7 +270,7 @@ specs/004-gnome-shell-indicator/
 ├── data-model.md        # Phase 1 output (E6/E7 new; E4 rewritten)
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
-│   ├── dbus-interface.md #   com.canonical.Myna.Dictation (unchanged wire) + com.canonical.Myna.Shell presence
+│   ├── dbus-interface.md #   com.canonical.Myna.Dictation (with RegisterClient) — Myna.Shell presence removed
 │   ├── publisher.md      #   DbusIndicator/DbusTrigger + launcher policy (Rust)
 │   └── extension.md      #   the thin host's guarantees (GJS, rewritten 2026-08-26)
 ├── checklists/
@@ -339,7 +339,7 @@ extensions/
     │                           #     anti-feedback reposition, respawn supervisor
     ├── place.js                #   PURE placement math (bottom-center of work area) —
     │                           #     the GJS-testable core (XH1)
-    ├── presence.js             #   com.canonical.Myna.Shell name ownership (XH5)
+    # removed: presence.js — Myna.Shell no longer exposed
     ├── respawn.js              #   PURE respawn policy (XH3)
     ├── resolve.js              #   PURE binary resolution order (XH2)
     └── test/
@@ -360,7 +360,7 @@ modes). The extension bundle keeps its top-level `extensions/myna-shell/`
 location (the GNOME loader demands the fixed layout) but shrinks to host
 modules only; its logic is factored into pure GJS modules (`place.js`,
 `respawn.js`, `resolve.js`, `presence.js`) so everything except live
-compositor calls is headlessly testable. The member-less `com.canonical.Myna.Shell`
+compositor calls is headlessly testable. The `com.canonical.Myna.Shell` presence (removed) — RegisterClient now
 presence name is the single seam between host and client policy; the
 unchanged `com.canonical.Myna.Dictation` contract is the seam between publisher and
 renderer. Deleting the extension's drawing modules (and the two labs)

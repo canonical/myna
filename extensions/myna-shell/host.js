@@ -8,7 +8,6 @@
 //   resolve.js   — how to launch the renderer (snap run / override)
 //   place.js     — where the overlay goes
 //   respawn.js   — what to do when it exits
-//   presence.js  — owning com.canonical.Myna.Shell while hosting
 //
 // This file is intentionally thin: it wires those decisions to
 // Meta.WaylandClient, Meta.Window and the Shell's signals, and holds the
