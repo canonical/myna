@@ -147,6 +147,11 @@ impl HudWindow {
         self.pill.set_reduced_motion_override(value);
     }
 
+    /// Force the accent hex (lab override); `None` returns to the desktop.
+    pub fn set_accent_override(&self, hex: Option<String>) {
+        self.pill.set_accent_override(hex);
+    }
+
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and

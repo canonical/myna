@@ -88,6 +88,13 @@ impl Target {
             Target::Embedded(p) => p.resync_accent(),
         }
     }
+
+    fn set_accent_override(&self, hex: Option<String>) {
+        match self {
+            Target::Window(w) => w.set_accent_override(hex),
+            Target::Embedded(p) => p.set_accent_override(hex),
+        }
+    }
 }
 
 /// `--lab`: the HUD as an external window, no backend.
@@ -225,10 +232,43 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .build();
     color_scheme_row.set_selected(0);
 
+    // Accent override: libadwaita has no public runtime accent setter (it is
+    // a desktop preference), so the lab forces the palette directly. The
+    // options are libadwaita's AccentColor palette, so each renders the way
+    // the real desktop choice would.
+    const ACCENT_LABELS: [&str; 10] = [
+        "default", "blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "slate",
+    ];
+    const ACCENT_HEXES: [&str; 9] = [
+        "#0073e5", "#308280", "#4b8501", "#c88800", "#e95420", "#da3450", "#b34cb3", "#7764d8",
+        "#657b69",
+    ];
+    let accents = gtk::StringList::new(&ACCENT_LABELS);
+    let accent_row = adw::ComboRow::builder()
+        .title(gettext("Accent color"))
+        .subtitle(gettext(
+            "force the pill's accent (libadwaita has no runtime setter)",
+        ))
+        .model(&accents)
+        .build();
+    accent_row.set_selected(0);
+
     let display_group = adw::PreferencesGroup::new();
     display_group.add(&reduced_motion_row);
     display_group.add(&color_scheme_row);
+    display_group.add(&accent_row);
     page.append(&display_group);
+
+    accent_row.connect_selected_notify({
+        let target = target.clone();
+        move |row| {
+            let hex = match row.selected() {
+                0 => None,
+                i => Some(ACCENT_HEXES[(i - 1) as usize].to_string()),
+            };
+            target.borrow().set_accent_override(hex);
+        }
+    });
 
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
     let dictation_target = gtk::TextView::new();

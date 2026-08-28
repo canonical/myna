@@ -29,6 +29,7 @@ use crate::hud_logic::{
 use crate::notice_slot::NoticeSlot;
 use crate::platform;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
+use crate::shader::hex_to_rgb;
 use crate::states::Descriptor;
 use crate::vumeter::levels_to_intensity;
 
@@ -80,6 +81,10 @@ struct PillState {
     /// The accent last read from the theme, so the palette is rebuilt only
     /// when the colour genuinely changes rather than every frame.
     accent: Option<crate::shader::Rgb>,
+    /// Lab override: when `Some`, forces the accent hex instead of the
+    /// desktop's — libadwaita has no public runtime accent setter (it is a
+    /// desktop preference), so the lab forces the palette directly.
+    accent_override: Option<String>,
 }
 
 /// The HUD pill: a `gtk::Box` styled `.myna-hud-pill`, self-driving.
@@ -156,6 +161,7 @@ impl Pill {
             // ribbon is mapped.
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
             accent: None,
+            accent_override: None,
         }));
 
         let this = Rc::new(Self {
@@ -387,6 +393,15 @@ impl Pill {
         self.ribbon.queue_render();
     }
 
+    /// Force the accent to a `#rrggbb` hex (the lab's override). `None`
+    /// returns to the desktop accent. libadwaita has no public runtime
+    /// accent setter (it is a desktop preference), so the lab forces the
+    /// palette directly.
+    pub fn set_accent_override(&self, hex: Option<String>) {
+        self.state.borrow_mut().accent_override = hex;
+        self.sync_palette();
+    }
+
     pub fn resync_accent(self: &Rc<Self>) {
         self.schedule_accent_resync();
     }
@@ -403,9 +418,13 @@ impl Pill {
 
     /// Read the desktop's accent and rebuild the palette if it changed.
     fn sync_palette(&self) {
-        let palette = platform::probe_accent_palette(Some(&self.ribbon));
-        let accent = palette.main_rgb();
         let mut state = self.state.borrow_mut();
+        // A lab override wins over the desktop entirely.
+        let palette = match state.accent_override.as_deref() {
+            Some(hex) => crate::accent::resolve_theme_accent_palette(hex_to_rgb(hex)),
+            None => platform::probe_accent_palette(Some(&self.ribbon)),
+        };
+        let accent = palette.main_rgb();
         if state.accent == Some(accent) {
             return;
         }
