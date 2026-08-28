@@ -1240,6 +1240,44 @@ product.
 snap slim and render nothing when hosted — rejected (that is the status quo
 this change exists to replace).
 
+## R28 — dash-to-dock reserved-extent export (2026-08-26)
+
+**Problem**: In dash-to-dock's default configuration (bottom, auto-hide), the
+dock claims NO strut (`addChrome` without `affectsStruts` — docking.js), so
+mutter's work area does NOT shrink for it, yet the dock slides out over the
+bottom of the work area and draws (as `Main.uiGroup` chrome) ABOVE our pill.
+A pill placed `BOTTOM_MARGIN` above the work area's bottom is therefore
+covered the moment the dock appears. Only in `dock-fixed` mode does the dock
+claim a strut and the work area already excludes it.
+
+**Decision**: dash-to-dock publishes its per-monitor reserved extent as
+`Main.layoutManager.dashToDockStruts` — a destroyable GObject (registered
+with the shell's SignalTracker `registerDestroyableType`) carrying a
+`monitors` map
+(`{ [index]: { side, x, y, width, height } }`) and a per-monitor `updated`
+signal (monitor index, `-1` = all). It is SET on dash-to-dock enable, NULLED
+on disable, and emits `destroy` on teardown, so consumers that
+`connectObject('updated', h, owner)` get auto-disconnected. **(2026-08-26)**
+It lives on `Main.layoutManager` (a mutable GObject) rather than on `Main`
+itself: the `Main` module namespace is frozen, and assigning
+`Main.dashToDockStruts = …` throws `TypeError: "dashToDockStruts" is
+read-only`. The extent is the
+dock's FULL-SIZE rectangle (where it would slide out), independent of current
+auto-hide visibility — consumers reserve it always.
+
+myna-shell consumes it (dockStrutsConsumer.js + the host's
+`shrinkWorkAreaForDock`): when a bottom dock reserves the primary monitor,
+the work area is shrunk so the pill sits above it; absent the object,
+placement is unchanged. The export is a dash-to-dock change (proposed
+upstream / Ubuntu dock); myna-shell degrades gracefully without it.
+
+**Alternatives rejected**: a producer→consumer capability handshake like
+`desktopIconsIntegration.js` (UUID-probing + push) — a single destroyable
+global is simpler to consume and the object's destroy signal already gives
+the same teardown guarantee; probing dash-to-dock's schema directly (couples
+us to its settings keys and misses multi-dock/geometry nuance).
+
+
 ## Open items carried to the plan / future
 
 - Whether the constitution should explicitly name **GJS UI shims** as an

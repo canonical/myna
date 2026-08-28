@@ -18,10 +18,11 @@ import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
+import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {computePlacement, placementChanged} from './place.js';
+import {computePlacement, placementChanged, shrinkWorkAreaForDock} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
 
@@ -46,11 +47,21 @@ function isExecutable(path) {
  *     primary monitor's work area `{x, y, width, height}` (injected so the
  *     host is testable without a live Shell; the extension passes the real
  *     `Main.layoutManager.getWorkAreaForMonitor` wrapper).
+ * @param {function(): ({x: number, y: number, width: number, height: number}|null)} [deps.getDockReservedExtent]
+ *     - returns the region reserved on the pill's monitor by an overlay
+ *     dock that claims no strut (dash-to-dock in auto-hide mode), or null
+ *     when none. The host raises the pill above it so it is never covered
+ *     when the dock slides out.
  * @param {function(string): void} [deps.log] - single-line logger.
  */
 export class OverlayHost {
-    constructor({getMonitorWorkArea, log = msg => console.log(`[myna-shell] ${msg}`)}) {
+    constructor({
+        getMonitorWorkArea,
+        getDockReservedExtent = () => null,
+        log = msg => console.log(`[myna-shell] ${msg}`),
+    }) {
         this._getMonitorWorkArea = getMonitorWorkArea;
+        this._getDockReservedExtent = getDockReservedExtent;
         this._log = log;
 
         this._client = null;         // Meta.WaylandClient
@@ -134,6 +145,11 @@ export class OverlayHost {
      * (XH3). Exposed for the extension's presence/logging. */
     get dormant() {
         return this._dormant;
+    }
+
+    /** Recompute placement now (e.g. the dock's reserved extent changed). */
+    positionNow() {
+        this._position();
     }
 
     // ── Launch ──────────────────────────────────────────────────────────
@@ -363,9 +379,16 @@ export class OverlayHost {
     _position() {
         if (!this._window || this._positioning)
             return;
-        const workArea = this._getMonitorWorkArea();
+        let workArea = this._getMonitorWorkArea();
         if (!workArea)
             return;
+
+        // If an overlay dock (no strut, so not reflected in the work area)
+        // reserves the bottom of this monitor, raise the placement above it:
+        // a pill sitting at the work area's bottom edge would be covered the
+        // moment the dock slides out.
+        workArea = shrinkWorkAreaForDock(
+            workArea, this._getDockReservedExtent(), St.Side.BOTTOM);
 
         const frame = this._window.get_frame_rect();
         const target = computePlacement(

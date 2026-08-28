@@ -54,3 +54,46 @@ export function computePlacement(workArea, windowSize, bottomMargin = BOTTOM_MAR
 export function placementChanged(current, target) {
     return current.x !== target.x || current.y !== target.y;
 }
+
+/**
+ * Shrink a work area so a bottom overlay dock's reserved extent is left
+ * clear. dash-to-dock in auto-hide mode claims no strut, so its extent is
+ * NOT reflected in the work area; raising the work area's bottom to the
+ * dock's top edge keeps the pill above where the dock would slide out.
+ *
+ * The shrink applies only to a dock whose `side` equals `bottomSide`
+ * (`St.Side.BOTTOM`) — a dock on the left or right (vertical mode) does not
+ * occupy the strip the pill lives in, so it is ignored. And it applies only
+ * when the dock does NOT claim a real strut (`affectsStruts` false): a
+ * dock-fixed dock already shrinks the work area, and adding its extent
+ * again would over-shrink.
+ *
+ * @param {{x: number, y: number, width: number, height: number}} workArea
+ * @param {{side: number, x: number, y: number, width: number, height: number, affectsStruts?: boolean}|null} dockExtent -
+ *     the reserved extent on this monitor, or `null`.
+ * @param {number} bottomSide - the `St.Side` value for the bottom edge
+ *     (imported by the caller; this module stays gi-free and testable).
+ * @returns {object} the (possibly shrunk) work area.
+ */
+export function shrinkWorkAreaForDock(workArea, dockExtent, bottomSide) {
+    // Only a bottom dock matters, and only one that does not already claim
+    // a strut (the work area excludes it in that case).
+    if (!dockExtent || dockExtent.side !== bottomSide || dockExtent.affectsStruts)
+        return workArea;
+
+    const reservedTop = dockExtent.y;
+    const workAreaBottom = workArea.y + workArea.height;
+    if (reservedTop >= workAreaBottom)
+        return workArea;
+
+    // Read the fields explicitly rather than spreading: a Meta.Rectangle
+    // (or any GObject boxed work area) has its fields as GObject properties
+    // that object spread does NOT copy — spreading one would drop x/y/width
+    // and leave a broken `{height}`-only object.
+    return {
+        x: workArea.x,
+        y: workArea.y,
+        width: workArea.width,
+        height: Math.max(0, reservedTop - workArea.y),
+    };
+}

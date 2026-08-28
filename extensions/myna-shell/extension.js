@@ -19,6 +19,7 @@
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {watchDashToDockStruts} from './dockStrutsConsumer.js';
 import {OverlayHost} from './host.js';
 import {ShellPresence} from './presence.js';
 
@@ -34,13 +35,40 @@ export default class MynaShellExtension extends Extension {
                 const { primaryIndex } = Main.layoutManager;
                 if (primaryIndex < 0)
                     return null;
-                return Main.layoutManager.getWorkAreaForMonitor(primaryIndex);
+                // getWorkAreaForMonitor returns a Meta.Rectangle BOXED
+                // struct: its fields are GObject properties, so object
+                // spread ({...workArea}) copies nothing from it. Normalize to
+                // a plain object here so the host's placement math (which
+                // spreads the work area) sees real values.
+                const rect = Main.layoutManager.getWorkAreaForMonitor(primaryIndex);
+                return {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                };
             },
+            // An overlay dock (dash-to-dock auto-hide) claims no strut, so it
+            // does not shrink the work area; its reserved extent lets the
+            // host raise the pill above where the dock would slide out.
+            getDockReservedExtent: () => this._dockExtent ?? null,
         });
         this._host.enable();
+
+        // Follow Main.layoutManager.dashToDockStruts so the pill is never placed
+        // auto-hide dock would cover it. `this` is the connectObject owner,
+        // so the handler is auto-disconnected when the struts object is
+        // destroyed (dash-to-dock disabled).
+        this._dockWatch = watchDashToDockStruts(this, extent => {
+            this._dockExtent = extent;
+            this._host?.positionNow();
+        });
     }
 
     disable() {
+        this._dockWatch?.disconnect();
+        this._dockWatch = null;
+        this._dockExtent = null;
         this._host?.disable();
         this._host = null;
         this._presence?.disable();
