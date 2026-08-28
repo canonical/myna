@@ -393,10 +393,14 @@ impl Pill {
                 // The pill does not own the toplevel window — hide it via
                 // the widget's root. `HudWindow::apply_descriptor` does
                 // the same, but this tick is the only path that returns to
-                // idle without a new bus publish.
+                // idle without a new bus publish. Only hide the HUD overlay
+                // window (`myna-hud-window`), not the lab's ApplicationWindow
+                // when the pill is embedded as a preview.
                 if let Some(root) = this.pill.root() {
                     if let Some(window) = root.downcast_ref::<gtk::Window>() {
-                        window.set_visible(false);
+                        if window.has_css_class("myna-hud-window") {
+                            window.set_visible(false);
+                        }
                     }
                 }
             }
