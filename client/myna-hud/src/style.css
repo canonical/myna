@@ -89,37 +89,42 @@ window.myna-hud-window {
     color: rgba(255, 255, 255, 1.0);
 }
 
-/* Severity/phase colour-coding: orange for a recoverable notice, red for a
- * critical error, and a warm tint for the cold-model-load phase — so the
- * treatment reads at a glance, not just from the label text
- * (FR-005/006/007). Toggled via hud_logic::pill_color_class. */
+/* Severity/phase colour-coding: warning (recoverable), error (critical)
+ * and accent tint for the cold-model-load phase — so the treatment reads
+ * at a glance, not just from the label text (FR-005/006/007). Toggled via
+ * hud_logic::pill_color_class. Uses libadwaita's named theme colours /
+ * CSS variables (see /data/GNOME/libadwaita/src/stylesheet/_colors.scss)
+ * instead of custom hard-coded values, so the pill follows the system
+ * palette and dark/light/high-contrast variants automatically. Backgrounds
+ * are dark mixes with black (not just transparent) for readability on
+ * light wallpapers, as the original custom rgba(58,40,10,0.88) /
+ * rgba(58,12,12,0.88) did. Loading uses the accent colour. */
 .myna-hud-pill.myna-hud-severity-recoverable {
-    border: 1px solid rgba(245, 166, 35, 0.9);
-    background-color: rgba(58, 40, 10, 0.88);
+    border: 1px solid var(--warning-bg-color);
+    background-color: color-mix(in srgb, color-mix(in srgb, var(--warning-bg-color) 20%, black) 88%, transparent);
 }
 
 .myna-hud-pill.myna-hud-severity-recoverable .myna-hud-icon,
 .myna-hud-pill.myna-hud-severity-recoverable .myna-hud-label {
-    color: rgb(245, 166, 35);
+    color: var(--warning-bg-color);
 }
 
 .myna-hud-pill.myna-hud-severity-critical {
-    border: 1px solid rgba(224, 64, 64, 0.9);
-    background-color: rgba(58, 12, 12, 0.88);
+    border: 1px solid var(--error-bg-color);
+    background-color: color-mix(in srgb, color-mix(in srgb, var(--error-bg-color) 20%, black) 88%, transparent);
 }
 
 .myna-hud-pill.myna-hud-severity-critical .myna-hud-icon,
 .myna-hud-pill.myna-hud-severity-critical .myna-hud-label {
-    color: rgb(224, 90, 90);
+    color: var(--error-bg-color);
 }
 
 .myna-hud-pill.myna-hud-phase-loading {
-    border: 1px solid rgba(245, 166, 35, 0.55);
+    border: 1px solid color-mix(in srgb, var(--accent-bg-color) 55%, transparent);
 }
 
-.myna-hud-pill.myna-hud-phase-loading .myna-hud-icon,
-.myna-hud-pill.myna-hud-phase-loading .myna-hud-label {
-    color: rgb(245, 190, 110);
+.myna-hud-pill.myna-hud-phase-loading .myna-hud-icon {
+    color: var(--accent-color);
 }
 
 /* High-contrast legibility (FR-022): a brighter border/background so the
