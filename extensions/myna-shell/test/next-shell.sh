@@ -25,10 +25,9 @@
 # LXD and not Docker, in CI as well as here. GNOME Shell reaches logind over
 # the system bus at startup, and a Docker container has neither: the Shell
 # gets far enough to create a surfaceless renderer and then dies in
-# `LoginManagerSystemd`, which entrance-visual.sh reads - correctly - as "no
-# Shell here" and skips. A run that skips its most valuable half looks
-# exactly like a run that passed, so there is one runtime, and it is the one
-# that can host a session.
+# `LoginManagerSystemd`. A pure-gjs suite would not catch that (it never
+# starts a Shell), so there is one runtime, and it is the one that can host
+# a session.
 #
 #   MYNA_SHELL_NEXT_KEEP=1   leave the container behind for a second look
 set -uo pipefail
