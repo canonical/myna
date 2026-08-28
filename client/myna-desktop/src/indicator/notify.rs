@@ -63,19 +63,37 @@ impl NotifyIndicator {
         }
     }
 
+    /// Compute a dynamic notification timeout from the visible text length,
+    /// mirroring the HUD's `hold_ms_for` and GNOME Shell gdm's
+    /// `_getIntervalForMessage` (48 ms per character, at least 3.5 s, capped
+    /// at 10 s). Starts when the notification is shown and restarts on a
+    /// replacement — a new error while one is visible is shown again for its
+    /// full interval. With multiple Dictation clients the server does not
+    /// drive the idle transition; each notifier owns its timer locally.
+    fn timeout_for(body: &str, is_error: bool) -> Timeout {
+        if !is_error {
+            return Timeout::Never;
+        }
+        let len = body.chars().count() as f64;
+        const PER_CHAR_MS: f64 = 48.0;
+        const MIN_MS: f64 = 3500.0;
+        const MAX_MS: f64 = 10_000.0;
+        let ms = (len * PER_CHAR_MS).max(MIN_MS).min(MAX_MS) as i32;
+        Timeout::Milliseconds(ms as u32)
+    }
+
     /// Show or replace the lifecycle toast, returning the (possibly new)
     /// notification id. Runs the blocking D-Bus round-trip off the runtime.
     async fn show(&self, summary: String, body: String, error: bool) -> Option<u32> {
         let app = self.app_name.clone();
         let id = self.id;
+        let timeout = Self::timeout_for(&body, error);
         tokio::task::spawn_blocking(move || {
             let mut n = Notification::new();
             n.appname(&app)
                 .summary(&summary)
                 .body(&body)
-                // Persistent while active: it lives for the utterance, then we
-                // close/replace it — it must not self-dismiss mid-dictation.
-                .timeout(Timeout::Never)
+                .timeout(timeout)
                 // Transient: don't clutter the notification tray with dictation
                 // liveness once dismissed.
                 .hint(Hint::Transient(true))

@@ -17,13 +17,27 @@
 //! and owns the actual timer/redraw. That keeps the rules testable without a
 //! toolkit and stops a stray timer from ever outliving the window.
 
-use crate::hud_logic::severity_auto_dismisses;
 use crate::states::Severity;
 
-/// How long a recoverable notice is held before it clears itself. The same
-/// bounded window the indicator has always used (spec Assumptions: reuse the
-/// existing ~3.5 s hold rather than introducing a new tunable).
+/// How long a recoverable notice is held before it clears itself. Kept for
+/// tests/compat — the actual hold is now dynamic (see `hold_ms_for`).
 pub const HOLD_MS: f64 = 3500.0;
+
+/// Compute a dynamic hold duration from the visible text length, as done in
+/// GNOME Shell's gdm `util.js` (`_getIntervalForMessage`): give the user
+/// `48 ms` per character or `HOLD_MS` (3.5 s), whichever is longer. The
+/// timeout starts when the notice is shown and restarts in full on a
+/// replacement, so a second error right after the first is shown again for
+/// its full interval. Capped at 10 s to avoid a very long error pinning
+/// the HUD forever.
+pub fn hold_ms_for(reason: &str) -> f64 {
+    // `chars().count()` is the user-visible length; byte length would
+    // over-count multi-byte emoji (e.g. "⚠️" is 6 bytes but 1 char).
+    let len = reason.chars().count() as f64;
+    const PER_CHAR_MS: f64 = 48.0;
+    const MAX_MS: f64 = 10_000.0;
+    (len * PER_CHAR_MS).max(HOLD_MS).min(MAX_MS)
+}
 
 /// The single held-notice slot.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -37,20 +51,24 @@ pub struct NoticeSlot {
 impl NoticeSlot {
     /// Apply a descriptor's severity/reason at time `now_ms`.
     ///
-    /// A problem severity replaces whatever is held (restarting the hold for
-    /// a recoverable one); `None` — any live, non-problem state — clears the
-    /// slot, so a new session always starts clean.
+    /// A problem severity replaces whatever is held, restarting the hold
+    /// window in full. The hold window is dynamic — `hold_ms_for(reason)` —
+    /// and applies to **both** severities; even a critical error now
+    /// auto-dismisses after its interval and returns to idle. The timeout
+    /// starts when the notice is shown and a replacement restarts it, so a
+    /// new error while one is visible is shown again for its full interval.
+    /// `None` (a live, non-problem state) clears the slot so a new session
+    /// always starts clean. With multiple Dictation clients the server does
+    /// not drive the timeout — each notifier (HUD, notification) owns its
+    /// own timer locally — so a `State` that stays `error` on the bus still
+    /// cycles: show → timeout → idle → new `error` publish re-shows.
     pub fn hold(&mut self, severity: Option<Severity>, reason: &str, now_ms: f64) {
         match severity {
             None => self.clear(),
             Some(severity) => {
                 self.severity = Some(severity);
                 self.reason = reason.to_string();
-                self.expires_at = if severity_auto_dismisses(Some(severity)) {
-                    Some(now_ms + HOLD_MS)
-                } else {
-                    None
-                };
+                self.expires_at = Some(now_ms + hold_ms_for(reason));
             }
         }
     }

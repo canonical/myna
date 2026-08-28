@@ -29,24 +29,29 @@ fn recoverable_notice_auto_dismisses() {
     assert_eq!(slot.expires_at(), Some(HOLD_MS));
 }
 
-// --- FR-007b: a critical error never auto-clears -------------------------
-// It stays until the CLIENT publishes a different state. There is no user
-// dismiss control: the HUD takes no pointer input (FR-025).
+// --- FR-007b: critical errors now also auto-dismiss (dynamic hold) ----
+// Since 2026-08-28 both severities auto-dismiss with a dynamic interval
+// (hold_ms_for). Timeout is notifier-side only.
 
 #[test]
-fn critical_error_persists_until_the_client_clears_it() {
+fn critical_error_auto_dismisses_with_dynamic_hold() {
     let mut slot = NoticeSlot::default();
-    slot.hold(Some(Severity::Critical), "Microphone unavailable", 0.0);
-    assert_eq!(slot.expires_at(), None, "no timer at all");
+    let reason = "Microphone unavailable";
+    slot.hold(Some(Severity::Critical), reason, 0.0);
+    let expected = myna_hud::notice_slot::hold_ms_for(reason);
+    assert_eq!(slot.expires_at(), Some(expected));
     assert!(
-        slot.is_showing(HOLD_MS * 100.0),
-        "still showing long past any recoverable hold"
+        slot.is_showing(expected - 1.0),
+        "still showing just before expiry"
     );
+    assert!(
+        !slot.is_showing(expected + 1.0),
+        "cleared on its own after the dynamic hold"
+    );
+    // A new state from the client also clears it early.
+    slot.hold(Some(Severity::Critical), reason, 0.0);
     slot.clear();
-    assert!(
-        !slot.is_showing(0.0),
-        "a new state from the client clears it"
-    );
+    assert!(!slot.is_showing(0.0));
 }
 
 // --- X20/FR-007a: a second recoverable replaces in place AND restarts ----
@@ -69,23 +74,24 @@ fn recoverable_replacement_restarts_the_hold() {
     );
 }
 
-// --- X20/FR-007d: a second critical replaces and still does not expire ---
+// --- X20/FR-007d: a second critical replaces and restarts the hold ---
 
 #[test]
-fn critical_replacement_still_never_auto_clears() {
+fn critical_replacement_restarts_the_hold() {
     let mut slot = NoticeSlot::default();
     slot.hold(Some(Severity::Critical), "first", 0.0);
     slot.hold(Some(Severity::Critical), "second", 500.0);
     assert_eq!(slot.reason(), Some("second"), "replaced in place");
-    assert_eq!(slot.expires_at(), None, "still no auto-dismiss");
+    let expected = 500.0 + myna_hud::notice_slot::hold_ms_for("second");
+    assert_eq!(slot.expires_at(), Some(expected));
     assert!(
-        slot.is_showing(HOLD_MS * 10.0),
-        "still requires an explicit dismiss"
+        !slot.is_showing(expected + 1.0),
+        "cleared after its own hold"
     );
 }
 
 // A problem of the *other* severity also replaces the held slot — there is
-// exactly one slot, never a queue (R15).
+// exactly one slot, never a queue (R15). Both severities now auto-dismiss.
 #[test]
 fn any_problem_replaces_the_single_slot() {
     let mut slot = NoticeSlot::default();
@@ -93,14 +99,16 @@ fn any_problem_replaces_the_single_slot() {
     slot.hold(Some(Severity::Critical), "broken", 100.0);
     assert_eq!(slot.severity(), Some(Severity::Critical));
     assert_eq!(slot.reason(), Some("broken"));
-    assert_eq!(slot.expires_at(), None, "now persistent");
+    assert_eq!(
+        slot.expires_at(),
+        Some(100.0 + myna_hud::notice_slot::hold_ms_for("broken"))
+    );
 
     slot.hold(Some(Severity::Recoverable), "hiccup again", 200.0);
     assert_eq!(slot.severity(), Some(Severity::Recoverable));
     assert_eq!(
         slot.expires_at(),
-        Some(200.0 + HOLD_MS),
-        "and auto-dismissing again"
+        Some(200.0 + myna_hud::notice_slot::hold_ms_for("hiccup again"))
     );
 }
 

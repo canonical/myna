@@ -346,14 +346,32 @@ impl Pill {
                 return glib::ControlFlow::Break;
             };
 
-            // A held recoverable notice clears itself on time.
+            // A held notice (any severity) auto-dismisses after its
+            // dynamic hold window. Timeout is notifier-side only: it
+            // starts when the notice is shown and a replacement restarts
+            // it. With multiple Dictation clients the server never drives
+            // the idle transition — each HUD owns its timer locally, so a
+            // new error publish will re-show even if the server still
+            // reports `error`.
             let now = this.now_ms();
             let expired = {
                 let state = this.state.borrow();
                 state.notice.severity().is_some() && !state.notice.is_showing(now)
             };
             if expired {
-                this.state.borrow_mut().notice.clear();
+                // Return to idle locally and hide the overlay window.
+                // `apply_descriptor` with `None` clears the notice, sets
+                // the descriptor to hidden, and updates the pill chrome.
+                this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
+                // The pill does not own the toplevel window — hide it via
+                // the widget's root. `HudWindow::apply_descriptor` does
+                // the same, but this tick is the only path that returns to
+                // idle without a new bus publish.
+                if let Some(root) = this.pill.root() {
+                    if let Some(window) = root.downcast_ref::<gtk::Window>() {
+                        window.set_visible(false);
+                    }
+                }
             }
 
             if this.ribbon.is_visible() {

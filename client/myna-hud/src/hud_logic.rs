@@ -30,14 +30,17 @@ pub fn icon_for_severity(severity: Option<Severity>) -> &'static str {
     }
 }
 
-/// Whether a held notice of this severity auto-dismisses on its own (R15,
-/// FR-007a/FR-007b): `recoverable` notices do (a bounded hold, restarting in
-/// full on a repeat — X20); `critical` errors never do (persist until the
-/// user's explicit dismiss — X22).
+/// Whether a held notice of this severity auto-dismisses on its own.
+/// Historically only `recoverable` auto-dismissed (R15) and `critical`
+/// persisted (X22). Since 2026-08-28 both severities auto-dismiss with a
+/// dynamic hold (`notice_slot::hold_ms_for`) that starts when the notice is
+/// shown — even critical errors return to idle — and a replacement restarts
+/// the window in full. Notifier-side timeout only: with multiple Dictation
+/// clients the server does not drive the idle transition.
 ///
 /// Port of `hudLogic.js`'s `severityAutoDismisses`.
 pub fn severity_auto_dismisses(severity: Option<Severity>) -> bool {
-    severity == Some(Severity::Recoverable)
+    severity.is_some()
 }
 
 /// Whether an incoming descriptor should replace an already-held notice in
