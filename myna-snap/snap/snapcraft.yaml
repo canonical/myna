@@ -77,6 +77,8 @@ apps:
       - desktop
       - desktop-legacy
       - gsettings
+    slots:
+      - hud # com.canonical.Myna.Hud for the HUD's D-Bus service
 
   # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
   # The launcher passes only --socket/--language: activation (portal, because
@@ -210,6 +212,11 @@ slots:
     interface: dbus
     bus: session
     name: com.canonical.Myna.Dictation
+
+  hud:
+    interface: dbus
+    bus: session
+    name: com.canonical.Myna.Hud
 
 parts:
   # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:

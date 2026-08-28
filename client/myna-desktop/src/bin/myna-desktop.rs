@@ -56,10 +56,9 @@ use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
+use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
-use myna_desktop::indicator::SilentIndicator;
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
-use myna_desktop::policy::{probe_shell_presence, SurfaceDecision};
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
@@ -1137,16 +1136,21 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 }
 
 /// The default indicator path: serve `com.canonical.Myna.Dictation` and publish through
-/// it (feature 004 — the GNOME Shell extension consumes it). Falls back to
-/// desktop notifications by itself when the session bus is unreachable or the
-/// name can't be owned, which is why this needs no flag — dictation never
-/// hard-fails on it (P15). `--no-dbus` forces the notification path.
+/// it (feature 004 — the HUD consumes it). Falls back to desktop
+/// notifications when the session bus is unreachable or the name can't be
+/// owned, and dynamically suppresses the notification fallback while any HUD
+/// client is registered via `RegisterClient` (the `myna-hud`
+/// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
+/// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
     match ZbusBus::serve().await {
         Ok(bus) => {
+            let clients = bus.client_registry();
             let readiness = Readiness::new();
             let service = DictationService::new(bus);
-            let indicator = DbusIndicator::new(service.bus(), readiness.clone());
+            let dbus_indicator = DbusIndicator::new(service.bus(), readiness.clone());
+            let notify = NotifyIndicator::new();
+            let indicator = DynamicIndicator::new(dbus_indicator, notify, clients);
             let pump_bus = service.bus();
             eprintln!("serving com.canonical.Myna.Dictation on the session bus");
             run_controller(args, resolved, indicator, Some(readiness), Some(pump_bus)).await
@@ -1155,17 +1159,12 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             let who = owner_pid
                 .map(|pid| format!(" (pid {pid})"))
                 .unwrap_or_default();
-            eprintln!("a myna-desktop daemon is already running{who} - not starting a second one.");
-            eprintln!("  a second daemon is worse than none: the GlobalShortcuts portal keeps the");
-            eprintln!("  hotkey with whoever bound it first, so this process would never see a");
-            eprintln!("  press while shadowing the running one.");
-            eprintln!("  stop it first, or run this one with --no-dbus for a deliberate second.");
-            // Exit 0: "someone else already did the job" is the *success* of a
-            // start request, and it has to be, because more than one thing can
-            // legitimately issue one - the unit, a D-Bus activation, a manual
-            // `snap run`. Failing here would make a supervised unit restart
-            // into the same benign condition until systemd gave up on it.
-            ExitCode::SUCCESS
+            eprintln!(
+                "cannot acquire com.canonical.Myna.Dictation — another myna-desktop already owns it{who}"
+            );
+            eprintln!("  falling back to desktop notifications for this instance");
+            eprintln!("  (the first owner keeps the hotkey; this instance will not receive presses while it lives — stop it first, or use --no-dbus for an intentional second instance)");
+            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
         }
         Err(ServeError::Bus(e)) => {
             eprintln!("cannot serve com.canonical.Myna.Dictation ({e}); falling back");
@@ -1173,15 +1172,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            // P20: if the shell host owns com.canonical.Myna.Shell, the hosted HUD is
-            // the indicator — suppress the notification fallback (no
-            // duplicate surface). Otherwise restore it (P21).
-            let decision = SurfaceDecision::for_shell_presence(probe_shell_presence().await);
-            if decision.uses_notify_fallback {
-                run_controller(args, resolved, NotifyIndicator::new(), None, None).await
-            } else {
-                run_controller(args, resolved, SilentIndicator, None, None).await
-            }
+            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
         }
     }
 }

@@ -46,6 +46,8 @@ change already reads the consistent reason.
 | `Start` | `() → (b ok, s error)` | begin a session (equivalent to a hotkey Press); `ok=false` + reason if unavailable/blocked |
 | `Stop` | `() → ()` | end the active session (graceful, like Release); no-op if idle |
 | `Toggle` | `() → ()` | Start if idle, else Stop (the panel-button action, R8) |
+| `RegisterClient` | `() → (u count)` | register the caller's unique bus name (`:1.xxx`) as a HUD client; idempotent, returns current client count. The server monitors `NameOwnerChanged` for the sender so a crashed client is pruned without an explicit `UnregisterClient` |
+| `UnregisterClient` | `() → (u count)` | unregister the caller; idempotent, returns current client count |
 
 ## Guarantees (each a test row)
 
@@ -62,8 +64,14 @@ change already reads the consistent reason.
 | C9 | With no owner, a client sees the name absent and no signals; when `myna-desktop` starts/stops, name-appeared/vanished fire. | env-gated + extension lifecycle test |
 | C10 | **(2026-07-30)** A session that completes with an empty/blank transcript publishes `notice` (not `idle`), with a fixed content-free `ErrorMessage` reason; a non-empty completion publishes `idle` exactly as before. | hermetic `dbus_indicator.rs` + `controller.rs` (empty vs. non-empty transcript cases) |
 | C11 | **(2026-07-30)** The live per-event path (`event_to_indicator`'s `Done(_)` arm) and the finalize-block safety net (`SessionOutcome::Completed`) always agree on `notice` vs. `idle` for the same transcript — both route through one shared `completion_indicator_state()` helper, so they can never publish conflicting states, and a redundant second call is a no-op under C2's per-wire-state dedup. | hermetic `controller.rs` (asserts both call sites produce identical `IndicatorState` for the same transcript) |
+| C14 | **(2026-08-28)** A `RegisterClient` call adds the sender's unique name to the client set (idempotent) and `UnregisterClient` removes it; the server also prunes vanished names via `NameOwnerChanged`. Return value is the current client count. | hermetic `serve.rs` client registry + gated round-trip |
+| C15 | **(2026-08-28)** While at least one client is registered, the notification fallback is suppressed and the D-Bus HUD is the indicator; when the last client leaves (explicit `UnregisterClient` or vanished), the fallback is restored. The D-Bus `State` publishing is unaffected. | hermetic `dynamic.rs` + gated |
 
-## Presence: `com.canonical.Myna.Shell` (2026-08-26, R24)
+## HUD identity: `com.canonical.Myna.Hud` (2026-08-28)
+
+- **Well-known name**: `com.canonical.Myna.Hud` on the session bus, owned by the `myna-hud` `Adw.Application` singleton. Not watched directly for fallback — the HUD registers via `RegisterClient` on `com.canonical.Myna.Dictation` and the publisher's client set is authoritative.
+
+## Presence: `com.canonical.Myna.Shell` (2026-08-26, R24) — legacy
 
 The companion seam for **surface selection** — which indicator is active:
 

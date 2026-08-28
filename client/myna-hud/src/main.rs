@@ -55,10 +55,12 @@ fn main() -> glib::ExitCode {
 
     let app = adw::Application::builder()
         .application_id(APP_ID)
-        // The modes are dispatched here, not through GApplication's own
-        // option parsing, so `--lab` cannot be forwarded to a running
-        // instance and silently change its behaviour.
-        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        // The HUD is a singleton that owns com.canonical.Myna.Hud; it
+        // registers as a client of com.canonical.Myna.Dictation so the
+        // publisher can suppress its notification fallback while a HUD
+        // is present. NON_UNIQUE would leave the name unclaimed and the
+        // publisher would never see the client, so we use the default
+        // (FLAGS_NONE) which requests the well-known name.
         .build();
 
     app.connect_activate(move |app| match mode {

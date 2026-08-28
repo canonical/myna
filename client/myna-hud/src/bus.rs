@@ -23,6 +23,20 @@ use crate::dbus_consumer::{Snapshot, BUS_NAME, OBJECT_PATH};
 /// The interface whose properties carry the whole UI state (E1–E3).
 const INTERFACE: &str = "com.canonical.Myna.Dictation";
 
+/// Best-effort RegisterClient on the Dictation bus name. Idempotent —
+/// the server keys by the sender's unique name and monitors
+/// NameOwnerChanged, so a vanished client is pruned without an explicit
+/// UnregisterClient.
+fn try_register(connection: &Connection) {
+    let Ok(proxy) = zbus::blocking::Proxy::new(connection, BUS_NAME, OBJECT_PATH, INTERFACE) else {
+        return;
+    };
+    let _: Result<u32, _> = proxy.call("RegisterClient", &());
+    // Keep the connection alive — its unique name is the client's identity
+    // on the server. The server prunes on NameOwnerChanged, so an explicit
+    // UnregisterClient on exit is not required.
+}
+
 /// What the worker observed. The rules live in the consumer.
 #[derive(Clone, Debug)]
 pub enum BusEvent {
@@ -59,6 +73,14 @@ fn run(sender: async_channel::Sender<BusEvent>) -> zbus::Result<()> {
         .destination(BUS_NAME)?
         .path(OBJECT_PATH)?
         .build()?;
+
+    // Register as a Dictation client so the publisher can suppress its
+    // notification fallback while a HUD is present. Best-effort: if the
+    // Dictation name has no owner yet the call fails and will be retried
+    // on the next NameAppeared. The server prunes vanished clients via
+    // NameOwnerChanged, so an explicit UnregisterClient on exit is not
+    // required for correctness.
+    try_register(&connection);
 
     // A publisher already running when we start must be reflected at once
     // (X8) — otherwise the HUD stays blank until the next transition.
@@ -106,6 +128,12 @@ fn run(sender: async_channel::Sender<BusEvent>) -> zbus::Result<()> {
             continue;
         }
         let appeared = args.new_owner().as_ref().is_some();
+        if appeared {
+            // The Dictation publisher (re)appeared — (re)register so the
+            // publisher's client list reflects this HUD even if it started
+            // first or the publisher restarted.
+            try_register(&connection);
+        }
         let event = if appeared {
             match read_snapshot(&properties) {
                 Ok(snapshot) => BusEvent::NameAppeared(snapshot),

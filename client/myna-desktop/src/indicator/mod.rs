@@ -11,6 +11,7 @@
 use async_trait::async_trait;
 
 pub mod dbus;
+pub mod dynamic;
 pub mod mock;
 pub mod notify;
 
