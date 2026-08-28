@@ -1021,7 +1021,7 @@ tests guarded. `GskGLShader` was already rejected upstream-adjacent
 headless/virtual machines better anyway); render via Cairo in GTK
 (`Gtk.DrawingArea`) — same dual-path problem, slower.
 
-## R24 — Presence and launch policy: `RegisterClient` client set (replaces `com.canonical.Myna.Shell`)
+## R24 — Presence and launch policy: `RegisterClient` client set
 
 **Decision**: The extension owns the well-known session-bus name
 RegisterClient set for exactly as long as a HUD is registered — **no** presence name,

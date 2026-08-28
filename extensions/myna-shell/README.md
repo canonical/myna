@@ -12,7 +12,6 @@ HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
 - positions it bottom-centre of the primary work area (and keeps it clear
   of an auto-hide bottom dash-to-dock via `Main.layoutManager.dashToDockStruts`),
 - supervises it (respawn on unexpected exit with bounded backoff, terminate
-  on disable). `com.canonical.Myna.Shell` presence is no longer exposed;
   fallback suppression now uses `com.canonical.Myna.Dictation` `RegisterClient`
   client set.
 

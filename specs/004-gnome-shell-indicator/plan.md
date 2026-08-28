@@ -36,14 +36,14 @@ The GNOME Shell extension remains, inverted into a **thin overlay host**:
 it spawns the binary through `Meta.WaylandClient` (so it structurally knows
 its child's window), adopts that window as a dock-typed, window-list-hidden,
 all-workspaces, always-above, never-focusable overlay, positions it
-bottom-center, supervises the process (bounded-backoff respawn), and owns the
-`com.canonical.Myna.Shell` presence name (removed — now `RegisterClient` client set). The renderer application
-becomes the consumer of the existing `com.canonical.Myna.Dictation` contract (unchanged
-wire), reads accent color via libadwaita's color manager and reduced motion
-via GTK's absent-safe `gtk-interface-reduced-motion` (never a direct read of
-the new a11y key — crash guard), and doubles as the developer lab
-(`--lab`, no backend required) and backend simulator (`--serve-dbus`),
-replacing the GJS `dev-lab/` and Python `dev-lab-gpu/` tools (deleted).
+bottom-center, supervises the process (bounded-backoff respawn)
+The renderer application becomes the consumer of the existing
+`com.canonical.Myna.Dictation` contract (unchanged wire), reads accent color
+via libadwaita's color manager and reduced motion via GTK's absent-safe
+`gtk-interface-reduced-motion` (never a direct read of the new a11y key —
+crash guard), and doubles as the developer lab (`--lab`, no backend required)
+and backend simulator (`--serve-dbus`), replacing the GJS `dev-lab/` and Python
+`dev-lab-gpu/` tools (deleted).
 `myna-desktop` drops its experimental `ui-gtk` overlay and gains the
 presence-driven launcher policy (suppress the notification fallback while the
 host is up; contract-only seam for a future non-GNOME layer-shell backend).
@@ -64,8 +64,8 @@ Three deliverables, two contracts between them:
 2. **GNOME Shell extension — thin host** (GJS, harness-tier, much smaller
    than before): launch (`Meta.WaylandClient`), adopt + overlay-typing
    (DOCK/hide-from-window-list/stick/above), position + reposition
-   (anti-feedback), supervision (respawn/terminate), presence name
-   (`com.canonical.Myna.Shell` — removed). No drawing, no dictation data, no `St`/`Clutter`
+   (anti-feedback), supervision (respawn/terminate).
+   No drawing, no dictation data, no `St`/`Clutter`
    rendering modules.
 3. **`myna-desktop` D-Bus publisher + launcher policy** (Rust, TDD, shipped
    — existing): unchanged `DbusIndicator`/`DbusTrigger`/level-pump contract;
@@ -360,9 +360,8 @@ modes). The extension bundle keeps its top-level `extensions/myna-shell/`
 location (the GNOME loader demands the fixed layout) but shrinks to host
 modules only; its logic is factored into pure GJS modules (`place.js`,
 `respawn.js`, `resolve.js`, `presence.js`) so everything except live
-compositor calls is headlessly testable. The `com.canonical.Myna.Shell` presence (removed) — RegisterClient now
-presence name is the single seam between host and client policy; the
-unchanged `com.canonical.Myna.Dictation` contract is the seam between publisher and
+compositor calls is headlessly testable.
+The unchanged `com.canonical.Myna.Dictation` contract is the seam between publisher and
 renderer. Deleting the extension's drawing modules (and the two labs)
 removes the entire Cairo/GLSL lockstep apparatus — `myna-hud`'s shader
 generator and its conformance tests are the one source of truth (R23).

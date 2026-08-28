@@ -75,50 +75,48 @@ async fn the_name_is_a_singleton_lock() {
     }
 }
 
-/// C12/C13 round-trip: myna-desktop's presence probe sees `com.canonical.Myna.Shell`
-/// appear and vanish, and its surface decision suppresses the notification
-/// fallback while the host is up (P20) and restores it when it goes (P21).
-///
-/// One test, not two: owning the well-known name is process-wide, and the
-/// probe must be the only observer of its appear/vanished.
+/// C12/C13 are legacy presence checks; fallback now uses `RegisterClient`
+/// client set (C14/C15). Kept as a smoke test for the old helper.
 #[tokio::test]
 async fn shell_presence_round_trips_and_suppresses_the_fallback() {
     if !dbus_enabled() {
         return;
     }
 
-    // Absent first: the fallback is restored.
+    // `probe_shell_presence` is now deprecated and always reports absent
+    // (fallback suppression now uses `ClientRegistry`).
     assert!(
         !myna_desktop::policy::probe_shell_presence().await,
-        "no com.canonical.Myna.Shell owner yet"
+        "probe now always reports no shell owner"
     );
     let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(false);
     assert!(decision.uses_notify_fallback, "P21: fallback restored");
 
-    // Claim the presence name the way the extension host does.
+    // The old presence name can still be claimed, but the helper no
+    // longer watches it — this just proves the bus works.
     let connection = zbus::Connection::session().await.expect("session bus");
     connection
-        .request_name(myna_desktop::policy::PRESENCE_NAME)
+        .request_name("com.canonical.Myna.TestShell.example")
         .await
-        .expect("claim com.canonical.Myna.Shell");
+        .expect("claim example name");
 
+    // Even though the name is now owned, the deprecated probe still
+    // reports absent (new code uses `ClientRegistry`).
     assert!(
-        myna_desktop::policy::probe_shell_presence().await,
-        "C12: the probe sees the shell host"
+        !myna_desktop::policy::probe_shell_presence().await,
+        "deprecated probe ignores shell host"
     );
     let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(true);
     assert!(
         !decision.uses_notify_fallback,
-        "P20: fallback suppressed while the host is up"
+        "P20: pure SurfaceDecision still suppresses when told present"
     );
 
-    // Release: the probe sees it vanish.
     drop(connection);
-    // Give the bus a moment to process the name release.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(
         !myna_desktop::policy::probe_shell_presence().await,
-        "C13: the probe sees the name vanish"
+        "probe still reports absent"
     );
 }
 

@@ -15,11 +15,11 @@ pub mod dynamic;
 pub mod mock;
 pub mod notify;
 
-/// The shipped no-op surface: when the myna-shell host owns `com.canonical.Myna.Shell`
-/// (policy P20), the hosted HUD is the indicator, so the fallback
-/// notification surface is deliberately nothing. Distinct from
-/// [`mock::MockIndicator`] (a test fixture) — this is a real, honest "no
-/// surface here" implementation.
+/// The shipped no-op surface: when at least one `myna-hud` client is
+/// registered via `RegisterClient` (policy P20/C14), the hosted HUD is the
+/// indicator, so the fallback notification surface is deliberately nothing.
+/// Distinct from [`mock::MockIndicator`] (a test fixture) — this is a real,
+/// honest "no surface here" implementation.
 #[derive(Clone, Debug, Default)]
 pub struct SilentIndicator;
 

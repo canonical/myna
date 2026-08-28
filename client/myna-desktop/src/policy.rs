@@ -1,29 +1,24 @@
 //! policy — the launcher policy for the indicator surface (feature 004,
 //! T151; contract publisher.md P20–P23).
 //!
-//! `myna-desktop` always serves `com.canonical.Myna.Dictation` (the myna-shell
-//! extension consumes it). The policy decides the FALLBACK surface:
+//! `myna-desktop` always serves `com.canonical.Myna.Dictation` (the myna-hud
+//! client consumes it). The policy decides the FALLBACK surface:
 //!
-//! * while `com.canonical.Myna.Shell` has an owner (the extension host is up and
-//!   hosting the `myna-hud` overlay), the `NotifyIndicator` fallback is
+//! * while at least one `myna-hud` client is registered via `RegisterClient`
+//!   (and pruned via `NameOwnerChanged`), the `NotifyIndicator` fallback is
 //!   **suppressed** — there is already a hosted HUD, a second notification
-//!   would be a duplicate (P20);
-//! * when it vanishes (extension disabled/removed/Shell crash), the fallback
-//!   is restored so dictation stays observable (P21);
-//! * presence watching never blocks or fails dictation — a bus error
+//!   would be a duplicate (P20/C14);
+//! * when the last client leaves (`UnregisterClient` or vanished), the
+//!   fallback is restored so dictation stays observable (P21/C15);
+//! * client-set watching never blocks or fails dictation — a bus error
 //!   degrades to the fallback, never an abort (P22);
 //! * the non-GNOME spawn seam (launch `myna-hud` standalone where a
 //!   focus-safe overlay backend exists) is **contract only** — the hook
 //!   exists, no backend ships this pass (P23).
 //!
-//! The [`Policy`] trait is the seam: the real implementation watches the
-//! session bus for `com.canonical.Myna.Shell`, and tests inject a fake presence. The
-//! decision is a pure function of "is the shell host present", so it is
-//! trivially hermetic.
-
-/// The presence name the extension host owns while enabled (contract
-/// dbus-interface.md C12/C13).
-pub const PRESENCE_NAME: &str = "com.canonical.Myna.Shell";
+//! Fallback suppression now uses the `RegisterClient` client set. This module
+//! is retained for the `Policy` seam and tests; real fallback now lives in
+//! `indicator::dynamic::DynamicIndicator` + `dbus::serve::ClientRegistry`.
 
 /// What to do with the indicator surface given the shell-host presence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,12 +43,11 @@ impl SurfaceDecision {
     }
 }
 
-/// The presence seam: report the shell host's presence and watch for
-/// changes. The real implementation queries the session bus; tests use a
-/// fake.
+/// Presence seam — now DEPRECATED. Real fallback uses
+/// `ClientRegistry::has_clients()` (`indicator::dynamic`). This trait is kept
+/// for `tests/policy.rs` hermetic coverage of the old `SurfaceDecision` pure
+/// logic.
 pub trait Policy: Send {
-    /// Whether `com.canonical.Myna.Shell` currently has an owner. An unreachable bus
-    /// returns `false` (P22 — degrade to the fallback, never abort).
     fn shell_present(&self) -> bool;
 
     /// Begin watching for presence changes; `on_change` fires immediately
@@ -71,22 +65,7 @@ pub trait Policy: Send {
     }
 }
 
-/// Probe the session bus for the shell host's presence.
-///
-/// Uses the crate's stale-guid-tolerant session connect
-/// ([`crate::dbus::serve::connect_session`]); an unreachable bus returns
-/// `false` (P22 — degrade to the fallback, never abort).
+/// Deprecated: use `ClientRegistry` / `DynamicIndicator`. Kept for tests.
 pub async fn probe_shell_presence() -> bool {
-    use zbus::names::BusName;
-
-    let Ok(connection) = crate::dbus::serve::connect_session().await else {
-        return false;
-    };
-    let Ok(db) = zbus::fdo::DBusProxy::new(&connection).await else {
-        return false;
-    };
-    let Ok(name) = BusName::try_from(PRESENCE_NAME) else {
-        return false;
-    };
-    db.name_has_owner(name).await.unwrap_or(false)
+    false
 }
