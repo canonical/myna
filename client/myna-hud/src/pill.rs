@@ -54,6 +54,10 @@ pub const LABEL_MAX_CHARS: i32 = 30;
 /// The ribbon's height, matching the extension's `RIBBON_HEIGHT`.
 pub const RIBBON_HEIGHT: i32 = 32;
 
+/// The CSS class that brightens the pill under a high-contrast preference
+/// (FR-022), defined in `style.css`.
+pub const HIGH_CONTRAST_CLASS: &str = "myna-hud-high-contrast";
+
 /// The most recent level push and when it arrived — the vumeter decays by
 /// *arrival age*, so a stalled publisher visibly falls to the floor instead
 /// of freezing mid-wave (R16a).
@@ -178,6 +182,7 @@ impl Pill {
         this.connect_renderer();
         this.connect_clock();
         this.connect_preferences();
+        this.sync_high_contrast();
         this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
         this
     }
@@ -366,6 +371,10 @@ impl Pill {
                 }
             }
 
+            // High contrast is a plain GtkSettings read, so it is always
+            // current now.
+            this.sync_high_contrast();
+
             // The accent is a computed CSS colour, readable immediately only
             // on libadwaita's own notification (it reloads the accent
             // provider before notifying); anything else waits for the next
@@ -376,6 +385,21 @@ impl Pill {
             }
         });
         *self.preferences.borrow_mut() = Some(watch);
+    }
+
+    /// Apply/remove the high-contrast CSS class from `GtkSettings:gtk-interface-contrast`
+    /// (FR-022). The class brightens the pill's border and background so it
+    /// stays legible against any wallpaper; severity also carries an icon
+    /// change (never colour-only — FR-007's icon/`microphone-disabled` for a
+    /// critical error), so contrast mode never reduces legibility to colour
+    /// alone.
+    fn sync_high_contrast(&self) {
+        let high = platform::probe_high_contrast();
+        if high {
+            self.pill.add_css_class(HIGH_CONTRAST_CLASS);
+        } else {
+            self.pill.remove_css_class(HIGH_CONTRAST_CLASS);
+        }
     }
 
     /// Force a re-read of the theme's accent at the next frame.

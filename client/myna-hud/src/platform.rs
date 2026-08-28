@@ -60,6 +60,10 @@ const ANIMATIONS_KEY: &str = "enable-animations";
 const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
 /// `GtkReducedMotion.no_preference` — the one value meaning "full motion".
 const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
+/// `GtkSettings`' contrast property (GTK ≥ 4.22).
+const GTK_INTERFACE_CONTRAST_PROPERTY: &str = "gtk-interface-contrast";
+/// `GtkInterfaceContrast.more` — the only "high contrast" level.
+const GTK_INTERFACE_CONTRAST_MORE: i32 = 2;
 /// `AdwStyleManager`'s resolved accent — notified after the stylesheet is
 /// updated, so the theme is already current when it fires.
 const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
@@ -120,6 +124,36 @@ pub fn decode_reduced_motion(value: &glib::Value) -> Option<bool> {
 pub fn probe_enable_animations() -> Option<bool> {
     let settings = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY)?;
     Some(settings.boolean(ANIMATIONS_KEY))
+}
+
+/// Whether the desktop requests a higher-contrast UI (FR-022), from
+/// `GtkSettings:gtk-interface-contrast` — a **`GtkInterfaceContrast` enum**
+/// (`unsupported = 0`, `no_preference = 1`, `more = 2`), not a boolean. Read
+/// the same way as reduced-motion (via `g_value_get_enum`) so it degrades
+/// cleanly when the property is absent (older GTK) and tolerates additive
+/// values.
+///
+/// `false` when the property is missing or reports anything but `more` (the
+/// only "high contrast" level GTK defines); the pill then uses its normal
+/// styling.
+pub fn probe_high_contrast() -> bool {
+    let settings = gtk::Settings::default();
+    let Some(settings) = settings else {
+        return false;
+    };
+    let property = settings
+        .find_property(GTK_INTERFACE_CONTRAST_PROPERTY)
+        .map(|p| p.name().to_string());
+    let Some(property) = property else {
+        return false;
+    };
+    let value = settings.property_value(&property);
+    if value.type_().is_a(glib::Type::ENUM) {
+        // SAFETY: the GValue is known to hold an enum.
+        let raw = unsafe { glib::gobject_ffi::g_value_get_enum(value.to_glib_none().0) };
+        return raw == GTK_INTERFACE_CONTRAST_MORE;
+    }
+    false
 }
 
 /// The live reduced-motion preference, resolved through both safe sources.
@@ -276,18 +310,32 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
         )
     };
 
-    let mut gtk_handle = None;
+    let mut gtk_handles = Vec::new();
     let gtk_settings = gtk::Settings::default();
     if let Some(settings) = &gtk_settings {
+        // Reduced motion (GTK ≥ 4.22).
         if settings
             .find_property(GTK_REDUCED_MOTION_PROPERTY)
             .is_some()
         {
             let cb = on_change.clone();
-            gtk_handle = Some(
+            gtk_handles.push(
                 settings.connect_notify_local(Some(GTK_REDUCED_MOTION_PROPERTY), move |_, _| {
                     cb(AccentReadiness::NextFrame)
                 }),
+            );
+        }
+        // High contrast (GTK ≥ 4.22).
+        if settings
+            .find_property(GTK_INTERFACE_CONTRAST_PROPERTY)
+            .is_some()
+        {
+            let cb = on_change.clone();
+            gtk_handles.push(
+                settings
+                    .connect_notify_local(Some(GTK_INTERFACE_CONTRAST_PROPERTY), move |_, _| {
+                        cb(AccentReadiness::NextFrame)
+                    }),
             );
         }
     }
@@ -297,7 +345,7 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
         manager,
         adw_handle,
         gtk_settings,
-        gtk_handle,
+        gtk_handles,
     }
 }
 
@@ -307,7 +355,7 @@ pub struct PreferenceWatch {
     manager: adw::StyleManager,
     adw_handle: Option<glib::SignalHandlerId>,
     gtk_settings: Option<gtk::Settings>,
-    gtk_handle: Option<glib::SignalHandlerId>,
+    gtk_handles: Vec<glib::SignalHandlerId>,
 }
 
 impl Drop for PreferenceWatch {
@@ -315,8 +363,10 @@ impl Drop for PreferenceWatch {
         if let Some(handle) = self.adw_handle.take() {
             self.manager.disconnect(handle);
         }
-        if let (Some(settings), Some(handle)) = (&self.gtk_settings, self.gtk_handle.take()) {
-            settings.disconnect(handle);
+        if let Some(settings) = &self.gtk_settings {
+            for handle in self.gtk_handles.drain(..) {
+                settings.disconnect(handle);
+            }
         }
         // The gio::Settings objects drop with their handlers attached; the
         // objects themselves are owned here and released now.

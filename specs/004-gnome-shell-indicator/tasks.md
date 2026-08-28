@@ -156,7 +156,7 @@ driver. **Phase B complete (2026-08-26).**
 
 ## Phase J: Acceptance & gates
 
-- [ ] T153 [P] High-contrast legibility (app CSS): contrast variant; severity never color-only (T047 re-homed).
+- [X] T153 [P] High-contrast legibility (app CSS): contrast variant; severity never color-only (T047 re-homed). *(Done 2026-08-27: `probe_high_contrast()` reads `GtkSettings:gtk-interface-contrast` (a `GtkInterfaceContrast` enum: unsupported=0/no_preference=1/more=2, read via g_value_get_enum like reduced-motion), wired into `watch_preferences` (notify::gtk-interface-contrast) and applied as the `.myna-hud-high-contrast` CSS class on the pill. Severity is already never colour-only: critical swaps to the mic-disabled icon + distinct label, recoverable has its own label text (existing x19 test).)*
 - [ ] T154 [P] Version-gate verification: `metadata.json` `shell-version: ["50","51"]` loads on both (workshop + `next-shell.sh`); mutter ABI 18/51 host APIs asserted by T101a/T125 (T048 re-homed).
 - [ ] T180 Run quickstart end-to-end (§1–§8): hermetic + gated suites, host contract tests, lab/simulator, install, the **on-hardware hosted spoken run** (focus never stolen — including the × click; clicks pass through; no window-list entry; all workspaces; always-on-top; not movable/minimizable/closable via ordinary window management; states legible; ribbon correct incl. accent/fallback and reduced-motion no-crash; transcript injected unchanged), severity walkthroughs, renderer-crash respawn + budgeted dormancy, disable teardown, watermarks (SC-001–SC-016).
 - [ ] T181 [P] SC-013 structured comparison (carried from T050a): GPU ribbon vs. a recording of the prior implementation, ≥3 observers, majority-verdict recorded.
