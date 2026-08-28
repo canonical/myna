@@ -333,6 +333,19 @@ impl Pill {
         // the accessible description, and it is content-free by contract.
         self.pill
             .update_property(&[gtk::accessible::Property::Label(&descriptor.status_text)]);
+        // Live announcement (GTK 4.14+): `Label` alone is only spoken on
+        // focus, but the HUD is deliberately non-focusable chrome
+        // (`window.set_can_focus(false)`, DOCK, empty input region).  The
+        // explicit announcement is the AT-SPI live-region signal Orca
+        // speaks even without focus.  Only for `notice`/`error` (severity
+        // present) — the continuous `Recording`/`Finalizing` states would
+        // spam.
+        if descriptor.severity.is_some() && !descriptor.status_text.is_empty() {
+            self.pill.announce(
+                &descriptor.status_text,
+                gtk::AccessibleAnnouncementPriority::Medium,
+            );
+        }
     }
 
     /// A level push from the publisher. Never deduplicated — the arrival

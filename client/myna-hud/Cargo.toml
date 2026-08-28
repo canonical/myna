@@ -37,17 +37,17 @@ path = "src/main.rs"
 #     the accent API landed, so adw_style_manager_get_accent_color_rgba() is
 #     called directly rather than probed by property name. NOT v1_7: nothing
 #     needed from it, and a floor is easier to hold than to lower.
-#   - gtk4 v4_10 only. GTK canNOT follow: the snap is on 4.18, so
-#     `gtk-interface-reduced-motion` (4.22) stays a RUNTIME property lookup
-#     (find_property + property_value), absent in the snap — where the
+#   - gtk4 v4_14. Raised from v4_10 for `GtkAccessible::announce()` (live
+#     announcement for non-focusable HUD, T56). Snap is on 4.18 and workshop
+#     on 4.22, so 4.14 is safe. `gtk-interface-reduced-motion` (4.22) stays a
+#     RUNTIME property lookup, absent in the snap — where the
 #     enable-animations GSettings fallback is the shipping path — and present
-#     on 26.04 hosts. v4_10 also matches myna-desktop's former ui-gtk feature
-#     for workspace feature unification.
+#     on 26.04 hosts.
 #
 # The accent RGBA is still read as a gdk::RGBA and never as AdwAccentColor:
 # Ubuntu's Yaru patches add ADW_ACCENT_COLOR_BROWN = SLATE + 100, outside
 # upstream's enumeration, so the Rust enum cannot represent it.
-gtk4 = { version = "0.11", features = ["v4_10"] }
+gtk4 = { version = "0.11", features = ["v4_14"] }
 libadwaita = { version = "0.9", features = ["v1_6"] }
 # The com.canonical.Myna.Dictation consumer (name watch + PropertiesChanged) and the
 # --serve-dbus simulator's publisher. Same crate family as myna-desktop.
