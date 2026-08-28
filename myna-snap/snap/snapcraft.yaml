@@ -19,19 +19,13 @@ base: core24
 version: 0.1.0-dev
 assumes:
   - snapd2.75 # pipewire interface + writable content shares
-summary: Myna push-to-talk dictation (UbuSTT client)
+summary: Speech to text desktop client for the Ubuntu Desktop
 description: |
-  Local, offline push-to-talk dictation for the Ubuntu desktop. Tap the
-  hotkey, speak, tap again — the transcript is typed into the focused
+  Local, offline speech-to-text for the Ubuntu desktop. Invoke
+  the client, speak and the transcript is typed into the focused
   application via IBus. Audio is captured by this snap (the inference snaps
   have no microphone access) and pushed as PCM to a local backend snap
-  (whisper, nemotron, or qwen) over a Unix socket; nothing leaves the
-  machine and no audio is persisted.
-
-  Activation is tap-to-toggle via the GlobalShortcuts portal (--hold switches
-  it to hold-to-talk); state and the live audio level are published on
-  org.myna.Dictation for the myna-shell GNOME extension indicator. Feedback
-  falls back to desktop notifications.
+  over a Unix socket; nothing leaves the machine and no audio is persisted.
 grade: devel
 confinement: strict
 compression: lzo
