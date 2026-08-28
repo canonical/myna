@@ -1,12 +1,24 @@
-# myna-shell — GNOME Shell dictation HUD
+# myna-shell — GNOME Shell overlay host for the myna dictation HUD
 
-The focus-safe dictation indicator for GNOME (feature 004). A bottom-center
-HUD pill, styled after GNOME's own volume/brightness OSD, that visualizes
-`myna-desktop`'s dictation state and audio level. Supports **GNOME Shell 46
-(Ubuntu 24.04 LTS) through 51** from one bundle — see "Shell compatibility"
-below for what varies across that range and how. Pure UI: it never captures
-audio, transcribes, or injects text — see `docs/desktop-injection.md` for the
-last-mile that does. Contract and design history: `specs/004-gnome-shell-indicator/`.
+A thin GNOME Shell extension that hosts the **myna-hud** renderer
+application as a focus-safe overlay (feature 004). It does **not** draw the
+HUD or consume `org.myna.Dictation` itself — the standalone
+`myna-hud` binary (see `client/myna-hud`) does both. This extension:
+
+- launches the renderer (`Meta.WaylandClient.new_subprocess`, so the child
+  inherits the compositor's Wayland socket),
+- adopts its window (`owns_window` → DOCK type, hidden from the window
+  list, on all workspaces, above normal windows, never focused),
+- positions it bottom-centre of the primary work area (and keeps it clear
+  of an auto-hide bottom dash-to-dock via `Main.layoutManager.dashToDockStruts`),
+- supervises it (respawn on unexpected exit with bounded backoff, terminate
+  on disable), and
+- owns `org.myna.Shell` for as long as it is enabled, so `myna-desktop` can
+  suppress its own fallback notification indicator (C12/C13).
+
+The HUD pill itself, its GPU wave ribbon, accent colour, reduced-motion
+handling, lab and simulator modes all live in `client/myna-hud`. Contract
+and design history: `specs/004-gnome-shell-indicator/`.
 
 ## Install (development)
 
@@ -14,243 +26,83 @@ last-mile that does. Contract and design history: `specs/004-gnome-shell-indicat
 UUID=myna-shell@canonical.com
 mkdir -p ~/.local/share/gnome-shell/extensions/$UUID
 cp -r extensions/myna-shell/* ~/.local/share/gnome-shell/extensions/$UUID/
-# dev-lab/ is a non-shipped development tool — never installed.
-rm -rf ~/.local/share/gnome-shell/extensions/$UUID/dev-lab
 gnome-extensions enable $UUID
 ```
+
+The renderer must be reachable as `snap run myna.hud` (the packaged snap
+app), or as `$MYNA_HUD_BINARY` (a locally built binary) for development. If
+neither resolves, the extension logs once and stays dormant — it never
+crash-loops.
 
 GNOME Shell on Wayland does not hot-reload extension JS — after copying an
 update, `gnome-extensions disable "$UUID" && gnome-extensions enable "$UUID"`
 only refreshes `metadata.json`; a **log out / log back in** is required to
-load changed module code. See `dev-lab/README.md` for a much faster
-standalone iteration loop while tuning the wave ribbon specifically.
+load changed module code. To iterate on the renderer without the extension,
+run `client/myna-hud` directly (`--lab` for a standalone HUD, `--serve-dbus`
+to publish a simulated `org.myna.Dictation`).
 
-## What it shows
+## What the hosted overlay shows
 
-Driven entirely by `org.myna.Dictation` (served by `myna-desktop --dbus`):
+Driven entirely by `org.myna.Dictation` (served by `myna-desktop`):
 
 - **Idle**: nothing — push-to-talk, no persistent overlay.
-- **Loading / Recording / Transcribing / Finishing**: the pill with a filled
-  mic icon and a state label.
-- **Recoverable notice** (e.g. "No speech detected"): a non-blocking pill that
-  auto-dismisses after ~3.5 s; a new session can start immediately.
-- **Critical error** (e.g. "Microphone unavailable"): a persistent pill with a
-  mic-with-slash icon and a dismiss (×) control — reactive but never
-  keyboard-focusable, so dismissing it can never steal focus.
-- **Audio level**: a flowing, accent-colored wave ribbon (2026-07-30 redesign
-  — see `ribbon.js`) calibrated to real speech levels (not a raw linear
-  gain): it unfolds when a session starts, flows with your voice, relaxes to
-  a thin idle line on a pause, and morphs into a simplified processing
-  motion when you stop. Colored from your system's accent-color preference,
-  or Ubuntu orange if you haven't set one; falls back to a static line if
-  you have reduced motion enabled.
+- **Loading / Recording / Transcribing / Finishing**: a bottom-centre pill
+  with a filled mic icon and a state label.
+- **Recoverable notice** (e.g. "No speech detected"): a non-blocking pill
+  that auto-dismisses after ~3.5 s; a new session can start immediately.
+- **Critical error** (e.g. "Microphone unavailable"): a persistent pill with
+  a mic-with-slash icon that does not clear on a timer — the client resolves
+  it by publishing a different state.
+- **Audio level**: a flowing, accent-coloured GPU wave ribbon, calibrated to
+  real speech levels, unfolding on session start, flowing with the voice,
+  relaxing on a pause, and morphing into a simplified processing motion on
+  stop. Coloured from the desktop's accent preference (Yaru-aware), or
+  Ubuntu orange as a fallback; a static line under reduced motion.
 
 ## Layout
 
-- `extension.js` — entry point: wires `dbus.js` → `states.js` → `view.js`.
-- `dbus.js` — the `org.myna.Dictation` proxy + name-watch lifecycle. Zero
-  Shell dependency (pure `Gio`/`GLib`) — reused verbatim by `dev-lab/`.
-- `states.js` — pure wire-state → descriptor mapping (`{key, statusText,
-  severity, hidden}`); the stable, unit-tested contract layer.
-- `view.js` — the `IndicatorView` seam. A redesign replaces one file
-  (`hud.js`) and this factory; nothing else moves.
-- `hud.js` + `hudLogic.js` — the current view: `hud.js` is the Shell/Clutter
-  actor; `hudLogic.js` is the pure, unit-tested logic factored out of it
-  (icon/colour choice, auto-dismiss/replace-in-place rules, and which state
-  transitions force a wave-ribbon phase change). Placement is not in either
-  file any more: the pill is bottom-centred declaratively by a
-  `Layout.MonitorConstraint` plus `stylesheet.css`'s `margin-bottom`.
-- `vumeter.js` — pure RMS/peak → calibrated loudness envelope + stale-decay;
-  reused unchanged by `ribbon.js`.
-- `ribbon.js` — pure wave-ribbon strand/control-point generation and the 5
-  lifecycle-phase timing functions (unfold/flow/morph/complete).
-- `shellCompat.js` — the Shell-version-varying API surface, in one place:
-  the accent palette, the reduced-motion preference, `St.BoxLayout`'s
-  direction property and unredirect control all moved between 46 and 51.
-  Everything is resolved by *capability* detection, never a version number.
-- `shellCompatLogic.js` — its pure half, split out for the reason
-  `hudLogic.js` was: the seam imports `St` and `Meta`, which live in
-  mutter's and gnome-shell's private typelibs and so are unreachable from
-  the headless suite.
-- `accent.js` — pure accent palette resolution from GSettings. On Shell 47+
-  the shipped HUD uses native `St.Settings` and CSS accent colours instead;
-  on 46, where neither exists, `shellCompat.js` resolves the palette through
-  this. Also used by the standalone `dev-lab/`.
-- `ribbonPaint.js` — the shared Cairo drawing function, toolkit-agnostic
-  (no Shell/Gtk import) — used unmodified by both `hud.js` and `dev-lab/`.
-  Also owns the **shared tuning tables** (gradient stops, glow/feather
-  passes, billow/taper shapes, per-role thickness and alpha) that the GPU
-  path bakes into its shader, so both renderers are driven by one set of
-  numbers.
-- `ribbonGlsl.js` — **generates** the GPU path's GLSL fragment shader from
-  those same tables (the default renderer, see below). A generator rather
-  than a `.glsl` file so the constants are read from the one place they are
-  defined; no build step, it is an ordinary ES module returning a string.
-- `ribbonShader.js` — `ShaderRibbonActor`, a `Clutter.ShaderEffect`-based
-  drop-in for `hud.js`'s Cairo `WaveRibbonActor`, exposing the identical
-  API. The shipped default; Shell-only (see below).
-- `stylesheet.css` — pill/icon/label/ribbon styling, including the severity
-  and high-contrast colour classes.
-- `dev-lab/` — a standalone GTK4+libadwaita tuning app for the Cairo wave
-  ribbon, **not part of the shipped bundle** (see `dev-lab/README.md`).
-- `dev-lab-gpu/` — the same for the GPU renderer: a Python `Gtk.GLArea` lab
-  plus a headless, display-free render check that compiles and rasterizes
-  the generated shader on a real driver. It can also publish
-  `org.myna.Dictation` itself, so the sliders drive the **real HUD** in a
-  live session without a microphone or a model. Python only because the raw
-  GL entry points a standalone GL area needs are not introspectable and so
-  are unreachable from gjs; JS still owns the shader, the model and the
-  uniform packing, handed over as JSON. **Not part of the shipped bundle**
-  (see `dev-lab-gpu/README.md`).
-- `test/*.test.js` — headless GJS tests (`gjs -m test/<name>.test.js`) for
-  everything above except `hud.js` itself.
-- `test/gpu-probe.js` — checks the GPU path's toolkit API is reachable and
-  that Cogl accepts the generated shader. Needs mutter's typelibs, which
-  `test/shell-typelibs.sh` locates.
-- `test/compat-probe.js` — checks `shellCompat.js`'s capability detection
-  against the same real typelibs. See "Testing" below for why it cannot be
-  a headless unit test.
-- `test/entrance-visual.sh` + `test/visual-driver/` - `hud.js`'s
-  *presentation*, driven against a real headless GNOME Shell. **Not part of
-  the shipped bundle.**
-
-## GPU rasterization
-
-The Shell HUD rasterizes the ribbon on the GPU (`ribbonShader.js`) as a
-per-pixel distance field. Fall back to the Cairo painter with an environment
-variable:
-
-```sh
-MYNA_SHELL_CAIRO_RIBBON=1
-```
-
-**Cairo remains the reference implementation**, and is kept rather than
-deleted because:
-
-- **GNOME Shell 46 and 50 have no GPU path at all.** `ribbonShader.js` overrides
-  `ClutterShaderEffectClass::get_static_snippet`, which arrived in mutter
-  51.alpha (`2d5bc0fbff`, "clutter/shader-effect: Port to CoglSnippet"); the
-  same commit added `clutter_shader_effect_set_uniform_float`, the only
-  introspectable way to push a `vec2`/`vec3`/`vec4` from GJS. On mutter 46
-  and 50 neither exists, so `hud.js` selects Cairo automatically —
-  `ribbonShaderSupported()` registers the effect subclass behind a try/catch
-  and logs once when it cannot. That registration is deliberately *lazy*: at
-  module scope the throw would abort the `import` and take the whole
-  extension down, before `MYNA_SHELL_CAIRO_RIBBON` could ever be read.
-- `dev-lab/` cannot use the GPU path. GTK4's `GskGLShader` was deprecated in
-  4.16 and no longer renders at all — both its Cairo and GPU paths now fill
-  the node with hot pink (`#FF69B4`) as a "missing shader" marker. Its
-  replacement, `GtkGLArea`, needs raw `epoxy`/`glCreateShader` calls that
-  are not introspectable and so are unreachable from `gjs`. The Cairo
-  painter is therefore the only renderer the tuning app can share.
-- The headless tests paint into a real `Cairo.ImageSurface`; GLSL has no
-  equivalent that runs without a GL context.
-- On llvmpipe (VMs, some installs) the "GPU" path is still the CPU, so the
-  fallback is also the escape hatch if the shader ever misbehaves on a
-  particular driver.
-
-Only *rasterization* moves. `computeRibbonModel` — the phase state machine,
-the envelope smoothing, the amplitude response curve — stays pure JS and
-stays the single authority for what to draw. The shader regenerates each
-strand's sine analytically from the parameters the model now reports
-(`amplitude`/`phaseOffset`/`delayMs`/`speedScale`) rather than from
-constants of its own, and `test/ribbonGlsl.test.js` asserts both that those
-regenerated points match the model's own and that every `#define` still
-equals its JS original — so a retune of either renderer cannot silently
-desynchronize them.
-
-It also gets a *better* result for the soft passes: `paintGlow`'s stacked
-strokes exist only because "Cairo has no native blur", and its own comments
-note they band visibly on a near-flat curve. The shader evaluates them as
-summed Gaussians, which is what the stack was approximating.
-
-`Shell.GLSLEffect` is **not** used — it was removed from gnome-shell in
-`30f545eb00` ("Remove GLSLEffect — now that everything uses
-ClutterShaderEffect"). `Clutter.ShaderEffect` + `Cogl.Snippet` is the
-supported path, and is what the Shell's own `js/ui/lightbox.js` vignette
-uses from JS.
-
-## Shell compatibility
-
-One bundle covers Shell 46 → 51. Four APIs move inside that range, and
-`shellCompat.js` owns all four. Each is chosen by asking the toolkit what it
-has — `'accentColor' in St.Settings.get()`, `'orientation' in
-St.BoxLayout.prototype` — rather than by comparing `Config.PACKAGE_VERSION`,
-because downstreams backport and a property that is there is there.
-
-| What | 46 | 47+ |
-| --- | --- | --- |
-| Accent palette | no `accent-color` anywhere — `accent.js` resolves it from GSettings, landing on the documented Ubuntu orange | `St.Settings.accent-color`, resolved by CSS's `-st-accent-color` |
-| Reduced motion | `enable-animations` (inverted) | `reduced-motion` |
-| `St.BoxLayout` direction | `vertical: bool` | `orientation: Clutter.Orientation` |
-| Unredirect | `Meta.{disable,enable}_unredirect_for_display(global.display)` | `global.compositor.{disable,enable}_unredirect()` |
-
-Two of these fail *loudly and totally* rather than degrading, which is why
-the seam exists at all: connecting to `notify::accent-color` on a 46
-`St.Settings`, or passing `orientation` to a 46 `St.BoxLayout`, throws out of
-the ribbon actor's constructor — so the pill is never built and the HUD is
-simply absent, with only a backtrace in the journal to say why.
-
-The accent one is quieter and worth spelling out. `_getThemePalette()` asks
-the theme node for `-myna-ribbon-*-color`, which the stylesheet defines in
-terms of `-st-accent-color`; where St has no such keyword the lookup reports
-not-found, and the pre-fix behaviour was to return `null` and paint
-*nothing*. A ribbon-shaped hole, no error. Pre-47 the actors now skip that
-lookup entirely — it cannot succeed, and asking once per frame would also
-make St re-parse a value it has no keyword for — and take
-`shellCompat.js`'s palette instead. Both renderers accept it without
-conversion: `ribbonPaint.js`'s `colorToRgbFloat` already took hex as
-readily as a resolved colour object.
-
-The GPU ribbon is a fifth difference, but it predates this and handles
-itself: `ribbonShaderSupported()` finds no `get_static_snippet` vfunc on
-mutter 46 and falls back to Cairo. See "GPU rasterization" above.
+- `extension.js` — entry point: wires the host and the `org.myna.Shell`
+  presence name.
+- `host.js` — the stateful glue: spawn, adopt, dock-type, position,
+  supervise. Composes the pure modules below.
+- `place.js` — pure placement math (bottom-centre + shrink-above-dock).
+- `resolve.js` — pure launch resolution (`$MYNA_HUD_BINARY` →
+  `snap run myna.hud`).
+- `respawn.js` — pure respawn policy (bounded backoff → dormancy).
+- `presence.js` — owns `org.myna.Shell` for exactly as long as enabled,
+  fail-soft.
+- `dockStrutsConsumer.js` — follows `Main.layoutManager.dashToDockStruts`
+  (the dash-to-dock reserved-extent export) so the pill is never covered by
+  an auto-hide bottom dock.
+- `metadata.json` — declares Shell 50/51.
+- `test/*.test.js` — headless GJS contract tests (`gjs -m test/<name>.test.js`)
+  for the pure modules above; no Shell needed.
 
 ## Compositor behaviour
 
-`hud.js` runs on GNOME Shell's single main loop, the loop that composites
-every frame, so it follows the same rules `ui/osdWindow.js` does:
+- **Launch through `Meta.WaylandClient`** so the renderer inherits the
+  compositor's Wayland socket (the child connects via `WAYLAND_SOCKET`, the
+  normal path for a confined GTK app) and its window can be adopted with
+  `owns_window`.
+- **Adoption on `map`** (the `window_manager` signal DIN uses), with
+  `owns_window` guarded against the X11-window exception; a window that
+  unmaps at idle and re-maps is re-adopted, and an `unmanaged` handler
+  clears tracking so the fresh window is adopted rather than rejected.
+- **Focus safety**: the adopted window is DOCK-typed (mutter forces
+  `takes_focus = FALSE`), never focused on map, and the renderer's surface
+  input region is empty in every state — typing into the focused
+  application is never interrupted.
+- **Overview**: the window's actor is reparented into
+  `Main.layoutManager.uiGroup` while the overview shows, so the HUD persists
+  over it (the dock mechanism).
+- **No synchronous work on the main loop** that isn't drawing; all signal
+  handlers are owner-tracked via `connectObject`/`disconnectObject`, so
+  teardown cannot leak.
 
-- **The actor tree is built when the view is constructed**, at `enable()`,
-  and reused for every session. `show()`/`hide()` only fade opacity and flip
-  `visible`, and a `show()` landing inside the 200 ms fade-out picks the pill
-  up where that fade left it rather than re-running the entrance over an
-  actor the user can still see. Building it on the first `show()` instead put
-  actor construction, a GSettings open and a full CSS resolve in the very
-  frame the pill was trying to appear in; `ui/osdWindow.js` builds its OSD at
-  startup for the same reason.
-- **No overshooting easing mode on `opacity`.** Clutter's animatable path
-  feeds the interpolated value through `g_value_get_uint` into a `guint8`
-  setter, which truncates rather than clamps - so an `EASE_OUT_BACK` peak of
-  ~280 wraps to 24 and blanks the actor. Scale is a double and overshoots
-  safely, so the entrance eases the two on separate modes.
-- **The ribbon animates off the actor's frame clock** (a `Clutter.Timeline`
-  bound to the actor), not a `GLib.timeout_add`. A fixed 24 Hz timer against
-  a 60 Hz output beats against vsync and reads as juddering motion. The
-  timeline also idles automatically whenever the ribbon is unmapped, so a
-  hidden HUD and a critical error (which hides the ribbon) both cost nothing.
-- **Raised above its chrome siblings on every present.** Chrome paints in
-  insertion order, and the Ubuntu dock re-adds itself on every re-track, so
-  landing above it once proves nothing. With a bottom dock in its
-  non-reserving (intellihide) state the two overlap, and without the raise the
-  pill is completely hidden behind the dock. `osdWindow.js` raises itself the
-  same way, for the same reason. Placement stays on the *work area*, so a dock
-  that does reserve space is cleared rather than drawn over.
-- **Unredirect disabled while the pill is on screen**, balanced on hide
-  (`shellCompat.js` picks the spelling this Shell has). Over a fullscreen
-  window mutter may scan the window out directly, and an overlay appearing
-  forces it in and out of that path.
-- **Nothing per-frame that isn't drawing.** `St.Settings` invalidates the
-  native CSS accent colours and reduced-motion state only when they change,
-  and `_applyDescriptor` only writes an icon name, label or style class when
-  it actually changed (each write invalidates St's theme node).
-- **No synchronous D-Bus.** `dbus.js` builds its proxy with
-  `Gio.DBusProxy.new`, cancelling an in-flight construction on `disable()`.
-  The `new_sync` it replaced blocked the whole desktop on the daemon's
-  initial `GetAll`, at exactly the moment the pill was about to appear.
-
-Verified against a real GNOME Shell rather than asserted, and the parts of
-that which are mechanical now run as `test/entrance-visual.sh` (below).
+The live compositor behaviour (dock typing, focus safety, click-through,
+repositioning) is verified on hardware, not headlessly — the pure modules
+are unit-tested, and the integration is exercised by the on-hardware run
+(T125 / `specs/004-gnome-shell-indicator/quickstart.md`).
 
 ## Testing
 
@@ -259,83 +111,24 @@ cd extensions/myna-shell
 test/run-suite.sh          # everything below, in one go
 ```
 
-`test/run-suite.sh` runs the pure GJS suites (`test/*.test.js`, no Shell),
-then `test/compat-probe.sh` and `test/gpu-probe.sh` (mutter's typelibs), then
-`test/entrance-visual.sh` (a real headless Shell). The last three exit 77 when
-they cannot judge, which the runner treats as a skip.
+`test/run-suite.sh` runs the pure GJS contract suites (`test/*.test.js`),
+which need nothing but `gjs`. It runs in CI as `make test-extension`, in its
+own Workshop (`.workshop/myna-shell.yaml`).
 
-`test/compat-probe.sh` is the counterpart to the compatibility table above: it
-checks that `shellCompat.js`'s detection agrees with the `St` and `Meta` on the
-machine running it, and that whichever signal and property each branch picked
-really exist there. Only a real typelib can catch a detection that says "yes"
-on a Shell that means "no", and that mistake does not degrade — it throws
-inside the ribbon actor's constructor. `test/shellCompat.test.js` covers the
-pure choices headlessly; the two together are why `shellCompatLogic.js` is a
-separate file.
+`test/next-shell.sh` runs the same suite inside a throwaway LXD container of
+Ubuntu 26.10 (Shell 51), since the workshop base only reaches Shell 50.
+`make test-extension-next`; CI runs it as `extension-next`,
+`continue-on-error` — it tracks a development series, so it reports without
+gating a merge on someone else's upload.
 
-It runs in CI as `make test-extension`, in its own Workshop
-(`.workshop/myna-shell.yaml`) rather than the main one. A Workshop SDK cannot
-carry its own base image, so the Shell version a test can reach comes from the
-workshop's base: the main workshop sits on ubuntu@24.04 because that is the
-snap's `core24`, and 24.04's Shell 46 cannot reach the GPU ribbon at all. The
-extension's workshop therefore keeps a newer base.
-
-Since 46 became supported, running `test/run-suite.sh` on a 24.04 desktop
-exercises a branch CI does not otherwise see — the Cairo ribbon, `vertical`
-BoxLayouts, and the pre-47 accent palette. Worth doing by hand on an LTS
-machine after touching `hud.js` or `shellCompat.js`.
-
-### Testing the next Shell
-
-`workshop init` accepts no base newer than ubuntu@26.04, so the workshop
-above is pinned to Shell 50 - the half where `hud.js` falls back to Cairo.
-On its own it never rasterizes a shader, which is how the GPU path came to
-ship broken on Shell 50.
-
-```sh
-make test-extension-next
-```
-
-`test/next-shell.sh` runs the same `run-suite.sh` inside a throwaway LXD
-container of Ubuntu 26.10, which carries Shell 51. LXD and not Docker:
-GNOME Shell reaches logind over the system bus at startup, and a Docker
-container has neither, so the Shell dies before the driver loads and the
-presentation check skips rather than fails. Set `MYNA_SHELL_NEXT_KEEP=1` to
-keep the container.
-
-CI runs it as `extension-next`, `continue-on-error` - it tracks a
-development series and a beta Shell, so it reports when the GPU path breaks
-without gating a merge on someone else's upload.
-
-Pure logic (`states.js`, `vumeter.js`, `ribbon.js`, `accent.js`,
-`hudLogic.js`, `dbus.js`'s lifecycle) is unit-tested headless — including a
-real headless-Cairo smoke check of `ribbonPaint.js` (an `ImageSurface`
-needs no display server). The widget tree in `hud.js` cannot be reached that
-way: GNOME Shell's Clutter fork aborts if you construct an actor outside a
-running compositor.
-
-So `test/entrance-visual.sh` brings a compositor. It stands up a headless
-GNOME Shell on a private bus with a virtual monitor, loads a driver
-(`test/visual-driver/`) that builds the real `HudView` out of the working
-tree, and samples the pill's opacity, visibility and scale once per presented
-frame. What it asserts is *presentation*: that the pill is built before it is
-needed, that its entrance never blanks, and that a session restarting inside
-the previous one's fade-out is picked up rather than re-entered. Everything
-private, torn down on exit, and safe to run on a desktop - it never touches
-the caller's session or dconf.
-
-It skips (exit 77) rather than failing where no Shell can run, or where the
-Shell is too starved to present enough frames to judge - an animation seen at
-three frames could hide a one-frame blank between them, and a guess there is
-worse than an honest skip.
-
-Geometry and colour stay manual-acceptance; see
-`specs/004-gnome-shell-indicator/quickstart.md`.
+Geometry, colour, focus safety and the dock interaction stay
+manual-acceptance; see `specs/004-gnome-shell-indicator/quickstart.md`.
 
 ## Out of scope
 
 Text injection, model/mic selection, translation, transcript display, and
-screen-reader announcements (tracked separately, plan T56) are all out of
-scope for this extension. Public distribution (extensions.gnome.org review,
-Ubuntu archive, or bundling in a snap) is noted as follow-up, not delivered
-here — install today by copying the bundle in-tree per above.
+screen-reader announcements (tracked separately) are out of scope for this
+extension; the HUD rendering itself is the `myna-hud` application, not this
+extension. Public distribution (extensions.gnome.org review, Ubuntu archive,
+or bundling in a snap) is noted as follow-up, not delivered here — install
+today by copying the bundle in-tree per above.

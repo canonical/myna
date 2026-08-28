@@ -1,8 +1,0 @@
-# GPU ribbon dev-lab — see README.md. Not part of the shipped extension.
-#
-# PyGObject (GTK4 + libadwaita) is deliberately absent: it is a system
-# package everywhere this runs, and installing a second copy into a venv
-# tends to mismatch the system typelibs.
-PyOpenGL>=3.1
-numpy>=1.24
-Pillow>=10.0   # only for render_headless.py --out

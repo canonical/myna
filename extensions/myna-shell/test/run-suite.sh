@@ -5,10 +5,12 @@
 #
 # exits 0 when everything that could run passed, non-zero otherwise.
 #
-# Ordered by what each suite needs: the pure GJS contract tests need nothing,
-# compat-probe.sh and gpu-probe.sh need mutter's typelibs, entrance-visual.sh
-# needs a Shell it can start. The last three exit 77 when they cannot judge;
-# that is a skip, and their headers say where each draws the line.
+# The suite is the host's pure GJS contract tests (placement, resolution,
+# respawn, presence, host-composed logic), which need nothing but gjs. The
+# live compositor behaviour the host drives (dock typing, focus safety,
+# click-through, repositioning) escapes unit tests by design — it is
+# verified on hardware (T125 / R28), so there is no headless-Shell harness
+# here anymore.
 #
 # One entrypoint because three callers run this same list - the myna-shell
 # workshop's `gjs-test` action, test/next-shell.sh, and anyone in a checkout.
@@ -19,12 +21,4 @@ cd "$(dirname "$HERE")" || exit 1
 
 for t in test/*.test.js; do
     gjs -m "$t" || exit 1
-done
-
-# `cmd; rc=$?` would not survive a caller running us under `set -e`: a 77
-# aborts at the call itself, before the assignment.
-for check in test/compat-probe.sh test/gpu-probe.sh test/entrance-visual.sh; do
-    rc=0
-    "$check" || rc=$?
-    [ "$rc" -eq 0 ] || [ "$rc" -eq 77 ] || exit "$rc"
 done

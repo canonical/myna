@@ -9,14 +9,14 @@
 # metadata.json declares Shell 50 and 51, and only 50 is reachable from a
 # Workshop: `workshop init` takes ubuntu@20.04, 22.04, 24.04 or 26.04 and
 # nothing newer, so the myna-shell workshop's 26.04 base pins it to Shell 50.
-# That is the half where hud.js falls back to Cairo, so `make test-extension`
-# alone never rasterizes a single shader - which is how the GPU path shipped
-# broken on Shell 50 in the first place.
+# The host's mutter APIs (Meta.WaylandClient.new_subprocess, owns_window,
+# hide_from_window_list, ...) exist in both the mutter 18 (Shell 50) and 51
+# (Shell 51) ABIs, so a suite that passes on 50 must also load on 51.
 #
 # Ubuntu 26.10 (stonking) carries Shell 51, so this borrows a container of it
 # and runs test/run-suite.sh inside. Nothing but gjs, gnome-shell and
-# dbus-run-session is installed: the suite needs no display server of its
-# own, and entrance-visual.sh brings its own private session.
+# dbus-run-session is installed: the host's pure GJS suites need no display
+# server of their own.
 #
 # It is a development series, so it will break for reasons that are not ours.
 # Treat a failure here as a question, not a verdict - CI runs it non-blocking

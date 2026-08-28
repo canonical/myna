@@ -64,14 +64,13 @@ jobs:
 
   # The same suites against the NEXT GNOME Shell. Workshop cannot reach it -
   # `workshop init` takes no base newer than ubuntu@26.04 - so the job above
-  # only ever sees Shell 50, where hud.js falls back to Cairo and no shader
-  # is rasterized at all. Ubuntu 26.10 carries Shell 51, and LXD (not a
+  # only ever sees Shell 50. Ubuntu 26.10 carries Shell 51, and LXD (not a
   # Docker container: GNOME Shell needs logind on a system bus) can host it.
   #
   # Non-blocking on purpose. It tracks a development series and a beta Shell,
   # so it will break for reasons that are not ours; it is here to say when
-  # the GPU path stops working, not to gate a merge on someone else's
-  # upload.
+  # the host's mutter API usage stops loading, not to gate a merge on
+  # someone else's upload.
   extension-next:
     runs-on: ubuntu-latest
     continue-on-error: true

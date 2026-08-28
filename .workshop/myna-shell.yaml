@@ -8,19 +8,15 @@
 #
 #   - client/ + server/ ship in a snap on `core24`, so the main workshop's
 #     ubuntu@24.04 base is what we ship, and must stay there.
-#   - extensions/myna-shell ships to a GNOME desktop, and its metadata.json
-#     declares Shell 46/50/51. 24.04 has 46 (the 2026-08-27 backport added
-#     it), so the presentation check does now run there - but only against
-#     the Cairo half. The GPU ribbon needs the CoglSnippet ShaderEffect API,
-#     which arrived in mutter 51.alpha and which no 24.04 archive has or can
-#     have (Shell 50 wants mutter 50, gjs 1.86, glib 2.86).
+#   - extensions/myna-shell ships to a GNOME desktop. Its metadata.json
+#     declares Shell 50/51, which no 24.04 archive has or can have (Shell 50
+#     wants mutter 50, gjs 1.86, glib 2.86). The host's pure GJS suites need
+#     nothing but gjs, so this workshop provides the Shell version the
+#     extension actually targets.
 #
-# So the extension gets a base that ships a Shell close enough to reach the
-# GPU path's half of the code, and the daemon keeps the base it ships on.
-# Note what this base does NOT cover any more: since 46 became supported,
-# `entrance-visual.sh` on a 24.04 host exercises a genuinely different branch
-# of hud.js (Cairo ribbon, `vertical` BoxLayouts, the pre-47 accent palette).
-# CI only sees that branch where a developer runs the suite on an LTS desktop.
+# So the extension gets a base that ships a Shell it supports, and the daemon
+# keeps the base it ships on. Porting the extension backwards to an older Shell
+# would collapse the two again; until then, this tests what we ship.
 name: myna-shell
 base: ubuntu@26.04
 sdks:
@@ -30,22 +26,16 @@ sdks:
 # The extension's own suites. Mirrors the `myna` workshop's action style: bash,
 # run as the workshop user with the project mounted at /project.
 actions:
-  # The pure GJS contract tests (state to visual-intent mapping, stub-proxy
-  # lifecycle, ribbon/vumeter/accent maths) need no Shell at all. Then the
-  # ribbon's GPU path against mutter's own typelibs, and the HUD's
-  # *presentation* against a real headless Shell: Clutter easing on a real
-  # frame clock, which the pure suites above cannot see.
-  #
-  # entrance-visual.sh exits 77 when it cannot measure - no Shell, a Shell
-  # outside the extension's supported range, or one too starved to present
-  # enough frames to judge. That is a skip, not a failure; its header explains
-  # where it draws each of those lines.
+  # The host's pure GJS contract tests (placement, binary resolution, respawn
+  # policy, presence lifecycle, host-composed logic) need no Shell at all.
+  # The live compositor behaviour the host drives (dock typing, focus safety,
+  # click-through, repositioning) is verified on hardware, not headlessly
+  # (T125/R28).
   gjs-test: |
     /project/extensions/myna-shell/test/run-suite.sh
 
   # The Shell this base actually provides, against the range the extension
-  # declares. Worth a named action because a mismatch is what makes gjs-test
-  # skip its most valuable half, silently and without failing.
+  # declares.
   shell-version-probe: |
     gnome-shell --version
     sed -n 's/.*"shell-version": *\[\([^]]*\)\].*/\1/p' /project/extensions/myna-shell/metadata.json

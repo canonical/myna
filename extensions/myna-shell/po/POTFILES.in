@@ -1,4 +1,0 @@
-# List of source files containing translatable strings, one per line, relative
-# to the extension package root (extensions/myna-shell). Keep in sync with the
-# files that call gettext (`_`, `ngettext`, `pgettext`).
-states.js
