@@ -157,6 +157,16 @@ impl HudWindow {
         self.pill.set_high_contrast_override(value);
     }
 
+    /// Current wire state (for lab sync when HUD auto-dismisses locally).
+    pub fn current_wire_state(&self) -> String {
+        self.pill.current_wire_state()
+    }
+
+    /// Current descriptor (for lab sync).
+    pub fn current_descriptor(&self) -> crate::states::Descriptor {
+        self.pill.current_descriptor()
+    }
+
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and
