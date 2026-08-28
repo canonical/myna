@@ -21,7 +21,7 @@ use super::{Indicator, IndicatorState};
 /// A `notify-rust`-backed indicator: one updating toast per dictation session.
 #[derive(Debug, Default)]
 pub struct NotifyIndicator {
-    /// App-name summary shown on every toast.
+    /// App name shown on every toast (`appname` field, not the `summary`).
     app_name: String,
     /// The live notification's id, so state changes *replace* it rather than
     /// stack a new toast each transition. Cleared on `Hidden`.
@@ -70,8 +70,9 @@ impl NotifyIndicator {
         let id = self.id;
         tokio::task::spawn_blocking(move || {
             let mut n = Notification::new();
-            n.summary(&app)
-                .body(&format!("{summary}\n{body}"))
+            n.appname(&app)
+                .summary(&summary)
+                .body(&body)
                 // Persistent while active: it lives for the utterance, then we
                 // close/replace it — it must not self-dismiss mid-dictation.
                 .timeout(Timeout::Never)
@@ -103,7 +104,7 @@ impl NotifyIndicator {
         let app = self.app_name.clone();
         let _ = tokio::task::spawn_blocking(move || {
             // Re-address the existing toast by id, then close it.
-            if let Ok(handle) = Notification::new().summary(&app).id(id).show() {
+            if let Ok(handle) = Notification::new().appname(&app).id(id).show() {
                 handle.close();
             }
         })
