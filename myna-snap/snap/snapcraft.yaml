@@ -219,7 +219,7 @@ parts:
   # would install exists. A nil part + explicit toolchain is deterministic.
   rust-deps:
     plugin: nil
-    build-snaps:
+    build-packages:
       - rustup
     override-pull: |
       rustup default stable
