@@ -34,15 +34,15 @@ fn x19_icon_by_severity() {
 }
 
 // --- FR-007a/FR-007b: auto-dismiss behavior by severity --------------------
-// Since 2026-08-28 both severities auto-dismiss with a dynamic hold
-// (notice_slot::hold_ms_for) — even critical errors return to idle after
-// their interval. Notifier-side timeout only; the server never drives
-// the idle transition.
+// Only Recoverable (notice) auto-dismisses locally; Critical (error)
+// stays until server publishes new state. Server auto-dismisses notice
+// after longer hold, client keeps showing for even longer (slower reading)
+// and ignores server idle until its own timer completes.
 
 #[test]
 fn auto_dismiss_by_severity() {
     assert!(severity_auto_dismisses(Some(Severity::Recoverable)));
-    assert!(severity_auto_dismisses(Some(Severity::Critical)));
+    assert!(!severity_auto_dismisses(Some(Severity::Critical)));
     assert!(
         !severity_auto_dismisses(None),
         "non-problem states have no auto-dismiss concept"

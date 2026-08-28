@@ -122,6 +122,7 @@ impl ClientRegistry {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     fn snapshot(&self) -> HashSet<String> {
         self.clients
             .lock()

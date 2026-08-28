@@ -86,14 +86,17 @@ impl NotifyIndicator {
         }
     }
 
-    /// Dynamic hold for an error body, mirroring HUD `hold_ms_for` /
-    /// GNOME Shell gdm `_getIntervalForMessage` (48 ms/char, ≥3.5 s, ≤10 s).
+    /// Dynamic hold for a notice body, mirroring HUD `hold_ms_for` but
+    /// slower reading than server (60 ms/char, ≥8000, ≤15000). Only
+    /// `notice` (recoverable) auto-dismisses locally; `error` stays.
+    /// Server auto-dismisses `notice` after `server_hold_ms_for` (48 ms/char,
+    /// ≥6000); client keeps showing, ignoring server `idle` until this timer.
     fn hold_ms_for(body: &str) -> u64 {
         let len = body.chars().count() as f64;
-        const PER_CHAR_MS: f64 = 48.0;
-        const MIN_MS: f64 = 3500.0;
-        const MAX_MS: f64 = 10_000.0;
-        (len * PER_CHAR_MS).max(MIN_MS).min(MAX_MS) as u64
+        const PER_CHAR_MS: f64 = 60.0;
+        const MIN_MS: f64 = 8000.0;
+        const MAX_MS: f64 = 15_000.0;
+        (len * PER_CHAR_MS).clamp(MIN_MS, MAX_MS) as u64
     }
 
     /// Show or replace the lifecycle toast, returning the (possibly new)
@@ -176,16 +179,31 @@ impl NotifyIndicator {
 #[async_trait]
 impl Indicator for NotifyIndicator {
     async fn set_state(&mut self, state: IndicatorState) {
+        // Keep notice visible for its whole local hold, ignoring server idle
+        // until the timer completes. Only `recoverable` (notice) auto-dismisses
+        // locally; `critical` (error) stays until server publishes new state.
+        let is_notice = matches!(
+            &state,
+            IndicatorState::Error {
+                recoverable: true,
+                ..
+            }
+        );
+        let is_error = matches!(&state, IndicatorState::Error { .. });
         match toast_text(&state) {
             Some((summary, body)) => {
-                let error = matches!(state, IndicatorState::Error { .. });
                 self.abort_pending();
-                self.id = self.show(summary, body.clone(), error).await;
-                if error {
+                self.id = self.show(summary, body.clone(), is_error).await;
+                if is_notice {
                     self.schedule_auto_hide(&body);
                 }
             }
             None => {
+                // `Hidden` from server auto-dismiss of a notice — keep
+                // showing locally until our own timer completes.
+                if self.pending_hide.is_some() {
+                    return;
+                }
                 self.abort_pending();
                 self.close().await;
                 self.id = None;
@@ -194,6 +212,9 @@ impl Indicator for NotifyIndicator {
     }
 
     async fn hide(&mut self) {
+        if self.pending_hide.is_some() {
+            return;
+        }
         self.abort_pending();
         self.close().await;
         self.id = None;

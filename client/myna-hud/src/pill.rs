@@ -236,6 +236,51 @@ impl Pill {
     /// window's concern (its opacity is bound to the pill's visibility).
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let now = self.now_ms();
+        // Server auto-dismisses `notice` after its own longer hold. Client
+        // keeps showing for its own minimum (slower reading) and ignores
+        // server `idle` until that minimum completes, unless a new
+        // non-idle state arrives (which replaces immediately).
+        if descriptor.hidden {
+            let (is_showing, expires_at) = {
+                let state = self.state.borrow();
+                (state.notice.is_showing(now), state.notice.expires_at())
+            };
+            if is_showing {
+                if let Some(expires_at) = expires_at {
+                    // Still within client's minimum for a `notice` — keep
+                    // showing and schedule the idle for the remaining time.
+                    let remaining = (expires_at - now).max(0.0) as u64;
+                    let this_weak = Rc::downgrade(self);
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(remaining),
+                        move || {
+                            if let Some(this) = this_weak.upgrade() {
+                                // Only go idle if still the same notice (no
+                                // replacement in the meantime).
+                                let still = {
+                                    let s = this.state.borrow();
+                                    s.notice.expires_at() == Some(expires_at)
+                                        && s.notice.is_showing(this.now_ms())
+                                };
+                                if still {
+                                    this.apply_descriptor(crate::states::state_to_descriptor(
+                                        None, "",
+                                    ));
+                                    if let Some(root) = this.pill.root() {
+                                        if let Some(window) = root.downcast_ref::<gtk::Window>() {
+                                            if window.has_css_class("myna-hud-window") {
+                                                window.set_visible(false);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    );
+                }
+                return;
+            }
+        }
         {
             let mut state = self.state.borrow_mut();
             if descriptor.severity.is_some() {
@@ -372,39 +417,6 @@ impl Pill {
             let Some(this) = this.upgrade() else {
                 return glib::ControlFlow::Break;
             };
-
-            // A held notice (any severity) auto-dismisses after its
-            // dynamic hold window. Timeout is notifier-side only: it
-            // starts when the notice is shown and a replacement restarts
-            // it. With multiple Dictation clients the server never drives
-            // the idle transition — each HUD owns its timer locally, so a
-            // new error publish will re-show even if the server still
-            // reports `error`.
-            let now = this.now_ms();
-            let expired = {
-                let state = this.state.borrow();
-                state.notice.severity().is_some() && !state.notice.is_showing(now)
-            };
-            if expired {
-                // Return to idle locally and hide the overlay window.
-                // `apply_descriptor` with `None` clears the notice, sets
-                // the descriptor to hidden, and updates the pill chrome.
-                this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
-                // The pill does not own the toplevel window — hide it via
-                // the widget's root. `HudWindow::apply_descriptor` does
-                // the same, but this tick is the only path that returns to
-                // idle without a new bus publish. Only hide the HUD overlay
-                // window (`myna-hud-window`), not the lab's ApplicationWindow
-                // when the pill is embedded as a preview.
-                if let Some(root) = this.pill.root() {
-                    if let Some(window) = root.downcast_ref::<gtk::Window>() {
-                        if window.has_css_class("myna-hud-window") {
-                            window.set_visible(false);
-                        }
-                    }
-                }
-            }
-
             if this.ribbon.is_visible() {
                 this.ribbon.queue_render();
             }

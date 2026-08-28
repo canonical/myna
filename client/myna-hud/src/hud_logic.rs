@@ -31,16 +31,15 @@ pub fn icon_for_severity(severity: Option<Severity>) -> &'static str {
 }
 
 /// Whether a held notice of this severity auto-dismisses on its own.
-/// Historically only `recoverable` auto-dismissed (R15) and `critical`
-/// persisted (X22). Since 2026-08-28 both severities auto-dismiss with a
-/// dynamic hold (`notice_slot::hold_ms_for`) that starts when the notice is
-/// shown — even critical errors return to idle — and a replacement restarts
-/// the window in full. Notifier-side timeout only: with multiple Dictation
-/// clients the server does not drive the idle transition.
+/// Only `Recoverable` (`notice`) auto-dismisses locally after its dynamic
+/// hold; `Critical` (`error`) stays until the server publishes a new state.
+/// The server auto-dismisses `notice` after a longer hold, but the client
+/// keeps showing for its own (even longer, slower reading) hold, ignoring
+/// the server's `idle` until its timer completes.
 ///
 /// Port of `hudLogic.js`'s `severityAutoDismisses`.
 pub fn severity_auto_dismisses(severity: Option<Severity>) -> bool {
-    severity.is_some()
+    severity == Some(Severity::Recoverable)
 }
 
 /// Whether an incoming descriptor should replace an already-held notice in
