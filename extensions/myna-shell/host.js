@@ -113,6 +113,8 @@ export class OverlayHost {
         // per-adoption token.
         global.window_manager.disconnectObject(this);
         Main.overview.disconnectObject(this);
+        global.display.disconnectObject(this);
+        global.backend.get_monitor_manager?.()?.disconnectObject(this);
         this._disconnectWindowSignals();
 
         // Cancel the current subprocess wait so its promise rejects as
