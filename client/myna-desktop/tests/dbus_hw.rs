@@ -121,3 +121,82 @@ async fn shell_presence_round_trips_and_suppresses_the_fallback() {
         "C13: the probe sees the name vanish"
     );
 }
+
+/// A minimal consumer proxy for the served interface's methods.
+#[zbus::proxy(
+    interface = "org.myna.Dictation",
+    default_service = "org.myna.Dictation",
+    default_path = "/org/myna/Dictation"
+)]
+trait DictationMethods {
+    fn start(&self) -> zbus::Result<(bool, String)>;
+    fn stop(&self) -> zbus::Result<()>;
+    fn toggle(&self) -> zbus::Result<()>;
+}
+
+/// C6 on the wire: the served `Toggle` method feeds a `DbusTrigger` — a
+/// `Toggle` while idle yields a `Press` edge, another `Toggle` while active
+/// yields a `Release` (P9), and duplicate `Start`s do not start two sessions
+/// (P10).
+#[tokio::test]
+async fn served_toggle_method_feeds_the_trigger() {
+    if !dbus_enabled() {
+        return;
+    }
+
+    let (mut trigger, source) = myna_desktop::shortcut::dbus::DbusTrigger::new();
+    // The well-known name is process-wide: the sibling singleton-lock test may
+    // already own it (cargo runs test fns concurrently). If so, the wire
+    // round-trip here cannot run — skip it rather than fighting over the name;
+    // the trigger's own logic is covered hermetically in tests/dbus_trigger.rs.
+    let owner = match ZbusBus::serve_with_trigger(Some(source)).await {
+        Ok(owner) => owner,
+        Err(ServeError::AlreadyRunning { .. }) => {
+            eprintln!("skipping served_toggle: another test owns the name");
+            return;
+        }
+        Err(other) => panic!("serve_with_trigger failed: {other}"),
+    };
+    let _owner = owner;
+
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");
+
+    // Toggle while idle -> Press.
+    proxy.toggle().await.expect("Toggle on");
+    let edge = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        myna_orchestrator::Trigger::next_edge(&mut trigger),
+    )
+    .await
+    .expect("Press edge arrives");
+    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Press));
+
+    // Toggle while active -> Release.
+    proxy.toggle().await.expect("Toggle off");
+    let edge = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        myna_orchestrator::Trigger::next_edge(&mut trigger),
+    )
+    .await
+    .expect("Release edge arrives");
+    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Release));
+
+    // Duplicate Start while active -> no second Press (P10).
+    let (ok, reason) = proxy.start().await.expect("Start");
+    assert!(ok && reason.is_empty(), "Start reports success (C7 shape)");
+    let edge = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        myna_orchestrator::Trigger::next_edge(&mut trigger),
+    )
+    .await
+    .expect("Start -> Press");
+    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Press));
+    proxy.start().await.expect("Start again");
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        myna_orchestrator::Trigger::next_edge(&mut trigger),
+    )
+    .await
+    .expect_err("a duplicate Start must NOT start a second session");
+}

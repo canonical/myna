@@ -65,13 +65,41 @@ impl ServedState {
 }
 
 /// The `org.myna.Dictation` object. Properties read the shared [`ServedState`]
-/// (updated by the publisher through the [`Bus`] seam).
+/// (updated by the publisher through the [`Bus`] seam); the `Start`/`Stop`/
+/// `Toggle` methods feed a [`DbusTriggerSource`] when one is attached (the
+/// panel-button activation path, P9–P12/C6), and are otherwise no-ops.
 struct DictationObject {
     served: Arc<Mutex<ServedState>>,
+    trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
 }
 
 #[zbus::interface(name = "org.myna.Dictation")]
 impl DictationObject {
+    /// `Start`: begin a session (a Press edge for the trigger — C6).
+    async fn start(&self) -> (bool, String) {
+        if let Some(trigger) = &self.trigger {
+            trigger.start();
+        }
+        // The reason is content-free and this object is only a surface; a
+        // startability refusal (C7/P11) is signalled upstream before the
+        // trigger is pushed, so here it always succeeds.
+        (true, String::new())
+    }
+
+    /// `Stop`: end the session (a Release edge — C6).
+    async fn stop(&self) {
+        if let Some(trigger) = &self.trigger {
+            trigger.stop();
+        }
+    }
+
+    /// `Toggle`: Start if idle, else Stop (the panel-button action, C6).
+    async fn toggle(&self) {
+        if let Some(trigger) = &self.trigger {
+            trigger.toggle();
+        }
+    }
+
     #[zbus(property)]
     async fn state(&self) -> String {
         self.served
@@ -123,6 +151,15 @@ impl ZbusBus {
     /// and the caller falls back to `NotifyIndicator` (P15);
     /// [`ServeError::AlreadyRunning`] means a second daemon and is fatal.
     pub async fn serve() -> Result<Self, ServeError> {
+        Self::serve_with_trigger(None).await
+    }
+
+    /// Like [`serve`](Self::serve), but attaches a [`DbusTriggerSource`] so
+    /// the served `Start`/`Stop`/`Toggle` methods feed the panel-button
+    /// trigger (T140/T141).
+    pub async fn serve_with_trigger(
+        trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
+    ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
         conn.object_server()
@@ -130,6 +167,7 @@ impl ZbusBus {
                 OBJECT_PATH,
                 DictationObject {
                     served: Arc::clone(&served),
+                    trigger,
                 },
             )
             .await?;

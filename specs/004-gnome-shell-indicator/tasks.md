@@ -151,7 +151,7 @@ driver. **Phase B complete (2026-08-26).**
 
 ## Phase I: US4 carried forward (P3, unchanged scope)
 
-- [ ] T140 Hermetic `DbusTrigger` tests + implementation (`client/myna-desktop/src/shortcut/dbus.rs`, C6/C7, P9–P12) — as originally scoped (T040/T042).
+- [X] T140 Hermetic `DbusTrigger` tests + implementation (`client/myna-desktop/src/shortcut/dbus.rs`, C6/C7, P9–P12) — as originally scoped (T040/T042). *(Done 2026-08-27: `src/shortcut/dbus.rs` — `DbusTrigger` (Trigger) + `DbusTriggerSource` with Press/Release alternation and duplicate suppression (P9/P10), content-free `(false, reason)` refused-start shape (P11), clean exhaustion (P12); served object gains `Start`/`Stop`/`Toggle` feeding the source via `serve_with_trigger` (C6); 6 hermetic tests + env-gated wire round-trip in dbus_hw.rs.)*
 - [ ] T141 Optional panel button (host side, `extension.js`/`presence.js`-adjacent) with availability dimming — T041/T043 re-homed; the button consumes `org.myna.Dictation` directly (it is a client like any other).
 
 ## Phase J: Acceptance & gates
