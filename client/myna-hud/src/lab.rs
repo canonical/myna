@@ -21,6 +21,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gettextrs::gettext;
+use gtk::gdk;
 use gtk::glib;
 use gtk4 as gtk;
 use libadwaita as adw;
@@ -234,22 +235,21 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
     // Accent override: libadwaita has no public runtime accent setter (it is
     // a desktop preference), so the lab forces the palette directly. The
-    // options are libadwaita's AccentColor palette, so each renders the way
-    // the real desktop choice would.
-    const ACCENT_LABELS: [&str; 10] = [
-        "default", "blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "slate",
-    ];
-    const ACCENT_HEXES: [&str; 9] = [
-        "#0073e5", "#308280", "#4b8501", "#c88800", "#e95420", "#da3450", "#b34cb3", "#7764d8",
-        "#657b69",
-    ];
-    let accents = gtk::StringList::new(&ACCENT_LABELS);
+    // options are derived from libadwaita's OWN enum + theme rather than
+    // hardcoded: the names come from the AdwAccentColor GType enum nicks,
+    // and each value is resolved at runtime from the theme's CSS
+    // `--accent-<name>` variable — so the list always matches the running
+    // libadwaita (including Ubuntu's Yaru values and any future accents).
+    let accent_options = build_accent_options();
+    let accent_labels: Vec<&str> = accent_options.iter().map(|(n, _)| n.as_str()).collect();
+    let accent_hexes: Vec<Option<String>> = accent_options.iter().map(|(_, h)| h.clone()).collect();
+    let accent_model = gtk::StringList::new(&accent_labels);
     let accent_row = adw::ComboRow::builder()
         .title(gettext("Accent color"))
         .subtitle(gettext(
             "force the pill's accent (libadwaita has no runtime setter)",
         ))
-        .model(&accents)
+        .model(&accent_model)
         .build();
     accent_row.set_selected(0);
 
@@ -262,10 +262,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     accent_row.connect_selected_notify({
         let target = target.clone();
         move |row| {
-            let hex = match row.selected() {
-                0 => None,
-                i => Some(ACCENT_HEXES[(i - 1) as usize].to_string()),
-            };
+            let idx = row.selected() as usize;
+            let hex = accent_hexes.get(idx).cloned().flatten();
             target.borrow().set_accent_override(hex);
         }
     });
@@ -519,4 +517,80 @@ fn sync_preview(preview_holder: &gtk::Box, target: &Target) {
     if let Target::Embedded(pill) = target {
         preview_holder.append(pill.widget());
     }
+}
+
+/// Build the lab's accent-option list from libadwaita itself.
+///
+/// The names come from the `AdwAccentColor` GType enum's member nicks, and
+/// each value is resolved at runtime from the theme's CSS
+/// `--accent-<nick>` custom property (read back from a probe widget's
+/// computed colour) — the same runtime-CSS technique the pill once used,
+/// now confined to the lab. This way the list always matches the running
+/// libadwaita: Ubuntu's Yaru values, any future accent, and the exact
+/// names the enum exposes.
+///
+/// The first option is "default" (no override). Each following option is
+/// `(display label, Some(hex))`.
+pub fn build_accent_options() -> Vec<(String, Option<String>)> {
+    let mut options = vec![("default".to_string(), None)];
+
+    // Enumerate AdwAccentColor's members from its GType.
+    let class = glib::EnumClass::new::<adw::AccentColor>();
+    for member in class.values() {
+        let nick = member.nick();
+        // The theme's CSS variable for this accent: `--accent-blue`, etc.
+        let variable = format!("--accent-{nick}");
+        // A probe widget styled with the variable, read back as a colour.
+        // Needs to be attached to a display to have a style context.
+        let Some(hex) = css_color_hex(&variable) else {
+            // The theme didn't define the variable (older libadwaita):
+            // still list the accent, but without a usable override value.
+            options.push((nick.to_string(), None));
+            continue;
+        };
+        options.push((nick.to_string(), Some(hex)));
+    }
+    options
+}
+
+/// Resolve a CSS custom property's colour (e.g. `--accent-blue`) through the
+/// current theme, as a `#rrggbb` hex. `None` if the property is not defined.
+///
+/// Uses one shared probe widget rooted in a hidden window: the widget's
+/// computed colour is read back after re-loading the provider with the
+/// variable, the way accent_css_probe() demonstrated works synchronously.
+/// A fully transparent result means the theme did not define the variable
+/// (older libadwaita).
+fn css_color_hex(variable: &str) -> Option<String> {
+    let display = gdk::Display::default()?;
+
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(&format!(
+        ".myna-lab-accent-probe {{ color: var({variable}); }}"
+    ));
+    gtk::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    // Root the probe in a (non-app) window so it has a style context. A
+    // window without an application can still compute style once presented.
+    let probe = gtk::Label::new(None);
+    probe.add_css_class("myna-lab-accent-probe");
+    let window = gtk::Window::new();
+    window.set_child(Some(&probe));
+    window.present();
+
+    let color = probe.color();
+    window.close();
+    if color.alpha() <= 0.0 {
+        return None;
+    }
+    Some(format!(
+        "#{:02x}{:02x}{:02x}",
+        (color.red() * 255.0).round() as u8,
+        (color.green() * 255.0).round() as u8,
+        (color.blue() * 255.0).round() as u8
+    ))
 }
