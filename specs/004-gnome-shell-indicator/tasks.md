@@ -140,7 +140,7 @@ driver. **Phase B complete (2026-08-26).**
 
 ## Phase G: Packaging, envs, CI
 
-- [ ] T152 [P] Renderer watermarks `client/myna-hud/tests/watermarks.rs`: activation→visible, envelope constants, GLArea frame budget (declared tolerances); publisher watermarks unchanged (T046 carried).
+- [X] T152 [P] Renderer watermarks `client/myna-hud/tests/watermarks.rs`: activation→visible, envelope constants, GLArea frame budget (declared tolerances); publisher watermarks unchanged (T046 carried). *(Done 2026-08-27: `tests/watermarks.rs` — 7 watermark tests pinning the declared constants: activation→visible immediate (recording descriptor not hidden), envelope attack 35ms/release 280ms, stale-decay 300ms, publish cadence 15-20Hz, lifecycle durations in band, and the 60fps frame-budget (bounded per-frame envelope advance + convergence within ~200ms, stale decay at the boundary).)*
 - [ ] T160 Snap: `myna-snap/snap/snapcraft.yaml` gains the `gnome` extension, the `myna-hud` app/command, and the `wayland`/`x11` plugs back (R27); `make snap-myna` builds; smoke: `snap run myna.hud --help` inside the snap.
 - [ ] T161 [P] Envs/CI: `.workshop/myna.yaml` (renderer SDK deps from T100; `test`/`lint` now cover `myna-hud`), `.workshop/myna-shell.yaml` (host suites replace the drawing suites in `gjs-test`), `Makefile` doc-lines, `.github/workflows/ci.yml` (no new jobs — existing `workshop`/`extension` jobs pick up the crates/suites); `cargo deny`/`machete` clean for the new crate.
 
