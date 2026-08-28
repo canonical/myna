@@ -127,6 +127,19 @@ impl<S: TextSink> TextSink for ReadinessTee<S> {
     }
 }
 
+/// Server-side auto-dismiss for `notice` (recoverable) only: after a longer
+/// hold the server publishes `idle` so late-joining clients don't see a
+/// stale `No speech detected` forever. `error` (critical) stays persistent.
+/// Hold is dynamic per text length, longer than the notifier's previous
+/// hold but shorter than the client's new slower hold.
+fn server_hold_ms_for(reason: &str) -> u64 {
+    let len = reason.chars().count() as f64;
+    const PER_CHAR_MS: f64 = 48.0;
+    const MIN_MS: f64 = 6000.0;
+    const MAX_MS: f64 = 12000.0;
+    (len * PER_CHAR_MS).clamp(MIN_MS, MAX_MS) as u64
+}
+
 /// Publishes `IndicatorState` transitions as `State`/`ErrorMessage` property
 /// updates via the [`crate::dbus::Bus`] seam (P1) — pushed to subscribers with
 /// the standard `PropertiesChanged`, the interface's only signal (contract
@@ -139,7 +152,12 @@ pub struct DbusIndicator {
     readiness: Readiness,
     /// Last published `(state, error_message)` — drives the one-signal-per-
     /// transition dedup and the `ErrorMessage` invariant (set iff error).
-    last: Option<(String, String)>,
+    /// Shared with the pending notice auto-dismiss task so it can check
+    /// whether the notice is still current before publishing `idle`.
+    last: Arc<tokio::sync::Mutex<Option<(String, String)>>>,
+    /// Pending server-side auto-dismiss for a `notice`. Only `notice`
+    /// (recoverable) auto-dismisses on the server; `error` stays.
+    pending_notice_hide: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl DbusIndicator {
@@ -148,8 +166,52 @@ impl DbusIndicator {
         Self {
             bus,
             readiness,
-            last: None,
+            last: Arc::new(tokio::sync::Mutex::new(None)),
+            pending_notice_hide: None,
         }
+    }
+
+    fn cancel_notice_auto_hide(&mut self) {
+        if let Some(h) = self.pending_notice_hide.take() {
+            h.abort();
+        }
+    }
+
+    fn schedule_notice_auto_hide(&mut self, reason: String) {
+        self.cancel_notice_auto_hide();
+        let ms = server_hold_ms_for(&reason);
+        let bus = self.bus.clone();
+        let last = self.last.clone();
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+            // Only auto-dismiss if still the same notice; otherwise a new
+            // state has overwritten `last` and this task should have been
+            // aborted. Check `last` before publishing.
+            {
+                let guard = last.lock().await;
+                let is_still_this_notice =
+                    matches!(&*guard, Some((s, r)) if s == wire_state::NOTICE && r == &reason);
+                if !is_still_this_notice {
+                    return;
+                }
+            }
+            // Publish idle; also clear levels/error as `hide()` does.
+            {
+                let mut bus = bus.lock().await;
+                bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
+                    .await;
+                bus.set_property("State", PropertyValue::Str(wire_state::IDLE.to_string()))
+                    .await;
+                bus.set_property("AudioRms", PropertyValue::F64(0.0)).await;
+                bus.set_property("AudioPeak", PropertyValue::F64(0.0)).await;
+            }
+            // Update `last` to idle so future `publish` dedup is correct.
+            {
+                let mut guard = last.lock().await;
+                *guard = Some((wire_state::IDLE.to_string(), String::new()));
+            }
+        });
+        self.pending_notice_hide = Some(handle);
     }
 
     /// Publish the transition (unless it repeats the current wire state) as
@@ -161,13 +223,21 @@ impl DbusIndicator {
     /// renamed, to avoid an interface break.
     async fn publish(&mut self, state: &str, error_message: &str) {
         let current = (state.to_string(), error_message.to_string());
-        if self.last.as_ref() == Some(&current) {
-            return; // idempotent per wire state (Indicator seam contract)
+        {
+            let guard = self.last.lock().await;
+            if guard.as_ref() == Some(&current) {
+                return; // idempotent per wire state (Indicator seam contract)
+            }
         }
         let is_problem = |s: &str| s == wire_state::ERROR || s == wire_state::NOTICE;
-        let leaving_problem =
-            matches!(&self.last, Some((s, _)) if is_problem(s)) && !is_problem(state);
-        self.last = Some(current);
+        let leaving_problem = {
+            let guard = self.last.lock().await;
+            matches!(&*guard, Some((s, _)) if is_problem(s)) && !is_problem(state)
+        };
+        {
+            let mut guard = self.last.lock().await;
+            *guard = Some(current);
+        }
 
         let mut bus = self.bus.lock().await;
         if is_problem(state) {
@@ -193,10 +263,22 @@ impl Indicator for DbusIndicator {
             _ => String::new(),
         };
         let wire = map_state(&state, self.readiness.ready_seen());
+        let is_notice = wire == wire_state::NOTICE;
+        let is_error = wire == wire_state::ERROR;
+        // Server auto-dismiss only for `notice`; `error` stays persistent.
+        // Cancel any pending notice hide on any state change; a new `notice`
+        // will re-arm with its own reason.
+        self.cancel_notice_auto_hide();
         self.publish(wire, &error_message).await;
+        if is_notice {
+            self.schedule_notice_auto_hide(error_message);
+        } else if is_error {
+            // `error` is persistent — no auto-hide.
+        }
     }
 
     async fn hide(&mut self) {
+        self.cancel_notice_auto_hide();
         self.publish(wire_state::IDLE, "").await;
         // P3: levels and any error reason die with the session.
         let mut bus = self.bus.lock().await;
