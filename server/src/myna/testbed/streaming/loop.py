@@ -5,8 +5,12 @@ Re-decode strategies (local-agreement): the uncommitted window is re-decoded
 on a cadence and the strategy decides what to commit when. Chunked policies
 (SilenceCut, murmure-style — Parakeet TDT): the loop watches the audio for a
 silence/force cut; only then is the region up to the cut decoded *once* and
-committed wholesale — no re-decode, cheapest compute, no unstable text by
-design. Emits 007-contract events (committed finals with
+committed wholesale — no re-decode, so committed text costs one decode per
+chunk. Between cuts, ``partial_cadence_seconds`` re-decodes the tail of the
+uncommitted window for *display* (see [`_chunked_partial`]): committed text is
+untouched by it, and without it a chunked strategy shows nothing until its
+first cut, which at the shipped 15 s arm is most of a minute in the worst
+case. Emits 007-contract events (committed finals with
 monotonic ``segment_index``; unstable finals that supersede the previous
 unstable) and returns the accumulated committed transcript — the caller
 emits ``TranscriptionDone``.
@@ -35,7 +39,8 @@ in a worker thread.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -48,7 +53,7 @@ from myna.core import (
 )
 
 from .strategies import Hypothesis, Word
-from .window import RollingWindow
+from .window import RATE, RollingWindow
 
 MIN_DECODE_S = 0.3  # don't bother decoding sub-300ms tails
 _OVERLAP_LOOKBACK = 12  # words of committed history text-alignment dedupe uses
@@ -193,6 +198,39 @@ def _utterance_edge(text: str, first: bool) -> str:
     return text.lstrip() if first else text
 
 
+async def _chunked_partial(
+    window: RollingWindow,
+    run_decode: Callable[[np.ndarray, float], Awaitable[Hypothesis]],
+    fresh_words: Callable[[list[Word]], list[Word]],
+    tail_seconds: float | None,
+) -> list[Word] | None:
+    """One unstable tick for a chunked strategy — display text only.
+
+    Decodes the whole uncommitted window, so what is shown is always a single
+    self-consistent hypothesis that grows as the speaker talks. ``None`` says
+    "nothing to show this tick": leave whatever is on screen alone rather than
+    blanking it, because an empty decode is more often the encoder faltering
+    on this particular window than the speaker having said nothing.
+
+    ``tail_seconds`` caps the decode at the last N seconds for machines that
+    need the compute back. It is off by default, and it is a real trade, not a
+    free optimisation: the display then shows only those N seconds and drops
+    its head as the window slides. Stitching a longer display out of
+    successive tails was tried and abandoned (2026-08-28) — each tick can only
+    contribute its own first second to the stitched head, and a decode's first
+    second is its least reliable part, so the head accumulated into nonsense
+    ("Many little wrinkles his brow He could Arranged that Satisfactorily")
+    while the full-window decode of the same audio read cleanly.
+    """
+    if tail_seconds and window.window_seconds > tail_seconds:
+        offset = window.end - tail_seconds
+        samples = window.samples()[-int(tail_seconds * RATE) :]
+    else:
+        offset, samples = window.frontier, window.samples()
+    hyp = await run_decode(samples, offset)
+    return fresh_words(hyp.words) or None
+
+
 async def run_streaming_loop(
     audio: AsyncIterator[PcmChunk],
     emit: EventSink,
@@ -201,6 +239,49 @@ async def run_streaming_loop(
     cadence_seconds: float = 1.0,
     window_cap_seconds: float = 30.0,
     overlap_seconds: float = 1.0,
+    partial_cadence_seconds: float | None = None,
+    partial_tail_seconds: float | None = None,
+) -> str:
+    # Every decode in a session runs on this one thread. `asyncio.to_thread`
+    # would use the event loop's default pool, which grows to min(32, cpu + 4)
+    # workers even under a strictly sequential caller — a submit that lands
+    # before the previous worker has released the idle semaphore spawns
+    # another. Harmless at one decode per utterance; at two per second it
+    # reached the cap, and since each thread takes a glibc malloc arena, RSS
+    # climbed ~500 MB over a five-minute session. There is nothing to gain
+    # from a wider pool: decodes here are strictly sequential and ORT already
+    # parallelises inside one.
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="myna-decode")
+
+    async def run_decode(samples: np.ndarray, offset: float) -> Hypothesis:
+        return await asyncio.get_running_loop().run_in_executor(executor, decode, samples, offset)
+
+    try:
+        return await _run(
+            audio,
+            emit,
+            run_decode,
+            strategy,
+            cadence_seconds,
+            window_cap_seconds,
+            overlap_seconds,
+            partial_cadence_seconds,
+            partial_tail_seconds,
+        )
+    finally:
+        executor.shutdown(wait=False)
+
+
+async def _run(
+    audio: AsyncIterator[PcmChunk],
+    emit: EventSink,
+    run_decode: Callable[[np.ndarray, float], Awaitable[Hypothesis]],
+    strategy,
+    cadence_seconds: float,
+    window_cap_seconds: float,
+    overlap_seconds: float,
+    partial_cadence_seconds: float | None,
+    partial_tail_seconds: float | None,
 ) -> str:
     window = RollingWindow(window_cap_seconds, overlap_seconds)
     committed: list[str] = []
@@ -241,7 +322,7 @@ async def run_streaming_loop(
             cut = strategy.observe(window.samples(), window.frontier, window.end)
             if cut is not None and cut - window.frontier >= MIN_DECODE_S:
                 samples = window.region_before(cut)
-                hyp = await asyncio.to_thread(decode, samples, window.frontier)
+                hyp = await run_decode(samples, window.frontier)
                 fresh = fresh_words(hyp.words)
                 text = _join_natural(fresh)
                 if text:
@@ -251,17 +332,27 @@ async def run_streaming_loop(
                 # watermark both advance.
                 committed_through = max(committed_through, cut)
                 window.advance(cut)
-                last_unstable = ""  # I4 (chunked emits no unstable by design)
-            elif window.end - last_decode_end >= cadence_seconds:
+                last_unstable = ""  # I4: the commit resolves the epoch
+            elif window.end - last_decode_end >= (partial_cadence_seconds or cadence_seconds):
                 last_decode_end = window.end
-                await emit(TranscriptionProgress())  # liveness on quiet ticks
+                if partial_cadence_seconds and window.window_seconds >= MIN_DECODE_S:
+                    words = await _chunked_partial(
+                        window, run_decode, fresh_words, partial_tail_seconds
+                    )
+                    text = _utterance_edge(_join_natural(words), not committed) if words else ""
+                    if text:
+                        await emit_unstable(text)
+                    else:
+                        await emit(TranscriptionProgress())
+                else:
+                    await emit(TranscriptionProgress())  # liveness on quiet ticks
             continue
 
         # tick on cadence
         if window.end - last_decode_end < cadence_seconds:
             continue
         last_decode_end = window.end
-        hyp = await asyncio.to_thread(decode, window.samples(), window.frontier)
+        hyp = await run_decode(window.samples(), window.frontier)
         decision = strategy.commit_rule(last_hyp, hyp, window.end, window.over_cap)
         last_hyp = hyp
         produced = False
@@ -287,7 +378,7 @@ async def run_streaming_loop(
 
     # I5: resolve the tail — decode whatever is left and commit it.
     if window.window_seconds >= MIN_DECODE_S:
-        hyp = await asyncio.to_thread(decode, window.samples(), window.frontier)
+        hyp = await run_decode(window.samples(), window.frontier)
         fresh = fresh_words(hyp.words)
         tail = _join_natural(fresh)
         if tail:

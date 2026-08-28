@@ -12,21 +12,31 @@ Emission is **chunked commit** (murmure ``audio/chunking.rs`` semantics, ported
 as ``streaming.strategies.SilenceCut``): speech accumulates until a pause cuts
 it past the arm point (15 s arm / 500 ms silence cut / 60 s force cut with 1 s
 overlap), each finalized chunk is decoded *once* and committed wholesale.
-Chunk-final decode means no re-decode strategy buys anything, and decode-once
-keeps streaming WER at batch parity (fixed-head's 008 control result). The
-trade: no unstable hypotheses by design — continuous partials is the
-sherpa-onnx arm's comparison point (US4). All emission invariants (I1–I7) are
+Chunk-final decode means no re-decode strategy buys anything for *committed*
+text, and decode-once keeps streaming WER at batch parity (fixed-head's 008
+control result). Committed text is therefore only as prompt as the arm: at the
+shipped 15 s, measured live 2026-08-28, the first word reaches the screen 17.7 s
+into a 28 s utterance. So the loop also re-decodes the uncommitted window on
+``stream_partial_cadence_s`` and emits it as **unstable** display text (0 to
+show nothing between cuts, the pre-2026-08-28 behaviour). Being
+display-only it cannot move committed WER — measured identical — and it takes
+time-to-first-word from 17.7 s to 0.6 s. All emission invariants (I1–I7) are
 enforced by the shared ``streaming.loop``.
 
 Requires the ``parakeet`` extra: ``uv sync --extra parakeet``. Weights are
 murmure's ``parakeet-tdt-0.6b-v3-int8`` bundle, staged by
 ``dev/fetch_parakeet_onnx.py`` (pinned + sha256-verified) into the XDG cache;
 ``--model`` points at a local directory instead (snap model component).
-Murmure's re-quantized int8 encoder is load-bearing: istupakov's HF int8
-encoder collapses (blank output mid-audio) non-monotonically on some inputs
-— the nemo128 preprocessor does utterance-global CMVN, so feature statistics
-shift with window length and that quantization can't absorb the shift
-(2026-07-29 discriminator runs; murmure's decodes every probed length).
+The collapse this adapter was chosen to avoid is not avoided, and is not what
+it was thought to be. Murmure's re-quantized int8 encoder was picked over
+istupakov's because istupakov's collapses (blank output mid-audio)
+non-monotonically on some inputs, read at the time as quantization failing to
+absorb utterance-global CMVN shifting with window length (2026-07-29
+discriminator runs). Re-measured 2026-08-28 over 486 sliding windows: murmure's
+collapses on **11.5%** of them and istupakov's on 9.1%, so murmure's was never
+the safe one — it was probed on windows that happened to work. Quantization is
+not the mechanism either; see ``_COLLAPSE_WORDS_PER_SECOND`` for the evidence
+and for the retry that recovers most of it.
 """
 
 from __future__ import annotations
@@ -108,6 +118,40 @@ LANGUAGES = (
 _LOAD_HEARTBEAT_SECONDS = 2.0
 _PROGRESS_INTERVAL_SECONDS = 1.0
 
+# Parakeet TDT v3 returns near-empty output for particular window lengths: the
+# joint emits blank at every frame with a +5 to +10 logit margin, on audio the
+# same window half a second longer transcribes correctly. Measured 2026-08-28
+# over 486 sliding windows (3-16 s) of the real corpus: 11.5% of decodes
+# collapse. It is NOT the quantisation the module docstring blames for
+# istupakov's failures — the 2.4 GB fp32 encoder collapses at 11.9%, on
+# different windows — nor the TDT duration head, which capping does not fix;
+# the encoder output for shared audio diverges (frame cosine 0.55) while the
+# mel features agree (0.997). sherpa-onnx's export of the same weights
+# collapses at 5.3%, so roughly half of ours is the port's to lose.
+#
+# Until that is understood, a plausibility check and one retry with the window
+# nudged recovers 77% of collapses. Padding *every* decode is the wrong trade
+# — always-on 0.2 s padding halves the collapse rate but costs 1.6 pp of WER
+# on the healthy 88% (2.60% -> 4.20% batch, and 0.5 s padding costs 6.4 pp),
+# which is why this fires only on a decode that already came back implausibly
+# short for the audio it was given.
+_COLLAPSE_WORDS_PER_SECOND = 0.5  # 5x below conversational speech (~2.5 w/s)
+_COLLAPSE_RETRY_PAD_S = 0.2
+
+# Unstable-partial dials. 0.5 s reads as continuous without the preedit region
+# thrashing, and a tick is affordable at any window the arm allows: the decode
+# costs ~22 ms + ~16 ms per second of audio, so even a full 15 s window is
+# ~260 ms. Measured over seven streams: the median word is on screen 1.6 s
+# after it is spoken, against 10.6 s with no partials.
+#
+# The tail cap is off by default (0 = decode the whole uncommitted window).
+# Capping it is the way to buy compute back on a weak machine, at the cost of
+# the display showing only the last N seconds — see [`_chunked_partial`], which
+# carries the evidence for why the obvious middle ground does not work. Raising
+# the cadence is the gentler dial: 1.0 s roughly halves the work.
+PARTIAL_CADENCE_S = 0.5
+PARTIAL_TAIL_S = 0.0
+
 # Murmure's DECODE_SPACE_RE: strip the leading space and spaces before
 # punctuation, keep word-boundary spaces. Tokens carry ▁→space already.
 _DECODE_SPACE_RE = re.compile(r"\A\s|\s\B|(\s)\b")
@@ -153,27 +197,55 @@ def _tokens_to_words(tokens: list[str], timestamps: list[float]) -> list[Word]:
     return words
 
 
+def _encoder_threads() -> int:
+    """Intra-op threads for the encoder.
+
+    The encoder scales to about four and then goes backwards as SMT siblings
+    contend, so this is half the visible CPUs, capped at four and floored at
+    one. ``sched_getaffinity`` rather than ``cpu_count`` so a taskset or a
+    cgroup cpuset is respected.
+    """
+    return max(1, min(4, len(os.sched_getaffinity(0)) // 2))
+
+
 class _ParakeetOnnx:
     """The three ONNX sessions + greedy TDT decode (murmure engine.rs port)."""
 
-    def __init__(self, model_dir: str) -> None:
+    def __init__(self, model_dir: str, *, encoder_threads: int | None = None) -> None:
         import onnxruntime as ort
 
-        opts = ort.SessionOptions()
-        opts.log_severity_level = 3
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         providers = ["CPUExecutionProvider"]
+
+        def opts(intra: int) -> ort.SessionOptions:
+            o = ort.SessionOptions()
+            o.log_severity_level = 3
+            o.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            o.intra_op_num_threads = intra
+            o.inter_op_num_threads = 1
+            return o
+
+        # Sizing the three pools separately is worth ~2x on short windows and
+        # 45 threads (measured 2026-08-28: 45 -> 3 added threads, and a 2 s
+        # window from 112 ms to 55 ms). Left to itself ORT gives every session
+        # a pool the width of the machine, so three sessions oversubscribe it
+        # threefold and then fight. The preprocessor and the decoder_joint run
+        # tensors far too small to divide: the joint's is one frame, and the
+        # greedy loop calls it once per encoder frame — ~94 times for a 15 s
+        # window — so its thread barriers were most of the cost of running it.
+        # Threads are also not free at rest here: each one takes a glibc
+        # malloc arena, which is where the RSS growth over a long session came
+        # from (see myna.server.lifecycle on trimming them back).
         self._preprocessor = ort.InferenceSession(
-            os.path.join(model_dir, "nemo128.onnx"), opts, providers=providers
+            os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=providers
         )
         self._encoder = ort.InferenceSession(
             os.path.join(model_dir, "encoder-model.int8.onnx"),
-            opts,
+            opts(encoder_threads or _encoder_threads()),
             providers=providers,
         )
         self._decoder_joint = ort.InferenceSession(
             os.path.join(model_dir, "decoder_joint-model.int8.onnx"),
-            opts,
+            opts(1),
             providers=providers,
         )
         self._vocab, self._blank_idx = _load_vocab(model_dir)
@@ -253,12 +325,32 @@ class _ParakeetOnnx:
         encoder_out = np.transpose(encoder_out, (0, 2, 1))
         return self._decode_sequence(encoder_out[0], int(encoder_lens[0]))
 
+    def _transcribe_guarded(self, samples: np.ndarray) -> tuple[list[str], list[float]]:
+        """`transcribe`, with one retry when the result looks collapsed.
+
+        The retry pads silence onto both ends, which is enough of a nudge to
+        move the window off whatever the encoder trips over (head+tail
+        recovers 77% of collapses; head alone 52%, tail alone 32%). Retry
+        timestamps are shifted back over the head pad so they stay in region
+        seconds. A genuinely silent region simply decodes to nothing twice —
+        at RTF 0.02 that costs less than losing the words does.
+        """
+        tokens, timestamps = self.transcribe(samples)
+        seconds = len(samples) / PARAKEET_RATE
+        if len(tokens) >= _COLLAPSE_WORDS_PER_SECOND * seconds:
+            return tokens, timestamps
+        pad = np.zeros(int(_COLLAPSE_RETRY_PAD_S * PARAKEET_RATE), dtype=samples.dtype)
+        retry_tokens, retry_timestamps = self.transcribe(np.concatenate([pad, samples, pad]))
+        if len(retry_tokens) <= len(tokens):
+            return tokens, timestamps
+        return retry_tokens, [max(0.0, t - _COLLAPSE_RETRY_PAD_S) for t in retry_timestamps]
+
     def transcribe_text(self, samples: np.ndarray) -> str:
-        tokens, _ = self.transcribe(samples)
+        tokens, _ = self._transcribe_guarded(samples)
         return _detokenize(tokens)
 
     def transcribe_words(self, samples: np.ndarray) -> list[Word]:
-        tokens, timestamps = self.transcribe(samples)
+        tokens, timestamps = self._transcribe_guarded(samples)
         return _tokens_to_words(tokens, timestamps)
 
 
@@ -287,18 +379,28 @@ class ParakeetAdapter:
         stream_arm_s: float = SC_ARM_S,
         stream_silence_cut_s: float = SC_SILENCE_CUT_S,
         stream_force_cut_s: float = SC_FORCE_CUT_S,
+        stream_partial_cadence_s: float = PARTIAL_CADENCE_S,
+        stream_partial_tail_s: float = PARTIAL_TAIL_S,
     ) -> None:
         self._model_dir = model_dir
         self._streaming = streaming
         self._stream_arm_s = float(stream_arm_s)
         self._stream_silence_cut_s = float(stream_silence_cut_s)
         self._stream_force_cut_s = float(stream_force_cut_s)
+        # 0 disables partials (committed text only, the pre-2026-08-28 shape);
+        # 0 tail means the tick decodes the whole uncommitted window.
+        self._stream_partial_cadence_s = float(stream_partial_cadence_s)
+        self._stream_partial_tail_s = float(stream_partial_tail_s)
         if self._stream_arm_s <= 0:
             raise ValueError("stream_arm_s must be > 0")
         if self._stream_silence_cut_s <= 0:
             raise ValueError("stream_silence_cut_s must be > 0")
         if self._stream_force_cut_s <= 0:
             raise ValueError("stream_force_cut_s must be > 0")
+        if self._stream_partial_cadence_s < 0:
+            raise ValueError("stream_partial_cadence_s must be >= 0 (0 disables partials)")
+        if self._stream_partial_tail_s < 0:
+            raise ValueError("stream_partial_tail_s must be >= 0 (0 = whole window)")
         self._model: _ParakeetOnnx | None = None
         self._model_lock = asyncio.Lock()
 
@@ -413,8 +515,10 @@ class ParakeetAdapter:
         emit: EventSink,
     ) -> None:
         """Chunked commit (008 US3): SilenceCut watches for pause/force cuts;
-        each finalized chunk is decoded once and committed wholesale (no
-        unstable text by design). The shared loop enforces I1–I7 and returns
+        each finalized chunk is decoded once and committed wholesale. Between
+        cuts the loop re-decodes the uncommitted window for unstable display
+        text, so the screen is not blank until the first cut; it never touches
+        the committed transcript. The shared loop enforces I1–I7 and returns
         exactly the concatenation of committed text for the terminal done."""
         from myna.testbed.streaming.loop import run_streaming_loop
         from myna.testbed.streaming.strategies import SilenceCut
@@ -436,5 +540,7 @@ class ParakeetAdapter:
             # The force cut is the memory bound (I6) in chunked mode.
             window_cap_seconds=self._stream_force_cut_s + 5.0,
             overlap_seconds=1.0,  # murmure CHUNK_FORCED_OVERLAP_SECS
+            partial_cadence_seconds=self._stream_partial_cadence_s or None,
+            partial_tail_seconds=self._stream_partial_tail_s or None,
         )
         await emit(TranscriptionDone(text=transcript))

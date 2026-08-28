@@ -31,17 +31,34 @@ The snap is CPU-only and does not require `hardware-observe`. Session socket:
 
 ## Streaming cadence
 
-Defaults:
+Two independent things: when text becomes **committed** (final, injectable),
+and how often the not-yet-committed audio is shown as **unstable** text a
+client can render as preedit.
+
+Committing:
 
 - `stream-arm-seconds=15` — audio required before a pause can commit
 - `stream-silence-cut-seconds=0.5` — pause length that commits
 - `stream-force-cut-seconds=60` — maximum uncommitted window
 
-Example for earlier chunks:
+Showing:
+
+- `stream-partial-cadence-seconds=0.5` — how often the uncommitted window is
+  re-decoded for display; `0` shows nothing until the first commit
+- `stream-partial-tail-seconds=0` — `0` decodes the whole uncommitted window;
+  a cap decodes only the last N seconds, which costs less and shows less
+
+At the defaults the first words appear about 0.6 s in, while the first
+committed segment still waits for the arm. Partials cannot change committed
+text — measured identical with them on and off — so the dials are independent:
 
 ```bash
-sudo snap set myna-parakeet stream-arm-seconds=5
+sudo snap set myna-parakeet stream-partial-cadence-seconds=1
 sudo snap restart myna-parakeet.server
 ```
 
-Lower values commit sooner but decode more often and use less right context.
+Partials are the expensive setting. On a Ryzen AI 7 350 the decode is busy
+roughly 80% of the time you are speaking at the 0.5 s default and 43% at 1 s;
+without them it is 3%. Lower `stream-arm-seconds` commits sooner but decodes
+more often with less right context, and each extra chunk is another chance at
+the framing collapse described in `server/src/myna/testbed/parakeet.py`.

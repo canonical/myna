@@ -27,3 +27,9 @@ fi
 if ! modelctl get stream-force-cut-seconds >/dev/null 2>&1; then
     modelctl set --package stream-force-cut-seconds="60"
 fi
+if ! modelctl get stream-partial-cadence-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-partial-cadence-seconds="0.5"
+fi
+if ! modelctl get stream-partial-tail-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-partial-tail-seconds="0"
+fi

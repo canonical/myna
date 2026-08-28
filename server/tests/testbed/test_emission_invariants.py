@@ -464,3 +464,150 @@ def test_window_never_moves_frontier_backwards():
     w.advance(6.0)
     w.advance(4.0)  # regression attempt — ignored
     assert w.frontier == pytest.approx(6.0)
+
+
+# ---------------------------------------------------------------------------
+# Chunked partials (2026-08-28): unstable display text between commits
+# ---------------------------------------------------------------------------
+
+
+def _speech_pcm(rng):
+    """(seconds, speech) -> PCM. Silence is digital zero so SilenceCut's VAD
+    reads it as a pause; speech is noise at an RMS the VAD arms on."""
+
+    def pcm(seconds: float, speech: bool) -> bytes:
+        n = int(seconds * 16_000)
+        if not speech:
+            return b"\x00\x00" * n
+        noise = rng.standard_normal(n)
+        noise = noise * (0.05 / np.sqrt(np.mean(noise * noise)))
+        return (noise * 32767).astype(np.int16).tobytes()
+
+    return pcm
+
+
+async def _chunked_session(partial_cadence, partial_tail=None, decode=None):
+    """16 s speech, 1 s pause (cuts past the 15 s arm), 4 s speech (I5 tail)."""
+    rng = np.random.default_rng(7)
+    pcm = _speech_pcm(rng)
+    plan = [(16.0, True), (1.0, False), (4.0, True)]
+
+    async def audio():
+        for seconds, speech in plan:
+            for _ in range(int(seconds / 0.5)):
+                yield PcmChunk(data=pcm(0.5, speech), format=FORMAT)
+
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    transcript = await run_streaming_loop(
+        audio(),
+        emit,
+        decode or scripted_decode(),
+        SilenceCut(),
+        cadence_seconds=1.0,
+        window_cap_seconds=65.0,
+        partial_cadence_seconds=partial_cadence,
+        partial_tail_seconds=partial_tail,
+    )
+    events.append(TranscriptionDone(text=transcript))
+    return events, transcript
+
+
+@pytest.mark.asyncio
+async def test_chunked_partials_show_text_long_before_the_first_commit():
+    """The point of the whole thing: at a 15 s arm the first commit is ~17 s
+    in, and without partials the screen is blank until then."""
+    events, _ = await _chunked_session(partial_cadence=1.0)
+
+    finals = _finals(events)
+    first_unstable = next(i for i, e in enumerate(finals) if e.disposition == Disposition.UNSTABLE)
+    first_committed = next(
+        i for i, e in enumerate(finals) if e.disposition == Disposition.COMMITTED
+    )
+    assert first_unstable < first_committed, "partials must precede the first commit"
+    assert_unstable_wellformed(events)
+    assert_commit_clears_unstable(events)
+    assert_append_only_and_complete(events)
+
+
+@pytest.mark.asyncio
+async def test_chunked_partials_leave_committed_text_untouched():
+    """Unstable text is display-only: turning partials on must not move a
+    single character of the transcript."""
+    with_partials, transcript_on = await _chunked_session(partial_cadence=1.0)
+    without, transcript_off = await _chunked_session(partial_cadence=None)
+
+    assert transcript_on == transcript_off
+    assert [e.text for e in _committed(with_partials)] == [e.text for e in _committed(without)]
+    assert not _unstable(without), "partials off must stay silent between cuts"
+
+
+def _last_display_before_first_commit(events):
+    last = None
+    for e in _finals(events):
+        if e.disposition == Disposition.COMMITTED:
+            break
+        last = e.text
+    return last
+
+
+@pytest.mark.asyncio
+async def test_chunked_partial_display_covers_the_whole_uncommitted_span():
+    """By default a tick decodes the whole uncommitted window, so the display
+    grows with the speaker instead of sliding: a preedit region that drops its
+    first words reads as the app deleting them."""
+    events, _ = await _chunked_session(partial_cadence=1.0)
+
+    assert _unstable(events), "expected unstable ticks"
+    # scripted_decode labels each word by its absolute second, so a display
+    # that starts at w0 and reaches w15 covers the full 16 s before the cut.
+    shown = _last_display_before_first_commit(events)
+    assert shown is not None
+    words = shown.split()
+    assert words[0] == "w0", f"display lost its head: {shown!r}"
+    assert words == [f"w{i}" for i in range(len(words))], f"display is not contiguous: {words}"
+    assert len(words) > 10, f"display covers only part of the uncommitted span: {words}"
+
+
+@pytest.mark.asyncio
+async def test_partial_tail_cap_trades_the_head_away_and_says_so():
+    """The cap exists to buy compute back on a weak machine. It is a real
+    trade: the display then shows only the last N seconds. Pinned so nobody
+    reintroduces the stitching that made this look free (see
+    `_chunked_partial`) without re-reading why it was removed."""
+    events, _ = await _chunked_session(partial_cadence=1.0, partial_tail=6.0)
+
+    shown = _last_display_before_first_commit(events)
+    words = shown.split()
+    assert words[0] != "w0", "a capped tick cannot still be showing the utterance head"
+    assert len(words) <= 7, f"a 6 s cap must show ~6 s of words, got {words}"
+
+
+@pytest.mark.asyncio
+async def test_chunked_partial_that_decodes_to_nothing_keeps_the_last_text():
+    """An empty decode is more often the model faltering on this window than
+    silence — blanking the preedit on it would make the text flicker."""
+    calls = {"n": 0}
+    base = scripted_decode()
+
+    def flaky(samples, offset):
+        calls["n"] += 1
+        # Collapse every other tick, the way the encoder does on some windows.
+        return Hypothesis(words=[]) if calls["n"] % 2 == 0 else base(samples, offset)
+
+    events, _ = await _chunked_session(partial_cadence=1.0, decode=flaky)
+
+    unstable = _unstable(events)
+    assert unstable, "a collapsing tick must not silence the whole stream"
+    assert all(e.text.strip() for e in unstable), "never emit an empty unstable"
+    # And within a commit epoch the text never goes backwards over one.
+    epoch: list[int] = []
+    for e in _finals(events):
+        if e.disposition == Disposition.COMMITTED:
+            epoch = []
+            continue
+        epoch.append(len(e.text.split()))
+        assert epoch == sorted(epoch), f"display shrank on a collapsed tick: {epoch}"

@@ -28,6 +28,10 @@ modelctl set --package streaming="true"
 modelctl set --package stream-arm-seconds="15"
 modelctl set --package stream-silence-cut-seconds="0.5"
 modelctl set --package stream-force-cut-seconds="60"
+# Unstable partials between commits (display only). Cadence 0 = off;
+# tail 0 = decode the whole uncommitted window.
+modelctl set --package stream-partial-cadence-seconds="0.5"
+modelctl set --package stream-partial-tail-seconds="0"
 
 #
 # Activate the single engine.

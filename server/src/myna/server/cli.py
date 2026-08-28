@@ -103,6 +103,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="max uncommitted audio window before Parakeet force-commits (default 60)",
     )
     parser.add_argument(
+        "--stream-partial-cadence-s",
+        type=float,
+        default=None,
+        help="seconds between Parakeet unstable-partial ticks between commits "
+        "(default 0.5; 0 shows nothing until the first cut)",
+    )
+    parser.add_argument(
+        "--stream-partial-tail-s",
+        type=float,
+        default=None,
+        help="cap each Parakeet partial tick at the last N seconds of the window "
+        "(default 0 = whole window; capping shows only those N seconds)",
+    )
+    parser.add_argument(
         "--sleep-idle-seconds",
         type=float,
         default=0.0,
@@ -148,6 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _default_if_none(value: float | None, fallback: float) -> float:
+    """`x or fallback` is wrong wherever 0 is a meaningful setting."""
+    return fallback if value is None else value
+
+
 def build_adapter(args: argparse.Namespace):
     """Construct the chosen adapter, importing its extra lazily so --help and
     the other adapter work without it installed."""
@@ -183,6 +202,14 @@ def build_adapter(args: argparse.Namespace):
             stream_arm_s=getattr(args, "stream_arm_s", None) or 15.0,
             stream_silence_cut_s=getattr(args, "stream_silence_cut_s", None) or 0.5,
             stream_force_cut_s=getattr(args, "stream_force_cut_s", None) or 60.0,
+            # `or` would swallow an explicit 0, and 0 is how partials are
+            # turned off.
+            stream_partial_cadence_s=_default_if_none(
+                getattr(args, "stream_partial_cadence_s", None), 0.5
+            ),
+            stream_partial_tail_s=_default_if_none(
+                getattr(args, "stream_partial_tail_s", None), 0.0
+            ),
         )
 
     if args.adapter == "sherpa":

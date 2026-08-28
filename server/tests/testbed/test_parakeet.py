@@ -22,9 +22,12 @@ from myna.core import (
 )
 from myna.server.cli import build_adapter, build_parser
 from myna.testbed.parakeet import (
+    _COLLAPSE_RETRY_PAD_S,
+    PARAKEET_RATE,
     ParakeetAdapter,
     _detokenize,
     _load_vocab,
+    _ParakeetOnnx,
     _tokens_to_words,
 )
 from myna.testbed.streaming.strategies import SilenceCut
@@ -211,3 +214,172 @@ async def test_batch_session_off_format_rejected():
 
     assert type(events[0]).__name__ == "TranscriptionError"
     assert events[0].code == "unsupported_audio_format"
+
+
+# ─── Collapse guard (2026-08-28) ─────────────────────────────────────────────
+#
+# The encoder returns blank-at-every-frame for particular window lengths; a
+# retry with the window nudged by silence recovers ~3/4 of them. These build a
+# _ParakeetOnnx without __init__ so no ONNX session is created.
+
+
+def _bare_model(script):
+    """A _ParakeetOnnx whose `transcribe` is `script(samples) -> (tokens, ts)`,
+    recording the sample counts it was called with."""
+    model = _ParakeetOnnx.__new__(_ParakeetOnnx)
+    model.calls = []
+
+    def transcribe(samples):
+        model.calls.append(len(samples))
+        return script(len(samples), len(model.calls))
+
+    model.transcribe = transcribe
+    return model
+
+
+def test_plausible_decode_is_not_retried():
+    """A healthy chunk must cost exactly one decode — the retry is for the
+    collapse, not a tax on every commit."""
+    model = _bare_model(lambda n, call: ([" one", " two", " three"], [0.0, 0.5, 1.0]))
+
+    tokens, _ = model._transcribe_guarded(np.zeros(16_000 * 2, dtype=np.float32))
+
+    assert tokens == [" one", " two", " three"]
+    assert len(model.calls) == 1, "healthy decode must not pay for a retry"
+
+
+def test_collapsed_decode_is_retried_with_padding_on_both_ends():
+    """Zero words out of ten seconds of audio is the collapse signature."""
+
+    def script(n, call):
+        if call == 1:
+            return [], []
+        return ([" recovered", " text"], [0.3, 0.8])
+
+    model = _bare_model(script)
+    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+
+    assert len(model.calls) == 2, "a collapsed decode must be retried once"
+    pad_samples = int(_COLLAPSE_RETRY_PAD_S * PARAKEET_RATE)
+    assert model.calls[1] == model.calls[0] + 2 * pad_samples, "pad goes on both ends"
+    assert tokens == [" recovered", " text"]
+    # Times come back in region seconds, with the head pad taken off again.
+    assert timestamps == [pytest.approx(0.1), pytest.approx(0.6)]
+
+
+def test_retry_that_does_not_help_keeps_the_original_decode():
+    """The nudge recovers about three quarters of collapses; when it does not,
+    the guard must not make things worse or loop."""
+
+    def script(n, call):
+        return ([" solitary"], [0.4]) if call == 1 else ([], [])
+
+    model = _bare_model(script)
+    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+
+    assert len(model.calls) == 2, "exactly one retry, never a loop"
+    assert tokens == [" solitary"] and timestamps == [0.4]
+
+
+def test_short_region_is_judged_on_its_own_length():
+    """The threshold is words per second, so a 0.5 s region yielding one word
+    is plausible and must not be retried."""
+    model = _bare_model(lambda n, call: ([" hi"], [0.0]))
+
+    model._transcribe_guarded(np.zeros(8_000, dtype=np.float32))
+
+    assert len(model.calls) == 1
+
+
+# ─── Partial (unstable) emission wiring ──────────────────────────────────────
+
+
+async def test_partial_dials_reach_the_loop(monkeypatch):
+    adapter = ParakeetAdapter(
+        streaming=True, stream_partial_cadence_s=0.25, stream_partial_tail_s=4.0
+    )
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured.update(kwargs)
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    async def empty_audio():
+        for _ in ():
+            yield b""  # pragma: no cover - async iterator shape only
+
+    async def emit(_event):
+        pass
+
+    await adapter._run_streaming_session(object(), empty_audio(), emit)
+
+    assert captured["partial_cadence_seconds"] == 0.25
+    assert captured["partial_tail_seconds"] == 4.0
+
+
+async def test_zero_tail_means_the_whole_window(monkeypatch):
+    """0 must reach the loop as None (whole window), not as a 0-second cap."""
+    adapter = ParakeetAdapter(streaming=True, stream_partial_tail_s=0)
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured.update(kwargs)
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    async def empty_audio():
+        for _ in ():
+            yield b""  # pragma: no cover - async iterator shape only
+
+    async def emit(_event):
+        pass
+
+    await adapter._run_streaming_session(object(), empty_audio(), emit)
+
+    assert captured["partial_tail_seconds"] is None
+
+
+async def test_zero_cadence_disables_partials(monkeypatch):
+    """0 is a real setting, not a missing one: it restores commit-only output."""
+    adapter = ParakeetAdapter(streaming=True, stream_partial_cadence_s=0)
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured.update(kwargs)
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    async def empty_audio():
+        for _ in ():
+            yield b""  # pragma: no cover - async iterator shape only
+
+    async def emit(_event):
+        pass
+
+    await adapter._run_streaming_session(object(), empty_audio(), emit)
+
+    assert captured["partial_cadence_seconds"] is None
+
+
+def test_partial_dials_are_validated():
+    with pytest.raises(ValueError, match="stream_partial_cadence_s"):
+        ParakeetAdapter(stream_partial_cadence_s=-1)
+    with pytest.raises(ValueError, match="stream_partial_tail_s"):
+        ParakeetAdapter(stream_partial_tail_s=-1)
+    # 0 is legal on both: cadence 0 turns partials off, tail 0 means the whole
+    # uncommitted window.
+    ParakeetAdapter(stream_partial_cadence_s=0, stream_partial_tail_s=0)
+
+
+def test_cli_wires_partial_dials_including_an_explicit_zero():
+    base = ["--socket", "/tmp/s.sock", "--adapter", "parakeet", "--streaming"]
+    adapter = build_adapter(build_parser().parse_args(base))
+    assert adapter._stream_partial_cadence_s == 0.5
+    assert adapter._stream_partial_tail_s == 0.0, "the tick decodes the whole window by default"
+
+    off = build_adapter(build_parser().parse_args(base + ["--stream-partial-cadence-s", "0"]))
+    assert off._stream_partial_cadence_s == 0.0, "an explicit 0 must survive the default"

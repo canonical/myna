@@ -16,3 +16,14 @@ for key in stream-arm-seconds stream-silence-cut-seconds stream-force-cut-second
         exit 1
     fi
 done
+
+# Both partial keys take 0 — cadence 0 turns partials off, tail 0 means the
+# whole uncommitted window — so they are checked for a number, not a positive.
+for key in stream-partial-cadence-seconds stream-partial-tail-seconds; do
+    value="$(snapctl get "$key")"
+    [ -z "$value" ] && continue
+    if [[ ! "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "$key must be a number of seconds, 0 to disable (got '$value')"
+        exit 1
+    fi
+done
