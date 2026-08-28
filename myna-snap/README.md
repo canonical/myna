@@ -220,8 +220,8 @@ terminal). The three activation flags are mutually exclusive.
 **Indicator**: `org.myna.Dictation` is always served for the myna-shell
 GNOME extension, falling back to desktop notifications by itself when the
 session bus is unreachable - so there is no flag to set. `myna --no-dbus`
-forces the notification path for debugging. The experimental GTK overlay is
-`--overlay`.
+forces the notification path for debugging. The experimental GTK `--overlay`
+was removed (T150).
 
 **Preedit**: in-field unstable hypotheses are on exactly when this machine
 resolves to streaming (your persisted `streaming_mode` through the RTF tier

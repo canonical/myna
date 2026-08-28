@@ -3,15 +3,14 @@
 //! A persistent, screen-reader-perceivable surface showing recording /
 //! transcribing / finalizing / error — so the user always knows dictation is
 //! live. [`notify::NotifyIndicator`] is the shipped default;
-//! [`gtk::GtkIndicator`] (opt-in feature `ui-gtk`, branch 003d) is the overlay;
-//! [`mock::MockIndicator`] is the hermetic test fixture. See
-//! `specs/003-desktop-injection/contracts/indicator.md`.
+//! [`mock::MockIndicator`] is the hermetic test fixture. The former GTK
+//! overlay (`indicator::gtk`, feature `ui-gtk`) was removed in T150 — the
+//! myna-shell overlay (feature 004) and the headless notify path are the
+//! shipped indicators. See `specs/003-desktop-injection/contracts/indicator.md`.
 
 use async_trait::async_trait;
 
 pub mod dbus;
-#[cfg(feature = "ui-gtk")]
-pub mod gtk;
 pub mod mock;
 pub mod notify;
 

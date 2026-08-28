@@ -20,9 +20,9 @@
 //!
 //! Both are press-to-toggle: tap to start, tap again to stop. `--portal` /
 //! `--control` force one; `--hold` switches the portal to hold-to-talk;
-//! `--stdin` is terminal debug (injects back into the terminal); `--overlay` is
-//! the experimental GTK activity overlay (the window can steal focus on Wayland
-//! and cut the session).
+//! `--stdin` is terminal debug (injects back into the terminal). The
+//! experimental GTK activity overlay was removed (T150); the indicator is
+//! either the myna-shell overlay (feature 004) or headless notifications.
 //!
 //! ```text
 //!   myna-server --adapter whisper --socket /tmp/myna.sock &
@@ -105,7 +105,6 @@ OPTIONS:
     --shortcut <accel> preferred trigger in portal activation (the portal's bind
                        dialog may still let you pick a different key)
     --hold             portal activation: hold-to-talk instead (hold = record)
-    --overlay          show the GTK activity overlay (experimental; may steal focus)
 
 ACTIVATION (default: portal when packaged — $SNAP set — else control socket):
     --portal           force the GlobalShortcuts portal (packaged builds only)
@@ -340,7 +339,6 @@ struct Args {
     /// `None` = resolve from packaging; `Some` = the user forced one.
     activation: Option<Activation>,
     hold: bool,
-    overlay: bool,
     /// `None` = resolve from the persisted streaming mode; `Some` = forced.
     preedit: Option<bool>,
     no_dbus: bool,
@@ -377,7 +375,6 @@ fn parse_args_from(
             "--control" => set_activation(&mut a, Activation::Control)?,
             "--stdin" => set_activation(&mut a, Activation::Stdin)?,
             "--hold" => a.hold = true,
-            "--overlay" => a.overlay = true,
             "--preedit" => a.preedit = Some(true),
             "--no-preedit" => a.preedit = Some(false),
             "--no-dbus" => a.no_dbus = true,
@@ -1111,17 +1108,6 @@ fn main() -> ExitCode {
         preedit_reason(args.preedit, settings.streaming_mode)
     );
 
-    // The GTK overlay (opt-in) needs the GLib main loop on the process main
-    // thread; everything else runs headless with desktop notifications.
-    #[cfg(feature = "ui-gtk")]
-    if args.overlay {
-        return run_with_overlay(args, resolved);
-    }
-    #[cfg(not(feature = "ui-gtk"))]
-    if args.overlay {
-        eprintln!("note: this build has no ui-gtk feature; using notifications");
-    }
-
     run_headless(args, resolved)
 }
 
@@ -1188,36 +1174,6 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             run_controller(args, resolved, NotifyIndicator::new(), None, None).await
         }
     }
-}
-
-/// Opt-in GTK overlay path (R6): GTK owns the main thread + GLib loop; the
-/// controller runs on a worker thread with a `GtkIndicator` bridged over an
-/// `async-channel`. When the session loop ends the sender drops, closing the
-/// channel, which quits the GTK app (see `run_indicator_app`).
-#[cfg(feature = "ui-gtk")]
-fn run_with_overlay(args: Args, resolved: Resolved) -> ExitCode {
-    use myna_desktop::indicator::gtk::{run_indicator_app, GtkIndicator};
-
-    let (tx, rx) = async_channel::unbounded();
-    let worker = std::thread::spawn(move || {
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
-            Err(e) => {
-                eprintln!("cannot start async runtime: {e}");
-                return ExitCode::FAILURE;
-            }
-        };
-        rt.block_on(run_controller(
-            args,
-            resolved,
-            GtkIndicator::new(tx),
-            None,
-            None,
-        ))
-    });
-
-    let _gtk_code = run_indicator_app(rx);
-    worker.join().unwrap_or(ExitCode::FAILURE)
 }
 
 #[cfg(test)]

@@ -133,7 +133,7 @@ driver. **Phase B complete (2026-08-26).**
 
 ## Phase F: Client policy & removal (P20–P23)
 
-- [ ] T150 Remove `ui-gtk`: delete `client/myna-desktop/src/indicator/gtk.rs`, the `ui-gtk` feature, `--overlay` CLI mode, and `async-channel`/`gtk4`/`glib` optional deps; update the affected tests (the P19 "unchanged behavior" assertions move to `notify.rs`-only).
+- [X] T150 Remove `ui-gtk`: delete `client/myna-desktop/src/indicator/gtk.rs`, the `ui-gtk` feature, `--overlay` CLI mode, and `async-channel`/`gtk4`/`glib` optional deps; update the affected tests (the P19 "unchanged behavior" assertions move to `notify.rs`-only). *(Done 2026-08-27: deleted `src/indicator/gtk.rs`, the `ui-gtk` feature and the `gtk4`/`glib`/`async-channel` optional deps; removed the `--overlay` CLI mode and `run_with_overlay`; updated `indicator/mod.rs`, `lib.rs`, `notify.rs`, `mock.rs` docs, `tests/indicator_hw.rs` (now just the clean skip gate), and the README/snap/docs references. myna-desktop lib tests (49) + indicator_hw pass.)*
 - [ ] T151 New `policy.rs` + `tests/policy.rs` (fake presence seam): suppress/restore the `NotifyIndicator` fallback on `org.myna.Shell` appeared/vanished (P20/P21), bus errors degrade to fallback — never abort (P22), contract-only non-GNOME spawn seam (P23). **Test first.** Extend `tests/dbus_hw.rs` (env-gated) with the C12/C13 round-trips.
 
 **Checkpoint**: `cargo test -p myna-desktop` green with the policy in and the overlay out; `--dbus` behavior unchanged.

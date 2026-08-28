@@ -65,7 +65,7 @@ apps:
   # $SNAP is set), the org.myna.Dictation indicator, and streaming preedit are
   # all resolved by myna-desktop itself rather than pinned here.
   # NOTE: deliberately NO `gnome` extension and no GTK at all. The packaged
-  # build omits myna-desktop's opt-in `ui-gtk` feature, so feedback is the
+  # build omits myna-desktop's removed `ui-gtk` overlay, so feedback is the
   # org.myna.Dictation indicator (myna-shell) with a notification fallback:
   # no toolkit to ship, and none of the GTK stack, icon themes and emoji
   # data that came with it.
@@ -208,7 +208,7 @@ parts:
 
   # The Rust workspace (client/), staged into this project by dev/prepare.sh
   # (craft-parts local sources must live inside the project dir). Builds the
-  # shipped app (no `ui-gtk`: see the apps note) + the testbed CLI.
+  # shipped app + the testbed CLI.
   client:
     plugin: nil
     after: [rust-deps]

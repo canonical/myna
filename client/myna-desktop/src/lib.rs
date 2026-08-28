@@ -16,8 +16,9 @@
 //! - `shortcut` — activation, reusing `myna_orchestrator::Trigger`
 //!   ([`shortcut::portal::GlobalShortcutTrigger`]);
 //! - [`indicator::Indicator`] — the activity surface
-//!   ([`indicator::notify::NotifyIndicator`], the `ui-gtk`
-//!   [`indicator::gtk::GtkIndicator`], [`indicator::mock::MockIndicator`]).
+//!   ([`indicator::notify::NotifyIndicator`] for headless, and the
+//!   myna-shell overlay for GNOME; [`indicator::mock::MockIndicator`] for
+//!   tests). The former GTK overlay was removed in T150.
 //!
 //! Real IBus/portal/GTK behavior lives behind env-gated integration suites
 //! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS` / a display gate); the hermetic

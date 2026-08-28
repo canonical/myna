@@ -29,7 +29,7 @@ T21/T22 — the desktop last-mile) and `../docs/desktop-injection.md`.
   for the inference snap; `myna-audio` is the capture adapter (mock:
   `ScriptedBackend`); the hotkey is `Trigger` (`StdinTrigger` /
   `GlobalShortcutTrigger`); the injector/indicator are `Injector` / `Indicator`
-  (`MockInjector` / `IbusInjector`, `MockIndicator` / `GtkIndicator`). Real
+  (`MockInjector` / `IbusInjector`, `MockIndicator` / `NotifyIndicator`). Real
   implementations drop in behind the same traits.
 - **Invariants** (from `../CLAUDE.md`): never persist audio, bounded in-memory
   buffering, no transcription/audio content logged by default; the desktop
@@ -92,10 +92,9 @@ myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running
 
 Other activation modes: `--portal` (GlobalShortcuts hold-to-talk — only works
 when packaged as a snap/flatpak, which GNOME grants an app identity); `--stdin`
-(terminal debug — injects back into the terminal); `--overlay` (GTK activity
-overlay instead of notifications — **experimental**: on GNOME/Wayland the overlay
-window can steal focus and cut the session short). Feedback defaults to desktop
-notifications.
+(terminal debug — injects back into the terminal). Feedback defaults to
+desktop notifications; on GNOME the myna-shell extension hosts the richer
+overlay HUD (feature 004). The former GTK `--overlay` was removed in T150.
 
 See `../docs/desktop-injection.md` for the settled T21/T22 contract (controller
 state model, the three seams, the IBus-over-zbus backend, the GTK indicator).

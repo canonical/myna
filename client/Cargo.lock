@@ -1209,11 +1209,8 @@ name = "myna-desktop"
 version = "0.1.0"
 dependencies = [
  "ashpd",
- "async-channel",
  "async-trait",
  "futures-util",
- "glib",
- "gtk4",
  "myna-audio",
  "myna-core",
  "myna-orchestrator",

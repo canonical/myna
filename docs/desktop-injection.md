@@ -15,8 +15,8 @@ GlobalShortcutTrigger ──Press/Release──▶ ┌────────�
                                          │  (per-utterance FSM │
 IbusInjector ◀── commit(Final) ──────────│   over run_dictation)│
    (IBus engine)   focus/secure events ─▶│                     │
-                                         │  Indicator.set_state│──▶ GtkIndicator
-myna-audio (PipeWire) ──PCM──▶ run_dictation ──OrchestratorEvent─┘    / NotifyIndicator
+                                         │  Indicator.set_state│──▶ NotifyIndicator
+myna-audio (PipeWire) ──PCM──▶ run_dictation ──OrchestratorEvent─┘    (or the myna-shell HUD)
 ```
 
 Three boundary seams, each with a mock so the controller is fully
@@ -29,9 +29,10 @@ hermetic-testable (no D-Bus / IBus / portal / display):
 - **`Injector`** (`inject::Injector`) — text injection. Production:
   `inject::ibus::IbusInjector`; tests: `inject::mock::MockInjector`.
 - **`Indicator`** (`indicator::Indicator`) — activity surface. Default:
-  `indicator::notify::NotifyIndicator` (notifications); opt-in experimental:
-  `indicator::gtk::GtkIndicator` (feature `ui-gtk`); tests:
-  `indicator::mock::MockIndicator`.
+  `indicator::notify::NotifyIndicator` (notifications); on GNOME the
+  myna-shell extension hosts the overlay HUD (feature 004). The former GTK
+  overlay (`indicator::gtk::GtkIndicator`, feature `ui-gtk`, `--overlay`) was
+  removed in T150; tests: `indicator::mock::MockIndicator`.
 
 ## Controller state model
 
@@ -265,19 +266,17 @@ Shell suppresses the banner for low-urgency notifications and drops them
 straight to the tray, which read as "no UI at all" (2026-07-20). It carries
 state labels only, never transcript text (N8).
 
-An opt-in GTK4 overlay (`--overlay`, `indicator::gtk::GtkIndicator`) gives a
-persistent per-state surface with AT-SPI labels (FR-019), but is
-**experimental**: on GNOME/Wayland mapping a top-level can shift keyboard focus
-off the target — our IBus engine then sees `FocusOut` and ends the session (its
-wrong-target safety), cutting dictation short. The clean fix (an always-on-top
-HUD that never takes focus) is the **`wlr-layer-shell`** protocol
-(`gtk4-layer-shell`, `KeyboardMode::None`), as the reference Handy app does —
-**but that only works on wlroots compositors and KWin; Mutter does not implement
-layer-shell**, so it is not a fix on our primary target (GNOME). See the
-platform survey below for why, and what the actually-portable options are. When
-used it owns the process main thread + GLib loop, with the tokio controller on a
-worker thread bridged by an `async-channel`; the error state also raises a
-`notify-rust` toast.
+An always-on-top HUD that never takes focus is delivered by the **myna-shell
+extension hosting the `myna-hud` application's window** (feature 004): the
+extension launches it via `Meta.WaylandClient`, docks it, and its input region
+is empty, so it can never steal focus. The earlier opt-in GTK4 overlay
+(`--overlay`, `indicator::gtk::GtkIndicator`) was experimental and removed in
+T150 — on GNOME/Wayland mapping a top-level can shift keyboard focus off the
+target, our IBus engine then sees `FocusOut` and ends the session. The
+`wlr-layer-shell` protocol (`gtk4-layer-shell`, `KeyboardMode::None`) would be
+the clean fix on wlroots compositors and KWin — **but Mutter does not implement
+layer-shell**, so it is not a fix on our primary target (GNOME); see the
+platform survey below.
 
 ## Wayland input-stealing: the platform landscape (survey)
 
