@@ -408,23 +408,29 @@ enum PublisherState {
 /// snapshot force idle when off — the same observable effect as releasing
 /// the name, without the race.
 fn start_publish(shared: Rc<crate::serve::Shared>, publisher: &Rc<RefCell<PublisherState>>) {
-    if !matches!(*publisher.borrow(), PublisherState::Unclaimed) {
-        return; // already claimed or claiming
+    // The name is claimed exactly once for the process lifetime (the
+    // detached publish loop keeps the connection alive). The PUBLISH GATE is
+    // separate and must re-enable on EVERY toggle-on — the early return
+    // below only skips the claim, not the gate, otherwise re-enabling after
+    // a stop_publish() would silently do nothing (the pill would never come
+    // back until the lab restarted).
+    if matches!(*publisher.borrow(), PublisherState::Unclaimed) {
+        *publisher.borrow_mut() = PublisherState::Claimed;
+        let shared = (*shared).clone();
+        glib::spawn_future_local(async move {
+            match crate::serve::serve(shared).await {
+                Ok(connection) => {
+                    std::mem::forget(connection); // held for process lifetime
+                    eprintln!("myna-hud: publishing org.myna.Dictation");
+                }
+                Err(e) => {
+                    eprintln!("myna-hud: {e}");
+                }
+            }
+        });
     }
-    *publisher.borrow_mut() = PublisherState::Claimed;
+    // Always re-enable the gate, claimed or not.
     shared.set_publishing(true);
-    let shared = (*shared).clone();
-    glib::spawn_future_local(async move {
-        match crate::serve::serve(shared).await {
-            Ok(connection) => {
-                std::mem::forget(connection); // held for process lifetime
-                eprintln!("myna-hud: publishing org.myna.Dictation");
-            }
-            Err(e) => {
-                eprintln!("myna-hud: {e}");
-            }
-        }
-    });
 }
 
 /// Stop publishing: gate the snapshot to idle without releasing the name.

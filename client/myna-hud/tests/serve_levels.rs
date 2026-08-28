@@ -74,3 +74,39 @@ fn an_idle_session_publishes_no_levels() {
     assert_eq!(rms, 0.0, "no levels while idle");
     assert_eq!(peak, 0.0);
 }
+
+// --- The publish gate: off → on must resume publishing -----------------
+// Pins the bug where toggling publish off then on in the lab never showed
+// the pill again: start_publish early-returned when the name was already
+// claimed, so the gate was never re-enabled. The gate and the claim are
+// separate concerns — the claim happens once, the gate must re-open on
+// every toggle-on.
+
+#[test]
+fn the_publish_gate_reenables_after_being_turned_off() {
+    let shared = Shared::default();
+    shared.set_controls(Controls {
+        state: wire::RECORDING.into(),
+        reason: String::new(),
+        envelope: 0.5,
+    });
+
+    // Publishing on by default.
+    assert_eq!(shared.snapshot().0, wire::RECORDING);
+
+    // Toggle off: the snapshot forces idle (consumers see the HUD go quiet).
+    shared.set_publishing(false);
+    let (state, _r, rms, _p) = shared.snapshot();
+    assert_eq!(state, wire::IDLE, "gated off publishes idle");
+    assert_eq!(rms, 0.0);
+
+    // Toggle back on: publishing resumes — this is what was broken.
+    shared.set_publishing(true);
+    let (state, _r, rms, _p) = shared.snapshot();
+    assert_eq!(
+        state,
+        wire::RECORDING,
+        "re-enabled publishes the live state"
+    );
+    assert!(rms > 0.0, "levels flow again");
+}
