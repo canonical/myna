@@ -89,6 +89,11 @@ install-schema: ## Install the client GSettings schema on the host (needs sudo)
 	sudo glib-compile-schemas /usr/share/glib-2.0/schemas
 	@echo "installed org.myna.dictation; read it with: gsettings get org.myna.dictation streaming-mode"
 
+.PHONY: i18n
+i18n: ## Regenerate the myna-hud translation template (po/myna.pot)
+	cd client/myna-hud && xgettext --from-code=UTF-8 --keyword=gettext --keyword=n_ \
+		--add-comments=TRANSLATORS --output=po/myna.pot --files-from=po/POTFILES.in
+
 .PHONY: server
 server: ## Sync the Python server env
 	cd server && uv sync

@@ -32,6 +32,7 @@ pub mod bus;
 pub mod dbus_consumer;
 pub mod gl;
 pub mod hud_logic;
+pub mod i18n;
 pub mod input_region;
 pub mod lab;
 pub mod motion;

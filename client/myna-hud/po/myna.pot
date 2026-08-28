@@ -1,0 +1,118 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-28 10:53+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/lab.rs:136
+msgid "myna HUD lab"
+msgstr ""
+
+#: src/lab.rs:151
+msgid "Published to org.myna.Dictation"
+msgstr ""
+
+#: src/lab.rs:170
+msgid "Publish on the session bus"
+msgstr ""
+
+#: src/lab.rs:172
+msgid ""
+"on: the HUD is embedded and published; a shell-hosted instance shows the "
+"real overlay"
+msgstr ""
+
+#: src/lab.rs:186
+msgid "State"
+msgstr ""
+
+#: src/lab.rs:187
+msgid "the wire value the publisher would send"
+msgstr ""
+
+#: src/lab.rs:203
+msgid "Audio level"
+msgstr ""
+
+#: src/lab.rs:204
+msgid "the smoothed envelope, published as RMS/peak"
+msgstr ""
+
+#: src/lab.rs:223
+msgid "Reduced motion"
+msgstr ""
+
+#: src/lab.rs:224
+msgid "the static/minimal-motion accessibility path"
+msgstr ""
+
+#: src/lab.rs:230
+msgid "Color scheme"
+msgstr ""
+
+#: src/lab.rs:231
+msgid "force light/dark to check legibility"
+msgstr ""
+
+#: src/lab.rs:248
+msgid "Accent color"
+msgstr ""
+
+#: src/lab.rs:250
+msgid "force the pill's accent (libadwaita has no runtime setter)"
+msgstr ""
+
+#: src/lab.rs:275
+msgid ""
+"Type here while the HUD is showing: the caret must never move to the HUD."
+msgstr ""
+
+#: src/lab.rs:282
+msgid "Dictation target"
+msgstr ""
+
+#: src/states.rs:96
+msgid "Loading model…"
+msgstr ""
+
+#: src/states.rs:97
+msgid "Listening"
+msgstr ""
+
+#: src/states.rs:98
+msgid "Transcribing"
+msgstr ""
+
+#: src/states.rs:99
+msgid "Finishing"
+msgstr ""
+
+#: src/states.rs:102
+msgid "No speech detected"
+msgstr ""
+
+#: src/states.rs:105
+msgid "Error"
+msgstr ""
+
+#: src/states.rs:106
+msgid "Active"
+msgstr ""
+
+#: src/states.rs:137
+#, c-format
+msgid "Error — %s"
+msgstr ""

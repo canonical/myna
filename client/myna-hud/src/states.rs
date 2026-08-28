@@ -15,6 +15,7 @@
 //! caller-controlled text is the content-free `reason` (E3), and it can flow
 //! solely into the two problem states' status lines.
 
+use crate::i18n::n_;
 use gettextrs::gettext;
 
 /// The E1 wire-state string constants (additive contract,
@@ -92,17 +93,17 @@ fn hidden() -> Descriptor {
 /// unknown value falls through to `Active`, never panics (X2).
 fn base_for(state: &str) -> (DictationState, &'static str, Option<Severity>) {
     match state {
-        wire::LOADING => (DictationState::Loading, "Loading model…", None),
-        wire::RECORDING => (DictationState::Recording, "Listening", None),
-        wire::TRANSCRIBING => (DictationState::Transcribing, "Transcribing", None),
-        wire::FINALIZING => (DictationState::Finalizing, "Finishing", None),
+        wire::LOADING => (DictationState::Loading, n_("Loading model…"), None),
+        wire::RECORDING => (DictationState::Recording, n_("Listening"), None),
+        wire::TRANSCRIBING => (DictationState::Transcribing, n_("Transcribing"), None),
+        wire::FINALIZING => (DictationState::Finalizing, n_("Finishing"), None),
         wire::NOTICE => (
             DictationState::Notice,
-            "No speech detected",
+            n_("No speech detected"),
             Some(Severity::Recoverable),
         ),
-        wire::ERROR => (DictationState::Error, "Error", Some(Severity::Critical)),
-        _ => (DictationState::Active, "Active", None),
+        wire::ERROR => (DictationState::Error, n_("Error"), Some(Severity::Critical)),
+        _ => (DictationState::Active, n_("Active"), None),
     }
 }
 
