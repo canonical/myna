@@ -19,13 +19,35 @@ use notify_rust::{Hint, Notification, Timeout, Urgency};
 use super::{Indicator, IndicatorState};
 
 /// A `notify-rust`-backed indicator: one updating toast per dictation session.
-#[derive(Debug, Default)]
 pub struct NotifyIndicator {
     /// App name shown on every toast (`appname` field, not the `summary`).
     app_name: String,
     /// The live notification's id, so state changes *replace* it rather than
     /// stack a new toast each transition. Cleared on `Hidden`.
     id: Option<u32>,
+    /// Pending auto-hide task for an error notice. Freedesktop `Timeout` is
+    /// not reliably honored by daemons, so we `close()` ourselves after the
+    /// dynamic hold.
+    pending_hide: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Default for NotifyIndicator {
+    fn default() -> Self {
+        Self {
+            app_name: "Myna".to_string(),
+            id: None,
+            pending_hide: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for NotifyIndicator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NotifyIndicator")
+            .field("app_name", &self.app_name)
+            .field("id", &self.id)
+            .finish()
+    }
 }
 
 /// The user-facing summary + body for a state (labels only — never transcript
@@ -60,40 +82,33 @@ impl NotifyIndicator {
         Self {
             app_name: "Myna".to_string(),
             id: None,
+            pending_hide: None,
         }
     }
 
-    /// Compute a dynamic notification timeout from the visible text length,
-    /// mirroring the HUD's `hold_ms_for` and GNOME Shell gdm's
-    /// `_getIntervalForMessage` (48 ms per character, at least 3.5 s, capped
-    /// at 10 s). Starts when the notification is shown and restarts on a
-    /// replacement — a new error while one is visible is shown again for its
-    /// full interval. With multiple Dictation clients the server does not
-    /// drive the idle transition; each notifier owns its timer locally.
-    fn timeout_for(body: &str, is_error: bool) -> Timeout {
-        if !is_error {
-            return Timeout::Never;
-        }
+    /// Dynamic hold for an error body, mirroring HUD `hold_ms_for` /
+    /// GNOME Shell gdm `_getIntervalForMessage` (48 ms/char, ≥3.5 s, ≤10 s).
+    fn hold_ms_for(body: &str) -> u64 {
         let len = body.chars().count() as f64;
         const PER_CHAR_MS: f64 = 48.0;
         const MIN_MS: f64 = 3500.0;
         const MAX_MS: f64 = 10_000.0;
-        let ms = (len * PER_CHAR_MS).max(MIN_MS).min(MAX_MS) as i32;
-        Timeout::Milliseconds(ms as u32)
+        (len * PER_CHAR_MS).max(MIN_MS).min(MAX_MS) as u64
     }
 
     /// Show or replace the lifecycle toast, returning the (possibly new)
     /// notification id. Runs the blocking D-Bus round-trip off the runtime.
+    /// Freedesktop `Timeout` is not reliably honored, so we always use
+    /// `Timeout::Never` and close ourselves after `hold_ms_for` for errors.
     async fn show(&self, summary: String, body: String, error: bool) -> Option<u32> {
         let app = self.app_name.clone();
         let id = self.id;
-        let timeout = Self::timeout_for(&body, error);
         tokio::task::spawn_blocking(move || {
             let mut n = Notification::new();
             n.appname(&app)
                 .summary(&summary)
                 .body(&body)
-                .timeout(timeout)
+                .timeout(Timeout::Never)
                 // Transient: don't clutter the notification tray with dictation
                 // liveness once dismissed.
                 .hint(Hint::Transient(true))
@@ -128,6 +143,34 @@ impl NotifyIndicator {
         })
         .await;
     }
+
+    fn abort_pending(&mut self) {
+        if let Some(h) = self.pending_hide.take() {
+            h.abort();
+        }
+    }
+
+    fn schedule_auto_hide(&mut self, body: &str) {
+        self.abort_pending();
+        let ms = Self::hold_ms_for(body);
+        let app = self.app_name.clone();
+        let id = self.id;
+        // Notifier-side timeout only: starts when shown, restarts on
+        // replacement, and with multiple Dictation clients the server does
+        // not drive idle.
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+            if let Some(id) = id {
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(h) = Notification::new().appname(&app).id(id).show() {
+                        h.close();
+                    }
+                })
+                .await;
+            }
+        });
+        self.pending_hide = Some(handle);
+    }
 }
 
 #[async_trait]
@@ -136,9 +179,14 @@ impl Indicator for NotifyIndicator {
         match toast_text(&state) {
             Some((summary, body)) => {
                 let error = matches!(state, IndicatorState::Error { .. });
-                self.id = self.show(summary, body, error).await;
+                self.abort_pending();
+                self.id = self.show(summary, body.clone(), error).await;
+                if error {
+                    self.schedule_auto_hide(&body);
+                }
             }
             None => {
+                self.abort_pending();
                 self.close().await;
                 self.id = None;
             }
@@ -146,6 +194,7 @@ impl Indicator for NotifyIndicator {
     }
 
     async fn hide(&mut self) {
+        self.abort_pending();
         self.close().await;
         self.id = None;
     }
