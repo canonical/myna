@@ -5,7 +5,7 @@ use libadwaita::prelude::*;
 
 fn probe(window: &gtk::ApplicationWindow, css: &str, label: &str) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(&format!(".myna-accent-probe {{ color: {css}; }}"));
+    provider.load_from_string(&format!(".myna-accent-probe {{ color: {css}; }}"));
     gtk::style_context_add_provider_for_display(
         &gtk::gdk::Display::default().unwrap(),
         &provider,
@@ -53,7 +53,7 @@ fn main() {
         // What our own probe_css_accent() makes of the same declaration.
         {
             let provider = gtk::CssProvider::new();
-            provider.load_from_data(".myna-probe2 { color: @accent_bg_color; }");
+            provider.load_from_string(".myna-probe2 { color: @accent_bg_color; }");
             gtk::style_context_add_provider_for_display(
                 &gtk::gdk::Display::default().unwrap(),
                 &provider,

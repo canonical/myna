@@ -35,7 +35,7 @@ fn main() {
             // (A separate provider's @define-color does not resolve into
             // another sheet's reference, so redefining the named colour
             // that way just invalidates it.)
-            provider.load_from_data(".myna-hud-ribbon { color: #00b000; }");
+            provider.load_from_string(".myna-hud-ribbon { color: #00b000; }");
             gtk::style_context_add_provider_for_display(
                 &gtk::gdk::Display::default().unwrap(),
                 &provider,

@@ -15,7 +15,7 @@ fn main() {
         if let Ok(extra) = std::env::var("MYNA_EXTRA_CSS") {
             if !extra.is_empty() {
                 let p = gtk::CssProvider::new();
-                p.load_from_data(&extra);
+                p.load_from_string(&extra);
                 gtk::style_context_add_provider_for_display(
                     &gtk::gdk::Display::default().unwrap(),
                     &p,
