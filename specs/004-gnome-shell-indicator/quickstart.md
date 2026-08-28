@@ -59,7 +59,7 @@ MYNA_HUD_GL_TESTS=1 cargo test -p myna-hud --test render_gl               # surf
 
 **Expected**: `myna-desktop` claims `com.canonical.Myna.Dictation`, a `zbus` client
 observes `PropertiesChanged` + properties, name-appeared/vanished fire, and
-the presence seam round-trips `com.canonical.Myna.Shell` ownership; the render check
+the RegisterClient client set (replaces presence seam); the render check
 compiles the generated shader on the real driver and rasterizes non-blank,
 non-flooded, per-phase-distinct frames (port of the former Python
 `render_headless.py`). Runs identically on the desktop VM and hardware
@@ -133,11 +133,11 @@ needed. Confirm it loaded with:
 
 ```sh
 journalctl --user -b 0 -o cat | grep -i myna-shell   # no load errors
-busctl --user status com.canonical.Myna.Shell >/dev/null && echo "presence: up"
+busctl --user call com.canonical.Myna.Dictation /com/canonical/Myna/Dictation com.canonical.Myna.Dictation RegisterClient 2>/dev/null; busctl --user get-property com.canonical.Myna.Dictation /com/canonical/Myna/Dictation com.canonical.Myna.Dictation State | grep -q . && echo "dictation: up"
 pgrep -af myna-hud                                    # the host spawned the renderer
 ```
 
-**Expected**: extension loaded, `com.canonical.Myna.Shell` owned, `myna-hud` running
+**Expected**: extension loaded, `myna-hud` registered via `RegisterClient`, `myna-hud` running
 with no visible window (idle → nothing shown, XH6/XH8 dormant path).
 
 ## 5. End-to-end spoken run (the on-hardware acceptance)

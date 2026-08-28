@@ -12,9 +12,9 @@ HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
 - positions it bottom-centre of the primary work area (and keeps it clear
   of an auto-hide bottom dash-to-dock via `Main.layoutManager.dashToDockStruts`),
 - supervises it (respawn on unexpected exit with bounded backoff, terminate
-  on disable), and
-- owns `com.canonical.Myna.Shell` for as long as it is enabled, so `myna-desktop` can
-  suppress its own fallback notification indicator (C12/C13).
+  on disable). `com.canonical.Myna.Shell` presence is no longer exposed;
+  fallback suppression now uses `com.canonical.Myna.Dictation` `RegisterClient`
+  client set.
 
 The HUD pill itself, its GPU wave ribbon, accent colour, reduced-motion
 handling, lab and simulator modes all live in `client/myna-hud`. Contract
@@ -61,16 +61,13 @@ Driven entirely by `com.canonical.Myna.Dictation` (served by `myna-desktop`):
 
 ## Layout
 
-- `extension.js` — entry point: wires the host and the `com.canonical.Myna.Shell`
-  presence name.
+- `extension.js` — entry point: wires the host.
 - `host.js` — the stateful glue: spawn, adopt, dock-type, position,
   supervise. Composes the pure modules below.
 - `place.js` — pure placement math (bottom-centre + shrink-above-dock).
 - `resolve.js` — pure launch resolution (`$MYNA_HUD_BINARY` →
   `snap run myna.hud`).
 - `respawn.js` — pure respawn policy (bounded backoff → dormancy).
-- `presence.js` — owns `com.canonical.Myna.Shell` for exactly as long as enabled,
-  fail-soft.
 - `dockStrutsConsumer.js` — follows `Main.layoutManager.dashToDockStruts`
   (the dash-to-dock reserved-extent export) so the pill is never covered by
   an auto-hide bottom dock.
