@@ -53,14 +53,20 @@ fn main() -> glib::ExitCode {
         }
     };
 
+    // Lab / serve-dbus are developer harnesses that you want to run
+    // repeatedly (often several at once) without D-Bus single-instance
+    // forwarding — e.g. `myna-hud --lab` alongside a hosted instance.
+    // There `NON_UNIQUE` is correct. The hosted HUD (no flag) must be a
+    // singleton owning `com.canonical.Myna.Hud` so `myna-desktop`'s
+    // `RegisterClient` + `NameOwnerChanged` pruning sees it, and the snap
+    // `hud` D-Bus slot is actually claimed.
+    let flags = match mode {
+        Mode::Lab | Mode::ServeDbus => gtk::gio::ApplicationFlags::NON_UNIQUE,
+        Mode::Hosted => gtk::gio::ApplicationFlags::empty(),
+    };
     let app = adw::Application::builder()
         .application_id(APP_ID)
-        // The HUD is a singleton that owns com.canonical.Myna.Hud; it
-        // registers as a client of com.canonical.Myna.Dictation so the
-        // publisher can suppress its notification fallback while a HUD
-        // is present. NON_UNIQUE would leave the name unclaimed and the
-        // publisher would never see the client, so we use the default
-        // (FLAGS_NONE) which requests the well-known name.
+        .flags(flags)
         .build();
 
     app.connect_activate(move |app| match mode {
