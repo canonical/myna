@@ -60,15 +60,33 @@ environment:
   XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
 
 apps:
+  # The dictation HUD renderer (feature 004): standalone GTK4 + libadwaita
+  # application (GPU ribbon, pill chrome, accent/motion/high-contrast, lab).
+  # Hosted by the myna-shell extension's overlay on GNOME (R27); also usable
+  # standalone via `snap run myna.hud --lab` / `--serve-dbus`. Packaged via
+  # the `gnome` extension (core24 → GNOME 46 SDK: GTK 4.18 / libadwaita 1.7).
+  # This re-stages the toolkit that T69 had pruned for the one-label ui-gtk
+  # overlay — now justified by the real product. The myna snap itself stays
+  # 4.9 MB; this is the `gnome` extension's ~13 MB cost.
+  myna-hud:
+    command: bin/myna-hud
+    extensions: [gnome]
+    plugs:
+      - wayland
+      - x11
+      - desktop
+      - desktop-legacy
+      - gsettings
+
   # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
   # The launcher passes only --socket/--language: activation (portal, because
   # $SNAP is set), the org.myna.Dictation indicator, and streaming preedit are
   # all resolved by myna-desktop itself rather than pinned here.
-  # NOTE: deliberately NO `gnome` extension and no GTK at all. The packaged
-  # build omits myna-desktop's removed `ui-gtk` overlay, so feedback is the
-  # org.myna.Dictation indicator (myna-shell) with a notification fallback:
-  # no toolkit to ship, and none of the GTK stack, icon themes and emoji
-  # data that came with it.
+  # NOTE: deliberately NO `gnome` extension for the daemon itself and no GTK
+  # at all there. The packaged build omits myna-desktop's removed `ui-gtk`
+  # overlay, so feedback is the org.myna.Dictation indicator (myna-shell)
+  # with a notification fallback: no toolkit to ship there, and none of the
+  # GTK stack that came with it.
   myna:
     command: bin/myna-daemon
     # A per-user systemd service, started at login and supervised
@@ -220,12 +238,18 @@ parts:
       - pkg-config
       - libclang-dev # bindgen, for pipewire-sys
       - libpipewire-0.3-dev
-      - libglib2.0-dev # gio-sys links glib/gio; brings glib-compile-schemas
+      - libgtk-4-dev
+      - libadwaita-1-dev
+      - libepoxy-dev
+      - libegl-dev
+      - libgl1-mesa-dev
+      - gettext # xgettext for myna-hud po template (build-time only)
     override-build: |
       toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
       export PATH="$toolchain/bin:$PATH"
       cargo install -f --locked --path myna-desktop --root "$CRAFT_PART_INSTALL"
       cargo install -f --locked --path myna-cli --root "$CRAFT_PART_INSTALL"
+      cargo install -f --locked --path myna-hud --root "$CRAFT_PART_INSTALL"
       rm -f "$CRAFT_PART_INSTALL"/.crates.toml "$CRAFT_PART_INSTALL"/.crates2.json
       # DWARF is ~30% of a release Rust binary and no user of a strict snap
       # can run a debugger against it anyway. --strip-debug, not --strip-all:
@@ -287,8 +311,8 @@ parts:
       # plugin directories, which are dlopened and so have no NEEDED edge
       # pointing at them. Over-pruning is not silent: snapcraft's `library`
       # linter reports anything left with a missing dependency.
-      keep=$(mktemp) todo=$(mktemp) next=$(mktemp)
-      { ls bin/myna-desktop bin/myna-dictate usr/bin/* usr/libexec/* 2>/dev/null
+       keep=$(mktemp) todo=$(mktemp) next=$(mktemp)
+      { ls bin/myna-desktop bin/myna-dictate bin/myna-hud usr/bin/* usr/libexec/* 2>/dev/null
         find "$lib"/pipewire-0.3 "$lib"/spa-0.2 "$lib"/gio -name '*.so' 2>/dev/null
       } > "$todo" || true
       while [ -s "$todo" ]; do
