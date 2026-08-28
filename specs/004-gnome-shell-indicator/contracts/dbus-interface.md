@@ -8,8 +8,7 @@ indicator. **(2026-08-26)** The consumer is now the renderer application
 longer holds any `com.canonical.Myna.Dictation` proxy; every guarantee below is unchanged
 and simply re-homed. State + level only — never transcript content (constitution
 V). This contract is defined here and encoded as executable tests on both sides
-before implementation. `com.canonical.Myna.Shell` presence name is no longer
-exposed — fallback suppression now uses `RegisterClient` client set (C14/C15).
+before implementation. Fallback suppression uses `RegisterClient` client set (C14/C15).
 
 ## Bus topology
 
@@ -71,9 +70,9 @@ change already reads the consistent reason.
 
 - **Well-known name**: `com.canonical.Myna.Hud` on the session bus, owned by the `myna-hud` `Adw.Application` singleton. Not watched directly for fallback — the HUD registers via `RegisterClient` on `com.canonical.Myna.Dictation` and the publisher's client set is authoritative.
 
-## Presence: `com.canonical.Myna.Shell` — removed
+## Presence: Client responsibility
 
-`com.canonical.Myna.Shell` was the 2026-08-26 companion presence name for surface selection (FR-017a, C12/C13, R24) — a member-less well-known name owned by the Shell extension while enabled. It is no longer exposed or watched; fallback suppression now uses the `RegisterClient` client set (C14/C15). Retained here for history; new code must not watch it.
+Fallback suppression now uses the `RegisterClient` client set (C14/C15).
 
 ## Confinement (why properties only)
 

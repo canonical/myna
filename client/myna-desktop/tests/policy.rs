@@ -1,11 +1,13 @@
 // tests/policy.rs — the launcher policy for the indicator surface (feature
 // 004, T151; contract publisher.md P20–P23). Hermetic: the presence probe is
-// injected, so no session bus is needed.
+// injected, so no session bus is needed. Fallback now uses
+// `ClientRegistry::has_clients()` (RegisterClient). This test keeps the
+// pure `SurfaceDecision` logic hermetic via a fake.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use myna_desktop::policy::{Policy, PRESENCE_NAME};
+use myna_desktop::policy::Policy;
 
 /// A fake presence probe the policy is handed (the real one queries the
 /// session bus). Toggling it fires the watched callbacks, like a real
@@ -40,7 +42,7 @@ impl Policy for FakePresence {
     }
 }
 
-// --- P20: while com.canonical.Myna.Shell has an owner, the notification fallback is
+// --- P20: while a HUD client is registered, the notification fallback is
 // suppressed --------------------------------------------------------------
 
 #[test]
@@ -55,7 +57,7 @@ fn p20_shell_present_suppresses_the_notify_fallback() {
     );
 }
 
-// --- P21: when com.canonical.Myna.Shell vanishes, the fallback is restored ---------
+// --- P21: when the last HUD client leaves, the fallback is restored ---------
 
 #[test]
 fn p21_shell_vanished_restores_the_notify_fallback() {
@@ -105,15 +107,15 @@ fn p22_bus_error_degrades_to_fallback() {
     );
 }
 
-// The name watched is exactly the extension host's presence name.
+// Policy trait still has shell_present for the pure SurfaceDecision test;
+// new code uses ClientRegistry, but the trait is kept for hermetic coverage.
 #[test]
-fn p20_watches_org_myna_shell() {
-    assert_eq!(PRESENCE_NAME, "com.canonical.Myna.Shell");
+fn p20_policy_trait_still_works() {
     let presence = FakePresence::default();
     presence.set_present(true);
     assert!(
         presence.shell_present(),
-        "the fake reports the com.canonical.Myna.Shell owner state"
+        "the fake still reports the presence state"
     );
 }
 

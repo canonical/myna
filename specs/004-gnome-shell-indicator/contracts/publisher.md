@@ -12,8 +12,7 @@ notification fallback while any `myna-hud` client is registered via
 `RegisterClient` and restores it when the last client leaves; and the old
 experimental `ui-gtk`/`GtkIndicator` overlay is **removed** (superseded by the
 `myna-hud` renderer application — spec FR-023; its guarantees were never listed
-here and its files are deleted). `com.canonical.Myna.Shell` presence is no
-longer exposed or watched (see `dbus-interface.md` §Presence — removed).
+here and its files are deleted).
 
 ## DbusIndicator (implements `indicator::Indicator`)
 
@@ -62,7 +61,7 @@ longer exposed or watched (see `dbus-interface.md` §Presence — removed).
 ## Launcher policy (2026-08-26, R24; C13 → C14/C15)
 
 `myna-desktop` selects the indicator surface from the `RegisterClient` client set
-instead of rendering its own. `com.canonical.Myna.Shell` is no longer watched.
+instead of rendering its own.
 
 | # | Guarantee | Test tier |
 |---|---|---|
