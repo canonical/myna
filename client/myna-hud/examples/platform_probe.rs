@@ -50,7 +50,7 @@ fn main() {
         // A widget styled the way `style.css` styles the ribbon, so the
         // CSS path is exercised exactly as production does it.
         let provider = gtk::CssProvider::new();
-        provider.load_from_data(".myna-accent-probe { color: @accent_bg_color; }");
+        provider.load_from_string(".myna-accent-probe { color: @accent_bg_color; }");
         gtk::style_context_add_provider_for_display(
             &gtk::gdk::Display::default().unwrap(),
             &provider,

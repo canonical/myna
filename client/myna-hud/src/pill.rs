@@ -594,7 +594,7 @@ fn build_model(state: &PillState) -> crate::ribbon::RibbonModel {
 /// Install the pill's stylesheet once per display.
 fn load_css() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(include_str!("style.css"));
+    provider.load_from_string(include_str!("style.css"));
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,

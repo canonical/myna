@@ -638,7 +638,7 @@ fn css_color_hex(variable: &str) -> Option<String> {
     let display = gdk::Display::default()?;
 
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(&format!(
+    provider.load_from_string(&format!(
         ".myna-lab-accent-probe {{ color: var({variable}); }}"
     ));
     gtk::style_context_add_provider_for_display(
