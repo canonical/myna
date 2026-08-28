@@ -326,16 +326,19 @@ rather than the "obvious" solution.
   shell chrome belongs to **GNOME Shell extensions** (JS, in the compositor
   process), not arbitrary client surfaces, so it has declined to adopt
   layer-shell.
-- *So on GNOME* there is currently **no sanctioned way for a normal client to
-  show an always-on-top, non-focus-stealing overlay.** The realistic options are
-  (a) a **GNOME Shell extension** for the indicator (the GNOME-blessed path, a
-  separate JS component with its own packaging/review — **shipped**: see
-  `extensions/myna-shell/` / feature 004, a bottom-center HUD pill consuming
-  `org.myna.Dictation`), (b) lean on the **notification/OSD** facilities the
-  shell already owns (what `NotifyIndicator` does — the fallback when the
-  extension is absent), or (c) ship layer-shell for KDE/wlroots users and fall
-  back to notifications on GNOME (`gtk4-layer-shell` gates on
-  `is_supported()`; this is what Handy effectively does).
+- *So on GNOME* there is currently **no sanctioned way for an *unassisted* normal client to
+   show an always-on-top, non-focus-stealing overlay.** An *assisted* client —
+   one whose window is hosted by a Shell extension — **does** have a sanctioned
+   path: the extension launches the client's window via `Meta.WaylandClient`,
+   docks it and owns its placement, which is exactly the **shipped GNOME answer**
+   (`myna-shell` hosting `myna-hud`, feature 004). The realistic options for
+   *unassisted* clients are (a) a **GNOME Shell extension** for the indicator
+   (the GNOME-blessed path, a separate JS component — **shipped** as the
+   `myna-hud` + `myna-shell` pair), (b) the **notification/OSD** facilities
+   the shell already owns (what `NotifyIndicator` does — the fallback when the
+   extension is absent), or (c) ship layer-shell for KDE/wlroots users and fall
+   back to notifications on GNOME (`gtk4-layer-shell` gates on
+   `is_supported()`).
 - *The "right" upstream fix, once it settles:* a **standardised cross-desktop
   layer-shell** in `wayland-protocols` (an `ext-`namespace successor has been
   discussed for years) that Mutter would implement — or GNOME converging on some
@@ -384,9 +387,12 @@ becomes the norm for assistive input.
   boundary the survey argues for: IBus today, `input_method_v2` for wlroots, and
   whatever portable text-injection path standardises later, all behind
   `Injector` with no controller/FSM changes.
-- **Focus-safe overlay** is compositor-dependent (survey §2): a `gtk4-layer-shell`
-  backend would serve KDE/wlroots; GNOME needs a Shell extension or the
-  notification floor. Kept behind the `Indicator` seam.
+- **Focus-safe overlay** is compositor-dependent (survey §2): on **GNOME** the
+  shipped answer is the **extension-hosted `myna-hud` overlay** (`myna-shell`
+  launching `myna-hud` via `Meta.WaylandClient` — a sanctioned, assisted-client
+  path); a `gtk4-layer-shell` backend remains a **backend swap** behind the same
+  `Indicator` seam for KDE/wlroots where layer-shell is natively supported.
+  Notifications stay the portable floor. Kept behind the `Indicator` seam.
 - **Streaming preedit**: **landed** (2026-07-27), and since 2026-08-24 no
   longer opt-in — it follows the streaming tier gate (see *Streaming preedit*
   above). The remaining piece is the UD136 hypothesis-*display* question

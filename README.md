@@ -50,9 +50,11 @@ The rest of this README expands on each piece.
   (hotkey → capture → IBus injection into the focused app). `myna-audio` is a
   PipeWire capture adapter, `myna-orchestrator` the session FSM, `myna-core` the
   wire contract.
-- `extensions/myna-shell/` — a **GJS** GNOME Shell extension: a focus-safe,
-  animated dictation indicator that runs inside the compositor and consumes state
-  from `myna-desktop` over D-Bus. Easy to make your own.
+- `extensions/myna-shell/` — a **GJS** GNOME Shell extension: a thin overlay
+  **host** that launches the standalone `myna-hud` renderer via
+  `Meta.WaylandClient` and positions it as a focus-safe, click-through DOCK
+  (feature 004 — the pill is rendered by `myna-hud`, not by the extension).
+  Easy to make your own — or run without it and fall back to notifications.
 - `*-snap/` — one inference snap per model family (strict-confinement packages
   of `myna-server` + a model + engines).
 - `docs/` — architecture and design notes; `docs/project-plan.md` is the living
@@ -221,10 +223,16 @@ preedit follows the streaming tier gate. Force any of them with `--portal` /
 
 ### The GNOME Shell indicator
 
-On GNOME/Wayland a normal client can't show an always-on-top, focus-safe overlay,
-so the animated dictation indicator lives in a GJS extension that runs inside the
-compositor and reads state + audio level from `myna-desktop` over D-Bus
-(`org.myna.Dictation`). It never captures, transcribes, or injects.
+On GNOME/Wayland an *unassisted* normal client can't show an always-on-top,
+focus-safe overlay — the hosted overlay **is** the sanctioned GNOME answer:
+`myna-shell` (a thin host) launches `myna-hud` (the standalone renderer) via
+`Meta.WaylandClient`, docks it and owns its placement; on other compositors
+the same `Indicator` seam hosts a `gtk4-layer-shell` backend (a backend swap).
+The extension never captures, transcribes or injects — it only hosts.
+
+To iterate on the extension without rebuilding the package, put the symlink
+where the package would land - and remove it before installing the real deb,
+which claims the same path:
 
 To iterate on the extension without rebuilding the package, put the symlink
 where the package would land - and remove it before installing the real deb,
