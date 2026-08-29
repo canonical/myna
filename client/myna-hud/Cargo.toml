@@ -77,3 +77,6 @@ async-io = "2"
 # trace it through the gettext-system feature's platform gettext linkage.
 [package.metadata.cargo-machete]
 ignored = ["gettext-rs"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
