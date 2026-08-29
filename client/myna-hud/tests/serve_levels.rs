@@ -4,6 +4,10 @@
 // sat frozen at the last state change. No bus needed: this exercises
 // Shared::snapshot directly, exactly what the ~20 Hz publish loop reads.
 
+// The `serve` module is dev-lab-only (#[cfg(dev_lab)]); skip this test when
+// dev_lab is off (e.g. coverage builds, per build.rs / T171).
+#![cfg(dev_lab)]
+
 use myna_hud::serve::{Controls, Shared};
 use myna_hud::simulator::envelope_to_levels;
 use myna_hud::states::wire;

@@ -7,6 +7,10 @@
 // Without one it skips (returns early) rather than failing, matching the
 // harness convention for env-dependent checks.
 
+// The `serve` module is dev-lab-only (#[cfg(dev_lab)]); skip this test when
+// dev_lab is off (e.g. coverage builds, per build.rs / T171).
+#![cfg(dev_lab)]
+
 use std::time::Duration;
 
 use myna_hud::serve::{serve, Controls, Shared};
