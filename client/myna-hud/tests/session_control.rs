@@ -4,6 +4,10 @@
 // method checks. The bus wiring is out of scope here; this pins the rules
 // the served `Start`/`Stop`/`Toggle` methods drive.
 
+// The `session_control` module is dev-lab-only (#[cfg(dev_lab)]); skip this
+// test when dev_lab is off (e.g. coverage builds, per build.rs / T171).
+#![cfg(dev_lab)]
+
 use myna_hud::session_control::{Session, StartOutcome};
 
 #[test]
