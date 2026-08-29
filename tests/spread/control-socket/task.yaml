@@ -45,8 +45,9 @@ prepare: |
 
 execute: |
     set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    snap install --dangerous "$MYNA_SNAP"
+    install_snap "$MYNA_SNAP"
 
     # The plug must exist to be connectable at all - the failure mode this
     # guards is a snapcraft.yaml that quietly dropped it.
