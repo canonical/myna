@@ -70,12 +70,14 @@ actions:
     # The orchestrator e2e tests spawn the venv's myna-server and skip (never
     # fail) when it is absent, so sync first or they silently stop testing.
     (cd /project/server && uv sync -q)
+    export RUST_BACKTRACE=1
     cd /project/client && cargo test --workspace "$@"
   # The env-gated hardware suites, with their services stood up (features
   # 002/003). `test` above stays hermetic; this is the same suites with the
   # gates on, and it is what `cov` folds in.
   test-gated: |
     export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
     cd /project/client
     /project/dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
     /project/dev/gated-tests.sh cargo test \
@@ -100,6 +102,7 @@ actions:
   # Raw .profraw is left in place for `exercise` to merge against.
   cov: |
     export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
     # cargo-llvm-cov needs llvm-tools. Without it, it offers to install the
     # component from an interactive prompt - which on a CI runner is a hang,
     # not an error, and locally reports the network as a rustup prompt failing
@@ -158,6 +161,7 @@ actions:
   # `corpus` tier above.
   exercise: |
     export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
     bash /project/dev/exercise.sh
 
   # Populations (test-covered / use-case-only / never-executed) + dead-code
