@@ -71,6 +71,8 @@ apps:
   hud:
     command: bin/myna-hud
     extensions: [gnome]
+    environment:
+      NO_AT_BRIDGE: "1"
     plugs:
       - wayland
       - x11
