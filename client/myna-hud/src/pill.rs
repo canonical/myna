@@ -29,6 +29,7 @@ use crate::hud_logic::{
 use crate::notice_slot::NoticeSlot;
 use crate::platform;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
+#[cfg(dev_lab)]
 use crate::shader::hex_to_rgb;
 use crate::states::Descriptor;
 use crate::vumeter::levels_to_intensity;
@@ -78,6 +79,7 @@ struct PillState {
     phase_since: Instant,
     started: Instant,
     reduced_motion: bool,
+    #[cfg(dev_lab)]
     /// Lab override: when `Some`, replaces the desktop-derived
     /// `reduced_motion` and is not clobbered by a live preference change.
     reduced_motion_override: Option<bool>,
@@ -85,13 +87,16 @@ struct PillState {
     /// The accent last read from the theme, so the palette is rebuilt only
     /// when the colour genuinely changes rather than every frame.
     accent: Option<crate::shader::Rgb>,
+    #[cfg(dev_lab)]
     /// Lab override: when `Some`, forces the accent hex instead of the
     /// desktop's — libadwaita has no public runtime accent setter (it is a
     /// desktop preference), so the lab forces the palette directly.
     accent_override: Option<String>,
+    #[cfg(dev_lab)]
     /// Lab override: when `Some`, forces high-contrast on/off instead of the
     /// desktop's `gtk-interface-contrast` / `Adw.StyleManager:high-contrast`.
     /// Like reduced-motion, this survives live preference changes while set.
+    #[cfg(dev_lab)]
     high_contrast_override: Option<bool>,
 }
 
@@ -163,13 +168,16 @@ impl Pill {
             phase_since: Instant::now(),
             started: Instant::now(),
             reduced_motion: platform::probe_reduced_motion(),
+            #[cfg(dev_lab)]
             reduced_motion_override: None,
             // No styled widget is rooted yet, so this is the fallback
             // palette; sync_palette() re-resolves from the theme once the
             // ribbon is mapped.
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
             accent: None,
+            #[cfg(dev_lab)]
             accent_override: None,
+            #[cfg(dev_lab)]
             high_contrast_override: None,
         }));
 
@@ -443,20 +451,28 @@ impl Pill {
             let Some(this) = this.upgrade() else { return };
             // Motion comes straight from its own sources, so it is always
             // read now — unless the lab has pinned it.
+            #[cfg(dev_lab)]
             {
                 let mut state = this.state.borrow_mut();
                 if state.reduced_motion_override.is_none() {
                     state.reduced_motion = platform::probe_reduced_motion();
                 }
             }
+            #[cfg(not(dev_lab))]
+            {
+                this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
+            }
 
             // High contrast is a plain setting too — unless the lab has
             // pinned it, re-read the desktop preference live.
             // (The override survives while set, like reduced-motion.)
+            #[cfg(dev_lab)]
             let high_changed = {
                 let state = this.state.borrow();
                 state.high_contrast_override.is_none()
             };
+            #[cfg(not(dev_lab))]
+            let high_changed = true;
             if high_changed {
                 this.sync_high_contrast_inner(None);
             }
@@ -487,10 +503,17 @@ impl Pill {
         let high = if let Some(v) = forced {
             v
         } else {
-            let state = self.state.borrow();
-            if let Some(v) = state.high_contrast_override {
-                v
-            } else {
+            #[cfg(dev_lab)]
+            {
+                let state = self.state.borrow();
+                if let Some(v) = state.high_contrast_override {
+                    v
+                } else {
+                    platform::probe_high_contrast()
+                }
+            }
+            #[cfg(not(dev_lab))]
+            {
                 platform::probe_high_contrast()
             }
         };
@@ -502,6 +525,11 @@ impl Pill {
     }
 
     /// Force a re-read of the theme's accent at the next frame.
+    pub fn resync_accent(self: &Rc<Self>) {
+        self.schedule_accent_resync();
+    }
+
+    #[cfg(dev_lab)]
     /// Override the reduced-motion mode (the lab's accessibility toggle).
     /// `None` returns to the desktop preference.
     pub fn set_reduced_motion_override(&self, value: Option<bool>) {
@@ -520,6 +548,7 @@ impl Pill {
     /// returns to the desktop accent. libadwaita has no public runtime
     /// accent setter (it is a desktop preference), so the lab forces the
     /// palette directly.
+    #[cfg(dev_lab)]
     pub fn set_accent_override(&self, hex: Option<String>) {
         self.state.borrow_mut().accent_override = hex;
         self.sync_palette();
@@ -529,13 +558,10 @@ impl Pill {
     /// preference (GtkSettings `gtk-interface-contrast` with libadwaita
     /// `high-contrast` fallback). Works on any libadwaita 1.x — the
     /// `high-contrast` property existed before `gtk-interface-contrast`.
+    #[cfg(dev_lab)]
     pub fn set_high_contrast_override(&self, value: Option<bool>) {
         self.state.borrow_mut().high_contrast_override = value;
         self.sync_high_contrast_inner(value);
-    }
-
-    pub fn resync_accent(self: &Rc<Self>) {
-        self.schedule_accent_resync();
     }
 
     fn schedule_accent_resync(self: &Rc<Self>) {
@@ -552,10 +578,13 @@ impl Pill {
     fn sync_palette(&self) {
         let mut state = self.state.borrow_mut();
         // A lab override wins over the desktop entirely.
+        #[cfg(dev_lab)]
         let palette = match state.accent_override.as_deref() {
             Some(hex) => crate::accent::resolve_theme_accent_palette(hex_to_rgb(hex)),
             None => platform::probe_accent_palette(Some(&self.ribbon)),
         };
+        #[cfg(not(dev_lab))]
+        let palette = platform::probe_accent_palette(Some(&self.ribbon));
         let accent = palette.main_rgb();
         if state.accent == Some(accent) {
             return;
@@ -583,9 +612,12 @@ fn build_model(state: &PillState) -> crate::ribbon::RibbonModel {
         elapsed_ms,
         phase: state.phase,
         phase_elapsed_ms: state.phase_since.elapsed().as_secs_f64() * 1000.0,
+        #[cfg(dev_lab)]
         reduced_motion: state
             .reduced_motion_override
             .unwrap_or(state.reduced_motion),
+        #[cfg(not(dev_lab))]
+        reduced_motion: state.reduced_motion,
         severity_tint: state.notice.severity(),
         ..Default::default()
     })

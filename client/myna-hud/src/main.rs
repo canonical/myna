@@ -29,7 +29,9 @@ const APP_ID: &str = "com.canonical.Myna.Hud";
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
     Hosted,
+    #[cfg(dev_lab)]
     Lab,
+    #[cfg(dev_lab)]
     ServeDbus,
 }
 
@@ -60,9 +62,18 @@ fn main() -> glib::ExitCode {
     // singleton owning `com.canonical.Myna.Hud` so `myna-desktop`'s
     // `RegisterClient` + `NameOwnerChanged` pruning sees it, and the snap
     // `hud` D-Bus slot is actually claimed.
-    let flags = match mode {
-        Mode::Lab | Mode::ServeDbus => gtk::gio::ApplicationFlags::NON_UNIQUE,
-        Mode::Hosted => gtk::gio::ApplicationFlags::empty(),
+    let flags = {
+        #[cfg(dev_lab)]
+        {
+            match mode {
+                Mode::Lab | Mode::ServeDbus => gtk::gio::ApplicationFlags::NON_UNIQUE,
+                Mode::Hosted => gtk::gio::ApplicationFlags::empty(),
+            }
+        }
+        #[cfg(not(dev_lab))]
+        {
+            gtk::gio::ApplicationFlags::empty()
+        }
     };
     let app = adw::Application::builder()
         .application_id(APP_ID)
@@ -71,7 +82,9 @@ fn main() -> glib::ExitCode {
 
     app.connect_activate(move |app| match mode {
         Mode::Hosted => activate_hosted(app),
+        #[cfg(dev_lab)]
         Mode::Lab => activate_lab(app),
+        #[cfg(dev_lab)]
         Mode::ServeDbus => activate_serve_dbus(app),
     });
 
@@ -80,11 +93,26 @@ fn main() -> glib::ExitCode {
 }
 
 fn parse_mode() -> Result<Mode, String> {
+    #[allow(unused_mut)]
     let mut mode = Mode::Hosted;
     for argument in std::env::args().skip(1) {
         match argument.as_str() {
+            #[cfg(dev_lab)]
             "--lab" => mode = Mode::Lab,
+            #[cfg(not(dev_lab))]
+            "--lab" => {
+                return Err(format!(
+                    "myna-hud: --lab requires --features dev-lab (or a debug build)\n\n{USAGE}"
+                ))
+            }
+            #[cfg(dev_lab)]
             "--serve-dbus" => mode = Mode::ServeDbus,
+            #[cfg(not(dev_lab))]
+            "--serve-dbus" => {
+                return Err(format!(
+                "myna-hud: --serve-dbus requires --features dev-lab (or a debug build)\n\n{USAGE}"
+            ))
+            }
             "--version" => {
                 println!("myna-hud {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
@@ -99,6 +127,7 @@ fn parse_mode() -> Result<Mode, String> {
     Ok(mode)
 }
 
+#[cfg(dev_lab)]
 const USAGE: &str = "\
 Usage: myna-hud [OPTION]
 
@@ -107,6 +136,16 @@ The myna dictation HUD renderer.
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --lab          development lab: manual controls, no backend
   --serve-dbus   publish a simulated com.canonical.Myna.Dictation
+  --version      print the version and exit
+  -h, --help     print this help and exit";
+
+#[cfg(not(dev_lab))]
+const USAGE: &str = "\
+Usage: myna-hud [OPTION]
+
+The myna dictation HUD renderer.
+
+  (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --version      print the version and exit
   -h, --help     print this help and exit";
 
@@ -152,12 +191,14 @@ fn activate_hosted(app: &adw::Application) {
 }
 
 /// The development lab: manual controls, no backend.
+#[cfg(dev_lab)]
 fn activate_lab(app: &adw::Application) {
     myna_hud::lab::present(app);
 }
 
 /// The simulated publisher: the lab, plus a real `com.canonical.Myna.Dictation` on the
 /// session bus so the hosted path can be exercised without the daemon.
+#[cfg(dev_lab)]
 fn activate_serve_dbus(app: &adw::Application) {
     myna_hud::lab::present_serving(app);
 }

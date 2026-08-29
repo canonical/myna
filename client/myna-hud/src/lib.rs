@@ -34,13 +34,16 @@ pub mod gl;
 pub mod hud_logic;
 pub mod i18n;
 pub mod input_region;
+#[cfg(dev_lab)]
 pub mod lab;
 pub mod motion;
 pub mod notice_slot;
 pub mod pill;
 pub mod platform;
 pub mod ribbon;
+#[cfg(dev_lab)]
 pub mod serve;
+#[cfg(dev_lab)]
 pub mod session_control;
 pub mod shader;
 pub mod simulator;
