@@ -1233,6 +1233,7 @@ dependencies = [
  "gl",
  "gtk4",
  "libadwaita",
+ "tokio",
  "zbus",
 ]
 
