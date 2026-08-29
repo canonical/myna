@@ -10,13 +10,18 @@ description = "GTK4 renderer application for the myna dictation indicator — th
 name = "myna_hud"
 path = "src/lib.rs"
 
+[features]
+# Lab + simulator — dev tool. Present in debug builds automatically (build.rs
+# emits dev_lab when PROFILE==debug); enable explicitly in release with
+# --features dev-lab. Release without it is the lean shipped binary.
+dev-lab = []
+
 [[bin]]
 name = "myna-hud"
 path = "src/main.rs"
 
 [dependencies]
 # The pure logic modules (states/vumeter/ribbon/shader/hud_logic/
-# input_region/accent/motion/simulator) are std-only; the application half
 # links the toolkit stack.
 #
 # Version strategy (R26; runtime matrix per the snap's SDK — the packaged

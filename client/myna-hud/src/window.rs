@@ -143,16 +143,19 @@ impl HudWindow {
     }
 
     /// Override reduced-motion for lab testing; `None` returns to the desktop.
+    #[cfg(dev_lab)]
     pub fn set_reduced_motion_override(&self, value: Option<bool>) {
         self.pill.set_reduced_motion_override(value);
     }
 
     /// Force the accent hex (lab override); `None` returns to the desktop.
+    #[cfg(dev_lab)]
     pub fn set_accent_override(&self, hex: Option<String>) {
         self.pill.set_accent_override(hex);
     }
 
     /// Force high-contrast for the lab; `None` returns to the desktop.
+    #[cfg(dev_lab)]
     pub fn set_high_contrast_override(&self, value: Option<bool>) {
         self.pill.set_high_contrast_override(value);
     }
