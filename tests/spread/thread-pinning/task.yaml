@@ -39,11 +39,12 @@ prepare: |
 
 execute: |
     set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
     COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
 
-    snap install --dangerous "$ADAPTER_SNAP" "$COMPONENT"
+    install_snap "$ADAPTER_SNAP" "$COMPONENT"
     snap connect ${SNAP_UNDER_TEST}:hardware-observe
     # Sideloading carries no snap declaration, so hardware-observe is
     # unconnected at install time and the install hook skips `use-engine
@@ -56,7 +57,7 @@ execute: |
     ${MODELCTL} use-engine --auto --assume-yes --no-restart
     ${MODELCTL} use-model "$MODEL" --assume-yes
 
-    snap install --dangerous "$MYNA_SNAP"
+    install_snap "$MYNA_SNAP"
     snap connect myna:backend ${SNAP_UNDER_TEST}:ubustt-socket
     cp "$SPREAD_PATH/tests/spread/thread-pinning/fixture.wav" /var/snap/myna/current/fixture.wav
 

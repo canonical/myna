@@ -33,6 +33,7 @@ prepare: |
 
 execute: |
     set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
     COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
@@ -41,7 +42,7 @@ execute: |
     # unconnected and the install hook skips `use-engine --auto`, leaving no
     # active engine and a daemon that exits 1 on every start. Connect, select,
     # then start - the same dance dev/matrix.py performs.
-    snap install --dangerous "$ADAPTER_SNAP" "$COMPONENT"
+    install_snap "$ADAPTER_SNAP" "$COMPONENT"
     snap connect ${SNAP_UNDER_TEST}:hardware-observe
     snap stop ${SNAP_UNDER_TEST}.server || true
     systemctl reset-failed snap.${SNAP_UNDER_TEST}.server.service || true
@@ -63,7 +64,7 @@ execute: |
     ${MODELCTL} list-models --format=json | grep -q "\"name\": \"$MODEL\""
     ${MODELCTL} use-model "$MODEL" --assume-yes
 
-    snap install --dangerous "$MYNA_SNAP"
+    install_snap "$MYNA_SNAP"
     snap connect myna:backend ${SNAP_UNDER_TEST}:ubustt-socket
 
     # Confinement: the client cannot read the spread project dir, so stage the

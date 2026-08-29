@@ -16,10 +16,11 @@ prepare: |
 
 execute: |
     set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
-    snap install --dangerous "$FAKE_SNAP"
-    snap install --dangerous "$MYNA_SNAP"
+    install_snap "$FAKE_SNAP"
+    install_snap "$MYNA_SNAP"
     snap connect myna:backend myna-fake-backend:ubustt-socket
 
     # The fake backend daemon serves the scripted transcript once the socket

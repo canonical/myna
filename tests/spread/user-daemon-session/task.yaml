@@ -33,8 +33,9 @@ prepare: |
 
 execute: |
     set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    snap install --dangerous "$MYNA_SNAP"
+    install_snap "$MYNA_SNAP"
 
     # Lingering starts a user manager with no session behind it - the whole
     # point of the test.
@@ -86,6 +87,10 @@ execute: |
     # nobody is logged into. Re-installing the same file is the sideload form
     # of a refresh: it makes a new revision and moves the unit to it.
     PID_BEFORE=$(systemctl --user -M "$USER_NAME@" show snap.myna.myna.service -p MainPID --value)
+    # A re-install of the same file is the sideload form of a refresh: it makes
+    # a new revision and moves the unit to it. snapd is already up after the
+    # first install, so this is safe as a raw install (and must NOT short-circuit
+    # on "already installed" - it has to produce a new revision).
     snap install --dangerous "$MYNA_SNAP"
     for i in $(seq 1 30); do
         PID_AFTER=$(systemctl --user -M "$USER_NAME@" show snap.myna.myna.service -p MainPID --value)
