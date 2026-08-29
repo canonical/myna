@@ -40,6 +40,25 @@ all report paths are repo-relative and gitignored.
   terminal missing-lines summary, `server/coverage-tests.cobertura.xml`.
 - **Exit**: non-zero if any test fails or report generation fails.
 
+## `gjs-cov` — GJS extension coverage (feature 006, GJS suites)
+
+- **Runs**: the extension's pure-GJS contract suites (`extensions/myna-shell/test/*.test.js`)
+  under gjs's own `--coverage-prefix/--coverage-output` instrumentation (no extra
+  tool installs - gjs emits lcov natively), one coverage run per test file, merged.
+  Every shipped `.js` module in the extension is accounted for: the ones the
+  contract suites drive (`place.js`, `resolve.js`, `respawn.js`,
+  `shellCompatLogic.js`, …) report real line/branch hits, while the Shell-bound
+  modules (`host.js` / `extension.js` / `announcer.js` / `dockStrutsConsumer.js`
+  / `shellCompat.js`) import `gi://Meta`/`gi://Shell` and are not loadable
+  headlessly, so they appear at **0% against their physical line count** rather
+  than vanishing from the denominator. That is the honest number, not a miss.
+- **Outputs**: `extensions/myna-shell/target/coverage/gjs.lcov` (merged lcov),
+  `gjs-extension.lcov` (the instrumented extension tree only, re-anchored on the
+  real sources for `genhtml`/merging), `gjs-summary.md` (digest, for a CI job
+  summary), `gjs-summary.json` (machine-readable totals + per-file).
+- **Exit**: non-zero if any test fails or no extension records are found (wrong
+  prefix/`--raw`); the report itself is advisory.
+
 ## `exercise` — use-case runs under instrumentation (FR-004)
 
 - **Runs** `dev/exercise.sh`, which re-executes itself under

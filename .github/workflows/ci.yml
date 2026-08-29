@@ -145,6 +145,9 @@ jobs:
       - name: Python coverage (tests)
         run: make py-cov
 
+      - name: GJS extension coverage (tests)
+        run: make gjs-cov
+
       - name: Use-case exercise (merged exports)
         run: make workshop-exercise
 
@@ -156,6 +159,9 @@ jobs:
           make workshop-deadcode
           cat client/target/coverage/populations-summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: GJS coverage report
+        run: cat extensions/myna-shell/target/coverage/gjs-summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
@@ -165,6 +171,7 @@ jobs:
             client/target/coverage/
             server/htmlcov/
             server/coverage-*.xml
+            extensions/myna-shell/target/coverage/
 
       # Blocking gate (FR-008): 80% of changed coverable lines, 5-line floor,
       # deletion-only and excluded paths cannot false-fail. Exit 2 = fail.

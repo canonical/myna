@@ -206,6 +206,10 @@ cov: ## Rust coverage (workshop: cov)
 py-cov: ## Python coverage (workshop: py-cov)
 	workshop run myna py-cov
 
+.PHONY: gjs-cov
+gjs-cov: ## GJS extension coverage (workshop: gjs-cov)
+	workshop run myna gjs-cov
+
 # The one definition of the static gate battery: CI's `static` job runs
 # `make check` and nothing else, so a gate added here is a gate CI enforces -
 # there is no second list in the workflow to keep in step. Deliberately

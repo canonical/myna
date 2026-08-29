@@ -148,6 +148,25 @@ actions:
       --cov-report=xml:coverage-tests.cobertura.xml "$@"
     cp -f .coverage .coverage.tests
 
+  # GJS extension coverage (feature 006): the pure-GJS contract suites under
+  # instrumentation via gjs's own --coverage-prefix/--coverage-output, merged
+  # across runs, filtered to the extension tree, and digested. Needs only gjs
+  # (project-desktop SDK); the Shell-bound modules (host.js/extension.js) are
+  # not importable headlessly, so they read as 0 - that is expected, not a miss.
+  gjs-cov: |
+    set -uo pipefail
+    EXT=/project/extensions/myna-shell
+    OUT="$EXT/target/coverage"
+    RAW="$OUT/raw"
+    rm -rf "$OUT"; mkdir -p "$RAW"
+    cd "$EXT"
+    for t in test/*.test.js; do
+      gjs -m --coverage-prefix="$EXT" --coverage-output="$RAW/$(basename "$t")" "$t" || exit 1
+    done
+    # gjs writes one coverage.lcov per run; merge them into one lcov.
+    cat "$RAW"/*/coverage.lcov > "$OUT/gjs.lcov"
+    python3 /project/dev/gjs_coverage.py "$OUT/gjs.lcov" "$EXT" --raw "$RAW" --out "$OUT"
+
   # Real-speech corpus tier the `exercise` use-cases dictate from. Corpora are
   # generated, never committed (.gitignore), so CI has to provision one; the
   # default args reproduce the tier `exercise` expects, bit-for-bit. Idempotent:

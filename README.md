@@ -338,6 +338,7 @@ One command per language in the Workshop environment (same commands in CI):
 ```shell
 workshop run myna cov        # Rust: HTML + lcov + Cobertura under client/target/coverage/
 workshop run myna py-cov     # Python: htmlcov/ + term-missing + Cobertura
+workshop run myna gjs-cov    # GJS extension: lcov + digest under extensions/myna-shell/target/coverage/
 workshop run myna exercise   # real use-cases instrumented (CLI, desktop daemon, capture), merged exports
 workshop run myna deadcode   # populations + dead-code report, digest on stdout
 ```
