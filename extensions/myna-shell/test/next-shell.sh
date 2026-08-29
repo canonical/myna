@@ -36,7 +36,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=$(dirname "$HERE")
 ROOT=$(cd "$SRC/../.." && pwd)
 NAME=myna-shell-next
-PACKAGES="gjs gnome-shell dbus-x11"
+PACKAGES="gjs gnome-shell dbus-daemon"
 IMAGE=ubuntu-daily:stonking
 # The suite runs from the mount, so the container needs no write access to it.
 INNER="/project/extensions/myna-shell/test/run-suite.sh"
