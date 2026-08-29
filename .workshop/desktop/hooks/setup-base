@@ -11,7 +11,7 @@
 #   - ibus          : the IBus daemon the MYNA_IBUS_TESTS suite injects through
 #   - xdg-desktop-portal, xdg-desktop-portal-gnome : the portal + a
 #                     GlobalShortcuts backend for the MYNA_PORTAL_TESTS suite
-#   - dbus, dbus-x11 : a D-Bus session bus (dbus-run-session) for both suites,
+#   - dbus, dbus-daemon : a D-Bus session bus (dbus-run-session) for both suites,
 #                     and for feature 004's MYNA_DBUS_TESTS com.canonical.Myna.Dictation
 #                     round-trip suite
 #   Feature 004 (GNOME Shell indicator):
@@ -34,5 +34,5 @@ apt-get install --yes --no-install-recommends \
   xdg-desktop-portal \
   xdg-desktop-portal-gnome \
   dbus \
-  dbus-x11 \
+  dbus-daemon \
   gnome-session
