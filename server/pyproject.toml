@@ -52,6 +52,13 @@ audio8 = [
     "numpy>=1.26",
     "psutil>=5",
 ]
+# GigaAM-v3 e2e RNN-T batch adapter (Russian): ONNX Runtime + numpy only,
+# no torch. The graphs + piece table are staged by dev/fetch_gigaam_model.py
+# (which does need torch, in an isolated env, at component-build time).
+gigaam = [
+    "onnxruntime>=1.27,<1.28",
+    "numpy>=1.26",
+]
 benchmarker = [
     "psutil>=5",
     "pyyaml>=6",
