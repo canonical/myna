@@ -17,6 +17,8 @@
 #   Feature 004 (GNOME Shell indicator):
 #   - gnome-session : the session bits the desktop last-mile's own gated
 #                     suites expect to find.
+#   Feature 004 (GPU render smoke check, ui-check action):
+#   - xvfb          : provides xvfb-run, used to run render_check headless.
 # The extension's *test* dependencies are no longer here. This SDK sits on the
 # main workshop's ubuntu@24.04 base, which is the snap's core24 and cannot have
 # the Shell 50/51 the extension targets, so its suites moved to the `myna-shell`
@@ -35,4 +37,5 @@ apt-get install --yes --no-install-recommends \
   xdg-desktop-portal-gnome \
   dbus \
   dbus-daemon \
-  gnome-session
+  gnome-session \
+  xvfb

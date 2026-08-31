@@ -190,6 +190,10 @@ test-extension-next: ## The same suites against the NEXT GNOME Shell, in a throw
 lint-client: ## Rust lints as errors (workshop: lint)
 	workshop run myna lint
 
+.PHONY: ui-check
+ui-check: ## Renderer UI smoke check under xvfb (workshop: ui-check)
+	workshop run myna ui-check
+
 .PHONY: lint-server
 lint-server: ## Python lint + format check (workshop: py-lint)
 	workshop run myna py-lint

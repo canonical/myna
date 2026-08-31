@@ -94,6 +94,25 @@ actions:
   # snap's core24, and the extension targets a Shell no 24.04 archive has.
   # See .workshop/myna-shell.yaml.
 
+  # --- feature 004: GPU render smoke check --------------------------------
+  # The renderer test suite proves the shader compiles and the packings
+  # match; this proves a driver actually paints a wave — running
+  # `examples/render_check` under xvfb and asserting exit 0. CI-friendly
+  # (xvfb + Mesa software renderer is enough; the workshop SDK already
+  # supplies libegl/libgl/libepoxy). Use this whenever the shader core or
+  # the uploader changes — that path is unreachable from unit tests and
+  # easily regresses (see the be8d380 / fix-2e45c6 incident: a wrong GL
+  # upload count silently produced a flat saturated block).
+  ui-check: |
+    set -uo pipefail
+    export RUST_BACKTRACE=1
+    cd /project/client
+    # The example has the rendered ribbon checked end-to-end (compile +
+    # link + render + read_pixels + body-bands-on-centre-row assertions).
+    cargo build -p myna-hud --example render_check
+    xvfb-run -a -s "-screen 0 800x600x24" \
+      ./target/debug/examples/render_check
+
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
   # The coverage SDK puts its tools in /usr/local/cargo-bin.

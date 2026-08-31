@@ -37,6 +37,14 @@ jobs:
       - name: Rust tests (cargo test --workspace)
         run: make test-client
 
+      # GPU render smoke check (xvfb + render_check). Catches the kind of
+      # regression that compiled-and-passed-unit-tests but produced a
+      # broken overlay (see be8d380 / 2e45c68: a wrong `count` argument
+      # to glUniform4fv for an array uniform silently corrupted the next
+      # uniforms and the ribbon became a flat saturated block).
+      - name: Renderer UI check (xvfb + render_check)
+        run: make ui-check
+
       # Offline Python suite (fake-adapter contract + adapter logic; the
       # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
       - name: Python tests (pytest)
