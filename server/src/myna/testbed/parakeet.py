@@ -20,12 +20,15 @@ into a 28 s utterance. So the loop also re-decodes the uncommitted window on
 ``stream_partial_cadence_s`` and emits it as **unstable** display text (0 to
 show nothing between cuts, the pre-2026-08-28 behaviour). Being
 display-only it cannot move committed WER — measured identical — and it takes
-time-to-first-word from 17.7 s to 0.6 s. All emission invariants (I1–I7) are
-enforced by the shared ``streaming.loop``.
+time-to-first-word from 17.7 s to ~2.1 s at the shipped 2.0 s cadence (perf
+T04, 2026-08-29: the original 0.5 s cadence reached 0.6 s but ran the encoder
+at up to 82.6% duty cycle and could fall behind real time entirely on
+pause-free audio — see ``PARTIAL_CADENCE_S``). All emission invariants
+(I1–I7) are enforced by the shared ``streaming.loop``.
 
 Requires the ``parakeet`` extra: ``uv sync --extra parakeet``. Weights are
 murmure's ``parakeet-tdt-0.6b-v3-int8`` bundle, staged by
-``dev/fetch_parakeet_onnx.py`` (pinned + sha256-verified) into the XDG cache;
+``dev/parakeet/fetch_parakeet_onnx.py`` (pinned + sha256-verified) into the XDG cache;
 ``--model`` points at a local directory instead (snap model component).
 The collapse this adapter was chosen to avoid is not avoided, and is not what
 it was thought to be. Murmure's re-quantized int8 encoder was picked over
@@ -42,9 +45,13 @@ and for the retry that recovers most of it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
+from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -63,7 +70,9 @@ from myna.core import (
     TranscriptionFinal,
     TranscriptionProgress,
 )
+from myna.server.lifecycle import MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate
+from myna.testbed.harness import StreamingTelemetry
 from myna.testbed.streaming.strategies import (
     SC_ARM_S,
     SC_FORCE_CUT_S,
@@ -71,6 +80,26 @@ from myna.testbed.streaming.strategies import (
     Hypothesis,
     Word,
 )
+
+# Tracy zones (dev tooling only): `tracy_client` is built from source
+# by hand and never present in a production
+# install, so this is a permanent import-time branch, not a per-call one -
+# `_zone` costs one nullcontext() when disabled, same order of magnitude as
+# the `bench is not None` checks below.
+try:
+    from tracy_client import ScopedZone as _TracyZone
+
+    _TRACY = True
+except ImportError:
+    _TRACY = False
+
+
+def _zone(name: str):
+    return _TracyZone(name) if _TRACY else nullcontext()
+
+
+_log = logging.getLogger(__name__)
+
 
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
@@ -81,6 +110,29 @@ MODEL_FILES = (
     "nemo128.onnx",
     "vocab.txt",
 )
+
+# Optimized encoder variant (ratified 2026-08-31): a staged model dir MAY
+# additionally carry the "maxstack" encoder (10-of-11 FFN requant + fused
+# SiLU custom ops + export cleanups; built by
+# dev/parakeet/build_maxstack_encoder.py) and the custom-op kernel library it
+# needs. When both are present the adapter uses them — measured encode
+# −13.3% on the same audio path — and falls back to the base encoder
+# byte-for-byte otherwise, so a bundle without them behaves exactly as
+# before. MYNA_ORT_CUSTOM_OPS overrides the library location (dev tooling).
+MAXSTACK_ENCODER_FILE = "encoder-model.int8.maxstack.onnx"
+QSILU_LIB_FILE = "libqsilu.so"
+
+
+def encoder_variant(model_dir: str) -> tuple[str, str | None]:
+    """(encoder path, custom-ops library path or None) for a model dir."""
+    lib = os.environ.get("MYNA_ORT_CUSTOM_OPS") or os.path.join(model_dir, QSILU_LIB_FILE)
+    maxstack = os.path.join(model_dir, MAXSTACK_ENCODER_FILE)
+    if os.path.exists(maxstack) and os.path.exists(lib):
+        return maxstack, lib
+    base = os.path.join(model_dir, "encoder-model.int8.onnx")
+    env_lib = os.environ.get("MYNA_ORT_CUSTOM_OPS")
+    return base, env_lib if env_lib and os.path.exists(env_lib) else None
+
 
 # TDT frame duration: 10 ms feature window × 8 encoder subsampling.
 FRAME_S = 0.08
@@ -138,23 +190,36 @@ _PROGRESS_INTERVAL_SECONDS = 1.0
 _COLLAPSE_WORDS_PER_SECOND = 0.5  # 5x below conversational speech (~2.5 w/s)
 _COLLAPSE_RETRY_PAD_S = 0.2
 
-# Unstable-partial dials. 0.5 s reads as continuous without the preedit region
-# thrashing, and a tick is affordable at any window the arm allows: the decode
-# costs ~22 ms + ~16 ms per second of audio, so even a full 15 s window is
-# ~260 ms. Measured over seven streams: the median word is on screen 1.6 s
-# after it is spoken, against 10.6 s with no partials.
+# Unstable-partial dials. Was 0.5 s (reads as continuous without the preedit
+# region thrashing) until perf T04 (2026-08-29) mapped display quality
+# against measured encoder cost (T03's StreamingTelemetry) across the
+# (cadence, tail) grid: at 0.5 s the encoder ran 56.5-82.6% duty cycle
+# depending on how much the speaker paused, and on pause-free audio it could
+# not sustain real time at all (91.2 s wall for 60 s of audio). Every cadence
+# tested left `head_loss_rate` at 0.00 (the display never loses its head,
+# unlike tail-capping — see below) and time-to-first-unstable scales
+# ~linearly with cadence, so 2.0 s was chosen as the cheapest cadence that
+# stayed comfortably real-time on the pause-free case (30.7% duty, no
+# backlog) while keeping first-word latency at ~2.1 s — still ~8x faster
+# than the 17.7 s pre-partial-tick baseline.
 #
 # The tail cap is off by default (0 = decode the whole uncommitted window).
-# Capping it is the way to buy compute back on a weak machine, at the cost of
-# the display showing only the last N seconds — see [`_chunked_partial`], which
-# carries the evidence for why the obvious middle ground does not work. Raising
-# the cadence is the gentler dial: 1.0 s roughly halves the work.
-PARTIAL_CADENCE_S = 0.5
+# T04 measured it as a *worse* lever than cadence for the same duty-cycle
+# savings: at every cadence tested, capping the tail bought further cost
+# reduction only by making 29-94% of unstable updates structurally drop the
+# display's head (not just revise it — see [`_chunked_partial`], which
+# carries the evidence for why the obvious middle ground does not work).
+PARTIAL_CADENCE_S = 2.0
 PARTIAL_TAIL_S = 0.0
 
 # Murmure's DECODE_SPACE_RE: strip the leading space and spaces before
 # punctuation, keep word-boundary spaces. Tokens carry ▁→space already.
 _DECODE_SPACE_RE = re.compile(r"\A\s|\s\B|(\s)\b")
+
+# Stage span name -> elapsed seconds. Wired only by dev/parakeet/bench_parakeet.py
+# (T01); production callers never pass one, so the hot path pays nothing
+# beyond the branch (verified <1% overhead over 71 joint calls, 2026-08-28).
+BenchSink = Callable[[str, float], None]
 
 
 def _detokenize(tokens: list[str]) -> str:
@@ -200,12 +265,42 @@ def _tokens_to_words(tokens: list[str], timestamps: list[float]) -> list[Word]:
 def _encoder_threads() -> int:
     """Intra-op threads for the encoder.
 
-    The encoder scales to about four and then goes backwards as SMT siblings
-    contend, so this is half the visible CPUs, capped at four and floored at
-    one. ``sched_getaffinity`` rather than ``cpu_count`` so a taskset or a
-    cgroup cpuset is respected.
+    Re-measured 2026-08-29 (perf T08) on the reference Ryzen AI 7 350 (4 Zen 5
+    cores at 5.09 GHz + 4 Zen 5c cores at 3.51 GHz, SMT2, 16 logical CPUs): the
+    encoder scales almost linearly through 4 threads pinned one-per-physical
+    fast-core (2.94x at 12.46 s of audio, 2.35-2.70x at 2-5 s windows), then
+    genuinely goes backwards past 4 on the *same four cores* via SMT (6 or 8
+    threads sharing those 4 cores' execution units) - both slower (+15-20%
+    wall time) and costlier in joules per utterance than stopping at 4. That
+    part of the old comment's mechanism holds up. What does not hold up is the
+    "half the visible CPUs" arithmetic: it produces 4 on this box only because
+    16 // 2 happens to clear the cap, not because halving models SMT contention
+    in general. Crossing into the 4 slower Zen 5c cores (2026-08-28's untested
+    "8 threads, 1.26x" figure) was not re-verified: doing so requires pinning
+    across two CPU frequencies, which the measurement guard hard-refuses
+    because that placement is exactly the source of its own documented 1.45x
+    variance risk.
+
+    ``sched_getaffinity`` rather than ``cpu_count`` so a taskset or a cgroup
+    cpuset is respected; halved and capped at four so a machine with more
+    visible CPUs (via SMT or a larger cpuset) does not walk back into the
+    regression measured above, and floored at one so a single-CPU affinity
+    mask still gets a working thread count.
     """
     return max(1, min(4, len(os.sched_getaffinity(0)) // 2))
+
+
+@dataclass
+class _JointBuffers:
+    """Per-utterance reusable IOBinding state for decoder_joint (T09). See
+    `_ParakeetOnnx._joint_buffers`."""
+
+    io: object  # onnxruntime.IOBinding, left untyped to avoid an import here
+    encoder_step: np.ndarray  # (1, 1024, 1), written in place per step
+    target: np.ndarray  # (1, 1) int32, written in place per step
+    state_in: tuple[np.ndarray, np.ndarray]  # (2,1,640) each: current committed state
+    state_out: tuple[np.ndarray, np.ndarray]  # (2,1,640) each: scratch for the new state
+    logits: np.ndarray  # (vocab+durations,), a view into the reused output buffer
 
 
 class _ParakeetOnnx:
@@ -238,11 +333,17 @@ class _ParakeetOnnx:
         self._preprocessor = ort.InferenceSession(
             os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=providers
         )
-        self._encoder = ort.InferenceSession(
-            os.path.join(model_dir, "encoder-model.int8.onnx"),
-            opts(encoder_threads or _encoder_threads()),
-            providers=providers,
+        encoder_opts = opts(encoder_threads or _encoder_threads())
+        # See encoder_variant: the maxstack encoder's myna.QSiLU* custom ops
+        # (dev/parakeet/qsilu/) need their kernel library registered on the session.
+        encoder_path, custom_ops = encoder_variant(model_dir)
+        if custom_ops:
+            encoder_opts.register_custom_ops_library(custom_ops)
+        _log.info(
+            "parakeet encoder variant: %s",
+            "maxstack (custom ops registered)" if custom_ops else "base",
         )
+        self._encoder = ort.InferenceSession(encoder_path, encoder_opts, providers=providers)
         self._decoder_joint = ort.InferenceSession(
             os.path.join(model_dir, "decoder_joint-model.int8.onnx"),
             opts(1),
@@ -251,79 +352,188 @@ class _ParakeetOnnx:
         self._vocab, self._blank_idx = _load_vocab(model_dir)
         # Logits are vocab + TDT duration bins; the duration slice is the tail.
         self._vocab_size = len(self._vocab)
+        # Static for this model (batch=1, one target, one encoder frame per
+        # call) - read once rather than hardcoded so a different joint export
+        # can't silently mismatch it. See _JointBuffers / _joint_buffers.
+        self._joint_out_width = int(self._decoder_joint.get_outputs()[0].shape[-1])
+        # T10: model-load time is exactly the "startup" the SPEC wants for the
+        # cgroup-limit prediction -- this is the point a 794 MB encoder is
+        # about to become resident, so it's the earliest place a too-small
+        # limit is known. See myna.server.lifecycle.MemoryPressureMonitor.
+        self.pressure_monitor = MemoryPressureMonitor()
 
-    def _create_decoder_state(self) -> tuple[np.ndarray, np.ndarray]:
-        return (
+    def _joint_buffers(self) -> _JointBuffers:
+        """Fresh IOBinding + pre-allocated buffers for one `_decode_sequence`
+        call.
+
+        Per-call cost was attributed to session dispatch (dict construction,
+        fresh numpy allocation for every input and output, a non-contiguous
+        reshape+astype copy of the encoder frame) stacked on top of real
+        kernel time. Building these
+        buffers once per utterance and reusing them for every one of its
+        ~71 steps removes the per-step allocation; the kernel time itself
+        (DynamicQuantizeMatMul/DynamicQuantizeLSTM) is untouched and turned
+        out to be most of the 323 us, not the small remainder this buys back.
+
+        Built fresh per utterance rather than cached on `self` so two
+        `_decode_sequence` calls in flight at once (concurrent sessions on
+        one server process share one `_ParakeetOnnx`) get independent memory,
+        exactly as safe as the plain `session.run()` calls this replaces -
+        setup cost is 13.6 us/utterance, 0.19 us amortized per step, so
+        rebuilding it every call is free next to what it buys.
+        """
+        import onnxruntime as ort
+
+        encoder_step = np.zeros((1, 1024, 1), dtype=np.float32)
+        target = np.zeros((1, 1), dtype=np.int32)
+        target_length = np.array([1], dtype=np.int32)  # constant: one target
+        state_in = (
             np.zeros((2, 1, 640), dtype=np.float32),
             np.zeros((2, 1, 640), dtype=np.float32),
+        )
+        state_out = (
+            np.zeros((2, 1, 640), dtype=np.float32),
+            np.zeros((2, 1, 640), dtype=np.float32),
+        )
+        out = np.zeros((1, 1, 1, self._joint_out_width), dtype=np.float32)
+
+        io = self._decoder_joint.io_binding()
+        io.bind_ortvalue_input("encoder_outputs", ort.OrtValue.ortvalue_from_numpy(encoder_step))
+        io.bind_ortvalue_input("targets", ort.OrtValue.ortvalue_from_numpy(target))
+        io.bind_ortvalue_input("target_length", ort.OrtValue.ortvalue_from_numpy(target_length))
+        io.bind_ortvalue_input("input_states_1", ort.OrtValue.ortvalue_from_numpy(state_in[0]))
+        io.bind_ortvalue_input("input_states_2", ort.OrtValue.ortvalue_from_numpy(state_in[1]))
+        io.bind_ortvalue_output("outputs", ort.OrtValue.ortvalue_from_numpy(out))
+        io.bind_ortvalue_output("output_states_1", ort.OrtValue.ortvalue_from_numpy(state_out[0]))
+        io.bind_ortvalue_output("output_states_2", ort.OrtValue.ortvalue_from_numpy(state_out[1]))
+        return _JointBuffers(
+            io=io,
+            encoder_step=encoder_step,
+            target=target,
+            state_in=state_in,
+            state_out=state_out,
+            logits=out.reshape(-1),
         )
 
     def _decode_step(
         self,
+        buffers: _JointBuffers,
         prev_token: int,
-        state: tuple[np.ndarray, np.ndarray],
         encoder_step: np.ndarray,  # [1024]
-    ) -> tuple[np.ndarray, tuple[np.ndarray, np.ndarray]]:
-        outputs = self._decoder_joint.run(
-            ["outputs", "output_states_1", "output_states_2"],
-            {
-                "encoder_outputs": encoder_step.reshape(1, -1, 1).astype(np.float32),
-                "targets": np.array([[prev_token]], dtype=np.int32),
-                "target_length": np.array([1], dtype=np.int32),
-                "input_states_1": state[0],
-                "input_states_2": state[1],
-            },
-        )
-        logits = outputs[0].reshape(-1)  # [1, 1, 1, vocab+durations] → flat
-        return logits, (outputs[1], outputs[2])
+    ) -> np.ndarray:
+        """One decoder_joint call via `buffers` (T09: was a fresh dict, fresh
+        output allocation and a reshape+astype copy per call; see
+        `_joint_buffers`). The returned array is a view into `buffers`'
+        reused output - valid only until the next `_decode_step` call on the
+        same buffers, which is exactly how `_decode_sequence` consumes it
+        (argmax, then either adopt or discard `buffers.state_out` before
+        looping). `buffers.state_in` is a separate buffer from
+        `state_out` and is never touched by ORT, so "discard" is simply "do
+        not copy" - no ping-pong swap needed for the blank-token branch.
+        """
+        buffers.encoder_step[0, :, 0] = encoder_step
+        buffers.target[0, 0] = prev_token
+        with _zone("joint"):
+            self._decoder_joint.run_with_iobinding(buffers.io)
+        return buffers.logits
 
     def _decode_sequence(
-        self, encodings: np.ndarray, encodings_len: int
+        self, encodings: np.ndarray, encodings_len: int, *, bench: BenchSink | None = None
     ) -> tuple[list[str], list[float]]:
         """Greedy TDT decode (murmure decode_sequence_greedy): argmax vocab
         token; on non-blank update the decoder state; the duration head skips
-        t forward; a blank (or MAX_TOKENS_PER_STEP at one frame) advances 1."""
-        state = self._create_decoder_state()
+        t forward; a blank (or MAX_TOKENS_PER_STEP at one frame) advances 1.
+
+        ``bench``, when given, separates the ``joint`` span (summed ONNX call
+        time) from ``greedy`` (loop wall time minus joint) the way T01's
+        harness needs — the loop's own argmax/control-flow overhead is
+        otherwise invisible next to 71+ sequential ORT calls. It also reports
+        the non-timing counts the harness wants alongside the spans:
+        ``_frames`` (``encodings_len``) and ``_joint_calls``.
+        """
+        if bench is not None:
+            bench("_frames", float(encodings_len))
+        buffers = self._joint_buffers()
         tokens: list[str] = []
         timestamps: list[float] = []
         t = 0
         emitted_at_frame = 0
         prev_token = self._blank_idx
-        while t < encodings_len:
-            logits, new_state = self._decode_step(prev_token, state, encodings[t])
-            vocab_logits = logits[: self._vocab_size]
-            dur_logits = logits[self._vocab_size :]
-            token = int(np.argmax(vocab_logits))
-            if token != self._blank_idx:
-                state = new_state
-                prev_token = token
-                tokens.append(self._vocab[token])
-                timestamps.append(t * FRAME_S)
-                emitted_at_frame += 1
-            duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
-            if duration > 0:
-                t += duration
-                emitted_at_frame = 0
-            elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
-                t += 1
-                emitted_at_frame = 0
+        joint_s = 0.0
+        joint_calls = 0
+        loop_t0 = time.perf_counter() if bench is not None else 0.0
+        with _zone("decode_sequence"):
+            while t < encodings_len:
+                if bench is None:
+                    logits = self._decode_step(buffers, prev_token, encodings[t])
+                else:
+                    step_t0 = time.perf_counter()
+                    logits = self._decode_step(buffers, prev_token, encodings[t])
+                    joint_s += time.perf_counter() - step_t0
+                    joint_calls += 1
+                vocab_logits = logits[: self._vocab_size]
+                dur_logits = logits[self._vocab_size :]
+                token = int(np.argmax(vocab_logits))
+                if token != self._blank_idx:
+                    buffers.state_in[0][...] = buffers.state_out[0]
+                    buffers.state_in[1][...] = buffers.state_out[1]
+                    prev_token = token
+                    tokens.append(self._vocab[token])
+                    timestamps.append(t * FRAME_S)
+                    emitted_at_frame += 1
+                duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
+                if duration > 0:
+                    t += duration
+                    emitted_at_frame = 0
+                elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
+                    t += 1
+                    emitted_at_frame = 0
+        if bench is not None:
+            bench("joint", joint_s)
+            bench("greedy", (time.perf_counter() - loop_t0) - joint_s)
+            bench("_joint_calls", float(joint_calls))
         return tokens, timestamps
 
-    def transcribe(self, samples: np.ndarray) -> tuple[list[str], list[float]]:
-        """float32 mono 16 kHz → (tokens, token timestamps in region seconds)."""
-        waveforms = samples.reshape(1, -1).astype(np.float32)
-        waveforms_lens = np.array([samples.shape[0]], dtype=np.int64)
-        features, features_lens = self._preprocessor.run(
-            ["features", "features_lens"],
-            {"waveforms": waveforms, "waveforms_lens": waveforms_lens},
-        )
-        encoder_out, encoder_lens = self._encoder.run(
-            ["outputs", "encoded_lengths"],
-            {"audio_signal": features, "length": features_lens},
-        )
-        # [1, 1024, T] → [1, T, 1024]
-        encoder_out = np.transpose(encoder_out, (0, 2, 1))
-        return self._decode_sequence(encoder_out[0], int(encoder_lens[0]))
+    def transcribe(
+        self, samples: np.ndarray, *, bench: BenchSink | None = None
+    ) -> tuple[list[str], list[float]]:
+        """float32 mono 16 kHz → (tokens, token timestamps in region seconds).
+
+        ``bench(name, seconds)`` fires once per stage (``preprocess``,
+        ``encode``, ``transpose``, then ``joint``/``greedy`` from
+        ``_decode_sequence``) — dev/parakeet/bench_parakeet.py's hook (T01). ``None``
+        by default and on every production call path.
+        """
+        with _zone("transcribe"):
+            waveforms = samples.reshape(1, -1).astype(np.float32)
+            waveforms_lens = np.array([samples.shape[0]], dtype=np.int64)
+            t0 = time.perf_counter() if bench is not None else 0.0
+            with _zone("preprocess"):
+                features, features_lens = self._preprocessor.run(
+                    ["features", "features_lens"],
+                    {"waveforms": waveforms, "waveforms_lens": waveforms_lens},
+                )
+            if bench is not None:
+                bench("preprocess", time.perf_counter() - t0)
+                t0 = time.perf_counter()
+            with _zone("encode"):
+                encoder_out, encoder_lens = self._encoder.run(
+                    ["outputs", "encoded_lengths"],
+                    {"audio_signal": features, "length": features_lens},
+                )
+            if bench is not None:
+                bench("encode", time.perf_counter() - t0)
+                t0 = time.perf_counter()
+            # [1, 1024, T] → [1, T, 1024]. Forced contiguous (T09): a plain
+            # np.transpose is a strided view, so every one of the ~71 per-frame
+            # slices `_decode_step` takes below would itself be a non-contiguous
+            # copy source; one real copy here makes each of those a cheap
+            # contiguous memcpy instead.
+            with _zone("transpose"):
+                encoder_out = np.ascontiguousarray(np.transpose(encoder_out, (0, 2, 1)))
+            if bench is not None:
+                bench("transpose", time.perf_counter() - t0)
+            return self._decode_sequence(encoder_out[0], int(encoder_lens[0]), bench=bench)
 
     def _transcribe_guarded(self, samples: np.ndarray) -> tuple[list[str], list[float]]:
         """`transcribe`, with one retry when the result looks collapsed.
@@ -356,12 +566,12 @@ class _ParakeetOnnx:
 
 def _default_model_dir() -> str:
     """The staged weights (downloads on first use; offline-safe once staged by
-    dev/fetch_parakeet_onnx.py). The dev/ script is imported by path — it is
+    dev/parakeet/fetch_parakeet_onnx.py). The dev/ script is imported by path — it is
     not part of the installed package (snaps ship weights as components and
     always pass ``--model``)."""
     import importlib.util
 
-    fetch = Path(__file__).resolve().parents[4] / "dev" / "fetch_parakeet_onnx.py"
+    fetch = Path(__file__).resolve().parents[4] / "dev" / "parakeet" / "fetch_parakeet_onnx.py"
     spec = importlib.util.spec_from_file_location("fetch_parakeet_onnx", fetch)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -381,6 +591,7 @@ class ParakeetAdapter:
         stream_force_cut_s: float = SC_FORCE_CUT_S,
         stream_partial_cadence_s: float = PARTIAL_CADENCE_S,
         stream_partial_tail_s: float = PARTIAL_TAIL_S,
+        stream_telemetry: StreamingTelemetry | None = None,
     ) -> None:
         self._model_dir = model_dir
         self._streaming = streaming
@@ -391,6 +602,8 @@ class ParakeetAdapter:
         # 0 tail means the tick decodes the whole uncommitted window.
         self._stream_partial_cadence_s = float(stream_partial_cadence_s)
         self._stream_partial_tail_s = float(stream_partial_tail_s)
+        # perf T03: None on every production call path (dev tooling only).
+        self._stream_telemetry = stream_telemetry
         if self._stream_arm_s <= 0:
             raise ValueError("stream_arm_s must be > 0")
         if self._stream_silence_cut_s <= 0:
@@ -477,6 +690,11 @@ class ParakeetAdapter:
 
         try:
             model = await self._load_model_with_heartbeat(emit)
+            # T10: re-arm the once-per-session debounce. A fresh session on a
+            # persistently undersized machine should still get told, the same
+            # way LifecycleService itself re-arms idle-release on a fresh
+            # session rather than staying silent forever after the first.
+            model.pressure_monitor.begin_session()
             # Ready BEFORE pulling audio — the client gates on it
             # (docs/architecture/ie115-lifecycle.md §3A).
             await emit(TranscriptionProgress(phase=PHASE_READY))
@@ -499,7 +717,14 @@ class ParakeetAdapter:
                 return
 
             samples = np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
+            # T10: sample from this thread, straddling the whole decode -- ORT
+            # aggregates page faults process-wide (RUSAGE_SELF), so a worker
+            # thread's faults count here regardless.
+            majflt_before = sample_majflt()
             text = await asyncio.to_thread(model.transcribe_text, samples)
+            warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
+            if warning is not None:
+                await emit(TranscriptionProgress(warning=warning))
             # Batch mode is degenerate streaming (I7): one committed final.
             await emit(TranscriptionFinal(text=text, disposition=Disposition.COMMITTED))
             await emit(TranscriptionDone(text=text))
@@ -523,8 +748,20 @@ class ParakeetAdapter:
         from myna.testbed.streaming.loop import run_streaming_loop
         from myna.testbed.streaming.strategies import SilenceCut
 
+        # T10: `decode` runs on run_streaming_loop's dedicated worker thread
+        # (not the event loop), so a detected warning can't be `await
+        # emit(...)`ed directly from here -- it's handed to the loop via
+        # run_coroutine_threadsafe, fire-and-forget (advisory, debounced to
+        # once per session; nothing downstream depends on its timing).
+        event_loop = asyncio.get_running_loop()
+
         def decode(samples: np.ndarray, offset: float) -> Hypothesis:
+            majflt_before = sample_majflt()
             words = model.transcribe_words(samples)
+            warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
+            if warning is not None:
+                progress = TranscriptionProgress(warning=warning)
+                asyncio.run_coroutine_threadsafe(emit(progress), event_loop)
             return Hypothesis(words=[Word(w.text, w.start + offset, w.end + offset) for w in words])
 
         transcript = await run_streaming_loop(
@@ -542,5 +779,6 @@ class ParakeetAdapter:
             overlap_seconds=1.0,  # murmure CHUNK_FORCED_OVERLAP_SECS
             partial_cadence_seconds=self._stream_partial_cadence_s or None,
             partial_tail_seconds=self._stream_partial_tail_s or None,
+            telemetry=self._stream_telemetry,
         )
         await emit(TranscriptionDone(text=transcript))

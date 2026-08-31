@@ -1,6 +1,6 @@
 """Stage the Parakeet TDT 0.6B v3 int8 ONNX weights (008 US3 / T023).
 
-    uv run python dev/fetch_parakeet_onnx.py [--out-dir DIR]
+    uv run python dev/parakeet/fetch_parakeet_onnx.py [--out-dir DIR]
 
 Source: murmure's `parakeet-tdt-0.6b-v3-int8` bundle (GitHub release zip,
 pinned + sha256-verified) — `nemo128.onnx` (mel preprocessor),

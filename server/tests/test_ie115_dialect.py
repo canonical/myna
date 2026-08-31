@@ -81,6 +81,16 @@ def test_encoder_progress_phases_map_to_status_states():
     assert transcribing == {"type": w.STATUS_EVENT, "state": "transcribing", "snippet": "hi"}
 
 
+def test_encoder_progress_warning_is_additive_and_round_trips():
+    # T10: memory-pressure notice rides the same additive STATUS frame.
+    enc = w.Ie115Encoder()
+    frame = enc.encode(TranscriptionProgress(phase="transcribing", warning="low on memory"))
+    assert frame == {"type": w.STATUS_EVENT, "state": "transcribing", "warning": "low on memory"}
+    dec = w.Ie115Decoder()
+    [event] = dec.decode(frame)
+    assert event == TranscriptionProgress(phase="transcribing", warning="low on memory")
+
+
 def test_encoder_finals_become_deltas_sharing_the_utterance_item():
     enc = w.Ie115Encoder()
     d1 = enc.encode(TranscriptionFinal(text="one"))

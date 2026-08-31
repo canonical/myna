@@ -38,7 +38,13 @@ Semantics:
   additive ``STATUS`` liveness event (``state: loading|ready|transcribing``,
   see ``docs/architecture/ie115-lifecycle.md``); ``ready`` was added
   (2026-07-01, plan T42) so the client can gate audio on model residency — the
-  accept-gate — over the wire, not just infer it.
+  accept-gate — over the wire, not just infer it. ``warning`` (plan T10,
+  2026-08-29) is an additive, optional, human-readable string for a
+  non-terminal condition worth surfacing mid-session - currently only runtime
+  memory-pressure detection (``myna.server.lifecycle.MemoryPressureMonitor``):
+  the machine cannot hold the model resident, so decoding is thrashing rather
+  than failing. Debounced to once per session by the emitter; absent (``None``)
+  on every other progress event.
 - ``transcription.final``    — stable, committed text for one utterance
   segment. Never retracted.
 - ``transcription.done``     — end of session; carries the complete transcript.
@@ -92,11 +98,15 @@ class TranscriptionProgress:
     ``phase`` is ``"preparing"`` while the model loads, ``"ready"`` once it is
     resident and the service will accept audio (gate open, nothing decoding
     yet), else ``"transcribing"`` (the default), so a cold load reads as
-    "loading…" not a hang and the client can gate audio on ``ready``."""
+    "loading…" not a hang and the client can gate audio on ``ready``.
+    ``warning`` (T10) is an optional, human-readable, non-terminal notice -
+    currently only memory-pressure detection - debounced to once per session
+    by the emitter; ``None`` on every other progress event."""
 
     type: ClassVar[str] = "transcription.progress"
     snippet: str | None = None
     phase: str = PHASE_TRANSCRIBING
+    warning: str | None = None
 
 
 @dataclass(frozen=True)

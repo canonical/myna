@@ -107,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="seconds between Parakeet unstable-partial ticks between commits "
-        "(default 0.5; 0 shows nothing until the first cut)",
+        "(default 2.0, perf T04; 0 shows nothing until the first cut)",
     )
     parser.add_argument(
         "--stream-partial-tail-s",
@@ -194,7 +194,7 @@ def build_adapter(args: argparse.Namespace):
         )
 
     if args.adapter == "parakeet":
-        from myna.testbed.parakeet import ParakeetAdapter
+        from myna.testbed.parakeet import PARTIAL_CADENCE_S, PARTIAL_TAIL_S, ParakeetAdapter
 
         return ParakeetAdapter(
             args.model,
@@ -203,12 +203,13 @@ def build_adapter(args: argparse.Namespace):
             stream_silence_cut_s=getattr(args, "stream_silence_cut_s", None) or 0.5,
             stream_force_cut_s=getattr(args, "stream_force_cut_s", None) or 60.0,
             # `or` would swallow an explicit 0, and 0 is how partials are
-            # turned off.
+            # turned off. Default from the adapter module (perf T04), not a
+            # literal here, so the two can't drift apart.
             stream_partial_cadence_s=_default_if_none(
-                getattr(args, "stream_partial_cadence_s", None), 0.5
+                getattr(args, "stream_partial_cadence_s", None), PARTIAL_CADENCE_S
             ),
             stream_partial_tail_s=_default_if_none(
-                getattr(args, "stream_partial_tail_s", None), 0.0
+                getattr(args, "stream_partial_tail_s", None), PARTIAL_TAIL_S
             ),
         )
 

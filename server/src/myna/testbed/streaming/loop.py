@@ -34,13 +34,21 @@ and reusable across adapters (whisper re-decode, parakeet chunk-commit).
 Signature: ``decode(samples: np.ndarray, offset_seconds: float) -> Hypothesis``
 with word/segment times in *absolute* session seconds (offset added). It runs
 in a worker thread.
+
+``telemetry`` (perf T03, ``myna.testbed.harness.StreamingTelemetry``) is an
+optional accumulator that records every decode call's kind/window/wall time
+without touching commit or alignment logic - ``None`` on every production
+call path, so it costs nothing there.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -51,9 +59,26 @@ from myna.core import (
     TranscriptionFinal,
     TranscriptionProgress,
 )
+from myna.testbed.harness import StreamingTelemetry
 
 from .strategies import Hypothesis, Word
 from .window import RATE, RollingWindow
+
+# Tracy frame marks (dev tooling only, see myna.testbed.parakeet._TRACY):
+# one frame per decode call, named by kind, so Tracy's frame-time view shows
+# the streaming duty cycle directly - gaps between frames are idle time,
+# frame width is decode wall time.
+try:
+    from tracy_client import ScopedFrame as _TracyFrame
+
+    _TRACY = True
+except ImportError:
+    _TRACY = False
+
+
+def _frame(name: str):
+    return _TracyFrame(name) if _TRACY else nullcontext()
+
 
 MIN_DECODE_S = 0.3  # don't bother decoding sub-300ms tails
 _OVERLAP_LOOKBACK = 12  # words of committed history text-alignment dedupe uses
@@ -241,6 +266,7 @@ async def run_streaming_loop(
     overlap_seconds: float = 1.0,
     partial_cadence_seconds: float | None = None,
     partial_tail_seconds: float | None = None,
+    telemetry: StreamingTelemetry | None = None,
 ) -> str:
     # Every decode in a session runs on this one thread. `asyncio.to_thread`
     # would use the event loop's default pool, which grows to min(32, cpu + 4)
@@ -267,6 +293,7 @@ async def run_streaming_loop(
             overlap_seconds,
             partial_cadence_seconds,
             partial_tail_seconds,
+            telemetry=telemetry,
         )
     finally:
         executor.shutdown(wait=False)
@@ -282,7 +309,22 @@ async def _run(
     overlap_seconds: float,
     partial_cadence_seconds: float | None,
     partial_tail_seconds: float | None,
+    telemetry: StreamingTelemetry | None = None,
 ) -> str:
+    # perf T03: additive, outside the commit/alignment logic below -- with
+    # telemetry=None (every production call today) this is one branch per
+    # decode and costs nothing.
+    session_t0 = time.perf_counter() if telemetry is not None else 0.0
+
+    async def timed_decode(samples: np.ndarray, offset: float, kind: str) -> Hypothesis:
+        with _frame(f"decode:{kind}"):
+            if telemetry is None:
+                return await run_decode(samples, offset)
+            t0 = time.perf_counter()
+            hyp = await run_decode(samples, offset)
+            telemetry.record(kind, len(samples) / RATE, time.perf_counter() - t0)
+            return hyp
+
     window = RollingWindow(window_cap_seconds, overlap_seconds)
     committed: list[str] = []
     committed_through = 0.0  # absolute seconds covered by committed text
@@ -322,7 +364,7 @@ async def _run(
             cut = strategy.observe(window.samples(), window.frontier, window.end)
             if cut is not None and cut - window.frontier >= MIN_DECODE_S:
                 samples = window.region_before(cut)
-                hyp = await run_decode(samples, window.frontier)
+                hyp = await timed_decode(samples, window.frontier, "commit")
                 fresh = fresh_words(hyp.words)
                 text = _join_natural(fresh)
                 if text:
@@ -337,7 +379,10 @@ async def _run(
                 last_decode_end = window.end
                 if partial_cadence_seconds and window.window_seconds >= MIN_DECODE_S:
                     words = await _chunked_partial(
-                        window, run_decode, fresh_words, partial_tail_seconds
+                        window,
+                        functools.partial(timed_decode, kind="partial"),
+                        fresh_words,
+                        partial_tail_seconds,
                     )
                     text = _utterance_edge(_join_natural(words), not committed) if words else ""
                     if text:
@@ -352,7 +397,7 @@ async def _run(
         if window.end - last_decode_end < cadence_seconds:
             continue
         last_decode_end = window.end
-        hyp = await run_decode(window.samples(), window.frontier)
+        hyp = await timed_decode(window.samples(), window.frontier, "tick")
         decision = strategy.commit_rule(last_hyp, hyp, window.end, window.over_cap)
         last_hyp = hyp
         produced = False
@@ -378,9 +423,12 @@ async def _run(
 
     # I5: resolve the tail — decode whatever is left and commit it.
     if window.window_seconds >= MIN_DECODE_S:
-        hyp = await run_decode(window.samples(), window.frontier)
+        hyp = await timed_decode(window.samples(), window.frontier, "commit")
         fresh = fresh_words(hyp.words)
         tail = _join_natural(fresh)
         if tail:
             await emit_committed(_utterance_edge(tail, not committed), fresh)
+    if telemetry is not None:
+        telemetry.audio_seconds_ingested = window.end
+        telemetry.session_seconds = time.perf_counter() - session_t0
     return "".join(committed)

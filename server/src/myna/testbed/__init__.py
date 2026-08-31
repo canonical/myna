@@ -13,7 +13,14 @@ Rules of the house (from CLAUDE.md):
 from myna.testbed.adapter import Adapter, Candidate
 from myna.testbed.corpus import Clip, by_category, load_manifest
 from myna.testbed.fake import FakeAdapter, ScriptStep
-from myna.testbed.harness import Harness, Metrics, ResultRecord, TimedEvent
+from myna.testbed.harness import (
+    DecodeSample,
+    Harness,
+    Metrics,
+    ResultRecord,
+    StreamingTelemetry,
+    TimedEvent,
+)
 from myna.testbed.metrics import (
     ErrorRate,
     character_error_rate,
@@ -26,6 +33,7 @@ __all__ = [
     "Adapter",
     "Candidate",
     "Clip",
+    "DecodeSample",
     "ErrorRate",
     "FakeAdapter",
     "Harness",
@@ -34,6 +42,7 @@ __all__ = [
     "ResultRecord",
     "ScriptStep",
     "SilenceSource",
+    "StreamingTelemetry",
     "TimedEvent",
     "WavFileSource",
     "by_category",

@@ -19,6 +19,7 @@ from myna.core import (
         TranscriptionProgress(snippet="he"),
         TranscriptionProgress(),
         TranscriptionProgress(phase=PHASE_PREPARING),
+        TranscriptionProgress(warning="this machine is low on memory"),
         TranscriptionFinal(text="hello world"),
         TranscriptionFinal(
             text="hello world",
@@ -43,6 +44,15 @@ def test_progress_phase_defaults_and_crosses_the_wire():
     wire = event_to_wire(TranscriptionProgress(phase=PHASE_PREPARING))
     assert wire["data"]["phase"] == PHASE_PREPARING
     assert event_from_wire(wire).phase == PHASE_PREPARING
+
+
+def test_progress_warning_defaults_to_none_and_is_additive():
+    # T10: warning is additive (default None) so old wire records / clients
+    # that never saw the field still round-trip correctly.
+    assert TranscriptionProgress().warning is None
+    wire = event_to_wire(TranscriptionProgress(warning="low on memory"))
+    assert wire["data"]["warning"] == "low on memory"
+    assert event_from_wire(wire).warning == "low on memory"
 
 
 def test_unknown_event_is_ignored_not_rejected():

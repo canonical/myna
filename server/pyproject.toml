@@ -82,6 +82,11 @@ dev = [
     "mypy>=1.13",
     "vulture>=2.14",
     "pip-audit>=2.7",
+    # dev/requantize_encoder.py (perf T06): onnxruntime.quantization needs the
+    # onnx package to load/rewrite the graph. Already a locked transitive dep
+    # of the nemotron extra; pinned here directly so a parakeet-only sync
+    # still has it. Dev-only -- never imported at runtime.
+    "onnx>=1.19",
 ]
 
 [build-system]

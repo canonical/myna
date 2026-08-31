@@ -45,7 +45,7 @@ PINNED = {
     "dev/fetch_sherpa_model.py": r'^REVISION = "[0-9a-f]{40}"$',
     "dev/fetch_audio8_model.py": r'^REVISION = "[0-9a-f]{40}"$',
     "dev/fetch_funasr_model.py": r'^REVISION = "v[0-9.]+"$',
-    "dev/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
+    "dev/parakeet/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
 }
 
 
@@ -104,10 +104,10 @@ def test_parakeet_pins_agree() -> None:
     bash = re.search(
         r'^rev="murmure-model ([0-9.]+)"$', _text("parakeet-snap/dev/download-models.sh"), re.M
     )
-    py = re.search(r'^RELEASE = "([0-9.]+)"$', _text("dev/fetch_parakeet_onnx.py"), re.M)
+    py = re.search(r'^RELEASE = "([0-9.]+)"$', _text("dev/parakeet/fetch_parakeet_onnx.py"), re.M)
     assert bash and py
     assert bash.group(1) == py.group(1), (
         "parakeet-snap/dev/download-models.sh stamps a different murmure-model "
-        "release than dev/fetch_parakeet_onnx.py downloads - the stamp would "
+        "release than dev/parakeet/fetch_parakeet_onnx.py downloads - the stamp would "
         "certify weights that were never staged"
     )

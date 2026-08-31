@@ -183,6 +183,8 @@ class Ie115Encoder:
             }
             if event.snippet:  # additive, optional (note §7.5)
                 frame["snippet"] = event.snippet
+            if event.warning:  # additive, optional (T10 memory-pressure notice)
+                frame["warning"] = event.warning
             return frame
         if isinstance(event, TranscriptionFinal):
             frame = {
@@ -234,7 +236,11 @@ class Ie115Decoder:
             return []
         if ftype == STATUS_EVENT:
             phase = _STATE_TO_PHASE.get(str(frame.get("state") or ""), PHASE_TRANSCRIBING)
-            return [TranscriptionProgress(phase=phase, snippet=frame.get("snippet"))]
+            return [
+                TranscriptionProgress(
+                    phase=phase, snippet=frame.get("snippet"), warning=frame.get("warning")
+                )
+            ]
         if ftype == TRANSCRIPTION_DELTA:
             # Committed, append-only segment text — the IE115 face of our
             # `transcription.final` (streaming contract, streaming.md §3a).

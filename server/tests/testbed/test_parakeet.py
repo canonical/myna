@@ -8,6 +8,8 @@ session dispatch paths (batch I7, streaming strategy wiring).
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
@@ -21,16 +23,21 @@ from myna.core import (
     TranscriptionDone,
 )
 from myna.server.cli import build_adapter, build_parser
+from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
+    MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
+    PARTIAL_CADENCE_S,
+    QSILU_LIB_FILE,
     ParakeetAdapter,
     _detokenize,
     _load_vocab,
     _ParakeetOnnx,
     _tokens_to_words,
+    encoder_variant,
 )
-from myna.testbed.streaming.strategies import SilenceCut
+from myna.testbed.streaming.strategies import SilenceCut, Word
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 
@@ -45,10 +52,18 @@ class _FakeParakeetModel:
     def __init__(self, text: str = "hello world"):
         self._text = text
         self.calls: list[int] = []  # lengths of sample arrays passed in
+        # T10: run_session drives the real MemoryPressureMonitor lifecycle
+        # (begin_session/observe_decode) against whatever model it holds; the
+        # fake needs a real one so that path is exercised, not stubbed out.
+        self.pressure_monitor = MemoryPressureMonitor()
 
     def transcribe_text(self, samples) -> str:
         self.calls.append(len(samples))
         return self._text
+
+    def transcribe_words(self, samples) -> list[Word]:
+        self.calls.append(len(samples))
+        return [Word(w, i, i + 1) for i, w in enumerate(self._text.split())]
 
 
 async def pcm_audio(seconds: float, chunk_s: float = 0.5):
@@ -138,6 +153,47 @@ async def test_streaming_cut_constants_are_configurable(monkeypatch):
     assert captured["kwargs"]["window_cap_seconds"] == 12.0
 
 
+async def test_streaming_decode_schedules_pressure_warning_across_the_thread(monkeypatch):
+    """T10 on the streaming path: `decode` runs off-loop (run_streaming_loop's
+    dedicated worker thread), so the warning has to cross back via
+    run_coroutine_threadsafe rather than a direct await. Captures the real
+    `decode` closure and calls it as the worker thread would, then lets the
+    event loop run one tick to pick up the scheduled emit."""
+    from myna.server import lifecycle
+
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: 800 * 1024**2)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+
+    adapter = ParakeetAdapter(streaming=True)
+    model = _FakeParakeetModel("hello world")
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured["decode"] = decode
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    async def empty_audio():
+        for _ in ():
+            yield b""  # pragma: no cover - async iterator shape only
+
+    await adapter._run_streaming_session(model, empty_audio(), emit)
+
+    decode = captured["decode"]
+    hyp = decode(np.zeros(1600, dtype=np.float32), 0.0)
+    assert hyp.words, "sanity: the captured decode closure actually ran the fake model"
+    await asyncio.sleep(0.01)  # let run_coroutine_threadsafe's scheduled coroutine execute
+
+    warnings = [e.warning for e in events if getattr(e, "warning", None)]
+    assert warnings == [lifecycle.MEMORY_PRESSURE_MESSAGE]
+
+
 def test_streaming_cut_constants_must_be_positive():
     with pytest.raises(ValueError, match="stream_arm_s"):
         ParakeetAdapter(stream_arm_s=0)
@@ -190,6 +246,44 @@ async def test_batch_session_emits_complete_transcript_and_satisfies_i7():
     done = events[-1]
     assert done.text == "he had never been father lover husband friend"
     assert model.calls, "model.transcribe_text was never called"
+
+
+@pytest.mark.asyncio
+async def test_batch_session_surfaces_memory_pressure_warning_once(monkeypatch):
+    """T10: run_session wires MemoryPressureMonitor's signal onto
+    transcription.progress -- and re-arms the debounce each session, exactly
+    like LifecycleService's own idle-release re-arm."""
+    from myna.server import lifecycle
+
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: 800 * 1024**2)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+
+    adapter = ParakeetAdapter(streaming=False)
+    model = _FakeParakeetModel("hello")
+    adapter._model = model
+
+    events = await run_session(adapter, audio_seconds=2.0)
+    warnings = [e.warning for e in events if getattr(e, "warning", None)]
+    assert warnings == [lifecycle.MEMORY_PRESSURE_MESSAGE]
+
+    # A second session on the same (still undersized) model warns again.
+    events2 = await run_session(adapter, audio_seconds=2.0)
+    warnings2 = [e.warning for e in events2 if getattr(e, "warning", None)]
+    assert warnings2 == [lifecycle.MEMORY_PRESSURE_MESSAGE]
+
+
+@pytest.mark.asyncio
+async def test_batch_session_no_warning_on_a_healthy_machine(monkeypatch):
+    from myna.server import lifecycle
+
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+
+    adapter = ParakeetAdapter(streaming=False)
+    adapter._model = _FakeParakeetModel("hello")
+
+    events = await run_session(adapter, audio_seconds=2.0)
+    assert not any(getattr(e, "warning", None) for e in events)
 
 
 @pytest.mark.asyncio
@@ -378,8 +472,47 @@ def test_partial_dials_are_validated():
 def test_cli_wires_partial_dials_including_an_explicit_zero():
     base = ["--socket", "/tmp/s.sock", "--adapter", "parakeet", "--streaming"]
     adapter = build_adapter(build_parser().parse_args(base))
-    assert adapter._stream_partial_cadence_s == 0.5
+    assert adapter._stream_partial_cadence_s == PARTIAL_CADENCE_S
     assert adapter._stream_partial_tail_s == 0.0, "the tick decodes the whole window by default"
 
     off = build_adapter(build_parser().parse_args(base + ["--stream-partial-cadence-s", "0"]))
     assert off._stream_partial_cadence_s == 0.0, "an explicit 0 must survive the default"
+
+
+# Encoder variant selection (perf T11/T13): a model dir carrying the maxstack
+# encoder AND its custom-op kernel library gets the fast path; anything less
+# falls back to the base encoder byte-for-byte. The selection is what the
+# whole optimized-snap story rides on, so pin it model-free.
+
+
+def test_encoder_variant_base_when_dir_is_plain(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
+    path, lib = encoder_variant(str(tmp_path))
+    assert path.endswith("encoder-model.int8.onnx")
+    assert lib is None
+
+
+def test_encoder_variant_maxstack_needs_both_files(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
+    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
+    # encoder present but no kernel lib: must fall back, never half-load
+    path, lib = encoder_variant(str(tmp_path))
+    assert path.endswith("encoder-model.int8.onnx") and lib is None
+
+    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
+    path, lib = encoder_variant(str(tmp_path))
+    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
+    assert lib == str(tmp_path / QSILU_LIB_FILE)
+
+
+def test_encoder_variant_env_overrides_lib_location(tmp_path, monkeypatch):
+    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
+    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
+    ext = tmp_path / "elsewhere.so"
+    ext.write_bytes(b"")
+    monkeypatch.setenv("MYNA_ORT_CUSTOM_OPS", str(ext))
+    path, lib = encoder_variant(str(tmp_path))
+    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
+    assert lib == str(ext)

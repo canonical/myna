@@ -1,15 +1,24 @@
-"""Idle-unload / socket-activation lifecycle (T27/T28). No model or sockets."""
+"""Idle-unload / socket-activation lifecycle (T27/T28), plus runtime
+memory-pressure detection (T10). No model or sockets."""
 
 import asyncio
 import platform
 import socket
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from myna.core import SessionConfig, WsUnixClient, serve_unix, systemd_socket
 from myna.server import lifecycle
-from myna.server.lifecycle import LifecycleService, idle_monitor
+from myna.server.lifecycle import (
+    MAJOR_PAGE_FAULT_THRESHOLD,
+    PSI_SOME_AVG10_THRESHOLD,
+    LifecycleService,
+    MemoryPressureMonitor,
+    idle_monitor,
+    sample_majflt,
+)
 from myna.testbed import FakeAdapter, Harness, SilenceSource
 from myna.testbed.adapter import Candidate
 
@@ -153,3 +162,154 @@ async def test_serves_on_a_pre_bound_socket(tmp_path):
             source=SilenceSource(0.3),
         )
     assert record.events[-1].event.type == "transcription.done"
+
+
+# --- T10: runtime memory-pressure detection --------------------------------
+
+
+def test_sample_majflt_is_a_nonnegative_int():
+    # Smoke test on the real process; the delta (not the absolute value) is
+    # the signal everywhere else, but the primitive itself must not explode.
+    assert sample_majflt() >= 0
+
+
+def test_monitor_healthy_machine_stays_silent(monkeypatch):
+    """No cgroup limit, no PSI signal, majflt delta well under threshold:
+    the acceptance criterion's 'lifted' half -- no false positive."""
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+    monitor = MemoryPressureMonitor()
+    monitor.begin_session()
+    assert monitor.observe_decode(0, 5) is None
+
+
+def test_monitor_undersized_cgroup_warns_on_first_decode_even_with_no_faults(monkeypatch):
+    """Reproduces the 2026-08-28 discovery deterministically: a cgroup limit
+    below what the model needs is known at model-load time, before a single
+    decode has faulted -- this is the 'memory.high = 800 MB' half of the
+    acceptance criterion, made safe to test without inducing real thrash."""
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: 800 * 1024**2)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+    monitor = MemoryPressureMonitor()
+    monitor.begin_session()
+    warning = monitor.observe_decode(0, 0)  # zero faults -- cgroup fact alone is enough
+    assert warning == lifecycle.MEMORY_PRESSURE_MESSAGE
+    assert "page fault" not in warning.lower()  # SPEC: never say "page faults" to a user
+
+
+def test_monitor_majflt_delta_over_threshold_warns(monkeypatch):
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: None)
+    monitor = MemoryPressureMonitor()
+    monitor.begin_session()
+    assert monitor.observe_decode(0, MAJOR_PAGE_FAULT_THRESHOLD) is None  # exactly at, not over
+    assert monitor.observe_decode(0, MAJOR_PAGE_FAULT_THRESHOLD + 1) is not None
+
+
+def test_monitor_psi_over_threshold_warns_even_with_no_faults(monkeypatch):
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: PSI_SOME_AVG10_THRESHOLD + 1.0)
+    monitor = MemoryPressureMonitor()
+    monitor.begin_session()
+    assert monitor.observe_decode(0, 0) is not None
+
+
+def test_monitor_debounces_within_a_session_then_rearms_on_the_next(monkeypatch):
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: 800 * 1024**2)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: 0.0)
+    monitor = MemoryPressureMonitor()
+
+    monitor.begin_session()
+    assert monitor.observe_decode(0, 0) is not None  # first decode of session 1: warns
+    assert monitor.observe_decode(0, 0) is None  # second decode, same session: debounced
+    assert monitor.observe_decode(0, 999999) is None  # even a huge delta: still debounced
+
+    monitor.begin_session()  # a fresh session re-arms (mirrors LifecycleService)
+    assert monitor.observe_decode(0, 0) is not None
+
+
+def test_monitor_healthy_cgroup_does_not_mask_a_real_page_fault_storm(monkeypatch):
+    """A generously-sized cgroup must not suppress the behavioural signal --
+    the cgroup check is one *additional* way to trigger, not a gate on the
+    others."""
+    monkeypatch.setattr(lifecycle, "_cgroup_memory_limit_bytes", lambda: 8 * 1024**3)
+    monkeypatch.setattr(lifecycle, "_read_psi_some_avg10", lambda: None)
+    monitor = MemoryPressureMonitor()
+    monitor.begin_session()
+    assert monitor.observe_decode(0, MAJOR_PAGE_FAULT_THRESHOLD + 1) is not None
+
+
+def test_read_psi_degrades_to_none_when_file_is_absent():
+    assert lifecycle._read_psi_some_avg10("/nonexistent/path/for/sure") is None
+
+
+def test_read_psi_degrades_to_none_on_malformed_content(tmp_path):
+    bogus = tmp_path / "memory"
+    bogus.write_text("garbage\nnot the psi format at all\n")
+    assert lifecycle._read_psi_some_avg10(str(bogus)) is None
+
+
+def test_read_psi_parses_the_real_kernel_format(tmp_path):
+    psi = tmp_path / "memory"
+    psi.write_text(
+        "some avg10=12.34 avg60=5.00 avg300=1.00 total=999\n"
+        "full avg10=1.00 avg60=0.50 avg300=0.10 total=111\n"
+    )
+    assert lifecycle._read_psi_some_avg10(str(psi)) == 12.34
+
+
+def test_cgroup_memory_limit_degrades_to_none_when_unreadable(monkeypatch):
+    """Snap confinement, cgroup v1, or no cgroup at all -- must not raise."""
+
+    def _raise(self, *a, **kw):
+        raise OSError("confined")
+
+    monkeypatch.setattr(Path, "read_text", _raise)
+    assert lifecycle._cgroup_memory_limit_bytes() is None
+
+
+def test_cgroup_memory_limit_walks_ancestors_and_takes_the_minimum(tmp_path, monkeypatch):
+    """The limit that bit the 2026-08-28 baseline was on the process's own
+    scope, but a limit on any ancestor slice has the same effect -- mirrors
+    dev/parakeet/bench_guard.py's identical-purpose walk (T02)."""
+    (tmp_path / "proc_self_cgroup").write_text("0::/leaf/child\n")
+    cgroup_root = tmp_path / "sys_fs_cgroup"
+    leaf, child = cgroup_root / "leaf", cgroup_root / "leaf" / "child"
+    child.mkdir(parents=True)
+    (leaf / "memory.high").write_text("max\n")
+    (leaf / "memory.max").write_text(f"{3 * 1024**3}\n")
+    (child / "memory.high").write_text(f"{1024**3}\n")  # smallest: the answer
+    (child / "memory.max").write_text("max\n")
+
+    real_path = Path
+
+    def fake_path(p, *args, **kwargs):
+        if p == "/proc/self/cgroup":
+            return real_path(tmp_path / "proc_self_cgroup")
+        if p == "/sys/fs/cgroup":
+            return real_path(cgroup_root)
+        return real_path(p, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle, "Path", fake_path)
+    assert lifecycle._cgroup_memory_limit_bytes() == 1024**3
+
+
+def test_cgroup_memory_limit_none_when_nothing_is_limited(tmp_path, monkeypatch):
+    (tmp_path / "proc_self_cgroup").write_text("0::/leaf\n")
+    cgroup_root = tmp_path / "sys_fs_cgroup"
+    leaf = cgroup_root / "leaf"
+    leaf.mkdir(parents=True)
+    (leaf / "memory.high").write_text("max\n")
+    (leaf / "memory.max").write_text("max\n")
+
+    real_path = Path
+
+    def fake_path(p, *args, **kwargs):
+        if p == "/proc/self/cgroup":
+            return real_path(tmp_path / "proc_self_cgroup")
+        if p == "/sys/fs/cgroup":
+            return real_path(cgroup_root)
+        return real_path(p, *args, **kwargs)
+
+    monkeypatch.setattr(lifecycle, "Path", fake_path)
+    assert lifecycle._cgroup_memory_limit_bytes() is None

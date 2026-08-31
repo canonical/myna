@@ -4,7 +4,7 @@
 # `model-components` part).
 #
 # Source: murmure's parakeet-tdt-0.6b-v3-int8 bundle (see
-# dev/fetch_parakeet_onnx.py for why not istupakov's HF export). Reuses the
+# dev/parakeet/fetch_parakeet_onnx.py for why not istupakov's HF export). Reuses the
 # already-staged XDG cache copy when present (hardlinked, no download).
 #
 #   ./dev/download-models.sh
@@ -20,7 +20,7 @@ out="$snap_dir/components/model-parakeet-int8"
 # (a versioned release URL, sha256-verified in the python fetcher); what was
 # missing is the staged-directory stamp, so a component staged from an older
 # release survived a pin move unnoticed. Keep in step with URL in
-# dev/fetch_parakeet_onnx.py; test_model_pins.py holds the two together.
+# dev/parakeet/fetch_parakeet_onnx.py; test_model_pins.py holds the two together.
 rev="murmure-model 1.2.0"
 
 if [ -f "$out/encoder-model.int8.onnx" ]; then
@@ -38,7 +38,7 @@ fi
 # sha256-verified rather than hardlinked in blind.
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/myna/models/parakeet-tdt-0.6b-v3-int8"
 cd "$repo_root/server"
-uv run python "$repo_root/dev/fetch_parakeet_onnx.py"
+uv run python "$repo_root/dev/parakeet/fetch_parakeet_onnx.py"
 
 mkdir -p "$out"
 cp -al "$cache/." "$out/" 2>/dev/null || cp -a "$cache/." "$out/"
