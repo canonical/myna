@@ -1,4 +1,4 @@
-//! vumeter — PURE envelope logic (feature 004; contract extension.md X5;
+//! vumeter — PURE envelope logic (feature 004; contract RC5;
 //! research R5/R16/R16a/R17). RMS/peak → a headset-calibrated dBFS intensity
 //! with stale-decay. This is the shared envelope math [`crate::ribbon`]
 //! (the 2026-07-30 wave-ribbon redesign) delegates to unchanged — the
@@ -7,7 +7,7 @@
 //! caller.
 //!
 //! No GTK imports; carries energy only, never samples or content
-//! (constitution V, X6).
+//! (constitution V, RC6).
 
 /// Past this age with no fresh level, ease the VU to its floor rather than
 /// freezing on the last value (R5/SC-004).
@@ -26,7 +26,7 @@ pub const DB_FLOOR: f64 = -67.0;
 pub const DB_CEILING: f64 = -14.0;
 const PEAK_WEIGHT: f64 = 0.55;
 
-/// Clamp to `[0,1]`; NaN collapses to 0 (X5's NaN-safety).
+/// Clamp to `[0,1]`; NaN collapses to 0 (RC5's NaN-safety).
 fn clamp01(x: f64) -> f64 {
     if x.is_nan() {
         return 0.0;
@@ -48,7 +48,7 @@ pub fn boost_level(level: f64) -> f64 {
 }
 
 /// RMS + peak → VU intensity in `[FLOOR, 1]`, monotonic and clamped, decaying
-/// to [`FLOOR`] once the last update is older than [`STALE_MS`] (X5). RMS
+/// to [`FLOOR`] once the last update is older than [`STALE_MS`] (RC5). RMS
 /// keeps the display stable; a weighted peak makes consonants and short
 /// transients visible without pinning the meter. Both inputs use the same
 /// calibrated dBFS scale ([`boost_level`]) so quiet speech visibly drives the

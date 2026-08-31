@@ -615,7 +615,7 @@ strand's centreline — glow-stroke-only, no solid fill, each with its own
 higher-frequency drift and a gradient that fades to nothing at both ends —
 evoking a curl of smoke peeling off the main flow rather than a second
 parallel band. `computeRibbonModel`'s returned model now echoes `elapsedMs`
-through (additive; doesn't change the `strands` shape the existing X24
+through (additive; doesn't change the `strands` shape the existing RC24
 tests check) purely so `ribbon-paint.js` can drive these rendering-only
 time-based effects without needing new geometry fields.
 
@@ -780,7 +780,7 @@ reference design decision's explicit "aubergine if the main colour is
 orange" rule (2026-07-30 analysis pass: this specific override had been
 dropped to a generic "darker/complementary" description across the derived
 artifacts; reinstated here and in spec.md FR-010b, data-model.md E2a,
-contracts/extension.md X25, and tasks.md T054). Guarded by
+contracts/extension.md RC25, and tasks.md T054). Guarded by
 `Gio.SettingsSchemaSource.get_default().lookup(...)` +
 `GSettingsSchema.has_key(...)` before ever constructing a `Gio.Settings`
 against the schema, so a pre-GNOME-47 shell (schema or key absent) degrades

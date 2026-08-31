@@ -2,19 +2,21 @@
 
 **Feature**: 004-gnome-shell-indicator | **Date**: 2026-07-21 (HUD redesign: 2026-07-30; wave-ribbon: 2026-07-30; rewritten as host contract: 2026-08-26)
 
-**(2026-08-26 architecture revision)** The extension no longer draws anything
-and no longer consumes `com.canonical.Myna.Dictation`. It is a **thin window-management
-host** for the renderer application (`myna-hud`, Rust GTK4 — `contracts/`
-sibling guarantees live in the publisher/renderer tasks; the rendering
+**(2026-08-26 architecture revision; RC- numbering: 2026-08-31)** The
+extension no longer draws anything and no longer consumes
+`com.canonical.Myna.Dictation`. It is a **thin window-management host** for
+the renderer application (`myna-hud`, Rust GTK4 — `contracts/` sibling
+guarantees live in the publisher/renderer tasks; the rendering
 guarantees X11–X31 previously listed here move to the renderer application's
 own test suite in `client/myna-hud`): it launches the binary through the
 compositor's Wayland-client API, adopts its window, makes it a focus-safe
 overlay, positions it, supervises the process.
-The pure mapping/rendering guarantees (formerly X1–X6, X19, X24–X26) are re-homed
-verbatim as Rust unit tests of `myna-hud`'s ported pure modules; the
-visual/focus acceptance guarantees (formerly X11–X18, X20–X23, X27–X31) remain
-manual on-hardware acceptance items, now exercised through the hosted window.
-The host is pure window-management. The guarantees below are the **host's** own.
+The pure mapping/rendering guarantees (formerly X1–X6, X19, X24–X26; now
+**RC1–RC6, RC19, RC24–RC26**) are re-homed verbatim as Rust unit tests of
+`myna-hud`'s ported pure modules; the visual/focus acceptance guarantees
+(formerly X11–X18, X20–X23, X27–X31) remain manual on-hardware acceptance
+items, now exercised through the hosted window. The host is pure
+window-management. The guarantees below are the **host's** own.
 
 Harness-tier note: the host is GJS by platform necessity (an extension cannot
 be another language), but it is a *thin shim* — launch/adopt/position/supervise
@@ -22,6 +24,32 @@ be another language), but it is a *thin shim* — launch/adopt/position/supervis
 is factored into pure modules so everything except live compositor behavior is
 GJS-unit-tested without a Shell; the compositor behavior is verified by the
 manual acceptance plus a headless-Shell integration test where available.
+
+## Renderer contract (myna-hud, `client/myna-hud`)
+
+The pure guarantees the standalone GTK4 renderer application upholds.
+Every row here is encoded as a Rust unit test in `client/myna-hud/tests/`.
+The `RC-` prefix disambiguates from the host contract (`XH-`,
+above), the wire contract (`C-`, in `dbus-interface.md`), and the
+research references (`R-`, in `research.md`).
+
+| # | Guarantee | Spec |
+|---|---|---|
+| RC1 | Wire `State` strings map to a content-free semantic descriptor; unknown values pass through verbatim. | FR-008 |
+| RC2 | The state→descriptor mapping is additive: a `State` value the renderer does not recognise is treated as the closest match, never as a crash. | FR-008 |
+| RC3 | The idle `State` keeps the renderer dormant — no actor, no window content shown. | FR-002 |
+| RC5 | `levels_to_intensity` is calibrated: louder inputs produce higher intensity monotonically across the speech range; ST levels decays toward a floor within `STALE_MS`; NaN inputs are safe. | FR-009, SC-004 |
+| RC6 | No transcript content ever crosses a render boundary — only `State`, `ErrorMessage`, `AudioRms`, `AudioPeak`. | constitution V |
+| RC7 | The consumer is dormant while `com.canonical.Myna.Dictation` has no owner: no proxy, no `State` emission, no error surfaced. | FR-018, FR-026 |
+| RC8 | Name-appeared connects the proxy and reflects the current `State`; name-vanished returns to idle. Levels are forwarded on every `PropertiesChanged` (never deduplicated — R16a). | FR-026 |
+| RC9 | `disable()` removes the watch, drops the proxy, and disconnects every subscription (no leaks). | FR-026 |
+| RC10 | Re-`enable()` after `disable()` re-establishes the watch and proxy cleanly. | FR-026 |
+| RC19 | Severity maps to a content-free icon choice and pill colour class. | FR-005, FR-007 |
+| RC20 | A held notice replaces in place — never queues. The replacement policy and the timing are deterministic. | FR-007a, FR-007b, FR-007d |
+| RC21 | Recoverable notices auto-dismiss after their dynamic hold; critical errors persist until the publisher sends a new `State. | FR-007b, FR-007d |
+| RC24 | The ribbon model composes layered strands (base/secondary/voice), is deterministic, and the `Morph` phase produces travelling dots. | FR-010 |
+| RC25 | Accent resolution prefers the live theme (`@accent_bg_color`), then `AdwStyleManager:accent-color-rgba` when available, then a documented Ubuntu-orange fallback. | FR-005, R26 |
+| RC26 | Reduced-motion resolution is absent-safe — the renderer never crashes when neither `GtkSettings:gtk-interface-reduced-motion` nor `org.gnome.desktop.a11y.interface` is readable; the modern property wins, and the legacy `enable-animations` setting (inverted) is the fallback. | R26, E2b |
 
 ## Pure, unit-tested (GJS contract tests, no Shell required)
 

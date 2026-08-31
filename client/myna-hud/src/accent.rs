@@ -1,6 +1,6 @@
 //! accent — PURE accent-color resolution (feature 004, 2026-07-30
 //! wave-ribbon redesign; research R18, mechanism amended R26; contract
-//! extension.md X25). Resolves GNOME's desktop-wide accent-color preference
+//! extension.md RC25). Resolves GNOME's desktop-wide accent-color preference
 //! (`org.gnome.desktop.interface`'s `accent-color`) into the wave ribbon's
 //! colour palette.
 //!

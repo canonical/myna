@@ -1,6 +1,6 @@
 // tests/states.rs — hermetic contract test for the pure wire-state →
-// semantic descriptor mapping (feature 004, contract extension.md X1–X4, X6,
-// X19). No Shell, no D-Bus.
+// semantic descriptor mapping (feature 004, contract extension.md RC1–RC4,
+// RC6, RC19). No Shell, no D-Bus.
 //
 // English-only assertions: no gettext domain is bound in the test binary,
 // so gettext() is the identity function.
@@ -11,8 +11,8 @@ fn d(state: &str) -> Descriptor {
     state_to_descriptor(Some(state), "")
 }
 
-// --- X1: every known State maps to its semantic descriptor ---------------
-// (severity replaces the old boolean isError — X19)
+// --- RC1: every known State maps to its semantic descriptor ---------------
+// (severity replaces the old boolean isError — RC19)
 #[test]
 fn x1_known_states_map_to_their_descriptors() {
     let cases: &[(&str, DictationState, &str, Option<Severity>)] = &[
@@ -71,7 +71,7 @@ fn x1_error_with_reason_surfaces_it() {
 }
 
 // Notice with a reason surfaces it directly as the status text (no "Error —"
-// prefix — it isn't an error), and is 'recoverable' severity (X19).
+// prefix — it isn't an error), and is 'recoverable' severity (RC19).
 #[test]
 fn x19_notice_with_reason_is_the_status() {
     let desc = state_to_descriptor(Some(wire::NOTICE), "No speech detected");
@@ -79,7 +79,7 @@ fn x19_notice_with_reason_is_the_status() {
     assert_eq!(desc.severity, Some(Severity::Recoverable));
 }
 
-// --- X2: unknown State → neutral "active" descriptor ----------------------
+// --- RC2: unknown State → neutral "active" descriptor ----------------------
 #[test]
 fn x2_unknown_states_map_to_active() {
     for bogus in ["quantizing", "", "RECORDING", "idle "] {
@@ -91,14 +91,14 @@ fn x2_unknown_states_map_to_active() {
     }
 }
 
-// --- X3: idle → hidden (no window; push-to-talk) --------------------------
+// --- RC3: idle → hidden (no window; push-to-talk) --------------------------
 #[test]
 fn x3_idle_and_missing_state_are_hidden() {
     assert!(d(wire::IDLE).hidden, "idle: hidden");
     assert!(state_to_descriptor(None, "").hidden, "null: hidden");
 }
 
-// --- X4: loading and recording are distinct -------------------------------
+// --- RC4: loading and recording are distinct -------------------------------
 #[test]
 fn x4_loading_and_recording_are_distinct() {
     let loading = d(wire::LOADING);
@@ -107,7 +107,7 @@ fn x4_loading_and_recording_are_distinct() {
     assert_ne!(loading.status_text, recording.status_text, "statusText");
 }
 
-// --- X19: notice and error are mutually exclusive severities --------------
+// --- RC19: notice and error are mutually exclusive severities --------------
 #[test]
 fn x19_severities_are_mutually_exclusive() {
     let notice = d(wire::NOTICE);
@@ -127,8 +127,8 @@ fn x19_severities_are_mutually_exclusive() {
     }
 }
 
-// --- X6: descriptor carries only state + content-free status --------------
-// The four-field shape is structural in Rust; the behavioral half of X6 is
+// --- RC6: descriptor carries only state + content-free status --------------
+// The four-field shape is structural in Rust; the behavioral half of RC6 is
 // that caller text can never flow into a non-problem status.
 #[test]
 fn x6_non_problem_status_is_fixed() {

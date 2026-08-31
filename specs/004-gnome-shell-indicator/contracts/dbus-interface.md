@@ -10,6 +10,15 @@ and simply re-homed. State + level only — never transcript content (constituti
 V). This contract is defined here and encoded as executable tests on both sides
 before implementation. Fallback suppression uses `RegisterClient` client set (C14/C15).
 
+The `C-` numbering below is **wire-level**: it is enforced by both the
+publisher (`myna-desktop`) and any consumer that wants to be a correct
+client. The renderer-side consumer lifecycle (dormancy on no owner,
+reflect-on-appeared, clear-on-vanished, no-leak disable, re-enable) was
+previously referenced here as `X7–X10` — it has moved to the **renderer
+contract** (`RC7–RC10`, in `extension.md`'s Renderer Contract section) since
+those guarantees are now an attribute of the `myna-hud` consumer, not of
+this interface.
+
 ## Bus topology
 
 - **Bus**: session bus.

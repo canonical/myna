@@ -1,6 +1,6 @@
 //! ribbon — PURE wave-ribbon logic (feature 004-gnome-shell-indicator,
 //! 2026-07-30 wave-ribbon redesign, refined per the "fabric in gentle
-//! airflow" design pass; research R17/R17a; contract extension.md X24).
+//! airflow" design pass; research R17/R17a; contract RC24).
 //!
 //! Pipeline (matches the design doc):
 //!
@@ -281,7 +281,7 @@ pub struct Point {
 /// wave itself — the GPU path regenerates this exact sine per-pixel in GLSL
 /// — reproduces it from the same numbers that produced `points`, rather
 /// than from a hand-copied second set of constants that could drift.
-/// Additive: consumers reading only `role`/`points`/`crest`/`alpha` (the X24
+/// Additive: consumers reading only `role`/`points`/`crest`/`alpha` (the RC24
 /// contract) are unaffected.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Strand {
@@ -316,7 +316,7 @@ pub struct Convergence {
     pub alpha: f64,
 }
 
-/// The full ribbon model (X24's contract): layered strands, the morph dots,
+/// The full ribbon model (RC24's contract): layered strands, the morph dots,
 /// the complete-phase convergence, the brightness pulse, and the tint.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RibbonModel {
@@ -619,7 +619,7 @@ pub fn compute_ribbon_model(input: RibbonInput) -> RibbonModel {
     // `elapsed_ms` is echoed through so renderers can add their own
     // time-based rendering-only effects without needing new geometry fields
     // on the strands themselves — additive, doesn't change the strand
-    // contract X24 tests already cover.
+    // contract RC24 tests already cover.
     RibbonModel {
         strands: layers,
         dots,

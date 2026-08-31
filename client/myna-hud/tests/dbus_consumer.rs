@@ -1,6 +1,6 @@
 // tests/dbus_consumer.rs — hermetic contract test for the
 // com.canonical.Myna.Dictation consumer lifecycle (feature 004, contract
-// extension.md X7–X10 re-homed to the renderer; dbus-interface.md C8/C9).
+// extension.md RC7–RC10 re-homed to the renderer; dbus-interface.md C8/C9).
 // No session bus: the name watch and the proxy are injectable seams.
 
 use std::cell::RefCell;
@@ -44,7 +44,7 @@ fn service(recorder: &Shared) -> DictationService {
         .build()
 }
 
-// --- X7: dormant while the name has no owner -----------------------------
+// --- RC7: dormant while the name has no owner -----------------------------
 
 #[test]
 fn x7_dormant_without_an_owner() {
@@ -58,7 +58,7 @@ fn x7_dormant_without_an_owner() {
     assert!(!svc.is_available(), "not available without an owner");
 }
 
-// --- X8: name-appeared connects and reflects the current State -----------
+// --- RC8: name-appeared connects and reflects the current State -----------
 
 #[test]
 fn x8_name_appeared_reflects_the_current_state() {
@@ -86,7 +86,7 @@ fn x8_name_appeared_reflects_the_current_state() {
     assert!(svc.is_available());
 }
 
-// --- X8: name-vanished clears to idle (daemon crash/exit) ---------------
+// --- RC8: name-vanished clears to idle (daemon crash/exit) ---------------
 
 #[test]
 fn x8_name_vanished_clears_to_idle() {
@@ -237,7 +237,7 @@ fn repeated_states_are_deduplicated() {
     assert_eq!(states, 0, "an unchanged state is not re-emitted");
 }
 
-// --- X9/X10: disable drops everything; re-enable re-establishes ---------
+// --- RC9/RC10: disable drops everything; re-enable re-establishes ---------
 
 #[test]
 fn x9_disable_drops_everything_and_x10_reenable_works() {

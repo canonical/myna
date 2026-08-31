@@ -1,5 +1,5 @@
 // tests/notice_slot.rs — hermetic test for the held-notice slot (feature
-// 004, R15; FR-007a/FR-007b/FR-007d; contract extension.md X20 re-homed to
+// 004, R15; FR-007a/FR-007b/FR-007d; contract extension.md RC20 re-homed to
 // the renderer). The slot owns *when* a notice clears; the window owns the
 // pixels and the actual timer.
 
@@ -49,7 +49,7 @@ fn critical_error_persists_until_the_client_clears_it() {
     assert!(!slot.is_showing(0.0));
 }
 
-// --- X20/FR-007a: a second recoverable replaces in place AND restarts ----
+// --- RC20/FR-007a: a second recoverable replaces in place AND restarts ----
 
 #[test]
 fn recoverable_replacement_restarts_the_hold() {
@@ -71,7 +71,7 @@ fn recoverable_replacement_restarts_the_hold() {
     );
 }
 
-// --- X20/FR-007d: a second critical replaces and still does not expire ---
+// --- RC20/FR-007d: a second critical replaces and still does not expire ---
 
 #[test]
 fn critical_replacement_still_never_auto_clears() {

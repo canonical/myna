@@ -1,5 +1,5 @@
 // tests/hud_logic.rs — hermetic contract test for the HUD pill's PURE logic
-// (feature 004, 2026-07-30 HUD redesign; contracts extension.md X19–X21).
+// (feature 004, 2026-07-30 HUD redesign; contracts extension.md RC19–RC21).
 // Exercises hud_logic only — no GTK. The app's composited behaviour
 // (focus-safety, timing, per-state treatments, dismiss click) is
 // manual-acceptance plus the env-gated render check.
@@ -11,7 +11,7 @@ use myna_hud::hud_logic::{
 use myna_hud::ribbon::RibbonPhase;
 use myna_hud::states::{DictationState, Severity};
 
-// --- X19: mic vs. mic-slash icon, contextual on severity -------------------
+// --- RC19: mic vs. mic-slash icon, contextual on severity -------------------
 
 #[test]
 fn x19_icon_by_severity() {
@@ -48,7 +48,7 @@ fn auto_dismiss_by_severity() {
     );
 }
 
-// --- X20: replace-in-place — any new problem descriptor replaces the held
+// --- RC20: replace-in-place — any new problem descriptor replaces the held
 // --- slot; there is never a queue, regardless of matching severity. --------
 
 #[test]

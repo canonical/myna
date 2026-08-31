@@ -1,6 +1,6 @@
 // tests/ribbon.rs — hermetic contract test for the pure wave-ribbon logic
 // (feature 004, 2026-07-30 wave-ribbon redesign + the "fabric in gentle
-// airflow" refinement; contract extension.md X24). No Shell, no D-Bus.
+// airflow" refinement; contract extension.md RC24). No Shell, no D-Bus.
 //
 // The headless Cairo `paintRibbon` smoke check is not here — the Cairo
 // painter is deliberately not ported (GPU-only rendering, R23); the
@@ -176,7 +176,7 @@ fn model_uses_shaped_amplitude() {
     );
 }
 
-// --- X24: layered strands (base/voice/secondary), deterministic -----------
+// --- RC24: layered strands (base/voice/secondary), deterministic -----------
 
 #[test]
 fn x24_layered_strands_deterministic() {
@@ -265,7 +265,7 @@ fn crest_factors() {
     );
 }
 
-// --- X24: the lifecycle-phase timing functions are pure & independent ----
+// --- RC24: the lifecycle-phase timing functions are pure & independent ----
 
 #[test]
 fn phase_timing_functions() {

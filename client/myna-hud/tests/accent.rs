@@ -1,6 +1,6 @@
 // tests/accent.rs — hermetic contract test for the pure accent-color
 // resolution (feature 004, 2026-07-30 wave-ribbon redesign; contract
-// extension.md X25; mechanism amended R26). The reduced-motion half (X26)
+// extension.md RC25; mechanism amended R26). The reduced-motion half (RC26)
 // is covered by tests/motion.rs — the resolution moved there with E2b's
 // two-safe-sources design.
 

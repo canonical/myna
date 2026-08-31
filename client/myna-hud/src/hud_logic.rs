@@ -1,9 +1,9 @@
 //! hud_logic — PURE logic for the bottom-center HUD pill (feature
 //! 004-gnome-shell-indicator, 2026-07-30 HUD redesign; research R14/R15;
-//! contracts extension.md X19–X21). No GTK imports — unit-tested headless
+//! contracts RC19–RC21). No GTK imports — unit-tested headless
 //! by [`tests/hud_logic.rs`], the same split `states`/`vumeter` already
 //! establish between the *stable* pure layer and the *experimental*
-//! toolkit-dependent window ([`crate::window`], harness-tier — see plan.md
+//! toolkit-dependent window ([`crate::window"], harness-tier — see plan.md
 //! Constitution Check). The window owns all pixels; this module only decides
 //! icon choice, colour class, ribbon phase, and auto-dismiss behavior.
 //!
@@ -14,7 +14,7 @@
 use crate::ribbon::RibbonPhase;
 use crate::states::{DictationState, Severity};
 
-/// Icon choice for a descriptor's severity (X19): a mic-with-slash icon only
+/// Icon choice for a descriptor's severity (RC19): a mic-with-slash icon only
 /// for a critical error (the microphone genuinely may be at fault); every
 /// other treatment — including a recoverable notice, where the microphone
 /// itself isn't the problem — keeps the plain filled mic.
@@ -38,7 +38,7 @@ pub fn severity_auto_dismisses(severity: Option<Severity>) -> bool {
 }
 
 /// Whether an incoming descriptor should replace an already-held notice in
-/// place rather than being ignored or queued (R15, FR-007a/FR-007d, X20):
+/// place rather than being ignored or queued (R15, FR-007a/FR-007d, RC20):
 /// any new problem descriptor (`Some` severity) always replaces whatever is
 /// currently held — there is exactly one held-notice slot, never a queue,
 /// regardless of whether the severity matches the one already showing.

@@ -1,5 +1,5 @@
 //! notice_slot — the held-notice slot (feature 004; research R15;
-//! FR-007a/FR-007b/FR-007d; contract extension.md X20, re-homed to the
+//! FR-007a/FR-007b/FR-007d; contract RC20, re-homed to the
 //! renderer by the 2026-08-26 architecture revision).
 //!
 //! There is exactly **one** slot, never a queue: any new problem descriptor

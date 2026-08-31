@@ -1,15 +1,16 @@
 //! states — PURE dictation-state → *semantic descriptor* (feature
-//! 004-gnome-shell-indicator; data-model E1/E1a). This is the STABLE layer:
-//! it maps the `com.canonical.Myna.Dictation` wire `State` to a content-free,
-//! presentation-free descriptor. It says *what* the system is doing — never
-//! how to draw it. Renderers own all pixels: colour, geometry, animation,
-//! icon choice. Swapping the look never touches this file.
+//! 004-gnome-shell-indicator; data-model E1/E1a; contracts RC1, RC2, RC6).
+//! This is the STABLE layer: it maps the `com.canonical.Myna.Dictation`
+//! wire `State` to a content-free, presentation-free descriptor. It says
+//! *what* the system is doing — never how to draw it. Renderers own all
+//! pixels: colour, geometry, animation, icon choice. Swapping the look
+//! never touches this file.
 //!
 //! The user-facing `status_text` strings go through gettext (domain `myna`,
 //! R25) — with no bound domain gettext is the identity function, so the
 //! tests assert the English source.
 //!
-//! Nothing here ever carries transcript text (constitution V, X6): the only
+//! Nothing here ever carries transcript text (constitution V, RC6): the only
 //! caller-controlled text is the content-free `reason` (E3), and it can flow
 //! solely into the two problem states' status lines.
 
@@ -51,7 +52,7 @@ pub enum Severity {
 }
 
 /// The machine key of a [`Descriptor`]: the known wire states plus the
-/// neutral `Active` an unknown value degrades to (FR-008/X2) and `Idle` for
+/// neutral `Active` an unknown value degrades to (FR-008/RC2) and `Idle` for
 /// the hidden case.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DictationState {
@@ -68,7 +69,7 @@ pub enum DictationState {
 /// The stable descriptor for a state (data-model E-mapping): a machine
 /// `key` (renderers switch on this), a human, content-free `status_text`,
 /// a `severity` (`Some` only for the two problem states), and `hidden`
-/// (idle → nothing shown, FR-002/X3).
+/// (idle → nothing shown, FR-002/RC3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Descriptor {
     pub key: DictationState,
@@ -87,7 +88,7 @@ fn hidden() -> Descriptor {
 }
 
 /// The stable base for each known state: msgid + severity. Additive: an
-/// unknown value falls through to `Active`, never panics (X2).
+/// unknown value falls through to `Active`, never panics (RC2).
 fn base_for(state: &str) -> (DictationState, &'static str, Option<Severity>) {
     match state {
         wire::LOADING => (DictationState::Loading, n_("Loading model…"), None),
@@ -108,12 +109,12 @@ fn base_for(state: &str) -> (DictationState, &'static str, Option<Severity>) {
 ///
 /// Port of `states.js`'s `stateToDescriptor`:
 /// * `None` (no State property) and `idle` → the hidden descriptor
-///   (push-to-talk, FR-002/X3).
+///   (push-to-talk, FR-002/RC3).
 /// * An **unknown** value degrades to the neutral "active" descriptor
-///   (FR-008/X2).
+///   (FR-008/RC2).
 /// * `reason` — a content-free reason for a `notice`/`error` state (E3);
 ///   ignored for every other state so caller text can never leak into an
-///   unrelated status (X6). `notice`'s reason is shown as-is (it isn't an
+///   unrelated status (RC6). `notice`'s reason is shown as-is (it isn't an
 ///   error, so no "Error —" prefix); `error`'s reason is appended after that
 ///   prefix, matching the pre-2026-07-30 behavior.
 pub fn state_to_descriptor(state: Option<&str>, reason: &str) -> Descriptor {
