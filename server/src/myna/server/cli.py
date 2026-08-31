@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "audio8", "fake"),
+        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "audio8", "gigaam", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -213,6 +213,13 @@ def build_adapter(args: argparse.Namespace):
             max_new_tokens=args.audio8_max_new_tokens,
             device=args.device or "cpu",
         )
+
+    if args.adapter == "gigaam":
+        from myna.testbed.gigaam import GigaAMAdapter
+
+        # --model is the ONNX model dir, like sherpa/funasr; absent = the
+        # staged component or ~/.cache/myna/gigaam-v3-e2e-rnnt.
+        return GigaAMAdapter(args.model)
 
     if args.adapter == "qwen-c":
         # The C runtime needs a local model directory (no downloading); the

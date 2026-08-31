@@ -416,7 +416,21 @@ impl EngineObject {
     async fn focus_out(&self) {
         self.state.focused.store(false, Ordering::SeqCst);
         myna_core::dbg_log!("inject", "IBus FocusOut received");
-        let _ = self.state.focus_tx.send(FocusEvent::FocusOut);
+        // ponytail: GNOME 50 + older ibus-daemons flap FocusOut->FocusIn on
+        // auxiliary input contexts (shell chrome, notifications) without the
+        // dictation target actually losing focus; a naive broadcast here
+        // suppresses every final commit. Debounce: only report focus loss if
+        // no FocusIn follows within the grace window.
+        let state = Arc::clone(&self.state);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+            if !state.focused.load(Ordering::SeqCst) {
+                myna_core::dbg_log!("inject", "IBus FocusOut confirmed (no re-focus)");
+                let _ = state.focus_tx.send(FocusEvent::FocusOut);
+            } else {
+                myna_core::dbg_log!("inject", "IBus FocusOut flapped away (ignored)");
+            }
+        });
     }
 
     #[zbus(name = "FocusOutId")]
