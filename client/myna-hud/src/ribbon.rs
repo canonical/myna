@@ -29,9 +29,8 @@
 //! for depth (never independent per-strand state). "Audio drives the energy
 //! of the animation, while the product controls its shape."
 //!
-//! Ported 1:1 from `extensions/myna-shell/ribbon.js` (deleted with the old
-//! bundle; this is now the single source of truth). No GTK imports —
-//! deterministic and unit-testable headless ([`tests/ribbon.rs`]).
+//! No GTK imports — deterministic and unit-testable headless
+//! ([`tests/ribbon.rs`]).
 
 use crate::states::Severity;
 use crate::vumeter::levels_to_intensity;
@@ -116,26 +115,25 @@ pub const COMPLETE_MS: f64 = 400.0; // 300-500ms ("fast enough not to delay the 
 /// A slow, gentle pulse period for the recoverable-issue tint: motion
 /// pauses, but the ribbon still gently pulses rather than sitting perfectly
 /// still.
-pub const RECOVERABLE_PULSE_MS: f64 = 1800.0;
+pub(crate) const RECOVERABLE_PULSE_MS: f64 = 1800.0;
 
 // Per-strand offsets (radians / ms / unitless amplitude scale). Fixed,
 // small, deterministic — every strand reads the SAME smoothed envelope,
-// only these constant offsets differ. Public because the GPU path
-// (shader.rs) regenerates this exact wave in GLSL rather than consuming the
-// sampled points, and bakes these into the shader as `#define`s — so the two
-// evaluate the same sine instead of two hand-copied literals that can drift
-// apart.
-pub const VOICE_PHASE: f64 = 0.0;
-pub const SECONDARY_PHASE: f64 = 1.35;
-pub const SECONDARY_DELAY_MS: f64 = 260.0;
-pub const SECONDARY_AMPLITUDE_SCALE: f64 = 0.65;
-pub const SECONDARY_ALPHA: f64 = 0.45;
-pub const BASE_PHASE: f64 = 2.7;
-pub const BASE_ALPHA: f64 = 0.28;
+// only these constant offsets differ. Constants shared with the GPU path
+// (shader.rs), which regenerates this exact wave in GLSL and bakes them
+// into the shader as `#define`s so the Rust model and the GLSL expression
+// evaluate the same sine instead of two hand-copied literals drifting apart.
+pub(crate) const VOICE_PHASE: f64 = 0.0;
+pub(crate) const SECONDARY_PHASE: f64 = 1.35;
+pub(crate) const SECONDARY_DELAY_MS: f64 = 260.0;
+pub(crate) const SECONDARY_AMPLITUDE_SCALE: f64 = 0.65;
+pub(crate) const SECONDARY_ALPHA: f64 = 0.45;
+pub(crate) const BASE_PHASE: f64 = 2.7;
+pub(crate) const BASE_ALPHA: f64 = 0.28;
 /// The base strand is "alive" almost independent of voice — a slow sway that
 /// keeps the ribbon from ever reading as fully static.
-pub const BASE_AMPLITUDE: f64 = 0.05;
-pub const BASE_SPEED_SCALE: f64 = 0.35;
+pub(crate) const BASE_AMPLITUDE: f64 = 0.05;
+pub(crate) const BASE_SPEED_SCALE: f64 = 0.35;
 
 /// How fast the wave flows left-to-right (radians per ms) — shared with the
 /// GPU path's shader `#define`s (see the per-strand offsets note above).
@@ -161,7 +159,6 @@ pub const AMPLITUDE_CURVE_K: f64 = 5.0;
 /// spike, and the caller is expected to throttle how many are concurrently
 /// alive — a handful of sparse points, never a music-visualizer shower.
 pub const PARTICLE_ONSET_THRESHOLD: f64 = 0.14;
-pub const PARTICLE_LIFETIME_MS: f64 = 420.0;
 
 /// Clamp to `[0,1]`; NaN collapses to 0.
 fn clamp01(x: f64) -> f64 {
@@ -179,7 +176,6 @@ fn clamp01(x: f64) -> f64 {
 /// and strictly monotonic, so it never changes the ceiling the renderer's
 /// safe-scale guard protects against — only what happens below it.
 ///
-/// Port of `ribbon.js`'s `shapeAmplitude`.
 pub fn shape_amplitude(env: f64) -> f64 {
     let e = clamp01(env);
     if e <= 0.0 {
@@ -193,7 +189,6 @@ pub fn shape_amplitude(env: f64) -> f64 {
 /// (R16a), reused unchanged. This is NOT yet the value the wave shape
 /// should be driven by; see [`apply_envelope_smoothing`].
 ///
-/// Port of `ribbon.js`'s `computeEnvelope`.
 pub fn compute_envelope(rms: f64, peak: f64, age_ms: f64) -> f64 {
     levels_to_intensity(rms, peak, age_ms)
 }
@@ -207,7 +202,6 @@ pub fn compute_envelope(rms: f64, peak: f64, age_ms: f64) -> f64 {
 /// how the phase/phase-start timestamps are caller-owned) — this keeps the
 /// module side-effect-free.
 ///
-/// Port of `ribbon.js`'s `applyEnvelopeSmoothing` (default-tau form).
 pub fn apply_envelope_smoothing(previous: f64, target: f64, dt_ms: f64) -> f64 {
     let clamped_target = clamp01(target);
     let tau = if clamped_target > previous {
@@ -222,7 +216,6 @@ pub fn apply_envelope_smoothing(previous: f64, target: f64, dt_ms: f64) -> f64 {
 /// single, symmetric time constant instead of attack/release auto-selection
 /// (used by a few tests that care only about convergence, not ballistics).
 ///
-/// Port of `ribbon.js`'s `applyEnvelopeSmoothing(previous, target, dtMs,
 /// tauMs)`.
 pub fn apply_envelope_smoothing_with_tau(
     previous: f64,
@@ -246,7 +239,6 @@ fn smoothing_step(previous: f64, clamped_target: f64, dt_ms: f64, tau_ms: f64) -
 /// caller supplies the delta (this frame's smoothed value minus last
 /// frame's) so this module never needs to remember history itself.
 ///
-/// Port of `ribbon.js`'s `isStrongSyllableOnset`.
 pub fn is_strong_syllable_onset(envelope_delta: f64) -> bool {
     envelope_delta >= PARTICLE_ONSET_THRESHOLD
 }
@@ -461,7 +453,6 @@ fn make_strand(
 /// audio-reactivity and applies a slow, gentle pulse instead (motion
 /// "pauses" but never looks frozen-dead).
 ///
-/// Port of `ribbon.js`'s `computeRibbonModel`.
 pub fn compute_ribbon_model(input: RibbonInput) -> RibbonModel {
     let points = input.point_count.max(2);
     let strands = input.strand_count.max(1);

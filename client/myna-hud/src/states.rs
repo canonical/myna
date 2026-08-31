@@ -5,11 +5,9 @@
 //! how to draw it. Renderers own all pixels: colour, geometry, animation,
 //! icon choice. Swapping the look never touches this file.
 //!
-//! Ported 1:1 from `extensions/myna-shell/states.js` (deleted with the old
-//! bundle; this is now the single source of truth). The user-facing
-//! `status_text` strings go through gettext (domain `myna`, R25) — with no
-//! bound domain gettext is the identity function, so the tests assert the
-//! English source, exactly like the GJS suite did.
+//! The user-facing `status_text` strings go through gettext (domain `myna`,
+//! R25) — with no bound domain gettext is the identity function, so the
+//! tests assert the English source.
 //!
 //! Nothing here ever carries transcript text (constitution V, X6): the only
 //! caller-controlled text is the content-free `reason` (E3), and it can flow
@@ -20,8 +18,7 @@ use gettextrs::gettext;
 
 /// The E1 wire-state string constants (additive contract,
 /// `contracts/dbus-interface.md`). Mirrors `myna-desktop`'s
-/// `indicator::dbus::wire_state` — the consumer-side copy, the same way the
-/// GJS extension carried its own.
+/// `indicator::dbus::wire_state` — the consumer-side copy.
 pub mod wire {
     pub const IDLE: &str = "idle";
     pub const LOADING: &str = "loading";
@@ -131,8 +128,7 @@ pub fn state_to_descriptor(state: Option<&str>, reason: &str) -> Descriptor {
     let mut status_text = gettext(msgid);
     if !reason.is_empty() {
         match key {
-            // Translated printf-style template, %s substituted (the GJS
-            // version used GLib's String.format on the translated string).
+            // Translated printf-style template, %s substituted.
             DictationState::Error => {
                 status_text = gettext("Error — %s").replace("%s", reason);
             }

@@ -1,13 +1,10 @@
 // tests/ribbon.rs — hermetic contract test for the pure wave-ribbon logic
 // (feature 004, 2026-07-30 wave-ribbon redesign + the "fabric in gentle
-// airflow" refinement; contract extension.md X24), ported 1:1 from the GJS
-// test/ribbon.test.js. No Shell, no D-Bus.
+// airflow" refinement; contract extension.md X24). No Shell, no D-Bus.
 //
-// Two sections of the GJS suite are NOT here: the headless Cairo
-// `paintRibbon` smoke check (the Cairo painter is deliberately not ported —
-// GPU-only rendering, R23; the equivalent lands as the env-gated EGL render
-// check over the shader) and the overflow-guard section (paint-layer
-// tunables that move to the shader conformance tests, T104).
+// The headless Cairo `paintRibbon` smoke check is not here — the Cairo
+// painter is deliberately not ported (GPU-only rendering, R23); the
+// equivalent lands as the env-gated EGL render check over the shader.
 
 use myna_hud::ribbon::{
     apply_envelope_smoothing, apply_envelope_smoothing_with_tau, complete_progress,

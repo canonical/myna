@@ -1,9 +1,7 @@
 // tests/simulator.rs — hermetic test for the --serve-dbus simulator's pure
-// mapping (lab controls → com.canonical.Myna.Dictation wire properties), ported from
-// dev-lab-gpu/dictation_service.py's mapping tables (the drift checks come
-// from dbus_headless.py's deliberate boostLevel transcription — the
-// round-trip through the REAL vumeter math is what catches calibration
-// drift between the slider and the rendered ribbon).
+// mapping (lab controls → com.canonical.Myna.Dictation wire properties).
+// The drift checks round-trip through the REAL vumeter math to catch
+// calibration drift between the slider and the rendered ribbon.
 
 use myna_hud::ribbon::RibbonPhase;
 use myna_hud::simulator::{envelope_to_levels, shell_phase, wire_state, ERROR_REASON, PUBLISH_HZ};

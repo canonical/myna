@@ -7,12 +7,9 @@
 //! Constitution Check). The window owns all pixels; this module only decides
 //! icon choice, colour class, ribbon phase, and auto-dismiss behavior.
 //!
-//! Ported 1:1 from `extensions/myna-shell/hudLogic.js` (deleted with the old
-//! bundle; this is now the single source of truth).
-//!
 //! The pill's positioning is not logic anymore: on GNOME the extension host
 //! positions the window (R21); elsewhere the window centers itself — no
-//! hand-computed `computePosition` exists to port.
+//! hand-computed `computePosition` exists.
 
 use crate::ribbon::RibbonPhase;
 use crate::states::{DictationState, Severity};
@@ -22,7 +19,6 @@ use crate::states::{DictationState, Severity};
 /// other treatment — including a recoverable notice, where the microphone
 /// itself isn't the problem — keeps the plain filled mic.
 ///
-/// Port of `hudLogic.js`'s `iconForSeverity`.
 pub fn icon_for_severity(severity: Option<Severity>) -> &'static str {
     match severity {
         Some(Severity::Critical) => "microphone-disabled-symbolic",
@@ -37,7 +33,6 @@ pub fn icon_for_severity(severity: Option<Severity>) -> &'static str {
 /// keeps showing for its own (even longer, slower reading) hold, ignoring
 /// the server's `idle` until its timer completes.
 ///
-/// Port of `hudLogic.js`'s `severityAutoDismisses`.
 pub fn severity_auto_dismisses(severity: Option<Severity>) -> bool {
     severity == Some(Severity::Recoverable)
 }
@@ -48,7 +43,6 @@ pub fn severity_auto_dismisses(severity: Option<Severity>) -> bool {
 /// currently held — there is exactly one held-notice slot, never a queue,
 /// regardless of whether the severity matches the one already showing.
 ///
-/// Port of `hudLogic.js`'s `shouldReplaceHeldNotice`.
 pub fn should_replace_held_notice(incoming_severity: Option<Severity>) -> bool {
     incoming_severity.is_some()
 }
@@ -61,7 +55,6 @@ pub fn should_replace_held_notice(incoming_severity: Option<Severity>) -> bool {
 /// state (recording/transcribing/finalizing) gets no colour override — the
 /// label alone is enough to distinguish those (FR-005).
 ///
-/// Port of `hudLogic.js`'s `pillColorClass`.
 pub fn pill_color_class(key: DictationState, severity: Option<Severity>) -> Option<&'static str> {
     match severity {
         Some(Severity::Recoverable) => Some("myna-hud-severity-recoverable"),
@@ -75,7 +68,6 @@ pub fn pill_color_class(key: DictationState, severity: Option<Severity>) -> Opti
 /// before applying the current one (avoids stale classes lingering across
 /// states).
 ///
-/// Port of `hudLogic.js`'s `PILL_COLOR_CLASSES`.
 pub const PILL_COLOR_CLASSES: [&str; 3] = [
     "myna-hud-severity-recoverable",
     "myna-hud-severity-critical",
@@ -101,7 +93,6 @@ pub const PILL_COLOR_CLASSES: [&str; 3] = [
 /// `idle`/`notice`/`error` return `None`: idle never shows, and notice/error
 /// are carried by the severity tint/visibility, not a phase.
 ///
-/// Port of `hudLogic.js`'s `ribbonPhaseForStateKey`.
 pub fn ribbon_phase_for_state_key(key: DictationState) -> Option<RibbonPhase> {
     match key {
         DictationState::Transcribing => Some(RibbonPhase::Morph),
@@ -121,7 +112,6 @@ pub fn ribbon_phase_for_state_key(key: DictationState) -> Option<RibbonPhase> {
 /// "pauses" but never reads as dead. The severity is passed straight through
 /// as the ribbon model's `severity_tint` input.
 ///
-/// Port of `hudLogic.js`'s `ribbonVisibleForSeverity`.
 pub fn ribbon_visible_for_severity(severity: Option<Severity>) -> bool {
     severity != Some(Severity::Critical)
 }

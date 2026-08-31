@@ -10,7 +10,8 @@
 pub const DOMAIN: &str = "myna";
 
 /// Marker for a translatable string that is looked up by VARIABLE later
-/// (the port of gettext's `N_` / GJS's `N_()`).
+/// (the gettext `N_` convention, picked up by xgettext for C/Python and
+/// equally usable from Rust).
 ///
 /// [`gettext`](gettextrs::gettext) is often called with a msgid that flows
 /// through a variable (e.g. `states.rs` passes the msgid from a match arm),

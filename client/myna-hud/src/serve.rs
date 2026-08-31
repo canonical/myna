@@ -1,13 +1,12 @@
 //! serve — the `--serve-dbus` simulator: a fake `com.canonical.Myna.Dictation`
-//! publisher (feature 004, T132; contract `dbus-interface.md`), the Rust
-//! port of the former Python GPU lab's `dictation_service.py`.
+//! publisher (feature 004, T132; contract `dbus-interface.md`).
 //!
 //! It claims the well-known name (never by force — a clean request, and it
 //! bows out if `myna-desktop` already owns it), publishes
 //! `State`/`ErrorMessage`/`AudioRms`/`AudioPeak` at [`PUBLISH_HZ`] from the
 //! lab's controls, and answers `Start`/`Stop`/`Toggle`. This is what lets
-//! the real hosted path — the extension consuming a live name — be exercised
-//! without the Python daemon.
+//! the real hosted path — the extension consuming a live name — be
+//! exercised without the daemon.
 //!
 //! The interface's *rules* are pure and tested elsewhere: the wire-state
 //! mapping in [`crate::simulator`], the session dedup in

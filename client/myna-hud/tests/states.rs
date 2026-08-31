@@ -1,10 +1,9 @@
 // tests/states.rs — hermetic contract test for the pure wire-state →
 // semantic descriptor mapping (feature 004, contract extension.md X1–X4, X6,
-// X19), ported 1:1 from the GJS test/states.test.js. No Shell, no D-Bus.
+// X19). No Shell, no D-Bus.
 //
-// English-only assertions: no gettext domain is bound in the test binary, so
-// gettext() is the identity function (the GJS harness relied on the same
-// property via its Shell-free gettext shim).
+// English-only assertions: no gettext domain is bound in the test binary,
+// so gettext() is the identity function.
 
 use myna_hud::states::{state_to_descriptor, wire, Descriptor, DictationState, Severity};
 

@@ -1,11 +1,10 @@
 // tests/shader.rs — conformance test for the GENERATED wave-ribbon shader
-// (feature 004, 2026-08-21 GPU rasterization pass), ported 1:1 from the GJS
-// test/ribbonGlsl.test.js. No GL context needed for the constant/uniform
-// conformance; glslangValidator (when installed) checks a driver would
-// accept the source. The one property a visual check cannot give you: the
-// shader's baked-in constants still equal the Rust constants the model
-// uses — the two renderers' TUNING must be shared, exactly where two copies
-// would silently drift.
+// (feature 004, 2026-08-21 GPU rasterization pass). No GL context needed
+// for the constant/uniform conformance; glslangValidator (when installed)
+// checks a driver would accept the source. The one property a visual check
+// cannot give you: the shader's baked-in constants still equal the Rust
+// constants the model uses — self-consistency, where two copies would
+// silently drift.
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -92,11 +91,11 @@ fn parse_defines() -> BTreeMap<String, f64> {
 #[test]
 fn shader_constants_match_their_rust_originals() {
     let defines = parse_defines();
-    let same = |define_name: &str, js_value: f64, label: &str| {
+    let same = |define_name: &str, value: f64, label: &str| {
         assert_eq!(
             defines.get(define_name),
-            Some(&js_value),
-            "{label}: shader {define_name} === Rust {js_value}"
+            Some(&value),
+            "{label}: shader {define_name} === Rust {value}"
         );
     };
     same("MYNA_SPATIAL_FREQUENCY", SPATIAL_FREQUENCY, "wave");
@@ -443,8 +442,8 @@ fn generated_shader_compiles_under_glslang() {
         return;
     };
     let shader = build_ribbon_shader();
-    // The production profile (GLArea on GLES/Wayland) is exercised here too,
-    // on top of the GJS suite's 1.20/ES 1.00 pair.
+    // The production profile (GLArea on GLES/Wayland) plus the legacy
+    // desktop GL 1.20 fallback used by lab-side contexts.
     for (profile, label) in [
         (GlProfile::Gl120, "GLSL 1.20"),
         (GlProfile::Es100, "GLSL ES 1.00"),

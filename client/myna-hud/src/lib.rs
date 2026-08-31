@@ -9,14 +9,15 @@
 //! (`--lab`) and the backend simulator (`--serve-dbus`).
 //!
 //! Module layout (plan.md Project Structure):
-//! - **Pure, std-only, unit-tested** (ported 1:1 from the former GJS
-//!   extension modules — their GJS test suites are the ported assertions):
-//!   [`states`] (wire state → descriptor; port of states.js),
-//!   [`vumeter`] (calibrated envelope; port of vumeter.js),
-//!   [`ribbon`] (strand model + phase machine; port of ribbon.js),
-//!   [`shader`] (GLSL generator + uniform packing; port of ribbonGlsl.js —
-//!   the Cairo painter is deliberately NOT ported, GPU-only per R23),
-//!   [`hud_logic`] (icon/phase/color/notice rules; port of hudLogic.js),
+//! - **Pure, std-only, unit-tested** (the source of truth for every
+//!   contract guarantee is encoded as Rust unit tests in
+//!   `client/myna-hud/tests/`):
+//!   [`states`] (wire state → descriptor),
+//!   [`vumeter`] (calibrated envelope),
+//!   [`ribbon`] (strand model + phase machine),
+//!   [`shader`] (GLSL generator + uniform packing — GPU-only per R23,
+//!   the Cairo painter is deliberately not ported),
+//!   [`hud_logic`] (icon/phase/color/notice rules),
 //!   [`input_region`] (per-state click-through geometry, new R22),
 //!   [`accent`] (accent-color resolution rules, R26),
 //!   [`motion`] (reduced-motion resolution, absent-safe, R26/E2b),

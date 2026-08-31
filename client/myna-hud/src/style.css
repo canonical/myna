@@ -1,10 +1,6 @@
-/* style.css — the HUD pill's chrome (feature 004, T112), ported from the
- * extension's stylesheet.css. St's CSS subset became real GTK4 CSS: the
- * class names, colours and radii are carried over unchanged so the pill
- * looks identical, but the layout properties St implemented by writing
- * Clutter margins (`spacing`, the pill's `margin-bottom`) are now the
- * widgets' own spacing and the HOST's placement respectively — the window
- * no longer positions itself (R21), so the bottom gap belongs to place.js.
+/* style.css — the HUD pill's chrome (feature 004, T112). The renderer is
+ * a standalone GTK4 application; the bottom gap below the pill is the host
+ * extension's responsibility (placement), not the renderer's.
  */
 
 /* The window itself must be transparent: only the pill is visible.
@@ -60,9 +56,8 @@ window.myna-hud-window {
  * level (R16a/R17). */
 .myna-hud-ribbon {
     /* The accent, resolved by the THEME rather than mapped from a settings
-     * name — the direct analogue of the extension's
-     * `-myna-ribbon-main-color: -st-accent-color`. The renderer reads this
-     * back with gtk_widget_get_color(); see platform::probe_css_accent.
+     * name (the analogue of the Shell's `-st-accent-color`). The renderer
+     * reads this back with gtk_widget_get_color(); see platform::probe_css_accent.
      *
      * `@accent_bg_color` (the named colour, defined since libadwaita 1.0)
      * rather than `var(--accent-bg-color)` (GTK 4.16+) so the whole runtime

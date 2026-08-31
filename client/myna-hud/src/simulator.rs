@@ -1,7 +1,5 @@
 //! simulator — the `--serve-dbus` mode's PURE mapping (lab controls →
-//! `com.canonical.Myna.Dictation` wire properties). Ported from
-//! `dev-lab-gpu/dictation_service.py`'s mapping tables (deleted with the old
-//! bundle; this is now the single source of truth — the zbus publisher that
+//! `com.canonical.Myna.Dictation` wire properties; the zbus publisher that
 //! consumes it is T132).
 //!
 //! The simulator makes the lab a stand-in for `myna-desktop --dbus`: it owns
@@ -49,7 +47,6 @@ pub const ERROR_REASON: &str = "Microphone unavailable";
 
 /// The lab's look as a `(State, ErrorMessage)` pair.
 ///
-/// Port of `dictation_service.py`'s `wire_state`:
 /// * `session_active == false` (Stop/Toggle ended the session — the daemon
 ///   is still running, it is simply not dictating) → `idle`, the case that
 ///   clears the pill entirely.
@@ -122,7 +119,6 @@ const PEAK_OVER_RMS: f64 = 1.8;
 /// calibration here is what makes the two agree (and what catches drift if
 /// the vumeter constants ever change without the simulator following).
 ///
-/// Port of `dictation_service.py`'s `envelope_to_levels`.
 pub fn envelope_to_levels(envelope: f64) -> (f64, f64) {
     let level = envelope.clamp(0.0, 1.0);
     if level <= 0.0 {

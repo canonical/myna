@@ -1,9 +1,7 @@
 //! gl — the ribbon's GPU renderer (feature 004, T121; research R23/R24).
 //!
-//! The Shell extension drew the ribbon through a Clutter effect whose Cogl
-//! snippet came from [`crate::shader`]; standing alone we compile that same
-//! snippet ourselves and draw it over a fullscreen quad inside a
-//! [`gtk4::GLArea`].
+//! The renderer compiles the GLSL emitted by [`crate::shader`] and draws
+//! it over a fullscreen quad inside a [`gtk4::GLArea`].
 //!
 //! ## Why raw `epoxy_*` statics rather than the `gl` crate's loader
 //!

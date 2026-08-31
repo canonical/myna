@@ -4,11 +4,10 @@
 //! (`org.gnome.desktop.interface`'s `accent-color`) into the wave ribbon's
 //! colour palette.
 //!
-//! Ported 1:1 from `extensions/myna-shell/accent.js`'s pure half. The live,
-//! settings-backed half (schema/key-existence-guarded reads, `changed::`
+//! The settings-backed half (schema/key-existence-guarded reads, `changed::`
 //! subscriptions, the libadwaita style-manager probe) is application-layer
-//! wiring; the reduced-motion resolution that used to live here moved to
-//! [`crate::motion`] with E2b's two-safe-sources design.
+//! wiring; the reduced-motion resolution lives in [`crate::motion`] with
+//! E2b's two-safe-sources design.
 //!
 //! Resolution order (the application layer probes; see
 //! [`crate::platform::probe_accent_palette`]):
@@ -47,8 +46,8 @@ pub const UBUNTU_ORANGE: &str = "#E95420";
 /// to match the source design brief).
 pub const UBUNTU_AUBERGINE: &str = "#77216F";
 
-/// The resolved ribbon palette (hex strings, the GJS shape; convert to the
-/// shader's [`RibbonPalette`] with [`AccentPalette::as_ribbon_palette`]).
+/// The resolved ribbon palette (hex strings; convert to the shader's
+/// [`RibbonPalette`] with [`AccentPalette::as_ribbon_palette`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct AccentPalette {
     pub main: String,
@@ -81,8 +80,7 @@ fn clamp01(x: f64) -> f64 {
 }
 
 /// Parse `#rrggbb` into 0-255 components; invalid input degrades to black
-/// (this module's own rule — the painter's color parser degraded to white;
-/// both are non-panicking by design).
+/// (this module's own rule; non-panicking by design).
 fn hex_to_rgb255(hex: &str) -> (u32, u32, u32) {
     let t = hex.trim();
     let h = t.strip_prefix('#').unwrap_or(t);
@@ -180,8 +178,6 @@ fn complement(hex: &str) -> String {
 }
 
 /// Derive the ribbon's full palette from one resolved main colour.
-///
-/// Port of `accent.js`'s `derivePalette`.
 pub fn derive_palette(main_hex: &str, is_orange: bool) -> AccentPalette {
     AccentPalette {
         main: main_hex.to_string(),

@@ -3,12 +3,11 @@
 //! with stale-decay. This is the shared envelope math [`crate::ribbon`]
 //! (the 2026-07-30 wave-ribbon redesign) delegates to unchanged — the
 //! segmented bar-meter-only helpers (`intensity_to_active_segments`/
-//! `segment_color`) that used to live in the GJS `vumeter.js` were removed
-//! once the ribbon fully replaced their only caller, and are not ported.
+//! `segment_color`) were removed once the ribbon fully replaced their only
+//! caller.
 //!
-//! Ported 1:1 from `extensions/myna-shell/vumeter.js` (deleted with the old
-//! bundle; this is now the single source of truth). No GTK imports; carries
-//! energy only, never samples or content (constitution V, X6).
+//! No GTK imports; carries energy only, never samples or content
+//! (constitution V, X6).
 
 /// Past this age with no fresh level, ease the VU to its floor rather than
 /// freezing on the last value (R5/SC-004).
@@ -39,7 +38,6 @@ fn clamp01(x: f64) -> f64 {
 /// `[0,1]`. Monotonic non-decreasing, so it never breaks the
 /// "louder → higher" contract.
 ///
-/// Port of `vumeter.js`'s `boostLevel`.
 pub fn boost_level(level: f64) -> f64 {
     let l = clamp01(level);
     if l <= 0.0 {
@@ -56,7 +54,6 @@ pub fn boost_level(level: f64) -> f64 {
 /// calibrated dBFS scale ([`boost_level`]) so quiet speech visibly drives the
 /// VU.
 ///
-/// Port of `vumeter.js`'s `levelsToIntensity`.
 ///
 /// * `rms` — normalized RMS level in `[0,1]`.
 /// * `peak` — normalized peak level in `[0,1]`.

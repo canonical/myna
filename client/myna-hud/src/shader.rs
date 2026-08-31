@@ -1,8 +1,6 @@
 //! shader — GENERATES the wave ribbon's GLSL fragment shader from the shared
-//! tuning constants (feature 004, 2026-08-21 GPU rasterization pass; ported
-//! from `extensions/myna-shell/ribbonGlsl.js` + the shared tables of
-//! `ribbonPaint.js`, which are now the single source of truth — R23: the
-//! Cairo painter itself is deliberately NOT ported, GPU-only rendering).
+//! tuning constants (feature 004, 2026-08-21 GPU rasterization pass; R23:
+//! the Cairo painter itself is deliberately NOT ported, GPU-only rendering).
 //!
 //! # Why a generator rather than a .glsl file
 //!
@@ -28,13 +26,11 @@
 //! (`y = f(x)`), no polyline SDF is needed — the vertical distance IS the
 //! distance.
 //!
-//! # Profiles
+//! # Profile
 //!
-//! The generated core is written in Cogl style (`cogl_tex_coord_in[0]`,
-//! `cogl_color_out`), matching the original. [`standalone_shader`] wraps it
-//! into a complete, compilable shader for a target GL profile (desktop GL
-//! 1.20 / ES 1.00 / ES 3.00 — GLArea's context is GLES on Wayland), the way
-//! the former Python GPU lab's `ribbon_gl.py` did.
+//! GTK4 GLArea on Linux gives an OpenGL ES 3.2 context (T101), so the
+//! shader targets GLSL ES 3.00. [`standalone_shader`] wraps the generated
+//! fragment body in the preamble required by that profile.
 
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
@@ -43,8 +39,8 @@ use crate::ribbon::{
     RibbonModel, RibbonTint, StrandRole, DEFAULT_STRAND_COUNT, FLOW_SPEED, SPATIAL_FREQUENCY,
 };
 
-// ── Shared tuning tables (ribbonPaint.js's tables — the Cairo painter's
-// ── drawing code is not ported; its TUNING is the shader's contract).
+// ── Shared tuning tables (the Cairo painter is not ported; its TUNING is
+// ── the shader's contract).
 
 /// The amber palette used when a recoverable notice tints the ribbon.
 pub const AMBER_MAIN: &str = "#F5A623";
@@ -307,7 +303,6 @@ pub const OVERFLOW_BOOST: f64 = 1.3;
 /// of sync. Returns `1` (no shrink) once the boosted budget already covers
 /// the worst case.
 ///
-/// Port of `ribbonPaint.js`'s `computeSafeScale`.
 pub fn compute_safe_scale() -> f64 {
     let worst_case_extent_fraction =
         BASE_CENTRELINE_FRACTION + (VOICE_THICKNESS_FRACTION * MAX_BODY_BILLOW) / 2.0;
@@ -322,7 +317,6 @@ fn clamp01(x: f64) -> f64 {
 /// between (no kink) — used to fade the glow/feather/wisp effects in as
 /// activity rises, rather than a hard on/off that would visibly "pop".
 ///
-/// Port of `ribbonPaint.js`'s `activityRamp`.
 pub fn activity_ramp(activity: f64) -> f64 {
     activity_ramp_bounds(activity, ACTIVITY_RAMP.lo, ACTIVITY_RAMP.hi)
 }
@@ -435,7 +429,6 @@ pub struct ResolvedPalette {
 /// colour and darkened, so it reads as a warm undertone rather than a bold
 /// second hue.
 ///
-/// Port of `ribbonPaint.js`'s `resolveRibbonPalette`.
 pub fn resolve_ribbon_palette(model: &RibbonModel, palette: &RibbonPalette) -> ResolvedPalette {
     let amber = model.tint == Some(RibbonTint::Amber);
     let main_rgb = if amber {
@@ -497,9 +490,8 @@ pub const PAINT_ORDER: [StrandRole; 3] =
     [StrandRole::Base, StrandRole::Secondary, StrandRole::Voice];
 
 /// One declared uniform: its name and component count. All of them are
-/// scalars or vec2/3/4 — never arrays (the historical Cogl
-/// `ClutterShaderFloat` marshalling asserted `size <= 4`; the packing is kept
-/// because it is also what fits GLES uniform upload cleanly).
+/// scalars or vec2/3/4 — kept scalar/vec-shaped to fit GLES uniform upload
+/// cleanly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UniformSpec {
     pub name: &'static str,
@@ -585,7 +577,6 @@ pub fn ribbon_uniforms() -> &'static [UniformSpec] {
 /// than it looks: the packing encodes the paint order and the role tags, so
 /// a second copy is exactly where the renderers would silently diverge.
 ///
-/// Port of `ribbonGlsl.js`'s `packRibbonUniforms`.
 ///
 /// Returns uniform name → exactly `components` values, one entry per
 /// [`ribbon_uniforms`] member.
@@ -729,7 +720,6 @@ fn f(value: f64) -> String {
 /// The `#define` block: every shared constant, named after its Rust origin so
 /// a grep for the constant name finds the shader's copy too.
 ///
-/// Port of `ribbonGlsl.js`'s `glslConstantDefines`.
 pub fn glsl_constant_defines() -> String {
     let defines: [(&str, f64); 33] = [
         ("MYNA_PI", PI),
@@ -885,10 +875,8 @@ pub struct ShaderSource {
     pub code: String,
 }
 
-/// Build the fragment shader (Cogl-style core; wrap with
-/// [`standalone_shader`] for a specific GL profile).
-///
-/// Port of `ribbonGlsl.js`'s `buildRibbonShader`.
+/// Build the fragment shader. The body alone — wrap with
+/// [`standalone_shader`] for a complete, compilable ES 3.00 fragment.
 pub fn build_ribbon_shader() -> ShaderSource {
     let strand_uniforms = (0..MAX_STRANDS)
         .map(|i| format!("uniform vec4 uStrandGeom{i};\nuniform vec3 uStrandStyle{i};"))

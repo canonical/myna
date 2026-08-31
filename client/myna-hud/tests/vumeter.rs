@@ -1,7 +1,6 @@
 // tests/vumeter.rs — hermetic contract test for the pure envelope logic
 // (feature 004, contract extension.md X5, SC-004), reused unchanged by
-// ribbon.rs (2026-07-30 wave-ribbon redesign; ported 1:1 from the GJS
-// test/vumeter.test.js, assertion for assertion). No Shell, no D-Bus.
+// ribbon.rs (2026-07-30 wave-ribbon redesign). No Shell, no D-Bus.
 
 use myna_hud::vumeter::{levels_to_intensity, STALE_MS};
 

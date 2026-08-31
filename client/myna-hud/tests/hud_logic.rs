@@ -1,9 +1,8 @@
 // tests/hud_logic.rs — hermetic contract test for the HUD pill's PURE logic
-// (feature 004, 2026-07-30 HUD redesign; contracts extension.md X19–X21),
-// ported 1:1 from the GJS test/hud.test.js. Exercises hud_logic only — no
-// GTK. The app's composited behaviour (focus-safety, timing, per-state
-// treatments, dismiss click) is manual-acceptance plus the env-gated render
-// check, the same harness-tier split the extension had.
+// (feature 004, 2026-07-30 HUD redesign; contracts extension.md X19–X21).
+// Exercises hud_logic only — no GTK. The app's composited behaviour
+// (focus-safety, timing, per-state treatments, dismiss click) is
+// manual-acceptance plus the env-gated render check.
 
 use myna_hud::hud_logic::{
     icon_for_severity, pill_color_class, ribbon_phase_for_state_key, ribbon_visible_for_severity,

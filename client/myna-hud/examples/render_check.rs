@@ -1,15 +1,13 @@
-// examples/render_check.rs — the GPU render check (feature 004, T121/T133):
-// the port of the former Python lab's `render_headless.py`.
+// examples/render_check.rs — the GPU render check (feature 004, T121/T133).
 //
 // The shader tests prove the generated source *compiles*; this proves a
 // driver actually *lights pixels* with it. Two failure modes hide from a
 // compile check and show only as an empty overlay:
 //
 //   1. the program links but every strand falls outside the canvas, and
-//   2. `cogl_tex_coord_in[0]` is never fed — Cogl used to splice that
-//      assignment in, and without it every strand samples x = 0, so the
-//      frame is *constant along x*. This check asserts horizontal variation
-//      precisely to catch that.
+//   2. the UV `vUv` is never fed from the vertex stage, so every strand
+//      samples x = 0 and the frame is *constant along x*. This check asserts
+//      horizontal variation precisely to catch that.
 //
 // Run with:  xvfb-run -a -s "-screen 0 640x480x24" \
 //                cargo run -p myna-hud --example render_check

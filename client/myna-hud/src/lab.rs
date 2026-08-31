@@ -1,6 +1,5 @@
 //! lab — the development lab and the simulator's control surface (feature
-//! 004, T131/T132), replacing the extension's `dev-lab/` and `dev-lab-gpu/`
-//! harnesses.
+//! 004, T131/T132).
 //!
 //! The lab is one control window with:
 //!

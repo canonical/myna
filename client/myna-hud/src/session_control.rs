@@ -1,6 +1,5 @@
 //! session_control — the `--serve-dbus` simulator's session-control state
-//! machine (feature 004, T132; contract `dbus-interface.md` C6/C7), ported
-//! from `dictation_service.py`'s `_on_method_call`.
+//! machine (feature 004, T132; contract `dbus-interface.md` C6/C7).
 //!
 //! This is the pure half of the served `com.canonical.Myna.Dictation` interface's
 //! methods: `Start`, `Stop`, `Toggle`. It owns the one rule that has teeth —

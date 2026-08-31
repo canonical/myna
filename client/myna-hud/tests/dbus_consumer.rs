@@ -1,8 +1,7 @@
 // tests/dbus_consumer.rs — hermetic contract test for the
 // com.canonical.Myna.Dictation consumer lifecycle (feature 004, contract
-// extension.md X7–X10 re-homed to the renderer; dbus-interface.md C8/C9),
-// ported from the GJS test/lifecycle.test.js. No session bus: the name
-// watch and the proxy are injectable seams.
+// extension.md X7–X10 re-homed to the renderer; dbus-interface.md C8/C9).
+// No session bus: the name watch and the proxy are injectable seams.
 
 use std::cell::RefCell;
 use std::rc::Rc;
