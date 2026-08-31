@@ -94,10 +94,10 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
   the newer surfaces are read dynamically at runtime via GObject property
   lookup, which needs no cargo feature and no per-environment build matrix;
   see Primary Dependencies).
-- Extension host: **GJS**, GNOME Shell 50 and 51, using the public extension
-  API plus mutter's introspected `Meta.WaylandClient`/`Meta.Window` APIs
-  (verified present in both `Meta-18.gir` (mutter 50) and `Meta-51.gir`
-  (mutter 51)).
+- Extension host: **GJS**, GNOME Shell 46–51, using the public extension API
+  plus mutter's introspected `Meta.WaylandClient`/`Meta.Window` APIs. The
+  trusted-client launch/configuration move is capability-adapted between
+  `Meta-14.gir` (mutter 46) and `Meta-18.gir`/`Meta-51.gir` (mutter 50/51).
 - `myna-desktop` publisher/policy: Rust (unchanged).
 
 **Primary Dependencies**:
@@ -170,8 +170,8 @@ is never touched by any deliverable.
   dev headers, `glslang-tools` for shader validation in tests) land in the
   Workshop definitions in the same PR (constitution IV).
 
-**Target Platform**: Ubuntu Desktop 26.04+ on Wayland, GNOME Shell 50/51
-(mutter ABI 18 / 51); session D-Bus present. The toolkit floor is
+**Target Platform**: Ubuntu Desktop on Wayland, GNOME Shell 46–51 (Mutter
+ABI 14–51); session D-Bus present. The toolkit floor is
 environment-dependent: the snap carries its own GTK 4.18/libadwaita 1.7.7
 (gnome-46-2404 SDK), 26.04 hosts carry 4.22/1.9, and the 24.04 workshop
 carries 4.14/1.5 — the renderer probes the newer surfaces at runtime and

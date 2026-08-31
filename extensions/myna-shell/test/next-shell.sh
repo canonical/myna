@@ -6,12 +6,10 @@
 #
 # exits 0 when the suite passed there, non-zero otherwise.
 #
-# metadata.json declares Shell 50 and 51, and only 50 is reachable from a
-# Workshop: `workshop init` takes ubuntu@20.04, 22.04, 24.04 or 26.04 and
-# nothing newer, so the myna-shell workshop's 26.04 base pins it to Shell 50.
-# The host's mutter APIs (Meta.WaylandClient.new_subprocess, owns_window,
-# hide_from_window_list, ...) exist in both the mutter 18 (Shell 50) and 51
-# (Shell 51) ABIs, so a suite that passes on 50 must also load on 51.
+# metadata.json declares Shell 46 through 51. The local workshop exercises
+# the modern path; this container checks the newest series available from an
+# archive. The host adapts trusted-client launch/configuration at the Mutter
+# 14–16 / 17+ boundary, while all other APIs it uses are common to both.
 #
 # Ubuntu 26.10 (stonking) carries Shell 51, so this borrows a container of it
 # and runs test/run-suite.sh inside. Nothing but gjs, gnome-shell and

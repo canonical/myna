@@ -77,15 +77,15 @@ research references (`R-`, in `research.md`).
 | XH10a | The overlay stays visible when the **overview** opens (a dictation session may span opening the overview to find a window). The host reparents the window's actor into `Main.layoutManager.uiGroup` while the overview is showing and returns it to the window group when it hides. **(2026-08-26; needs on-hardware verification.)** | FR-001 |
 | XH11 | The window is positioned bottom-center of the primary monitor's work area, follows monitor/work-area changes and the window's own size changes without flicker loops (programmatic moves do not re-trigger themselves). **(2026-08-26)** When an overlay dock (dash-to-dock in auto-hide mode) reserves the bottom of the primary monitor via `Main.layoutManager.dashToDockStruts`, the host shrinks the work area to sit above the dock's reserved extent, so the pill is never covered when the dock slides out; absent the object, placement falls back to the plain work area. | FR-004 |
 | XH12 | Clicks on the indicator pass through to the application underneath in **every** state (empty input region, client-side — R22). **(2026-08-26)** There is no longer any exception: the dismiss control is gone, the HUD takes no pointer input, and a critical error is cleared by the client publishing a new state. | FR-025, SC-015 |
-| XH13 | The extension declares `shell-version: ["50", "51"]` and refuses to load elsewhere; both target mutter ABI generations (18/51) expose the host APIs it uses. | FR-020, SC-008 |
+| XH13 | The extension declares `shell-version: ["46", "47", "48", "49", "50", "51"]`. It supports both trusted-client API generations: on Mutter 14–16 (GNOME Shell 46–48), `Meta.WaylandClient.new(global.context, launcher)` then `client.spawnv(global.display, argv)` launches the renderer and `client.make_dock(window)` / `client.hide_from_window_list(window)` configure it; on Mutter 17+ (GNOME Shell 49+), `Meta.WaylandClient.new_subprocess(...)` then `client.get_subprocess()` launches it and `window.set_type(Meta.WindowType.DOCK)` / `window.hide_from_window_list()` configure it. The branch is capability-based, not version-string-based. | FR-020, SC-008 |
 
 ## Constraints
 
 - No network; no audio capture; the host never reads, renders, logs, or
   persists dictation state, levels, or transcript content — it has no bus
   surface at all (privacy, constitution V — FR-019).
-- `metadata.json` declares `shell-version: ["50", "51"]`, a unique `uuid`, and
-  no settings schema (no picker — Out of Scope).
+- `metadata.json` declares `shell-version: ["46", "47", "48", "49", "50", "51"]`,
+  a unique `uuid`, and no settings schema (no picker — Out of Scope).
 - Bundle is directly loadable at
   `~/.local/share/gnome-shell/extensions/<uuid>/` (no build step); it carries
   no drawing assets (no CSS for the pill, no ribbon modules — those live in

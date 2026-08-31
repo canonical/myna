@@ -5,8 +5,9 @@ application as a focus-safe overlay (feature 004). It does **not** draw the
 HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
 `myna-hud` binary (see `client/myna-hud`) does both. This extension:
 
-- launches the renderer (`Meta.WaylandClient.new_subprocess`, so the child
-  inherits the compositor's Wayland socket),
+- launches the renderer through `Meta.WaylandClient` (the Mutter 14–15
+  `new()` + `spawnv()` API on Shell 46–48, or `new_subprocess()` on Shell
+  49–51, so the child inherits the compositor's Wayland socket),
 - adopts its window (`owns_window` → DOCK type, hidden from the window
   list, on all workspaces, above normal windows, never focused),
 - positions it bottom-centre of the primary work area (and keeps it clear
@@ -70,7 +71,7 @@ Driven entirely by `com.canonical.Myna.Dictation` (served by `myna-desktop`):
 - `dockStrutsConsumer.js` — follows `Main.layoutManager.dashToDockStruts`
   (the dash-to-dock reserved-extent export) so the pill is never covered by
   an auto-hide bottom dock.
-- `metadata.json` — declares Shell 50/51.
+- `metadata.json` — declares Shell 46–51.
 - `test/*.test.js` — headless GJS contract tests (`gjs -m test/<name>.test.js`)
   for the pure modules above; no Shell needed.
 
@@ -79,7 +80,10 @@ Driven entirely by `com.canonical.Myna.Dictation` (served by `myna-desktop`):
 - **Launch through `Meta.WaylandClient`** so the renderer inherits the
   compositor's Wayland socket (the child connects via `WAYLAND_SOCKET`, the
   normal path for a confined GTK app) and its window can be adopted with
-  `owns_window`.
+  `owns_window`. Shell 46–48 construct the trusted client then call
+  `spawnv()`; Shell 49–51 use `new_subprocess()`. Mutter 17 moved dock
+  typing and window-list hiding from the trusted client to `Meta.Window`, so
+  the host selects the available method at map time.
 - **Adoption on `map`** (the `window_manager` signal DIN uses), with
   `owns_window` guarded against the X11-window exception; a window that
   unmaps at idle and re-maps is re-adopted, and an `unmanaged` handler

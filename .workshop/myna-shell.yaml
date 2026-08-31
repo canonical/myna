@@ -9,14 +9,12 @@
 #   - client/ + server/ ship in a snap on `core24`, so the main workshop's
 #     ubuntu@24.04 base is what we ship, and must stay there.
 #   - extensions/myna-shell ships to a GNOME desktop. Its metadata.json
-#     declares Shell 50/51, which no 24.04 archive has or can have (Shell 50
-#     wants mutter 50, gjs 1.86, glib 2.86). The host's pure GJS suites need
-#     nothing but gjs, so this workshop provides the Shell version the
-#     extension actually targets.
+#     declares Shell 46–51. The host's pure GJS suites need nothing but gjs,
+#     while the current workshop base provides the modern end of that range.
 #
 # So the extension gets a base that ships a Shell it supports, and the daemon
-# keeps the base it ships on. Porting the extension backwards to an older Shell
-# would collapse the two again; until then, this tests what we ship.
+# keeps the base it ships on. The Shell 46 adapter is checked against Mutter
+# 14's GIR/source contract; live compositor behaviour remains on-hardware.
 name: myna-shell
 base: ubuntu@26.04
 sdks:

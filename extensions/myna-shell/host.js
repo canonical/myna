@@ -25,6 +25,7 @@ import {computePlacement, placementChanged, shrinkWorkAreaForDock} from './place
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
 import {DictationAnnouncer} from './announcer.js';
+import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
 
 // Await the subprocess with a Cancellable instead of a bare callback, so
 // disable() can cancel the wait rather than relying on a flag to ignore a
@@ -130,12 +131,12 @@ export class OverlayHost {
         // it is never orphaned above the overview.
         this._raiseAboveOverview(false);
 
-        // Kill the renderer process. Meta.WaylandClient has NO destroy() (it
-        // only exposes get_subprocess/owns_window), so terminating the
-        // subprocess is what stops the renderer and reaps its window; the
-        // wait was cancelled above, so this exit does not schedule a
-        // respawn. force_exit is a hard kill — the renderer is a HUD with no
-        // unsaved state, and a graceful SIGTERM would only delay teardown.
+        // Kill the renderer process. Meta.WaylandClient has no destroy()
+        // method in either supported API generation, so terminating the
+        // subprocess stops the renderer and reaps its window; the wait was
+        // cancelled above, so this exit does not schedule a respawn.
+        // force_exit is a hard kill — the renderer is a HUD with no unsaved
+        // state, and a graceful SIGTERM would only delay teardown.
         try {
             this._subprocess?.force_exit();
         } catch (e) {
@@ -169,18 +170,31 @@ export class OverlayHost {
             return;
         }
 
-        let client;
+        // Mutter 14-16 creates a trusted client, then launches through
+        // client.spawnv(). Mutter 17+ combines those steps in
+        // new_subprocess(). Both paths create the private Wayland socket
+        // required for owns_window() to identify the renderer.
+        let client, subprocess;
         try {
-            // Launch THROUGH Meta.WaylandClient so the child inherits the
-            // compositor's Wayland socket and we can own its window (R27).
             const launcher = new Gio.SubprocessLauncher({
                 flags: Gio.SubprocessFlags.NONE,
             });
-            client = Meta.WaylandClient.new_subprocess(
-                global.context, launcher, launch.argv);
+            ({client, subprocess} = launchTrustedClient({
+                WaylandClient: Meta.WaylandClient,
+                context: global.context,
+                display: global.display,
+                launcher,
+                argv: launch.argv,
+            }));
         } catch (e) {
             logError(e, `[myna-shell] failed to launch renderer (${launch.source})`);
             this._scheduleRestart(/* expected= */ false, /* uptimeMs= */ 0);
+            return;
+        }
+
+        if (!subprocess) {
+            this._log(`failed to launch renderer (${launch.source}); staying dormant`);
+            this._dormant = true;
             return;
         }
 
@@ -207,7 +221,7 @@ export class OverlayHost {
         // handed — so a superseded wait never confuses the current one.
         const cancellable = new Gio.Cancellable();
         this._cancellable = cancellable;
-        this._subprocess = client.get_subprocess();
+        this._subprocess = subprocess;
         this._watchExit(this._subprocess, cancellable);
     }
 
@@ -334,8 +348,11 @@ export class OverlayHost {
      * normal windows, and never focused on map (XH10). */
     _makeOverlay(window) {
         try {
-            window.set_type(Meta.WindowType.DOCK);
-            window.hide_from_window_list();
+            configureTrustedWindow({
+                client: this._client,
+                window,
+                dockType: Meta.WindowType.DOCK,
+            });
             window.stick();            // all workspaces
             window.make_above();       // above normal windows
         } catch (e) {
