@@ -46,7 +46,14 @@ export default class MynaShellExtension extends Extension {
             // host raise the pill above where the dock would slide out.
             getDockReservedExtent: () => this._dockExtent ?? null,
         });
-        this._host.enable();
+
+        // Wait for startup-complete, as DIN and dash-to-dock do.
+        if (Main.layoutManager._startingUp) {
+            Main.layoutManager.connectObject('startup-complete',
+                () => this._host.enable(), this);
+        } else {
+            this._host.enable();
+        }
 
         // Follow Main.layoutManager.dashToDockStruts so the pill is never placed
         // auto-hide dock would cover it. `this` is the connectObject owner,
@@ -59,6 +66,7 @@ export default class MynaShellExtension extends Extension {
     }
 
     disable() {
+        Main.layoutManager.disconnectObject(this);
         this._dockWatch?.disconnect();
         this._dockWatch = null;
         this._dockExtent = null;
