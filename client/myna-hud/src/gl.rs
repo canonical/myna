@@ -261,6 +261,7 @@ impl RibbonRenderer {
             (epoxy::epoxy_glBlendFunc)(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
 
             (epoxy::epoxy_glUseProgram)(self.program);
+            let specs = crate::shader::ribbon_uniforms();
             for (name, values) in &uniforms {
                 let Ok(cname) = CString::new(name.as_str()) else {
                     continue;
@@ -270,11 +271,20 @@ impl RibbonRenderer {
                     // Dropped by the driver as unused — not an error.
                     continue;
                 }
-                match values.len() {
-                    1 => (epoxy::epoxy_glUniform1fv)(location, 1, values.as_ptr()),
-                    2 => (epoxy::epoxy_glUniform2fv)(location, 1, values.as_ptr()),
-                    3 => (epoxy::epoxy_glUniform3fv)(location, 1, values.as_ptr()),
-                    4 => (epoxy::epoxy_glUniform4fv)(location, 1, values.as_ptr()),
+                let Some(spec) = specs.iter().find(|s| s.name == name.as_str()) else {
+                    continue;
+                };
+                // glUniform*fv(loc, count, ptr) treats `count` as the number of array
+                // elements, not components × count. For a vec4 array of N
+                // elements, glUniform4fv(loc, N, ptr) updates N consecutive
+                // vec4s of the array; passing N×M writes past the array end
+                // and silently corrupts the next uniforms in the program.
+                let count = spec.count as gl::types::GLsizei;
+                match spec.components {
+                    1 => (epoxy::epoxy_glUniform1fv)(location, count, values.as_ptr()),
+                    2 => (epoxy::epoxy_glUniform2fv)(location, count, values.as_ptr()),
+                    3 => (epoxy::epoxy_glUniform3fv)(location, count, values.as_ptr()),
+                    4 => (epoxy::epoxy_glUniform4fv)(location, count, values.as_ptr()),
                     _ => continue,
                 }
             }

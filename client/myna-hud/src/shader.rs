@@ -496,78 +496,93 @@ pub const PAINT_ORDER: [StrandRole; 3] =
 pub struct UniformSpec {
     pub name: &'static str,
     pub components: usize,
+    /// Number of array slots, or 1 for a non-array uniform. The GLSL
+    /// declaration is `<type> <name>[N];` for arrays and `<type> <name>;`
+    /// otherwise. `glUniform*fv` uploads `count` array elements (not
+    /// `components * count`), so the packed length is `components * count`
+    /// but the upload `count` argument is just `count`.
+    pub count: usize,
 }
 
-/// Every uniform the generated shader declares, with its component count.
-/// The GLArea renderer uploads exactly this set; `tests/shader.rs` asserts
-/// the two agree, so a uniform cannot be added to the shader and forgotten
-/// in the uploader.
+/// Every uniform the generated shader declares, with its component count
+/// and array length (1 for non-arrays). The GLArea renderer uploads exactly
+/// this set; `tests/shader.rs` asserts the two agree, so a uniform cannot
+/// be added to the shader and forgotten in the uploader.
 pub fn ribbon_uniforms() -> &'static [UniformSpec] {
     static SPECS: std::sync::OnceLock<Vec<UniformSpec>> = std::sync::OnceLock::new();
     SPECS.get_or_init(|| {
-        let mut specs = vec![
+        vec![
             UniformSpec {
                 name: "uSize",
                 components: 2,
+                count: 1,
             },
             UniformSpec {
                 name: "uElapsedMs",
                 components: 1,
+                count: 1,
             },
             UniformSpec {
                 name: "uActivity",
                 components: 1,
+                count: 1,
             },
             UniformSpec {
                 name: "uEffectStrength",
                 components: 1,
+                count: 1,
             },
             UniformSpec {
                 name: "uBrightnessBoost",
                 components: 1,
+                count: 1,
             },
-        ];
-        for i in 0..MAX_STRANDS {
-            specs.push(UniformSpec {
-                name: Box::leak(format!("uStrandGeom{i}").into_boxed_str()),
+            UniformSpec {
+                name: "uStrandGeom",
                 components: 4,
-            });
-            specs.push(UniformSpec {
-                name: Box::leak(format!("uStrandStyle{i}").into_boxed_str()),
+                count: MAX_STRANDS,
+            },
+            UniformSpec {
+                name: "uStrandStyle",
                 components: 3,
-            });
-        }
-        specs.extend([
+                count: MAX_STRANDS,
+            },
             UniformSpec {
                 name: "uVoice",
                 components: 4,
+                count: 1,
             },
             UniformSpec {
                 name: "uMain",
                 components: 3,
+                count: 1,
             },
             UniformSpec {
                 name: "uHighlight",
                 components: 3,
+                count: 1,
             },
             UniformSpec {
                 name: "uShadow",
                 components: 3,
+                count: 1,
             },
             UniformSpec {
                 name: "uDotX",
                 components: MAX_DOTS,
+                count: 1,
             },
             UniformSpec {
                 name: "uDotAlpha",
                 components: 1,
+                count: 1,
             },
             UniformSpec {
                 name: "uConvergence",
                 components: 3,
+                count: 1,
             },
-        ]);
-        specs
+        ]
     })
 }
 
@@ -634,31 +649,28 @@ pub fn pack_ribbon_uniforms(
         .take(MAX_STRANDS)
         .collect();
 
+    // Two array uniforms: uStrandGeom[MAX_STRANDS] (vec4 each) and
+    // uStrandStyle[MAX_STRANDS] (vec3 each). Unused slots are zero-padded
+    // — the shader's `for (int i = 0; i < MAX_STRANDS; ++i)` skips inactive
+    // slots via the third style component (the "active" flag).
+    let mut geom = Vec::with_capacity(MAX_STRANDS * 4);
+    let mut style = Vec::with_capacity(MAX_STRANDS * 3);
     for i in 0..MAX_STRANDS {
-        let strand = ordered.get(i).copied();
-        values.insert(
-            format!("uStrandGeom{i}"),
-            strand
-                .map(|s| {
-                    vec![
-                        ins(s.amplitude),
-                        ins(s.phase_offset),
-                        ins(s.delay_ms),
-                        ins(s.speed_scale),
-                    ]
-                })
-                .unwrap_or_else(|| vec![0.0; 4]),
-        );
-        // The third component is the "active" flag: an absent strand is
-        // skipped outright rather than drawn at zero alpha, so it costs
-        // nothing and can never contribute a stray pixel.
-        values.insert(
-            format!("uStrandStyle{i}"),
-            strand
-                .map(|s| vec![ins(s.alpha), ins(role_tag(s.role) as f64), 1.0])
-                .unwrap_or_else(|| vec![0.0; 3]),
-        );
+        if let Some(s) = ordered.get(i).copied() {
+            geom.extend_from_slice(&[
+                ins(s.amplitude),
+                ins(s.phase_offset),
+                ins(s.delay_ms),
+                ins(s.speed_scale),
+            ]);
+            style.extend_from_slice(&[ins(s.alpha), ins(role_tag(s.role) as f64), 1.0]);
+        } else {
+            geom.extend_from_slice(&[0.0; 4]);
+            style.extend_from_slice(&[0.0; 3]);
+        }
     }
+    values.insert("uStrandGeom".into(), geom);
+    values.insert("uStrandStyle".into(), style);
 
     // The wisps curl off the voice strand specifically, so its parameters
     // are uploaded separately rather than searched for in the shader.
@@ -773,6 +785,8 @@ pub fn glsl_constant_defines() -> String {
         .map(|(name, value)| format!("#define {name} {}", f(*value)))
         .collect::<Vec<_>>()
         .join("\n")
+        + "\n#define MYNA_MAX_STRANDS "
+        + &MAX_STRANDS.to_string()
 }
 
 /// Unroll a stop table into a piecewise `mix()` chain. `tone_of` names the
@@ -878,10 +892,8 @@ pub struct ShaderSource {
 /// Build the fragment shader. The body alone — wrap with
 /// [`standalone_shader`] for a complete, compilable ES 3.00 fragment.
 pub fn build_ribbon_shader() -> ShaderSource {
-    let strand_uniforms = (0..MAX_STRANDS)
-        .map(|i| format!("uniform vec4 uStrandGeom{i};\nuniform vec3 uStrandStyle{i};"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let strand_uniforms =
+        "uniform vec4 uStrandGeom[MYNA_MAX_STRANDS];\nuniform vec3 uStrandStyle[MYNA_MAX_STRANDS];";
 
     let declarations = format!(
         r#"{defines}
@@ -1060,10 +1072,9 @@ vec4 wispLayer(float t, float py, float centreY, float verticalScale,
         feather_stack = emit_gaussian_stack("featherStack", &FEATHER_PASSES),
     );
 
-    let draw_calls = (0..MAX_STRANDS)
-        .map(|i| format!("acc = drawStrand(uStrandGeom{i}, uStrandStyle{i}, t, py, centreY, verticalScale, acc);"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let draw_calls = r#"for (int i = 0; i < MYNA_MAX_STRANDS; ++i) {
+    acc = drawStrand(uStrandGeom[i], uStrandStyle[i], t, py, centreY, verticalScale, acc);
+}"#;
 
     let code = format!(
         r#"vec2 uv = cogl_tex_coord_in[0].xy;
@@ -1076,8 +1087,8 @@ float verticalScale = (uSize.y * 0.5) * MYNA_BASE_CENTRELINE_FRACTION * MYNA_SAF
 vec4 acc = vec4(0.0);
 
 // Strands are uploaded already sorted back-to-front (PAINT_ORDER), so the
-// bright focal voice strand lands on top. Unrolled because the per-strand
-// parameters are separate uniforms, not an array.
+// bright focal voice strand lands on top. A constant-bound `for` over the
+// MAX_STRANDS array uniform — modern drivers unroll it.
 {draw_calls}
 
 // Wispy trailing tendrils curling off the voice strand - soft falloff only,

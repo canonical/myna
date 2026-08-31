@@ -1,13 +1,18 @@
 // examples/render_check.rs — the GPU render check (feature 004, T121/T133).
 //
 // The shader tests prove the generated source *compiles*; this proves a
-// driver actually *lights pixels* with it. Two failure modes hide from a
-// compile check and show only as an empty overlay:
+// driver actually *lights pixels* with it. Three failure modes hide from a
+// compile check and show only as a wrong overlay:
 //
-//   1. the program links but every strand falls outside the canvas, and
+//   1. the program links but every strand falls outside the canvas (the
+//      frame is empty);
 //   2. the UV `vUv` is never fed from the vertex stage, so every strand
-//      samples x = 0 and the frame is *constant along x*. This check asserts
-//      horizontal variation precisely to catch that.
+//      samples x = 0 and the frame is *constant along x*;
+//   3. the strand-body uniforms are uploaded with the wrong count, so the
+//      wisps/dots still draw but the actual ribbon body is missing
+//      (caught by the centreline-bounded-body check below — the body must
+//      cover a substantial part of the canvas at the centre row, while
+//      wisps alone would give a sparse set of isolated tendrils).
 //
 // Run with:  xvfb-run -a -s "-screen 0 640x480x24" \
 //                cargo run -p myna-hud --example render_check
@@ -59,6 +64,19 @@ fn main() {
                     renderer.render(&model, &palette, WIDTH, HEIGHT);
 
                     let pixels = unsafe { read_pixels(WIDTH, HEIGHT) };
+                    if let Ok(path) = std::env::var("MYNA_RENDER_CHECK_OUT") {
+                        // Save the framebuffer as a grayscale PGM so the
+                        // rendered ribbon can be eyeballed from CI.
+                        let mut pgm = format!("P5\n{WIDTH} {HEIGHT}\n255\n").into_bytes();
+                        for y in 0..HEIGHT {
+                            for x in 0..WIDTH {
+                                let i = ((y * WIDTH + x) * 4 + 3) as usize;
+                                pgm.push(pixels[i]);
+                            }
+                        }
+                        let _ = std::fs::write(&path, pgm);
+                        println!("render-check: wrote {path}");
+                    }
                     let alpha_at =
                         |x: i32, y: i32| -> u8 { pixels[((y * WIDTH + x) * 4 + 3) as usize] };
 
@@ -84,10 +102,42 @@ fn main() {
                     let max = column_profile.iter().max().copied().unwrap_or(0);
                     println!("render-check: column alpha min={min} max={max}");
                     if max == min {
-                        problems.push(
-                            "the frame is constant along x — cogl_tex_coord_in[0] is not being fed"
-                                .into(),
-                        );
+                        problems
+                            .push("the frame is constant along x — vUv is not being fed".into());
+                    }
+
+                    // 3. The strand BODY drew — not just wisps / dots.
+                    //    The body is a thin band near the vertical
+                    //    centre; wisps + dots add isolated tendrils and a
+                    //    few travelling markers, not a connected fill.
+                    //    A wrong uniform upload (e.g. writing `count` as
+                    //    `components * count` for an array uniform) can
+                    //    leave the strand body drawing nothing while the
+                    //    wisp/dot layer, which reads different uniforms,
+                    //    still draws — and the result is a flat saturated
+                    //    block that passes any "is something drawn?" check.
+                    //
+                    //    The discriminating signal is the number of rows
+                    //    lit per column: a wave lights a band, a solid
+                    //    block lights all rows. We assert the median
+                    //    lit-rows-per-column is well below HEIGHT (the
+                    //    wave is a thin band, not a solid rectangle).
+                    let mut rows_per_col: Vec<u32> = (0..WIDTH)
+                        .map(|x| (0..HEIGHT).filter(|&y| alpha_at(x, y) > 32).count() as u32)
+                        .collect();
+                    rows_per_col.sort_unstable();
+                    let median = rows_per_col[WIDTH as usize / 2];
+                    let p90 = rows_per_col[(WIDTH as usize * 90) / 100];
+                    println!(
+                        "render-check: rows-lit per column median={median} p90={p90} (of {HEIGHT})"
+                    );
+                    if median > HEIGHT as u32 * 3 / 4 {
+                        problems.push(format!(
+                            "the body fills the canvas — median rows-lit per column \
+                             is {median} of {HEIGHT} (a wave is a thin band, not a \
+                             solid block; this usually means the strand-array \
+                             uniforms were uploaded with the wrong count)"
+                        ));
                     }
 
                     renderer.unrealize();

@@ -67,11 +67,24 @@ fn generator_produces_blocks() {
 #[test]
 fn every_define_is_a_float_literal() {
     for line in glsl_constant_defines().split('\n') {
+        if line.is_empty() {
+            continue;
+        }
         let value = line.rsplit(' ').next().unwrap();
-        assert!(
-            value.parse::<f64>().is_ok() && value.contains('.'),
-            "define is a float literal: {line}"
-        );
+        // Most defines are floats (no implicit int→float promotion in GLSL).
+        // The one exception is MYNA_MAX_STRANDS — array dimensions need a
+        // constant integral expression, so it's emitted as an integer.
+        if line.contains("MYNA_MAX_STRANDS") {
+            assert!(
+                value.parse::<u64>().is_ok() && !value.contains('.'),
+                "MYNA_MAX_STRANDS is an integer: {line}"
+            );
+        } else {
+            assert!(
+                value.parse::<f64>().is_ok() && value.contains('.'),
+                "define is a float literal: {line}"
+            );
+        }
     }
 }
 
@@ -149,38 +162,8 @@ fn uniforms_declared_and_packed_agree() {
     let shader = build_ribbon_shader();
     let specs = ribbon_uniforms();
 
-    // Parse `uniform <type> <name>;` declarations.
-    let declared: Vec<(String, String)> = shader
-        .declarations
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            let rest = l.strip_prefix("uniform ")?;
-            let rest = rest.strip_suffix(';')?;
-            let (ty, name) = rest.split_once(' ')?;
-            Some((ty.to_string(), name.to_string()))
-        })
-        .collect();
-
-    // An array uniform can never be uploaded through the vec4-max packing.
-    assert!(
-        declared.iter().all(|(ty, _)| !ty.contains('[')),
-        "no uniform is declared as an array"
-    );
-
-    assert!(
-        declared
-            .iter()
-            .all(|(_, name)| specs.iter().any(|s| s.name == name)),
-        "every declared uniform is in ribbon_uniforms()"
-    );
-    assert!(
-        specs
-            .iter()
-            .all(|s| declared.iter().any(|(_, name)| name == s.name)),
-        "every ribbon_uniforms() entry is declared in the shader"
-    );
-
+    // Parse `uniform <type> <name>;` declarations, where <name> may carry
+    // an array suffix (`foo[N]`). The spec's `name` is the bare identifier.
     let glsl_components = |ty: &str| match ty {
         "float" => 1,
         "vec2" => 2,
@@ -188,30 +171,74 @@ fn uniforms_declared_and_packed_agree() {
         "vec4" => 4,
         _ => 0,
     };
-    for (ty, name) in &declared {
-        if let Some(spec) = specs.iter().find(|s| s.name == name) {
+    let declared: Vec<(&str, &str, bool)> = shader
+        .declarations
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let rest = l.strip_prefix("uniform ")?;
+            let rest = rest.strip_suffix(';')?;
+            let (ty, name_with_size) = rest.split_once(' ')?;
+            let (base_ty, ty_is_array) = if let Some(idx) = ty.find('[') {
+                let _end = ty.find(']').expect("[ without ]");
+                (&ty[..idx], true)
+            } else {
+                (ty, false)
+            };
+            let (name, name_is_array) = if let Some(idx) = name_with_size.find('[') {
+                let _end = name_with_size.find(']').expect("[ without ]");
+                (&name_with_size[..idx], true)
+            } else {
+                (name_with_size, false)
+            };
+            Some((base_ty, name, ty_is_array || name_is_array))
+        })
+        .collect();
+
+    assert!(
+        declared
+            .iter()
+            .all(|(_, name, _)| specs.iter().any(|s| s.name == *name)),
+        "every declared uniform is in ribbon_uniforms()"
+    );
+    assert!(
+        specs
+            .iter()
+            .all(|s| declared.iter().any(|(_, name, _)| name == &s.name)),
+        "every ribbon_uniforms() entry is declared in the shader"
+    );
+    for (base_ty, name, has_array_suffix) in &declared {
+        if let Some(spec) = specs.iter().find(|s| s.name == *name) {
             assert_eq!(
                 spec.components,
-                glsl_components(ty),
+                glsl_components(base_ty),
                 "{name}: component count matches its GLSL type"
+            );
+            assert_eq!(
+                spec.count > 1,
+                *has_array_suffix,
+                "{name}: array-ness matches the GLSL declaration"
             );
             assert!(
                 (1..=4).contains(&spec.components),
-                "{name}: fits the four-component limit"
+                "{name}: components fits a vec* upload"
             );
         }
     }
 
+    // Two array uniforms carry the per-strand data — the geometry (vec4)
+    // and the style (vec3) of each strand, indexed by slot.
     assert!(
-        (0..MAX_STRANDS).all(|i| {
-            declared
-                .iter()
-                .any(|(ty, name)| name == &format!("uStrandGeom{i}") && ty == "vec4")
-                && declared
-                    .iter()
-                    .any(|(ty, name)| name == &format!("uStrandStyle{i}") && ty == "vec3")
-        }),
-        "one geometry/style uniform pair per strand slot"
+        declared
+            .iter()
+            .any(|(ty, name, _)| { *name == "uStrandGeom" && *ty == "vec4" }),
+        "uStrandGeom is declared as a vec4 array"
+    );
+    assert!(
+        declared
+            .iter()
+            .any(|(ty, name, _)| { *name == "uStrandStyle" && *ty == "vec3" }),
+        "uStrandStyle is declared as a vec3 array"
     );
 
     assert_eq!(
@@ -219,11 +246,19 @@ fn uniforms_declared_and_packed_agree() {
         "slots sized for the model's maximum"
     );
 
+    // The shader composites strands in index order via a constant-bound
+    // for loop over the array uniforms.
     assert!(
-        (0..MAX_STRANDS).all(|i| shader
+        shader
             .code
-            .contains(&format!("drawStrand(uStrandGeom{i}, uStrandStyle{i}"))),
-        "every strand slot is composited by the shader body"
+            .contains("for (int i = 0; i < MYNA_MAX_STRANDS; ++i)"),
+        "the shader body loops over the strand array"
+    );
+    assert!(
+        shader
+            .code
+            .contains("drawStrand(uStrandGeom[i], uStrandStyle[i]"),
+        "the loop indexes both strand array uniforms"
     );
 
     // The shader composites strand 0, 1, 2… in index order, so the
@@ -354,8 +389,8 @@ fn packed_uniforms_are_complete_and_uploadable() {
                 .unwrap_or_else(|| panic!("{}: missing from the packing", spec.name));
             assert_eq!(
                 values.len(),
-                spec.components,
-                "{}: packed to its declared width",
+                spec.components * spec.count,
+                "{}: packed to its declared width (components × count)",
                 spec.name
             );
             assert!(
@@ -370,11 +405,12 @@ fn packed_uniforms_are_complete_and_uploadable() {
     // only thing putting the bright voice strand on top.
     let flow = model(0.7, 1200.0, RibbonPhase::Flow, 100.0);
     let packed = pack_ribbon_uniforms(360.0, 32.0, &flow, &palette());
+    let style = packed.get("uStrandStyle").expect("uStrandStyle packed");
     let mut tags = Vec::new();
     for i in 0..MAX_STRANDS {
-        let style = &packed[&format!("uStrandStyle{i}")];
-        if style[2] > 0.5 {
-            tags.push(style[1] as i32);
+        let s = &style[i * 3..(i + 1) * 3];
+        if s[2] > 0.5 {
+            tags.push(s[1] as i32);
         }
     }
     assert_eq!(
@@ -384,8 +420,8 @@ fn packed_uniforms_are_complete_and_uploadable() {
     );
     assert!(
         (0..MAX_STRANDS).all(|i| {
-            let style = &packed[&format!("uStrandStyle{i}")];
-            style[2] > 0.5 || style.iter().all(|v| *v == 0.0)
+            let s = &style[i * 3..(i + 1) * 3];
+            s[2] > 0.5 || s.iter().all(|v| *v == 0.0)
         }),
         "an unused strand slot is marked inactive rather than transparent"
     );
@@ -610,4 +646,65 @@ fn palette_resolution_amber_override() {
     assert_eq!(normal.effect_strength, activity_ramp(normal.activity));
     assert_eq!(activity_ramp(ACTIVITY_RAMP.lo - 0.01), 0.0);
     assert_eq!(activity_ramp(ACTIVITY_RAMP.hi + 0.01), 1.0);
+}
+
+// --- Array-uniform upload convention -----------------------------------
+//
+// glUniform4fv(loc, count, ptr) interprets `count` as the number of array
+// elements, NOT `components * count`. A vec4 array of N is uploaded with
+// `count = N`, not `count = N*4` (which would write 4× past the buffer and
+// silently corrupt the next uniforms in the program; the rendered ribbon
+// became a flat saturated block). The packing length IS
+// `components * count`, the upload `count` argument IS `count`. Pin both.
+//
+// This is the regression that be8d380 introduced and `examples/render_check`
+// (strengthened with a "rows lit per column" check) caught end-to-end;
+// here we pin it at the unit-test level so the convention can't silently
+// regress again.
+
+#[test]
+fn array_uniform_packing_and_upload_count_convention() {
+    use myna_hud::shader::{pack_ribbon_uniforms, ribbon_uniforms, MAX_STRANDS};
+    let spec = ribbon_uniforms();
+    let geom_spec = spec.iter().find(|s| s.name == "uStrandGeom").unwrap();
+    let style_spec = spec.iter().find(|s| s.name == "uStrandStyle").unwrap();
+    assert_eq!(geom_spec.count, MAX_STRANDS, "uStrandGeom is an array");
+    assert_eq!(geom_spec.components, 4);
+    assert_eq!(style_spec.count, MAX_STRANDS, "uStrandStyle is an array");
+    assert_eq!(style_spec.components, 3);
+
+    let model = myna_hud::ribbon::compute_ribbon_model(myna_hud::ribbon::RibbonInput {
+        envelope: 0.6,
+        elapsed_ms: 100.0,
+        ..Default::default()
+    });
+    let packed = pack_ribbon_uniforms(360.0, 32.0, &model, &palette());
+
+    // Packed length = components × count (the buffer the uploader sends).
+    assert_eq!(packed["uStrandGeom"].len(), MAX_STRANDS * 4);
+    assert_eq!(packed["uStrandStyle"].len(), MAX_STRANDS * 3);
+
+    // Upload `count` argument = count (number of array elements).
+    // glUniform4fv(loc, N, ptr) updates N consecutive vec4s of the array.
+    // The invariant is that `count` (upload) != `components * count`.
+    assert_ne!(
+        geom_spec.count,
+        geom_spec.components * geom_spec.count,
+        "upload count is the array length, not components × count"
+    );
+    assert_ne!(
+        style_spec.count,
+        style_spec.components * style_spec.count,
+        "upload count is the array length, not components × count"
+    );
+
+    // A non-array uniform has `count == 1`, which is what
+    // glUniform*fv(loc, 1, ptr) expects regardless of components.
+    for s in spec.iter().filter(|s| s.count == 1) {
+        assert_eq!(
+            s.count, 1,
+            "{}: non-array uniforms upload exactly one element",
+            s.name
+        );
+    }
 }
