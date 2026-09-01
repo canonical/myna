@@ -72,7 +72,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.spread/qemu
-          key: spread-qemu-ubuntu-24.04-64-v1
+          # v2: the image now pre-installs the myna snap's gnome extension
+          # prerequisites (gnome-46-2404, gtk-common-themes, mesa-2404) - see
+          # dev/spread-image.sh. Bumped so CI doesn't restore a v1 image that
+          # predates that and re-triggers the slow-network install timeout.
+          key: spread-qemu-ubuntu-24.04-64-v2
 
       # Same script `make spread` runs locally, and self-provisioning (it
       # apt-installs qemu/cloud-image-utils when they are missing and exits

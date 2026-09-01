@@ -17,12 +17,15 @@ TMP="$IMG.tmp"
 # image before this check is why a *cache hit* failed CI with "qemu-system-x86_64:
 # executable file not found" while cache misses passed.
 missing=0
-for cmd in qemu-system-x86_64 cloud-localds sshpass wget openssl; do
+for cmd in qemu-system-x86_64 cloud-localds genisoimage sshpass wget openssl snap; do
     command -v "$cmd" >/dev/null || missing=1
 done
 if [ "$missing" -eq 1 ]; then
     sudo apt-get update
-    sudo apt-get install -y qemu-system-x86 cloud-image-utils sshpass wget openssl
+    # genisoimage is also cloud-image-utils' own dependency for cloud-localds;
+    # named explicitly because it is used directly below, not just as a
+    # transitive Depends: it should stay found even if that stops being true.
+    sudo apt-get install -y qemu-system-x86 cloud-image-utils genisoimage sshpass wget openssl
 fi
 
 if [ -f "$IMG" ]; then
@@ -49,6 +52,26 @@ printf '#cloud-config\nssh_pwauth: true\nusers:\n  - name: ubuntu\n    sudo: ALL
 printf 'instance-id: myna-spread-seed\nlocal-hostname: myna-spread\n' > meta-data
 cloud-localds seed.iso user-data meta-data
 
+# myna-snap's `hud` app uses the `gnome` extension, which makes ANY install of
+# the myna snap - confined-e2e never even runs `hud` - pull gnome-46-2404,
+# gtk-common-themes and mesa-2404 in as prerequisites. qemu's usermode (SLIRP)
+# networking inside the guest is too slow for that download to land inside
+# install_snap's 300s timeout (observed: low single-digit % per minute, so
+# tens of minutes for ~100 MB), so every confined-e2e / control-socket run
+# failed on "install-snap change in progress" once the extension was added
+# (f5e5a63). The store itself is not the bottleneck - fetching the same snaps
+# on the host below takes seconds - so download them here (fast, real
+# networking) and hand the files to the guest on a second read-only ISO drive
+# for an offline `snap ack` + `snap install`, entirely off the slow path.
+if [ ! -f gnome-ext.iso ]; then
+    rm -rf gnome-ext-snaps
+    mkdir gnome-ext-snaps
+    for s in gnome-46-2404 gtk-common-themes mesa-2404; do
+        (cd gnome-ext-snaps && snap download "$s")
+    done
+    genisoimage -quiet -output gnome-ext.iso -volid GNOMEEXT -joliet -rock gnome-ext-snaps
+fi
+
 QEMU=""
 cleanup() {
     if [ -n "$QEMU" ]; then
@@ -60,13 +83,21 @@ trap cleanup EXIT
 qemu-system-x86_64 -enable-kvm -m 2G -smp 2 -nographic \
     -drive file="$TMP",if=virtio,format=qcow2 \
     -drive file=seed.iso,if=virtio,format=raw \
+    -drive file=gnome-ext.iso,if=virtio,format=raw \
     -netdev user,id=n1,hostfwd=tcp::10022-:22 \
     -device virtio-net-pci,netdev=n1 &
 QEMU=$!
 
+# UserKnownHostsFile=/dev/null alongside StrictHostKeyChecking=no: this port
+# is fixed (10022) and every boot generates a fresh host key, so without it
+# StrictHostKeyChecking=no's own default behavior - accept AND remember the
+# key - leaves a stale entry that rejects the *next* re-prime's (different)
+# key as a possible MITM attack, hanging every later ssh call here on a
+# password prompt it can never see. Found by re-running this script
+# repeatedly while developing the gnome-ext.iso staging above.
 ready=0
 for _ in $(seq 1 90); do
-    if sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
+    if sshpass -p ubuntu ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o PreferredAuthentications=password -o PubkeyAuthentication=no \
         -p 10022 ubuntu@localhost 'cloud-init status --wait' 2>/dev/null; then
         ready=1
@@ -80,7 +111,23 @@ if [ "$ready" -ne 1 ]; then
     exit 1
 fi
 
-sshpass -p ubuntu ssh -o StrictHostKeyChecking=no \
+# Install the prerequisite snaps staged on gnome-ext.iso above, offline (no
+# store fetch from the guest at all): ack each assertion, then sideload the
+# matching .snap. Baking them into the image here means the later
+# `snap install myna` in a task finds them already present.
+sshpass -p ubuntu ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+    -p 10022 ubuntu@localhost '
+set -e
+dev=$(readlink -f /dev/disk/by-label/GNOMEEXT)
+mnt=$(mktemp -d)
+sudo mount -o ro "$dev" "$mnt"
+for f in "$mnt"/*.assert; do sudo snap ack "$f"; done
+for f in "$mnt"/*.snap; do sudo snap install "$f"; done
+sudo umount "$mnt"
+'
+
+sshpass -p ubuntu ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     -p 10022 ubuntu@localhost 'sudo poweroff' || true
 wait "$QEMU" || true
@@ -89,4 +136,10 @@ trap - EXIT
 
 mv "$TMP" "$IMG"
 rm -f seed.iso user-data meta-data
+# gnome-ext.iso is NOT removed: it is the expensive part to rebuild (three
+# store downloads + packing ~1 GB into an ISO), and keeping it means a later
+# re-prime (e.g. after deleting $IMG for a disk-size change) skips straight to
+# the cheap steps instead of repeating it. Only the loose .snap/.assert
+# staging directory goes, now that they are packed.
+rm -rf gnome-ext-snaps
 echo "primed: $IMG"
