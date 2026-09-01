@@ -2,22 +2,61 @@
 // simulator over a REAL session bus (feature 004, T132; contract
 // dbus-interface.md C1/C4/C6), the port of `dbus_headless.py`.
 //
-// Gated: it needs a session bus. Run under `dbus-run-session`, e.g.
-//   dbus-run-session -- cargo test -p myna-hud --test serve_roundtrip
-// Without one it skips (returns early) rather than failing, matching the
-// harness convention for env-dependent checks.
+// Runs on a session bus of its own, spawned here. It used to take whatever
+// `DBUS_SESSION_BUS_ADDRESS` pointed at, which meant the developer's real
+// session bus - and `serve()` claims `com.canonical.Myna.Dictation`, which the
+// real daemon already owns there. The test therefore failed on precisely the
+// machines most likely to run it (anyone with myna installed) with
+// "already owned (myna-desktop running?)", and passed only under
+// `dbus-run-session`. A private bus is the property the test actually wants:
+// it asserts on singleton *name ownership*, which is only meaningful in a bus
+// it controls. Skips cleanly where `dbus-daemon` is not installed.
 
 // The `serve` module is dev-lab-only (#[cfg(dev_lab)]); skip this test when
 // dev_lab is off (e.g. coverage builds, per build.rs / T171).
 #![cfg(dev_lab)]
 
+use std::io::BufRead;
 use std::time::Duration;
 
 use myna_hud::serve::{serve, Controls, Shared};
 use myna_hud::states::wire;
 
-fn have_session_bus() -> bool {
-    std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some()
+/// A session bus that exists only for this test binary, torn down on drop.
+///
+/// Points `DBUS_SESSION_BUS_ADDRESS` at itself, which is what every
+/// `zbus::Connection::session()` below resolves against. Sound to set here
+/// because this is the whole of the test binary and nothing has spawned a
+/// thread yet.
+struct PrivateBus(std::process::Child);
+
+impl PrivateBus {
+    /// Spawn one, or `None` where there is no `dbus-daemon` to spawn.
+    fn spawn() -> Option<Self> {
+        let mut child = std::process::Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--print-address"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .ok()?;
+        let mut address = String::new();
+        std::io::BufReader::new(child.stdout.take()?)
+            .read_line(&mut address)
+            .ok()?;
+        let address = address.trim();
+        if address.is_empty() {
+            let _ = child.kill();
+            return None;
+        }
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", address);
+        Some(Self(child))
+    }
+}
+
+impl Drop for PrivateBus {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 /// A minimal consumer proxy for the served interface.
@@ -40,10 +79,10 @@ trait Dictation {
 
 #[tokio::test]
 async fn serve_publishes_and_answers_over_the_bus() {
-    if !have_session_bus() {
-        eprintln!("     (skip) no DBUS_SESSION_BUS_ADDRESS — run under dbus-run-session");
+    let Some(_bus) = PrivateBus::spawn() else {
+        eprintln!("     (skip) no dbus-daemon to stand a private session bus on");
         return;
-    }
+    };
 
     let shared = Shared::default();
     // Recording, mid-level — an active session so levels flow.
