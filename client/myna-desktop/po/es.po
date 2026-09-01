@@ -1,0 +1,86 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-01 13:43+0200\n"
+"PO-Revision-Date: 2026-09-01 11:51+0000\n"
+"Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
+"Language-Team: Spanish\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/indicator/mod.rs:94
+msgid "Loading model…"
+msgstr "Cargando modelo…"
+
+#: src/indicator/mod.rs:95
+msgid "Listening"
+msgstr "Escuchando"
+
+#: src/indicator/mod.rs:96
+msgid "Transcribing"
+msgstr "Transcribiendo"
+
+#: src/indicator/mod.rs:97
+msgid "Finishing"
+msgstr "Finalizando"
+
+#: src/indicator/notify.rs:60
+msgid "🎤 Dictation: listening"
+msgstr "🎤 Dictado: escuchando"
+
+#: src/indicator/notify.rs:61
+msgid "Speak now — tap your shortcut again to stop."
+msgstr "Habla ahora — pulsa de nuevo tu atajo para detener."
+
+#: src/indicator/notify.rs:64
+msgid "💬 Dictation: transcribing"
+msgstr "💬 Dictado: transcribiendo"
+
+#: src/indicator/notify.rs:65
+msgid "Converting speech to text…"
+msgstr "Convirtiendo voz a texto…"
+
+#: src/indicator/notify.rs:68
+msgid "⏳ Dictation: finishing"
+msgstr "⏳ Dictado: finalizando"
+
+#: src/indicator/notify.rs:69
+msgid "Inserting the final text…"
+msgstr "Insertando el texto final…"
+
+#: src/indicator/notify.rs:72
+msgid "⚠️ Dictation error"
+msgstr "⚠️ Error de dictado"
+
+#: src/controller.rs:196
+msgid "Focus lost"
+msgstr "Foco perdido"
+
+#: src/controller.rs:198
+msgid "No speech detected"
+msgstr "No se detectó voz"
+
+#: src/controller.rs:522
+msgid "Dictation target closed"
+msgstr "Destino del dictado cerrado"
+
+#: src/controller.rs:583
+msgid "Refusing to type into a password field"
+msgstr "Se rehúsa a escribir en un campo de contraseña"
+
+#: src/controller.rs:584
+msgid "No text field is focused"
+msgstr "Ningún campo de texto está enfocado"
+
+#: src/shortcut/retry.rs:243
+msgid "dictation hotkey unavailable: %s"
+msgstr "atajo de dictado no disponible: %s"
