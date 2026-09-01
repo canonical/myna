@@ -1474,8 +1474,21 @@ mod tests {
         std::fs::create_dir_all(&data_dir).expect("data dir");
         std::fs::rename(base.join("locale"), data_dir.join("locale")).expect("move locale tree");
 
-        let saved = save_env(&["LANG", "LC_ALL", "LC_MESSAGES", "LOCPATH", "XDG_DATA_DIRS"]);
+        // LANGUAGE too, and it is not optional: gettext ranks it above LANG,
+        // and a GNOME session sets it (`en_GB:en` here). Left in place the
+        // catalog lookup asks for English, finds no `locale/en*`, and the
+        // assertion below fails - on a developer's desktop only, never in a
+        // container where nothing sets it.
+        let saved = save_env(&[
+            "LANG",
+            "LANGUAGE",
+            "LC_ALL",
+            "LC_MESSAGES",
+            "LOCPATH",
+            "XDG_DATA_DIRS",
+        ]);
         std::env::set_var("LANG", "it_IT.UTF-8");
+        std::env::remove_var("LANGUAGE");
         std::env::remove_var("LC_ALL");
         std::env::remove_var("LC_MESSAGES");
         std::env::set_var("LOCPATH", base.join("locales"));
