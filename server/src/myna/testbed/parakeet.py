@@ -104,13 +104,6 @@ _log = logging.getLogger(__name__)
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
 
-MODEL_FILES = (
-    "encoder-model.int8.onnx",
-    "decoder_joint-model.int8.onnx",
-    "nemo128.onnx",
-    "vocab.txt",
-)
-
 # Optimized encoder variant (ratified 2026-08-31): a staged model dir MAY
 # additionally carry the "maxstack" encoder (10-of-11 FFN requant + fused
 # SiLU custom ops + export cleanups; built by
