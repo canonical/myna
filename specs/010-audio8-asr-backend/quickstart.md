@@ -31,8 +31,8 @@ real-utterance latency is not measurably slower than subsequent ones.
 ## Scenario 3 — Dictation over both wire dialects (US1, SC-001)
 
 ```bash
-uv run python dev/dictate.py --socket /tmp/ubustt.sock --wav server/fixtures/audio/quiet-pangram.wav
-uv run python dev/dictate.py --dialect ie115 --socket /tmp/ubustt.sock --wav server/fixtures/audio/quiet-weather.wav
+myna-dictate --socket /tmp/ubustt.sock --clip server/fixtures/audio/quiet-pangram.wav
+myna-dictate --dialect ie115 --socket /tmp/ubustt.sock --clip server/fixtures/audio/quiet-weather.wav
 ```
 
 Expected: committed transcript returned on both dialects; zero protocol

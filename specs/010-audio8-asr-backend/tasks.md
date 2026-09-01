@@ -52,7 +52,7 @@ Paths follow the project structure from `plan.md`:
 
 **Goal**: An Audio8 adapter in `myna-server` that serves batch dictation over both wire dialects, advertises truthful capabilities, runs warm-up, sanitizes generative output, gates silence, handles unbounded audio via chunk-and-stitch (FR-009 amended), and carries a weights-free unit suite at coverage parity.
 
-**Independent Test**: Start `myna-server --adapter audio8`, run `dev/dictate.py` against both wire dialects with English and Chinese clips, verify committed text is returned (artifact-free), and run `pytest tests/test_audio8_unit.py` without model weights.
+**Independent Test**: Start `myna-server --adapter audio8`, run `myna-dictate` against both wire dialects with English and Chinese clips, verify committed text is returned (artifact-free), and run `pytest tests/test_audio8_unit.py` without model weights.
 
 ### Implementation for User Story 1
 

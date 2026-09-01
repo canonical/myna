@@ -50,7 +50,7 @@ Watch it: `sudo snap logs -f myna-nemotron.server`; the socket appears at
 `/var/snap/myna-nemotron/common/run/ubustt.sock`. Transcribe / dictate from the repo:
 
 ```shell
-uv run python dev/dictate.py --socket /var/snap/myna-nemotron/common/run/ubustt.sock
+myna-dictate --socket /var/snap/myna-nemotron/common/run/ubustt.sock --mic
 ```
 
 ## Confined clients (the `ubustt-socket` slot)

@@ -27,7 +27,7 @@ from myna.testbed.metrics import (
     normalize,
     word_error_rate,
 )
-from myna.testbed.sources import MicSource, SilenceSource, WavFileSource
+from myna.testbed.sources import SilenceSource, WavFileSource
 
 __all__ = [
     "Adapter",
@@ -38,7 +38,6 @@ __all__ = [
     "FakeAdapter",
     "Harness",
     "Metrics",
-    "MicSource",
     "ResultRecord",
     "ScriptStep",
     "SilenceSource",
