@@ -104,14 +104,19 @@ _log = logging.getLogger(__name__)
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
 
-# Optimized encoder variant (ratified 2026-08-31): a staged model dir MAY
-# additionally carry the "maxstack" encoder (10-of-11 FFN requant + fused
-# SiLU custom ops + export cleanups; built by
-# dev/parakeet/build_maxstack_encoder.py) and the custom-op kernel library it
-# needs. When both are present the adapter uses them — measured encode
-# −13.3% on the same audio path — and falls back to the base encoder
-# byte-for-byte otherwise, so a bundle without them behaves exactly as
-# before. MYNA_ORT_CUSTOM_OPS overrides the library location (dev tooling).
+# Optimized encoder variant (ratified 2026-08-31): the "maxstack" encoder
+# (10-of-11 FFN requant + fused SiLU custom ops + export cleanups; built by
+# dev/parakeet/build_maxstack_encoder.py) plus the custom-op kernel library it
+# needs. Measured encode -13.3% on the same audio path, and since 2026-09-01 it
+# is the only encoder the snap component ships
+# (parakeet-snap/dev/download-models.sh) - the base export it derives from
+# stays a build input.
+#
+# The base encoder is still selected for a dir that carries it and not the
+# pair, which is what an unprocessed upstream bundle looks like: the model
+# cache the maxstack build reads, and any other staging of the murmure
+# release. MYNA_ORT_CUSTOM_OPS overrides the library location (dev tooling).
+BASE_ENCODER_FILE = "encoder-model.int8.onnx"
 MAXSTACK_ENCODER_FILE = "encoder-model.int8.maxstack.onnx"
 QSILU_LIB_FILE = "libqsilu.so"
 
@@ -122,7 +127,16 @@ def encoder_variant(model_dir: str) -> tuple[str, str | None]:
     maxstack = os.path.join(model_dir, MAXSTACK_ENCODER_FILE)
     if os.path.exists(maxstack) and os.path.exists(lib):
         return maxstack, lib
-    base = os.path.join(model_dir, "encoder-model.int8.onnx")
+    base = os.path.join(model_dir, BASE_ENCODER_FILE)
+    if not os.path.exists(base):
+        # A shipped component has no base encoder to fall back to, so a lost
+        # kernel library surfaces here rather than in ORT with a path it cannot
+        # explain. Name the pair: the answer is to restore or rebuild it.
+        raise FileNotFoundError(
+            f"{model_dir} carries no loadable encoder: {MAXSTACK_ENCODER_FILE} needs "
+            f"{QSILU_LIB_FILE} beside it (or MYNA_ORT_CUSTOM_OPS pointing at it), and "
+            f"there is no {BASE_ENCODER_FILE} to fall back to"
+        )
     env_lib = os.environ.get("MYNA_ORT_CUSTOM_OPS")
     return base, env_lib if env_lib and os.path.exists(env_lib) else None
 

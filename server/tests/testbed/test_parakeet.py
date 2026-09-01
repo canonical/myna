@@ -26,6 +26,7 @@ from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
+    BASE_ENCODER_FILE,
     MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
     PARTIAL_CADENCE_S,
@@ -480,9 +481,11 @@ def test_cli_wires_partial_dials_including_an_explicit_zero():
 
 
 # Encoder variant selection (perf T11/T13): a model dir carrying the maxstack
-# encoder AND its custom-op kernel library gets the fast path; anything less
-# falls back to the base encoder byte-for-byte. The selection is what the
-# whole optimized-snap story rides on, so pin it model-free.
+# encoder AND its custom-op kernel library gets the fast path; a dir carrying
+# the unprocessed upstream bundle falls back to the base encoder byte-for-byte;
+# a dir with neither usable pairing says so instead of handing ORT a path that
+# is not there. The shipped component is maxstack-only, so that last case is
+# the failure mode a broken component now presents as. Pin it model-free.
 
 
 def test_encoder_variant_base_when_dir_is_plain(tmp_path, monkeypatch):
@@ -505,6 +508,27 @@ def test_encoder_variant_maxstack_needs_both_files(tmp_path, monkeypatch):
     path, lib = encoder_variant(str(tmp_path))
     assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
     assert lib == str(tmp_path / QSILU_LIB_FILE)
+
+
+def test_encoder_variant_maxstack_only_is_the_shipped_component_shape(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
+    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
+    path, lib = encoder_variant(str(tmp_path))
+    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
+    assert lib == str(tmp_path / QSILU_LIB_FILE)
+
+
+def test_encoder_variant_refuses_a_dir_with_no_loadable_encoder(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    # Maxstack without its kernel library, and no base to retreat to: the shape
+    # a component that lost libqsilu.so has.
+    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
+    with pytest.raises(FileNotFoundError, match=QSILU_LIB_FILE):
+        encoder_variant(str(tmp_path))
+
+    (tmp_path / BASE_ENCODER_FILE).write_bytes(b"")
+    assert encoder_variant(str(tmp_path))[0].endswith(BASE_ENCODER_FILE)
 
 
 def test_encoder_variant_env_overrides_lib_location(tmp_path, monkeypatch):
