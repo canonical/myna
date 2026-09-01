@@ -8,8 +8,8 @@
 //! The store is **GSettings**, schema `com.canonical.Myna.Dictation`
 //! (`client/data/glib-2.0/schemas/`). Three kinds of writer have to reach the
 //! same values: the confined `myna` snap (over the `gsettings` interface),
-//! unconfined host tools (`gsettings set`, `myna-dictate`, a future Settings
-//! page), and further snaps as they grow configuration APIs (T54). A JSON file
+//! unconfined host tools (`myna-dictate`, a future Settings page), and further
+//! snaps as they grow configuration APIs (T54). A JSON file
 //! cannot be that store - this used to be `~/.config/myna/settings.json`, and
 //! the packaged daemon could never read it: inside the snap `$HOME` is
 //! `$SNAP_USER_DATA`, and the `home` interface grants no top-level dotfiles, so
@@ -18,6 +18,12 @@
 //! Nothing here fails hard. A machine without the schema installed (an
 //! unpackaged build on a box where `make install-schema` was never run) reads
 //! defaults, exactly as a missing file did.
+//!
+//! GSettings is the *store*, not the interface. The one supported way to read
+//! and write these keys is `myna.config` (`myna-desktop --config`), which is
+//! what [`KEYS`] and [`Store::set`] are for: the `gsettings` CLI cannot reach
+//! a snap-only install, which has no schema on the host, and `dconf write`
+//! reaches it only by skipping the validation that makes a typo visible.
 //!
 //! Two layers, deliberately separated:
 //!
@@ -64,12 +70,68 @@ pub struct Settings {
     pub hotkey: Option<String>,
 }
 
-/// Why a settings write did not happen.
+/// Why a settings read or write did not happen.
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
     /// The backend refused the write (read-only key, locked-down dconf).
     #[error("cannot write {0}: {1}")]
     Write(&'static str, glib::BoolError),
+
+    /// A name that is not in [`KEYS`].
+    #[error("unknown key: {0}")]
+    UnknownKey(String),
+
+    /// A value outside an enum key's range, caught here rather than in the
+    /// schema so the rejection can say what *was* allowed.
+    #[error("invalid value {value:?} for {key} (allowed: {})", allowed.join(", "))]
+    InvalidValue {
+        key: &'static str,
+        value: String,
+        allowed: &'static [&'static str],
+    },
+}
+
+/// A key the configuration CLI can get, set and reset: enough for it to
+/// validate a write and explain a rejection without knowing the schema.
+///
+/// This table is the contract, and it exists because the alternative was
+/// `dconf write`, which bypasses the schema entirely: a typo landed silently
+/// and read back as the default. A setting that is one letter wrong and a
+/// setting that was never made must not look the same.
+pub struct KeySpec {
+    pub name: &'static str,
+    /// The accepted nicks of an enum key; `None` for free text.
+    pub values: Option<&'static [&'static str]>,
+    pub summary: &'static str,
+}
+
+/// Every key the configuration CLI exposes, in the order it lists them.
+pub const KEYS: &[KeySpec] = &[
+    KeySpec {
+        name: KEY_STREAMING_MODE,
+        values: Some(&["auto", "streaming", "batch"]),
+        summary: "how transcripts are emitted, and so whether partials show in-field",
+    },
+    KeySpec {
+        name: KEY_LANGUAGE,
+        values: None,
+        summary: "language hint for the backend; empty lets it decide",
+    },
+    KeySpec {
+        name: KEY_ACTIVATION,
+        values: Some(&["auto", "portal", "control"]),
+        summary: "how a press reaches the daemon",
+    },
+    KeySpec {
+        name: KEY_HOTKEY,
+        values: None,
+        summary: "accelerator offered to the portal's bind dialog",
+    },
+];
+
+/// Look up a key by name.
+pub fn key_spec(name: &str) -> Option<&'static KeySpec> {
+    KEYS.iter().find(|k| k.name == name)
 }
 
 impl Settings {
@@ -138,14 +200,59 @@ impl Store {
         (!value.is_empty()).then_some(value)
     }
 
+    /// Read any key as the string the store holds; an enum key reads its nick.
+    pub fn get(&self, key: &str) -> Result<String, SettingsError> {
+        let spec = key_spec(key).ok_or_else(|| SettingsError::UnknownKey(key.to_string()))?;
+        Ok(self.settings.string(spec.name).to_string())
+    }
+
+    /// Whether the user holds a value of their own here, as opposed to reading
+    /// the schema default.
+    ///
+    /// This is the distinction that matters when a setting looks like it is
+    /// not taking effect: "explicitly set to auto" and "never set" read
+    /// identically through [`get`](Self::get), and confusing the two is how a
+    /// value written to the wrong place looks like a value that was ignored.
+    pub fn is_set(&self, key: &str) -> Result<bool, SettingsError> {
+        let spec = key_spec(key).ok_or_else(|| SettingsError::UnknownKey(key.to_string()))?;
+        Ok(self.settings.user_value(spec.name).is_some())
+    }
+
+    /// Validate against [`KEYS`], then write and flush, so a caller that exits
+    /// immediately afterwards still lands the value.
+    pub fn set(&self, key: &str, value: &str) -> Result<(), SettingsError> {
+        let spec = key_spec(key).ok_or_else(|| SettingsError::UnknownKey(key.to_string()))?;
+        match spec.values {
+            Some(allowed) if !allowed.contains(&value) => {
+                return Err(SettingsError::InvalidValue {
+                    key: spec.name,
+                    value: value.to_string(),
+                    allowed,
+                })
+            }
+            _ => {}
+        }
+        self.settings
+            .set_string(spec.name, value)
+            .map_err(|e| SettingsError::Write(spec.name, e))?;
+        gio::Settings::sync();
+        Ok(())
+    }
+
+    /// Put a key back to its schema default. Distinct from writing the default
+    /// nick by hand: this clears the user's value, so a later change to what
+    /// the default *is* reaches a machine that never chose otherwise.
+    pub fn reset(&self, key: &str) -> Result<(), SettingsError> {
+        let spec = key_spec(key).ok_or_else(|| SettingsError::UnknownKey(key.to_string()))?;
+        self.settings.reset(spec.name);
+        gio::Settings::sync();
+        Ok(())
+    }
+
     /// Write the preference and flush it, so a caller that exits immediately
     /// afterwards still lands the value.
     pub fn set_streaming_mode(&self, mode: StreamingMode) -> Result<(), SettingsError> {
-        self.settings
-            .set_string(KEY_STREAMING_MODE, mode_nick(mode))
-            .map_err(|e| SettingsError::Write(KEY_STREAMING_MODE, e))?;
-        gio::Settings::sync();
-        Ok(())
+        self.set(KEY_STREAMING_MODE, mode_nick(mode))
     }
 }
 
@@ -495,6 +602,113 @@ mod tests {
             assert_eq!(store.streaming_mode(), mode);
             assert_eq!(mode_from_nick(mode_nick(mode)), Some(mode));
         }
+    }
+
+    /// [`KEYS`] is what the CLI validates against, so it has to agree with the
+    /// schema in *both* directions: every nick it offers must be accepted, and
+    /// it must not be missing one the schema would take. The second half is the
+    /// one a static table gets wrong over time - a nick added to the schema and
+    /// not here would be rejected by `myna.config` alone, for no visible reason.
+    #[test]
+    fn key_specs_match_the_schema_range() {
+        let schema = test_schema();
+        let store = test_store();
+        for spec in KEYS {
+            let Some(allowed) = spec.values else { continue };
+            for value in allowed {
+                store
+                    .set(spec.name, value)
+                    .unwrap_or_else(|e| panic!("schema rejects {}={value}: {e}", spec.name));
+                assert_eq!(store.get(spec.name).unwrap(), *value);
+            }
+            // ("enum", <[nicks]>) for an enum-typed key.
+            let range = schema.key(spec.name).range();
+            let (kind, values) = range
+                .get::<(String, glib::Variant)>()
+                .expect("a range is (s, v)");
+            assert_eq!(kind, "enum", "{} is declared as an enum", spec.name);
+            let mut from_schema: Vec<String> = values
+                .iter()
+                .map(|v| v.get::<String>().expect("a nick is a string"))
+                .collect();
+            let mut from_table: Vec<String> = allowed.iter().map(|v| v.to_string()).collect();
+            from_schema.sort();
+            from_table.sort();
+            assert_eq!(
+                from_schema, from_table,
+                "KEYS and the schema disagree on {}",
+                spec.name
+            );
+        }
+    }
+
+    /// Every key the schema declares is reachable from the CLI. A key added to
+    /// the schema and not to [`KEYS`] is invisible: unsettable and unlistable,
+    /// with nothing anywhere saying it exists.
+    #[test]
+    fn key_specs_cover_every_key_in_the_schema() {
+        let mut from_schema: Vec<String> = test_schema()
+            .list_keys()
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        let mut from_table: Vec<String> = KEYS.iter().map(|k| k.name.to_string()).collect();
+        from_schema.sort();
+        from_table.sort();
+        assert_eq!(from_schema, from_table);
+    }
+
+    /// The whole reason the CLI exists rather than `dconf write`: a typo is
+    /// refused, and the refusal names the range instead of landing silently.
+    #[test]
+    fn an_invalid_enum_value_is_refused_with_its_range() {
+        let store = test_store();
+        store.set(KEY_STREAMING_MODE, "streaming").unwrap();
+        let err = store
+            .set(KEY_STREAMING_MODE, "strea")
+            .expect_err("a typo is not a value");
+        let message = err.to_string();
+        assert!(message.contains("strea"), "{message}");
+        assert!(message.contains("auto, streaming, batch"), "{message}");
+        // ...and the store is untouched, so a rejected write cannot be
+        // mistaken for one that landed.
+        assert_eq!(store.streaming_mode(), StreamingMode::Streaming);
+    }
+
+    #[test]
+    fn an_unknown_key_is_refused() {
+        let store = test_store();
+        for result in [
+            store.set("streaming", "auto").err(),
+            store.get("streaming").err(),
+            store.reset("streaming").err(),
+        ] {
+            assert!(matches!(result, Some(SettingsError::UnknownKey(k)) if k == "streaming"));
+        }
+    }
+
+    /// Free-text keys have no range, so anything is a value - including the
+    /// empty string, which is how a UI clears one.
+    #[test]
+    fn free_text_keys_take_any_value() {
+        let store = test_store();
+        store.set(KEY_LANGUAGE, "fr").unwrap();
+        assert_eq!(store.text(KEY_LANGUAGE).as_deref(), Some("fr"));
+        store.set(KEY_LANGUAGE, "").unwrap();
+        assert_eq!(store.text(KEY_LANGUAGE), None);
+    }
+
+    /// `reset` clears the user's value rather than writing today's default over
+    /// it, so a machine that never chose follows the default if it ever moves.
+    #[test]
+    fn reset_restores_the_schema_default() {
+        let store = test_store();
+        store.set(KEY_STREAMING_MODE, "batch").unwrap();
+        store.set(KEY_HOTKEY, "<Super>d").unwrap();
+        store.reset(KEY_STREAMING_MODE).unwrap();
+        store.reset(KEY_HOTKEY).unwrap();
+        assert_eq!(store.streaming_mode(), StreamingMode::Auto);
+        assert_eq!(store.text(KEY_HOTKEY), None);
     }
 
     /// Where the old JSON store fell back on a malformed file, this falls back

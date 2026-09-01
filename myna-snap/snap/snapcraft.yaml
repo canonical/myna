@@ -49,7 +49,7 @@ environment:
   GSETTINGS_SCHEMA_DIR: $SNAP/usr/share/glib-2.0/schemas
   GIO_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/gio/modules
   # ...and the *host's* dconf database, which is the point of using GSettings
-  # at all: the store has to be the one `gsettings set` and a Settings panel
+  # at all: the store has to be the one `myna.config` and a Settings panel
   # write. libdconf derives that path from XDG_CONFIG_HOME (else $HOME/.config)
   # and snapd points $HOME at $SNAP_USER_DATA, so without this the daemon reads
   # a database nothing writes and every key is its schema default. The
@@ -209,6 +209,27 @@ apps:
       # exists only in this namespace.
       - gsettings
       - backend
+
+  # Get and set the client settings: the single configuration surface.
+  #
+  # Every other way in was wrong for a packaged install. `gsettings` needs the
+  # schema on the *host*, which a snap-only install never gets - the snap ships
+  # its own copy internally, which is why the daemon can read what the host
+  # tools cannot reach. `dconf write` needs no schema for precisely the reason
+  # that disqualifies it: it does not validate, so a mistyped nick lands
+  # silently and reads back as the schema default - a setting that is one
+  # letter wrong looks exactly like a feature that does not work.
+  #
+  # `snap set myna …` is deliberately not this surface either: snapd
+  # configuration is per-snap and root-set, while these are per-user
+  # preferences. The system-wide plane stays separate and covers activation,
+  # language and hotkey only.
+  config:
+    command: bin/myna-config
+    plugs:
+      # The host's dconf database, via the environment set below - the same
+      # grant `myna.status` uses to read it.
+      - gsettings
 
   # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
   # dialect selection. `home` lets it read clips from the user's files.
@@ -418,6 +439,7 @@ parts:
     organize:
       "myna-daemon": bin/myna-daemon
       "myna-status": bin/myna-status
+      "myna-config": bin/myna-config
       "myna-testbed": bin/myna-testbed
       "myna-install-shortcut": bin/myna-install-shortcut
       "myna-runtime-links": bin/myna-runtime-links

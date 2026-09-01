@@ -1,0 +1,9 @@
+#!/bin/sh
+# `myna.config`: the single place client settings are read and written.
+#
+# Confined, like `myna.status`, and for the same reason: the environment set in
+# snapcraft.yaml is what points GLib at our own compiled schema and at the
+# *host's* dconf database, so inside the snap is the only place a read or a
+# write means what the daemon means by it. Extra args go straight through.
+set -eu
+exec "$SNAP/bin/myna-desktop" --config "$@"
