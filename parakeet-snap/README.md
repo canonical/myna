@@ -2,7 +2,11 @@
 
 Small CPU-tier speech-to-text snap: NVIDIA Parakeet TDT 0.6B v3 (25 languages,
 punctuation) as an int8 ONNX export served via onnxruntime. No torch; roughly
-787 MB installed with the model component.
+690 MB installed (46 MB snap + 646 MB model component).
+
+The component carries the maxstack encoder only (13% faster encode, 148 MB
+smaller than the base export it is built from). Nothing falls back to the base
+encoder at runtime, so the component must ship `libqsilu.so` beside it.
 
 Streaming is enabled by default: SilenceCut emits committed chunks at pauses.
 It does not emit unstable partials.
@@ -13,6 +17,21 @@ It does not emit unstable partials.
 ./dev/prepare.sh
 ./dev/download-models.sh
 snapcraft pack
+```
+
+When the component's file list changes (not its contents), run `snapcraft
+clean model-components` before packing: craft keeps staged files that no longer
+exist in `components/`, so an incremental repack ships them anyway.
+
+`download-models.sh` fetches the pinned upstream export into the model cache
+and stages the component from it. The maxstack encoder is derived from that
+export rather than downloaded, so on a fresh machine the first run fetches and
+then stops with the two commands that build it; run them and re-run the fetch:
+
+```bash
+ORT_INCLUDE=/path/to/onnxruntime-linux-x64-<ver>/include ../dev/parakeet/qsilu/build.sh
+cd ../server && uv run python ../dev/parakeet/build_maxstack_encoder.py \
+    --model-dir ~/.cache/myna/models/parakeet-tdt-0.6b-v3-int8
 ```
 
 ## Install

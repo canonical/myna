@@ -153,10 +153,17 @@ parts:
 
   # Model weights as a component. Populate components/ with
   # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
-  # the base.
+  # the base. What that script stages is what ships: one encoder (maxstack),
+  # not the base export it was built from.
   model-components:
     plugin: dump
     source: components
+    # Craft only ever adds: a file DELETED from components/ survives in this
+    # part's stage and prime dirs and ships anyway (measured - emptying
+    # CRAFT_PART_INSTALL on rebuild does not clear it either). A clean build
+    # is correct; an incremental repack after the component's file list
+    # changes needs `snapcraft clean model-components` first, which is how
+    # the dropped base encoder kept reappearing in a 1.36 GB component.
     organize:
       "model-parakeet-int8/*": (component/model-parakeet-int8)/
     prime:
