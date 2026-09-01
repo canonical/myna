@@ -23,6 +23,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use gettextrs::gettext;
 
 use super::{Trigger, TriggerEdge};
 use crate::dbus::{PropertyValue, SharedBus};
@@ -238,10 +239,10 @@ impl RetryingTrigger {
                         );
                         self.last_reason = Some(reason);
                     }
-                    self.publish(&format!(
-                        "dictation hotkey unavailable: {}",
-                        failure.reason()
-                    ))
+                    self.publish(
+                        &gettext("dictation hotkey unavailable: %s")
+                            .replace("%s", failure.reason()),
+                    )
                     .await;
                     // Under the tests' `start_paused` clock tokio auto-advances
                     // whenever every task is parked on a timer, so the real

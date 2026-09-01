@@ -19,7 +19,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gettextrs::gettext;
 use gtk::gdk;
 use gtk::glib;
 use gtk4 as gtk;
@@ -148,7 +147,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title(gettext("myna HUD lab"))
+        .title("myna HUD lab")
         .default_width(460)
         .default_height(620)
         .build();
@@ -163,8 +162,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     // Placed directly below the publish row — it is "what the toggle is
     // doing", not a separate section. Declared here but appended after the
     // publish row.
-    let preview_frame =
-        gtk::Frame::new(Some(&gettext("Published to com.canonical.Myna.Dictation")));
+    let preview_frame = gtk::Frame::new(Some("Published to com.canonical.Myna.Dictation"));
     let preview_holder = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     preview_holder.set_halign(gtk::Align::Center);
     preview_holder.set_margin_top(8);
@@ -183,10 +181,10 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .active(publishing)
         .build();
     let publish_row = adw::ActionRow::builder()
-        .title(gettext("Publish on the session bus"))
-        .subtitle(gettext(
+        .title("Publish on the session bus")
+        .subtitle(
             "on: the HUD is embedded and published; a shell-hosted instance shows the real overlay",
-        ))
+        )
         .build();
     publish_row.add_suffix(&publish_switch);
     publish_row.set_activatable_widget(Some(&publish_switch));
@@ -199,8 +197,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     // ── State ───────────────────────────────────────────────────────────
     let states = gtk::StringList::new(&wire::ALL);
     let state_row = adw::ComboRow::builder()
-        .title(gettext("State"))
-        .subtitle(gettext("the wire value the publisher would send"))
+        .title("State")
+        .subtitle("the wire value the publisher would send")
         .model(&states)
         .build();
     state_row.set_selected(
@@ -216,8 +214,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     level.set_hexpand(true);
     level.set_draw_value(true);
     let level_row = adw::ActionRow::builder()
-        .title(gettext("Audio level"))
-        .subtitle(gettext("the smoothed envelope, published as RMS/peak"))
+        .title("Audio level")
+        .subtitle("the smoothed envelope, published as RMS/peak")
         .build();
     level_row.add_suffix(&level);
 
@@ -235,8 +233,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .active(false)
         .build();
     let reduced_motion_row = adw::ActionRow::builder()
-        .title(gettext("Reduced motion"))
-        .subtitle(gettext("the static/minimal-motion accessibility path"))
+        .title("Reduced motion")
+        .subtitle("the static/minimal-motion accessibility path")
         .build();
     reduced_motion_row.add_suffix(&reduced_motion);
 
@@ -245,15 +243,15 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .active(false)
         .build();
     let high_contrast_row = adw::ActionRow::builder()
-        .title(gettext("High contrast"))
-        .subtitle(gettext("bright border / background for busy wallpaper"))
+        .title("High contrast")
+        .subtitle("bright border / background for busy wallpaper")
         .build();
     high_contrast_row.add_suffix(&high_contrast);
 
     let color_scheme = gtk::StringList::new(&["default", "light", "dark"]);
     let color_scheme_row = adw::ComboRow::builder()
-        .title(gettext("Color scheme"))
-        .subtitle(gettext("force light/dark to check legibility"))
+        .title("Color scheme")
+        .subtitle("force light/dark to check legibility")
         .model(&color_scheme)
         .build();
     color_scheme_row.set_selected(0);
@@ -270,10 +268,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     let accent_hexes: Vec<Option<String>> = accent_options.iter().map(|(_, h)| h.clone()).collect();
     let accent_model = gtk::StringList::new(&accent_labels);
     let accent_row = adw::ComboRow::builder()
-        .title(gettext("Accent color"))
-        .subtitle(gettext(
-            "force the pill's accent (libadwaita has no runtime setter)",
-        ))
+        .title("Accent color")
+        .subtitle("force the pill's accent (libadwaita has no runtime setter)")
         .model(&accent_model)
         .build();
     accent_row.set_selected(0);
@@ -297,15 +293,15 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     // ── Dictation target (focus safety, FR-024) ─────────────────────────
     let dictation_target = gtk::TextView::new();
     dictation_target.set_wrap_mode(gtk::WrapMode::WordChar);
-    dictation_target.buffer().set_text(&gettext(
-        "Type here while the HUD is showing: the caret must never move to the HUD.",
-    ));
+    dictation_target
+        .buffer()
+        .set_text("Type here while the HUD is showing: the caret must never move to the HUD.");
     let scroller = gtk::ScrolledWindow::builder()
         .child(&dictation_target)
         .vexpand(true)
         .has_frame(true)
         .build();
-    let target_label = gtk::Label::new(Some(&gettext("Dictation target")));
+    let target_label = gtk::Label::new(Some("Dictation target"));
     target_label.set_xalign(0.0);
     target_label.add_css_class("heading");
     page.append(&target_label);

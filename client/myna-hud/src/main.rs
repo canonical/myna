@@ -20,7 +20,6 @@ use libadwaita::prelude::*;
 
 use myna_hud::bus::{self, BusEvent};
 use myna_hud::dbus_consumer::DictationService;
-use myna_hud::i18n::DOMAIN;
 use myna_hud::states::state_to_descriptor;
 use myna_hud::window::HudWindow;
 
@@ -36,18 +35,6 @@ enum Mode {
 }
 
 fn main() -> glib::ExitCode {
-    // Bind the `myna` gettext domain (R25) so the lab UI localizes. The
-    // publisher translates StatusMessage before it crosses D-Bus. The domain's
-    // .mo files live in the standard share/locale
-    // path; the snap stages them under $SNAP/share/locale, and a build-tree
-    // run can point at its own po/ via the locale dir. If nothing is found,
-    // gettext falls back to the identity function — never a failure.
-    if let Ok(dir) = std::env::var("MYNA_LOCALEDIR") {
-        let _ = gettextrs::TextDomain::new(DOMAIN).push(dir).init();
-    } else {
-        let _ = gettextrs::TextDomain::new(DOMAIN).init();
-    }
-
     let mode = match parse_mode() {
         Ok(mode) => mode,
         Err(message) => {

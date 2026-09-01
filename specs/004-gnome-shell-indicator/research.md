@@ -1056,8 +1056,8 @@ severity, level, reduced-motion, plus a dictation-target text view — driving
 the identical renderer modules with **no backend required**) and
 `--serve-dbus` (the simulator that owns `com.canonical.Myna.Dictation`, port of
 `dictation_service.py`, so the real hosted indicator can be driven without
-`myna-desktop`). Localization moves with the app: gettext domain **`myna`**
-(previously the extension's own domain), catalog under `client/myna-hud/po/`.
+`myna-desktop`). Localization moves with the app: gettext domain **`myna-desktop`**
+(previously the extension's own domain), catalog under `client/myna-desktop/po/`.
 
 **Rationale**: With rendering outside the Shell there is exactly one place to
 tune — the app itself; the JSON bridge (`bridge.js`/`bridge.py`) existed only
@@ -1297,4 +1297,3 @@ us to its settings keys and misses multi-dock/geometry nuance).
   classification is a stopgap, not that taxonomy.
 - Re-verify the snap-confine/Wayland-socket fd handoff (R27's spike) on real
   hardware once the snap stages `myna-hud`.
-

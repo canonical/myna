@@ -63,20 +63,8 @@ async-channel = "2"
 # Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
 # uniform upload) — loaded via GDK's get_proc_address (R23).
 gl = "0.14"
-# Status-string localization, domain `myna` (R25). gettext-system: link the
-# platform's gettext (glibc provides the runtime symbols) instead of
-# building the vendored gnu gettext, which does not build cleanly in
-# minimal containers. With no bound domain gettext is the identity
-# function, so pure-module tests assert English.
-gettext-rs = { version = "0.7", features = ["gettext-system"] }
 gdk4-x11 = "0.11"
 async-io = "2"
-
-# cargo-machete false-positive: gettext-rs is used in src/main.rs (the
-# `gettextrs::TextDomain` binding for R25 localization), but machete does not
-# trace it through the gettext-system feature's platform gettext linkage.
-[package.metadata.cargo-machete]
-ignored = ["gettext-rs"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }

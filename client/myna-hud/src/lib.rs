@@ -33,7 +33,6 @@ pub mod bus;
 pub mod dbus_consumer;
 pub mod gl;
 pub mod hud_logic;
-pub mod i18n;
 pub mod input_region;
 #[cfg(dev_lab)]
 pub mod lab;

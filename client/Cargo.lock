@@ -1230,7 +1230,6 @@ dependencies = [
  "async-channel",
  "async-io",
  "gdk4-x11",
- "gettext-rs",
  "gl",
  "gtk4",
  "libadwaita",

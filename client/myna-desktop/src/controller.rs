@@ -15,6 +15,7 @@
 //! the whole lifecycle with mocks (no D-Bus / IBus / portal / display).
 
 use futures_util::stream::{BoxStream, StreamExt};
+use gettextrs::gettext;
 use tokio::sync::mpsc;
 
 use crate::indicator::{Indicator, IndicatorState};
@@ -192,9 +193,9 @@ pub fn event_to_indicator(
 pub fn completion_indicator_state(transcript: &str, focus_lost: bool) -> IndicatorState {
     if transcript.trim().is_empty() {
         if focus_lost {
-            IndicatorState::recoverable("Focus lost")
+            IndicatorState::recoverable(gettext("Focus lost"))
         } else {
-            IndicatorState::recoverable("No speech detected")
+            IndicatorState::recoverable(gettext("No speech detected"))
         }
     } else {
         IndicatorState::Hidden
@@ -518,7 +519,7 @@ impl DesktopController {
         if cancelled {
             myna_core::info_log!("ctrl", "utterance cancelled: dictation target closed");
             self.injector.cancel().await;
-            report_critical(self.indicator.as_mut(), "dictation target closed").await;
+            report_critical(self.indicator.as_mut(), gettext("Dictation target closed")).await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
@@ -579,8 +580,8 @@ impl DesktopController {
     /// show an error, release the engine defensively, never capture.
     async fn abort_before_capture(&mut self, err: InjectError) {
         let message = match &err {
-            InjectError::SecureField => "refusing to type into a password field".to_string(),
-            InjectError::NoTarget => "no text field is focused".to_string(),
+            InjectError::SecureField => gettext("Refusing to type into a password field"),
+            InjectError::NoTarget => gettext("No text field is focused"),
             other => other.to_string(),
         };
         myna_core::info_log!("ctrl", "acquire failed, aborting before capture: {message}");
