@@ -66,6 +66,20 @@ fn the_published_level_matches_the_calibration() {
 }
 
 #[test]
+fn a_live_status_message_override_is_published_verbatim() {
+    let shared = Shared::default();
+    shared.set_controls(Controls {
+        state: wire::TRANSCRIBING.into(),
+        status_message: "Decoding audio locally".into(),
+        envelope: 0.4,
+    });
+
+    let (state, status_message, _rms, _peak) = shared.snapshot();
+    assert_eq!(state, wire::TRANSCRIBING);
+    assert_eq!(status_message, "Decoding audio locally");
+}
+
+#[test]
 fn an_idle_session_publishes_no_levels() {
     let shared = Shared::default();
     shared.set_controls(Controls {

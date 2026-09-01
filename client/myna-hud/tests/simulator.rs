@@ -4,7 +4,9 @@
 // calibration drift between the slider and the rendered ribbon.
 
 use myna_hud::ribbon::RibbonPhase;
-use myna_hud::simulator::{envelope_to_levels, shell_phase, wire_state, ERROR_MESSAGE, PUBLISH_HZ};
+use myna_hud::simulator::{
+    default_status_message, envelope_to_levels, shell_phase, wire_state, PUBLISH_HZ,
+};
 use myna_hud::states::{wire, Severity};
 use myna_hud::vumeter::levels_to_intensity;
 
@@ -38,7 +40,7 @@ fn severity_outranks_phase() {
     );
     assert_eq!(
         wire_state("morph", Some(Severity::Critical), true),
-        (wire::ERROR, ERROR_MESSAGE),
+        (wire::ERROR, "Microphone unavailable"),
         "critical → error with a content-free reason"
     );
 }
@@ -53,6 +55,23 @@ fn phases_map_to_their_states() {
     assert_eq!(wire_state("flow", None, true).0, wire::RECORDING);
     assert_eq!(wire_state("morph", None, true).0, wire::TRANSCRIBING);
     assert_eq!(wire_state("complete", None, true).0, wire::FINALIZING);
+}
+
+#[test]
+fn default_status_messages_match_the_publisher_contract() {
+    let cases = [
+        (wire::IDLE, ""),
+        (wire::LOADING, "Loading model…"),
+        (wire::RECORDING, "Listening"),
+        (wire::TRANSCRIBING, "Transcribing"),
+        (wire::FINALIZING, "Finishing"),
+        (wire::NOTICE, "No speech detected"),
+        (wire::ERROR, "Microphone unavailable"),
+        ("quantizing", "Active"),
+    ];
+    for (state, message) in cases {
+        assert_eq!(default_status_message(state), message, "{state}");
+    }
 }
 
 #[test]

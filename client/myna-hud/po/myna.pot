@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 10:40+0000\n"
+"POT-Creation-Date: 2026-09-01 10:52+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -43,52 +43,61 @@ msgstr ""
 msgid "the wire value the publisher would send"
 msgstr ""
 
-#: src/lab.rs:219
-msgid "Audio level"
+#: src/lab.rs:218
+msgid "Status message"
 msgstr ""
 
 #: src/lab.rs:220
+msgid ""
+"publisher label; edits are published live when the session bus is enabled"
+msgstr ""
+
+#: src/lab.rs:231
+msgid "Audio level"
+msgstr ""
+
+#: src/lab.rs:232
 msgid "the smoothed envelope, published as RMS/peak"
 msgstr ""
 
-#: src/lab.rs:238
+#: src/lab.rs:251
 msgid "Reduced motion"
 msgstr ""
 
-#: src/lab.rs:239
+#: src/lab.rs:252
 msgid "the static/minimal-motion accessibility path"
 msgstr ""
 
-#: src/lab.rs:248
+#: src/lab.rs:261
 msgid "High contrast"
 msgstr ""
 
-#: src/lab.rs:249
+#: src/lab.rs:262
 msgid "bright border / background for busy wallpaper"
 msgstr ""
 
-#: src/lab.rs:255
+#: src/lab.rs:268
 msgid "Color scheme"
 msgstr ""
 
-#: src/lab.rs:256
+#: src/lab.rs:269
 msgid "force light/dark to check legibility"
 msgstr ""
 
-#: src/lab.rs:273
+#: src/lab.rs:286
 msgid "Accent color"
 msgstr ""
 
-#: src/lab.rs:275
+#: src/lab.rs:288
 msgid "force the pill's accent (libadwaita has no runtime setter)"
 msgstr ""
 
-#: src/lab.rs:301
+#: src/lab.rs:314
 msgid ""
 "Type here while the HUD is showing: the caret must never move to the HUD."
 msgstr ""
 
-#: src/lab.rs:308
+#: src/lab.rs:321
 msgid "Dictation target"
 msgstr ""
 

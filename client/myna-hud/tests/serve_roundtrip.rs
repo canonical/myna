@@ -75,6 +75,21 @@ async fn serve_publishes_and_answers_over_the_bus() {
         "the publisher-owned recording label is observable on the bus"
     );
 
+    // A lab edit is the simulator publisher's StatusMessage override. The
+    // next publish tick must carry it to a real D-Bus client, not merely the
+    // embedded preview.
+    shared.set_controls(Controls {
+        state: wire::RECORDING.into(),
+        status_message: "Listening through the test publisher".into(),
+        envelope: 0.6,
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        proxy.status_message().await.expect("updated StatusMessage"),
+        "Listening through the test publisher",
+        "a live simulator override is published over D-Bus"
+    );
+
     // --- C6: Start begins a session and reports success ---------------
     let (ok, reason) = proxy.start().await.expect("Start");
     assert!(ok && reason.is_empty(), "Start reports success (C7 shape)");

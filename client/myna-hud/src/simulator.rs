@@ -36,10 +36,21 @@ fn phase_state(phase: &str) -> Option<&'static str> {
     }
 }
 
-/// Content-free publisher labels, per constitution V and contract C3 — never
-/// anything derived from a transcript.
-pub const NOTICE_MESSAGE: &str = "No speech detected";
-pub const ERROR_MESSAGE: &str = "Microphone unavailable";
+/// Content-free default labels for the simulator publisher. These match
+/// `myna-desktop`'s `StatusMessage` defaults; the lab may override them live
+/// to exercise arbitrary publisher text.
+pub fn default_status_message(state: &str) -> &'static str {
+    match state {
+        wire::IDLE => "",
+        wire::LOADING => "Loading model…",
+        wire::RECORDING => "Listening",
+        wire::TRANSCRIBING => "Transcribing",
+        wire::FINALIZING => "Finishing",
+        wire::NOTICE => "No speech detected",
+        wire::ERROR => "Microphone unavailable",
+        _ => "Active",
+    }
+}
 
 /// The lab's look as a `(State, StatusMessage)` pair.
 ///
@@ -56,20 +67,17 @@ pub fn wire_state(
     session_active: bool,
 ) -> (&'static str, &'static str) {
     if !session_active {
-        return (wire::IDLE, "");
+        return (wire::IDLE, default_status_message(wire::IDLE));
     }
     if let Some(severity) = severity_tint {
         return match severity {
-            Severity::Recoverable => (wire::NOTICE, NOTICE_MESSAGE),
-            Severity::Critical => (wire::ERROR, ERROR_MESSAGE),
+            Severity::Recoverable => (wire::NOTICE, default_status_message(wire::NOTICE)),
+            Severity::Critical => (wire::ERROR, default_status_message(wire::ERROR)),
         };
     }
     match phase_state(phase) {
-        Some(wire::RECORDING) => (wire::RECORDING, "Listening"),
-        Some(wire::TRANSCRIBING) => (wire::TRANSCRIBING, "Transcribing"),
-        Some(wire::FINALIZING) => (wire::FINALIZING, "Finishing"),
-        Some(state) => (state, "Active"),
-        None => ("active", "Active"),
+        Some(state) => (state, default_status_message(state)),
+        None => ("active", default_status_message("active")),
     }
 }
 

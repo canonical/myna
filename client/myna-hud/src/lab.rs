@@ -26,7 +26,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::pill::Pill;
-use crate::simulator::{envelope_to_levels, ERROR_MESSAGE, NOTICE_MESSAGE, PUBLISH_HZ};
+use crate::simulator::{default_status_message, envelope_to_levels, PUBLISH_HZ};
 use crate::states::{state_to_descriptor, wire};
 use crate::window::HudWindow;
 
@@ -44,7 +44,7 @@ impl Default for Controls {
     fn default() -> Self {
         Self {
             state: wire::RECORDING.to_string(),
-            status_message: String::new(),
+            status_message: default_status_message(wire::RECORDING).to_string(),
             envelope: 0.4,
             reduced_motion: None,
             high_contrast: None,
@@ -208,6 +208,10 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             .unwrap_or(0) as u32,
     );
 
+    let status_message_row = adw::EntryRow::new();
+    status_message_row.set_title("Status message");
+    status_message_row.set_text(default_status_message(wire::RECORDING));
+
     // ── Level ───────────────────────────────────────────────────────────
     let level = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
     level.set_value(0.4);
@@ -221,6 +225,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
     let model_group = adw::PreferencesGroup::new();
     model_group.add(&state_row);
+    model_group.add(&status_message_row);
     model_group.add(&level_row);
     page.append(&model_group);
 
@@ -325,37 +330,42 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             // Publish the controls to the bus if we are serving.
             shared.set_controls(crate::serve::Controls {
                 state: controls.state.clone(),
-                status_message: match controls.state.as_str() {
-                    wire::NOTICE => NOTICE_MESSAGE.to_string(),
-                    wire::ERROR => ERROR_MESSAGE.to_string(),
-                    _ => controls.status_message.clone(),
-                },
+                status_message: controls.status_message.clone(),
                 envelope: controls.envelope,
             });
-            let (state, status_message) = match controls.state.as_str() {
-                wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_MESSAGE.to_string()),
-                wire::ERROR => (wire::ERROR.to_string(), ERROR_MESSAGE.to_string()),
-                other => (other.to_string(), String::new()),
-            };
-            let status_message = if controls.status_message.is_empty() {
-                status_message
-            } else {
-                controls.status_message.clone()
-            };
-            target
-                .borrow()
-                .apply_descriptor(state_to_descriptor(Some(&state), &status_message));
+            target.borrow().apply_descriptor(state_to_descriptor(
+                Some(&controls.state),
+                &controls.status_message,
+            ));
         }
     };
 
     state_row.connect_selected_notify({
         let controls = controls.clone();
         let apply = apply.clone();
+        let status_message_row = status_message_row.clone();
         move |row| {
             let index = row.selected() as usize;
             if let Some(state) = wire::ALL.get(index) {
-                controls.borrow_mut().state = (*state).to_string();
+                let message = default_status_message(state);
+                {
+                    let mut controls = controls.borrow_mut();
+                    controls.state = (*state).to_string();
+                    controls.status_message = message.to_string();
+                }
+                // set_text() synchronously emits `changed`, whose handler
+                // borrows `controls`; release the mutable borrow first.
+                status_message_row.set_text(message);
             }
+            apply();
+        }
+    });
+
+    status_message_row.connect_changed({
+        let controls = controls.clone();
+        let apply = apply.clone();
+        move |entry| {
+            controls.borrow_mut().status_message = entry.text().to_string();
             apply();
         }
     });
@@ -445,11 +455,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
                     // shell-hosted instance's AudioRms tracks the slider.
                     shared.set_controls(crate::serve::Controls {
                         state: controls.state.clone(),
-                        status_message: match controls.state.as_str() {
-                            wire::NOTICE => NOTICE_MESSAGE.to_string(),
-                            wire::ERROR => ERROR_MESSAGE.to_string(),
-                            _ => controls.status_message.clone(),
-                        },
+                        status_message: controls.status_message.clone(),
                         envelope: controls.envelope,
                     });
                 }
