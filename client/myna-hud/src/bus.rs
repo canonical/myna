@@ -162,7 +162,7 @@ fn read_snapshot(properties: &PropertiesProxy<'_>) -> zbus::Result<Snapshot> {
 fn snapshot_from(map: &HashMap<String, OwnedValue>) -> Snapshot {
     Snapshot {
         state: string_of(map, "State"),
-        error_message: string_of(map, "ErrorMessage"),
+        status_message: string_of(map, "StatusMessage"),
         audio_rms: double_of(map, "AudioRms"),
         audio_peak: double_of(map, "AudioPeak"),
     }

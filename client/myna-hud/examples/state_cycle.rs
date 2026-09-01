@@ -35,7 +35,14 @@ fn main() {
                 std::time::Duration::from_millis(800 * (i as u64 + 1)),
                 move || {
                     println!("state-cycle: {state}");
-                    hud.apply_descriptor(state_to_descriptor(Some(state), ""));
+                    let status_message = match state {
+                        wire::LOADING => "Loading model...",
+                        wire::RECORDING => "Listening",
+                        wire::TRANSCRIBING => "Transcribing",
+                        wire::FINALIZING => "Finishing",
+                        _ => "",
+                    };
+                    hud.apply_descriptor(state_to_descriptor(Some(state), status_message));
                     hud.push_level(0.4, 0.7);
                 },
             );

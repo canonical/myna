@@ -1010,11 +1010,11 @@ fn print_status(args: &Args) -> ExitCode {
             println!("  {:<15} {}", "state", status.state);
             println!(
                 "  {:<15} {}",
-                "error",
-                if status.error.is_empty() {
+                "status",
+                if status.status_message.is_empty() {
                     "(none)".into()
                 } else {
-                    status.error
+                    status.status_message
                 }
             );
         }
@@ -1049,6 +1049,14 @@ fn opt(value: &Option<String>) -> String {
 }
 
 fn main() -> ExitCode {
+    // StatusMessage is translated by the publisher before it crosses D-Bus,
+    // so the HUD and Shell a11y announcer consume the same final label.
+    let mut domain = gettextrs::TextDomain::new("myna-desktop");
+    if let Ok(dir) = std::env::var("MYNA_DESKTOP_LOCALEDIR") {
+        domain = domain.push(dir);
+    }
+    let _ = domain.init();
+
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {

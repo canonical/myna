@@ -14,7 +14,17 @@ fn main() {
     let state = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "recording".into());
-    let reason = std::env::args().nth(2).unwrap_or_default();
+    let status_message = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| match state.as_str() {
+            "loading" => "Loading model...".into(),
+            "recording" => "Listening".into(),
+            "transcribing" => "Transcribing".into(),
+            "finalizing" => "Finishing".into(),
+            "notice" => "No speech detected".into(),
+            "error" => "Microphone unavailable".into(),
+            _ => String::new(),
+        });
     let app = adw::Application::builder()
         .application_id("com.canonical.Myna.StateGallery")
         .build();
@@ -24,7 +34,7 @@ fn main() {
         // the one that lets `idle` actually hide the window rather than
         // being undone by a later present().
         hud.window().present();
-        hud.apply_descriptor(state_to_descriptor(Some(&state), &reason));
+        hud.apply_descriptor(state_to_descriptor(Some(&state), &status_message));
         hud.push_level(0.35, 0.6);
     });
     app.run_with_args::<&str>(&[]);

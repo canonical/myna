@@ -27,7 +27,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::pill::Pill;
-use crate::simulator::{envelope_to_levels, ERROR_REASON, NOTICE_REASON, PUBLISH_HZ};
+use crate::simulator::{envelope_to_levels, ERROR_MESSAGE, NOTICE_MESSAGE, PUBLISH_HZ};
 use crate::states::{state_to_descriptor, wire};
 use crate::window::HudWindow;
 
@@ -35,7 +35,7 @@ use crate::window::HudWindow;
 #[derive(Clone, Debug)]
 struct Controls {
     state: String,
-    reason: String,
+    status_message: String,
     envelope: f64,
     reduced_motion: Option<bool>,
     high_contrast: Option<bool>,
@@ -45,7 +45,7 @@ impl Default for Controls {
     fn default() -> Self {
         Self {
             state: wire::RECORDING.to_string(),
-            reason: String::new(),
+            status_message: String::new(),
             envelope: 0.4,
             reduced_motion: None,
             high_contrast: None,
@@ -329,26 +329,26 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             // Publish the controls to the bus if we are serving.
             shared.set_controls(crate::serve::Controls {
                 state: controls.state.clone(),
-                reason: match controls.state.as_str() {
-                    wire::NOTICE => NOTICE_REASON.to_string(),
-                    wire::ERROR => ERROR_REASON.to_string(),
-                    _ => controls.reason.clone(),
+                status_message: match controls.state.as_str() {
+                    wire::NOTICE => NOTICE_MESSAGE.to_string(),
+                    wire::ERROR => ERROR_MESSAGE.to_string(),
+                    _ => controls.status_message.clone(),
                 },
                 envelope: controls.envelope,
             });
-            let (state, reason) = match controls.state.as_str() {
-                wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_REASON.to_string()),
-                wire::ERROR => (wire::ERROR.to_string(), ERROR_REASON.to_string()),
+            let (state, status_message) = match controls.state.as_str() {
+                wire::NOTICE => (wire::NOTICE.to_string(), NOTICE_MESSAGE.to_string()),
+                wire::ERROR => (wire::ERROR.to_string(), ERROR_MESSAGE.to_string()),
                 other => (other.to_string(), String::new()),
             };
-            let reason = if controls.reason.is_empty() {
-                reason
+            let status_message = if controls.status_message.is_empty() {
+                status_message
             } else {
-                controls.reason.clone()
+                controls.status_message.clone()
             };
             target
                 .borrow()
-                .apply_descriptor(state_to_descriptor(Some(&state), &reason));
+                .apply_descriptor(state_to_descriptor(Some(&state), &status_message));
         }
     };
 
@@ -449,10 +449,10 @@ fn build_lab(app: &adw::Application, publishing: bool) {
                     // shell-hosted instance's AudioRms tracks the slider.
                     shared.set_controls(crate::serve::Controls {
                         state: controls.state.clone(),
-                        reason: match controls.state.as_str() {
-                            wire::NOTICE => NOTICE_REASON.to_string(),
-                            wire::ERROR => ERROR_REASON.to_string(),
-                            _ => controls.reason.clone(),
+                        status_message: match controls.state.as_str() {
+                            wire::NOTICE => NOTICE_MESSAGE.to_string(),
+                            wire::ERROR => ERROR_MESSAGE.to_string(),
+                            _ => controls.status_message.clone(),
                         },
                         envelope: controls.envelope,
                     });

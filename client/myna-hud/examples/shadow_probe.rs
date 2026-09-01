@@ -23,7 +23,7 @@ fn main() {
                 );
             }
         }
-        hud.apply_descriptor(state_to_descriptor(Some(wire::RECORDING), ""));
+        hud.apply_descriptor(state_to_descriptor(Some(wire::RECORDING), "Listening"));
         hud.push_level(0.35, 0.6);
         hud.window().present();
     });

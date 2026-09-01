@@ -8,20 +8,3 @@
 
 /// The gettext domain for myna's translated strings.
 pub const DOMAIN: &str = "myna";
-
-/// Marker for a translatable string that is looked up by VARIABLE later
-/// (the gettext `N_` convention, picked up by xgettext for C/Python and
-/// equally usable from Rust).
-///
-/// [`gettext`](gettextrs::gettext) is often called with a msgid that flows
-/// through a variable (e.g. `states.rs` passes the msgid from a match arm),
-/// which xgettext cannot see. Wrapping the literal in [`N_`] marks it for
-/// extraction while being a no-op at runtime — the string is then translated
-/// when `gettext()` finally runs on it. Extraction:
-///
-/// ```sh
-/// xgettext --keyword=gettext --keyword=N_ --files-from=po/POTFILES.in ...
-/// ```
-pub fn n_(msgid: &str) -> &str {
-    msgid
-}

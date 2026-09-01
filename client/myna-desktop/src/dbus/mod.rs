@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
 /// A property value crossing the bus seam. The contract only uses `s` and `d`
-/// shapes (`State`/`ErrorMessage` strings, `AudioRms`/`AudioPeak` doubles), so
+/// shapes (`State`/`StatusMessage` strings, `AudioRms`/`AudioPeak` doubles), so
 /// those are the only variants — no transcript-bearing shape exists here (C3).
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
@@ -48,7 +48,7 @@ pub enum PropertyValue {
 /// testable without a session bus.
 #[async_trait]
 pub trait Bus: Send {
-    /// Set a property (`State` / `AudioRms` / `AudioPeak` / `ErrorMessage`),
+    /// Set a property (`State` / `StatusMessage` / `AudioRms` / `AudioPeak`),
     /// emitting `PropertiesChanged` on the real bus.
     async fn set_property(&mut self, name: &str, value: PropertyValue);
 }

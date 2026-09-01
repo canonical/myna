@@ -20,8 +20,8 @@ here and its files are deleted).
 |---|---|---|
 | P1 | `set_state(s)` maps `IndicatorState` → the E1 `State` string and updates the `State` property (pushed via `PropertiesChanged`). | hermetic (fake bus) |
 | P2 | The `Loading`→`Ready` split surfaces as `loading` then `recording` (R4/C5): the indicator tracks whether `Ready` has been seen this session. | hermetic |
-| P3 | `hide()` publishes `idle`, zeroes `AudioRms`/`AudioPeak`, and clears `ErrorMessage`. | hermetic |
-| P4 | Error state carries the existing content-free message via the `ErrorMessage` property; never transcript (C3). | hermetic |
+| P3 | `hide()` publishes `idle`, zeroes `AudioRms`/`AudioPeak`, and clears `StatusMessage`. | hermetic |
+| P4 | Every visible state carries its content-free label via `StatusMessage`; never transcript (C3). | hermetic |
 | P5 | Is a drop-in `Indicator`: the controller wiring is unchanged; `DbusIndicator` composes with `NotifyIndicator` as fallback (both can run; D-Bus preferred). | hermetic + compile |
 | P16 | **(2026-07-30)** `map_state` publishes `notice` when `IndicatorState::Error{recoverable: true, ..}` and `error` when `recoverable: false` — the two are mutually exclusive per call (C10). | hermetic |
 
@@ -89,4 +89,3 @@ instead of rendering its own.
 - **(2026-07-30)** No true wire-level error disposition/taxonomy — the
   `recoverable`/`notice` classification is an interim, client-inferred stopgap
   (T31/T62 remain the owners of that future work).
-

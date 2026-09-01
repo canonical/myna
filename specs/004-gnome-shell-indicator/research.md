@@ -40,7 +40,7 @@ not applicable on Wayland and still focus-fragile.
 
 **Decision**: A **session-bus D-Bus interface** `com.canonical.Myna.Dictation`, served by
 `myna-desktop`, consumed by the extension via `Gio.DBusProxy`. State as a `State`
-property (+ `ErrorMessage`), every update pushed with the standard
+property (+ `StatusMessage`), every update pushed with the standard
 `PropertiesChanged` — the interface defines no custom signals, because
 `PropertiesChanged` on the service's own path is the one broadcast a
 strictly-confined publisher may send to unconfined subscribers (contract
@@ -294,7 +294,7 @@ inference-snap work, out of scope). Both deferred.
 addition, not a new top-level variant). `DbusIndicator::map_state` publishes
 **two distinct additive `State` wire values** from it — `error` when
 `recoverable == false` (critical), and a new `notice` when `recoverable ==
-true` (recoverable) — reusing the existing `ErrorMessage` property for both
+true` (recoverable) — publishing the content-free `StatusMessage` property for both
 (broadened meaning, not renamed, so no interface break). A session that
 completes with an empty/blank transcript (`SessionOutcome::Completed{transcript}`
 where `transcript.trim().is_empty()`) publishes `notice` with a fixed
@@ -1297,5 +1297,4 @@ us to its settings keys and misses multi-dock/geometry nuance).
   classification is a stopgap, not that taxonomy.
 - Re-verify the snap-confine/Wayland-socket fd handoff (R27's spike) on real
   hardware once the snap stages `myna-hud`.
-
 

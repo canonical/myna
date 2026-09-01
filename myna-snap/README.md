@@ -162,8 +162,8 @@ The one real cost was the retry log - ~2,900 identical lines a day on a machine
 with no compositor. A bind failure is now reported once at the operational
 tier, again only when the reason changes, and the repeats go to `MYNA_DEBUG`;
 the current reason is continuously readable on
-`com.canonical.Myna.Dictation.ErrorMessage`, which is the surface for "what is wrong
-right now".
+`com.canonical.Myna.Dictation.StatusMessage`, which is the surface for the
+current publisher-owned user-facing status.
 
 **What `snap refresh myna` does.** It stops and restarts the unit in every user
 manager, on the new revision (`refresh-mode: restart`, stated explicitly in
@@ -292,7 +292,7 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   (step 2) and make sure the backend daemon has run (`snap logs
   myna-whisper.server`). The daemon does not need restarting afterwards: the
   socket is re-resolved at every press.
-- **The hotkey does nothing right after login** - read `ErrorMessage` (below),
+- **The hotkey does nothing right after login** - read `StatusMessage` (below),
   or `journalctl --user -u snap.myna.myna`. `dictation hotkey unavailable: …`
   means activation is not bound; it clears itself once it is. Two retry
   speeds, by cause: the portal not being up yet is retried at 1s doubling to
@@ -302,10 +302,10 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
 - **`myna.toggle` can't reach the daemon** — `myna` isn't running, or it's
   running in the default portal activation; `myna.toggle` needs
   `myna --control`.
-- **Nothing is injected, state shows `error`** — read the reason:
+- **Nothing is injected, state shows `error`** — read the status:
   `gdbus call --session --dest com.canonical.Myna.Dictation \
     --object-path /com/canonical/Myna/Dictation \
-    --method org.freedesktop.DBus.Properties.Get com.canonical.Myna.Dictation ErrorMessage`
+    --method org.freedesktop.DBus.Properties.Get com.canonical.Myna.Dictation StatusMessage`
   (a *capture_failed* usually means `myna:pipewire` isn't connected).
 - **A press "does nothing" - the session starts and dies silently** - the
   daemon serves `com.canonical.Myna.Dictation` by default, so ALL feedback (including
@@ -323,7 +323,7 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   `/var/snap/<snap>/common/run/...` directly - confinement denies it (the
   `backend` content share exists precisely for this); the denial shows in
   `sudo journalctl -k`. Live state without restarting: read the
-  `State`/`ErrorMessage` properties as above.
+  `State`/`StatusMessage` properties as above.
 - **`busctl` fails with "Operation not permitted" / "Access denied" against
   the session bus in general** — your shell's `DBUS_SESSION_BUS_ADDRESS`
   carries a stale `guid=` (a terminal/tmux server that survived a logout;

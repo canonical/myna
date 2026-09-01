@@ -16,7 +16,7 @@
 //!   restarted, or the compositor replaced) is rebound rather than treated as
 //!   "the user is done", which is what ended the process before.
 //!
-//! While unbound, the reason is published on `com.canonical.Myna.Dictation.ErrorMessage`
+//! While unbound, the reason is published on `com.canonical.Myna.Dictation.StatusMessage`
 //! so the degraded state is inspectable (`gdbus`, the shell extension) rather
 //! than only being a line in the journal.
 
@@ -157,7 +157,7 @@ impl RetryingTrigger {
     }
 
     /// Publish the degraded reason (and its clearing) on
-    /// `com.canonical.Myna.Dictation.ErrorMessage`.
+    /// `com.canonical.Myna.Dictation.StatusMessage`.
     pub fn status_on(mut self, bus: SharedBus) -> Self {
         self.status = Some(bus);
         self
@@ -167,7 +167,7 @@ impl RetryingTrigger {
         if let Some(bus) = &self.status {
             bus.lock()
                 .await
-                .set_property("ErrorMessage", PropertyValue::Str(message.to_string()))
+                .set_property("StatusMessage", PropertyValue::Str(message.to_string()))
                 .await;
         }
     }
@@ -223,7 +223,7 @@ impl RetryingTrigger {
                     // a single line is not read as "gave up" - and then only
                     // when the reason changes. The unchanging repeats drop to
                     // the debug tier; the current reason stays continuously
-                    // readable on `ErrorMessage` below, which is the surface
+                    // readable on `StatusMessage` below, which is the surface
                     // meant for "what is wrong right now" anyway.
                     let reason = failure.reason().to_string();
                     if self.last_reason.as_deref() == Some(reason.as_str()) {
@@ -401,7 +401,7 @@ mod tests {
         let _ = tokio::time::timeout(Duration::from_secs(5), trigger.next_edge()).await;
 
         assert_eq!(
-            bus.property("ErrorMessage"),
+            bus.property("StatusMessage"),
             Some(PropertyValue::Str(
                 "dictation hotkey unavailable: global-shortcuts portal unavailable".into()
             ))
@@ -547,7 +547,7 @@ mod tests {
 
         assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
         assert_eq!(
-            bus.property("ErrorMessage"),
+            bus.property("StatusMessage"),
             Some(PropertyValue::Str(String::new()))
         );
     }

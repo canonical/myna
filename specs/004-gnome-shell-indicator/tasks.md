@@ -40,12 +40,11 @@ a documented API transition within Shell 46–51, such as XH13's Mutter
 trusted-client adapter.
 
 Run `cd extensions/myna-shell && shexli "$PWD"` for every host change. The
-review guide records the deliberate in-tree exemptions: `EGO-P-006` for
-gettext metadata, `EGO-P-007` for standalone contract tests, and `EGO-M-004`
-for the declared Shell 46–51 support range. Treat every other finding as
-actionable unless this feature documents an explicit rationale. CI runs the
-same JSON gate in a lightweight pip-only job and publishes its classification
-to the GitHub job summary.
+review guide records the deliberate in-tree exemptions: `EGO-P-007` for
+standalone contract tests and `EGO-M-004` for the declared Shell 46–51 support
+range. Treat every other finding as actionable unless this feature documents
+an explicit rationale. CI runs the same JSON gate in a lightweight pip-only
+job and publishes its classification to the GitHub job summary.
 
 **Organization**: phases ordered by dependency: Foundational (crate + deps +
 spikes) → Pure-logic port → Renderer app → Lab/simulator → Extension host →
@@ -135,8 +134,8 @@ driver. **Phase B complete (2026-08-26).**
 ## Phase D: Lab & simulator modes (R25)
 
 - [X] T131 [P] `--lab` UI (`lab.rs`): manual controls (state, severity, level slider, reduced-motion toggle, phase triggers) + a plain `Gtk.TextView` dictation target, driving the identical renderer modules with **no backend** (T124's mode dispatch). *(Done 2026-08-26: state/level/session controls + dictation target; publishes at the contract cadence.)*
-- [X] T132 `--serve-dbus` (`simulator.rs` serving): claim `com.canonical.Myna.Dictation` (never by force; clean release), publish State/ErrorMessage/AudioRms/AudioPeak at ~20 Hz from the lab controls, implement Start/Stop/Toggle (port of `dictation_service.py` + `dbus_headless.py`'s contract checks as a hermetic test over the fake `Bus`-style seam). *(Done 2026-08-26: `session_control.rs` (7 tests, C6 dedup) + `serve.rs` (zbus server, ~20Hz publish, Start/Stop/Toggle); `tests/serve_roundtrip.rs` claims the real name and round-trips over `dbus-run-session` — State/levels/methods/stand-down; `--serve-dbus` wired via `lab::present_serving`.)*
-- [X] T133 [P] i18n move: `client/myna-hud/po/` (domain `myna`; `POTFILES.in` from Rust sources via xgettext), replacing `extensions/myna-shell/po/`. *(Done 2026-08-27: `client/myna-hud/po/` — POTFILES.in, regenerated myna.pot (18 msgids: lab UI + status strings), LINGUAS, README; status msgids marked `n_()` (port of N_, extractable while looked up by variable); domain `myna` bound in main.rs via gettextrs TextDomain with MYNA_HUD_LOCALEDIR override; `make i18n` regenerates the template. Old extension po/ removed in T170.)*
+- [X] T132 `--serve-dbus` (`simulator.rs` serving): claim `com.canonical.Myna.Dictation` (never by force; clean release), publish State/StatusMessage/AudioRms/AudioPeak at ~20 Hz from the lab controls, implement Start/Stop/Toggle (port of `dictation_service.py` + `dbus_headless.py`'s contract checks as a hermetic test over the fake `Bus`-style seam). *(Done 2026-08-26: `session_control.rs` (7 tests, C6 dedup) + `serve.rs` (zbus server, ~20Hz publish, Start/Stop/Toggle); `tests/serve_roundtrip.rs` claims the real name and round-trips over `dbus-run-session` — State/levels/methods/stand-down; `--serve-dbus` wired via `lab::present_serving`.)*
+- [X] T133 [P] i18n move: `client/myna-hud/po/` (shared `myna` domain; `POTFILES.in` from Rust sources via xgettext), replacing `extensions/myna-shell/po/`. *(Done 2026-08-27; amended 2026-09-01: `client/myna-hud/po/` — POTFILES.in, regenerated myna.pot, LINGUAS, README; the publisher resolves lifecycle labels through gettext before publishing `StatusMessage`, while `myna-hud` binds the same domain for its lab UI; `MYNA_LOCALEDIR` overrides the locale root for either binary; `make i18n` regenerates the template. Old extension po/ removed.)*
 
 **Checkpoint**: quickstart §3a/§3b usable — the lab renders with no backend; the simulator drives a hosted indicator end-to-end.
 

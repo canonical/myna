@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use myna_orchestrator::{OrchestratorEvent, TextSink};
 
 use crate::dbus::{PropertyValue, SharedBus};
-use crate::indicator::{Indicator, IndicatorState};
+use crate::indicator::{status_message, Indicator, IndicatorState};
 
 /// The `com.canonical.Myna.Dictation` wire states (data-model E1; the additive string
 /// enum the extension switches on).
@@ -140,18 +140,18 @@ fn server_hold_ms_for(reason: &str) -> u64 {
     (len * PER_CHAR_MS).clamp(MIN_MS, MAX_MS) as u64
 }
 
-/// Publishes `IndicatorState` transitions as `State`/`ErrorMessage` property
+/// Publishes `IndicatorState` transitions as `State`/`StatusMessage` property
 /// updates via the [`crate::dbus::Bus`] seam (P1) — pushed to subscribers with
 /// the standard `PropertiesChanged`, the interface's only signal (contract
 /// §Confinement). Emits exactly one `State` update per *wire-state* transition
 /// (C2 — a duplicate `IndicatorState` whose mapped state is unchanged is a
 /// no-op), carries only state + a content-free reason (C3), and `hide()`
-/// publishes `idle`, zeroes the levels, and clears `ErrorMessage` (P3).
+/// publishes `idle`, zeroes the levels, and clears `StatusMessage` (P3).
 pub struct DbusIndicator {
     bus: SharedBus,
     readiness: Readiness,
-    /// Last published `(state, error_message)` — drives the one-signal-per-
-    /// transition dedup and the `ErrorMessage` invariant (set iff error).
+    /// Last published `(state, status_message)` — drives the one-signal-per-
+    /// transition dedup and the publisher-owned status label invariant.
     /// Shared with the pending notice auto-dismiss task so it can check
     /// whether the notice is still current before publishing `idle`.
     last: Arc<tokio::sync::Mutex<Option<(String, String)>>>,
@@ -177,9 +177,9 @@ impl DbusIndicator {
         }
     }
 
-    fn schedule_notice_auto_hide(&mut self, reason: String) {
+    fn schedule_notice_auto_hide(&mut self, status_message: String) {
         self.cancel_notice_auto_hide();
-        let ms = server_hold_ms_for(&reason);
+        let ms = server_hold_ms_for(&status_message);
         let bus = self.bus.clone();
         let last = self.last.clone();
         let handle = tokio::spawn(async move {
@@ -189,16 +189,15 @@ impl DbusIndicator {
             // aborted. Check `last` before publishing.
             {
                 let guard = last.lock().await;
-                let is_still_this_notice =
-                    matches!(&*guard, Some((s, r)) if s == wire_state::NOTICE && r == &reason);
+                let is_still_this_notice = matches!(&*guard, Some((s, r)) if s == wire_state::NOTICE && r == &status_message);
                 if !is_still_this_notice {
                     return;
                 }
             }
-            // Publish idle; also clear levels/error as `hide()` does.
+            // Publish idle; also clear levels/status as `hide()` does.
             {
                 let mut bus = bus.lock().await;
-                bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
+                bus.set_property("StatusMessage", PropertyValue::Str(String::new()))
                     .await;
                 bus.set_property("State", PropertyValue::Str(wire_state::IDLE.to_string()))
                     .await;
@@ -215,41 +214,28 @@ impl DbusIndicator {
     }
 
     /// Publish the transition (unless it repeats the current wire state) as
-    /// `ErrorMessage` + `State` property sets, each pushed to subscribers via
-    /// `PropertiesChanged` (C2). `ErrorMessage` goes first so a client
-    /// reacting to the `State` flip already reads the consistent reason.
-    /// `ErrorMessage` is shared by both problem states (`error` and, since
-    /// 2026-07-30, `notice` — data-model E3/contract §Members) rather than
-    /// renamed, to avoid an interface break.
-    async fn publish(&mut self, state: &str, error_message: &str) {
-        let current = (state.to_string(), error_message.to_string());
+    /// `StatusMessage` + `State` property sets, each pushed to subscribers
+    /// via `PropertiesChanged` (C2). The message goes first so a client
+    /// reacting to the `State` flip already reads the consistent label.
+    async fn publish(&mut self, state: &str, status_message: &str) {
+        let current = (state.to_string(), status_message.to_string());
         {
             let guard = self.last.lock().await;
             if guard.as_ref() == Some(&current) {
                 return; // idempotent per wire state (Indicator seam contract)
             }
         }
-        let is_problem = |s: &str| s == wire_state::ERROR || s == wire_state::NOTICE;
-        let leaving_problem = {
-            let guard = self.last.lock().await;
-            matches!(&*guard, Some((s, _)) if is_problem(s)) && !is_problem(state)
-        };
         {
             let mut guard = self.last.lock().await;
             *guard = Some(current);
         }
 
         let mut bus = self.bus.lock().await;
-        if is_problem(state) {
-            bus.set_property(
-                "ErrorMessage",
-                PropertyValue::Str(error_message.to_string()),
-            )
-            .await;
-        } else if leaving_problem {
-            bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
-                .await;
-        }
+        bus.set_property(
+            "StatusMessage",
+            PropertyValue::Str(status_message.to_string()),
+        )
+        .await;
         bus.set_property("State", PropertyValue::Str(state.to_string()))
             .await;
     }
@@ -258,20 +244,17 @@ impl DbusIndicator {
 #[async_trait]
 impl Indicator for DbusIndicator {
     async fn set_state(&mut self, state: IndicatorState) {
-        let error_message = match &state {
-            IndicatorState::Error { message, .. } => message.clone(),
-            _ => String::new(),
-        };
         let wire = map_state(&state, self.readiness.ready_seen());
+        let status_message = status_message(&state, self.readiness.ready_seen());
         let is_notice = wire == wire_state::NOTICE;
         let is_error = wire == wire_state::ERROR;
         // Server auto-dismiss only for `notice`; `error` stays persistent.
         // Cancel any pending notice hide on any state change; a new `notice`
         // will re-arm with its own reason.
         self.cancel_notice_auto_hide();
-        self.publish(wire, &error_message).await;
+        self.publish(wire, &status_message).await;
         if is_notice {
-            self.schedule_notice_auto_hide(error_message);
+            self.schedule_notice_auto_hide(status_message);
         } else if is_error {
             // `error` is persistent — no auto-hide.
         }
@@ -280,12 +263,11 @@ impl Indicator for DbusIndicator {
     async fn hide(&mut self) {
         self.cancel_notice_auto_hide();
         self.publish(wire_state::IDLE, "").await;
-        // P3: levels and any error reason die with the session.
+        // P3: levels die with the session. publish() already cleared the
+        // StatusMessage together with the idle State transition.
         let mut bus = self.bus.lock().await;
         bus.set_property("AudioRms", PropertyValue::F64(0.0)).await;
         bus.set_property("AudioPeak", PropertyValue::F64(0.0)).await;
-        bus.set_property("ErrorMessage", PropertyValue::Str(String::new()))
-            .await;
     }
 }
 
@@ -315,6 +297,31 @@ mod tests {
     fn recording_splits_on_readiness() {
         assert_eq!(map_state(&IndicatorState::Recording, false), "loading");
         assert_eq!(map_state(&IndicatorState::Recording, true), "recording");
+    }
+
+    #[test]
+    fn publisher_owns_status_messages_for_every_visible_state() {
+        let cases = [
+            (IndicatorState::Recording, false, "Loading model…"),
+            (IndicatorState::Recording, true, "Listening"),
+            (IndicatorState::Transcribing, true, "Transcribing"),
+            (IndicatorState::Finalizing, true, "Finishing"),
+            (
+                IndicatorState::recoverable("No speech detected"),
+                true,
+                "No speech detected",
+            ),
+            (
+                IndicatorState::critical("Microphone unavailable"),
+                true,
+                "Microphone unavailable",
+            ),
+        ];
+        for (state, ready, expected) in cases {
+            let wire = map_state(&state, ready);
+            assert_eq!(status_message(&state, ready), expected, "{wire}");
+        }
+        assert_eq!(status_message(&IndicatorState::Hidden, false), "");
     }
 
     /// C3: the mapping can only emit one of the seven contract state strings —

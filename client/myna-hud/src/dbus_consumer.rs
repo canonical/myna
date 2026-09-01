@@ -12,7 +12,7 @@
 //! All updates arrive one way: the standard
 //! `org.freedesktop.DBus.Properties.PropertiesChanged` signal. The proxy
 //! applies it to its property cache before emitting, so we simply re-read
-//! the cached `State`/`ErrorMessage`/`AudioRms`/`AudioPeak` and forward what
+//! the cached `State`/`StatusMessage`/`AudioRms`/`AudioPeak` and forward what
 //! changed. This is the one push channel that works for EVERY publisher,
 //! confined or not (contract `dbus-interface.md` §Confinement) — which is
 //! why the interface defines no custom signals.
@@ -38,7 +38,7 @@ pub const OBJECT_PATH: &str = "/com/canonical/Myna/Dictation";
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub state: String,
-    pub error_message: String,
+    pub status_message: String,
     pub audio_rms: f64,
     pub audio_peak: f64,
 }
@@ -57,7 +57,7 @@ pub struct DictationServiceBuilder {
 }
 
 impl DictationServiceBuilder {
-    /// Called with `(state, error_message)` on every transition, on
+    /// Called with `(state, status_message)` on every transition, on
     /// name-appeared (reflecting the current State), and with `("idle", "")`
     /// on name-vanished.
     pub fn on_state_changed(mut self, f: impl Fn(&str, &str) + 'static) -> Self {
@@ -97,7 +97,7 @@ pub struct DictationService {
     on_availability_changed: Option<AvailabilityCallback>,
     watching: bool,
     available: bool,
-    /// The last `(state, error)` pair emitted, for the dedup rule.
+    /// The last `(state, status_message)` pair emitted, for the dedup rule.
     last_state: Option<(String, String)>,
 }
 
@@ -169,11 +169,11 @@ impl DictationService {
     }
 
     fn reflect(&mut self, snapshot: Snapshot) {
-        let pair = (snapshot.state.clone(), snapshot.error_message.clone());
+        let pair = (snapshot.state.clone(), snapshot.status_message.clone());
         if self.last_state.as_ref() != Some(&pair) {
             self.last_state = Some(pair);
             if let Some(cb) = &self.on_state_changed {
-                cb(&snapshot.state, &snapshot.error_message);
+                cb(&snapshot.state, &snapshot.status_message);
             }
         }
         // Arrival time is part of the stale-decay contract: forward every

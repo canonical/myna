@@ -30,6 +30,8 @@ trait Dictation {
     #[zbus(property)]
     fn state(&self) -> zbus::Result<String>;
     #[zbus(property)]
+    fn status_message(&self) -> zbus::Result<String>;
+    #[zbus(property)]
     fn audio_rms(&self) -> zbus::Result<f64>;
     fn start(&self) -> zbus::Result<(bool, String)>;
     fn stop(&self) -> zbus::Result<()>;
@@ -47,7 +49,7 @@ async fn serve_publishes_and_answers_over_the_bus() {
     // Recording, mid-level — an active session so levels flow.
     shared.set_controls(Controls {
         state: wire::RECORDING.into(),
-        reason: String::new(),
+        status_message: "Listening".into(),
         envelope: 0.6,
     });
 
@@ -66,6 +68,11 @@ async fn serve_publishes_and_answers_over_the_bus() {
         proxy.state().await.expect("State"),
         wire::RECORDING,
         "a non-idle control set publishes on launch, with no Toggle"
+    );
+    assert_eq!(
+        proxy.status_message().await.expect("StatusMessage"),
+        "Listening",
+        "the publisher-owned recording label is observable on the bus"
     );
 
     // --- C6: Start begins a session and reports success ---------------

@@ -14,36 +14,12 @@
 import Atk from 'gi://Atk';
 import Gio from 'gi://Gio';
 import St from 'gi://St';
-import {gettext as _} from 'gettext';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const BUS_NAME = 'com.canonical.Myna.Dictation';
 const OBJECT_PATH = '/com/canonical/Myna/Dictation';
 const IFACE = 'com.canonical.Myna.Dictation';
-
-function descriptorFor(state, reason) {
-    // Mirrors `myna-hud/src/states.rs::base_for` + `state_to_descriptor`.
-    // Announce the same content-free status_text the pill shows — all
-    // non-idle phases. Unknown values degrade to "Active" like the HUD.
-    // All msgids are marked for xgettext via `_()` — the pot is
-    // `extensions/myna-shell/po` (domain MynaShellExtension) plus the
-    // shared `client/myna-hud/po` (domain myna). Shell's `gettext` import
-    // is domain-bound to MynaShellExtension when run as an extension; under
-    // plain `gjs -m` it falls back to identity (English source).
-    if (state === 'idle' || !state) return null;
-    if (state === 'loading') return _('Loading model…');
-    if (state === 'recording') return _('Listening');
-    if (state === 'transcribing') return _('Transcribing');
-    if (state === 'finalizing') return _('Finishing');
-    if (state === 'notice') {
-        return reason && reason.length > 0 ? reason : _('No speech detected');
-    }
-    if (state === 'error') {
-        return reason && reason.length > 0 ? _('Error — %s').format(reason) : _('Error');
-    }
-    return _('Active');
-}
 
 export class DictationAnnouncer {
     /**
@@ -55,7 +31,7 @@ export class DictationAnnouncer {
         this._proxy = null;
         this._a11yActor = null;
         this._lastState = null;
-        this._lastReason = null;
+        this._lastMessage = null;
         this._cancellable = null;
     }
 
@@ -86,6 +62,8 @@ export class DictationAnnouncer {
             IFACE,
             cancellable,
             (source, res) => {
+                if (this._cancellable !== cancellable || cancellable.is_cancelled())
+                    return;
                 try {
                     this._proxy = Gio.DBusProxy.new_for_bus_finish(res);
                     this._proxy.connectObject('g-properties-changed',
@@ -107,17 +85,17 @@ export class DictationAnnouncer {
         this._a11yActor?.destroy();
         this._a11yActor = null;
         this._lastState = null;
-        this._lastReason = null;
+        this._lastMessage = null;
     }
 
     _reflectFromProxy() {
         try {
             const stateVar = this._proxy.get_cached_property('State');
-            const errVar = this._proxy.get_cached_property('ErrorMessage');
+            const messageVar = this._proxy.get_cached_property('StatusMessage');
             const state = stateVar ? stateVar.unpack() : null;
-            const err = errVar ? errVar.unpack() : '';
+            const message = messageVar ? messageVar.unpack() : '';
             if (state)
-                this._maybeAnnounce(state, err);
+                this._maybeAnnounce(state, message);
         } catch (e) {
             logError(e, 'announcer reflectFromProxy failed');
         }
@@ -125,12 +103,12 @@ export class DictationAnnouncer {
 
     _onPropertiesChanged(changedDict) {
         let state = null;
-        let reason = null;
+        let message = null;
         try {
             const s = changedDict.lookup_value('State', null);
-            const e = changedDict.lookup_value('ErrorMessage', null);
+            const e = changedDict.lookup_value('StatusMessage', null);
             if (s) state = s.unpack();
-            if (e) reason = e.unpack();
+            if (e) message = e.unpack();
         } catch (e) {
             logError(e, 'announcer unpack');
             return;
@@ -139,25 +117,22 @@ export class DictationAnnouncer {
         if (state === null || state === undefined)
             return;
 
-        if (reason === null || reason === undefined) {
+        if (message === null || message === undefined) {
             try {
-                const errVar = this._proxy?.get_cached_property('ErrorMessage');
-                if (errVar) reason = errVar.unpack();
-                else reason = '';
-            } catch { reason = ''; }
+                const messageVar = this._proxy?.get_cached_property('StatusMessage');
+                message = messageVar ? messageVar.unpack() : '';
+            } catch { message = ''; }
         }
-        this._maybeAnnounce(state, reason || '');
+        this._maybeAnnounce(state, message || '');
     }
 
-    _maybeAnnounce(state, reason) {
-        if (state === this._lastState && reason === this._lastReason) return;
+    _maybeAnnounce(state, message) {
+        if (state === this._lastState && message === this._lastMessage) return;
         this._lastState = state;
-        this._lastReason = reason;
+        this._lastMessage = message;
 
-        const text = descriptorFor(state, reason);
-        if (!text) return;
-
-        this._announce(text);
+        if (state !== 'idle' && message)
+            this._announce(message);
     }
 
     _announce(text) {

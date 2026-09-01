@@ -4,11 +4,11 @@
 // calibration drift between the slider and the rendered ribbon.
 
 use myna_hud::ribbon::RibbonPhase;
-use myna_hud::simulator::{envelope_to_levels, shell_phase, wire_state, ERROR_REASON, PUBLISH_HZ};
+use myna_hud::simulator::{envelope_to_levels, shell_phase, wire_state, ERROR_MESSAGE, PUBLISH_HZ};
 use myna_hud::states::{wire, Severity};
 use myna_hud::vumeter::levels_to_intensity;
 
-// --- wire_state: phase/severity/session → (State, ErrorMessage) ----------
+// --- wire_state: phase/severity/session → (State, StatusMessage) ----------
 
 #[test]
 fn inactive_session_is_idle() {
@@ -33,12 +33,12 @@ fn severity_outranks_phase() {
     // pill would stay neutral while only the lab's ribbon went amber.
     assert_eq!(
         wire_state("flow", Some(Severity::Recoverable), true),
-        (wire::NOTICE, ""),
-        "recoverable → notice; empty reason exercises the default text path"
+        (wire::NOTICE, "No speech detected"),
+        "recoverable → notice with the publisher-owned status message"
     );
     assert_eq!(
         wire_state("morph", Some(Severity::Critical), true),
-        (wire::ERROR, ERROR_REASON),
+        (wire::ERROR, ERROR_MESSAGE),
         "critical → error with a content-free reason"
     );
 }

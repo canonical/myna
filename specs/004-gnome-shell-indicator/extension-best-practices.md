@@ -22,8 +22,6 @@
 > Classify results rather than blindly changing the bundle to silence them.
 > The expected in-tree exemptions are:
 >
-> - `EGO-P-006` for `po/LINGUAS` and `po/POTFILES.in`: these are required
->   gettext source/translation metadata, not shipped build artifacts.
 > - `EGO-P-007` for `test/*.test.js`: these are deliberate standalone GJS
 >   contract tests, invoked by `test/run-suite.sh`, not extension entrypoint
 >   modules.

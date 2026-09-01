@@ -1,4 +1,0 @@
-# List of translated languages (one language code per line), consumed by the
-# i18n tooling that will live in the importing project. No translations exist
-# yet — add each locale's code here (e.g. `fr`, `pt_BR`) alongside its `<code>.po`
-# file, created from po/MynaShellExtension.pot with `msginit`.

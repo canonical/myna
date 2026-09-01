@@ -12,8 +12,14 @@ use myna_hud::states::wire;
 /// What the consumer told the application, in order.
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
-    State { state: String, error: String },
-    Level { rms: f64, peak: f64 },
+    State {
+        state: String,
+        status_message: String,
+    },
+    Level {
+        rms: f64,
+        peak: f64,
+    },
     Available(bool),
 }
 
@@ -29,10 +35,10 @@ fn service(recorder: &Shared) -> DictationService {
     let s2 = recorder.clone();
     let s3 = recorder.clone();
     DictationService::builder()
-        .on_state_changed(move |state, error| {
+        .on_state_changed(move |state, status_message| {
             s1.borrow_mut().events.push(Event::State {
                 state: state.to_string(),
-                error: error.to_string(),
+                status_message: status_message.to_string(),
             });
         })
         .on_level(move |rms, peak| {
@@ -67,7 +73,7 @@ fn x8_name_appeared_reflects_the_current_state() {
     svc.enable();
     svc.simulate_name_appeared(Snapshot {
         state: wire::RECORDING.into(),
-        error_message: String::new(),
+        status_message: "Listening".into(),
         audio_rms: 0.2,
         audio_peak: 0.4,
     });
@@ -95,6 +101,7 @@ fn x8_name_vanished_clears_to_idle() {
     svc.enable();
     svc.simulate_name_appeared(Snapshot {
         state: wire::RECORDING.into(),
+        status_message: "Listening".into(),
         ..Default::default()
     });
     recorder.borrow_mut().events.clear();
@@ -105,7 +112,7 @@ fn x8_name_vanished_clears_to_idle() {
         events.first(),
         Some(&Event::State {
             state: wire::IDLE.into(),
-            error: String::new()
+            status_message: String::new()
         }),
         "clears to idle, not frozen mid-session"
     );
@@ -128,7 +135,7 @@ fn properties_changed_forwards_state_and_levels() {
 
     svc.simulate_properties_changed(Snapshot {
         state: wire::RECORDING.into(),
-        error_message: String::new(),
+        status_message: "Listening".into(),
         audio_rms: 0.5,
         audio_peak: 0.7,
     });
@@ -137,7 +144,7 @@ fn properties_changed_forwards_state_and_levels() {
     assert!(
         events.contains(&Event::State {
             state: wire::RECORDING.into(),
-            error: String::new()
+            status_message: "Listening".into()
         }),
         "state transition forwarded"
     );
@@ -150,9 +157,9 @@ fn properties_changed_forwards_state_and_levels() {
     );
 }
 
-// A `notice`/`error` transition carries its content-free reason (E3).
+// Every visible state carries its publisher-owned, content-free status label.
 #[test]
-fn error_state_carries_its_reason() {
+fn status_message_travels_with_every_state() {
     let recorder: Shared = Rc::default();
     let mut svc = service(&recorder);
     svc.enable();
@@ -160,15 +167,28 @@ fn error_state_carries_its_reason() {
     recorder.borrow_mut().events.clear();
     svc.simulate_properties_changed(Snapshot {
         state: wire::ERROR.into(),
-        error_message: "Microphone unavailable".into(),
+        status_message: "Microphone unavailable".into(),
         ..Default::default()
     });
     assert!(
         recorder.borrow().events.contains(&Event::State {
             state: wire::ERROR.into(),
-            error: "Microphone unavailable".into()
+            status_message: "Microphone unavailable".into()
         }),
-        "the reason travels with the state"
+        "the error status message travels with the state"
+    );
+
+    svc.simulate_properties_changed(Snapshot {
+        state: wire::TRANSCRIBING.into(),
+        status_message: "Transcribing".into(),
+        ..Default::default()
+    });
+    assert!(
+        recorder.borrow().events.contains(&Event::State {
+            state: wire::TRANSCRIBING.into(),
+            status_message: "Transcribing".into()
+        }),
+        "the non-error status message travels with the state"
     );
 }
 
@@ -189,7 +209,7 @@ fn r16a_repeated_levels_are_still_forwarded() {
     for _ in 0..3 {
         svc.simulate_properties_changed(Snapshot {
             state: wire::RECORDING.into(),
-            error_message: String::new(),
+            status_message: "Listening".into(),
             audio_rms: 0.31,
             audio_peak: 0.42,
         });
@@ -216,6 +236,7 @@ fn repeated_states_are_deduplicated() {
     svc.enable();
     svc.simulate_name_appeared(Snapshot {
         state: wire::RECORDING.into(),
+        status_message: "Listening".into(),
         ..Default::default()
     });
     recorder.borrow_mut().events.clear();
@@ -223,7 +244,7 @@ fn repeated_states_are_deduplicated() {
     for _ in 0..3 {
         svc.simulate_properties_changed(Snapshot {
             state: wire::RECORDING.into(),
-            error_message: String::new(),
+            status_message: "Listening".into(),
             audio_rms: 0.1,
             audio_peak: 0.2,
         });

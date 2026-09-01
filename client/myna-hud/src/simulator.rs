@@ -36,16 +36,12 @@ fn phase_state(phase: &str) -> Option<&'static str> {
     }
 }
 
-/// Content-free reasons, per constitution V and contract C3 — never anything
-/// derived from a transcript. The empty one is deliberate: it exercises the
-/// path where the state module supplies its own default text ("No speech
-/// detected"), while the error reason exercises the "Error — %s" prefix.
-/// Between them the two ErrorMessage renderings are both visible from the
-/// lab.
-pub const NOTICE_REASON: &str = "";
-pub const ERROR_REASON: &str = "Microphone unavailable";
+/// Content-free publisher labels, per constitution V and contract C3 — never
+/// anything derived from a transcript.
+pub const NOTICE_MESSAGE: &str = "No speech detected";
+pub const ERROR_MESSAGE: &str = "Microphone unavailable";
 
-/// The lab's look as a `(State, ErrorMessage)` pair.
+/// The lab's look as a `(State, StatusMessage)` pair.
 ///
 /// * `session_active == false` (Stop/Toggle ended the session — the daemon
 ///   is still running, it is simply not dictating) → `idle`, the case that
@@ -64,13 +60,16 @@ pub fn wire_state(
     }
     if let Some(severity) = severity_tint {
         return match severity {
-            Severity::Recoverable => (wire::NOTICE, NOTICE_REASON),
-            Severity::Critical => (wire::ERROR, ERROR_REASON),
+            Severity::Recoverable => (wire::NOTICE, NOTICE_MESSAGE),
+            Severity::Critical => (wire::ERROR, ERROR_MESSAGE),
         };
     }
     match phase_state(phase) {
-        Some(state) => (state, ""),
-        None => ("active", ""),
+        Some(wire::RECORDING) => (wire::RECORDING, "Listening"),
+        Some(wire::TRANSCRIBING) => (wire::TRANSCRIBING, "Transcribing"),
+        Some(wire::FINALIZING) => (wire::FINALIZING, "Finishing"),
+        Some(state) => (state, "Active"),
+        None => ("active", "Active"),
     }
 }
 

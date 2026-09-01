@@ -13,7 +13,7 @@ use myna_hud::simulator::envelope_to_levels;
 use myna_hud::states::wire;
 
 fn rms_for(shared: &Shared) -> f64 {
-    let (_state, _reason, rms, _peak) = shared.snapshot();
+    let (_state, _status_message, rms, _peak) = shared.snapshot();
     rms
 }
 
@@ -24,7 +24,7 @@ fn a_changed_envelope_changes_the_published_levels() {
     // An active recording session at a low level.
     shared.set_controls(Controls {
         state: wire::RECORDING.into(),
-        reason: String::new(),
+        status_message: "Listening".into(),
         envelope: 0.2,
     });
     let low = rms_for(&shared);
@@ -33,7 +33,7 @@ fn a_changed_envelope_changes_the_published_levels() {
     // snapshot the bus reads must reflect the new envelope.
     shared.set_controls(Controls {
         state: wire::RECORDING.into(),
-        reason: String::new(),
+        status_message: "Listening".into(),
         envelope: 0.8,
     });
     let high = rms_for(&shared);
@@ -53,10 +53,10 @@ fn the_published_level_matches_the_calibration() {
     let shared = Shared::default();
     shared.set_controls(Controls {
         state: wire::RECORDING.into(),
-        reason: String::new(),
+        status_message: "Listening".into(),
         envelope: 0.55,
     });
-    let (_s, _r, rms, peak) = shared.snapshot();
+    let (_s, _status_message, rms, peak) = shared.snapshot();
     let (expected_rms, expected_peak) = envelope_to_levels(0.55);
     assert!((rms - expected_rms).abs() < 1e-9, "{rms} vs {expected_rms}");
     assert!(
@@ -70,10 +70,10 @@ fn an_idle_session_publishes_no_levels() {
     let shared = Shared::default();
     shared.set_controls(Controls {
         state: wire::IDLE.into(),
-        reason: String::new(),
+        status_message: String::new(),
         envelope: 0.9, // even with the slider up
     });
-    let (state, _reason, rms, peak) = shared.snapshot();
+    let (state, _status_message, rms, peak) = shared.snapshot();
     assert_eq!(state, wire::IDLE);
     assert_eq!(rms, 0.0, "no levels while idle");
     assert_eq!(peak, 0.0);
@@ -91,7 +91,7 @@ fn the_publish_gate_reenables_after_being_turned_off() {
     let shared = Shared::default();
     shared.set_controls(Controls {
         state: wire::RECORDING.into(),
-        reason: String::new(),
+        status_message: "Listening".into(),
         envelope: 0.5,
     });
 
@@ -100,13 +100,13 @@ fn the_publish_gate_reenables_after_being_turned_off() {
 
     // Toggle off: the snapshot forces idle (consumers see the HUD go quiet).
     shared.set_publishing(false);
-    let (state, _r, rms, _p) = shared.snapshot();
+    let (state, _status_message, rms, _p) = shared.snapshot();
     assert_eq!(state, wire::IDLE, "gated off publishes idle");
     assert_eq!(rms, 0.0);
 
     // Toggle back on: publishing resumes — this is what was broken.
     shared.set_publishing(true);
-    let (state, _r, rms, _p) = shared.snapshot();
+    let (state, _status_message, rms, _p) = shared.snapshot();
     assert_eq!(
         state,
         wire::RECORDING,

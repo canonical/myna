@@ -4,4 +4,4 @@
 #   xgettext --from-code=UTF-8 --keyword=gettext --add-comments=TRANSLATORS \
 #     --output=po/myna.pot --files-from=po/POTFILES.in
 src/lab.rs
-src/states.rs
+../myna-desktop/src/indicator/dbus.rs

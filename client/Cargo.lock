@@ -1211,6 +1211,7 @@ dependencies = [
  "ashpd",
  "async-trait",
  "futures-util",
+ "gettext-rs",
  "myna-audio",
  "myna-core",
  "myna-orchestrator",

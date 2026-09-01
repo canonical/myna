@@ -119,11 +119,10 @@ Also run [`shexli`](https://pypi.org/project/shexli/) from the extension root:
 shexli "$PWD"
 ```
 
-The review baseline documents the expected in-tree exemptions: `EGO-P-006`
-for gettext metadata, `EGO-P-007` for standalone test modules, and
-`EGO-M-004` for the intentional Shell 46–51 support range. Investigate every
-other finding before merging. CI runs the same JSON gate and publishes its
-accepted/actionable finding summary.
+The review baseline documents the expected in-tree exemptions: `EGO-P-007`
+for standalone test modules and `EGO-M-004` for the intentional Shell 46–51
+support range. Investigate every other finding before merging. CI runs the
+same JSON gate and publishes its accepted/actionable finding summary.
 
 ```sh
 cd extensions/myna-shell

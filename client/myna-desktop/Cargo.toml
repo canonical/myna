@@ -36,6 +36,8 @@ zbus = "5"
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
 # Desktop notifications for error states / secure-field refusals.
 notify-rust = "4"
+# Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
 [dev-dependencies]
 # `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens

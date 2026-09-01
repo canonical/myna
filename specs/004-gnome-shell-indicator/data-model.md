@@ -145,17 +145,16 @@ Rules:
   level/state inputs (E2) are unaffected either way (FR-022a: "still conveys
   state and level").
 
-## E3 — ErrorReason (optional)
+## E3 — StatusMessage
 
-A short, user-facing reason string carried by the `ErrorMessage` property
-when `State == error` **or `State == notice`** (2026-07-30: broadened —
-previously `error`-only) — e.g. "no text field is focused", "refusing to type
-into a password field", "inference backend unavailable" (critical/`error`), or
-"No speech detected" (recoverable/`notice`). Empty when neither. Content-free
-(never transcript). Sourced from the controller's existing
-`IndicatorState::Error{message, ..}` / `abort_before_capture` messages, and
-(2026-07-30) from `completion_indicator_state()`'s fixed reason for the
-empty-transcript case.
+A short, user-facing status string carried by the `StatusMessage` property
+for every visible state — e.g. "Loading model...", "Listening",
+"Transcribing", "Finishing", a content-free failure label, or "No speech
+detected". Empty only while `State == idle`. Content-free (never transcript).
+Sourced by `myna-desktop`: fixed lifecycle labels come from the publisher;
+problem labels come from the controller's existing
+`IndicatorState::Error{message, ..}` / `abort_before_capture` messages and
+`completion_indicator_state()`'s fixed empty-transcript label.
 
 ## E4 — IndicatorSurface (renderer-side, transient; rewritten 2026-08-26)
 
@@ -238,4 +237,3 @@ the `myna` gettext domain (R25).
 
 The visual-intent record is CSS-class + icon-choice + label — no transcript,
 tunable in `stylesheet.css` without touching the mapping.
-

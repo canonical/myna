@@ -27,8 +27,6 @@ def accepted(finding: dict[str, object], root: Path) -> str | None:
     rule = finding.get("rule_id")
     paths = relative_paths(finding, root)
 
-    if rule == "EGO-P-006" and paths <= {"po/LINGUAS", "po/POTFILES.in"}:
-        return "required gettext metadata"
     if (
         rule == "EGO-P-007"
         and paths

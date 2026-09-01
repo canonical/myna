@@ -39,7 +39,7 @@ research references (`R-`, in `research.md`).
 | RC2 | The state→descriptor mapping is additive: a `State` value the renderer does not recognise is treated as the closest match, never as a crash. | FR-008 |
 | RC3 | The idle `State` keeps the renderer dormant — no actor, no window content shown. | FR-002 |
 | RC5 | `levels_to_intensity` is calibrated: louder inputs produce higher intensity monotonically across the speech range; ST levels decays toward a floor within `STALE_MS`; NaN inputs are safe. | FR-009, SC-004 |
-| RC6 | No transcript content ever crosses a render boundary — only `State`, `ErrorMessage`, `AudioRms`, `AudioPeak`. | constitution V |
+| RC6 | No transcript content ever crosses a render boundary — only `State`, `StatusMessage`, `AudioRms`, `AudioPeak`. | constitution V |
 | RC7 | The consumer is dormant while `com.canonical.Myna.Dictation` has no owner: no proxy, no `State` emission, no error surfaced. | FR-018, FR-026 |
 | RC8 | Name-appeared connects the proxy and reflects the current `State`; name-vanished returns to idle. Levels are forwarded on every `PropertiesChanged` (never deduplicated — R16a). | FR-026 |
 | RC9 | `disable()` removes the watch, drops the proxy, and disconnects every subscription (no leaks). | FR-026 |

@@ -55,7 +55,7 @@ struct ServedState {
     state: String,
     audio_rms: f64,
     audio_peak: f64,
-    error_message: String,
+    status_message: String,
 }
 
 impl ServedState {
@@ -216,11 +216,11 @@ impl DictationObject {
     }
 
     #[zbus(property)]
-    async fn error_message(&self) -> String {
+    async fn status_message(&self) -> String {
         self.served
             .lock()
             .expect("served state poisoned")
-            .error_message
+            .status_message
             .clone()
     }
 }
@@ -433,7 +433,7 @@ impl Bus for ZbusBus {
                 let mut served = self.served.lock().expect("served state poisoned");
                 match (name, &value) {
                     ("State", PropertyValue::Str(s)) => served.state = s.clone(),
-                    ("ErrorMessage", PropertyValue::Str(s)) => served.error_message = s.clone(),
+                    ("StatusMessage", PropertyValue::Str(s)) => served.status_message = s.clone(),
                     ("AudioRms", PropertyValue::F64(d)) => served.audio_rms = *d,
                     ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
                     _ => {
@@ -451,7 +451,7 @@ impl Bus for ZbusBus {
             let emitter = iface_ref.signal_emitter();
             match name {
                 "State" => iface.state_changed(emitter).await,
-                "ErrorMessage" => iface.error_message_changed(emitter).await,
+                "StatusMessage" => iface.status_message_changed(emitter).await,
                 "AudioRms" => iface.audio_rms_changed(emitter).await,
                 "AudioPeak" => iface.audio_peak_changed(emitter).await,
                 _ => Ok(()),

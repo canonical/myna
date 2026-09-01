@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-28 10:53+0000\n"
+"POT-Creation-Date: 2026-09-01 10:40+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,102 +17,97 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/lab.rs:136
+#: src/lab.rs:151
 msgid "myna HUD lab"
 msgstr ""
 
-#: src/lab.rs:151
+#: src/lab.rs:167
 msgid "Published to com.canonical.Myna.Dictation"
 msgstr ""
 
-#: src/lab.rs:170
+#: src/lab.rs:186
 msgid "Publish on the session bus"
 msgstr ""
 
-#: src/lab.rs:172
+#: src/lab.rs:188
 msgid ""
 "on: the HUD is embedded and published; a shell-hosted instance shows the "
 "real overlay"
 msgstr ""
 
-#: src/lab.rs:186
+#: src/lab.rs:202
 msgid "State"
 msgstr ""
 
-#: src/lab.rs:187
+#: src/lab.rs:203
 msgid "the wire value the publisher would send"
 msgstr ""
 
-#: src/lab.rs:203
+#: src/lab.rs:219
 msgid "Audio level"
 msgstr ""
 
-#: src/lab.rs:204
+#: src/lab.rs:220
 msgid "the smoothed envelope, published as RMS/peak"
 msgstr ""
 
-#: src/lab.rs:223
+#: src/lab.rs:238
 msgid "Reduced motion"
 msgstr ""
 
-#: src/lab.rs:224
+#: src/lab.rs:239
 msgid "the static/minimal-motion accessibility path"
 msgstr ""
 
-#: src/lab.rs:230
+#: src/lab.rs:248
+msgid "High contrast"
+msgstr ""
+
+#: src/lab.rs:249
+msgid "bright border / background for busy wallpaper"
+msgstr ""
+
+#: src/lab.rs:255
 msgid "Color scheme"
 msgstr ""
 
-#: src/lab.rs:231
+#: src/lab.rs:256
 msgid "force light/dark to check legibility"
 msgstr ""
 
-#: src/lab.rs:248
+#: src/lab.rs:273
 msgid "Accent color"
 msgstr ""
 
-#: src/lab.rs:250
+#: src/lab.rs:275
 msgid "force the pill's accent (libadwaita has no runtime setter)"
 msgstr ""
 
-#: src/lab.rs:275
+#: src/lab.rs:301
 msgid ""
 "Type here while the HUD is showing: the caret must never move to the HUD."
 msgstr ""
 
-#: src/lab.rs:282
+#: src/lab.rs:308
 msgid "Dictation target"
 msgstr ""
 
-#: src/states.rs:96
+#: ../myna-desktop/src/indicator/dbus.rs:72
 msgid "Loading model…"
 msgstr ""
 
-#: src/states.rs:97
+#: ../myna-desktop/src/indicator/dbus.rs:73
 msgid "Listening"
 msgstr ""
 
-#: src/states.rs:98
+#: ../myna-desktop/src/indicator/dbus.rs:74
 msgid "Transcribing"
 msgstr ""
 
-#: src/states.rs:99
+#: ../myna-desktop/src/indicator/dbus.rs:75
 msgid "Finishing"
 msgstr ""
 
-#: src/states.rs:102
-msgid "No speech detected"
-msgstr ""
-
-#: src/states.rs:105
-msgid "Error"
-msgstr ""
-
-#: src/states.rs:106
+#: ../myna-desktop/src/indicator/dbus.rs:76
 msgid "Active"
-msgstr ""
-
-#: src/states.rs:137
-#, c-format
-msgid "Error — %s"
 msgstr ""

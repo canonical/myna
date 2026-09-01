@@ -6,16 +6,9 @@
 //! pixels: colour, geometry, animation, icon choice. Swapping the look
 //! never touches this file.
 //!
-//! The user-facing `status_text` strings go through gettext (domain `myna`,
-//! R25) — with no bound domain gettext is the identity function, so the
-//! tests assert the English source.
-//!
-//! Nothing here ever carries transcript text (constitution V, RC6): the only
-//! caller-controlled text is the content-free `reason` (E3), and it can flow
-//! solely into the two problem states' status lines.
-
-use crate::i18n::n_;
-use gettextrs::gettext;
+//! Nothing here ever carries transcript text (constitution V, RC6). The
+//! publisher owns the content-free `StatusMessage` label for every visible
+//! state, so this module preserves it without translating or reformatting it.
 
 /// The E1 wire-state string constants (additive contract,
 /// `contracts/dbus-interface.md`). Mirrors `myna-desktop`'s
@@ -87,21 +80,17 @@ fn hidden() -> Descriptor {
     }
 }
 
-/// The stable base for each known state: msgid + severity. Additive: an
+/// The stable base for each known state: key + severity. Additive: an
 /// unknown value falls through to `Active`, never panics (RC2).
-fn base_for(state: &str) -> (DictationState, &'static str, Option<Severity>) {
+fn base_for(state: &str) -> (DictationState, Option<Severity>) {
     match state {
-        wire::LOADING => (DictationState::Loading, n_("Loading model…"), None),
-        wire::RECORDING => (DictationState::Recording, n_("Listening"), None),
-        wire::TRANSCRIBING => (DictationState::Transcribing, n_("Transcribing"), None),
-        wire::FINALIZING => (DictationState::Finalizing, n_("Finishing"), None),
-        wire::NOTICE => (
-            DictationState::Notice,
-            n_("No speech detected"),
-            Some(Severity::Recoverable),
-        ),
-        wire::ERROR => (DictationState::Error, n_("Error"), Some(Severity::Critical)),
-        _ => (DictationState::Active, n_("Active"), None),
+        wire::LOADING => (DictationState::Loading, None),
+        wire::RECORDING => (DictationState::Recording, None),
+        wire::TRANSCRIBING => (DictationState::Transcribing, None),
+        wire::FINALIZING => (DictationState::Finalizing, None),
+        wire::NOTICE => (DictationState::Notice, Some(Severity::Recoverable)),
+        wire::ERROR => (DictationState::Error, Some(Severity::Critical)),
+        _ => (DictationState::Active, None),
     }
 }
 
@@ -112,12 +101,10 @@ fn base_for(state: &str) -> (DictationState, &'static str, Option<Severity>) {
 ///   (push-to-talk, FR-002/RC3).
 /// * An **unknown** value degrades to the neutral "active" descriptor
 ///   (FR-008/RC2).
-/// * `reason` — a content-free reason for a `notice`/`error` state (E3);
-///   ignored for every other state so caller text can never leak into an
-///   unrelated status (RC6). `notice`'s reason is shown as-is (it isn't an
-///   error, so no "Error —" prefix); `error`'s reason is appended after that
-///   prefix, matching the pre-2026-07-30 behavior.
-pub fn state_to_descriptor(state: Option<&str>, reason: &str) -> Descriptor {
+/// * `status_message` is the publisher-owned, content-free label for every
+///   visible state (C3/RC6). It is displayed verbatim; this client does not
+///   own a second translation or formatting table.
+pub fn state_to_descriptor(state: Option<&str>, status_message: &str) -> Descriptor {
     let Some(state) = state else {
         return hidden();
     };
@@ -125,21 +112,10 @@ pub fn state_to_descriptor(state: Option<&str>, reason: &str) -> Descriptor {
         return hidden();
     }
 
-    let (key, msgid, severity) = base_for(state);
-    let mut status_text = gettext(msgid);
-    if !reason.is_empty() {
-        match key {
-            // Translated printf-style template, %s substituted.
-            DictationState::Error => {
-                status_text = gettext("Error — %s").replace("%s", reason);
-            }
-            DictationState::Notice => status_text = reason.to_string(),
-            _ => {}
-        }
-    }
+    let (key, severity) = base_for(state);
     Descriptor {
         key,
-        status_text,
+        status_text: status_message.to_string(),
         severity,
         hidden: false,
     }

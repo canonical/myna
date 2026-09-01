@@ -36,12 +36,13 @@ enum Mode {
 }
 
 fn main() -> glib::ExitCode {
-    // Bind the `myna` gettext domain (R25) so the status strings and lab UI
-    // localize. The domain's .mo files live in the standard share/locale
+    // Bind the `myna` gettext domain (R25) so the lab UI localizes. The
+    // publisher translates StatusMessage before it crosses D-Bus. The domain's
+    // .mo files live in the standard share/locale
     // path; the snap stages them under $SNAP/share/locale, and a build-tree
     // run can point at its own po/ via the locale dir. If nothing is found,
     // gettext falls back to the identity function — never a failure.
-    if let Ok(dir) = std::env::var("MYNA_HUD_LOCALEDIR") {
+    if let Ok(dir) = std::env::var("MYNA_LOCALEDIR") {
         let _ = gettextrs::TextDomain::new(DOMAIN).push(dir).init();
     } else {
         let _ = gettextrs::TextDomain::new(DOMAIN).init();
@@ -169,8 +170,8 @@ fn activate_hosted(app: &adw::Application) {
         let mut service = DictationService::builder()
             .on_state_changed({
                 let hud = hud_for_events.clone();
-                move |state, error| {
-                    hud.apply_descriptor(state_to_descriptor(Some(state), error));
+                move |state, status_message| {
+                    hud.apply_descriptor(state_to_descriptor(Some(state), status_message));
                 }
             })
             .on_level({

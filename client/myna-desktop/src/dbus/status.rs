@@ -18,8 +18,8 @@ use super::{BUS_NAME, OBJECT_PATH};
 #[derive(Debug, Default, PartialEq)]
 pub struct DaemonStatus {
     pub state: String,
-    /// Empty when nothing is wrong - the daemon clears it on recovery.
-    pub error: String,
+    /// Publisher-owned label for the current state; empty while idle.
+    pub status_message: String,
 }
 
 /// Read the published properties, or say why they could not be read.
@@ -38,7 +38,7 @@ pub async fn read() -> Result<DaemonStatus, zbus::Error> {
         proxy.get_all(InterfaceName::try_from(BUS_NAME)?).await?;
     Ok(DaemonStatus {
         state: text(&all, "State"),
-        error: text(&all, "ErrorMessage"),
+        status_message: text(&all, "StatusMessage"),
     })
 }
 

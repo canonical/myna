@@ -356,7 +356,7 @@ class MicProbe:
 
 def client_state():
     state = {"dbus": {}, "rss": 0, "pids": [], "streaming_mode": "", "settings_error": ""}
-    for prop in ("State", "AudioRms", "AudioPeak", "ErrorMessage"):
+    for prop in ("State", "StatusMessage", "AudioRms", "AudioPeak"):
         rc, out, _ = run(
             [
                 "busctl",
@@ -836,7 +836,7 @@ class ClientTab(Scrollable):
         rms, peak = dbus.get("AudioRms", 0.0) or 0.0, dbus.get("AudioPeak", 0.0) or 0.0
         self.vars["audio"].set(f"rms {rms:.3f}  peak {peak:.3f}")
         self.level["value"] = peak
-        self.vars["error"].set(dbus.get("ErrorMessage") or "-")
+        self.vars["error"].set(dbus.get("StatusMessage") or "-")
         self.vars["processes"].set(", ".join(state.get("pids") or []) or "not running")
         self.vars["client RSS"].set(human_bytes(state.get("rss")))
         if not self.mode_note.get():

@@ -117,8 +117,8 @@ mod tests {
             "pump must not touch State"
         );
         assert!(
-            fake.property("ErrorMessage").is_none(),
-            "pump must not touch ErrorMessage"
+            fake.property("StatusMessage").is_none(),
+            "pump must not touch StatusMessage"
         );
         let _ = Arc::strong_count(&service.bus());
     }

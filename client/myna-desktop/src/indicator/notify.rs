@@ -14,6 +14,7 @@
 //! (feature 004); the former GTK `ui-gtk` overlay was removed in T150.
 
 use async_trait::async_trait;
+use gettextrs::gettext;
 use notify_rust::{Hint, Notification, Timeout, Urgency};
 
 use super::{Indicator, IndicatorState};
@@ -50,29 +51,25 @@ impl std::fmt::Debug for NotifyIndicator {
     }
 }
 
-/// The user-facing summary + body for a state (labels only — never transcript
-/// text). `None` means "close the toast" (`Hidden`).
+/// The notification-specific summary + body for a state (labels only — never
+/// transcript text). `None` means "close the toast" (`Hidden`).
 fn toast_text(state: &IndicatorState) -> Option<(String, String)> {
     match state {
         IndicatorState::Hidden => None,
         IndicatorState::Recording => Some((
-            "🎤 Dictation: listening".into(),
-            "Speak now — tap your shortcut again to stop.".into(),
+            gettext("🎤 Dictation: listening"),
+            gettext("Speak now — tap your shortcut again to stop."),
         )),
         IndicatorState::Transcribing => Some((
-            "💬 Dictation: transcribing".into(),
-            "Converting speech to text…".into(),
+            gettext("💬 Dictation: transcribing"),
+            gettext("Converting speech to text…"),
         )),
         IndicatorState::Finalizing => Some((
-            "⏳ Dictation: finishing".into(),
-            "Inserting the final text…".into(),
+            gettext("⏳ Dictation: finishing"),
+            gettext("Inserting the final text…"),
         )),
-        // `recoverable` (feature 004, 2026-07-30) is intentionally ignored
-        // here: this indicator renders every error identically regardless of
-        // severity (out of scope for feature 004 — see plan.md Complexity
-        // Tracking).
         IndicatorState::Error { message, .. } => {
-            Some(("⚠️ Dictation error".into(), message.clone()))
+            Some((gettext("⚠️ Dictation error"), message.clone()))
         }
     }
 }
@@ -235,6 +232,35 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_toasts_keep_their_notification_specific_text() {
+        assert_eq!(
+            toast_text(&IndicatorState::Recording),
+            Some((
+                "🎤 Dictation: listening".into(),
+                "Speak now — tap your shortcut again to stop.".into(),
+            ))
+        );
+        assert_eq!(
+            toast_text(&IndicatorState::Transcribing),
+            Some((
+                "💬 Dictation: transcribing".into(),
+                "Converting speech to text…".into(),
+            ))
+        );
+        assert_eq!(
+            toast_text(&IndicatorState::Finalizing),
+            Some((
+                "⏳ Dictation: finishing".into(),
+                "Inserting the final text…".into(),
+            ))
+        );
+        assert_eq!(
+            toast_text(&IndicatorState::critical("mic gone")),
+            Some(("⚠️ Dictation error".into(), "mic gone".into()))
+        );
+    }
+
+    #[test]
     fn error_toast_carries_the_message() {
         let (_summary, body) = toast_text(&IndicatorState::critical("mic gone")).unwrap();
         assert_eq!(body, "mic gone");
@@ -260,8 +286,8 @@ mod tests {
 
     #[test]
     fn labels_never_leak_transcript_text() {
-        // The listening/transcribing/finishing labels are fixed strings with no
-        // interpolated transcript (privacy, N8).
+        // The notification's fixed labels are never built from transcript
+        // content (privacy, N8).
         for s in [
             IndicatorState::Recording,
             IndicatorState::Transcribing,

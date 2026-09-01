@@ -30,7 +30,7 @@ fn activation_to_visible_is_immediate_no_extra_delay() {
     // immediately, and the consumer forwards the state as soon as it
     // arrives. The only remaining time is the frame clock's next tick
     // (~16.7ms), well inside the target.
-    let descriptor = state_to_descriptor(Some(wire::RECORDING), "");
+    let descriptor = state_to_descriptor(Some(wire::RECORDING), "Listening");
     assert!(
         !descriptor.hidden,
         "a recording descriptor is visible the moment it is applied"

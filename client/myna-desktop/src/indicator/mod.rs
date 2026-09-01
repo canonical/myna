@@ -9,6 +9,7 @@
 //! shipped indicators. See `specs/003-desktop-injection/contracts/indicator.md`.
 
 use async_trait::async_trait;
+use gettextrs::gettext;
 
 pub mod dbus;
 pub mod dynamic;
@@ -78,6 +79,23 @@ impl IndicatorState {
             message: message.into(),
             recoverable: true,
         }
+    }
+}
+
+/// The publisher-owned, content-free label for a D-Bus `StatusMessage`.
+///
+/// This belongs to the indicator boundary rather than `indicator::dbus`:
+/// D-Bus is one presentation transport, while the desktop session policy
+/// decides whether `Recording` is still loading or actively listening.
+/// Consumers render this already-translated value verbatim.
+pub fn status_message(state: &IndicatorState, ready_seen: bool) -> String {
+    match state {
+        IndicatorState::Hidden => String::new(),
+        IndicatorState::Recording if !ready_seen => gettext("Loading model…"),
+        IndicatorState::Recording => gettext("Listening"),
+        IndicatorState::Transcribing => gettext("Transcribing"),
+        IndicatorState::Finalizing => gettext("Finishing"),
+        IndicatorState::Error { message, .. } => message.clone(),
     }
 }
 

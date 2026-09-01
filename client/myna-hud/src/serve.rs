@@ -3,7 +3,7 @@
 //!
 //! It claims the well-known name (never by force — a clean request, and it
 //! bows out if `myna-desktop` already owns it), publishes
-//! `State`/`ErrorMessage`/`AudioRms`/`AudioPeak` at [`PUBLISH_HZ`] from the
+//! `State`/`StatusMessage`/`AudioRms`/`AudioPeak` at [`PUBLISH_HZ`] from the
 //! lab's controls, and answers `Start`/`Stop`/`Toggle`. This is what lets
 //! the real hosted path — the extension consuming a live name — be
 //! exercised without the daemon.
@@ -29,8 +29,8 @@ use crate::dbus_consumer::{BUS_NAME, OBJECT_PATH};
 pub struct Controls {
     /// The wire `State` the lab selected (`recording`, `notice`, `idle`, …).
     pub state: String,
-    /// The content-free reason for a `notice`/`error` state.
-    pub reason: String,
+    /// The publisher-owned, content-free label for the selected state.
+    pub status_message: String,
     /// The smoothed envelope `[0, 1]`.
     pub envelope: f64,
 }
@@ -39,7 +39,7 @@ impl Default for Controls {
     fn default() -> Self {
         Self {
             state: wire::IDLE.into(),
-            reason: String::new(),
+            status_message: String::new(),
             envelope: 0.0,
         }
     }
@@ -96,7 +96,7 @@ impl Shared {
         self.session.lock().unwrap().set_active(active);
     }
 
-    /// The `(State, ErrorMessage, rms, peak)` to publish right now, from the
+    /// The `(State, StatusMessage, rms, peak)` to publish right now, from the
     /// current controls and session flag. Public so the lab's slider→bus
     /// wiring can be pinned without a bus (tests/serve_levels.rs).
     pub fn snapshot(&self) -> (String, String, f64, f64) {
@@ -106,8 +106,8 @@ impl Shared {
         // consumers see the HUD go quiet — the observable effect of
         // "unpublish" without the name-release race.
         let active = active && self.is_publishing();
-        let (state, reason) = if active {
-            (controls.state.clone(), controls.reason.clone())
+        let (state, status_message) = if active {
+            (controls.state.clone(), controls.status_message.clone())
         } else {
             (wire::IDLE.to_string(), String::new())
         };
@@ -116,7 +116,7 @@ impl Shared {
         } else {
             (0.0, 0.0)
         };
-        (state, reason, rms, peak)
+        (state, status_message, rms, peak)
     }
 }
 
@@ -124,18 +124,18 @@ impl Shared {
 pub struct Dictation {
     shared: Shared,
     state: String,
-    error_message: String,
+    status_message: String,
     audio_rms: f64,
     audio_peak: f64,
 }
 
 impl Dictation {
     fn new(shared: Shared) -> Self {
-        let (state, error_message, audio_rms, audio_peak) = shared.snapshot();
+        let (state, status_message, audio_rms, audio_peak) = shared.snapshot();
         Self {
             shared,
             state,
-            error_message,
+            status_message,
             audio_rms,
             audio_peak,
         }
@@ -169,8 +169,8 @@ impl Dictation {
     }
 
     #[zbus(property)]
-    fn error_message(&self) -> String {
-        self.error_message.clone()
+    fn status_message(&self) -> String {
+        self.status_message.clone()
     }
 
     #[zbus(property)]
@@ -247,7 +247,7 @@ async fn publish_once(connection: &zbus::Connection, shared: &Shared) -> zbus::R
         .object_server()
         .interface::<_, Dictation>(OBJECT_PATH)
         .await?;
-    let (state, error_message, audio_rms, audio_peak) = shared.snapshot();
+    let (state, status_message, audio_rms, audio_peak) = shared.snapshot();
 
     let mut iface = iface_ref.get_mut().await;
     let emitter = iface_ref.signal_emitter();
@@ -259,9 +259,9 @@ async fn publish_once(connection: &zbus::Connection, shared: &Shared) -> zbus::R
         iface.state = state;
         iface.state_changed(emitter).await?;
     }
-    if iface.error_message != error_message {
-        iface.error_message = error_message;
-        iface.error_message_changed(emitter).await?;
+    if iface.status_message != status_message {
+        iface.status_message = status_message;
+        iface.status_message_changed(emitter).await?;
     }
     // Levels are pushed every tick, unconditionally — arrival time is part
     // of the stale-decay contract (R16a), so identical values still refresh.

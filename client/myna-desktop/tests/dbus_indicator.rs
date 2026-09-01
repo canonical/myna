@@ -23,12 +23,15 @@ async fn one_state_update_per_transition_and_state_property_tracks() {
 
     indicator.set_state(IndicatorState::Recording).await;
     assert_eq!(fake.property("State"), str_prop("recording"));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Listening"));
 
     indicator.set_state(IndicatorState::Transcribing).await;
     assert_eq!(fake.property("State"), str_prop("transcribing"));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Transcribing"));
 
     indicator.set_state(IndicatorState::Finalizing).await;
     assert_eq!(fake.property("State"), str_prop("finalizing"));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Finishing"));
 
     indicator.hide().await;
 
@@ -40,7 +43,7 @@ async fn one_state_update_per_transition_and_state_property_tracks() {
     assert_eq!(fake.property("State"), str_prop("idle"));
 }
 
-/// P3: `hide()` publishes `idle`, zeroes the levels, and clears `ErrorMessage`.
+/// P3: `hide()` publishes `idle`, zeroes the levels, and clears `StatusMessage`.
 #[tokio::test]
 async fn hide_publishes_idle_zeroes_levels_clears_error() {
     let fake = FakeBus::new();
@@ -55,7 +58,7 @@ async fn hide_publishes_idle_zeroes_levels_clears_error() {
         ))
         .await;
     assert_eq!(
-        fake.property("ErrorMessage"),
+        fake.property("StatusMessage"),
         str_prop("refusing to type into a password field")
     );
 
@@ -64,7 +67,7 @@ async fn hide_publishes_idle_zeroes_levels_clears_error() {
     assert_eq!(fake.property("State"), str_prop("idle"));
     assert_eq!(fake.property("AudioRms"), Some(PropertyValue::F64(0.0)));
     assert_eq!(fake.property("AudioPeak"), Some(PropertyValue::F64(0.0)));
-    assert_eq!(fake.property("ErrorMessage"), str_prop(""));
+    assert_eq!(fake.property("StatusMessage"), str_prop(""));
     assert_eq!(
         fake.state_history().last().map(String::as_str),
         Some("idle")
@@ -84,10 +87,12 @@ async fn cold_load_publishes_loading_then_recording() {
     readiness.note_loading(); // OrchestratorEvent::Loading seen
     indicator.set_state(IndicatorState::Recording).await;
     assert_eq!(fake.property("State"), str_prop("loading"));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Loading model…"));
 
     readiness.note_ready(); // OrchestratorEvent::Ready seen
     indicator.set_state(IndicatorState::Recording).await;
     assert_eq!(fake.property("State"), str_prop("recording"));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Listening"));
 
     assert_eq!(fake.state_history(), vec!["loading", "recording"]);
 }
@@ -115,9 +120,9 @@ async fn duplicate_states_do_not_reemit() {
 }
 
 /// T009/C10 (2026-07-30): `Error{recoverable: true}` publishes the `notice`
-/// wire state (not `error`), reusing `ErrorMessage` for the reason; a
-/// critical error still publishes `error`. Leaving either problem state
-/// clears `ErrorMessage`.
+/// wire state (not `error`) with its publisher-owned `StatusMessage`; a
+/// critical error still publishes `error`. Leaving any visible state replaces
+/// the message with the new state's label.
 #[tokio::test]
 async fn recoverable_error_publishes_notice_not_error() {
     let fake = FakeBus::new();
@@ -131,21 +136,20 @@ async fn recoverable_error_publishes_notice_not_error() {
         .await;
     assert_eq!(fake.property("State"), str_prop("notice"));
     assert_eq!(
-        fake.property("ErrorMessage"),
+        fake.property("StatusMessage"),
         str_prop("No speech detected")
     );
 
-    // Leaving the recoverable notice clears ErrorMessage, same as leaving a
-    // critical error would.
+    // Leaving the recoverable notice replaces its message with the new label.
     indicator.set_state(IndicatorState::Recording).await;
-    assert_eq!(fake.property("ErrorMessage"), str_prop(""));
+    assert_eq!(fake.property("StatusMessage"), str_prop("Listening"));
 
     indicator
         .set_state(IndicatorState::critical("microphone unavailable"))
         .await;
     assert_eq!(fake.property("State"), str_prop("error"));
     assert_eq!(
-        fake.property("ErrorMessage"),
+        fake.property("StatusMessage"),
         str_prop("microphone unavailable")
     );
 
@@ -154,7 +158,7 @@ async fn recoverable_error_publishes_notice_not_error() {
 
 /// C3: every published payload is a wire state + a content-free reason — the
 /// `State` values can only ever be the six state strings plus the reason
-/// string from `IndicatorState::Error` in `ErrorMessage` (never transcript,
+/// string from `IndicatorState::Error` in `StatusMessage` (never transcript,
 /// which never reaches the indicator seam).
 #[tokio::test]
 async fn payloads_are_content_free() {
