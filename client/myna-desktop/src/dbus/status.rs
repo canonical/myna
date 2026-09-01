@@ -47,3 +47,24 @@ fn text(all: &HashMap<String, OwnedValue>, key: &str) -> String {
         .and_then(|v| String::try_from(v.try_clone().ok()?).ok())
         .unwrap_or_default()
 }
+
+/// Ask the running daemon to raise the portal's bind dialog for the dictation
+/// shortcut, returning what it reported.
+///
+/// The call has to land in the daemon: the portal keys a binding by the
+/// caller's app id, so binding from this process would file it under whatever
+/// confinement *this* command runs in and leave the daemon still unbound.
+pub async fn bind_shortcut(preferred: Option<&str>) -> Result<(bool, String), zbus::Error> {
+    let connection = Connection::session().await?;
+    connection
+        .call_method(
+            Some(BUS_NAME),
+            OBJECT_PATH,
+            Some(BUS_NAME),
+            "BindShortcut",
+            &(preferred.unwrap_or_default()),
+        )
+        .await?
+        .body()
+        .deserialize()
+}

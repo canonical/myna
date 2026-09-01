@@ -44,37 +44,51 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// missed, which is why it is finite at all.
 const ABSENT_RECHECK: Duration = Duration::from_secs(30);
 
-/// How long one bind attempt may take before it is abandoned and retried.
+/// Backstop on one whole bind attempt.
 ///
-/// The portal's `BindShortcuts` resolves on a `Response` *signal*, not on the
-/// method reply, so no D-Bus call timeout applies to it and a portal that
-/// never answers never returns. An unbounded await here defeats the whole
-/// point of this type: the loop cannot retry what it is still waiting on, so
-/// the daemon stays up, keeps the bus name, logs nothing further and is deaf
-/// until something restarts it - strictly worse than the failure the retrying
-/// exists to fix. (Observed 2026-08-25: restarting `xdg-desktop-portal` under
-/// a running daemon left `bind_shortcuts` pending indefinitely.)
+/// The bind's own answer deadline lives at the portal boundary
+/// ([`crate::shortcut::portal::BIND_TIMEOUT`]), because that is the only place
+/// that holds the session it has to hand back on the way out. This is the
+/// looser guard around everything else an attempt does - connecting, checking
+/// the bus name, installing signal matches - so that a `Rebind` which wedges
+/// somewhere this module cannot see still comes back rather than parking the
+/// loop forever. (Observed 2026-08-25: restarting `xdg-desktop-portal` under a
+/// running daemon left `bind_shortcuts` pending indefinitely.)
 ///
-/// Generous rather than tight, because a bind can legitimately block on a
-/// user-facing confirm sheet: portal v1 has no persist token, so backends
-/// older than xdg-desktop-portal-gnome 51 prompt once per bind. Timing out
-/// under someone's cursor would just raise a second sheet. What matters is
-/// that it is finite.
-const BIND_TIMEOUT: Duration = Duration::from_secs(120);
+/// Deliberately longer than the inner deadline: if both are armed the inner
+/// one must win, because it is the one that cleans up.
+const ATTEMPT_BACKSTOP: Duration = Duration::from_secs(180);
 
-/// Retry delay after the backend had the request and did not grant it. Long,
-/// and deliberately not part of the doubling sequence: the portal's bind is a
-/// *user-facing confirm sheet* (portal v1 has no persist token, so there is
-/// one per bind), and retrying a refused or ignored sheet on the fast backoff
-/// re-raises that dialog every second or two. Still finite, so a sheet
-/// dismissed by accident heals on its own instead of needing
-/// `snap restart myna`.
-const REFUSED_BACKOFF: Duration = Duration::from_secs(300);
+/// Retry delay after a confirm sheet was raised and did not become a binding -
+/// declined, or never answered at all.
+///
+/// This is the *net*, not the mechanism. A sheet that failed is a question
+/// already put to whoever is at this machine, and re-putting it on a timer is
+/// how an unattended VM ended up with six stacked "Add Keyboard Shortcuts"
+/// dialogs (reported 2026-09-01; the dialogs also leaked, which is fixed at
+/// the portal boundary). The real signal to ask again is a *new backend* -
+/// a portal restart, which in practice means a new desktop session - and
+/// [`Rebind::wait_before_retry`] parks on exactly that. The hour is only there
+/// so a missed signal heals on its own instead of needing `snap restart myna`.
+///
+/// Not part of the doubling ladder: it is already the ceiling.
+const SHEET_RECHECK: Duration = Duration::from_secs(3600);
+
+/// Recheck interval while no shortcut is bound at all.
+///
+/// Nothing is wrong and nothing is being waited on: the binding arrives when
+/// the user runs `--bind-shortcut`, in another process, and the portal has no
+/// signal to offer this one about it. So this is a plain poll - one
+/// `ListShortcuts` round trip, no UI - slow enough to cost nothing and quick
+/// enough that the hotkey works shortly after being bound.
+const UNBOUND_RECHECK: Duration = Duration::from_secs(15);
 
 /// Why a bind attempt failed, and therefore how eagerly to try the next one.
-/// The two are genuinely different situations and the wrong delay is
+/// These are genuinely different situations and the wrong delay is
 /// user-visible either way: too slow and the hotkey is dead after login, too
-/// fast and the user is buried in portal dialogs.
+/// fast and the user is buried in portal dialogs. The dividing line is whether
+/// the attempt cost a human anything - the first two ask nobody and can be
+/// retried freely, the last two put a dialog on someone's screen and cannot.
 #[derive(Debug)]
 pub enum BindFailure {
     /// The service is not running and this daemon declined to start it (see
@@ -89,15 +103,29 @@ pub enum BindFailure {
     /// first and then back away.
     Unavailable(String),
     /// The request reached the backend and came back without a grant - the
-    /// user dismissed the confirm sheet, or never answered it. Retrying fast
-    /// would just raise the sheet again.
+    /// user dismissed the confirm sheet. They have answered, so the next
+    /// thing worth asking is a different backend, not them again.
     Refused(String),
+    /// A sheet was raised and nobody answered it inside the portal
+    /// boundary's deadline - a locked screen, a session switched away from.
+    /// Held apart from [`Self::Refused`] because the *diagnosis* differs and
+    /// it is user-visible on `StatusMessage`: "the user said no" and "there was
+    /// no user" are not the same fault, even though both mean stop asking.
+    Unanswered(String),
+    /// The portal works and holds no binding for this app. Not degradation -
+    /// the daemon is waiting on a step only the user can take, and says so
+    /// rather than raising a dialog to ask for it.
+    Unbound(String),
 }
 
 impl BindFailure {
     fn reason(&self) -> &str {
         match self {
-            Self::NotYet(r) | Self::Unavailable(r) | Self::Refused(r) => r,
+            Self::NotYet(r)
+            | Self::Unavailable(r)
+            | Self::Refused(r)
+            | Self::Unanswered(r)
+            | Self::Unbound(r) => r,
         }
     }
 }
@@ -177,17 +205,17 @@ impl RetryingTrigger {
     /// returns having set `self.inner`.
     async fn bind_with_backoff(&mut self) {
         loop {
-            // Bound the attempt (see BIND_TIMEOUT) before matching on it, so
+            // Bound the attempt (see ATTEMPT_BACKSTOP) before matching on it, so
             // the borrow of `self.rebind` ends and `publish` can take `&mut
             // self` below.
-            let outcome = match tokio::time::timeout(BIND_TIMEOUT, self.rebind.bind()).await {
+            let outcome = match tokio::time::timeout(ATTEMPT_BACKSTOP, self.rebind.bind()).await {
                 Ok(result) => result,
-                // Timing out means the backend took the request and sat on it,
-                // which is a sheet nobody answered - the same disposition as a
-                // refusal, not a reason to hammer.
-                Err(_) => Err(BindFailure::Refused(format!(
-                    "no answer within {}s (an unanswered shortcut dialog?)",
-                    BIND_TIMEOUT.as_secs()
+                // The backstop fired, so the attempt wedged somewhere the
+                // portal boundary's own deadline does not cover. Nothing was
+                // answered, so it disposes like an unanswered sheet.
+                Err(_) => Err(BindFailure::Unanswered(format!(
+                    "bind attempt did not return within {}s",
+                    ATTEMPT_BACKSTOP.as_secs()
                 ))),
             };
             match outcome {
@@ -216,9 +244,20 @@ impl RetryingTrigger {
                             format!("backing off to every {BACKOFF_MAX:?}"),
                             true,
                         ),
-                        BindFailure::Refused(_) => {
-                            (REFUSED_BACKOFF, format!("every {REFUSED_BACKOFF:?}"), true)
-                        }
+                        // Both mean a sheet was raised and did not take. The
+                        // wait is spent parked on a new backend appearing, so
+                        // the usual cadence is one sheet per desktop session
+                        // rather than one per `SHEET_RECHECK`.
+                        BindFailure::Refused(_) | BindFailure::Unanswered(_) => (
+                            SHEET_RECHECK,
+                            "waiting for a new backend".to_string(),
+                            false,
+                        ),
+                        BindFailure::Unbound(_) => (
+                            UNBOUND_RECHECK,
+                            "waiting for a shortcut to be bound".to_string(),
+                            false,
+                        ),
                     };
                     // Said once, in full - including that it keeps trying, so
                     // a single line is not read as "gave up" - and then only
@@ -499,9 +538,81 @@ mod tests {
         }
     }
 
+    /// Refuses every bind the way an unattended machine does: the sheet goes
+    /// up and nothing comes back.
+    struct UnansweredBind {
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Rebind for UnansweredBind {
+        async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            Err(BindFailure::Unanswered("no answer within 120s".into()))
+        }
+    }
+
+    /// Never bound; binds on the attempt after `until`.
+    struct UnboundUntil {
+        until: usize,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Rebind for UnboundUntil {
+        async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
+            let n = self.attempts.fetch_add(1, Ordering::SeqCst);
+            if n < self.until {
+                return Err(BindFailure::Unbound("no dictation shortcut bound".into()));
+            }
+            Ok(Box::new(ScriptedTrigger::new(vec![TriggerEdge::Press])))
+        }
+    }
+
+    /// Nothing bound is not degradation and not a dead end: the user binds in
+    /// another process, so this keeps looking - cheaply, and without ever
+    /// putting a dialog up to ask.
+    #[tokio::test(start_paused = true)]
+    async fn an_unbound_shortcut_is_rechecked_until_it_appears() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut trigger = RetryingTrigger::new(UnboundUntil {
+            until: 2,
+            attempts: Arc::clone(&attempts),
+        });
+
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    /// and says which command fixes it, rather than reporting a fault.
+    #[tokio::test(start_paused = true)]
+    async fn an_unbound_shortcut_says_so_on_the_bus() {
+        let bus = FakeBus::new();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let trigger = RetryingTrigger::new(UnboundUntil {
+            until: usize::MAX,
+            attempts,
+        });
+        let mut trigger = trigger.status_on(Arc::new(tokio::sync::Mutex::new(bus.clone())));
+
+        let _ = tokio::time::timeout(UNBOUND_RECHECK / 2, trigger.next_edge()).await;
+
+        assert_eq!(
+            bus.property("StatusMessage"),
+            Some(PropertyValue::Str(
+                "dictation hotkey unavailable: no dictation shortcut bound".into()
+            ))
+        );
+    }
+
     /// A refused bind is a dialog the user just said no to. Retrying it on the
     /// 1s/2s/4s ladder would raise that dialog again immediately and keep
     /// doing it; it has to wait properly instead.
+    ///
+    /// The window is the whole of `SHEET_RECHECK`, not a couple of minutes:
+    /// the point of the policy is that the *only* thing which re-asks inside
+    /// that hour is a new backend, and a window shorter than the delay under
+    /// test would pass no matter what the delay was.
     #[tokio::test(start_paused = true)]
     async fn a_refused_bind_does_not_re_raise_the_dialog() {
         let attempts = Arc::new(AtomicUsize::new(0));
@@ -509,12 +620,55 @@ mod tests {
             attempts: Arc::clone(&attempts),
         });
 
-        // Two minutes is already past several rungs of the fast backoff.
-        let _ = tokio::time::timeout(Duration::from_secs(120), trigger.next_edge()).await;
+        let _ =
+            tokio::time::timeout(SHEET_RECHECK - Duration::from_secs(1), trigger.next_edge()).await;
         assert_eq!(
             attempts.load(Ordering::SeqCst),
             1,
-            "no second dialog within the refusal backoff"
+            "the dismissed sheet was put back up inside SHEET_RECHECK"
+        );
+    }
+
+    /// The reported bug's cadence, at the policy layer.
+    ///
+    /// A VM left at a lock screen answered nothing for 47 minutes and
+    /// collected six sheets: one raised per portal-side bind timeout + the old
+    /// five-minute refusal backoff. An unanswered sheet is not a reason to
+    /// raise another one - nobody has seen the first yet.
+    #[tokio::test(start_paused = true)]
+    async fn an_unanswered_sheet_is_not_replaced_with_another_one() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut trigger = RetryingTrigger::new(UnansweredBind {
+            attempts: Arc::clone(&attempts),
+        });
+
+        // The reporter's window, and then some.
+        let _ = tokio::time::timeout(Duration::from_secs(47 * 60), trigger.next_edge()).await;
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "an unattended machine was asked more than once in 47 minutes"
+        );
+    }
+
+    /// "Nobody answered" and "the user declined" are different diagnoses, and
+    /// the one on `StatusMessage` is what a support answer gets written from.
+    /// They were the same string until 2026-09-01.
+    #[tokio::test(start_paused = true)]
+    async fn an_unanswered_sheet_reports_itself_as_unanswered() {
+        let bus = FakeBus::new();
+        let trigger = RetryingTrigger::new(UnansweredBind {
+            attempts: Arc::new(AtomicUsize::new(0)),
+        });
+        let mut trigger = trigger.status_on(Arc::new(tokio::sync::Mutex::new(bus.clone())));
+
+        let _ = tokio::time::timeout(Duration::from_secs(5), trigger.next_edge()).await;
+
+        assert_eq!(
+            bus.property("StatusMessage"),
+            Some(PropertyValue::Str(
+                "dictation hotkey unavailable: no answer within 120s".into()
+            ))
         );
     }
 

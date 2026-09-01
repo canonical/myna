@@ -150,6 +150,11 @@ apps:
   # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
   toggle:
     command: bin/myna-desktop --toggle
+    # Reads the host's dconf to work out which activation is in force, and so
+    # what to say when the poke does not land. Without this the read is denied
+    # and the advice is computed from defaults - plus six dconf-CRITICALs.
+    plugs:
+      - gsettings
 
   # Bind <accel> → `myna.toggle` via dconf. Only needed under `myna --control`
   # — packaged, the daemon defaults to the GlobalShortcuts portal, which owns
@@ -160,6 +165,23 @@ apps:
     command: bin/myna-install-shortcut
     plugs:
       - gsettings
+
+  # Bind (or rebind) the portal shortcut - the packaged default. The one thing
+  # that raises the desktop's "Add Keyboard Shortcuts" dialog: the daemon
+  # itself only ever attaches to a binding that already exists, so a session
+  # start never asks for a key.
+  #
+  # This is a *client*. The bind is performed by the daemon over
+  # com.canonical.Myna.Dictation, because the portal keys a binding by the
+  # caller's app id and this app's is `myna_bind-shortcut`, not the daemon's
+  # `myna_myna` - binding here would file it where nothing looks for it.
+  # `desktop` is for the session bus (and for an unpackaged fallback that
+  # cannot apply here); same-snap D-Bus comes from the base template.
+  bind-shortcut:
+    command: bin/myna-desktop --bind-shortcut
+    plugs:
+      - desktop
+      - gsettings # activation + preferred hotkey come from the host's dconf
 
   # One screen of "what is dictation doing, and why": the persisted settings,
   # what they resolved to and which plane won, whether the backend socket is

@@ -81,7 +81,7 @@ actions:
     cd /project/client
     /project/dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
     /project/dev/gated-tests.sh cargo test \
-      -p myna-desktop --test ibus_hw --test dbus_hw -- --test-threads=1
+      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
 
   # Rust lints as errors.
   lint: |
@@ -151,7 +151,7 @@ actions:
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       -p myna-audio --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
-      -p myna-desktop --test ibus_hw --test dbus_hw -- --test-threads=1
+      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
     cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml
     cargo llvm-cov report --lcov --output-path target/coverage/rust.lcov
     cargo llvm-cov report --html --output-dir target/coverage/html

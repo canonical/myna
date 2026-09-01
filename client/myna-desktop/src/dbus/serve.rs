@@ -139,6 +139,15 @@ struct DictationObject {
     served: Arc<Mutex<ServedState>>,
     trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
     clients: Arc<ClientRegistry>,
+    /// Set under portal activation. `BindShortcut` runs here rather than in
+    /// the CLI that asks for it because the portal keys a binding by app id,
+    /// and the app id comes from the caller's confinement: a separate snap
+    /// app would bind under `myna_bind-shortcut` and the daemon would never
+    /// see it.
+    // `BindShortcut` itself is `cfg(not(test))` — the portal call it makes has
+    // no hermetic double — so under `cfg(test)` nothing reads this.
+    #[cfg_attr(test, allow(dead_code))]
+    bind_mode: Option<crate::shortcut::portal::ActivationMode>,
 }
 
 #[zbus::interface(name = "com.canonical.Myna.Dictation")]
@@ -165,6 +174,34 @@ impl DictationObject {
     async fn toggle(&self) {
         if let Some(trigger) = &self.trigger {
             trigger.toggle();
+        }
+    }
+
+    /// `BindShortcut`: raise the portal's own bind dialog for the dictation
+    /// shortcut, or its rebind dialog if one is already bound. `preferred` is
+    /// an accelerator to offer the dialog, or empty for the portal's default.
+    /// Returns `(ok, message)`.
+    #[cfg(not(test))]
+    async fn bind_shortcut(&self, preferred: &str) -> (bool, String) {
+        use crate::shortcut::portal::{configure, Configured};
+
+        let Some(mode) = self.bind_mode else {
+            return (
+                false,
+                "activation is not Portal; this daemon takes no portal shortcut".into(),
+            );
+        };
+        let preferred = (!preferred.is_empty()).then_some(preferred);
+        match configure("dictate", preferred, mode).await {
+            Ok(Configured::Bound(triggers)) if triggers.is_empty() => {
+                (true, "shortcut bound".into())
+            }
+            Ok(Configured::Bound(triggers)) => (true, format!("bound to {}", triggers.join(", "))),
+            Ok(Configured::DialogOpened) => (
+                true,
+                "already bound; opened the desktop's shortcut settings".into(),
+            ),
+            Err(e) => (false, e.to_string()),
         }
     }
 
@@ -248,11 +285,31 @@ impl ZbusBus {
         Self::serve_with_trigger(None).await
     }
 
+    /// [`serve`](Self::serve) plus the activation mode `BindShortcut` binds
+    /// with. `None` leaves the method refusing, which is right for every
+    /// activation that owns no portal shortcut.
+    pub async fn serve_for_portal(
+        mode: Option<crate::shortcut::portal::ActivationMode>,
+    ) -> Result<Self, ServeError> {
+        Self::serve_inner(None, mode).await
+    }
+
     /// Like [`serve`](Self::serve), but attaches a [`DbusTriggerSource`] so
     /// the served `Start`/`Stop`/`Toggle` methods feed the panel-button
     /// trigger (T140/T141).
     pub async fn serve_with_trigger(
         trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
+    ) -> Result<Self, ServeError> {
+        Self::serve_inner(trigger, None).await
+    }
+
+    async fn serve_inner(
+        trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
+        // `BindShortcut` itself is `cfg(not(test))` — the portal call it makes has
+        // no hermetic double — so under `cfg(test)` nothing reads this.
+        #[cfg_attr(test, allow(dead_code))] bind_mode: Option<
+            crate::shortcut::portal::ActivationMode,
+        >,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
@@ -264,6 +321,7 @@ impl ZbusBus {
                     served: Arc::clone(&served),
                     trigger,
                     clients: Arc::clone(&clients),
+                    bind_mode,
                 },
             )
             .await?;

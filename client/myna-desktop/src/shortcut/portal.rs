@@ -3,8 +3,11 @@
 //!
 //! Maps portal `Activated` → [`TriggerEdge::Press`] (deduped: first wins until
 //! `Deactivated`, collapsing compositor autorepeat — FR-008), `Deactivated` →
-//! [`TriggerEdge::Release`], and session-end → `None`. Binds via `ashpd`; the app
-//! ships no shortcut-config UI (the desktop's portal dialog owns rebinding).
+//! [`TriggerEdge::Release`], and session-end → `None`. The daemon re-establishes
+//! a binding the user already asked for ([`GlobalShortcutTrigger::attach`],
+//! gated on [`consent`]); asking for one in the first place is an explicit user
+//! step ([`configure`], `--bind-shortcut`) that hands the portal's own dialog
+//! the job.
 //!
 //! ## Testability
 //!
@@ -36,6 +39,19 @@ pub enum TriggerError {
     /// costs one bus round trip and is worth re-checking often.
     #[error("no portal running yet: {0}")]
     PortalNotRunning(String),
+    /// The backend took the bind request and never answered it within
+    /// [`BIND_TIMEOUT`]. Deliberately *not* [`Self::BindRejected`]: nobody
+    /// declined anything, there was simply nobody in front of the sheet (a
+    /// locked screen, a switched-away session). The two want different retry
+    /// policies, and conflating them is what made an unattended machine look
+    /// like a user saying no over and over.
+    #[error("shortcut bind unanswered: {0}")]
+    BindUnanswered(String),
+    /// The portal holds no binding for this app and none has been asked for.
+    /// Nothing is broken and nothing is pending: the user has not run
+    /// `--bind-shortcut`.
+    #[error("no dictation shortcut bound: {0}")]
+    NoShortcutBound(String),
 }
 
 /// A raw portal activation edge (before dedup). Public so the hermetic test can
@@ -174,11 +190,124 @@ impl GlobalShortcutTrigger {
         }
     }
 
-    /// Create a portal session on the crate's shared session-bus connection
-    /// (stale-`guid` tolerant — see [`crate::dbus::serve::connect_session`]),
-    /// bind `shortcut_id` (offering `preferred_trigger` to the portal's own
-    /// confirm/rebind UI — FR-009), and merge the `Activated`/`Deactivated`
-    /// signals for that shortcut into one stream.
+    /// Re-establish the binding the user asked for, without asking again.
+    ///
+    /// `ListShortcuts` first, and if that answers we are done. It usually does
+    /// not: GNOME reports only what was bound *on this session*, never what it
+    /// has stored, so the sole way to activate a stored binding is to issue
+    /// `BindShortcuts` again - which is exactly the call that raises the
+    /// "Add Keyboard Shortcuts" sheet when nothing is stored.
+    ///
+    /// [`consent`] is what separates those two cases. Bind only where the user
+    /// has already been through that dialog once, because then the portal
+    /// answers from its store and shows nothing; with no consent on record,
+    /// refuse and say which command to run. That is the reported bug: a fresh
+    /// install raised the sheet at every login, and dismissing it stored
+    /// nothing, so the next login raised it again.
+    #[cfg(not(test))]
+    pub async fn attach(shortcut_id: &str, mode: ActivationMode) -> Result<Self, TriggerError> {
+        let conn = crate::dbus::serve::connect_session()
+            .await
+            .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+        Self::attach_with_connection(conn, shortcut_id, mode).await
+    }
+
+    /// As [`Self::attach`] but on a caller-provided session-bus connection.
+    #[cfg(not(test))]
+    pub async fn attach_with_connection(
+        conn: zbus::Connection,
+        shortcut_id: &str,
+        mode: ActivationMode,
+    ) -> Result<Self, TriggerError> {
+        Self::attach_with_connection_timeout(conn, shortcut_id, mode, BIND_TIMEOUT).await
+    }
+
+    /// As [`Self::attach_with_connection`] but with an explicit deadline on the
+    /// re-bind, so `tests/portal_leak.rs` need not spend [`BIND_TIMEOUT`].
+    #[cfg(not(test))]
+    pub async fn attach_with_connection_timeout(
+        conn: zbus::Connection,
+        shortcut_id: &str,
+        mode: ActivationMode,
+        answer_within: std::time::Duration,
+    ) -> Result<Self, TriggerError> {
+        let (shortcuts, session) = open_session(&conn).await?;
+        match Self::attach_on_session(
+            &conn,
+            &shortcuts,
+            &session,
+            shortcut_id,
+            mode,
+            answer_within,
+        )
+        .await
+        {
+            Ok(signals) => Ok(Self {
+                signals,
+                dedup: Dedup::with_mode(mode),
+                _keepalive: Keepalive::Portal(shortcuts, session),
+            }),
+            Err(e) => {
+                close_session(&session).await;
+                Err(e)
+            }
+        }
+    }
+    #[cfg(not(test))]
+    async fn attach_on_session(
+        conn: &zbus::Connection,
+        shortcuts: &ashpd::desktop::global_shortcuts::GlobalShortcuts,
+        session: &ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>,
+        shortcut_id: &str,
+        mode: ActivationMode,
+        answer_within: std::time::Duration,
+    ) -> Result<BoxStream<'static, PortalSignal>, TriggerError> {
+        let bound = list_shortcuts(shortcuts, session).await?;
+        if let Some(shortcut) = bound.iter().find(|s| s.id() == shortcut_id) {
+            let trigger = shortcut.trigger_description().to_string();
+            let signals = Self::subscribe(conn, shortcuts, shortcut_id).await?;
+            myna_core::info_log!(
+                "portal",
+                "attached '{shortcut_id}' ({trigger}); session live"
+            );
+            return Ok(signals);
+        }
+
+        if !consent::given() {
+            return Err(TriggerError::NoShortcutBound(format!(
+                "no '{shortcut_id}' binding, and none has been asked for"
+            )));
+        }
+
+        // Consent on record, so the portal has a binding to answer from and
+        // this is silent. If it is not - the user removed the shortcut in
+        // Settings and is now looking at a sheet - that consent is spent, and
+        // withdrawing it here is what stops the daemon asking again at every
+        // login for the rest of the install's life.
+        let result = Self::bind_on_session(
+            conn,
+            shortcuts,
+            session,
+            shortcut_id,
+            None,
+            mode,
+            answer_within,
+        )
+        .await;
+        if matches!(
+            result,
+            Err(TriggerError::BindRejected(_)) | Err(TriggerError::BindUnanswered(_))
+        ) {
+            consent::withdraw();
+        }
+        result
+    }
+
+    /// Create a portal session and bind `shortcut_id`, offering
+    /// `preferred_trigger` to the portal's own confirm UI (FR-009).
+    ///
+    /// May raise the portal's sheet. [`Self::attach`] calls it only with
+    /// [`consent`] on record, where the portal answers from its store instead.
     #[cfg(not(test))]
     pub async fn bind(
         shortcut_id: &str,
@@ -199,34 +328,109 @@ impl GlobalShortcutTrigger {
         preferred_trigger: Option<&str>,
         mode: ActivationMode,
     ) -> Result<Self, TriggerError> {
-        use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
-        use futures_util::future;
+        Self::bind_with_connection_timeout(conn, shortcut_id, preferred_trigger, mode, BIND_TIMEOUT)
+            .await
+    }
 
-        if !portal_is_up(&conn).await? {
-            return Err(TriggerError::PortalNotRunning(format!(
-                "nothing owns {PORTAL_BUS_NAME}; waiting rather than starting one"
-            )));
+    /// As [`Self::bind_with_connection`] but with an explicit answer deadline.
+    ///
+    /// The deadline is a parameter only so the fake-portal suite
+    /// (`tests/portal_leak.rs`) can exercise the abandon-and-clean-up path
+    /// without spending [`BIND_TIMEOUT`] per attempt.
+    #[cfg(not(test))]
+    pub async fn bind_with_connection_timeout(
+        conn: zbus::Connection,
+        shortcut_id: &str,
+        preferred_trigger: Option<&str>,
+        mode: ActivationMode,
+        answer_within: std::time::Duration,
+    ) -> Result<Self, TriggerError> {
+        let (shortcuts, session) = open_session(&conn).await?;
+
+        // Past this point a portal session exists, and every failure below has
+        // to hand it back: see `close_session`. Returning `?` straight out of
+        // here is what left a session - and the unanswered sheet hanging off
+        // it - on the desktop once per retry.
+        match Self::bind_on_session(
+            &conn,
+            &shortcuts,
+            &session,
+            shortcut_id,
+            preferred_trigger,
+            mode,
+            answer_within,
+        )
+        .await
+        {
+            Ok(signals) => Ok(Self {
+                signals,
+                dedup: Dedup::with_mode(mode),
+                _keepalive: Keepalive::Portal(shortcuts, session),
+            }),
+            Err(e) => {
+                close_session(&session).await;
+                Err(e)
+            }
         }
+    }
 
-        // Cloned, not moved: `portal_owner_changed` below needs the same
-        // connection (a zbus `Connection` clone is a handle to the one socket).
-        let shortcuts = GlobalShortcuts::with_connection(conn.clone())
-            .await
-            .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
-        let session = shortcuts
-            .create_session(Default::default())
-            .await
-            .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    /// The half of the bind that runs with a live session in hand, split out
+    /// so the caller above has exactly one place to clean up.
+    #[cfg(not(test))]
+    #[allow(clippy::too_many_arguments)]
+    async fn bind_on_session(
+        conn: &zbus::Connection,
+        shortcuts: &ashpd::desktop::global_shortcuts::GlobalShortcuts,
+        session: &ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>,
+        shortcut_id: &str,
+        preferred_trigger: Option<&str>,
+        mode: ActivationMode,
+        answer_within: std::time::Duration,
+    ) -> Result<BoxStream<'static, PortalSignal>, TriggerError> {
+        use ashpd::desktop::global_shortcuts::NewShortcut;
 
         let shortcut =
             NewShortcut::new(shortcut_id, mode.describe()).preferred_trigger(preferred_trigger);
-        shortcuts
-            .bind_shortcuts(&session, &[shortcut], None, Default::default())
-            .await
-            .map_err(|e| TriggerError::BindRejected(e.to_string()))?;
+        // `BindShortcuts` resolves on a `Response` *signal*, not on the method
+        // reply, so no D-Bus call timeout applies and a backend that raises a
+        // sheet nobody answers never returns. The bound wait is what makes
+        // that recoverable; closing the session on the way out is what stops
+        // the abandoned sheet from staying on the screen.
+        let bound = tokio::time::timeout(
+            answer_within,
+            shortcuts.bind_shortcuts(session, &[shortcut], None, Default::default()),
+        )
+        .await;
+        match bound {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => return Err(TriggerError::BindRejected(e.to_string())),
+            Err(_) => {
+                return Err(TriggerError::BindUnanswered(format!(
+                    "no answer within {}s; closing the session so the sheet does not linger",
+                    answer_within.as_secs()
+                )));
+            }
+        }
 
-        // Subscribe to the two edge signals and fold them, filtered to our
-        // shortcut id, into one PortalSignal stream.
+        let signals = Self::subscribe(conn, shortcuts, shortcut_id).await?;
+        myna_core::info_log!(
+            "portal",
+            "bound '{shortcut_id}' (preferred {}, {mode:?}); session live",
+            preferred_trigger.unwrap_or("portal default")
+        );
+        Ok(signals)
+    }
+
+    /// Fold the two edge signals for `shortcut_id` into one stream, ending it
+    /// when the portal we bound against stops being the portal.
+    #[cfg(not(test))]
+    async fn subscribe(
+        conn: &zbus::Connection,
+        shortcuts: &ashpd::desktop::global_shortcuts::GlobalShortcuts,
+        shortcut_id: &str,
+    ) -> Result<BoxStream<'static, PortalSignal>, TriggerError> {
+        use futures_util::future;
+
         let id_a = shortcut_id.to_string();
         let id_d = shortcut_id.to_string();
         let activated = shortcuts
@@ -243,29 +447,200 @@ impl GlobalShortcutTrigger {
             .filter_map(move |e| {
                 future::ready((e.shortcut_id() == id_d).then_some(PortalSignal::Deactivated))
             });
-        // The portal can restart under a long-lived daemon (a package
-        // upgrade, a crash, `systemctl --user restart`). Its session dies with
-        // it, but these are *bus-level* signal matches, so the streams above
-        // stay happily open and this trigger would go on listening to a
-        // session that no longer exists: the hotkey silently stops working and
-        // nothing says so. Ending the stream when the portal's bus name
-        // changes owner turns that into a plain rebind, which
-        // `retry::RetryingTrigger` already knows how to do.
-        let restarted = portal_owner_changed(&conn).await?;
-        let signals = stream::select(activated, deactivated)
+        // The portal can restart under a long-lived daemon (a package upgrade,
+        // a crash, `systemctl --user restart`). Its session dies with it, but
+        // these are *bus-level* signal matches, so the streams above stay
+        // happily open and this trigger would go on listening to a session
+        // that no longer exists: the hotkey silently stops working and nothing
+        // says so. Ending the stream when the portal's bus name changes owner
+        // turns that into a plain rebind, which `retry::RetryingTrigger`
+        // already knows how to do.
+        let restarted = portal_owner_changed(conn).await?;
+        Ok(stream::select(activated, deactivated)
             .take_until(restarted)
-            .boxed();
+            .boxed())
+    }
+}
 
-        myna_core::info_log!(
-            "portal",
-            "bound '{shortcut_id}' (preferred {}, {mode:?}); session live",
-            preferred_trigger.unwrap_or("portal default")
-        );
-        Ok(Self {
-            signals,
-            dedup: Dedup::with_mode(mode),
-            _keepalive: Keepalive::Portal(shortcuts, session),
-        })
+/// Raise the portal's own shortcut UI: bind `shortcut_id` if it is unbound,
+/// otherwise ask the portal to show its rebind dialog for it.
+///
+/// The whole of `--bind-shortcut`. The binding outlives this process - the
+/// portal keys it by app id, not by session - which is what lets the daemon
+/// pick it up with [`GlobalShortcutTrigger::attach`].
+#[cfg(not(test))]
+pub async fn configure(
+    shortcut_id: &str,
+    preferred_trigger: Option<&str>,
+    mode: ActivationMode,
+) -> Result<Configured, TriggerError> {
+    let conn = crate::dbus::serve::connect_session()
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    let (shortcuts, session) = open_session(&conn).await?;
+    let already = list_shortcuts(&shortcuts, &session)
+        .await?
+        .iter()
+        .any(|s| s.id() == shortcut_id);
+
+    let outcome = if already {
+        shortcuts
+            .configure_shortcuts(&session, None, Default::default())
+            .await
+            .map(|()| Configured::DialogOpened)
+            .map_err(|e| TriggerError::BindRejected(e.to_string()))
+    } else {
+        use ashpd::desktop::global_shortcuts::NewShortcut;
+        let shortcut =
+            NewShortcut::new(shortcut_id, mode.describe()).preferred_trigger(preferred_trigger);
+        match tokio::time::timeout(
+            BIND_TIMEOUT,
+            shortcuts.bind_shortcuts(&session, &[shortcut], None, Default::default()),
+        )
+        .await
+        {
+            Ok(Ok(req)) => req
+                .response()
+                .map(|r| {
+                    Configured::Bound(
+                        r.shortcuts()
+                            .iter()
+                            .filter(|s| s.id() == shortcut_id)
+                            .map(|s| s.trigger_description().to_string())
+                            .collect(),
+                    )
+                })
+                .map_err(|e| TriggerError::BindRejected(e.to_string())),
+            Ok(Err(e)) => Err(TriggerError::BindRejected(e.to_string())),
+            Err(_) => Err(TriggerError::BindUnanswered(format!(
+                "no answer within {}s",
+                BIND_TIMEOUT.as_secs()
+            ))),
+        }
+    };
+
+    if outcome.is_ok() {
+        consent::give();
+    }
+    close_session(&session).await;
+    outcome
+}
+
+/// Whether the user has been through the portal's bind dialog for this app.
+///
+/// Not a cache of the binding - the portal owns that, and only it knows the
+/// key. This records the one thing the portal will not tell us apart: whether
+/// a `BindShortcuts` will be answered from the store or will put a dialog on
+/// someone's screen. Without it the daemon cannot re-establish a binding at
+/// login without also being the thing that begs for one.
+#[cfg(not(test))]
+pub mod consent {
+    use std::path::PathBuf;
+
+    /// `$SNAP_USER_COMMON` under confinement (survives refresh, shared by the
+    /// snap's apps), the XDG state dir otherwise.
+    fn path() -> Option<PathBuf> {
+        if let Some(dir) = std::env::var_os("MYNA_STATE_DIR") {
+            return Some(PathBuf::from(dir).join("shortcut-bound"));
+        }
+        if let Some(dir) = std::env::var_os("SNAP_USER_COMMON") {
+            return Some(PathBuf::from(dir).join("shortcut-bound"));
+        }
+        let state = std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
+        Some(state.join("myna").join("shortcut-bound"))
+    }
+
+    pub fn given() -> bool {
+        path().is_some_and(|p| p.exists())
+    }
+
+    pub fn give() {
+        let Some(p) = path() else { return };
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(&p, b"") {
+            myna_core::dbg_log!(
+                "portal",
+                "could not record the bind at {}: {e}",
+                p.display()
+            );
+        }
+    }
+
+    pub fn withdraw() {
+        let Some(p) = path() else { return };
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
+/// What [`configure`] did.
+#[derive(Debug)]
+pub enum Configured {
+    /// A new binding was made; the portal reported these triggers for it.
+    Bound(Vec<String>),
+    /// Already bound, so the portal's rebind dialog was raised instead.
+    DialogOpened,
+}
+
+/// Open a GlobalShortcuts session, refusing to start a portal to do it.
+#[cfg(not(test))]
+async fn open_session(
+    conn: &zbus::Connection,
+) -> Result<
+    (
+        ashpd::desktop::global_shortcuts::GlobalShortcuts,
+        ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>,
+    ),
+    TriggerError,
+> {
+    use ashpd::desktop::global_shortcuts::GlobalShortcuts;
+
+    if !portal_is_up(conn).await? {
+        return Err(TriggerError::PortalNotRunning(format!(
+            "nothing owns {PORTAL_BUS_NAME}; waiting rather than starting one"
+        )));
+    }
+    // Cloned, not moved: `portal_owner_changed` needs the same connection (a
+    // zbus `Connection` clone is a handle to the one socket).
+    let shortcuts = GlobalShortcuts::with_connection(conn.clone())
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    let session = shortcuts
+        .create_session(Default::default())
+        .await
+        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+    Ok((shortcuts, session))
+}
+
+/// The bindings the portal already holds for this app.
+///
+/// Bounded like the bind is: `ListShortcuts` also resolves on a `Response`
+/// signal, so a backend that takes the request and forgets it would otherwise
+/// park the daemon's whole retry loop. Nobody is being asked anything here,
+/// so the deadline is short.
+#[cfg(not(test))]
+async fn list_shortcuts(
+    shortcuts: &ashpd::desktop::global_shortcuts::GlobalShortcuts,
+    session: &ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>,
+) -> Result<Vec<ashpd::desktop::global_shortcuts::Shortcut>, TriggerError> {
+    match tokio::time::timeout(
+        LIST_TIMEOUT,
+        shortcuts.list_shortcuts(session, Default::default()),
+    )
+    .await
+    {
+        Ok(Ok(req)) => req
+            .response()
+            .map(|r| r.shortcuts().to_vec())
+            .map_err(|e| TriggerError::PortalUnavailable(e.to_string())),
+        Ok(Err(e)) => Err(TriggerError::PortalUnavailable(e.to_string())),
+        Err(_) => Err(TriggerError::PortalUnavailable(format!(
+            "ListShortcuts unanswered within {}s",
+            LIST_TIMEOUT.as_secs()
+        ))),
     }
 }
 
@@ -274,6 +649,48 @@ impl GlobalShortcutTrigger {
 /// the portal any more".
 #[cfg(not(test))]
 const PORTAL_BUS_NAME: &str = "org.freedesktop.portal.Desktop";
+
+/// How long one bind attempt may wait for the portal to answer.
+///
+/// `BindShortcuts` resolves on a `Response` signal rather than on the method
+/// reply, so nothing underneath imposes a deadline: a backend that raises a
+/// confirm sheet and gets no answer leaves the call pending for as long as the
+/// daemon runs. Generous rather than tight, because the wait is legitimately a
+/// human one - portal v1 has no persist token, so backends older than
+/// xdg-desktop-portal-gnome 51 raise that sheet once per bind. What matters is
+/// that it is finite, and that expiring it closes the session (see
+/// [`close_session`]) instead of walking away from it.
+#[cfg(not(test))]
+pub const BIND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// How long a `ListShortcuts` may take. No human in the loop, so unlike
+/// [`BIND_TIMEOUT`] this is a machine timeout.
+#[cfg(not(test))]
+const LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Hand a portal session back after a bind that did not work out.
+///
+/// `ashpd` only surfaces the `Request` object once the response arrives, so a
+/// client that gives up waiting has no handle on the pending request and
+/// cannot `Close` it directly. The session is the lever it does have: closing
+/// it ends the backend's interaction for that session, which is what takes an
+/// unanswered "Add Keyboard Shortcuts" sheet off the screen. Without this each
+/// abandoned attempt left its sheet up and the next attempt raised another -
+/// six of them stacked on an unattended machine in 47 minutes (reported
+/// 2026-09-01).
+///
+/// Best-effort by construction: this runs on the failure path, and a portal
+/// that just failed to answer a bind may equally fail to answer this. A
+/// refusal here changes nothing the caller can act on, so it is logged and
+/// dropped rather than replacing the error being reported.
+#[cfg(not(test))]
+async fn close_session(
+    session: &ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>,
+) {
+    if let Err(e) = session.close().await {
+        myna_core::dbg_log!("portal", "could not close the abandoned session: {e}");
+    }
+}
 
 /// Whether a portal is already running.
 ///
@@ -354,6 +771,54 @@ pub async fn await_portal(limit: std::time::Duration) {
             myna_core::dbg_log!(
                 "portal",
                 "cannot watch for a portal ({e}); falling back to the net"
+            );
+            net.await;
+        }
+    }
+}
+
+/// Wait for a *different* portal to show up, or give up after `limit`.
+///
+/// The counterpart to [`await_portal`] for the other half of the retry policy.
+/// After a confirm sheet has been raised and did not become a binding, the
+/// portal is up and staying up, so [`await_portal`] returns instantly and the
+/// daemon would just re-raise the sheet. What genuinely warrants asking again
+/// is a *new* backend - `xdg-desktop-portal` restarting, which is what a new
+/// desktop session looks like from here. That is a signal on the bus, so wait
+/// for it rather than putting the same question up on a timer.
+///
+/// Subscribe first, then wait: unlike [`await_portal`] there is no state to
+/// re-check afterwards, because "changed owner" is the event itself.
+#[cfg(not(test))]
+pub async fn await_portal_change(limit: std::time::Duration) {
+    use futures_util::future::{select, Either};
+
+    let conn = match crate::dbus::serve::connect_session().await {
+        Ok(conn) => conn,
+        Err(_) => return tokio::time::sleep(limit).await,
+    };
+    let changed = async {
+        let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
+        let mut changes = dbus
+            .receive_name_owner_changed_with_args(&[(0, PORTAL_BUS_NAME)])
+            .await?;
+        // Both halves of a restart resolve this. Binding against a portal that
+        // is still starting just fails, and that failure has its own backoff.
+        if changes.next().await.is_some() {
+            myna_core::info_log!("portal", "{PORTAL_BUS_NAME} changed owner; asking again");
+            return Ok(());
+        }
+        Err(zbus::Error::InvalidReply)
+    };
+    futures_util::pin_mut!(changed);
+    match select(changed, Box::pin(tokio::time::sleep(limit))).await {
+        Either::Left((Ok(()), _)) | Either::Right(_) => {}
+        // The watch broke; serve out the net rather than returning early and
+        // spinning against a bus that just failed us.
+        Either::Left((Err(e), net)) => {
+            myna_core::dbg_log!(
+                "portal",
+                "cannot watch for a new portal ({e}); using the net"
             );
             net.await;
         }

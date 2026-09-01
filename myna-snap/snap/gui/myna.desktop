@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=myna
+GenericName=Dictation
+Comment=Set the keyboard shortcut for myna dictation
+Exec=myna.bind-shortcut
+Categories=Utility;Accessibility;
+Keywords=dictation;speech;transcription;voice;

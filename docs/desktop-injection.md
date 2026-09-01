@@ -245,8 +245,10 @@ focus. Three mechanisms, behind the reused `Trigger` seam:
   shortcut bound to `myna-desktop --toggle` (via `--install-shortcut`, gsettings)
   fires it globally. Works for an unsandboxed binary: no terminal focus, no
   portal, no app id. This is the works-today path on GNOME/Wayland.
-- **GlobalShortcuts portal (portal activation, R2).** `shortcut::portal::
-  GlobalShortcutTrigger::bind(id, preferred_trigger)` — real hold-to-talk
+- **GlobalShortcuts portal (portal activation, R2).** `myna.bind-shortcut` binds
+  the key once through the desktop's own dialog; the daemon
+  (`GlobalShortcutTrigger::attach`) only ever takes what `ListShortcuts`
+  already holds, so a session start raises no dialog — real hold-to-talk
   (`Activated`→`Press`, `Deactivated`→`Release`), autorepeat collapsed by the
   hermetic-tested `Dedup` state machine (FR-008). **But** GNOME's backend refuses
   callers without an app identity ("an app id is required"), which it only grants
