@@ -550,18 +550,31 @@ impl DesktopController {
                     myna_core::info_log!("ctrl", "utterance aborted");
                     self.injector.cancel().await;
                     finalize_state(&mut self.state, DictationState::Cancelled);
+                    // The Press that opened this utterance may never have been
+                    // answered by a Release read off the trigger (the abort is
+                    // not itself a release edge e.g. target-gone); resync so
+                    // the next toggle is a fresh Press, not a stray Release.
+                    self.trigger.resync().await;
                 }
                 Ok(SessionOutcome::Failed { message, .. }) => {
                     myna_core::info_log!("ctrl", "utterance FAILED: {message}");
                     self.injector.cancel().await;
                     report_critical(self.indicator.as_mut(), message).await;
                     finalize_state(&mut self.state, DictationState::Error);
+                    // A hard failure is not a Release edge: the toggle's Press
+                    // was consumed with no matching Release, so resync or the
+                    // next toggle reads as a swallowed Release (need two
+                    // toggles to restart). Same as the FocusOut/TargetGone
+                    // resync below (manual test report, 2026-07-31).
+                    self.trigger.resync().await;
                 }
                 Err(err) => {
                     myna_core::info_log!("ctrl", "utterance backend ERROR: {err}");
                     self.injector.cancel().await;
                     report_critical(self.indicator.as_mut(), err.to_string()).await;
                     finalize_state(&mut self.state, DictationState::Error);
+                    // Same toggle-parity fix as the Failed branch above.
+                    self.trigger.resync().await;
                 }
             }
         }
@@ -588,6 +601,10 @@ impl DesktopController {
         self.injector.cancel().await; // idempotent; releases if anything stuck
         report_critical(self.indicator.as_mut(), message).await;
         advance(&mut self.state, DictationState::Error);
+        // A pre-capture abort is not a Release edge — the toggle's Press was
+        // consumed and never matched, so resync or the next toggle reads as a
+        // swallowed Release and the user needs two toggles to restart.
+        self.trigger.resync().await;
         advance(&mut self.state, DictationState::Idle);
     }
 }

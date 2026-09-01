@@ -811,6 +811,168 @@ async fn focus_out_resyncs_trigger_so_the_very_next_poke_starts_a_new_utterance(
     );
 }
 
+// ── Regression: a hard failure must resync the toggle's parity ──────────────
+// (manual test report: after `myna.toggle` starts an utterance that then fails,
+// the trigger is left "pressed" with no matching Release consumed, so the next
+// toggle delivers a swallowed Release — the user needs TWO toggles to restart.)
+//
+// `ToggleMockTrigger` cannot catch this for FAILING *sessions*: it queues every
+// poke eagerly, so the first utterance's select loop swallows the pending
+// "Release" as its own graceful stop, masking the desync. [`ToggleFailureTrigger`]
+// instead blocks while an utterance's select loop runs (no poke arrives until
+// the controller is back at Idle) and only then delivers the restart poke — the
+// real control-socket ordering — so the edge that comes out depends purely on
+// whether the failure resynced `pressed`. It is used only for utterances that
+// actually reach the select loop (a run `Failed` / `Err`); a pre-capture acquire
+// failure returns before the select loop, so it uses plain `ToggleMockTrigger`.
+
+/// A toggle-trigger mock faithful to the control-socket ordering for a session
+/// that fails while running: the start poke (Press) is consumed, then the
+/// select loop's poll blocks (no poke arrives until the controller is back at
+/// Idle — the next toggle happens *after* the failing utterance ended), and the
+/// final poll at Idle is the restart poke. It flips `pressed` like the real
+/// toggle, so `resync()` makes the restart a fresh `Press`; without a resync it
+/// comes out as a `Release`, which the Idle loop silently swallows.
+struct ToggleFailureTrigger {
+    /// 0 = start poke pending, 1 = utterance running, 2 = restart poke ready,
+    /// 3 = exhausted.
+    phase: u8,
+    pressed: bool,
+}
+
+impl ToggleFailureTrigger {
+    fn new() -> Self {
+        Self {
+            phase: 0,
+            pressed: false,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for ToggleFailureTrigger {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        match self.phase {
+            // The start poke: Press.
+            0 => {
+                self.phase = 1;
+                self.pressed = true;
+                Some(TriggerEdge::Press)
+            }
+            // The utterance is running: no poke arrives yet (the user has
+            // not pressed again), so block — the session's result branch
+            // wins the select. The next poll happens back at Idle.
+            1 => {
+                self.phase = 2;
+                std::future::pending::<()>().await;
+                None
+            }
+            // The restart poke at Idle: flips exactly like the real toggle.
+            // A resynced failure ends with `pressed == false`, so this
+            // reads as a fresh Press; otherwise it reads as a Release,
+            // which the Idle loop swallows.
+            2 => {
+                self.phase = 3;
+                self.pressed = !self.pressed;
+                Some(if self.pressed {
+                    TriggerEdge::Press
+                } else {
+                    TriggerEdge::Release
+                })
+            }
+            _ => None,
+        }
+    }
+
+    async fn resync(&mut self) {
+        self.pressed = false;
+    }
+
+    async fn discard_pending(&mut self) {}
+}
+
+/// Run the controller over a toggle-failure trigger and a session factory that
+/// fails every utterance; assert the SECOND poke still starts a new utterance
+/// (i.e. the failure resynced the trigger).
+async fn assert_failed_utterance_resyncs_trigger(
+    session: impl myna_desktop::SessionFactory + 'static,
+) {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = DesktopController::builder()
+        .trigger(ToggleFailureTrigger::new())
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .build();
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.acquires, 2,
+        "both utterances must run — the failing utterance must have resynced \
+         the trigger so the second poke is a fresh Press, not a stray Release \
+         silently swallowed while idle (got {} acquire(s))",
+        log.acquires
+    );
+}
+
+/// A session factory that fails every utterance with a `Failed` outcome.
+fn failing_session(
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send {
+    move |_events: mpsc::Sender<OrchestratorEvent>| {
+        let run: SessionRun = Box::pin(async {
+            Ok(SessionOutcome::Failed {
+                code: "decode_failed".into(),
+                message: "boom".into(),
+            })
+        });
+        (run, StopHandle::default())
+    }
+}
+
+#[tokio::test]
+async fn failed_outcome_resyncs_trigger_so_the_very_next_poke_restarts() {
+    assert_failed_utterance_resyncs_trigger(failing_session()).await;
+}
+
+#[tokio::test]
+async fn backend_error_resyncs_trigger_so_the_very_next_poke_restarts() {
+    let session = move |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let run: SessionRun = Box::pin(async {
+            Err(myna_orchestrator::BackendError::Connect(
+                "backend gone".into(),
+            ))
+        });
+        (run, StopHandle::default())
+    };
+    assert_failed_utterance_resyncs_trigger(session).await;
+}
+
+#[tokio::test]
+async fn acquire_failure_resyncs_trigger_so_the_very_next_poke_restarts() {
+    // A pre-capture acquire failure returns before the select loop, so the
+    // second poke is not consumed by the failing utterance — the eager
+    // `ToggleMockTrigger` is the faithful model here.
+    let injector = MockInjector::new().with_acquires([AcquireOutcome::NoTarget]);
+    let inject_log = injector.log();
+    let mut controller = DesktopController::builder()
+        .trigger(ToggleMockTrigger::new(2))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(failing_session())
+        .build();
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.acquires, 2,
+        "the acquire failure must have resynced the trigger so the second poke \
+         attempts a fresh utterance (got {} acquire(s))",
+        log.acquires
+    );
+}
+
 // ── R9 streaming preedit (opt-in): Unstable → preedit, never committed ──────
 
 /// Build a controller with the preedit opt-in switched on (the `build` helper
