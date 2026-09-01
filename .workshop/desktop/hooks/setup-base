@@ -19,6 +19,11 @@
 #                     suites expect to find.
 #   Feature 004 (GPU render smoke check, ui-check action):
 #   - xvfb          : provides xvfb-run, used to run render_check headless.
+#   i18n test (src/bin/myna-desktop.rs both_domains_load_through_default_data_dirs):
+#   - gettext       : msgfmt, to compile the test catalogs through the real
+#                     gettext toolchain (the test skips only when unavailable).
+#   - locales       : localedef, to build an it_IT.UTF-8 locale for the test
+#                     without touching the host's locale archive.
 # The extension's *test* dependencies are no longer here. This SDK sits on the
 # main workshop's ubuntu@24.04 base, which is the snap's core24 and cannot have
 # the Shell 50/51 the extension targets, so its suites moved to the `myna-shell`
@@ -38,4 +43,6 @@ apt-get install --yes --no-install-recommends \
   dbus \
   dbus-daemon \
   gnome-session \
-  xvfb
+  xvfb \
+  gettext \
+  locales

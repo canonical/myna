@@ -30,6 +30,7 @@ pub mod audio;
 pub mod backend;
 pub mod driver;
 pub mod fsm;
+pub mod i18n;
 pub mod runner;
 pub mod sink;
 pub mod trigger;

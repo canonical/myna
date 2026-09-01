@@ -14,10 +14,13 @@ pub mod fake;
 pub mod ws_unix;
 pub mod ws_unix_ie115;
 
+use std::fmt;
+
 use async_trait::async_trait;
 use myna_core::{PcmChunk, SessionConfig, TranscriptionEvent, WireError};
-use thiserror::Error;
 use tokio::sync::mpsc;
+
+use crate::i18n::tr;
 
 /// A client that opens transcription sessions against an STT backend.
 #[async_trait]
@@ -46,22 +49,60 @@ pub enum Outbound {
 }
 
 /// Failure interacting with the backend.
-#[derive(Debug, Error)]
+///
+/// `Display` renders user-visible messages through this crate's gettext domain
+/// ([`crate::i18n`]); with no .mo installed it is the identity, so the English
+/// strings below double as the source templates for translation.
+#[derive(Debug)]
 pub enum BackendError {
-    #[error("cannot reach backend: {0}")]
     Connect(String),
-    #[error("handshake failed: {0}")]
     Handshake(String),
     /// The backend refused the session with a terminal error during the
     /// handshake (e.g. `unsupported_protocol_version`).
-    #[error("session rejected: {code}: {message}")]
-    Rejected { code: String, message: String },
-    #[error("malformed event from backend: {0}")]
-    Wire(#[from] WireError),
-    #[error("backend connection closed unexpectedly")]
+    Rejected {
+        code: String,
+        message: String,
+    },
+    Wire(WireError),
     Closed,
-    #[error("transport error: {0}")]
     Transport(String),
+}
+
+impl fmt::Display for BackendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BackendError::Connect(inner) => {
+                write!(f, "{}", tr("cannot reach backend: %s").replace("%s", inner))
+            }
+            BackendError::Handshake(inner) => {
+                write!(f, "{}", tr("handshake failed: %s").replace("%s", inner))
+            }
+            BackendError::Rejected { code, message } => write!(
+                f,
+                "{}",
+                tr("session rejected: %1$s: %2$s")
+                    .replace("%1$s", code)
+                    .replace("%2$s", message)
+            ),
+            BackendError::Wire(e) => write!(
+                f,
+                "{}",
+                tr("malformed event from backend: %s").replace("%s", &e.to_string())
+            ),
+            BackendError::Closed => write!(f, "{}", tr("backend connection closed unexpectedly")),
+            BackendError::Transport(inner) => {
+                write!(f, "{}", tr("transport error: %s").replace("%s", inner))
+            }
+        }
+    }
+}
+
+impl std::error::Error for BackendError {}
+
+impl From<WireError> for BackendError {
+    fn from(e: WireError) -> Self {
+        BackendError::Wire(e)
+    }
 }
 
 /// The audio/control side of an open session. Cheap to clone (it is a channel

@@ -9,6 +9,13 @@ gettext domain **`myna-desktop`** (R25).
   (`src/indicator/mod.rs`) — translated before publication
   in the D-Bus `StatusMessage` property, so every consumer sees the same
   final label.
+- The user-facing error templates this crate owns: the backend-socket
+  resolution errors (`src/backend.rs`) and the injection errors
+  (`src/inject/mod.rs`), translated at the point their `Display` is rendered.
+
+Backend transport errors (e.g. "cannot reach backend") are owned by the
+`myna-orchestrator` crate and live in its own `po/` (see
+`client/myna-orchestrator/po/README.md`).
 
 ## Re-extracting the template
 
@@ -16,7 +23,7 @@ gettext domain **`myna-desktop`** (R25).
 C-ish, which is sufficient for `gettext()` calls). Regenerate with:
 
 ```sh
-xgettext --language=C --from-code=UTF-8 --keyword=gettext \
+xgettext --from-code=UTF-8 --keyword=gettext \
   --add-comments=TRANSLATORS \
   --output=po/myna-desktop.pot \
   --files-from=po/POTFILES.in

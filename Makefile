@@ -90,9 +90,11 @@ install-schema: ## Install the client GSettings schema on the host (needs sudo)
 	@echo "installed com.canonical.Myna.Dictation; read it with: gsettings get com.canonical.Myna.Dictation streaming-mode"
 
 .PHONY: i18n
-i18n: ## Regenerate the myna-desktop translation template (po/myna-desktop.pot)
+i18n: ## Regenerate the translation templates (po/*.pot for myna-desktop + myna-orchestrator)
 	cd client/myna-desktop && xgettext --from-code=UTF-8 --keyword=gettext \
 		--add-comments=TRANSLATORS --output=po/myna-desktop.pot --files-from=po/POTFILES.in
+	cd client/myna-orchestrator && xgettext --from-code=UTF-8 --keyword=gettext --keyword=tr \
+		--add-comments=TRANSLATORS --output=po/myna-orchestrator.pot --files-from=po/POTFILES.in
 
 .PHONY: server
 server: ## Sync the Python server env

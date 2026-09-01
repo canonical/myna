@@ -268,14 +268,16 @@ parts:
       # install - one schema, three kinds of writer (myna_core::settings).
       install -Dm644 data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml \
           "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml"
-      # Compile and install gettext translations for the myna-desktop domain so
-      # they are available under $SNAP/usr/share/locale at runtime. The
-      # client part ships the po/ directory in the workspace; build-time msgfmt
-      # (gettext) is provided by the build-packages list above.
-      for po in myna-desktop/po/*.po; do
+      # Compile and install gettext translations so they are available under
+      # $SNAP/usr/share/locale at runtime. Two domains ship from this part —
+      # the desktop's (myna-desktop) and the orchestrator's
+      # (myna-orchestrator) — each compiled to its own <domain>.mo. Build-time
+      # msgfmt (gettext) is provided by the build-packages list above.
+      for po in myna-desktop/po/*.po myna-orchestrator/po/*.po; do
         lang=$(basename "$po" .po)
+        domain=$(basename "$(dirname "$(dirname "$po")")")
         mkdir -p "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES"
-        msgfmt "$po" -o "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES/myna-desktop.mo"
+        msgfmt "$po" -o "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES/$domain.mo"
       done
     stage-packages:
       - libpipewire-0.3-0

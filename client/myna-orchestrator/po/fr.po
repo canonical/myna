@@ -1,0 +1,47 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-01 16:38+0000\n"
+"PO-Revision-Date: 2026-09-01 11:51+0000\n"
+"Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/backend/mod.rs:72
+#, c-format
+msgid "cannot reach backend: %s"
+msgstr "impossible de joindre le backend : %s"
+
+#: src/backend/mod.rs:75
+#, c-format
+msgid "handshake failed: %s"
+msgstr "échec du handshake : %s"
+
+#: src/backend/mod.rs:80
+#, c-format
+msgid "session rejected: %1$s: %2$s"
+msgstr "session refusée : %1$s : %2$s"
+
+#: src/backend/mod.rs:87
+#, c-format
+msgid "malformed event from backend: %s"
+msgstr "événement malformé du backend : %s"
+
+#: src/backend/mod.rs:89
+msgid "backend connection closed unexpectedly"
+msgstr "connexion au backend fermée inopinément"
+
+#: src/backend/mod.rs:91
+#, c-format
+msgid "transport error: %s"
+msgstr "erreur de transport : %s"

@@ -1048,14 +1048,32 @@ fn opt(value: &Option<String>) -> String {
     value.clone().unwrap_or_else(|| "(unset)".into())
 }
 
-fn main() -> ExitCode {
-    // StatusMessage is translated by the publisher before it crosses D-Bus,
-    // so the HUD and Shell a11y announcer consume the same final label.
-    let mut domain = gettextrs::TextDomain::new("myna-desktop");
+/// Initialize both gettext domains this package owns.
+///
+/// `MYNA_DESKTOP_LOCALEDIR` (when set) is the only override; every other
+/// catalog is found by gettext itself through the default data dirs
+/// (`XDG_DATA_DIRS`, else `/usr/local/share` and `/usr/share`) — which is
+/// where the snap stages its `.mo` files, so no path logic belongs here.
+///
+/// Order matters: the orchestrator domain inits first and the desktop's last,
+/// so `textdomain()` ends on the desktop domain — what the plain `gettext()`
+/// calls in this crate expect. Each `init()` also sets the process locale
+/// from the environment.
+fn init_i18n() {
+    let mut orchestrator = gettextrs::TextDomain::new(myna_orchestrator::i18n::GETTEXT_DOMAIN);
+    let mut desktop = gettextrs::TextDomain::new("myna-desktop");
     if let Ok(dir) = std::env::var("MYNA_DESKTOP_LOCALEDIR") {
-        domain = domain.push(dir);
+        if !dir.is_empty() {
+            orchestrator = orchestrator.push(dir.clone());
+            desktop = desktop.push(dir);
+        }
     }
-    let _ = domain.init();
+    let _ = orchestrator.init();
+    let _ = desktop.init();
+}
+
+fn main() -> ExitCode {
+    init_i18n();
 
     let args = match parse_args() {
         Ok(a) => a,
@@ -1188,6 +1206,146 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tmpdir(tag: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "myna-i18n-init-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("tmpdir");
+        base
+    }
+
+    /// Write a real gettext catalog from a `.po` source using the system
+    /// `msgfmt`, so the test exercises the exact lookup path a shipped
+    /// `.mo` would. Skips (returns false) when `msgfmt` is unavailable.
+    fn compile_po(
+        msgfmt: &str,
+        po_dir: &std::path::Path,
+        domain: &str,
+        translations: &[(&str, &str)],
+    ) -> bool {
+        let po = po_dir.join(format!("{domain}.po"));
+        let mut content = String::from(
+            "msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n\n",
+        );
+        for (id, s) in translations {
+            let id_esc = id.replace('\\', "\\\\").replace('"', "\\\"");
+            let s_esc = s.replace('\\', "\\\\").replace('"', "\\\"");
+            content.push_str(&format!("msgid \"{id_esc}\"\nmsgstr \"{s_esc}\"\n\n"));
+        }
+        std::fs::create_dir_all(po_dir).expect("create po dir");
+        std::fs::write(&po, content).expect("write po");
+
+        let mo_dir = po_dir
+            .parent()
+            .expect("mo dir")
+            .join("locale")
+            .join("it")
+            .join("LC_MESSAGES");
+        std::fs::create_dir_all(&mo_dir).expect("create mo dir");
+        let mo = mo_dir.join(format!("{domain}.mo"));
+        std::process::Command::new(msgfmt)
+            .arg(&po)
+            .arg("-o")
+            .arg(&mo)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    fn save_env(keys: &[&'static str]) -> Vec<(&'static str, Option<std::ffi::OsString>)> {
+        keys.iter().map(|k| (*k, std::env::var_os(k))).collect()
+    }
+
+    fn restore_env(saved: &[(&'static str, Option<std::ffi::OsString>)]) {
+        for (key, value) in saved {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+    }
+
+    /// Build a `it_IT.UTF-8` locale into `dir` without touching the system
+    /// (test-only plumbing; the app never sets LOCPATH). Returns false when
+    /// `localedef` is unavailable, so the test can skip on minimal hosts.
+    fn build_locale_into(dir: &std::path::Path) -> bool {
+        std::fs::create_dir_all(dir).expect("locale parent dir");
+        std::process::Command::new("localedef")
+            .args(["--no-archive", "-i", "it_IT", "-f", "UTF-8"])
+            .arg(dir.join("it_IT.UTF-8"))
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    /// init_i18n mutates process-global gettext state (locale, domain
+    /// bindings, textdomain) and the test env, so run these serially.
+    static I18N_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The regression: the snap sets no MYNA_DESKTOP_LOCALEDIR, so both
+    /// catalogs must be found by real gettext through the default data dirs
+    /// (`XDG_DATA_DIRS`) — the same way the desktop catalog already works.
+    #[test]
+    fn both_domains_load_through_default_data_dirs() {
+        let _guard = I18N_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let base = tmpdir("xdg");
+        let msgfmt = std::env::var("MSGGFMT").unwrap_or_else(|_| "msgfmt".into());
+        if !build_locale_into(&base.join("locales")) {
+            eprintln!("skipping: localedef could not build it_IT.UTF-8");
+            return;
+        }
+        if !compile_po(
+            &msgfmt,
+            &base.join("po"),
+            "myna-desktop",
+            &[("Listening", "IT-LISTENING")],
+        ) {
+            eprintln!("skipping: msgfmt could not compile the catalogs");
+            return;
+        }
+        if !compile_po(
+            &msgfmt,
+            &base.join("po"),
+            myna_orchestrator::i18n::GETTEXT_DOMAIN,
+            &[("cannot reach backend: %s", "IT-REACH: %s")],
+        ) {
+            eprintln!("skipping: msgfmt could not compile the catalogs");
+            return;
+        }
+
+        let data_dir = base.join("share");
+        // compile_po writes <domain>.mo into <base>/locale/<lang>/LC_MESSAGES/;
+        // move that locale tree under the data dir so XDG_DATA_DIRS resolves it
+        // exactly as a packaged snap would.
+        std::fs::create_dir_all(&data_dir).expect("data dir");
+        std::fs::rename(base.join("locale"), data_dir.join("locale")).expect("move locale tree");
+
+        let saved = save_env(&["LANG", "LC_ALL", "LC_MESSAGES", "LOCPATH", "XDG_DATA_DIRS"]);
+        std::env::set_var("LANG", "it_IT.UTF-8");
+        std::env::remove_var("LC_ALL");
+        std::env::remove_var("LC_MESSAGES");
+        std::env::set_var("LOCPATH", base.join("locales"));
+        std::env::set_var("XDG_DATA_DIRS", &data_dir);
+
+        init_i18n();
+
+        assert_eq!(
+            gettextrs::gettext("Listening"),
+            "IT-LISTENING",
+            "the desktop domain inits last, so plain gettext() hits its catalog"
+        );
+        assert_eq!(
+            myna_orchestrator::i18n::tr("cannot reach backend: %s"),
+            "IT-REACH: %s",
+            "the orchestrator catalog is reached through the same data dirs"
+        );
+
+        restore_env(&saved);
+    }
 
     fn args(v: &[&str]) -> std::iter::Peekable<impl Iterator<Item = String>> {
         v.iter()

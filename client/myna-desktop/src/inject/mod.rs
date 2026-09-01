@@ -6,8 +6,11 @@
 //! shipped implementor (branch 003b); [`mock::MockInjector`] is the hermetic test
 //! fixture. See `specs/003-desktop-injection/contracts/injector.md`.
 
+use std::fmt;
+
 use async_trait::async_trait;
 use futures_util::stream::BoxStream;
+use gettextrs::gettext;
 
 pub mod ibus;
 pub mod lazy;
@@ -54,21 +57,50 @@ pub enum FocusEvent {
 }
 
 /// Why an injection operation failed.
-#[derive(Debug, thiserror::Error)]
+///
+/// `Display` renders user-facing messages through the desktop gettext domain;
+/// with no .mo installed it is the identity, so the strings below double as
+/// the source templates for translation.
+#[derive(Debug)]
 pub enum InjectError {
     /// The focused field is a password/secure field — refuse to inject (FR-021).
-    #[error("focused field is secure (password); refusing to inject")]
     SecureField,
     /// Nothing editable is focused — a clear failure, not a silent no-op (FR-023).
-    #[error("no editable target is focused")]
     NoTarget,
     /// The injection backend is not reachable (e.g. IBus daemon down).
-    #[error("injection backend unavailable: {0}")]
     Unavailable(String),
     /// A backend-specific failure (with context).
-    #[error("injection backend error: {0}")]
     Backend(String),
 }
+
+impl fmt::Display for InjectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InjectError::SecureField => {
+                write!(
+                    f,
+                    "{}",
+                    gettext("focused field is secure (password); refusing to inject")
+                )
+            }
+            InjectError::NoTarget => {
+                write!(f, "{}", gettext("no editable target is focused"))
+            }
+            InjectError::Unavailable(inner) => write!(
+                f,
+                "{}",
+                gettext("injection backend unavailable: %s").replace("%s", inner)
+            ),
+            InjectError::Backend(inner) => write!(
+                f,
+                "{}",
+                gettext("injection backend error: %s").replace("%s", inner)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InjectError {}
 
 /// The text-injection seam. All mutating operations are async; the focus stream
 /// is `'static` so the controller can own it while still driving the injector.

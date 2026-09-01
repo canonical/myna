@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 13:43+0200\n"
+"POT-Creation-Date: 2026-09-01 16:41+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -82,5 +82,36 @@ msgid "No text field is focused"
 msgstr ""
 
 #: src/shortcut/retry.rs:243
+#, c-format
 msgid "dictation hotkey unavailable: %s"
+msgstr ""
+
+#: src/backend.rs:47
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+
+#: src/backend.rs:54
+#, c-format
+msgid ""
+"%s backends are connected; disconnect all but one (`snap connections myna`)"
+msgstr ""
+
+#: src/inject/mod.rs:83
+msgid "focused field is secure (password); refusing to inject"
+msgstr ""
+
+#: src/inject/mod.rs:87
+msgid "no editable target is focused"
+msgstr ""
+
+#: src/inject/mod.rs:92
+#, c-format
+msgid "injection backend unavailable: %s"
+msgstr ""
+
+#: src/inject/mod.rs:97
+#, c-format
+msgid "injection backend error: %s"
 msgstr ""

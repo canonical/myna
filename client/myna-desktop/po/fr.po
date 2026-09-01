@@ -84,3 +84,37 @@ msgstr "Aucun champ de texte n'est focalisé"
 #: src/shortcut/retry.rs:243
 msgid "dictation hotkey unavailable: %s"
 msgstr "raccourci de dictée indisponible: %s"
+
+#: src/backend.rs:47
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+"aucun backend n'est connecté - installez-en un et connectez-le, ex. `sudo "
+"snap connect myna:backend myna-whisper`"
+
+#: src/backend.rs:54
+#, c-format
+msgid ""
+"%s backends are connected; disconnect all but one (`snap connections myna`)"
+msgstr ""
+"%s backends sont connectés ; déconnectez-en tous sauf un (`snap "
+"connections myna`)"
+
+#: src/inject/mod.rs:80
+msgid "focused field is secure (password); refusing to inject"
+msgstr "le champ focalisé est protégé (mot de passe) ; refus d'écrire"
+
+#: src/inject/mod.rs:83
+msgid "no editable target is focused"
+msgstr "aucun champ de texte éditable n'est focalisé"
+
+#: src/inject/mod.rs:88
+#, c-format
+msgid "injection backend unavailable: %s"
+msgstr "backend d'insertion indisponible : %s"
+
+#: src/inject/mod.rs:93
+#, c-format
+msgid "injection backend error: %s"
+msgstr "erreur du backend d'insertion : %s"

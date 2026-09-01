@@ -39,6 +39,12 @@ notify-rust = "4"
 # Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
+# cargo-machete cannot see gettext-rs: it is only referenced through the
+# re-exported `gettextrs::` namespace (indicator/controller/inject/backend),
+# which the unused-dep scan treats as no usage.
+[package.metadata.cargo-machete]
+ignored = ["gettext-rs"]
+
 [dev-dependencies]
 # `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens
 # of seconds, so the tests advance tokio's clock instead of the wall clock.

@@ -12,25 +12,54 @@
 //! So resolution happens at each Press instead, and "no backend" is an error
 //! the user sees on the indicator rather than a reason to exit.
 
+use std::fmt;
 use std::io;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
+
+use gettextrs::gettext;
 
 /// The socket file an inference snap exports inside its shared directory.
 const SOCKET_NAME: &str = "ubustt.sock";
 
 /// Why no single backend socket could be named.
-#[derive(Debug, thiserror::Error)]
+///
+/// `Display` renders user-facing messages through the desktop gettext domain;
+/// with no .mo installed it is the identity, so the strings below double as
+/// the source templates for translation.
+#[derive(Debug)]
 pub enum ResolveError {
     /// No backend snap is connected (or none has started its session server).
-    #[error("no backend is connected - install one and connect it, e.g. `sudo snap connect myna:backend myna-whisper`")]
     NotConnected,
     /// More than one is connected. Which one answers would be decided by the
     /// order they were connected, and can change when a backend is
     /// reinstalled, so this is an error rather than a guess.
-    #[error("{0} backends are connected; disconnect all but one (`snap connections myna`)")]
     Ambiguous(usize),
 }
+
+impl fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResolveError::NotConnected => write!(
+                f,
+                "{}",
+                gettext(
+                    "no backend is connected - install one and connect it, e.g. `sudo snap connect myna:backend myna-whisper`"
+                )
+            ),
+            ResolveError::Ambiguous(n) => write!(
+                f,
+                "{}",
+                gettext(
+                    "%s backends are connected; disconnect all but one (`snap connections myna`)"
+                )
+                .replace("%s", &n.to_string())
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {}
 
 /// Find the one backend socket under `dir`, looking at `dir/<entry>/ubustt.sock`
 /// for every subdirectory. Missing `dir` reads as "not connected": before the
