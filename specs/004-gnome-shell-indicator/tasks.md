@@ -39,6 +39,12 @@ Avoid optional calls and broad `try`/`catch` by default. The only exception is
 a documented API transition within Shell 46–51, such as XH13's Mutter
 trusted-client adapter.
 
+Run `cd extensions/myna-shell && shexli "$PWD"` for every host change. The
+review guide records the deliberate in-tree exemptions: `EGO-P-006` for
+gettext metadata, `EGO-P-007` for standalone contract tests, and `EGO-M-004`
+for the declared Shell 46–51 support range. Treat every other finding as
+actionable unless this feature documents an explicit rationale.
+
 **Organization**: phases ordered by dependency: Foundational (crate + deps +
 spikes) → Pure-logic port → Renderer app → Lab/simulator → Extension host →
 Client policy/removal → Packaging → Deletions → Docs → Acceptance. Story

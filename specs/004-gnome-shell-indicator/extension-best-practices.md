@@ -11,6 +11,28 @@
 > than silently diverging here. The one deliberate compatibility exception is
 > `mutterCompat.js`: its optional calls select APIs that moved between Mutter
 > 14–16 and 17+, as documented in `contracts/extension.md` XH13.
+>
+> **Automated review:** install [`shexli`](https://pypi.org/project/shexli/)
+> outside the extension bundle, then run:
+>
+> ```sh
+> cd extensions/myna-shell && shexli "$PWD"
+> ```
+>
+> Classify results rather than blindly changing the bundle to silence them.
+> The expected in-tree exemptions are:
+>
+> - `EGO-P-006` for `po/LINGUAS` and `po/POTFILES.in`: these are required
+>   gettext source/translation metadata, not shipped build artifacts.
+> - `EGO-P-007` for `test/*.test.js`: these are deliberate standalone GJS
+>   contract tests, invoked by `test/run-suite.sh`, not extension entrypoint
+>   modules.
+> - `EGO-M-004` for `metadata.json`: the feature deliberately declares the
+>   supported GNOME Shell 46–51 range; Mutter API differences within that
+>   range are handled by the documented `mutterCompat.js` adapter.
+>
+> Any other `shexli` finding is actionable unless its feature-specific
+> rationale is added here or to `contracts/extension.md`.
 
 This is a reference and benchmark for GNOME Shell extension developers,
 as well as LLMs that generate GNOME Shell extension code.

@@ -113,6 +113,17 @@ It is a vendored snapshot of the maintained
 The documented Mutter 14–16 / 17+ transition in `mutterCompat.js` is the
 intentional exception to its default prohibition on optional API checks.
 
+Also run [`shexli`](https://pypi.org/project/shexli/) from the extension root:
+
+```sh
+shexli "$PWD"
+```
+
+The review baseline documents the expected in-tree exemptions: `EGO-P-006`
+for gettext metadata, `EGO-P-007` for standalone test modules, and
+`EGO-M-004` for the intentional Shell 46–51 support range. Investigate every
+other finding before merging.
+
 ```sh
 cd extensions/myna-shell
 test/run-suite.sh          # everything below, in one go
