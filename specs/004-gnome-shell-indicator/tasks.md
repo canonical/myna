@@ -30,6 +30,15 @@ prior task; only the revision's delta is new work.
   simulator's state mapping is unit-tested; the lab UI itself carries no
   acceptance weight (it drives the identical renderer modules).
 
+**Extension review baseline**: every changed `extensions/myna-shell/` file
+MUST be reviewed against
+[`extension-best-practices.md`](./extension-best-practices.md). It is a
+vendored snapshot; the maintained source is the
+[GJS Guide best-practices Markdown](https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md).
+Avoid optional calls and broad `try`/`catch` by default. The only exception is
+a documented API transition within Shell 46–51, such as XH13's Mutter
+trusted-client adapter.
+
 **Organization**: phases ordered by dependency: Foundational (crate + deps +
 spikes) → Pure-logic port → Renderer app → Lab/simulator → Extension host →
 Client policy/removal → Packaging → Deletions → Docs → Acceptance. Story

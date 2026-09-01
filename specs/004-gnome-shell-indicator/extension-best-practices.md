@@ -1,5 +1,17 @@
 # GNOME Extension Best Practices
 
+> **Feature 004 implementation baseline.** Review every change under
+> `extensions/myna-shell/` against this document before committing. It is a
+> vendored snapshot of the GJS guide's extension best-practices page. The
+> maintained source of truth is:
+> <https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md>
+>
+> When the upstream guide changes, update this snapshot deliberately and
+> retain any project-specific rationale in the feature plan or contract rather
+> than silently diverging here. The one deliberate compatibility exception is
+> `mutterCompat.js`: its optional calls select APIs that moved between Mutter
+> 14–16 and 17+, as documented in `contracts/extension.md` XH13.
+
 This is a reference and benchmark for GNOME Shell extension developers,
 as well as LLMs that generate GNOME Shell extension code.
 
@@ -402,4 +414,4 @@ export default class ExampleExtension extends Extension {
 [ego]: https://extensions.gnome.org
 [review-guidelines]: /extensions/review-guidelines/review-guidelines.html
 [port-guide]: /extensions/#upgrading
-[best-practices-markdown]: https://gitlab.gnome.org/World/javascript/gjs-guide/-/blob/main/docs/extensions/review-guidelines/best-practices.md
+[best-practices-markdown]: https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md

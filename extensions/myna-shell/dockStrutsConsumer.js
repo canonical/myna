@@ -56,7 +56,7 @@ export function watchDashToDockStruts(owner, onChange) {
     // the (possibly new) object.
     const stateChangedId = Main.extensionManager.connect(
         'extension-state-changed', (_em, extension) => {
-            if (!DASH_TO_DOCK_UUIDS.includes(extension?.uuid))
+            if (!DASH_TO_DOCK_UUIDS.includes(extension.uuid))
                 return;
 
             // Re-connect to whatever object is current now.

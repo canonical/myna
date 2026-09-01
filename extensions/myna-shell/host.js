@@ -81,7 +81,6 @@ export class OverlayHost {
 
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
-        this._enabled = false;
         this._announcer = null;
 
         // Cancels the current subprocess wait. A fresh Cancellable is made
@@ -93,12 +92,9 @@ export class OverlayHost {
         this._cancellable = null;
     }
 
-    /** Launch the renderer and begin hosting. Idempotent-safe: a second
-     * enable() while already hosting is a no-op. */
+    /** Launch the renderer and begin hosting. The extension owns this object
+     * for one enable/disable generation. */
     enable() {
-        if (this._enabled)
-            return;
-        this._enabled = true;
         this._dormant = false;
         this._restartState = initialState();
         this._spawn();
@@ -107,7 +103,6 @@ export class OverlayHost {
     /** Terminate the renderer, drop the window, disconnect everything
      * (XH7). Safe to call when never enabled or already disabled. */
     disable() {
-        this._enabled = false;
         this._announcer?.disable();
         this._announcer = null;
         this._cancelPendingRestart();
@@ -118,7 +113,7 @@ export class OverlayHost {
         global.window_manager.disconnectObject(this);
         Main.overview.disconnectObject(this);
         global.display.disconnectObject(this);
-        global.backend.get_monitor_manager?.()?.disconnectObject(this);
+        global.backend.get_monitor_manager().disconnectObject(this);
         this._disconnectWindowSignals();
 
         // Cancel the current subprocess wait so its promise rejects as
@@ -327,7 +322,7 @@ export class OverlayHost {
         this._disconnectOverview();
         this._disconnectWindowSignals();
         global.display.disconnectObject(this);
-        global.backend.get_monitor_manager?.()?.disconnectObject(this);
+        global.backend.get_monitor_manager().disconnectObject(this);
         this._window = null;
         this._announcer?.disable();
         this._announcer = null;
@@ -450,8 +445,6 @@ export class OverlayHost {
      * causes, and that path is suppressed upstream (the wait is cancelled).
      */
     _onRendererExited() {
-        if (!this._enabled)
-            return;   // disable() terminated it; not an incident
         const uptimeMs = GLib.get_monotonic_time() / 1000 - this._launchedAtMs;
         // Drop all tracked signals for this dead renderer. _spawn()
         // reconnects the map watch for the respawn, so it is dropped here too
@@ -459,7 +452,7 @@ export class OverlayHost {
         this._disconnectOverview();
         this._disconnectWindowSignals();
         global.display.disconnectObject(this);
-        global.backend.get_monitor_manager?.()?.disconnectObject(this);
+        global.backend.get_monitor_manager().disconnectObject(this);
         global.window_manager.disconnectObject(this);
         this._window = null;
         this._client = null;
@@ -483,11 +476,11 @@ export class OverlayHost {
         if (!plan.restart)
             return;
 
+        this._cancelPendingRestart();
         this._restartTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT, plan.delayMs, () => {
                 this._restartTimeoutId = 0;
-                if (this._enabled)
-                    this._spawn();
+                this._spawn();
                 return GLib.SOURCE_REMOVE;
             });
     }

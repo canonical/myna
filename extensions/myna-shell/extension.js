@@ -61,7 +61,7 @@ export default class MynaShellExtension extends Extension {
         // destroyed (dash-to-dock disabled).
         this._dockWatch = watchDashToDockStruts(this, extent => {
             this._dockExtent = extent;
-            this._host?.positionNow();
+            this._host.positionNow();
         });
     }
 
@@ -70,7 +70,7 @@ export default class MynaShellExtension extends Extension {
         this._dockWatch?.disconnect();
         this._dockWatch = null;
         this._dockExtent = null;
-        this._host?.disable();
+        this._host.disable();
         this._host = null;
     }
 }

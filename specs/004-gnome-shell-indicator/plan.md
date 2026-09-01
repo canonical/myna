@@ -4,6 +4,12 @@
 
 **Input**: Feature specification from `/specs/004-gnome-shell-indicator/spec.md`
 
+**GNOME extension implementation baseline**:
+[`extension-best-practices.md`](./extension-best-practices.md). Review every
+`extensions/myna-shell/` change against this vendored guide; its maintained
+upstream source is the
+[GJS Guide best-practices Markdown](https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md).
+
 ## Summary
 
 **(2026-08-26 architecture revision — this supersedes the delivery shape
@@ -98,6 +104,9 @@ are superseded (publisher facts survive — see `contracts/publisher.md`).
   plus mutter's introspected `Meta.WaylandClient`/`Meta.Window` APIs. The
   trusted-client launch/configuration move is capability-adapted between
   `Meta-14.gir` (mutter 46) and `Meta-18.gir`/`Meta-51.gir` (mutter 50/51).
+  Follow [`extension-best-practices.md`](./extension-best-practices.md);
+  optional calls are limited to capability-adapting APIs that genuinely move
+  in the declared Shell range.
 - `myna-desktop` publisher/policy: Rust (unchanged).
 
 **Primary Dependencies**:

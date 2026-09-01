@@ -53,7 +53,6 @@ export class DictationAnnouncer {
     constructor({log = () => {}} = {}) {
         this._log = log;
         this._proxy = null;
-        this._signalId = 0;
         this._a11yActor = null;
         this._lastState = null;
         this._lastReason = null;
@@ -89,8 +88,8 @@ export class DictationAnnouncer {
             (source, res) => {
                 try {
                     this._proxy = Gio.DBusProxy.new_for_bus_finish(res);
-                    this._signalId = this._proxy.connect('g-properties-changed',
-                        (p, changed, _invalidated) => this._onPropertiesChanged(changed));
+                    this._proxy.connectObject('g-properties-changed',
+                        (p, changed, _invalidated) => this._onPropertiesChanged(changed), this);
                     this._reflectFromProxy();
                 } catch (e) {
                     if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
@@ -103,22 +102,15 @@ export class DictationAnnouncer {
     disable() {
         this._cancellable?.cancel();
         this._cancellable = null;
-        if (this._proxy && this._signalId) {
-            try { this._proxy.disconnect(this._signalId); } catch {}
-        }
+        this._proxy?.disconnectObject(this);
         this._proxy = null;
-        this._signalId = 0;
-        if (this._a11yActor) {
-            try { Main.layoutManager.uiGroup.remove_child(this._a11yActor); } catch {}
-            this._a11yActor.destroy();
-            this._a11yActor = null;
-        }
+        this._a11yActor?.destroy();
+        this._a11yActor = null;
         this._lastState = null;
         this._lastReason = null;
     }
 
     _reflectFromProxy() {
-        if (!this._proxy) return;
         try {
             const stateVar = this._proxy.get_cached_property('State');
             const errVar = this._proxy.get_cached_property('ErrorMessage');
@@ -126,7 +118,9 @@ export class DictationAnnouncer {
             const err = errVar ? errVar.unpack() : '';
             if (state)
                 this._maybeAnnounce(state, err);
-        } catch {}
+        } catch (e) {
+            logError(e, 'announcer reflectFromProxy failed');
+        }
     }
 
     _onPropertiesChanged(changedDict) {

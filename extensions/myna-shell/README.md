@@ -106,6 +106,13 @@ are unit-tested, and the integration is exercised by the on-hardware run
 
 ## Testing
 
+Before changing the host, review the feature's
+[`extension-best-practices.md`](../../specs/004-gnome-shell-indicator/extension-best-practices.md).
+It is a vendored snapshot of the maintained
+[GJS Guide best-practices Markdown](https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md).
+The documented Mutter 14–16 / 17+ transition in `mutterCompat.js` is the
+intentional exception to its default prohibition on optional API checks.
+
 ```sh
 cd extensions/myna-shell
 test/run-suite.sh          # everything below, in one go

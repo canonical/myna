@@ -99,3 +99,10 @@ research references (`R-`, in `research.md`).
 - The host MUST NOT depend on private Shell UI internals (no `OsdWindow`, no
   `Main.wm._checkDimming`-style injections): the permitted surface is the
   public extension API plus the mutter window/Wayland-client APIs named above.
+- Every change under `extensions/myna-shell/` MUST follow the feature's
+  [`extension-best-practices.md`](../extension-best-practices.md) review
+  baseline. The maintained upstream source is the
+  [GJS Guide best-practices Markdown](https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md).
+  Capability checks are permitted only for APIs that genuinely differ across
+  the declared GNOME Shell 46–51 range (currently the trusted-client paths in
+  XH13).
