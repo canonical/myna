@@ -127,9 +127,9 @@ impl<S: TextSink> TextSink for ReadinessTee<S> {
     }
 }
 
-/// Server-side auto-dismiss for `notice` (recoverable) only: after a longer
-/// hold the server publishes `idle` so late-joining clients don't see a
-/// stale `No speech detected` forever. `error` (critical) stays persistent.
+/// Server-side auto-dismiss for `notice` (recoverable) and `error` (critical):
+/// after a longer hold the server publishes `idle` so late-joining clients do
+/// not keep seeing stale status forever.
 /// Hold is dynamic per text length, longer than the notifier's previous
 /// hold but shorter than the client's new slower hold.
 fn server_hold_ms_for(reason: &str) -> u64 {
@@ -152,12 +152,14 @@ pub struct DbusIndicator {
     readiness: Readiness,
     /// Last published `(state, status_message)` — drives the one-signal-per-
     /// transition dedup and the publisher-owned status label invariant.
-    /// Shared with the pending notice auto-dismiss task so it can check
-    /// whether the notice is still current before publishing `idle`.
+    /// Shared with the pending auto-dismiss task so it can check whether the
+    /// current transient state is still current before publishing `idle`.
     last: Arc<tokio::sync::Mutex<Option<(String, String)>>>,
-    /// Pending server-side auto-dismiss for a `notice`. Only `notice`
-    /// (recoverable) auto-dismisses on the server; `error` stays.
-    pending_notice_hide: Option<tokio::task::JoinHandle<()>>,
+    /// Pending server-side auto-dismiss for the current transient state.
+    pending_hide: Option<tokio::task::JoinHandle<()>>,
+    /// Auto-dismiss hold for a status message, keyed by its length. A plain
+    /// fn pointer so tests can inject a near-instant hold.
+    hold_ms_for: fn(&str) -> u64,
 }
 
 impl DbusIndicator {
@@ -167,30 +169,49 @@ impl DbusIndicator {
             bus,
             readiness,
             last: Arc::new(tokio::sync::Mutex::new(None)),
-            pending_notice_hide: None,
+            pending_hide: None,
+            hold_ms_for: server_hold_ms_for,
         }
     }
 
-    fn cancel_notice_auto_hide(&mut self) {
-        if let Some(h) = self.pending_notice_hide.take() {
+    /// Test constructor: override the auto-dismiss hold so a test does not
+    /// wait on the real 6–12 s timer.
+    #[cfg(test)]
+    fn with_hold(bus: SharedBus, readiness: Readiness, hold_ms_for: fn(&str) -> u64) -> Self {
+        Self {
+            bus,
+            readiness,
+            last: Arc::new(tokio::sync::Mutex::new(None)),
+            pending_hide: None,
+            hold_ms_for,
+        }
+    }
+
+    fn cancel_auto_hide(&mut self) {
+        if let Some(h) = self.pending_hide.take() {
             h.abort();
         }
     }
 
-    fn schedule_notice_auto_hide(&mut self, status_message: String) {
-        self.cancel_notice_auto_hide();
-        let ms = server_hold_ms_for(&status_message);
+    fn schedule_auto_hide(&mut self, status_message: String) {
+        self.cancel_auto_hide();
+        let ms = (self.hold_ms_for)(&status_message);
         let bus = self.bus.clone();
         let last = self.last.clone();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
-            // Only auto-dismiss if still the same notice; otherwise a new
-            // state has overwritten `last` and this task should have been
-            // aborted. Check `last` before publishing.
+            // Only auto-dismiss if still the same transient state; otherwise
+            // a new state has overwritten `last` and this task should have
+            // been aborted. Check `last` before publishing.
             {
                 let guard = last.lock().await;
-                let is_still_this_notice = matches!(&*guard, Some((s, r)) if s == wire_state::NOTICE && r == &status_message);
-                if !is_still_this_notice {
+                let is_still_this = matches!(
+                    &*guard,
+                    Some((s, r))
+                        if (s == wire_state::NOTICE || s == wire_state::ERROR)
+                            && r == &status_message
+                );
+                if !is_still_this {
                     return;
                 }
             }
@@ -210,7 +231,7 @@ impl DbusIndicator {
                 *guard = Some((wire_state::IDLE.to_string(), String::new()));
             }
         });
-        self.pending_notice_hide = Some(handle);
+        self.pending_hide = Some(handle);
     }
 
     /// Publish the transition (unless it repeats the current wire state) as
@@ -246,22 +267,18 @@ impl Indicator for DbusIndicator {
     async fn set_state(&mut self, state: IndicatorState) {
         let wire = map_state(&state, self.readiness.ready_seen());
         let status_message = status_message(&state, self.readiness.ready_seen());
-        let is_notice = wire == wire_state::NOTICE;
-        let is_error = wire == wire_state::ERROR;
-        // Server auto-dismiss only for `notice`; `error` stays persistent.
-        // Cancel any pending notice hide on any state change; a new `notice`
+        let is_transient = wire == wire_state::NOTICE || wire == wire_state::ERROR;
+        // Cancel any pending hide on any state change; a new transient state
         // will re-arm with its own reason.
-        self.cancel_notice_auto_hide();
+        self.cancel_auto_hide();
         self.publish(wire, &status_message).await;
-        if is_notice {
-            self.schedule_notice_auto_hide(status_message);
-        } else if is_error {
-            // `error` is persistent — no auto-hide.
+        if is_transient {
+            self.schedule_auto_hide(status_message);
         }
     }
 
     async fn hide(&mut self) {
-        self.cancel_notice_auto_hide();
+        self.cancel_auto_hide();
         self.publish(wire_state::IDLE, "").await;
         // P3: levels die with the session. publish() already cleared the
         // StatusMessage together with the idle State transition.
@@ -273,7 +290,10 @@ impl Indicator for DbusIndicator {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+    use crate::dbus::FakeBus;
 
     /// Contract publisher.md P1 / data-model E1: every IndicatorState maps to
     /// the com.canonical.Myna.Dictation State string of the E1 table.
@@ -415,5 +435,112 @@ mod tests {
         assert_ne!(notice, error);
         assert_eq!(notice, "notice");
         assert_eq!(error, "error");
+    }
+
+    /// A critical error auto-dismisses to `idle` after the hold, clearing the
+    /// status message, so it cannot linger forever on the wire.
+    #[tokio::test]
+    async fn critical_error_auto_hides_after_hold() {
+        let bus = FakeBus::new();
+        let shared: SharedBus = Arc::new(tokio::sync::Mutex::new(bus.clone()));
+        let mut indicator = DbusIndicator::with_hold(shared, Readiness::new(), |_| 5);
+
+        indicator
+            .set_state(IndicatorState::critical("mic gone"))
+            .await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str("error".into())),
+            "critical error publishes `error` immediately"
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::IDLE.into())),
+            "critical error auto-hides to `idle` after the hold"
+        );
+        assert_eq!(
+            bus.property("StatusMessage"),
+            Some(PropertyValue::Str(String::new())),
+            "auto-hide clears the status message"
+        );
+    }
+
+    /// A recoverable notice keeps auto-hiding to `idle` after the hold.
+    #[tokio::test]
+    async fn recoverable_notice_auto_hides_after_hold() {
+        let bus = FakeBus::new();
+        let shared: SharedBus = Arc::new(tokio::sync::Mutex::new(bus.clone()));
+        let mut indicator = DbusIndicator::with_hold(shared, Readiness::new(), |_| 5);
+
+        indicator
+            .set_state(IndicatorState::recoverable("No speech detected"))
+            .await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str("notice".into()))
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::IDLE.into())),
+            "notice auto-hides to `idle` after the hold"
+        );
+    }
+
+    /// A state change before the hold fires cancels the pending hide: a stale
+    /// timer must not yank a newer state back to `idle`.
+    #[tokio::test]
+    async fn state_change_before_hold_cancels_pending_hide() {
+        let bus = FakeBus::new();
+        let shared: SharedBus = Arc::new(tokio::sync::Mutex::new(bus.clone()));
+        let mut indicator = DbusIndicator::with_hold(shared, Readiness::new(), |_| 100);
+
+        indicator
+            .set_state(IndicatorState::critical("mic gone"))
+            .await;
+        indicator.set_state(IndicatorState::Transcribing).await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::TRANSCRIBING.into()))
+        );
+
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::TRANSCRIBING.into())),
+            "a stale auto-hide must not fire after the state moved on"
+        );
+    }
+
+    /// hide() clears a transient immediately and aborts any pending hide, so
+    /// nothing yanks a later state to `idle` afterwards.
+    #[tokio::test]
+    async fn hide_clears_error_immediately_and_aborts_pending() {
+        let bus = FakeBus::new();
+        let shared: SharedBus = Arc::new(tokio::sync::Mutex::new(bus.clone()));
+        let mut indicator = DbusIndicator::with_hold(shared, Readiness::new(), |_| 100);
+
+        indicator
+            .set_state(IndicatorState::critical("mic gone"))
+            .await;
+        indicator.hide().await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::IDLE.into()))
+        );
+        assert_eq!(
+            bus.property("StatusMessage"),
+            Some(PropertyValue::Str(String::new()))
+        );
+
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(
+            bus.property("State"),
+            Some(PropertyValue::Str(wire_state::IDLE.into())),
+            "hide() aborts the pending auto-hide; nothing else fires"
+        );
     }
 }
