@@ -27,6 +27,9 @@ import {resolveHudLaunch} from './resolve.js';
 import {DictationAnnouncer} from './announcer.js';
 import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
 
+/** The daemon whose presence the renderer's lifetime follows (XH14). */
+const DAEMON_BUS_NAME = 'com.canonical.Myna.Dictation';
+
 // Await the subprocess with a Cancellable instead of a bare callback, so
 // disable() can cancel the wait rather than relying on a flag to ignore a
 // late callback. Promisified once at module load (idempotent).
@@ -97,36 +100,88 @@ export class OverlayHost {
         // instance, so a stale wait can never act on a newer generation's
         // cancellable.
         this._cancellable = null;
+
+        // Gio.bus_watch_name id; 0 when not watching (XH14).
+        this._nameWatchId = 0;
+        this._daemonPresent = false;
     }
 
-    /** Launch the renderer and begin hosting. The extension owns this object
-     * for one enable/disable generation. */
+    /** Begin hosting: watch for the daemon and run the renderer for exactly
+     * as long as it is there. The extension owns this object for one
+     * enable/disable generation. */
     enable() {
         this._dormant = false;
         this._restartState = initialState();
-        this._spawn();
+        this._watchDaemon();
     }
 
     /** Terminate the renderer, drop the window, disconnect everything
      * (XH7). Safe to call when never enabled or already disabled. */
     disable() {
-        this._announcer?.disable();
-        this._announcer = null;
+        this._unwatchDaemon();
+        this._stopRenderer();
+    }
+
+    // ── Daemon presence (XH14) ──────────────────────────────────────────
+
+    /** Run the renderer for exactly as long as the daemon owns its name.
+     *
+     * The HUD draws one thing: what `com.canonical.Myna.Dictation` is doing.
+     * With no daemon it is a process with nothing to render, and — being a
+     * snap app rather than a snap service — one that `snap stop myna` cannot
+     * reach and that snapd counts as "running apps", so it blocks every
+     * install and refresh of the snap it belongs to.
+     *
+     * Never `AUTO_START`: watching must not be what brings the daemon up.
+     */
+    _watchDaemon() {
+        if (this._nameWatchId)
+            return;
+        this._nameWatchId = Gio.bus_watch_name(
+            Gio.BusType.SESSION,
+            DAEMON_BUS_NAME,
+            Gio.BusNameWatcherFlags.NONE,
+            () => this._onDaemonAppeared(),
+            () => this._onDaemonVanished());
+    }
+
+    _unwatchDaemon() {
+        if (this._nameWatchId) {
+            Gio.bus_unwatch_name(this._nameWatchId);
+            this._nameWatchId = 0;
+        }
+        this._daemonPresent = false;
+    }
+
+    _onDaemonAppeared() {
+        if (this._subprocess || this._restartTimeoutId)
+            return;
+        // A new daemon is a new incident history: the budget exists to stop a
+        // crash loop, not to hold a grudge across restarts of the thing the
+        // renderer talks to.
+        this._daemonPresent = true;
+        this._dormant = false;
+        this._restartState = initialState();
+        this._log(`${DAEMON_BUS_NAME} appeared; starting the renderer`);
+        this._spawn();
+    }
+
+    _onDaemonVanished() {
+        this._daemonPresent = false;
+        if (!this._subprocess && !this._restartTimeoutId)
+            return;
+        this._log(`${DAEMON_BUS_NAME} vanished; stopping the renderer`);
+        this._stopRenderer();
+    }
+
+    /** Take the renderer down without counting it as an incident.
+     *
+     * Cancelling the wait first is what makes it expected: `_watchExit` skips
+     * `_onRendererExited` on a cancelled wait, so the kill below schedules no
+     * respawn (XH3's "the host asked it to stop").
+     */
+    _stopRenderer() {
         this._cancelPendingRestart();
-
-        // Drop every tracked signal: the host-lifetime ones (map watch,
-        // overview) keyed on `this`, the spawn-lifetime window-created watch,
-        // and the window-scoped ones keyed on the per-adoption token.
-        global.window_manager.disconnectObject(this);
-        Main.overview.disconnectObject(this);
-        global.display.disconnectObject(this);
-        global.backend.get_monitor_manager().disconnectObject(this);
-        this._disconnectWindowSignals();
-        this._disconnectSpawnSignals();
-
-        // Cancel the current subprocess wait so its promise rejects as
-        // cancelled rather than resolving into _onRendererExited after we
-        // have torn down — no late respawn.
         this._cancellable?.cancel();
         this._cancellable = null;
 
@@ -134,20 +189,33 @@ export class OverlayHost {
         // it is never orphaned above the overview.
         this._raiseAboveOverview(false);
 
-        // Kill the renderer process. Meta.WaylandClient has no destroy()
-        // method in either supported API generation, so terminating the
-        // subprocess stops the renderer and reaps its window; the wait was
-        // cancelled above, so this exit does not schedule a respawn.
-        // force_exit is a hard kill — the renderer is a HUD with no unsaved
-        // state, and a graceful SIGTERM would only delay teardown.
+        // Meta.WaylandClient has no destroy() in either supported API
+        // generation, so terminating the subprocess stops the renderer and
+        // reaps its window. force_exit is a hard kill — the renderer is a HUD
+        // with no unsaved state, and SIGTERM would only delay teardown.
         try {
             this._subprocess?.force_exit();
         } catch (e) {
             logError(e, '[myna-shell] error terminating renderer');
         }
+
+        // Drop every tracked signal: the ones keyed on `this` (map watch,
+        // overview, monitors), the spawn-lifetime window-created watch, and
+        // the window-scoped ones keyed on the per-adoption token. `_spawn()`
+        // reconnects what it needs, so none of these outlive the process they
+        // were watching for.
+        global.window_manager.disconnectObject(this);
+        Main.overview.disconnectObject(this);
+        global.display.disconnectObject(this);
+        global.backend.get_monitor_manager().disconnectObject(this);
+        this._disconnectWindowSignals();
+        this._disconnectSpawnSignals();
+
         this._subprocess = null;
         this._client = null;
         this._window = null;
+        this._announcer?.disable();
+        this._announcer = null;
     }
 
     /** Whether the host has given up after exhausting the restart budget
@@ -526,7 +594,12 @@ export class OverlayHost {
         this._restartTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT, plan.delayMs, () => {
                 this._restartTimeoutId = 0;
-                this._spawn();
+                // The daemon can go away inside the backoff window - a crash
+                // and a `snap stop` at once. Respawning into that would put
+                // the process snapd counts back on the machine with nothing
+                // left for it to render.
+                if (this._daemonPresent)
+                    this._spawn();
                 return GLib.SOURCE_REMOVE;
             });
     }

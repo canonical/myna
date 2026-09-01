@@ -5,6 +5,11 @@ application as a focus-safe overlay (feature 004). It does **not** draw the
 HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
 `myna-hud` binary (see `client/myna-hud`) does both. This extension:
 
+- runs the renderer for exactly as long as the daemon owns
+  `com.canonical.Myna.Dictation`, watching the name and starting/stopping with
+  it (XH14) — the HUD draws that interface and nothing else, and as a snap
+  *app* rather than a service an idle one is both unreachable by
+  `snap stop myna` and enough to block `snap install`/`refresh`,
 - launches the renderer through `Meta.WaylandClient` (the Mutter 14–15
   `new()` + `spawnv()` API on Shell 46–48, or `new_subprocess()` on Shell
   49–51, so the child inherits the compositor's Wayland socket),

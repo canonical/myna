@@ -107,6 +107,25 @@ async function watchExit(subprocess, cancellable) {
     return !cancellable.is_cancelled();
 }
 
+// --- The renderer's lifetime follows the daemon (XH14) --------------------
+
+{
+    // A daemon that goes away is the host asking the renderer to stop, so it
+    // takes the `expected` branch: no respawn, and no dormancy either - the
+    // budget is for crash loops, and a `snap stop myna` is not one.
+    const afterStop = planRestart(initialState(), {expected: true, uptimeMs: 5000});
+    check('XH14 a vanished daemon stops the renderer without respawning',
+        !afterStop.restart && !afterStop.dormant);
+
+    // And a daemon that comes back gets a clean slate, so a renderer that
+    // crashed against the previous one is not already part-way to dormant.
+    const crashed = planRestart(initialState(), {expected: false, uptimeMs: 10});
+    check('XH14 ... and the crash tally is non-zero before a restart',
+        crashed.consecutiveFailures > 0);
+    eq('XH14 a returning daemon resets the tally the host carries',
+        initialState().consecutiveFailures, 0);
+}
+
 const loop = new GLib.MainLoop(null, false);
 (async () => {
     const proc = Gio.Subprocess.new(['sh', '-c', 'exit 0'], Gio.SubprocessFlags.NONE);
