@@ -294,9 +294,7 @@ def run_cell(model: _ParakeetOnnx, clip: str, samples: np.ndarray, k: float) -> 
     mean_shift = float(
         np.linalg.norm(feat_full_region.mean(axis=1) - feat_naive_region.mean(axis=1))
     )
-    std_shift = float(
-        np.linalg.norm(feat_full_region.std(axis=1) - feat_naive_region.std(axis=1))
-    )
+    std_shift = float(np.linalg.norm(feat_full_region.std(axis=1) - feat_naive_region.std(axis=1)))
 
     return Cell(
         clip=clip,
@@ -344,7 +342,8 @@ def _print_row(row: dict) -> None:
     prof = row.get("case_b_distance_profile") or []
     if prof:
         bins = "  ".join(
-            f"[{b['distance_frames'][0]}," f"{b['distance_frames'][1] or 'inf'}):"
+            f"[{b['distance_frames'][0]},"
+            f"{b['distance_frames'][1] or 'inf'}):"
             f"med={b['median']:.3f}/min={b['min']:.3f}"
             for b in prof
         )

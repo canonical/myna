@@ -276,7 +276,7 @@ def main() -> None:
         action="store_true",
         help=(
             "measure and write a record even with T02 guard violations, "
-            "stamping \"environment\": \"dirty\" into it"
+            'stamping "environment": "dirty" into it'
         ),
     )
     ap.add_argument(

@@ -428,9 +428,7 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--model-dir", type=Path, required=True)
-    ap.add_argument(
-        "--calib-glob", default=str(REPO_ROOT / "corpus" / "real" / "audio" / "*.wav")
-    )
+    ap.add_argument("--calib-glob", default=str(REPO_ROOT / "corpus" / "real" / "audio" / "*.wav"))
     ap.add_argument("--calib-n", type=int, default=16)
     ap.add_argument(
         "--qsilu-lib", type=Path, default=Path(__file__).resolve().parent / "qsilu" / "libqsilu.so"

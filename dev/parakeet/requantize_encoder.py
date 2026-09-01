@@ -271,9 +271,7 @@ def main() -> None:
     )
     ap.add_argument("--model-dir", required=True, help="staged parakeet model directory")
     ap.add_argument("--out", type=Path, required=True, help="output encoder .onnx path")
-    ap.add_argument(
-        "--calib-glob", default=str(REPO_ROOT / "corpus" / "real" / "audio" / "*.wav")
-    )
+    ap.add_argument("--calib-glob", default=str(REPO_ROOT / "corpus" / "real" / "audio" / "*.wav"))
     ap.add_argument("--calib-n", type=int, default=16)
     ap.add_argument(
         "--calibrate-method",
