@@ -79,6 +79,13 @@ export class OverlayHost {
         // touching the host-lifetime ones.
         this._windowSignals = null;
 
+        // Spawn-lifetime display signals (the window-created watch). A
+        // separate token from `this` so the idle unmap (which drops the
+        // `this`-keyed display signals in _onWindowUnmanaged) cannot take
+        // the pre-map dock-typing watch down with it — a re-shown HUD must
+        // be dock-typed before its *first* map again.
+        this._spawnSignals = null;
+
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
         this._announcer = null;
@@ -108,13 +115,14 @@ export class OverlayHost {
         this._cancelPendingRestart();
 
         // Drop every tracked signal: the host-lifetime ones (map watch,
-        // overview) keyed on `this`, and the window-scoped ones keyed on the
-        // per-adoption token.
+        // overview) keyed on `this`, the spawn-lifetime window-created watch,
+        // and the window-scoped ones keyed on the per-adoption token.
         global.window_manager.disconnectObject(this);
         Main.overview.disconnectObject(this);
         global.display.disconnectObject(this);
         global.backend.get_monitor_manager().disconnectObject(this);
         this._disconnectWindowSignals();
+        this._disconnectSpawnSignals();
 
         // Cancel the current subprocess wait so its promise rejects as
         // cancelled rather than resolving into _onRendererExited after we
@@ -156,6 +164,8 @@ export class OverlayHost {
     // ── Launch ──────────────────────────────────────────────────────────
 
     _spawn() {
+        // The extension only constructs this host under Wayland (see
+        // extension.js), so Meta.WaylandClient is guaranteed available here.
         const launch = resolveHudLaunch({getenv: GLib.getenv, isExecutable});
         if (launch.argv === null) {
             this._log(
@@ -210,6 +220,22 @@ export class OverlayHost {
             GObject.ConnectFlags.AFTER,
             this);
 
+        // Dock-type the window at CREATION, not at map. Mutter's focus-on-map
+        // decision (window_state_on_map, src/core/window.c) reads the window
+        // type before the shell's `map` signal fires — so typing it in the
+        // map handler is too late, and the first map steals focus while the
+        // window is still NORMAL (XH10, 2026-09-01). window-created fires
+        // before the first commit, so the window is already DOCK when that
+        // decision runs; the map handler re-asserts and positions. Dedicated
+        // spawn-lifetime tracker: the idle unmap/remap drops the `this`-keyed
+        // display signals, and the re-shown window must be dock-typed before
+        // its own first map again.
+        this._spawnSignals = {};
+        global.display.connectObject(
+            'window-created',
+            (_display, window) => this._onWindowCreated(window),
+            this._spawnSignals);
+
         // Watch the subprocess so an exit drives the respawn policy. A fresh
         // Cancellable per spawn, captured by this wait: disable() cancels
         // whatever is current, and _watchExit checks the very instance it was
@@ -241,9 +267,34 @@ export class OverlayHost {
 
     // ── Adoption (XH4) ──────────────────────────────────────────────────
 
-    _onWindowMapped(window) {
-        if (!window)
+    /** Whether `window` belongs to our renderer's trusted client. The host
+     * only exists under Wayland (see extension.js), so the window is a
+     * Wayland surface and `owns_window()` is guaranteed not to throw. */
+    _ownsWindow(window) {
+        return this._client?.owns_window(window) ?? false;
+    }
+
+    /** Dock-type our renderer's window before its first map, so mutter's
+     * focus-on-map decision sees DOCK and refuses focus. The map handler
+     * (`_onWindowMapped`) still does the real adoption — placement, the
+     * overview lift, supervision signals — and re-asserts the overlay.
+     * One window per renderer (XH4): a second window from the same client
+     * (a lab window, a dialog) is not dock-typed either. */
+    _onWindowCreated(window) {
+        if (this._window || !this._ownsWindow(window))
             return;
+        try {
+            configureTrustedWindow({
+                client: this._client,
+                window,
+                dockType: Meta.WindowType.DOCK,
+            });
+        } catch (e) {
+            logError(e, '[myna-shell] error dock-typing overlay window at creation');
+        }
+    }
+
+    _onWindowMapped(window) {
         // Already tracking this exact window — a spurious re-map of the one
         // we hold. Re-assert the overlay treatment (mutter can reset some of
         // it) and reposition, but do not re-run the one-time wiring.
@@ -259,21 +310,7 @@ export class OverlayHost {
         // its surface is destroyed (see _adopt), which clears this._window,
         // so reaching here with this._window set means a genuine second
         // window (a dialog), not the re-mapped HUD.
-        if (this._window)
-            return;
-
-        // owns_window() throws on an X11 window (e.g. anything via XWayland),
-        // so guard it: an unrelated window mapping must never take the host
-        // down, and a renderer that connected over XWayland instead of the
-        // injected Wayland socket simply is not ours.
-        let owns = false;
-        try {
-            owns = this._client?.owns_window(window) ?? false;
-        } catch (e) {
-            // X11 window (or the client is gone) — not ours.
-            return;
-        }
-        if (!owns)
+        if (this._window || !this._ownsWindow(window))
             return;
 
         this._adopt(window);
@@ -336,6 +373,14 @@ export class OverlayHost {
         if (this._windowSignals) {
             this._window?.disconnectObject(this._windowSignals);
             this._windowSignals = null;
+        }
+    }
+
+    /** Drop the spawn-lifetime window-created watch. */
+    _disconnectSpawnSignals() {
+        if (this._spawnSignals) {
+            global.display.disconnectObject(this._spawnSignals);
+            this._spawnSignals = null;
         }
     }
 
@@ -451,6 +496,7 @@ export class OverlayHost {
         // rather than left dangling on the exited process's would-be windows.
         this._disconnectOverview();
         this._disconnectWindowSignals();
+        this._disconnectSpawnSignals();
         global.display.disconnectObject(this);
         global.backend.get_monitor_manager().disconnectObject(this);
         global.window_manager.disconnectObject(this);

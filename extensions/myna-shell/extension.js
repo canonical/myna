@@ -15,12 +15,23 @@
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import Meta from 'gi://Meta';
 
 import {watchDashToDockStruts} from './dockStrutsConsumer.js';
 import {OverlayHost} from './host.js';
 
 export default class MynaShellExtension extends Extension {
     enable() {
+        // The overlay host adopts the renderer window through
+        // Meta.WaylandClient, which only exists under Wayland. On X11 (mutter
+        // that still supports it) we leave `this._host` unset and do nothing —
+        // the daemon falls back to desktop notifications — rather than retry a
+        // Wayland-only API. Mutter 17+/Shell 49+ dropped X11, so an absent
+        // probe means Wayland.
+        const isWayland = Meta.is_wayland_compositor?.() ?? true;
+        if (!isWayland)
+            return;
+
         this._host = new OverlayHost({
             // The primary monitor's work area, so the pill sits above the
             // dock/panel rather than under them (place.js owns the maths).
@@ -66,6 +77,8 @@ export default class MynaShellExtension extends Extension {
     }
 
     disable() {
+        if (!this._host)
+            return;
         Main.layoutManager.disconnectObject(this);
         this._dockWatch?.disconnect();
         this._dockWatch = null;

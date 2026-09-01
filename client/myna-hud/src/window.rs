@@ -71,9 +71,11 @@ impl HudWindow {
         // this for a wrapped error; this is only the resting floor.
         window.set_default_size(PILL_WIDTH, RESTING_HEIGHT);
         // The HUD must never take focus from the app being dictated into.
-        // The host also enforces this by DOCK-typing the window (mutter
-        // forces takes_focus = FALSE), but a renderer that asked for focus
-        // would still steal it in lab mode.
+        // The host enforces this by DOCK-typing the window at creation,
+        // before its first map: mutter's focus-on-map decision refuses
+        // focus for DOCK windows, so the pill never steals the target's
+        // keyboard focus. A renderer that asked for focus would still steal
+        // it in lab mode.
         window.set_can_focus(false);
 
         // The pill lives inside a fixed-size holder rather than being the
@@ -173,9 +175,10 @@ impl HudWindow {
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and
-    /// the pager. Redundant on the Wayland shipping path (the host handles
-    /// it); this is the lab/fallback case. There is no GDK4 always-on-top
-    /// equivalent — stacking is the host's job on Wayland.
+    /// the pager. Only reached in standalone/lab mode on an X11 session — the
+    /// Wayland shipping path (host-docked overlay) never hits this. There is
+    /// no GDK4 always-on-top equivalent — stacking is the host's job on
+    /// Wayland.
     fn connect_x11_hints(self: &Rc<Self>) {
         self.window.connect_realize(|window| {
             let Some(surface) = window.surface() else {
