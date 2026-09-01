@@ -43,7 +43,9 @@ Run `cd extensions/myna-shell && shexli "$PWD"` for every host change. The
 review guide records the deliberate in-tree exemptions: `EGO-P-006` for
 gettext metadata, `EGO-P-007` for standalone contract tests, and `EGO-M-004`
 for the declared Shell 46–51 support range. Treat every other finding as
-actionable unless this feature documents an explicit rationale.
+actionable unless this feature documents an explicit rationale. CI runs the
+same JSON gate in a lightweight pip-only job and publishes its classification
+to the GitHub job summary.
 
 **Organization**: phases ordered by dependency: Foundational (crate + deps +
 spikes) → Pure-logic port → Renderer app → Lab/simulator → Extension host →

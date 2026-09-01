@@ -70,6 +70,26 @@ jobs:
       - name: Extension tests (gjs + headless Shell)
         run: make test-extension
 
+  # Static GNOME extension review. This deliberately does not use the Shell
+  # workshop: shexli reviews the bundle layout and JavaScript structure, not
+  # live Mutter behaviour. The gate writes an accepted/actionable finding
+  # summary to the job summary and fails only on findings outside the
+  # feature's documented exemption list.
+  extension-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install shexli
+        run: python -m pip install --disable-pip-version-check shexli
+
+      - name: Review extension bundle (shexli)
+        run: python dev/shexli_gate.py extensions/myna-shell
+
   # The same suites against the NEXT GNOME Shell. Workshop cannot reach it -
   # `workshop init` takes no base newer than ubuntu@26.04 - so the job above
   # only ever sees Shell 50. Ubuntu 26.10 carries Shell 51, and LXD (not a

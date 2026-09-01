@@ -32,7 +32,10 @@
 >   range are handled by the documented `mutterCompat.js` adapter.
 >
 > Any other `shexli` finding is actionable unless its feature-specific
-> rationale is added here or to `contracts/extension.md`.
+> rationale is added here or to `contracts/extension.md`. CI installs `shexli`
+> with pip and runs `dev/shexli_gate.py extensions/myna-shell`; the gate writes
+> the accepted/actionable classification to the GitHub job summary and fails on
+> any unaccepted finding.
 
 This is a reference and benchmark for GNOME Shell extension developers,
 as well as LLMs that generate GNOME Shell extension code.
