@@ -12,6 +12,10 @@
 # in snap.yml shrinks to build-only and its smoke assertions live here.
 name: Spread
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   schedule:
     - cron: "41 4 * * *" # nightly 04:41 UTC

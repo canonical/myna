@@ -5,6 +5,10 @@
 # Chrome that GitHub's ubuntu-latest runners pre-install; no Workshop needed.
 name: Docs lint
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
   push:

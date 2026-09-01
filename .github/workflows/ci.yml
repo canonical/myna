@@ -9,6 +9,10 @@
 # actions (`lint`, `test`, `py-test`, `gjs-test`) are defined alongside each.
 name: CI
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
   push:
