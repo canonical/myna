@@ -115,6 +115,7 @@ fi
 # store fetch from the guest at all): ack each assertion, then sideload the
 # matching .snap. Baking them into the image here means the later
 # `snap install myna` in a task finds them already present.
+# shellcheck disable=SC2016  # single-quoted on purpose: vars expand on the guest, not here
 sshpass -p ubuntu ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o PreferredAuthentications=password -o PubkeyAuthentication=no \
     -p 10022 ubuntu@localhost '
