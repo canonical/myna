@@ -47,7 +47,7 @@ pub fn default_status_message(state: &str) -> &'static str {
         wire::TRANSCRIBING => "Transcribing",
         wire::FINALIZING => "Finishing",
         wire::NOTICE => "No speech detected",
-        wire::ERROR => "Microphone unavailable",
+        wire::ERROR => "Error: Microphone unavailable",
         _ => "Active",
     }
 }

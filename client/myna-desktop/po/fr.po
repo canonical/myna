@@ -33,6 +33,11 @@ msgstr "Transcription en cours"
 msgid "Finishing"
 msgstr "Finalisation"
 
+#: src/indicator/mod.rs:107
+#, c-format
+msgid "Error: %s"
+msgstr "Erreur : %s"
+
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
 msgstr "🎤 Dictée : à l'écoute"

@@ -88,6 +88,11 @@ impl IndicatorState {
 /// D-Bus is one presentation transport, while the desktop session policy
 /// decides whether `Recording` is still loading or actively listening.
 /// Consumers render this already-translated value verbatim.
+///
+/// Critical errors are published as `Error: <message>` so the severity reads
+/// in the HUD text itself, not just from the pill's tint; the message is kept
+/// verbatim (lowercase) after the prefix. Recoverable notices publish the
+/// reason verbatim too — they carry their own severity colour.
 pub fn status_message(state: &IndicatorState, ready_seen: bool) -> String {
     match state {
         IndicatorState::Hidden => String::new(),
@@ -95,7 +100,14 @@ pub fn status_message(state: &IndicatorState, ready_seen: bool) -> String {
         IndicatorState::Recording => gettext("Listening"),
         IndicatorState::Transcribing => gettext("Transcribing"),
         IndicatorState::Finalizing => gettext("Finishing"),
-        IndicatorState::Error { message, .. } => message.clone(),
+        IndicatorState::Error {
+            message,
+            recoverable: false,
+        } => gettext("Error: %s").replace("%s", message),
+        IndicatorState::Error {
+            message,
+            recoverable: true,
+        } => message.clone(),
     }
 }
 

@@ -59,7 +59,7 @@ async fn hide_publishes_idle_zeroes_levels_clears_error() {
         .await;
     assert_eq!(
         fake.property("StatusMessage"),
-        str_prop("refusing to type into a password field")
+        str_prop("Error: refusing to type into a password field")
     );
 
     indicator.hide().await;
@@ -150,7 +150,7 @@ async fn recoverable_error_publishes_notice_not_error() {
     assert_eq!(fake.property("State"), str_prop("error"));
     assert_eq!(
         fake.property("StatusMessage"),
-        str_prop("microphone unavailable")
+        str_prop("Error: microphone unavailable")
     );
 
     assert_eq!(fake.state_history(), vec!["notice", "recording", "error"]);

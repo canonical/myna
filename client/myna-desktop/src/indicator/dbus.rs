@@ -334,7 +334,7 @@ mod tests {
             (
                 IndicatorState::critical("Microphone unavailable"),
                 true,
-                "Microphone unavailable",
+                "Error: Microphone unavailable",
             ),
         ];
         for (state, ready, expected) in cases {
@@ -342,6 +342,19 @@ mod tests {
             assert_eq!(status_message(&state, ready), expected, "{wire}");
         }
         assert_eq!(status_message(&IndicatorState::Hidden, false), "");
+    }
+
+    /// Critical errors are published as `Error: <message>` (so the severity
+    /// reads in the HUD text, not just the tint), keeping the message verbatim
+    /// after the prefix; recoverable notices publish the reason verbatim.
+    #[test]
+    fn critical_errors_are_prefixed_notices_verbatim() {
+        let critical = status_message(&IndicatorState::critical("microphone unavailable"), true);
+        assert_eq!(critical, "Error: microphone unavailable");
+        let critical = status_message(&IndicatorState::critical("no backend is connected"), true);
+        assert_eq!(critical, "Error: no backend is connected");
+        let notice = status_message(&IndicatorState::recoverable("No speech detected"), true);
+        assert_eq!(notice, "No speech detected", "notices are not prefixed");
     }
 
     /// C3: the mapping can only emit one of the seven contract state strings —

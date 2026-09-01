@@ -40,8 +40,8 @@ fn severity_outranks_phase() {
     );
     assert_eq!(
         wire_state("morph", Some(Severity::Critical), true),
-        (wire::ERROR, "Microphone unavailable"),
-        "critical → error with a content-free reason"
+        (wire::ERROR, "Error: Microphone unavailable"),
+        "critical → error with the publisher-owned prefixed reason"
     );
 }
 
@@ -66,7 +66,7 @@ fn default_status_messages_match_the_publisher_contract() {
         (wire::TRANSCRIBING, "Transcribing"),
         (wire::FINALIZING, "Finishing"),
         (wire::NOTICE, "No speech detected"),
-        (wire::ERROR, "Microphone unavailable"),
+        (wire::ERROR, "Error: Microphone unavailable"),
         ("quantizing", "Active"),
     ];
     for (state, message) in cases {

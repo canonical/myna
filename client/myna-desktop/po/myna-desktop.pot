@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 16:41+0000\n"
+"POT-Creation-Date: 2026-09-01 17:25+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,20 +17,25 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/indicator/mod.rs:94
+#: src/indicator/mod.rs:100
 msgid "Loading model…"
 msgstr ""
 
-#: src/indicator/mod.rs:95
+#: src/indicator/mod.rs:101
 msgid "Listening"
 msgstr ""
 
-#: src/indicator/mod.rs:96
+#: src/indicator/mod.rs:102
 msgid "Transcribing"
 msgstr ""
 
-#: src/indicator/mod.rs:97
+#: src/indicator/mod.rs:103
 msgid "Finishing"
+msgstr ""
+
+#: src/indicator/mod.rs:107
+#, c-format
+msgid "Error: %s"
 msgstr ""
 
 #: src/indicator/notify.rs:60
