@@ -67,11 +67,6 @@ pub struct Settings {
 /// Why a settings write did not happen.
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
-    /// No `com.canonical.Myna.Dictation` in any installed schema source. Packaged, the
-    /// snap ships its own; unpackaged, `make install-schema` puts it on the
-    /// host.
-    #[error("GSettings schema {SCHEMA_ID} is not installed")]
-    SchemaMissing,
     /// The backend refused the write (read-only key, locked-down dconf).
     #[error("cannot write {0}: {1}")]
     Write(&'static str, glib::BoolError),
@@ -96,14 +91,6 @@ impl Settings {
             activation: store.text(KEY_ACTIVATION).filter(|a| a != "auto"),
             hotkey: store.text(KEY_HOTKEY),
         }
-    }
-
-    /// Persist. Unlike [`Self::load`] this reports failure: a caller asking to
-    /// *change* a setting has to hear that it did not take.
-    pub fn save(&self) -> Result<(), SettingsError> {
-        Store::open()
-            .ok_or(SettingsError::SchemaMissing)?
-            .set_streaming_mode(self.streaming_mode)
     }
 }
 
