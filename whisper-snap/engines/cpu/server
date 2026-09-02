@@ -7,7 +7,7 @@ idle="$(modelctl get sleep-idle-seconds)"
 # on CPU means the FP16 weights are upcast and decoded in FP32 — CTranslate2
 # says so in a startup warning nobody was reading. "auto" defers to the
 # model's own measured choice; anything else overrides it.
-# See docs/whisper-quantization-and-decoding.md §1.
+# Per-model measurements are in each models/*/model.yaml (project-plan T70).
 compute_type="$(modelctl get compute-type 2>/dev/null || true)"
 compute_type="${compute_type:-auto}"
 [ "$compute_type" = auto ] && compute_type="${MODEL_COMPUTE_TYPE:-default}"

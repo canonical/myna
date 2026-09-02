@@ -71,9 +71,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "dev"))  # bench_guard.py lives there
 
 import bench_guard  # noqa: E402
-
 from myna.core import AudioFormat, LoopbackClient, PcmChunk, SessionConfig  # noqa: E402
 from myna.core.events import Disposition  # noqa: E402
 from myna.testbed.harness import Harness, StreamingTelemetry, compute_metrics  # noqa: E402
@@ -310,7 +310,7 @@ def main() -> None:
     if args.clip is None:
         ap.error("--clip is required unless --replay is given")
 
-    pre_violations = bench_guard.check()
+    pre_violations = bench_guard.check(bench_guard.PROFILES["parakeet"])
     for v in pre_violations:
         print(v, file=sys.stderr)
     hard_pre = [v for v in pre_violations if v.severity == bench_guard.HARD]

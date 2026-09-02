@@ -42,6 +42,7 @@ from myna.core import (
     TranscriptionProgress,
 )
 from myna.testbed.adapter import Candidate
+from myna.testbed.harness import StreamingTelemetry
 
 WHISPER_RATE = 16_000
 WHISPER_FORMAT = AudioFormat(sample_rate_hz=WHISPER_RATE, channels=1, sample_width_bytes=2)
@@ -72,10 +73,83 @@ def _iso639_1(language: str | None) -> str | None:
 # on the balanced tier (6.21%) and on speech padded with 3 s of silence.
 #
 # Note this is the *opposite* sign to the whisper.cpp constant it was derived
-# from; see docs/whisper-quantization-and-decoding.md §3. `vad_filter=True`
+# from (whisper.cpp feeds it to a temperature-fallback ladder, not a silence
+# gate, so porting it by value doubles the failure here). `vad_filter=True`
 # also reaches 0/12 but costs accuracy on base and strips pause-heavy speech,
 # so it is deliberately not used here.
 _LOG_PROB_THRESHOLD = -0.5
+
+# Streaming defaults, module-level so ``myna.server.cli`` can reference them
+# instead of repeating the literals (it used to, and a default changed in one
+# place would silently not change in the other).
+#
+# STREAM_CADENCE_S is 2.0, not the 1.0 this shipped with. Whisper's encoder
+# costs the same per call whatever the window holds (a fixed 30 s of padded
+# mel), so streaming cost is ticks x a constant and the cadence is the only
+# lever on it. Measured 2026-09-02 over 302 s of speech, 3 runs each: 1.0 ->
+# 2.0 takes the encoder duty cycle 45.4% -> 18.2% for an unchanged WER (5.60%
+# median both) and 0.57 s more before the first text appears. 3.0 saves only
+# 1.5x more and costs another second of that, so 2.0 is the knee.
+STREAM_CADENCE_S = 2.0
+STREAM_WINDOW_CAP_S = 30.0  # I6, the uncommitted-buffer bound
+STREAM_BEAM_SIZE = 1  # greedy re-decode ticks
+
+
+# Temperature-fallback ladder. faster-whisper's default is six steps
+# (0.0 through 1.0): when a decode trips the compression-ratio or
+# log-probability rejection test, the segment is decoded again at each higher
+# temperature in turn, so one bad segment can cost six decodes. It is a tail
+# mechanism, and measured 2026-09-02 on corpus/real/manifest-balanced.json it
+# was buying nothing: capping it after the second step leaves WER unchanged on
+# tiny and base (6.21% and 4.53%, to four decimals) and slightly better on
+# small (3.41% -> 3.38%), while cutting p95 decode latency 26% on tiny, 10% on
+# base and 25% on small. Dropping it *entirely* measures the same, but the
+# second step is kept: it is a recovery path for pathological segments, and no
+# fixture here can produce one - the corpus is clean read speech and the
+# silence probe is near-silence, so "never helped" is a statement about what
+# can be tested, not about what a user will record.
+#
+# Deliberately NOT changed at the same time (docs/project-plan.md T82):
+# beam_size stays 5 - dropping it to 1 costs 0.50 pp of WER for ~15%, the same
+# trade shape as base int8, which was rejected in T70 - and
+# condition_on_previous_text stays True, which costs 0.20 pp for nothing.
+_TEMPERATURE_LADDER = (0.0, 0.2)
+
+
+def batch_decode_options(language: str | None, prompt: str | None) -> dict:
+    """Decode parameters for the batch path, in one place.
+
+    Extracted so ``dev/whisper/bench_whisper.py`` and
+    ``dev/lab/whisper_decode_sweep.py`` measure the shipped decode rather than
+    a copy of it that drifts. Everything not named here is faster-whisper's
+    own default.
+    """
+    return {
+        "language": _iso639_1(language),
+        "initial_prompt": prompt,
+        "log_prob_threshold": _LOG_PROB_THRESHOLD,
+        "temperature": list(_TEMPERATURE_LADDER),
+    }
+
+
+def stream_decode_options(language: str | None, prompt: str | None, beam_size: int) -> dict:
+    """Decode parameters for a streaming re-decode tick. Same rationale as
+    [`batch_decode_options`]; the differences from batch are the greedy beam
+    and ``word_timestamps``, which the local-agreement strategy needs.
+
+    The temperature ladder is capped here for the batch reason and one more:
+    a tick's cost lands directly in the encoder duty cycle, so a segment that
+    escalates through six temperatures stalls the whole live display."""
+    return {
+        "language": _iso639_1(language),
+        "initial_prompt": prompt,
+        "beam_size": beam_size,
+        "word_timestamps": True,
+        "vad_filter": False,
+        "log_prob_threshold": _LOG_PROB_THRESHOLD,
+        "temperature": list(_TEMPERATURE_LADDER),
+    }
+
 
 _PROGRESS_INTERVAL_SECONDS = 1.0
 # Heartbeat cadence while the model loads. A cold load is a few seconds from
@@ -97,9 +171,10 @@ class FasterWhisperAdapter:
         compute_type: str = "default",
         download_root: str | None = None,
         streaming: bool = False,  # T020: Enable streaming mode
-        stream_cadence_s: float = 1.0,  # seconds of new audio between re-decodes
-        stream_window_cap_s: float = 30.0,  # max uncommitted window (I6)
-        stream_beam_size: int = 1,  # re-decode beam; 5 ≈ batch quality, 1 ≈ 5× cheaper
+        stream_cadence_s: float = STREAM_CADENCE_S,
+        stream_window_cap_s: float = STREAM_WINDOW_CAP_S,
+        stream_beam_size: int = STREAM_BEAM_SIZE,  # 5 ≈ batch quality, 1 ≈ 5× cheaper
+        stream_telemetry: StreamingTelemetry | None = None,
     ) -> None:
         self._model_size = model_size
         self._device = device
@@ -109,6 +184,10 @@ class FasterWhisperAdapter:
         self._stream_cadence_s = stream_cadence_s
         self._stream_window_cap_s = stream_window_cap_s
         self._stream_beam_size = stream_beam_size
+        # perf T03: None on every production call path (dev tooling only). The
+        # streaming duty cycle is invisible on the wire, so this is the only
+        # way to measure it - see StreamingTelemetry's docstring.
+        self._stream_telemetry = stream_telemetry
         self._model = None
         self._model_lock = asyncio.Lock()
 
@@ -282,19 +361,10 @@ class FasterWhisperAdapter:
         from myna.testbed.streaming.loop import run_streaming_loop
         from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, Word
 
-        language = _iso639_1(config.language)
-        prompt = config.prompt
+        options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
 
         def decode(samples, offset: float) -> Hypothesis:
-            segments, _info = model.transcribe(
-                samples,
-                language=language,
-                initial_prompt=prompt,
-                beam_size=self._stream_beam_size,
-                word_timestamps=True,
-                vad_filter=False,
-                log_prob_threshold=_LOG_PROB_THRESHOLD,
-            )
+            segments, _info = model.transcribe(samples, **options)
             words: list[Word] = []
             for seg in segments:  # drain the generator (we're in a thread)
                 for w in seg.words or []:
@@ -308,6 +378,7 @@ class FasterWhisperAdapter:
             LocalAgreement(),
             cadence_seconds=self._stream_cadence_s,
             window_cap_seconds=self._stream_window_cap_s,
+            telemetry=self._stream_telemetry,
         )
         await emit(TranscriptionDone(text=transcript))
 
@@ -319,9 +390,6 @@ class FasterWhisperAdapter:
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
         segments, _info = model.transcribe(
-            samples,
-            language=_iso639_1(config.language),
-            initial_prompt=config.prompt,
-            log_prob_threshold=_LOG_PROB_THRESHOLD,
+            samples, **batch_decode_options(config.language, config.prompt)
         )
         return list(segments)  # drain the generator while still in the thread

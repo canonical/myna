@@ -84,7 +84,6 @@ sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "dev"))  # bench_guard.py lives here, not in dev/spikes/
 
 import bench_guard  # noqa: E402
-
 from myna.testbed.metrics import word_error_rate  # noqa: E402
 from myna.testbed.parakeet import (  # noqa: E402
     FRAME_S,
@@ -373,7 +372,7 @@ def main() -> None:
                 _print_row(json.loads(line))
         return
 
-    pre_violations = bench_guard.check()
+    pre_violations = bench_guard.check(bench_guard.PROFILES["parakeet"])
     for v in pre_violations:
         print(v, file=sys.stderr)
     hard_pre = [v for v in pre_violations if v.severity == bench_guard.HARD]

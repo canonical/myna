@@ -43,6 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
 
 from myna.testbed.metrics import character_error_rate, word_error_rate  # noqa: E402
+from myna.testbed.whisper import batch_decode_options  # noqa: E402
 
 # Named decode configurations. "baseline" is exactly what the shipped adapter
 # passes today; the rest are the hypotheses under test.
@@ -67,8 +68,34 @@ from myna.testbed.metrics import character_error_rate, word_error_rate  # noqa: 
 # `openwhispr-1458-literal` transcribes their numbers unchanged so the trap is
 # in the results table rather than in a footnote; the `silence-*` entries are
 # their *intent* expressed in this library's polarity.
+# ``shipped`` comes from the adapter itself rather than being retyped, so it
+# cannot drift. Note it is NOT the same as ``baseline``: baseline is
+# faster-whisper's own defaults, which is what this script measured before T71
+# put ``log_prob_threshold=-0.5`` in the adapter. Keep both - baseline is what
+# the recorded T70/T71 rows compare against, shipped is what users run.
+_SHIPPED = {k: v for k, v in batch_decode_options("en", None).items() if k != "language"}
+
 DECODE_CONFIGS: dict[str, dict] = {
     "baseline": {},
+    "shipped": dict(_SHIPPED),
+    # --- whisper perf WP06: what the shipped batch path never sets ---
+    # beam_size defaults to 5. The adapter's own comment claims "5 ~= batch
+    # quality, 1 ~= 5x cheaper" about a path that passes neither.
+    "beam1": {**_SHIPPED, "beam_size": 1},
+    # The six-step temperature-fallback ladder re-decodes a rejected segment up
+    # to six times. A tail-latency mechanism, so judge it on p95, not the mean.
+    "no-ladder": {**_SHIPPED, "temperature": [0.0]},
+    "ladder-2": {**_SHIPPED, "temperature": [0.0, 0.2]},
+    "beam1-no-ladder": {**_SHIPPED, "beam_size": 1, "temperature": [0.0]},
+    # condition_on_previous_text=True is the usual repetition-loop source and
+    # also serialises segments against each other.
+    "shipped-no-condition": {**_SHIPPED, "condition_on_previous_text": False},
+    "beam1-no-ladder-no-condition": {
+        **_SHIPPED,
+        "beam_size": 1,
+        "temperature": [0.0],
+        "condition_on_previous_text": False,
+    },
     # Their constants, taken at face value. Expected to be worse, not better.
     "openwhispr-1458-literal": {
         "compression_ratio_threshold": 2.8,
@@ -104,6 +131,14 @@ class Row:
     decode_seconds: float
     rtf: float
     load_seconds: float
+    # Per-clip decode latency. The temperature ladder is a tail mechanism -
+    # it fires on a minority of segments and multiplies their cost - so a mean
+    # hides exactly the thing under test (whisper perf WP06).
+    p50_ms: float
+    p95_ms: float
+    max_ms: float
+    # Segments where the ladder actually fired (winning temperature != 0).
+    ladder_segments: int
     # A transcript far longer than its reference is the hallucinated-tail
     # signature; count clips where the hypothesis runs away.
     runaway_clips: int
@@ -153,12 +188,31 @@ def sweep(model_size, compute_type, decode_name, clips, download_root, threads, 
     wer_edits = wer_ref = cer_edits = cer_ref = 0
     audio_seconds = decode_seconds = 0.0
     runaway = empty = 0
+    per_clip_ms: list[float] = []
+
+    # Count segments that took the temperature ladder. Patched on the class
+    # for the duration of the sweep, the same way dev/whisper/bench_whisper.py
+    # instruments the stage timeline, so the count comes from the real decode.
+    from faster_whisper.transcribe import WhisperModel as _WM
+
+    ladder = {"n": 0}
+    original_fallback = _WM.generate_with_fallback
+
+    def counted_fallback(self, *a, **kw):
+        out = original_fallback(self, *a, **kw)
+        if out[2]:  # winning temperature != 0
+            ladder["n"] += 1
+        return out
+
+    _WM.generate_with_fallback = counted_fallback
 
     for clip, samples in clips:
         t0 = time.perf_counter()
         segments, _info = model.transcribe(samples, language="en", **overrides)
         text = "".join(s.text for s in segments).strip()
-        decode_seconds += time.perf_counter() - t0
+        elapsed = time.perf_counter() - t0
+        per_clip_ms.append(elapsed * 1000)
+        decode_seconds += elapsed
         audio_seconds += clip["duration_seconds"]
 
         w = word_error_rate(clip["text"], text)
@@ -172,6 +226,8 @@ def sweep(model_size, compute_type, decode_name, clips, download_root, threads, 
         elif w.insertions > max(5, w.reference_length):
             runaway += 1
 
+    _WM.generate_with_fallback = original_fallback
+    ordered = sorted(per_clip_ms)
     label = Path(model_size).name if "/" in model_size else model_size
     return Row(
         model=label,
@@ -185,6 +241,12 @@ def sweep(model_size, compute_type, decode_name, clips, download_root, threads, 
         decode_seconds=round(decode_seconds, 2),
         rtf=round(decode_seconds / audio_seconds, 4) if audio_seconds else 0.0,
         load_seconds=round(load_seconds, 2),
+        p50_ms=round(ordered[len(ordered) // 2], 1) if ordered else 0.0,
+        p95_ms=round(ordered[min(int(0.95 * len(ordered)), len(ordered) - 1)], 1)
+        if ordered
+        else 0.0,
+        max_ms=round(ordered[-1], 1) if ordered else 0.0,
+        ladder_segments=ladder["n"],
         runaway_clips=runaway,
         empty_clips=empty,
     )
@@ -251,16 +313,17 @@ def main() -> int:
                     )
 
     hdr = (
-        f"{'model':<20} {'compute':<14} {'decode':<28} {'WER':>8} {'CER':>8} "
-        f"{'RTF':>7} {'load s':>7} {'runaway':>7}"
+        f"{'model':<14} {'compute':<9} {'decode':<30} {'WER':>8} {'CER':>8} "
+        f"{'RTF':>7} {'p50ms':>8} {'p95ms':>8} {'maxms':>8} {'ladder':>7} {'runaway':>8}"
     )
     print("\n" + hdr)
     print("-" * len(hdr))
     for r in rows:
         print(
-            f"{r.model:<20} {r.compute_type:<14} {r.decode_config:<28} "
+            f"{r.model:<14} {r.compute_type:<9} {r.decode_config:<30} "
             f"{r.wer:>8.4f} {r.cer:>8.4f} {r.rtf:>7.3f} "
-            f"{r.load_seconds:>7.1f} {r.runaway_clips:>7}"
+            f"{r.p50_ms:>8.0f} {r.p95_ms:>8.0f} {r.max_ms:>8.0f} "
+            f"{r.ladder_segments:>7} {r.runaway_clips:>8}"
         )
     print(f"\nappended to {args.out}")
     return 0
