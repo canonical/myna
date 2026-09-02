@@ -15,13 +15,13 @@ Which is better is backend-dependent (CTranslate2 wakes cheaply; NeMo/torch
 pays a heavy import+CUDA-init tax), so it's a flag, not a hardcode.
 
 ``MemoryPressureMonitor`` (T10) is the runtime counterpart to
-``dev/parakeet/bench_guard.py``'s dev-time checks (T02): the same page-fault-thrash
+``dev/bench_guard.py``'s dev-time checks (T02): the same page-fault-thrash
 signature that made the 2026-08-28 baseline's first pass wrong by 18x, caught
 during real decoding instead of a benchmark. It lives here rather than in the
 adapter because this is the closest existing neighbour to this concern - the
 module already tracks busy/idle state and arena-trimming for the same
 underlying reason (memory behaviour of a resident model). ``sample_majflt`` and
-``MAJOR_PAGE_FAULT_THRESHOLD`` are the shared primitive: ``dev/parakeet/bench_guard.py``
+``MAJOR_PAGE_FAULT_THRESHOLD`` are the shared primitive: ``dev/bench_guard.py``
 imports both from here instead of defining its own, so the dev-time guard and
 the runtime detector can never drift on what "a major fault" means.
 """
@@ -74,7 +74,7 @@ MAJOR_PAGE_FAULT_THRESHOLD = 1000
 """Per-decode major-fault budget. Healthy is order 10^2; a throttled machine
 hit 202,792 major faults for a single 12 s decode. 1000 sits comfortably above
 ordinary noise (a busy laptop, a cold page cache) and far below the failure
-mode. Shared with dev/parakeet/bench_guard.py's identical-purpose check so the
+mode. Shared with dev/bench_guard.py's identical-purpose check so the
 two thresholds cannot silently drift apart."""
 
 PSI_SOME_AVG10_THRESHOLD = 5.0
@@ -103,7 +103,7 @@ def sample_majflt() -> int:
     count, which includes faulting in the model itself at load time.
 
     The single shared primitive between this module and
-    ``dev/parakeet/bench_guard.py`` (T02): both need the identical number for the
+    ``dev/bench_guard.py`` (T02): both need the identical number for the
     identical reason, and the dev script imports this function rather than
     defining its own so the two can't drift on what "a major fault" means.
     """

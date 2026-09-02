@@ -49,9 +49,9 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "dev"))  # bench_guard.py lives there
 
 import bench_guard  # noqa: E402
-
 from myna.testbed.parakeet import (  # noqa: E402
     PARAKEET_RATE,
     _default_model_dir,
@@ -315,7 +315,7 @@ def main() -> None:
         )
         return
 
-    pre_violations = bench_guard.check()
+    pre_violations = bench_guard.check(bench_guard.PROFILES["parakeet"])
     for v in pre_violations:
         print(v, file=sys.stderr)
     hard_pre = [v for v in pre_violations if v.severity == bench_guard.HARD]

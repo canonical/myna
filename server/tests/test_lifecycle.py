@@ -271,7 +271,7 @@ def test_cgroup_memory_limit_degrades_to_none_when_unreadable(monkeypatch):
 def test_cgroup_memory_limit_walks_ancestors_and_takes_the_minimum(tmp_path, monkeypatch):
     """The limit that bit the 2026-08-28 baseline was on the process's own
     scope, but a limit on any ancestor slice has the same effect -- mirrors
-    dev/parakeet/bench_guard.py's identical-purpose walk (T02)."""
+    dev/bench_guard.py's identical-purpose walk (T02)."""
     (tmp_path / "proc_self_cgroup").write_text("0::/leaf/child\n")
     cgroup_root = tmp_path / "sys_fs_cgroup"
     leaf, child = cgroup_root / "leaf", cgroup_root / "leaf" / "child"

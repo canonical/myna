@@ -179,7 +179,12 @@ def build_adapter(args: argparse.Namespace):
         return FakeAdapter()
 
     if args.adapter == "whisper":
-        from myna.testbed.whisper import FasterWhisperAdapter
+        from myna.testbed.whisper import (
+            STREAM_BEAM_SIZE,
+            STREAM_CADENCE_S,
+            STREAM_WINDOW_CAP_S,
+            FasterWhisperAdapter,
+        )
 
         return FasterWhisperAdapter(
             args.model or "tiny",
@@ -188,9 +193,9 @@ def build_adapter(args: argparse.Namespace):
             streaming=args.streaming,
             # getattr: programmatic callers (tests, embedding) may build the
             # namespace without the streaming flags.
-            stream_cadence_s=getattr(args, "stream_cadence_s", None) or 1.0,
-            stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or 30.0,
-            stream_beam_size=getattr(args, "stream_beam_size", None) or 1,
+            stream_cadence_s=getattr(args, "stream_cadence_s", None) or STREAM_CADENCE_S,
+            stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or STREAM_WINDOW_CAP_S,
+            stream_beam_size=getattr(args, "stream_beam_size", None) or STREAM_BEAM_SIZE,
         )
 
     if args.adapter == "parakeet":
