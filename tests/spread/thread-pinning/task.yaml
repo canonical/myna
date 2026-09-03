@@ -14,7 +14,10 @@
 # intra_op_num_threads, say) would still "pass" the positive half.
 #
 # funasr is the subject because it is the smallest ORT snap (62 MB + 229 MB
-# component); parakeet and audio8 behave identically but cost 750 MB+ each.
+# component); audio8 and sherpa behave identically but cost more to build.
+# parakeet no longer belongs in that list: it caps its three sessions at 1/4/1
+# and so never pins - the exact "quietly stopped pinning" case above, which is
+# why it now ships without the interface.
 # The static counterpart is server/tests/test_snap_packaging.py.
 summary: ORT pins its thread pool once process-control is connected
 

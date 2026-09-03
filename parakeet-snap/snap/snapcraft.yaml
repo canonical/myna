@@ -62,13 +62,14 @@ apps:
       # /sys/fs/cgroup/** and /proc/**.
       - hardware-observe
       - system-observe
-      # Thread pinning. The default seccomp template allows only
-      # `sched_setaffinity 0 - -` (the calling thread, passed as a literal 0),
-      # but glibc's pthread_setaffinity_np always passes the target's real tid
-      # so every ORT pin is refused with EPERM. process-control drops the
-      # argument filter. NOT auto-connect: `snap connect
-      # myna-parakeet:process-control`, else ORT logs the failures and runs unpinned.
-      - process-control
+      # No `process-control` here, unlike the other ORT snaps: it exists only
+      # to lift seccomp's sched_setaffinity filter so ORT can pin its thread
+      # pool, and ORT pins only when it sizes that pool itself. This adapter
+      # sizes all three sessions explicitly (1/4/1 - worth ~2x on short
+      # windows, T09), which makes ORT skip affinity entirely, so the plug
+      # would be a broad grant (kill/setscheduler/cgroup writes) that does
+      # nothing. Verified 2026-09-03: the real adapter loading the shipped
+      # weights issues zero sched_setaffinity calls.
 
 hooks:
   install:

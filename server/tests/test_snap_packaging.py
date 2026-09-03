@@ -287,15 +287,23 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
         )
 
 
-# Snaps whose adapter runs ONNX Runtime *without* an explicit thread count, so
-# ORT sizes its own pool and therefore tries to pin it (T65). Deliberately not
-# derived from "uses ORT":
+# Snaps whose adapter leaves ORT to size its own pool, so ORT also pins it
+# (T65). Deliberately not derived from "uses ORT":
+#   - parakeet is ORT, but sizes its three sessions explicitly (1/4/1), which
+#     makes ORT skip affinity - see THREAD_CAPPED_ADAPTERS;
 #   - sherpa is ORT too, but sherpa-onnx forwards an explicit `num_threads`
-#     straight to intra_op_num_threads, which makes ORT skip affinity entirely;
-#     granting it process-control would be a broad privilege that does nothing;
+#     straight to intra_op_num_threads, with the same effect;
 #   - whisper/nemotron/qwen are not ORT at all (CTranslate2, PyTorch, and a
 #     ctypes libqwen_asr.so), and none of them pins.
-ORT_PINNING_SNAPS = {"parakeet-snap", "funasr-snap", "audio8-snap"}
+ORT_PINNING_SNAPS = {"funasr-snap", "audio8-snap"}
+
+# Adapters that deliberately cap ORT's intra-op pool, and so give up pinning.
+# Exactly one, and it has to buy something bigger than pinning to be here:
+# parakeet sizes preprocessor/encoder/decoder_joint at 1/4/1 because three
+# machine-wide pools oversubscribe the box threefold and fight (~2x on short
+# windows, T09). Anything else appearing here is a cap that costs pinning for
+# nothing; anything leaving here needs process-control adding to its snap.
+THREAD_CAPPED_ADAPTERS = {"parakeet.py"}
 
 
 def test_pinning_daemons_plug_process_control(snap) -> None:
@@ -326,34 +334,50 @@ def test_pinning_daemons_plug_process_control(snap) -> None:
         )
 
 
-def test_no_adapter_hardcodes_a_thread_count() -> None:
+def test_thread_capped_adapters_are_exactly_the_declared_ones() -> None:
     """An explicit intra_op_num_threads silently disables ORT thread pinning.
 
-    ORT sets affinity only when it sizes the pool itself, so a hardcoded count
+    ORT sets affinity only when it sizes the pool itself - measured 2026-09-03
+    on onnxruntime 1.27.0, where intra_op_num_threads 0 issued 24
+    sched_setaffinity calls and both 1 and 4 issued none. So a hardcoded count
     costs pinning *and* caps the snap below the machine it was installed on
     (funasr and audio8 shipped at 4 threads regardless of core count, T65).
+
+    Asserted as an equality, not an emptiness: parakeet's perf pass added a cap
+    and nothing noticed its process-control plug had gone inert. Adding or
+    removing a cap now has to move this set, which is the same edit that has to
+    move ORT_PINNING_SNAPS.
     """
     adapters = REPO_ROOT / "server" / "src" / "myna" / "testbed"
-    offenders = []
+    offenders = set()
     for path in sorted(adapters.glob("*.py")):
         # Parse rather than grep: the string also appears in prose explaining
         # why it is not passed, and a comment must not fail the build.
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            for kw in node.keywords:
-                if kw.arg != "intra_op_num_threads":
-                    continue
+            # Both spellings: a keyword to the library that wraps ORT, and an
+            # attribute set on a SessionOptions. parakeet uses the second, and
+            # a kwarg-only walk read it as uncapped for a fortnight.
+            values = []
+            if isinstance(node, ast.Call):
+                values = [kw.value for kw in node.keywords if kw.arg == "intra_op_num_threads"]
+            elif isinstance(node, ast.Assign):
+                values = [
+                    node.value
+                    for t in node.targets
+                    if isinstance(t, ast.Attribute) and t.attr == "intra_op_num_threads"
+                ]
+            for value in values:
                 # 0 means "ORT, size it yourself", which is the whole point and
                 # is not always omittable: funasr_onnx defaults the argument to
                 # 4, so leaving it out there caps the pool instead of freeing it.
-                if isinstance(kw.value, ast.Constant) and kw.value.value == 0:
+                if isinstance(value, ast.Constant) and value.value == 0:
                     continue
-                offenders.append(path.name)
-                break
-    assert not offenders, (
-        f"{', '.join(offenders)}: pins intra_op_num_threads to a fixed count, which "
-        "makes ORT skip affinity and caps the pool below the machine - pass 0 (or "
-        "omit it, where the library default is already 0/None) so ORT sizes and pins"
+                offenders.add(path.name)
+    assert offenders == THREAD_CAPPED_ADAPTERS, (
+        f"thread-capped adapters are {sorted(offenders)}, expected "
+        f"{sorted(THREAD_CAPPED_ADAPTERS)}. A cap makes ORT skip affinity and holds "
+        "the pool below the machine - pass 0 (or omit it, where the library default "
+        "is already 0/None) unless the cap buys more than pinning does, and keep "
+        "ORT_PINNING_SNAPS in step either way"
     )
