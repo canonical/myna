@@ -38,7 +38,11 @@ is the one a user installs.
 **The label is an output, not an input.** `modelctl use-engine --auto` chooses
 the engine by hardware detection, not this file; the runner reads it back with
 `show-engine` and stamps `<snap>/<engine>/<model>` onto every record. A config
-that named the engine could only ever disagree with reality.
+that named the engine could only ever disagree with reality. The one input is
+``--label-suffix``, stamped as ``<snap>+<suffix>``: two builds of the same snap
+(e.g. base vs maxstack encoder) are indistinguishable from inside, and
+aggregate.py dedups by label, so without it a rebuild silently shadows the run
+it was meant to be compared against.
 
 **Purge between targets.** `snap remove --purge` drops $SNAP_COMMON, so each
 target re-runs auto-selection from clean rather than inheriting whatever engine
@@ -262,8 +266,9 @@ def _modelctl_command(snap_dir: Path, snap: str) -> str:
 class SnapTarget:
     """A locally packed snap: purge, sideload, measure, purge."""
 
-    def __init__(self, spec: dict):
+    def __init__(self, spec: dict, label_suffix: str = ""):
         self.snap = spec["snap"]
+        self.label_suffix = label_suffix
         if self.snap not in PURGEABLE:
             raise SystemExit(
                 f"{self.snap!r} is not in the purge allowlist {sorted(PURGEABLE)} - "
@@ -290,7 +295,8 @@ class SnapTarget:
         variant the sweep is currently on. Both are read back or set by the
         runner, never taken from config.
         """
-        parts = [self.snap, self.engine or "unknown-engine"]
+        snap = f"{self.snap}+{self.label_suffix}" if self.label_suffix else self.snap
+        parts = [snap, self.engine or "unknown-engine"]
         if self.model:
             parts.append(self.model)
         mode = "streaming" if self.streaming else "batch"
@@ -756,6 +762,11 @@ def main() -> None:
         help="append to the results file instead of resetting it",
     )
     parser.add_argument(
+        "--label-suffix",
+        default="",
+        help="tag every label as <snap>+<suffix>, to keep two builds of one snap apart",
+    )
+    parser.add_argument(
         "--no-resources",
         action="store_true",
         help="skip peak RAM/VRAM sampling (for pristine latency timing)",
@@ -790,7 +801,7 @@ def main() -> None:
         print(f"cold clip: {cold_clip}")
     if args.dry_run:
         for spec in targets:
-            t = SnapTarget(spec)
+            t = SnapTarget(spec, args.label_suffix)
             print(f"  - {t.snap:20} files={[Path(f).name for f in _snap_files(t.dir, t.snap)]}")
             print(f"    {'':20} socket={t.socket}")
         return
@@ -813,7 +824,7 @@ def main() -> None:
     broken: list[tuple[str, str]] = []
     unusable: list[tuple[str, str]] = []
     for spec in targets:
-        target = SnapTarget(spec)
+        target = SnapTarget(spec, args.label_suffix)
         print(f"\n=== {target.snap} ===")
         try:
             target.start()
