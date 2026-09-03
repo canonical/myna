@@ -67,6 +67,27 @@ def _default_model_dir() -> str:
     return snapshot_download(HF_REPO_ID)
 
 
+# Intra-op threads for all three ONNX sessions. Small on purpose, and the one
+# adapter-level thread cap besides parakeet's (T65).
+#
+# sherpa-onnx forwards this straight to intra_op_num_threads, so ORT never
+# pins the pool (affinity happens only when ORT sizes it itself) - but pinning
+# does not begin to pay for the wrong width here. Measured 2026-09-03 on
+# sherpa-onnx 1.13.7 + onnxruntime 1.27.0 over 1020 s of the English corpus,
+# 3 timed reps each, as RTF: 1 -> 0.0535, **2 -> 0.0372**, 3 -> 0.0363,
+# 4 -> 0.0365, 6 -> 0.0466, 16 -> 0.1834, and 0 (ORT sizes and *does* pin,
+# 45 sched_setaffinity calls) -> 0.1342. The streaming transducer decodes
+# 480 ms chunks whose tensors are far too small to divide, so three
+# machine-wide pools spend their time in thread barriers: pinning buys 1.37x
+# against 16, and a small pool buys 4.9x.
+#
+# 2 rather than the 3 that measured lowest: the floor from 2 to 4 is flat
+# inside run-to-run spread, and a constant that cannot walk into the bad
+# region on a wider machine is worth more than 2%. It is also sherpa-onnx's
+# own default, so the value only has to be passed to keep it from drifting.
+DEFAULT_NUM_THREADS = 2
+
+
 class SherpaAdapter:
     """sherpa-onnx OnlineRecognizer behind ``SttService``."""
 
@@ -75,15 +96,11 @@ class SherpaAdapter:
         model_dir: str | None = None,
         *,
         streaming: bool = False,
-        num_threads: int | None = None,
+        num_threads: int = DEFAULT_NUM_THREADS,
     ) -> None:
         self._model_dir = model_dir
         self._streaming = streaming
-        # sherpa-onnx has no "let ORT size the pool" setting: it forwards this
-        # straight to intra_op_num_threads, and its own default is 2. Default to
-        # every CPU we are actually allowed (sched_getaffinity, not cpu_count,
-        # so a cgroup cpuset is honoured).
-        self._num_threads = num_threads or len(os.sched_getaffinity(0))
+        self._num_threads = num_threads
         self._recognizer = None
         self._model_lock = asyncio.Lock()
 
