@@ -111,3 +111,28 @@ def test_parakeet_pins_agree() -> None:
         "release than dev/parakeet/fetch_parakeet_onnx.py downloads - the stamp would "
         "certify weights that were never staged"
     )
+
+
+def test_qsilu_headers_match_the_onnxruntime_runtime() -> None:
+    """The custom-op ABI is version-pinned: libqsilu.so built against headers a
+    release out registers an op the runtime loading it refuses, and that
+    surfaces at model load in the field, not at build time."""
+    build_sh = _text("dev/parakeet/qsilu/build.sh")
+    version = re.search(r"^ort_version=([0-9.]+)$", build_sh, re.M)
+    assert version, "dev/parakeet/qsilu/build.sh names no onnxruntime version"
+    assert re.search(r"^ort_sha256=[0-9a-f]{64}$", build_sh, re.M), (
+        "dev/parakeet/qsilu/build.sh downloads the header tarball without a "
+        "sha256 - a release asset fetched unverified is not a pin"
+    )
+    locked = re.search(
+        r'^\[\[package\]\]\nname = "onnxruntime"\nversion = "([0-9.]+)"$',
+        _text("server/uv.lock"),
+        re.M,
+    )
+    assert locked, "server/uv.lock resolves no onnxruntime"
+    assert version.group(1) == locked.group(1), (
+        f"dev/parakeet/qsilu/build.sh builds libqsilu.so against onnxruntime "
+        f"{version.group(1)} headers, but the server resolves onnxruntime "
+        f"{locked.group(1)} - the custom op would be registered against an ABI "
+        "the runtime loading it does not implement"
+    )
