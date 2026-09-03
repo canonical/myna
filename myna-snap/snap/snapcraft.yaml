@@ -196,8 +196,8 @@ apps:
   # One screen of "what is dictation doing, and why": the persisted settings,
   # what they resolved to and which plane won, whether the backend socket is
   # reachable, and what the running daemon publishes on the bus. Those four
-  # answers lived in four places (gsettings, a journal line printed once at
-  # startup, the content share, D-Bus), which is a lot to know before you can
+  # answers lived in four places (the settings store, a journal line printed
+  # once at startup, the content share, D-Bus), which is a lot to know before you can
   # ask a simple question.
   #
   # An app rather than a flag on a wrapper the user never sees, and confined

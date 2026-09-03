@@ -62,8 +62,12 @@ myna-dictate --socket /path/to.sock --mode batch --clip clip.wav
 Persistent preference (used when `--mode` is absent):
 
 ```sh
-gsettings set com.canonical.Myna.Dictation streaming-mode batch
-gsettings get com.canonical.Myna.Dictation streaming-mode
+# packaged: glib's gsettings over the snap's keyfile store
+myna.config set streaming-mode batch
+myna.config get streaming-mode
+
+# unpackaged: same schema, same backend, host store (needs `make install-schema`)
+GSETTINGS_BACKEND=keyfile gsettings set com.canonical.Myna.Dictation streaming-mode batch
 ```
 
 A running `myna-desktop` picks the change up live - it subscribes to the store
@@ -76,27 +80,29 @@ Unpackaged builds need the schema on the host first - `make install-schema` -
 since without it every read is the default (`auto`) and there is nothing to
 subscribe to.
 
-## Where the setting lives (2026-08-26)
+## Where the setting lives
 
 GSettings, schema `com.canonical.Myna.Dictation`, key `streaming-mode`; the source is
-`client/data/glib-2.0/schemas/`. It was a JSON file at
-`~/.config/myna/settings.json` until 2026-08-26, and that could not work: the
-store has to be writable by the confined snap, by unconfined host tools, and
-later by other snaps with configuration APIs (T54), while inside the snap
-`$HOME` is `$SNAP_USER_DATA` and the `home` interface grants no top-level
-dotfiles - so the packaged daemon could never read what the CLI wrote.
+`client/data/glib-2.0/schemas/`. The backend is glib's keyfile backend in both
+distributions - one store shape everywhere:
 
-There is no automatic migration, deliberately: the only reader the old file
-ever had was an unpackaged build, so the one-line `gsettings set` above is the
-whole migration.
+- **snap**: `GSETTINGS_BACKEND=keyfile` with `XDG_CONFIG_HOME=$SNAP_USER_COMMON/.config`
+  (per app, in `myna-snap/snap/snapcraft.yaml`), so the store is
+  `~/snap/myna/common/.config/glib-2.0/settings/keyfile` - plaintext,
+  `snap save`d, removed with the snap. The snap ships its own compiled schema
+  (`GSETTINGS_SCHEMA_DIR`); the store needs no interface, so nothing reads
+  the host's dconf. `common`, not the per-revision `current`: `snap revert`
+  must not revert settings.
+- **unpackaged**: the same variables on the dev launch path
+  (`dev/gated-tests.sh` exports them into its scratch config home; a
+  hand-run binary wants them in its environment), so the store is
+  `~/.config/glib-2.0/settings/keyfile`.
 
-Two things make it work under confinement, both in `myna-snap/snap/snapcraft.yaml`:
-the snap ships and compiles its own copy of the schema
-(`GSETTINGS_SCHEMA_DIR`) plus the dconf backend module (`GIO_MODULE_DIR`,
-because glib comes from the base and would otherwise scan the base's empty
-module dir), and `XDG_CONFIG_HOME` points at `$SNAP_REAL_HOME/.config` so
-libdconf opens the *host's* database rather than a snap-private one nothing
-writes. Reads and writes were verified in both directions on 2026-08-26.
+Live reload is the keyfile backend's own file monitor. The store moved here
+from the host's dconf database (2026-09); values there are not migrated - the
+carry-over is one line (`dconf dump /com/canonical/myna/` is already keyfile
+syntax). Earlier still it was a JSON file at `~/.config/myna/settings.json`,
+which the confined snap could never read.
 
 ## Desktop client (`myna-desktop`)
 
