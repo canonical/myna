@@ -334,7 +334,8 @@ def test_make_writes_the_manifest_to_a_separate_out_dir_with_relative_paths(tmp_
     cmd_make(MakeArgs(src, out=out))
 
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["clips"][0]["path"] == "one.wav"
+    assert manifest["clips"][0]["path"] == "../clips/one.wav"
+    assert [c.id for c in load_manifest(out / "manifest.json")] == ["one"]
 
 
 def test_make_skips_clips_with_no_transcript_sidecar(tmp_path, capsys):
