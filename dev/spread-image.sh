@@ -41,8 +41,8 @@ if [ ! -f "$TMP" ]; then
 fi
 
 # The cloud image ships a 3.5G disk, which the base system plus the snaps a
-# task installs will fill (adapter-smoke and thread-pinning each sideload a
-# real inference snap and its model component). qcow2 is sparse, so the extra
+# task installs will fill (adapter-smoke sideloads a real inference snap and
+# its model component). qcow2 is sparse, so the extra
 # virtual size costs nothing until it is used; cloud-init's growpart expands
 # the root partition on first boot.
 qemu-img resize "$TMP" "$DISK_SIZE"

@@ -46,13 +46,12 @@ apps:
     plugs:
       - hardware-observe
       - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
-      # Thread pinning: the default seccomp template allows only
-      # `sched_setaffinity 0 - -` (a literal pid 0), but glibc's
-      # pthread_setaffinity_np always passes the target's real tid, so every
-      # ORT pin is refused with EPERM. process-control drops that filter.
-      # NOT auto-connect: `snap connect <snap>:process-control`, else ORT
-      # logs the failures on each model load and runs unpinned.
-      - process-control
+      # No `process-control`: it exists only to lift seccomp's
+      # sched_setaffinity filter so ORT can pin its thread pool, and ORT pins
+      # only when it sizes that pool itself. This adapter caps the pool
+      # explicitly (T65: ORT's own sizing measured 12-16% slower), so nothing
+      # here ever pins and the plug would be a broad grant
+      # (kill/setscheduler/cgroup writes) that does nothing.
       - opengl
       # Weights are a component (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets

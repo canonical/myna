@@ -288,22 +288,20 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
 
 
 # Snaps whose adapter leaves ORT to size its own pool, so ORT also pins it
-# (T65). Deliberately not derived from "uses ORT":
-#   - parakeet is ORT, but sizes its three sessions explicitly (1/4/1), which
-#     makes ORT skip affinity - see THREAD_CAPPED_ADAPTERS;
-#   - sherpa is ORT too, but sherpa-onnx forwards an explicit `num_threads`
-#     straight to intra_op_num_threads, with the same effect;
-#   - whisper/nemotron/qwen are not ORT at all (CTranslate2, PyTorch, and a
-#     ctypes libqwen_asr.so), and none of them pins.
-ORT_PINNING_SNAPS = {"funasr-snap", "audio8-snap"}
+# (T65). Empty, and that is the finding rather than an oversight: every ORT
+# adapter here measured faster with a small explicit pool than with ORT's own
+# sizing, pinning included (parakeet ~2x, sherpa 4.9x, funasr 12%, audio8
+# 16%), so none of them pins and none of them may plug process-control.
+# whisper/nemotron/qwen are not ORT at all (CTranslate2, PyTorch, and a ctypes
+# libqwen_asr.so) and never pinned either.
+ORT_PINNING_SNAPS: set[str] = set()
 
-# Adapters that deliberately cap ORT's intra-op pool, and so give up pinning.
-# Exactly one, and it has to buy something bigger than pinning to be here:
-# parakeet sizes preprocessor/encoder/decoder_joint at 1/4/1 because three
-# machine-wide pools oversubscribe the box threefold and fight (~2x on short
-# windows, T09). Anything else appearing here is a cap that costs pinning for
-# nothing; anything leaving here needs process-control adding to its snap.
-THREAD_CAPPED_ADAPTERS = {"parakeet.py"}
+# Adapters that cap ORT's intra-op pool, and so give up pinning. Kept as an
+# explicit list because the cap is the load-bearing decision: each value was
+# measured (T65), and a cap that appears here without one is how funasr and
+# audio8 shipped 4 threads on every machine in the first place. Anything
+# leaving this set needs process-control adding to its snap.
+THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py", "audio8.py"}
 
 
 def test_pinning_daemons_plug_process_control(snap) -> None:

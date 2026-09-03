@@ -277,9 +277,9 @@ async def test_load_model_constructs_engine_from_staged_dir(monkeypatch, tmp_pat
     adapter = Audio8Adapter(str(_staged_model(tmp_path)))
     engine = await adapter._load_model()
     assert isinstance(engine, _FakeEngine)
-    # No thread count: an explicit intra_op_num_threads makes ORT skip
-    # affinity, so passing one would silently cost us thread pinning.
-    assert engine.intra_op_num_threads is None
+    # A small pool, not the machine's width: omitting this hands sizing to ORT
+    # (and buys pinning), but measured 16% slower than 4 - T65.
+    assert engine.intra_op_num_threads == 4
     assert adapter._max_audio_seconds == 30.0
 
 

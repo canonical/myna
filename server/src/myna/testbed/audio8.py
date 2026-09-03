@@ -250,8 +250,13 @@ class Audio8Adapter:
                 engine_cls,
                 str(model_dir / "model_bundle"),
                 provider=provider,
-                # No thread count: ORT sets affinity only when it sizes the
-                # pool itself, so an explicit count would cost us pinning.
+                # A small pool, not the machine's width. Omitting this hands
+                # sizing to ORT, which is also the only way ORT pins - but
+                # pinning does not pay for the width it picks. Measured
+                # 2026-09-03 over 718 s of corpus/english, interleaved (RTF):
+                # 4 -> 0.0899, ORT-sized *and* pinned -> 0.1047, explicit
+                # 16 -> 0.1101. See T65.
+                intra_op_num_threads=4,
                 cache_precision=self._cache_precision,
                 audio_precision=self._audio_precision,
             )

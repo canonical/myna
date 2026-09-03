@@ -156,10 +156,14 @@ class FunasrAdapter:
                 model_dir=model_dir,
                 device_id="-1",
                 quantize=quantize,
-                # 0 is ORT's "you size the pool", which also lets it pin.
-                # Not omitted: funasr_onnx's own default is 4, so leaving
-                # this out caps us at 4 threads and silently loses pinning.
-                intra_op_num_threads=0,
+                # A small pool, not the machine's width. 0 would hand sizing
+                # to ORT, which is also the only way ORT pins - but pinning
+                # does not pay for the width it picks. Measured 2026-09-03
+                # over 1020 s of corpus/english, interleaved (RTF): 4 ->
+                # 0.0447, 8 -> 0.0443, explicit 16 -> 0.0467, 0 (ORT-sized
+                # *and* pinned) -> 0.0499. Also funasr_onnx's own default,
+                # so this is passed only to stop it drifting. See T65.
+                intra_op_num_threads=4,
             )
         return self._model
 
