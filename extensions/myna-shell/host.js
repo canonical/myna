@@ -27,9 +27,6 @@ import {resolveHudLaunch} from './resolve.js';
 import {DictationAnnouncer} from './announcer.js';
 import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
 
-/** The daemon whose presence the renderer's lifetime follows (XH14). */
-const DAEMON_BUS_NAME = 'com.canonical.Myna.Dictation';
-
 // Await the subprocess with a Cancellable instead of a bare callback, so
 // disable() can cancel the wait rather than relying on a flag to ignore a
 // late callback. Promisified once at module load (idempotent).
@@ -47,6 +44,8 @@ function isExecutable(path) {
  * Hosts exactly one renderer window as an overlay.
  *
  * @param {object} deps
+ * @param {DictationProxy} deps.proxy - the shared daemon proxy whose
+ *     `g-name-owner` drives the renderer's lifetime (XH14).
  * @param {function(): (object|null)} deps.getMonitorWorkArea - returns the
  *     primary monitor's work area `{x, y, width, height}` (injected so the
  *     host is testable without a live Shell; the extension passes the real
@@ -60,6 +59,7 @@ function isExecutable(path) {
  */
 export class OverlayHost {
     constructor({
+        proxy,
         getMonitorWorkArea,
         getDockReservedExtent = () => null,
         log = msg => console.log(`[myna-shell] ${msg}`),
@@ -67,6 +67,7 @@ export class OverlayHost {
         this._getMonitorWorkArea = getMonitorWorkArea;
         this._getDockReservedExtent = getDockReservedExtent;
         this._log = log;
+        this._proxy = proxy;
 
         this._client = null;         // Meta.WaylandClient
         this._subprocess = null;     // its GSubprocess (for force_exit)
@@ -94,20 +95,16 @@ export class OverlayHost {
         this._announcer = null;
 
         // Cancels the current subprocess wait. A fresh Cancellable is made
-        // for each spawn rather than reset()-ing one (reset is discouraged
+        // for each spawn rather than cancelling() one (reset is discouraged
         // and error-prone once an operation has touched it); disable()
         // cancels whichever is current. _watchExit captures its own
         // instance, so a stale wait can never act on a newer generation's
         // cancellable.
         this._cancellable = null;
-
-        // Gio.bus_watch_name id; 0 when not watching (XH14).
-        this._nameWatchId = 0;
-        this._daemonPresent = false;
     }
 
-    /** Begin hosting: watch for the daemon and run the renderer for exactly
-     * as long as it is there. The extension owns this object for one
+    /** Begin hosting: follow the daemon's presence and run the renderer for
+     * exactly as long as it is there. The extension owns this object for one
      * enable/disable generation. */
     enable() {
         this._dormant = false;
@@ -132,25 +129,28 @@ export class OverlayHost {
      * reach and that snapd counts as "running apps", so it blocks every
      * install and refresh of the snap it belongs to.
      *
-     * Never `AUTO_START`: watching must not be what brings the daemon up.
+     * Presence is the shared proxy's `g-name-owner`, watched directly on the
+     * very Gio.DBusProxy both the host and the announcer read — one proxy,
+     * one source of truth. The proxy is created with DO_NOT_AUTO_START, so
+     * watching never brings the daemon up.
      */
     _watchDaemon() {
-        if (this._nameWatchId)
-            return;
-        this._nameWatchId = Gio.bus_watch_name(
-            Gio.BusType.SESSION,
-            DAEMON_BUS_NAME,
-            Gio.BusNameWatcherFlags.NONE,
-            () => this._onDaemonAppeared(),
-            () => this._onDaemonVanished());
+        this._proxy.proxy.connectObject(
+            'notify::g-name-owner',
+            () => this._onDaemonOwnerChanged(),
+            this);
+        this._onDaemonOwnerChanged();
     }
 
     _unwatchDaemon() {
-        if (this._nameWatchId) {
-            Gio.bus_unwatch_name(this._nameWatchId);
-            this._nameWatchId = 0;
-        }
-        this._daemonPresent = false;
+        this._proxy.proxy?.disconnectObject(this);
+    }
+
+    _onDaemonOwnerChanged() {
+        if (this._proxy.present)
+            this._onDaemonAppeared();
+        else
+            this._onDaemonVanished();
     }
 
     _onDaemonAppeared() {
@@ -159,18 +159,16 @@ export class OverlayHost {
         // A new daemon is a new incident history: the budget exists to stop a
         // crash loop, not to hold a grudge across restarts of the thing the
         // renderer talks to.
-        this._daemonPresent = true;
         this._dormant = false;
         this._restartState = initialState();
-        this._log(`${DAEMON_BUS_NAME} appeared; starting the renderer`);
+        this._log('daemon appeared; starting the renderer');
         this._spawn();
     }
 
     _onDaemonVanished() {
-        this._daemonPresent = false;
         if (!this._subprocess && !this._restartTimeoutId)
             return;
-        this._log(`${DAEMON_BUS_NAME} vanished; stopping the renderer`);
+        this._log('daemon vanished; stopping the renderer');
         this._stopRenderer();
     }
 
@@ -390,7 +388,10 @@ export class OverlayHost {
         // Announcer lives exactly as long as the adopted window — no window,
         // no a11y speech (passive, no RegisterClient).
         if (!this._announcer) {
-            this._announcer = new DictationAnnouncer({log: this._log});
+            this._announcer = new DictationAnnouncer({
+                proxy: this._proxy,
+                log: this._log,
+            });
             this._announcer.enable();
         }
         this._makeOverlay(window);
@@ -598,7 +599,7 @@ export class OverlayHost {
                 // and a `snap stop` at once. Respawning into that would put
                 // the process snapd counts back on the machine with nothing
                 // left for it to render.
-                if (this._daemonPresent)
+                if (this._proxy.present)
                     this._spawn();
                 return GLib.SOURCE_REMOVE;
             });

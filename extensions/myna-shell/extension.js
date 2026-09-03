@@ -17,6 +17,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import Meta from 'gi://Meta';
 
+import {DictationProxy} from './dictationProxy.js';
 import {watchDashToDockStruts} from './dockStrutsConsumer.js';
 import {OverlayHost} from './host.js';
 
@@ -32,9 +33,17 @@ export default class MynaShellExtension extends Extension {
         if (!isWayland)
             return;
 
+        // One proxy for the daemon, shared by the host (renderer lifetime
+        // from `g-name-owner`) and the announcer (State/StatusMessage). A
+        // single name watch; avoid a second bus_watch_name.
+        this._proxy = new DictationProxy({log: msg =>
+            console.log(`[myna-shell] ${msg}`)});
+        this._proxy.connect();
+
         this._host = new OverlayHost({
-            // The primary monitor's work area, so the pill sits above the
-            // dock/panel rather than under them (place.js owns the maths).
+            proxy: this._proxy,
+            // The primary monitor's work area, so the dock/panel rather than
+            // under them (handleRemote owns the maths).
             getMonitorWorkArea: () => {
                 const { primaryIndex } = Main.layoutManager;
                 if (primaryIndex < 0)
@@ -85,5 +94,7 @@ export default class MynaShellExtension extends Extension {
         this._dockExtent = null;
         this._host.disable();
         this._host = null;
+        this._proxy?.disconnect();
+        this._proxy = null;
     }
 }
