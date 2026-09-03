@@ -9,8 +9,7 @@
 
 use futures_util::{SinkExt, StreamExt};
 use myna_core::{
-    Capabilities, ClientControl, ServerControl, SessionConfig, TranscriptionEvent,
-    PROTOCOL_VERSION,
+    Capabilities, ClientControl, ServerControl, SessionConfig, TranscriptionEvent, PROTOCOL_VERSION,
 };
 use serde_json::Value;
 use tokio::net::UnixStream;
@@ -98,10 +97,12 @@ impl BackendClient for WsUnixBackend {
 /// `session.created` greeting, send `capabilities.query` as the shape-sniffed
 /// first frame (`transport_ws.py`'s `_SessionHandler.handle`), and return what
 /// comes back. Doesn't open a session, so it can't wake a lazily-loaded model.
-pub async fn query_capabilities(socket_path: &std::path::Path) -> Result<Capabilities, BackendError> {
-    let stream = UnixStream::connect(socket_path).await.map_err(|e| {
-        BackendError::Connect(format!("{}: {e}", socket_path.display()))
-    })?;
+pub async fn query_capabilities(
+    socket_path: &std::path::Path,
+) -> Result<Capabilities, BackendError> {
+    let stream = UnixStream::connect(socket_path)
+        .await
+        .map_err(|e| BackendError::Connect(format!("{}: {e}", socket_path.display())))?;
     let (ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
         .await
         .map_err(|e| BackendError::Handshake(e.to_string()))?;
