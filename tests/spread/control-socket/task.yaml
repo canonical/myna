@@ -53,9 +53,11 @@ execute: |
     # guards is a snapcraft.yaml that quietly dropped it.
     snap connections myna | grep -q "network-bind .*myna:network-bind"
 
-    # Control activation is a per-machine setting; the daemon reads it once, at
-    # start, so every check below restarts it.
-    snap set myna activation=control
+    # Control activation is a per-user setting in the snap's keyfile store.
+    # The daemon live-reloads it; the restart below is for the seccomp
+    # profile, not the setting. Written directly because dconf (D-Bus to a
+    # session service) never allowed a lingering headless user this at all.
+    su - "$USER_NAME" -c 'mkdir -p ~/snap/myna/common/.config/glib-2.0/settings && printf "[com/canonical/myna/dictation]\nactivation='"'"'control'"'"'\n" > ~/snap/myna/common/.config/glib-2.0/settings/keyfile'
 
     USER_UID=$(id -u "$USER_NAME")
     SOCK="/run/user/$USER_UID/snap.myna/myna-desktop.sock"

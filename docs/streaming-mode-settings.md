@@ -115,10 +115,6 @@ showing" is answerable from the journal:
 settings: streaming-mode Auto resolves to Batch on tier x86_64-cpu-generic
 ```
 
-`snap set myna streaming-mode=…` is deliberately *not* a key: the emission mode
-is a per-user preference, and snapd configuration is per snap and root-set. The
-system-wide plane covers `activation`, `language` and `hotkey` only.
-
 The GTK settings UI exposing this key is a follow-up (UD136 design thread).
 
 ## How it interacts with the server
