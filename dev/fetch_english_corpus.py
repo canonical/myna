@@ -1,8 +1,8 @@
-"""Build the real recorded-speech corpus tier (T25).
+"""Build the English recorded-speech corpus tier (T25).
 
-    uv run python dev/fetch_real_corpus.py [--out corpus/real] [-n 12]
+    uv run python dev/fetch_english_corpus.py [--out corpus/english] [-n 12]
 
-Real human speech with exact reference transcripts, so WER is trustworthy — the
+Real English human speech with exact reference transcripts, so WER is trustworthy — the
 synthetic espeak tier is out-of-distribution and its WER is misleading across
 architectures (Nemotron ~0% on real voice vs ~45% on espeak; plan T09/T25).
 
@@ -76,7 +76,7 @@ def notice_for(subset: str) -> str:
 Real recorded-speech corpus tier (T25)
 
 Derived from the LibriSpeech ASR corpus ({subset}), redistributed under its
-original licence. Regenerate with: uv run python dev/fetch_real_corpus.py
+original licence. Regenerate with: uv run python dev/fetch_english_corpus.py
 
   Source:  {BASE_URL}/{subset}.tar.gz
   Licence: CC-BY-4.0  (https://creativecommons.org/licenses/by/4.0/)
@@ -403,7 +403,7 @@ def build(
         json.dumps(
             {
                 "schema_version": 1,
-                "generator": "dev/fetch_real_corpus.py",
+                "generator": "dev/fetch_english_corpus.py",
                 "generated": {
                     "dataset": "librispeech",
                     "subset": subset,
@@ -451,7 +451,7 @@ def is_complete(out_dir: Path, manifest_name: str, n: int, subset: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=REPO_ROOT / "corpus" / "real")
+    parser.add_argument("--out", type=Path, default=REPO_ROOT / "corpus" / "english")
     parser.add_argument("--cache", type=Path, default=REPO_ROOT / ".cache" / "librispeech")
     parser.add_argument(
         "--tarball",

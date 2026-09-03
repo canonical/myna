@@ -43,7 +43,7 @@ if compgen -G "$repo_root/corpus/real/audio/*.wav" >/dev/null; then
     echo "corpus/real already present - skipping"
 else
     cd "$repo_root/server"
-    uv run --extra parakeet python "$repo_root/dev/fetch_real_corpus.py"
+    uv run --extra parakeet python "$repo_root/dev/fetch_english_corpus.py"
 fi
 
 echo "== build =="

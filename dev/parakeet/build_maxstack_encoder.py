@@ -24,7 +24,7 @@ it first: qsilu/build.sh); the adapter picks both up automatically
 (``myna.testbed.parakeet.encoder_variant``) and falls back to the base
 encoder when either is absent.
 
-Needs the real calibration corpus (dev/fetch_real_corpus.py) for step 1.
+Needs the real calibration corpus (dev/fetch_english_corpus.py) for step 1.
 Calibration honours a clip-length cap (see requantize_encoder.py); run
 under a memory cap the first time on a new machine, per that script's
 docstring.

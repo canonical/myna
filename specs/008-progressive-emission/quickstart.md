@@ -2,7 +2,7 @@
 
 **Feature**: `specs/008-progressive-emission`
 
-Prerequisites: real corpus fetched (`dev/fetch_real_corpus.py`), model cache
+Prerequisites: English corpus fetched (`dev/fetch_english_corpus.py`), model cache
 populated, `client/` built (`cargo build --release`). GPU scenarios require the
 NVIDIA PC.
 

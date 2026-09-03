@@ -23,7 +23,7 @@ serves a scripted transcript over the in-process loopback transport:
 cd server && uv sync && uv run python -m myna.testbed   # fake adapter -> a ResultRecord
 ```
 
-To dictate for real, a Myna STT inference snap needs to be installed (or run one from this repo directly). You can then use the reference client to push audio at it and see transcription results. The LibriSpeech corpus is a good example (`uv run python ../dev/fetch_real_corpus.py`).
+To dictate for real, a Myna STT inference snap needs to be installed (or run one from this repo directly). You can then use the reference client to push audio at it and see transcription results. The LibriSpeech corpus is a good example (`uv run python ../dev/fetch_english_corpus.py`).
 
 ```shell
 # 1. serve Whisper on a Unix socket (downloads the `base` weights on first session)
@@ -126,7 +126,7 @@ cd server
 uv run pytest                                   # offline suite: contract + adapter logic
 uv run python -m myna.testbed                   # demo: fake adapter over loopback
 uv run python ../dev/generate_fixtures.py       # synthetic corpus -> server/fixtures/
-uv run python ../dev/fetch_real_corpus.py       # real LibriSpeech corpus -> corpus/real/
+uv run python ../dev/fetch_english_corpus.py    # English LibriSpeech corpus -> corpus/real/
 uv run python ../dev/fetch_chinese_corpus.py    # FLEURS Mandarin corpus  -> corpus/chinese/
 
 # serve a real adapter, then talk to it:
@@ -267,12 +267,12 @@ Rebuild any of them from the cached downloads (no network needed once `.cache/`
 is populated):
 
 ```shell
-uv run python dev/fetch_real_corpus.py --select balanced -n 80 \
+uv run python dev/fetch_english_corpus.py --select balanced -n 80 \
     --manifest-name manifest-balanced.json     # speaker-balanced English (clean)
-uv run python dev/fetch_real_corpus.py --subset test-other --select balanced -n 80 \
+uv run python dev/fetch_english_corpus.py --subset test-other --select balanced -n 80 \
     --out corpus/librispeech-other --manifest-name manifest-balanced.json  # (hard)
-uv run python dev/fetch_real_corpus.py                 # the original 14-clip tier
-uv run python dev/fetch_chinese_corpus.py -n 50        # Mandarin
+uv run python dev/fetch_english_corpus.py
+uv run python dev/fetch_chinese_corpus.py -n 50
 ```
 
 One LibriSpeech split per corpus dir - the `NOTICE` carries that split's
