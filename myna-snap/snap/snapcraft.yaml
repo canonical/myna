@@ -156,13 +156,22 @@ apps:
     # private keyfile, so reading it needs no interface.
     environment: *settings-env
 
-  # Bind <accel> → `myna.toggle` via dconf. Only needed under `myna --control`
-  # — packaged, the daemon defaults to the GlobalShortcuts portal, which owns
-  # its own binding. Uses dconf because the GNOME schemas are not visible
-  # inside the snap's core24 /usr — dconf writes need no schema, and the
-  # gsettings interface grants them.
+  # Bind <accel> → `myna.toggle` via dconf. Only needed under control-socket
+  # activation, which is where Noble and Jammy users land: the GlobalShortcuts
+  # portal backend first ships in xdg-desktop-portal-gnome 48.rc (Noble has
+  # 46.2, Jammy 42.1). Uses dconf because the GNOME schemas are not visible
+  # inside the snap's core24 /usr — dconf writes need no schema. The ONE app
+  # with the `gsettings` plug: it is the only host-dconf writer left.
+  #
+  # dconf is asymmetric: reads open $XDG_CONFIG_HOME/dconf/user directly, but
+  # writes go over D-Bus to the session's dconf-service, which always writes
+  # the real ~/.config/dconf/user. The env below points the read at the same
+  # database the write lands in; without it the read sees an empty database
+  # and the script would clobber the user's existing custom keybindings.
   install-shortcut:
     command: bin/myna-install-shortcut
+    environment:
+      XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
     plugs:
       - gsettings
 
