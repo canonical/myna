@@ -2,11 +2,12 @@
 <!--
   Myna client settings.
 
-  This schema is the shared store the settings live in, and it is shared on
-  purpose: the confined `myna` snap reads it over the `gsettings` interface,
-  unconfined host tools (the myna-dictate CLI, `gsettings set`, a future
-  Settings page) write it directly, and further snaps growing configuration
-  APIs can plug the same interface.
+  This schema is the shared store the settings live in. The backend is
+  glib's keyfile backend everywhere: the confined `myna` snap selects it per
+  app with GSETTINGS_BACKEND + XDG_CONFIG_HOME (myna-snap/snap/snapcraft.yaml),
+  so the store is the snap-private
+  $SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile; unpackaged dev launches
+  export the same pair (dev/gated-tests.sh).
 
   Installed twice from this one source: into the snap at
   $SNAP/usr/share/glib-2.0/schemas (myna-snap/snap/snapcraft.yaml), and onto

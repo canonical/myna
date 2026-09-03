@@ -45,13 +45,21 @@ FONT_RANGE = (7, 30)
 TIMEOUT = 8
 FAST_POLL = 2.0
 CLIENT_SNAP = "myna"
-# The client settings store is GSettings, not a file: ~/.config/myna/settings.json
-# was on the wrong side of the snap's confinement and nothing has read it since
-# the store moved. Reached here through the host CLI, which lands in the same
-# dconf database the confined daemon reads ($XDG_CONFIG_HOME is pointed at
-# $SNAP_REAL_HOME/.config for exactly that).
+# The client settings store is GSettings over glib's keyfile backend, not the
+# host's dconf and not a file of ours: the snap sets GSETTINGS_BACKEND=keyfile
+# with XDG_CONFIG_HOME=$SNAP_USER_COMMON/.config per app, so what the confined
+# daemon reads is ~/snap/myna/common/.config/glib-2.0/settings/keyfile. This
+# panel points host gsettings at the same file with the same two variables.
 SCHEMA = "com.canonical.Myna.Dictation"
 KEY_STREAMING_MODE = "streaming-mode"
+
+
+def client_store_env():
+    env = os.environ.copy()
+    env["GSETTINGS_BACKEND"] = "keyfile"
+    env["XDG_CONFIG_HOME"] = str(pathlib.Path.home() / "snap" / CLIENT_SNAP / "common" / ".config")
+    return env
+
 
 # Keys a real `describe-config` would flag itself. Guessed here, and the guess
 # is displayed as a guess: that is the point of the panel.
@@ -59,10 +67,15 @@ NO_RESTART = {"sleep-idle-seconds", "verbose"}
 ADVANCED = {"ws.unix-socket", "verbose"}
 
 
-def run(cmd, timeout=TIMEOUT):
+def run(cmd, timeout=TIMEOUT, env=None):
     try:
         p = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            env=env,
         )
         return p.returncode, p.stdout, p.stderr
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
@@ -76,7 +89,9 @@ def streaming_mode():
     install-schema` until the extension deb carries it, and the daemon then
     reads the same built-in defaults this reports.
     """
-    rc, out, err = run(["gsettings", "get", SCHEMA, KEY_STREAMING_MODE], timeout=3)
+    rc, out, err = run(
+        ["gsettings", "get", SCHEMA, KEY_STREAMING_MODE], timeout=3, env=client_store_env()
+    )
     if rc != 0:
         detail = (err.strip().splitlines() or [""])[-1]
         return "", detail or f"no {SCHEMA} schema (defaults apply; make install-schema)"
@@ -818,7 +833,7 @@ class ClientTab(Scrollable):
 
     def save_mode(self):
         cmd = ["gsettings", "set", SCHEMA, KEY_STREAMING_MODE, self.mode.get()]
-        rc, _, err = run(cmd, timeout=3)
+        rc, _, err = run(cmd, timeout=3, env=client_store_env())
         if rc != 0:
             messagebox.showerror("Save failed", err.strip() or " ".join(cmd))
             return

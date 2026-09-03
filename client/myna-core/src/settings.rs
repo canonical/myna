@@ -11,9 +11,12 @@
 //! snap both are set per app (`myna-snap/snap/snapcraft.yaml`), so the store
 //! is the snap-private file
 //! `$SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile` - plaintext,
-//! editable, captured by `snap save`, removed with the snap. Live reload is
-//! the keyfile backend's own file monitor, which is what [`watch`] rides on;
-//! the tests below drive that same backend directly.
+//! editable, captured by `snap save`, removed with the snap; `myna.config`
+//! (glib's own `gsettings` behind a wrapper) is the packaged way in.
+//! Unpackaged, the dev launch paths export the same pair, so the store is
+//! `~/.config/glib-2.0/settings/keyfile` - one store shape everywhere. Live
+//! reload is the keyfile backend's own file monitor, which is what [`watch`]
+//! rides on; the tests below drive that same backend directly.
 //!
 //! Nothing here fails hard. A machine without the schema installed (an
 //! unpackaged build on a box where `make install-schema` was never run) reads

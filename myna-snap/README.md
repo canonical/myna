@@ -237,24 +237,26 @@ preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 |---|---|
 | `myna` | the dictation daemon - a user service, so no `/snap/bin` entry |
 | `myna.status` | what state dictation is in, and why - start here |
+| `myna.config` | query/change the persisted settings: glib's gsettings over the snap's keyfile store. Bare, it lists every key; `set`/`get`/`reset` take bare values (`myna.config set language fr`) |
 | `myna.toggle` | poke the daemon's control socket (start/stop). **Control activation only** - the default (portal) daemon has no control socket |
-| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf). **Control activation only** - refuses under portal, where it would shadow the portal's own binding |
+| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf). **Control activation only** - refuses under portal, where it would shadow the portal's own binding. Needed on Noble/Jammy (no GlobalShortcuts backend there); the one app with the `gsettings` plug |
 | `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
 
 ### `myna.status`
 
 The four planes that answer "why is it doing that" used to be four places: the
-persisted values in `gsettings`, what they resolved to in a journal line
-printed once at startup, the backend socket nowhere at all, and the live state
-on the bus. This prints the composition, including *which* plane won each value
-- because "I set that and nothing happened" is the question being asked.
+persisted values in the settings store, what they resolved to in a journal
+line printed once at startup, the backend socket nowhere at all, and the live
+state on the bus. This prints the composition, including *which* plane won each
+value - flag, settings or built-in - because "I set that and nothing happened"
+is the question being asked.
 
 ```
 settings   com.canonical.Myna.Dictation (schema installed)
   activation      (unset)      -> Portal (packaged)      [built-in]
   language        (unset)      -> (backend default)      [built-in]
   hotkey          (unset)      -> (portal default)       [built-in]
-  streaming-mode  auto         -> preedit false          [gsettings]
+  streaming-mode  auto         -> preedit false          [settings]
                   streaming-mode Auto resolves to Batch on tier x86_64-cpu-generic
 
 backend
@@ -365,10 +367,29 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 
 ## Settings
 
-One plane: the per-user settings store, reached with `myna.config`.
+One plane: the per-user settings store, a plaintext keyfile only this snap
+can see:
+
+```
+~/snap/myna/common/.config/glib-2.0/settings/keyfile
+```
+
+(`common`, not the per-revision `current`: `snap revert` must not revert
+settings. `snap remove` snapshots it into the automatic snapshot;
+`snap remove --purge` deletes it.)
+
+Read and write it with `myna.config` - glib's own gsettings over that store,
+with the schema id filled in. Bare, it lists every key; `set`/`get`/`reset`
+take bare values. Changes reach the running daemon with no restart (the
+backend's file monitor); `streaming-mode` and `language` apply live,
+`activation` and `hotkey` are bound at startup and the journal says
+`restart to apply`. "Is this key set?" is `cat` of the file - an absent
+key reads the schema default, so the file only ever holds what was set.
 
 ```shell
+myna.config                                    # every key, set or default
 myna.config set streaming-mode streaming
+myna.config reset streaming-mode
 ```
 
 **A flag beats the user's settings value, which beats the built-in.**
@@ -380,14 +401,24 @@ myna.config set streaming-mode streaming
 | `activation` | `auto` \| `portal` \| `control` | how a press reaches the daemon |
 | `hotkey` | `'<Super>d'` | the accelerator offered to the portal |
 
-Settings are read once, at start:
+The daemon logs what it resolved at every start:
 
 ```shell
-sudo snap restart myna
 journalctl --user -u snap.myna.myna | grep settings:
 #  settings: streaming-mode Auto resolves to Streaming on tier x86_64-cpu-generic
 #  settings: activation Portal, language (backend default), hotkey (portal default)
 ```
+
+Notes:
+
+- The store moved here from the host's dconf database (pre-2026-09). Old
+  values are not migrated; carry one over by hand if you need it (dconf's
+  dump is already keyfile syntax):
+  `dconf dump /com/canonical/myna/ > ~/snap/myna/common/.config/glib-2.0/settings/keyfile`
+- `snap set myna ...` is not a thing. snapd accepts and silently stores
+  arbitrary keys; nothing in this snap reads them.
+- Deleting the keyfile does not reset a running daemon (glib's backend
+  ignores file-deleted events); reset keys, don't remove the file.
 
 `auto` gates on a measured RTF baseline, and the snap ships none - so `auto`
 means batch today. That is the safe end of the failure, and the reason is
