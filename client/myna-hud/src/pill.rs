@@ -29,6 +29,7 @@ use crate::hud_logic::{
 };
 use crate::notice_slot::NoticeSlot;
 use crate::platform;
+use crate::progress::ProgressView;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
 use crate::segmented_meter::SegmentedMeterView;
 #[cfg(dev_lab)]
@@ -114,6 +115,7 @@ pub struct Pill {
     ribbon: gtk::GLArea,
     bar: Rc<BarView>,
     meter: Rc<SegmentedMeterView>,
+    progress: Rc<ProgressView>,
     state: Rc<RefCell<PillState>>,
     renderer: Rc<RefCell<Option<RibbonRenderer>>>,
     /// Owns the accent/reduced-motion subscriptions; dropped with the pill,
@@ -154,6 +156,7 @@ impl Pill {
 
         let bar = BarView::new();
         let meter = SegmentedMeterView::new();
+        let progress = ProgressView::new();
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
         content.set_hexpand(true);
@@ -163,6 +166,7 @@ impl Pill {
         content.append(&label);
         content.append(bar.widget());
         content.append(meter.widget());
+        content.append(progress.widget());
         content.append(&ribbon);
 
         let pill = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -202,6 +206,7 @@ impl Pill {
             ribbon,
             bar,
             meter,
+            progress,
             state,
             renderer: Rc::default(),
             preferences: RefCell::new(None),
@@ -237,6 +242,12 @@ impl Pill {
     /// `bar` hud-style is active (input region).
     pub fn bar(&self) -> &gtk::Widget {
         self.bar.widget()
+    }
+
+    /// The progress bar, for the window to read its allocation when the
+    /// `progress` hud-style is active (input region).
+    pub fn progress(&self) -> &gtk::Widget {
+        self.progress.widget()
     }
 
     /// Current descriptor (for lab sync when the HUD auto-dismisses locally).
@@ -355,7 +366,7 @@ impl Pill {
         // the whole pill is hidden at idle — the latter matters because the
         // frame clock only queues a render while the indicator is visible, so
         // hiding it here is what makes idle cost no GPU. Which indicator is
-        // shown follows the `hud-style` setting (ribbon vs vumeter vs bar).
+        // shown follows the `hud-style` setting (ribbon/vumeter/bar/progress).
         let visible = !descriptor.hidden && ribbon_visible_for_severity(descriptor.severity);
         let style = {
             let state = self.state.borrow();
@@ -369,6 +380,9 @@ impl Pill {
         self.bar
             .widget()
             .set_visible(visible && style == HudStyle::Bar);
+        self.progress
+            .widget()
+            .set_visible(visible && style == HudStyle::Progress);
 
         // Nothing is shown at idle (FR-002/X3) — push-to-talk means the
         // resting state is an absent HUD, not an empty one. The pill keeps
@@ -407,6 +421,7 @@ impl Pill {
         });
         self.bar.push_level(rms, peak);
         self.meter.push_level(rms, peak);
+        self.progress.push_level(rms, peak);
     }
 
     fn now_ms(&self) -> f64 {
@@ -492,6 +507,9 @@ impl Pill {
             }
             if this.bar.widget().is_visible() {
                 this.bar.queue_draw();
+            }
+            if this.progress.widget().is_visible() {
+                this.progress.queue_draw();
             }
             glib::ControlFlow::Continue
         });

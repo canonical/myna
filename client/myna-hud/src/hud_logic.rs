@@ -25,6 +25,8 @@ pub enum HudStyle {
     Ribbon,
     /// The classic segmented bar meter (the pre-ribbon `BarMeterActor`).
     Vumeter,
+    /// A plain `GtkProgressBar`.
+    Progress,
 }
 
 impl HudStyle {
@@ -34,6 +36,7 @@ impl HudStyle {
         match nick {
             "ribbon" => HudStyle::Ribbon,
             "vumeter" => HudStyle::Vumeter,
+            "progress" => HudStyle::Progress,
             _ => HudStyle::Bar,
         }
     }

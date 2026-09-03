@@ -56,12 +56,12 @@ pub const KEY_ACTIVATION: &str = "activation";
 /// The accelerator offered to the portal's bind dialog; empty offers none.
 pub const KEY_HOTKEY: &str = "hotkey";
 
-/// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave) or
-/// `vumeter` (segmented bar).
+/// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave),
+/// `vumeter` (segmented bar) or `progress` (plain GtkProgressBar).
 pub const KEY_HUD_STYLE: &str = "hud-style";
 
 /// The accepted HUD style nicks.
-pub const HUD_STYLES: &[&str] = &["bar", "ribbon", "vumeter"];
+pub const HUD_STYLES: &[&str] = &["bar", "ribbon", "vumeter", "progress"];
 
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
