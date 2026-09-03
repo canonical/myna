@@ -75,7 +75,6 @@ myna-desktop — push-to-talk dictation (T21/T22)
 
 USAGE:
     myna-desktop --socket <path> [options]      # run the dictation daemon
-    myna-desktop --config [get|set|reset] …     # read and write the settings
     myna-desktop --toggle                       # start/stop the running daemon
     myna-desktop --bind-shortcut               # portal mode: pick a key in the desktop's dialog
     myna-desktop --install-shortcut <accel>     # control mode: bind a GNOME shortcut
@@ -99,12 +98,6 @@ OPTIONS:
                        control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
     --status           print what this daemon has resolved, what the running one
                        is doing, and whether the backend is reachable, then exit
-    --config           read and write the persisted settings, then exit. The
-                       rest of the command line is the subcommand: bare to
-                       list, `get <key>`, `set <key> <value>`, `reset <key>`.
-                       Packaged this is `myna.config`, which is the only
-                       supported way in - not `gsettings`, not `dconf write`,
-                       not `snap set`.
     --toggle           poke the running daemon over the control socket. Control
                        activation only - a portal daemon has no control socket
                        and is driven by its portal shortcut instead.
@@ -349,9 +342,6 @@ struct Args {
     shortcut: Option<String>,
     toggle: bool,
     status: bool,
-    /// `--config` swallows the rest of the command line: everything after it
-    /// is the configuration subcommand, not a flag of the daemon.
-    config: Option<Vec<String>>,
     install_shortcut: Option<String>,
     bind_shortcut: bool,
     /// `None` = resolve from packaging; `Some` = the user forced one.
@@ -386,7 +376,6 @@ fn parse_args_from(
             "--shortcut" => a.shortcut = Some(next(&mut it, "--shortcut")?),
             "--toggle" => a.toggle = true,
             "--status" => a.status = true,
-            "--config" => a.config = Some(it.by_ref().collect()),
             "--bind-shortcut" => a.bind_shortcut = true,
             "--install-shortcut" => {
                 a.install_shortcut = Some(next(&mut it, "--install-shortcut")?);
@@ -1207,141 +1196,6 @@ fn init_i18n() {
     let _ = desktop.init();
 }
 
-/// What `myna.config` prints when asked how to drive it.
-const CONFIG_USAGE: &str = "\
-USAGE:
-    myna.config                      list every setting, its value and whether
-                                     it was set or is the schema default
-    myna.config get <key>            print one value, bare (for scripts)
-    myna.config set <key> <value>    write a value
-    myna.config reset <key>          clear it, back to the default
-";
-
-/// `myna.config`: the single place client settings are read and written.
-///
-/// It exists because there was no such place. The store is GSettings, so the
-/// answer was either `gsettings set` - which needs the schema on the *host*,
-/// where a snap-only install has never put it, since the snap ships its own
-/// copy internally - or `dconf write`, which needs no schema for exactly the
-/// reason that makes it the wrong tool: it does not validate. A mistyped nick
-/// lands, reads back as the schema default, and presents as a feature that
-/// silently does not work rather than as a typo.
-///
-/// Confined, like `myna.status`, and for the same reason: the environment set
-/// in `snapcraft.yaml` is what points GLib at our schema and at the host's
-/// dconf database, so inside the snap is the only place the answer is the
-/// daemon's answer.
-fn run_config(argv: &[String]) -> ExitCode {
-    let Some(store) = myna_core::Store::open() else {
-        eprintln!(
-            "the settings schema ({}) is not installed, so there is nothing to read or write",
-            myna_core::settings::SCHEMA_ID
-        );
-        // Two very different situations, and the advice for one is useless
-        // for the other, so say which one this is rather than listing both.
-        if std::env::var_os("SNAP").is_some() {
-            eprintln!(
-                "  the snap ships its own copy, so this is a packaging bug - please report it"
-            );
-        } else {
-            eprintln!(
-                "  unpackaged build: run `make install-schema` once, or use the packaged \
-                 `myna.config`"
-            );
-        }
-        return ExitCode::FAILURE;
-    };
-
-    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-    match argv.as_slice() {
-        [] | ["list"] => list_config(&store),
-        ["get", key] => match store.get(key) {
-            Ok(value) => {
-                println!("{value}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => config_error(e),
-        },
-        ["set", key, value] => match store.set(key, value) {
-            // Echo what landed rather than staying silent: the failure this
-            // tool is here to prevent is a write you believe happened.
-            Ok(()) => {
-                println!("{key} = {value}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => config_error(e),
-        },
-        ["reset", key] => match store.reset(key) {
-            Ok(()) => {
-                let now = store.get(key).unwrap_or_default();
-                println!("{key} = {} (default)", render_value(&now));
-                ExitCode::SUCCESS
-            }
-            Err(e) => config_error(e),
-        },
-        _ => {
-            eprintln!(
-                "unrecognised arguments: {}\n\n{CONFIG_USAGE}",
-                argv.join(" ")
-            );
-            ExitCode::FAILURE
-        }
-    }
-}
-
-/// Print a settings error, plus the one thing that makes it actionable: the
-/// set of names or values that *would* have worked.
-fn config_error(e: myna_core::SettingsError) -> ExitCode {
-    eprintln!("{e}");
-    if let myna_core::SettingsError::UnknownKey(_) = e {
-        let names: Vec<&str> = myna_core::KEYS.iter().map(|k| k.name).collect();
-        eprintln!("  known keys: {}", names.join(", "));
-    }
-    ExitCode::FAILURE
-}
-
-/// An empty string is a legitimate value meaning "unset" (GSettings has no
-/// null), so it has to render as something a reader can see.
-fn render_value(value: &str) -> String {
-    if value.is_empty() {
-        "(empty)".into()
-    } else {
-        value.to_string()
-    }
-}
-
-/// The listing, which is the answer to "is this actually set?".
-///
-/// It reports set-vs-default per key because those two read identically
-/// otherwise, and a value written somewhere the daemon does not look is
-/// indistinguishable from one that was never written at all.
-fn list_config(store: &myna_core::Store) -> ExitCode {
-    for spec in myna_core::KEYS {
-        let value = store.get(spec.name).unwrap_or_default();
-        let origin = match store.is_set(spec.name) {
-            Ok(true) => "set",
-            _ => "default",
-        };
-        println!(
-            "  {:<15} {:<12} {:<8} {}",
-            spec.name,
-            render_value(&value),
-            origin,
-            spec.summary
-        );
-    }
-    // The listing says what is stored; this says what it comes to on this
-    // machine, which is a different question and the one people are usually
-    // really asking. Same helper the daemon logs at startup, so they cannot
-    // disagree.
-    println!(
-        "\n  {}",
-        preedit_reason(None, myna_core::Settings::load().streaming_mode)
-    );
-    println!("  run `myna.status` for how the rest resolved");
-    ExitCode::SUCCESS
-}
-
 fn main() -> ExitCode {
     init_i18n();
 
@@ -1354,9 +1208,6 @@ fn main() -> ExitCode {
     };
 
     // Non-daemon subcommands first (no IBus / server needed).
-    if let Some(argv) = &args.config {
-        return run_config(argv);
-    }
     if let Some(accel) = &args.install_shortcut {
         return install_shortcut(&args, accel);
     }
@@ -1903,32 +1754,6 @@ mod tests {
         // reporting includes "no backend configured".
         assert!(parse_args_from(args(&["--status"])).unwrap().status);
         assert!(!parse_args_from(args(&["--toggle"])).unwrap().status);
-    }
-
-    /// `--config` takes the rest of the command line verbatim. It has to: the
-    /// subcommand carries free-text values (a hotkey is `<Super>d`, a language
-    /// is a bare word), and anything the daemon's parser interpreted first
-    /// would be a value the CLI could never set.
-    #[test]
-    fn config_swallows_the_rest_of_the_command_line() {
-        assert_eq!(parse_args_from(args(&["--status"])).unwrap().config, None);
-        assert_eq!(
-            parse_args_from(args(&["--config"])).unwrap().config,
-            Some(vec![])
-        );
-        assert_eq!(
-            parse_args_from(args(&["--config", "set", "hotkey", "<Super>d"]))
-                .unwrap()
-                .config,
-            Some(vec!["set".into(), "hotkey".into(), "<Super>d".into()])
-        );
-        // A value that happens to spell a daemon flag is still a value.
-        assert_eq!(
-            parse_args_from(args(&["--config", "set", "language", "--status"]))
-                .unwrap()
-                .config,
-            Some(vec!["set".into(), "language".into(), "--status".into()])
-        );
     }
 
     #[test]

@@ -100,7 +100,7 @@ install-schema: ## Install the client GSettings schema on the host (needs sudo)
 	sudo install -Dm644 client/data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml \
 		/usr/share/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml
 	sudo glib-compile-schemas /usr/share/glib-2.0/schemas
-	@echo "installed com.canonical.Myna.Dictation; read it with: myna-desktop --config"
+	@echo "installed com.canonical.Myna.Dictation; read it with: gsettings get com.canonical.Myna.Dictation streaming-mode"
 
 .PHONY: i18n
 i18n: ## Regenerate the translation templates (po/*.pot for myna-desktop + myna-orchestrator)
