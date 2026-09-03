@@ -3,17 +3,17 @@
 //! One setting today: [`StreamingMode`] (Auto | Streaming | Batch), resolved
 //! against the tier gate when Auto (FR-002/FR-003).
 //!
-//! ## Where it lives, and why that is not a file
+//! ## Where it lives
 //!
-//! The store is **GSettings**, schema `com.canonical.Myna.Dictation`
-//! (`client/data/glib-2.0/schemas/`). Three kinds of writer have to reach the
-//! same values: the confined `myna` snap (over the `gsettings` interface),
-//! unconfined host tools (`gsettings set`, `myna-dictate`, a future Settings
-//! page), and further snaps as they grow configuration APIs (T54). A JSON file
-//! cannot be that store - this used to be `~/.config/myna/settings.json`, and
-//! the packaged daemon could never read it: inside the snap `$HOME` is
-//! `$SNAP_USER_DATA`, and the `home` interface grants no top-level dotfiles, so
-//! the value was written on one side of confinement and read on the other.
+//! The API is **GSettings**, schema `com.canonical.Myna.Dictation`
+//! (`client/data/glib-2.0/schemas/`); the *backend* is chosen by the
+//! environment: `GSETTINGS_BACKEND=keyfile` plus `XDG_CONFIG_HOME`. In the
+//! snap both are set per app (`myna-snap/snap/snapcraft.yaml`), so the store
+//! is the snap-private file
+//! `$SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile` - plaintext,
+//! editable, captured by `snap save`, removed with the snap. Live reload is
+//! the keyfile backend's own file monitor, which is what [`watch`] rides on;
+//! the tests below drive that same backend directly.
 //!
 //! Nothing here fails hard. A machine without the schema installed (an
 //! unpackaged build on a box where `make install-schema` was never run) reads
@@ -74,14 +74,6 @@ pub struct Settings {
     pub hud_style: Option<String>,
 }
 
-/// Why a settings write did not happen.
-#[derive(Debug, thiserror::Error)]
-pub enum SettingsError {
-    /// The backend refused the write (read-only key, locked-down dconf).
-    #[error("cannot write {0}: {1}")]
-    Write(&'static str, glib::BoolError),
-}
-
 impl Settings {
     /// Read the store. A missing schema or an unreadable backend yields
     /// defaults (Auto) - a broken settings store must never break dictation.
@@ -122,9 +114,12 @@ impl Store {
     /// mode for a dictation daemon that starts before the desktop does.
     pub fn open() -> Option<Self> {
         let source = gio::SettingsSchemaSource::default()?;
-        source.lookup(SCHEMA_ID, true)?;
+        let schema = source.lookup(SCHEMA_ID, true)?;
         Some(Self {
-            settings: gio::Settings::new(SCHEMA_ID),
+            settings: match keyfile_backend() {
+                Some(backend) => gio::Settings::new_full(&schema, Some(&backend), None),
+                None => gio::Settings::new(SCHEMA_ID),
+            },
         })
     }
 
@@ -148,15 +143,40 @@ impl Store {
         let value = self.settings.string(key).to_string();
         (!value.is_empty()).then_some(value)
     }
+}
 
-    /// Write the preference and flush it, so a caller that exits immediately
-    /// afterwards still lands the value.
-    pub fn set_streaming_mode(&self, mode: StreamingMode) -> Result<(), SettingsError> {
-        self.settings
-            .set_string(KEY_STREAMING_MODE, mode_nick(mode))
-            .map_err(|e| SettingsError::Write(KEY_STREAMING_MODE, e))?;
-        gio::Settings::sync();
-        Ok(())
+/// An explicit keyfile backend when the environment selects one
+/// (`GSETTINGS_BACKEND=keyfile`), or `None` to leave glib's default.
+///
+/// The path mirrors what glib's own default keyfile backend would use:
+/// `$XDG_CONFIG_HOME/glib-2.0/settings/keyfile`, root path `/`.
+///
+/// Why not simply let the default handle the env: `g_settings_backend_get_default`
+/// is a *process singleton*, created by the first `GSettings` object on
+/// whatever thread and main context that thread happens to have. The keyfile
+/// backend's live-reload file monitor dispatches on the context captured at
+/// that moment, so a process whose first settings read happens on a
+/// context-free main thread (the daemon's tokio main) gets a monitor that is
+/// never dispatched: reads work, and no change is ever delivered (observed
+/// live with the snap's glib 2.80). One backend per [`Store`] puts each
+/// store's monitor on the thread that owns the store - for [`watch`], the
+/// watcher thread with its running loop. The dconf default needs no such
+/// care (changes arrive on the gdbus thread and are routed per listener
+/// context), so it keeps the singleton.
+fn keyfile_backend() -> Option<gio::SettingsBackend> {
+    if std::env::var_os("GSETTINGS_BACKEND").as_deref() == Some(std::ffi::OsStr::new("keyfile")) {
+        let config_dir = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+        let path = config_dir.join("glib-2.0/settings/keyfile");
+        Some(gio::functions::keyfile_settings_backend_new(
+            path.to_str()?,
+            "/",
+            None,
+        ))
+    } else {
+        None
     }
 }
 
@@ -255,17 +275,6 @@ fn watch_with(
         }),
         // The thread is already returning; nothing to join against.
         _ => None,
-    }
-}
-
-/// The enum nicks in the schema. Kept next to their parser so the two cannot
-/// drift, and deliberately not derived from the serde names: the wire spelling
-/// and the settings spelling are separate contracts that happen to agree.
-fn mode_nick(mode: StreamingMode) -> &'static str {
-    match mode {
-        StreamingMode::Auto => "auto",
-        StreamingMode::Streaming => "streaming",
-        StreamingMode::Batch => "batch",
     }
 }
 
@@ -369,6 +378,18 @@ mod tests {
     use super::*;
     use crate::{TierAssessment, TierTable};
 
+    /// The enum nicks in the schema. Kept next to their parser so the two
+    /// cannot drift, and deliberately not derived from the serde names: the
+    /// wire spelling and the settings spelling are separate contracts that
+    /// happen to agree.
+    fn mode_nick(mode: StreamingMode) -> &'static str {
+        match mode {
+            StreamingMode::Auto => "auto",
+            StreamingMode::Streaming => "streaming",
+            StreamingMode::Batch => "batch",
+        }
+    }
+
     fn table() -> TierTable {
         TierTable {
             assessments: vec![TierAssessment {
@@ -459,8 +480,8 @@ mod tests {
     /// *two* stores over one set of values: a memory backend is private to the
     /// object that made it, and a `SettingsBackend` is a GObject that cannot
     /// cross to the watcher thread anyway. Two independent backends over one
-    /// file is also the shape production has - two processes over one dconf
-    /// database - rather than one object shared behind a mutex.
+    /// file is also the shape production has - two processes over one
+    /// keyfile - rather than one object shared behind a mutex.
     fn store_on(path: &std::path::Path) -> Store {
         let backend = gio::functions::keyfile_settings_backend_new(
             path.to_str().expect("utf-8 temp path"),
@@ -474,13 +495,24 @@ mod tests {
         }
     }
 
+    /// Write a mode the way any external writer would: straight through
+    /// `gio::Settings`, with a sync so a change made just before an assert
+    /// (or just before the process exits) is on disk.
+    fn set_mode(store: &Store, mode: StreamingMode) {
+        store
+            .settings
+            .set_string(KEY_STREAMING_MODE, mode_nick(mode))
+            .expect("schema accepts nick");
+        gio::Settings::sync();
+    }
+
     /// T046: the preference round-trips through the settings store.
     #[test]
     fn settings_persist_across_load() {
         let store = test_store();
-        store.set_streaming_mode(StreamingMode::Batch).unwrap();
+        set_mode(&store, StreamingMode::Batch);
         assert_eq!(store.streaming_mode(), StreamingMode::Batch);
-        store.set_streaming_mode(StreamingMode::Streaming).unwrap();
+        set_mode(&store, StreamingMode::Streaming);
         assert_eq!(store.streaming_mode(), StreamingMode::Streaming);
     }
 
@@ -502,7 +534,7 @@ mod tests {
             StreamingMode::Streaming,
             StreamingMode::Batch,
         ] {
-            store.set_streaming_mode(mode).expect("schema accepts nick");
+            set_mode(&store, mode);
             assert_eq!(store.streaming_mode(), mode);
             assert_eq!(mode_from_nick(mode_nick(mode)), Some(mode));
         }
@@ -551,9 +583,7 @@ mod tests {
         )
         .expect("the test schema is always installed");
 
-        store_on(&path)
-            .set_streaming_mode(StreamingMode::Batch)
-            .unwrap();
+        set_mode(&store_on(&path), StreamingMode::Batch);
         let seen = rx
             .recv_timeout(Duration::from_secs(5))
             .expect("the change is delivered");
@@ -562,9 +592,7 @@ mod tests {
         // Dropping the handle ends the subscription (and joins the thread,
         // which is what would hang here if `quit` had raced `run`).
         drop(watch);
-        store_on(&path)
-            .set_streaming_mode(StreamingMode::Streaming)
-            .unwrap();
+        set_mode(&store_on(&path), StreamingMode::Streaming);
         assert!(
             rx.recv_timeout(Duration::from_millis(250)).is_err(),
             "a dropped watch must stop delivering"

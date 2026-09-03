@@ -3,7 +3,7 @@
 # that is the only place the answer is the daemon's answer. Three of the four
 # planes it reports differ outside the snap: `$SNAP` decides activation, the
 # backend socket is a bind mount in this namespace, and the settings store is
-# the host dconf database only because of the environment set in
-# snapcraft.yaml. Extra args go straight through.
+# the snap's private keyfile (GSETTINGS_BACKEND=keyfile, set per app in
+# snapcraft.yaml). Extra args go straight through.
 set -eu
 exec "$SNAP/bin/myna-desktop" --status --backend-dir "$SNAP_DATA/backend" "$@"
