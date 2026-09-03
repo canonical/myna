@@ -361,6 +361,8 @@ def build(model_dir: Path, calib_glob: str, calib_n: int, qsilu_lib: Path) -> No
     import onnx
     from requantize_encoder import _find_fp32_linear2_nodes, requantize
 
+    from myna.testbed.corpus import digest_files
+
     if not qsilu_lib.exists():
         raise SystemExit(f"{qsilu_lib} missing — build it: dev/parakeet/qsilu/build.sh")
 
@@ -378,7 +380,9 @@ def build(model_dir: Path, calib_glob: str, calib_n: int, qsilu_lib: Path) -> No
     with tempfile.TemporaryDirectory(dir=model_dir) as tmp:
         step1 = Path(tmp) / "step1.onnx"
         print("== step 1/4: requantize 10 FFN down-projections ==")
-        requantize(str(model_dir), step1, calib_glob, calib_n, nodes=nodes)
+        calibration = requantize(str(model_dir), step1, calib_glob, calib_n, nodes=nodes)[
+            "calibration_clips"
+        ]
 
         model = onnx.load(str(step1), load_external_data=True)
         print("== step 2/4: fuse SiLU islands ==")
@@ -399,7 +403,8 @@ def build(model_dir: Path, calib_glob: str, calib_n: int, qsilu_lib: Path) -> No
     upstream = (model_dir / "UPSTREAM_REVISION").read_text(encoding="utf-8").strip()
     (model_dir / STAMP_FILE).write_text(
         f"maxstack {PIPELINE_VERSION}\nbase: {upstream}\nexcluded: {EXCLUDED_NODE}\n"
-        f"libqsilu sha256: {lib_sha}\n",
+        f"libqsilu sha256: {lib_sha}\n"
+        f"calibration: {digest_files(calibration)} ({len(calibration)} clips)\n",
         encoding="utf-8",
     )
     print(f"\nstaged {out} ({out.stat().st_size / 1e6:.1f} MB) + {qsilu_lib.name}")

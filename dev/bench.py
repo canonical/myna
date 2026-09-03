@@ -58,6 +58,7 @@ from myna.testbed import (  # noqa: E402
     Harness,
     character_error_rate,
     load_manifest,
+    verify_corpus,
     word_error_rate,
 )
 from myna.testbed.adapter import Candidate  # noqa: E402
@@ -226,6 +227,12 @@ async def main() -> None:
         print(f"(capabilities query failed: {type(exc).__name__}: {exc})")
 
     clips = select_clips(args)
+    # Which corpus produced these numbers, recomputed from the clips rather
+    # than taken on trust: a WER is only comparable against the same one.
+    try:
+        corpus = verify_corpus(args.manifest)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     pace = (
         "fast as possible"
         if args.batch
@@ -325,6 +332,8 @@ async def main() -> None:
             record = {
                 "run_started": run_started,
                 "served_models": served_models,
+                "corpus_id": corpus,
+                "corpus_manifest": args.manifest.name,
                 # Stamped on every row of a truncated sweep: coverage travels
                 # with the data, so a partial WER can never be read as a full one.
                 "usability_fail": overran,

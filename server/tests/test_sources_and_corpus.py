@@ -10,7 +10,13 @@ import pytest
 
 from myna.core import AudioFormat, LoopbackClient
 from myna.testbed import FakeAdapter, Harness, WavFileSource, by_category, load_manifest
-from myna.testbed.corpus import SCHEMA_VERSION
+from myna.testbed.corpus import (
+    SCHEMA_VERSION,
+    corpus_id,
+    sha256_file,
+    stamp_corpus,
+    verify_corpus,
+)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -42,6 +48,7 @@ def make_manifest(tmp_path: Path, **overrides) -> Path:
         "channels": 1,
         "source": "synthetic:test",
         "license": "CC0-1.0",
+        "sha256": sha256_file(tmp_path / "audio" / "clip.wav"),
         **overrides.pop("entry", {}),
     }
     manifest = {"schema_version": SCHEMA_VERSION, "clips": [entry], **overrides}
@@ -130,3 +137,78 @@ def test_generated_clips_exist_and_match_manifest():
         assert source.format.channels == clip.channels
         assert clip.license == "CC0-1.0"
         assert clip.text
+
+
+def test_corpus_id_ignores_clip_order(tmp_path):
+    """Identity is the set of clips, not how the manifest happens to list them."""
+    path = make_manifest(tmp_path)
+    manifest = json.loads(path.read_text())
+    manifest["clips"].append(dict(manifest["clips"][0], id="tone-b"))
+    path.write_text(json.dumps(manifest))
+    forward = corpus_id(path)
+    manifest["clips"].reverse()
+    path.write_text(json.dumps(manifest))
+    assert corpus_id(path) == forward
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param({"text": "different reference"}, id="reference-text"),
+        pytest.param({"category": "noise"}, id="category"),
+        pytest.param({"language": "de"}, id="language"),
+        pytest.param({"sha256": "0" * 64}, id="audio-digest"),
+    ],
+)
+def test_corpus_id_tracks_what_wer_is_scored_against(tmp_path, change):
+    baseline = corpus_id(make_manifest(tmp_path))
+    other = tmp_path / "other"
+    other.mkdir()
+    assert corpus_id(make_manifest(other, entry=change)) != baseline
+
+
+def test_corpus_id_needs_every_clip_to_record_its_audio(tmp_path):
+    path = make_manifest(tmp_path, entry={"sha256": ""})
+    with pytest.raises(ValueError, match="records no sha256"):
+        corpus_id(path)
+
+
+def test_manifest_without_digests_does_not_load(tmp_path):
+    path = make_manifest(tmp_path, entry={"sha256": ""})
+    with pytest.raises(ValueError, match="records no sha256"):
+        load_manifest(path)
+
+
+def test_stamp_corpus_records_each_clip_and_the_set(tmp_path):
+    path = make_manifest(tmp_path, entry={"sha256": ""})
+    identity = stamp_corpus(path)
+    manifest = json.loads(path.read_text())
+    assert manifest["corpus_id"] == identity
+    assert manifest["clips"][0]["sha256"] == sha256_file(tmp_path / "audio" / "clip.wav")
+    assert stamp_corpus(path) == identity
+
+
+def test_verify_corpus_names_the_clip_that_is_not_what_the_manifest_says(tmp_path):
+    """Same path, different audio: the numbers a run recorded against the
+    stamped id were not measured on what is on disk now."""
+    path = make_manifest(tmp_path)
+    stamp_corpus(path)
+    write_tone_wav(tmp_path / "audio" / "clip.wav", seconds=0.4)
+    with pytest.raises(ValueError, match="tone: "):
+        verify_corpus(path)
+
+
+def test_verify_corpus_reports_a_missing_clip(tmp_path):
+    path = make_manifest(tmp_path)
+    stamp_corpus(path)
+    (tmp_path / "audio" / "clip.wav").unlink()
+    with pytest.raises(ValueError, match="missing"):
+        verify_corpus(path)
+
+
+def test_stamp_corpus_will_not_relabel_drifted_audio(tmp_path):
+    path = make_manifest(tmp_path)
+    stamp_corpus(path)
+    write_tone_wav(tmp_path / "audio" / "clip.wav", seconds=0.4)
+    with pytest.raises(ValueError, match="not the recorded"):
+        stamp_corpus(path)

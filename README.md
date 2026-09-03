@@ -278,6 +278,14 @@ uv run python dev/fetch_chinese_corpus.py -n 50        # Mandarin
 One LibriSpeech split per corpus dir - the `NOTICE` carries that split's
 attribution, so the builder refuses to mix them.
 
+Every clip records its `sha256`, and every manifest a `corpus_id` derived from
+those digests and the reference text the clips are scored against. `dev/bench.py`
+and `myna-bench run` hash the audio before a sweep and abort naming any clip that
+is not what the manifest says; each record carries the id, and `dev/aggregate.py`
+refuses a results file that mixes corpora or holds unstamped rows (`--corpus <id>`
+to narrow one deliberately). Two numbers are comparable when the ids match,
+whatever machine or month produced them.
+
 ```shell
 cd server
 uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock &

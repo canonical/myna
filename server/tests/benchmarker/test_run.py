@@ -33,6 +33,7 @@ from myna.benchmarker._run import (
     cmd_run,
     wait_for_socket,
 )
+from myna.testbed.corpus import sha256_file
 
 
 class FakeRun:
@@ -560,6 +561,7 @@ def sweep(tmp_path, target, **overrides):
         "budget": 60.0,
         "out": _JsonlWriter(tmp_path / "out.jsonl"),
         "provenance": {"machine": "box"},
+        "corpus": {"corpus_id": "v1:test", "corpus_manifest": "manifest.json"},
         "resources_path": tmp_path / "resources.jsonl",
         "sample_resources": False,
         "broken": [],
@@ -748,6 +750,7 @@ def corpus(tmp_path):
                 "channels": 1,
                 "source": "test",
                 "license": "CC0-1.0",
+                "sha256": sha256_file(path),
             }
         )
     manifest = tmp_path / "manifest.json"

@@ -50,12 +50,14 @@ from pathlib import Path
 
 # Reuse the synthetic tier's WAV writer + seeded-noise mixer (same house format).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server" / "src"))
 from generate_fixtures import (  # noqa: E402
     NOISE_SEED,
     NOISE_SNR_DB,
     mix_noise,
     write_wav,
 )
+from myna.testbed.corpus import stamp_corpus  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RATE = 16_000
@@ -402,6 +404,15 @@ def build(
             {
                 "schema_version": 1,
                 "generator": "dev/fetch_real_corpus.py",
+                "generated": {
+                    "dataset": "librispeech",
+                    "subset": subset,
+                    "select": select,
+                    "n": n,
+                    "noise_snr_db": NOISE_SNR_DB,
+                    "noise_seed": NOISE_SEED,
+                    "long_form_minutes": long_form_minutes,
+                },
                 "clips": entries,
             },
             indent=2,
@@ -410,6 +421,7 @@ def build(
         + "\n",
         encoding="utf-8",
     )
+    print(f"corpus id {stamp_corpus(manifest)}")
     return manifest
 
 
@@ -498,7 +510,13 @@ def main() -> int:
         and args.skip_complete
         and is_complete(args.out, manifest_name, args.n, args.subset)
     ):
-        print(f"{args.out} already holds this corpus; skipping fetch")
+        manifest_path = args.out / manifest_name
+        # Stamp even on the skip path: a tier restored from a cache, or built
+        # before ids existed, still has to say which corpus it is.
+        print(
+            f"{args.out} already holds this corpus (id {stamp_corpus(manifest_path)});"
+            " skipping fetch"
+        )
         return 0
 
     tar_path = args.tarball or download(
