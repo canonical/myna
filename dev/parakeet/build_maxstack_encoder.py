@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the maxstack encoder into a staged Parakeet model dir (perf, phase 2).
 
-    cd server && uv run python ../dev/parakeet/build_maxstack_encoder.py \
+    cd server && uv run --extra parakeet python ../dev/parakeet/build_maxstack_encoder.py \
         --model-dir ~/.cache/myna/models/parakeet-tdt-0.6b-v3-int8
 
 Deterministic post-processing of the pinned murmure bundle, ratified

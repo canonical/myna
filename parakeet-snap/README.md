@@ -4,9 +4,10 @@ Small CPU-tier speech-to-text snap: NVIDIA Parakeet TDT 0.6B v3 (25 languages,
 punctuation) as an int8 ONNX export served via onnxruntime. No torch; roughly
 690 MB installed (46 MB snap + 646 MB model component).
 
-The component carries the maxstack encoder only (13% faster encode, 148 MB
-smaller than the base export it is built from). Nothing falls back to the base
-encoder at runtime, so the component must ship `libqsilu.so` beside it.
+The component carries one encoder, never both: the base int8 export, or the
+maxstack rebuild of it (13% faster encode, 148 MB smaller) with `libqsilu.so`
+beside it for the custom ops it calls. Nothing falls back at runtime. Sizes
+above are the maxstack shape; the base one installs at 812 MB.
 
 Streaming is enabled by default: SilenceCut emits committed chunks at pauses.
 It does not emit unstable partials.
@@ -14,25 +15,27 @@ It does not emit unstable partials.
 ## Build
 
 ```bash
-./dev/prepare.sh
-./dev/download-models.sh
-snapcraft pack
+make snap-parakeet            # base encoder
+make snap-parakeet-maxstack   # optimized encoder - ~13x faster encode
 ```
 
-When the component's file list changes (not its contents), run `snapcraft
-clean model-components` before packing: craft keeps staged files that no longer
-exist in `components/`, so an incremental repack ships them anyway.
+Either stages `components/` from the pinned upstream export in the model
+cache. Switching encoders changes the component's file list, so run `snapcraft
+clean model-components` first: craft keeps staged files that no longer exist in
+`components/` and packs them anyway.
 
-`download-models.sh` fetches the pinned upstream export into the model cache
-and stages the component from it. The maxstack encoder is derived from that
-export rather than downloaded, so on a fresh machine the first run fetches and
-then stops with the two commands that build it; run them and re-run the fetch:
+The maxstack encoder is derived from that export rather than downloaded, so it
+has to be built once per machine before it can be staged:
 
 ```bash
-ORT_INCLUDE=/path/to/onnxruntime-linux-x64-<ver>/include ../dev/parakeet/qsilu/build.sh
-cd ../server && uv run python ../dev/parakeet/build_maxstack_encoder.py \
-    --model-dir ~/.cache/myna/models/parakeet-tdt-0.6b-v3-int8
+make parakeet-maxstack-encoder
 ```
+
+That fetches the pinned onnxruntime headers, builds the custom-op kernels,
+downloads the LibriSpeech calibration tier (~330 MB) and runs the
+requantization pass, which peaks at several GB of RSS - see
+`dev/parakeet/build_maxstack_encoder.py` about running it under a memory cap
+the first time.
 
 ## Install
 
@@ -40,12 +43,6 @@ cd ../server && uv run python ../dev/parakeet/build_maxstack_encoder.py \
 sudo snap install --dangerous \
     ./myna-parakeet_*.snap \
     ./myna-parakeet+model-parakeet-int8.comp
-```
-
-The snap is CPU-only and does not require `hardware-observe`. Session socket:
-
-```text
-/var/snap/myna-parakeet/common/run/ubustt.sock
 ```
 
 ## Streaming cadence

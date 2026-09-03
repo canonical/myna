@@ -8,12 +8,15 @@ SNAPS := whisper parakeet nemotron qwen sherpa funasr audio8 myna fake
 # tiny/base/small, qwen's 0.6B + 1.7B); the two ONNX ones are fetched by
 # repo-level scripts. audio8's weights are CC-BY-NC-4.0 (non-commercial).
 FETCH_whisper  := cd whisper-snap && ./dev/download-models.sh
-FETCH_parakeet := cd parakeet-snap && ./dev/download-models.sh
+FETCH_parakeet  = cd parakeet-snap && ./dev/download-models.sh $(PARAKEET_ENCODER)
 FETCH_nemotron := cd nemotron-snap && ./dev/download-models.sh
 FETCH_qwen     := cd qwen-snap && ./dev/download-models.sh
 FETCH_sherpa   := cd sherpa-snap && ./dev/download-models.sh
 FETCH_funasr   := uv run ./dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
 FETCH_audio8   := uv run ./dev/fetch_audio8_model.py --profile snap --target ./audio8-snap/components/model-audio8-onnx --accept-license "CC-BY-NC-4.0"
+
+# Which encoder snap-parakeet stages; snap-parakeet-maxstack overrides it.
+PARAKEET_ENCODER ?= base
 
 # Short name -> packaged snap name. The two differ everywhere: the directory and
 # these targets are keyed on the adapter, while the snap itself is namespaced
@@ -65,6 +68,16 @@ $(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
 .NOTPARALLEL: snaps
 .PHONY: snaps
 snaps: $(SNAPS:%=snap-%) ## Build every snap (all the snap-* targets below), in order
+
+# Same snap, optimized encoder. The encoder is built once into the model cache
+# (parakeet-maxstack-encoder) and staged from there.
+.PHONY: snap-parakeet-maxstack
+snap-parakeet-maxstack: ## Build the parakeet snap with the maxstack encoder
+	$(MAKE) snap-parakeet PARAKEET_ENCODER=maxstack
+
+.PHONY: parakeet-maxstack-encoder
+parakeet-maxstack-encoder: ## Build the maxstack encoder into the model cache (input to snap-parakeet-maxstack)
+	./dev/parakeet/build-maxstack.sh
 
 .PHONY: lint-snaps
 lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
