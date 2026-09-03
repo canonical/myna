@@ -101,3 +101,12 @@ overlay HUD (feature 004). The former GTK `--overlay` was removed in T150.
 
 See `../docs/desktop-injection.md` for the settled T21/T22 contract (controller
 state model, the three seams, the IBus-over-zbus backend, the GTK indicator).
+
+### Settings store (unpackaged)
+
+Same shape as the snap: schema `com.canonical.Myna.Dictation` (install with
+`make install-schema`), store `~/.config/glib-2.0/settings/keyfile`, selected
+with `GSETTINGS_BACKEND=keyfile`. Inspect or change it with
+`GSETTINGS_BACKEND=keyfile myna-desktop --status`, or edit the file directly -
+the daemon live-reloads. `dev/gated-tests.sh` exports both variables into its
+scratch config home, so scripted runs never touch the real store.

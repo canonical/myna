@@ -211,6 +211,11 @@ export XDG_CACHE_HOME="$SCRATCH/cache"
 # Private state too: wireplumber remembers default-device choices across runs,
 # and inheriting the caller's would make the graph depend on their desktop.
 export XDG_STATE_HOME="$SCRATCH/state"
+# The settings store is the keyfile backend everywhere, snap or unpackaged
+# (see client/myna-core/src/settings.rs). Scratch config home, so this lands
+# in the scratch keyfile. Scoped to this script, never a shell profile: with
+# it set, every GLib program in the shell would write there.
+export GSETTINGS_BACKEND=keyfile
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 chmod 700 "$XDG_RUNTIME_DIR"
 

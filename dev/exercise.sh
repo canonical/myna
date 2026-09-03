@@ -230,10 +230,12 @@ grep -qF -- "is required to run the daemon" "$WORK/desktop-nosocket.out" \
 run_cli myna-desktop desktop-toggle.out --toggle --control-socket "$WORK/absent.sock"
 
 # The shortcut installer shells out to gsettings. Under gated-tests.sh both
-# XDG_CONFIG_HOME and the session bus are scratch, so the dconf write lands in
-# a temporary directory and the developer's real keybindings are untouched. It
-# reports failure cleanly where the GNOME schemas are absent, which is a path
-# worth covering too.
+# XDG_CONFIG_HOME and the session bus are scratch, so the dconf read lands in
+# a scratch database; and with GSETTINGS_BACKEND=keyfile (also exported there)
+# anything GSettings-side lands in the scratch keyfile - the installer's child
+# strips that variable precisely so its write stays dconf-shaped. Either way
+# the developer's real keybindings are untouched. It reports failure cleanly
+# where the GNOME schemas are absent, which is a path worth covering too.
 run_cli myna-desktop desktop-shortcut.out --install-shortcut '<Super>t'
 grep -qiE "bound|failed to set" "$WORK/desktop-shortcut.out" \
   || die "myna-desktop --install-shortcut said nothing (see $WORK/desktop-shortcut.out)"
