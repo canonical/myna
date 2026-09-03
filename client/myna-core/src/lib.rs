@@ -18,6 +18,7 @@
 //!   has no serde impl.
 
 pub mod audio;
+pub mod capabilities;
 pub mod capture;
 pub mod control;
 pub mod debug;
@@ -28,6 +29,7 @@ pub mod settings;
 pub mod tier;
 
 pub use audio::{AudioFormat, PcmChunk};
+pub use capabilities::Capabilities;
 pub use capture::{AudioSource, CaptureError, CaptureStream, StopHandle};
 pub use control::{ClientControl, ServerControl};
 pub use events::{

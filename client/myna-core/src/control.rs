@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::capabilities::Capabilities;
 use crate::session::SessionConfig;
 
 /// Client → server control frames.
@@ -38,6 +39,9 @@ pub enum ServerControl {
     /// Positive handshake ack, echoing the version the server will speak.
     #[serde(rename = "session.created")]
     SessionCreated { protocol_version: String },
+    /// Reply to `capabilities.query`: what the backend can do (T24).
+    #[serde(rename = "capabilities")]
+    Capabilities { data: Capabilities },
 }
 
 #[cfg(test)]
@@ -96,6 +100,40 @@ mod tests {
             wire(&frame),
             golden(r#"{"type": "session.created", "protocol_version": "1"}"#)
         );
+    }
+
+    #[test]
+    fn capabilities_reply_matches_python() {
+        let frame = ServerControl::Capabilities {
+            data: crate::capabilities::Capabilities {
+                models: vec!["parakeet-tdt-0.6b-v2".into()],
+                ..crate::capabilities::Capabilities::default()
+            },
+        };
+        assert_eq!(
+            wire(&frame),
+            golden(
+                r#"{"type": "capabilities", "data": {
+                    "models": ["parakeet-tdt-0.6b-v2"], "languages": ["*"],
+                    "input_formats": [{"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2}],
+                    "punctuation": false, "translation": false}}"#
+            )
+        );
+    }
+
+    #[test]
+    fn server_control_round_trips() {
+        for frame in [
+            ServerControl::SessionCreated {
+                protocol_version: "1".into(),
+            },
+            ServerControl::Capabilities {
+                data: crate::capabilities::Capabilities::default(),
+            },
+        ] {
+            let decoded: ServerControl = serde_json::from_value(wire(&frame)).unwrap();
+            assert_eq!(decoded, frame);
+        }
     }
 
     #[test]
