@@ -19,10 +19,10 @@
 #
 # One entry is not an utterance but a whole chapter concatenated in reading
 # order (category "long-form", ~5 min) - regenerated alongside the rest by
-# `make bench-corpus` (dev/fetch_real_corpus.py --long-form-minutes). Rolling
+# `make bench-corpus` (dev/fetch_english_corpus.py --long-form-minutes). Rolling
 # windows, buffer growth, and drift only show up minutes into a session; no
 # individual utterance is long enough to exercise them.
-manifest: corpus/real/manifest-balanced.json
+manifest: corpus/english/manifest-balanced.json
 out: results/bench.jsonl
 cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged --cold to measure model load
 # clips: []                              # warm sweep clips; omit = whole manifest

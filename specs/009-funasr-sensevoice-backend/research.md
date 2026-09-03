@@ -203,7 +203,7 @@ registration barriers). Script filters to `validated.tsv` entries at least
   measurement (SC-001: CER within 1 pp of published SenseVoice benchmarks).
   Our real corpus for English is 100 clips — the Chinese corpus is the
   same scale class.
-- The script pattern mirrors `dev/fetch_real_corpus.py` exactly — same
+- The script pattern mirrors `dev/fetch_english_corpus.py` exactly — same
   manifest format, same gitignored output directory.
 
 **Alternatives considered**:

@@ -8,7 +8,7 @@
 - Rust toolchain (stable, via Workshop: `workshop launch myna`)
 - Python environment with `uv` (`uv sync --extra whisper --extra nemotron`)
 - A running `myna-server` with a streaming-capable adapter
-- Real corpus available (`dev/fetch_real_corpus.py` run at least once)
+- Real corpus available (`dev/fetch_english_corpus.py` run at least once)
 - (Optional) The canonical/whisper-snap adapter + WhisperLive docker for interop testing
 
 ## Scenario 1: Streaming committed segments (Nemotron, native transducer)

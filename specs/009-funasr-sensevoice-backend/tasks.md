@@ -30,7 +30,7 @@ Paths follow the project structure from `plan.md`:
 
 - [x] T001 Add `funasr` extra to `server/pyproject.toml` with `funasr-onnx>=0.4.2` and its transitive deps: `onnxruntime`, `kaldi-native-fbank`, `sentencepiece`, `numpy`, `PyYAML`, `soundfile`, `jieba`, `librosa`, `scipy`. Verify `uv sync --extra funasr` installs cleanly.
 - [x] T002 [P] Create `dev/fetch_funasr_model.py` — downloads SenseVoice-Small ONNX artifacts from ModelScope `iic/SenseVoiceSmall` (HF mirror `FunAudioLLM/SenseVoiceSmall` as fallback), staged to `$HF_HOME` cache or a configurable target directory. Includes `--quantize` flag to prefer `model_quant.onnx`. Output: `model.onnx` (or `model_quant.onnx`), `config.yaml`, `am.mvn`, `chn_jpn_yue_eng_ko_spectok.bpe.model`.
-- [x] T003 [P] Create `dev/fetch_chinese_corpus.py` — downloads a curated subset of Mozilla Common Voice zh-CN v18.0 (`validated.tsv`, CC0). Filters to clips ≥ 5 s, selects up to 50, writes `corpus/chinese/manifest.csv` + `corpus/chinese/audio/*.wav`. Mirrors `dev/fetch_real_corpus.py` layout. Add `corpus/chinese/` to `.gitignore`.
+- [x] T003 [P] Create `dev/fetch_chinese_corpus.py` — downloads a curated subset of Mozilla Common Voice zh-CN v18.0 (`validated.tsv`, CC0). Filters to clips ≥ 5 s, selects up to 50, writes `corpus/chinese/manifest.csv` + `corpus/chinese/audio/*.wav`. Mirrors `dev/fetch_english_corpus.py` layout. Add `corpus/chinese/` to `.gitignore`.
 
 **Checkpoint**: FunASR model and Chinese corpus are fetchable; `funasr` extra installs.
 

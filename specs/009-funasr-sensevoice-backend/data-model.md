@@ -102,5 +102,5 @@ The adapter's `candidate` property exposes the evaluation-matrix entry:
 | `clip_count` | `int` | Target ~50; actual count per download |
 
 Fetched by `dev/fetch_chinese_corpus.py`; regenerated on demand; never
-committed. Mirrors `corpus/real/` layout and `dev/fetch_real_corpus.py`
+committed. Mirrors `corpus/real/` layout and `dev/fetch_english_corpus.py`
 pattern.

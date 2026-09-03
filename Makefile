@@ -159,7 +159,7 @@ bench-aggregate: ## Re-print the comparison table from the last matrix run
 # ad hoc bench-long-<snap> runs against one already-running snap.
 .PHONY: bench-corpus
 bench-corpus: ## Regenerate the matrix's corpus (manifest-balanced.json) with the long-form clip included
-	cd server && uv run python ../dev/fetch_real_corpus.py \
+	cd server && uv run python ../dev/fetch_english_corpus.py \
 		-n 80 --select balanced --manifest-name manifest-balanced.json --long-form-minutes 5
 
 .PHONY: bench-corpus-long

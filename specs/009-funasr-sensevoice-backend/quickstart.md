@@ -2,7 +2,7 @@
 
 **Feature**: `specs/009-funasr-sensevoice-backend`
 
-Prerequisites: real English corpus fetched (`dev/fetch_real_corpus.py`),
+Prerequisites: English corpus fetched (`dev/fetch_english_corpus.py`),
 Chinese corpus fetched (`dev/fetch_chinese_corpus.py`), `client/` built
 (`cargo build --release`), FunASR model cache populated.
 

@@ -237,7 +237,7 @@ and complete a dictation session with the network disabled.
   feature is expected to follow as its own spec.
 - Chinese reference audio will come from a permissively licensed corpus (e.g., a
   Common Voice zh-CN subset or AISHELL sample), fetched by script and
-  gitignored, mirroring `dev/fetch_real_corpus.py`.
+  gitignored, mirroring `dev/fetch_english_corpus.py`.
 - Streaming emission for SenseVoice (rolling re-decode or a streaming Paraformer
   variant) is explicitly deferred; this feature ships batch mode only.
 - The GPU runtime tier and any LLM-based transcript polishing (the reference

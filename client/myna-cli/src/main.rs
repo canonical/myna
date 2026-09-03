@@ -186,7 +186,7 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
 }
 
 /// Read a corpus `manifest.json` (schema-v1, as written by
-/// `dev/fetch_real_corpus.py`) and append its clips.
+/// `dev/fetch_english_corpus.py`) and append its clips.
 ///
 /// Every clip is hashed against the digest the manifest records. Audio that
 /// is not what the manifest says it is stops the run: a transcript printed
