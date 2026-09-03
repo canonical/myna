@@ -42,10 +42,9 @@ fi
 
 # Local patch 2: give the guest more than one core. Upstream passes no -smp, so
 # qemu defaults to a single vCPU - on which ONNX Runtime spawns no extra
-# intra-op threads and therefore never calls sched_setaffinity at all. That
-# makes thread pinning untestable (tests/spread/thread-pinning) and quietly
-# unrepresentative of any machine the snaps actually run on. Not sent upstream
-# as of 2026-08-24; the guard makes re-application idempotent.
+# intra-op threads at all, which is unrepresentative of any machine the snaps
+# actually run on and makes every thread-pool assertion vacuous. Not sent
+# upstream as of 2026-08-24; the guard makes re-application idempotent.
 if ! grep -q '"-smp"' "$SRC/spread/qemu.go"; then
     sed -i "s|\"-cpu\", \"host\",|\"-cpu\", \"host\",\n\t\t\"-smp\", \"$SPREAD_SMP\",|" "$SRC/spread/qemu.go"
 fi

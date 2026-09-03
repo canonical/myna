@@ -217,10 +217,9 @@ async def test_load_prefers_int8_export_when_present(monkeypatch, tmp_path):
     await FunasrAdapter(str(snapshot))._load_model()
     assert captured["quantize"] is True
     assert captured["device_id"] == "-1"  # CPU inference
-    # 0 = "ORT, size the pool yourself", which is also what lets it pin.
-    # Must be passed explicitly: funasr_onnx's own default is 4, so omitting
-    # this caps us at 4 threads and silently loses pinning.
-    assert captured["intra_op_num_threads"] == 0
+    # A small pool, not the machine's width: 0 would hand sizing to ORT (and
+    # buy pinning), but measured 12% slower than 4 - T65.
+    assert captured["intra_op_num_threads"] == 4
 
 
 async def test_load_falls_back_to_fp32_export(monkeypatch, tmp_path):

@@ -18,10 +18,10 @@
 # caught it before because control mode had only ever been exercised
 # unpackaged, where there is no seccomp filter at all.
 #
-# Both directions, as in thread-pinning. Here the positive half asserts a
-# *presence* (the socket exists, the toggle reaches it), so unlike that test it
-# cannot pass vacuously; the negative half is what pins the cause to the
-# interface rather than to something incidental about the VM.
+# Both directions. The positive half asserts a *presence* (the socket exists,
+# the toggle reaches it), so it cannot pass vacuously; the negative half is
+# what pins the cause to the interface rather than to something incidental
+# about the VM.
 #
 # No desktop is needed and none is installed: control mode is the path that
 # asks nothing of the session, so a lingering headless user is a faithful host
