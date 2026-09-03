@@ -62,9 +62,8 @@ myna-dictate --socket /path/to.sock --mode batch --clip clip.wav
 Persistent preference (used when `--mode` is absent):
 
 ```sh
-myna.config set streaming-mode batch
-myna.config get streaming-mode
-myna.config                       # every key, its value, and set-vs-default
+gsettings set com.canonical.Myna.Dictation streaming-mode batch
+gsettings get com.canonical.Myna.Dictation streaming-mode
 ```
 
 A running `myna-desktop` picks the change up live - it subscribes to the store
@@ -73,20 +72,9 @@ from the next hypothesis, with no restart. `activation` and `hotkey` are the
 exception: both are bound into the trigger at startup, and a change to either
 says so in the journal instead of pretending to apply.
 
-`myna.config` is the only supported way in. The store is GSettings, but the
-`gsettings` CLI is not an entry point: a snap-only install has no schema on the
-host (the snap ships its own copy internally), so every host-side `gsettings`
-call fails with `No such schema`. Nor is `dconf write`, which needs no schema
-for precisely the reason that disqualifies it - it does not validate, so a
-mistyped nick lands silently and reads back as the schema default. A setting
-that is one letter wrong then looks exactly like a feature that does not work.
-`myna.config` validates against the schema's own range and says what was
-allowed.
-
-Unpackaged builds have no `myna.config`, so they need the schema on the host
-first - `make install-schema` - after which `myna-desktop --config …` is the
-same command. Without it every read is the default (`auto`) and there is
-nothing to subscribe to.
+Unpackaged builds need the schema on the host first - `make install-schema` -
+since without it every read is the default (`auto`) and there is nothing to
+subscribe to.
 
 ## Where the setting lives (2026-08-26)
 
@@ -98,13 +86,9 @@ later by other snaps with configuration APIs (T54), while inside the snap
 `$HOME` is `$SNAP_USER_DATA` and the `home` interface grants no top-level
 dotfiles - so the packaged daemon could never read what the CLI wrote.
 
-The dconf path is `/com/canonical/myna/dictation/`. It is worth knowing only
-for reading a raw `dconf dump`: nothing should be writing there by hand, which
-is what `myna.config` is for.
-
 There is no automatic migration, deliberately: the only reader the old file
-ever had was an unpackaged build, so the one-line `myna.config set` above is
-the whole migration.
+ever had was an unpackaged build, so the one-line `gsettings set` above is the
+whole migration.
 
 Two things make it work under confinement, both in `myna-snap/snap/snapcraft.yaml`:
 the snap ships and compiles its own copy of the schema

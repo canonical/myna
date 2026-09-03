@@ -368,8 +368,8 @@ polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 Two planes, and the order between them is the whole design:
 
 ```shell
-myna.config set streaming-mode streaming    # per user
-sudo snap set myna language=fr              # per machine
+gsettings set com.canonical.Myna.Dictation streaming-mode streaming   # per user
+sudo snap set myna language=fr                              # per machine
 ```
 
 **A flag beats the user's GSettings value, which beats `snap set`, which beats
@@ -377,24 +377,20 @@ the built-in.** snapd's configuration is per *snap*, not per user, so it can
 only ever be a default: an admin (or an image build) presetting a language must
 not overrule an account that chose its own.
 
-| key | `myna.config set` | `snap set` | effect |
+| key | gsettings | snap set | effect |
 |---|---|---|---|
 | `streaming-mode` | `auto` \| `streaming` \| `batch` | - | emission mode, and with it in-field partials |
 | `language` | any short code | `language=fr` | session language hint |
 | `activation` | `auto` \| `portal` \| `control` | `activation=control` | how a press reaches the daemon |
 | `hotkey` | `'<Super>d'` | `hotkey='<Super>d'` | the accelerator offered to the portal |
 
-`streaming-mode` and `language` are picked up **live** - the daemon subscribes
-to the store rather than reading it once, so a write reaches the next
-hypothesis with no restart. `activation` and `hotkey` are bound into the
-trigger at startup and say so in the journal instead of pretending to apply.
+Settings are read once, at start:
 
 ```shell
-myna.config                    # every key, its value, and set-vs-default
-myna.config set streaming-mode streaming
+sudo snap restart myna
 journalctl --user -u snap.myna.myna | grep settings:
-#  settings: streaming-mode changed
-#  settings: preedit -> true (streaming-mode Streaming resolves to Streaming on tier x86_64-cpu-generic)
+#  settings: streaming-mode Auto resolves to Streaming on tier x86_64-cpu-generic
+#  settings: activation Portal, language (backend default), hotkey (portal default)
 ```
 
 `snap set` validates: a bad value fails the `snap set` itself rather than
