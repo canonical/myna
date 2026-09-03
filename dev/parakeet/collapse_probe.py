@@ -22,7 +22,7 @@ own retry (``_transcribe_guarded`` in parakeet.py): raw token count under
 ``_ParakeetOnnx.transcribe`` directly (not ``transcribe_text``/
 ``_transcribe_guarded``) so the retry mitigation cannot mask a collapse.
 
-Stream: the 12 real corpus/real/audio/librispeech-2277-149896-* segments
+Stream: the 12 real corpus/english/audio/librispeech-2277-149896-* segments
 (same speaker and passage, ~51.7 s) concatenated in filename order, followed
 by the first 65 s of the corpus's one long-form clip
 (librispeech-3081-166546-longform.wav) -- both are genuine continuous

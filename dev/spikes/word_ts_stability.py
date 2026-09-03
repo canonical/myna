@@ -134,7 +134,7 @@ def main() -> None:
             clips.append((f"speaker-{speaker}", np.concatenate(acc)[: int(MAX_CLIP_S * RATE)]))
     clips = clips[: args.max_clips]
     if not clips:
-        sys.exit("no ≥8s speaker streams found — check corpus/real")
+        sys.exit("no ≥8s speaker streams found — check corpus/english")
 
     from faster_whisper import WhisperModel
 

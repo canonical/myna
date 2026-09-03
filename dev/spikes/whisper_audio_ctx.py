@@ -19,7 +19,7 @@ context is not a smaller version of the same input but a distribution the
 decoder never saw. The decode degenerates, that trips faster-whisper's
 compression-ratio and log-probability thresholds, and the temperature-fallback
 ladder re-decodes the segment up to six times. Measured on tiny/int8 over
-`corpus/real/manifest-balanced.json` (2026-09-02): 20 s of context costs
+`corpus/english/manifest-balanced.json` (2026-09-02): 20 s of context costs
 6.21% -> 21.44% WER and runs **2.3x slower**; 10 s costs 108% WER and 7.5x
 slower, with 73% of segments taking the ladder against 13% at baseline.
 

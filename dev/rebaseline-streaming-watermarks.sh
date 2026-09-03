@@ -2,7 +2,7 @@
 # Re-baseline streaming-mode watermarks on the 26-28 s concatenated streams.
 #
 # Runs whisper-tiny batch + streaming (local-agreement — the only strategy
-# since the 2026-07-28 triage) against corpus/real/manifest-streams.json,
+# since the 2026-07-28 triage) against corpus/english/manifest-streams.json,
 # appending results to a fresh JSONL.
 #
 # Usage: cd /home/charles/Projects/myna && bash dev/rebaseline-streaming-watermarks.sh
@@ -13,7 +13,7 @@ REPO_ROOT=/home/charles/Projects/myna
 SERVER_DIR=$REPO_ROOT/server
 SOCKET=/tmp/myna-baseline.sock
 OUT=$REPO_ROOT/results/bench-008-rebaseline.jsonl
-MANIFEST=$REPO_ROOT/corpus/real/manifest-streams.json
+MANIFEST=$REPO_ROOT/corpus/english/manifest-streams.json
 LABEL_PREFIX=whisper-tiny
 BENCH=$REPO_ROOT/dev/bench.py
 AGG=$REPO_ROOT/dev/aggregate.py

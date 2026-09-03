@@ -20,7 +20,7 @@ in a throwaway venv carrying torch + transformers + compressed-tensors +
 ctranslate2 - none of which are Myna dependencies, and none of which this
 concludes we should add.
 
-    python dev/lab/w8a8_probe.py --manifest corpus/real/manifest-balanced.json
+    python dev/lab/w8a8_probe.py --manifest corpus/english/manifest-balanced.json
 """
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ def main() -> int:
     p.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "corpus/real/manifest-balanced.json",
+        default=REPO_ROOT / "corpus/english/manifest-balanced.json",
     )
     p.add_argument("--limit", type=int, default=None)
     p.add_argument(

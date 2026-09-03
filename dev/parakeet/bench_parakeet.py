@@ -2,7 +2,7 @@
 """Parakeet stage-timeline benchmark harness (perf T01).
 
     cd server && uv run python ../dev/parakeet/bench_parakeet.py \
-        ../corpus/real/audio/librispeech-422-122949-0001.wav \
+        ../corpus/english/audio/librispeech-422-122949-0001.wav \
         --reps 15 --threads 4 --json ../results/result.json
 
     # replay a saved run's summary without re-measuring anything:
@@ -10,7 +10,7 @@
         --replay ../results/result.json
 
     # per-operator encoder breakdown (ORT's own node profiler):
-    uv run python ../dev/parakeet/bench_parakeet.py ../corpus/real/audio/foo.wav \
+    uv run python ../dev/parakeet/bench_parakeet.py ../corpus/english/audio/foo.wav \
         --profile-nodes /tmp/encprof
 
 Times the same five spans as the 2026-08-28 baseline by calling

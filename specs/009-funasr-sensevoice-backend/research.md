@@ -194,7 +194,7 @@ This removes language markers (`<|zh|>`, `<|en|>`, …), emotion tags
 Mozilla Common Voice zh-CN v18.0 (CC0 license — no attribution or
 registration barriers). Script filters to `validated.tsv` entries at least
 5 s, selects up to 50 clips, and writes the same corpus layout as
-`corpus/real/` (manifest.csv, audio/*.wav directories, reference text).
+`corpus/english/` (manifest.csv, audio/*.wav directories, reference text).
 
 **Rationale**:
 - AISHELL-1 requires registration and the license terms are ambiguous for

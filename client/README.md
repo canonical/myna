@@ -64,7 +64,7 @@ Against a running Python `myna-server` (any adapter) on a Unix socket:
 
 ```sh
 # internal myna.core wire (default) — Enter to start, Enter/clip-end to stop, Ctrl-D quits
-myna-dictate --socket /tmp/myna.sock --language en --clip corpus/real/audio/<id>.wav
+myna-dictate --socket /tmp/myna.sock --language en --clip corpus/english/audio/<id>.wav
 
 # IE115 (OpenAI-Realtime-shaped) wire — same FSM, second backend
 myna-dictate --socket /tmp/myna.sock --dialect ie115 --language en --clip <wav>

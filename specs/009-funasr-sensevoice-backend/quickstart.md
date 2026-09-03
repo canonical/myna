@@ -27,7 +27,7 @@ Dictate an English utterance from the real corpus, internal dialect:
 
 ```sh
 ./client/target/release/myna-dictate --socket /tmp/myna.sock \
-    --dialect internal --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+    --dialect internal --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: `✓` with the transcript; no model control tags (`<|zh|>`, etc.)
@@ -37,7 +37,7 @@ Repeat with the IE115 dialect:
 
 ```sh
 ./client/target/release/myna-dictate --socket /tmp/myna.sock \
-    --dialect ie115 --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+    --dialect ie115 --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: same transcript; IE115 event flow (`completed`) with zero protocol
@@ -129,7 +129,7 @@ End-to-end with confined client:
 sudo snap connect myna:ubustt-socket myna-funasr:ubustt-socket
 ./client/target/release/myna-dictate \
     --socket /var/snap/myna-funasr/common/run/ubustt.sock \
-    --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+    --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: transcript returned; network can be disabled (no `network` plug);
@@ -142,7 +142,7 @@ snap reports `ready` after warm-up.
 sleep 120  # or whatever modelctl idle-unload interval
 # Next session should show `preparing` → `ready` again (re-load + warm-up)
 ./client/target/release/myna-dictate --socket /var/snap/myna-funasr/common/run/ubustt.sock \
-    --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+    --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: session succeeds after re-load; warm-up log message visible in snap

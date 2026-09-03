@@ -14,7 +14,7 @@
 
 # Trustworthy WER needs real speech *and* more than one voice: the balanced
 # tier round-robins 40 LibriSpeech dev-clean speakers (fixtures/ is plumbing
-# only, and corpus/real/manifest.json is all speaker 2277). Swap in
+# only, and corpus/english/manifest.json is all speaker 2277). Swap in
 # corpus/librispeech-other/manifest-balanced.json for the hard split.
 #
 # One entry is not an utterance but a whole chapter concatenated in reading

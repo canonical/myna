@@ -2,7 +2,7 @@
 """Whisper streaming duty-cycle telemetry (whisper perf WP02/WP05).
 
     cd server && uv run --extra whisper python ../dev/whisper/bench_whisper_streaming.py \
-        ../corpus/real/audio/librispeech-3081-166546-longform.wav \
+        ../corpus/english/audio/librispeech-3081-166546-longform.wav \
         --model tiny --window 60 --json ../results/whisper-streaming.jsonl
 
     # sweep the re-decode cadence, which is WP05's only real lever:

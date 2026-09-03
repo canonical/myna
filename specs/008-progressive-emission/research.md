@@ -79,7 +79,7 @@ capped (~30 s) with force-commit of the oldest stable prefix beyond that.
 ## Decision 3: Spike S1 — faster-whisper word-timestamp stability (GATE for local-agreement default)
 
 **Decision**: Timeboxed spike (≤ 1 day) before strategy implementation. On the
-real corpus (`corpus/real/`, ≥ 10 clips, 8–30 s): for each clip, decode
+real corpus (`corpus/english/`, ≥ 10 clips, 8–30 s): for each clip, decode
 growing prefixes (2 s, 4 s, … full) with `word_timestamps=True`; between
 successive passes measure (a) word-sequence agreement of the overlapping
 prefix, (b) timestamp drift per agreed word, (c) how far behind speech the

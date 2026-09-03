@@ -5,7 +5,7 @@
 Downloads the FLEURS Mandarin test split (``cmn_hans_cn``, CC-BY-4.0) directly
 from the HF hub — ``test.tsv`` (metadata) + ``test.tar.gz`` (~525 MB of 16 kHz
 mono WAVs) — selects the first N clips with duration ≥ 5 s, and writes a
-manifest.csv matching the ``corpus/real/`` layout.
+manifest.csv matching the ``corpus/english/`` layout.
 
 FLEURS is the standard multilingual ASR eval benchmark — a better fit than
 Common Voice for comparing against published SenseVoice CER figures, and it's

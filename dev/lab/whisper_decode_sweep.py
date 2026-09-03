@@ -24,7 +24,7 @@ the session contract, so it is a lab tool and not a bench target. Snap-level
 numbers come from dev/matrix.py.
 
     uv run --extra whisper python dev/lab/whisper_decode_sweep.py \
-        --manifest corpus/real/manifest-balanced.json --model tiny \
+        --manifest corpus/english/manifest-balanced.json --model tiny \
         --compute-types float32 int8 int8_float32
 """
 
@@ -257,7 +257,7 @@ def main() -> int:
     p.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "corpus/real/manifest-balanced.json",
+        default=REPO_ROOT / "corpus/english/manifest-balanced.json",
     )
     p.add_argument("--models", nargs="+", default=["tiny"])
     p.add_argument("--compute-types", nargs="+", default=["float32", "int8"])

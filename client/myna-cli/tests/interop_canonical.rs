@@ -24,7 +24,7 @@ const ADAPTER_SOCKET: &str = "/tmp/myna-adapter.sock";
 fn clip(name: &str) -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("corpus/real/audio")
+        .join("corpus/english/audio")
         .join(name);
     p.exists().then_some(p)
 }
