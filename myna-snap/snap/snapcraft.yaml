@@ -221,6 +221,14 @@ apps:
       - backend
       - desktop
 
+  # Query/change the persisted settings: glib's own gsettings CLI over the
+  # snap-private keyfile (the store needs no interface), with the schema id
+  # filled in for the verbs that take one. Bare, it lists every key with its
+  # value; "is this key set?" is `cat` of the keyfile.
+  config:
+    command: bin/myna-config
+    environment: *settings-env
+
   # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
   # dialect selection. `home` lets it read clips from the user's files.
   testbed:
@@ -432,11 +440,28 @@ parts:
     source: scripts
     stage-packages:
       - dconf-cli # dconf write, for myna-install-shortcut
+      - libglib2.0-bin # gsettings, for myna-config
     prime:
       - -usr/share/doc
       - -usr/share/man
+      # Of libglib2.0-bin's tools only gsettings is wanted (myna-config);
+      # the rest are build host tools, pointless inside the snap.
+      - -usr/bin/gapplication
+      - -usr/bin/gdbus
+      - -usr/bin/gdbus-codegen
+      - -usr/bin/gio
+      - -usr/bin/gio-querymodules
+      - -usr/bin/glib-compile-resources
+      - -usr/bin/glib-compile-schemas
+      - -usr/bin/gobject-query
+      - -usr/bin/gresource
+      - -usr/bin/gsettings-data-convert
+      - -usr/bin/gtester
+      - -usr/bin/gtester-report
+      - -usr/share
     organize:
       "myna-daemon": bin/myna-daemon
+      "myna-config": bin/myna-config
       "myna-status": bin/myna-status
       "myna-testbed": bin/myna-testbed
       "myna-install-shortcut": bin/myna-install-shortcut
