@@ -187,30 +187,81 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
 
 /// Read a corpus `manifest.json` (schema-v1, as written by
 /// `dev/fetch_real_corpus.py`) and append its clips.
+///
+/// Every clip is hashed against the digest the manifest records. Audio that
+/// is not what the manifest says it is stops the run: a transcript printed
+/// beside the wrong reference is worse than no transcript.
 fn load_corpus(dir: &std::path::Path, clips: &mut Vec<Clip>) -> Result<(), String> {
     let manifest = dir.join("manifest.json");
     let text =
         std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let doc: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    let corpus_id = doc
+        .get("corpus_id")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| {
+            format!(
+                "{}: no corpus_id - regenerate the corpus",
+                manifest.display()
+            )
+        })?;
     let entries = doc
         .get("clips")
         .and_then(|c| c.as_array())
         .ok_or("manifest has no clips[]")?;
+    let mut drifted = Vec::new();
     for entry in entries {
         let rel = entry
             .get("path")
             .and_then(|p| p.as_str())
             .ok_or("clip missing path")?;
+        let id = entry.get("id").and_then(|i| i.as_str()).unwrap_or(rel);
+        let recorded = entry
+            .get("sha256")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "{}: clip {id} records no sha256 - regenerate the corpus",
+                    manifest.display()
+                )
+            })?;
+        let path = dir.join(rel);
+        let found = sha256_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if found != recorded {
+            drifted.push(format!("  {id}: {} != {}", &found[..16], &recorded[..16]));
+        }
         clips.push(Clip {
-            path: dir.join(rel),
+            path,
             reference: entry.get("text").and_then(|t| t.as_str()).map(String::from),
         });
+    }
+    if !drifted.is_empty() {
+        return Err(format!(
+            "{}: {} clip(s) are not what the manifest records - regenerate the corpus\n{}",
+            manifest.display(),
+            drifted.len(),
+            drifted.join("\n")
+        ));
     }
     if clips.is_empty() {
         return Err("corpus manifest lists no clips".into());
     }
+    println!("corpus {corpus_id} ({} clips)", entries.len());
     Ok(())
+}
+
+fn sha256_file(path: &std::path::Path) -> Result<String, std::io::Error> {
+    use sha2::{Digest as _, Sha256};
+
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(hasher.finalize().iter().fold(String::new(), |mut acc, b| {
+        use std::fmt::Write as _;
+        let _ = write!(acc, "{b:02x}");
+        acc
+    }))
 }
 
 #[tokio::main]
