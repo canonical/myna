@@ -40,24 +40,13 @@ environment:
   SPA_PLUGIN_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/spa-0.2
   PIPEWIRE_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pipewire-0.3
   PIPEWIRE_CONFIG_DIR: $SNAP/usr/share/pipewire
-  # Client settings live in GSettings (com.canonical.Myna.Dictation), which needs two
-  # things the base cannot supply: our own compiled schema, and the dconf
-  # backend module. glib comes from core24, so it looks for gio modules in the
-  # *base's* /usr/lib/.../gio/modules - empty - rather than the snap's, and
-  # without the backend every write would land in a memory backend and be lost
-  # at exit. See myna_core::settings.
+  # Client settings are GSettings (com.canonical.Myna.Dictation); the schema
+  # ships compiled inside the snap and supplies the defaults and range
+  # validation. The store is glib's keyfile backend, not the host's dconf,
+  # and the dconf GIO module is no longer staged, but the env selecting the
+  # backend is per app (see the daemon's `environment:` for why) - the only
+  # global here is where the schema lives. See myna_core::settings.
   GSETTINGS_SCHEMA_DIR: $SNAP/usr/share/glib-2.0/schemas
-  GIO_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/gio/modules
-  # ...and the *host's* dconf database, which is the point of using GSettings
-  # at all: the store has to be the one `gsettings set` and a Settings panel
-  # write. libdconf derives that path from XDG_CONFIG_HOME (else $HOME/.config)
-  # and snapd points $HOME at $SNAP_USER_DATA, so without this the daemon reads
-  # a database nothing writes and every key is its schema default. The
-  # `gsettings` interface already grants read on the real one; writes never went
-  # through the file anyway (the dconf service performs those over D-Bus).
-  # Also the first place myna-desktop looks for the IBus address file, which is
-  # under the real home too.
-  XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
 
 apps:
   # The dictation HUD renderer (feature 004): standalone GTK4 + libadwaita
@@ -91,6 +80,19 @@ apps:
   # GTK stack that came with it.
   myna:
     environment:
+      # &settings-env, reused by every app that reads the settings store
+      # (toggle, bind-shortcut, status, testbed): glib's keyfile backend,
+      # which puts the store at
+      # $SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile - plaintext,
+      # editable, captured by `snap save`, removed with the snap. COMMON, not
+      # DATA: DATA is per-revision and `snap revert` would revert settings.
+      # Per app rather than top-level because myna.hud reads the host's
+      # org.gnome.desktop.interface enable-animations through GSettings
+      # (myna-hud/src/platform.rs) and must keep whatever backend its gnome
+      # extension sets up.
+      <<: &settings-env
+        GSETTINGS_BACKEND: keyfile
+        XDG_CONFIG_HOME: $SNAP_USER_COMMON/.config
       XDG_DATA_DIRS: "$SNAP/usr/share:$XDG_DATA_DIRS"
     command: bin/myna-daemon
     # A per-user systemd service, started at login and supervised
@@ -139,7 +141,6 @@ apps:
       - pipewire # mic capture — snapd gates it: `snap connect myna:pipewire`
       - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
       - desktop-legacy # the IBus daemon's private socket (text injection)
-      - gsettings # dconf write for --install-shortcut (control mode)
       - network-bind # seccomp bind(2) for the control socket - no other interface grants it
       - backend # content share → the backend snap's session socket
     slots:
@@ -150,11 +151,10 @@ apps:
   # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
   toggle:
     command: bin/myna-desktop --toggle
-    # Reads the host's dconf to work out which activation is in force, and so
-    # what to say when the poke does not land. Without this the read is denied
-    # and the advice is computed from defaults - plus six dconf-CRITICALs.
-    plugs:
-      - gsettings
+    # Reads the settings store to work out which activation is in force, and
+    # so what to say when the poke does not land. The store is this snap's
+    # private keyfile, so reading it needs no interface.
+    environment: *settings-env
 
   # Bind <accel> → `myna.toggle` via dconf. Only needed under `myna --control`
   # — packaged, the daemon defaults to the GlobalShortcuts portal, which owns
@@ -179,9 +179,10 @@ apps:
   # cannot apply here); same-snap D-Bus comes from the base template.
   bind-shortcut:
     command: bin/myna-desktop --bind-shortcut
+    # activation + preferred hotkey come from the settings store (keyfile).
+    environment: *settings-env
     plugs:
       - desktop
-      - gsettings # activation + preferred hotkey come from the host's dconf
 
   # One screen of "what is dictation doing, and why": the persisted settings,
   # what they resolved to and which plane won, whether the backend socket is
@@ -196,24 +197,27 @@ apps:
   # that only exists in this namespace.
   status:
     command: bin/myna-status
+    environment: *settings-env
     plugs:
-      # Two plugs, three capabilities. `gsettings` reads the host's dconf
-      # database (see `environment:`) and, because it pulls in AppArmor's
-      # dbus-session-strict abstraction, is also what grants the session bus
-      # socket; the base template then allows D-Bus to peers in the same snap
-      # ("Allow apps from the same package to communicate with each other via
-      # DBus"), so reading the daemon's published state needs no `dbus` plug of
-      # its own - verified against the generated profile, which contains no
-      # rule naming com.canonical.Myna.Dictation at all. `backend` makes the socket line
-      # the truth rather than a guess: the content share is a bind mount that
-      # exists only in this namespace.
-      - gsettings
+      # Two plugs. `backend` makes the socket line the truth rather than a
+      # guess: the content share is a bind mount that exists only in this
+      # namespace. `desktop` is what grants the session bus (its
+      # dbus-session-strict abstraction); the base template then allows D-Bus
+      # to peers in the same snap ("Allow apps from the same package to
+      # communicate with each other via DBus"), so reading the daemon's
+      # published state needs no `dbus` plug of its own - verified against
+      # the generated profile, which contains no rule naming
+      # com.canonical.Myna.Dictation at all. The settings store itself is the
+      # snap-private keyfile: no interface.
       - backend
+      - desktop
 
   # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
   # dialect selection. `home` lets it read clips from the user's files.
   testbed:
     command: bin/myna-testbed
+    # myna-dictate resolves streaming-mode from the settings store (keyfile).
+    environment: *settings-env
     plugs:
       - pipewire
       - home
@@ -344,6 +348,13 @@ parts:
             "$lib"/gio/modules/libgiognomeproxy.so \
             "$lib"/gio/modules/libgiognutls.so \
             usr/libexec/glib-pacrunner usr/bin/session-migration
+
+      # The dconf GIO module (staged here by the pipewire packages'
+      # dependency tree) is the one backend that must not load: settings apps
+      # run with GSETTINGS_BACKEND=keyfile against the snap-private keyfile,
+      # and with no dconf module staged every other GLib program in the snap
+      # (the HUD) keeps whatever backend its own environment selects.
+      rm -f "$lib"/gio/modules/libdconfsettings.so
 
       # Now drop every library the snap cannot reach. Deleting those modules
       # orphans the apt dependencies they came with - roc, pulse, avahi,
