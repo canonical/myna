@@ -8,7 +8,10 @@
 //! as JSON text frames, ending in exactly one terminal event.
 
 use futures_util::{SinkExt, StreamExt};
-use myna_core::{ClientControl, SessionConfig, TranscriptionEvent, PROTOCOL_VERSION};
+use myna_core::{
+    Capabilities, ClientControl, ServerControl, SessionConfig, TranscriptionEvent,
+    PROTOCOL_VERSION,
+};
 use serde_json::Value;
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
@@ -83,6 +86,60 @@ impl BackendClient for WsUnixBackend {
             events: BackendEvents { rx: ev_rx },
             protocol_version,
         })
+    }
+}
+
+/// Ask a backend what it can do, outside of any session (T24 discovery) — what
+/// `myna-desktop --status` uses to name the model actually being served,
+/// since the resolved socket path itself carries no identity (the content
+/// share's mount-point basename is snapd's, not the backend's).
+///
+/// One connection, used once and discarded: skip past the eager
+/// `session.created` greeting, send `capabilities.query` as the shape-sniffed
+/// first frame (`transport_ws.py`'s `_SessionHandler.handle`), and return what
+/// comes back. Doesn't open a session, so it can't wake a lazily-loaded model.
+pub async fn query_capabilities(socket_path: &std::path::Path) -> Result<Capabilities, BackendError> {
+    let stream = UnixStream::connect(socket_path).await.map_err(|e| {
+        BackendError::Connect(format!("{}: {e}", socket_path.display()))
+    })?;
+    let (ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
+        .await
+        .map_err(|e| BackendError::Handshake(e.to_string()))?;
+    let (mut write, mut read) = ws.split();
+
+    // The greeting is always the first frame; skip it (and any stray
+    // ping/pong ahead of it) rather than parse it, same as `read_handshake_ack`.
+    loop {
+        match read.next().await {
+            Some(Ok(Message::Text(_))) => break,
+            Some(Ok(Message::Close(_))) | None => return Err(BackendError::Closed),
+            Some(Ok(_)) => continue,
+            Some(Err(e)) => return Err(BackendError::Transport(e.to_string())),
+        }
+    }
+
+    write
+        .send(Message::text(
+            serde_json::to_string(&ClientControl::CapabilitiesQuery).expect("serializable"),
+        ))
+        .await
+        .map_err(|e| BackendError::Transport(e.to_string()))?;
+
+    loop {
+        match read.next().await {
+            Some(Ok(Message::Text(text))) => {
+                return match serde_json::from_str(&text) {
+                    Ok(ServerControl::Capabilities { data }) => Ok(data),
+                    Ok(other) => Err(BackendError::Handshake(format!(
+                        "expected capabilities, got {other:?}"
+                    ))),
+                    Err(e) => Err(BackendError::Handshake(format!("bad JSON: {e}"))),
+                };
+            }
+            Some(Ok(Message::Close(_))) | None => return Err(BackendError::Closed),
+            Some(Ok(_)) => continue,
+            Some(Err(e)) => return Err(BackendError::Transport(e.to_string())),
+        }
     }
 }
 
