@@ -29,6 +29,7 @@
     <value nick="ribbon" value="0"/>
     <value nick="vumeter" value="1"/>
     <value nick="bar" value="2"/>
+    <value nick="progress" value="3"/>
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
@@ -80,7 +81,8 @@
       <description>
         bar: a simple level bar in the accent colour (the default). ribbon:
         the flowing GPU wave ribbon. vumeter: the classic segmented bar meter.
-        All three are driven by the same calibrated audio envelope; only the
+        progress: a plain GtkProgressBar.
+        All are driven by the same calibrated audio envelope; only the
         presentation differs.
       </description>
     </key>

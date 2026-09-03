@@ -214,9 +214,11 @@ impl HudWindow {
         let ribbon: &gtk::Widget = self.pill.ribbon().upcast_ref();
         let meter: &gtk::Widget = self.pill.meter().upcast_ref();
         let bar: &gtk::Widget = self.pill.bar().upcast_ref();
+        let progress: &gtk::Widget = self.pill.progress().upcast_ref();
         ribbon.connect_map(on_map.clone());
         meter.connect_map(on_map.clone());
-        bar.connect_map(on_map);
+        bar.connect_map(on_map.clone());
+        progress.connect_map(on_map);
     }
 
     /// Make the surface fully click-through, in every state (R22/FR-025).
