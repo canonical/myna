@@ -102,6 +102,14 @@ _TERMINAL = ("transcription.done", "transcription.error")
 # client through the socket instead of growing server memory. This queue is
 # also where a future overload/lag signal (open item, Matias) would be
 # measured — design that signal against this bound.
+#
+# That backpressure is why neither end runs the websockets keepalive
+# (`ping_interval=None` on every unix_serve/unix_connect below): a pong is an
+# in-band frame, so once the reader is blocked on this queue the peer's pong
+# waits behind the buffered audio and the default 20 s timeout drops the
+# connection mid-utterance (reproduced 2026-09-03 with fast-fed long-form
+# audio at a 15 s SilenceCut arm). On a Unix socket a dead peer is an
+# immediate EOF anyway; the keepalive only exists for TCP paths.
 _AUDIO_QUEUE_MAXSIZE = 256
 
 
@@ -141,12 +149,13 @@ async def serve_unix(
     session. Use as an async context manager. Either binds ``socket_path``, or
     serves on a pre-bound ``sock`` (e.g. from ``systemd_socket()``)."""
     handler = _SessionHandler(service)
+    # ping_interval=None: see the note at `_AUDIO_QUEUE_MAXSIZE`.
     if sock is not None:
-        cm = unix_serve(handler.handle, sock=sock)
+        cm = unix_serve(handler.handle, sock=sock, ping_interval=None)
         async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
             yield server
     else:
-        cm = unix_serve(handler.handle, path=str(socket_path))
+        cm = unix_serve(handler.handle, path=str(socket_path), ping_interval=None)
         async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
             yield server
 
@@ -492,7 +501,7 @@ class WsUnixClient:
         self._socket_path = str(socket_path)
 
     async def open_session(self, config: SessionConfig) -> _WsSession:
-        ws = await unix_connect(self._socket_path)
+        ws = await unix_connect(self._socket_path, ping_interval=None)
         await ws.send(
             json.dumps(
                 {
@@ -505,7 +514,7 @@ class WsUnixClient:
         return _WsSession(ws)
 
     async def capabilities(self) -> Capabilities:
-        ws = await unix_connect(self._socket_path)
+        ws = await unix_connect(self._socket_path, ping_interval=None)
         try:
             await ws.send(json.dumps({"type": "capabilities.query"}))
             reply = json.loads(await ws.recv())
@@ -576,7 +585,7 @@ class WsUnixIe115Client:
         self._base64_audio = base64_audio
 
     async def open_session(self, config: SessionConfig) -> _Ie115Session:
-        ws = await unix_connect(self._socket_path)
+        ws = await unix_connect(self._socket_path, ping_interval=None)
         await ws.send(
             json.dumps({"type": SESSION_UPDATE, "session": session_config_to_ie115(config)})
         )
