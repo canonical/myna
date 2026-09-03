@@ -150,6 +150,13 @@ impl HudWindow {
         self.pill.set_reduced_motion_override(value);
     }
 
+    /// Override the HUD indicator style for lab testing (the `hud-style`
+    /// GSettings key); `None` returns to the desktop preference.
+    #[cfg(dev_lab)]
+    pub fn set_hud_style_override(&self, style: Option<crate::hud_logic::HudStyle>) {
+        self.pill.set_hud_style(style);
+    }
+
     /// Force the accent hex (lab override); `None` returns to the desktop.
     #[cfg(dev_lab)]
     pub fn set_accent_override(&self, hex: Option<String>) {
@@ -191,15 +198,25 @@ impl HudWindow {
         });
     }
 
-    /// Re-apply the (empty) input region whenever the ribbon maps, since the
-    /// toolkit can reset the surface's input region across a map.
+    /// Re-apply the (empty) input region whenever the indicator maps, since
+    /// the toolkit can reset the surface's input region across a map. Hooked
+    /// on all available indicators (ribbon + segmented meter + accent bar) so
+    /// the correct one's map is observed whichever `hud-style` is active.
     fn reapply_input_region_on_map(self: &Rc<Self>) {
-        let this = Rc::downgrade(self);
-        self.pill.ribbon().connect_map(move |_| {
-            if let Some(this) = this.upgrade() {
-                this.apply_input_region();
+        let on_map = {
+            let this = Rc::downgrade(self);
+            move |_: &gtk::Widget| {
+                if let Some(this) = this.upgrade() {
+                    this.apply_input_region();
+                }
             }
-        });
+        };
+        let ribbon: &gtk::Widget = self.pill.ribbon().upcast_ref();
+        let meter: &gtk::Widget = self.pill.meter().upcast_ref();
+        let bar: &gtk::Widget = self.pill.bar().upcast_ref();
+        ribbon.connect_map(on_map.clone());
+        meter.connect_map(on_map.clone());
+        bar.connect_map(on_map);
     }
 
     /// Make the surface fully click-through, in every state (R22/FR-025).

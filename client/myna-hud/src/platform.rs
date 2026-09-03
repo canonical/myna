@@ -45,6 +45,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 
 use crate::accent::{fallback_palette, resolve_theme_accent_palette, AccentPalette};
+use crate::hud_logic::HudStyle;
 use crate::motion::{reduced_motion, MotionReadings};
 use crate::shader::Rgb;
 
@@ -55,6 +56,10 @@ const ACCENT_KEY: &str = "accent-color";
 /// Watched because a Yaru accent variant is selected by theme name.
 const GTK_THEME_KEY: &str = "gtk-theme";
 const ANIMATIONS_KEY: &str = "enable-animations";
+
+/// Myna's own schema — the `hud-style` presentation preference.
+const MYNA_SCHEMA: &str = "com.canonical.Myna.Dictation";
+const HUD_STYLE_KEY: &str = "hud-style";
 
 /// `GtkSettings`' reduced-motion property (GTK ≥ 4.22).
 const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
@@ -149,6 +154,17 @@ pub fn probe_reduced_motion() -> bool {
         gtk_reduced_motion: probe_gtk_reduced_motion(),
         enable_animations: probe_enable_animations(),
     })
+}
+
+/// The HUD's audio-level presentation style, read from our own
+/// `hud-style` GSettings key, schema/key guarded (a missing schema/key on
+/// this system degrades to the default Bar, exactly like every other
+/// platform probe — never an abort).
+pub fn probe_hud_style() -> HudStyle {
+    match settings_for_schema_key(MYNA_SCHEMA, HUD_STYLE_KEY) {
+        Some(settings) => HudStyle::from_nick(&settings.string(HUD_STYLE_KEY)),
+        None => HudStyle::default(),
+    }
 }
 
 /// The accent as the **theme** resolves it, read back from `widget`'s
@@ -280,6 +296,16 @@ pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
     if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY) {
         let cb = on_change.clone();
         settings.connect_changed(Some(ANIMATIONS_KEY), move |_, _| {
+            cb(AccentReadiness::NextFrame)
+        });
+        settings_handles.push(settings);
+    }
+
+    // The HUD's own presentation style — a `hud-style` change must swap the
+    // ribbon/meter live, like every other preference it honours.
+    if let Some(settings) = settings_for_schema_key(MYNA_SCHEMA, HUD_STYLE_KEY) {
+        let cb = on_change.clone();
+        settings.connect_changed(Some(HUD_STYLE_KEY), move |_, _| {
             cb(AccentReadiness::NextFrame)
         });
         settings_handles.push(settings);

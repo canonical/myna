@@ -38,6 +38,7 @@ struct Controls {
     envelope: f64,
     reduced_motion: Option<bool>,
     high_contrast: Option<bool>,
+    hud_style: Option<crate::hud_logic::HudStyle>,
 }
 
 impl Default for Controls {
@@ -48,6 +49,7 @@ impl Default for Controls {
             envelope: 0.4,
             reduced_motion: None,
             high_contrast: None,
+            hud_style: None,
         }
     }
 }
@@ -101,6 +103,13 @@ impl Target {
         match self {
             Target::Window(w) => w.set_high_contrast_override(value),
             Target::Embedded(p) => p.set_high_contrast_override(value),
+        }
+    }
+
+    fn set_hud_style_override(&self, style: Option<crate::hud_logic::HudStyle>) {
+        match self {
+            Target::Window(w) => w.set_hud_style_override(style),
+            Target::Embedded(p) => p.set_hud_style(style),
         }
     }
 
@@ -279,11 +288,23 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .build();
     accent_row.set_selected(0);
 
+    // Indicator style: the GSettings-backed `hud-style` (bar / ribbon /
+    // vumeter), overridable here for previewing each without touching the
+    // desktop store. `default` re-reads the desktop value (now `bar`).
+    let hud_style_model = gtk::StringList::new(&["default", "bar", "ribbon", "vumeter"]);
+    let hud_style_row = adw::ComboRow::builder()
+        .title("Indicator style")
+        .subtitle("bar (accent level), ribbon (GPU wave) or vumeter (segmented meter)")
+        .model(&hud_style_model)
+        .build();
+    hud_style_row.set_selected(0);
+
     let display_group = adw::PreferencesGroup::new();
     display_group.add(&reduced_motion_row);
     display_group.add(&high_contrast_row);
     display_group.add(&color_scheme_row);
     display_group.add(&accent_row);
+    display_group.add(&hud_style_row);
     page.append(&display_group);
 
     accent_row.connect_selected_notify({
@@ -292,6 +313,21 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             let idx = row.selected() as usize;
             let hex = accent_hexes.get(idx).cloned().flatten();
             target.borrow().set_accent_override(hex);
+        }
+    });
+
+    hud_style_row.connect_selected_notify({
+        let target = target.clone();
+        let controls = controls.clone();
+        move |row| {
+            let style = match row.selected() {
+                1 => Some(crate::hud_logic::HudStyle::Bar),
+                2 => Some(crate::hud_logic::HudStyle::Ribbon),
+                3 => Some(crate::hud_logic::HudStyle::Vumeter),
+                _ => None,
+            };
+            controls.borrow_mut().hud_style = style;
+            target.borrow().set_hud_style_override(style);
         }
     });
 
@@ -425,11 +461,14 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             } else {
                 stop_publish(&shared, &publisher);
             }
-            // Re-sync reduced-motion, high-contrast and accent onto the new target.
+            // Re-sync reduced-motion, high-contrast, indicator style and
+            // accent onto the new target.
             let rm = controls.borrow().reduced_motion;
             target.borrow().set_reduced_motion_override(rm);
             let hc = controls.borrow().high_contrast;
             target.borrow().set_high_contrast_override(hc);
+            let style = controls.borrow().hud_style;
+            target.borrow().set_hud_style_override(style);
             target.borrow().resync_accent();
             apply();
         });

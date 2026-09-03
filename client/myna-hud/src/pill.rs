@@ -21,14 +21,16 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 
+use crate::bar::BarView;
 use crate::gl::RibbonRenderer;
 use crate::hud_logic::{
     icon_for_severity, pill_color_class, ribbon_phase_for_state_key, ribbon_visible_for_severity,
-    PILL_COLOR_CLASSES,
+    HudStyle, PILL_COLOR_CLASSES,
 };
 use crate::notice_slot::NoticeSlot;
 use crate::platform;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
+use crate::segmented_meter::SegmentedMeterView;
 #[cfg(dev_lab)]
 use crate::shader::hex_to_rgb;
 use crate::states::Descriptor;
@@ -87,6 +89,10 @@ struct PillState {
     /// The accent last read from the theme, so the palette is rebuilt only
     /// when the colour genuinely changes rather than every frame.
     accent: Option<crate::shader::Rgb>,
+    /// The HUD's audio-level presentation: the GPU ribbon or the classic
+    /// segmented meter. Read from `hud-style` at build, re-read live on a
+    /// settings change.
+    hud_style: HudStyle,
     #[cfg(dev_lab)]
     /// Lab override: when `Some`, forces the accent hex instead of the
     /// desktop's — libadwaita has no public runtime accent setter (it is a
@@ -106,6 +112,8 @@ pub struct Pill {
     icon: gtk::Image,
     label: gtk::Label,
     ribbon: gtk::GLArea,
+    bar: Rc<BarView>,
+    meter: Rc<SegmentedMeterView>,
     state: Rc<RefCell<PillState>>,
     renderer: Rc<RefCell<Option<RibbonRenderer>>>,
     /// Owns the accent/reduced-motion subscriptions; dropped with the pill,
@@ -144,12 +152,17 @@ impl Pill {
         ribbon.set_height_request(RIBBON_HEIGHT);
         ribbon.set_hexpand(true);
 
+        let bar = BarView::new();
+        let meter = SegmentedMeterView::new();
+
         let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
         content.set_hexpand(true);
-        // A critical error hides the ribbon, leaving the label alone in a
+        // A critical error hides the indicator, leaving the label alone in a
         // box that would otherwise pack it against the top edge.
         content.set_valign(gtk::Align::Center);
         content.append(&label);
+        content.append(bar.widget());
+        content.append(meter.widget());
         content.append(&ribbon);
 
         let pill = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -175,6 +188,7 @@ impl Pill {
             // ribbon is mapped.
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
             accent: None,
+            hud_style: platform::probe_hud_style(),
             #[cfg(dev_lab)]
             accent_override: None,
             #[cfg(dev_lab)]
@@ -186,6 +200,8 @@ impl Pill {
             icon,
             label,
             ribbon,
+            bar,
+            meter,
             state,
             renderer: Rc::default(),
             preferences: RefCell::new(None),
@@ -196,6 +212,7 @@ impl Pill {
         this.connect_clock();
         this.connect_preferences();
         this.sync_high_contrast();
+        this.sync_palette();
         this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
         this
     }
@@ -208,6 +225,18 @@ impl Pill {
     /// The ribbon area, for the window to read its allocation (input region).
     pub fn ribbon(&self) -> &gtk::GLArea {
         &self.ribbon
+    }
+
+    /// The segmented meter, for the window to read its allocation when the
+    /// `vumeter` hud-style is active (input region).
+    pub fn meter(&self) -> &gtk::Widget {
+        self.meter.widget()
+    }
+
+    /// The accent level bar, for the window to read its allocation when the
+    /// `bar` hud-style is active (input region).
+    pub fn bar(&self) -> &gtk::Widget {
+        self.bar.widget()
     }
 
     /// Current descriptor (for lab sync when the HUD auto-dismisses locally).
@@ -322,12 +351,24 @@ impl Pill {
             self.pill.add_css_class(class);
         }
 
-        // The ribbon is hidden when a critical error collapses it OR when
+        // The indicator is hidden when a critical error collapses it OR when
         // the whole pill is hidden at idle — the latter matters because the
-        // frame clock only queues a render while the ribbon is visible, so
-        // hiding it here is what makes idle cost no GPU.
+        // frame clock only queues a render while the indicator is visible, so
+        // hiding it here is what makes idle cost no GPU. Which indicator is
+        // shown follows the `hud-style` setting (ribbon vs vumeter vs bar).
+        let visible = !descriptor.hidden && ribbon_visible_for_severity(descriptor.severity);
+        let style = {
+            let state = self.state.borrow();
+            state.hud_style
+        };
         self.ribbon
-            .set_visible(!descriptor.hidden && ribbon_visible_for_severity(descriptor.severity));
+            .set_visible(visible && style == HudStyle::Ribbon);
+        self.meter
+            .widget()
+            .set_visible(visible && style == HudStyle::Vumeter);
+        self.bar
+            .widget()
+            .set_visible(visible && style == HudStyle::Bar);
 
         // Nothing is shown at idle (FR-002/X3) — push-to-talk means the
         // resting state is an absent HUD, not an empty one. The pill keeps
@@ -364,6 +405,8 @@ impl Pill {
             peak,
             at: Instant::now(),
         });
+        self.bar.push_level(rms, peak);
+        self.meter.push_level(rms, peak);
     }
 
     fn now_ms(&self) -> f64 {
@@ -438,8 +481,17 @@ impl Pill {
             let Some(this) = this.upgrade() else {
                 return glib::ControlFlow::Break;
             };
+            // The ribbon repaints through the GLArea; the vumeter and the
+            // accent bar through their own snapshot. Queue whichever is
+            // currently visible so a hidden indicator costs no GPU / redraw.
             if this.ribbon.is_visible() {
                 this.ribbon.queue_render();
+            }
+            if this.meter.widget().is_visible() {
+                this.meter.queue_draw();
+            }
+            if this.bar.widget().is_visible() {
+                this.bar.queue_draw();
             }
             glib::ControlFlow::Continue
         });
@@ -461,6 +513,17 @@ impl Pill {
             #[cfg(not(dev_lab))]
             {
                 this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
+            }
+
+            // The hud-style has no lab override in the shipped pill; re-read
+            // the desktop preference live so `myna.config set hud-style …`
+            // swaps the meter without a restart.
+            if {
+                let state = this.state.borrow();
+                state.hud_style
+            } != platform::probe_hud_style()
+            {
+                this.set_hud_style(None);
             }
 
             // High contrast is a plain setting too — unless the lab has
@@ -529,6 +592,25 @@ impl Pill {
         self.schedule_accent_resync();
     }
 
+    /// Switch the audio-level presentation (the `hud-style` setting): the
+    /// accent level bar, the GPU ribbon, or the classic segmented meter.
+    /// `None` re-reads the desktop preference
+    /// (`com.canonical.Myna.Dictation hud-style`).
+    pub fn set_hud_style(self: &Rc<Self>, style: Option<HudStyle>) {
+        let style = style.unwrap_or_else(platform::probe_hud_style);
+        {
+            let mut state = self.state.borrow_mut();
+            if state.hud_style == style {
+                return;
+            }
+            state.hud_style = style;
+        }
+        // Re-assert the visibility split so the newly shown indicator
+        // reflects the current state immediately (not just at the next
+        // descriptor).
+        self.apply_descriptor(self.current_descriptor());
+    }
+
     #[cfg(dev_lab)]
     /// Override the reduced-motion mode (the lab's accessibility toggle).
     /// `None` returns to the desktop preference.
@@ -592,6 +674,7 @@ impl Pill {
         state.accent = Some(accent);
         state.palette = palette.as_ribbon_palette();
         drop(state);
+        self.bar.set_accent(accent);
         self.ribbon.queue_render();
     }
 }
