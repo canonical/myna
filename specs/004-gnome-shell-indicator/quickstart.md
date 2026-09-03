@@ -144,7 +144,7 @@ with no visible window (idle → nothing shown, XH6/XH8 dormant path).
 
 ```sh
 myna-desktop --socket /tmp/myna.sock --language en &   # serves com.canonical.Myna.Dictation
-myna-desktop --install-shortcut '<Super>t>'                              # once: binds a shortcut (feature 003)
+myna-desktop --install-shortcut '<Super>t'             # once: binds a shortcut (feature 003)
 # focus a text field (GNOME Text Editor), then:
 #   tap the shortcut  → HUD pill appears bottom-center (loading treatment if cold, then listening)
 #   speak        → the wave ribbon flows, growing fuller/brighter with your voice
