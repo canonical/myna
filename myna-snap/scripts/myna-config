@@ -1,0 +1,19 @@
+#!/bin/sh
+# myna.config: glib's own gsettings CLI, pointed at this snap's schema and
+# its private keyfile store (GSETTINGS_SCHEMA_DIR snap-wide, GSETTINGS_BACKEND
+# + XDG_CONFIG_HOME per app - all in snapcraft.yaml). The schema id is filled
+# in for the verbs that take one; anything else passes through. Bare, it
+# lists every key.
+#
+# `set` accepts bare strings for the string-typed keys (all four today):
+# gsettings falls back to string parsing when GVariant parsing fails.
+set -eu
+SCHEMA=com.canonical.Myna.Dictation
+GS="$SNAP/usr/bin/gsettings"
+case "${1:-}" in
+    "") exec "$GS" list-recursively "$SCHEMA" ;;
+    get | set | reset | reset-recursively | range | describe | list-keys \
+    | list-children | list-recursively | monitor | writable)
+        verb=$1; shift; exec "$GS" "$verb" "$SCHEMA" "$@" ;;
+    *) exec "$GS" "$@" ;;
+esac
