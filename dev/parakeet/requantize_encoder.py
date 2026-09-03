@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Re-quantize the encoder's fp32 FFN down-projections to int8 (perf T06).
 
-    cd server && uv run python ../dev/parakeet/requantize_encoder.py \
+    cd server && uv run --extra parakeet python ../dev/parakeet/requantize_encoder.py \
         --model-dir ~/.cache/myna/models/parakeet-tdt-0.6b-v3-int8 \
         --out ../results/encoder-model.int8.requant.onnx \
         --calib-glob '../corpus/real/audio/*.wav' --calib-n 16

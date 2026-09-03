@@ -4,9 +4,8 @@ model-card-url: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
 quantization: int8
 disk-size: 687M
 # Weights shipped as a snap component (murmure's int8 ONNX export of NVIDIA's
-# Parakeet TDT 0.6B v3, CC-BY-4.0), with the encoder replaced by the maxstack
-# rebuild of it (dev/parakeet/build_maxstack_encoder.py) - the only encoder in
-# the component since 2026-09-01, which is where disk-size dropped from 812M.
+# Parakeet TDT 0.6B v3, CC-BY-4.0). disk-size is the maxstack encoder the
+# released snap ships (parakeet-snap/README.md); a base-encoder pack is 812M.
 # modelctl installs it on use-model; the server loads from the directory, so no
 # network access is needed.
 components:
