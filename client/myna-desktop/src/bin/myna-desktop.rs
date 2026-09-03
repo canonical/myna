@@ -41,11 +41,8 @@
 //! debugging, but a correct setup requires none of them.
 //!
 //! What *is* configurable is resolved in one place, [`Resolved`], with one
-//! order: a command-line flag, then the user's GSettings value
-//! (`com.canonical.Myna.Dictation`), then the system default a `snap set myna …` wrote,
-//! then the built-in. The user's own store outranks the system one on purpose -
-//! snapd configuration is per snap, not per user, so an admin setting a
-//! language must not overrule an account that chose its own.
+//! order: a command-line flag, then the user's settings value
+//! (`com.canonical.Myna.Dictation`), then the built-in.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -154,7 +151,7 @@ impl Activation {
         }
     }
 
-    /// Parse a settings/`snap set` value. `auto` is absent by construction
+    /// Parse a settings value. `auto` is absent by construction
     /// (`Settings` filters it), so anything unrecognised here is a typo, and
     /// answering `None` means it falls through to packaging rather than
     /// silently selecting a transport nobody asked for.
@@ -167,38 +164,14 @@ impl Activation {
     }
 }
 
-/// System-wide defaults from `snap set myna …`, handed over by the launcher.
-///
-/// snapd's configuration is per *snap*, not per user, so it can only ever be a
-/// default: an admin (or an image build) setting `language=fr` must not
-/// overrule a user who set their own. See [`Resolved`] for the order.
-#[derive(Clone, Debug, Default, PartialEq)]
-struct SystemDefaults {
-    activation: Option<String>,
-    language: Option<String>,
-    hotkey: Option<String>,
-}
-
-impl SystemDefaults {
-    fn from_env() -> Self {
-        let read = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
-        Self {
-            activation: read("MYNA_CFG_ACTIVATION"),
-            language: read("MYNA_CFG_LANGUAGE"),
-            hotkey: read("MYNA_CFG_HOTKEY"),
-        }
-    }
-}
-
 /// Everything the daemon works out for itself, resolved once at startup.
 ///
 /// One order throughout, most specific first:
 ///
 /// 1. **a command-line flag** — someone is debugging, and meant it;
-/// 2. **the user's GSettings value** (`com.canonical.Myna.Dictation`) — the desktop's own
+/// 2. **the user's settings value** (`com.canonical.Myna.Dictation`) — the desktop's own
 ///    per-user store, which is what a Settings page writes;
-/// 3. **the system default** from `snap set myna …` — per machine, root-set;
-/// 4. **the built-in** — packaging for activation, the tier gate for preedit.
+/// 3. **the built-in** — packaging for activation, the tier gate for preedit.
 #[derive(Debug, PartialEq)]
 struct Resolved {
     activation: Activation,
@@ -208,7 +181,7 @@ struct Resolved {
 }
 
 impl Resolved {
-    fn new(args: &Args, settings: &myna_core::Settings, system: &SystemDefaults) -> Self {
+    fn new(args: &Args, settings: &myna_core::Settings) -> Self {
         let activation = args
             .activation
             .or_else(|| {
@@ -217,31 +190,28 @@ impl Resolved {
                     .as_deref()
                     .and_then(Activation::from_nick)
             })
-            .or_else(|| system.activation.as_deref().and_then(Activation::from_nick))
             .unwrap_or_else(Activation::from_packaging);
         Self {
             activation,
-            language: pick(&args.language, &settings.language, &system.language),
-            hotkey: pick(&args.shortcut, &settings.hotkey, &system.hotkey),
+            language: pick(&args.language, &settings.language),
+            hotkey: pick(&args.shortcut, &settings.hotkey),
             preedit: resolve_preedit(args.preedit, settings.streaming_mode),
         }
     }
 }
 
 /// The precedence rule itself, in one place so every knob obeys the same one.
-fn pick(flag: &Option<String>, user: &Option<String>, system: &Option<String>) -> Option<String> {
-    flag.clone()
-        .or_else(|| user.clone())
-        .or_else(|| system.clone())
+fn pick(flag: &Option<String>, user: &Option<String>) -> Option<String> {
+    flag.clone().or_else(|| user.clone())
 }
 
 /// The part of [`Resolved`] the daemon keeps re-reading while it runs.
 ///
 /// Resolving once at startup made a restart the price of every settings
-/// change, for every writer there is (`gsettings`, `myna-dictate`, a Settings
-/// page, another snap - T54). The precedence does not move: a change re-runs
-/// [`Resolved::new`] with the same flags and system defaults, so a `--language`
-/// on the command line still outranks a GSettings write made an hour later, and
+/// change, for every writer there is (`myna.config`, a Settings page, another
+/// snap - T54). The precedence does not move: a change re-runs
+/// [`Resolved::new`] with the same flags, so a `--language`
+/// on the command line still outranks a settings write made an hour later, and
 /// only the answer lands in these cells.
 ///
 /// The two keys here are the two whose readers ask for them again anyway -
@@ -266,14 +236,11 @@ impl LiveSettings {
     /// cells. The returned watch must outlive the controller - dropping it
     /// ends the subscription.
     fn follow(&self, args: &Args, startup: &Resolved) -> Option<myna_core::SettingsWatch> {
-        // Read once, not per change: snapd configuration reaches this process
-        // as environment, and the launcher sets it before exec.
-        let system = SystemDefaults::from_env();
         let (activation, hotkey) = (startup.activation, startup.hotkey.clone());
         let watch = myna_core::settings::watch({
-            let (args, live, system) = (args.clone(), self.clone(), system.clone());
+            let (args, live) = (args.clone(), self.clone());
             move |settings| {
-                let now = Resolved::new(&args, &settings, &system);
+                let now = Resolved::new(&args, &settings);
                 live.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
                 if now.activation != activation || now.hotkey != hotkey {
                     myna_core::info_log!(
@@ -292,7 +259,7 @@ impl LiveSettings {
             // one - a daemon started at login races anything the session
             // autostarts alongside it.
             let settings = myna_core::Settings::load();
-            let now = Resolved::new(args, &settings, &system);
+            let now = Resolved::new(args, &settings);
             self.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
         } else {
             // Not a failure: the same missing schema that makes `Settings::load`
@@ -466,7 +433,7 @@ fn control_path(args: &Args) -> PathBuf {
 /// better than a fixed string that is wrong for the shipped default.
 fn toggle_failure_hint(args: &Args) -> Vec<String> {
     let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, &SystemDefaults::from_env());
+    let resolved = Resolved::new(args, &settings);
     toggle_hint_for(resolved.activation, resolved.hotkey.as_deref())
 }
 
@@ -840,7 +807,7 @@ fn bind_shortcut_command() -> String {
 /// is nothing to get wrong, so an unpackaged run falls back to binding here.
 fn bind_shortcut(args: &Args) -> ExitCode {
     let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, &SystemDefaults::from_env());
+    let resolved = Resolved::new(args, &settings);
     if resolved.activation != Activation::Portal {
         eprintln!(
             "activation is {:?}, which takes no portal shortcut.\n  \
@@ -935,7 +902,7 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
     use std::process::Command;
 
     let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, &SystemDefaults::from_env());
+    let resolved = Resolved::new(args, &settings);
     if let Some(refusal) = shortcut_install_refusal(resolved.activation, accel) {
         eprintln!("{refusal}");
         return ExitCode::FAILURE;
@@ -991,8 +958,9 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
 /// `--status`: one screen answering "what state is dictation in, and why".
 ///
 /// Every line of this was previously somewhere else - the persisted values in
-/// `gsettings`, what they resolved to and why in a journal line printed once at
-/// startup, the live state on the bus, the backend socket nowhere at all - so
+/// the settings store, what they resolved to and why in a journal line printed
+/// once at startup, the live state on the bus, the backend socket nowhere at
+/// all - so
 /// answering the question meant knowing all four places and how they compose.
 /// The composition is what this prints: not just the value in force, but where
 /// it came from, because "I set that and nothing happened" is the question
@@ -1000,8 +968,7 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
 fn print_status(args: &Args) -> ExitCode {
     let store = myna_core::settings::Store::open();
     let settings = myna_core::Settings::load();
-    let system = SystemDefaults::from_env();
-    let resolved = Resolved::new(args, &settings, &system);
+    let resolved = Resolved::new(args, &settings);
 
     println!(
         "settings   {} ({})",
@@ -1026,9 +993,7 @@ fn print_status(args: &Args) -> ExitCode {
         // instead of looking like a contradiction.
         match (
             resolved.activation,
-            args.activation
-                .or(nick(&settings.activation))
-                .or(nick(&system.activation)),
+            args.activation.or(nick(&settings.activation)),
         ) {
             (activation, None) if std::env::var_os("SNAP").is_some() => {
                 format!("{activation:?} (packaged)")
@@ -1036,11 +1001,7 @@ fn print_status(args: &Args) -> ExitCode {
             (activation, None) => format!("{activation:?} (unpackaged)"),
             (activation, Some(_)) => format!("{activation:?}"),
         },
-        source(
-            args.activation.is_some(),
-            settings.activation.is_some(),
-            system.activation.is_some(),
-        ),
+        source(args.activation.is_some(), settings.activation.is_some()),
     );
     // The shipped default makes `myna.toggle` inert, and nothing used to say
     // so - the only feedback was a control-socket error naming a socket the
@@ -1059,11 +1020,7 @@ fn print_status(args: &Args) -> ExitCode {
             .language
             .clone()
             .unwrap_or_else(|| "(backend default)".into()),
-        source(
-            args.language.is_some(),
-            settings.language.is_some(),
-            system.language.is_some(),
-        ),
+        source(args.language.is_some(), settings.language.is_some()),
     );
     row(
         "hotkey",
@@ -1072,17 +1029,13 @@ fn print_status(args: &Args) -> ExitCode {
             .hotkey
             .clone()
             .unwrap_or_else(|| "(portal default)".into()),
-        source(
-            args.shortcut.is_some(),
-            settings.hotkey.is_some(),
-            system.hotkey.is_some(),
-        ),
+        source(args.shortcut.is_some(), settings.hotkey.is_some()),
     );
     row(
         "streaming-mode",
         format!("{:?}", settings.streaming_mode).to_lowercase(),
         format!("preedit {}", resolved.preedit),
-        source(args.preedit.is_some(), store.is_some(), false),
+        source(args.preedit.is_some(), store.is_some()),
     );
     println!(
         "  {:<15} {}",
@@ -1150,19 +1103,17 @@ fn print_status(args: &Args) -> ExitCode {
 }
 
 /// Which plane a resolved value came from - the same order as [`Resolved`].
-fn source(flag: bool, user: bool, system: bool) -> &'static str {
+fn source(flag: bool, user: bool) -> &'static str {
     if flag {
         "flag"
     } else if user {
-        "gsettings"
-    } else if system {
-        "snap set"
+        "settings"
     } else {
         "built-in"
     }
 }
 
-/// A settings/`snap set` activation nick, where it names one. Used only to ask
+/// A settings activation nick, where it names one. Used only to ask
 /// "did anything *choose* this, or is it packaging?".
 fn nick(value: &Option<String>) -> Option<Activation> {
     value.as_deref().and_then(Activation::from_nick)
@@ -1240,10 +1191,10 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Everything resolvable, resolved once: flags, then the user's GSettings,
-    // then `snap set myna …`, then the built-in.
+    // Everything resolvable, resolved once: flags, then the user's settings,
+    // then the built-in.
     let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(&args, &settings, &SystemDefaults::from_env());
+    let resolved = Resolved::new(&args, &settings);
     // `--hold` is a portal concept (the portal reports press and release; the
     // control socket only ever delivers a single poke). Rejected against the
     // *resolved* transport rather than ignored, so "hold-to-talk silently does
@@ -1589,8 +1540,8 @@ mod tests {
         myna_core::Settings::default()
     }
 
-    fn resolved(args: &Args, settings: &myna_core::Settings, system: &SystemDefaults) -> Resolved {
-        Resolved::new(args, settings, system)
+    fn resolved(args: &Args, settings: &myna_core::Settings) -> Resolved {
+        Resolved::new(args, settings)
     }
 
     #[test]
@@ -1598,61 +1549,25 @@ mod tests {
         // $SNAP is the portal's availability test: GNOME grants a portal app
         // identity only to a packaged app.
         let a = Args::default();
-        assert_eq!(
-            resolved(&a, &unset(), &SystemDefaults::default()).activation,
-            {
-                if std::env::var_os("SNAP").is_some() {
-                    Activation::Portal
-                } else {
-                    Activation::Control
-                }
+        assert_eq!(resolved(&a, &unset()).activation, {
+            if std::env::var_os("SNAP").is_some() {
+                Activation::Portal
+            } else {
+                Activation::Control
             }
-        );
+        });
         // An explicit flag always wins over the packaging default.
         let forced = Args {
             activation: Some(Activation::Stdin),
             ..Default::default()
         };
-        assert_eq!(
-            resolved(&forced, &unset(), &SystemDefaults::default()).activation,
-            Activation::Stdin
-        );
+        assert_eq!(resolved(&forced, &unset()).activation, Activation::Stdin);
     }
 
-    // ── flag > user setting > `snap set` > built-in ─────────────────────────
+    // ── flag > user setting > built-in ─────────────────────────────────────
 
     #[test]
-    fn the_users_setting_beats_the_system_default() {
-        // `snap set myna language=fr` is one admin choosing for every account
-        // on the machine; a user who set their own language must keep it.
-        let settings = myna_core::Settings {
-            language: Some("en".into()),
-            ..Default::default()
-        };
-        let system = SystemDefaults {
-            language: Some("fr".into()),
-            ..Default::default()
-        };
-        let r = resolved(&Args::default(), &settings, &system);
-        assert_eq!(r.language.as_deref(), Some("en"));
-    }
-
-    #[test]
-    fn the_system_default_applies_where_the_user_set_nothing() {
-        // …and it has to, or `snap set` on an image build would do nothing.
-        let system = SystemDefaults {
-            language: Some("fr".into()),
-            hotkey: Some("<Super>d".into()),
-            activation: Some("control".into()),
-        };
-        let r = resolved(&Args::default(), &unset(), &system);
-        assert_eq!(r.language.as_deref(), Some("fr"));
-        assert_eq!(r.hotkey.as_deref(), Some("<Super>d"));
-        assert_eq!(r.activation, Activation::Control);
-    }
-
-    #[test]
-    fn a_flag_beats_both() {
+    fn a_flag_beats_the_setting() {
         let a = Args {
             language: Some("de".into()),
             shortcut: Some("<Super>x".into()),
@@ -1665,12 +1580,7 @@ mod tests {
             activation: Some("portal".into()),
             ..Default::default()
         };
-        let system = SystemDefaults {
-            language: Some("fr".into()),
-            hotkey: Some("<Super>d".into()),
-            activation: Some("control".into()),
-        };
-        let r = resolved(&a, &settings, &system);
+        let r = resolved(&a, &settings);
         assert_eq!(r.language.as_deref(), Some("de"));
         assert_eq!(r.hotkey.as_deref(), Some("<Super>x"));
         assert_eq!(r.activation, Activation::Stdin);
@@ -1678,7 +1588,7 @@ mod tests {
 
     #[test]
     fn an_unparseable_activation_falls_through_to_packaging() {
-        // A typo in `snap set myna activation=portl` must not silently select a
+        // A typo in the stored activation must not silently select a
         // transport: the hotkey doing nothing is the worst failure this daemon
         // has, and packaging is the answer that is always right.
         let settings = myna_core::Settings {
@@ -1686,7 +1596,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            resolved(&Args::default(), &settings, &SystemDefaults::default()).activation,
+            resolved(&Args::default(), &settings).activation,
             Activation::from_packaging()
         );
     }
@@ -1711,11 +1621,11 @@ mod tests {
         // that decides, and the parser cannot see settings.
         let control = parse_args_from(args(&["--control", "--hold", "--socket", "/tmp/x.sock"]))
             .expect("parsing no longer rejects this");
-        let r = resolved(&control, &unset(), &SystemDefaults::default());
+        let r = resolved(&control, &unset());
         assert!(control.hold && r.activation != Activation::Portal);
         let portal = parse_args_from(args(&["--portal", "--hold", "--socket", "/tmp/x.sock"]))
             .expect("portal + hold parses");
-        let r = resolved(&portal, &unset(), &SystemDefaults::default());
+        let r = resolved(&portal, &unset());
         assert!(portal.hold && r.activation == Activation::Portal);
     }
 
@@ -1738,14 +1648,13 @@ mod tests {
     }
 
     /// `--status` reports *which* plane won, so the attribution has to be the
-    /// same order `Resolved` applies - a status line that says "gsettings"
+    /// same order `Resolved` applies - a status line that says "settings"
     /// where a flag actually won is worse than no status line.
     #[test]
     fn the_reported_source_follows_the_precedence() {
-        assert_eq!(source(true, true, true), "flag");
-        assert_eq!(source(false, true, true), "gsettings");
-        assert_eq!(source(false, false, true), "snap set");
-        assert_eq!(source(false, false, false), "built-in");
+        assert_eq!(source(true, true), "flag");
+        assert_eq!(source(false, true), "settings");
+        assert_eq!(source(false, false), "built-in");
     }
 
     #[test]
@@ -1832,11 +1741,7 @@ mod tests {
             "test setup: readiness should start warm"
         );
 
-        let resolved = Resolved::new(
-            &args,
-            &myna_core::Settings::default(),
-            &SystemDefaults::default(),
-        );
+        let resolved = Resolved::new(&args, &myna_core::Settings::default());
         let mut factory = make_session(
             &args,
             &LiveSettings::new(&resolved),

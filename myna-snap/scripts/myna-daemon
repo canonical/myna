@@ -36,25 +36,6 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     exec "$SNAP/bin/myna-desktop" --help
 fi
 
-# System-wide defaults from `snap set myna …`, written by the configure hook.
-# Exported, not turned into flags: myna-desktop treats them as the *lowest*
-# precedence (below the user's own GSettings values), and a flag here would
-# outrank the user - see `Resolved` in myna-desktop.
-#
-# Parsed, never sourced. A hotkey is spelled `<Super>d`, which as shell input is
-# a redirection: sourcing it took the daemon down with status 2 and straight
-# into systemd's restart limit (found live, 2026-08-26). Parsing also means a
-# root-written file is data to this user process, not code.
-if [ -f "$SNAP_DATA/config.env" ]; then
-    while IFS='=' read -r key value; do
-        case "$key" in
-            MYNA_CFG_ACTIVATION | MYNA_CFG_LANGUAGE | MYNA_CFG_HOTKEY)
-                export "$key=$value"
-                ;;
-        esac
-    done < "$SNAP_DATA/config.env"
-fi
-
 # PipeWire/Wayland compat symlinks (see bin/myna-runtime-links).
 # shellcheck source=/dev/null  # generated inside the snap at runtime
 . "$SNAP/bin/myna-runtime-links"
