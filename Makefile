@@ -127,10 +127,12 @@ bench-plan: bench-corpus ## Print the matrix run plan without installing anythin
 	cd server && uv run python ../dev/matrix.py --config ../dev/matrix.yaml --dry-run
 
 # Installs and purges real snaps as root (snap remove --purge between
-# targets) — this modifies system state, run it yourself when ready.
+# targets) — this modifies system state, run it yourself when ready. -B: root
+# byte-compiling into the venv leaves __pycache__ dirs the owner cannot remove,
+# which breaks every later `uv run`.
 .PHONY: bench-run
 bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps); writes results/bench.jsonl
-	sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml
+	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml
 
 # --keep-results: unlike bench-run (a full sweep, meant to start clean),
 # bench-run-<snap> exists to be called once per snap across separate
@@ -139,7 +141,7 @@ bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps)
 # Safe to re-run the same snap too: aggregate.py dedups by (label, clip),
 # newest wins.
 bench-run-%: bench-corpus ## Matrix sweep scoped to one snap (bench-run-<snap>, e.g. bench-run-whisper)
-	sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results
+	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results
 
 .PHONY: bench-aggregate
 bench-aggregate: ## Re-print the comparison table from the last matrix run
