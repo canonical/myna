@@ -508,9 +508,6 @@ impl Pill {
             if this.bar.widget().is_visible() {
                 this.bar.queue_draw();
             }
-            if this.progress.widget().is_visible() {
-                this.progress.queue_draw();
-            }
             glib::ControlFlow::Continue
         });
     }
