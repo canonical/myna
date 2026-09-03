@@ -124,7 +124,7 @@ BENCH_LABEL_ARGS = $(if $(BENCH_LABEL_SUFFIX),--label-suffix $(BENCH_LABEL_SUFFI
 
 # In-repo benchmark run: dev/matrix.py sideloads the snap/component files
 # already sitting in each */-snap dir (no bench.yaml needed — see
-# dev/matrix.yaml for the target list) and sweeps corpus/real. Distinct from
+# dev/matrix.yaml for the target list) and sweeps corpus/english. Distinct from
 # `bench`/myna-bench.pyz above, which is the config-driven tool for testers
 # without a checkout.
 .PHONY: bench-plan
@@ -168,8 +168,8 @@ bench-corpus: ## Regenerate the matrix's corpus (manifest-balanced.json) with th
 		-n 80 --select balanced --manifest-name manifest-balanced.json --long-form-minutes 5
 
 .PHONY: bench-corpus-long
-bench-corpus-long: ## (Re)generate a standalone ~5min long-form clip (corpus/real/manifest-long.json)
-	cd server && uv run python ../dev/fetch_real_corpus.py \
+bench-corpus-long: ## (Re)generate a standalone ~5min long-form clip (corpus/english/manifest-long.json)
+	cd server && uv run python ../dev/fetch_english_corpus.py \
 		-n 0 --manifest-name manifest-long.json --long-form-minutes 5
 
 # e.g. `make bench-long-whisper` — assumes the snap is already installed and
@@ -178,7 +178,7 @@ bench-corpus-long: ## (Re)generate a standalone ~5min long-form clip (corpus/rea
 bench-long-%: ## Run the long-form clip against an already-running <snap> (bench-long-<snap>)
 	cd server && uv run python ../dev/bench.py \
 		--socket /var/snap/$(SNAPNAME_$*)/common/run/ubustt.sock \
-		--manifest ../corpus/real/manifest-long.json --label $(SNAPNAME_$*)/long-form
+		--manifest ../corpus/english/manifest-long.json --label $(SNAPNAME_$*)/long-form
 
 # ------------------------------------------------------------------------
 # tests / lint / coverage — delegate to the canonical Workshop environment

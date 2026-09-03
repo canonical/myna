@@ -12,7 +12,7 @@
 //!
 //! ```text
 //!   myna-server --adapter fake --socket /tmp/myna.sock &
-//!   myna-dictate --socket /tmp/myna.sock --clip corpus/real/audio/<id>.wav
+//!   myna-dictate --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
 //!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone (T52, native PipeWire)
 //! ```
 //!

@@ -170,7 +170,7 @@ async def main() -> None:
         type=Path,
         default=REPO_ROOT / "server" / "fixtures" / "manifest.json",
         help="corpus manifest to sweep (default: synthetic fixtures; "
-        "use corpus/real/manifest.json for trustworthy WER)",
+        "use corpus/english/manifest.json for trustworthy WER)",
     )
     parser.add_argument(
         "--label",

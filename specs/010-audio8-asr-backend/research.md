@@ -218,7 +218,7 @@ space is exactly the VERS-node hazard the project pin exists to avoid.
 ## Decision 13: Benchmark & comparison — existing pipeline, two corpora, per-engine labels
 
 **Decision**: Run `dev/bench.py` against the Audio8 backend socket with labels
-`audio8/cpu` (and `audio8/nvidia-gpu` where hardware exists) on `corpus/real`
+`audio8/cpu` (and `audio8/nvidia-gpu` where hardware exists) on `corpus/english`
 (en) and `corpus/chinese` (zh); aggregate with `dev/aggregate.py` alongside
 existing `results/bench-*.jsonl` baselines; check the comparison summary into
 `results/` (FR-015/016, SC-002). No corpus or pipeline changes needed — both

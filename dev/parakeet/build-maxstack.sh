@@ -39,8 +39,8 @@ else
 fi
 
 echo "== input 3/3: calibration corpus =="
-if compgen -G "$repo_root/corpus/real/audio/*.wav" >/dev/null; then
-    echo "corpus/real already present - skipping"
+if compgen -G "$repo_root/corpus/english/audio/*.wav" >/dev/null; then
+    echo "corpus/english already present - skipping"
 else
     cd "$repo_root/server"
     uv run --extra parakeet python "$repo_root/dev/fetch_english_corpus.py"

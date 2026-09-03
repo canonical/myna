@@ -783,7 +783,7 @@ def main() -> None:
         raise SystemExit(f"no config at {args.config}")
     cfg = yaml.safe_load(args.config.read_text(encoding="utf-8"))
 
-    manifest = (REPO_ROOT / cfg.get("manifest", "corpus/real/manifest.json")).resolve()
+    manifest = (REPO_ROOT / cfg.get("manifest", "corpus/english/manifest.json")).resolve()
     out = (REPO_ROOT / cfg.get("out", "results/bench.jsonl")).resolve()
     cold_clip = cfg.get("cold_clip")
     warm_clips = cfg.get("clips", [])

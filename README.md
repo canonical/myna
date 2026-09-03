@@ -33,7 +33,7 @@ To dictate for real, a Myna STT inference snap needs to be installed (or run one
 # 2. dictate — from a WAV clip, or live from the microphone
 cd client && cargo build --release && cd ..
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en \
-    --clip corpus/real/audio/<id>.wav          # a clip (Enter to start, clip-end to stop)
+    --clip corpus/english/audio/<id>.wav          # a clip (Enter to start, clip-end to stop)
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en --mic   # live mic
 ```
 
@@ -126,7 +126,7 @@ cd server
 uv run pytest                                   # offline suite: contract + adapter logic
 uv run python -m myna.testbed                   # demo: fake adapter over loopback
 uv run python ../dev/generate_fixtures.py       # synthetic corpus -> server/fixtures/
-uv run python ../dev/fetch_english_corpus.py    # English LibriSpeech corpus -> corpus/real/
+uv run python ../dev/fetch_english_corpus.py    # English LibriSpeech corpus -> corpus/english/
 uv run python ../dev/fetch_chinese_corpus.py    # FLEURS Mandarin corpus  -> corpus/chinese/
 
 # serve a real adapter, then talk to it:
@@ -150,11 +150,11 @@ cd client && cargo build --release && cd ..
 
 # real-time from a WAV clip:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en \
-    --clip corpus/real/audio/<id>.wav
+    --clip corpus/english/audio/<id>.wav
 
 # over the Myna STT wire — same FSM, different dialect:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
-    --language en --clip corpus/real/audio/<id>.wav
+    --language en --clip corpus/english/audio/<id>.wav
 
 # live microphone:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --language en --mic
@@ -184,13 +184,13 @@ hypothesis text is marked as `unstable` and should never be injected; it only di
 #    (force --mode streaming: the auto default resolves to batch on hardware
 #    whose baseline RTF ≥ 1.0, e.g. CPU-only whisper-tiny)
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
-    --mode streaming --clip corpus/real/audio/<id>.wav
+    --mode streaming --clip corpus/english/audio/<id>.wav
 
 # other display modes:
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
-    --mode batch --clip corpus/real/audio/<id>.wav      # no » lines, only ✓
+    --mode batch --clip corpus/english/audio/<id>.wav      # no » lines, only ✓
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
-    --mode streaming --show-unstable --clip corpus/real/audio/<id>.wav   # + ~ lines
+    --mode streaming --show-unstable --clip corpus/english/audio/<id>.wav   # + ~ lines
 ```
 
 ## Dictate into apps — `myna-desktop`
@@ -250,17 +250,17 @@ See also `specs/004-gnome-shell-indicator/quickstart.md`.
 ## Benchmarking
 
 The testbed replays a corpus through a backend and scores it offline. Accuracy is
-only trustworthy on the **real** corpora (`corpus/real/`, `corpus/chinese/`); the
+only trustworthy on the **real** corpora (`corpus/english/`, `corpus/chinese/`); the
 synthetic espeak `server/fixtures/` exercise plumbing and latency only.
 
 The real tiers, and what each is for:
 
 | Manifest | Clips | Audio | Use it for |
 | --- | --- | --- | --- |
-| `corpus/real/manifest-balanced.json` | 82 | ~12 min | **English accuracy, clean.** Round-robin over all 40 LibriSpeech dev-clean speakers - the only English tier whose WER is a property of the language rather than of one voice. |
+| `corpus/english/manifest-balanced.json` | 82 | ~12 min | **English accuracy, clean.** Round-robin over all 40 LibriSpeech dev-clean speakers - the only English tier whose WER is a property of the language rather than of one voice. |
 | `corpus/librispeech-other/manifest-balanced.json` | 82 | ~13 min | **English accuracy, hard.** Same construction over LibriSpeech test-other: accented, noisier, lower-fidelity recordings. Report the clean/other pair together - the gap between them is what separates backends. |
-| `corpus/real/manifest.json` | 14 | ~1 min | Quick smoke runs, and continuity with older `results/*.jsonl` (single speaker, 2277). |
-| `corpus/real/manifest-streams.json` | 2 | ~55 s | Long-form streaming watermarks. **Frozen** - `results/streaming-watermarks.json` and the emission-invariant tests are baselined against these exact clips. |
+| `corpus/english/manifest.json` | 14 | ~1 min | Quick smoke runs, and continuity with older `results/*.jsonl` (single speaker, 2277). |
+| `corpus/english/manifest-streams.json` | 2 | ~55 s | Long-form streaming watermarks. **Frozen** - `results/streaming-watermarks.json` and the emission-invariant tests are baselined against these exact clips. |
 | `corpus/chinese/manifest.json` | 50 | ~9 min | Mandarin CER (FLEURS `cmn_hans_cn` test), for SenseVoice/FunASR against published figures. |
 
 Rebuild any of them from the cached downloads (no network needed once `.cache/`
@@ -292,11 +292,11 @@ uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock &
 
 # sweep the real corpus, tagging the run (appends to results/bench.jsonl):
 uv run python ../dev/bench.py --socket /tmp/myna.sock \
-    --manifest ../corpus/real/manifest-balanced.json --label whisper-base/cpu --batch
+    --manifest ../corpus/english/manifest-balanced.json --label whisper-base/cpu --batch
 
 # streaming-mode runs (server needs --streaming) record extra metrics:
 uv run python ../dev/bench.py --socket /tmp/myna.sock --streaming \
-    --manifest ../corpus/real/manifest-balanced.json --label whisper-tiny/streaming
+    --manifest ../corpus/english/manifest-balanced.json --label whisper-tiny/streaming
 
 # collate every recorded run into a WER/CER matrix:
 uv run python ../dev/aggregate.py --by-category

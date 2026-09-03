@@ -60,7 +60,7 @@ includes `audio8.py` at parity with the funasr adapter floor.
 ## Scenario 6 — Benchmark + comparison report (US2, SC-002)
 
 ```bash
-uv run python dev/bench.py --socket /tmp/ubustt.sock --label audio8/cpu            # corpus/real (en)
+uv run python dev/bench.py --socket /tmp/ubustt.sock --label audio8/cpu            # corpus/english (en)
 uv run python dev/bench.py --socket /tmp/ubustt.sock --label audio8/cpu-zh <chinese corpus args>
 uv run python dev/aggregate.py --by-category                                       # vs recorded baselines
 ```

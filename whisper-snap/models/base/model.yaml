@@ -7,7 +7,7 @@ components:
   - model-base
 environment:
   - MODEL_DIR=$SNAP_COMPONENTS/model-base
-  # Measured 2026-08-26 on corpus/real/manifest-balanced.json:
+  # Measured 2026-08-26 on corpus/english/manifest-balanced.json:
   # INT8 costs 4.53% -> 5.03% WER for 1.37x. `base` is
   # the accuracy option; not a trade to make by default.
   - MODEL_COMPUTE_TYPE=float32

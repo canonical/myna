@@ -12,7 +12,7 @@ NVIDIA PC.
 myna-server --socket /tmp/myna.sock --adapter whisper --model base --streaming
 ./client/target/release/myna-dictate --socket /tmp/myna.sock --dialect ie115 \
     --mode streaming --show-unstable \
-    --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+    --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 ```
 
 Expected: `~` unstable lines during playback; at least one committed `»`

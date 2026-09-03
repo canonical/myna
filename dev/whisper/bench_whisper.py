@@ -2,7 +2,7 @@
 """Whisper stage-timeline benchmark harness (whisper perf WP01).
 
     cd server && uv run --extra whisper python ../dev/whisper/bench_whisper.py \
-        ../corpus/real/audio/librispeech-1272-128104-0000.wav \
+        ../corpus/english/audio/librispeech-1272-128104-0000.wav \
         --model tiny --reps 10 --json ../results/whisper.jsonl
 
     # replay a saved run's summary without re-measuring anything:

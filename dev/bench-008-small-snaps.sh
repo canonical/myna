@@ -11,7 +11,7 @@ REPO_ROOT=/home/charles/Projects/myna
 SERVER_DIR=$REPO_ROOT/server
 SOCKET=/tmp/myna-bench-small.sock
 OUT=$REPO_ROOT/results/bench-008-small-snaps.jsonl
-MANIFEST=$REPO_ROOT/corpus/real/manifest-streams.json
+MANIFEST=$REPO_ROOT/corpus/english/manifest-streams.json
 BENCH=$REPO_ROOT/dev/bench.py
 AGG=$REPO_ROOT/dev/aggregate.py
 

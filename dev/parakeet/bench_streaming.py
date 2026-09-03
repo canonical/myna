@@ -2,7 +2,7 @@
 """Streaming duty-cycle telemetry (perf T03).
 
     cd server && uv run python ../dev/parakeet/bench_streaming.py \
-        ../corpus/real/audio/librispeech-3081-166546-longform.wav \
+        ../corpus/english/audio/librispeech-3081-166546-longform.wav \
         --window 60 --json ../results/result.json
 
     # replay a saved run's summary without re-measuring anything:

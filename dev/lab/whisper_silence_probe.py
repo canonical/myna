@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Does Whisper invent text when there is nothing to transcribe?
 
-The corpus tiers cannot answer this. Every clip in `corpus/real` is a person
+The corpus tiers cannot answer this. Every clip in `corpus/english` is a person
 reading, so a decoder setting that suppresses spurious output can only ever
 look neutral or harmful there - which is exactly what the clean-corpus sweep
 in dev/lab/whisper_decode_sweep.py shows. The failure this probes for is the
@@ -143,7 +143,7 @@ def main() -> int:
     p.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "corpus/real/manifest-balanced.json",
+        default=REPO_ROOT / "corpus/english/manifest-balanced.json",
     )
     p.add_argument("--seed", type=int, default=20260826)
     p.add_argument("--out", type=Path, default=REPO_ROOT / "results/whisper-silence-probe.json")

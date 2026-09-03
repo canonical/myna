@@ -32,7 +32,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT="$REPO_ROOT/client"
 SERVER="$REPO_ROOT/server"
-CLIP="$REPO_ROOT/corpus/real/audio/librispeech-2277-149896-0005.wav"
+CLIP="$REPO_ROOT/corpus/english/audio/librispeech-2277-149896-0005.wav"
 EXPECTED="The quick brown fox jumps over the lazy dog."
 WORK="$REPO_ROOT/.coverage-work"
 mkdir -p "$WORK"
@@ -179,7 +179,7 @@ fi
 # --- Scenario 5: corpus manifest (multi-clip session) --------------------------
 # `--corpus` is how the evaluation harness drives the CLI, and it is a distinct
 # path from `--clip`: a manifest read, then several utterances in one session.
-# The manifest is written here rather than pointed at corpus/real/manifest.json
+# The manifest is written here rather than pointed at corpus/english/manifest.json
 # so the scenario costs two utterances whatever tier is provisioned.
 notice "scenario 5: fake-adapter dictation from a corpus manifest"
 CORPUS_DIR="$WORK/corpus"; rm -rf "$CORPUS_DIR"; mkdir -p "$CORPUS_DIR"

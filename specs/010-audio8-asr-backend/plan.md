@@ -35,7 +35,7 @@ profile, fp32 graphs excluded, Decision 10).
 
 **Testing**: `pytest` (`server/tests/test_audio8_unit.py`, weights-free);
 `dev/adapter_coverage.py` merged-coverage run; `dev/bench.py` /
-`dev/aggregate.py` on `corpus/real` + `corpus/chinese`; confined end-to-end
+`dev/aggregate.py` on `corpus/english` + `corpus/chinese`; confined end-to-end
 against the `audio8` snap (whisper-snap smoke pattern). Two spike gates
 (language pinning, Decision 4; output posture, Decision 14).
 

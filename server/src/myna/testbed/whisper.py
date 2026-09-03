@@ -99,7 +99,7 @@ STREAM_BEAM_SIZE = 1  # greedy re-decode ticks
 # (0.0 through 1.0): when a decode trips the compression-ratio or
 # log-probability rejection test, the segment is decoded again at each higher
 # temperature in turn, so one bad segment can cost six decodes. It is a tail
-# mechanism, and measured 2026-09-02 on corpus/real/manifest-balanced.json it
+# mechanism, and measured 2026-09-02 on corpus/english/manifest-balanced.json it
 # was buying nothing: capping it after the second step leaves WER unchanged on
 # tiny and base (6.21% and 4.53%, to four decimals) and slightly better on
 # small (3.41% -> 3.38%), while cutting p95 decode latency 26% on tiny, 10% on

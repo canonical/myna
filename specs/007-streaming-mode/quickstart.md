@@ -22,7 +22,7 @@ myna-server --adapter nemotron --socket /tmp/myna-stream.sock --streaming
 # Terminal 2: dictate a long clip (≥8s)
 ./client/target/release/myna-dictate \
   --socket /tmp/myna-stream.sock --dialect ie115 \
-  --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+  --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 
 # Expected: committed text lines (» prefix) appear DURING playback, before the
 # clip finishes. Final ✓ line shows the complete transcript.
@@ -30,7 +30,7 @@ myna-server --adapter nemotron --socket /tmp/myna-stream.sock --streaming
 
 **Expected output shape**:
 ```
-── clip corpus/real/audio/librispeech-2277-149896-0005.wav
+── clip corpus/english/audio/librispeech-2277-149896-0005.wav
 🎤 ready — listening (streaming)
    » Many little wrinkles
    » gathered between his eyes
@@ -52,14 +52,14 @@ myna-server --adapter whisper --model tiny --socket /tmp/myna-batch.sock
 # Dictate the same clip
 ./client/target/release/myna-dictate \
   --socket /tmp/myna-batch.sock --dialect ie115 \
-  --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+  --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 
 # Expected: NO progressive text. Single ✓ line appears after full inference.
 ```
 
 **Expected output shape**:
 ```
-── clip corpus/real/audio/librispeech-2277-149896-0005.wav
+── clip corpus/english/audio/librispeech-2277-149896-0005.wav
 🎤 ready — listening
 ✓ Many little wrinkles gathered between his eyes as he contemplated this and his brow moistened.
 ```
@@ -74,7 +74,7 @@ completes. Behavior identical to today.
 ```bash
 # Use the Python test client to dump raw events
 python3 dev/transcribe.py --socket /tmp/myna-stream.sock \
-  --clip corpus/real/audio/librispeech-2277-149896-0005.wav \
+  --clip corpus/english/audio/librispeech-2277-149896-0005.wav \
   --raw-events
 
 # Expected: delta events carry "disposition": "committed" or "unstable"
@@ -117,7 +117,7 @@ go run ./cmd/whisperlive-adapter serve \
 ./client/target/release/myna-dictate \
   --socket /tmp/myna-adapter.sock --dialect ie115 --base64-audio \
   --ws-path /v1/realtime \
-  --clip corpus/real/audio/librispeech-2277-149896-0005.wav
+  --clip corpus/english/audio/librispeech-2277-149896-0005.wav
 
 # Expected: transcription completes (possibly with delta text shown progressively
 # depending on clip length and WhisperLive's segment timing).

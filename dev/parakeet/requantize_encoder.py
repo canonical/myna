@@ -4,7 +4,7 @@
     cd server && uv run --extra parakeet python ../dev/parakeet/requantize_encoder.py \
         --model-dir ~/.cache/myna/models/parakeet-tdt-0.6b-v3-int8 \
         --out ../results/encoder-model.int8.requant.onnx \
-        --calib-glob '../corpus/real/audio/*.wav' --calib-n 16
+        --calib-glob '../corpus/english/audio/*.wav' --calib-n 16
 
 The 2026-08-28 baseline found `feed_forward*/linear2` (the
 4096 -> 1024 FFN down-projection) running in fp32 in the shipped murmure
