@@ -45,7 +45,7 @@
 //! (`com.canonical.Myna.Dictation`), then the built-in.
 
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
@@ -899,8 +899,6 @@ fn shortcut_install_refusal(activation: Activation, accel: &str) -> Option<Strin
 ///
 /// Refuses under portal activation - see [`shortcut_install_refusal`].
 fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
-    use std::process::Command;
-
     let settings = myna_core::Settings::load();
     let resolved = Resolved::new(args, &settings);
     if let Some(refusal) = shortcut_install_refusal(resolved.activation, accel) {
@@ -914,7 +912,7 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
     let command = toggle_command();
 
     let gset = |args: &[&str]| {
-        Command::new("gsettings")
+        host_gsettings()
             .args(args)
             .status()
             .map(|s| s.success())
@@ -922,7 +920,7 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
     };
 
     // Read the current list and append our path if absent (don't clobber).
-    let current = Command::new("gsettings")
+    let current = host_gsettings()
         .args(["get", SCHEMA, "custom-keybindings"])
         .output()
         .ok()
@@ -953,6 +951,16 @@ fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
         eprintln!("bind one manually: Settings → Keyboard → Custom Shortcuts → `{command}`");
         ExitCode::FAILURE
     }
+}
+
+/// Host `gsettings` for the unpackaged `--install-shortcut`. Dev launches
+/// run with `GSETTINGS_BACKEND=keyfile`, and a child inheriting it would
+/// write the GNOME keybinding into the keyfile instead of dconf - the
+/// keybinding has to live where GNOME's settings-daemon reads it.
+fn host_gsettings() -> Command {
+    let mut cmd = Command::new("gsettings");
+    cmd.env_remove("GSETTINGS_BACKEND");
+    cmd
 }
 
 /// `--status`: one screen answering "what state is dictation in, and why".
@@ -1655,6 +1663,18 @@ mod tests {
         assert_eq!(source(true, true), "flag");
         assert_eq!(source(false, true), "settings");
         assert_eq!(source(false, false), "built-in");
+    }
+
+    // Dev launches set GSETTINGS_BACKEND=keyfile; the installer's whole job
+    // is writing the keybinding into dconf, so the child must not inherit it.
+    #[test]
+    fn the_installers_gsettings_child_forgets_the_keyfile_backend() {
+        let cmd = host_gsettings();
+        assert!(
+            cmd.get_envs()
+                .any(|(key, value)| key == "GSETTINGS_BACKEND" && value.is_none()),
+            "GSETTINGS_BACKEND must be explicitly removed from the child env"
+        );
     }
 
     #[test]
