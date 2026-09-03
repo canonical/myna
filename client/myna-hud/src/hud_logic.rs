@@ -14,6 +14,31 @@
 use crate::ribbon::RibbonPhase;
 use crate::states::{DictationState, Severity};
 
+/// The HUD's audio-level presentation, selected by the `hud-style` GSettings
+/// key (`com.canonical.Myna.Dictation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum HudStyle {
+    /// A simple level bar in the accent colour (the default; `vumeter.png`).
+    #[default]
+    Bar,
+    /// The flowing GPU wave ribbon (the 2026-07-30 redesign).
+    Ribbon,
+    /// The classic segmented bar meter (the pre-ribbon `BarMeterActor`).
+    Vumeter,
+}
+
+impl HudStyle {
+    /// Parse a `hud-style` nick; anything unrecognised is the default (Bar) —
+    /// a foreign/newer value must never break the HUD.
+    pub fn from_nick(nick: &str) -> Self {
+        match nick {
+            "ribbon" => HudStyle::Ribbon,
+            "vumeter" => HudStyle::Vumeter,
+            _ => HudStyle::Bar,
+        }
+    }
+}
+
 /// Icon choice for a descriptor's severity (RC19): a mic-with-slash icon only
 /// for a critical error (the microphone genuinely may be at fault); every
 /// other treatment — including a recoverable notice, where the microphone

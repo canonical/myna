@@ -24,7 +24,7 @@ window.myna-hud-window {
 .myna-hud-pill {
     padding: 10px 16px;
     background-color: rgba(20, 22, 28, 0.82);
-    border-radius: 18px;
+    border-radius: 999px;
     /* Legible against a busy or light wallpaper. The severity states draw a
      * strong coloured border, and at 0.08 the ordinary states read as an
      * edgeless dark blob by comparison — the pill needs a defined edge in
@@ -55,17 +55,21 @@ window.myna-hud-window {
  * once made the meter read as permanently flat regardless of the real audio
  * level (R16a/R17). */
 .myna-hud-ribbon {
-    /* The accent, resolved by the THEME rather than mapped from a settings
-     * name (the analogue of the Shell's `-st-accent-color`). The renderer
-     * reads this back with gtk_widget_get_color(); see platform::probe_css_accent.
-     *
-     * `@accent_bg_color` (the named colour, defined since libadwaita 1.0)
-     * rather than `var(--accent-bg-color)` (GTK 4.16+) so the whole runtime
-     * matrix is covered, and `accent_bg_color` rather than `accent_color`:
-     * the latter is the standalone/foreground variant, darkened for
-     * contrast, and can even fall outside sRGB. */
+    /* The accent: `@accent_bg_color` (the named colour, defined since
+     * libadwaita 1.0) rather than `var(--accent-bg-color)` (GTK 4.16+) so the
+     * whole runtime matrix is covered, and `accent_bg_color` rather than
+     * `accent_color`: the latter is the standalone/foreground variant,
+     * darkened for contrast, and can even fall outside sRGB. */
     color: @accent_bg_color;
 
+    min-height: 32px;
+    min-width: 160px;
+}
+
+/* The classic segmented VU meter (the `hud-style: vumeter` alternative to
+ * the ribbon). Same footprint so the pill keeps one stable size whichever
+ * indicator is selected. The bars are painted by the widget itself. */
+.myna-hud-vumeter {
     min-height: 32px;
     min-width: 160px;
 }

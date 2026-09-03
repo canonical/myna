@@ -29,6 +29,7 @@
 //! ever sees, renders, logs, or persists transcript content; no network.
 
 pub mod accent;
+pub mod bar;
 pub mod bus;
 pub mod dbus_consumer;
 pub mod gl;
@@ -41,6 +42,7 @@ pub mod notice_slot;
 pub mod pill;
 pub mod platform;
 pub mod ribbon;
+pub mod segmented_meter;
 #[cfg(dev_lab)]
 pub mod serve;
 #[cfg(dev_lab)]

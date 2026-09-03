@@ -1,10 +1,9 @@
 //! vumeter — PURE envelope logic (feature 004; contract RC5;
 //! research R5/R16/R16a/R17). RMS/peak → a headset-calibrated dBFS intensity
-//! with stale-decay. This is the shared envelope math [`crate::ribbon`]
-//! (the 2026-07-30 wave-ribbon redesign) delegates to unchanged — the
-//! segmented bar-meter-only helpers (`intensity_to_active_segments`/
-//! `segment_color`) were removed once the ribbon fully replaced their only
-//! caller.
+//! with stale-decay. This is the shared envelope math [`crate::ribbon`],
+//! [`crate::bar`] and [`crate::segmented_meter`] delegate to unchanged — plus
+//! the segmented bar-meter helpers (`intensity_to_active_segments` /
+//! `segment_color`) that drive the classic `vumeter` HUD style's view.
 //!
 //! No GTK imports; carries energy only, never samples or content
 //! (constitution V, RC6).
@@ -70,4 +69,43 @@ pub fn levels_to_intensity(rms: f64, peak: f64, age_ms: f64) -> f64 {
         1.0 - clamp01(age_ms / STALE_MS)
     };
     FLOOR + (combined.max(FLOOR) - FLOOR) * freshness
+}
+
+// ── Segmented bar meter (classic vumeter HUD style) ─────────────────────────
+//
+// Port of the removed `vumeter.js` helpers (`intensityToActiveSegments` /
+// `segmentColor`) and the GJS `BarMeterActor` renderer contract, re-added so
+// the HUD can be configured to the classic segmented bar when the `hud-style`
+// setting is `vumeter`. Segments illuminate left-to-right as the (calibrated)
+// level rises, with conventional green → yellow → red zones.
+
+/// Number of illuminated segments for an intensity and fixed segment count.
+/// Port of `vumeter.js`'s `intensityToActiveSegments`.
+pub fn intensity_to_active_segments(intensity: f64, segment_count: usize) -> usize {
+    let count = segment_count.max(1);
+    ((clamp01(intensity) * count as f64).ceil() as usize).min(count)
+}
+
+/// Conventional segmented-VU colour zone for a segment's normalized place.
+/// Port of `vumeter.js`'s `segmentColor`.
+pub enum SegmentColor {
+    Green,
+    Yellow,
+    Red,
+}
+
+/// The normalized position at which the yellow zone begins.
+pub const YELLOW_START: f64 = 0.68;
+/// The normalized position at which the red zone begins.
+pub const RED_START: f64 = 0.86;
+
+/// The colour zone for a segment at normalized place `position` in `[0,1]`.
+pub fn segment_color(position: f64) -> SegmentColor {
+    if position >= RED_START {
+        SegmentColor::Red
+    } else if position >= YELLOW_START {
+        SegmentColor::Yellow
+    } else {
+        SegmentColor::Green
+    }
 }

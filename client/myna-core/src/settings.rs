@@ -56,6 +56,13 @@ pub const KEY_ACTIVATION: &str = "activation";
 /// The accelerator offered to the portal's bind dialog; empty offers none.
 pub const KEY_HOTKEY: &str = "hotkey";
 
+/// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave) or
+/// `vumeter` (segmented bar).
+pub const KEY_HUD_STYLE: &str = "hud-style";
+
+/// The accepted HUD style nicks.
+pub const HUD_STYLES: &[&str] = &["bar", "ribbon", "vumeter"];
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -68,6 +75,9 @@ pub struct Settings {
     /// the enum, so this stays a string in the shared crate. `auto` is `None`.
     pub activation: Option<String>,
     pub hotkey: Option<String>,
+    /// The HUD indicator style nick (`ribbon` | `vumeter`), or `None` when
+    /// unset (the schema default applies).
+    pub hud_style: Option<String>,
 }
 
 /// Why a settings read or write did not happen.
@@ -127,6 +137,11 @@ pub const KEYS: &[KeySpec] = &[
         values: None,
         summary: "accelerator offered to the portal's bind dialog",
     },
+    KeySpec {
+        name: KEY_HUD_STYLE,
+        values: Some(HUD_STYLES),
+        summary: "how the HUD renders the audio level",
+    },
 ];
 
 /// Look up a key by name.
@@ -152,6 +167,7 @@ impl Settings {
             language: store.text(KEY_LANGUAGE),
             activation: store.text(KEY_ACTIVATION).filter(|a| a != "auto"),
             hotkey: store.text(KEY_HOTKEY),
+            hud_style: store.text(KEY_HUD_STYLE),
         }
     }
 }

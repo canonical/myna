@@ -25,6 +25,12 @@
     <value nick="batch" value="2"/>
   </enum>
 
+  <enum id="com.canonical.Myna.Dictation.HudStyle">
+    <value nick="ribbon" value="0"/>
+    <value nick="vumeter" value="1"/>
+    <value nick="bar" value="2"/>
+  </enum>
+
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
     <key name="streaming-mode" enum="com.canonical.Myna.Dictation.StreamingMode">
       <default>'auto'</default>
@@ -65,6 +71,17 @@
         An accelerator such as '&lt;Super&gt;d'. It is a *preference*: under
         portal activation the desktop's own bind dialog owns the final choice,
         and empty means "offer no preference".
+      </description>
+    </key>
+
+    <key name="hud-style" enum="com.canonical.Myna.Dictation.HudStyle">
+      <default>'bar'</default>
+      <summary>The HUD indicator style</summary>
+      <description>
+        bar: a simple level bar in the accent colour (the default). ribbon:
+        the flowing GPU wave ribbon. vumeter: the classic segmented bar meter.
+        All three are driven by the same calibrated audio envelope; only the
+        presentation differs.
       </description>
     </key>
   </schema>
