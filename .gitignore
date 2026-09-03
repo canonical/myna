@@ -2,10 +2,6 @@
 # These carry their own .git and would commit as broken gitlinks — keep out.
 reference/
 
-# Generated corpora — regenerate with the dev/ builders:
-#   server/fixtures/ -> dev/generate_fixtures.py  (synthetic espeak)
-#   corpus/          -> dev/fetch_real_corpus.py  (real LibriSpeech)
-#   .cache/          -> the ~337 MB LibriSpeech source download
 fixtures/
 corpus/
 .cache/
