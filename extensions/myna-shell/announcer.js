@@ -6,33 +6,28 @@
 // client could otherwise spam the screen reader. The reliable anchor is the
 // shell chrome itself (always in the AT-SPI tree). This module watches
 // `com.canonical.Myna.Dictation` *passively* (no RegisterClient) via the
-// well-known name proxy's `g-properties-changed` and announces all
+// shared well-known name proxy's `g-properties-changed` and announces all
 // non-idle phases (loading/listening/… + notice/error) via a hidden
 // St.Label live region. No visual notification — like a notification for
 // Orca, but without a banner.
 
 import Atk from 'gi://Atk';
-import Gio from 'gi://Gio';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const BUS_NAME = 'com.canonical.Myna.Dictation';
-const OBJECT_PATH = '/com/canonical/Myna/Dictation';
-const IFACE = 'com.canonical.Myna.Dictation';
-
 export class DictationAnnouncer {
     /**
      * @param {object} deps
+     * @param {DictationProxy} deps.proxy - the shared daemon proxy.
      * @param {function(string):void} [deps.log]
      */
-    constructor({log = () => {}} = {}) {
+    constructor({proxy, log = () => {}} = {}) {
         this._log = log;
-        this._proxy = null;
+        this._proxy = proxy;
         this._a11yActor = null;
         this._lastState = null;
         this._lastMessage = null;
-        this._cancellable = null;
     }
 
     enable() {
@@ -50,54 +45,31 @@ export class DictationAnnouncer {
         });
         Main.layoutManager.uiGroup.add_child(this._a11yActor);
 
-        const cancellable = new Gio.Cancellable();
-        this._cancellable = cancellable;
-        Gio.DBusProxy.new_for_bus(
-            Gio.BusType.SESSION,
-            Gio.DBusProxyFlags.DO_NOT_CONNECT_SIGNALS |
-            Gio.DBusProxyFlags.DO_NOT_AUTO_START,
-            null,
-            BUS_NAME,
-            OBJECT_PATH,
-            IFACE,
-            cancellable,
-            (source, res) => {
-                if (this._cancellable !== cancellable || cancellable.is_cancelled())
-                    return;
-                try {
-                    this._proxy = Gio.DBusProxy.new_for_bus_finish(res);
-                    this._proxy.connectObject('g-properties-changed',
-                        (p, changed, _invalidated) => this._onPropertiesChanged(changed), this);
-                    this._reflectFromProxy();
-                } catch (e) {
-                    if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                        this._log(`announcer: async proxy unavailable: ${e.message ?? e}`);
-                }
-            }
-        );
+        // The shared proxy owns the name watch and is ready synchronously;
+        // the announcer just consumes its g-properties-changed.
+        this._proxy.proxy.connectObject('g-properties-changed',
+            (p, changed, _invalidated) => this._onPropertiesChanged(changed), this);
+        this._reflect();
     }
 
     disable() {
-        this._cancellable?.cancel();
-        this._cancellable = null;
-        this._proxy?.disconnectObject(this);
-        this._proxy = null;
+        this._proxy.proxy?.disconnectObject(this);
         this._a11yActor?.destroy();
         this._a11yActor = null;
         this._lastState = null;
         this._lastMessage = null;
     }
 
-    _reflectFromProxy() {
+    _reflect() {
         try {
-            const stateVar = this._proxy.get_cached_property('State');
-            const messageVar = this._proxy.get_cached_property('StatusMessage');
+            const stateVar = this._proxy.proxy.get_cached_property('State');
+            const messageVar = this._proxy.proxy.get_cached_property('StatusMessage');
             const state = stateVar ? stateVar.unpack() : null;
             const message = messageVar ? messageVar.unpack() : '';
             if (state)
                 this._maybeAnnounce(state, message);
         } catch (e) {
-            logError(e, 'announcer reflectFromProxy failed');
+            logError(e, 'announcer reflect failed');
         }
     }
 
@@ -119,7 +91,7 @@ export class DictationAnnouncer {
 
         if (message === null || message === undefined) {
             try {
-                const messageVar = this._proxy?.get_cached_property('StatusMessage');
+                const messageVar = this._proxy.proxy?.get_cached_property('StatusMessage');
                 message = messageVar ? messageVar.unpack() : '';
             } catch { message = ''; }
         }
