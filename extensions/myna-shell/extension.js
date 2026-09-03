@@ -38,7 +38,7 @@ export default class MynaShellExtension extends Extension {
         // single name watch; avoid a second bus_watch_name.
         this._proxy = new DictationProxy({log: msg =>
             console.log(`[myna-shell] ${msg}`)});
-        this._proxy.connect();
+        this._proxy.start();
 
         this._host = new OverlayHost({
             proxy: this._proxy,
@@ -94,7 +94,7 @@ export default class MynaShellExtension extends Extension {
         this._dockExtent = null;
         this._host.disable();
         this._host = null;
-        this._proxy?.disconnect();
+        this._proxy?.stop();
         this._proxy = null;
     }
 }

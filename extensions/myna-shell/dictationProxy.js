@@ -27,8 +27,12 @@ export class DictationProxy {
     /** Create the proxy asynchronously. DO_NOT_AUTO_START means it only
      * reflects whether the name is owned, so it never brings the daemon up.
      * Cancellable, so a teardown that happens while creation is in flight can
-     * abort it. */
-    connect() {
+     * abort it.
+     *
+     * Named start()/stop() rather than connect()/disconnect(): in GJS those
+     * two names mean "attach/detach a signal handler" on every object that
+     * has them, and this class is not a GObject. */
+    start() {
         if (this._proxy)
             return;
 
@@ -57,21 +61,21 @@ export class DictationProxy {
 
     /** Drop the proxy, cancelling any in-flight creation. Consumers'
      * disconnectObject() handles the signals they attached. */
-    disconnect() {
+    stop() {
         this._cancellable?.cancel();
         this._cancellable = null;
         this._proxy?.disconnectObject(this);
         this._proxy = null;
     }
 
-    /** The live Gio.DBusProxy, or null while creation is in flight (connect
+    /** The live Gio.DBusProxy, or null while creation is in flight (start
      * before most consumers, so it resolves before they need it). */
     get proxy() {
         return this._proxy;
     }
 
     /** Whether the daemon currently owns the name (null before resolution /
-     * after disconnect reads as absent). */
+     * after stop reads as absent). */
     get present() {
         return (this._proxy?.get_name_owner() ?? null) !== null;
     }
