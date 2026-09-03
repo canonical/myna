@@ -266,7 +266,9 @@ def cmd_make(args) -> None:  # noqa: ANN001
             continue
 
         clip_id = wav.stem
-        rel = wav.relative_to(out_dir) if wav.is_relative_to(out_dir) else Path(wav.name)
+        # Relative to the manifest, which is what load_manifest resolves against:
+        # an --out beside the clips rather than over them still has to load.
+        rel = wav.relative_to(out_dir, walk_up=True)
         entries.append(
             {
                 "id": clip_id,
