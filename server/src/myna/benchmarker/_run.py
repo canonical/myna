@@ -421,6 +421,7 @@ def _sweep_one(
     budget: float,
     out: _JsonlWriter,
     provenance: dict,
+    corpus: dict[str, str],
     resources_path: Path,
     sample_resources: bool,
     broken: list[tuple[str, str]],
@@ -445,6 +446,7 @@ def _sweep_one(
                     cold=True,
                     streaming=target.streaming,
                     provenance=provenance,
+                    corpus=corpus,
                     budget_seconds=None,
                     out_fp=out,
                 )
@@ -462,6 +464,7 @@ def _sweep_one(
                 cold=False,
                 streaming=target.streaming,
                 provenance={**provenance, "sweep_budget_seconds": budget},
+                corpus=corpus,
                 budget_seconds=budget,
                 out_fp=out,
             )
@@ -535,9 +538,16 @@ def cmd_run(args) -> None:  # noqa: ANN001
 
     _resolve_user_home()
 
-    from myna.testbed.corpus import load_manifest
+    from myna.testbed.corpus import load_manifest, verify_corpus
 
     all_clips = list(load_manifest(manifest_path))
+    try:
+        corpus = {
+            "corpus_id": verify_corpus(manifest_path),
+            "corpus_manifest": manifest_path.name,
+        }
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     clip_by_id = {c.id: c for c in all_clips}
 
     if cold_clip_id:
@@ -626,6 +636,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
                                     budget=budget,
                                     out=out,
                                     provenance=provenance,
+                                    corpus=corpus,
                                     resources_path=resources_path,
                                     sample_resources=not args.no_resources,
                                     broken=broken,
@@ -641,6 +652,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
                                 budget=budget,
                                 out=out,
                                 provenance=provenance,
+                                corpus=corpus,
                                 resources_path=resources_path,
                                 sample_resources=not args.no_resources,
                                 broken=broken,

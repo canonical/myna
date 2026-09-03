@@ -19,6 +19,8 @@ import urllib.request
 import wave
 from pathlib import Path
 
+from myna.testbed.corpus import stamp_corpus
+
 RATE = 16_000
 BASE_URL = "https://www.openslr.org/resources/12"
 SUBSETS = ("dev-clean", "dev-other", "test-clean", "test-other")
@@ -187,6 +189,7 @@ def _build_corpus(out_dir: Path, tar_path: Path, n: int, subset: str) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    print(f"corpus id {stamp_corpus(manifest_path)}")
     return manifest_path
 
 
@@ -305,7 +308,8 @@ def cmd_make(args) -> None:  # noqa: ANN001
         + "\n",
         encoding="utf-8",
     )
-    print(f"\nadded {len(entries)} clips, skipped {len(skipped)}")
+    print(f"\ncorpus id {stamp_corpus(manifest_path)}")
+    print(f"added {len(entries)} clips, skipped {len(skipped)}")
     if skipped:
         print(f"skipped (no .txt sidecar or unreadable): {', '.join(skipped)}")
     print(f"wrote {manifest_path}")

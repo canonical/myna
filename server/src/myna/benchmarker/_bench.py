@@ -58,6 +58,7 @@ def to_line(
     clips_scored: int,
     clips_requested: int,
     provenance: dict | None,
+    corpus: dict[str, str] | None = None,
 ) -> dict:
     """Serialise a single-clip result to the JSONL record schema."""
     m = record.metrics
@@ -98,6 +99,7 @@ def to_line(
         "started_at": record.started_at,
         "run_started": run_started,
         "served_models": served_models,
+        **(corpus or {}),
         "usability_fail": usability_fail,
         "clips_scored": clips_scored,
         "clips_requested": clips_requested,
@@ -121,6 +123,7 @@ async def run_clips(
     provenance: dict | None,
     budget_seconds: float | None,
     out_fp,
+    corpus: dict[str, str] | None = None,
 ) -> tuple[bool, int]:
     """Sweep ``clips`` and append JSONL records to ``out_fp``.
 
@@ -176,6 +179,7 @@ async def run_clips(
             clips_scored=0,  # back-patched below
             clips_requested=len(clips),
             provenance=provenance,
+            corpus=corpus,
         )
         lines.append(line)
 

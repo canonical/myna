@@ -58,6 +58,27 @@ def load_latest(path: Path) -> tuple[list[dict], dict[str, tuple[str, str]]]:
     return list(latest.values()), statuses
 
 
+def one_corpus(records: list[dict], wanted: str | None) -> tuple[list[dict], str]:
+    """Records for a single corpus. Two corpora in one file is not a table to
+    be qualified, it is a comparison that cannot be made."""
+    ids = {r.get("corpus_id") for r in records}
+    if not ids:
+        raise SystemExit("no clip records to aggregate")
+    if None in ids:
+        raise SystemExit(
+            "records with no corpus_id: they were measured before the corpus was "
+            "stamped, and nothing says what audio produced them - drop them"
+        )
+    if wanted is None:
+        if len(ids) > 1:
+            raise SystemExit(
+                "records span " + ", ".join(sorted(ids)) + " - a WER micro-averaged "
+                "across two corpora compares nothing; re-run on one, or pass --corpus"
+            )
+        wanted = ids.pop()
+    return [r for r in records if r["corpus_id"] == wanted], wanted
+
+
 def _pct(values: list[float], q: float) -> float | None:
     if not values:
         return None
@@ -285,16 +306,22 @@ def main() -> None:
         default="wer",
         help="rank rows best-first by this metric (default: wer); 'label' for alphabetical",
     )
+    parser.add_argument(
+        "--corpus",
+        help="corpus id to report on; required when the file holds more than one",
+    )
     args = parser.parse_args()
 
     records, statuses = load_latest(args.infile)
+    records, corpus = one_corpus(records, args.corpus)
     summary = summarize(records)
     resources = load_resources(args.infile.parent / "matrix-resources.jsonl")
     for label, peaks in resources.items():
         if label in summary:
             summary[label]["peak_rss_mb"] = peaks.get("peak_rss_mb")
             summary[label]["peak_vram_mb"] = peaks.get("peak_vram_mb")
-    print(f"{len(records)} records across {len(summary)} label(s) from {args.infile}\n")
+    print(f"{len(records)} records across {len(summary)} label(s) from {args.infile}")
+    print(f"corpus {corpus}\n")
     order = ranked_labels(summary, args.sort, statuses)
     print_overall(summary, order, statuses)
     if args.by_category:

@@ -28,6 +28,9 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server" / "src"))
+from myna.testbed.corpus import stamp_corpus  # noqa: E402
+
 RATE = 16_000
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE = REPO_ROOT / ".cache"
@@ -197,6 +200,7 @@ def main() -> int:
         "clips": clips,
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    print(f"corpus id {stamp_corpus(manifest_path)}")
 
     notice_path = args.out / "README.txt"
     with open(notice_path, "w") as f:

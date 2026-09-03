@@ -29,6 +29,9 @@ from array import array
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server" / "src"))
+from myna.testbed.corpus import stamp_corpus  # noqa: E402
+
 TARGET_RATE = 16_000
 NOISE_SNR_DB = 10.0
 NOISE_SEED = 20260612  # fixed: regeneration must be deterministic
@@ -305,6 +308,7 @@ def generate(
         + "\n",
         encoding="utf-8",
     )
+    print(f"corpus id {stamp_corpus(manifest_path)}")
     return manifest_path
 
 

@@ -255,6 +255,7 @@ def requantize(
     remaining_fp32 = _find_fp32_linear2_nodes(after)
     summary = {
         "targets": targets,
+        "calibration_clips": clip_paths,
         "before_ops": dict(before_ops),
         "after_ops": dict(after_ops),
         "remaining_fp32_linear2": remaining_fp32,

@@ -11,7 +11,15 @@ Rules of the house (from CLAUDE.md):
 """
 
 from myna.testbed.adapter import Adapter, Candidate
-from myna.testbed.corpus import Clip, by_category, load_manifest
+from myna.testbed.corpus import (
+    Clip,
+    by_category,
+    corpus_id,
+    digest_files,
+    load_manifest,
+    stamp_corpus,
+    verify_corpus,
+)
 from myna.testbed.fake import FakeAdapter, ScriptStep
 from myna.testbed.harness import (
     DecodeSample,
@@ -46,7 +54,11 @@ __all__ = [
     "WavFileSource",
     "by_category",
     "character_error_rate",
+    "corpus_id",
+    "digest_files",
     "load_manifest",
     "normalize",
+    "stamp_corpus",
+    "verify_corpus",
     "word_error_rate",
 ]

@@ -18,7 +18,7 @@ from myna.benchmarker._bench import bench_clip, run_clips, session_error, to_lin
 from myna.benchmarker._summarize import _summarize
 from myna.core import TranscriptionError, TranscriptionFinal, serve_unix
 from myna.testbed import FakeAdapter, ScriptStep
-from myna.testbed.corpus import Clip
+from myna.testbed.corpus import Clip, sha256_file
 
 RATE = 16_000
 
@@ -51,6 +51,7 @@ def make_clip(tmp_path, clip_id="clip-a", text="hello world", seconds=0.4, categ
         channels=1,
         source="test",
         license="CC0-1.0",
+        sha256=sha256_file(path),
     )
 
 
@@ -166,6 +167,25 @@ async def test_provenance_is_omitted_entirely_when_not_supplied(tmp_path, socket
 
 
 # ─── run_clips ───────────────────────────────────────────────────────────────
+
+
+async def test_a_sweep_stamps_the_corpus_it_measured(tmp_path, socket):
+    """A WER without a corpus id cannot be compared to another machine's."""
+    out = Collector()
+    await run_clips(
+        socket=socket,
+        clips=[make_clip(tmp_path)],
+        label="fake/batch",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        out_fp=out,
+        corpus={"corpus_id": "v1:abcd", "corpus_manifest": "manifest.json"},
+    )
+
+    assert out.records[0]["corpus_id"] == "v1:abcd"
+    assert out.records[0]["corpus_manifest"] == "manifest.json"
 
 
 async def test_a_sweep_writes_one_record_per_clip(tmp_path, socket):
