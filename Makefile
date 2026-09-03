@@ -117,6 +117,11 @@ server: ## Sync the Python server env
 bench: ## Build the standalone myna-bench.pyz zipapp (external distribution, not an in-repo run)
 	./dev/build-bench.sh
 
+# BENCH_LABEL_SUFFIX=maxstack tags every label <snap>+maxstack so two builds of
+# one snap can share results/bench.jsonl (aggregate.py dedups by label).
+BENCH_LABEL_SUFFIX ?=
+BENCH_LABEL_ARGS = $(if $(BENCH_LABEL_SUFFIX),--label-suffix $(BENCH_LABEL_SUFFIX))
+
 # In-repo benchmark run: dev/matrix.py sideloads the snap/component files
 # already sitting in each */-snap dir (no bench.yaml needed — see
 # dev/matrix.yaml for the target list) and sweeps corpus/real. Distinct from
@@ -132,7 +137,7 @@ bench-plan: bench-corpus ## Print the matrix run plan without installing anythin
 # which breaks every later `uv run`.
 .PHONY: bench-run
 bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps); writes results/bench.jsonl
-	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml
+	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml $(BENCH_LABEL_ARGS)
 
 # --keep-results: unlike bench-run (a full sweep, meant to start clean),
 # bench-run-<snap> exists to be called once per snap across separate
@@ -141,7 +146,7 @@ bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps)
 # Safe to re-run the same snap too: aggregate.py dedups by (label, clip),
 # newest wins.
 bench-run-%: bench-corpus ## Matrix sweep scoped to one snap (bench-run-<snap>, e.g. bench-run-whisper)
-	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results
+	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results $(BENCH_LABEL_ARGS)
 
 .PHONY: bench-aggregate
 bench-aggregate: ## Re-print the comparison table from the last matrix run
