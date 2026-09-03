@@ -1051,6 +1051,14 @@ fn print_status(args: &Args) -> ExitCode {
         preedit_reason(args.preedit, settings.streaming_mode)
     );
 
+    let rt = match cli_runtime() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("cannot start async runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     println!("\nbackend");
     match args.backend() {
         None => println!(
@@ -1060,7 +1068,22 @@ fn print_status(args: &Args) -> ExitCode {
         Some(backend) => {
             println!("  {:<15} {}", "configured", backend.describe());
             match backend.resolve() {
-                Ok(path) => println!("  {:<15} {}", "resolves to", path.display()),
+                Ok(path) => {
+                    println!("  {:<15} {}", "resolves to", path.display());
+                    // The resolved path names snapd's mount point (a generic
+                    // "run", "run-2", … - see `BackendSocket::describe`), not
+                    // the backend serving it, so ask the backend itself (T24
+                    // capabilities discovery) rather than guess from the path.
+                    match rt.block_on(myna_orchestrator::query_capabilities(&path)) {
+                        Ok(caps) if caps.models.is_empty() => {
+                            println!("  {:<15} (backend did not report one)", "model");
+                        }
+                        Ok(caps) => {
+                            println!("  {:<15} {}", "model", caps.models.join(", "));
+                        }
+                        Err(e) => println!("  {:<15} unknown ({e})", "model"),
+                    }
+                }
                 Err(e) => {
                     println!("  {:<15} NOT reachable: {e}", "resolves to");
                     // The share is a bind mount inside the snap's namespace,
@@ -1083,13 +1106,6 @@ fn print_status(args: &Args) -> ExitCode {
     }
 
     println!("\ndaemon     {}", myna_desktop::dbus::BUS_NAME);
-    let rt = match cli_runtime() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("cannot start async runtime: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
     match rt.block_on(myna_desktop::dbus::status::read()) {
         Ok(status) => {
             println!("  {:<15} {}", "state", status.state);
