@@ -64,6 +64,9 @@ mod imp {
         pub(super) state_since: RefCell<Option<Instant>>,
         /// The desktop's reduce-animation preference — makes the pulse static.
         pub(super) reduced_motion: RefCell<bool>,
+        /// The last smoothed level and when it was computed.
+        pub(super) smoothed_level: RefCell<f64>,
+        pub(super) last_frame: RefCell<Option<Instant>>,
     }
 
     #[glib::object_subclass]
@@ -88,14 +91,7 @@ mod imp {
                 return;
             }
 
-            let sample = self.level.borrow();
-            let (rms, peak, age_ms) = match *sample {
-                Some(LevelSample { rms, peak, at }) => {
-                    (rms, peak, at.elapsed().as_secs_f64() * 1000.0)
-                }
-                None => (0.0, 0.0, vumeter::STALE_MS + 1.0),
-            };
-            let intensity = vumeter::levels_to_intensity(rms, peak, age_ms);
+            let intensity = super::current_intensity(self);
 
             let (key, severity, state_ms) = match *self.key.borrow() {
                 Some(key) => {
@@ -164,6 +160,38 @@ mod imp {
     }
 }
 
+/// The eased level for the current frame: the raw intensity smoothed toward
+/// the pushed sample by [`crate::hud_logic::smooth_level`] (slower under
+/// reduced motion). Advances the view's smoothed/last-frame state.
+fn current_intensity(imp: &imp::SegmentedMeterView) -> f64 {
+    let now = Instant::now();
+    let dt_ms = match *imp.last_frame.borrow() {
+        Some(prev) => now.duration_since(prev).as_secs_f64() * 1000.0,
+        None => 0.0,
+    };
+    let smoothed = crate::hud_logic::smooth_level(
+        *imp.smoothed_level.borrow(),
+        raw_intensity(&imp.level),
+        dt_ms,
+        *imp.reduced_motion.borrow(),
+    );
+    *imp.smoothed_level.borrow_mut() = smoothed;
+    *imp.last_frame.borrow_mut() = Some(now);
+    smoothed
+}
+
+/// The calibrated intensity for the current level, decaying with age.
+fn raw_intensity(level: &RefCell<Option<LevelSample>>) -> f64 {
+    let sample = level.borrow();
+    match *sample {
+        Some(LevelSample { rms, peak, at }) => {
+            let age_ms = at.elapsed().as_secs_f64() * 1000.0;
+            vumeter::levels_to_intensity(rms, peak, age_ms)
+        }
+        None => 0.0,
+    }
+}
+
 glib::wrapper! {
     /// The classic segmented bar meter.
     pub struct SegmentedMeterView(ObjectSubclass<imp::SegmentedMeterView>)
@@ -197,6 +225,7 @@ impl SegmentedMeterView {
             peak,
             at: Instant::now(),
         });
+        *imp.last_frame.borrow_mut() = None;
         self.queue_draw();
     }
 

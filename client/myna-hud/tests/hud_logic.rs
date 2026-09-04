@@ -7,7 +7,7 @@
 use myna_hud::hud_logic::{
     icon_for_severity, indicator_state, pill_color_class, pulse_position,
     ribbon_phase_for_state_key, ribbon_visible_for_severity, severity_auto_dismisses,
-    should_replace_held_notice, PILL_COLOR_CLASSES,
+    should_replace_held_notice, smooth_level, PILL_COLOR_CLASSES,
 };
 use myna_hud::ribbon::RibbonPhase;
 use myna_hud::states::{DictationState, Severity};
@@ -172,9 +172,9 @@ fn plain_level_states_report_the_raw_level() {
 #[test]
 fn loading_transcribing_finalizing_report_a_pulse() {
     for (key, period) in [
-        (DictationState::Loading, 1600.0),
-        (DictationState::Transcribing, 1100.0),
-        (DictationState::Finalizing, 800.0),
+        (DictationState::Loading, 2000.0),
+        (DictationState::Transcribing, 1400.0),
+        (DictationState::Finalizing, 1000.0),
     ] {
         let s = indicator_state(key, None, 0.0, 0.0, false);
         let Some(pulse) = s.pulse else {
@@ -257,4 +257,46 @@ fn pulse_position_swings_back_and_forth() {
     assert!((pulse_position(1000.0, 1000.0) - 0.0).abs() < 1e-9);
     // Symmetric around the peak.
     assert!((pulse_position(250.0, 1000.0) - pulse_position(750.0, 1000.0)).abs() < 1e-9);
+}
+
+// --- smooth_level: sample-intensity easing ----------------------------------
+
+#[test]
+fn smooth_level_is_identity_with_no_elapsed_time() {
+    assert_eq!(
+        smooth_level(0.0, 0.5, 0.0, false),
+        0.5,
+        "dt=0 jumps to target"
+    );
+}
+
+#[test]
+fn smooth_level_eases_toward_the_target() {
+    // Attack (rising): a small step moves partway toward the target, and a
+    // much bigger dt converges to it.
+    let a = smooth_level(0.0, 1.0, 50.0, false);
+    assert!(a > 0.0 && a < 1.0, "rises partway: {a}");
+    assert!(
+        smooth_level(0.0, 1.0, 2000.0, false) > a,
+        "more time converges closer to the target"
+    );
+}
+
+#[test]
+fn smooth_level_is_slower_under_reduced_motion() {
+    // Same dt: reduced motion eases less far than full motion.
+    let full = smooth_level(0.0, 1.0, 200.0, false);
+    let reduced = smooth_level(0.0, 1.0, 200.0, true);
+    assert!(
+        reduced < full,
+        "reduced motion eases the level more slowly (got reduced={reduced}, full={full})"
+    );
+}
+
+#[test]
+fn smooth_level_clamps_and_snaps_on_down_motion() {
+    // A fresh start (previous 0) to a 0.2 sample with no dt snaps.
+    assert_eq!(smooth_level(0.0, 0.2, 0.0, false), 0.2);
+    // Rising toward an existing target never overshoots 1.
+    assert!(smooth_level(0.0, 1.0, 1e9, false) <= 1.0);
 }
