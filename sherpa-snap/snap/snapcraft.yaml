@@ -1,0 +1,156 @@
+# sherpa-onnx inference snap (UbuSTT) — feature 008 US4.
+#
+# The turnkey small streaming snap: a NeMo-family streaming FastConformer
+# transducer (k2-fsa export, int8) via sherpa-onnx's OnlineRecognizer —
+# native chunked streaming (continuous partials + rule endpointing) with no
+# custom decode loop. Follows the parakeet-snap/whisper-snap pattern
+# (modelctl v2 + one cpu engine + weights as a component). Weights: run
+# ./dev/download-models.sh before packing. No `network` plug.
+name: myna-sherpa
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: sherpa-onnx streaming speech-to-text snap (UbuSTT)
+description: |
+  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Unix domain socket. Wraps a streaming FastConformer transducer (NeMo
+  family, k2-fsa ONNX export, int8) served via sherpa-onnx's
+  OnlineRecognizer: continuous partial hypotheses plus endpoint-driven
+  committed segments.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  sherpa:
+    command: bin/sherpa
+    completer: bin/snap-completer.bash
+    plugs: &hook-plugs
+      # modelctl's hardware detection (lscompute reading /sys) backs
+      # `show-engine`, `use-engine` and `status`. This snap ships one CPU
+      # engine and its daemon does not need scoring to boot, but the modelctl
+      # surface is meant to answer uniformly on every inference snap.
+      - hardware-observe
+      - opengl
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs: *hook-plugs
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (T14c).
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
+      ln --symbolic ./modelctl bin/sherpa
+      craftctl default
+
+  server-app:
+    # myna-server + sherpa-onnx + onnxruntime in a venv. The myna wheel is
+    # staged into wheels/ by dev/prepare.sh before packing.
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[sherpa]
+    build-packages:
+      - python3-venv
+    override-prime: |
+      craftctl default
+      site=$(echo "$CRAFT_PRIME"/lib/python3*/site-packages)
+      # The wheel now ships its own VERS_1.27.0 libonnxruntime.so beside
+      # _sherpa_onnx, and $ORIGIN leads that module's RPATH, so the pip
+      # onnxruntime is never the copy the loader picks - it and its protobuf
+      # chain are dead weight here. Nothing in this snap imports onnxruntime
+      # from Python either; sherpa_onnx drives the native lib. The gate
+      # re-reads /proc/self/maps to confirm which copy actually mapped, so a
+      # wheel that goes back to unbundling fails the build.
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import sherpa_onnx; assert sherpa_onnx.OnlineRecognizer; assert any('sherpa_onnx/lib/libonnxruntime' in l for l in open('/proc/self/maps')), 'sherpa-onnx stopped bundling libonnxruntime'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PRIME/bin/python3"
+      rm -f "$CRAFT_PRIME"/bin/pip* "$CRAFT_PRIME"/bin/onnxruntime_test
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-fastconformer-480ms/*": (component/model-fastconformer-480ms)/
+    prime:
+      - -*
+
+components:
+  model-fastconformer-480ms:
+    type: standard
+    summary: Streaming FastConformer transducer (480ms) int8 ONNX
+    description: |
+      NeMo streaming FastConformer transducer (English) exported to ONNX by
+      k2-fsa (sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8):
+      encoder/decoder/joiner + tokens. 480 ms latency variant (80/1040 ms
+      variants exist upstream).

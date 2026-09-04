@@ -1,0 +1,53 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+# `snap set myna-parakeet stream-*=...` writes top-level snap config; modelctl's
+# package config holds the install-time defaults. Prefer the user-visible
+# snapd value, then fall back to the package default.
+stream_arm="$(snapctl get stream-arm-seconds 2>/dev/null || true)"
+stream_silence_cut="$(snapctl get stream-silence-cut-seconds 2>/dev/null || true)"
+stream_force_cut="$(snapctl get stream-force-cut-seconds 2>/dev/null || true)"
+stream_partial_cadence="$(snapctl get stream-partial-cadence-seconds 2>/dev/null || true)"
+stream_partial_tail="$(snapctl get stream-partial-tail-seconds 2>/dev/null || true)"
+stream_arm="${stream_arm:-$(modelctl get stream-arm-seconds)}"
+stream_silence_cut="${stream_silence_cut:-$(modelctl get stream-silence-cut-seconds)}"
+stream_force_cut="${stream_force_cut:-$(modelctl get stream-force-cut-seconds)}"
+# `${x:-default}` treats an explicit 0 as unset, and 0 is how a user turns
+# partials off, so test for the empty string instead.
+stream_partial_cadence="${stream_partial_cadence:-$(modelctl get stream-partial-cadence-seconds 2>/dev/null || true)}"
+stream_partial_tail="${stream_partial_tail:-$(modelctl get stream-partial-tail-seconds 2>/dev/null || true)}"
+[ -z "$stream_partial_cadence" ] && stream_partial_cadence=0.5
+[ -z "$stream_partial_tail" ] && stream_partial_tail=0
+
+# MODEL_DIR normally comes from model.yaml when modelctl runs the engine. This
+# CPU-only snap bypasses modelctl run to avoid hardware scoring, so fall back
+# to its single component directly.
+MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-parakeet-int8}"
+
+# Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
+#
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# Defaults to true here: chunked progressive commit is this snap's reason to
+# exist (008 US3). It is a key rather than a hardcoded flag only so the batch
+# baseline is measurable on the same build.
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --adapter parakeet \
+    --model "$MODEL_DIR" \
+    "${stream_args[@]}" \
+    --stream-arm-s "${stream_arm:-15}" \
+    --stream-silence-cut-s "${stream_silence_cut:-0.5}" \
+    --stream-force-cut-s "${stream_force_cut:-60}" \
+    --stream-partial-cadence-s "$stream_partial_cadence" \
+    --stream-partial-tail-s "$stream_partial_tail" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

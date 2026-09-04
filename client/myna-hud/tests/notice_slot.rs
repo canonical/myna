@@ -1,0 +1,134 @@
+// tests/notice_slot.rs — hermetic test for the held-notice slot (feature
+// 004, R15; FR-007a/FR-007b/FR-007d; contract extension.md RC20 re-homed to
+// the renderer). The slot owns *when* a notice clears; the window owns the
+// pixels and the actual timer.
+
+use myna_hud::notice_slot::{hold_ms_for, NoticeSlot};
+use myna_hud::states::Severity;
+
+fn recoverable(reason: &str) -> (Option<Severity>, String) {
+    (Some(Severity::Recoverable), reason.to_string())
+}
+
+// --- FR-007a: a recoverable notice auto-dismisses after the hold window ---
+// Client uses slower reading (60ms/char, ≥8000) than server (48ms/char,
+// ≥6000) and ignores server idle until its own timer.
+
+#[test]
+fn recoverable_notice_auto_dismisses() {
+    let mut slot = NoticeSlot::default();
+    let (sev, reason) = recoverable("No speech detected");
+    let expected = hold_ms_for(&reason);
+    slot.hold(sev, &reason, 0.0);
+    assert!(slot.is_showing(0.0), "shown immediately");
+    assert!(
+        slot.is_showing(expected - 1.0),
+        "still showing just before the hold expires"
+    );
+    assert!(
+        !slot.is_showing(expected + 1.0),
+        "cleared on its own after the hold window — no user action"
+    );
+    assert_eq!(slot.expires_at(), Some(expected));
+}
+
+// --- FR-007b: a critical error never auto-clears on the client ----
+// It stays until the server publishes a new state. The server never
+// auto-dismisses `error` (only `notice` after its longer hold).
+
+#[test]
+fn critical_error_persists_until_the_client_clears_it() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Critical), "Microphone unavailable", 0.0);
+    assert_eq!(slot.expires_at(), None, "no timer at all");
+    assert!(
+        slot.is_showing(8000.0),
+        "still showing long past any recoverable hold"
+    );
+    slot.clear();
+    assert!(!slot.is_showing(0.0));
+}
+
+// --- RC20/FR-007a: a second recoverable replaces in place AND restarts ----
+
+#[test]
+fn recoverable_replacement_restarts_the_hold() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Recoverable), "first", 0.0);
+    let exp1 = hold_ms_for("first");
+    // Halfway through the original hold, a second occurrence arrives.
+    slot.hold(Some(Severity::Recoverable), "second", exp1 / 2.0);
+    assert_eq!(slot.reason(), Some("second"), "replaced in place");
+    let exp2 = hold_ms_for("second");
+    assert_eq!(
+        slot.expires_at(),
+        Some(exp1 / 2.0 + exp2),
+        "the hold restarts in full, not on the original's stale schedule"
+    );
+    assert!(
+        slot.is_showing(exp1 + 1.0),
+        "still showing past the ORIGINAL expiry"
+    );
+}
+
+// --- RC20/FR-007d: a second critical replaces and still does not expire ---
+
+#[test]
+fn critical_replacement_still_never_auto_clears() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Critical), "first", 0.0);
+    slot.hold(Some(Severity::Critical), "second", 500.0);
+    assert_eq!(slot.reason(), Some("second"), "replaced in place");
+    assert_eq!(slot.expires_at(), None, "still no auto-dismiss");
+    assert!(
+        slot.is_showing(8000.0),
+        "still requires an explicit dismiss"
+    );
+}
+
+// A problem of the *other* severity also replaces the held slot — there is
+// exactly one slot, never a queue (R15).
+#[test]
+fn any_problem_replaces_the_single_slot() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Recoverable), "hiccup", 0.0);
+    slot.hold(Some(Severity::Critical), "broken", 100.0);
+    assert_eq!(slot.severity(), Some(Severity::Critical));
+    assert_eq!(slot.reason(), Some("broken"));
+    assert_eq!(slot.expires_at(), None, "now persistent");
+
+    slot.hold(Some(Severity::Recoverable), "hiccup again", 200.0);
+    assert_eq!(slot.severity(), Some(Severity::Recoverable));
+    assert_eq!(
+        slot.expires_at(),
+        Some(200.0 + hold_ms_for("hiccup again")),
+        "and auto-dismissing again"
+    );
+}
+
+// --- A non-problem state clears the slot (a new session starts clean) ----
+
+#[test]
+fn non_problem_state_clears_the_slot() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Critical), "broken", 0.0);
+    slot.hold(None, "", 10.0);
+    assert!(
+        !slot.is_showing(10.0),
+        "a live state clears the held notice"
+    );
+    assert_eq!(slot.severity(), None);
+}
+
+// --- FR-007a: the notice never blocks a new session ---------------------
+// Structural: the slot exposes only presentation state, so nothing here can
+// gate a session start. Pinned so a future "blocking" flag would fail here.
+
+#[test]
+fn slot_carries_no_blocking_state() {
+    let mut slot = NoticeSlot::default();
+    slot.hold(Some(Severity::Recoverable), "No speech detected", 0.0);
+    // A fresh session's live state simply replaces it, at any time.
+    slot.hold(None, "", 1.0);
+    assert!(!slot.is_showing(1.0));
+}

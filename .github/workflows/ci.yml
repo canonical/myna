@@ -1,0 +1,211 @@
+# CI for myna — runs the build+test suite inside the *same* Canonical Workshop
+# environments developers use locally (.workshop/*.yaml), so "green in CI"
+# means "green in the environment you develop in" (constitution Principle IV).
+#
+# The launch-workshop action installs Workshop on the hosted runner and builds
+# one workshop per job. `myna` (Rust toolchain + uv + the in-project pipewire
+# SDK) carries the client/server suites; `myna-shell` carries the GNOME Shell
+# extension's, on a base new enough to run the Shell it targets. The named
+# actions (`lint`, `test`, `py-test`, `gjs-test`) are defined alongside each.
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  workshop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # TODO(security): pin to a commit SHA before relying on this in anger —
+      # @v1 tracks the latest v1.* and can move under us.
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          # Persist the crate registry and uv cache across runs.
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Rust lint (clippy -D warnings)
+        run: make lint-client
+
+      - name: Rust tests (cargo test --workspace)
+        run: make test-client
+
+      # GPU render smoke check (xvfb + render_check). Catches the kind of
+      # regression that compiled-and-passed-unit-tests but produced a
+      # broken overlay (see be8d380 / 2e45c68: a wrong `count` argument
+      # to glUniform4fv for an array uniform silently corrupted the next
+      # uniforms and the ribbon became a flat saturated block).
+      - name: Renderer UI check (xvfb + render_check)
+        run: make ui-check
+
+      # Offline Python suite (fake-adapter contract + adapter logic; the
+      # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
+      - name: Python tests (pytest)
+        run: make test-server
+
+
+  # The GNOME Shell extension, in its own workshop and so its own job: the
+  # Shell version a test can reach comes from the workshop's base, and the
+  # extension targets a newer one than the core24 snap does. The pure GJS
+  # contract suites run first, then the HUD's presentation against a real
+  # headless Shell. See .workshop/myna-shell.yaml.
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # TODO(security): pin to a commit SHA before relying on this in anger -
+      # @v1 tracks the latest v1.* and can move under us.
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna-shell
+
+      - name: Extension tests (gjs + headless Shell)
+        run: make test-extension
+
+  # Static GNOME extension review. This deliberately does not use the Shell
+  # workshop: shexli reviews the bundle layout and JavaScript structure, not
+  # live Mutter behaviour. The gate writes an accepted/actionable finding
+  # summary to the job summary and fails only on findings outside the
+  # feature's documented exemption list.
+  extension-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install shexli
+        run: python -m pip install --disable-pip-version-check shexli
+
+      - name: Review extension bundle (shexli)
+        run: python dev/shexli_gate.py extensions/myna-shell
+
+  # The same suites against the NEXT GNOME Shell. Workshop cannot reach it -
+  # `workshop init` takes no base newer than ubuntu@26.04 - so the job above
+  # only ever sees Shell 50. Ubuntu 26.10 carries Shell 51, and LXD (not a
+  # Docker container: GNOME Shell needs logind on a system bus) can host it.
+  #
+  # Non-blocking on purpose. It tracks a development series and a beta Shell,
+  # so it will break for reasons that are not ours; it is here to say when
+  # the host's mutter API usage stops loading, not to gate a merge on
+  # someone else's upload.
+  extension-next:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: canonical/setup-lxd@v1
+
+      - name: Extension tests on the next Shell (LXD)
+        run: make test-extension-next
+
+  # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
+  # violations. The battery is defined once, by `check` in the Makefile, and
+  # invoked here - listing the gates again in this file is what let the snap
+  # manifest lint exist in CI but not in `make check`.
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      # fmt, lint-server, lint-snaps, machete, deny, py-types, shell-lint,
+      # workflow-lint - see the `check` target for the authoritative list.
+      # Snap manifest lint runs modelctl itself (pinned release; the script
+      # fetches the CLI tarball, no Workshop toolchain).
+      - name: Static gates
+        run: make check
+
+  # Coverage (feature 006, FR-007): both languages measured in the Workshop
+  # environment, reports published as artifacts, and the self-hosted patch
+  # gate (FR-008) enforced on the PR's changed lines. Project-level coverage
+  # is informational (FR-009) until a project threshold is ratified.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — patch-cov needs the merge base.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # The use-case exercise dictates from a LibriSpeech clip. Corpora are
+      # generated, not committed, so CI provisions the tier, cached on the
+      # generator's hash: the `corpus` action passes no selection args, so the
+      # generator (and the fixture writer it shares) is the whole input, and the
+      # same hash means the same clips. Only a cache miss pays the ~330 MB
+      # LibriSpeech download; the tier itself is a couple of MB, and the source
+      # tarball is deliberately not cached.
+      - name: Cache english-speech corpus
+        uses: actions/cache@v4
+        with:
+          path: corpus/english
+          key: corpus-english-${{ hashFiles('dev/fetch_english_corpus.py', 'dev/generate_fixtures.py') }}
+
+      - uses: canonical/launch-workshop@v1
+        with:
+          workshop: myna
+          cache: |
+            rust:cargo-registry
+            uv:cache
+
+      - name: Provision english-speech corpus
+        run: make workshop-corpus
+
+      - name: Rust coverage (tests)
+        run: make cov
+
+      - name: Python coverage (tests)
+        run: make py-cov
+
+      - name: GJS extension coverage (tests)
+        run: make gjs-cov
+
+      - name: Use-case exercise (merged exports)
+        run: make workshop-exercise
+
+      # The digest (populations, per-component debt, hot spots, never-entered
+      # functions, static findings) goes to the job summary, so the number is
+      # read on every run rather than only when someone downloads the artifact.
+      - name: Dead-code report
+        run: |
+          make workshop-deadcode
+          cat client/target/coverage/populations-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: GJS coverage report
+        run: cat extensions/myna-shell/target/coverage/gjs-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          retention-days: 14
+          path: |
+            client/target/coverage/
+            server/htmlcov/
+            server/coverage-*.xml
+            extensions/myna-shell/target/coverage/
+
+      # Blocking gate (FR-008): 80% of changed coverable lines, 5-line floor,
+      # deletion-only and excluded paths cannot false-fail. Exit 2 = fail.
+      - name: Patch coverage gate
+        run: workshop run myna patch-cov --base "origin/${{ github.base_ref || 'main' }}"

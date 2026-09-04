@@ -1,0 +1,199 @@
+# Nemotron / FastConformer inference snap (UbuSTT).
+#
+# Sibling of whisper-snap (one snap per model family). Same pattern: modelctl
+# v2 engine/runtime/model manifests; the testbed adapter (myna-server
+# --adapter nemotron) is the server. Differences:
+#   - GPU-only: NVIDIA cache-aware streaming FastConformer-RNNT via NeMo.
+#   - the runtime component is NeMo + torch + CUDA (multi-GB) — much heavier
+#     than whisper's CTranslate2 venv. UNVERIFIED in confinement; build-verify
+#     on a CUDA box and expect to iterate on LD_LIBRARY_PATH (torch bundles its
+#     own CUDA libs).
+#   - model ships as a .nemo checkpoint component (no runtime download).
+name: myna-nemotron
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: NVIDIA Nemotron/FastConformer speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text exposing the UbuSTT session API on a Unix
+  domain socket, served by NVIDIA's cache-aware streaming FastConformer-RNNT
+  via the NeMo toolkit. Natively streaming transducer with a latency/accuracy
+  dial (att-context-size) and native punctuation/capitalisation. English-only.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  nemotron:
+    command: bin/nemotron
+    completer: bin/snap-completer.bash
+    plugs:
+      - hardware-observe
+      - opengl
+      # No `network`: weights ship as components and modelctl has
+      # nothing to fetch at runtime. The plug contradicted this
+      # snap's own stated invariant (see the header) and the other
+      # inference snaps, which never had it.
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      - opengl
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+    environment:
+      # NeMo/HF caches under writable $SNAP_COMMON (weights are a component, so
+      # this should stay unused at runtime — kept as a safety net).
+      HF_HOME: $SNAP_COMMON/huggingface
+      NEMO_CACHE_DIR: $SNAP_COMMON/nemo
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (T14c — the myna orchestrator
+# snap plugs this). A *writable* content share: snapd adds AppArmor rw rules on
+# the exported dir, which is exactly what a named-socket connect() through the
+# bind mount needs (interfaces/builtin/content.go). The socket itself appears
+# once the server daemon has run (it mkdirs $SNAP_COMMON/run). Identity-based
+# access control beyond "an admin connected the plug" remains T17.
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+    override-build: |
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
+      ln --symbolic ./modelctl bin/nemotron
+      craftctl default
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  # Model weights as a component: the .nemo checkpoint downloaded by
+  # ./dev/download-models.sh into components/. Routed into its own component.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-streaming-multi/*": (component/model-streaming-multi)/
+    prime:
+      - -*
+
+  # NeMo + torch + CUDA runtime as a component (myna[nemotron] pip tree).
+  # Exposed via PYTHONPATH + LD_LIBRARY_PATH, run by the base python3.
+  # amd64-only; UNVERIFIED — build-verify on a CUDA box (torch in strict
+  # confinement + LD_LIBRARY_PATH is the expected iteration point).
+  nemo-cuda:
+    plugin: nil
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    build-packages:
+      - python3
+      - python3-pip
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      # The closure dev/prepare.sh staged into wheels/ is the offline path:
+      # find-links only wins when the index has no such version, so it is
+      # PIP_CACHE_DIR above that keeps the weight - torch plus the nvidia-*
+      # CUDA packages, several GB - off the network on a rebuild.
+      #
+      # The index stays enabled deliberately: a few closure members (wget,
+      # nemo-toolkit) are sdist-only, and building those offline would need
+      # their PEP 517 build deps staged too.
+      pip3 install --target="$target" \
+        --find-links=. \
+        ./myna-0.0.1-py3-none-any.whl[nemotron]
+      # nemo_toolkit[asr] pulls the whole training stack. What goes here is
+      # training-side only for a cache-aware streaming transcribe:
+      #   triton    torch.compile/inductor codegen. NeMo names it only in the
+      #             k2 loss, the n-gram LM decoders and context biasing - none
+      #             on this adapter's greedy streaming path.
+      #   numba +   RNNT *loss* kernels, SpecAugment (gated off by
+      #   llvmlite  use_numba_spec_augment=False) and perturb's phase vocoder.
+      #             Nothing in rnnt_greedy_decoding touches them.
+      #   wandb,    experiment tracking and training visualisation, in a snap
+      #   tensorb.  with no `network` plug.
+      # pyarrow, pandas, sklearn, sympy and scipy all failed this same test -
+      # NeMo reaches them while importing - so they stay. So do nvidia/nccl,
+      # nvshmem and cusparselt: libtorch_cuda NEEDs all three.
+      export PRUNE_DROP="triton numba llvmlite wandb tensorboard tensorboard_data_server"
+      export PRUNE_GATE="import torch; from nemo.collections.asr.parts.utils.streaming_utils import CacheAwareStreamingAudioBuffer; assert CacheAwareStreamingAudioBuffer"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
+      craftctl default
+    organize:
+      "*": (component/nemo-cuda)
+    prime:
+      - -*
+
+components:
+  model-streaming-multi:
+    type: standard
+    summary: FastConformer hybrid large streaming multi (.nemo)
+    description: |
+      NVIDIA stt_en_fastconformer_hybrid_large_streaming_multi checkpoint —
+      cache-aware streaming transducer, English, native punctuation.
+  nemo-cuda:
+    type: standard
+    summary: NeMo + torch CUDA runtime
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + nemo_toolkit[asr]
+      + torch (CUDA). amd64 only; large.

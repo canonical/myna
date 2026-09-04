@@ -1,0 +1,19 @@
+# In-project SDK: coverage + quality-gate tooling (feature 006).
+#
+# Provisions the tools the Workshop actions in .workshop/myna.yaml need:
+#   - cargo-llvm-cov (+ llvm-tools-preview): Rust source-based coverage
+#   - cargo-deny    : dependency ban/license policy (offline invariant, FR-011)
+#   - cargo-machete : unused workspace dependencies
+#   - cargo-audit   : RustSec advisory audit (weekly scheduled gate)
+#   - shellcheck    : dev/*.sh and snap-script lint
+#   - actionlint    : .github/workflows lint
+# Python tools (diff-cover, ruff, mypy, vulture, pip-audit) ride the server
+# dev dependency group (server/pyproject.toml) instead — one lockfile.
+#
+# Rust tools are installed by hooks/setup-base (root, at install) via
+# cargo-binstall (prebuilt, pinned) into /usr/local/cargo-bin so they do not
+# depend on which user the rust SDK installed rustup for; llvm-tools-preview
+# is a rustup component and is added per-user the first time `cov` runs
+# (idempotent, offline-cached by the rust SDK's registry cache).
+name: coverage
+summary: Coverage (cargo-llvm-cov) and quality-gate tooling for the myna gates.

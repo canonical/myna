@@ -1,0 +1,37 @@
+# In-project SDK: give the workshop its *own* server/.venv, shadowing the
+# host's.
+#
+# The project is bind-mounted at /project, so by default the workshop and the
+# host share one server/.venv - and a virtualenv cannot be shared that way.
+# `uv sync` installs myna as an *editable* package, which records one absolute
+# source path
+#
+#   host:     /home/charles/Projects/myna/server/src
+#   workshop: /project/server/src
+#
+# in server/.venv/.../_editable_impl_myna.pth. Whichever side synced last won,
+# and the other side got `ModuleNotFoundError: No module named 'myna'` from
+# anything importing it (dev/bench.py, dev/matrix.py). Silent, and the
+# traceback points at the script rather than the venv.
+#
+# Matching the mount paths cannot fix it: CI checks out at
+# /home/runner/work/myna/myna, so no single path is right for a developer's
+# host *and* the runner, and .workshop/ is committed for everyone.
+#
+# The mount plug below shadows /project/server/.venv with per-workshop storage
+# (~/.local/share/workshop/id/<id>/myna/mount/venv/venv on the host), so each
+# side keeps its own venv at the same in-tree path. Nothing else changes: `uv
+# sync`, the actions, dev/exercise.sh, and the orchestrator e2e tests all keep
+# using server/.venv and are simply served different bytes. Nothing is lost by
+# not sharing - a venv is ~120 MB of hardlinks into the uv cache (which the uv
+# SDK already mounts separately per workshop), and re-materialising one from a
+# warm cache takes under a second.
+name: venv
+summary: Per-workshop server/.venv, shadowing the host's (a venv's paths cannot be shared).
+
+plugs:
+  # Workshop-managed storage, mounted over the bind-mounted path. Empty on
+  # first launch; the actions' `uv sync` populates it.
+  venv:
+    interface: mount
+    workshop-target: /project/server/.venv

@@ -1,0 +1,33 @@
+#!/bin/bash -eu
+
+# The nemo-cuda runtime component provides myna + NeMo + torch on PYTHONPATH and
+# the CUDA libraries on LD_LIBRARY_PATH (runtimes/nemo-cuda/runtime.yaml); we run
+# the same myna.server the testbed measures, as the nemotron adapter.
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+att="$(modelctl get att-context-size 2>/dev/null || true)"
+
+att_args=()
+[ -n "${att:-}" ] && att_args=(--att-context-size "$att")
+
+# Idle-unload (T27): drop the model after idle, keep serving (full process/VRAM
+# release via socket activation is blocked upstream — see whisper-snap notes).
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+exec python3 -m myna.server \
+    --adapter nemotron \
+    --socket "$socket_path" \
+    --model "${MODEL_PATH:?MODEL_PATH unset — is the model component installed? try: myna-nemotron.nemotron use-model streaming-multi}" \
+    --device cuda \
+    "${att_args[@]}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "${stream_args[@]}" \
+    "$@"

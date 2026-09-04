@@ -1,0 +1,171 @@
+/* style.css — the HUD pill's chrome (feature 004, T112). The renderer is
+ * a standalone GTK4 application; the bottom gap below the pill is the host
+ * extension's responsibility (placement), not the renderer's.
+ */
+
+/* The window itself must be transparent: only the pill is visible.
+ *
+ * Scoped to the window NODE alone — deliberately not `> *`. A descendant
+ * form like `window.myna-hud-window > *` has specificity (0,1,1), which
+ * outranks `.myna-hud-pill` (0,1,0) and silently erases the pill's own
+ * background, while still losing to the two-class severity rules (0,2,0).
+ * The result is a pill that is see-through when idle/listening but
+ * correctly tinted for a notice or an error — which is exactly the bug this
+ * comment exists to prevent recurring.
+ *
+ * `background: none` (not just `background-color`) so a theme's
+ * background-image cannot show through either. */
+window.myna-hud-window {
+    background: none;
+    background-color: transparent;
+    box-shadow: none;
+}
+
+.myna-hud-pill {
+    padding: 10px 16px;
+    background-color: var(--dark-3);
+    border-radius: 999px;
+    /* Legible against a busy or light wallpaper. The severity states draw a
+     * strong coloured border, and at 0.08 the ordinary states read as an
+     * edgeless dark blob by comparison — the pill needs a defined edge in
+     * every state, not just the alarming ones. */
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    /* No drop shadow. The window hugs the pill exactly, so a shadow has
+     * nowhere to fade into: it is clipped by the surface edge and reads as
+     * a hard grey band around the pill rather than a soft shadow — plainly
+     * visible against a light desktop. Restoring it would mean growing the
+     * window with a transparent margin, which also moves the overlay's
+     * extent and therefore the gap the host places it at (R21/R22). */
+}
+
+.myna-hud-icon {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.myna-hud-label {
+    font-size: 11pt;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+/* The ribbon's floor. Its actual width comes from hexpand, so it reaches the
+ * pill's right edge instead of stopping at a fixed width; the floor only
+ * guards against the box squeezing the GLArea to near-zero, which is what
+ * once made the meter read as permanently flat regardless of the real audio
+ * level (R16a/R17). */
+.myna-hud-ribbon {
+    color: var(--accent-bg-color);
+
+    min-height: 32px;
+    min-width: 160px;
+}
+
+/* The classic segmented VU meter (the `hud-style: vumeter` alternative to
+ * the ribbon). Same footprint so the pill keeps one stable size whichever
+ * indicator is selected. The gauge's zone colours are the conventional
+ * VU green/yellow/red, defined here (the exact values the old hardcoded
+ * RGB carried) so the widget resolves them via lookup_color rather than
+ * hardcoding them in Rust. `color` carries the accent (warning under the
+ * recoverable class) for the recoverable fill. */
+@define-color myna-vu-green #33d16b;
+@define-color myna-vu-yellow #fab82e;
+@define-color myna-vu-red #f23d33;
+
+.myna-hud-vumeter {
+    color: var(--accent-bg-color);
+    min-height: 32px;
+    min-width: 160px;
+}
+
+.myna-hud-vumeter.myna-hud-severity-recoverable {
+    color: var(--warning-bg-color);
+}
+
+/* The accent level bar (the `hud-style: bar` alternative). Same footprint.
+ * The bar is painted by the widget, reading this resolved `color`. */
+.myna-hud-bar {
+    color: var(--accent-bg-color);
+    min-height: 32px;
+    min-width: 160px;
+}
+
+.myna-hud-bar.myna-hud-severity-recoverable {
+    color: var(--warning-bg-color);
+}
+
+/* The plain GtkProgressBar (the `hud-style: progress` alternative). Its fill
+ * is the themed `progress` sub-node; the recoverable class drives it to the
+ * warning colour. */
+.myna-hud-progress {
+    min-height: 8px;
+    min-width: 160px;
+}
+
+.myna-hud-progress progress {
+    background-color: var(--accent-bg-color);
+}
+
+.myna-hud-progress.myna-hud-severity-recoverable progress {
+    background-color: var(--warning-bg-color);
+}
+
+.myna-hud-dismiss {
+    color: rgba(255, 255, 255, 0.75);
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 2px;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.myna-hud-dismiss:hover {
+    color: rgba(255, 255, 255, 1.0);
+}
+
+/* Severity/phase colour-coding: warning (recoverable), error (critical)
+ * and accent tint for the cold-model-load phase — so the treatment reads
+ * at a glance, not just from the label text (FR-005/006/007). Toggled via
+ * hud_logic::pill_color_class. Uses libadwaita's named theme colours /
+ * CSS variables (see /data/GNOME/libadwaita/src/stylesheet/_colors.scss)
+ * instead of custom hard-coded values, so the pill follows the system
+ * palette and dark/light/high-contrast variants automatically. Backgrounds
+ * are dark mixes with black (not just transparent) for readability on
+ * light wallpapers, as the original custom rgba(58,40,10,0.88) /
+ * rgba(58,12,12,0.88) did. Loading uses the accent colour. */
+.myna-hud-pill.myna-hud-severity-recoverable {
+    border: 1px solid var(--warning-bg-color);
+    background-color: color-mix(in srgb, color-mix(in srgb, var(--warning-bg-color) 20%, black) 88%, transparent);
+}
+
+.myna-hud-pill.myna-hud-severity-recoverable .myna-hud-icon,
+.myna-hud-pill.myna-hud-severity-recoverable .myna-hud-label {
+    color: var(--warning-bg-color);
+}
+
+.myna-hud-pill.myna-hud-severity-critical {
+    border: 1px solid var(--error-bg-color);
+    background-color: color-mix(in srgb, color-mix(in srgb, var(--error-bg-color) 20%, black) 88%, transparent);
+}
+
+.myna-hud-pill.myna-hud-severity-critical .myna-hud-icon,
+.myna-hud-pill.myna-hud-severity-critical .myna-hud-label {
+    color: var(--error-bg-color);
+}
+
+.myna-hud-pill.myna-hud-phase-loading {
+    border: 1px solid color-mix(in srgb, var(--accent-bg-color) 55%, transparent);
+}
+
+.myna-hud-pill.myna-hud-phase-loading .myna-hud-icon {
+    color: var(--accent-color);
+}
+
+/* High-contrast legibility (FR-022): a brighter border/background so the
+ * pill stays distinguishable from busy wallpaper without relying on the
+ * shadow alone. */
+.myna-hud-pill.myna-hud-high-contrast {
+    background-color: rgba(0, 0, 0, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+}

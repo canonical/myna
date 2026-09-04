@@ -1,0 +1,255 @@
+# Canonical Workshop development environment for myna.
+# https://ubuntu.com/workshop/docs
+#
+# Constitution Principle IV: the canonical dev environment is defined here as
+# composable SDKs, launched with `workshop launch myna` / `workshop exec`. This
+# covers what the Rust client subsystem (client/) needs to build and test — the
+# toolchain plus the PipeWire dev headers and audio tooling that the native
+# capture backend (client/myna-audio, feature 002-native-pipewire-backend) links
+# against and integration-tests with, and uv for the Python evaluation harness.
+#
+# The PipeWire dev headers, libclang (bindgen), and audio tooling are provided
+# by the in-project SDK at .workshop/pipewire/sdk.yaml, referenced below with
+# the `project-` prefix. Extend `sdks:` with further SDKs (CUDA, extras) as
+# those workflows are brought under Workshop.
+name: myna
+# Raised from ubuntu@24.04 for the HUD renderer (client/myna-hud, feature
+# 004). The binding floor this workspace builds against is set by what the
+# SNAP ships, and the snap's toolkit does NOT come from core24: the
+# snapcraft `gnome` extension supplies the gnome-46-2404 SDK (GTK 4.18.6,
+# libadwaita 1.7.7). core24's own libadwaita is 1.5, so a 24.04 base modelled
+# a stack no user ever runs, and it was the only thing preventing the crate
+# from using the libadwaita 1.6 accent API directly instead of probing for it
+# by property name.
+#
+# The base only has to be at or above the floor the cargo features declare
+# (see client/myna-hud/Cargo.toml): libadwaita v1_6, gtk4 v4_10. GTK
+# deliberately does NOT follow the base — the snap is on 4.18, so anything
+# newer (4.22's `gtk-interface-reduced-motion`) stays a runtime property
+# lookup rather than a compile-time feature.
+base: ubuntu@26.04
+sdks:
+  # Workspace toolchain (client/Cargo.toml: rust-version = 1.75) — cargo, clippy,
+  # rustfmt.
+  - name: rust
+
+  # Python tooling for the evaluation harness (`uv sync` / `uv run`).
+  - name: uv
+
+  # In-project SDK: gives the workshop its own server/.venv, shadowing the
+  # host's with a mount. A venv records absolute paths, so the two sides cannot
+  # share the bind-mounted one. See .workshop/venv/sdk.yaml.
+  - name: project-venv
+
+  # In-project SDK: libpipewire-0.3 dev headers + libclang (bindgen) + PipeWire
+  # audio tooling, plus a host-sound custom-device plug. See
+  # .workshop/pipewire/sdk.yaml.
+  - name: project-pipewire
+
+  # In-project SDK: coverage + quality-gate tooling (feature 006):
+  # cargo-llvm-cov / cargo-deny / cargo-machete / cargo-audit / shellcheck /
+  # actionlint. See .workshop/coverage/sdk.yaml.
+  - name: project-coverage
+
+  # In-project SDK: GTK4 dev headers (the `ui-gtk` activity indicator) plus the
+  # IBus daemon and xdg-desktop-portal GlobalShortcuts backend the desktop
+  # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
+  # env-gated integration-tests against — plus GJS and a GNOME Shell session
+  # for the feature 004 (GNOME Shell indicator) extension contract tests and
+  # acceptance. See .workshop/desktop/sdk.yaml.
+  - name: project-desktop
+
+# Named automation, runnable in or out of CI with `workshop run myna <action>`.
+# Bodies are bash, run as the workshop user with the project mounted at
+# /project. The CI workflow (.github/workflows/ci.yml) drives these same
+# actions, so "green in CI" means "green in the environment you develop in".
+actions:
+  # Rust workspace: build + full test suite (hermetic + gated integration; the
+  # PipeWire-gated tests skip cleanly when MYNA_PIPEWIRE_TESTS is unset).
+  test: |
+    # The orchestrator e2e tests spawn the venv's myna-server and skip (never
+    # fail) when it is absent, so sync first or they silently stop testing.
+    (cd /project/server && uv sync -q)
+    export RUST_BACKTRACE=1
+    cd /project/client && cargo test --workspace "$@"
+  # The env-gated hardware suites, with their services stood up (features
+  # 002/003). `test` above stays hermetic; this is the same suites with the
+  # gates on, and it is what `cov` folds in.
+  test-gated: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
+    cd /project/client
+    /project/dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
+    /project/dev/gated-tests.sh cargo test \
+      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+
+  # Rust lints as errors.
+  lint: |
+    cd /project/client && cargo clippy --workspace --all-targets -- -D warnings
+  # Python offline suite (fake-adapter contract + adapter logic).
+  py-test: |
+    cd /project/server && uv run pytest "$@"
+  # The GNOME Shell extension's suites (feature 004) live in the `myna-shell`
+  # workshop, not this one: this base is ubuntu@24.04 because that is the
+  # snap's core24, and the extension targets a Shell no 24.04 archive has.
+  # See .workshop/myna-shell.yaml.
+
+  # --- feature 004: GPU render smoke check --------------------------------
+  # The renderer test suite proves the shader compiles and the packings
+  # match; this proves a driver actually paints a wave — running
+  # `examples/render_check` under xvfb and asserting exit 0. CI-friendly
+  # (xvfb + Mesa software renderer is enough; the workshop SDK already
+  # supplies libegl/libgl/libepoxy). Use this whenever the shader core or
+  # the uploader changes — that path is unreachable from unit tests and
+  # easily regresses (see the be8d380 / fix-2e45c6 incident: a wrong GL
+  # upload count silently produced a flat saturated block).
+  ui-check: |
+    set -uo pipefail
+    export RUST_BACKTRACE=1
+    cd /project/client
+    # The example has the rendered ribbon checked end-to-end (compile +
+    # link + render + read_pixels + body-bands-on-centre-row assertions).
+    cargo build -p myna-hud --example render_check
+    xvfb-run -a -s "-screen 0 800x600x24" \
+      ./target/debug/examples/render_check
+
+  # --- feature 006: coverage, dead-code, quality gates -----------------------
+  # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
+  # The coverage SDK puts its tools in /usr/local/cargo-bin.
+
+  # Rust workspace coverage: tests, HTML + lcov + Cobertura (tests-only).
+  # Raw .profraw is left in place for `exercise` to merge against.
+  cov: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
+    # cargo-llvm-cov needs llvm-tools. Without it, it offers to install the
+    # component from an interactive prompt - which on a CI runner is a hang,
+    # not an error, and locally reports the network as a rustup prompt failing
+    # rather than as the download it was. Install it up front and fail with the
+    # reason. Idempotent: an installed component costs one rustup query.
+    if ! rustup component list --installed | grep -q '^llvm-tools'; then
+      rustup component add llvm-tools-preview || {
+        echo "cov: llvm-tools-preview install failed (see rustup's error above);" \
+             "cargo-llvm-cov cannot instrument without it" >&2
+        exit 1
+      }
+    fi
+    # The orchestrator e2e tests spawn the venv's myna-server; sync it first or
+    # they skip silently (and Rust loses ~2 points of coverage).
+    (cd /project/server && uv sync -q)
+    cd /project/client
+    mkdir -p target/coverage
+    cargo llvm-cov clean --workspace
+    cargo llvm-cov --workspace --no-report
+    # The env-gated hardware suites (features 002/003) on top of the hermetic
+    # run. Their services are already in the SDKs, so leaving the gates unset
+    # only meant native.rs / devices.rs / ibus.rs never showed the coverage
+    # their own tests produce. gated-tests.sh stands each service up in a
+    # private instance and leaves a gate unset when its service did not come
+    # up, so a runner without one skips exactly as it does offline. ibus_hw
+    # drives the session-global input engine and must run serially.
+    /project/dev/gated-tests.sh cargo llvm-cov --no-report \
+      -p myna-audio --test pipewire_hw
+    /project/dev/gated-tests.sh cargo llvm-cov --no-report \
+      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+    cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml
+    cargo llvm-cov report --lcov --output-path target/coverage/rust.lcov
+    cargo llvm-cov report --html --output-dir target/coverage/html
+    cargo llvm-cov report --summary-only
+
+  # Python suite coverage: branch coverage + per-test contexts, HTML +
+  # term-missing + Cobertura (tests-only). Stashes .coverage for `exercise`.
+  py-cov: |
+    cd /project/server
+    uv sync -q
+    uv run pytest --cov=myna --cov-branch --cov-context=test \
+      --cov-report=html:htmlcov --cov-report=term-missing \
+      --cov-report=xml:coverage-tests.cobertura.xml "$@"
+    cp -f .coverage .coverage.tests
+
+  # GJS extension coverage (feature 006): the pure-GJS contract suites under
+  # instrumentation via gjs's own --coverage-prefix/--coverage-output, merged
+  # across runs, filtered to the extension tree, and digested. Needs only gjs
+  # (project-desktop SDK); the Shell-bound modules (host.js/extension.js) are
+  # not importable headlessly, so they read as 0 - that is expected, not a miss.
+  gjs-cov: |
+    set -uo pipefail
+    EXT=/project/extensions/myna-shell
+    OUT="$EXT/target/coverage"
+    RAW="$OUT/raw"
+    rm -rf "$OUT"; mkdir -p "$RAW"
+    cd "$EXT"
+    for t in test/*.test.js; do
+      gjs -m --coverage-prefix="$EXT" --coverage-output="$RAW/$(basename "$t")" "$t" || exit 1
+    done
+    # gjs writes one coverage.lcov per run; merge them into one lcov.
+    cat "$RAW"/*/coverage.lcov > "$OUT/gjs.lcov"
+    python3 /project/dev/gjs_coverage.py "$OUT/gjs.lcov" "$EXT" --raw "$RAW" --out "$OUT"
+
+  # English-speech corpus tier the `exercise` use-cases dictate from. Corpora are
+  # generated, never committed (.gitignore), so CI has to provision one; the
+  # default args reproduce the tier `exercise` expects, bit-for-bit. Idempotent:
+  # a corpus already on disk (restored from the CI cache) costs nothing, and the
+  # ~330 MB LibriSpeech download is skipped. Runs under the server venv, not
+  # bare python3: the script stamps the corpus through `myna.testbed.corpus`,
+  # whose package import pulls in `myna.core` and so the server's dependencies.
+  corpus: |
+    cd /project/server && uv sync -q
+    uv run python /project/dev/fetch_english_corpus.py --skip-complete
+
+  # Real use-cases under instrumentation (both dialects; gated scenarios skip
+  # cleanly), then merged (tests + use-cases) exports per language. Needs the
+  # `corpus` tier above.
+  exercise: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    export RUST_BACKTRACE=1
+    bash /project/dev/exercise.sh
+
+  # Populations (test-covered / use-case-only / never-executed) + dead-code
+  # report. Prints the digest - per-language totals, per-component debt, the
+  # never-executed hot spots, never-entered function counts, static verdicts -
+  # to stdout, and writes the full report to client/target/coverage/
+  # populations.md, the same digest to populations-summary.md (what CI appends
+  # to the job summary), and populations.json.
+  deadcode: |
+    cd /project/server && uv sync -q
+    cd /project && /project/server/.venv/bin/python dev/coverage_populations.py
+
+  # Self-hosted patch-coverage gate (default 80%, 5-line floor). Needs a full
+  # checkout (merge base). Exit 2 = below threshold; other non-zero = error.
+  patch-cov: |
+    cd /project/server && uv sync -q
+    /project/server/.venv/bin/python /project/dev/patch_cov.py "$@"
+
+  # --- static gates (FR-010/FR-011) ---
+  fmt: |
+    cd /project/client && cargo fmt --check
+  machete: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo machete
+  deny: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo deny check bans licenses
+  py-lint: |
+    cd /project/server && uv sync -q
+    uv run ruff check src tests ../dev && uv run ruff format --check src tests ../dev
+  py-types: |
+    cd /project/server && uv sync -q
+    uv run mypy src/myna/core
+  shell-lint: |
+    cd /project
+    shellcheck -x dev/*.sh \
+      myna-snap/dev/*.sh \
+      extensions/myna-shell/test/*.sh \
+      .workshop/*/hooks/* \
+      *-snap/scripts/* *-snap/dev/*.sh \
+      *-snap/snap/hooks/*
+  workflow-lint: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project && actionlint .github/workflows/*.yml
+
+  # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
+  audit: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo audit
+    cd /project/server && uv sync -q && uv run pip-audit

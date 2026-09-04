@@ -1,0 +1,14 @@
+name: audio8-asr-0.1b
+description: Audio8-ASR-0.1B — compact autoregressive ASR, multilingual (en/zh/fr/de/ja/ko/yue), CC-BY-NC-4.0 licensed
+model-card-url: https://huggingface.co/Audio8/Audio8-ASR-0.1B
+quantization: int8
+disk-size: 886M
+# Weights + engine source shipped as a snap component (staged by
+# dev/fetch_audio8_model.py from Audio8/Audio8-ASR-0.1B-onnx-runtime,
+# CC-BY-NC-4.0 — compliance is the integrator's responsibility). modelctl
+# installs it on use-model; the server loads from the directory, so no
+# network access is needed.
+components:
+  - model-audio8-onnx
+environment:
+  - AUDIO8_MODEL_DIR=$SNAP_COMPONENTS/model-audio8-onnx

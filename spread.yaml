@@ -1,0 +1,90 @@
+# Spread project for myna (feature 006, US5) — confined multi-system
+# end-to-end tests on clean systems. Decision record:
+# specs/006-coverage-quality-gates/spread-decision.md
+#
+# Run locally (needs KVM):   make spread        (whole suite; primes the VM
+#                             image and builds spread on first run)
+# Single task / debug a failure:  make spread-smoke | spread-e2e | spread-debug
+#
+# spread is built from the pinned commit by dev/spread-build.sh (same as CI),
+# NOT the snap (no kvm plug), with one local patch: `-cpu host` for the guest
+# (qemu64 lacks x86-64-v2; numpy/CTranslate2 wheels refuse to run without it).
+#
+# The snaps under test are prebuilt and sent with the project:
+#   myna-snap/myna_*_amd64.snap              (myna-snap/dev/prepare.sh && snapcraft pack)
+#   fake-snap/myna-fake-backend_*_amd64.snap (fake-snap/dev/prepare.sh && snapcraft pack)
+#   whisper-snap/myna-whisper_*_amd64.snap   (make snap-whisper)
+#   whisper-snap/myna-whisper+model-tiny.comp (same; download-models.sh stages the weights)
+#
+# confined-e2e uses the fake backend (no model, runs anywhere); adapter-smoke
+# uses the real whisper snap to prove a shipped adapter is wired up in both
+# emission modes. 4 GB of VM RAM is enough for whisper-tiny on CPU.
+project: myna
+
+path: /home/spread/myna
+
+backends:
+    qemu:
+        memory: 4G
+        systems:
+            - ubuntu-24.04-64:
+                username: ubuntu
+                password: ubuntu
+
+# Keep the send small: the suite needs only the two snaps and tests/.
+exclude:
+    - .git
+    - client/target
+    - client
+    - server/.venv
+    - server
+    - corpus
+    - results
+    - .coverage-work
+    - .workshop
+    - specs
+    - docs
+    - dev
+    - extensions
+    - .claude
+    - .specify
+    - .pi
+    - .ruff_cache
+    # Local caches and reference checkouts: HF dataset caches, the locally
+    # built spread binary + clone, upstream snap sources. Several GB that the
+    # tasks never touch - they alone fill the 4 GB guest disk.
+    - .cache
+    - reference
+    - htmlcov
+    - myna-bench.pyz
+    # whisper-snap is *not* excluded wholesale: adapter-smoke needs the packed
+    # snap and the tiny component (161 MB + 76 MB). Its build trees and the
+    # larger components are dropped instead - shipping base/small/CUDA would add
+    # 2.3 GB to every send for no extra coverage.
+    - whisper-snap/parts
+    - whisper-snap/stage
+    - whisper-snap/prime
+    - whisper-snap/stage_packages
+    - whisper-snap/components
+    - whisper-snap/wheels
+    - whisper-snap/myna-whisper+model-base.comp
+    - whisper-snap/myna-whisper+model-small.comp
+    - whisper-snap/myna-whisper+faster-whisper-cuda.comp
+    - nemotron-snap
+    - qwen-snap
+    - sherpa-snap
+    - parakeet-snap
+    - audio8-snap
+    - funasr-snap
+    - fake-snap/stage
+    - fake-snap/prime
+    - fake-snap/parts
+    - fake-snap/stage_packages
+    - myna-snap/stage
+    - myna-snap/prime
+    - myna-snap/parts
+    - myna-snap/stage_packages
+
+suites:
+    tests/spread/:
+        summary: Confined end-to-end tests

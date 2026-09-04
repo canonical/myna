@@ -28,8 +28,23 @@ These ADRs are maintained as the current minimal accepted version of each archit
 
 Routine implementation details (adding a field, renaming a variable, choosing a module structure for one server) do not need a decision file.
 
+## Documentation boundaries
+
+Two directories hold architecture artefacts; they have different lifecycles:
+
+| Location | What lives here | Lifecycle |
+| --- | --- | --- |
+| `docs/architecture/` | **ADRs** — durable decisions (context, decision, rationale, consequences). Updated in place as a topic evolves. Architecture diagrams that must remain true long-term belong here, as validated Mermaid (not opaque PNGs). | Live — update in place |
+| `specs/NNN-*/` | **Spec kits** — per-feature artefacts (spec, plan, tasks, contracts, data model, diagrams). A snapshot of intent at the time the feature was designed. | Frozen at merge — do not update |
+
+Rule: *specs freeze at merge; ADRs live.* If a spec-kit diagram captures something that must stay true beyond that feature's scope, promote it into an ADR as a Mermaid block.
+
+All Mermaid diagrams in `docs/architecture/` are validated with `mmdc` (`@mermaid-js/mermaid-cli`) before commit. See the Mermaid validation notes in `CLAUDE.md` for gotchas.
+
 ## Index
 
 | Topic | Title | Status | Date |
 | --- | --- | --- | --- |
 | [Ubuntu Desktop STT Integration Specification](UD129 - Ubuntu Desktop STT Integration .md) | Initial High Level Specification | In Review | 2026-06-11 |
+| [Repository and Module Layout](repository-layout.md) | Python package + Rust workspace + snaps | Accepted | 2026-07-19 |
+| [Transport Abstraction and Event Vocabulary](transport-and-events.md) | Session contract over in-flux transport | Accepted (details provisional) | 2026-06-12 |

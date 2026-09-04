@@ -1,0 +1,122 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-01 17:25+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/indicator/mod.rs:100
+msgid "Loading model…"
+msgstr ""
+
+#: src/indicator/mod.rs:101
+msgid "Listening"
+msgstr ""
+
+#: src/indicator/mod.rs:102
+msgid "Transcribing"
+msgstr ""
+
+#: src/indicator/mod.rs:103
+msgid "Finishing"
+msgstr ""
+
+#: src/indicator/mod.rs:107
+#, c-format
+msgid "Error: %s"
+msgstr ""
+
+#: src/indicator/notify.rs:60
+msgid "🎤 Dictation: listening"
+msgstr ""
+
+#: src/indicator/notify.rs:61
+msgid "Speak now — tap your shortcut again to stop."
+msgstr ""
+
+#: src/indicator/notify.rs:64
+msgid "💬 Dictation: transcribing"
+msgstr ""
+
+#: src/indicator/notify.rs:65
+msgid "Converting speech to text…"
+msgstr ""
+
+#: src/indicator/notify.rs:68
+msgid "⏳ Dictation: finishing"
+msgstr ""
+
+#: src/indicator/notify.rs:69
+msgid "Inserting the final text…"
+msgstr ""
+
+#: src/indicator/notify.rs:72
+msgid "⚠️ Dictation error"
+msgstr ""
+
+#: src/controller.rs:196
+msgid "Focus lost"
+msgstr ""
+
+#: src/controller.rs:198
+msgid "No speech detected"
+msgstr ""
+
+#: src/controller.rs:522
+msgid "Dictation target closed"
+msgstr ""
+
+#: src/controller.rs:583
+msgid "Refusing to type into a password field"
+msgstr ""
+
+#: src/controller.rs:584
+msgid "No text field is focused"
+msgstr ""
+
+#: src/shortcut/retry.rs:243
+#, c-format
+msgid "dictation hotkey unavailable: %s"
+msgstr ""
+
+#: src/backend.rs:47
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+
+#: src/backend.rs:54
+#, c-format
+msgid ""
+"%s backends are connected; disconnect all but one (`snap connections myna`)"
+msgstr ""
+
+#: src/inject/mod.rs:83
+msgid "focused field is secure (password); refusing to inject"
+msgstr ""
+
+#: src/inject/mod.rs:87
+msgid "no editable target is focused"
+msgstr ""
+
+#: src/inject/mod.rs:92
+#, c-format
+msgid "injection backend unavailable: %s"
+msgstr ""
+
+#: src/inject/mod.rs:97
+#, c-format
+msgid "injection backend error: %s"
+msgstr ""

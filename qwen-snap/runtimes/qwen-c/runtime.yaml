@@ -1,0 +1,17 @@
+# Pure-C Qwen3-ASR runtime, serving the UbuSTT session API.
+# libqwen_asr.so is built from antirez/qwen-asr and baked into the base snap
+# (qwen-c-runtime part); the QwenCAdapter loads it via ctypes using QWEN_ASR_LIB.
+# OpenBLAS (libopenblas0-pthread) is staged into the base for BLAS at runtime.
+# No component, no download — the parsimonious CPU runtime.
+name: qwen-c
+
+servers:
+  ubustt:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - QWEN_ASR_LIB=$SNAP/lib/libqwen_asr.so
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP/usr/lib/$ARCH_TRIPLET:$SNAP/usr/lib/$ARCH_TRIPLET/openblas-pthread
+
+components: []

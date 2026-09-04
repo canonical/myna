@@ -1,0 +1,31 @@
+name: cpu
+summary: Parakeet TDT int8 via onnxruntime on CPU
+description: |
+  Runs Parakeet TDT 0.6B v3 (int8 ONNX) with onnxruntime on amd64 CPUs,
+  streaming chunked-commit transcription over the UbuSTT Unix-socket
+  session API.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+
+runtime: onnxruntime-cpu
+
+model:
+  default: parakeet-tdt-0.6b-v3
+  options:
+    - parakeet-tdt-0.6b-v3
+
+configurations:
+  # SilenceCut chunked-commit knobs (seconds). Lower stream-arm-seconds for
+  # earlier chunks; the 15/0.5/60 defaults are murmure's proven constants.
+  stream-arm-seconds: 15
+  stream-silence-cut-seconds: 0.5
+  stream-force-cut-seconds: 60
+  # Unstable partials between commits — display only, committed text is
+  # unaffected. Cadence 0 shows nothing until the first cut; tail 0 decodes the
+  # whole uncommitted window, and capping it shows only that many seconds.
+  stream-partial-cadence-seconds: 0.5
+  stream-partial-tail-seconds: 0

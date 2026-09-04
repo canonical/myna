@@ -1,0 +1,31 @@
+#!/bin/bash -eu
+
+# UNVERIFIED on hardware — scaffolded in T15. The faster-whisper-cuda runtime
+# component provides myna + CUDA CTranslate2 on PYTHONPATH and the cuBLAS/cuDNN
+# libraries on LD_LIBRARY_PATH (see runtimes/faster-whisper-cuda/runtime.yaml);
+# we run the same server module the cpu engine does, on the GPU.
+
+socket_path="$(modelctl get ws.unix-socket)"
+compute_type="$(modelctl get compute-type)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# Idle-unload (T27) matters most here: frees GPU weights after idle. Full VRAM
+# release (process exit via socket activation) is blocked upstream — modelctl
+# run forks and doesn't pass the listening fd (design note §4).
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+exec python3 -m myna.server \
+    --socket "$socket_path" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-whisper.whisper use-model small}" \
+    --device cuda \
+    --compute-type "${compute_type:-float16}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "${stream_args[@]}" \
+    "$@"

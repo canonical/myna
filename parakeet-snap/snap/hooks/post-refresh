@@ -1,0 +1,35 @@
+#!/bin/bash -eu
+
+# shellcheck disable=SC2034  # used via process substitution below
+tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
+exec 1> >(tee >(logger --tag="$tag"))
+exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# Migrate the socket-path config key: <= v2.0.0-beta.1 packaging used the
+# custom `socket.path`; modelctl's `status` now reads `ws.unix-socket` for
+# ws+unix servers. Copy the old value if the new key was never set.
+if ! modelctl get ws.unix-socket >/dev/null 2>&1; then
+    if old_socket="$(modelctl get socket.path 2>/dev/null)"; then
+        modelctl set --package ws.unix-socket="$old_socket"
+    else
+        modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
+    fi
+fi
+
+# Defaults for refreshes from revisions that predate the SilenceCut config
+# knobs. Preserve any user-set values.
+if ! modelctl get stream-arm-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-arm-seconds="15"
+fi
+if ! modelctl get stream-silence-cut-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-silence-cut-seconds="0.5"
+fi
+if ! modelctl get stream-force-cut-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-force-cut-seconds="60"
+fi
+if ! modelctl get stream-partial-cadence-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-partial-cadence-seconds="0.5"
+fi
+if ! modelctl get stream-partial-tail-seconds >/dev/null 2>&1; then
+    modelctl set --package stream-partial-tail-seconds="0"
+fi

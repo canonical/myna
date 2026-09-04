@@ -1,0 +1,83 @@
+# Local reference checkouts (qwen3-snap, gemma4-snap, inference-snaps-cli).
+# These carry their own .git and would commit as broken gitlinks — keep out.
+reference/
+
+fixtures/
+corpus/
+.cache/
+
+# Snap build artifacts
+# .pip-cache/ is the persistent pip cache each snapcraft.yaml points
+# PIP_CACHE_DIR at; it is meant to outlive the build VM, so it is not
+# swept by `make clean-snaps`.
+.pip-cache/
+whisper-snap/wheels/
+whisper-snap/.hf-cache/
+nemotron-snap/wheels/
+nemotron-snap/.hf-cache/
+qwen-snap/wheels/
+qwen-snap/.hf-cache/
+qwen-snap/build.log
+*.snap
+*.comp
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+dist/
+
+# Testbed output
+results/
+
+# Generated benchmark zipapp - rebuild with dev/build-bench.sh
+myna-bench.pyz
+
+# Canonical Workshop per-project instance state (the .workshop/ definitions
+# are committed; the lock ties a launched instance to this checkout).
+.workshop.lock
+
+# Rust build artifacts
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+# Cargo.lock is deliberately tracked (client/): the workspace ships binaries,
+# and myna-snap builds them with `cargo install --locked`, which silently
+# resolves fresh versions when no lock is present. The two other lock files in
+# the tree sit under directories already ignored wholesale (reference/,
+# myna-snap/client/).
+# snap build artifacts (weights staged by dev/download-models.sh, wheels by dev/prepare.sh)
+parakeet-snap/components/model-*/
+parakeet-snap/wheels/
+parakeet-snap/*.snap
+parakeet-snap/*.comp
+sherpa-snap/components/model-*/
+sherpa-snap/wheels/
+sherpa-snap/*.snap
+sherpa-snap/*.comp
+# Coverage artifacts (feature 006)
+client/target/coverage/
+server/.coverage*
+server/coverage-*.xml
+server/htmlcov/
+.coverage-work/
+funasr-snap/components/model-*/
+funasr-snap/wheels/
+funasr-snap/*.snap
+funasr-snap/*.comp
+# Audio8 model + engine staged by dev/fetch_audio8_model.py (CC-BY-NC-4.0 —
+# must NOT enter the git tree; research.md Decision 2)
+audio8-snap/components/model-audio8-onnx/
+audio8-snap/wheels/
+audio8-snap/*.snap
+audio8-snap/*.comp
+# FunASR model staged by dev/fetch_funasr_model.py (default --target)
+funasr_model/

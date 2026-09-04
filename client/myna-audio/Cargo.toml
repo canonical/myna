@@ -1,0 +1,17 @@
+[package]
+name = "myna-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Audio-capture adapter for the myna dictation service (docs/audio-adapter-api.md)"
+
+[dependencies]
+myna-core = { path = "../myna-core" }
+bytes.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+pipewire.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

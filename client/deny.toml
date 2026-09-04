@@ -1,0 +1,83 @@
+# cargo-deny policy (feature 006, FR-011): mechanically codifies the offline
+# invariant — the shipped dictation client must not gain a network stack
+# (constitution Principle V). The sanctioned transport is WebSocket over a
+# Unix domain socket (tokio-tungstenite, no TCP/TLS); HTTP/cloud client crates
+# are banned workspace-wide.
+#
+# Checked in CI by the `rust-dep-policy` gate (`workshop run myna deny`).
+
+[graph]
+all-features = false
+# Myna ships as a Linux snap (PipeWire + zbus); nothing here is ever
+# built for Windows or macOS. Scoping the graph to the targets we actually
+# ship keeps the audit honest - without it, cargo-deny walks the
+# windows-*/mac-notification-sys subtrees of `notify-rust` and reports
+# duplicate versions in code that never reaches a build. Note the ban list
+# below is therefore enforced for these targets only, which is the shipped
+# surface.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
+[bans]
+multiple-versions = "warn"
+deny = [
+  # HTTP clients / stacks
+  { name = "reqwest" },
+  { name = "hyper" },
+  { name = "hyper-util" },
+  { name = "ureq" },
+  { name = "curl" },
+  { name = "isahc" },
+  { name = "surf" },
+  { name = "awc" },
+  # TLS stacks (no network = no TLS; UDS needs neither)
+  { name = "rustls" },
+  { name = "native-tls" },
+  { name = "openssl" },
+  { name = "openssl-sys" },
+  # Cloud SDKs
+  { name = "aws-config" },
+  { name = "aws-sdk-stt" },
+  { name = "azure_core" },
+  { name = "google-cloud" },
+]
+# Duplicate versions we cannot resolve from here: every one is an upstream
+# transitive that pins an older major, so `multiple-versions = "warn"` would
+# otherwise emit permanent noise and bury the next real duplicate. Each entry
+# names the *older* copy; cargo-deny reports an unmatched skip once upstream
+# catches up, so stale entries here surface themselves.
+skip = [
+  # rand 0.9 (tungstenite 0.29) vs getrandom 0.4 (ashpd / tempfile / uuid).
+  # Unifies at tungstenite 0.30, which raises the MSRV to 1.85 - above the
+  # workspace's declared rust-version = 1.75. Revisit if that MSRV moves.
+  { crate = "getrandom@0.3", reason = "rand 0.9 via tungstenite; unifies only at tungstenite 0.30 (MSRV 1.85)" },
+  # bindgen (build-dep of pipewire-sys) still parses with nom 7 and shells out
+  # with shlex 1; pipewire/libspa and cc are already on the newer majors.
+  { crate = "nom@7", reason = "bindgen 0.72 (pipewire-sys build-dep); libspa is on nom 8" },
+  { crate = "shlex@1", reason = "bindgen 0.72 (pipewire-sys build-dep); cc is on shlex 2" },
+  # The proc-macro ecosystem is mid-migration: thiserror 2 and serde_repr are
+  # on syn 3, serde_derive / glib-macros / zbus_macros are still on syn 2.
+  { crate = "syn@2", reason = "serde_derive, glib-macros, zbus_macros; thiserror 2 is already on syn 3" },
+]
+
+[licenses]
+# Copyleft and unlicensed crates are a legal-review event, not a build
+# default; widen only deliberately.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  # The workspace's own crates (repo LICENSE is GPL-3.0).
+  "GPL-3.0-only",
+]
+confidence-threshold = 0.8
+
+[advisories]
+# The per-PR gate does NOT audit advisories (that is the weekly `audit`
+# workflow's job, FR-012); this section exists so `cargo deny check` without
+# arguments stays meaningful. The CI gate runs `cargo deny check bans licenses`
+# explicitly.
+ignore = []

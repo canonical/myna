@@ -1,0 +1,21 @@
+name: cpu
+summary: FunASR SenseVoice-Small ONNX on CPU
+description: |
+  Runs SenseVoice-Small via ONNX Runtime on amd64/arm64 CPUs. Batch
+  (commit-on-finalize) transcription over the UbuSTT Unix-socket session API.
+  Multilingual: auto-detect zh/en/yue/ja/ko.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: funasr-onnx-cpu
+
+model:
+  default: sensevoice
+  options:
+    - sensevoice

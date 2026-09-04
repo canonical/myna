@@ -1,0 +1,37 @@
+# Docs lint — validate every ```mermaid block in docs/ and specs/.
+#
+# Runs independently of the Workshop build+test job so diagram breakage is
+# reported quickly without waiting for the Rust compile.  Uses the Google
+# Chrome that GitHub's ubuntu-latest runners pre-install; no Workshop needed.
+name: Docs lint
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  mermaid:
+    name: Validate Mermaid diagrams
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # mmdc is the @mermaid-js/mermaid-cli CLI; Puppeteer drives headless Chrome.
+      - name: Install mmdc
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      # ubuntu-latest ships google-chrome-stable; tell Puppeteer where it is
+      # and pass --no-sandbox (required for the root user in the runner).
+      - name: Validate Mermaid diagrams
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome-stable
+        run: python3 dev/check-mermaid.py

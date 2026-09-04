@@ -1,0 +1,227 @@
+# Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
+# v2 from inference-snaps-cli). Differences from the LLM snaps, per
+# docs/asr-inference-snap-design.md:
+#   - the server is the UbuSTT session server (myna-server) on a Unix socket,
+#     not an HTTP llama-server: no microphone access, no TCP port.
+#   - model weights ship as per-model snap components (T15): run
+#     ./dev/download-models.sh before packing. No runtime download / `network`.
+#   - cpu engine venv is baked into the base snap (server-app part); the
+#     nvidia-gpu CUDA stack ships as the faster-whisper-cuda component
+#     (scaffolded in T15, build-verify on a CUDA box before relying on it).
+name: myna-whisper
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: Whisper speech-to-text inference snap for Myna
+description: |
+  Local, offline speech-to-text service exposing the Myna session API on a
+  Unix domain socket. Wraps Whisper models served via faster-whisper
+  (CTranslate2), with hardware-based engine selection and switchable model
+  sizes via the modelctl CLI.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # Path modelctl/runtimes use to reach installed components, matching the
+  # reference snaps. Model components expose MODEL_DIR=$SNAP_COMPONENTS/<id>.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  whisper:
+    command: bin/whisper
+    completer: bin/snap-completer.bash
+    plugs:
+      # modelctl's hardware detection (lscompute reading /sys, /proc) backs
+      # `use-engine --auto`, `show-engine` and `status`.
+      - hardware-observe
+      - opengl
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      - opengl
+      # Weights are components now (no runtime download), so no `network`.
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (T14c — the myna orchestrator
+# snap plugs this). A *writable* content share: snapd adds AppArmor rw rules on
+# the exported dir, which is exactly what a named-socket connect() through the
+# bind mount needs (interfaces/builtin/content.go). The socket itself appears
+# once the server daemon has run (it mkdirs $SNAP_COMMON/run). Identity-based
+# access control beyond "an admin connected the plug" remains T17.
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
+      ln --symbolic ./modelctl bin/whisper
+      craftctl default
+
+  server-app:
+    # myna-server + faster-whisper in a venv. The myna wheel is staged into
+    # wheels/ by dev/prepare.sh before packing.
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[whisper]
+    build-packages:
+      - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # faster-whisper declares onnxruntime (and so protobuf/flatbuffers) only
+      # to run the bundled Silero VAD, lazily from vad.py. The adapter passes
+      # vad_filter=False streaming and takes this default when batching.
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/onnxruntime_test "$CRAFT_PART_INSTALL"/bin/pip*
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  # Model weights as components. Populate components/ with
+  # ./dev/download-models.sh before packing. Each model-<size>-ct2/ directory
+  # (CTranslate2 conversion: model.bin, config.json, tokenizer.json, …) is
+  # routed into its own component; `prime: [-*]` keeps them out of the base.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-tiny-ct2/*": (component/model-tiny)/
+      "model-base-ct2/*": (component/model-base)/
+      "model-small-ct2/*": (component/model-small)/
+    prime:
+      - -*
+
+  # CUDA runtime as a component: myna[whisper] + ctranslate2 + NVIDIA cuBLAS/
+  # cuDNN pip libs under site-packages/. Exposed via PYTHONPATH + LD_LIBRARY_PATH
+  # (see runtimes/faster-whisper-cuda/runtime.yaml), run by the base python3.
+  # amd64-only; UNVERIFIED — scaffolded in T15, build-verify on a CUDA box.
+  faster-whisper-cuda:
+    plugin: nil
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    build-packages:
+      - python3
+      - python3-pip
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      # No nvidia-cudnn-cu12: CTranslate2 4.8's CUDA backend is cuBLAS-only.
+      # It carries no DT_NEEDED, no dlopen name and not one "cudnn" string,
+      # and the wheel declares no CUDA deps at all. cuBLAS pulls NVRTC itself.
+      pip3 install --target="$target" \
+        ./myna-0.0.1-py3-none-any.whl[whisper] \
+        ctranslate2 \
+        nvidia-cublas-cu12
+      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
+      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
+      nvidia="$target/nvidia"
+      # The .alt NVRTC is a second codegen build nothing here dlopens - the
+      # only binary naming it is itself. libnvrtc.so.12 stays; cuBLASLt JITs
+      # through it, and it wants the matching non-alt builtins.
+      rm -f "$nvidia"/cuda_nvrtc/lib/libnvrtc.alt.so.* \
+            "$nvidia"/cuda_nvrtc/lib/libnvrtc-builtins.alt.so.*
+      # A LD_PRELOAD BLAS interposer for unmodified Fortran binaries, and
+      # headers for compiling against the stack. Neither has a runtime caller.
+      rm -f "$nvidia"/cublas/lib/libnvblas.so.*
+      rm -rf "$nvidia"/*/include
+      craftctl default
+    organize:
+      "*": (component/faster-whisper-cuda)
+    prime:
+      - -*
+
+components:
+  model-tiny:
+    type: standard
+    summary: Whisper tiny CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper tiny (MIT).
+  model-base:
+    type: standard
+    summary: Whisper base CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper base (MIT).
+  model-small:
+    type: standard
+    summary: Whisper small CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper small (MIT).
+  faster-whisper-cuda:
+    type: standard
+    summary: faster-whisper CUDA runtime (CTranslate2 + cuBLAS/cuDNN)
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + CUDA CTranslate2
+      and the NVIDIA cuBLAS/cuDNN libraries. amd64 only.

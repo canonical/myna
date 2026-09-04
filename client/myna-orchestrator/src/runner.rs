@@ -1,0 +1,331 @@
+//! One-utterance dictation runner (plan T41) — composes the three boundary
+//! traits with the FSM driver: an [`AudioSource`] pushes PCM, the
+//! [`run_session`] FSM driver mediates the backend, and a [`TextSink`] renders
+//! the results. This is the reusable core of the demo binary and the seam T21
+//! (hotkey → this) and T22 (this → injector) plug into.
+//!
+//! The audio-adapter contract (`docs/audio-adapter-api.md` §5) maps cleanly:
+//! a clean source end (hotkey release / WAV EOF) becomes `EndOfAudio`
+//! (finalize), and a capture fault becomes `CaptureFailed` — a visible
+//! `Failed` outcome (abandon the backend session, commit nothing, but tell the
+//! user *why*), never a silent abort.
+
+use std::sync::Arc;
+
+use tokio::sync::{mpsc, Notify};
+
+use crate::audio::AudioSource;
+use crate::backend::{BackendClient, BackendError};
+use crate::driver::{run_session, OrchestratorInput};
+use crate::fsm::{OrchestratorEvent, SessionOutcome};
+use crate::sink::TextSink;
+use futures_util::StreamExt;
+use myna_core::SessionConfig;
+
+/// Capacity of the audio backlog between the source and the FSM before
+/// backpressure applies — the "bounded in-memory buffer" invariant (~1.6 s at
+/// 100 ms chunks).
+const INPUT_CAPACITY: usize = 16;
+const OUTPUT_CAPACITY: usize = 64;
+
+/// Run a single utterance to completion: open a backend session, stream every
+/// chunk `source` produces, signal end-of-audio (or abort on a capture fault),
+/// and forward every orchestrator event to `sink`. Returns the session outcome.
+///
+/// `config.audio_format` is overwritten with the source's actual format, so the
+/// service validates against what is really being sent (the source never
+/// resamples — audio-adapter-api §1/§7).
+pub async fn run_dictation<B, S, T>(
+    backend: &B,
+    mut config: SessionConfig,
+    source: S,
+    sink: &mut T,
+) -> Result<SessionOutcome, BackendError>
+where
+    B: BackendClient,
+    S: AudioSource + 'static,
+    T: TextSink,
+{
+    config.audio_format = source.format();
+
+    let (in_tx, in_rx) = mpsc::channel::<OrchestratorInput>(INPUT_CAPACITY);
+    let (out_tx, mut out_rx) = mpsc::channel(OUTPUT_CAPACITY);
+
+    // Capture starts NOW; only the *push* into the FSM waits for the first
+    // `Ready`. This is the client half of the accept-gate
+    // (ie115-lifecycle.md §3A) plus the capture-from-press requirement
+    // (audio-adapter-api.md §6, a T21 acceptance criterion): a live adapter
+    // (`myna-audio::CaptureSource`) fills its bounded ring from `capture()`,
+    // so speech during a cold load is buffered, not lost; a lazy/paced source
+    // (WavFileSource) produces nothing until polled, so nothing drains into
+    // the closed gate either way. `notify_one` stores a permit, so a `Ready`
+    // that fires before the pump parks is not lost.
+    let ready_gate = Arc::new(Notify::new());
+
+    // Pump the capture stream into the FSM's input channel. A clean end →
+    // EndOfAudio (finalize); a fault → CaptureFailed (discard + surface why).
+    let pump_gate = ready_gate.clone();
+    let audio_task = tokio::spawn(async move {
+        let mut stream = Box::new(source).capture(); // the press: ring fills from here
+        myna_core::dbg_log!("capture", "stream opened; waiting for ready gate");
+        pump_gate.notified().await; // hold the push for residency (or task abort below)
+        myna_core::dbg_log!("capture", "ready gate open; forwarding audio");
+        let mut chunks = 0u64;
+        let mut bytes = 0u64;
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(chunk) => {
+                    chunks += 1;
+                    bytes += chunk.data.len() as u64;
+                    if myna_core::debug::enabled() && chunks % 20 == 0 {
+                        myna_core::debug::log(
+                            "capture",
+                            format!("forwarded {chunks} chunks / {bytes} bytes so far"),
+                        );
+                    }
+                    if in_tx.send(OrchestratorInput::Audio(chunk)).await.is_err() {
+                        myna_core::dbg_log!(
+                            "capture",
+                            "FSM gone; stop capturing at {chunks} chunks"
+                        );
+                        return; // FSM already terminal; stop capturing
+                    }
+                }
+                Err(fault) => {
+                    // The device/daemon faulted mid-capture: report it, don't
+                    // swallow it as a bare abort (the mic-unavailable case).
+                    myna_core::dbg_log!("capture", "capture fault: {fault}");
+                    let _ = in_tx
+                        .send(OrchestratorInput::CaptureFailed {
+                            message: fault.to_string(),
+                        })
+                        .await;
+                    return;
+                }
+            }
+        }
+        myna_core::dbg_log!(
+            "capture",
+            "end of audio after {chunks} chunks / {bytes} bytes ({:.2}s @16k mono s16)",
+            bytes as f64 / 32000.0
+        );
+        let _ = in_tx.send(OrchestratorInput::EndOfAudio).await;
+    });
+
+    // Drive the FSM and drain its events to the sink concurrently.
+    let driver = run_session(backend, config, in_rx, out_tx);
+    tokio::pin!(driver);
+
+    let mut outputs_open = true;
+    let outcome = loop {
+        tokio::select! {
+            event = out_rx.recv(), if outputs_open => match event {
+                Some(event) => {
+                    if matches!(event, OrchestratorEvent::Ready) {
+                        myna_core::dbg_log!("runner", "READY received; opening capture gate");
+                        ready_gate.notify_one(); // open the capture gate, once
+                    }
+                    sink.emit(event).await;
+                }
+                None => outputs_open = false,
+            },
+            result = &mut driver => {
+                // Driver finished: drain any events still buffered, then return.
+                while let Some(event) = out_rx.recv().await {
+                    sink.emit(event).await;
+                }
+                break result;
+            }
+        }
+    };
+
+    // The session is terminal. If it ended before `Ready` (e.g. a load-time
+    // error), the pump is still parked on the gate — abort rather than await so
+    // we never hang. In the happy path the pump already sent EndOfAudio and
+    // finished, so the abort is a no-op.
+    audio_task.abort();
+    let _ = audio_task.await;
+    outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::WavFileSource;
+    use crate::backend::fake::FakeBackend;
+    use crate::sink::CollectingSink;
+    use myna_core::AudioFormat;
+    use std::path::PathBuf;
+
+    fn wav_file(seconds_of_silence: usize) -> PathBuf {
+        let fmt = AudioFormat::default();
+        let data = vec![0u8; fmt.bytes_per_second() as usize * seconds_of_silence];
+        let byte_rate = fmt.bytes_per_second();
+        let block_align = (fmt.channels as u16) * (fmt.sample_width_bytes as u16);
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        out.extend_from_slice(b"WAVE");
+        out.extend_from_slice(b"fmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&(fmt.channels as u16).to_le_bytes());
+        out.extend_from_slice(&fmt.sample_rate_hz.to_le_bytes());
+        out.extend_from_slice(&byte_rate.to_le_bytes());
+        out.extend_from_slice(&block_align.to_le_bytes());
+        out.extend_from_slice(&((fmt.sample_width_bytes as u16) * 8).to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&data);
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("myna-runner-{}-{}.wav", std::process::id(), nanos));
+        std::fs::write(&path, out).unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn wav_through_fake_backend_prints_transcript() {
+        // The full T41 chain against a mock backend: WAV source → FSM → sink.
+        let path = wav_file(1);
+        let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.1);
+        let backend = FakeBackend::commit_drain();
+        let mut sink = CollectingSink::default();
+
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed {
+                transcript: "the quick brown fox jumps over the lazy dog.".into()
+            }
+        );
+        assert_eq!(
+            sink.finals(),
+            vec!["the quick brown fox", "jumps over the lazy dog."]
+        );
+        assert_eq!(
+            sink.done().as_deref(),
+            Some("the quick brown fox jumps over the lazy dog.")
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// T030 (feature 007): streaming round-trip — committed deltas arrive
+    /// progressively at the sink; unstable deltas surface as Unstable, never
+    /// as committed Final text; the terminal Done carries the full transcript.
+    #[tokio::test]
+    async fn streaming_committed_deltas_flow_to_sink_progressively() {
+        use crate::backend::fake::FakeStep;
+        use myna_core::{
+            Disposition, Progress, TranscriptionEvent, TranscriptionFinal, PHASE_READY,
+        };
+
+        let committed = |text: &str, i: u32| {
+            TranscriptionEvent::Final(TranscriptionFinal {
+                text: text.into(),
+                segments: vec![],
+                disposition: Disposition::Committed,
+                segment_index: Some(i),
+            })
+        };
+        let unstable = |text: &str| {
+            TranscriptionEvent::Final(TranscriptionFinal {
+                text: text.into(),
+                segments: vec![],
+                disposition: Disposition::Unstable,
+                segment_index: None,
+            })
+        };
+
+        let backend = FakeBackend::new(vec![
+            FakeStep::Emit(TranscriptionEvent::Progress(Progress::phase(PHASE_READY))),
+            FakeStep::Emit(committed("Many ", 0)),
+            FakeStep::Emit(unstable("little wrinkl")),
+            FakeStep::Emit(unstable("little wrinkles")),
+            FakeStep::Emit(committed("little wrinkles ", 1)),
+            FakeStep::WaitForFinish,
+            FakeStep::Emit(TranscriptionEvent::Done(TranscriptionFinal {
+                text: "Many little wrinkles".into(),
+                ..Default::default()
+            })),
+        ]);
+
+        let path = wav_file(1);
+        let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.1);
+        let mut sink = CollectingSink::default();
+
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed {
+                transcript: "Many little wrinkles".into()
+            }
+        );
+        // Committed segments reached the sink progressively, in order.
+        assert_eq!(sink.finals(), vec!["Many ", "little wrinkles "]);
+        // Unstable hypotheses surfaced as Unstable — not committed text.
+        let unstables: Vec<_> = sink
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                OrchestratorEvent::Unstable(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(unstables, vec!["little wrinkl", "little wrinkles"]);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn myna_audio_capture_source_drops_in_behind_the_same_trait() {
+        // T50 acceptance: the real adapter crate (over its fake backend — the
+        // "mock audio adapter") replaces WavFileSource with no runner changes.
+        use myna_audio::{CaptureSource, ScriptedBackend, Step};
+        use std::time::Duration;
+
+        let backend_script = ScriptedBackend::new(vec![Step::Silence(Duration::from_millis(300))]);
+        let source = CaptureSource::builder(AudioFormat::default())
+            .backend(Box::new(backend_script))
+            .build();
+        let backend = FakeBackend::commit_drain();
+        let mut sink = CollectingSink::default();
+
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            SessionOutcome::Completed {
+                transcript: "the quick brown fox jumps over the lazy dog.".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_format_is_negotiated_into_config() {
+        // A non-default WAV format must flow into the session config.
+        let path = wav_file(1);
+        let source = WavFileSource::new(&path).unwrap();
+        let fmt = source.format();
+        let backend = FakeBackend::happy_path();
+        let mut sink = CollectingSink::default();
+        // Pass a deliberately empty config; the runner fills audio_format.
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
+            .await
+            .unwrap();
+        assert!(matches!(outcome, SessionOutcome::Completed { .. }));
+        assert_eq!(fmt, AudioFormat::default());
+        std::fs::remove_file(&path).ok();
+    }
+}

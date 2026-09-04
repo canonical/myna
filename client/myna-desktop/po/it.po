@@ -1,0 +1,125 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-01 13:43+0200\n"
+"PO-Revision-Date: 2026-09-01 11:51+0000\n"
+"Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
+"Language-Team: Italian\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/indicator/mod.rs:94
+msgid "Loading model…"
+msgstr "Caricamento modello…"
+
+#: src/indicator/mod.rs:95
+msgid "Listening"
+msgstr "In ascolto"
+
+#: src/indicator/mod.rs:96
+msgid "Transcribing"
+msgstr "Trascrizione in corso"
+
+#: src/indicator/mod.rs:97
+msgid "Finishing"
+msgstr "Completamento"
+
+#: src/indicator/mod.rs:107
+#, c-format
+msgid "Error: %s"
+msgstr "Errore: %s"
+
+#: src/indicator/notify.rs:60
+msgid "🎤 Dictation: listening"
+msgstr "🎤 Dettatura: in ascolto"
+
+#: src/indicator/notify.rs:61
+msgid "Speak now — tap your shortcut again to stop."
+msgstr "Parla — premi di nuovo la scorciatoia per interrompere."
+
+#: src/indicator/notify.rs:64
+msgid "💬 Dictation: transcribing"
+msgstr "💬 Dettatura: trascrizione in corso"
+
+#: src/indicator/notify.rs:65
+msgid "Converting speech to text…"
+msgstr "Conversione dell'audio in testo…"
+
+#: src/indicator/notify.rs:68
+msgid "⏳ Dictation: finishing"
+msgstr "⏳ Dettatura: completamento"
+
+#: src/indicator/notify.rs:69
+msgid "Inserting the final text…"
+msgstr "Inserimento del testo finale…"
+
+#: src/indicator/notify.rs:72
+msgid "⚠️ Dictation error"
+msgstr "⚠️ Errore di dettatura"
+
+#: src/controller.rs:196
+msgid "Focus lost"
+msgstr "Perdita del focus"
+
+#: src/controller.rs:198
+msgid "No speech detected"
+msgstr "Nessuna voce rilevata"
+
+#: src/controller.rs:522
+msgid "Dictation target closed"
+msgstr "Campo di destinazione della dettatura chiuso"
+
+#: src/controller.rs:583
+msgid "Refusing to type into a password field"
+msgstr "Impossibile completare un campo password"
+
+#: src/controller.rs:584
+msgid "No text field is focused"
+msgstr "Nessun campo di testo a fuoco"
+
+#: src/shortcut/retry.rs:243
+msgid "dictation hotkey unavailable: %s"
+msgstr "scorciatoia per la registrazione non disponibile: %s"
+
+#: src/backend.rs:47
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+"nessun backend è collegato - installane uno e collegalo, es. `sudo snap "
+"connect myna:backend myna-whisper`"
+
+#: src/backend.rs:54
+#, c-format
+msgid ""
+"%s backends are connected; disconnect all but one (`snap connections myna`)"
+msgstr ""
+"%s backend sono collegati; disconnettine tutti tranne uno (`snap "
+"connections myna`)"
+
+#: src/inject/mod.rs:80
+msgid "focused field is secure (password); refusing to inject"
+msgstr "il campo a fuoco è protetto (password); rifiuto di digitare"
+
+#: src/inject/mod.rs:83
+msgid "no editable target is focused"
+msgstr "nessun campo di testo modificabile è a fuoco"
+
+#: src/inject/mod.rs:88
+#, c-format
+msgid "injection backend unavailable: %s"
+msgstr "backend di inserimento non disponibile: %s"
+
+#: src/inject/mod.rs:93
+#, c-format
+msgid "injection backend error: %s"
+msgstr "errore del backend di inserimento: %s"

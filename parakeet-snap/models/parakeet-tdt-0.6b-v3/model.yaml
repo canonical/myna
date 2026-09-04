@@ -1,0 +1,14 @@
+name: parakeet-tdt-0.6b-v3
+description: Parakeet TDT 0.6B v3 (multilingual, 25 languages, punctuation) — int8 ONNX
+model-card-url: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+quantization: int8
+disk-size: 687M
+# Weights shipped as a snap component (murmure's int8 ONNX export of NVIDIA's
+# Parakeet TDT 0.6B v3, CC-BY-4.0). disk-size is the maxstack encoder the
+# released snap ships (parakeet-snap/README.md); a base-encoder pack is 812M.
+# modelctl installs it on use-model; the server loads from the directory, so no
+# network access is needed.
+components:
+  - model-parakeet-int8
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-parakeet-int8

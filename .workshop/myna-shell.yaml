@@ -1,0 +1,39 @@
+# Workshop for the GNOME Shell extension (extensions/myna-shell), separate
+# from the main `myna` workshop.
+#
+# It exists because of one line: `base`. A Workshop SDK cannot carry its own
+# base image, so the GNOME Shell version available to a test comes from the
+# workshop's base and nothing else, and this project has two shipping targets
+# that disagree about it:
+#
+#   - client/ + server/ ship in a snap on `core24`, so the main workshop's
+#     ubuntu@24.04 base is what we ship, and must stay there.
+#   - extensions/myna-shell ships to a GNOME desktop. Its metadata.json
+#     declares Shell 46–51. The host's pure GJS suites need nothing but gjs,
+#     while the current workshop base provides the modern end of that range.
+#
+# So the extension gets a base that ships a Shell it supports, and the daemon
+# keeps the base it ships on. The Shell 46 adapter is checked against Mutter
+# 14's GIR/source contract; live compositor behaviour remains on-hardware.
+name: myna-shell
+base: ubuntu@26.04
+sdks:
+  # In-project SDK: GJS + GNOME Shell. See .workshop/shell/sdk.yaml.
+  - name: project-shell
+
+# The extension's own suites. Mirrors the `myna` workshop's action style: bash,
+# run as the workshop user with the project mounted at /project.
+actions:
+  # The host's pure GJS contract tests (placement, binary resolution, respawn
+  # policy, presence lifecycle, host-composed logic) need no Shell at all.
+  # The live compositor behaviour the host drives (dock typing, focus safety,
+  # click-through, repositioning) is verified on hardware, not headlessly
+  # (T125/R28).
+  gjs-test: |
+    /project/extensions/myna-shell/test/run-suite.sh
+
+  # The Shell this base actually provides, against the range the extension
+  # declares.
+  shell-version-probe: |
+    gnome-shell --version
+    sed -n 's/.*"shell-version": *\[\([^]]*\)\].*/\1/p' /project/extensions/myna-shell/metadata.json

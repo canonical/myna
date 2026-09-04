@@ -1,0 +1,27 @@
+#!/bin/bash -eu
+
+# shellcheck disable=SC2034  # used via process substitution below
+tag="snap.$SNAP_INSTANCE_NAME.hook.install"
+exec 1> >(tee >(logger --tag="$tag"))
+exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# The UbuSTT socket path, under the key modelctl's `status` reads for a
+# ws+unix runtime server (runtimes/*/runtime.yaml) to report the entrypoint.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
+modelctl set --package verbose="false"
+# Idle-unload: release the model after this many idle seconds (0 = never).
+modelctl set --package sleep-idle-seconds="300"
+# Emission mode. false = commit-on-finalize (one final at end of audio),
+# true = progressive committed segments. A config key rather than a hardcoded
+# flag so the same build can be measured both ways; the benchmark runner treats
+# the presence of this key as the snap declaring it supports streaming at all.
+modelctl set --package streaming="false"
+
+if snapctl is-connected hardware-observe; then
+    modelctl use-engine --auto --assume-yes --verbose
+elif lscpu -V &> /dev/null; then
+    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
+    modelctl use-engine --auto --assume-yes --verbose
+else
+    echo "hardware-observe interface not auto connected. Skip auto engine selection."
+fi

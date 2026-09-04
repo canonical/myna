@@ -1,0 +1,70 @@
+[package]
+name = "myna-hud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "GTK4 renderer application for the myna dictation indicator — the HUD pill and GPU wave ribbon (feature 004, 2026-08-26 architecture revision)."
+
+[lib]
+name = "myna_hud"
+path = "src/lib.rs"
+
+[features]
+# Lab + simulator — dev tool. Present in debug builds automatically (build.rs
+# emits dev_lab when PROFILE==debug); enable explicitly in release with
+# --features dev-lab. Release without it is the lean shipped binary.
+dev-lab = []
+
+[[bin]]
+name = "myna-hud"
+path = "src/main.rs"
+
+[dependencies]
+# The pure logic modules (states/vumeter/ribbon/shader/hud_logic/
+# links the toolkit stack.
+#
+# Version strategy (R26; runtime matrix per the snap's SDK — the packaged
+# binary builds and runs against ubuntu/gnome-sdk's gnome-46-2404 stack,
+# NOT the noble archive):
+#   - The myna snap (T160; snapcraft `gnome` extension on core24): GTK
+#     4.18.6, libadwaita 1.7.7 — Ubuntu-patched to expose the Yaru accent
+#     colors (extra AdwAccentColor values and accent-color-rgba).
+#   - Dev/host desktops (26.04+, Shell 50/51): GTK 4.22, libadwaita 1.9+.
+#   - Workshop / client CI (.workshop/myna.yaml, ubuntu@26.04): GTK 4.22,
+#     libadwaita 1.9. The base was raised from 24.04 for this crate: core24's
+#     libadwaita 1.5 is NOT what the snap ships against, so building against
+#     it modelled a stack that no user ever runs.
+#
+# The compile-time features below therefore define the FLOOR we may use, and
+# the workshop only has to be at least that:
+#   - libadwaita v1_6 — the floor is set by the snap's 1.7.7, and 1.6 is where
+#     the accent API landed, so adw_style_manager_get_accent_color_rgba() is
+#     called directly rather than probed by property name. NOT v1_7: nothing
+#     needed from it, and a floor is easier to hold than to lower.
+#   - gtk4 v4_14. Raised from v4_10 for `GtkAccessible::announce()` (live
+#     announcement for non-focusable HUD, T56). Snap is on 4.18 and workshop
+#     on 4.22, so 4.14 is safe. `gtk-interface-reduced-motion` (4.22) stays a
+#     RUNTIME property lookup, absent in the snap — where the
+#     enable-animations GSettings fallback is the shipping path — and present
+#     on 26.04 hosts.
+#
+# The accent RGBA is still read as a gdk::RGBA and never as AdwAccentColor:
+# Ubuntu's Yaru patches add ADW_ACCENT_COLOR_BROWN = SLATE + 100, outside
+# upstream's enumeration, so the Rust enum cannot represent it.
+gtk4 = { version = "0.11", features = ["v4_14"] }
+libadwaita = { version = "0.9", features = ["v1_6"] }
+# The com.canonical.Myna.Dictation consumer (name watch + PropertiesChanged) and the
+# --serve-dbus simulator's publisher. Same crate family as myna-desktop.
+zbus = "5"
+# The bus worker -> GTK main-thread bridge (T124): glib's own channel is
+# deprecated, and this is executor-agnostic.
+async-channel = "2"
+# Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
+# uniform upload) — loaded via GDK's get_proc_address (R23).
+gl = "0.14"
+gdk4-x11 = "0.11"
+async-io = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }

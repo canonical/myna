@@ -1,0 +1,5 @@
+# Staged by dev/prepare.sh before packing.
+/client/
+# Pack output / logs.
+*.snap
+*.log

@@ -1,0 +1,86 @@
+# Build the myna client snap and smoke-test the artifact under confinement.
+#
+# Distinct from ci.yml (Workshop build+test, constitution IV): snap builds
+# need snapcraft + LXD, not the Workshop toolchain — folding them under
+# Workshop is the recorded T55(c) follow-up. Same developer-local commands
+# (myna-snap/dev/prepare.sh && snapcraft pack), driven by the action.
+name: Snap
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "client/**"
+      - "myna-snap/**"
+      - ".github/workflows/snap.yml"
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - "myna-snap/**"
+      - ".github/workflows/snap.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # craft-parts local sources must live inside the project dir; stage the
+      # client workspace exactly as a local build does.
+      - name: Stage the client workspace
+        run: myna-snap/dev/prepare.sh
+
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: myna-snap
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myna-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 14
+
+  smoke:
+    name: Confined smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: myna-snap
+
+      # snapd refuses to *install* any snap declaring a user daemon unless the
+      # flag is set or the snap-id is on its hardcoded allowlist, and a
+      # sideload has no snap-id at all (T57; docs/deployment-architecture.md
+      # §2a). Dropped once the id lands in `userDaemonsOverrides` (T74).
+      - name: Allow user daemons
+        run: sudo snap set system experimental.user-daemons=true
+
+      # Strict confinement, sideloaded (store review interfaces like
+      # `pipewire` stay disconnected — nothing here needs them).
+      - name: Install the snap
+        run: sudo snap install --dangerous ./myna_*_amd64.snap
+
+      # `myna` is a service app, and snapd writes no /snap/bin wrapper for
+      # those (wrappers/binaries.go), so the daemon is reached with `snap run`.
+      - name: Binaries run confined
+        run: |
+          snap run myna --help
+          myna.testbed --help
+
+      # Matched whole rather than as a prefix: `network-bind` carries seccomp
+      # bind(2) for the control socket and nothing else - its AppArmor snippet
+      # has no `network inet` rule, so there is still no outbound reach - and a
+      # prefix match cannot tell the two apart. Extracted to a file first so a
+      # failing unsquashfs cannot pass as an empty match.
+      - name: Offline invariant - no network plug in the manifest
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+          unsquashfs -no-progress -cat ./myna_*_amd64.snap meta/snap.yaml >manifest.yaml
+          ! grep -qE '^[[:space:]]*(- network|network:|interface: network)$' manifest.yaml

@@ -1,0 +1,6 @@
+#!/bin/sh
+# myna-dictate (testbed CLI) launcher: PipeWire compat symlinks, then exec.
+set -eu
+# shellcheck source=/dev/null  # generated inside the snap at runtime
+. "$SNAP/bin/myna-runtime-links"
+exec "$SNAP/bin/myna-dictate" "$@"

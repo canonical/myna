@@ -99,7 +99,7 @@ report (T12 is still open on the engineering side).
 
 The full English reading sample corpus (six passage categories, plus two
 short non-English probe sentences for TC-07/TC-08) lives in a standalone
-file: **[`docs/test-samples-en.md`](test-samples-en.md)**.
+file: **[`docs/test-plan/test-samples-en.md`](test-samples-en.md)**.
 
 The same six-section corpus (§1–§6) has also been translated into 9
 additional languages, each in its own file, to cover script/phonetic

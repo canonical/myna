@@ -1,0 +1,130 @@
+# Confined end-to-end tests via spread (feature 006, US5; decision record:
+# specs/006-coverage-quality-gates/spread-decision.md).
+#
+# Nightly + on changes to the snap/packaging seams. Builds the client snap
+# and the fake-backend test snap, builds spread from a pinned upstream
+# commit (supply-chain choice recorded in the decision record), and runs the
+# confined-e2e and control-socket tasks on a clean qemu ubuntu-24.04-64 VM
+# (hosted-runner KVM). The other two tasks stay local-only: they need the
+# funasr snap and its model component.
+#
+# Supersession plan: once this is green for two weeks, the bespoke smoke job
+# in snap.yml shrinks to build-only and its smoke assertions live here.
+name: Spread
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: "41 4 * * *" # nightly 04:41 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "myna-snap/**"
+      # The client sources the snap is built from. Broad on purpose, and it
+      # does mean a VM boot on every Rust PR: the tasks here assert on the
+      # *packaged* daemon, so the seams they guard - seccomp, AppArmor, the
+      # user manager - are invisible to `cargo test`, and a change that breaks
+      # one of them arrives through this directory, not through myna-snap/.
+      # Control-socket activation reached a user broken for exactly that
+      # reason. Nightly would catch it a day later; this catches it in review.
+      - "client/**"
+      - "fake-snap/**"
+      - "spread.yaml"
+      - "tests/spread/**"
+      - ".github/workflows/spread.yml"
+
+# Pinned upstream commit (decision record; bump deliberately).
+env:
+  # The 2026.07.12 tag (latest/stable at pinning time). Its original commit
+  # (052d7a1) is gone from the repo after an upstream force-push; pin the
+  # tag's current commit so the checkout actually resolves.
+  SPREAD_COMMIT: 32cad07bfd7fffb395f6c6134b68b1c24f9490c0
+
+jobs:
+  confined-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Hosted runners do have KVM, but ship /dev/kvm as root:kvm 0660 with the
+      # runner user outside the kvm group, so it is present and unwritable.
+      # snapd widens it with a chmod (.github/workflows/spread-vfs.yaml); this
+      # needs a rule, because a chmod does not survive the rest of the job.
+      # `apt-get install` in dev/spread-image.sh takes whatever the archive has
+      # moved on to, and when that includes a library systemd links (libssl3t64,
+      # 2026-08-26) needrestart restarts systemd-udevd, which re-applies
+      # 50-udev-default.rules and puts the device back at 0660. 99- beats 50-,
+      # so this widening survives that.
+      - name: KVM available
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm-writable.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then echo "hosted runner lost KVM"; exit 1; fi
+          sudo apt-get update && sudo apt-get install -y cpu-checker && sudo kvm-ok
+
+      # The qemu backend needs a primed image at ~/.spread/qemu/<system>.img
+      # (SSH on 22, ubuntu/ubuntu password auth), built from the noble cloud
+      # image + a cloud-init seed and primed by booting once. Caching it saves
+      # the ~1 GB download and the boot; dev/spread-image.sh below does the
+      # work on a miss.
+      - name: Cache qemu image
+        uses: actions/cache@v4
+        with:
+          path: ~/.spread/qemu
+          # v2: the image now pre-installs the myna snap's gnome extension
+          # prerequisites (gnome-46-2404, gtk-common-themes, mesa-2404) - see
+          # dev/spread-image.sh. Bumped so CI doesn't restore a v1 image that
+          # predates that and re-triggers the slow-network install timeout.
+          key: spread-qemu-ubuntu-24.04-64-v2
+
+      # Same script `make spread` runs locally, and self-provisioning (it
+      # apt-installs qemu/cloud-image-utils when they are missing and exits
+      # early when the image is already primed), so the cache hit above simply
+      # makes it a no-op.
+      - name: Build + prime qemu image
+        run: ./dev/spread-image.sh
+
+      - name: Stage + build client snap
+        run: myna-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: client
+        with:
+          path: myna-snap
+
+      - name: Stage + build fake-backend snap
+        run: fake-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: backend
+        with:
+          path: fake-snap
+
+      # Losing /dev/kvm is invisible from inside spread: qemu exits on "Could
+      # not access KVM kernel module", spread discards its stderr, and the only
+      # symptom is a hostfwd port that never opens - five minutes of "connection
+      # refused" per allocation attempt, twice, then an aborted task. Three days
+      # of runs failed that way before the rule above. Assert it here instead,
+      # after everything that apt-installs.
+      - name: KVM still writable
+        run: |
+          ls -l /dev/kvm
+          test -w /dev/kvm
+
+      # The one command a developer runs for this suite: primes the image (a
+      # no-op after the step above), builds spread at the pinned commit, and
+      # runs confined-e2e. The task resolves the snaps from the project dir.
+      - name: Run confined-e2e
+        run: make spread-e2e
+
+      # Runs here rather than local-only (as user-daemon-session does) because
+      # it needs no snap beyond the client one built above: the image is
+      # primed, spread is built, so the marginal cost is
+      # two daemon restarts. It guards a seccomp gap that reached a user -
+      # control-socket activation cannot bind without `network-bind`, and
+      # nothing unpackaged can notice, since there is no seccomp filter there.
+      - name: Run control-socket
+        run: make spread-control

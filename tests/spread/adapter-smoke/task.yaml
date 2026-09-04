@@ -1,0 +1,144 @@
+# Adapter wiring smoke test: a real inference snap, both emission modes.
+#
+# Not an accuracy test - the matrix runner (dev/matrix.py) measures WER on a
+# speaker-balanced corpus and this VM has no business duplicating that. What
+# this proves is that the shipped artifact is *wired up*: auto engine selection
+# lands on something, the daemon binds its socket, the content share reaches the
+# client, a real clip produces real words, and the `streaming` config toggle
+# actually changes the event stream.
+#
+# Whisper is the subject because it is the smallest real adapter that supports
+# both modes (161 MB snap + 76 MB tiny component). The mode loop is the point;
+# pointing it at another snap is a one-line change.
+summary: Transcribe a clip through the whisper snap in batch and streaming modes
+
+environment:
+    SNAP_UNDER_TEST: myna-whisper
+    # Project directory, which does NOT track the snap name: the snaps are
+    # namespaced `myna-*`, the directories stayed `<adapter>-snap`.
+    SNAP_DIR: whisper-snap
+    # The modelctl entry point. Never $SNAP_UNDER_TEST: every inference snap
+    # names its CLI app after the *adapter*, so snapd always exposes it as
+    # `<snap>.<adapter>` - here `myna-whisper.whisper`.
+    MODELCTL: myna-whisper.whisper
+    MODEL: tiny
+
+prepare: |
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+    test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
+    test -f "$ADAPTER_SNAP" || { echo "adapter snap missing: build ${SNAP_DIR} first"; exit 1; }
+    test -f "$COMPONENT" || { echo "model component missing: ./dev/download-models.sh"; exit 1; }
+
+execute: |
+    set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+
+    # Sideloading carries no snap declaration, so hardware-observe stays
+    # unconnected and the install hook skips `use-engine --auto`, leaving no
+    # active engine and a daemon that exits 1 on every start. Connect, select,
+    # then start - the same dance dev/matrix.py performs.
+    install_snap "$ADAPTER_SNAP" "$COMPONENT"
+    snap connect ${SNAP_UNDER_TEST}:hardware-observe
+    snap stop ${SNAP_UNDER_TEST}.server || true
+    systemctl reset-failed snap.${SNAP_UNDER_TEST}.server.service || true
+
+    # The modelctl surface must answer on a freshly installed snap. Asserted
+    # here because it silently did not: parakeet and sherpa once shipped
+    # without a hardware-observe plug, so every one of these commands died
+    # when hardware detection could not read /sys - which nothing noticed
+    # until a benchmark run collapsed halfway through. The static counterpart
+    # is server/tests/test_snap_packaging.py; this is the version that proves
+    # it on a real install under confinement.
+    ${MODELCTL} show-machine --format=json > machine.json
+    grep -q '"cpus"' machine.json
+    ${MODELCTL} use-engine --auto --assume-yes --no-restart
+    ${MODELCTL} show-engine --format=json > engine.json
+    grep -q '"name"' engine.json
+    # list-models is a table since modelctl v2.0.0-beta.2 (header row, '*' on
+    # the active model) - match on the stable JSON representation instead.
+    ${MODELCTL} list-models --format=json | grep -q "\"name\": \"$MODEL\""
+    ${MODELCTL} use-model "$MODEL" --assume-yes
+
+    install_snap "$MYNA_SNAP"
+    snap connect myna:backend ${SNAP_UNDER_TEST}:ubustt-socket
+
+    # Confinement: the client cannot read the spread project dir, so stage the
+    # clip where its own plugs reach.
+    cp "$SPREAD_PATH/tests/spread/adapter-smoke/fixture.wav" /var/snap/myna/current/fixture.wav
+
+    for mode in batch streaming; do
+        [ "$mode" = streaming ] && streaming=true || streaming=false
+        # Emission mode is a snap config toggle, so the server has to be told;
+        # the client's --mode alone cannot conjure partials the server never emits.
+        snap set ${SNAP_UNDER_TEST} streaming="$streaming"
+        snap restart ${SNAP_UNDER_TEST}.server
+
+        # The server binds in its own $SNAP_COMMON/run (host-visible); the
+        # content share into the myna snap exists only inside myna's mount
+        # namespace, so the host-side wait must target the backend's own path.
+        for _ in $(seq 1 90); do
+            [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ] && break
+            sleep 1
+        done
+        if ! [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ]; then
+            echo "=== socket missing in $mode mode; daemon state ==="
+            snap services ${SNAP_UNDER_TEST}.server || true
+            snap logs -n 80 ${SNAP_UNDER_TEST}.server || true
+            echo "=== modelctl surface ==="
+            ${MODELCTL} status 2>&1 || true
+            sudo ${MODELCTL} get ws.unix-socket 2>&1 || true
+            sudo ${MODELCTL} run -- echo run-ok 2>&1 || true
+        fi
+        test -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock
+
+        # The content share itself: assert from inside the myna snap's mount
+        # namespace (the path does not exist on the host at all).
+        if ! sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/run/ubustt.sock'; then
+            echo "=== content share not visible inside the myna snap ==="
+            snap connections myna || true
+            sudo snap run --shell myna.testbed -c 'ls -laR /var/snap/myna/current/backend/ 2>&1' || true
+            exit 1
+        fi
+
+        # myna.testbed is stdin-triggered (Enter starts the utterance); feed it
+        # one Enter and hold the pipe open while the clip plays out.
+        ( printf '\n'; sleep 60 ) | \
+            myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
+                --clip /var/snap/myna/current/fixture.wav \
+                --language en --mode "$mode" --no-realtime \
+                > "$mode.out" 2>&1 || true
+        cat "$mode.out"
+
+        # A final line ("✓ ...") carrying real text. Deliberately not asserted
+        # verbatim: whisper-tiny output is not stable enough for that, and a
+        # smoke test that fails on a one-word difference gets disabled rather
+        # than fixed. Length is the honest proxy - 28 s of speech that decodes
+        # to a handful of characters means the audio path is broken.
+        grep -q '^✓ ' "$mode.out"
+        # "✓ (no speech detected)" is the loudest possible wiring regression.
+        if grep -q 'no speech detected' "$mode.out"; then
+            echo "FAIL: $mode produced no transcript - audio never reached the model"
+            exit 1
+        fi
+        final_len=$(grep '^✓ ' "$mode.out" | head -1 | wc -c)
+        test "$final_len" -gt 100 || {
+            echo "FAIL: $mode final transcript only $final_len chars for 28s of speech"
+            exit 1
+        }
+    done
+
+    # The modes must actually differ. Committed segments ("» ...") arrive
+    # progressively during streaming and never in commit-on-finalize, so this
+    # is what proves the toggle reaches the adapter rather than being ignored.
+    grep -q '^   » ' streaming.out
+    ! grep -q '^   » ' batch.out
+
+restore: |
+    snap remove --purge myna || true
+    snap remove --purge ${SNAP_UNDER_TEST} || true
+    rm -f batch.out streaming.out machine.json engine.json

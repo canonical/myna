@@ -1,0 +1,144 @@
+[project]
+name = "myna"
+version = "0.0.1"
+description = "Speech to text on Ubuntu — dictation client and candidate-adapter testbed"
+requires-python = ">=3.12"
+# SPDX expression, not a file: hatchling refuses metadata paths outside the
+# project dir, and the licence text lives at the repo root (../LICENSE).
+license = "GPL-3.0-or-later"
+dependencies = [
+    "websockets>=16.0",
+]
+
+[project.optional-dependencies]
+whisper = [
+    "faster-whisper>=1.2.1",
+]
+# Heavy (torch + CUDA); for the Nemotron / FastConformer adapter (T09).
+nemotron = [
+    "nemo_toolkit[asr]>=2.0",
+]
+# Small transducer snaps (feature 008): Parakeet TDT int8 ONNX via ONNX
+# Runtime (no torch), and the sherpa-onnx turnkey streaming runtime.
+parakeet = [
+    # 1.27.x exactly: sherpa-onnx 1.13.x's native lib needs the VERS_1.27.0
+    # version node, and each onnxruntime lib exports only its own (1.28
+    # dropped VERS_1.27.0). The sherpa extra resolves its libonnxruntime
+    # from this package.
+    "onnxruntime>=1.27,<1.28",
+]
+sherpa = [
+    "sherpa-onnx>=1.10",
+    # sherpa-onnx's native lib resolves libonnxruntime from this package (the
+    # wheel doesn't bundle it); same 1.27.x pin as the parakeet extra.
+    "onnxruntime>=1.27,<1.28",
+]
+# FunASR / SenseVoice batch adapter (feature 009): ONNX Runtime + fbank +
+# sentencepiece, no torch/NeMo. The single funasr-onnx dep pulls in all
+# transitive deps (onnxruntime, kaldi-native-fbank, sentencepiece, numpy,
+# PyYAML, jieba, librosa, scipy, soundfile).
+funasr = [
+    "funasr-onnx>=0.4.2",
+]
+# Audio8-ASR batch adapter (feature 010): the publisher's self-contained ONNX
+# cache engine (staged at fetch time, research.md Decision 2), no torch, no
+# trust_remote_code. onnxruntime uses the project 1.27.x pin (VERS-node
+# hazard shared with sherpa/parakeet; upstream's 1.22 pin is soft).
+# transformers is needed only for WhisperFeatureExtractor (numpy-based).
+audio8 = [
+    "onnxruntime>=1.27,<1.28",
+    "tokenizers>=0.22",
+    "transformers>=4.57",
+    "numpy>=1.26",
+    "psutil>=5",
+]
+benchmarker = [
+    "psutil>=5",
+    "pyyaml>=6",
+]
+
+[project.scripts]
+myna-server = "myna.server.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "hypothesis>=6",
+    "pyyaml>=6",   # dev/matrix.py config
+    "psutil>=5",   # dev/matrix.py peak RSS/VRAM sampling
+    # The adapter unit suites (audio8/funasr/parakeet/sherpa/streaming) are
+    # deliberately model-free (they stub the ONNX runtimes) but still build PCM
+    # with numpy. Only the heavy extras carried it, so their module-level
+    # importorskip made the whole suite vanish from CI: 11 files, 119 tests,
+    # ~800 lines of coverage. numpy is a test dependency in its own right, so
+    # it belongs here, not behind an extra.
+    "numpy>=1.26",
+    # Quality gates (feature 006): patch-coverage gate, lint, scoped types,
+    # dead-code scan, scheduled lockfile audit.
+    "diff-cover>=9",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "vulture>=2.14",
+    "pip-audit>=2.7",
+    # dev/requantize_encoder.py (perf T06): onnxruntime.quantization needs the
+    # onnx package to load/rewrite the graph. Already a locked transitive dep
+    # of the nemotron extra; pinned here directly so a parakeet-only sync
+    # still has it. Dev-only -- never imported at runtime.
+    "onnx>=1.19",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/myna"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["myna"]
+branch = true
+
+[tool.vulture]
+# The dead-code report is only useful if it is actionable (feature 006, US2
+# acceptance 3), so known-good false positives are named here rather than left
+# to be re-triaged every run. These three are parameters on test fakes that
+# mirror a real signature: _FakeEngine stands in for the publisher's
+# OnnxCacheAsrEngine, so a drift in the real constructor has to break the fake
+# loudly. A parameter the fake deliberately ignores is not dead code.
+ignore_names = ["intra_op_num_threads", "audio_token_count", "audio_bytes"]
+
+[tool.ruff]
+src = ["src", "../dev"]
+# House width is ~100; default 88 wraps too aggressively for this codebase.
+line-length = 100
+
+[tool.ruff.lint]
+# F401/F841 (unused imports/names) are the dead-code statics of FR-006;
+# E/W/I keep style and import hygiene mechanical (FR-010).
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501", "E402"]  # importorskip precedes gated imports
+# One-off experiment scripts stay ungated (evaluation-harness tier).
+"../dev/spikes/**" = ["E501", "B007", "B905", "UP042"]
+
+[tool.mypy]
+# Scoped strict: only the shared contract package (myna.core) is load-bearing
+# enough for strict typing; the testbed/adapters stay harness-tier (FR-010).
+mypy_path = "src"
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "myna.testbed.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "myna.server.*"
+ignore_errors = true

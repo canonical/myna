@@ -1,0 +1,20 @@
+[package]
+name = "myna-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Demo binary for the myna dictation orchestrator."
+
+[[bin]]
+name = "myna-dictate"
+path = "src/main.rs"
+
+[dependencies]
+myna-core = { path = "../myna-core" }
+myna-audio = { path = "../myna-audio" }
+myna-orchestrator = { path = "../myna-orchestrator" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+async-trait.workspace = true

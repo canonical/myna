@@ -1,0 +1,25 @@
+name: nvidia-gpu
+summary: NVIDIA CUDA Audio8-ASR-0.1B via onnxruntime-gpu
+description: |
+  Runs Audio8-ASR-0.1B with the ONNX cache engine on the CUDA execution
+  provider (NVIDIA GPUs). Same commit-on-finalize UbuSTT Unix-socket session
+  API as the cpu engine; the onnxruntime-gpu runtime ships as an on-demand
+  component.
+vendor: Canonical Ltd
+
+# UNVERIFIED on hardware — scaffolded. Build-verify on a CUDA box before
+# relying on auto-selection (the adapter fails fast if CUDA is absent, FR-020).
+devices:
+  allof:
+    - type: gpu
+      vendor-id: 0x10de # NVIDIA Corporation
+  anyof:
+    - type: cpu
+      architecture: amd64
+
+runtime: audio8-onnx-cuda
+
+model:
+  default: audio8-asr-0.1b
+  options:
+    - audio8-asr-0.1b

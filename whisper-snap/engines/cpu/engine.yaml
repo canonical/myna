@@ -1,0 +1,31 @@
+name: cpu
+summary: CPU-optimized Whisper via faster-whisper
+description: |
+  Runs Whisper models with CTranslate2 on amd64/arm64 CPUs. Commit-on-finalize
+  transcription over the UbuSTT Unix-socket session API.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: faster-whisper-cpu
+
+model:
+  default: tiny
+  options:
+    - tiny
+    - base
+    - small
+
+configurations:
+  # CTranslate2 compute type. "auto" defers to the active model's
+  # MODEL_COMPUTE_TYPE (models/*/model.yaml), which is where the measured
+  # per-model choice lives — INT8 is free on tiny and costs accuracy on base,
+  # so one engine-wide value would be wrong for one of them. Set an explicit
+  # type here (int8, int8_float32, float32) to override every model.
+  compute-type: auto
+  sleep-idle-seconds: 300

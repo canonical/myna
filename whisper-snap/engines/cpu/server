@@ -1,0 +1,36 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# CTranslate2 arithmetic. Without this the server takes its "default", which
+# on CPU means the FP16 weights are upcast and decoded in FP32 — CTranslate2
+# says so in a startup warning nobody was reading. "auto" defers to the
+# model's own measured choice; anything else overrides it.
+# Per-model measurements are in each models/*/model.yaml (project-plan T70).
+compute_type="$(modelctl get compute-type 2>/dev/null || true)"
+compute_type="${compute_type:-auto}"
+[ "$compute_type" = auto ] && compute_type="${MODEL_COMPUTE_TYPE:-default}"
+
+# MODEL_DIR is exported from the active model.yaml and points at the
+# installed CTranslate2 model component (see models/*/model.yaml).
+# Idle-unload (T27): drop the model after sleep-idle-seconds, keep serving.
+# (Full process/VRAM release via socket activation is blocked upstream — see
+# docs/asr-inference-snap-design.md §4.)
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-whisper.whisper use-model tiny}" \
+    --device cpu \
+    --compute-type "$compute_type" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "${stream_args[@]}" \
+    "$@"

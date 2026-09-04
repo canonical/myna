@@ -1,0 +1,47 @@
+#!/bin/sh
+# Bind a GNOME custom keyboard shortcut to `myna.toggle`
+# (control-socket activation mode). Uses `dconf` directly: inside the snap the
+# host's GSettings schemas are not visible (the base snap owns /usr), and
+# dconf writes need no schema — the `gsettings` interface grants
+# ca.desrt.dconf.Writer. Appends to any existing custom keybindings; never
+# clobbers.
+#
+# Usage: myna-install-shortcut <accel>   (e.g. '<Super>t')
+set -eu
+
+LIST_KEY="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
+KB_KEY="$LIST_KEY/myna"          # key form (writes): no trailing slash
+KB_DIR="$KB_KEY/"                # dir form: how the entry appears in the list
+ACCEL="${1:?usage: myna-install-shortcut <accel> (e.g. '<Super>t')}"
+COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
+
+# dconf is asymmetric: writes go over D-Bus to the session's dconf-service,
+# which always writes the real ~/.config/dconf/user, while reads open
+# $XDG_CONFIG_HOME/dconf/user directly. snapcraft.yaml points XDG_CONFIG_HOME
+# at the real home so the two are the same file. If the database is not
+# readable, a read comes back EMPTY and indistinguishable from "no custom
+# keybindings": the merge below would then write ['…/myna/'] as the whole
+# list, clobbering the user's existing keybindings in the real database.
+# Fail closed instead.
+if [ ! -r "$XDG_CONFIG_HOME/dconf/user" ]; then
+    echo "cannot read $XDG_CONFIG_HOME/dconf/user - not touching keybindings." >&2
+    echo "bind by hand: Settings > Keyboard > Custom Shortcuts, add:" >&2
+    echo "  name: myna dictation   command: $COMMAND   shortcut: $ACCEL" >&2
+    exit 1
+fi
+
+current="$(dconf read "$LIST_KEY" || true)"
+case "$current" in
+    *"$KB_DIR"*) new_list="$current" ;;
+    "" | "[]" | "@as []") new_list="['$KB_DIR']" ;;
+    # Insert after the opening '[' (| delimiter: the path contains slashes).
+    *) new_list="$(printf '%s' "$current" | sed "s|^\[|['$KB_DIR', |")" ;;
+esac
+
+dconf write "$LIST_KEY" "$new_list"
+dconf write "$KB_KEY/name" "'myna dictation'"
+dconf write "$KB_KEY/command" "'$COMMAND'"
+dconf write "$KB_KEY/binding" "'$ACCEL'"
+
+echo "bound $ACCEL → $COMMAND"
+echo "start the daemon (myna), focus a field, tap $ACCEL to start/stop."

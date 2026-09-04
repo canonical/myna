@@ -1,0 +1,6 @@
+# In-project SDK: GJS and a GNOME Shell the myna-shell extension actually
+# supports, for extensions/myna-shell/test/. Paired with the `myna-shell`
+# workshop (.workshop/myna-shell.yaml), whose base is what fixes the Shell
+# version - see that file for why this is not part of the main workshop.
+name: shell
+summary: GJS + a GNOME Shell matching the extension's shell-version, for the myna-shell test suites.

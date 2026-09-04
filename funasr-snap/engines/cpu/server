@@ -1,0 +1,15 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# MODEL_DIR is exported from the active model.yaml and points at the
+# installed SenseVoice ONNX model component (see models/sensevoice/model.yaml).
+# Language/textnorm use the adapter defaults (auto / woitn).
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --adapter funasr \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-funasr.funasr use-model sensevoice}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

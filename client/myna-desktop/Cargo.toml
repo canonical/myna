@@ -1,0 +1,51 @@
+[package]
+name = "myna-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Desktop session controller + text injection — the dictation last-mile (plan T21/T22, feature 003-desktop-injection)."
+
+[lib]
+name = "myna_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myna-desktop"
+path = "src/bin/myna-desktop.rs"
+
+[features]
+# The indicator is the myna-shell overlay (feature 004) or the headless
+# NotifyIndicator; the GTK4 ui-gtk overlay was removed (T150).
+default = []
+
+[dependencies]
+myna-core = { path = "../myna-core" }
+myna-audio = { path = "../myna-audio" }
+myna-orchestrator = { path = "../myna-orchestrator" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+tokio-stream = { version = "0.1", features = ["sync"] }
+# D-Bus: the IBus engine object + a portal-client fallback (pure Rust).
+zbus = "5"
+# Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the
+# vendored `zbus`-direct path is the fallback if this cannot be fetched.
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
+# Desktop notifications for error states / secure-field refusals.
+notify-rust = "4"
+# Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+
+# cargo-machete cannot see gettext-rs: it is only referenced through the
+# re-exported `gettextrs::` namespace (indicator/controller/inject/backend),
+# which the unused-dep scan treats as no usage.
+[package.metadata.cargo-machete]
+ignored = ["gettext-rs"]
+
+[dev-dependencies]
+# `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens
+# of seconds, so the tests advance tokio's clock instead of the wall clock.
+tokio = { workspace = true, features = ["test-util"] }

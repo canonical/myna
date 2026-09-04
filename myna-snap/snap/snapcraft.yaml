@@ -1,0 +1,423 @@
+name: myna
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.75 # pipewire interface + writable content shares
+summary: Speech to text desktop client for the Ubuntu Desktop
+description: |
+  Local, offline speech-to-text for the Ubuntu desktop. Invoke
+  the client, speak and the transcript is typed into the focused
+  application via IBus. Audio is captured by this snap (the inference snaps
+  have no microphone access) and pushed as PCM to a local backend snap
+  over a Unix socket; nothing leaves the machine and no audio is persisted.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # The staged libpipewire must find its SPA plugins inside the snap — its
+  # compiled-in default (/usr/lib/…/spa-0.2) resolves against the core24
+  # base, which has no spa-0.2 ("can't make support.system handle").
+  SPA_PLUGIN_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/spa-0.2
+  PIPEWIRE_MODULE_DIR: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/pipewire-0.3
+  PIPEWIRE_CONFIG_DIR: $SNAP/usr/share/pipewire
+  # Client settings are GSettings (com.canonical.Myna.Dictation); the schema
+  # ships compiled inside the snap and supplies the defaults and range
+  # validation. The store is glib's keyfile backend, not the host's dconf,
+  # and the dconf GIO module is no longer staged, but the env selecting the
+  # backend is per app (see the daemon's `environment:` for why) - the only
+  # global here is where the schema lives. See myna_core::settings.
+  GSETTINGS_SCHEMA_DIR: $SNAP/usr/share/glib-2.0/schemas
+
+apps:
+  hud:
+    command: bin/myna-hud
+    extensions: [gnome]
+    environment:
+      NO_AT_BRIDGE: "1"
+    plugs:
+      - wayland
+      - x11
+      - desktop
+    slots:
+      - hud # com.canonical.Myna.Hud for the HUD's D-Bus service
+
+  # The dictation daemon: hotkey → PipeWire capture → backend → IBus inject.
+  myna:
+    environment:
+      # &settings-env, reused by every app that reads the settings store
+      # (toggle, bind-shortcut, status, testbed): glib's keyfile backend,
+      # which puts the store at
+      # $SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile - plaintext,
+      # editable, captured by `snap save`, removed with the snap. COMMON, not
+      # DATA: DATA is per-revision and `snap revert` would revert settings.
+      # Per app rather than top-level because myna.hud reads the host's
+      # org.gnome.desktop.interface enable-animations through GSettings
+      # (myna-hud/src/platform.rs) and must keep whatever backend its gnome
+      # extension sets up.
+      <<: &settings-env
+        GSETTINGS_BACKEND: keyfile
+        XDG_CONFIG_HOME: $SNAP_USER_COMMON/.config
+      XDG_DATA_DIRS: "$SNAP/usr/share:$XDG_DATA_DIRS"
+    command: bin/myna-daemon
+    # A per-user systemd service, started at login and supervised
+    # (`WantedBy=default.target`, `Restart=on-failure`, `RestartSec=1s`).
+    # Reachable as `snap services|start|stop|logs myna`.
+    #
+    # INSTALL PRECONDITION: snapd rejects the *install* of any snap declaring a
+    # user daemon unless `experimental.user-daemons` is set or the snap-id is on
+    # the hardcoded allowlist in overlord/snapstate/snapstate.go:82 (checked at
+    # :561, snapd 2.77). A local or `--dangerous` install has no snap-id at all,
+    # so dev and CI need:
+    #
+    #   sudo snap set system experimental.user-daemons=true
+    #
+    # The store path is a snapd PR adding this snap's id to that list, which
+    # needs the name registered and uploaded first.
+    #
+    # NOT `activates-on: [dictation]`: that omits the [Install] section
+    # entirely (wrappers/internal/service_unit_gen.go:214), making the unit
+    # on-demand only. Nothing would hold the global hotkey until something
+    # addressed com.canonical.Myna.Dictation, and the only natural poker is the
+    # myna-shell extension, which is not packaged. The hotkey IS the entry
+    # point, so it has to be held from login.
+    #
+    # Starting against `default.target` means PAM login - before the
+    # compositor, PipeWire, IBus and the portal (the `graphical-session.target`
+    # ordering for desktop-plugging user daemons was added in snapd 2.74 and
+    # reverted in 2.74.1, LP #2141607). That is safe because myna-desktop
+    # treats all four as things that come and go: it binds activation with
+    # backoff, connects IBus at the first press, and resolves the backend
+    # socket per press.
+    daemon: simple
+    daemon-scope: user
+    # A refresh stops this unit in *every* user manager and starts it again on
+    # the new revision - measured, not assumed (2026-08-26: x3 -> x4, new pids
+    # in both a graphical session and a lingering headless one). Stated rather
+    # than left to the default, because the alternative is a real choice:
+    # `endure` keeps an in-flight utterance alive at the price of running the
+    # old revision until the user logs out, which on a laptop that only ever
+    # suspends is weeks. An utterance lasts seconds, so the window a refresh
+    # can land in is tiny and the cost when it does is that one utterance;
+    # activation rebinds by itself afterwards. Fixes landing promptly is worth
+    # more.
+    refresh-mode: restart
+    plugs:
+      - pipewire # mic capture — snapd gates it: `snap connect myna:pipewire`
+      - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
+      - desktop-legacy # the IBus daemon's private socket (text injection)
+      - network-bind # seccomp bind(2) for the control socket - no other interface grants it
+      - backend # content share → the backend snap's session socket
+    slots:
+      - dictation # com.canonical.Myna.Dictation for the GNOME Shell indicator
+
+  # Poke the running daemon. Only meaningful under control-socket activation
+  # (`myna --control`), which a packaged build does not default to: bind
+  # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
+  toggle:
+    command: bin/myna-desktop --toggle
+    # Reads the settings store to work out which activation is in force, and
+    # so what to say when the poke does not land. The store is this snap's
+    # private keyfile, so reading it needs no interface.
+    environment: *settings-env
+
+  # Bind <accel> → `myna.toggle` via dconf. Only needed under control-socket
+  # activation, which is where Noble and Jammy users land: the GlobalShortcuts
+  # portal backend first ships in xdg-desktop-portal-gnome 48.rc (Noble has
+  # 46.2, Jammy 42.1). Uses dconf because the GNOME schemas are not visible
+  # inside the snap's core24 /usr — dconf writes need no schema. The ONE app
+  # with the `gsettings` plug: it is the only host-dconf writer left.
+  #
+  # dconf is asymmetric: reads open $XDG_CONFIG_HOME/dconf/user directly, but
+  # writes go over D-Bus to the session's dconf-service, which always writes
+  # the real ~/.config/dconf/user. The env below points the read at the same
+  # database the write lands in; without it the read sees an empty database
+  # and the script would clobber the user's existing custom keybindings.
+  install-shortcut:
+    command: bin/myna-install-shortcut
+    environment:
+      XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
+    plugs:
+      - gsettings
+
+  # Bind (or rebind) the portal shortcut - the packaged default. The one thing
+  # that raises the desktop's "Add Keyboard Shortcuts" dialog: the daemon
+  # itself only ever attaches to a binding that already exists, so a session
+  # start never asks for a key.
+  #
+  # This is a *client*. The bind is performed by the daemon over
+  # com.canonical.Myna.Dictation, because the portal keys a binding by the
+  # caller's app id and this app's is `myna_bind-shortcut`, not the daemon's
+  # `myna_myna` - binding here would file it where nothing looks for it.
+  # `desktop` is for the session bus (and for an unpackaged fallback that
+  # cannot apply here); same-snap D-Bus comes from the base template.
+  bind-shortcut:
+    command: bin/myna-desktop --bind-shortcut
+    # activation + preferred hotkey come from the settings store (keyfile).
+    environment: *settings-env
+    plugs:
+      - desktop
+
+  # One screen of "what is dictation doing, and why": the persisted settings,
+  # what they resolved to and which plane won, whether the backend socket is
+  # reachable, and what the running daemon publishes on the bus. Those four
+  # answers lived in four places (the settings store, a journal line printed
+  # once at startup, the content share, D-Bus), which is a lot to know before you can
+  # ask a simple question.
+  #
+  # An app rather than a flag on a wrapper the user never sees, and confined
+  # rather than unpackaged, because the answer depends on where it is asked
+  # from: `$SNAP` decides activation, and the backend share is a bind mount
+  # that only exists in this namespace.
+  status:
+    command: bin/myna-status
+    environment: *settings-env
+    plugs:
+      - backend
+      - desktop
+
+  # Query/change the persisted settings
+  config:
+    command: bin/myna-config
+    environment: *settings-env
+
+  # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
+  # dialect selection. `home` lets it read clips from the user's files.
+  testbed:
+    command: bin/myna-testbed
+    # myna-dictate resolves streaming-mode from the settings store (keyfile).
+    environment: *settings-env
+    plugs:
+      - pipewire
+      - home
+      - backend
+
+# The backend session socket, shared by an inference snap (whisper /
+# nemotron / qwen). Manual connect (different publishers):
+#   sudo snap connect myna:backend myna-whisper:ubustt-socket
+# snapd appends the slot's source basename, so the socket lands at
+# $SNAP_DATA/backend/run/ubustt.sock. One active backend at a time;
+# multi-backend discovery/selection is T48.
+plugs:
+  backend:
+    interface: content
+    content: ubustt-socket
+    target: $SNAP_DATA/backend
+
+slots:
+  dictation:
+    interface: dbus
+    bus: session
+    name: com.canonical.Myna.Dictation
+
+  hud:
+    interface: dbus
+    bus: session
+    name: com.canonical.Myna.Hud
+
+parts:
+  # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:
+  # its prologue env validation runs before any part builds, and with rustup
+  # 1.29 both its checks (`rustup dump-testament` with no default toolchain;
+  # `cargo --version` in the bare instance) fail before the toolchain it
+  # would install exists. A nil part + explicit toolchain is deterministic.
+  rust-deps:
+    plugin: nil
+    build-packages:
+      - rustup
+    override-pull: |
+      rustup default stable
+
+  # The Rust workspace (client/), staged into this project by dev/prepare.sh
+  # (craft-parts local sources must live inside the project dir). Builds the
+  # shipped app + the testbed CLI.
+  client:
+    plugin: nil
+    after: [rust-deps]
+    source: client
+    build-packages:
+      - curl
+      - gcc
+      - git
+      - pkg-config
+      - libclang-dev # bindgen, for pipewire-sys
+      - libpipewire-0.3-dev
+      - libgtk-4-dev
+      - libadwaita-1-dev
+      - libepoxy-dev
+      - libegl-dev
+      - libgl1-mesa-dev
+      - gettext # xgettext for myna-hud po template (build-time only)
+    override-build: |
+      toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
+      export PATH="$toolchain/bin:$PATH"
+      cargo install -f --locked --path myna-desktop --root "$CRAFT_PART_INSTALL"
+      cargo install -f --locked --path myna-cli --root "$CRAFT_PART_INSTALL"
+      cargo install -f --locked --path myna-hud --root "$CRAFT_PART_INSTALL"
+      rm -f "$CRAFT_PART_INSTALL"/.crates.toml "$CRAFT_PART_INSTALL"/.crates2.json
+      # DWARF is ~30% of a release Rust binary and no user of a strict snap
+      # can run a debugger against it anyway. --strip-debug, not --strip-all:
+      # the symbol table is what makes a panic backtrace readable.
+      strip --strip-debug "$CRAFT_PART_INSTALL"/bin/*
+      # The settings store, from the same XML the host and the (future) deb
+      # install - one schema, three kinds of writer (myna_core::settings).
+      install -Dm644 data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml \
+          "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml"
+      # Compile and install gettext translations so they are available under
+      # $SNAP/usr/share/locale at runtime. Two domains ship from this part —
+      # the desktop's (myna-desktop) and the orchestrator's
+      # (myna-orchestrator) — each compiled to its own <domain>.mo. Build-time
+      # msgfmt (gettext) is provided by the build-packages list above.
+      for po in myna-desktop/po/*.po myna-orchestrator/po/*.po; do
+        lang=$(basename "$po" .po)
+        domain=$(basename "$(dirname "$(dirname "$po")")")
+        mkdir -p "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES"
+        msgfmt "$po" -o "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES/$domain.mo"
+      done
+    stage-packages:
+      - libpipewire-0.3-0
+      # protocol-native & friends: mandatory modules loaded by pw_context_new
+      # (PIPEWIRE_MODULE_DIR). libspa-0.2-modules comes in as a dependency.
+      - libpipewire-0.3-modules
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
+      - -usr/share/lintian
+      - -usr/share/bug
+      - -usr/share/doc-base
+    override-prime: |
+      craftctl default
+      cd "$CRAFT_PRIME"
+      lib="usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR"
+
+      # libpipewire-0.3-modules ships ~40 modules; pw_context_new loads the
+      # six named in client.conf and nothing dlopens the rest. The keep-list
+      # is spelled out here rather than read out of client.conf: that file is
+      # primed by another part, with no ordering guarantee between them.
+      modules="protocol-native client-node client-device adapter metadata session-manager"
+      for so in "$lib"/pipewire-0.3/libpipewire-module-*.so; do
+        name=$(basename "$so" .so)
+        case " $modules " in
+          *" ${name#libpipewire-module-} "*) ;;
+          *) rm -f "$so" ;;
+        esac
+      done
+
+      # Likewise for SPA: client.conf's context.spa-libs maps audioconvert
+      # and support and nothing else. Devices (alsa, v4l2, bluez5) are opened
+      # by the host daemon, never here: this snap is a PipeWire *client*.
+      find "$lib"/spa-0.2 -mindepth 1 -maxdepth 1 -type d \
+        ! -name audioconvert ! -name support -exec rm -rf {} +
+
+      # gio's proxy/TLS modules, glib-pacrunner and session-migration would
+      # otherwise be honoured as roots by the sweep below, and they are what
+      # drags libproxy -> libcurl -> libssh/libldap/libsasl2 into a snap that
+      # has no `network` plug at all.
+      rm -f "$lib"/gio/modules/libgiolibproxy.so \
+            "$lib"/gio/modules/libgiognomeproxy.so \
+            "$lib"/gio/modules/libgiognutls.so \
+            usr/libexec/glib-pacrunner usr/bin/session-migration
+
+      # The dconf GIO module (staged here by the pipewire packages'
+      # dependency tree) is the one backend that must not load: settings apps
+      # run with GSETTINGS_BACKEND=keyfile against the snap-private keyfile,
+      # and with no dconf module staged every other GLib program in the snap
+      # (the HUD) keeps whatever backend its own environment selects.
+      rm -f "$lib"/gio/modules/libdconfsettings.so
+
+      # Now drop every library the snap cannot reach. Deleting those modules
+      # orphans the apt dependencies they came with - roc, pulse, avahi,
+      # libcurl and every audio codec - and that list churns with each
+      # pipewire release, so walk the ELF closure from the real entry points
+      # instead of chasing it by hand. Roots: the shipped binaries, plus the
+      # plugin directories, which are dlopened and so have no NEEDED edge
+      # pointing at them. Over-pruning is not silent: snapcraft's `library`
+      # linter reports anything left with a missing dependency.
+       keep=$(mktemp) todo=$(mktemp) next=$(mktemp)
+      { ls bin/myna-desktop bin/myna-dictate bin/myna-hud usr/bin/* usr/libexec/* 2>/dev/null
+        find "$lib"/pipewire-0.3 "$lib"/spa-0.2 "$lib"/gio -name '*.so' 2>/dev/null
+      } > "$todo" || true
+      while [ -s "$todo" ]; do
+        : > "$next"
+        while read -r f; do
+          real=$(readlink -f "$f") || continue
+          grep -qxF "$real" "$keep" && continue
+          echo "$real" >> "$keep"
+          objdump -p "$real" 2>/dev/null | awk '/NEEDED/ {print $2}' |
+            while read -r n; do find usr/lib -name "$n" >> "$next"; done
+        done < "$todo"
+        cp "$next" "$todo"
+      done
+      find usr/lib -name '*.so*' -type f |
+        while read -r f; do
+          grep -qxF "$(readlink -f "$f")" "$keep" || rm -f "$f"
+        done
+      find usr/lib -xtype l -delete
+      find usr/lib -type d -empty -delete
+      rm -f "$keep" "$todo" "$next"
+
+      # Data and unit/service files left behind by the libraries the sweep
+      # took out. The systemd user units and the PACRunner D-Bus service are
+      # doubly dead: the host never reads a snap's, and they now name
+      # binaries this part just deleted.
+      rm -rf usr/share/X11 usr/share/alsa usr/share/GConf usr/share/upstart \
+             usr/share/session-migration \
+             usr/share/bash-completion usr/lib/systemd "$lib"/avahi \
+             etc/pulse usr/share/dbus-1/services/org.gtk.GLib.PACRunner.service
+
+      # usr/share/glib-2.0 survives that sweep for exactly one file, the
+      # settings schema. Everything a stage-package left beside it goes, and
+      # what remains is compiled: glib reads gschemas.compiled, never the XML.
+      find usr/share/glib-2.0 -type f ! -name 'com.canonical.Myna*.gschema.xml' -delete
+      find usr/share/glib-2.0 -mindepth 1 -type d -empty -delete
+      glib-compile-schemas usr/share/glib-2.0/schemas
+
+  # PipeWire client config (client.conf & friends). In noble these ship in
+  # pipewire-bin (libpipewire-0.3-common is docs-only); pw_context_new treats
+  # a missing client.conf as fatal. Keep ONLY client.conf: not the daemon
+  # binaries the package also carries, nor the daemon/JACK/AES67/AVB configs
+  # sitting beside it.
+  pipewire-config:
+    plugin: nil
+    stage-packages:
+      - pipewire-bin
+    # Filter at *stage*, not prime: pipewire-bin's dependency tree overlaps
+    # the client part's (libcurl-gnutls & co.) and craft-parts refuses to
+    # stage the same path from two parts. Nothing here is wanted anyway.
+    stage:
+      - usr/share/pipewire/client.conf
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - dconf-cli # dconf write, for myna-install-shortcut
+      - libglib2.0-bin # gsettings, for myna-config
+    prime:
+      - -usr/share/doc
+      - -usr/share/man
+      # Of libglib2.0-bin's tools only gsettings is wanted (myna-config);
+      # the rest are build host tools, pointless inside the snap.
+      - -usr/bin/gapplication
+      - -usr/bin/gdbus
+      - -usr/bin/gdbus-codegen
+      - -usr/bin/gio
+      - -usr/bin/gio-querymodules
+      - -usr/bin/glib-compile-resources
+      - -usr/bin/glib-compile-schemas
+      - -usr/bin/gobject-query
+      - -usr/bin/gresource
+      - -usr/bin/gsettings-data-convert
+      - -usr/bin/gtester
+      - -usr/bin/gtester-report
+      - -usr/share
+    organize:
+      "myna-daemon": bin/myna-daemon
+      "myna-config": bin/myna-config
+      "myna-status": bin/myna-status
+      "myna-testbed": bin/myna-testbed
+      "myna-install-shortcut": bin/myna-install-shortcut
+      "myna-runtime-links": bin/myna-runtime-links

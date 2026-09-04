@@ -1,0 +1,31 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# MODEL_DIR normally comes from model.yaml when modelctl runs the engine. This
+# CPU-only snap bypasses modelctl run to avoid hardware scoring, so fall back
+# to its single component directly.
+MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-fastconformer-480ms}"
+
+# Idle-unload (T27) as in the other inference snaps.
+#
+# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# Defaults to true here: native partials + endpoint commits are this snap's
+# reason to exist (008 US4). It is a key rather than a hardcoded flag only so
+# the batch baseline is measurable on the same build.
+# A config key rather than a build-time flag, so batch and streaming are two
+# measurable configurations of one shipped artifact.
+streaming="$(snapctl get streaming 2>/dev/null || true)"
+streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --adapter sherpa \
+    --model "$MODEL_DIR" \
+    "${stream_args[@]}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"
