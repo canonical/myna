@@ -24,6 +24,7 @@
 //! the user's global input method until restored.
 
 use std::collections::HashMap;
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -34,8 +35,9 @@ use futures_util::stream::{BoxStream, StreamExt};
 use tokio::sync::broadcast;
 use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
+use zbus::address::transport::{Transport, Unix, UnixSocket};
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
-use zbus::Connection;
+use zbus::{Address, Connection};
 
 use super::{FocusEvent, InjectError, InjectionTarget, Injector};
 
@@ -274,10 +276,10 @@ fn candidate_dirs() -> Vec<PathBuf> {
 /// current display, and **validated** against liveness so a stale address file
 /// (e.g. left by a crashed/replaced daemon) yields an actionable error rather
 /// than a bare "connection refused".
-fn discover_address() -> Result<String, InjectError> {
+fn discover_address() -> Result<Address, InjectError> {
     if let Ok(addr) = std::env::var("IBUS_ADDRESS") {
         if !addr.is_empty() {
-            return Ok(addr);
+            return to_zbus_address(&addr);
         }
     }
     let dirs = candidate_dirs();
@@ -304,7 +306,69 @@ fn discover_address() -> Result<String, InjectError> {
         .or_else(|_| std::env::var("DISPLAY").map(|d| format!("unix{}", d.replace(':', "-"))))
         .ok();
 
-    pick_address(files, want.as_deref(), &first)
+    to_zbus_address(&pick_address(files, want.as_deref(), &first)?)
+}
+
+/// Decode a D-Bus address value into a filesystem path.
+///
+/// The D-Bus address grammar percent-encodes every byte outside
+/// `[-0-9A-Za-z_/.\]`, so an `@` in the user's home arrives as `%40`:
+/// `unix:path=/home/first.last%40canonical.com/.cache/ibus/dbus-E7P10tya`.
+/// `zbus` unescapes when it connects, so the socket is reachable; a literal
+/// `Path::exists` on the raw value is not, and answered "missing socket" for
+/// every account whose home is not plain ASCII-alphanumeric - every AD login
+/// (root-caused 2026-09-04 on a `didier.roche@canonical.com` home, where the
+/// daemon was alive and the address file fresh).
+fn address_path(value: &str) -> PathBuf {
+    let raw = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        match value
+            .get(i + 1..i + 3)
+            .filter(|_| raw[i] == b'%')
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(raw[i]);
+                i += 1;
+            }
+        }
+    }
+    PathBuf::from(std::ffi::OsString::from_vec(out))
+}
+
+/// Parse a D-Bus address for `zbus`, with the unix socket path percent-decoded.
+///
+/// `zbus` 5.18 parses `path=` with a plain `PathBuf::from` (`address/transport/
+/// unix.rs:40`), so the `%40` ibus writes for an `@` in the home reaches
+/// `connect(2)` verbatim and fails with `ENOENT`. Decoding into the typed
+/// [`Address`] - rather than rewriting the address string - keeps a path that
+/// legitimately contains `,` or `;` from being re-parsed as address options.
+fn to_zbus_address(raw: &str) -> Result<Address, InjectError> {
+    let parsed = Address::try_from(raw)
+        .map_err(|e| InjectError::Unavailable(format!("bad IBus address {raw}: {e}")))?;
+    let Transport::Unix(unix) = parsed.transport() else {
+        return Ok(parsed);
+    };
+    let UnixSocket::File(path) = unix.path() else {
+        return Ok(parsed);
+    };
+    let decoded = address_path(&path.to_string_lossy());
+    if decoded == *path {
+        return Ok(parsed);
+    }
+    let rebuilt = Address::new(Transport::Unix(Unix::new(UnixSocket::File(decoded))));
+    match parsed.guid() {
+        Some(guid) => rebuilt
+            .set_guid(guid.to_owned())
+            .map_err(|e| InjectError::Unavailable(format!("bad IBus address guid: {e}"))),
+        None => Ok(rebuilt),
+    }
 }
 
 /// Rank the candidate address files (display match first, then newest) and
@@ -333,8 +397,11 @@ fn pick_address(
     };
 
     // Walk candidates best-first; take the first whose daemon is alive and whose
-    // socket exists. Remember a stale candidate so we can explain it.
-    let mut stale: Option<(String, Option<i64>)> = None;
+    // socket exists. Remember why the *best* one was rejected: a dead PID and a
+    // socket that is not there have different causes and different fixes, so the
+    // message names the check that actually failed and the file it failed on.
+    let tried = ranked.len();
+    let mut stale: Option<(String, String)> = None;
     for path in ranked {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
@@ -348,26 +415,35 @@ fn pick_address(
             .find_map(|l| l.strip_prefix("IBUS_DAEMON_PID="))
             .and_then(|p| p.trim().parse().ok());
         // The daemon PID is alive (Linux /proc) and the unix socket path exists?
-        let pid_alive = pid
-            .map(|p| PathBuf::from(format!("/proc/{p}")).exists())
-            .unwrap_or(true);
-        let sock_ok = addr
+        // Absent either field, that check has nothing to say and passes.
+        let dead_pid = pid.filter(|p| !PathBuf::from(format!("/proc/{p}")).exists());
+        let gone_sock = addr
             .split("path=")
             .nth(1)
             .and_then(|s| s.split(',').next())
-            .map(|sp| PathBuf::from(sp).exists())
-            .unwrap_or(true);
-        if pid_alive && sock_ok {
+            .filter(|sp| !address_path(sp).exists())
+            .map(str::to_owned);
+        if dead_pid.is_none() && gone_sock.is_none() {
             return Ok(addr);
         }
-        stale.get_or_insert((addr, pid));
+        let why = match (dead_pid, gone_sock) {
+            (Some(p), Some(s)) => format!("PID {p} is gone and its socket {s} is missing"),
+            (Some(p), None) => format!("PID {p} is gone (no /proc/{p})"),
+            (None, Some(s)) => format!("its socket {s} is missing"),
+            (None, None) => unreachable!("both checks passed above"),
+        };
+        let name = path
+            .file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .into_owned();
+        stale.get_or_insert((name, why));
     }
 
     Err(match stale {
-        Some((_, pid)) => InjectError::Unavailable(format!(
-            "IBus address file(s) present but the daemon looks gone (stale PID {} / missing \
-             socket). Try `ibus restart` (or set IBUS_ADDRESS).",
-            pid.map(|p| p.to_string()).unwrap_or_else(|| "?".into())
+        Some((name, why)) => InjectError::Unavailable(format!(
+            "no IBus daemon answers: tried {tried} address file(s), best is {name} where {why}. \
+             Is IBus running in this session? Try `ibus restart` (or set IBUS_ADDRESS)."
         )),
         None => InjectError::Unavailable(format!(
             "no usable IBus address in {} (is an IBus daemon running? try `ibus restart`)",
@@ -500,7 +576,7 @@ impl IbusInjector {
     /// not reachable.
     pub async fn connect() -> Result<Self, InjectError> {
         let address = discover_address()?;
-        let conn = zbus::conn::Builder::address(address.as_str())
+        let conn = zbus::conn::Builder::address(address)
             .map_err(|e| InjectError::Unavailable(format!("bad IBus address: {e}")))?
             .build()
             .await
@@ -891,25 +967,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
-    /// A stale address file (dead daemon PID) is reported as stale, not used.
+    /// A dead daemon PID is reported as such, naming the file and the PID -
+    /// the socket it left behind is still on disk, so only the PID check can
+    /// catch this (the common case: ibus exited without cleaning up).
     #[test]
     fn stale_daemon_is_not_picked() {
         let dir = temp_dir("stale");
+        let sock = dir.join("sock-left-behind");
+        std::fs::write(&sock, []).unwrap();
         std::fs::write(
             dir.join("abc-unix-wayland-0"),
+            // 4194303 is above the default pid_max: it cannot be alive. (PID 2
+            // would be - kthreadd - which is why a "small pid" is no test.)
             format!(
-                "IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=2\n",
-                dir.display()
-            ),
-        )
-        .unwrap();
-        // PID 2 is not this process but is alive on Linux — use a PID that
-        // cannot exist instead.
-        std::fs::write(
-            dir.join("def-unix-wayland-0"),
-            format!(
-                "IBUS_ADDRESS=unix:path={}/gone\nIBUS_DAEMON_PID=4194303\n",
-                dir.display()
+                "IBUS_ADDRESS=unix:path={},guid=x\nIBUS_DAEMON_PID=4194303\n",
+                sock.display()
             ),
         )
         .unwrap();
@@ -919,7 +991,116 @@ mod tests {
             .collect();
         let err = pick_address(files, Some("unix-wayland-0"), &dir).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("stale") || msg.contains("no usable"), "{msg}");
+        // The message must name the check that failed and the file it failed
+        // on: `ibus restart` is the fix for a dead PID, and nothing but a
+        // rewritten address file fixes a socket that is not there.
+        assert!(msg.contains("PID 4194303 is gone"), "{msg}");
+        assert!(msg.contains("abc-unix-wayland-0"), "{msg}");
+        assert!(!msg.contains("socket"), "the socket is there: {msg}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The socket path in an address file is D-Bus percent-encoded: a home with
+    /// an `@` in it (every AD login) reaches us as `%40` and must be decoded
+    /// before it is looked for on disk, or a live daemon is rejected forever.
+    #[test]
+    fn percent_encoded_socket_path_is_decoded() {
+        let dir = temp_dir("percent");
+        // The real thing: `/home/didier.roche@canonical.com/.cache/ibus/...`
+        let home = dir.join("didier.roche@canonical.com");
+        std::fs::create_dir_all(&home).unwrap();
+        let sock = home.join("dbus-E7P10tya");
+        std::fs::write(&sock, []).unwrap();
+        std::fs::write(
+            dir.join("abc-unix-wayland-0"),
+            format!(
+                "IBUS_ADDRESS=unix:path={},guid=x\nIBUS_DAEMON_PID={}\n",
+                sock.display().to_string().replace('@', "%40"),
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        let files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_file())
+            .collect();
+        let addr = pick_address(files, Some("unix-wayland-0"), &dir)
+            .expect("a live daemon whose socket is there must be picked");
+        // Handed to zbus still encoded: it unescapes the address itself.
+        assert!(addr.contains("%40"), "{addr}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The address handed to zbus carries the DECODED path: zbus 5.18 does not
+    /// unescape `path=` itself, so an `@` home reaches `connect(2)` as `%40`
+    /// and fails with ENOENT (reproduced against a live ibus-daemon 1.5.34 in a
+    /// `/tmp/d.r@c` home, 2026-09-04). The guid survives the rebuild.
+    #[test]
+    fn zbus_address_carries_the_decoded_path() {
+        let addr = to_zbus_address(
+            "unix:path=/home/didier.roche%40canonical.com/.cache/ibus/dbus-E7P10tya,guid=c13b8599eb3c6db4e1e4a9006a9a78ca",
+        )
+        .expect("a valid address");
+        let Transport::Unix(unix) = addr.transport() else {
+            panic!("expected a unix transport");
+        };
+        let UnixSocket::File(path) = unix.path() else {
+            panic!("expected a socket file path");
+        };
+        assert_eq!(
+            path,
+            &PathBuf::from("/home/didier.roche@canonical.com/.cache/ibus/dbus-E7P10tya")
+        );
+        assert_eq!(
+            addr.guid().map(|g| g.to_string()),
+            Some("c13b8599eb3c6db4e1e4a9006a9a78ca".to_owned())
+        );
+    }
+
+    /// An address with nothing to decode is passed through untouched.
+    #[test]
+    fn zbus_address_without_encoding_is_unchanged() {
+        let raw = "unix:abstract=/tmp/ibus/dbus-abcdef,guid=c13b8599eb3c6db4e1e4a9006a9a78ca";
+        assert_eq!(to_zbus_address(raw).unwrap().to_string(), raw);
+    }
+
+    /// Percent-decoding is byte-wise, and leaves a bare `%` alone.
+    #[test]
+    fn address_path_decodes_bytes_not_characters() {
+        assert_eq!(address_path("/home/a%40b/x"), PathBuf::from("/home/a@b/x"));
+        assert_eq!(address_path("/tmp/100%"), PathBuf::from("/tmp/100%"));
+        assert_eq!(address_path("/tmp/%2"), PathBuf::from("/tmp/%2"));
+        assert_eq!(address_path("/tmp/%c3%a9"), PathBuf::from("/tmp/\u{e9}"));
+    }
+
+    /// A live daemon whose socket path is not there (an address file left by a
+    /// session with a different home) is reported as a missing socket, not as a
+    /// dead daemon - the two have different fixes.
+    #[test]
+    fn missing_socket_is_named_without_blaming_the_pid() {
+        let dir = temp_dir("nosock");
+        std::fs::write(
+            dir.join("abc-unix-wayland-0"),
+            format!(
+                "IBUS_ADDRESS=unix:path={}/gone,guid=x\nIBUS_DAEMON_PID={}\n",
+                dir.display(),
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        let files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        let err = pick_address(files, Some("unix-wayland-0"), &dir).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("its socket"), "{msg}");
+        assert!(msg.contains("/gone"), "{msg}");
+        assert!(
+            !msg.contains("is gone ("),
+            "must not blame the live PID: {msg}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

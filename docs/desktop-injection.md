@@ -106,7 +106,20 @@ default; when on it prints transcript text (`myna_core::debug`).
 `zbus` — pure Rust, no FFI, no GObject-introspection, no subprocess:
 
 - **Address discovery**: `$IBUS_ADDRESS`, else the socket file under
-  `~/.config/ibus/bus/<machine-id>-<display>` (`IBUS_ADDRESS=` line).
+  `~/.config/ibus/bus/<machine-id>-<display>` (`IBUS_ADDRESS=` line). ibus never
+  removes those files, so a desktop accumulates one per display it has ever run
+  (and per nested test compositor); each candidate is validated - its
+  `IBUS_DAEMON_PID` is alive and its `path=` socket exists - and the best-ranked
+  failure is what the "no IBus daemon answers" error names. The `path=` value is
+  **D-Bus percent-encoded** (every byte outside `[-0-9A-Za-z_/.\]`), so it is
+  decoded twice over: once for the liveness check, and once into the typed
+  `zbus::Address` handed to `Connection` - zbus 5.18 parses `path=` with a plain
+  `PathBuf::from`, so an undecoded `%40` reaches `connect(2)` verbatim. An `@` in
+  the home (every AD account, `/home/first.last@canonical.com`) therefore failed
+  twice: rejected as a "missing socket", and `ENOENT` if that check were skipped.
+  Covered E2E by `ibus_hw` against a daemon in an `@` home. `dev/ibus-doctor.sh`
+  replays that ranking on a user's machine, from the host and from inside the
+  snap's confinement, and prunes the address files whose daemon is gone.
 - **Register**: `RegisterComponent(v)` with a serialized `IBusComponent`
   (`(sa{sv}ssssssssavav)`) carrying one `IBusEngineDesc`
   (`(sa{sv}ssssssssussssssss)` — layout confirmed against the live daemon).
