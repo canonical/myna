@@ -121,6 +121,11 @@ pub struct Pill {
     /// Owns the accent/reduced-motion subscriptions; dropped with the pill,
     /// so no preference callback can outlive it.
     preferences: RefCell<Option<platform::PreferenceWatch>>,
+    /// The lab accent-override provider: sets the bar/progress accent to the
+    /// override hex so those CSS-driven views follow the lab selector too
+    /// (the ribbon gets it via the palette). `None` when unset, or cleared.
+    #[cfg(dev_lab)]
+    accent_override_css: RefCell<Option<gtk::CssProvider>>,
 }
 
 impl Pill {
@@ -210,6 +215,8 @@ impl Pill {
             state,
             renderer: Rc::default(),
             preferences: RefCell::new(None),
+            #[cfg(dev_lab)]
+            accent_override_css: RefCell::new(None),
         });
 
         this.connect_palette();
@@ -666,11 +673,50 @@ impl Pill {
     /// Force the accent to a `#rrggbb` hex (the lab's override). `None`
     /// returns to the desktop accent. libadwaita has no public runtime
     /// accent setter (it is a desktop preference), so the lab forces the
-    /// palette directly.
+    /// ribbon palette directly, and the CSS-driven views (bar, progress)
+    /// follow through an injected high-priority CSS rule.
     #[cfg(dev_lab)]
     pub fn set_accent_override(&self, hex: Option<String>) {
-        self.state.borrow_mut().accent_override = hex;
+        self.state.borrow_mut().accent_override = hex.clone();
+        self.sync_accent_override_css(hex.as_deref());
         self.sync_palette();
+    }
+
+    /// Install/clear the lab accent-override CSS so the CSS-driven views
+    /// (bar, progress) follow the lab selector too. The override is a
+    /// high-priority rule on the view's accent colour; `None` removes it.
+    #[cfg(dev_lab)]
+    fn sync_accent_override_css(&self, hex: Option<&str>) {
+        let display = match gdk::Display::default() {
+            Some(d) => d,
+            None => {
+                *self.accent_override_css.borrow_mut() = None;
+                return;
+            }
+        };
+        let provider = gtk::CssProvider::new();
+        match hex {
+            Some(hex) => {
+                let css = format!(
+                    ".myna-hud-bar {{ color: {hex}; }} \
+                     .myna-hud-progress progress {{ background-color: {hex}; }}"
+                );
+                provider.load_from_string(&css);
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER,
+                );
+                *self.accent_override_css.borrow_mut() = Some(provider);
+            }
+            None => {
+                // Drop the old provider (removes its rules from the display).
+                *self.accent_override_css.borrow_mut() = None;
+            }
+        }
+        // Force both views to re-resolve their CSS colour.
+        self.bar.queue_draw();
+        self.progress.queue_draw();
     }
 
     /// Force high-contrast on/off for the lab; `None` returns to the desktop
