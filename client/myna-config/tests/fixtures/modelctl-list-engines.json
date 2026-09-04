@@ -1,0 +1,24 @@
+{
+  "active-engine": "cpu",
+  "engines": [{
+    "name": "cpu",
+    "summary": "Parakeet TDT int8 via onnxruntime on CPU",
+    "description": "CPU inference engine",
+    "vendor": "Canonical Ltd",
+    "devices": {
+      "anyof": [{"type": "cpu", "architecture": "amd64"}],
+      "allof": null
+    },
+    "runtime": "onnxruntime-cpu",
+    "model": {
+      "default": "parakeet-tdt-0.6b-v3",
+      "options": ["parakeet-tdt-0.6b-v3"]
+    },
+    "configurations": {
+      "stream-arm-seconds": 15,
+      "stream-partial-cadence-seconds": 0.5
+    },
+    "score": 10,
+    "compatible": true
+  }]
+}

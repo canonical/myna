@@ -1,0 +1,17 @@
+{
+  "active-engine": "gpu",
+  "engines": [
+    {
+      "name": "cpu",
+      "compatible": true,
+      "model": {"default": "tiny", "options": ["tiny", "base"]},
+      "configurations": {"shared": "engine-default"}
+    },
+    {
+      "name": "gpu",
+      "compatible": true,
+      "model": {"default": "large", "options": ["base", "large"]},
+      "configurations": {"compute.precision": "float16"}
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "engine": "cpu",
+  "services": {"server": "active"},
+  "entrypoints": {
+    "ubustt": {
+      "unix-socket": "/var/snap/myna-parakeet/common/run/ubustt.sock",
+      "unix-socket-url": "ws://unix/v1"
+    }
+  }
+}

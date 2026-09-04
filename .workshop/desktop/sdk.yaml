@@ -19,4 +19,4 @@
 # System packages are installed by the setup-base hook (hooks/setup-base, runs
 # as root at install). Referenced from .workshop/myna.yaml as `project-desktop`.
 name: desktop
-summary: GTK4 dev headers, IBus daemon, xdg-desktop-portal (GlobalShortcuts), D-Bus session bus for myna-desktop.
+summary: GTK4/libadwaita headers, Blueprint compiler, IBus daemon, xdg-desktop-portal, and D-Bus session bus for desktop Rust clients.

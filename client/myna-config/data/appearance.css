@@ -1,0 +1,8 @@
+.reduced-motion * {
+  transition: none;
+}
+
+.high-contrast textview {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}

@@ -1,0 +1,12 @@
+{
+  "active-model": "parakeet-tdt-0.6b-v3",
+  "models": [{
+    "name": "parakeet-tdt-0.6b-v3",
+    "description": "Parakeet TDT 0.6B v3 multilingual int8 ONNX",
+    "model-card-url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+    "quantization": "int8",
+    "capabilities": null,
+    "disk-size": "687M",
+    "components": ["model-parakeet-int8"]
+  }]
+}

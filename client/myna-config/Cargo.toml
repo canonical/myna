@@ -1,0 +1,38 @@
+[package]
+name = "myna-config"
+default-run = "myna-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Native GTK4 and libadwaita configuration application for Myna."
+
+[lib]
+name = "myna_config"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myna-config"
+path = "src/main.rs"
+
+[[bin]]
+name = "command-runner-fixture"
+path = "src/bin/command_runner_fixture.rs"
+test = false
+
+[dependencies]
+async-trait.workspace = true
+gio.workspace = true
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+gtk4 = { version = "0.11", features = ["v4_14"] }
+libadwaita = { version = "0.9", features = ["v1_6"] }
+myna-core = { path = "../myna-core" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["gettext-rs"]
+
+[build-dependencies]
+glib-build-tools = "0.20"

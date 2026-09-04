@@ -1,0 +1,44 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $MynaPage: Adw.NavigationPage {
+  title: _("Myna");
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {}
+
+    content: Adw.PreferencesPage preferences_page {
+      title: _("Myna");
+      icon-name: "audio-input-microphone-symbolic";
+
+      Adw.PreferencesGroup active_backend_group {
+        title: _("Active Backend");
+        description: _("Choose which installed speech backend serves Myna.");
+
+        Adw.ComboRow active_backend_row {
+          title: _("Backend");
+          subtitle: _("Choose which installed backend Myna uses for dictation.");
+
+          [suffix]
+          Gtk.Button switch_backend_button {
+            label: _("Switch");
+            sensitive: false;
+            valign: center;
+
+            styles [
+              "suggested-action",
+            ]
+          }
+        }
+      }
+
+      Adw.PreferencesGroup settings_group {
+        title: _("Dictation");
+        description: _(
+          "Changes are saved immediately. Each setting explains whether it applies live or after a daemon restart. “Auto” choices let Myna select the best behavior for this machine."
+        );
+      }
+    };
+  };
+}

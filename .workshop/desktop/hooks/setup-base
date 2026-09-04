@@ -1,12 +1,14 @@
 #!/bin/bash
 # setup-base — runs as root at SDK install (and when this SDK's revision
 # changes). Installs the system build + test dependencies for myna-desktop
-# (feature 003-desktop-injection):
+# (feature 003-desktop-injection) and the myna-config Blueprint/GResource UI
+# build (feature config-ui/T009):
 #   Build:
 #   - libgtk-4-dev  : GTK4 headers/libs; gtk4-rs links these via pkg-config
-#                     (only needed for the `ui-gtk` feature; the hermetic
-#                     suite builds --no-default-features without GTK)
-#   - libglib2.0-dev, pkg-config : glib-rs build + library discovery
+#   - libadwaita-1-dev : libadwaita headers + Adw-1 typelib for gtk-rs and Blueprint
+#   - libglib2.0-dev, libglib2.0-dev-bin, pkg-config : glib-rs build, gresource compilation,
+#                     and library discovery
+#   - blueprint-compiler : compiles the .blp composite templates to .ui XML
 #   Gated-integration runtime services (skip cleanly when the gates are unset):
 #   - ibus          : the IBus daemon the MYNA_IBUS_TESTS suite injects through
 #   - xdg-desktop-portal, xdg-desktop-portal-gnome : the portal + a
@@ -32,7 +34,11 @@
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install --yes --no-install-recommends \
+  libgtk-4-dev \
   libadwaita-1-dev \
+  libglib2.0-dev \
+  libglib2.0-dev-bin \
+  blueprint-compiler \
   libepoxy-dev \
   libegl-dev \
   libgl1-mesa-dev \

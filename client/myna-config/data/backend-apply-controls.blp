@@ -1,0 +1,31 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BackendApplyControls: Adw.ActionRow {
+  title: _("Apply or revert staged changes");
+  activatable: false;
+
+  [prefix]
+  Gtk.Spinner progress_spinner {
+    visible: false;
+  }
+
+  [suffix]
+  Gtk.Box button_box {
+    orientation: horizontal;
+    spacing: 6;
+
+    Gtk.Button revert_button {
+      label: _("Revert");
+    }
+
+    Gtk.Button apply_button {
+      label: _("Apply");
+      sensitive: false;
+
+      styles [
+        "suggested-action",
+      ]
+    }
+  }
+}

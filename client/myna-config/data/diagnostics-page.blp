@@ -1,0 +1,69 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $DiagnosticsPage: Adw.NavigationPage {
+  title: _("About and Diagnostics");
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [end]
+      Gtk.Button refresh_button {
+        icon-name: "view-refresh-symbolic";
+        tooltip-text: _("Refresh diagnostics");
+
+        accessibility {
+          label: _("Refresh diagnostics");
+          description: _("Re-read installed snaps and per-backend status.");
+        }
+      }
+
+      [end]
+      Gtk.Button copy_button {
+        icon-name: "edit-copy-symbolic";
+        tooltip-text: _("Copy privacy-safe diagnostics");
+
+        accessibility {
+          label: _("Copy diagnostics");
+          description: _(
+            "Copies a privacy-safe diagnostic report to the clipboard. Audio, transcripts, and filesystem paths are excluded."
+          );
+        }
+      }
+    }
+
+    content: Adw.PreferencesPage preferences_page {
+      title: _("About and Diagnostics");
+      icon-name: "dialog-information-symbolic";
+
+      Adw.PreferencesGroup report_group {
+        title: _("Copyable diagnostics");
+        description: _(
+          "Snap versions, backend resolution, connection summary, and command failures. No audio or transcript content is ever included."
+        );
+
+        Gtk.ScrolledWindow {
+          hscrollbar-policy: automatic;
+          vscrollbar-policy: automatic;
+          min-content-height: 240;
+
+          Gtk.TextView report_view {
+            editable: false;
+            monospace: true;
+            cursor-visible: false;
+            wrap-mode: word_char;
+            top-margin: 8;
+            bottom-margin: 8;
+            left-margin: 8;
+            right-margin: 8;
+
+            accessibility {
+              label: _("Diagnostic report");
+              description: _("Read-only privacy-safe diagnostic text.");
+            }
+          }
+        }
+      }
+    };
+  };
+}

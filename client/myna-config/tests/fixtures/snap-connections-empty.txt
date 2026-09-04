@@ -1,0 +1,2 @@
+Interface                         Plug           Slot                                  Notes
+network                           browser:network :network                             -

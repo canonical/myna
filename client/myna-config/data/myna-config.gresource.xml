@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/canonical/Myna/Config/ui">
+    <file>appearance.css</file>
+    <file>active-backend-dialog.ui</file>
+    <file>apply-dialog.ui</file>
+    <file>backend-apply-controls.ui</file>
+    <file>backend-page.ui</file>
+    <file>diagnostics-page.ui</file>
+    <file>main-window.ui</file>
+    <file>myna-page.ui</file>
+    <file>operation-error-dialog.ui</file>
+    <file>sidebar-row.ui</file>
+    <file>status-page.ui</file>
+  </gresource>
+</gresources>

@@ -1,0 +1,17 @@
+# Source files containing translatable strings, relative to this crate.
+data/active-backend-dialog.blp
+data/apply-dialog.blp
+data/backend-apply-controls.blp
+data/backend-page.blp
+data/diagnostics-page.blp
+data/main-window.blp
+data/myna-page.blp
+data/operation-error-dialog.blp
+data/sidebar-row.blp
+data/status-page.blp
+src/app.rs
+src/active_backend.rs
+src/backend_ui.rs
+src/diagnostics.rs
+src/myna_settings.rs
+../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml

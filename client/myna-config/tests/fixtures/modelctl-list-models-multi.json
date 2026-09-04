@@ -1,0 +1,8 @@
+{
+  "active-model": "large",
+  "models": [
+    {"name": "tiny"},
+    {"name": "base"},
+    {"name": "large"}
+  ]
+}

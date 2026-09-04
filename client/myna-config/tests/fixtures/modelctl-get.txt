@@ -1,0 +1,7 @@
+sleep-idle-seconds: 300
+shared: user
+stream-arm-seconds: 15
+stream-partial-cadence-seconds: 0.5
+streaming: true
+verbose: false
+ws.unix-socket: /var/snap/myna-parakeet/common/run/ubustt.sock

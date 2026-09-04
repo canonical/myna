@@ -6,6 +6,11 @@ fixtures/
 corpus/
 .cache/
 
+# ...but myna-config's test fixtures are checked-in sources, not corpus data:
+# `fixtures/` above is for audio clips, and it hid a directory the test suite
+# cannot compile without.
+!client/myna-config/tests/fixtures/
+
 # Snap build artifacts
 # .pip-cache/ is the persistent pip cache each snapcraft.yaml points
 # PIP_CACHE_DIR at; it is meant to outlive the build VM, so it is not

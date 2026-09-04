@@ -1,0 +1,7 @@
+name:      myna-parakeet
+summary:   Parakeet backend
+commands:
+  - myna-parakeet.parakeet
+services:
+  myna-parakeet.server: simple, enabled, active
+installed: 0.1.0

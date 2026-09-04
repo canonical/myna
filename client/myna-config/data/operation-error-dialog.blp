@@ -1,0 +1,43 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $OperationErrorDialog: Adw.AlertDialog {
+  heading: _("Operation failed");
+  body: _("Full details are shown below. You can copy them to share with support.");
+  default-response: "close";
+  close-response: "close";
+
+  responses [
+    close: _("Close"),
+  ]
+
+  extra-child: Gtk.Box {
+    orientation: vertical;
+    spacing: 12;
+
+    Gtk.ScrolledWindow scroller {
+      min-content-height: 320;
+      propagate-natural-height: true;
+      hexpand: true;
+
+      child: Gtk.Label details_label {
+        wrap: true;
+        wrap-mode: word_char;
+        selectable: true;
+        xalign: 0;
+        yalign: 0;
+        use-markup: false;
+      };
+    }
+
+    Gtk.Button copy_button {
+      halign: end;
+      label: _("Copy Details");
+      tooltip-text: _("Copy the full failure details to the clipboard");
+
+      styles [
+        "flat",
+      ]
+    }
+  };
+}

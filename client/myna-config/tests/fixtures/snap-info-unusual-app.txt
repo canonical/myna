@@ -1,0 +1,7 @@
+name:      community-asr
+commands:
+  - community-asr.server-tools
+  - community-asr.control-centre
+services:
+  community-asr.server: simple, enabled, active
+installed: 2.0

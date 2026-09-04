@@ -1,0 +1,26 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $ActiveBackendDialog: Adw.AlertDialog {
+  heading: _("Switch active backend?");
+  body: _("Review the exact operations and privilege implications before continuing.");
+  default-response: "switch";
+  close-response: "cancel";
+
+  responses [
+    cancel: _("Cancel"),
+    switch: _("Switch Backend"),
+  ]
+
+  extra-child: Gtk.ScrolledWindow {
+    min-content-height: 280;
+    propagate-natural-height: true;
+
+    child: Gtk.Label switch_confirmation_label {
+      wrap: true;
+      selectable: true;
+      xalign: 0;
+      yalign: 0;
+    };
+  };
+}

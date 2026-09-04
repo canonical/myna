@@ -1,0 +1,2 @@
+Interface Plug Slot
+content - myna-whisper:ubustt-socket

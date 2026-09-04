@@ -473,46 +473,73 @@ its model fetch; `make help` lists every snap target.
 
 The snaps have their own README's with further details.
 
-## Configuration UI prototype
+## Native configuration UI prototype
 
-`dev/config-ui.py` is a **throwaway Tkinter prototype**, not a shipped surface
-and not a design commitment. It explores the current configuration surface
-against real installed snaps: what is actually configurable today, what a
-Settings panel has to guess in the absence of a config schema, and what the
-running system costs.
+`client/myna-config` is the host-run GTK4/libadwaita prototype. On a supported
+Ubuntu release, install Rust plus GTK 4.14+, libadwaita 1.6+, Blueprint, and
+gettext development tools:
 
 ```shell
-./dev/config-ui.py                  # stdlib only, no deps beyond python3-tk
-./dev/config-ui.py --font-size 16   # or Ctrl+plus / Ctrl+minus / Ctrl+0 live
+sudo apt install libgtk-4-dev libadwaita-1-dev blueprint-compiler gettext
+make install-schema
 ```
 
-It discovers backends by their `ubustt-socket` content slot, reads them
-unprivileged (`<backend> get|status|list-models|list-engines`), shows live
-service state, resident/peak memory, CPU time and on-disk size per backend
-alongside the client's dictation state from `com.canonical.Myna.Dictation`, and writes
-through `pkexec`, always displaying the literal command first.
+Then launch it from the workspace:
 
-What it surfaces, and what a real config API would have to answer:
+```shell
+cd client
+cargo run -p myna-config
+# or, from the repository root:
+make config-ui
+```
 
-- No machine-readable schema exists, so every control is rendered from the
-  *current value*: types are inferred, and ranges, defaults, titles and
-  restart-required flags are guessed. This is the case for `describe-config`
-  (config-api §3.4, Appendix A) in one screen.
-- The uniform-vocabulary split is already visible: parakeet exposes four
-  `stream-*` keys that funasr does not, and nothing distinguishes "not
-  applicable here" from "not implemented yet".
-- There is no *active backend* concept. Several backends can be connected to
-  the client's single `backend` plug, and an unconnected backend still runs and
-  holds its model resident. Connection state is configuration, and it lives on
-  the client snap rather than on the inference snaps.
-- The client's `AudioRms`/`AudioPeak` are published only during a live session,
-  so a settings panel cannot use them to answer "is my microphone working". The
-  panel opens the mic itself (opt-in, `pw-record`) to make the point that mic
-  verification and device choice are settings concerns, and that device choice
-  (`myna-desktop --target <node.name>`) is persisted nowhere today.
-- Residency reads better as intent next to a live number ("2.6G resident, idle
-  since 13:27") than as `sleep-idle-seconds`, which supports the `intent`
-  presets sketched in Appendix A.
+The prototype uses GNOME Blueprint at build time and embeds the generated
+GtkBuilder resources; Cargo remains the only build system. It reads and writes
+the Myna snap's existing private GSettings keyfile, so the schema must be
+installed on the host. It discovers installed inference snaps from their
+`ubustt-socket` slots and calls the current `snap get` and modelctl
+`status`/`get`/`list-models`/`list-engines` APIs directly.
+
+Supported surfaces are all schema-defined Myna client settings, installed and
+active-backend discovery, model and engine selection, known backend settings,
+clearly marked fallback rows for unknown settings, and sanitized diagnostics.
+The retired prototype's microphone probe, persistent device choice, inferred
+ranges/defaults, and broad process polling are intentionally absent because
+current product APIs cannot support them reliably.
+
+Reads and Myna GSettings changes are unprivileged. Backend switching goes
+directly through the host snapd REST API on `/run/snapd.socket` — no helper
+binary, no `pkexec` wrapper, no elevated child process. The socket is
+world-writable by default on Ubuntu, and snapd itself decides authorization:
+mutating requests carry `X-Allow-Interaction: true` so snapd asks polkit for a
+normal per-action prompt, exactly like the desktop's own Software/App Center
+does. There is no root helper to preinstall and no privileged code path in
+this client. Host backend switching also restarts the `myna.myna` user daemon
+so it sees the new backend content mount; dictation can pause briefly while the
+service comes back. This host-side restart does **not** claim to solve the
+separate strict-shipping path. Backend settings that are still `snap set`-shaped
+continue to run under polkit through the standard command runner; authorization
+denial is reported honestly and never claimed as success.
+
+The Software / App Center exception is not a template we can reuse: those
+apps have gone through the snap Store review process to hold the
+super-privileged `snapd-control` interface, which is deliberately not
+auto-connected and is only granted to a small allowlisted set of first-party
+system stores. Myna does not — and must not — request it.
+
+This remains a host prototype: it depends on the host snapd socket. Strict
+confinement for `myna-config` itself is still blocked. The confinement spike
+measured pre-HTTP transport failure for direct snapd REST requests from a
+strict snap; AppArmor attribution is a source-backed inference because no
+correlated audit record was available, and snapd policy shows the only rule
+that would grant `/run/snapd.socket rw` is the rejected `snapd-control`
+interface. Shipping `myna-config` as a strict snap is therefore still gated
+on a platform-owned, narrow host mediator plus an approved least-privilege
+client transport (a reviewed snapd interface or a purpose-built portal);
+neither exists here. **The shipping `myna.config` wrapper remains CLI-first
+and its existing argument behavior is unchanged
+until that dependency is approved and available.** See
+[`config-ui/confinement.md`](config-ui/confinement.md).
 
 ## Contributing
 

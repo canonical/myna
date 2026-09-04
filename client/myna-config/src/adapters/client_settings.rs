@@ -1,0 +1,250 @@
+use std::path::{Path, PathBuf};
+
+use gio::glib::prelude::ObjectExt;
+use gio::glib::{self, variant::ToVariant};
+use gio::prelude::SettingsExt;
+
+use crate::domain::{
+    ClientSetting, ClientSettingKey, ClientSettingMetadata, ClientSettingValue, SettingRange,
+};
+use crate::ports::{
+    ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
+};
+use myna_core::settings::SCHEMA_ID;
+
+#[derive(Debug)]
+pub struct GioClientSettings {
+    schema: gio::SettingsSchema,
+    settings: gio::Settings,
+}
+
+impl GioClientSettings {
+    pub fn open() -> Result<Self, ClientSettingsError> {
+        let source = gio::SettingsSchemaSource::default().ok_or_else(schema_unavailable)?;
+        Self::open_with_source(&source, private_keyfile_path()?)
+    }
+
+    pub fn open_with_source(
+        source: &gio::SettingsSchemaSource,
+        keyfile: impl AsRef<Path>,
+    ) -> Result<Self, ClientSettingsError> {
+        let keyfile = keyfile.as_ref();
+        if let Some(parent) = keyfile.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                ClientSettingsError::StoreUnavailable {
+                    message: format!("cannot create {}: {error}", parent.display()),
+                }
+            })?;
+        }
+        let path = keyfile
+            .to_str()
+            .ok_or_else(|| ClientSettingsError::StoreUnavailable {
+                message: format!("{} is not valid UTF-8", keyfile.display()),
+            })?;
+        let backend = gio::functions::keyfile_settings_backend_new(path, "/", None);
+        Self::open_with_backend(source, &backend)
+    }
+
+    pub fn open_with_backend(
+        source: &gio::SettingsSchemaSource,
+        backend: &gio::SettingsBackend,
+    ) -> Result<Self, ClientSettingsError> {
+        let schema = source
+            .lookup(SCHEMA_ID, true)
+            .ok_or_else(schema_unavailable)?;
+        let settings = gio::Settings::new_full(&schema, Some(backend), None);
+        Ok(Self { schema, settings })
+    }
+
+    fn schema_key(&self, key: &str) -> Result<gio::SettingsSchemaKey, ClientSettingsError> {
+        if !self.schema.has_key(key) {
+            return Err(ClientSettingsError::UnknownKey {
+                key: key.to_owned(),
+            });
+        }
+        Ok(self.schema.key(key))
+    }
+
+    fn metadata(&self, key: &str) -> Result<ClientSettingMetadata, ClientSettingsError> {
+        let schema_key = self.schema_key(key)?;
+        let range = setting_range(&schema_key);
+        Ok(ClientSettingMetadata::new(
+            ClientSettingKey::new(key).expect("schema keys are non-empty"),
+            schema_key.summary().map(Into::into),
+            schema_key.description().map(Into::into),
+            value_from_variant(&schema_key.default_value(), &range, key)?,
+            range.clone(),
+            value_from_variant(&self.settings.value(key), &range, key)?,
+            self.settings.is_writable(key),
+        ))
+    }
+
+    fn ensure_writable(&self, key: &str) -> Result<(), ClientSettingsError> {
+        if self.settings.is_writable(key) {
+            Ok(())
+        } else {
+            Err(ClientSettingsError::NotWritable {
+                key: key.to_owned(),
+            })
+        }
+    }
+}
+
+impl ClientSettings for GioClientSettings {
+    fn list(&self) -> Result<Vec<ClientSettingMetadata>, ClientSettingsError> {
+        let mut keys = self.schema.list_keys();
+        keys.sort();
+        keys.iter().map(|key| self.metadata(key)).collect()
+    }
+
+    fn get(&self, key: &str) -> Result<ClientSettingValue, ClientSettingsError> {
+        let schema_key = self.schema_key(key)?;
+        value_from_variant(&self.settings.value(key), &setting_range(&schema_key), key)
+    }
+
+    fn set(&self, key: &str, value: ClientSettingValue) -> Result<(), ClientSettingsError> {
+        let schema_key = self.schema_key(key)?;
+        self.ensure_writable(key)?;
+        let range = setting_range(&schema_key);
+        let variant = match (&range, &value) {
+            (SettingRange::Choices(_), ClientSettingValue::Choice(value))
+            | (SettingRange::Unrestricted, ClientSettingValue::Text(value)) => value.to_variant(),
+            _ => {
+                return Err(ClientSettingsError::InvalidValue {
+                    key: key.to_owned(),
+                    message: "value has the wrong schema type".into(),
+                });
+            }
+        };
+        if variant.type_() != schema_key.value_type() || !schema_key.range_check(&variant) {
+            return Err(ClientSettingsError::InvalidValue {
+                key: key.to_owned(),
+                message: "value is outside the schema range".into(),
+            });
+        }
+        self.settings.set_value(key, &variant).map_err(|error| {
+            ClientSettingsError::InvalidValue {
+                key: key.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        Ok(())
+    }
+
+    fn reset(&self, key: &str) -> Result<(), ClientSettingsError> {
+        self.schema_key(key)?;
+        self.ensure_writable(key)?;
+        self.settings.reset(key);
+        Ok(())
+    }
+
+    fn subscribe(
+        &self,
+        callback: ClientSettingsCallback,
+    ) -> Result<Box<dyn ClientSettingsSubscription>, ClientSettingsError> {
+        let settings = self.settings.clone();
+        let schema = self.schema.clone();
+        let handler = settings.connect_changed(None, move |settings, key| {
+            if !schema.has_key(key) {
+                return;
+            }
+            let schema_key = schema.key(key);
+            let range = setting_range(&schema_key);
+            if let Ok(value) = value_from_variant(&settings.value(key), &range, key) {
+                callback(
+                    ClientSetting::new(
+                        ClientSettingKey::new(key).expect("schema keys are non-empty"),
+                        value,
+                    )
+                    .expect("schema-derived setting is valid"),
+                );
+            }
+        });
+        Ok(Box::new(GioSubscription {
+            settings: self.settings.clone(),
+            handler: Some(handler),
+        }))
+    }
+}
+
+struct GioSubscription {
+    settings: gio::Settings,
+    handler: Option<glib::SignalHandlerId>,
+}
+
+impl ClientSettingsSubscription for GioSubscription {}
+
+impl Drop for GioSubscription {
+    fn drop(&mut self) {
+        if let Some(handler) = self.handler.take() {
+            self.settings.disconnect(handler);
+        }
+    }
+}
+
+fn setting_range(key: &gio::SettingsSchemaKey) -> SettingRange {
+    let range = key.range();
+    let kind = range.child_value(0).get::<String>();
+    let detail = range.child_value(1).get::<glib::Variant>();
+    match (kind.as_deref(), detail) {
+        (Some("enum"), Some(detail)) => detail
+            .get::<Vec<String>>()
+            .map(SettingRange::Choices)
+            .unwrap_or(SettingRange::Unrestricted),
+        (Some("range"), Some(detail)) if detail.n_children() == 2 => {
+            let minimum = value_from_variant(
+                &detail.child_value(0),
+                &SettingRange::Unrestricted,
+                key.name().as_str(),
+            );
+            let maximum = value_from_variant(
+                &detail.child_value(1),
+                &SettingRange::Unrestricted,
+                key.name().as_str(),
+            );
+            match (minimum, maximum) {
+                (Ok(minimum), Ok(maximum)) => SettingRange::Range { minimum, maximum },
+                _ => SettingRange::Unrestricted,
+            }
+        }
+        _ => SettingRange::Unrestricted,
+    }
+}
+
+fn value_from_variant(
+    value: &glib::Variant,
+    range: &SettingRange,
+    key: &str,
+) -> Result<ClientSettingValue, ClientSettingsError> {
+    let value = value
+        .get::<String>()
+        .ok_or_else(|| ClientSettingsError::InvalidValue {
+            key: key.to_owned(),
+            message: format!("unsupported GVariant type {}", value.type_()),
+        })?;
+    Ok(match range {
+        SettingRange::Choices(_) => ClientSettingValue::Choice(value),
+        _ => ClientSettingValue::Text(value),
+    })
+}
+
+fn private_keyfile_path() -> Result<PathBuf, ClientSettingsError> {
+    let common = std::env::var_os("SNAP_USER_COMMON")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join("snap/myna/common"))
+        })
+        .ok_or_else(|| ClientSettingsError::StoreUnavailable {
+            message: "neither SNAP_USER_COMMON nor HOME is set".into(),
+        })?;
+    Ok(common.join(".config/glib-2.0/settings/keyfile"))
+}
+
+fn schema_unavailable() -> ClientSettingsError {
+    ClientSettingsError::SchemaUnavailable {
+        schema_id: SCHEMA_ID,
+        guidance: "Install Myna's GSettings schema (or reinstall the Myna snap), then restart Myna Settings.",
+    }
+}

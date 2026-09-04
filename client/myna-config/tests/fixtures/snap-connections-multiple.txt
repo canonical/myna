@@ -1,0 +1,3 @@
+Interface                         Plug           Slot                                  Notes
+content[ubustt-socket]            myna:backend   myna-parakeet:ubustt-socket           manual
+content[ubustt-socket]            myna:backend   myna-whisper:ubustt-socket            manual
