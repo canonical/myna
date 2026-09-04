@@ -5,8 +5,9 @@
 // manual-acceptance plus the env-gated render check.
 
 use myna_hud::hud_logic::{
-    icon_for_severity, pill_color_class, ribbon_phase_for_state_key, ribbon_visible_for_severity,
-    severity_auto_dismisses, should_replace_held_notice, PILL_COLOR_CLASSES,
+    icon_for_severity, indicator_state, pill_color_class, pulse_position,
+    ribbon_phase_for_state_key, ribbon_visible_for_severity, severity_auto_dismisses,
+    should_replace_held_notice, PILL_COLOR_CLASSES,
 };
 use myna_hud::ribbon::RibbonPhase;
 use myna_hud::states::{DictationState, Severity};
@@ -156,4 +157,104 @@ fn ribbon_visibility_by_severity() {
         ribbon_visible_for_severity(None),
         "stays visible for non-problem states"
     );
+}
+
+// --- Simple-indicator state animation (bar / vumeter / progress) -----------
+
+#[test]
+fn plain_level_states_report_the_raw_level() {
+    let s = indicator_state(DictationState::Recording, None, 0.42, 0.0, false);
+    assert_eq!(s.fraction, 0.42);
+    assert!(s.pulse.is_none());
+    assert!(!s.warning);
+}
+
+#[test]
+fn loading_transcribing_finalizing_report_a_pulse() {
+    for (key, period) in [
+        (DictationState::Loading, 1600.0),
+        (DictationState::Transcribing, 1100.0),
+        (DictationState::Finalizing, 800.0),
+    ] {
+        let s = indicator_state(key, None, 0.0, 0.0, false);
+        let Some(pulse) = s.pulse else {
+            panic!("{key:?} must pulse");
+        };
+        assert!(pulse.width > 0.0 && pulse.width <= 1.0);
+        assert_eq!(pulse.period_ms, period);
+        assert!(!s.warning);
+    }
+}
+
+#[test]
+fn reduced_motion_pulses_are_slower_but_still_move() {
+    let normal = |key| {
+        let s = indicator_state(key, None, 0.0, 0.0, false);
+        s.pulse.unwrap().period_ms
+    };
+    let reduced = |key| {
+        let s = indicator_state(key, None, 0.0, 0.0, true);
+        s.pulse.unwrap().period_ms
+    };
+    for key in [
+        DictationState::Loading,
+        DictationState::Transcribing,
+        DictationState::Finalizing,
+    ] {
+        assert!(
+            reduced(key) > normal(key) * 3.0,
+            "{key:?} still pulses under reduced motion, just slower"
+        );
+    }
+}
+
+#[test]
+fn loading_pulse_is_semi_transparent() {
+    let loading = indicator_state(DictationState::Loading, None, 0.0, 0.0, false);
+    let transcribing = indicator_state(DictationState::Transcribing, None, 0.0, 0.0, false);
+    assert!(
+        loading.pulse.unwrap().alpha < 1.0,
+        "loading uses a semi-transparent accent"
+    );
+    assert!(
+        transcribing.pulse.unwrap().alpha == 1.0,
+        "transcribing is a full solid accent"
+    );
+}
+
+#[test]
+fn notice_reports_warning_empty() {
+    let s = indicator_state(
+        DictationState::Notice,
+        Some(Severity::Recoverable),
+        0.0,
+        0.0,
+        false,
+    );
+    assert!(s.warning);
+    assert_eq!(s.fraction, 0.0, "a notice bar is empty, not full");
+}
+
+#[test]
+fn critical_is_closed_and_not_warning() {
+    let s = indicator_state(
+        DictationState::Error,
+        Some(Severity::Critical),
+        0.5,
+        0.0,
+        false,
+    );
+    assert_eq!(s.fraction, 0.0);
+    assert!(s.pulse.is_none());
+    assert!(!s.warning);
+}
+
+#[test]
+fn pulse_position_swings_back_and_forth() {
+    // 0 at t=0, 1 at t=period/2, 0 again at t=period (the pong).
+    assert_eq!(pulse_position(0.0, 1000.0), 0.0);
+    assert_eq!(pulse_position(500.0, 1000.0), 1.0);
+    assert!((pulse_position(1000.0, 1000.0) - 0.0).abs() < 1e-9);
+    // Symmetric around the peak.
+    assert!((pulse_position(250.0, 1000.0) - pulse_position(750.0, 1000.0)).abs() < 1e-9);
 }

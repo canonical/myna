@@ -143,3 +143,134 @@ pub fn ribbon_phase_for_state_key(key: DictationState) -> Option<RibbonPhase> {
 pub fn ribbon_visible_for_severity(severity: Option<Severity>) -> bool {
     severity != Some(Severity::Critical)
 }
+
+// ── Non-ribbon indicator animation (bar / vumeter / progress) ───────────────
+
+/// The indeterminate "activity" pulse shown by the simple indicators while the
+/// session is working: a little block that travels back and forth (à la pong).
+/// The bar and the segmented meter draw it themselves from the shared
+/// [`pulse_position`]; the progress view maps it onto the stock
+/// `GtkProgressBar::pulse()`.
+#[derive(Clone, Copy, Debug)]
+pub struct Pulse {
+    /// The block's width as a fraction of the indicator (`[0,1]`).
+    pub width: f64,
+    /// Milliseconds for one full back-and-forth cycle.
+    pub period_ms: f64,
+    /// The block's alpha — `<1` for a semi-transparent accent (loading).
+    pub alpha: f64,
+}
+
+impl Default for Pulse {
+    fn default() -> Self {
+        Self {
+            width: 0.2,
+            period_ms: 1000.0,
+            alpha: 1.0,
+        }
+    }
+}
+
+/// How the simple indicators (bar / vumeter / progress) render the current
+/// state, mirroring the ribbon's phase-driven motion with their own
+/// primitives:
+///
+/// - `loading` → an activity [`Pulse`] at a slow pace, semi-transparent
+///   accent (the "warming up" look).
+/// - `transcribing` → a faster, fuller [`Pulse`] — the "working on it" feel
+///   while partial results are being committed.
+/// - `finalizing` → a quick [`Pulse`] — the "done" tail before the pill
+///   clears.
+/// - `notice` (recoverable) → the bar reads **full and warning-coloured**,
+///   gently breathing so it is alive but never looks like a level.
+/// - anything else live (`recording`/`active`/`idle`) → the plain level.
+///
+/// A `critical` error hides the indicator, so it reports a closed (0) fill.
+#[derive(Clone, Copy, Debug)]
+pub struct IndicatorState {
+    /// Filled fraction for plain-level states (`[0,1]`).
+    pub fraction: f64,
+    /// `Some` when the view should show an indeterminate activity pulse
+    /// instead of a level (loading / transcribing / finalizing).
+    pub pulse: Option<Pulse>,
+    /// Warning (recoverable notice): use the warning colour and read full.
+    pub warning: bool,
+}
+
+impl Default for IndicatorState {
+    fn default() -> Self {
+        Self {
+            fraction: 0.0,
+            pulse: None,
+            warning: false,
+        }
+    }
+}
+
+/// The animation state for the simple indicators.
+///
+/// `intensity` is the calibrated `[0,1]` level; `state_ms` is how long the
+/// indicator has been in its current state (0 = just entered); `reduced_motion`
+/// follows the desktop's reduce-animation preference — under it the activity
+/// pulse travels much more slowly than usual (reduced, not removed motion).
+pub fn indicator_state(
+    key: DictationState,
+    severity: Option<Severity>,
+    intensity: f64,
+    _state_ms: f64,
+    reduced_motion: bool,
+) -> IndicatorState {
+    let level = intensity.clamp(0.0, 1.0);
+    // Reduced motion slows the travel: callers multiply the "normal" period
+    // by this. The Ribbon's reduce-animation keeps a gentle, slow wave too.
+    let speed = if reduced_motion { 3.5 } else { 1.0 };
+    match (key, severity) {
+        (_, Some(Severity::Critical)) => IndicatorState::default(),
+        // Notice: warning colour, and an **empty** bar — the recoverable
+        // treatment reads as "attention, warning tint, nothing recorded".
+        (_, Some(Severity::Recoverable)) => IndicatorState {
+            fraction: 0.0,
+            warning: true,
+            ..Default::default()
+        },
+        (DictationState::Loading, _) => IndicatorState {
+            pulse: Some(Pulse {
+                width: 0.20,
+                period_ms: 1600.0 * speed,
+                alpha: 0.45, // semi-transparent accent
+            }),
+            ..Default::default()
+        },
+        (DictationState::Transcribing, _) => IndicatorState {
+            pulse: Some(Pulse {
+                width: 0.26,
+                period_ms: 1100.0 * speed,
+                alpha: 1.0,
+            }),
+            ..Default::default()
+        },
+        (DictationState::Finalizing, _) => IndicatorState {
+            pulse: Some(Pulse {
+                width: 0.32,
+                period_ms: 800.0 * speed,
+                alpha: 0.9,
+            }),
+            ..Default::default()
+        },
+        // Recording / Active / Idle: the plain level.
+        _ => IndicatorState {
+            fraction: level,
+            ..Default::default()
+        },
+    }
+}
+
+/// The centre of the activity block at `state_ms`: a `0..1..0` triangle wave
+/// across `period_ms` — 0 (left) at t=0, 1 (right) at t=period/2, 0 again at
+/// t=period — the "pong" back-and-forth used by the pulsing states.
+pub fn pulse_position(state_ms: f64, period_ms: f64) -> f64 {
+    if period_ms <= 0.0 {
+        return 0.0;
+    }
+    (0.5 - 0.5 * (state_ms / period_ms * std::f64::consts::TAU).cos()).clamp(0.0, 1.0)
+}

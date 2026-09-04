@@ -218,6 +218,7 @@ impl Pill {
         this.connect_preferences();
         this.sync_high_contrast();
         this.sync_palette();
+        this.push_reduced_motion();
         this.apply_descriptor(crate::states::state_to_descriptor(None, ""));
         this
     }
@@ -350,6 +351,12 @@ impl Pill {
             }
             state.descriptor = descriptor.clone();
         }
+
+        // Drive the non-ribbon views' state animations (loading pulse,
+        // notice warning colour, finalize settle) from the same descriptor.
+        self.bar.set_state(descriptor.key, descriptor.severity);
+        self.meter.set_state(descriptor.key, descriptor.severity);
+        self.progress.set_state(descriptor.key, descriptor.severity);
 
         self.label.set_text(&descriptor.status_text);
         self.icon
@@ -529,6 +536,8 @@ impl Pill {
             {
                 this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
             }
+            // Recompute the non-ribbon views' pulse pace.
+            this.push_reduced_motion();
 
             // The hud-style has no lab override in the shipped pill; re-read
             // the desktop preference live so `myna.config set hud-style …`
@@ -607,6 +616,18 @@ impl Pill {
         self.schedule_accent_resync();
     }
 
+    /// Forward the current reduce-animation preference to the non-ribbon
+    /// views so they travel at the right pace (slower under reduced motion).
+    fn push_reduced_motion(&self) {
+        let reduced = {
+            let state = self.state.borrow();
+            state.reduced_motion
+        };
+        self.bar.set_reduced_motion(reduced);
+        self.meter.set_reduced_motion(reduced);
+        self.progress.set_reduced_motion(reduced);
+    }
+
     /// Switch the audio-level presentation (the `hud-style` setting): the
     /// accent level bar, the GPU ribbon, or the classic segmented meter.
     /// `None` re-reads the desktop preference
@@ -638,6 +659,7 @@ impl Pill {
             state.reduced_motion = platform::probe_reduced_motion();
         }
         drop(state);
+        self.push_reduced_motion();
         self.ribbon.queue_render();
     }
 
@@ -689,7 +711,6 @@ impl Pill {
         state.accent = Some(accent);
         state.palette = palette.as_ribbon_palette();
         drop(state);
-        self.bar.set_accent(accent);
         self.ribbon.queue_render();
     }
 }
