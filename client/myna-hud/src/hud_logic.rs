@@ -236,7 +236,7 @@ pub fn indicator_state(
         (DictationState::Loading, _) => IndicatorState {
             pulse: Some(Pulse {
                 width: 0.20,
-                period_ms: 1600.0 * speed,
+                period_ms: 2000.0 * speed,
                 alpha: 0.45, // semi-transparent accent
             }),
             ..Default::default()
@@ -244,7 +244,7 @@ pub fn indicator_state(
         (DictationState::Transcribing, _) => IndicatorState {
             pulse: Some(Pulse {
                 width: 0.26,
-                period_ms: 1100.0 * speed,
+                period_ms: 1400.0 * speed,
                 alpha: 1.0,
             }),
             ..Default::default()
@@ -252,7 +252,7 @@ pub fn indicator_state(
         (DictationState::Finalizing, _) => IndicatorState {
             pulse: Some(Pulse {
                 width: 0.32,
-                period_ms: 800.0 * speed,
+                period_ms: 1000.0 * speed,
                 alpha: 0.9,
             }),
             ..Default::default()
@@ -274,3 +274,33 @@ pub fn pulse_position(state_ms: f64, period_ms: f64) -> f64 {
     }
     (0.5 - 0.5 * (state_ms / period_ms * std::f64::consts::TAU).cos()).clamp(0.0, 1.0)
 }
+
+/// One step of a one-pole low-pass toward `target` — easing the calibrated
+/// sample intensity so a level push doesn't snap the fill. `reduced_motion`
+/// uses a much larger time constant (slower easing), and the default attack/
+/// release are themselves gentle so the plain level never jumps.
+///
+/// `previous` is the value carried by the caller across frames; `dt_ms` is the
+/// time since that value was computed (0 → straight to target, to keep a
+/// freshly-created view from showing a stale intermediate).
+pub fn smooth_level(previous: f64, target: f64, dt_ms: f64, reduced_motion: bool) -> f64 {
+    let clamped_target = target.clamp(0.0, 1.0);
+    let speed = if reduced_motion { 0.25 } else { 1.0 };
+    // Attack (rising) is snappier than release (falling), like the ribbon's
+    // ballistics; both are scaled down under reduced motion.
+    let tau_ms = if clamped_target > previous {
+        (ENVELOPE_ATTACK_MS / speed).max(1.0)
+    } else {
+        (ENVELOPE_RELEASE_MS / speed).max(1.0)
+    };
+    if dt_ms <= 0.0 {
+        return clamped_target;
+    }
+    let alpha = 1.0 - (-dt_ms / tau_ms).exp();
+    (previous + (clamped_target - previous) * alpha).clamp(0.0, 1.0)
+}
+
+/// Attack (rising) time constant for [`smooth_level`], ms.
+pub const ENVELOPE_ATTACK_MS: f64 = 90.0;
+/// Release (falling) time constant for [`smooth_level`], ms.
+pub const ENVELOPE_RELEASE_MS: f64 = 480.0;

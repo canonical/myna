@@ -42,6 +42,8 @@ pub struct ProgressView {
     severity: RefCell<Option<crate::states::Severity>>,
     state_since: RefCell<Option<Instant>>,
     reduced_motion: RefCell<bool>,
+    smoothed_level: RefCell<f64>,
+    last_frame: RefCell<Option<Instant>>,
 }
 
 impl ProgressView {
@@ -61,6 +63,8 @@ impl ProgressView {
             severity: RefCell::new(None),
             state_since: RefCell::new(None),
             reduced_motion: RefCell::new(false),
+            smoothed_level: RefCell::new(0.0),
+            last_frame: RefCell::new(None),
         });
         this.connect_clock();
         this
@@ -79,6 +83,7 @@ impl ProgressView {
             peak,
             at: Instant::now(),
         });
+        *self.last_frame.borrow_mut() = None;
         self.update_fraction();
     }
 
@@ -150,7 +155,7 @@ impl ProgressView {
             }
             None => (crate::states::DictationState::Idle, None, 0.0),
         };
-        let intensity = current_intensity(&self.level);
+        let intensity = self.smoothed_intensity();
         crate::hud_logic::indicator_state(
             key,
             severity,
@@ -158,6 +163,24 @@ impl ProgressView {
             state_ms,
             *self.reduced_motion.borrow(),
         )
+    }
+
+    /// The smoothed level for this frame, advancing the easing state.
+    fn smoothed_intensity(&self) -> f64 {
+        let now = Instant::now();
+        let dt_ms = match *self.last_frame.borrow() {
+            Some(prev) => now.duration_since(prev).as_secs_f64() * 1000.0,
+            None => 0.0,
+        };
+        let smoothed = crate::hud_logic::smooth_level(
+            *self.smoothed_level.borrow(),
+            current_intensity(&self.level),
+            dt_ms,
+            *self.reduced_motion.borrow(),
+        );
+        *self.smoothed_level.borrow_mut() = smoothed;
+        *self.last_frame.borrow_mut() = Some(now);
+        smoothed
     }
 
     /// Drive the fraction from the frame clock while visible, so the bounce
