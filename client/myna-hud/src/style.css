@@ -23,7 +23,7 @@ window.myna-hud-window {
 
 .myna-hud-pill {
     padding: 10px 16px;
-    background-color: rgba(20, 22, 28, 0.82);
+    background-color: var(--dark-3);
     border-radius: 999px;
     /* Legible against a busy or light wallpaper. The severity states draw a
      * strong coloured border, and at 0.08 the ordinary states read as an
@@ -55,12 +55,7 @@ window.myna-hud-window {
  * once made the meter read as permanently flat regardless of the real audio
  * level (R16a/R17). */
 .myna-hud-ribbon {
-    /* The accent: `@accent_bg_color` (the named colour, defined since
-     * libadwaita 1.0) rather than `var(--accent-bg-color)` (GTK 4.16+) so the
-     * whole runtime matrix is covered, and `accent_bg_color` rather than
-     * `accent_color`: the latter is the standalone/foreground variant,
-     * darkened for contrast, and can even fall outside sRGB. */
-    color: @accent_bg_color;
+    color: var(--accent-bg-color);
 
     min-height: 32px;
     min-width: 160px;
@@ -72,7 +67,7 @@ window.myna-hud-window {
  * reads this resolved `color` (accent, or warning under the recoverable
  * class) at draw time. */
 .myna-hud-vumeter {
-    color: @accent_bg_color;
+    color: var(--accent-bg-color);
     min-height: 32px;
     min-width: 160px;
 }
@@ -84,7 +79,7 @@ window.myna-hud-window {
 /* The accent level bar (the `hud-style: bar` alternative). Same footprint.
  * The bar is painted by the widget, reading this resolved `color`. */
 .myna-hud-bar {
-    color: @accent_bg_color;
+    color: var(--accent-bg-color);
     min-height: 32px;
     min-width: 160px;
 }
@@ -102,7 +97,7 @@ window.myna-hud-window {
 }
 
 .myna-hud-progress progress {
-    background-color: @accent_bg_color;
+    background-color: var(--accent-bg-color);
 }
 
 .myna-hud-progress.myna-hud-severity-recoverable progress {
