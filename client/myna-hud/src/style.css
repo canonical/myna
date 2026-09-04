@@ -68,10 +68,45 @@ window.myna-hud-window {
 
 /* The classic segmented VU meter (the `hud-style: vumeter` alternative to
  * the ribbon). Same footprint so the pill keeps one stable size whichever
- * indicator is selected. The bars are painted by the widget itself. */
+ * indicator is selected. The bars are painted by the widget itself, which
+ * reads this resolved `color` (accent, or warning under the recoverable
+ * class) at draw time. */
 .myna-hud-vumeter {
+    color: @accent_bg_color;
     min-height: 32px;
     min-width: 160px;
+}
+
+.myna-hud-vumeter.myna-hud-severity-recoverable {
+    color: var(--warning-bg-color);
+}
+
+/* The accent level bar (the `hud-style: bar` alternative). Same footprint.
+ * The bar is painted by the widget, reading this resolved `color`. */
+.myna-hud-bar {
+    color: @accent_bg_color;
+    min-height: 32px;
+    min-width: 160px;
+}
+
+.myna-hud-bar.myna-hud-severity-recoverable {
+    color: var(--warning-bg-color);
+}
+
+/* The plain GtkProgressBar (the `hud-style: progress` alternative). Its fill
+ * is the themed `progress` sub-node; the recoverable class drives it to the
+ * warning colour. */
+.myna-hud-progress {
+    min-height: 8px;
+    min-width: 160px;
+}
+
+.myna-hud-progress progress {
+    background-color: @accent_bg_color;
+}
+
+.myna-hud-progress.myna-hud-severity-recoverable progress {
+    background-color: var(--warning-bg-color);
 }
 
 .myna-hud-dismiss {
