@@ -83,6 +83,7 @@ mod imp {
         /// segment. The state drives a fixed lit count (level), a moving lit
         /// cluster (pulse), or a full warning fill, per
         /// [`crate::hud_logic::indicator_state`].
+        #[allow(deprecated)]
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
             let w = widget.width() as f64;
@@ -141,12 +142,15 @@ mod imp {
 
             let gap = w / BAR_COUNT as f64;
             let bar_width = gap * 0.55;
+            // Resolve the gauge's zone colours from CSS once per frame (the
+            // libadwaita accent variables via the @define-color aliases).
+            let style = widget.style_context();
             for (i, position) in bar_positions().enumerate() {
                 let is_lit = lit(i);
                 let alpha = if is_lit { 1.0 } else { 0.16 };
                 let color = match warning_color {
                     Some(c) => with_alpha(&c, alpha),
-                    None => segment_rgba(position, alpha),
+                    None => zone_color(style.as_ref(), position, alpha),
                 };
                 // Conventional VU: fixed-height segments light left-to-right;
                 // a slight taper (taller at the loud end) keeps the row vital.
@@ -273,15 +277,26 @@ impl SegmentedMeterView {
     }
 }
 
-/// The colour zone for a segment drawn at normalized place `position`.
-fn segment_rgba(position: f64, alpha: f64) -> gtk::gdk::RGBA {
-    // Conventional VU colours (the GJS BarMeterActor RGBA values).
-    let (r, g, b) = match segment_color(position) {
-        SegmentColor::Red => (0.95, 0.24, 0.20),
-        SegmentColor::Yellow => (0.98, 0.72, 0.18),
-        SegmentColor::Green => (0.20, 0.82, 0.42),
+/// The colour zone for a segment drawn at normalized place `position`,
+/// resolved from CSS: the `@define-color myna-vu-<zone>` aliases of the
+/// libadwaita `--accent-*` variables. Falls back to white when the name is
+/// somehow unresolvable (a theme without the alias) rather than panicking.
+///
+/// Uses the now-deprecated `gtk_style_context_lookup_color` — the only way to
+/// read a CSS custom-property value at runtime in this GTK; there is no
+/// non-deprecated replacement, so it is explicitly allowed here.
+#[allow(deprecated)]
+fn zone_color(style: &gtk::StyleContext, position: f64, alpha: f64) -> gtk::gdk::RGBA {
+    let name = match segment_color(position) {
+        SegmentColor::Red => "myna-vu-red",
+        SegmentColor::Yellow => "myna-vu-yellow",
+        SegmentColor::Green => "myna-vu-green",
     };
-    gtk::gdk::RGBA::new(r as f32, g as f32, b as f32, alpha as f32)
+    let resolved = style.lookup_color(name).unwrap_or_else(|| {
+        // Unresolvable: a neutral grey (never a hardcoded zone colour).
+        gtk::gdk::RGBA::new(1.0, 1.0, 1.0, 1.0)
+    });
+    with_alpha(&resolved, alpha)
 }
 
 /// A copy of `color` with the given alpha (the boxed RGBA).

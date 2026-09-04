@@ -63,9 +63,15 @@ window.myna-hud-window {
 
 /* The classic segmented VU meter (the `hud-style: vumeter` alternative to
  * the ribbon). Same footprint so the pill keeps one stable size whichever
- * indicator is selected. The bars are painted by the widget itself, which
- * reads this resolved `color` (accent, or warning under the recoverable
- * class) at draw time. */
+ * indicator is selected. The gauge's zone colours are the conventional
+ * VU green/yellow/red, defined here (the exact values the old hardcoded
+ * RGB carried) so the widget resolves them via lookup_color rather than
+ * hardcoding them in Rust. `color` carries the accent (warning under the
+ * recoverable class) for the recoverable fill. */
+@define-color myna-vu-green #33d16b;
+@define-color myna-vu-yellow #fab82e;
+@define-color myna-vu-red #f23d33;
+
 .myna-hud-vumeter {
     color: var(--accent-bg-color);
     min-height: 32px;
