@@ -60,6 +60,8 @@ zbus = "5"
 # The bus worker -> GTK main-thread bridge (T124): glib's own channel is
 # deprecated, and this is executor-agnostic.
 async-channel = "2"
+# SIGINT/SIGTERM -> Application::quit(); glib 0.22 binds no g_unix_signal_add.
+signal-hook = "0.3"
 # Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
 # uniform upload) — loaded via GDK's get_proc_address (R23).
 gl = "0.14"

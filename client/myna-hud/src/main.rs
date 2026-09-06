@@ -68,6 +68,13 @@ fn main() -> glib::ExitCode {
         .flags(flags)
         .build();
 
+    // A signal is how the HUD is stopped - by the host retiring its client,
+    // or by a terminal - and GTK's default is to die mid-frame with
+    // `com.canonical.Myna.Hud` still held until the bus notices. Quit the
+    // application instead so shutdown runs and the process leaves through
+    // `main`, which is also what lets an instrumented run write its profile.
+    quit_on_signal();
+
     app.connect_activate(move |app| match mode {
         Mode::Hosted => activate_hosted(app),
         #[cfg(dev_lab)]
@@ -136,6 +143,33 @@ The myna dictation HUD renderer.
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --version      print the version and exit
   -h, --help     print this help and exit";
+
+/// Turn the first `SIGINT`/`SIGTERM` into `Application::quit()`. glib no
+/// longer binds `g_unix_signal_add`, so the signal is taken on a thread of
+/// its own and handed to the main loop as an idle. The watch ends with that
+/// first signal, so a second one falls through to the default disposition
+/// and kills a shutdown that hangs.
+fn quit_on_signal() {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
+
+    let mut signals = match Signals::new([SIGINT, SIGTERM]) {
+        Ok(signals) => signals,
+        Err(e) => {
+            eprintln!("myna-hud: not watching for signals: {e}");
+            return;
+        }
+    };
+    std::thread::spawn(move || {
+        if signals.forever().next().is_some() {
+            glib::idle_add_once(|| {
+                if let Some(app) = gtk::gio::Application::default() {
+                    app.quit();
+                }
+            });
+        }
+    });
+}
 
 /// The shipping path: render whatever the publisher reports.
 fn activate_hosted(app: &adw::Application) {
