@@ -548,6 +548,21 @@ impl FactoryObject {
 
 // ── The injector ────────────────────────────────────────────────────────────
 
+/// Map a failed IBus call to the [`InjectError`] arm that says the right thing
+/// about the *connection*. A transport failure (the socket is closed: IBus
+/// restarted under us, which every input-source change and GNOME Shell
+/// replace does) is `Unavailable`, so `LazyInjector` drops this connection
+/// and opens a fresh one. Anything the daemon answered - an unknown engine,
+/// a refused component - says nothing about the socket and stays `Backend`.
+fn classify(member: &str, e: zbus::Error) -> InjectError {
+    match e {
+        zbus::Error::InputOutput(_) => {
+            InjectError::Unavailable(format!("{member} failed: {e} (IBus connection lost)"))
+        }
+        e => InjectError::Backend(format!("{member} failed: {e}")),
+    }
+}
+
 /// IBus engine-over-`zbus` injector (the shipped backend).
 pub struct IbusInjector {
     conn: Connection,
@@ -615,7 +630,7 @@ impl IbusInjector {
                 body,
             )
             .await
-            .map_err(|e| InjectError::Backend(format!("{member} failed: {e}")))
+            .map_err(|e| classify(member, e))
     }
 
     /// Read the currently active global engine's name (to restore later).
@@ -770,7 +785,7 @@ impl Injector for IbusInjector {
                 &(ibus_text(text),),
             )
             .await
-            .map_err(|e| InjectError::Backend(format!("CommitText failed: {e}")))
+            .map_err(|e| classify("CommitText", e))
     }
 
     async fn set_preedit(&mut self, text: &str) {
@@ -840,6 +855,24 @@ impl Injector for IbusInjector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The transport dying under a held connection (IBus restarted: an
+    /// input-source change, `ibus restart`, a GNOME Shell replace, logout)
+    /// must read as `Unavailable`, or `LazyInjector` keeps the corpse and
+    /// every later press fails the same way.
+    #[test]
+    fn a_closed_socket_is_unavailable_not_a_backend_error() {
+        let io = std::io::Error::from(std::io::ErrorKind::BrokenPipe);
+        let err = classify("RegisterComponent", zbus::Error::InputOutput(Arc::new(io)));
+        assert!(matches!(err, InjectError::Unavailable(_)), "{err:?}");
+        assert!(err.to_string().contains("RegisterComponent"), "{err}");
+
+        let err = classify(
+            "SetGlobalEngine",
+            zbus::Error::Failure("no such engine".into()),
+        );
+        assert!(matches!(err, InjectError::Backend(_)), "{err:?}");
+    }
 
     /// R9: the preedit `IBusText` carries one underline attribute spanning the
     /// whole string (the volatile-text marker), and the cursor/end index counts

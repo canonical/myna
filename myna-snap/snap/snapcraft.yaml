@@ -90,8 +90,15 @@ apps:
     # ordering for desktop-plugging user daemons was added in snapd 2.74 and
     # reverted in 2.74.1, LP #2141607). That is safe because myna-desktop
     # treats all four as things that come and go: it binds activation with
-    # backoff, connects IBus at the first press, and resolves the backend
-    # socket per press.
+    # backoff, connects IBus at the first press and reconnects when a held
+    # connection turns out dead, and resolves the backend socket per press.
+    #
+    # The session bus is the exception: there is no reconnecting to a bus,
+    # and a logout replaces it (gnome-session-restart-dbus.service) while
+    # this unit lives on in the user manager. So the daemon exits non-zero
+    # when its served connection dies and the default restart-condition
+    # (on-failure) starts a fresh one on the new bus; dbus.socket survives
+    # the logout, so the fresh one connects even before the broker is back.
     daemon: simple
     daemon-scope: user
     # A refresh stops this unit in *every* user manager and starts it again on

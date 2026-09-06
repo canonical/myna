@@ -47,6 +47,8 @@
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
+use futures_util::future::{BoxFuture, FutureExt};
+
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::backend::BackendSocket;
@@ -680,6 +682,7 @@ async fn run_controller(
     indicator: impl Indicator + 'static,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
+    bus_lost: Option<BoxFuture<'static, ()>>,
 ) -> ExitCode {
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
@@ -714,9 +717,21 @@ async fn run_controller(
     };
 
     banner(&args, &resolved);
-    controller.run().await;
-    println!("bye");
-    ExitCode::SUCCESS
+    // A served bus that dies takes the daemon with it (`ZbusBus::lost`):
+    // non-zero, so `Restart=on-failure` starts a fresh one on the new bus.
+    let bus_lost = bus_lost.unwrap_or_else(|| futures_util::future::pending().boxed());
+    tokio::select! {
+        () = controller.run() => {
+            println!("bye");
+            ExitCode::SUCCESS
+        }
+        () = bus_lost => {
+            eprintln!(
+                "session bus connection lost (logout?); exiting so the service restarts on the new bus"
+            );
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Publish the "hotkey not bound yet" reason on `com.canonical.Myna.Dictation` where
@@ -1279,6 +1294,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             NotifyIndicator::new(),
             None,
             None,
+            None,
         ))
     } else {
         rt.block_on(run_headless_dbus(args, resolved))
@@ -1297,6 +1313,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
     match ZbusBus::serve_for_portal(bind_mode).await {
         Ok(bus) => {
             let clients = bus.client_registry();
+            let bus_lost = bus.lost().boxed();
             let readiness = Readiness::new();
             let service = DictationService::new(bus);
             let dbus_indicator = DbusIndicator::new(service.bus(), readiness.clone());
@@ -1304,7 +1321,15 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             let indicator = DynamicIndicator::new(dbus_indicator, notify, clients);
             let pump_bus = service.bus();
             eprintln!("serving com.canonical.Myna.Dictation on the session bus");
-            run_controller(args, resolved, indicator, Some(readiness), Some(pump_bus)).await
+            run_controller(
+                args,
+                resolved,
+                indicator,
+                Some(readiness),
+                Some(pump_bus),
+                Some(bus_lost),
+            )
+            .await
         }
         Err(ServeError::AlreadyRunning { owner_pid }) => {
             let who = owner_pid
@@ -1315,7 +1340,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             );
             eprintln!("  falling back to desktop notifications for this instance");
             eprintln!("  (the first owner keeps the hotkey; this instance will not receive presses while it lives — stop it first, or use --no-dbus for an intentional second instance)");
-            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
+            run_controller(args, resolved, NotifyIndicator::new(), None, None, None).await
         }
         Err(ServeError::Bus(e)) => {
             eprintln!("cannot serve com.canonical.Myna.Dictation ({e}); falling back");
@@ -1323,7 +1348,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            run_controller(args, resolved, NotifyIndicator::new(), None, None).await
+            run_controller(args, resolved, NotifyIndicator::new(), None, None, None).await
         }
     }
 }

@@ -268,6 +268,8 @@ pub struct ZbusBus {
     conn: Connection,
     served: Arc<Mutex<ServedState>>,
     clients: Arc<ClientRegistry>,
+    /// Flips to `true` once the connection behind `conn` is gone for good.
+    lost: tokio::sync::watch::Sender<bool>,
 }
 
 impl std::fmt::Debug for ZbusBus {
@@ -354,6 +356,7 @@ impl ZbusBus {
                     conn,
                     served,
                     clients: Arc::clone(&clients),
+                    lost: tokio::sync::watch::Sender::new(false),
                 };
                 bus.spawn_client_prune_task();
                 Ok(bus)
@@ -366,9 +369,13 @@ impl ZbusBus {
         }
     }
 
+    /// Watch `NameOwnerChanged` for the life of the connection: prune HUD
+    /// clients that vanish, and when the stream itself ends - which zbus does
+    /// only once the socket is closed - report the bus as lost.
     fn spawn_client_prune_task(&self) {
         let conn = self.conn.clone();
         let clients = Arc::clone(&self.clients);
+        let lost = self.lost.clone();
         tokio::spawn(async move {
             let Ok(proxy) = DBusProxy::new(&conn).await else {
                 return;
@@ -392,7 +399,20 @@ impl ZbusBus {
                     );
                 }
             }
+            let _ = lost.send(true);
         });
+    }
+
+    /// Resolves once the session bus behind this publisher is gone (a logout
+    /// replaces it), taking the well-known name with it. There is no
+    /// reconnecting to a bus: the caller exits non-zero and the service's
+    /// `Restart=on-failure` brings a fresh process up on the new one.
+    pub fn lost(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let mut rx = self.lost.subscribe();
+        async move {
+            // Err means the sender is gone, which is the bus gone too.
+            let _ = rx.wait_for(|lost| *lost).await;
+        }
     }
 
     /// Whether any HUD client is currently registered.

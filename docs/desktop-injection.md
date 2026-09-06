@@ -120,6 +120,18 @@ default; when on it prints transcript text (`myna_core::debug`).
   Covered E2E by `ibus_hw` against a daemon in an `@` home. `dev/ibus-doctor.sh`
   replays that ranking on a user's machine, from the host and from inside the
   snap's confinement, and prunes the address files whose daemon is gone.
+- **Connection lifetime**: opened at the first press that needs it
+  (`LazyInjector`), held across utterances, and replaced when it turns out
+  dead. IBus restarts under a held connection routinely - an input-source
+  change, `ibus restart`, a GNOME Shell replace, and a logout/login (the user
+  service outlives the session) - after which every call answers "Broken
+  pipe". A transport failure is classified `Unavailable` (anything the daemon
+  *answered* stays `Backend`), and a held connection that reports it is
+  reconnected and retried within the same press, so the first press after an
+  IBus restart works rather than merely noticing. The session bus that serves
+  the indicator is different: nothing reconnects to a bus, so the daemon exits
+  non-zero when that connection dies and the service's `Restart=on-failure`
+  brings a fresh one up on the new bus (`ZbusBus::lost`, `tests/bus_lost.rs`).
 - **Register**: `RegisterComponent(v)` with a serialized `IBusComponent`
   (`(sa{sv}ssssssssavav)`) carrying one `IBusEngineDesc`
   (`(sa{sv}ssssssssussssssss)` — layout confirmed against the live daemon).

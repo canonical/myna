@@ -65,7 +65,8 @@ impl LazyInjector {
 #[async_trait]
 impl Injector for LazyInjector {
     async fn acquire(&mut self) -> Result<InjectionTarget, InjectError> {
-        if self.inner.is_none() {
+        let held = self.inner.is_some();
+        if !held {
             self.inner = Some(self.connect.connect().await?);
         }
         let result = self
@@ -74,10 +75,32 @@ impl Injector for LazyInjector {
             .expect("connected just above")
             .acquire()
             .await;
-        if let Err(err) = &result {
-            self.note(err);
+        match result {
+            // A connection we were holding turned out to be dead: IBus was
+            // restarted since the last utterance. The user is pressing *now*,
+            // so reconnect now and try once more rather than making this
+            // press the one that merely notices.
+            Err(InjectError::Unavailable(why)) if held => {
+                myna_core::dbg_log!("inject", "held connection is stale ({why}); reconnecting");
+                self.inner = None;
+                self.inner = Some(self.connect.connect().await?);
+                let result = self
+                    .inner
+                    .as_mut()
+                    .expect("connected just above")
+                    .acquire()
+                    .await;
+                if let Err(err) = &result {
+                    self.note(err);
+                }
+                result
+            }
+            Err(err) => {
+                self.note(&err);
+                Err(err)
+            }
+            ok => ok,
         }
-        result
     }
 
     async fn set_activity(&mut self, active: bool) {
@@ -211,6 +234,110 @@ mod tests {
         injector.acquire().await.expect("second press connects");
         assert!(injector.is_connected());
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    /// An injector whose first `acquire` after construction reports the
+    /// connection dead, standing in for one whose IBus went away.
+    struct Stale;
+
+    #[async_trait]
+    impl Injector for Stale {
+        async fn acquire(&mut self) -> Result<InjectionTarget, InjectError> {
+            Err(InjectError::Unavailable("Broken pipe".into()))
+        }
+        async fn set_activity(&mut self, _: bool) {}
+        async fn commit(&mut self, _: &str) -> Result<(), InjectError> {
+            Err(InjectError::Unavailable("Broken pipe".into()))
+        }
+        async fn cancel(&mut self) {}
+        async fn end(&mut self) {}
+        fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
+            stream::empty().boxed()
+        }
+    }
+
+    /// Hands out `stale` dead injectors first (each connect succeeds, the
+    /// connection then fails on use), then live mocks.
+    struct GoesStale {
+        stale: usize,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Connect for GoesStale {
+        async fn connect(&mut self) -> Result<Box<dyn Injector>, InjectError> {
+            let n = self.attempts.fetch_add(1, Ordering::SeqCst);
+            if n < self.stale {
+                Ok(Box::new(Stale))
+            } else {
+                Ok(Box::new(MockInjector::new()))
+            }
+        }
+
+        fn supports_preedit(&self) -> bool {
+            true
+        }
+    }
+
+    /// The logout regression (2026-09-06): IBus restarted between two
+    /// utterances, the held connection answered every call with "Broken
+    /// pipe", and no later press ever reconnected. A held connection that
+    /// reports itself dead is replaced within the *same* press.
+    #[tokio::test]
+    async fn a_stale_held_connection_is_replaced_within_the_press() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut injector = LazyInjector::new(GoesStale {
+            stale: 0,
+            attempts: Arc::clone(&attempts),
+        });
+        injector.acquire().await.expect("first press connects");
+        injector.end().await;
+
+        // IBus restarts under the held connection.
+        injector.inner = Some(Box::new(Stale));
+
+        injector
+            .acquire()
+            .await
+            .expect("reconnected and acquired in one press");
+        assert!(injector.is_connected());
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    /// One retry, not a loop: a backend that is dead again on the fresh
+    /// connection is this press's error, exactly as a failed connect is.
+    #[tokio::test]
+    async fn a_fresh_connection_that_is_also_dead_is_not_retried() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut injector = LazyInjector::new(GoesStale {
+            stale: 1,
+            attempts: Arc::clone(&attempts),
+        });
+        injector.inner = Some(Box::new(Stale));
+
+        assert!(matches!(
+            injector.acquire().await,
+            Err(InjectError::Unavailable(_))
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1, "reconnected once");
+        assert!(!injector.is_connected(), "and dropped the dead replacement");
+    }
+
+    /// Without a held connection there is nothing stale to replace: a fresh
+    /// connection that fails on first use is dropped for the next press.
+    #[tokio::test]
+    async fn a_fresh_connection_that_fails_on_first_use_is_dropped() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut injector = LazyInjector::new(GoesStale {
+            stale: 1,
+            attempts: Arc::clone(&attempts),
+        });
+        assert!(matches!(
+            injector.acquire().await,
+            Err(InjectError::Unavailable(_))
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(!injector.is_connected());
     }
 
     /// A connection held across utterances is reused: re-registering the IBus
