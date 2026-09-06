@@ -184,10 +184,16 @@ fi
 notice "scenario 5: fake-adapter dictation from a corpus manifest"
 CORPUS_DIR="$WORK/corpus"; rm -rf "$CORPUS_DIR"; mkdir -p "$CORPUS_DIR"
 cp "$CLIP" "$CORPUS_DIR/clip.wav"
+# Stamped like a generated tier: myna-dictate hashes each clip against the
+# digest the manifest records and refuses a manifest with no corpus id.
 cat >"$CORPUS_DIR/manifest.json" <<JSON
-{"clips": [{"path": "clip.wav", "text": "$EXPECTED"},
-           {"path": "clip.wav", "text": "$EXPECTED"}]}
+{"schema_version": 1,
+ "clips": [{"id": "take-1", "path": "clip.wav", "text": "$EXPECTED", "language": "en", "category": "quiet"},
+           {"id": "take-2", "path": "clip.wav", "text": "$EXPECTED", "language": "en", "category": "quiet"}]}
 JSON
+(cd "$SERVER" && uv run -q python -c \
+  'import sys; from myna.testbed.corpus import stamp_corpus; stamp_corpus(sys.argv[1])' \
+  "$CORPUS_DIR/manifest.json")
 SOCK="$WORK/corpus.sock"; rm -f "$SOCK"
 start_server corpus "$SOCK"
 ( sleep 1; printf '\n'; sleep 6; printf '\n'; sleep 6 ) | \
