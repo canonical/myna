@@ -20,6 +20,7 @@ import Meta from 'gi://Meta';
 import {DictationProxy} from './dictationProxy.js';
 import {watchDashToDockStruts} from './dockStrutsConsumer.js';
 import {OverlayHost} from './host.js';
+import {chooseMonitorIndex} from './place.js';
 
 export default class MynaShellExtension extends Extension {
     enable() {
@@ -42,18 +43,28 @@ export default class MynaShellExtension extends Extension {
 
         this._host = new OverlayHost({
             proxy: this._proxy,
-            // The primary monitor's work area, so the dock/panel rather than
-            // under them (handleRemote owns the maths).
-            getMonitorWorkArea: () => {
-                const { primaryIndex } = Main.layoutManager;
-                if (primaryIndex < 0)
+            // The monitor the user is working on: the focused window's, NOT
+            // the primary one. Dictated text lands in the focused window, so
+            // the pill has to be on the same screen the user is typing into;
+            // on a laptop-plus-external setup the primary monitor is usually
+            // the one they are not looking at.
+            resolveTargetMonitor: () => chooseMonitorIndex({
+                focusMonitor: global.display.focus_window?.get_monitor() ?? -1,
+                pointerMonitor: global.display.get_current_monitor?.() ?? -1,
+                primaryIndex: Main.layoutManager.primaryIndex,
+                monitorCount: Main.layoutManager.monitors.length,
+            }),
+            // That monitor's work area, so the pill sits beside the
+            // panel/dock rather than under them (place.js owns the maths).
+            getWorkAreaForMonitor: index => {
+                if (index < 0)
                     return null;
                 // getWorkAreaForMonitor returns a Meta.Rectangle BOXED
                 // struct: its fields are GObject properties, so object
                 // spread ({...workArea}) copies nothing from it. Normalize to
                 // a plain object here so the host's placement math (which
                 // spreads the work area) sees real values.
-                const rect = Main.layoutManager.getWorkAreaForMonitor(primaryIndex);
+                const rect = Main.layoutManager.getWorkAreaForMonitor(index);
                 return {
                     x: rect.x,
                     y: rect.y,
@@ -63,8 +74,10 @@ export default class MynaShellExtension extends Extension {
             },
             // An overlay dock (dash-to-dock auto-hide) claims no strut, so it
             // does not shrink the work area; its reserved extent lets the
-            // host raise the pill above where the dock would slide out.
-            getDockReservedExtent: () => this._dockExtent ?? null,
+            // host raise the pill above where the dock would slide out. Keyed
+            // by monitor: the dock and the pill need not share one.
+            getDockReservedExtent: index =>
+                this._dockMonitors?.[index] ?? null,
         });
 
         // Wait for startup-complete, as DIN and dash-to-dock do.
@@ -79,8 +92,8 @@ export default class MynaShellExtension extends Extension {
         // auto-hide dock would cover it. `this` is the connectObject owner,
         // so the handler is auto-disconnected when the struts object is
         // destroyed (dash-to-dock disabled).
-        this._dockWatch = watchDashToDockStruts(this, extent => {
-            this._dockExtent = extent;
+        this._dockWatch = watchDashToDockStruts(this, monitors => {
+            this._dockMonitors = monitors;
             this._host.positionNow();
         });
     }
@@ -91,7 +104,7 @@ export default class MynaShellExtension extends Extension {
         Main.layoutManager.disconnectObject(this);
         this._dockWatch?.disconnect();
         this._dockWatch = null;
-        this._dockExtent = null;
+        this._dockMonitors = null;
         this._host.disable();
         this._host = null;
         this._proxy?.stop();

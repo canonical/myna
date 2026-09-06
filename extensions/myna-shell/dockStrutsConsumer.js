@@ -6,8 +6,9 @@
 // per-monitor `updated` signal (monitor index, or -1 for all) and a
 // `monitors` map of `{ side, x, y, width, height }`. This is the myna-shell
 // consumer: it follows that object (set / updated / destroyed) and hands the
-// primary monitor's reserved extent to the host, so the pill is never placed
-// where an auto-hide bottom dock would slide out.
+// whole per-monitor map to the extension, so the pill is never placed where
+// an auto-hide bottom dock would slide out, on whichever monitor it was
+// targeted at, which is not necessarily the primary one.
 //
 // The object lives on `Main.layoutManager` (a mutable GObject) because the
 // `Main` module namespace is frozen and cannot carry new properties. The
@@ -24,9 +25,11 @@ export const DASH_TO_DOCK_UUIDS = [
 ];
 
 /**
- * Watch `Main.layoutManager.dashToDockStruts` and call `onChange(extent)`
- * with the reserved extent for the primary monitor (`null` when none / the
- * object is gone).
+ * Watch `Main.layoutManager.dashToDockStruts` and call `onChange(monitors)`
+ * with the reserved extent for every monitor, keyed by monitor index
+ * (`null` when dash-to-dock is absent). The caller indexes it with whatever
+ * monitor the pill is actually on: the dock can be on a monitor the pill is
+ * not, and vice versa.
  *
  * @param {object} owner - a GObject (e.g. the extension instance) used as
  *     the connectObject owner, so the destroyable struts object
@@ -37,11 +40,7 @@ export const DASH_TO_DOCK_UUIDS = [
 export function watchDashToDockStruts(owner, onChange) {
     const sync = () => {
         const { dashToDockStruts } = Main.layoutManager;
-        const primaryIndex = Main.layoutManager.primaryIndex;
-        const extent = dashToDockStruts && primaryIndex >= 0
-            ? dashToDockStruts.monitors[primaryIndex] ?? null
-            : null;
-        onChange(extent);
+        onChange(dashToDockStruts?.monitors ?? null);
     };
 
     // Follow the object directly: connect to its `updated` when present.

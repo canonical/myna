@@ -46,25 +46,32 @@ function isExecutable(path) {
  * @param {object} deps
  * @param {DictationProxy} deps.proxy - the shared daemon proxy whose
  *     `g-name-owner` drives the renderer's lifetime (XH14).
- * @param {function(): (object|null)} deps.getMonitorWorkArea - returns the
- *     primary monitor's work area `{x, y, width, height}` (injected so the
- *     host is testable without a live Shell; the extension passes the real
- *     `Main.layoutManager.getWorkAreaForMonitor` wrapper).
- * @param {function(): ({x: number, y: number, width: number, height: number}|null)} [deps.getDockReservedExtent]
- *     - returns the region reserved on the pill's monitor by an overlay
- *     dock that claims no strut (dash-to-dock in auto-hide mode), or null
- *     when none. The host raises the pill above it so it is never covered
- *     when the dock slides out.
+ * @param {function(): number} deps.resolveTargetMonitor - returns the index
+ *     of the monitor the user is working on right now (see
+ *     `chooseMonitorIndex`), or -1 when there is none. The host calls this
+ *     once per adoption and holds the answer, so the pill does not hop
+ *     between monitors mid-dictation as focus or the pointer move.
+ * @param {function(number): (object|null)} deps.getWorkAreaForMonitor -
+ *     returns that monitor's work area `{x, y, width, height}` (injected so
+ *     the host is testable without a live Shell; the extension passes the
+ *     real `Main.layoutManager.getWorkAreaForMonitor` wrapper).
+ * @param {function(number): ({x: number, y: number, width: number, height: number}|null)} [deps.getDockReservedExtent]
+ *     - returns the region reserved on that monitor by an overlay dock that
+ *     claims no strut (dash-to-dock in auto-hide mode), or null when none.
+ *     The host raises the pill above it so it is never covered when the dock
+ *     slides out.
  * @param {function(string): void} [deps.log] - single-line logger.
  */
 export class OverlayHost {
     constructor({
         proxy,
-        getMonitorWorkArea,
+        resolveTargetMonitor,
+        getWorkAreaForMonitor,
         getDockReservedExtent = () => null,
         log = msg => console.log(`[myna-shell] ${msg}`),
     }) {
-        this._getMonitorWorkArea = getMonitorWorkArea;
+        this._resolveTargetMonitor = resolveTargetMonitor;
+        this._getWorkAreaForMonitor = getWorkAreaForMonitor;
         this._getDockReservedExtent = getDockReservedExtent;
         this._log = log;
         this._proxy = proxy;
@@ -72,6 +79,7 @@ export class OverlayHost {
         this._client = null;         // Meta.WaylandClient
         this._subprocess = null;     // its GSubprocess (for force_exit)
         this._window = null;         // the adopted Meta.Window
+        this._monitorIndex = -1;      // pinned for the adopted window's life
         this._restartState = initialState();
         this._dormant = false;
 
@@ -384,7 +392,12 @@ export class OverlayHost {
 
     _adopt(window) {
         this._window = window;
-        this._log('adopted renderer window');
+        // Pin the monitor now, while the window that had focus when
+        // dictation started still has it. Held for this window's life so the
+        // pill cannot hop monitors mid-utterance as focus or the pointer
+        // move; the idle unmap clears it, so the next dictation re-targets.
+        this._monitorIndex = this._resolveTargetMonitor();
+        this._log(`adopted renderer window (monitor ${this._monitorIndex})`);
         // Announcer lives exactly as long as the adopted window — no window,
         // no a11y speech (passive, no RegisterClient).
         if (!this._announcer) {
@@ -417,7 +430,7 @@ export class OverlayHost {
             'workareas-changed', () => this._position(), this);
         const monitorManager = global.backend.get_monitor_manager?.();
         monitorManager?.connectObject(
-            'monitors-changed', () => this._position(), this);
+            'monitors-changed', () => this._onMonitorsChanged(), this);
 
         this._position();
     }
@@ -430,6 +443,7 @@ export class OverlayHost {
         global.display.disconnectObject(this);
         global.backend.get_monitor_manager().disconnectObject(this);
         this._window = null;
+        this._monitorIndex = -1;
         this._announcer?.disable();
         this._announcer = null;
         // The renderer is still running (this is an idle hide, not an exit);
@@ -515,10 +529,25 @@ export class OverlayHost {
 
     // ── Positioning (XH1) ───────────────────────────────────────────────
 
+    /** A display was plugged, unplugged or rearranged: the pinned index may
+     * name a monitor that is gone, or one whose geometry moved out from
+     * under us, so re-target before repositioning. */
+    _onMonitorsChanged() {
+        this._monitorIndex = this._resolveTargetMonitor();
+        this._position();
+    }
+
     _position() {
         if (!this._window || this._positioning)
             return;
-        let workArea = this._getMonitorWorkArea();
+        // Normally pinned at adoption; -1 only if the monitor was unknown
+        // then (no focus, no pointer, no primary), so try again.
+        if (this._monitorIndex < 0)
+            this._monitorIndex = this._resolveTargetMonitor();
+        if (this._monitorIndex < 0)
+            return;
+
+        let workArea = this._getWorkAreaForMonitor(this._monitorIndex);
         if (!workArea)
             return;
 
@@ -527,7 +556,8 @@ export class OverlayHost {
         // a pill sitting at the work area's bottom edge would be covered the
         // moment the dock slides out.
         workArea = shrinkWorkAreaForDock(
-            workArea, this._getDockReservedExtent(), St.Side.BOTTOM);
+            workArea, this._getDockReservedExtent(this._monitorIndex),
+            St.Side.BOTTOM);
 
         const frame = this._window.get_frame_rect();
         const target = computePlacement(
@@ -570,6 +600,7 @@ export class OverlayHost {
         global.backend.get_monitor_manager().disconnectObject(this);
         global.window_manager.disconnectObject(this);
         this._window = null;
+        this._monitorIndex = -1;
         this._client = null;
         this._subprocess = null;
         this._announcer?.disable();

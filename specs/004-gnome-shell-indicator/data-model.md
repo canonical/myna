@@ -204,7 +204,7 @@ the wire.
 | wayland client | the `Meta.WaylandClient` handle created at `enable()` by spawning `myna-hud` (R21) |
 | subprocess | the spawned process handle (for exit watching / forced termination) |
 | adopted window | the `Meta.Window` owned by the client (identified via `owns_window()`; fallback `get_sandboxed_app_id()`/PID if the snap path requires it, R27) — re-typed DOCK, hidden from window lists, kept above, all workspaces |
-| position | bottom-center of the primary monitor's work area (R21's placement math, pure + unit-tested); recomputed on monitors/workarea/size changes with anti-feedback-loop guards |
+| position | bottom-center of the active monitor's work area (focused window's monitor, else pointer's, else primary) (R21's placement math, pure + unit-tested); recomputed on monitors/workarea/size changes with anti-feedback-loop guards |
 | supervision | respawn state: last exit time, bounded backoff, restart budget (FR-026) |
 | adopted state | whether adoption completed (window exists + typed + positioned); the indicator is not considered up until then |
 

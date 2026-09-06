@@ -6,7 +6,7 @@
 
 import System from 'system';
 
-import {BOTTOM_MARGIN, computePlacement, placementChanged, shrinkWorkAreaForDock} from '../place.js';
+import {BOTTOM_MARGIN, chooseMonitorIndex, computePlacement, placementChanged, shrinkWorkAreaForDock} from '../place.js';
 
 let failures = 0;
 
@@ -156,6 +156,54 @@ const LEFT_SIDE = 3;   // St.Side.LEFT
     const placed = computePlacement(shrunk, {width: 360, height: 76});
     check('a boxed-struct work area places the pill above the dock',
         placed.x === 780 && placed.y === 626);
+}
+
+// --- Monitor targeting: the focused screen, not the primary one -----------
+//
+// The bug this guards: a laptop panel plus an external primary display put
+// the pill on the external monitor whenever dictation started on the panel,
+// because placement asked for `primaryIndex` unconditionally.
+
+{
+    // Panel is monitor 1, external primary is 0. Focus is on the panel.
+    eq('the focused window\'s monitor wins over the primary',
+        chooseMonitorIndex({
+            focusMonitor: 1, pointerMonitor: 0, primaryIndex: 0,
+            monitorCount: 2,
+        }), 1);
+
+    eq('the pointer\'s monitor is used when nothing has focus',
+        chooseMonitorIndex({
+            focusMonitor: -1, pointerMonitor: 1, primaryIndex: 0,
+            monitorCount: 2,
+        }), 1);
+
+    eq('the primary monitor is the last resort',
+        chooseMonitorIndex({
+            focusMonitor: -1, pointerMonitor: -1, primaryIndex: 0,
+            monitorCount: 2,
+        }), 0);
+
+    // A stale index (a display unplugged since it was captured) must not be
+    // used to index a work area that no longer exists.
+    eq('an out-of-range focus monitor falls through to the pointer',
+        chooseMonitorIndex({
+            focusMonitor: 2, pointerMonitor: 1, primaryIndex: 0,
+            monitorCount: 2,
+        }), 1);
+
+    eq('no usable monitor at all reports -1',
+        chooseMonitorIndex({
+            focusMonitor: -1, pointerMonitor: -1, primaryIndex: -1,
+            monitorCount: 0,
+        }), -1);
+
+    // Single-monitor systems keep behaving exactly as before.
+    eq('a single-monitor system always lands on monitor 0',
+        chooseMonitorIndex({
+            focusMonitor: 0, pointerMonitor: 0, primaryIndex: 0,
+            monitorCount: 1,
+        }), 0);
 }
 
 print(failures === 0 ? 'PASS place.test.js' : `FAIL place.test.js: ${failures} failure(s)`);

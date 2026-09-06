@@ -97,3 +97,41 @@ export function shrinkWorkAreaForDock(workArea, dockExtent, bottomSide) {
         height: Math.max(0, reservedTop - workArea.y),
     };
 }
+
+/**
+ * Which monitor the pill belongs on. Dictation text lands in the focused
+ * window, so the pill belongs on the focused window's monitor, NOT on the
+ * primary one, which on a laptop-plus-external setup is usually the monitor
+ * the user is not looking at.
+ *
+ * The pointer's monitor is the fallback for when nothing holds focus (the
+ * desktop, a just-closed window), and the primary monitor the last resort.
+ * An index is only accepted when it names a monitor that currently exists:
+ * `get_monitor()` returns -1 for an unmapped window, and a captured index
+ * outlives the monitor it named when a display is unplugged.
+ *
+ * @param {object} sources
+ * @param {number} sources.focusMonitor - monitor index of the focused
+ *     window, or -1 when there is none.
+ * @param {number} sources.pointerMonitor - monitor index under the pointer,
+ *     or -1.
+ * @param {number} sources.primaryIndex - the primary monitor's index, or -1.
+ * @param {number} sources.monitorCount - how many monitors exist now.
+ * @returns {number} the monitor index to place on, or -1 when there is no
+ *     usable monitor at all (the caller then skips placement).
+ */
+export function chooseMonitorIndex({
+    focusMonitor = -1,
+    pointerMonitor = -1,
+    primaryIndex = -1,
+    monitorCount = 0,
+}) {
+    const usable = index =>
+        Number.isInteger(index) && index >= 0 && index < monitorCount;
+
+    for (const candidate of [focusMonitor, pointerMonitor, primaryIndex]) {
+        if (usable(candidate))
+            return candidate;
+    }
+    return -1;
+}
