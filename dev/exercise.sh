@@ -39,7 +39,10 @@ mkdir -p "$WORK"
 
 notice() { printf '\033[1m== %s\033[0m\n' "$*"; }
 SERVER_PID=""
-cleanup() { if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi }
+cleanup() {
+  if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
+  if [ -n "${HUD_PID:-}" ]; then stop_hud >/dev/null 2>&1 || true; fi
+}
 trap cleanup EXIT
 skip() { printf '\033[33mSKIP\033[0m %s\n' "$*"; }
 die() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
@@ -104,6 +107,27 @@ stop_server() {
   wait "$SERVER_PID" 2>/dev/null || true
 }
 
+# The HUD under scenario 3 runs behind xvfb-run and cargo, so $! is neither
+# the X server nor the renderer. Find the renderer by the gate this script
+# exports to everything it starts: a developer's own live HUD does not carry
+# it, and must survive the exercise.
+hud_pids() {
+  local pid
+  for pid in $(pgrep -x myna-hud 2>/dev/null); do
+    if tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qx 'MYNA_EXERCISE_GATED=1'; then
+      echo "$pid"
+    fi
+  done
+}
+HUD_PID=""
+stop_hud() {
+  # TERM, not KILL: the HUD quits its application on a signal, and the
+  # instrumented binary writes its .profraw only on that clean exit.
+  local pid
+  for pid in $(hud_pids); do kill -TERM "$pid" 2>/dev/null || true; done
+  if [ -n "$HUD_PID" ]; then wait "$HUD_PID"; fi
+}
+
 # --- Scenario 1: internal dialect ---------------------------------------------
 notice "scenario 1: fake-adapter dictation, internal dialect"
 SOCK="$WORK/internal.sock"; rm -f "$SOCK"
@@ -136,6 +160,29 @@ if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && [ "${MYNA_DBUS_TESTS:-}" = "1" ]; the
   notice "scenario 3: myna-desktop --stdin against $MYNA_PIPEWIRE_TARGET"
   SOCK="$WORK/desktop.sock"; rm -f "$SOCK"
   start_server desktop "$SOCK"
+  # The HUD beside the daemon, on a private X server: what a person sees of
+  # this session is the overlay mapping on the first state, painting each one
+  # and unmapping at idle, and none of the renderer runs without a display.
+  # Xvfb with Mesa's software GL is the same headless setup the `ui-check`
+  # action paints with. Built (and --version run) up front so the renderer is
+  # on the bus before the daemon publishes, not still compiling.
+  if command -v xvfb-run >/dev/null 2>&1; then
+    (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-hud -- --version) \
+      | tee "$WORK/hud-version.out"
+    grep -q "^myna-hud " "$WORK/hud-version.out" || die "myna-hud --version printed nothing"
+    (cd "$CLIENT" && xvfb-run -a -s "-screen 0 800x600x24" \
+      cargo llvm-cov run --no-report --bin myna-hud) >"$WORK/hud.out" 2>&1 &
+    HUD_PID=$!
+    for _ in $(seq 1 100); do
+      dbus-send --session --print-reply --dest=org.freedesktop.DBus / \
+        org.freedesktop.DBus.NameHasOwner string:com.canonical.Myna.Hud 2>/dev/null \
+        | grep -q 'boolean true' && break
+      sleep 0.1
+    done
+    [ -n "$(hud_pids)" ] || die "myna-hud did not come up (see $WORK/hud.out)"
+  else
+    skip "scenario 3 HUD: no xvfb-run"
+  fi
   # Toggle on, let a session run, toggle off, then EOF to quit. The quit has to
   # be a clean exit: the instrumented binary writes its .profraw from an atexit
   # handler, and a signal would kill it first and score the whole run as zero.
@@ -144,6 +191,14 @@ if [ "${MYNA_PIPEWIRE_TESTS:-}" = "1" ] && [ "${MYNA_DBUS_TESTS:-}" = "1" ]; the
     --stdin --socket "$SOCK" --target "$MYNA_PIPEWIRE_TARGET") \
     | tee "$WORK/desktop.out" || die "desktop scenario failed (see $WORK/desktop.out)"
   stop_server
+  if [ -n "$HUD_PID" ]; then
+    # The daemon is gone: the HUD has seen the name vanish and unmapped. A
+    # non-zero status here is the renderer dying under Xvfb, not our TERM.
+    stop_hud || die "myna-hud did not exit cleanly (see $WORK/hud.out)"
+    grep -q "D-Bus worker stopped" "$WORK/hud.out" \
+      && die "myna-hud lost its bus worker (see $WORK/hud.out)"
+    HUD_PID=""
+  fi
   # The transcript is injected into IBus, not printed, so there is nothing on
   # stdout to match: what this asserts is that the daemon reached its run loop
   # with a working injector. The publish and the injection themselves are the
