@@ -64,9 +64,17 @@ fi
 # --- fail-loud prerequisite check (FR-005) -----------------------------------
 # Rust: the merged report needs the test-suite .profraw. If absent, run the
 # suite now so a standalone `exercise` still yields a complete merged report.
+# Same shape as the `cov` action: the hermetic workspace run with the gates
+# off, then the gated suites with them on - dbus_hw and ibus_hw serially, as
+# each test wants sole ownership of a session-global name or engine.
 if ! ls "$CLIENT"/target/llvm-cov-target/*.profraw >/dev/null 2>&1; then
   notice "no Rust test coverage data; running the workspace suite first"
-  (cd "$CLIENT" && cargo llvm-cov --workspace --summary-only >/dev/null)
+  (cd "$CLIENT" \
+    && env -u MYNA_PIPEWIRE_TESTS -u MYNA_IBUS_TESTS -u MYNA_DBUS_TESTS \
+         cargo llvm-cov --workspace --no-report >/dev/null \
+    && cargo llvm-cov --no-report -p myna-audio --test pipewire_hw >/dev/null \
+    && cargo llvm-cov --no-report -p myna-desktop \
+         --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1 >/dev/null)
 fi
 # Python: the test-suite data file, stashed by the py-cov action.
 if [ ! -f "$SERVER/.coverage.tests" ]; then
