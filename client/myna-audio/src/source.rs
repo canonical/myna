@@ -20,7 +20,6 @@ use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 use crate::ring::Ring;
 use crate::stats::AudioStats;
 
-/// Default ring depth (§6) — **advisory only.** The capture buffer never drops
 /// Default capture-buffer bound (§6) — the **overload guard**. The buffer never
 /// silently drops; it grows to hold audio across the cold-load window and any
 /// transient service lag. This bound only exists so a service that is

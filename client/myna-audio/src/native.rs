@@ -2,7 +2,7 @@
 //! behind the [`CaptureBackend`] seam. No subprocess: a dedicated PipeWire
 //! main-loop thread owns a capture `Stream`, and its `process` callback pushes
 //! PCM straight into the adapter's ring via [`Producer::push`] (which never
-//! blocks — overflow is the ring's drop-oldest problem).
+//! blocks — overload is the ring's problem).
 //!
 //! Replaces the `pw-record` subprocess backend (feature
 //! 002-native-pipewire-backend, FR-016). Adds what the subprocess couldn't do

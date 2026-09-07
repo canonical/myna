@@ -72,8 +72,7 @@ async fn ring_fills_while_consumer_defers_then_drains_everything() {
 
     // Deliberately do NOT poll the stream. The tap alone proves capture is
     // live during the "cold load" — and it counts before any drain.
-    let snapshot = wait_stats(&mut stats, |s| s.captured >= secs(0.5)).await;
-    assert_eq!(snapshot.dropped, Duration::ZERO);
+    wait_stats(&mut stats, |s| s.captured >= secs(0.5)).await;
 
     let (chunks, fault) = drain(stream).await;
     assert!(fault.is_none());
@@ -141,7 +140,7 @@ async fn dropping_the_stream_aborts_the_backend() {
 async fn buffer_holds_all_audio_and_never_drops() {
     // §6 (corrected): the capture buffer never drops. 1.0 s is pushed while
     // nobody drains (the pre-ready cold-load window), well within the bound;
-    // every chunk must survive and the tap must report zero dropped audio.
+    // every chunk must survive.
     let steps = (0..10u8).map(|i| Step::Bytes(vec![i; 3_200])).collect();
     let backend = ScriptedBackend::new(steps);
     let source = CaptureSource::builder(FMT)
@@ -151,8 +150,7 @@ async fn buffer_holds_all_audio_and_never_drops() {
     let mut stats = source.stats();
     let stream = Box::new(source).capture();
 
-    let snapshot = wait_stats(&mut stats, |s| s.captured >= secs(1.0)).await;
-    assert_eq!(snapshot.dropped, Duration::ZERO, "nothing is ever dropped");
+    wait_stats(&mut stats, |s| s.captured >= secs(1.0)).await;
 
     let (chunks, fault) = drain(stream).await;
     assert!(fault.is_none());

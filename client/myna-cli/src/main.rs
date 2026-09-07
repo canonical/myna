@@ -569,17 +569,9 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             Err(e) => eprintln!("✗ could not open session: {e}"),
         }
 
-        // The T51 acceptance readout: how much the mic captured and whether
-        // the pre-ready ring aged anything out (zero drops expected).
+        // The T51 acceptance readout: how much the mic captured.
         let s = *mic_stats.borrow();
-        if s.dropped > Duration::ZERO {
-            println!(
-                "  (mic: captured {:.1?} — DROPPED {:.1?}: ring overflow, transcript starts mid-utterance)",
-                s.captured, s.dropped
-            );
-        } else {
-            println!("  (mic: captured {:.1?}, zero drops)", s.captured);
-        }
+        println!("  (mic: captured {:.1?})", s.captured);
         // Near-silent capture (~-40 dBFS peak) over a non-trivial window is
         // almost always a muted input or the wrong node, not a quiet
         // talker — flag it so an empty transcript isn't a mystery.

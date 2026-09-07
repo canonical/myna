@@ -9,7 +9,7 @@
 //!             │ re-chunk to whole-frame ~100 ms chunks
 //!             │ update stats tap (RMS/peak/clip, §8)
 //!             ▼
-//!     bounded ring (drop-oldest, §6)
+//!     bounded buffer (never drops, §6)
 //!             ▼
 //!     CaptureStream  ◀── drained when the consumer chooses
 //! ```
@@ -22,8 +22,8 @@
 //!
 //! The pre-ready requirement (§6): `capture()` is the hotkey press — the ring
 //! fills immediately; the consumer defers draining until the model is `ready`,
-//! so nothing said during a cold load is lost, up to the ring depth. Overflow
-//! is drop-oldest, surfaced as [`AudioStats::dropped`].
+//! so nothing said during a cold load is lost. The buffer never drops: past
+//! its (generous) bound the stream ends with an `Overloaded` fault instead.
 //!
 //! Backends: [`ScriptedBackend`] (the permanent fake fixture, T50) and
 //! [`PipeWireBackend`] (native `pipewire-rs`, T52 — node/channel selection +

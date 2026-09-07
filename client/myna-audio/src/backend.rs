@@ -30,7 +30,7 @@ pub struct CaptureSpec {
 
 /// Where a backend delivers PCM. `push` is synchronous and never blocks —
 /// callable from a tokio task, a plain thread, or a realtime callback.
-/// Overflow is the ring's problem (drop-oldest), never the backend's.
+/// Overload is the buffer's problem, never the backend's.
 pub struct Producer {
     ring: Arc<Ring>,
     stats: watch::Sender<AudioStats>,
@@ -95,18 +95,13 @@ impl Producer {
         let (rms, peak, clipped) = levels(&chunk);
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
-        // The buffer never drops (it grows to hold everything), so no audio
-        // is ever lost; `dropped` stays zero. `push` returns the buffer
-        // high-water mark, which we don't surface as a stat today.
         let _ = self.ring.push(chunk);
-        let _ = self.format.bytes_per_second();
         let _ = self.stats.send(AudioStats {
             rms,
             peak,
             session_peak: self.session_peak,
             clipped,
             captured: self.captured,
-            dropped: Duration::ZERO,
         });
     }
 }

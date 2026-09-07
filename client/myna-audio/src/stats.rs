@@ -22,9 +22,6 @@ pub struct AudioStats {
     pub session_peak: f32,
     /// The last captured chunk touched full scale.
     pub clipped: bool,
-    /// Total audio captured this session (including anything later dropped).
+    /// Total audio captured this session.
     pub captured: Duration,
-    /// Total audio aged out by ring overflow (drop-oldest, §6) — nonzero means
-    /// the transcript will start mid-utterance and the UI should say so.
-    pub dropped: Duration,
 }
