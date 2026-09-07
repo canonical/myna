@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 19:41+0100\n"
+"POT-Creation-Date: 2026-09-07 19:42+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -199,11 +199,11 @@ msgstr ""
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:780
+#: src/app.rs:786
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:839 src/app.rs:842
+#: src/app.rs:845 src/app.rs:848
 msgid "Reset to the schema default"
 msgstr ""
 
@@ -943,32 +943,29 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:34
 msgid ""
-"streaming: partial hypotheses appear in the field as you speak. batch: the "
-"transcript is injected once, when the utterance ends. auto: resolved per "
-"machine against the measured RTF tier table, which is also what decides "
-"whether in-field partials are shown at all. Changes apply live."
+"Streaming shows partial text in the field as you speak; Batch injects once, "
+"when the utterance ends; Automatic picks per machine from the measured RTF "
+"table."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:45
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:43
 msgid "Output language"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:46
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:44
 msgid ""
-"A BCP-47-ish code (en, fr, zh) passed to the backend per session. Backends "
-"that translate (whisper) emit *this* language whatever is spoken; the rest "
-"treat it as a recognition hint. Empty lets the backend decide, which is what "
-"a multilingual model does best. Changes apply live."
+"A BCP-47-ish code (en, fr, zh). Backends that translate (whisper) emit this "
+"language whatever is spoken; the rest take it as a recognition hint. Empty "
+"lets the backend decide."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:57
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:53
 msgid "The HUD indicator style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:58
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:54
 msgid ""
-"bar: a simple level bar in the accent colour (the default). ribbon: the "
-"flowing GPU wave ribbon. vumeter: the classic segmented bar meter. progress: "
-"a plain GtkProgressBar. All are driven by the same calibrated audio "
-"envelope; only the presentation differs. Changes apply live."
+"All four render the same calibrated audio envelope: Bar is a level bar in "
+"the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter, "
+"Progress a plain progress bar."
 msgstr ""

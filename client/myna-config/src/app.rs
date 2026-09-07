@@ -583,6 +583,14 @@ impl RowBinding {
     }
 }
 
+/// The schema description is hover-only: a permanent subtitle turns a
+/// two-row page into a wall of prose.
+fn describe(row: &impl IsA<gtk::Widget>, description: &str) {
+    let row = row.as_ref();
+    row.set_tooltip_text(Some(description));
+    row.update_property(&[gtk::accessible::Property::Description(description)]);
+}
+
 fn ready_page(
     controller: Rc<MynaSettingsController>,
     writer: PersistenceWriter,
@@ -607,10 +615,10 @@ fn ready_page(
                 let model = gtk::StringList::new(&labels);
                 let row = adw::ComboRow::builder()
                     .title(&plan.title)
-                    .subtitle(&plan.description)
                     .model(&model)
                     .sensitive(plan.writable)
                     .build();
+                describe(&row, &plan.description);
                 row.add_suffix(&reset);
                 if let Some(index) = setting
                     .value()
@@ -661,9 +669,7 @@ fn ready_page(
                     .sensitive(plan.writable)
                     .show_apply_button(true)
                     .build();
-                row.set_tooltip_text(Some(&plan.description));
-                row.upcast_ref::<gtk::Widget>()
-                    .update_property(&[gtk::accessible::Property::Description(&plan.description)]);
+                describe(&row, &plan.description);
                 row.add_suffix(&reset);
                 let updating = Rc::new(Cell::new(false));
                 let commit = Rc::new(RefCell::new(DebouncedTextCommit::new(

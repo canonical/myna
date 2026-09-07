@@ -32,11 +32,9 @@
       <default>'auto'</default>
       <summary>How transcripts are emitted</summary>
       <description>
-        streaming: partial hypotheses appear in the field as you speak.
-        batch: the transcript is injected once, when the utterance ends.
-         auto: resolved per machine against the measured RTF tier table, which
-         is also what decides whether in-field partials are shown at all.
-         Changes apply live.
+        Streaming shows partial text in the field as you speak; Batch injects
+        once, when the utterance ends; Automatic picks per machine from the
+        measured RTF table.
       </description>
     </key>
 
@@ -44,11 +42,9 @@
       <default>''</default>
       <summary>Output language</summary>
       <description>
-        A BCP-47-ish code (en, fr, zh) passed to the backend per session.
-        Backends that translate (whisper) emit *this* language whatever is
-        spoken; the rest treat it as a recognition hint. Empty lets the
-        backend decide, which is what a multilingual model does best.
-         Changes apply live.
+        A BCP-47-ish code (en, fr, zh). Backends that translate (whisper) emit
+        this language whatever is spoken; the rest take it as a recognition
+        hint. Empty lets the backend decide.
       </description>
     </key>
 
@@ -56,12 +52,9 @@
       <default>'bar'</default>
       <summary>The HUD indicator style</summary>
       <description>
-        bar: a simple level bar in the accent colour (the default). ribbon:
-        the flowing GPU wave ribbon. vumeter: the classic segmented bar meter.
-        progress: a plain GtkProgressBar.
-         All are driven by the same calibrated audio envelope; only the
-         presentation differs.
-         Changes apply live.
+        All four render the same calibrated audio envelope: Bar is a level bar
+        in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented
+        meter, Progress a plain progress bar.
       </description>
     </key>
   </schema>
