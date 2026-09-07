@@ -221,12 +221,8 @@ pub fn audio_drops() -> Option<AudioDrops> {
     let properties = gio::glib::VariantDict::new(Some(&reply.child_value(0)));
     // Absent, not zero, on a daemon older than these properties - the report
     // omits the line rather than claiming a clean session it cannot see.
-    let read = |name: &str| {
-        properties
-            .lookup_value(name, None)
-            // GetAll boxes every value in a variant.
-            .and_then(|value| value.as_variant().unwrap_or(value).get::<u64>())
-    };
+    // VariantDict lookup unboxes the values from GetAll's a{sv} reply.
+    let read = |name: &str| properties.lookup::<u64>(name).ok().flatten();
     Some(AudioDrops {
         not_resident: read("AudioDroppedNotResident")?,
         not_active: read("AudioDroppedNotActive")?,
