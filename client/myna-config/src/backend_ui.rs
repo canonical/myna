@@ -1181,6 +1181,7 @@ impl BackendUi {
             inventory_complete: self.inventory_complete.get(),
             machine: Some(crate::machine::machine_facts()),
             daemon: crate::machine::snap_process("myna"),
+            drops: crate::machine::audio_drops(),
             backends: pages
                 .iter()
                 .map(|page| backend_diagnostic_from(page, &snaps))

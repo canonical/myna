@@ -256,6 +256,25 @@ pub struct DesktopController {
     preedit: Live<bool>,
 }
 
+/// This session's accept-gate drop counts, published as they happen.
+///
+/// Cumulative per session, so a reader that samples late still sees the whole
+/// utterance's total rather than whatever happened since it last looked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AudioDrops {
+    pub not_resident: u64,
+    pub not_active: u64,
+}
+
+impl AudioDrops {
+    fn record(&mut self, reason: myna_orchestrator::DropReason) {
+        match reason {
+            myna_orchestrator::DropReason::NotResident => self.not_resident += 1,
+            myna_orchestrator::DropReason::NotActive => self.not_active += 1,
+        }
+    }
+}
+
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
 /// factory (mocks in tests, real portal/IBus/GTK in the binary).
 #[derive(Default)]
@@ -396,6 +415,9 @@ impl DesktopController {
         // the rest (FR-014/FR-022, SC-007). A normal Release does NOT suppress
         // (the commit-drain tail is still ours to insert).
         let mut commits_suppressed = false;
+        // Per session: a cold-start burst of pre-ready drops is normal, and a
+        // count carried over from the last utterance would read as this one's.
+        let mut drops = AudioDrops::default();
         // Set only by `FocusEvent::FocusOut` — distinguishes an empty
         // transcript caused by a deliberately-cut-short session (the target
         // field lost focus) from one where the user simply said nothing, so
@@ -490,6 +512,7 @@ impl DesktopController {
                             preedit: preedit.get(),
                         },
                         &mut buffer,
+                        &mut drops,
                     )
                     .await;
                 }
@@ -507,6 +530,7 @@ impl DesktopController {
                             preedit: preedit.get(),
                         },
                         &mut buffer,
+                        &mut drops,
                     )
                     .await;
                     }
@@ -681,6 +705,7 @@ async fn route_event(
     state: &mut DictationState,
     flags: RouteFlags,
     buffer: &mut CommitBuffer,
+    drops: &mut AudioDrops,
 ) {
     let RouteFlags {
         commit_allowed,
@@ -700,6 +725,12 @@ async fn route_event(
     }
     if let Some(indicator_state) = event_to_indicator(&event, *state, focus_lost) {
         indicator.set_state(indicator_state).await;
+    }
+    if let OrchestratorEvent::AudioDropped(reason) = &event {
+        drops.record(*reason);
+        indicator
+            .set_audio_drops(drops.not_resident, drops.not_active)
+            .await;
     }
     if let OrchestratorEvent::Final(text) = &event {
         // Commit-only: stable committed text is buffered; unstable `Snippet`
@@ -1054,6 +1085,22 @@ mod tests {
             completion_indicator_state("hello", true),
             IndicatorState::Hidden,
             "captured text hides the indicator even if focus was later lost"
+        );
+    }
+
+    #[test]
+    fn drops_are_counted_per_reason() {
+        use myna_orchestrator::DropReason;
+        let mut drops = AudioDrops::default();
+        drops.record(DropReason::NotResident);
+        drops.record(DropReason::NotResident);
+        drops.record(DropReason::NotActive);
+        assert_eq!(
+            drops,
+            AudioDrops {
+                not_resident: 2,
+                not_active: 1
+            }
         );
     }
 

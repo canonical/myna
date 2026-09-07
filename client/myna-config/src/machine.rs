@@ -183,3 +183,52 @@ pub fn bytes(value: u64) -> String {
         format!("{value:.1} {}", UNITS[unit])
     }
 }
+
+/// This session's accept-gate drop counts, read from the running daemon.
+///
+/// The one capture-health fact with no host-side source: only the daemon sees
+/// a chunk refused. Read through `gio`'s D-Bus rather than a zbus client -
+/// `gio` is already a dependency, the call is synchronous, and this page
+/// refreshes on demand rather than subscribing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AudioDrops {
+    pub not_resident: u64,
+    pub not_active: u64,
+}
+
+const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
+const DICTATION_PATH: &str = "/com/canonical/Myna/Dictation";
+
+/// `None` when the daemon is not running, which is not an error: "not running"
+/// is a perfectly good diagnostic answer and the report says so.
+pub fn audio_drops() -> Option<AudioDrops> {
+    use gio::glib::variant::ToVariant;
+
+    let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
+    let reply = connection
+        .call_sync(
+            Some(DICTATION_BUS),
+            DICTATION_PATH,
+            "org.freedesktop.DBus.Properties",
+            "GetAll",
+            Some(&(DICTATION_BUS,).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            1_000,
+            gio::Cancellable::NONE,
+        )
+        .ok()?;
+    let properties = gio::glib::VariantDict::new(Some(&reply.child_value(0)));
+    // Absent, not zero, on a daemon older than these properties - the report
+    // omits the line rather than claiming a clean session it cannot see.
+    let read = |name: &str| {
+        properties
+            .lookup_value(name, None)
+            // GetAll boxes every value in a variant.
+            .and_then(|value| value.as_variant().unwrap_or(value).get::<u64>())
+    };
+    Some(AudioDrops {
+        not_resident: read("AudioDroppedNotResident")?,
+        not_active: read("AudioDroppedNotActive")?,
+    })
+}

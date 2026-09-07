@@ -277,6 +277,14 @@ impl Indicator for DbusIndicator {
         }
     }
 
+    async fn set_audio_drops(&mut self, not_resident: u64, not_active: u64) {
+        let mut bus = self.bus.lock().await;
+        bus.set_property("AudioDroppedNotResident", PropertyValue::U64(not_resident))
+            .await;
+        bus.set_property("AudioDroppedNotActive", PropertyValue::U64(not_active))
+            .await;
+    }
+
     async fn hide(&mut self) {
         self.cancel_auto_hide();
         self.publish(wire_state::IDLE, "").await;
@@ -294,6 +302,25 @@ mod tests {
 
     use super::*;
     use crate::dbus::FakeBus;
+
+    #[tokio::test]
+    async fn drop_counts_are_published_as_counts_and_nothing_else() {
+        let fake = FakeBus::new();
+        let service = crate::dbus::DictationService::new(fake.clone());
+        let mut indicator = DbusIndicator::new(service.bus(), Readiness::default());
+
+        indicator.set_audio_drops(3, 0).await;
+
+        assert_eq!(
+            fake.property("AudioDroppedNotResident"),
+            Some(PropertyValue::U64(3))
+        );
+        assert_eq!(
+            fake.property("AudioDroppedNotActive"),
+            Some(PropertyValue::U64(0))
+        );
+        assert!(fake.property("State").is_none());
+    }
 
     /// Contract publisher.md P1 / data-model E1: every IndicatorState maps to
     /// the com.canonical.Myna.Dictation State string of the E1 table.

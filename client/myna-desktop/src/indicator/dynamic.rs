@@ -40,6 +40,10 @@ impl DynamicIndicator {
 
 #[async_trait]
 impl Indicator for DynamicIndicator {
+    async fn set_audio_drops(&mut self, not_resident: u64, not_active: u64) {
+        self.dbus.set_audio_drops(not_resident, not_active).await;
+    }
+
     async fn set_state(&mut self, state: IndicatorState) {
         let is_hidden = matches!(state, IndicatorState::Hidden);
         // Always publish via D-Bus for the HUD(s).

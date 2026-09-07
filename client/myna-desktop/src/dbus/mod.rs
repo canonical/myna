@@ -36,6 +36,8 @@ pub enum PropertyValue {
     Str(String),
     /// A D-Bus double (`d`) property.
     F64(f64),
+    /// A D-Bus unsigned 64-bit (`t`) property.
+    U64(u64),
 }
 
 /// The bus boundary all publisher logic is written against (research R11):
@@ -50,7 +52,8 @@ pub enum PropertyValue {
 #[async_trait]
 pub trait Bus: Send {
     /// Set a property (`State` / `StatusMessage` / `AudioRms` / `AudioPeak` /
-    /// `HudStyle`), emitting `PropertiesChanged` on the real bus.
+    /// `HudStyle` / `AudioDropped*`), emitting `PropertiesChanged` on the real
+    /// bus.
     async fn set_property(&mut self, name: &str, value: PropertyValue);
 }
 

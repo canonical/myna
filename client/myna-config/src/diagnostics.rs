@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use crate::machine::{bytes, MachineFacts, ProcessMemory};
+use crate::machine::{bytes, AudioDrops, MachineFacts, ProcessMemory};
 
 /// Copy-safe onboarding instructions surfaced when Myna itself is missing.
 pub const NO_MYNA_COMMAND: &str = "sudo snap install myna";
@@ -95,6 +95,7 @@ pub struct DiagnosticInput {
     pub installed_snaps: Vec<InstalledSnap>,
     pub machine: Option<MachineFacts>,
     pub daemon: Option<ProcessMemory>,
+    pub drops: Option<AudioDrops>,
     pub backends: Vec<BackendDiagnostic>,
     pub problems: Vec<String>,
 }
@@ -362,6 +363,13 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
                 &gettextrs::gettext("Memory"),
                 &memory_summary(memory),
             );
+            if let Some(drops) = input.drops {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Audio"),
+                    &drops_summary(drops),
+                );
+            }
         }
         (Some(snap), None) => {
             field(&mut out, &gettextrs::gettext("Version"), &snap.version);
@@ -447,6 +455,19 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
 
 fn field(out: &mut String, label: &str, value: &str) {
     out.push_str(&format!("    {label:<10} {value}\n"));
+}
+
+/// Always printed when the daemon is up: a confirmed zero is the fact worth
+/// having during a bug hunt.
+fn drops_summary(drops: AudioDrops) -> String {
+    let total = drops.not_resident + drops.not_active;
+    format!(
+        "{} {} ({} {})",
+        total,
+        gettextrs::gettext("chunks dropped this session"),
+        drops.not_resident,
+        gettextrs::gettext("before the model was ready")
+    )
 }
 
 fn memory_summary(memory: ProcessMemory) -> String {
@@ -640,6 +661,10 @@ mod tests {
                 resident: 16 * 1024 * 1024,
                 peak: 18 * 1024 * 1024,
             }),
+            drops: Some(AudioDrops {
+                not_resident: 3,
+                not_active: 0,
+            }),
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
                 version: "0.1.0".into(),
@@ -667,6 +692,10 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("parakeet-tdt-0.6b-v3"), "{text}");
+        assert!(
+            text.contains("3 chunks dropped this session (3 before the model was ready)"),
+            "{text}"
+        );
         assert!(text.contains("Problems:\n  (none)"), "{text}");
         // Nothing in the report came from outside this crate.
         assert!(!text.contains('/'), "{text}");

@@ -120,4 +120,9 @@ pub trait Indicator: Send {
 
     /// Clear the indicator (equivalent to `set_state(Hidden)`).
     async fn hide(&mut self);
+
+    /// Publish this session's running drop counts. Counts only - no audio, no
+    /// content - and the one capture-health fact no reader outside the daemon
+    /// can obtain for itself.
+    async fn set_audio_drops(&mut self, _not_resident: u64, _not_active: u64) {}
 }
