@@ -95,7 +95,7 @@ impl Producer {
         let (rms, peak, clipped) = levels(&chunk);
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
-        let _ = self.ring.push(chunk);
+        self.ring.push(chunk);
         let _ = self.stats.send(AudioStats {
             rms,
             peak,

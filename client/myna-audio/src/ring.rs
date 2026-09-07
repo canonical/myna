@@ -74,16 +74,15 @@ impl Ring {
         self.inner.lock().expect("audio ring mutex poisoned")
     }
 
-    /// Producer side: enqueue a chunk. Returns the current buffer high-water
-    /// mark in bytes (for the stats tap). A push after the consumer is gone,
+    /// Producer side: enqueue a chunk. A push after the consumer is gone,
     /// after `finish`, or after overload is a no-op. **Never drops** — but past
     /// `max_bytes` it latches `overloaded` and stops accepting audio, so the
     /// stream ends with an `Overloaded` fault instead of growing without bound.
-    pub(crate) fn push(&self, chunk: PcmChunk) -> u64 {
-        let peak_bytes = {
+    pub(crate) fn push(&self, chunk: PcmChunk) {
+        {
             let mut inner = self.lock();
             if inner.closed || inner.done {
-                return inner.peak_bytes as u64;
+                return;
             }
             if inner.queued_bytes + chunk.data.len() > inner.max_bytes {
                 // The service can't keep up: stop here and surface it. The
@@ -96,15 +95,13 @@ impl Ring {
                     inner.fault = Some(CaptureError::Overloaded(secs));
                 }
                 self.notify.notify_one();
-                return inner.peak_bytes as u64;
+                return;
             }
             inner.queued_bytes += chunk.data.len();
             inner.peak_bytes = inner.peak_bytes.max(inner.queued_bytes);
             inner.queue.push_back(chunk);
-            inner.peak_bytes
-        };
+        }
         self.notify.notify_one();
-        peak_bytes as u64
     }
 
     /// Producer side: capture is over — cleanly (`None`) or fatally (`Some`).
@@ -202,7 +199,7 @@ mod tests {
         r.push(chunk(0, 100));
         assert_eq!(r.next().await.unwrap().unwrap().data[0], 0);
         for i in 1..=1000u32 {
-            let _ = r.push(chunk((i % 250) as u8, 100));
+            r.push(chunk((i % 250) as u8, 100));
         }
         r.finish(None);
         let mut count = 0usize;
@@ -217,8 +214,8 @@ mod tests {
         // Past the bound: the already-queued audio still drains, then the stream
         // faults with `Overloaded` — the client is told, not silently truncated.
         let r = ring(250); // 2 x 100-byte chunks fit; the 3rd overflows
-        assert_eq!(r.push(chunk(1, 100)), 100);
-        assert_eq!(r.push(chunk(2, 100)), 200);
+        r.push(chunk(1, 100));
+        r.push(chunk(2, 100));
         r.push(chunk(3, 100)); // overflow: latches the fault, does not enqueue
                                // The two accepted chunks drain first...
         assert_eq!(r.next().await.unwrap().unwrap().data[0], 1);
