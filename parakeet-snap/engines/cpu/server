@@ -25,8 +25,6 @@ MODEL_DIR="${MODEL_DIR:-$SNAP_COMPONENTS/model-parakeet-int8}"
 # Defaults to true here: chunked progressive commit is this snap's reason to
 # exist (008 US3). It is a key rather than a hardcoded flag only so the batch
 # baseline is measurable on the same build.
-# A config key rather than a build-time flag, so batch and streaming are two
-# measurable configurations of one shipped artifact.
 streaming="$(modelctl get streaming 2>/dev/null || true)"
 stream_args=()
 [ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
