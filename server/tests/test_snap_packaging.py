@@ -333,6 +333,23 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
         )
 
 
+def test_whisper_quantization_describes_the_packaged_artifact() -> None:
+    """Model metadata describes disk weights, not a runtime compute policy."""
+    model_dir = REPO_ROOT / "whisper-snap" / "models"
+    expected_compute_type = {
+        "tiny": "int8",
+        "base": "float32",
+        "small": "float32",
+    }
+
+    for name, compute_type in expected_compute_type.items():
+        manifest = yaml.safe_load(
+            (model_dir / name / "model.yaml").read_text(encoding="utf-8")
+        )
+        assert manifest["quantization"] == "float16"
+        assert f"MODEL_COMPUTE_TYPE={compute_type}" in manifest["environment"]
+
+
 # Snaps whose adapter leaves ORT to size its own pool, so ORT also pins it
 # (T65). Empty, and that is the finding rather than an oversight: every ORT
 # adapter here measured faster with a small explicit pool than with ORT's own

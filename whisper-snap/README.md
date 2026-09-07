@@ -83,6 +83,33 @@ myna-whisper.whisper show-engine               # active engine + model options
 Switching a model installs that model's component (weights are already in the
 snap revision); nothing is fetched from the network at runtime.
 
+## Compute precision
+
+`show-model` reports the precision of the packaged CTranslate2 weights. All
+three model components currently contain FP16 weights. Runtime precision is a
+separate engine setting:
+
+```shell
+myna-whisper.whisper get compute-type
+sudo myna-whisper.whisper set compute-type=auto
+sudo myna-whisper.whisper set compute-type=int8
+sudo myna-whisper.whisper set compute-type=float32
+```
+
+`set` restarts the service unless `--no-restart` is passed. On the CPU engine,
+`auto` selects the measured per-model default: INT8 for `tiny`, FP32 for
+`base` and `small`. Explicit `int8` favors speed and `float32` favors accuracy.
+On this CPU, CTranslate2 resolves `int8` to `int8_float32`: linear and embedding
+weights use INT8 while the remaining computation uses FP32. The effective type
+is logged when the model loads:
+
+```shell
+sudo snap logs myna-whisper.server | grep 'effective CTranslate2 compute type'
+```
+
+`int8_float32` may also be selected explicitly, though it is equivalent to
+`int8` on supported CPUs.
+
 ## Idle behaviour
 
 The server unloads the model after an idle period, freeing the bulk of its

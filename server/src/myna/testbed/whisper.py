@@ -23,6 +23,7 @@ to pin a lab cache; verify offline runs with ``HF_HUB_OFFLINE=1``.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 
@@ -43,6 +44,8 @@ from myna.core import (
 )
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+
+_log = logging.getLogger(__name__)
 
 WHISPER_RATE = 16_000
 WHISPER_FORMAT = AudioFormat(sample_rate_hz=WHISPER_RATE, channels=1, sample_width_bytes=2)
@@ -235,6 +238,12 @@ class FasterWhisperAdapter:
                     device=self._device,
                     compute_type=self._compute_type,
                     download_root=self._download_root,
+                )
+                _log.info(
+                    "Loaded Whisper model with requested compute type %s; "
+                    "effective CTranslate2 compute type is %s",
+                    self._compute_type,
+                    self._model.model.compute_type,
                 )
         return self._model
 
