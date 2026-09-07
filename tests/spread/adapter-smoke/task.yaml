@@ -73,9 +73,9 @@ execute: |
 
     for mode in batch streaming; do
         [ "$mode" = streaming ] && streaming=true || streaming=false
-        # Emission mode is a snap config toggle, so the server has to be told;
+        # Emission mode is a modelctl config key, so the server has to be told;
         # the client's --mode alone cannot conjure partials the server never emits.
-        snap set ${SNAP_UNDER_TEST} streaming="$streaming"
+        ${MODELCTL} set streaming="$streaming" --assume-yes --no-restart
         snap restart ${SNAP_UNDER_TEST}.server
 
         # The server binds in its own $SNAP_COMMON/run (host-visible); the

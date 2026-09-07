@@ -13,7 +13,7 @@ the shape of the trade-off:
   both accuracy and cost. `list-models` reports the options, so the config does
   not name them (a `models:` allowlist can narrow the sweep).
 - **emission mode** (batch / streaming): a shipped configuration toggle
-  (`snap set <snap> streaming=`), so both settings are real user-facing
+  (`modelctl set streaming=`), so both settings are real user-facing
   configurations. Snaps whose adapter is commit-on-finalize only (funasr,
   qwen-c) expose no such key and are swept batch-only.
 

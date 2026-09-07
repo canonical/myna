@@ -57,7 +57,7 @@ Expected: committed `»` chunks after the configured arm plus a pause; no `~`
 partials. Default arm is 15 s; adjust with:
 
 ```sh
-sudo snap set myna-parakeet stream-arm-seconds=5
+sudo myna-parakeet.parakeet set stream-arm-seconds=5
 sudo snap restart myna-parakeet.server
 ```
 

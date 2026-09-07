@@ -69,7 +69,7 @@ committed segment still waits for the arm. Partials cannot change committed
 text — measured identical with them on and off — so the dials are independent:
 
 ```bash
-sudo snap set myna-parakeet stream-partial-cadence-seconds=1
+sudo myna-parakeet.parakeet set stream-partial-cadence-seconds=1
 sudo snap restart myna-parakeet.server
 ```
 

@@ -12,11 +12,10 @@ idle="$(modelctl get sleep-idle-seconds)"
 # Idle-unload (T27) matters most here: frees GPU weights after idle. Full VRAM
 # release (process exit via socket activation) is blocked upstream — modelctl
 # run forks and doesn't pass the listening fd (design note §4).
-# Emission mode (set at install, overridable with `snap set <snap> streaming=`).
+# Emission mode (set at install, overridable with `modelctl set streaming=`).
 # A config key rather than a build-time flag, so batch and streaming are two
 # measurable configurations of one shipped artifact.
-streaming="$(snapctl get streaming 2>/dev/null || true)"
-streaming="${streaming:-$(modelctl get streaming 2>/dev/null || true)}"
+streaming="$(modelctl get streaming 2>/dev/null || true)"
 stream_args=()
 [ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
 

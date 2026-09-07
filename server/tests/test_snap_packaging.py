@@ -237,6 +237,29 @@ def test_hooks_dir_holds_only_hooks(snap) -> None:
     assert not stray, f"{name}: snap/hooks/ contains non-hook files: {stray}"
 
 
+def test_user_config_lives_in_modelctl_only(snap) -> None:
+    """modelctl's config is the single store for user-facing settings.
+
+    snapd's config is a second store with different reader privileges: reading
+    it needs polkit interaction, which a desktop session cannot supply without
+    a terminal, and a stale `snap set` value silently shadowed what myna-config
+    had written through modelctl. So engine scripts read modelctl only, and no
+    snap ships a configure hook that would advertise `snap set` as the way in.
+    """
+    snap_dir, name, _ = snap
+    hook = REPO_ROOT / snap_dir / "snap" / "hooks" / "configure"
+    assert not hook.is_file(), (
+        f"{name}: a configure hook implies `snap set` configures this snap, but "
+        "modelctl is the only store the engine scripts read"
+    )
+    for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
+        script = server.read_text(encoding="utf-8")
+        assert "snapctl get" not in script, (
+            f"{name}: engines/{server.parent.name}/server reads snapd config; "
+            "read the value with `modelctl get` so there is one store"
+        )
+
+
 def test_socket_config_key_is_ws_unix_socket(snap) -> None:
     """`modelctl status` reports the session socket only under `ws.unix-socket`.
 
@@ -271,7 +294,7 @@ def test_exposes_the_session_socket(snap) -> None:
 def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
     """`--streaming` baked into an engine script is not a user-facing choice.
 
-    Emission mode is a shipped configuration (`snap set <snap> streaming=`), so
+    Emission mode is a shipped configuration (`modelctl set streaming=`), so
     an engine script must read it rather than hardcode it. Snaps whose adapter
     is commit-on-finalize only never mention --streaming at all, which is also
     fine - the failure this catches is a script that forces the flag on.
