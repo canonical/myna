@@ -383,19 +383,10 @@ fn read_only_rows_never_attempt_a_write_or_reset() {
 
 #[test]
 fn headless_smoke_build_maps_schema_metadata_to_widget_kinds() {
-    let shortcut = ClientSettingMetadata::new(
-        ClientSettingKey::new("hotkey").unwrap(),
-        Some("Preferred key".into()),
-        Some(String::new()),
-        ClientSettingValue::Text(String::new()),
-        SettingRange::Unrestricted,
-        ClientSettingValue::Text(String::new()),
-        true,
-    );
-    let prose_lookalike = ClientSettingMetadata::new(
+    let unrestricted = ClientSettingMetadata::new(
         ClientSettingKey::new("unrelated").unwrap(),
         Some("Unrelated".into()),
-        Some("Utilisez par exemple «<Super>d».".into()),
+        Some(String::new()),
         ClientSettingValue::Text(String::new()),
         SettingRange::Unrestricted,
         ClientSettingValue::Text(String::new()),
@@ -403,18 +394,16 @@ fn headless_smoke_build_maps_schema_metadata_to_widget_kinds() {
     );
     let fake = FakeSettings::with_rows({
         let mut rows = rows();
-        rows.push(shortcut.clone());
-        rows.push(prose_lookalike.clone());
+        rows.push(unrestricted.clone());
         rows
     });
 
     let plans = smoke_build(fake).unwrap();
 
-    assert_eq!(plans.len(), 4);
+    assert_eq!(plans.len(), 3);
     assert_eq!(plans[0].kind, WidgetKind::Choice);
     assert_eq!(plans[1].kind, WidgetKind::Text);
-    assert_eq!(widget_plan(&shortcut).kind, WidgetKind::Shortcut);
-    assert_eq!(widget_plan(&prose_lookalike).kind, WidgetKind::Text);
+    assert_eq!(widget_plan(&unrestricted).kind, WidgetKind::Text);
 }
 
 #[test]
@@ -511,8 +500,6 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
         "auto",
         "streaming",
         "batch",
-        "portal",
-        "control",
         "ribbon",
         "vumeter",
         "bar",
@@ -530,8 +517,6 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
             "Automatic",
             "Streaming",
             "Batch",
-            "Portal",
-            "Control socket",
             "Ribbon",
             "VU meter",
             "Bar",
@@ -540,8 +525,7 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
         ]
     );
     assert_ne!(labels[0], raw[0]);
-    assert_eq!(raw[4], "control");
-    assert_eq!(raw[7], "bar");
+    assert_eq!(raw[5], "bar");
 }
 
 #[test]
@@ -551,8 +535,6 @@ fn enum_display_labels_are_extracted_into_the_gettext_template() {
         "Automatic",
         "Streaming",
         "Batch",
-        "Portal",
-        "Control socket",
         "Ribbon",
         "VU meter",
         "Bar",

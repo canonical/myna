@@ -13,7 +13,6 @@ use crate::ports::{ClientSettings, ClientSettingsError, ClientSettingsSubscripti
 pub enum WidgetKind {
     Choice,
     Text,
-    Shortcut,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +28,6 @@ pub struct WidgetPlan {
 pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
     let kind = match metadata.range() {
         SettingRange::Choices(_) => WidgetKind::Choice,
-        _ if metadata.key().as_str() == "hotkey" => WidgetKind::Shortcut,
         _ => WidgetKind::Text,
     };
     WidgetPlan {
@@ -53,8 +51,6 @@ pub fn choice_display_label(choice: &str) -> String {
         "auto" => gettextrs::gettext("Automatic"),
         "streaming" => gettextrs::gettext("Streaming"),
         "batch" => gettextrs::gettext("Batch"),
-        "portal" => gettextrs::gettext("Portal"),
-        "control" => gettextrs::gettext("Control socket"),
         "ribbon" => gettextrs::gettext("Ribbon"),
         "vumeter" => gettextrs::gettext("VU meter"),
         "bar" => gettextrs::gettext("Bar"),

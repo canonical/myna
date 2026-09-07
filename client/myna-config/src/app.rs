@@ -514,7 +514,6 @@ enum RowBinding {
     Text {
         row: adw::EntryRow,
         key: String,
-        kind: WidgetKind,
         writable: bool,
         updating: Rc<Cell<bool>>,
         commit: Rc<RefCell<DebouncedTextCommit>>,
@@ -528,7 +527,6 @@ impl Drop for RowBinding {
     fn drop(&mut self) {
         if let Self::Text {
             key,
-            kind,
             commit,
             source,
             controller,
@@ -538,10 +536,8 @@ impl Drop for RowBinding {
         {
             cancel_source(source);
             if let Some(value) = commit.borrow_mut().flush() {
-                if valid_text_value(*kind, &value) {
-                    if let Ok(request) = controller.set(key, ClientSettingValue::Text(value)) {
-                        persist_request(writer.clone(), controller.clone(), request, None);
-                    }
+                if let Ok(request) = controller.set(key, ClientSettingValue::Text(value)) {
+                    persist_request(writer.clone(), controller.clone(), request, None);
                 }
             }
         }
@@ -658,7 +654,7 @@ fn ready_page(
                 );
                 group.add(&row);
             }
-            WidgetKind::Text | WidgetKind::Shortcut => {
+            WidgetKind::Text => {
                 let row = adw::EntryRow::builder()
                     .title(&plan.title)
                     .text(setting.value().as_str().unwrap_or_default())
@@ -668,13 +664,6 @@ fn ready_page(
                 row.set_tooltip_text(Some(&plan.description));
                 row.upcast_ref::<gtk::Widget>()
                     .update_property(&[gtk::accessible::Property::Description(&plan.description)]);
-                if plan.kind == WidgetKind::Shortcut {
-                    let icon = gtk::Image::from_icon_name(
-                        "preferences-desktop-keyboard-shortcuts-symbolic",
-                    );
-                    icon.set_tooltip_text(Some(&gettextrs::gettext("Keyboard shortcut")));
-                    row.add_prefix(&icon);
-                }
                 row.add_suffix(&reset);
                 let updating = Rc::new(Cell::new(false));
                 let commit = Rc::new(RefCell::new(DebouncedTextCommit::new(
@@ -685,11 +674,8 @@ fn ready_page(
                     let controller = controller.clone();
                     let key = plan.key.clone();
                     let updating = updating.clone();
-                    let overlay = overlay.downgrade();
                     let commit = commit.clone();
                     let source = source.clone();
-                    let row = row.downgrade();
-                    let kind = plan.kind;
                     let writer = writer.clone();
                     move |changed_row| {
                         if updating.get() {
@@ -703,10 +689,8 @@ fn ready_page(
                         };
                         let controller = controller.clone();
                         let key = key.clone();
-                        let overlay = overlay.clone();
                         let commit = commit.clone();
                         let source_slot = source.clone();
-                        let row = row.clone();
                         let writer = writer.clone();
                         let hold =
                             gio::Application::default().map(|application| application.hold());
@@ -717,15 +701,6 @@ fn ready_page(
                                 let Some(value) = commit.borrow_mut().take(revision) else {
                                     return;
                                 };
-                                if !valid_text_value(kind, &value) {
-                                    if let Some(overlay) = overlay.upgrade() {
-                                        show_invalid_shortcut(&overlay);
-                                    }
-                                    if let Some(row) = row.upgrade() {
-                                        rollback_text_row(&controller, &key, &row);
-                                    }
-                                    return;
-                                }
                                 if let Ok(request) =
                                     controller.set(&key, ClientSettingValue::Text(value))
                                 {
@@ -739,10 +714,8 @@ fn ready_page(
                     let controller = controller.clone();
                     let key = plan.key.clone();
                     let updating = updating.clone();
-                    let overlay = overlay.downgrade();
                     let commit = commit.clone();
                     let source = source.clone();
-                    let kind = plan.kind;
                     let writer = writer.clone();
                     move |row| {
                         if updating.get() {
@@ -753,13 +726,6 @@ fn ready_page(
                         let Some(value) = commit.borrow_mut().apply(&value) else {
                             return;
                         };
-                        if !valid_text_value(kind, &value) {
-                            if let Some(overlay) = overlay.upgrade() {
-                                show_invalid_shortcut(&overlay);
-                            }
-                            rollback_text_row(&controller, &key, row);
-                            return;
-                        }
                         if let Ok(request) = controller.set(&key, ClientSettingValue::Text(value)) {
                             persist_request(writer.clone(), controller.clone(), request, None);
                         }
@@ -770,7 +736,6 @@ fn ready_page(
                     RowBinding::Text {
                         row: row.clone(),
                         key: plan.key.clone(),
-                        kind: plan.kind,
                         writable: plan.writable,
                         updating,
                         commit,
@@ -862,22 +827,6 @@ fn persist_request(
         controller.complete(request, result);
         drop(hold);
     });
-}
-
-fn valid_text_value(kind: WidgetKind, value: &str) -> bool {
-    kind != WidgetKind::Shortcut || value.is_empty() || gtk::accelerator_parse(value).is_some()
-}
-
-fn show_invalid_shortcut(overlay: &adw::ToastOverlay) {
-    overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
-        "Enter a valid shortcut, such as <Super>d.",
-    )));
-}
-
-fn rollback_text_row(controller: &MynaSettingsController, key: &str, row: &adw::EntryRow) {
-    if let Some(current) = controller.row(key) {
-        row.set_text(current.value().as_str().unwrap_or_default());
-    }
 }
 
 fn reset_button(

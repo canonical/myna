@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 06:53+0100\n"
+"POT-Creation-Date: 2026-09-07 19:41+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -179,39 +179,31 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:12 src/app.rs:332 src/app.rs:477
+#: data/status-page.blp:12 src/app.rs:333 src/app.rs:478
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:13 src/app.rs:333 src/app.rs:478
+#: data/status-page.blp:13 src/app.rs:334 src/app.rs:479
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:482
+#: src/app.rs:483
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:483
+#: src/app.rs:484
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:499
+#: src/app.rs:500
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:674
-msgid "Keyboard shortcut"
-msgstr ""
-
-#: src/app.rs:814
+#: src/app.rs:780
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:872
-msgid "Enter a valid shortcut, such as <Super>d."
-msgstr ""
-
-#: src/app.rs:889 src/app.rs:892
+#: src/app.rs:839 src/app.rs:842
 msgid "Reset to the schema default"
 msgstr ""
 
@@ -917,47 +909,39 @@ msgstr ""
 msgid "omitted because command output may contain private content"
 msgstr ""
 
-#: src/myna_settings.rs:53
+#: src/myna_settings.rs:51
 msgid "Automatic"
 msgstr ""
 
-#: src/myna_settings.rs:54
+#: src/myna_settings.rs:52
 msgid "Streaming"
 msgstr ""
 
-#: src/myna_settings.rs:55
+#: src/myna_settings.rs:53
 msgid "Batch"
 msgstr ""
 
-#: src/myna_settings.rs:56
-msgid "Portal"
-msgstr ""
-
-#: src/myna_settings.rs:57
-msgid "Control socket"
-msgstr ""
-
-#: src/myna_settings.rs:58
+#: src/myna_settings.rs:54
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:59
+#: src/myna_settings.rs:55
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:60
+#: src/myna_settings.rs:56
 msgid "Bar"
 msgstr ""
 
-#: src/myna_settings.rs:61
+#: src/myna_settings.rs:57
 msgid "Progress"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:39
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:33
 msgid "How transcripts are emitted"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:40
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:34
 msgid ""
 "streaming: partial hypotheses appear in the field as you speak. batch: the "
 "transcript is injected once, when the utterance ends. auto: resolved per "
@@ -965,46 +949,23 @@ msgid ""
 "whether in-field partials are shown at all. Changes apply live."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
-msgid "Language hint sent to the backend"
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:45
+msgid "Output language"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:52
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:46
 msgid ""
-"A BCP-47-ish code (en, fr, zh) passed to the inference backend as a session "
-"hint. Empty means \"let the backend decide\", which is what a multilingual "
-"model does best. Changes apply live."
+"A BCP-47-ish code (en, fr, zh) passed to the backend per session. Backends "
+"that translate (whisper) emit *this* language whatever is spoken; the rest "
+"treat it as a recognition hint. Empty lets the backend decide, which is what "
+"a multilingual model does best. Changes apply live."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:62
-msgid "How a press reaches the daemon"
-msgstr ""
-
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:63
-msgid ""
-"auto: the portal where the app is packaged (the compositor can only identify "
-"a packaged app), the control socket otherwise. portal and control force one "
-"- a wrong choice here means the hotkey does nothing, so auto is nearly "
-"always right. Restart the Myna daemon after changing this setting."
-msgstr ""
-
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:74
-msgid "Preferred shortcut offered to the portal"
-msgstr ""
-
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:75
-msgid ""
-"An accelerator such as '<Super>d'. It is a *preference*: under portal "
-"activation the desktop's own bind dialog owns the final choice, and empty "
-"means \"offer no preference\". Restart the Myna daemon after changing this "
-"setting."
-msgstr ""
-
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:85
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:57
 msgid "The HUD indicator style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:86
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:58
 msgid ""
 "bar: a simple level bar in the accent colour (the default). ribbon: the "
 "flowing GPU wave ribbon. vumeter: the classic segmented bar meter. progress: "
