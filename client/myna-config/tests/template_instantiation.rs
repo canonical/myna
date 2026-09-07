@@ -85,3 +85,32 @@ fn appearance_policy_tracks_system_contrast_and_motion_preferences() {
         }
     );
 }
+
+/// The regression: a row desensitized while its own write was in flight took
+/// keyboard focus away from the entry the user was still typing in, and GTK
+/// warned that its `GtkText` never received a focus-out.
+#[test]
+fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let store = std::env::temp_dir().join(format!("myna-config-typing-{}", std::process::id()));
+    let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
+        // A scratch store, so the probe's write never touches the real one.
+        .env("GSETTINGS_BACKEND", "keyfile")
+        .env("XDG_CONFIG_HOME", &store)
+        .env("MYNA_CONFIG_TYPING_TEST", "1")
+        .output()
+        .expect("run typing probe");
+    std::fs::remove_dir_all(&store).ok();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "typing probe failed: {stderr}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("typing-focus: retained"));
+    assert!(
+        !stderr.contains("did not receive a focus-out event"),
+        "typing probe emitted the GtkText focus-out warning: {stderr}"
+    );
+}

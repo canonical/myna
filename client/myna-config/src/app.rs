@@ -23,6 +23,12 @@ pub use crate::myna_settings::{widget_plan, WidgetKind, WidgetPlan};
 const SMOKE_ENV: &str = "MYNA_CONFIG_SMOKE_BUILD";
 const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
+const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
+/// The probes must never claim the real application id: registering it while a
+/// Myna Settings is already running takes the remote-instance path, and
+/// `gtk_window_set_application` then segfaults against an application that was
+/// never started.
+const PROBE_APP_ID: &str = "com.canonical.Myna.Config.Probe";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppearancePolicy {
@@ -64,6 +70,10 @@ pub fn run() -> glib::ExitCode {
         return accessibility_probe();
     }
 
+    if smoke_requested(std::env::var_os(TYPING_ENV).as_deref()) {
+        return typing_probe();
+    }
+
     if smoke_requested(std::env::var_os(SMOKE_ENV).as_deref()) {
         return match GioClientSettings::open()
             .map(|settings| Rc::new(settings) as Rc<dyn ClientSettings>)
@@ -98,7 +108,9 @@ fn accessibility_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
 
-    let application = adw::Application::builder().application_id(APP_ID).build();
+    let application = adw::Application::builder()
+        .application_id(PROBE_APP_ID)
+        .build();
     let _ = application.register(None::<&gio::Cancellable>);
 
     let window = ui::MainWindow::new(&application);
@@ -225,7 +237,9 @@ fn template_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
 
-    let application = adw::Application::builder().application_id(APP_ID).build();
+    let application = adw::Application::builder()
+        .application_id(PROBE_APP_ID)
+        .build();
     let _ = application.register(None::<&gio::Cancellable>);
     for resource in [
         "active-backend-dialog.ui",
@@ -458,6 +472,100 @@ fn install_appearance_policy(window: &ui::MainWindow) {
     ));
 }
 
+/// Type into a text row and let its write land, asserting the row is still
+/// focused and editable afterwards.
+///
+/// The regression: `apply` desensitized a row while its own write was in
+/// flight. Doing that to a focused `AdwEntryRow` takes focus away mid-word and
+/// makes GTK complain that its `GtkText` never received a focus-out.
+fn typing_probe() -> glib::ExitCode {
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config typing probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    // libadwaita's own init: the widgets below are built before
+    // `Application::run` would have done it. No `Application` is attached -
+    // the probe only needs a realized toplevel to hold keyboard focus, and
+    // `gtk_window_set_application` crashes against an unstarted one.
+    adw::init().expect("libadwaita init");
+
+    let settings = match GioClientSettings::open() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("myna-config typing probe could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let controller = MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
+    let writer = PersistenceWriter::spawn(GioClientSettings::open);
+    let overlay = adw::ToastOverlay::new();
+    let PageState::Ready(rows) = controller.state() else {
+        eprintln!("myna-config typing probe found no settings rows");
+        return glib::ExitCode::FAILURE;
+    };
+    let page = ready_page(controller, writer, rows, &overlay);
+    overlay.set_child(Some(&page));
+    let window = adw::Window::builder().content(&overlay).build();
+    window.present();
+    settle_gtk();
+
+    let Some(row) = first_entry_row(overlay.upcast_ref::<gtk::Widget>()) else {
+        eprintln!("myna-config typing probe found no text row");
+        return glib::ExitCode::FAILURE;
+    };
+    // The window's focus widget, not `has_focus()`: an unmapped probe window
+    // never gets keyboard focus from the compositor, and it is the *window's*
+    // focus moving that this regression is about. `grab_focus` on an
+    // `AdwEntryRow` lands on the internal `GtkText`, so the test is whether
+    // focus is anywhere inside the row.
+    let focus_in_row = || {
+        gtk::prelude::GtkWindowExt::focus(&window).is_some_and(|widget| {
+            widget == *row.upcast_ref::<gtk::Widget>() || widget.is_ancestor(&row)
+        })
+    };
+    row.grab_focus();
+    settle_gtk();
+    if !focus_in_row() {
+        eprintln!("typing probe could not focus the text row");
+        return glib::ExitCode::FAILURE;
+    }
+    let original = row.text().to_string();
+    row.set_text("xx");
+    // Longer than the 250 ms debounce, so the write is issued and completed.
+    for _ in 0..8 {
+        settle_gtk();
+    }
+    if !focus_in_row() {
+        eprintln!("focus left the text row while its write was in flight");
+        return glib::ExitCode::FAILURE;
+    }
+    if !row.is_sensitive() {
+        eprintln!("the text row was desensitized while its write was in flight");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("typing-focus: retained");
+    row.set_text(&original);
+    for _ in 0..8 {
+        settle_gtk();
+    }
+    glib::ExitCode::SUCCESS
+}
+
+fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
+    if let Ok(row) = widget.clone().downcast::<adw::EntryRow>() {
+        return Some(row);
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = first_entry_row(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
 fn settle_gtk() {
     let context = glib::MainContext::default();
     for _ in 0..20 {
@@ -545,7 +653,12 @@ impl Drop for RowBinding {
 }
 
 impl RowBinding {
-    fn apply(&self, value: &ClientSettingValue, pending: bool) {
+    /// `pending` is deliberately not wired to sensitivity. Desensitizing a row
+    /// while its own write is in flight yanks focus out of the entry the user
+    /// is still typing in (and GTK warns that the GtkText never got a
+    /// focus-out). The write is already ordered by the controller's revision
+    /// gate, so nothing needed the lockout.
+    fn apply(&self, value: &ClientSettingValue, _pending: bool) {
         match self {
             Self::Choice {
                 row,
@@ -559,7 +672,7 @@ impl RowBinding {
                         row.set_selected(index as u32);
                     }
                 }
-                row.set_sensitive(*writable && !pending);
+                row.set_sensitive(*writable);
                 updating.set(false);
             }
             Self::Text {
@@ -575,8 +688,12 @@ impl RowBinding {
                     .borrow_mut()
                     .committed(value.as_str().unwrap_or_default());
                 updating.set(true);
-                row.set_text(value.as_str().unwrap_or_default());
-                row.set_sensitive(*writable && !pending);
+                let text = value.as_str().unwrap_or_default();
+                // Re-setting identical text still moves the cursor to the end.
+                if row.text() != text {
+                    row.set_text(text);
+                }
+                row.set_sensitive(*writable);
                 updating.set(false);
             }
         }
