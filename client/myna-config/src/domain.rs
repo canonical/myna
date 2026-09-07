@@ -420,9 +420,9 @@ impl BackendStatus {
 #[derive(Deserialize)]
 struct RawStatus {
     engine: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     services: BTreeMap<String, String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     entrypoints: BTreeMap<String, BTreeMap<String, String>>,
 }
 
@@ -517,7 +517,7 @@ impl ModelOptions {
 struct RawModelOptions {
     #[serde(rename = "active-model")]
     active: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     models: Vec<RawModelOption>,
 }
 
@@ -530,7 +530,7 @@ struct RawModelOption {
     quantization: Option<String>,
     #[serde(rename = "disk-size")]
     disk_size: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     components: Vec<String>,
 }
 
@@ -630,7 +630,7 @@ impl EngineOptions {
 struct RawEngineOptions {
     #[serde(rename = "active-engine")]
     active: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     engines: Vec<RawEngineOption>,
 }
 
@@ -641,19 +641,29 @@ struct RawEngineOption {
     description: Option<String>,
     vendor: Option<String>,
     runtime: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     compatible: bool,
     score: Option<i64>,
     model: Option<RawEngineModels>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     configurations: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
 struct RawEngineModels {
     default: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     options: Vec<String>,
+}
+
+/// modelctl writes `null` rather than `{}` or `[]` for anything empty, and
+/// serde's `default` only covers a *missing* field.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 pub fn parse_engine_options(input: &str) -> Result<EngineOptions, ParseError> {

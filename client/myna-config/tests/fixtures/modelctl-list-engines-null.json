@@ -1,0 +1,13 @@
+{
+  "active-engine": "cpu",
+  "engines": [
+    {
+      "name": "cpu",
+      "summary": "Null-valued optional maps",
+      "model": {"default": "m", "options": ["m"]},
+      "configurations": null,
+      "score": 10,
+      "compatible": true
+    }
+  ]
+}

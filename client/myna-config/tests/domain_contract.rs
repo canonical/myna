@@ -170,3 +170,14 @@ fn staged_changes_reject_noops_and_retain_restart_requirements() {
     .unwrap_err();
     assert_eq!(error.field(), "streaming");
 }
+
+#[test]
+fn modelctl_null_stands_in_for_an_empty_map() {
+    // Every backend but parakeet writes `"configurations": null`, and serde's
+    // `default` only covers a *missing* field.
+    let engines =
+        parse_engine_options(include_str!("fixtures/modelctl-list-engines-null.json")).unwrap();
+
+    assert_eq!(engines.options().len(), 1);
+    assert!(engines.options()[0].configuration().is_empty());
+}

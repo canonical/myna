@@ -20,9 +20,10 @@ pub const NO_BACKEND_COMMAND: &str = "sudo snap install myna-parakeet";
 /// refresh (currently `snap list` and `snap connections`).
 pub const APP_REFRESH_PROCESS_BUDGET: usize = 2;
 /// Upper bound on subprocess spawns required to refresh a single backend
-/// snapshot. This covers `snap info`, at most four prioritized modelctl
-/// candidate probes, and the three modelctl data commands.
-pub const BACKEND_REFRESH_PROCESS_BUDGET: usize = 8;
+/// snapshot: `snap info`, at most four prioritized modelctl candidate probes,
+/// and the four modelctl data commands (status, get, list-models,
+/// list-engines).
+pub const BACKEND_REFRESH_PROCESS_BUDGET: usize = 9;
 
 const PLACEHOLDER_PATH: &str = "<path>";
 const PLACEHOLDER_REDACTED: &str = "[redacted]";

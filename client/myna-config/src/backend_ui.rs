@@ -1810,13 +1810,14 @@ fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::Navigation
             .build();
         overview.add(&model_row);
     }
-    if let Some(engine) = &short.active_engine {
-        let engine_row = adw::ActionRow::builder()
-            .title(gettextrs::gettext("Active engine"))
-            .subtitle(escape_markup(engine))
-            .build();
-        overview.add(&engine_row);
-    }
+    let engine_row = adw::ActionRow::builder()
+        .title(gettextrs::gettext("Active engine"))
+        .subtitle(escape_markup(&match &short.active_engine {
+            Some(engine) => engine.clone(),
+            None => gettextrs::gettext("None selected — choose one below."),
+        }))
+        .build();
+    overview.add(&engine_row);
     if let Some(status) = page.snapshot().and_then(|snapshot| snapshot.status()) {
         let services = status
             .services()

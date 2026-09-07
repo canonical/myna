@@ -19,6 +19,7 @@ use myna_config::ports::BackendRepository;
 
 const CONNECTIONS: &str = include_str!("fixtures/snap-connections.txt");
 const GET: &str = include_str!("fixtures/modelctl-get.txt");
+const VERSION: &str = include_str!("fixtures/modelctl-version.json");
 const STATUS: &str = include_str!("fixtures/modelctl-status.json");
 const MODELS: &str = include_str!("fixtures/modelctl-list-models.json");
 const ENGINES: &str = include_str!("fixtures/modelctl-list-engines.json");
@@ -140,11 +141,8 @@ fn discovery_and_installed_app_listing_fail_explicitly() {
         &BackendIdentity::new("myna-parakeet"),
         CancellationToken::new(),
     ));
+    assert_eq!(snapshot.errors().len(), 1);
     assert!(snapshot.error(BackendSurface::ModelctlApp).is_some());
-    assert!(snapshot.error(BackendSurface::ModelctlConfig).is_some());
-    assert!(snapshot.error(BackendSurface::Status).is_some());
-    assert!(snapshot.error(BackendSurface::Models).is_some());
-    assert!(snapshot.error(BackendSurface::Engines).is_some());
     assert_eq!(runner.calls().len(), 1);
 }
 
@@ -152,6 +150,7 @@ fn discovery_and_installed_app_listing_fail_explicitly() {
 fn reads_the_installed_parakeet_shape_without_per_setting_commands() {
     let (repository, runner) = repository([
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MODELS),
@@ -182,11 +181,15 @@ fn reads_the_installed_parakeet_shape_without_per_setting_commands() {
             "/var/snap/myna-parakeet/common/run/ubustt.sock".into()
         ))
     );
-    assert_eq!(runner.calls().len(), 5);
+    assert_eq!(runner.calls().len(), 6);
     assert_eq!(
         runner.calls().iter().map(argv).collect::<Vec<_>>(),
         [
             ("snap", vec!["info", "myna-parakeet"]),
+            (
+                "snap",
+                vec!["run", "myna-parakeet.parakeet", "version", "--format=json"]
+            ),
             (
                 "snap",
                 vec!["run", "myna-parakeet.parakeet", "status", "--format=json"]
@@ -218,6 +221,7 @@ fn reads_the_installed_parakeet_shape_without_per_setting_commands() {
 fn reads_multi_engine_model_shape() {
     let (repository, _) = repository([
         ok(UNUSUAL_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MULTI_MODELS),
@@ -251,6 +255,7 @@ ws.unix-socket: /var/snap/myna-parakeet/common/run/custom.sock
 ";
     let (repository, _) = repository([
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(modelctl),
         ok(MODELS),
@@ -289,21 +294,25 @@ ws.unix-socket: /var/snap/myna-parakeet/common/run/custom.sock
 fn cached_apps_are_verified_and_invalidated_on_failure_and_refresh() {
     let (repository, runner) = repository([
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MODELS),
         ok(ENGINES),
-        failed("cached status"),
+        failed("cached version"),
+        ok(STATUS),
         ok(GET),
         ok(MODELS),
         ok(ENGINES),
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MODELS),
         ok(ENGINES),
         ok(include_str!("fixtures/snap-connections-empty.txt")),
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MODELS),
@@ -314,7 +323,7 @@ fn cached_apps_are_verified_and_invalidated_on_failure_and_refresh() {
     let first = block_on(repository.read_snapshot(&backend, CancellationToken::new()));
     assert!(first.errors().is_empty());
     let failed_cached = block_on(repository.read_snapshot(&backend, CancellationToken::new()));
-    assert!(failed_cached.error(BackendSurface::Status).is_some());
+    assert!(failed_cached.error(BackendSurface::ModelctlApp).is_some());
     assert!(failed_cached
         .error(BackendSurface::ModelctlConfig)
         .is_none());
@@ -335,19 +344,34 @@ fn cached_apps_are_verified_and_invalidated_on_failure_and_refresh() {
     assert_eq!(info_calls, 3);
 }
 
+fn refused(stderr: &str) -> Result<CommandOutput, CommandError> {
+    Err(CommandError::NonZero {
+        exit_status: Some(1),
+        stdout: String::new(),
+        stderr: stderr.into(),
+    })
+}
+
 #[test]
-fn modelctl_candidate_requires_status_contract_evidence() {
-    let (repository, runner) = repository([ok(PARAKEET_INFO), ok("{}")]);
+fn a_backend_with_no_engine_selected_is_a_state_not_a_failure() {
+    let (repository, _) = repository([
+        ok(PARAKEET_INFO),
+        ok(VERSION),
+        refused("Error: getting json status: getting status: no active engine\n"),
+        ok(GET),
+        refused("Error: loading engine manifest: engine manifest not found\n"),
+        ok(ENGINES),
+    ]);
 
     let snapshot = block_on(repository.read_snapshot(
         &BackendIdentity::new("myna-parakeet"),
         CancellationToken::new(),
     ));
 
-    assert!(snapshot.error(BackendSurface::Status).is_some());
-    assert!(snapshot.error(BackendSurface::ModelctlApp).is_some());
+    assert!(snapshot.errors().is_empty());
+    assert!(snapshot.status().is_none());
     assert!(snapshot.models().is_none());
-    assert_eq!(runner.calls().len(), 2);
+    assert!(snapshot.engines().is_some());
 }
 
 #[test]
@@ -363,7 +387,14 @@ commands:
   - community-asr.modelctl
 installed: 2.0
 ";
-    let (repository, runner) = repository([ok(info), ok(STATUS), ok(GET), ok(MODELS), ok(ENGINES)]);
+    let (repository, runner) = repository([
+        ok(info),
+        ok(VERSION),
+        ok(STATUS),
+        ok(GET),
+        ok(MODELS),
+        ok(ENGINES),
+    ]);
 
     let snapshot = block_on(repository.read_snapshot(
         &BackendIdentity::new("community-asr"),
@@ -376,12 +407,12 @@ installed: 2.0
         Some("community-asr.modelctl")
     );
     let calls = runner.calls();
-    assert_eq!(calls.len(), 5);
+    assert_eq!(calls.len(), 6);
     assert_eq!(
         argv(&calls[1]),
         (
             "snap",
-            vec!["run", "community-asr.modelctl", "status", "--format=json"]
+            vec!["run", "community-asr.modelctl", "version", "--format=json"]
         )
     );
 }
@@ -426,11 +457,13 @@ installed: 2.0
 fn any_modelctl_surface_failure_invalidates_the_verified_app() {
     let (repository, runner) = repository([
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         failed("get"),
         ok(MODELS),
         ok(ENGINES),
         ok(PARAKEET_INFO),
+        ok(VERSION),
         ok(STATUS),
         ok(GET),
         ok(MODELS),
@@ -497,7 +530,7 @@ impl CommandRunner for RefreshRaceRunner {
         match arguments.first().map(String::as_str) {
             Some("info") => ok(PARAKEET_INFO),
             Some("connections") => ok(include_str!("fixtures/snap-connections-empty.txt")),
-            Some("run") if arguments.get(2).map(String::as_str) == Some("status") => {
+            Some("run") if arguments.get(2).map(String::as_str) == Some("version") => {
                 if !self.state.status_started.swap(true, Ordering::SeqCst) {
                     poll_fn(|context| {
                         if self.state.release_status.load(Ordering::SeqCst) {
@@ -510,8 +543,9 @@ impl CommandRunner for RefreshRaceRunner {
                     })
                     .await;
                 }
-                ok(STATUS)
+                ok(VERSION)
             }
+            Some("run") if arguments.get(2).map(String::as_str) == Some("status") => ok(STATUS),
             Some("run") if arguments.get(2).map(String::as_str) == Some("get") => ok(GET),
             Some("run") if arguments.get(2).map(String::as_str) == Some("list-models") => {
                 ok(MODELS)
@@ -534,7 +568,7 @@ fn refresh_prevents_an_in_flight_resolver_from_repopulating_the_cache() {
         let mut in_flight = Box::pin(repository.read_snapshot(&backend, CancellationToken::new()));
         poll_fn(|context| match in_flight.as_mut().poll(context) {
             Poll::Pending => Poll::Ready(()),
-            Poll::Ready(_) => panic!("status verification should still be in flight"),
+            Poll::Ready(_) => panic!("modelctl verification should still be in flight"),
         })
         .await;
         assert!(runner.state.status_started.load(Ordering::SeqCst));
@@ -562,15 +596,16 @@ fn refresh_prevents_an_in_flight_resolver_from_repopulating_the_cache() {
 #[test]
 fn every_read_surface_can_fail_without_discarding_the_others() {
     let cases = [
-        (1, BackendSurface::Status),
-        (2, BackendSurface::ModelctlConfig),
-        (3, BackendSurface::Models),
-        (4, BackendSurface::Engines),
+        (2, BackendSurface::Status),
+        (3, BackendSurface::ModelctlConfig),
+        (4, BackendSurface::Models),
+        (5, BackendSurface::Engines),
     ];
 
     for (failed_index, expected_surface) in cases {
         let mut outcomes = vec![
             ok(PARAKEET_INFO),
+            ok(VERSION),
             ok(STATUS),
             ok(GET),
             ok(MODELS),
@@ -585,13 +620,11 @@ fn every_read_surface_can_fail_without_discarding_the_others() {
         ));
 
         assert!(snapshot.error(expected_surface).is_some());
-        assert!(runner.calls().len() <= 5);
-        if expected_surface != BackendSurface::Status {
-            assert_eq!(
-                snapshot.errors().len(),
-                1,
-                "only {expected_surface:?} should fail"
-            );
-        }
+        assert!(runner.calls().len() <= 6);
+        assert_eq!(
+            snapshot.errors().len(),
+            1,
+            "only {expected_surface:?} should fail"
+        );
     }
 }

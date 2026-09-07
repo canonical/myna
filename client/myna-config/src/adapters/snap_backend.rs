@@ -9,8 +9,8 @@ use crate::command::{
 use crate::diagnostics::{parse_snap_list, InstalledSnap};
 use crate::domain::{
     parse_connections, parse_engine_options, parse_model_options, parse_modelctl_config,
-    parse_status, BackendIdentity, BackendSnapshot, BackendStatus, BackendSurface,
-    BackendSurfaceError, ConnectionSnapshot, ParseError,
+    parse_status, BackendIdentity, BackendSnapshot, BackendSurface, BackendSurfaceError,
+    ConnectionSnapshot, ParseError,
 };
 use crate::ports::BackendRepository;
 
@@ -30,10 +30,9 @@ struct ModelctlCache {
 enum ModelctlResolution {
     Verified {
         app: String,
-        status: BackendStatus,
         cache_generation: u64,
     },
-    CachedStatusFailed {
+    CachedProbeFailed {
         app: String,
         error: BackendSurfaceError,
     },
@@ -74,17 +73,16 @@ impl SnapBackendRepository {
             (cache.generation, cache.apps.get(snap).cloned())
         };
         if let Some(app) = cached {
-            match self.verified_status(&app, cancellation.clone()).await {
-                Ok(status) => {
+            match self.verified_modelctl(&app, cancellation.clone()).await {
+                Ok(()) => {
                     return Ok(ModelctlResolution::Verified {
                         app,
-                        status,
                         cache_generation: generation,
                     });
                 }
                 Err(error) => {
                     self.invalidate_cached_app(snap, &app, generation);
-                    return Ok(ModelctlResolution::CachedStatusFailed { app, error });
+                    return Ok(ModelctlResolution::CachedProbeFailed { app, error });
                 }
             }
         }
@@ -113,8 +111,11 @@ impl SnapBackendRepository {
 
         let mut failures = Vec::new();
         for candidate in candidates.into_iter().take(MAX_MODELCTL_CANDIDATES) {
-            match self.verified_status(&candidate, cancellation.clone()).await {
-                Ok(status) => {
+            match self
+                .verified_modelctl(&candidate, cancellation.clone())
+                .await
+            {
+                Ok(()) => {
                     let mut cache = self
                         .modelctl_cache
                         .lock()
@@ -124,7 +125,6 @@ impl SnapBackendRepository {
                     }
                     return Ok(ModelctlResolution::Verified {
                         app: candidate,
-                        status,
                         cache_generation: generation,
                     });
                 }
@@ -135,7 +135,7 @@ impl SnapBackendRepository {
             BackendSurface::ModelctlApp,
             "snap",
             strings(&["info", snap]),
-            "none of the installed snap commands passed modelctl status verification",
+            "none of the installed snap commands answered `modelctl version`",
             "",
         ));
         Err(failures)
@@ -151,22 +151,48 @@ impl SnapBackendRepository {
         }
     }
 
-    async fn verified_status(
+    /// Prove `app` is this snap's modelctl. `version` is the only subcommand
+    /// that answers on every backend: `status` exits 1 with "no active
+    /// engine" before one is selected, which is a state, not a wrong app.
+    async fn verified_modelctl(
         &self,
         app: &str,
         cancellation: CancellationToken,
-    ) -> Result<BackendStatus, BackendSurfaceError> {
+    ) -> Result<(), BackendSurfaceError> {
+        let arguments = modelctl_arguments(app, &["version", "--format=json"]);
+        self.command(BackendSurface::ModelctlApp, "snap", arguments, cancellation)
+            .await
+            .map(|_| ())
+    }
+
+    async fn modelctl_status(
+        &self,
+        app: &str,
+        cancellation: CancellationToken,
+        snapshot: &mut BackendSnapshot,
+    ) {
         let arguments = modelctl_arguments(app, &["status", "--format=json"]);
-        let output = self
+        match self
             .command(
                 BackendSurface::Status,
                 "snap",
                 arguments.clone(),
                 cancellation,
             )
-            .await?;
-        parse_status(output.stdout())
-            .map_err(|error| parse_error(BackendSurface::Status, "snap", arguments, error))
+            .await
+        {
+            Ok(output) => match parse_status(output.stdout()) {
+                Ok(status) => snapshot.set_status(status),
+                Err(error) => snapshot.add_error(parse_error(
+                    BackendSurface::Status,
+                    "snap",
+                    arguments,
+                    error,
+                )),
+            },
+            Err(error) if is_unconfigured(&error) => {}
+            Err(error) => snapshot.add_error(error),
+        }
     }
 
     async fn modelctl_data(
@@ -218,6 +244,7 @@ impl SnapBackendRepository {
                     error,
                 )),
             },
+            Err(error) if is_unconfigured(&error) => {}
             Err(error) => snapshot.add_error(error),
         }
         failed |= snapshot.error(BackendSurface::Models).is_some();
@@ -315,31 +342,32 @@ impl BackendRepository for SnapBackendRepository {
         {
             Ok(ModelctlResolution::Verified {
                 app,
-                status,
                 cache_generation,
             }) => {
                 snapshot.set_identity(BackendIdentity::with_modelctl_app(
                     backend.snap_name(),
                     app.clone(),
                 ));
-                snapshot.set_status(status);
+                self.modelctl_status(&app, cancellation.clone(), &mut snapshot)
+                    .await;
                 if self.modelctl_data(&app, cancellation, &mut snapshot).await {
                     self.invalidate_cached_app(backend.snap_name(), &app, cache_generation);
                 }
             }
-            Ok(ModelctlResolution::CachedStatusFailed { app, error }) => {
+            Ok(ModelctlResolution::CachedProbeFailed { app, error }) => {
                 snapshot.set_identity(BackendIdentity::with_modelctl_app(
                     backend.snap_name(),
                     app.clone(),
                 ));
                 snapshot.add_error(error);
+                self.modelctl_status(&app, cancellation.clone(), &mut snapshot)
+                    .await;
                 self.modelctl_data(&app, cancellation, &mut snapshot).await;
             }
             Err(errors) => {
                 for error in errors {
                     snapshot.add_error(error);
                 }
-                add_unavailable_modelctl_errors(&mut snapshot, backend.snap_name());
             }
         }
         snapshot
@@ -477,21 +505,10 @@ fn surface_key(surface: BackendSurface) -> &'static str {
     }
 }
 
-fn add_unavailable_modelctl_errors(snapshot: &mut BackendSnapshot, snap: &str) {
-    for surface in [
-        BackendSurface::Status,
-        BackendSurface::ModelctlConfig,
-        BackendSurface::Models,
-        BackendSurface::Engines,
-    ] {
-        if snapshot.error(surface).is_none() {
-            snapshot.add_error(BackendSurfaceError::new(
-                surface,
-                "snap",
-                Vec::new(),
-                format!("modelctl app for {snap} is unavailable"),
-                "",
-            ));
-        }
-    }
+/// A backend with no engine selected yet. modelctl exits non-zero for every
+/// surface that needs one, which is a state the page already shows ("Active
+/// engine: none selected") and not something to repeat as a failure.
+fn is_unconfigured(error: &BackendSurfaceError) -> bool {
+    let stderr = error.stderr();
+    stderr.contains("no active engine") || stderr.contains("engine manifest not found")
 }
