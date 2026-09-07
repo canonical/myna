@@ -102,6 +102,46 @@ install-schema: ## Install the client GSettings schema on the host (needs sudo)
 	sudo glib-compile-schemas /usr/share/glib-2.0/schemas
 	@echo "installed com.canonical.Myna.Dictation; read it with: GSETTINGS_BACKEND=keyfile myna-desktop --status"
 
+# ------------------------------------------------------------------------
+# gnome-shell extension (hand-installed tarball)
+# ------------------------------------------------------------------------
+
+# The extension is not in the snap: gnome-shell only loads extensions from the
+# host's own search path, so until it ships as a deb (T74) the delivery is a
+# tarball the user unpacks into their extensions dir. The archive's single top
+# level directory is the UUID gnome-shell keys the extension on - read out of
+# metadata.json rather than repeated here, so a UUID change cannot produce a
+# tarball that silently fails to load.
+EXTENSION_DIR := extensions/myna-shell
+
+.PHONY: extension
+extension: ## Pack extensions/myna-shell into target/myna-shell-<rev>.tar.gz for hand-install
+	@uuid=$$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["uuid"])' \
+		$(EXTENSION_DIR)/metadata.json); \
+	rev=$$(git describe --always --dirty --abbrev=7); \
+	stage=target/extension-stage; \
+	tarball=target/myna-shell-$$rev.tar.gz; \
+	rm -rf $$stage; mkdir -p $$stage/$$uuid target; \
+	cp $(EXTENSION_DIR)/*.js $(EXTENSION_DIR)/metadata.json $(EXTENSION_DIR)/README.md \
+		$$stage/$$uuid/; \
+	tar czf $$tarball -C $$stage \
+		--sort=name --owner=0 --group=0 --numeric-owner \
+		--mtime=@$$(git log -1 --format=%ct) $$uuid; \
+	rm -rf $$stage; \
+	echo; \
+	echo "  $$tarball"; \
+	echo; \
+	echo "  install/upgrade on the target machine (the rm is what makes it an"; \
+	echo "  upgrade rather than an overlay - unpacking alone leaves files that"; \
+	echo "  a newer revision has deleted):"; \
+	echo; \
+	echo "    ext=~/.local/share/gnome-shell/extensions"; \
+	echo "    rm -rf \$$ext/$$uuid"; \
+	echo "    mkdir -p \$$ext && tar -xzf $$(basename $$tarball) -C \$$ext"; \
+	echo "    gnome-extensions enable $$uuid"; \
+	echo; \
+	echo "  then log out and back in - gnome-shell does not hot-reload extension JS."
+
 .PHONY: i18n
 i18n: ## Regenerate the translation templates (po/*.pot for myna-desktop + myna-orchestrator)
 	cd client/myna-desktop && xgettext --from-code=UTF-8 --keyword=gettext \
@@ -364,3 +404,4 @@ clean-build-containers: ## Delete this checkout's snapcraft LXD build containers
 clean: clean-snaps ## clean-snaps + Rust/Python build and coverage output
 	rm -rf client/target
 	rm -rf server/htmlcov server/coverage-*.xml
+	rm -rf target/extension-stage target/myna-shell-*.tar.gz
