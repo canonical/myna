@@ -165,11 +165,13 @@ type WsWrite = futures_util::stream::SplitSink<
     Message,
 >;
 
-/// Decode one IE115 server frame into zero or more internal events (stateless —
-/// the utterance terminal is a real frame, `completed` → `done`). Control frames
+/// Decode one IE115 server frame into zero or more internal events (the
+/// utterance terminal is a real frame, `completed` → `done`). Control frames
 /// (`session.created`/`session.updated`) yield nothing. Mirrors the Python
-/// `Ie115Decoder`.
-fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
+/// `Ie115Decoder`. `after_commit` says whether our `input_audio_buffer.commit`
+/// has gone out, which is what tells an answered commit from the canonical
+/// adapter's mid-stream resets.
+fn decode_frame(value: &Value, after_commit: bool) -> Vec<TranscriptionEvent> {
     match value.get("type").and_then(Value::as_str) {
         Some(STATUS_EVENT) => {
             let phase = match value.get("state").and_then(Value::as_str) {
@@ -233,19 +235,18 @@ fn decode_frame(value: &Value) -> Vec<TranscriptionEvent> {
             })]
         }
         Some(TRANSCRIPTION_COMPLETED) => {
-            // The utterance terminal: full transcript for this commit.
-            // HOWEVER: the canonical/whisper-snap adapter sends empty completed
-            // as a "revision reset" signal (clear partial, re-send from scratch).
-            // Only treat non-empty completed as the real terminal.
+            // The utterance terminal: full transcript for this commit. Before
+            // our commit, though, an empty transcript is the canonical
+            // whisper-snap adapter's revision-reset signal (clear the partial,
+            // re-send from scratch), not the end of anything — see
+            // docs/interop/canonical-whisper-snap-report.md gap 3. After the
+            // commit it is the terminal for an utterance nobody spoke into.
             let text = value
                 .get("transcript")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            if text.is_empty() {
-                // Revision reset — not a terminal. The next delta carries the
-                // corrected text. Ignore for now (our FSM already committed the
-                // delta; the streaming spec must define a proper discriminant).
+            if text.is_empty() && !after_commit {
                 vec![]
             } else {
                 vec![TranscriptionEvent::Done(TranscriptionFinal {
@@ -293,6 +294,7 @@ async fn pump(
     base64_audio: bool,
 ) {
     let mut outbound_open = true;
+    let mut after_commit = false;
     loop {
         tokio::select! {
             outbound = out_rx.recv(), if outbound_open => match outbound {
@@ -311,6 +313,7 @@ async fn pump(
                     if write.send(Message::text(frame)).await.is_err() {
                         break;
                     }
+                    after_commit = true;
                 }
                 Some(Outbound::Abort) => {
                     let _ = write.close().await;
@@ -327,7 +330,7 @@ async fn pump(
                             break;
                         }
                     };
-                    for event in decode_frame(&value) {
+                    for event in decode_frame(&value, after_commit) {
                         let terminal = event.is_terminal();
                         if ev_tx.send(Ok(event)).await.is_err() {
                             return; // FSM dropped the receiver
@@ -376,45 +379,69 @@ mod tests {
 
     #[test]
     fn decoder_maps_status_to_progress_phases() {
-        let loading = decode_frame(&json!({"type": "status", "state": "loading"}));
+        let loading = decode_frame(&json!({"type": "status", "state": "loading"}), false);
         assert!(
             matches!(&loading[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_PREPARING)
         );
-        let ready = decode_frame(&json!({"type": "status", "state": "ready"}));
+        let ready = decode_frame(&json!({"type": "status", "state": "ready"}), false);
         assert!(matches!(&ready[0], TranscriptionEvent::Progress(p) if p.phase == PHASE_READY));
     }
 
     #[test]
     fn decoder_delta_is_committed_final() {
-        let f = decode_frame(&json!({
-            "type": TRANSCRIPTION_DELTA, "item_id": "i1", "content_index": 0,
-            "delta": "one"
-        }));
+        let f = decode_frame(
+            &json!({
+                "type": TRANSCRIPTION_DELTA, "item_id": "i1", "content_index": 0,
+                "delta": "one"
+            }),
+            false,
+        );
         assert!(matches!(&f[0], TranscriptionEvent::Final(t) if t.text == "one"));
     }
 
     #[test]
     fn decoder_completed_is_the_terminal_done() {
-        let done = decode_frame(&json!({
-            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
-            "transcript": "one two"
-        }));
+        let done = decode_frame(
+            &json!({
+                "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
+                "transcript": "one two"
+            }),
+            false,
+        );
         assert!(matches!(&done[0], TranscriptionEvent::Done(t) if t.text == "one two"));
         assert!(done[0].is_terminal());
     }
 
     #[test]
+    fn empty_completed_is_a_reset_before_our_commit_and_the_terminal_after_it() {
+        // The canonical adapter emits empty completeds mid-stream (interop
+        // report gap 3); our own server emits one when the user committed
+        // without saying anything, and a session that ignored it would hang.
+        let frame = json!({
+            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
+            "transcript": ""
+        });
+        assert!(decode_frame(&frame, false).is_empty());
+        let done = decode_frame(&frame, true);
+        assert!(matches!(&done[0], TranscriptionEvent::Done(t) if t.text.is_empty()));
+        assert!(done[0].is_terminal());
+    }
+
+    #[test]
     fn decoder_error_is_terminal() {
-        let e = decode_frame(&json!({
-            "type": ERROR, "error": {"type": "server_error", "code": "server_error", "message": "boom"}
-        }));
+        let e = decode_frame(
+            &json!({
+                "type": ERROR, "error": {"type": "server_error", "code": "server_error", "message": "boom"}
+            }),
+            false,
+        );
         assert!(matches!(&e[0], TranscriptionEvent::Error(err) if err.code == "server_error"));
         assert!(e[0].is_terminal());
     }
 
     #[test]
     fn decoder_ignores_control_frames() {
-        assert!(decode_frame(&json!({"type": "session.created", "session": {}})).is_empty());
-        assert!(decode_frame(&json!({"type": "session.updated", "session": {}})).is_empty());
+        assert!(decode_frame(&json!({"type": "session.created", "session": {}}), false).is_empty());
+        assert!(decode_frame(&json!({"type": "session.updated", "session": {}}), false).is_empty());
     }
 }
