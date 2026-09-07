@@ -343,9 +343,7 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     }
 
     for name, compute_type in expected_compute_type.items():
-        manifest = yaml.safe_load(
-            (model_dir / name / "model.yaml").read_text(encoding="utf-8")
-        )
+        manifest = yaml.safe_load((model_dir / name / "model.yaml").read_text(encoding="utf-8"))
         assert manifest["quantization"] == "float16"
         assert f"MODEL_COMPUTE_TYPE={compute_type}" in manifest["environment"]
 
