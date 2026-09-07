@@ -58,6 +58,12 @@ RULE3_MIN_UTTERANCE_S = 20.0
 _LOAD_HEARTBEAT_SECONDS = 2.0
 _PROGRESS_INTERVAL_SECONDS = 1.0
 
+# Zeros appended at end-of-audio so the encoder can run past the last real
+# frame, sized from this model's geometry (10 ms fbank frames, 65-frame
+# window, 56-frame chunk shift, 480 ms = 48 frames of lookahead).
+_TAIL_PAD_FRAMES = 65 + 56 + 48
+_TAIL_PAD_SAMPLES = _TAIL_PAD_FRAMES * SHERPA_RATE // 100
+
 
 def _default_model_dir() -> str:
     """The HF cache snapshot (downloads on first use; HF_HUB_OFFLINE=1 uses the
@@ -327,15 +333,16 @@ class SherpaAdapter:
 
     @staticmethod
     def _flush(recognizer, stream) -> str:
-        """Drain any outstanding audio after the last audio chunk.
+        """Drain the audio left over after the last chunk.
 
-        After an endpoint + reset mid-clip, the tail of the audio may be
-        shorter than one full encoder chunk (480 ms for this model). A brief
-        zero-pad gives the encoder the right-context frames it needs to emit
-        the final word; ``input_finished`` then flushes the remainder.
+        The encoder only ever consumes whole windows, so when the audio stops
+        the last words are still unencoded: up to a chunk shift of real frames
+        are unprocessed, the step covering them needs a full window present,
+        and the transducer needs its lookahead as right context before it
+        emits their tokens. ``_TAIL_PAD_SAMPLES`` zeros supply all three;
+        ``input_finished`` then flushes the fbank remainder.
         """
-        _TAIL_PAD_S = 0.32  # just over one 480 ms chunk's lookahead frames
-        pad = np.zeros(int(_TAIL_PAD_S * SHERPA_RATE), dtype=np.float32)
+        pad = np.zeros(_TAIL_PAD_SAMPLES, dtype=np.float32)
         stream.accept_waveform(SHERPA_RATE, pad)
         stream.input_finished()
         while recognizer.is_ready(stream):
