@@ -10,6 +10,7 @@ pub mod backend_ui;
 pub mod command;
 pub mod diagnostics;
 pub mod domain;
+pub mod machine;
 pub mod markup;
 pub mod myna_settings;
 pub mod operation_gate;

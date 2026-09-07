@@ -29,8 +29,8 @@ use crate::backend_controller::{
 };
 use crate::command::{CancellationToken, GioCommandRunner};
 use crate::diagnostics::{
-    self, present_diagnostics, BackendDiagnostic, DiagnosticConnection, DiagnosticFailure,
-    DiagnosticInput, InstalledSnap, OnboardingState, RefreshPolicy, RefreshReason,
+    self, present_diagnostics, BackendDiagnostic, DiagnosticConnection, DiagnosticInput,
+    InstalledSnap, OnboardingState, RefreshPolicy, RefreshReason,
 };
 use crate::domain::{ActiveBackendState, BackendIdentity, ConfigValue, ServiceState};
 use crate::markup::escape_markup;
@@ -66,7 +66,7 @@ pub struct BackendUi {
     selected: RefCell<Selection>,
     installed_snaps: RefCell<Vec<InstalledSnap>>,
     inventory_complete: std::cell::Cell<bool>,
-    inventory_failure: RefCell<Option<DiagnosticFailure>>,
+    inventory_failure: RefCell<Option<String>>,
     last_diagnostics_refresh: std::cell::Cell<Option<Instant>>,
 }
 
@@ -1176,16 +1176,23 @@ impl BackendUi {
         let discovery_error = self.controller.last_discovery_error();
         let discovery_loading = self.controller.discovery_loading();
 
+        let snaps = self.installed_snaps.borrow().clone();
         let input = DiagnosticInput {
             inventory_complete: self.inventory_complete.get(),
-            installed_snaps: self.installed_snaps.borrow().clone(),
-            backends: pages.iter().map(backend_diagnostic_from).collect(),
-            inventory_failure: self.inventory_failure.borrow().clone(),
-            failures: discovery_error
-                .as_ref()
-                .map(failure_from_surface_error)
-                .into_iter()
+            machine: Some(crate::machine::machine_facts()),
+            daemon: crate::machine::snap_process("myna"),
+            backends: pages
+                .iter()
+                .map(|page| backend_diagnostic_from(page, &snaps))
                 .collect(),
+            problems: self
+                .inventory_failure
+                .borrow()
+                .iter()
+                .cloned()
+                .chain(discovery_error.as_ref().map(problem_from_surface_error))
+                .collect(),
+            installed_snaps: snaps,
         };
 
         let report = present_diagnostics(input);
@@ -1281,15 +1288,6 @@ impl BackendUi {
             preferences.add(&group);
         }
 
-        // Detailed per-backend sections (existing behaviour) below the
-        // copyable report for accessibility scanning.
-        add_backend_sections(
-            &preferences,
-            &pages,
-            discovery_error.as_ref(),
-            discovery_loading,
-        );
-
         widget.upcast()
     }
 
@@ -1344,7 +1342,7 @@ impl BackendUi {
                     Err(error) => {
                         ui.installed_snaps.borrow_mut().clear();
                         *ui.inventory_failure.borrow_mut() =
-                            Some(failure_from_surface_error(&error));
+                            Some(problem_from_surface_error(&error));
                     }
                 }
                 ui.inventory_complete.set(true);
@@ -2270,141 +2268,61 @@ fn service_state_label(state: &ServiceState) -> String {
     }
 }
 
-fn add_backend_sections(
-    preferences: &adw::PreferencesPage,
-    pages: &[BackendPage],
-    discovery_error: Option<&crate::domain::BackendSurfaceError>,
-    discovery_loading: bool,
-) {
-    if discovery_loading {
-        let group = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Refreshing backend diagnostics"))
-            .description(gettextrs::gettext("Reading installed inference backends…"))
-            .build();
-        preferences.add(&group);
-    } else if pages.is_empty() && discovery_error.is_none() {
-        let group = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("No backend diagnostics"))
-            .description(gettextrs::gettext(
-                "No installed inference backends were discovered.",
-            ))
-            .build();
-        preferences.add(&group);
-    }
-
-    if let Some(error) = discovery_error {
-        let group = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Backend discovery failed"))
-            .description(gettextrs::gettext(
-                "Previously discovered backends remain visible while this failure is investigated.",
-            ))
-            .build();
-        group.add(&diagnostic_error_row(error));
-        preferences.add(&group);
-    }
-
-    for page in pages {
-        let group = adw::PreferencesGroup::builder()
-            .title(escape_markup(&display_title_for(
-                page.identity().snap_name(),
-            )))
-            .description(escape_markup(page.identity().snap_name()))
-            .build();
-        if let Some(snapshot) = page.snapshot() {
-            let modelctl_app = snapshot
-                .identity()
-                .modelctl_app()
-                .map(str::to_owned)
-                .unwrap_or_else(|| gettextrs::gettext("Unavailable"));
-            let app = adw::ActionRow::builder()
-                .title(gettextrs::gettext("Model control command"))
-                .subtitle(escape_markup(&modelctl_app))
-                .build();
-            group.add(&app);
-            if let Some(status) = snapshot.status() {
-                for service in status.services() {
-                    let row = adw::ActionRow::builder()
-                        .title(format!(
-                            "{}: {}",
-                            gettextrs::gettext("Service"),
-                            service.name()
-                        ))
-                        .subtitle(escape_markup(&service_state_label(service.state())))
-                        .build();
-                    group.add(&row);
-                }
-                for (entrypoint, values) in status.entrypoints() {
-                    let details = values
-                        .iter()
-                        .map(|(key, value)| diagnostics::redact_text(&format!("{key}={value}")))
-                        .collect::<Vec<_>>()
-                        .join(" · ");
-                    let row = adw::ActionRow::builder()
-                        .title(format!(
-                            "{}: {entrypoint}",
-                            gettextrs::gettext("Entrypoint")
-                        ))
-                        .subtitle(escape_markup(&details))
-                        .build();
-                    group.add(&row);
-                }
-            }
-            for row in page
-                .rows()
-                .iter()
-                .filter(|row| row.presentation().metadata().diagnostics_only())
-            {
-                let metadata = row.presentation().metadata();
-                let value = if metadata.sensitivity() == Sensitivity::Sensitive {
-                    gettextrs::gettext("Sensitive value (redacted)")
-                } else {
-                    diagnostics::redact_text(&config_value_display(row.effective_value()))
-                };
-                let diagnostic = adw::ActionRow::builder()
-                    .title(metadata.title())
-                    .subtitle(escape_markup(&value))
-                    .build();
-                diagnostic.set_activatable(false);
-                group.add(&diagnostic);
-            }
-        }
-        for error in page.errors() {
-            group.add(&diagnostic_error_row(error));
-        }
-        preferences.add(&group);
-    }
-}
-
-fn backend_diagnostic_from(page: &BackendPage) -> BackendDiagnostic {
-    let modelctl_app = page
-        .snapshot()
-        .and_then(|snapshot| snapshot.identity().modelctl_app().map(str::to_owned));
-    let connection = match page.connection() {
-        ConnectionKind::Active => DiagnosticConnection::Connected,
-        ConnectionKind::Contested => DiagnosticConnection::MultipleConnections,
-        ConnectionKind::Disconnected => DiagnosticConnection::NotConnected,
-    };
-    let failures = page
-        .errors()
-        .iter()
-        .map(failure_from_surface_error)
-        .collect();
+fn backend_diagnostic_from(page: &BackendPage, snaps: &[InstalledSnap]) -> BackendDiagnostic {
+    let snap_name = page.identity().snap_name().to_owned();
+    let short = page.short_status();
+    let snapshot = page.snapshot();
     BackendDiagnostic {
-        snap_name: page.identity().snap_name().to_owned(),
-        modelctl_app,
-        connection,
-        failures,
+        version: snaps
+            .iter()
+            .find(|snap| snap.name == snap_name)
+            .map(|snap| snap.version.clone())
+            .unwrap_or_default(),
+        memory: crate::machine::snap_process(&snap_name),
+        snap_name,
+        connection: match page.connection() {
+            ConnectionKind::Active => DiagnosticConnection::Connected,
+            ConnectionKind::Contested => DiagnosticConnection::MultipleConnections,
+            ConnectionKind::Disconnected => DiagnosticConnection::NotConnected,
+        },
+        engine: short.active_engine.clone(),
+        model: short.active_model.clone(),
+        services: snapshot
+            .map(|snapshot| {
+                snapshot
+                    .status()
+                    .map(|status| {
+                        status
+                            .services()
+                            .iter()
+                            .map(|service| {
+                                format!(
+                                    "{}: {}",
+                                    service.name(),
+                                    service_state_label(service.state())
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default(),
+        problems: page
+            .errors()
+            .iter()
+            .map(problem_from_surface_error)
+            .collect(),
     }
 }
 
-fn failure_from_surface_error(error: &crate::domain::BackendSurfaceError) -> DiagnosticFailure {
-    DiagnosticFailure {
-        surface: diagnostic_surface_label(error.surface()),
-        executable: error.executable().to_owned(),
-        arguments: error.arguments().to_vec(),
-        message: error.message().to_owned(),
-        stderr: error.stderr().to_owned(),
-    }
+/// One sentence naming the surface and what it said. Deliberately not the
+/// command line: the report is pasted into bug reports.
+fn problem_from_surface_error(error: &crate::domain::BackendSurfaceError) -> String {
+    format!(
+        "{}: {}",
+        diagnostic_surface_label(error.surface()),
+        diagnostics::redact_text(error.message())
+    )
 }
 
 fn diagnostic_surface_label(surface: crate::domain::BackendSurface) -> String {
@@ -2420,26 +2338,15 @@ fn diagnostic_surface_label(surface: crate::domain::BackendSurface) -> String {
     }
 }
 
-fn diagnostic_error_row(error: &crate::domain::BackendSurfaceError) -> adw::ActionRow {
-    adw::ActionRow::builder()
-        .title(escape_markup(&diagnostic_surface_label(error.surface())))
-        .subtitle(escape_markup(&diagnostic_error_details(error)))
-        .build()
-}
-
-fn diagnostic_error_details(error: &crate::domain::BackendSurfaceError) -> String {
-    diagnostics::format_failure(&failure_from_surface_error(error)).replace('\n', " · ")
-}
-
 fn read_back_failure_details(errors: &[crate::domain::BackendSurfaceError]) -> String {
     if errors.is_empty() {
         return gettextrs::gettext("Persisted values could not be read.");
     }
     errors
         .iter()
-        .map(|error| diagnostics::format_failure(&failure_from_surface_error(error)))
+        .map(problem_from_surface_error)
         .collect::<Vec<_>>()
-        .join("\n\n")
+        .join("\n")
 }
 
 fn refresh_control_state(loading: bool, applying: bool) -> (bool, String) {
@@ -2932,7 +2839,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_diagnostic_preserves_command_but_omits_raw_stderr() {
+    fn a_surface_failure_becomes_one_sentence_with_no_command_line() {
         let error = crate::domain::BackendSurfaceError::new(
             crate::domain::BackendSurface::Connections,
             "snap",
@@ -2941,15 +2848,8 @@ mod tests {
             "permission denied",
         );
 
-        let details = diagnostic_error_details(&error);
-        assert!(details.contains("snap connections failed"));
-        assert!(details.contains("snap connections --all"));
-        assert!(!details.contains("permission denied"));
-        assert!(details.contains("omitted because command output may contain private content"));
-        assert_eq!(
-            diagnostic_surface_label(error.surface()),
-            gettextrs::gettext("Backend connections")
-        );
+        let problem = problem_from_surface_error(&error);
+        assert_eq!(problem, "Backend connections: snap connections failed");
     }
 
     #[test]
@@ -2976,12 +2876,10 @@ mod tests {
         ];
 
         let details = read_back_failure_details(&errors);
-        assert!(details.contains("snap run myna-whisper.whisper get"));
         assert!(details.contains("command exited unsuccessfully with status Some(1)"));
-        assert!(details.contains("snap run myna-whisper.whisper list-models"));
         assert!(details.contains("model list unavailable"));
         assert!(!details.contains("private config output"));
-        assert!(details.contains("omitted because command output may contain private content"));
+        assert!(!details.contains("snap run"));
     }
 
     #[test]

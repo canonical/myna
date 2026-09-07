@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 19:42+0100\n"
+"POT-Creation-Date: 2026-09-07 19:54+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -27,7 +27,7 @@ msgid ""
 msgstr ""
 
 #: data/active-backend-dialog.blp:11 data/apply-dialog.blp:11
-#: src/backend_ui.rs:2071
+#: src/backend_ui.rs:2070
 msgid "Cancel"
 msgstr ""
 
@@ -57,7 +57,7 @@ msgstr ""
 msgid "Revert"
 msgstr ""
 
-#: data/backend-page.blp:12 src/backend_ui.rs:2453 src/backend_ui.rs:2754
+#: data/backend-page.blp:12 src/backend_ui.rs:2353 src/backend_ui.rs:2654
 msgid "Refresh backend data"
 msgstr ""
 
@@ -67,19 +67,19 @@ msgid "About and Diagnostics"
 msgstr ""
 
 #: data/diagnostics-page.blp:13 data/diagnostics-page.blp:16
-#: src/backend_ui.rs:1198 src/backend_ui.rs:1200
+#: src/backend_ui.rs:1205 src/backend_ui.rs:1207
 msgid "Refresh diagnostics"
 msgstr ""
 
 #: data/diagnostics-page.blp:17
-msgid "Re-read installed snaps and per-backend status."
+msgid "Re-read the machine, the daemon, and every backend."
 msgstr ""
 
-#: data/diagnostics-page.blp:24 src/backend_ui.rs:1211
+#: data/diagnostics-page.blp:24 src/backend_ui.rs:1218
 msgid "Copy privacy-safe diagnostics"
 msgstr ""
 
-#: data/diagnostics-page.blp:27 src/backend_ui.rs:1213
+#: data/diagnostics-page.blp:27 src/backend_ui.rs:1220
 msgid "Copy diagnostics"
 msgstr ""
 
@@ -95,11 +95,11 @@ msgstr ""
 
 #: data/diagnostics-page.blp:42
 msgid ""
-"Snap versions, backend resolution, connection summary, and command failures. "
-"No audio or transcript content is ever included."
+"Machine, memory, versions, active engines, and anything currently wrong. No "
+"audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:61 src/backend_ui.rs:1231
+#: data/diagnostics-page.blp:61 src/backend_ui.rs:1238
 msgid "Diagnostic report"
 msgstr ""
 
@@ -107,7 +107,7 @@ msgstr ""
 msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
-#: data/main-window.blp:7 src/diagnostics.rs:312
+#: data/main-window.blp:7 src/diagnostics.rs:310
 msgid "Myna Settings"
 msgstr ""
 
@@ -136,7 +136,7 @@ msgstr ""
 msgid "Choose which installed speech backend serves Myna."
 msgstr ""
 
-#: data/myna-page.blp:20 src/backend_ui.rs:1748
+#: data/myna-page.blp:20 src/backend_ui.rs:1746
 msgid "Backend"
 msgstr ""
 
@@ -215,8 +215,7 @@ msgstr ""
 msgid "Degraded"
 msgstr ""
 
-#: src/active_backend.rs:35 src/backend_ui.rs:1772 src/backend_ui.rs:1846
-#: src/backend_ui.rs:2317
+#: src/active_backend.rs:35 src/backend_ui.rs:1770 src/backend_ui.rs:1845
 msgid "Unavailable"
 msgstr ""
 
@@ -228,11 +227,11 @@ msgstr ""
 msgid "Installed"
 msgstr ""
 
-#: src/active_backend.rs:71 src/backend_ui.rs:1763 src/diagnostics.rs:304
+#: src/active_backend.rs:71 src/backend_ui.rs:1761 src/diagnostics.rs:302
 msgid "Connected"
 msgstr ""
 
-#: src/active_backend.rs:73 src/backend_ui.rs:1765 src/diagnostics.rs:306
+#: src/active_backend.rs:73 src/backend_ui.rs:1763 src/diagnostics.rs:304
 msgid "Not connected"
 msgstr ""
 
@@ -399,7 +398,7 @@ msgstr ""
 msgid "The settings were changed, but the saved values could not be verified."
 msgstr ""
 
-#: src/backend_ui.rs:862 src/backend_ui.rs:1452
+#: src/backend_ui.rs:862 src/backend_ui.rs:1450
 msgid "Apply interrupted"
 msgstr ""
 
@@ -417,7 +416,7 @@ msgid ""
 "persisted values."
 msgstr ""
 
-#: src/backend_ui.rs:879 src/backend_ui.rs:1458
+#: src/backend_ui.rs:879 src/backend_ui.rs:1456
 msgid "Authorization denied"
 msgstr ""
 
@@ -425,11 +424,11 @@ msgstr ""
 msgid "snapd or polkit rejected the request."
 msgstr ""
 
-#: src/backend_ui.rs:891 src/backend_ui.rs:1462
+#: src/backend_ui.rs:891 src/backend_ui.rs:1460
 msgid "Backend rejected changes"
 msgstr ""
 
-#: src/backend_ui.rs:898 src/backend_ui.rs:1466
+#: src/backend_ui.rs:898 src/backend_ui.rs:1464
 msgid "Apply failed"
 msgstr ""
 
@@ -437,476 +436,466 @@ msgstr ""
 msgid "Could not read installed backends"
 msgstr ""
 
-#: src/backend_ui.rs:1222
+#: src/backend_ui.rs:1229
 msgid "Diagnostics copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:1238
+#: src/backend_ui.rs:1245
 msgid "Install Myna to get started"
 msgstr ""
 
-#: src/backend_ui.rs:1240
+#: src/backend_ui.rs:1247
 msgid ""
 "The Myna snap is not installed. Copy this command and run it in a terminal — "
 "installation is never automatic."
 msgstr ""
 
-#: src/backend_ui.rs:1244
+#: src/backend_ui.rs:1251
 msgid "Install a backend to enable dictation"
 msgstr ""
 
-#: src/backend_ui.rs:1246
+#: src/backend_ui.rs:1253
 msgid ""
 "No inference backend was discovered. Copy this command and run it in a "
 "terminal — installation is never automatic."
 msgstr ""
 
-#: src/backend_ui.rs:1258
+#: src/backend_ui.rs:1265
 msgid "Copy and run in a terminal"
 msgstr ""
 
-#: src/backend_ui.rs:1264 src/backend_ui.rs:1267
+#: src/backend_ui.rs:1271 src/backend_ui.rs:1274
 msgid "Copy install command"
 msgstr ""
 
-#: src/backend_ui.rs:1275
+#: src/backend_ui.rs:1282
 msgid "Install command copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:1454
+#: src/backend_ui.rs:1452
 msgid ""
 "Apply was cancelled after some operations completed. Persisted values were "
 "read back."
 msgstr ""
 
-#: src/backend_ui.rs:1476 src/backend_ui.rs:1550
+#: src/backend_ui.rs:1474 src/backend_ui.rs:1548
 msgid "Executable:"
 msgstr ""
 
-#: src/backend_ui.rs:1480 src/backend_ui.rs:1558
+#: src/backend_ui.rs:1478 src/backend_ui.rs:1556
 msgid "Arguments:"
 msgstr ""
 
-#: src/backend_ui.rs:1490 src/backend_ui.rs:1568 src/backend_ui.rs:1614
-#: src/backend_ui.rs:2547 src/backend_ui.rs:2587
+#: src/backend_ui.rs:1488 src/backend_ui.rs:1566 src/backend_ui.rs:1612
+#: src/backend_ui.rs:2447 src/backend_ui.rs:2487
 msgid "Exit status:"
 msgstr ""
 
-#: src/backend_ui.rs:1498 src/backend_ui.rs:1576 src/backend_ui.rs:1623
-#: src/backend_ui.rs:2556 src/backend_ui.rs:2596
+#: src/backend_ui.rs:1496 src/backend_ui.rs:1574 src/backend_ui.rs:1621
+#: src/backend_ui.rs:2456 src/backend_ui.rs:2496
 msgid "Standard error:"
 msgstr ""
 
-#: src/backend_ui.rs:1503 src/backend_ui.rs:1581
+#: src/backend_ui.rs:1501 src/backend_ui.rs:1579
 msgid "Message:"
 msgstr ""
 
-#: src/backend_ui.rs:1598
+#: src/backend_ui.rs:1596
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:1602
+#: src/backend_ui.rs:1600
 msgid "No privileged operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:1604
+#: src/backend_ui.rs:1602
 msgid "Completed operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1630
+#: src/backend_ui.rs:1628
 msgid "Failure:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1634
+#: src/backend_ui.rs:1632
 msgid "Reconciliation read-back:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1646
+#: src/backend_ui.rs:1644
 msgid "Backend:"
 msgstr ""
 
-#: src/backend_ui.rs:1652
+#: src/backend_ui.rs:1650
 msgid "Services: —"
 msgstr ""
 
-#: src/backend_ui.rs:1654
+#: src/backend_ui.rs:1652
 msgid "Services:"
 msgstr ""
 
-#: src/backend_ui.rs:1666
+#: src/backend_ui.rs:1664
 msgid "Status: unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:1673
+#: src/backend_ui.rs:1671
 msgid "Post-failure surface errors:"
 msgstr ""
 
-#: src/backend_ui.rs:1753
+#: src/backend_ui.rs:1751
 msgid "Some information could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:1764 src/diagnostics.rs:305
+#: src/backend_ui.rs:1762 src/diagnostics.rs:303
 msgid "Multiple connections"
 msgstr ""
 
-#: src/backend_ui.rs:1770 src/backend_ui.rs:1922
+#: src/backend_ui.rs:1768 src/backend_ui.rs:1921
 msgid "Refreshing…"
 msgstr ""
 
-#: src/backend_ui.rs:1774
+#: src/backend_ui.rs:1772
 msgid "Partial data"
 msgstr ""
 
-#: src/backend_ui.rs:1791
+#: src/backend_ui.rs:1789
 msgid "Overview"
 msgstr ""
 
-#: src/backend_ui.rs:1796 src/diagnostics.rs:391
+#: src/backend_ui.rs:1794
 msgid "Connection"
 msgstr ""
 
-#: src/backend_ui.rs:1798
+#: src/backend_ui.rs:1796
 msgid "Active — this backend serves Myna."
 msgstr ""
 
-#: src/backend_ui.rs:1800
+#: src/backend_ui.rs:1798
 msgid "Multiple backends are connected. Only one should be active at a time."
 msgstr ""
 
-#: src/backend_ui.rs:1802
+#: src/backend_ui.rs:1800
 msgid "Not connected to the Myna daemon."
 msgstr ""
 
-#: src/backend_ui.rs:1808
+#: src/backend_ui.rs:1806
 msgid "Active model"
 msgstr ""
 
-#: src/backend_ui.rs:1815
+#: src/backend_ui.rs:1812
 msgid "Active engine"
 msgstr ""
 
-#: src/backend_ui.rs:1833
+#: src/backend_ui.rs:1815
+msgid "None selected — choose one below."
+msgstr ""
+
+#: src/backend_ui.rs:1832 src/diagnostics.rs:405
 msgid "Services"
 msgstr ""
 
-#: src/backend_ui.rs:1835
+#: src/backend_ui.rs:1834
 msgid "No service health reported"
 msgstr ""
 
-#: src/backend_ui.rs:1852
+#: src/backend_ui.rs:1851
 msgid "Loading"
 msgstr ""
 
-#: src/backend_ui.rs:1854
+#: src/backend_ui.rs:1853
 msgid "Reading configuration from this backend…"
 msgstr ""
 
-#: src/backend_ui.rs:1864
+#: src/backend_ui.rs:1863
 msgid "No configuration reported"
 msgstr ""
 
-#: src/backend_ui.rs:1866
+#: src/backend_ui.rs:1865
 msgid "The backend accepted requests but reported no configurable settings."
 msgstr ""
 
-#: src/backend_ui.rs:1876
+#: src/backend_ui.rs:1875
 msgid "Some data is unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:1878
+#: src/backend_ui.rs:1877
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:1976
+#: src/backend_ui.rs:1975
 msgid "Fix invalid values before applying these backend changes."
 msgstr ""
 
-#: src/backend_ui.rs:1979
+#: src/backend_ui.rs:1978
 msgid ""
 "Review staged changes, authorize one privileged operation, then verify read-"
 "back."
 msgstr ""
 
-#: src/backend_ui.rs:1983
+#: src/backend_ui.rs:1982
 msgid "Staged changes"
 msgstr ""
 
-#: src/backend_ui.rs:2025
+#: src/backend_ui.rs:2024
 msgid "Applying backend changes…"
 msgstr ""
 
-#: src/backend_ui.rs:2027
+#: src/backend_ui.rs:2026
 msgid "A single authorization applies all staged changes together."
 msgstr ""
 
-#: src/backend_ui.rs:2090
+#: src/backend_ui.rs:2089
 msgid "General"
 msgstr ""
 
-#: src/backend_ui.rs:2091
+#: src/backend_ui.rs:2090
 msgid "Runtime"
 msgstr ""
 
-#: src/backend_ui.rs:2092
+#: src/backend_ui.rs:2091
 msgid "Advanced"
 msgstr ""
 
-#: src/backend_ui.rs:2093
+#: src/backend_ui.rs:2092
 msgid "Sensitive"
 msgstr ""
 
-#: src/backend_ui.rs:2100
+#: src/backend_ui.rs:2099
 msgid "Common backend preferences."
 msgstr ""
 
-#: src/backend_ui.rs:2103
+#: src/backend_ui.rs:2102
 msgid "Runtime and performance related settings."
 msgstr ""
 
-#: src/backend_ui.rs:2106
+#: src/backend_ui.rs:2105
 msgid ""
 "Advanced values. The backend supplies no richer metadata for these keys."
 msgstr ""
 
-#: src/backend_ui.rs:2109
+#: src/backend_ui.rs:2108
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
 
-#: src/backend_ui.rs:2124 src/backend_ui.rs:2358
+#: src/backend_ui.rs:2123
 msgid "Sensitive value (redacted)"
 msgstr ""
 
-#: src/backend_ui.rs:2263
+#: src/backend_ui.rs:2262
 msgid "Active"
 msgstr ""
 
-#: src/backend_ui.rs:2264
+#: src/backend_ui.rs:2263
 msgid "Inactive"
 msgstr ""
 
-#: src/backend_ui.rs:2265
+#: src/backend_ui.rs:2264
 msgid "Failed"
 msgstr ""
 
-#: src/backend_ui.rs:2267
+#: src/backend_ui.rs:2266
 msgid "Unknown"
 msgstr ""
 
-#: src/backend_ui.rs:2280
-msgid "Refreshing backend diagnostics"
-msgstr ""
-
-#: src/backend_ui.rs:2281
-msgid "Reading installed inference backends…"
-msgstr ""
-
-#: src/backend_ui.rs:2286
-msgid "No backend diagnostics"
-msgstr ""
-
-#: src/backend_ui.rs:2288
-msgid "No installed inference backends were discovered."
-msgstr ""
-
-#: src/backend_ui.rs:2296
-msgid "Backend discovery failed"
-msgstr ""
-
-#: src/backend_ui.rs:2298
-msgid ""
-"Previously discovered backends remain visible while this failure is "
-"investigated."
-msgstr ""
-
-#: src/backend_ui.rs:2319 src/backend_ui.rs:2414 src/diagnostics.rs:381
-msgid "Model control command"
-msgstr ""
-
-#: src/backend_ui.rs:2328
-msgid "Service"
-msgstr ""
-
-#: src/backend_ui.rs:2344
-msgid "Entrypoint"
-msgstr ""
-
-#: src/backend_ui.rs:2412
+#: src/backend_ui.rs:2323
 msgid "Installed snaps"
 msgstr ""
 
-#: src/backend_ui.rs:2413 src/backend_ui.rs:2950
+#: src/backend_ui.rs:2324
 msgid "Backend connections"
 msgstr ""
 
-#: src/backend_ui.rs:2415
+#: src/backend_ui.rs:2325
+msgid "Model control command"
+msgstr ""
+
+#: src/backend_ui.rs:2326
 msgid "Backend configuration"
 msgstr ""
 
-#: src/backend_ui.rs:2416
+#: src/backend_ui.rs:2327
 msgid "Backend status"
 msgstr ""
 
-#: src/backend_ui.rs:2417
+#: src/backend_ui.rs:2328
 msgid "Available models"
 msgstr ""
 
-#: src/backend_ui.rs:2418
+#: src/backend_ui.rs:2329
 msgid "Available engines"
 msgstr ""
 
-#: src/backend_ui.rs:2435
+#: src/backend_ui.rs:2335
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:2448 src/backend_ui.rs:2760
+#: src/backend_ui.rs:2348 src/backend_ui.rs:2660
 msgid "Applying backend changes and verifying restart…"
 msgstr ""
 
-#: src/backend_ui.rs:2451 src/backend_ui.rs:2750
+#: src/backend_ui.rs:2351 src/backend_ui.rs:2650
 msgid "Refreshing backend data…"
 msgstr ""
 
-#: src/backend_ui.rs:2459
+#: src/backend_ui.rs:2359
 msgid "Applying backend changes and waiting for restart/readiness…"
 msgstr ""
 
-#: src/backend_ui.rs:2461
+#: src/backend_ui.rs:2361
 msgid "Applying backend changes and verifying read-back…"
 msgstr ""
 
-#: src/backend_ui.rs:2480
+#: src/backend_ui.rs:2380
 msgid "missing"
 msgstr ""
 
-#: src/backend_ui.rs:2509
+#: src/backend_ui.rs:2409
 msgid "Backend switch failed."
 msgstr ""
 
-#: src/backend_ui.rs:2515
+#: src/backend_ui.rs:2415
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:2523
+#: src/backend_ui.rs:2423
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:2528
+#: src/backend_ui.rs:2428
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2535
+#: src/backend_ui.rs:2435
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2537 src/backend_ui.rs:2577
+#: src/backend_ui.rs:2437 src/backend_ui.rs:2477
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2563
+#: src/backend_ui.rs:2463
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2574
+#: src/backend_ui.rs:2474
 msgid ""
 "Backend switch succeeded, but the final connection state could not be "
 "verified.\n"
 "\n"
 msgstr ""
 
-#: src/backend_ui.rs:2603
+#: src/backend_ui.rs:2503
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2611
+#: src/backend_ui.rs:2511
 msgid "no backend connected"
 msgstr ""
 
-#: src/backend_ui.rs:2616
+#: src/backend_ui.rs:2516
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:2626
+#: src/backend_ui.rs:2526
 msgid "multiple backends"
 msgstr ""
 
-#: src/backend_ui.rs:2629
+#: src/backend_ui.rs:2529
 msgid "previous switch is unresolved"
 msgstr ""
 
-#: src/diagnostics.rs:294
+#: src/diagnostics.rs:292
 msgid "Myna is not installed"
 msgstr ""
 
-#: src/diagnostics.rs:295
+#: src/diagnostics.rs:293
 msgid "No backend discovered"
 msgstr ""
 
-#: src/diagnostics.rs:296
+#: src/diagnostics.rs:294
 msgid "Ready"
 msgstr ""
 
-#: src/diagnostics.rs:297
+#: src/diagnostics.rs:295
 msgid "Installation status unavailable"
 msgstr ""
 
-#: src/diagnostics.rs:317
+#: src/diagnostics.rs:314
 msgid "Onboarding"
 msgstr ""
 
-#: src/diagnostics.rs:322
+#: src/diagnostics.rs:319
 msgid "Suggested command"
 msgstr ""
 
-#: src/diagnostics.rs:329
-msgid "Installed Myna snaps"
+#: src/diagnostics.rs:326
+msgid "Machine"
 msgstr ""
 
-#: src/diagnostics.rs:349
-msgid "(none reported)"
+#: src/diagnostics.rs:330 src/diagnostics.rs:341
+msgid "CPU"
 msgstr ""
 
-#: src/diagnostics.rs:355
-msgid "Snap inventory failure"
+#: src/diagnostics.rs:331 src/diagnostics.rs:356 src/diagnostics.rs:410
+msgid "Memory"
 msgstr ""
 
-#: src/diagnostics.rs:361
-msgid "Command failures"
+#: src/diagnostics.rs:333 src/diagnostics.rs:336
+msgid "GPU"
+msgstr ""
+
+#: src/diagnostics.rs:333
+msgid "none"
+msgstr ""
+
+#: src/diagnostics.rs:342
+msgid "(no backend answered show-machine)"
+msgstr ""
+
+#: src/diagnostics.rs:347
+msgid "Daemon"
+msgstr ""
+
+#: src/diagnostics.rs:355 src/diagnostics.rs:359 src/diagnostics.rs:368
+msgid "Version"
+msgstr ""
+
+#: src/diagnostics.rs:362
+msgid "Process"
+msgstr ""
+
+#: src/diagnostics.rs:363
+msgid "not running"
 msgstr ""
 
 #: src/diagnostics.rs:369
+msgid "not installed"
+msgstr ""
+
+#: src/diagnostics.rs:374
 msgid "Backends"
 msgstr ""
 
-#: src/diagnostics.rs:373
+#: src/diagnostics.rs:378
 msgid "(none discovered)"
 msgstr ""
 
-#: src/diagnostics.rs:387
-msgid "(unresolved)"
+#: src/diagnostics.rs:393
+msgid "Engine"
 msgstr ""
 
 #: src/diagnostics.rs:397
-msgid "Failure"
+msgid "none selected"
 msgstr ""
 
-#: src/diagnostics.rs:422
-msgid "Surface"
+#: src/diagnostics.rs:400
+msgid "Model"
 msgstr ""
 
-#: src/diagnostics.rs:427
-msgid "Command"
+#: src/diagnostics.rs:415
+msgid "Problems"
 msgstr ""
 
-#: src/diagnostics.rs:436
-msgid "Message"
-msgstr ""
-
-#: src/diagnostics.rs:442
-msgid "Error output"
-msgstr ""
-
-#: src/diagnostics.rs:445
-msgid "omitted because command output may contain private content"
+#: src/diagnostics.rs:424
+msgid "(none)"
 msgstr ""
 
 #: src/myna_settings.rs:51

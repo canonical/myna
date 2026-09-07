@@ -118,7 +118,7 @@ fn accessibility_probe() -> glib::ExitCode {
         r#"<property name="label" translatable="yes">Refresh diagnostics</property>"#,
         r#"<property name="label" translatable="yes">Copy diagnostics</property>"#,
         r#"<property name="label" translatable="yes">Diagnostic report</property>"#,
-        r#"<property name="description" translatable="yes">Re-read installed snaps and per-backend status.</property>"#,
+        r#"<property name="description" translatable="yes">Re-read the machine, the daemon, and every backend.</property>"#,
     ]
     .iter()
     .any(|metadata| !template.contains(metadata))

@@ -1,14 +1,16 @@
 //! Pure presenter for the About/Diagnostics page and the associated refresh
 //! policy.
 //!
-//! Everything in this module is deliberately GTK-independent so it can be
-//! exercised from unit tests and reused headlessly. The presenter enforces the
-//! privacy contract for diagnostics: no audio, transcript, or freeform user
-//! content is ever surfaced, filesystem paths are stripped in favour of a
-//! `<path>` placeholder, and command-line arguments known to carry secrets are
-//! replaced with `[redacted]`.
+//! GTK-independent so it can be exercised headlessly. The report is built from
+//! facts this crate produces itself - machine shape, process memory, engine and
+//! model names, versions - and never embeds a command line, stderr, or any
+//! other text that came from outside. That is what keeps the privacy contract
+//! (no audio, no transcript, no filesystem path) true by construction rather
+//! than by scrubbing.
 
 use std::time::Duration;
+
+use crate::machine::{bytes, MachineFacts, ProcessMemory};
 
 /// Copy-safe onboarding instructions surfaced when Myna itself is missing.
 pub const NO_MYNA_COMMAND: &str = "sudo snap install myna";
@@ -63,23 +65,18 @@ pub struct InstalledSnap {
     pub version: String,
 }
 
-/// A command failure recorded during discovery or diagnostics.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct DiagnosticFailure {
-    pub surface: String,
-    pub executable: String,
-    pub arguments: Vec<String>,
-    pub message: String,
-    pub stderr: String,
-}
-
 /// Per-backend diagnostic summary.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BackendDiagnostic {
     pub snap_name: String,
-    pub modelctl_app: Option<String>,
+    pub version: String,
     pub connection: DiagnosticConnection,
-    pub failures: Vec<DiagnosticFailure>,
+    pub engine: Option<String>,
+    pub model: Option<String>,
+    pub services: Vec<String>,
+    pub memory: Option<ProcessMemory>,
+    /// One already-worded sentence per problem. Never a command line.
+    pub problems: Vec<String>,
 }
 
 /// Connection state rendered in diagnostics.
@@ -96,9 +93,10 @@ pub enum DiagnosticConnection {
 pub struct DiagnosticInput {
     pub inventory_complete: bool,
     pub installed_snaps: Vec<InstalledSnap>,
+    pub machine: Option<MachineFacts>,
+    pub daemon: Option<ProcessMemory>,
     pub backends: Vec<BackendDiagnostic>,
-    pub inventory_failure: Option<DiagnosticFailure>,
-    pub failures: Vec<DiagnosticFailure>,
+    pub problems: Vec<String>,
 }
 
 /// Which onboarding state the About/Diagnostics page should surface.
@@ -275,8 +273,7 @@ pub fn present_diagnostics(input: DiagnosticInput) -> DiagnosticReport {
 }
 
 fn classify_onboarding(input: &DiagnosticInput) -> OnboardingState {
-    if !input.inventory_complete || input.inventory_failure.is_some() || !input.failures.is_empty()
-    {
+    if !input.inventory_complete || !input.problems.is_empty() {
         return OnboardingState::Unavailable;
     }
     let has_myna = input.installed_snaps.iter().any(|snap| snap.name == "myna");
@@ -314,7 +311,6 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
     out.push(' ');
     out.push_str(env!("CARGO_PKG_VERSION"));
     out.push('\n');
-
     out.push_str(&gettextrs::gettext("Onboarding"));
     out.push_str(": ");
     out.push_str(&onboarding_state_label(onboarding));
@@ -327,43 +323,59 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
     }
 
     out.push('\n');
-    out.push_str(&gettextrs::gettext("Installed Myna snaps"));
+    out.push_str(&gettextrs::gettext("Machine"));
     out.push_str(":\n");
-    let relevant_snaps = input.installed_snaps.iter().filter(|snap| {
-        snap.name == "myna"
-            || input
-                .backends
-                .iter()
-                .any(|backend| backend.snap_name == snap.name)
-    });
-    let mut reported_snap = false;
-    for snap in relevant_snaps {
-        reported_snap = true;
-        out.push_str("  ");
-        out.push_str(&snap.name);
-        out.push(' ');
-        out.push_str(&snap.version);
-        out.push('\n');
-    }
-    if !reported_snap {
-        out.push_str("  ");
-        out.push_str(&gettextrs::gettext("(none reported)"));
-        out.push('\n');
+    match &input.machine {
+        Some(machine) => {
+            field(&mut out, &gettextrs::gettext("CPU"), &machine.cpu);
+            field(&mut out, &gettextrs::gettext("Memory"), &machine.memory);
+            if machine.gpus.is_empty() {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("GPU"),
+                    &gettextrs::gettext("none"),
+                );
+            }
+            for gpu in &machine.gpus {
+                field(&mut out, &gettextrs::gettext("GPU"), gpu);
+            }
+        }
+        None => field(
+            &mut out,
+            &gettextrs::gettext("CPU"),
+            &gettextrs::gettext("(no backend answered show-machine)"),
+        ),
     }
 
-    if let Some(failure) = &input.inventory_failure {
-        out.push('\n');
-        out.push_str(&gettextrs::gettext("Snap inventory failure"));
-        out.push_str(":\n");
-        push_failure(&mut out, failure);
-    }
-    if !input.failures.is_empty() {
-        out.push('\n');
-        out.push_str(&gettextrs::gettext("Command failures"));
-        out.push_str(":\n");
-        for failure in &input.failures {
-            push_failure(&mut out, failure);
+    out.push('\n');
+    out.push_str(&gettextrs::gettext("Daemon"));
+    out.push_str(":\n");
+    let myna = input
+        .installed_snaps
+        .iter()
+        .find(|snap| snap.name == "myna");
+    match (myna, input.daemon) {
+        (Some(snap), Some(memory)) => {
+            field(&mut out, &gettextrs::gettext("Version"), &snap.version);
+            field(
+                &mut out,
+                &gettextrs::gettext("Memory"),
+                &memory_summary(memory),
+            );
         }
+        (Some(snap), None) => {
+            field(&mut out, &gettextrs::gettext("Version"), &snap.version);
+            field(
+                &mut out,
+                &gettextrs::gettext("Process"),
+                &gettextrs::gettext("not running"),
+            );
+        }
+        (None, _) => field(
+            &mut out,
+            &gettextrs::gettext("Version"),
+            &gettextrs::gettext("not installed"),
+        ),
     }
 
     out.push('\n');
@@ -373,79 +385,84 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
         out.push_str("  ");
         out.push_str(&gettextrs::gettext("(none discovered)"));
         out.push('\n');
-    } else {
-        for backend in &input.backends {
-            out.push_str("  ");
-            out.push_str(&backend.snap_name);
-            out.push('\n');
-            out.push_str("    ");
-            out.push_str(&gettextrs::gettext("Model control command"));
-            out.push_str(": ");
-            let modelctl_app = backend
-                .modelctl_app
+    }
+    for backend in &input.backends {
+        out.push_str("  ");
+        out.push_str(&backend.snap_name);
+        if !backend.version.is_empty() {
+            out.push(' ');
+            out.push_str(&backend.version);
+        }
+        out.push_str(" - ");
+        out.push_str(&diagnostic_connection_label(backend.connection));
+        out.push('\n');
+        field(
+            &mut out,
+            &gettextrs::gettext("Engine"),
+            backend
+                .engine
                 .as_deref()
-                .map(redact_text)
-                .unwrap_or_else(|| gettextrs::gettext("(unresolved)"));
-            out.push_str(&modelctl_app);
-            out.push('\n');
-            out.push_str("    ");
-            out.push_str(&gettextrs::gettext("Connection"));
-            out.push_str(": ");
-            out.push_str(&diagnostic_connection_label(backend.connection));
-            out.push('\n');
-            for failure in &backend.failures {
-                out.push_str("    ");
-                out.push_str(&gettextrs::gettext("Failure"));
-                out.push_str(":\n");
-                push_failure_indented(&mut out, failure, "      ");
-            }
+                .unwrap_or(&gettextrs::gettext("none selected")),
+        );
+        if let Some(model) = &backend.model {
+            field(&mut out, &gettextrs::gettext("Model"), model);
+        }
+        if !backend.services.is_empty() {
+            field(
+                &mut out,
+                &gettextrs::gettext("Services"),
+                &backend.services.join(", "),
+            );
+        }
+        if let Some(memory) = backend.memory {
+            field(
+                &mut out,
+                &gettextrs::gettext("Memory"),
+                &memory_summary(memory),
+            );
         }
     }
 
+    out.push('\n');
+    out.push_str(&gettextrs::gettext("Problems"));
+    out.push_str(":\n");
+    let problems: Vec<&String> = input
+        .problems
+        .iter()
+        .chain(input.backends.iter().flat_map(|backend| &backend.problems))
+        .collect();
+    if problems.is_empty() {
+        out.push_str("  ");
+        out.push_str(&gettextrs::gettext("(none)"));
+        out.push('\n');
+    }
+    for problem in problems {
+        out.push_str("  ");
+        out.push_str(problem);
+        out.push('\n');
+    }
+
     out
+}
+
+fn field(out: &mut String, label: &str, value: &str) {
+    out.push_str(&format!("    {label:<10} {value}\n"));
+}
+
+fn memory_summary(memory: ProcessMemory) -> String {
+    format!(
+        "{} now, {} peak (pid {})",
+        bytes(memory.resident),
+        bytes(memory.peak),
+        memory.pid
+    )
 }
 
 fn onboarding_command(state: OnboardingState) -> Option<&'static str> {
     match state {
         OnboardingState::NoMyna => Some(NO_MYNA_COMMAND),
         OnboardingState::NoBackend => Some(NO_BACKEND_COMMAND),
-        OnboardingState::Ready => None,
-        OnboardingState::Unavailable => None,
-    }
-}
-
-fn push_failure(out: &mut String, failure: &DiagnosticFailure) {
-    push_failure_indented(out, failure, "  ");
-}
-
-fn push_failure_indented(out: &mut String, failure: &DiagnosticFailure, indent: &str) {
-    out.push_str(indent);
-    out.push_str(&gettextrs::gettext("Surface"));
-    out.push_str(": ");
-    out.push_str(&redact_text(&failure.surface));
-    out.push('\n');
-    out.push_str(indent);
-    out.push_str(&gettextrs::gettext("Command"));
-    out.push_str(": ");
-    out.push_str(&redact_text(&failure.executable));
-    for arg in sanitize_arguments(&failure.arguments) {
-        out.push(' ');
-        out.push_str(&arg);
-    }
-    out.push('\n');
-    out.push_str(indent);
-    out.push_str(&gettextrs::gettext("Message"));
-    out.push_str(": ");
-    out.push_str(&redact_text(&failure.message));
-    out.push('\n');
-    if !failure.stderr.is_empty() {
-        out.push_str(indent);
-        out.push_str(&gettextrs::gettext("Error output"));
-        out.push_str(": ");
-        out.push_str(&gettextrs::gettext(
-            "omitted because command output may contain private content",
-        ));
-        out.push('\n');
+        OnboardingState::Ready | OnboardingState::Unavailable => None,
     }
 }
 
@@ -459,65 +476,6 @@ pub fn redact_text(value: &str) -> String {
     scrub_paths(&scrubbed)
 }
 
-/// Redact a single command-line argument, treating the entire argument as a
-/// path if it starts with `/` and otherwise recursing into the standard
-/// single-line rules.
-fn sanitize_argument(argument: &str) -> String {
-    if argument.starts_with('/') {
-        return PLACEHOLDER_PATH.to_owned();
-    }
-    if let Some(eq) = argument.find('=') {
-        let key = &argument[..eq];
-        let key_lower = key.trim_start_matches('-').to_ascii_lowercase();
-        if SENSITIVE_KEY_SUBSTRINGS
-            .iter()
-            .any(|needle| key_lower.contains(needle))
-        {
-            return format!("{key}={PLACEHOLDER_REDACTED}");
-        }
-    }
-    redact_text(argument)
-}
-
-fn sanitize_arguments(arguments: &[String]) -> Vec<String> {
-    let mut sanitized = Vec::with_capacity(arguments.len() + 1);
-    let mut redact_next = false;
-
-    for argument in arguments {
-        if redact_next {
-            if is_split_secret_flag(argument) {
-                sanitized.push(PLACEHOLDER_REDACTED.to_owned());
-                sanitized.push(sanitize_argument(argument));
-                continue;
-            }
-            sanitized.push(PLACEHOLDER_REDACTED.to_owned());
-            redact_next = false;
-            continue;
-        }
-
-        sanitized.push(sanitize_argument(argument));
-        if is_split_secret_flag(argument) {
-            redact_next = true;
-        }
-    }
-
-    if redact_next {
-        sanitized.push(PLACEHOLDER_REDACTED.to_owned());
-    }
-    sanitized
-}
-
-fn is_split_secret_flag(argument: &str) -> bool {
-    if argument.contains('=') {
-        return false;
-    }
-    let key = argument.trim_start_matches('-').to_ascii_lowercase();
-    argument.starts_with('-')
-        && SENSITIVE_KEY_SUBSTRINGS
-            .iter()
-            .any(|needle| key.contains(needle))
-}
-
 fn contains_sensitive_content(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     SENSITIVE_LINE_KEYS.iter().any(|key| {
@@ -528,14 +486,6 @@ fn contains_sensitive_content(value: &str) -> bool {
                 && matches!(after, Some('=' | ':' | ' '))
         })
     })
-}
-
-/// Format a command failure for user-visible diagnostics after applying the
-/// same privacy filter used by the copyable report.
-pub fn format_failure(failure: &DiagnosticFailure) -> String {
-    let mut output = String::new();
-    push_failure(&mut output, failure);
-    output.trim().to_owned()
 }
 
 fn scrub_paths(value: &str) -> String {
@@ -604,13 +554,6 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_argument_replaces_absolute_paths() {
-        assert_eq!(sanitize_argument("/etc/hosts"), "<path>");
-        assert_eq!(sanitize_argument("--flag=/etc/hosts"), "--flag=<path>");
-        assert_eq!(sanitize_argument("list"), "list");
-    }
-
-    #[test]
     fn snap_list_parses_and_reports() {
         let snaps = parse_snap_list(
             "Name  Version  Rev  Tracking  Publisher  Notes\n\
@@ -664,29 +607,68 @@ mod tests {
         assert!(text.contains("Myna Settings "));
         assert!(text.contains("Onboarding: Myna is not installed"));
         assert!(text.contains("Suggested command: sudo snap install myna"));
-        assert!(text.contains("Installed Myna snaps:\n  (none reported)"));
         assert!(text.contains("Backends:\n  (none discovered)"));
+        assert!(text.contains("Problems:\n  (none)"));
     }
 
     #[test]
-    fn inventory_failure_without_backends_surfaces_command_and_message() {
+    fn a_problem_is_one_sentence_and_blocks_the_ready_state() {
         let report = present_diagnostics(DiagnosticInput {
-            inventory_failure: Some(DiagnosticFailure {
-                surface: "inventory".into(),
-                executable: "snap".into(),
-                arguments: vec!["list".into()],
-                message: "permission denied".into(),
-                stderr: "cannot connect to snapd".into(),
-            }),
+            problems: vec!["Installed snaps: permission denied".into()],
             ..DiagnosticInput::default()
         });
         let text = report.copy_text();
-        assert!(text.contains("Snap inventory failure"));
-        assert!(text.contains("snap list"));
-        assert!(text.contains("permission denied"));
-        assert!(text.contains("omitted because command output may contain private content"));
-        // Even under failure, the onboarding hint is still surfaced so the
-        // user knows what to do.
+        assert!(text.contains("Problems:\n  Installed snaps: permission denied"));
         assert_eq!(report.onboarding(), OnboardingState::Unavailable);
+    }
+
+    #[test]
+    fn the_report_names_the_machine_and_what_each_process_costs() {
+        let report = present_diagnostics(DiagnosticInput {
+            inventory_complete: true,
+            installed_snaps: vec![InstalledSnap {
+                name: "myna".into(),
+                version: "0.1.0".into(),
+            }],
+            machine: Some(MachineFacts {
+                cpu: "amd64 AuthenticAMD, avx2".into(),
+                memory: "30.1 GiB RAM, 8.0 GiB swap".into(),
+                gpus: vec!["AMD 0x1114 gfx1152 512.0 MiB VRAM".into()],
+            }),
+            daemon: Some(ProcessMemory {
+                pid: 42,
+                resident: 16 * 1024 * 1024,
+                peak: 18 * 1024 * 1024,
+            }),
+            backends: vec![BackendDiagnostic {
+                snap_name: "myna-parakeet".into(),
+                version: "0.1.0".into(),
+                connection: DiagnosticConnection::Connected,
+                engine: Some("cpu".into()),
+                model: Some("parakeet-tdt-0.6b-v3".into()),
+                services: vec!["server: Active".into()],
+                memory: Some(ProcessMemory {
+                    pid: 43,
+                    resident: 20 * 1024 * 1024,
+                    peak: 1500 * 1024 * 1024,
+                }),
+                problems: Vec::new(),
+            }],
+            problems: Vec::new(),
+        });
+        let text = report.copy_text();
+
+        assert!(text.contains("avx2"), "{text}");
+        assert!(text.contains("gfx1152"), "{text}");
+        // The peak is the point: idle residency says nothing about whether
+        // this machine can hold the model.
+        assert!(
+            text.contains("20.0 MiB now, 1.5 GiB peak (pid 43)"),
+            "{text}"
+        );
+        assert!(text.contains("parakeet-tdt-0.6b-v3"), "{text}");
+        assert!(text.contains("Problems:\n  (none)"), "{text}");
+        // Nothing in the report came from outside this crate.
+        assert!(!text.contains('/'), "{text}");
     }
 }

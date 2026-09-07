@@ -14,7 +14,7 @@ template $DiagnosticsPage: Adw.NavigationPage {
 
         accessibility {
           label: _("Refresh diagnostics");
-          description: _("Re-read installed snaps and per-backend status.");
+          description: _("Re-read the machine, the daemon, and every backend.");
         }
       }
 
@@ -39,7 +39,7 @@ template $DiagnosticsPage: Adw.NavigationPage {
       Adw.PreferencesGroup report_group {
         title: _("Copyable diagnostics");
         description: _(
-          "Snap versions, backend resolution, connection summary, and command failures. No audio or transcript content is ever included."
+          "Machine, memory, versions, active engines, and anything currently wrong. No audio, transcript, or filesystem path is ever included."
         );
 
         Gtk.ScrolledWindow {
