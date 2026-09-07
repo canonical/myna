@@ -44,14 +44,8 @@ pub const SCHEMA_ID: &str = "com.canonical.Myna.Dictation";
 /// The persisted streaming-mode preference.
 pub const KEY_STREAMING_MODE: &str = "streaming-mode";
 
-/// The language hint passed to the backend; empty means "backend decides".
+/// The output language passed to the backend; empty means "backend decides".
 pub const KEY_LANGUAGE: &str = "language";
-
-/// How a press reaches the daemon: `auto` | `portal` | `control`.
-pub const KEY_ACTIVATION: &str = "activation";
-
-/// The accelerator offered to the portal's bind dialog; empty offers none.
-pub const KEY_HOTKEY: &str = "hotkey";
 
 /// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave),
 /// `vumeter` (segmented bar) or `progress` (plain GtkProgressBar).
@@ -73,10 +67,6 @@ pub struct Settings {
     /// `None` where the key is empty - "unset" and "" are the same intent, and
     /// GSettings has no null.
     pub language: Option<String>,
-    /// The nick as stored (`auto` | `portal` | `control`); the desktop app owns
-    /// the enum, so this stays a string in the shared crate. `auto` is `None`.
-    pub activation: Option<String>,
-    pub hotkey: Option<String>,
     /// The HUD indicator style nick (`ribbon` | `vumeter`), or `None` when
     /// unset (the schema default applies).
     pub hud_style: Option<String>,
@@ -98,8 +88,6 @@ impl Settings {
         Self {
             streaming_mode: store.streaming_mode(),
             language: store.text(KEY_LANGUAGE),
-            activation: store.text(KEY_ACTIVATION).filter(|a| a != "auto"),
-            hotkey: store.text(KEY_HOTKEY),
             hud_style: store.text(KEY_HUD_STYLE),
         }
     }

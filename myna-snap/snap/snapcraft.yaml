@@ -163,7 +163,6 @@ apps:
   # cannot apply here); same-snap D-Bus comes from the base template.
   bind-shortcut:
     command: bin/myna-desktop --bind-shortcut
-    # activation + preferred hotkey come from the settings store (keyfile).
     environment: *settings-env
     plugs:
       - desktop

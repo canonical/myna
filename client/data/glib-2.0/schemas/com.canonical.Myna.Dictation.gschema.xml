@@ -14,12 +14,6 @@
   the host by `make install-schema` until the extension deb carries it.
 -->
 <schemalist gettext-domain="myna-config">
-  <enum id="com.canonical.Myna.Dictation.Activation">
-    <value nick="auto" value="0"/>
-    <value nick="portal" value="1"/>
-    <value nick="control" value="2"/>
-  </enum>
-
   <enum id="com.canonical.Myna.Dictation.StreamingMode">
     <value nick="auto" value="0"/>
     <value nick="streaming" value="1"/>
@@ -48,35 +42,13 @@
 
     <key name="language" type="s">
       <default>''</default>
-      <summary>Language hint sent to the backend</summary>
+      <summary>Output language</summary>
       <description>
-        A BCP-47-ish code (en, fr, zh) passed to the inference backend as a
-         session hint. Empty means "let the backend decide", which is what a
-         multilingual model does best.
+        A BCP-47-ish code (en, fr, zh) passed to the backend per session.
+        Backends that translate (whisper) emit *this* language whatever is
+        spoken; the rest treat it as a recognition hint. Empty lets the
+        backend decide, which is what a multilingual model does best.
          Changes apply live.
-      </description>
-    </key>
-
-    <key name="activation" enum="com.canonical.Myna.Dictation.Activation">
-      <default>'auto'</default>
-      <summary>How a press reaches the daemon</summary>
-      <description>
-        auto: the portal where the app is packaged (the compositor can only
-        identify a packaged app), the control socket otherwise. portal and
-         control force one - a wrong choice here means the hotkey does nothing,
-         so auto is nearly always right.
-         Restart the Myna daemon after changing this setting.
-      </description>
-    </key>
-
-    <key name="hotkey" type="s">
-      <default>''</default>
-      <summary>Preferred shortcut offered to the portal</summary>
-      <description>
-        An accelerator such as '&lt;Super&gt;d'. It is a *preference*: under
-         portal activation the desktop's own bind dialog owns the final choice,
-         and empty means "offer no preference".
-         Restart the Myna daemon after changing this setting.
       </description>
     </key>
 

@@ -153,28 +153,14 @@ impl Activation {
             Activation::Control
         }
     }
-
-    /// Parse a settings value. `auto` is absent by construction
-    /// (`Settings` filters it), so anything unrecognised here is a typo, and
-    /// answering `None` means it falls through to packaging rather than
-    /// silently selecting a transport nobody asked for.
-    fn from_nick(nick: &str) -> Option<Activation> {
-        match nick {
-            "portal" => Some(Activation::Portal),
-            "control" => Some(Activation::Control),
-            _ => None,
-        }
-    }
 }
 
 /// Everything the daemon works out for itself, resolved once at startup.
 ///
-/// One order throughout, most specific first:
-///
-/// 1. **a command-line flag** — someone is debugging, and meant it;
-/// 2. **the user's settings value** (`com.canonical.Myna.Dictation`) — the desktop's own
-///    per-user store, which is what a Settings page writes;
-/// 3. **the built-in** — packaging for activation, the tier gate for preedit.
+/// A command-line flag wins, then the user's settings value, then the
+/// built-in - packaging for activation, the tier gate for preedit.
+/// Activation and the preferred shortcut are argv-only debugging overrides:
+/// they were settings keys once, and neither was worth a user-facing knob.
 #[derive(Debug, PartialEq)]
 struct Resolved {
     activation: Activation,
@@ -185,27 +171,13 @@ struct Resolved {
 
 impl Resolved {
     fn new(args: &Args, settings: &myna_core::Settings) -> Self {
-        let activation = args
-            .activation
-            .or_else(|| {
-                settings
-                    .activation
-                    .as_deref()
-                    .and_then(Activation::from_nick)
-            })
-            .unwrap_or_else(Activation::from_packaging);
         Self {
-            activation,
-            language: pick(&args.language, &settings.language),
-            hotkey: pick(&args.shortcut, &settings.hotkey),
+            activation: args.activation.unwrap_or_else(Activation::from_packaging),
+            language: args.language.clone().or_else(|| settings.language.clone()),
+            hotkey: args.shortcut.clone(),
             preedit: resolve_preedit(args.preedit, settings.streaming_mode),
         }
     }
-}
-
-/// The precedence rule itself, in one place so every knob obeys the same one.
-fn pick(flag: &Option<String>, user: &Option<String>) -> Option<String> {
-    flag.clone().or_else(|| user.clone())
 }
 
 /// The part of [`Resolved`] the daemon keeps re-reading while it runs.
@@ -217,11 +189,8 @@ fn pick(flag: &Option<String>, user: &Option<String>) -> Option<String> {
 /// on the command line still outranks a settings write made an hour later, and
 /// only the answer lands in these cells.
 ///
-/// The two resolved keys here are the two whose readers ask for them again
-/// anyway - preedit at each transcript event, language at each press.
-/// `activation` and `hotkey` are bound into the trigger at startup and are
-/// *not* live; a change to either says so in the journal instead of pretending
-/// to apply.
+/// The two settings-backed knobs, and the two whose readers ask for them
+/// again anyway - preedit at each transcript event, language at each press.
 ///
 /// `hud_style` is a third kind: not resolved against anything and never read
 /// by this daemon, only *carried* to the HUD over the bus. It lives here
@@ -252,27 +221,13 @@ impl LiveSettings {
     /// Subscribe to the settings store, writing every change through these
     /// cells. The returned watch must outlive the controller - dropping it
     /// ends the subscription.
-    fn follow(
-        &self,
-        args: &Args,
-        startup: &Resolved,
-        bus: Option<SharedBus>,
-    ) -> Option<myna_core::SettingsWatch> {
-        let (activation, hotkey) = (startup.activation, startup.hotkey.clone());
+    fn follow(&self, args: &Args, bus: Option<SharedBus>) -> Option<myna_core::SettingsWatch> {
         let watch = myna_core::settings::watch({
             let (args, live) = (args.clone(), self.clone());
             move |settings| {
                 let now = Resolved::new(&args, &settings);
                 live.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
                 live.carry_hud_style(&settings);
-                if now.activation != activation || now.hotkey != hotkey {
-                    myna_core::info_log!(
-                        "settings",
-                        "activation/hotkey changed ({:?}, {}) - both are bound at startup, so restart to apply",
-                        now.activation,
-                        now.hotkey.as_deref().unwrap_or("(portal default)")
-                    );
-                }
             }
         });
         if watch.is_some() {
@@ -733,7 +688,7 @@ async fn run_controller(
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
-    let _settings_watch = live.follow(&args, &resolved, pump_bus.clone());
+    let _settings_watch = live.follow(&args, pump_bus.clone());
 
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
@@ -1054,23 +1009,20 @@ fn print_status(args: &Args) -> ExitCode {
     };
     row(
         "activation",
-        opt(&settings.activation),
+        "(flag only)".into(),
         // Packaging is the built-in, and it is the one value that can differ
         // between this invocation and the daemon it is reporting on - an
         // unpackaged `--status` against a running snap resolves Control while
         // the daemon holds Portal. Naming the reason makes that legible
         // instead of looking like a contradiction.
-        match (
-            resolved.activation,
-            args.activation.or(nick(&settings.activation)),
-        ) {
+        match (resolved.activation, args.activation) {
             (activation, None) if std::env::var_os("SNAP").is_some() => {
                 format!("{activation:?} (packaged)")
             }
             (activation, None) => format!("{activation:?} (unpackaged)"),
             (activation, Some(_)) => format!("{activation:?}"),
         },
-        source(args.activation.is_some(), settings.activation.is_some()),
+        source(args.activation.is_some(), false),
     );
     // The shipped default makes `myna.toggle` inert, and nothing used to say
     // so - the only feedback was a control-socket error naming a socket the
@@ -1084,7 +1036,10 @@ fn print_status(args: &Args) -> ExitCode {
     }
     row(
         "language",
-        opt(&settings.language),
+        settings
+            .language
+            .clone()
+            .unwrap_or_else(|| "(unset)".into()),
         resolved
             .language
             .clone()
@@ -1093,12 +1048,12 @@ fn print_status(args: &Args) -> ExitCode {
     );
     row(
         "hotkey",
-        opt(&settings.hotkey),
+        "(flag only)".into(),
         resolved
             .hotkey
             .clone()
             .unwrap_or_else(|| "(portal default)".into()),
-        source(args.shortcut.is_some(), settings.hotkey.is_some()),
+        source(args.shortcut.is_some(), false),
     );
     row(
         "streaming-mode",
@@ -1196,16 +1151,6 @@ fn source(flag: bool, user: bool) -> &'static str {
     } else {
         "built-in"
     }
-}
-
-/// A settings activation nick, where it names one. Used only to ask
-/// "did anything *choose* this, or is it packaging?".
-fn nick(value: &Option<String>) -> Option<Activation> {
-    value.as_deref().and_then(Activation::from_nick)
-}
-
-fn opt(value: &Option<String>) -> String {
-    value.clone().unwrap_or_else(|| "(unset)".into())
 }
 
 /// Initialize both gettext domains this package owns.
@@ -1659,8 +1604,6 @@ mod tests {
         assert_eq!(resolved(&forced, &unset()).activation, Activation::Stdin);
     }
 
-    // ── flag > user setting > built-in ─────────────────────────────────────
-
     #[test]
     fn a_flag_beats_the_setting() {
         let a = Args {
@@ -1671,28 +1614,15 @@ mod tests {
         };
         let settings = myna_core::Settings {
             language: Some("en".into()),
-            hotkey: Some("<Super>t".into()),
-            activation: Some("portal".into()),
             ..Default::default()
         };
         let r = resolved(&a, &settings);
         assert_eq!(r.language.as_deref(), Some("de"));
         assert_eq!(r.hotkey.as_deref(), Some("<Super>x"));
         assert_eq!(r.activation, Activation::Stdin);
-    }
-
-    #[test]
-    fn an_unparseable_activation_falls_through_to_packaging() {
-        // A typo in the stored activation must not silently select a
-        // transport: the hotkey doing nothing is the worst failure this daemon
-        // has, and packaging is the answer that is always right.
-        let settings = myna_core::Settings {
-            activation: Some("portl".into()),
-            ..Default::default()
-        };
         assert_eq!(
-            resolved(&Args::default(), &settings).activation,
-            Activation::from_packaging()
+            resolved(&Args::default(), &settings).language.as_deref(),
+            Some("en")
         );
     }
 

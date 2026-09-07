@@ -154,22 +154,22 @@ fn concurrent_different_key_edits_share_one_writer_and_both_persist() {
     let streaming = controller
         .set("streaming-mode", ClientSettingValue::Choice("batch".into()))
         .unwrap();
-    let language = controller
-        .set("language", ClientSettingValue::Text("fr".into()))
+    let hud = controller
+        .set("hud-style", ClientSettingValue::Choice("ribbon".into()))
         .unwrap();
     let streaming_request = streaming.clone();
-    let language_request = language.clone();
-    let (streaming_job, language_job) = std::thread::scope(|scope| {
+    let hud_request = hud.clone();
+    let (streaming_job, hud_job) = std::thread::scope(|scope| {
         let streaming_writer = writer.clone();
-        let language_writer = writer.clone();
+        let hud_writer = writer.clone();
         let streaming_job =
             scope.spawn(move || streaming_writer.submit(streaming_request).unwrap());
-        let language_job = scope.spawn(move || language_writer.submit(language_request).unwrap());
-        (streaming_job.join().unwrap(), language_job.join().unwrap())
+        let hud_job = scope.spawn(move || hud_writer.submit(hud_request).unwrap());
+        (streaming_job.join().unwrap(), hud_job.join().unwrap())
     });
 
     controller.complete(streaming, streaming_job.wait());
-    controller.complete(language, language_job.wait());
+    controller.complete(hud, hud_job.wait());
     drop(writer);
 
     let reopened =
@@ -179,8 +179,8 @@ fn concurrent_different_key_edits_share_one_writer_and_both_persist() {
         ClientSettingValue::Choice("batch".into())
     );
     assert_eq!(
-        reopened.get("language").unwrap(),
-        ClientSettingValue::Text("fr".into())
+        reopened.get("hud-style").unwrap(),
+        ClientSettingValue::Choice("ribbon".into())
     );
 }
 
@@ -313,12 +313,10 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans = smoke_build(std::rc::Rc::new(adapter)).unwrap();
 
-    assert_eq!(plans.len(), 5);
+    assert_eq!(plans.len(), 3);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
-    assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Shortcut));
-    assert!(plans.iter().all(|plan| {
-        plan.description.contains("apply live")
-            || plan.description.contains("Restart the Myna daemon")
-    }));
+    assert!(plans
+        .iter()
+        .all(|plan| plan.description.contains("apply live")));
 }
