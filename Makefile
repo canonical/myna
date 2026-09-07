@@ -282,6 +282,28 @@ install-schema: ## Install the client GSettings schema on the host (needs sudo)
 	sudo glib-compile-schemas /usr/share/glib-2.0/schemas
 	@echo "installed com.canonical.Myna.Dictation; read it with: GSETTINGS_BACKEND=keyfile myna-desktop --status"
 
+# GNOME resolves a window's icon through the desktop file whose name matches
+# the application id, so a build-tree run shows the fallback icon until both
+# the entry and the icons exist in a data dir. This installs them for the
+# current user and points Exec at the debug binary; the deb installs the same
+# two files under /usr.
+.PHONY: install-desktop
+install-desktop: ## Install the Myna Settings desktop entry + icons for this user
+	install -Dm644 client/data/icons/hicolor/scalable/apps/com.canonical.Myna.Config.svg \
+		$(HOME)/.local/share/icons/hicolor/scalable/apps/com.canonical.Myna.Config.svg
+	install -Dm644 client/data/icons/hicolor/symbolic/apps/com.canonical.Myna.Config-symbolic.svg \
+		$(HOME)/.local/share/icons/hicolor/symbolic/apps/com.canonical.Myna.Config-symbolic.svg
+	install -Dm644 client/data/icons/hicolor/scalable/apps/com.canonical.Myna.svg \
+		$(HOME)/.local/share/icons/hicolor/scalable/apps/com.canonical.Myna.svg
+	install -Dm644 client/data/icons/hicolor/symbolic/apps/com.canonical.Myna-symbolic.svg \
+		$(HOME)/.local/share/icons/hicolor/symbolic/apps/com.canonical.Myna-symbolic.svg
+	sed 's|^Exec=myna-config$$|Exec=$(CURDIR)/client/target/debug/myna-config|' \
+		client/myna-config/data/com.canonical.Myna.Config.desktop \
+		> $(HOME)/.local/share/applications/com.canonical.Myna.Config.desktop
+	-gtk4-update-icon-cache -qtf $(HOME)/.local/share/icons/hicolor
+	-update-desktop-database $(HOME)/.local/share/applications
+	@echo "installed com.canonical.Myna.Config; a running app picks the icon up on its next start"
+
 ##@ Snaps
 
 define snap_rule

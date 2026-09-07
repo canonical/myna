@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Myna Settings
+GenericName=Dictation Settings
+Comment=Configure Myna dictation and its speech backends
+Exec=myna-config
+Icon=com.canonical.Myna.Config
+Terminal=false
+StartupNotify=true
+Categories=Settings;
+Keywords=dictation;speech;transcription;voice;backend;
