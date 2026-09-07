@@ -26,14 +26,13 @@
 use std::collections::HashMap;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::stream::{BoxStream, StreamExt};
-use tokio::sync::broadcast;
-use tokio::sync::Notify;
+use tokio::sync::{broadcast, watch};
 use tokio_stream::wrappers::BroadcastStream;
 use zbus::address::transport::{Transport, Unix, UnixSocket};
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
@@ -463,10 +462,29 @@ struct EngineState {
     focus_tx: broadcast::Sender<FocusEvent>,
     /// Latest input-purpose from `SetContentType` (0 until one arrives).
     purpose: AtomicU32,
-    /// Set once the daemon focuses our engine on a context.
-    focused: AtomicBool,
-    /// Woken on the first `FocusIn` so `acquire` can proceed.
-    focus_in: Arc<Notify>,
+    /// Whether the daemon has focused our engine on a context.
+    ///
+    /// A `watch` rather than a `Notify`: the daemon delivers `FocusIn` *during*
+    /// the `SetGlobalEngine` round trip that triggers it, and
+    /// `Notify::notify_waiters` only wakes tasks already parked. A waiter
+    /// created after that call therefore missed the notification every time, so
+    /// `acquire` always saw `focus_received=false` and never ran its
+    /// `SetContentType` grace (the secure-field check below). A `watch` retains
+    /// the latest value, so a waiter that starts late still observes it.
+    focused: watch::Sender<bool>,
+}
+
+impl EngineState {
+    /// Whether the daemon focused our engine on a context, waiting up to
+    /// `FOCUS_WAIT` for a `FocusIn` that has not landed yet. Safe to call after
+    /// the triggering call has already returned (see `focused`).
+    async fn focus_arrived(&self) -> bool {
+        let mut rx = self.focused.subscribe();
+        let arrived = tokio::time::timeout(FOCUS_WAIT, rx.wait_for(|focused| *focused))
+            .await
+            .is_ok();
+        arrived
+    }
 }
 
 /// The `org.freedesktop.IBus.Engine` object the daemon drives. Most callbacks
@@ -478,9 +496,8 @@ struct EngineObject {
 #[zbus::interface(name = "org.freedesktop.IBus.Engine")]
 impl EngineObject {
     async fn focus_in(&self) {
-        self.state.focused.store(true, Ordering::SeqCst);
         myna_core::dbg_log!("inject", "IBus FocusIn received");
-        self.state.focus_in.notify_waiters();
+        self.state.focused.send_replace(true);
     }
 
     /// Newer IBus delivers focus with context/client ids.
@@ -490,7 +507,7 @@ impl EngineObject {
     }
 
     async fn focus_out(&self) {
-        self.state.focused.store(false, Ordering::SeqCst);
+        self.state.focused.send_replace(false);
         myna_core::dbg_log!("inject", "IBus FocusOut received");
         let _ = self.state.focus_tx.send(FocusEvent::FocusOut);
     }
@@ -603,8 +620,7 @@ impl IbusInjector {
         let state = Arc::new(EngineState {
             focus_tx,
             purpose: AtomicU32::new(0),
-            focused: AtomicBool::new(false),
-            focus_in: Arc::new(Notify::new()),
+            focused: watch::Sender::new(false),
         });
         Ok(Self {
             conn,
@@ -713,7 +729,7 @@ impl Injector for IbusInjector {
         // Register our component + serve the factory/engine, then become active.
         self.call("RegisterComponent", &(ibus_component(),)).await?;
         self.serve_objects().await?;
-        self.state.focused.store(false, Ordering::SeqCst);
+        self.state.focused.send_replace(false);
         self.state.purpose.store(0, Ordering::SeqCst);
         self.call("SetGlobalEngine", &(ENGINE_NAME,)).await?;
         self.active = true;
@@ -727,9 +743,7 @@ impl Injector for IbusInjector {
         // bare read would lose. We do NOT hard-fail on a slow/absent `FocusIn`:
         // that is the ordinary-field case (IBus focuses different widgets on
         // different schedules), and refusing there breaks legitimate dictation.
-        let focus_received = tokio::time::timeout(FOCUS_WAIT, self.state.focus_in.notified())
-            .await
-            .is_ok();
+        let focus_received = self.state.focus_arrived().await;
         if focus_received {
             // Focus arrived — let SetContentType land so a password field can't slip
             // through on the race between the two callbacks.
@@ -911,6 +925,63 @@ mod tests {
         assert_eq!(attr.fields()[4], Value::from(0u32));
         // "héllo w" is 7 chars but 8 bytes — the span must be 7.
         assert_eq!(attr.fields()[5], Value::from(7u32));
+    }
+
+    fn engine_state() -> Arc<EngineState> {
+        let (focus_tx, _) = broadcast::channel(16);
+        Arc::new(EngineState {
+            focus_tx,
+            purpose: AtomicU32::new(0),
+            focused: watch::Sender::new(false),
+        })
+    }
+
+    /// The daemon delivers `FocusIn` *during* the `SetGlobalEngine` round trip
+    /// that triggers it, so `acquire` only starts waiting after the event has
+    /// already been dispatched. That must still count as focus received: with
+    /// the earlier `Notify::notify_waiters` this notification was dropped on
+    /// the floor (no task was parked yet), `focus_received` was false on every
+    /// acquire, and the `SetContentType` grace that guards the secure-field
+    /// check never ran.
+    #[tokio::test]
+    async fn focus_in_delivered_before_the_wait_starts_is_not_lost() {
+        let state = engine_state();
+        let engine = EngineObject {
+            state: Arc::clone(&state),
+        };
+
+        // Happens inside `SetGlobalEngine`, before anyone awaits.
+        engine.focus_in().await;
+
+        assert!(
+            state.focus_arrived().await,
+            "FocusIn dispatched before the wait began must still be observed"
+        );
+    }
+
+    /// The flip side: with no `FocusIn` the wait times out rather than
+    /// reporting focus, so `acquire` keeps treating a silent context as the
+    /// ordinary-field case instead of claiming the grace period ran.
+    #[tokio::test(start_paused = true)]
+    async fn no_focus_in_times_out() {
+        let state = engine_state();
+        assert!(!state.focus_arrived().await);
+    }
+
+    /// A stale `FocusIn` from the previous utterance must not satisfy the next
+    /// `acquire`: it resets the flag before `SetGlobalEngine`.
+    #[tokio::test(start_paused = true)]
+    async fn focus_from_a_prior_session_does_not_carry_over() {
+        let state = engine_state();
+        let engine = EngineObject {
+            state: Arc::clone(&state),
+        };
+        engine.focus_in().await;
+        assert!(state.focus_arrived().await);
+
+        // What `acquire` does at the top of the next session.
+        state.focused.send_replace(false);
+        assert!(!state.focus_arrived().await);
     }
 
     /// I5/FR-021: PASSWORD and PIN purposes are the secure set, checked both at

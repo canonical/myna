@@ -161,8 +161,11 @@ default; when on it prints transcript text (`myna_core::debug`).
   legitimate dictation.
 
 **Residual risk (FR-021 "where undetectable", US4-4).** Detection is a *push*
-signal to our engine. **X11/XWayland apps**: GTK's IBus module talks to the
-daemon directly, so `SetContentType` reaches us and refusal works. **Wayland
+signal to our engine. **X11/XWayland apps**: where the app really is an IBus
+client (it loaded GTK's `im-ibus` module, or an equivalent), that client talks
+to the daemon directly, so `SetContentType` reaches us and refusal works - but
+see *Apps that are not IBus clients* below for the ones that never do.
+**Wayland
 apps**: the field's content-type stops at the compositor — verified on GNOME
 Shell (libmutter-18, and even the newer mutter-51): the `ClutterInputMethod`
 bridge between Mutter's `text-input-v3` relay and the shell's IBus client has
@@ -176,6 +179,62 @@ content-type seen" would refuse every ordinary Wayland field too. The fix
 belongs upstream (mutter/gnome-shell IM bridge). Diagnose per-field with
 `MYNA_DEBUG=1` — the acquire/commit paths log `focus_received`, `purpose`,
 every `SetContentType`/`FocusIn`/`FocusOut`, and commit refusals.
+
+**Apps that are not IBus clients: the commit is dropped in silence.** IBus is a
+*push* channel with no delivery receipt. `CommitText` is a signal; the daemon
+forwards it to whatever `InputContext` is current and returns nothing. If the
+focused application has no IBus client of its own, there is no context that can
+render into its window, and the text is discarded with no error anywhere in the
+stack - `acquire` succeeds, `commit` returns `Ok`, the session finalizes
+cleanly, and nothing appears in the field.
+
+The shipped example is **VS Code installed as a snap**. Its launcher hardcodes
+`--ozone-platform=x11` (`/snap/code/<rev>/electron-launch` ends with `exec "$@"
+--ozone-platform=x11`), so it always runs on XWayland, and the GTK3 it bundles
+ships no `im-ibus.so` (`$SNAP/usr/lib/$ARCH/gtk-3.0/3.0.0/immodules/` has
+`im-xim.so` and `im-wayland.so` but not `im-ibus.so`). XSETTINGS asks for
+`Gtk/IMModule='ibus'`, the module does not exist inside the snap, GTK falls back
+to `gtk-im-context-simple`, and the process never connects to the IBus socket at
+all. Setting `GTK_IM_MODULE=xim` does not rescue it either (measured).
+
+Measured on GNOME 49/Wayland with the `ibus_preedit_visual_probe` driver, one
+variable at a time:
+
+| Focused app | Display path | IBus client? | Commit lands |
+| --- | --- | --- | --- |
+| host GTK3 app | XWayland (`GDK_BACKEND=x11`) | yes, `im-ibus.so` | **yes** |
+| host GTK3 app | native Wayland | yes, via `text-input-v3` | **yes** |
+| VS Code snap | native Wayland (wrapper bypassed) | yes, via `text-input-v3` | **yes** |
+| VS Code snap | XWayland (as shipped) | **no** | **no** |
+
+So **XWayland is not the fault** - an XWayland app with an IBus module works
+fine. The fault is "the app is not an IBus client", and the snap's forced X11
+mode is what puts VS Code in that set.
+
+**Why we cannot detect it.** Nothing in the IBus channel distinguishes the two
+X11 rows. With the focus race above fixed, `acquire` reports
+`focus_received=true` in *both*, because the daemon focuses our engine on
+whatever `InputContext` is current regardless of whether that context has a
+live client behind it (with VS Code focused it is `ibus-x11`'s stale context).
+`org.freedesktop.IBus.InputContext` exposes no client name or connection
+identity, `CurrentInputContext` is a bare object path, and `purpose` is 0 in
+both. The only signals that separate them live outside IBus - the X focus
+window (`XGetInputFocus` returns a real client window with a `WM_CLASS` for an
+X11 app, and a parentless dummy window when a Wayland app has focus) and the
+IBus socket's peer list (`/proc/net/unix`), which is both snap-hostile and
+wrong for flatpak apps that reach IBus through `ibus-portal` rather than a
+direct connection. Neither is a sound basis for refusing to inject.
+
+Consequences for the user: on GNOME the only sanctioned client→app text path is
+IBus (see the survey below), so an app outside IBus is unreachable by design and
+the workaround is per-app - run it as a native Wayland client, or install a
+build whose GTK carries `im-ibus.so`. For the snap-packaged VS Code neither is
+available to the user without repacking, because the wrapper appends
+`--ozone-platform=x11` after the user's own arguments and Chromium takes the
+last value. Making the silent drop *visible* needs an out-of-band signal
+(focused-window client type from the shell extension, or a non-IBus fallback
+injector); that is an open product decision, not something the IBus backend can
+answer on its own.
 
 Verified: the connection handshake + GVariant shapes against the running daemon;
 the full register→activate→commit→restore cycle against an isolated IBus daemon
