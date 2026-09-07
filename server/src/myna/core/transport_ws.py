@@ -48,9 +48,9 @@ import contextlib
 import json
 import os
 import socket
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.server import Server, ServerConnection, unix_serve
@@ -240,14 +240,11 @@ class _SessionHandler:
                 await ws.close()
             return
 
-        def on_text(message: dict[str, Any], config: SessionConfig) -> tuple[str, PcmChunk | None]:
-            return ("finish", None) if message.get("type") == "session.finish" else ("ignore", None)
-
         async def emit(event: TranscriptionEvent) -> None:
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps(event_to_wire(event)))
 
-        await self._pump_session(ws, config, on_text=on_text, emit=emit)
+        await self._pump_session(ws, config, emit=emit)
 
     async def _handle_ie115(
         self,
@@ -345,11 +342,9 @@ class _SessionHandler:
                 """Consume to the boundary if the adapter stopped pulling early
                 (e.g. rejected the format) so leftover audio of this utterance
                 is discarded, not misread as the next one."""
-                while not self.ended:
-                    item = await frames.get()
-                    if item is _COMMIT or item is None:
-                        self.ended = True
-                        self.closed = item is None
+                if not self.ended:
+                    async for _ in self.audio():
+                        pass
 
         reader = asyncio.ensure_future(read_frames())
         try:
@@ -396,13 +391,12 @@ class _SessionHandler:
         ws: ServerConnection,
         config: SessionConfig,
         *,
-        on_text: Callable[[dict[str, Any], SessionConfig], tuple[str, PcmChunk | None]],
         emit: EventSink,
     ) -> None:
         """Internal-dialect session loop (one utterance per connection, server
-        closes after the terminal event): binary frames -> PCM; text frames
-        dispatched by ``on_text`` (finish/ignore); events out via ``emit``.
-        The reader runs concurrently with the adapter (commit-drain)."""
+        closes after the terminal event): binary frames -> PCM, ``session.finish``
+        ends the audio, every other text frame is ignored; events out via
+        ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
 
         async def read_frames() -> None:
@@ -411,10 +405,7 @@ class _SessionHandler:
                     if isinstance(frame, bytes):
                         await audio.put(PcmChunk(data=frame, format=config.audio_format))
                         continue
-                    kind, chunk = on_text(json.loads(frame), config)
-                    if kind == "append" and chunk is not None:
-                        await audio.put(chunk)
-                    elif kind == "finish":
+                    if json.loads(frame).get("type") == "session.finish":
                         break
             except ConnectionClosed:
                 pass  # client abort: just end the audio stream
