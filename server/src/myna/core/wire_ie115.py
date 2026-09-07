@@ -283,4 +283,3 @@ class Ie115Decoder:
                 message="connection closed before the utterance completed",
             )
         ]
-
