@@ -21,14 +21,12 @@ modelctl set --package verbose="false"
 modelctl set --package sleep-idle-seconds="300"
 
 #
-# Auto select an engine (cpu → pure-C runtime)
+# Activate the single engine.
+#
+# This snap ships exactly one engine, so hardware scoring has nothing to
+# decide. Selecting it by name also keeps `modelctl show-engine` /
+# `list-models` / `status` answering on a sideloaded install, where
+# hardware-observe is not auto-connected.
 #
 
-if snapctl is-connected hardware-observe; then
-    modelctl use-engine --auto --assume-yes --verbose
-elif lscpu -V &> /dev/null; then
-    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
-    modelctl use-engine --auto --assume-yes --verbose
-else
-    echo "hardware-observe interface not auto connected. Skip auto engine selection."
-fi
+modelctl use-engine cpu --assume-yes --verbose

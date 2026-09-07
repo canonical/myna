@@ -182,6 +182,29 @@ def test_install_hook_activates_an_engine(snap) -> None:
     )
 
 
+def test_single_cpu_engine_snaps_activate_it_by_name(snap) -> None:
+    """One CPU engine means hardware scoring has one possible answer.
+
+    Selecting by name also survives a sideload, where hardware-observe is not
+    auto-connected and `--auto` would leave the snap with no active engine.
+    nemotron is not covered: its single engine is nvidia-gpu, where refusing to
+    activate on a machine that cannot run it is the honest outcome.
+    """
+    snap_dir, name, _ = snap
+    engines = [p.name for p in (REPO_ROOT / snap_dir / "engines").iterdir() if p.is_dir()]
+    if engines != ["cpu"]:
+        return
+    hook = (REPO_ROOT / snap_dir / "snap" / "hooks" / "install").read_text(encoding="utf-8")
+    assert "use-engine cpu" in hook, (
+        f"{name}: ships only a cpu engine but the install hook does not select it "
+        "by name, so a sideloaded install can end up with no active engine"
+    )
+    assert "use-engine --auto" not in hook, (
+        f"{name}: ships only a cpu engine, so the install hook must not ask "
+        "modelctl to score hardware for the one possible answer"
+    )
+
+
 def test_declares_every_engine_it_ships(snap) -> None:
     """Every engines/<name>/ dir needs its server script, and vice versa."""
     snap_dir, name, _ = snap

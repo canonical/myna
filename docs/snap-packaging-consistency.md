@@ -30,6 +30,7 @@ modelctl's own `debug lint-package` over every snap.
 | `ubustt-socket` slot exposed | Confined clients reach the backend over the content share. | - |
 | Every `engines/<name>/` has `server` + `engine.yaml` | A half-declared engine fails at run time, not at pack time. | - |
 | No engine script hardcodes `--streaming` | Emission mode is a user-facing config toggle; a baked-in flag is not a choice. | parakeet, sherpa |
+| A snap whose only engine is `cpu` activates it by name | `--auto` asks modelctl to score hardware for the one possible answer, and skips selection entirely on a sideload. | funasr, qwen |
 
 ## Differences that are deliberate, not drift
 
@@ -38,9 +39,13 @@ and the tests permit them:
 
 - **parakeet and sherpa ship one engine and their `server.sh` execs
   `engines/cpu/server` directly**, instead of asking modelctl to score hardware
-  to discover the only possible answer. Their install hooks therefore activate
-  the engine *by name* rather than with `--auto`, which keeps the modelctl
-  surface working even where `hardware-observe` is unavailable.
+  to discover the only possible answer. funasr and qwen also ship one engine but
+  still go through `modelctl run`, which is what exports `MODEL_DIR` and the
+  qwen runtime's `QWEN_ASR_LIB`; all four activate that engine *by name* at
+  install, which keeps the modelctl surface working even where
+  `hardware-observe` is unavailable. nemotron is the exception: its one engine
+  is `nvidia-gpu`, and on a machine that cannot run it, no active engine is the
+  honest answer.
 - **Their daemon app does not plug `hardware-observe`/`opengl`**, unlike the
   others. It never touches hardware detection - the engine script reads config
   only - so the plugs would be unused privilege.
