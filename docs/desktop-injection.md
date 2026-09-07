@@ -252,9 +252,11 @@ waiting silently for commits:
   (ibus ≥ 1.5.29, `bus/engineproxy.c`), and a 3-arg `(vub)` emission fails
   `g_variant_get` there and is dropped *silently*. `mode` is
   `IBUS_ENGINE_PREEDIT_CLEAR` — focus-out discards the volatile text, never
-  commits it. The `IBusText` carries a single underline attribute spanning
-  the whole string (IBus indexes are **char**-based, not bytes) — the
-  conventional "uncommitted" visual. Two serialization traps, both
+  commits it. The `IBusText` carries a semantic `IBUS_ATTR_PREEDIT_WHOLE`
+  hint spanning the whole string (IBus indexes are **char**-based, not bytes),
+  allowing each client to choose its composing-text style. This is preserved
+  by GNOME's Wayland text-input bridge, unlike explicit underline attributes.
+  Two serialization traps, both
   root-caused live (2026-07-28) by diffing our signal bytes against
   libibus-serialized canonical bytes and driving a probe `IBus.InputContext`:
   the attr list must be **variant-wrapped** (`(sa{sv}sv)`, not inline
@@ -293,22 +295,17 @@ so the two gates agree by construction.
 
 > **⚠ Open (UD136 / plan T64):** this makes in-field partials the default
 > *wherever the tier gate opens streaming*, which is the substance of T64(a).
-> What T64 still owns is (b) the differentiating formatting: on GNOME/Wayland
-> the text-input-v3 path strips IBus preedit attributes, so the underline is
-> app/toolkit-dependent and a cross-app-consistent "unstable look" may have to
-> come from the shell extension instead. Nothing here settles that.
+> What T64 still owns is (b) whether the client-selected rendering of the
+> semantic whole-preedit hint differentiates unstable text sufficiently.
 
 **Styling reality (for the design meeting, plan T64).** The preedit *text*
-is delivered and replaced/committed correctly everywhere (probe-verified),
-but the *differentiating style* is not ours to control on GNOME: on native
-Wayland the app talks text-input-v3 to Mutter, which strips IBus preedit
-attributes (ibus ChangeLog: "GNOME Wayland uses text-input version 3 which
-deletes the preedit style") — GTK renders preedit with its own default
-look, and our underline attribute is honored only where the app/toolkit
-supports it (X11/XWayland IBus clients, some GTK paths). So a *consistent*
-cross-app "unstable" visual may need to live in the shell extension's chrome
-(feature 004) rather than in-field styling. Whether partials graduate from
-opt-in to default, and with what visual treatment, is a UD136 design call. Hermetic coverage: `tests/controller.rs`
+is delivered and replaced/committed correctly everywhere (probe-verified).
+Myna supplies the semantic `WHOLE` hint rather than prescribing an underline:
+GNOME Shell requests hint-formatted IBus attributes and forwards those through
+Wayland text-input-v3, while deliberately ignoring explicit visual attributes.
+The receiving toolkit chooses the actual themed appearance. Whether that
+client-selected treatment differentiates unstable text sufficiently remains a
+UD136 design call. Hermetic coverage: `tests/controller.rs`
 (`streaming_unstable_is_preedit_only_never_committed`,
 `preedit_is_off_by_default_even_when_supported`,
 `preedit_suppressed_with_commits_after_focus_loss`) + the GVariant shape test

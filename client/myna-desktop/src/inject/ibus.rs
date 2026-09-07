@@ -125,19 +125,22 @@ fn ibus_text(text: &str) -> Value<'static> {
     )
 }
 
-// IBusAttrType / IBusAttrUnderline constants for the preedit attribute.
-const ATTR_TYPE_UNDERLINE: u32 = 1;
-const ATTR_UNDERLINE_SINGLE: u32 = 1;
+// IBusAttrType / IBusAttrPreedit constants for the preedit attribute.
+//
+// GNOME Shell requests semantic preedit hints and deliberately ignores visual
+// attributes such as UNDERLINE. WHOLE lets each client render composing text
+// appropriately; traditional IBus clients commonly map it to an underline.
+const ATTR_TYPE_HINT: u32 = 4;
+const ATTR_PREEDIT_WHOLE: u32 = 1;
 
-/// `IBusAttrList` carrying one underline attribute spanning `[0, end)` — the
-/// conventional "this text is volatile" marker for a preedit region (R9).
+/// `IBusAttrList` carrying one whole-preedit hint spanning `[0, end)`.
 fn ibus_preedit_attr_list(end: u32) -> Value<'static> {
-    let underline = Value::from(
+    let whole = Value::from(
         StructureBuilder::new()
             .add_field("IBusAttribute".to_string())
             .add_field(empty_attach())
-            .add_field(ATTR_TYPE_UNDERLINE)
-            .add_field(ATTR_UNDERLINE_SINGLE)
+            .add_field(ATTR_TYPE_HINT)
+            .add_field(ATTR_PREEDIT_WHOLE)
             .add_field(0u32) // start index (chars)
             .add_field(end) // end index (chars)
             .build()
@@ -147,14 +150,14 @@ fn ibus_preedit_attr_list(end: u32) -> Value<'static> {
         StructureBuilder::new()
             .add_field("IBusAttrList".to_string())
             .add_field(empty_attach())
-            .add_field(vec![underline]) // attributes (av)
+            .add_field(vec![whole]) // attributes (av)
             .build()
             .expect("IBusAttrList structure"),
     )
 }
 
-/// `IBusText` for preedit: the volatile hypothesis, underlined over its whole
-/// length so the field renders it as uncommitted (the IME-convention visual).
+/// `IBusText` for preedit: the volatile hypothesis marked as composing over its
+/// whole length, leaving the client to choose the visual treatment.
 fn ibus_preedit_text(text: &str) -> Value<'static> {
     let chars = text.chars().count() as u32;
     Value::from(
@@ -888,11 +891,10 @@ mod tests {
         assert!(matches!(err, InjectError::Backend(_)), "{err:?}");
     }
 
-    /// R9: the preedit `IBusText` carries one underline attribute spanning the
-    /// whole string (the volatile-text marker), and the cursor/end index counts
-    /// **chars**, not bytes (IBus indexes are character-based).
+    /// R9: the preedit `IBusText` carries one semantic WHOLE hint spanning the
+    /// string, and the cursor/end index counts **chars**, not bytes.
     #[test]
-    fn preedit_text_is_fully_underlined_and_char_indexed() {
+    fn preedit_text_has_whole_hint_and_char_indexed() {
         let v = ibus_preedit_text("héllo w");
         let Value::Structure(s) = &v else {
             panic!("IBusText must be a structure")
@@ -911,7 +913,7 @@ mod tests {
         let Value::Array(list) = &attrs.fields()[2] else {
             panic!("attr array")
         };
-        assert_eq!(list.len(), 1, "exactly one (underline) attribute");
+        assert_eq!(list.len(), 1, "exactly one (whole-preedit) attribute");
         // `av` elements are variant-wrapped.
         let Value::Value(inner) = &list[0] else {
             panic!("attr variant")
@@ -920,8 +922,8 @@ mod tests {
             panic!("attr structure")
         };
         assert_eq!(attr.fields()[0], Value::from("IBusAttribute"));
-        assert_eq!(attr.fields()[2], Value::from(ATTR_TYPE_UNDERLINE));
-        assert_eq!(attr.fields()[3], Value::from(ATTR_UNDERLINE_SINGLE));
+        assert_eq!(attr.fields()[2], Value::from(ATTR_TYPE_HINT));
+        assert_eq!(attr.fields()[3], Value::from(ATTR_PREEDIT_WHOLE));
         assert_eq!(attr.fields()[4], Value::from(0u32));
         // "héllo w" is 7 chars but 8 bytes — the span must be 7.
         assert_eq!(attr.fields()[5], Value::from(7u32));
