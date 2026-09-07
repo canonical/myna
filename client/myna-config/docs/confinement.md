@@ -388,8 +388,8 @@ ports remain the domain/UI boundary:
   optimistic success. Stable contract errors and ordered step outcomes
   map into
   `SystemConfiguratorFailure`/`CommandResult`; specifically,
-  `configure_hook_rejected` maps to
-  `SystemConfiguratorError::ConfigureHookRejected`.
+  `values_rejected` maps to
+  `SystemConfiguratorError::ValuesRejected`.
 - No domain model or GTK presenter receives transport, snapd, polkit, or
   protocol types. The existing `SystemConfigurator` port is already the seam:
   a mediator client implements it without any consumer changing. Nothing here
