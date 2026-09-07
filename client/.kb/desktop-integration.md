@@ -18,6 +18,56 @@ Committed segments may be coalesced before IBus insertion because rapid adjacent
 
 In streaming mode, unstable hypotheses may replace the target's preedit region when the injector supports it. Preedit is volatile, clears before commits and on cancellation, and follows the same secure-field and focus-loss guards as committed text.
 
+# Why an input method, not emulated input
+
+The cross-desktop direction for synthetic input is libei/libeis mediated by the
+`org.freedesktop.portal.RemoteDesktop` portal, and Mutter already carries libei
+support. But libei emulates a *device* - keycodes and pointer motion - while
+dictation needs a semantic text commit. The difference is substantive, not
+cosmetic:
+
+- A keycode is not a character. It names a physical key position, and which
+  character it produces is decided later by whatever xkb layout the *receiving*
+  client has at delivery time. Emitting "ü", "€", or anything Cyrillic means
+  finding a (keycode, modifier level) pair that maps to that keysym in the
+  layout in force, and temporarily rewriting the keymap when none exists - the
+  trick `wtype` and `ydotool` use. That races the user's own typing and layout
+  switching, and per-window layouts make it unwinnable. A commit is a UTF-8
+  string: layout never enters the picture.
+- Modifier state is global and shared. Synthesising capitals or AltGr levels
+  means pressing and releasing real modifiers on the seat, interleaved with
+  whatever the user physically holds down. Lose that race and the text is
+  delivered as accelerators; a sentence typed while Ctrl is latched is a run of
+  commands, some destructive.
+- Keystrokes get interpreted; commits get inserted. Every synthetic key
+  traverses the app's key handling: autocomplete popups, type-ahead find, modal
+  editors, key repeat, candidate windows. A 120-character utterance is 120
+  opportunities to intercept, reorder, or transform it. A commit arrives on the
+  text-input interface as one atomic string the widget inserts verbatim, and
+  typically as a single undo step.
+- Keycodes fight the user's real IME; a commit sits downstream of it. With a
+  CJK or Hangul input method active, synthetic keys feed *its* composition
+  engine, so "nihao" becomes a candidate lookup rather than text. Being an input
+  method puts our output exactly where an IME's committed text goes, after
+  composition, and makes handing focus back to the user's IME a protocol
+  operation rather than a guess.
+- Streaming ASR needs preedit, which only the IM path has. `text-input-v3`
+  carries provisional preedit alongside commit, plus surrounding-text and
+  delete-surrounding-text. That is the exact shape of incremental recognition:
+  show the running hypothesis as styled preedit, replace it when the recogniser
+  revises, commit once it is stable. Keycode emulation can only fake revision
+  with backspaces, which is lossy against any field that reflows, autocorrects,
+  or autocompletes underneath it.
+- Delivery is scoped. The compositor routes a commit to the surface holding an
+  active text-input, so it can only land somewhere that asked for text.
+  Emulated keys go wherever focus happens to be at delivery, including a
+  different window if focus moved mid-utterance.
+
+There is no cross-desktop text-commit portal yet, so IBus stays the GNOME path
+and `input-method-v2` the wlroots path. The genuinely-unsettled question is
+whether a portable IM/text-injection interface ever standardises; until then
+`Injector` is the portability boundary and IBus is the shipping backend.
+
 # Important
 
 - Never inject unstable hypotheses with `CommitText`.
