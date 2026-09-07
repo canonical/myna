@@ -380,7 +380,6 @@ fn run_capture(
         .process({
             let main_loop = main_loop.clone();
             let producer = producer.clone();
-            let stop = stop.clone();
             let buffers_seen = buffers_seen.clone();
             // Channel pick/downmix config (§9): pick these input-channel indices
             // from the `stream_channels`-wide stream and average them down to
@@ -410,9 +409,10 @@ fn run_capture(
                                     .as_mut()
                                     .map(|p| p.push(bytes))
                                     .unwrap_or(false);
-                                if !alive || stop.is_stopped() {
-                                    // Consumer gone (abort) or stop tripped →
-                                    // end promptly (FR-011).
+                                if !alive {
+                                    // Consumer gone (abort) → end promptly
+                                    // (FR-011); a graceful stop is the
+                                    // stop-poll timer's job.
                                     main_loop.quit();
                                 }
                             }
