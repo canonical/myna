@@ -206,80 +206,36 @@ class SherpaAdapter:
             # (docs/architecture/ie115-lifecycle.md §3A).
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
-            if self._streaming:
-                await self._run_streaming_session(recognizer, audio, emit)
-                return
-
-            # Batch (I7 degenerate): push everything, finalize, one committed.
-            stream = recognizer.create_stream()
-            buffered = bytearray()
-            seconds_since_progress = 0.0
-            async for chunk in audio:
-                buffered.extend(chunk.data)
-                seconds_since_progress += chunk.duration_seconds
-                if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
-                    seconds_since_progress = 0.0
-                    await emit(TranscriptionProgress())
-
-            text = ""
-            if buffered:
-                samples = (
-                    np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
-                )
-                text = await asyncio.to_thread(self._decode_oneshot, recognizer, stream, samples)
-            await emit(TranscriptionFinal(text=text, disposition=Disposition.COMMITTED))
-            await emit(TranscriptionDone(text=text))
+            await self._run_push_loop(recognizer, audio, emit)
         except Exception as exc:
             await emit(
                 TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
 
-    @staticmethod
-    def _decode_oneshot(recognizer, stream, samples: np.ndarray) -> str:
-        """Push all audio and return the full transcript, accumulating across
-        any endpoint boundaries.
-
-        The recognizer is created with ``enable_endpoint_detection=True``
-        (needed by the streaming path); in batch mode an endpoint that fires
-        mid-audio (e.g. a noise-induced pause) would cause the ``is_ready``
-        loop to exit early and ``get_result`` to return only text up to that
-        endpoint, silently dropping the remainder. Looping over endpoints and
-        accumulating segments gives the same behaviour as the streaming
-        committed-segment concat (I2).
-        """
-        stream.accept_waveform(SHERPA_RATE, samples)
-        stream.input_finished()
-        segments: list[str] = []
-        while recognizer.is_ready(stream):
-            recognizer.decode_stream(stream)
-            if recognizer.is_endpoint(stream):
-                seg = recognizer.get_result(stream).strip()
-                if seg:
-                    segments.append(seg)
-                recognizer.reset(stream)
-        tail = recognizer.get_result(stream).strip()
-        if tail:
-            segments.append(tail)
-        return " ".join(segments)
-
-    async def _run_streaming_session(
+    async def _run_push_loop(
         self,
         recognizer,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
     ) -> None:
-        """Native push loop: partial results → unstable (display-only, never
-        restate committed text — sherpa resets its segment at each endpoint,
-        so post-endpoint partials only cover new audio, I3); endpoint-detected
-        segments → committed with monotonic ``segment_index`` (I1); at
-        end-of-audio the outstanding partial resolves to committed (I5) and
-        the terminal transcript is the verbatim concatenation (I2 — segments
-        after the first carry a synthetic leading space, since sherpa strips
-        its results)."""
+        """Native push loop, shared by both modes: partial results → unstable
+        (display-only, never restate committed text — sherpa resets its
+        segment at each endpoint, so post-endpoint partials only cover new
+        audio, I3); endpoint-detected segments → committed with monotonic
+        ``segment_index`` (I1); at end-of-audio the outstanding partial
+        resolves to committed (I5) and the terminal transcript is the verbatim
+        concatenation (I2 — segments after the first carry a synthetic leading
+        space, since sherpa strips its results).
+
+        Batch mode is the same loop with the intermediate emissions withheld:
+        the segments are accumulated and land as the single committed final
+        that I7 asks for.
+        """
         stream = recognizer.create_stream()
         committed: list[str] = []
         segment_index = 0
         last_unstable = ""
+        seconds_since_progress = 0.0
 
         async def commit(text: str) -> None:
             nonlocal segment_index, last_unstable
@@ -290,13 +246,14 @@ class SherpaAdapter:
             # every segment after the first carries a synthetic leading space.
             if committed:
                 text = " " + text
-            await emit(
-                TranscriptionFinal(
-                    text=text,
-                    disposition=Disposition.COMMITTED,
-                    segment_index=segment_index,
+            if self._streaming:
+                await emit(
+                    TranscriptionFinal(
+                        text=text,
+                        disposition=Disposition.COMMITTED,
+                        segment_index=segment_index,
+                    )
                 )
-            )
             committed.append(text)
             segment_index += 1
             last_unstable = ""  # I4: commit clears unstable
@@ -306,16 +263,22 @@ class SherpaAdapter:
             endpoint, text = await asyncio.to_thread(self._push, recognizer, stream, samples)
             if endpoint:
                 await commit(text)
-            elif text and text != last_unstable:
+            elif self._streaming and text and text != last_unstable:
                 await emit(TranscriptionFinal(text=text, disposition=Disposition.UNSTABLE))
                 last_unstable = text
-            elif not text and not endpoint:
-                await emit(TranscriptionProgress())  # liveness on quiet ticks
+            seconds_since_progress += chunk.duration_seconds
+            if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
+                seconds_since_progress = 0.0
+                await emit(TranscriptionProgress())  # liveness
 
         # I5: resolve the tail — flush and commit whatever is outstanding.
         tail = await asyncio.to_thread(self._flush, recognizer, stream)
         await commit(tail)
-        await emit(TranscriptionDone(text="".join(committed)))
+        transcript = "".join(committed)
+        if not self._streaming:
+            # I7 degenerate: one committed segment, the whole transcript.
+            await emit(TranscriptionFinal(text=transcript, disposition=Disposition.COMMITTED))
+        await emit(TranscriptionDone(text=transcript))
 
     @staticmethod
     def _push(recognizer, stream, samples: np.ndarray) -> tuple[bool, str]:
