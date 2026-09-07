@@ -284,21 +284,3 @@ class Ie115Decoder:
             )
         ]
 
-
-# --- test helpers (T08-T010, feature 007) ----------------------------------------
-
-
-def encode_delta(event: TranscriptionFinal, item_id: str) -> dict[str, Any]:
-    """Helper for testing: encode a TranscriptionFinal as an IE115 delta frame."""
-    encoder = Ie115Encoder()
-    encoder._item_id = item_id  # Override the generated item_id for testing
-    return encoder.encode(event)
-
-
-def decode_delta(frame: dict[str, Any]) -> TranscriptionFinal:
-    """Helper for testing: decode an IE115 delta frame to TranscriptionFinal."""
-    decoder = Ie115Decoder()
-    events = decoder.decode(frame)
-    if not events or not isinstance(events[0], TranscriptionFinal):
-        raise ValueError(f"Expected TranscriptionFinal, got {events}")
-    return events[0]

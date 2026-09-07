@@ -5,7 +5,19 @@ and that backward compatibility is maintained (absent field → committed defaul
 """
 
 from myna.core import Disposition, TranscriptionFinal
-from myna.core.wire_ie115 import decode_delta, encode_delta
+from myna.core.wire_ie115 import Ie115Decoder, Ie115Encoder
+
+
+def encode_delta(event: TranscriptionFinal, item_id: str) -> dict:
+    encoder = Ie115Encoder()
+    encoder._item_id = item_id  # pin the generated id so frames are comparable
+    return encoder.encode(event)
+
+
+def decode_delta(frame: dict) -> TranscriptionFinal:
+    (event,) = Ie115Decoder().decode(frame)
+    assert isinstance(event, TranscriptionFinal)
+    return event
 
 
 def test_disposition_encoding_committed():
