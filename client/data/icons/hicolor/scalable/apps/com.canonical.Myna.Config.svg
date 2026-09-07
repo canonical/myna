@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d3846"/>
+      <stop offset="1" stop-color="#1f1c26"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e4e1"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#base)"/>
+  <!-- tuning sliders -->
+  <g stroke="#62a0ea" stroke-width="8" stroke-linecap="round">
+    <path d="M92,38 L92,90"/>
+    <path d="M108,38 L108,90"/>
+  </g>
+  <g fill="#f6f5f4">
+    <circle cx="92" cy="74" r="8"/>
+    <circle cx="108" cy="52" r="8"/>
+  </g>
+  <circle cx="46" cy="64" r="31" fill="url(#feather)"/>
+  <path d="M70,53 L92,64 L70,75 z" fill="#f5c211"/>
+  <path d="M70,64 L92,64 L70,75 z" fill="#e5a50a"/>
+  <ellipse cx="56" cy="51" rx="12" ry="8" fill="#f6d32d"/>
+  <circle cx="55" cy="51" r="6" fill="#241f31"/>
+  <circle cx="57.2" cy="48.8" r="1.9" fill="#ffffff"/>
+</svg>

@@ -321,6 +321,7 @@ fn build_window(application: &adw::Application) {
         return;
     }
 
+    gtk::Window::set_default_icon_name(APP_ID);
     let window = ui::MainWindow::new(application);
     let split_view = window.split_view();
     let sidebar_list = window.sidebar_list();
