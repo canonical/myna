@@ -54,6 +54,10 @@ skip = [
   # with shlex 1; pipewire/libspa and cc are already on the newer majors.
   { crate = "nom@7", reason = "bindgen 0.72 (pipewire-sys build-dep); libspa is on nom 8" },
   { crate = "shlex@1", reason = "bindgen 0.72 (pipewire-sys build-dep); cc is on shlex 2" },
+  # glib-unix-sys (myna-hud's SIGINT/SIGTERM watch) is on system-deps 9;
+  # every other gtk-rs -sys crate in the 0.22/0.11 set still builds with 7.
+  # Build-time only, and it unifies when that release train catches up.
+  { crate = "system-deps@7", reason = "gtk-rs 0.22/0.11 -sys crates; glib-unix-sys 0.22.9 is on system-deps 9" },
   # The proc-macro ecosystem is mid-migration: thiserror 2 and serde_repr are
   # on syn 3, serde_derive / glib-macros / zbus_macros are still on syn 2.
   { crate = "syn@2", reason = "serde_derive, glib-macros, zbus_macros; thiserror 2 is already on syn 3" },

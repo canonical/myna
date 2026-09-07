@@ -60,8 +60,14 @@ zbus = "5"
 # The bus worker -> GTK main-thread bridge (T124): glib's own channel is
 # deprecated, and this is executor-agnostic.
 async-channel = "2"
-# SIGINT/SIGTERM -> Application::quit(); glib 0.22 binds no g_unix_signal_add.
-signal-hook = "0.3"
+# SIGINT/SIGTERM -> Application::quit(). The unix bindings are not in the
+# `glib` crate: they are generated from GLib's own `GLibUnix-2.0` GIR and ship
+# as `glib-unix`, on the same 0.22 release train as the glib already in the
+# tree. The default `futures` feature stays because 0.22.8's ungated
+# `signal_future` calls a gated helper.
+glib-unix = "0.22"
+# SIGINT/SIGTERM numbers for the watch above, and nothing else.
+libc = "0.2"
 # Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
 # uniform upload) — loaded via GDK's get_proc_address (R23).
 gl = "0.14"

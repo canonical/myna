@@ -49,6 +49,7 @@ pub mod serve;
 #[cfg(dev_lab)]
 pub mod session_control;
 pub mod shader;
+pub mod signals;
 pub mod simulator;
 pub mod states;
 pub mod vumeter;
