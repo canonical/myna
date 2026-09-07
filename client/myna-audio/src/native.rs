@@ -357,7 +357,7 @@ fn run_capture(
             let target = spec.target.clone();
             let opened = opened.clone();
             let ready_tx = ready_tx.clone();
-            move |_stream, _ud, old, new| {
+            move |_stream, _ud, _old, new| {
                 if !opened.get() && matches!(link_wait_on_state(&new), LinkWait::Wired) {
                     opened.set(true);
                     if let Some(tx) = ready_tx.borrow_mut().take() {
@@ -374,7 +374,6 @@ fn run_capture(
                     *fault.borrow_mut() = Some(CaptureError::DeviceUnavailable(detail));
                     main_loop.quit();
                 }
-                let _ = old;
             }
         })
         .process({
