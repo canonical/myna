@@ -229,17 +229,9 @@ fn value_from_variant(
 }
 
 fn private_keyfile_path() -> Result<PathBuf, ClientSettingsError> {
-    let common = std::env::var_os("SNAP_USER_COMMON")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join("snap/myna/common"))
-        })
-        .ok_or_else(|| ClientSettingsError::StoreUnavailable {
-            message: "neither SNAP_USER_COMMON nor HOME is set".into(),
-        })?;
-    Ok(common.join(".config/glib-2.0/settings/keyfile"))
+    myna_core::settings::store_path().ok_or_else(|| ClientSettingsError::StoreUnavailable {
+        message: "neither SNAP_USER_COMMON nor HOME is set".into(),
+    })
 }
 
 fn schema_unavailable() -> ClientSettingsError {

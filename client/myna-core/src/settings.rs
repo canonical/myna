@@ -111,12 +111,17 @@ impl Store {
     pub fn open() -> Option<Self> {
         let source = gio::SettingsSchemaSource::default()?;
         let schema = source.lookup(SCHEMA_ID, true)?;
+        let backend =
+            gio::functions::keyfile_settings_backend_new(store_path()?.to_str()?, "/", None);
         Some(Self {
-            settings: match keyfile_backend() {
-                Some(backend) => gio::Settings::new_full(&schema, Some(&backend), None),
-                None => gio::Settings::new(SCHEMA_ID),
-            },
+            settings: gio::Settings::new_full(&schema, Some(&backend), None),
         })
+    }
+
+    /// The backed `gio::Settings`, for a caller that needs `connect_changed`
+    /// on the same store this reads.
+    pub fn settings(&self) -> &gio::Settings {
+        &self.settings
     }
 
     /// Wrap the `gio::Settings` a signal handed back. The same GObject, one
@@ -141,39 +146,44 @@ impl Store {
     }
 }
 
-/// An explicit keyfile backend when the environment selects one
-/// (`GSETTINGS_BACKEND=keyfile`), or `None` to leave glib's default.
+/// The one settings file, for every process that reads or writes it.
 ///
-/// The path mirrors what glib's own default keyfile backend would use:
-/// `$XDG_CONFIG_HOME/glib-2.0/settings/keyfile`, root path `/`.
+/// The snap sets `GSETTINGS_BACKEND=keyfile` + `XDG_CONFIG_HOME`
+/// (`myna-snap/snap/snapcraft.yaml`) and `dev/gated-tests.sh` exports the same
+/// pair into a scratch home, so that env pair stays the override. With neither
+/// set - an unpackaged daemon, the host Settings app, an unpackaged HUD - the
+/// answer is the snap-private file anyway, because that is the store the snap
+/// is using and a host tool that wrote somewhere else would be editing a file
+/// nothing reads. There is no dconf path: two stores is how `hud-style` came
+/// to be writable in the Settings app and invisible to the HUD.
 ///
-/// Why not simply let the default handle the env: `g_settings_backend_get_default`
-/// is a *process singleton*, created by the first `GSettings` object on
-/// whatever thread and main context that thread happens to have. The keyfile
-/// backend's live-reload file monitor dispatches on the context captured at
-/// that moment, so a process whose first settings read happens on a
-/// context-free main thread (the daemon's tokio main) gets a monitor that is
-/// never dispatched: reads work, and no change is ever delivered (observed
-/// live with the snap's glib 2.80). One backend per [`Store`] puts each
-/// store's monitor on the thread that owns the store - for [`watch`], the
-/// watcher thread with its running loop. The dconf default needs no such
-/// care (changes arrive on the gdbus thread and are routed per listener
-/// context), so it keeps the singleton.
-fn keyfile_backend() -> Option<gio::SettingsBackend> {
-    if std::env::var_os("GSETTINGS_BACKEND").as_deref() == Some(std::ffi::OsStr::new("keyfile")) {
-        let config_dir = std::env::var_os("XDG_CONFIG_HOME")
+/// Always an explicit backend, never `g_settings_backend_get_default`: that is
+/// a *process singleton* created by the first `GSettings` object on whatever
+/// thread and main context that thread happens to have, and the keyfile
+/// backend's live-reload monitor dispatches on the context captured at that
+/// moment. A process whose first read happens on a context-free main thread
+/// (the daemon's tokio main) would get a monitor that is never dispatched:
+/// reads work, and no change is ever delivered (observed live with the snap's
+/// glib 2.80). One backend per [`Store`] puts each store's monitor on the
+/// thread that owns the store - for [`watch`], the watcher thread with its
+/// running loop.
+pub fn store_path() -> Option<PathBuf> {
+    let config_dir = if std::env::var_os("GSETTINGS_BACKEND").as_deref()
+        == Some(std::ffi::OsStr::new("keyfile"))
+    {
+        std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-        let path = config_dir.join("glib-2.0/settings/keyfile");
-        Some(gio::functions::keyfile_settings_backend_new(
-            path.to_str()?,
-            "/",
-            None,
-        ))
+            .filter(|path| path.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?
     } else {
-        None
-    }
+        std::env::var_os("SNAP_USER_COMMON")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join("snap/myna/common"))
+            })?
+            .join(".config")
+    };
+    Some(config_dir.join("glib-2.0/settings/keyfile"))
 }
 
 /// A live subscription to the store: every change re-reads the whole
