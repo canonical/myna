@@ -31,14 +31,22 @@ REVISION = "df8ed95e44a70924450381e610770f9d656d1e15"
 
 
 def fix_libs() -> None:
-    import onnxruntime  # noqa: F401 — must be installed (parakeet extra)
-    import sherpa_onnx
+    # Located, never imported: importing sherpa_onnx loads the native module,
+    # which is the thing that cannot load until this link exists. `--fix-libs`
+    # died on its own precondition ("version `VERS_1.27.0' not found") on any
+    # venv that actually needed it.
+    import importlib.util
 
+    import onnxruntime  # noqa: F401 — must be installed (parakeet extra)
+
+    spec = importlib.util.find_spec("sherpa_onnx")
+    if spec is None or not spec.origin:
+        sys.exit("sherpa_onnx is not installed - uv sync --extra sherpa")
     ort_capi = Path(onnxruntime.__file__).parent / "capi"
     libs = sorted(ort_capi.glob("libonnxruntime.so.1.*"))
     if not libs:
         sys.exit(f"no libonnxruntime.so.1.* under {ort_capi}")
-    target = Path(sherpa_onnx.__file__).parent.parent / "sherpa_onnx.libs" / "libonnxruntime.so"
+    target = Path(spec.origin).parent.parent / "sherpa_onnx.libs" / "libonnxruntime.so"
     target.parent.mkdir(exist_ok=True)
     target.unlink(missing_ok=True)
     target.symlink_to(libs[-1])
