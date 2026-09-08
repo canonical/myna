@@ -226,11 +226,39 @@ class FasterWhisperAdapter:
             translation=False,
         )
 
+    def _check_compute_type(self) -> None:
+        """Refuse arithmetic this device cannot do, before loading weights.
+
+        CTranslate2 does reject an unsupported explicit request - ``float16`` on
+        CPU raises - but it raises from inside the model constructor, several
+        seconds and one weight load in, with a message that does not say what
+        would have been accepted. For a sweep that is a cell that dies on its
+        first clip; for a user it is a daemon that starts and then fails on
+        first dictation. Ask for the supported set instead, which is a property
+        of the build and the device, rather than carrying a table here that goes
+        stale on the next CTranslate2 release.
+
+        ``default``/``auto`` are deferrals, not requests, and are left alone -
+        ``default`` is how the packaged float16 weights come to be decoded in
+        float32 on CPU, which CTranslate2 reports in a startup warning.
+        """
+        if self._compute_type in ("default", "auto"):
+            return
+        import ctranslate2
+
+        supported = ctranslate2.get_supported_compute_types(self._device)
+        if self._compute_type not in supported:
+            raise ValueError(
+                f"compute type {self._compute_type!r} is not available on device "
+                f"{self._device!r}; this build supports {sorted(supported)}"
+            )
+
     async def _load_model(self):
         async with self._model_lock:
             if self._model is None:
                 from faster_whisper import WhisperModel
 
+                self._check_compute_type()
                 # blocking download + load: keep it off the event loop
                 self._model = await asyncio.to_thread(
                     WhisperModel,

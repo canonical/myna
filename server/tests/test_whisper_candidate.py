@@ -7,7 +7,9 @@ weights from a local CTranslate2 model-component directory (T15).
 """
 
 import asyncio
+import sys
 
+import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
@@ -77,3 +79,43 @@ def test_rejects_any_noncanonical_format(rate, channels, width):
     assert len(events) == 1  # rejected outright, nothing else emitted
     assert isinstance(events[0], TranscriptionError)
     assert events[0].code == "unsupported_audio_format"
+
+
+# ─── compute type ────────────────────────────────────────────────────────────
+
+
+def _fake_ctranslate2(monkeypatch, supported):
+    """CTranslate2's own answer, stubbed - the real one needs the whisper extra."""
+    module = type(
+        "M", (), {"get_supported_compute_types": staticmethod(lambda device: set(supported))}
+    )
+    monkeypatch.setitem(sys.modules, "ctranslate2", module)
+
+
+def test_a_compute_type_the_device_cannot_do_is_refused(monkeypatch):
+    """CTranslate2 rejects float16-on-CPU too, but only from inside the model
+    constructor and without naming what it would have taken - which is a sweep
+    cell dying on its first clip, or a daemon that starts and then fails on
+    first dictation."""
+    _fake_ctranslate2(monkeypatch, {"float32", "int8", "int8_float32"})
+    adapter = FasterWhisperAdapter("tiny", device="cpu", compute_type="float16")
+    with pytest.raises(ValueError, match="not available on device 'cpu'"):
+        adapter._check_compute_type()
+
+
+def test_a_supported_compute_type_passes(monkeypatch):
+    _fake_ctranslate2(monkeypatch, {"float32", "int8", "int8_float32"})
+    FasterWhisperAdapter("tiny", device="cpu", compute_type="int8")._check_compute_type()
+
+
+@pytest.mark.parametrize("deferral", ["default", "auto"])
+def test_a_deferral_is_not_a_request_and_is_left_to_ctranslate2(monkeypatch, deferral):
+    def explode(device):
+        raise AssertionError("a deferral must not be checked against the supported set")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ctranslate2",
+        type("M", (), {"get_supported_compute_types": staticmethod(explode)}),
+    )
+    FasterWhisperAdapter("tiny", compute_type=deferral)._check_compute_type()
