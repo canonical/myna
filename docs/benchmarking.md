@@ -48,10 +48,11 @@ Copy to the other machine:
 - the packed artefacts for the snaps you want: `*-snap/myna-*_*.snap` and their
   `*-snap/myna-*+*.comp` components (a snap without its model component installs
   but cannot serve)
-- a `bench.yaml` - start from `dev/bench.yaml.example`, which already spells out
-  the one thing that is easy to get wrong: `cli:` is the modelctl command, and
-  it is named after the *adapter*, not the snap (`myna-funasr.funasr`, not
-  `myna-funasr`). A wrong `cli:` loses that target with a confusing error.
+- a `bench.yaml` - start from `dev/bench.yaml.example`. It needs the paths to
+  those artefacts and little else: the CLI command, the models, the engines and
+  whether the snap streams are all read out of the `.snap` itself, so `plan`
+  answers for an artefact-only config as completely as it does for a source
+  tree, and catches a bad key before the sweep does.
 
 The corpus is not copied. It is rebuilt on the far machine, which is exact:
 FLAC decode is lossless and the noise seed is fixed, so the same arguments
@@ -141,9 +142,11 @@ Two things `merge` refuses, because both lose data silently:
 
 ## What the numbers mean
 
-Labels are `<snap>/<engine>/<model>/<mode>[-<config>]`. The engine is not
-configured - `use-engine --auto` picks it by hardware detection and the runner
-reads back what it landed on, so a label is a record of what actually ran.
+Labels are `<snap>/<engine>/<model>/<mode>[-<config>]`, and the engine in one is
+always read back with `show-engine` rather than taken from config, so a label
+records what ran. Every record also carries `provenance.settings`, the complete
+key=value assignment its cell served under - a label is a name someone chose,
+and this is the thing to check when two rows disagree.
 
 | Column | |
 | --- | --- |
@@ -157,28 +160,64 @@ reads back what it landed on, so a label is a record of what actually ran.
 A `USABILITY_FAIL` is a result, not an error to retry: the budget is "must beat
 0.83× real time end to end", and a backend that cannot is a product finding.
 
-## Adding an axis
+## Choosing CPU or GPU
 
-Axes live in `dev/matrix.yaml`. Models and emission mode come from the snap
-itself; anything else is a `configs:` entry naming the modes it applies to:
+The device is not a setting, it is the **engine**, and each snap ships the ones
+it supports (`myna-whisper.whisper list-engines`). Left alone, a target is swept
+once on whatever `use-engine --auto` picks - what a machine would do. Naming
+engines overrides that, and is the only way to compare two of them, because one
+machine only ever makes one auto-selection:
 
 ```yaml
 - snap: myna-whisper
-  dir: whisper-snap
+  files: [whisper-snap/myna-whisper_*.snap, whisper-snap/myna-whisper+*.comp]
+  engines: [cpu, nvidia-gpu]        # each installed, configured and swept in turn
+```
+
+A named engine that will not activate fails that pass rather than falling back:
+a CPU number under a GPU label is wrong in the one way nobody checks. The GPU
+engine also needs its runtime component present (`+faster-whisper-cuda.comp`).
+
+## Adding an axis
+
+Axes live in `dev/bench.yaml`. Models, emission mode and engine come from the
+snap itself; anything else is a `configs:` entry naming where it applies:
+
+```yaml
+- snap: myna-whisper
+  files: [whisper-snap/myna-whisper_*.snap, whisper-snap/myna-whisper+*.comp]
   configs:
     - label: int8
       modes: [batch, streaming]     # decode precision affects both
+      engines: [cpu]                # ...but int8 is a CPU type
       settings: {compute-type: int8}
     - label: arm3s
       modes: [streaming]            # a latency dial means nothing in batch
       settings: {stream-arm-seconds: "3"}
 ```
 
-A mode no entry claims still gets exactly one row at whatever the snap shipped,
-and keys an entry omits are restored to the shipped value, so every row is an
-absolute configuration rather than a difference from the row before it. Only
-keys some `engine.yaml` declares are accepted - `make bench-plan` catches a
-typo before the sweep does, hours in.
+A mode or engine no entry claims still gets exactly one row at whatever the snap
+shipped, and keys an entry omits are restored to the shipped value, so every row
+is an absolute configuration rather than a difference from the row before it.
+`make bench-plan` catches a key the engine does not declare before the sweep
+does, hours in.
+
+Two rules about values:
+
+- **`auto` and `default` are refused.** They defer the choice, so the row cannot
+  say what it measured: whisper's `compute-type: auto` resolves to each model's
+  own `MODEL_COMPUTE_TYPE`, which is `int8` on tiny and `float32` on base - one
+  label, two arithmetics, and a duplicate of the explicit `int8` row on tiny.
+- **Precision values are engine-specific, and there are fewer than they look.**
+  Loading a CTranslate2 4.8.1 model on CPU and reading back the type it settled
+  on: `int8` and `int8_float32` both give `int8_float32`, `float32` gives
+  `float32`, and `float16`/`int8_float16` raise. So the CPU engine has **two**
+  distinct precisions, not three - an `int8` row and an `int8_float32` row are
+  the same measurement twice - while fp16 belongs to the CUDA engine. Scope each
+  point with `engines:` and the ones that do not apply simply do not run; the
+  whisper adapter also checks the request against
+  `ctranslate2.get_supported_compute_types(device)` before loading weights, so a
+  bad one fails at startup with the valid set rather than on the first clip.
 
 ## Troubleshooting
 
@@ -186,7 +225,7 @@ typo before the sweep does, hours in.
 | --- | --- |
 | `plan` says a target is not packed | `make snap-<name>`, then copy the new artefacts over |
 | a target is `BROKEN` immediately | `journalctl -u snap.<snap>.server` on that machine; usually a component that did not install |
-| `no engine could be selected` | the snap ships only a GPU engine and there is no GPU (nemotron is commented out of `matrix.yaml` for exactly this) |
+| `no engine could be selected` | the snap ships only a GPU engine and there is no GPU (nemotron is commented out of `dev/bench.yaml` for exactly this) |
 | WER is ~100% on long-form only | a long clip fed flat out can outrun a backend's websocket keepalive; re-check that row with `myna-bench bench --realtime` |
 | corpus id does not match | the `download-corpus` arguments differ from the ones used for the leaderboard's corpus |
 | `not a complete LibriSpeech archive` | an earlier download was interrupted; the message names the file to delete |

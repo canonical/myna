@@ -17,11 +17,16 @@ the shape of the trade-off:
   (``modelctl set streaming=``), so both settings are real user-facing
   configurations. Snaps whose adapter is commit-on-finalize only (funasr,
   audio8, qwen-c) expose no such key and are swept batch-only.
+- **engine** (``engines:``): cpu, nvidia-gpu. Omitted, the machine decides and
+  the target is swept once. Named, each engine is selected, configured and swept
+  in turn - the device is not a setting, it is which engine is active.
 - **config point** (``configs:``): any other shipped knob worth a row -
   whisper's ``compute-type`` (the quantization axis), parakeet's
   ``stream-arm-seconds``, nemotron's ``att-context-size``. Each entry names the
-  modes it applies to, so a batch-only knob is sweepable and a latency dial
-  does not multiply the batch rows.
+  modes and the engines it applies to, so a batch-only knob is sweepable, a
+  latency dial does not multiply the batch rows, and a precision that exists
+  only on CUDA is not requested on CPU. Values must be explicit: ``auto`` defers
+  the choice, so the row could not say what it measured.
 
 Labels come out as ``<snap>/<engine>/<model>/<mode>[-<config>]``.
 
@@ -34,14 +39,24 @@ measured something we do not ship: different confinement, different engine
 selection, different resident set. The only configuration that means anything
 is the one a user installs.
 
-**The label is an output, not an input.** ``use-engine --auto`` chooses the
-engine by hardware detection, not this file; the runner reads it back with
-``show-engine`` and stamps ``<snap>/<engine>/<model>`` onto every record. A
-config that named the engine could only ever disagree with reality. The one
-input is ``--label-suffix``, stamped as ``<snap>+<suffix>``: two builds of the
-same snap (e.g. base vs maxstack encoder) are indistinguishable from inside,
-and the summary dedups by label, so without it a rebuild silently shadows the
-run it was meant to be compared against.
+**The label is read back, never assumed.** A target that names no engines is
+swept once on whatever ``use-engine --auto`` picks, which is what a machine
+would do; a target that names them is swept once per engine, which is the only
+way to compare two of them, since a machine only makes one auto-selection.
+Either way the runner reads the result back with ``show-engine`` and stamps
+``<snap>/<engine>/<model>`` onto every record, and a named engine that will not
+activate fails rather than falling back - a CPU number under a GPU label is
+wrong in the one way nobody checks. The other input is ``--label-suffix``,
+stamped as ``<snap>+<suffix>``: two builds of the same snap (e.g. base vs
+maxstack encoder) are indistinguishable from inside, and the summary dedups by
+label, so without it a rebuild silently shadows the run it was meant to be
+compared against.
+
+**A label is a name; the settings are the measurement.** Every record carries
+``provenance.settings``, the complete assignment its cell served under. Without
+it a results file cannot answer what a row actually ran - which is how a sweep
+came back with a ``batch-auto`` row that was int8 on one model and float32 on
+the next.
 
 **Purge between targets.** ``snap remove --purge`` drops $SNAP_COMMON, so each
 target re-runs auto-selection from clean rather than inheriting whatever engine
@@ -66,31 +81,31 @@ Config format::
 
     targets:
       - snap: myna-whisper
-        # Either an explicit artefact list...
-        files:
-          - ./snaps/myna-whisper_1.0_amd64.snap
-          - ./snaps/myna-whisper+model-tiny.comp
-        # ...or a source-tree directory, whose packed snap and snapcraft.yaml
-        # declared components are globbed and validated.
-        dir: ../whisper-snap
-        cli: myna-whisper.whisper   # modelctl command (default: derived, then the snap name)
+        files:                      # paths or globs; exactly one .snap
+          - ./snaps/myna-whisper_*.snap
+          - ./snaps/myna-whisper+*.comp
+        cli: myna-whisper.whisper   # modelctl command (default: read from the snap)
         service: myna-whisper.server
         socket: /var/snap/myna-whisper/common/run/ubustt.sock
         models: [tiny, base]        # optional allowlist
+        engines: [cpu, nvidia-gpu]  # optional; omitted = one auto-selected pass
         configs:
           - label: int8
             modes: [batch]
+            engines: [cpu]          # optional; omitted = every engine
             settings: {compute-type: int8}
 """
 
 from __future__ import annotations
 
 import asyncio
+import glob
 import json
 import os
 import pwd
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -259,84 +274,43 @@ def _resolve_user_home() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _declared_components(snap_dir: Path) -> set[str]:
-    """Component names from the project's snapcraft.yaml.
+def _resolve_files(patterns: list[str], root: Path, snap: str) -> list[str]:
+    """The artefacts to sideload, from a target's ``files:``.
 
-    The .comp files on disk are not authoritative: a directory accumulates
-    artifacts from branches and renames (myna-qwen+qwen-vllm.comp outlived the
-    vLLM branch by two months). Installing an undeclared component fails, so
-    trust the manifest and ignore the debris.
+    Every entry is a glob, so a config can name
+    ``whisper-snap/myna-whisper_*.snap`` and keep working across a version bump.
+    That is what the old ``dir:`` form existed to do, back when it was also the
+    only way ``plan`` could read a target's axes; the snap answers for those
+    itself now (see ``snap_metadata``), so a glob is all that was left of it and
+    one config dialect serves an in-tree sweep and a tester's copied artefacts
+    alike.
+
+    A pattern that matches nothing is the target not being built yet rather than
+    a broken config, so it reads as unavailable: ``plan`` collects it and ``run``
+    skips that target and carries on. Exactly one ``.snap`` must survive the
+    expansion - zero installs nothing, and two are the two packed revisions a
+    branch switch leaves behind, where picking either silently benchmarks a
+    build nobody asked for.
     """
-    recipe = snap_dir / "snap" / "snapcraft.yaml"
-    if not recipe.exists():
-        return set()
-    parsed = yaml.safe_load(recipe.read_text(encoding="utf-8")) or {}
-    return set(parsed.get("components") or {})
-
-
-def _snap_files(snap_dir: Path, snap: str) -> list[str]:
-    """The packed snap plus the components its snapcraft.yaml declares.
-
-    Components are sideloaded in the same ``snap install`` invocation as the
-    snap they belong to; snapd resolves ``<snap>+<component>.comp`` by name.
-    """
-    packed = sorted(snap_dir.glob(f"{snap}_*.snap"))
-    if not packed:
-        raise TargetUnavailable(f"no {snap}_*.snap in {snap_dir} - pack it first")
-    if len(packed) > 1:
-        raise TargetUnavailable(f"several {snap}_*.snap in {snap_dir}: {[p.name for p in packed]}")
-    declared = _declared_components(snap_dir)
-    comps = [
-        p for p in sorted(snap_dir.glob(f"{snap}+*.comp")) if p.stem.split("+", 1)[1] in declared
-    ]
-    missing = declared - {p.stem.split("+", 1)[1] for p in comps}
-    if missing:
+    resolved: list[str] = []
+    for pattern in patterns:
+        joined = pattern if os.path.isabs(pattern) else str(root / pattern)
+        matches = sorted(glob.glob(joined))
+        if not matches:
+            raise TargetUnavailable(f"{snap}: nothing matches {pattern!r} - pack it first")
+        resolved.extend(matches)
+    files = list(dict.fromkeys(resolved))
+    packed = [f for f in files if f.endswith(".snap")]
+    if len(packed) != 1:
         raise TargetUnavailable(
-            f"{snap}: declared components not packed: {sorted(missing)} - repack"
+            f"{snap}: files: must resolve to exactly one .snap, got "
+            f"{[Path(f).name for f in packed]}"
         )
-    return [str(p) for p in [*packed, *comps]]
+    return files
 
 
-def _modelctl_command(snap_dir: Path, snap: str) -> str:
-    """The command that invokes this snap's modelctl CLI.
-
-    Snapd exposes an app as a bare ``<snap>`` only when the app name matches the
-    snap name, and as ``<snap>.<app>`` otherwise. ``myna-funasr`` names its CLI
-    app ``funasr``, so its command is ``myna-funasr.funasr`` - assuming the snap
-    name works for whisper and qwen and fails for funasr, which is exactly what
-    it did. The CLI app is the non-daemon one.
-    """
-    recipe = snap_dir / "snap" / "snapcraft.yaml"
-    if recipe.exists():
-        parsed = yaml.safe_load(recipe.read_text(encoding="utf-8")) or {}
-        for name, app in (parsed.get("apps") or {}).items():
-            if isinstance(app, dict) and "daemon" not in app:
-                return name if name == snap else f"{snap}.{name}"
-    return snap
-
-
-def declares_streaming(snap_dir: Path) -> bool | None:
-    """Whether the snap's install hook declares the ``streaming`` config key.
-
-    The key *is* the capability declaration - a snap whose adapter has no
-    progressive path never sets it. The hook is the only static record of that,
-    so this is how ``plan`` predicts the mode axis without installing anything.
-    Returns None when there is no hook to read (an artefact-only target).
-    """
-    hook = snap_dir / "snap" / "hooks" / "install"
-    if not hook.exists():
-        return None
-    return "streaming=" in hook.read_text(encoding="utf-8")
-
-
-def engine_options(snap_dir: Path) -> dict[str, dict]:
-    """``{engine: {"models": [...], "configurations": {...}}}`` from engine.yaml.
-
-    Static counterpart to ``list-models`` for ``plan``. Which engine is *active*
-    is decided by hardware detection at run time, so the plan reports every
-    engine the snap ships and says the choice is made on the machine.
-    """
-    engines_dir = snap_dir / "engines"
+def _engine_manifests(engines_dir: Path) -> dict[str, dict]:
+    """``{engine: {"models": [...], "configurations": {...}}}`` from engine.yaml."""
     if not engines_dir.is_dir():
         return {}
     out: dict[str, dict] = {}
@@ -352,24 +326,106 @@ def engine_options(snap_dir: Path) -> dict[str, dict]:
     return out
 
 
+_SNAP_METADATA: dict[str, dict] = {}
+
+
+def snap_metadata(snap_file: Path) -> dict:
+    """``{"engines": ..., "cli": ..., "streaming": ...}`` read out of a packed snap.
+
+    Every axis but the corpus is a property of the artefact, so this is where
+    ``plan`` gets them: the .snap carries ``engines/*/engine.yaml``,
+    ``meta/snap.yaml`` and ``meta/hooks/install``, which between them name the
+    engines, the models each offers, the knobs each declares, the CLI app and
+    whether there is an emission-mode toggle at all. Reading them is what lets
+    one config dialect serve both an in-tree sweep and a tester's copied
+    artefacts: before it there was a second, source-tree-only form of a target,
+    and a config naming a knob the snap does not have first showed up as a dead
+    cell hours into the sweep.
+
+    ``{}`` when the file cannot be read (no squashfs-tools, or a placeholder
+    used by a test). Every caller treats that as "ask the snap once it is
+    installed".
+    """
+    key = str(snap_file)
+    if key in _SNAP_METADATA:
+        return _SNAP_METADATA[key]
+    meta: dict = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "snap"
+        extracted = subprocess.run(
+            ["unsquashfs", "-q", "-n", "-f", "-d", str(root), str(snap_file), "engines", "meta"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if extracted.returncode == 0 and root.is_dir():
+            hook = root / "meta" / "hooks" / "install"
+            meta = {
+                "engines": _engine_manifests(root / "engines"),
+                "cli": _snap_yaml_command(root / "meta" / "snap.yaml"),
+                "streaming": (
+                    "streaming=" in hook.read_text(encoding="utf-8") if hook.exists() else None
+                ),
+            }
+    _SNAP_METADATA[key] = meta
+    return meta
+
+
+def _snap_yaml_command(snap_yaml: Path) -> str | None:
+    """The command that invokes this snap's modelctl CLI, from ``meta/snap.yaml``.
+
+    Snapd exposes an app as a bare ``<snap>`` only when the app name matches the
+    snap name, and as ``<snap>.<app>`` otherwise. ``myna-funasr`` names its CLI
+    app ``funasr``, so its command is ``myna-funasr.funasr`` - assuming the snap
+    name works for whisper and qwen and fails for funasr, which is exactly what
+    it did. The CLI app is the non-daemon one.
+    """
+    if not snap_yaml.exists():
+        return None
+    parsed = yaml.safe_load(snap_yaml.read_text(encoding="utf-8")) or {}
+    snap = parsed.get("name")
+    for name, app in (parsed.get("apps") or {}).items():
+        if isinstance(app, dict) and "daemon" not in app:
+            return str(name) if name == snap else f"{snap}.{name}"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Config points
 # ---------------------------------------------------------------------------
 
 
+# Values that mean "decide for me" rather than naming a setting. A config point
+# is a row in a comparison table, so it has to be an assignment: whisper's
+# ``compute-type: auto`` resolves to each model's own MODEL_COMPUTE_TYPE, which
+# is int8 on tiny and float32 on base - so one "auto" row is two different
+# arithmetics under one name, and against an explicit int8 row it is a duplicate
+# on tiny and an unlabelled float32 on base. Both were measured that way before
+# this check existed. The shipped default is still auto; what is refused is
+# putting a defer in a results table.
+DEFERRED_VALUES = frozenset({"auto", "default"})
+
+
 @dataclass(frozen=True)
 class Variant:
-    """One config point: a named settings assignment and the modes it applies to.
+    """One config point: a named settings assignment, and where it applies.
 
     ``modes`` exists because knobs are not all latency dials. ``compute-type``
     changes batch decoding and streaming alike; ``stream-arm-seconds`` means
     nothing in batch mode and sweeping it there would triple the rows for three
     identical numbers.
+
+    ``engines`` exists because a knob's *values* are engine-specific even when
+    its name is not: CTranslate2 takes int8_float32 and float32 on CPU and
+    float16, int8_float16 and float32 on CUDA, and rejects the CUDA types on a
+    CPU device. Empty means every engine, which is right for a knob like
+    ``stream-arm-seconds``.
     """
 
     label: str
     modes: tuple[str, ...]
     settings: dict[str, str] = field(default_factory=dict)
+    engines: tuple[str, ...] = ()
 
 
 def parse_variants(spec: dict, snap: str) -> list[Variant]:
@@ -404,17 +460,44 @@ def parse_variants(spec: dict, snap: str) -> list[Variant]:
                 f"{snap}/{label}: 'streaming' is the mode axis, not a setting - "
                 "use modes: [batch] / [streaming] instead"
             )
-        variants.append(Variant(label=label, modes=modes, settings=settings))
+        deferred = sorted(k for k, v in settings.items() if v.strip().lower() in DEFERRED_VALUES)
+        if deferred:
+            raise SystemExit(
+                f"{snap}/{label}: {deferred} is set to a value that defers the choice, so the "
+                "row cannot say what ran - it resolves per model and per engine. Name the "
+                "setting explicitly (whisper cpu: int8_float32, float32; whisper nvidia-gpu: "
+                "float16, int8_float16, float32), one config point each."
+            )
+        variants.append(
+            Variant(
+                label=label,
+                modes=modes,
+                settings=settings,
+                engines=tuple(entry.get("engines") or ()),
+            )
+        )
     return variants
 
 
-def variants_for(variants: list[Variant], mode: str) -> list[Variant | None]:
-    """Config points applying to ``mode``; ``[None]`` (shipped defaults) if none.
+def variants_for(
+    variants: list[Variant], mode: str, engine: str | None = None
+) -> list[Variant | None]:
+    """Config points applying to ``mode`` on ``engine``; ``[None]`` if none.
 
-    A mode no config mentions still gets exactly one row, at whatever the snap
-    shipped - never zero rows, which would silently drop half the matrix.
+    A mode no config claims still gets exactly one row, at whatever the snap
+    shipped - never zero rows, which would silently drop half the matrix. The
+    same holds for an engine whose points are all scoped to another one: a CPU
+    machine running a config written for both still measures the CPU engine at
+    its shipped precision rather than dropping the target.
+
+    ``engine`` of None means "not known yet" and does not filter, which is what
+    a plan for a target whose engine is decided on the machine has to do.
     """
-    applicable = [v for v in variants if mode in v.modes]
+    applicable = [
+        v
+        for v in variants
+        if mode in v.modes and (not v.engines or engine is None or engine in v.engines)
+    ]
     return list(applicable) if applicable else [None]
 
 
@@ -434,17 +517,17 @@ class SnapTarget:
                 "this runner removes what it benchmarks, so it refuses unknown snaps"
             )
         self.label_suffix = label_suffix
-        self.dir: Path | None = (root / spec["dir"]).resolve() if spec.get("dir") else None
-        raw_files = spec.get("files") or []
-        if raw_files:
-            self.files: list[str] = [str((root / f).resolve()) for f in raw_files]
-        elif self.dir is not None:
-            self.files = _snap_files(self.dir, self.snap)
-        else:
-            raise SystemExit(f"{self.snap}: target needs either files: or dir:")
-        self.cli: str = spec.get("cli") or (
-            _modelctl_command(self.dir, self.snap) if self.dir else self.snap
-        )
+        if not spec.get("files"):
+            raise SystemExit(
+                f"{self.snap}: target needs files: - paths or globs naming the packed "
+                "snap and the components to install with it"
+            )
+        self.files: list[str] = _resolve_files(list(spec["files"]), root, self.snap)
+        self.snap_file: Path = next(Path(f) for f in self.files if f.endswith(".snap"))
+        # The snap name is the command only when an app shares it, which is true
+        # for none of these snaps, so it is read out of the artefact's
+        # meta/snap.yaml. The fallback is for a snap that cannot be unsquashed.
+        self.cli: str = spec.get("cli") or self._metadata().get("cli") or self.snap
         self.service: str = spec.get("service") or f"{self.snap}.server"
         self.socket: Path = Path(
             spec.get("socket") or f"/var/snap/{self.snap}/common/run/ubustt.sock"
@@ -452,36 +535,64 @@ class SnapTarget:
         # Optional allowlist: which model variants to sweep. Omitted = every
         # option the active engine declares.
         self.only_models: list[str] = list(spec.get("models") or [])
+        # Optional engine axis: which engines to measure, each in turn. Omitted
+        # = one pass on whatever hardware detection picks (see engines_to_sweep).
+        self.only_engines: list[str] = list(spec.get("engines") or [])
         self.variants: list[Variant] = parse_variants(spec, self.snap)
         # Filled in after install, from the snap itself. The config never says.
         self.engine: str | None = None
         self.model: str | None = None
         self.streaming: bool = False
         self.config_suffix: str = ""
-        # Shipped value of every key any config touches, read once after
-        # install so a config that omits a key restores it rather than
-        # inheriting the previous config's value.
+        # Shipped value of every key any config touches, read once per engine
+        # so a config that omits a key restores it rather than inheriting the
+        # previous config's value.
         self._baseline: dict[str, str] = {}
+        # The complete key=value assignment the current cell is serving under,
+        # stamped onto every record it produces. Without it a label is the only
+        # record of what ran, and a label is a name someone chose.
+        self.applied: dict[str, str] = {}
+    def _metadata(self) -> dict:
+        """Engines, CLI app and streaming toggle, read out of the packed snap."""
+        return snap_metadata(self.snap_file)
+
+    def static_engines(self) -> dict[str, dict]:
+        """Engines this snap ships, read without installing it."""
+        return self._metadata().get("engines") or {}
+
+    def static_streaming(self) -> bool | None:
+        """Whether the snap declares an emission-mode toggle, read offline."""
+        return self._metadata().get("streaming")
 
     # -- identity ---------------------------------------------------------
+
+    def _label_for(self, mode: str, config_suffix: str) -> str:
+        snap = f"{self.snap}+{self.label_suffix}" if self.label_suffix else self.snap
+        parts = [snap, self.engine or "unknown-engine"]
+        if self.model:
+            parts.append(self.model)
+        parts.append(f"{mode}-{config_suffix}" if config_suffix else mode)
+        return "/".join(parts)
 
     @property
     def label(self) -> str:
         """``<snap>[+suffix]/<engine>/<model>/<mode>[-<config>]``.
 
-        The engine is whatever auto-selection landed on; the model is whichever
-        variant the sweep is currently on. Both are read back or set by the
-        runner, never taken from config.
+        The engine is the one the sweep selected or the one auto-selection
+        landed on; either way it is read back from the snap with ``show-engine``
+        rather than taken on trust. The model is whichever variant the sweep is
+        currently on.
         """
-        snap = f"{self.snap}+{self.label_suffix}" if self.label_suffix else self.snap
-        parts = [snap, self.engine or "unknown-engine"]
-        if self.model:
-            parts.append(self.model)
-        mode = STREAMING if self.streaming else BATCH
-        if self.config_suffix:
-            mode = f"{mode}-{self.config_suffix}"
-        parts.append(mode)
-        return "/".join(parts)
+        return self._label_for(STREAMING if self.streaming else BATCH, self.config_suffix)
+
+    def cell_label(self, mode: str, variant: Variant | None) -> str:
+        """The label a cell will carry, before it has been applied.
+
+        Applying a cell can fail - a value the engine refuses takes the daemon
+        down - and the failure has to be recorded against the row that caused
+        it, which means naming the row before trying it.
+        """
+        return self._label_for(mode, variant.label if variant else "")
 
     # -- lifecycle --------------------------------------------------------
 
@@ -495,6 +606,11 @@ class SnapTarget:
         )
 
     def start(self) -> None:
+        """Install the snap and leave it stopped, with no engine selected yet.
+
+        Selection is a separate step because it is an axis: ``select_engine`` is
+        called once per engine the target sweeps.
+        """
         self.purge()
         print(
             f"[{self.snap}] installing {len(self.files)} file(s): "
@@ -502,14 +618,27 @@ class SnapTarget:
         )
         _run(["snap", "install", "--dangerous", *self.files])
         self._connect_plugs()
-        # Install left no active engine, so the daemon is crash-looping toward
-        # its systemd start limit. Stop it, then clear the failure state, both
-        # *before* selecting an engine: `use-engine` restarts the snap itself
-        # and reports the whole selection as failed if systemd refuses. Stop
-        # first, or the loop can re-fail between the reset and the start.
+
+    def select_engine(self, name: str | None = None) -> None:
+        """Activate an engine and bring the socket up on it.
+
+        ``None`` leaves the choice to hardware detection, which is what a target
+        that does not name engines wants. A name is an override, and the only
+        way to measure the engine the machine would not have picked - a CPU
+        number from a box with a GPU in it, or the reverse.
+        """
+        # Before the first selection the daemon is crash-looping toward its
+        # systemd start limit (install left no active engine); after one it is
+        # serving. Stop covers both, then clear the failure state, both *before*
+        # `use-engine`: it restarts the snap itself and reports the whole
+        # selection as failed if systemd refuses. Stop first, or the loop can
+        # re-fail between the reset and the start.
+        # Engines can offer different weights, so nothing about the previous
+        # engine's model survives the switch.
+        self.model = None
         subprocess.run(["snap", "stop", self.service], capture_output=True, check=False)
         self._reset_failed()
-        self._select_engine()
+        self._select_engine(name)
         subprocess.run(["snap", "start", self.service], capture_output=True, check=False)
         if not wait_for_socket(self.socket):
             raise SystemExit(
@@ -518,6 +647,25 @@ class SnapTarget:
             )
         self._describe()
         self._read_baseline()
+
+    def engines_to_sweep(self) -> list[str | None]:
+        """The engines this target measures, in order; ``[None]`` = auto-select.
+
+        Naming engines is the only way to compare them: one machine runs one
+        auto-selection, so without this a GPU box can never produce the CPU row
+        it is being compared against, and a config written for both machines
+        silently measures whichever half the hardware chose.
+        """
+        if not self.only_engines:
+            return [None]
+        available = self.static_engines() or {}
+        unknown = [e for e in self.only_engines if available and e not in available]
+        if unknown:
+            raise SystemExit(
+                f"{self.snap}: engines: names {unknown}, which this snap does not ship "
+                f"(it has {sorted(available)})"
+            )
+        return list(self.only_engines)
 
     def stop(self) -> None:
         self.purge()
@@ -550,24 +698,34 @@ class SnapTarget:
             check=False,
         )
 
-    def _select_engine(self) -> None:
+    def _select_engine(self, name: str | None = None) -> None:
         """Activate an engine, since sideloading skipped the hook that would.
 
-        ``--auto`` only where there is an actual choice. Most of these snaps ship
-        a single CPU engine and deliberately avoid hardware scoring (their engine
-        scripts bypass ``modelctl run`` for exactly that reason), so they carry
-        neither pciutils nor a ``hardware-observe`` plug on the CLI app.
-        Demanding auto-selection from them fails on lspci to answer a question
-        with one possible answer.
+        ``--auto`` only where there is an actual choice *and* the config named
+        none. Most of these snaps ship a single CPU engine and deliberately
+        avoid hardware scoring (their engine scripts bypass ``modelctl run`` for
+        exactly that reason), so they carry neither pciutils nor a
+        ``hardware-observe`` plug on the CLI app. Demanding auto-selection from
+        them fails on lspci to answer a question with one possible answer.
 
-        Where there are several engines the machine still decides - never a name
-        from the config.
+        A named engine is taken at its word and never falls back: silently
+        measuring the CPU engine under a config that asked for the GPU one
+        produces a row that is wrong in the one way nobody checks.
 
         ``--no-restart`` because the caller starts the service afterwards; left
         to itself, ``use-engine`` restarts the snap as a side effect and reports
         the whole selection as failed if that start does not take.
         """
         engines = self._engines()
+        if name is not None:
+            print(f"[{self.snap}] use-engine {name} (named by config)")
+            result = _capture([self.cli, "use-engine", name, "--assume-yes", "--no-restart"])
+            if result.returncode != 0:
+                raise SystemExit(
+                    f"[{self.snap}] engine {name!r} could not be selected on this machine: "
+                    f"{result.stderr.strip()}"
+                )
+            return
         selector = [engines[0]] if len(engines) == 1 else ["--auto"]
         print(f"[{self.snap}] engines={engines or '(unknown)'} -> use-engine {selector[0]}")
         result = _capture([self.cli, "use-engine", *selector, "--assume-yes", "--no-restart"])
@@ -589,9 +747,7 @@ class SnapTarget:
                 return [e["name"] for e in json.loads(out.stdout).get("engines", [])]
             except (ValueError, KeyError, TypeError):
                 pass
-        if self.dir is not None:
-            return sorted(engine_options(self.dir))
-        return []
+        return sorted(self.static_engines())
 
     def _describe(self) -> None:
         """Ask the snap which engine auto-selection actually landed on."""
@@ -606,17 +762,37 @@ class SnapTarget:
         this baseline makes each row a complete assignment rather than a
         difference from whatever ran before it.
         """
-        keys = sorted({k for v in self.variants for k in v.settings})
+        self._baseline = {}
+        keys = sorted({k for v in self._variants_here() for k in v.settings})
         for key in keys:
             got = _capture([self.cli, "get", key])
             if got.returncode != 0:
                 raise SystemExit(
                     f"[{self.snap}] config key {key!r} is not offered by this snap "
-                    f"(engine {self.engine}); drop it from configs: or fix the name"
+                    f"(engine {self.engine}); scope it with engines: [<engine>], "
+                    "drop it from configs:, or fix the name"
                 )
             self._baseline[key] = got.stdout.strip()
         if self._baseline:
             print(f"[{self.snap}] config baseline: {self._baseline}")
+
+    def _variants_here(self) -> list[Variant]:
+        """Config points that apply to the engine currently active.
+
+        Not every engine takes every knob - ``compute-type`` exists on whisper
+        and on nothing else, and its legal values differ between whisper's own
+        two engines - so a config point scoped to another engine must not be
+        read, set, or counted as a row here.
+        """
+        return [v for v in self.variants if not v.engines or self.engine in v.engines]
+
+    def cells(self, modes: list[str]) -> list[tuple[str, Variant | None]]:
+        """Every (mode, config point) pair to measure on the active engine."""
+        return [
+            (mode, variant)
+            for mode in modes
+            for variant in variants_for(self._variants_here(), mode, self.engine)
+        ]
 
     # -- axes -------------------------------------------------------------
 
@@ -678,11 +854,13 @@ class SnapTarget:
             settings.update(variant.settings)
         args = [f"{k}={v}" for k, v in sorted(settings.items())]
         if togglable:
-            args.insert(0, f"streaming={'true' if mode == STREAMING else 'false'}")
+            settings["streaming"] = "true" if mode == STREAMING else "false"
+            args.insert(0, f"streaming={settings['streaming']}")
         if args:
             _run([self.cli, "set", "--assume-yes", "--no-restart", *args])
         self.streaming = mode == STREAMING
         self.config_suffix = variant.label if variant else ""
+        self.applied = settings
         subprocess.run(["snap", "restart", self.service], capture_output=True, check=False)
         if not wait_for_socket(self.socket):
             raise SystemExit(f"[{self.snap}] socket did not return after switching to {self.label}")
@@ -780,6 +958,9 @@ class _JsonlWriter:
 def _sweep_one(
     *,
     target: SnapTarget,
+    mode: str,
+    variant: Variant | None,
+    togglable: bool,
     clips_cold: list,
     clips_warm: list,
     budget: float,
@@ -792,20 +973,29 @@ def _sweep_one(
     unusable: list[tuple[str, str]],
     machine: str = "unknown",
 ) -> None:
-    """Cold sample + warm sweep for one matrix cell.
+    """Configure one matrix cell, then cold-sample and warm-sweep it.
+
+    Applying the cell belongs inside this boundary because it is the step most
+    likely to fail: a value the engine refuses takes the daemon down with it,
+    and that has to cost the one row that asked for it rather than every
+    remaining row of the target.
 
     Failures are recorded against this cell only: a model that is too slow or
     broken must not cost the sweep the *other* cells of the same snap.
     """
     from myna.benchmarker._bench import AllClipsFailed, run_clips
 
-    label = target.label
+    label = target.cell_label(mode, variant)
     sampler = None
-    if sample_resources and target.pid is not None:
-        sampler = ResourceSampler(target.pid)
-        sampler.start()
 
     try:
+        target.apply(mode=mode, variant=variant, togglable=togglable)
+        # The complete assignment this cell served under, so a row records what
+        # ran and not just what it was called.
+        provenance = {**provenance, "settings": dict(target.applied)}
+        if sample_resources and target.pid is not None:
+            sampler = ResourceSampler(target.pid)
+            sampler.start()
         if clips_cold:
             print(f"[{label}] cold sample ({clips_cold[0].id})")
             overran, _ = asyncio.run(
@@ -852,6 +1042,14 @@ def _sweep_one(
             out.status(label, "ok")
 
     except AllClipsFailed as exc:
+        broken.append((label, str(exc)))
+        out.status(label, "broken", str(exc))
+        print(f"[{label}] FAILED: {exc} - skipping cell")
+    except SystemExit as exc:
+        # A cell that could not be brought up - typically a setting the engine
+        # refuses, which takes the daemon down. SystemExit is not an Exception,
+        # so without this clause it would escape past the catch-all below and
+        # cost the target every row it had left.
         broken.append((label, str(exc)))
         out.status(label, "broken", str(exc))
         print(f"[{label}] FAILED: {exc} - skipping cell")
@@ -982,45 +1180,84 @@ def cmd_plan(args) -> None:  # noqa: ANN001
         except TargetUnavailable as exc:
             # Collected, not fatal: a plan that stops at the first unpacked snap
             # hides every target after it, which is the half you needed to see.
-            unavailable.append(f"{snap}: {exc}")
+            unavailable.append(str(exc))  # TargetUnavailable already names the snap
             print(f"  {snap:20} UNAVAILABLE - {exc}")
             continue
         variants = target.variants
         print(f"  {snap:20} cli={target.cli}  socket={target.socket}")
         print(f"  {'':20} files={[Path(f).name for f in target.files]}")
-        if target.dir is None:
-            print(f"  {'':20} axes unknown (artefact-only target; read at install time)")
+        engines = target.static_engines()
+        if not engines:
+            print(f"  {'':20} axes unknown (engines unreadable; read at install time)")
             continue
-        engines = engine_options(target.dir)
-        streams = declares_streaming(target.dir)
+        streams = target.static_streaming()
         modes = list(MODES) if streams else [BATCH]
-        widest = 0
+        # Which engines actually run: the ones named, or the single one the
+        # machine will pick from those shipped.
+        selected = set(target.only_engines) if target.only_engines else set(engines)
+        rows_by_engine: dict[str, list[str]] = {}
         for engine, detail in engines.items():
             models = detail["models"] or ["(engine default)"]
             if target.only_models:
                 models = [m for m in models if m in set(target.only_models)]
-            rows = []
-            for model in models:
-                for mode in modes:
-                    for variant in variants_for(variants, mode):
-                        cell = mode if variant is None else f"{mode}-{variant.label}"
-                        rows.append(f"{snap}/{engine}/{model}/{cell}")
-            total += len(rows)
-            widest = max(widest, len(rows))
-            print(f"  {'':20} engine {engine}: {len(rows)} row(s)")
-            for row in rows:
+            rows_by_engine[engine] = [
+                f"{snap}/{engine}/{model}/"
+                + (mode if variant is None else f"{mode}-{variant.label}")
+                for model in models
+                for mode in modes
+                for variant in variants_for(variants, mode, engine)
+            ]
+            total += len(rows_by_engine[engine])
+            mark = "" if engine in selected else "  (not selected)"
+            print(f"  {'':20} engine {engine}: {len(rows_by_engine[engine])} row(s){mark}")
+            for row in rows_by_engine[engine]:
                 print(f"  {'':22} {row}")
-        will_run += widest
-        if len(engines) > 1:
-            print(f"  {'':20} (one engine is chosen on the machine; only its rows will run)")
-        unknown = [k for v in variants for k in v.settings]
-        declared = {k for d in engines.values() for k in d["configurations"]}
-        stray = sorted(set(unknown) - declared)
-        if stray:
-            problems.append(f"{snap}: configs name key(s) no engine.yaml declares: {stray}")
+        run_here = [rows_by_engine[e] for e in engines if e in selected]
+        # Named engines all run; an unnamed target runs exactly one, so quote
+        # its largest rather than the sum - a box with a GPU in it would
+        # otherwise be told to plan a day around double the sweep it will start.
+        will_run += (
+            sum(len(r) for r in run_here)
+            if target.only_engines
+            else max((len(r) for r in run_here), default=0)
+        )
+        if target.only_engines:
+            print(f"  {'':20} engines: {target.only_engines} - each is measured in turn")
+        elif len(engines) > 1:
+            print(
+                f"  {'':20} (one engine is chosen on the machine; only its rows will run - "
+                "name them in engines: to measure both)"
+            )
+        unknown_engines = sorted(set(target.only_engines) - set(engines))
+        if unknown_engines:
+            problems.append(
+                f"{snap}: engines: names {unknown_engines}; this snap ships {sorted(engines)}"
+            )
+        for variant in variants:
+            scope = variant.engines or tuple(engines)
+            stray_engines = sorted(set(scope) - set(engines))
+            if stray_engines:
+                problems.append(
+                    f"{snap}/{variant.label}: engines: names {stray_engines}; "
+                    f"this snap ships {sorted(engines)}"
+                )
+            # A key is only meaningful on the engines the point is scoped to, so
+            # that is where it has to be declared - a compute-type point scoped
+            # to nvidia-gpu is not a mistake just because the cpu engine has no
+            # such knob, and one scoped to nothing is a mistake as soon as any
+            # engine it would run on lacks the key.
+            for engine in scope:
+                if engine not in engines:
+                    continue
+                missing = sorted(set(variant.settings) - set(engines[engine]["configurations"]))
+                if missing:
+                    problems.append(
+                        f"{snap}/{variant.label}: {missing} not declared by engine "
+                        f"{engine!r}; scope the point with engines: [...] or fix the name"
+                    )
 
-    print(f"\n{total} row(s) across all engines; the engine chosen on the machine decides which.")
-    print(f"at most {will_run} will run here (one engine per target).")
+    print(f"\n{total} row(s) across all engines.")
+    print(f"at most {will_run} will run here.")
     print(
         f"upper bound if every one of those spends its full {cfg.budget:.0f}s budget: "
         f"{will_run * cfg.budget / 3600:.1f} h"
@@ -1134,55 +1371,63 @@ def cmd_run(args) -> None:  # noqa: ANN001
             print(f"\n=== {target.snap} ===")
             try:
                 target.start()
-                if not detected:
-                    # The first installed snap answers for the machine; they
-                    # all would. Detection is a property of the box, not the snap.
-                    detected = show_machine(target.cli)
-                provenance = {
-                    "machine": machine["hostname"],
-                    "cpu": machine["cpu"],
-                    "ram_gb": machine["ram_gb"],
-                    "gpu": machine["gpu"],
-                    "gpu_vram_gb": machine["gpu_vram_gb"],
-                    "provision": "snap",
-                    "hardware": detected,
-                }
-                models = target.models()
-                togglable = target.supports_streaming()
-                modes = list(MODES) if togglable else [BATCH]
-                cells = [
-                    (mode, variant)
-                    for mode in modes
-                    for variant in variants_for(target.variants, mode)
-                ]
-                described = [
-                    mode if variant is None else f"{mode}-{variant.label}"
-                    for mode, variant in cells
-                ]
-                print(f"[{target.snap}] models={models or '(none reported)'} cells={described}")
-                for model in models or [None]:
-                    # One install, every weight the engine offers. `use-model`
-                    # restarts the snap, so each variant loads cold and only one
-                    # is resident at a time - the same property the purge gives
-                    # us between snaps.
-                    if model:
-                        target.use_model(model)
-                    for mode, variant in cells:
-                        target.apply(mode=mode, variant=variant, togglable=togglable)
-                        _sweep_one(
-                            target=target,
-                            clips_cold=clips_cold,
-                            clips_warm=clips_warm,
-                            budget=cfg.budget,
-                            out=out,
-                            provenance=provenance,
-                            corpus=corpus,
-                            resources_path=resources_path,
-                            sample_resources=not args.no_resources,
-                            broken=broken,
-                            unusable=unusable,
-                            machine=machine["hostname"],
-                        )
+                for engine in target.engines_to_sweep():
+                    # One install, every engine the config asks for. `use-engine`
+                    # restarts the snap, so each engine comes up clean; the
+                    # baseline and the applicable config points are re-read
+                    # against it, since neither the knobs nor their legal values
+                    # are shared between engines.
+                    target.select_engine(engine)
+                    if not detected:
+                        # The first installed snap answers for the machine; they
+                        # all would. Detection is a property of the box, not the
+                        # snap.
+                        detected = show_machine(target.cli)
+                    provenance = {
+                        "machine": machine["hostname"],
+                        "cpu": machine["cpu"],
+                        "ram_gb": machine["ram_gb"],
+                        "gpu": machine["gpu"],
+                        "gpu_vram_gb": machine["gpu_vram_gb"],
+                        "provision": "snap",
+                        "hardware": detected,
+                    }
+                    models = target.models()
+                    togglable = target.supports_streaming()
+                    cells = target.cells(list(MODES) if togglable else [BATCH])
+                    described = [
+                        mode if variant is None else f"{mode}-{variant.label}"
+                        for mode, variant in cells
+                    ]
+                    print(
+                        f"[{target.snap}] engine={target.engine} "
+                        f"models={models or '(none reported)'} cells={described}"
+                    )
+                    for model in models or [None]:
+                        # Every weight the engine offers. `use-model` restarts
+                        # the snap, so each variant loads cold and only one is
+                        # resident at a time - the same property the purge gives
+                        # us between snaps.
+                        if model:
+                            target.use_model(model)
+                        for mode, variant in cells:
+                            _sweep_one(
+                                target=target,
+                                mode=mode,
+                                variant=variant,
+                                togglable=togglable,
+                                clips_cold=clips_cold,
+                                clips_warm=clips_warm,
+                                budget=cfg.budget,
+                                out=out,
+                                provenance=provenance,
+                                corpus=corpus,
+                                resources_path=resources_path,
+                                sample_resources=not args.no_resources,
+                                broken=broken,
+                                unusable=unusable,
+                                machine=machine["hostname"],
+                            )
             except SystemExit as exc:
                 broken.append((target.label, str(exc)))
                 out.status(target.label, "broken", str(exc))

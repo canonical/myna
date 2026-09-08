@@ -4,15 +4,20 @@
 #   make bench-run           # the full sweep (sudo: installs and purges snaps)
 #   make bench-run-whisper   # one snap
 #
+# Those targets run myna-bench.pyz - the same artefact testers download - against
+# this file, which is the same shape as the bench.yaml they write. The only
+# difference is where the artefacts are: globs into the `*-snap/` directories of
+# this tree rather than a directory of files copied over.
+#
 # Snaps only: the runner purges any existing install, sideloads the locally
 # packed snap plus its components, benchmarks it, and purges again. Anything
 # measured outside a snap is not what we ship.
 #
-# Note what is *absent* here. No engine, no device, no hardware annotation:
-# the snap's install hook runs `modelctl use-engine --auto`, so the engine is
-# chosen by hardware detection and read back afterwards, and machine provenance
-# comes from `modelctl show-machine`. A config can only ever disagree with the
-# machine it runs on, so it is not asked.
+# No hardware annotation: machine provenance comes from `modelctl show-machine`,
+# and a config can only ever disagree with the machine it runs on. The engine is
+# left to `use-engine --auto` here too, which is right for an in-repo sweep -
+# add `engines: [cpu, nvidia-gpu]` to a target to measure both on one box, which
+# is the only way to compare them (a machine makes one auto-selection).
 
 # Paths below are relative to this, which is relative to this file's directory.
 root: ..
@@ -38,45 +43,63 @@ cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged cold to m
 # run on the actual hardware rather than predicted from a spec sheet.
 sweep_budget_seconds: 850
 
-# Each snap is swept across every model variant its selected engine offers
-# (`modelctl list-models`) x every emission mode it supports (batch, and
-# streaming where the snap's install hook declares the `streaming` key) x every
-# entry in its `configs:`. One row per combination.
-#
-# configs: optional list of {label, modes, settings}. Each entry is a named
-# point on some shipped knob, and `modes` says which emission modes it applies
-# to - so a decode-precision knob can be swept in batch and a latency dial only
-# in streaming. A mode no config mentions still runs exactly once, at the
-# values the snap shipped with. Keys a config omits are restored to those
-# shipped values, so every row is an absolute configuration rather than a
-# difference from the row before it.
+# The schema - files:, engines:, models:, configs: and their rules - is written
+# out once, for testers, in dev/bench.yaml.example. This file is the same format
+# and only records what is specific to this tree: which snaps we sweep, which
+# points on their knobs are worth a row, and why. Comments below are the
+# rationale for each choice, not a description of the format.
 targets:
   - snap: myna-whisper
-    dir: whisper-snap
+    files:
+      - whisper-snap/myna-whisper_*.snap
+      - whisper-snap/myna-whisper+*.comp
     # LocalAgreement re-decode: no user-facing latency dial. Commits when two
     # consecutive 2 s-cadence decodes agree; TTFF is content-driven, not config.
     #
-    # compute-type is the quantization axis. `auto` is what ships, and defers to
-    # each model's measured MODEL_COMPUTE_TYPE (T70: INT8 for tiny, FP32 for
-    # base and small), so it must coincide with one of the two explicit rows per
-    # model - measuring it anyway is what checks that mapping is still true.
-    # Applies to both modes: precision is a decode property, not an emission one.
+    # compute-type is the quantization axis, and it is engine-specific.
+    # Measured against CTranslate2 4.8.1 by loading model-base-ct2 on cpu and
+    # reading back the type it settled on:
+    #
+    #   cpu:  int8 -> int8_float32, int8_float32 -> int8_float32,
+    #         float32 -> float32; float16 and int8_float16 raise.
+    #   cuda: float16, int8_float16, float32.
+    #
+    # So the CPU engine has exactly two distinct precisions, not three - `int8`
+    # and `int8_float32` are one row spelled two ways - and float16 belongs to
+    # the GPU engine alone. The points are scoped accordingly; the ones for the
+    # engine that is not active simply do not run.
+    # Both modes: precision is a decode property, not an emission one.
+    #
+    # What ships is `compute-type: auto`, which defers to each model's measured
+    # MODEL_COMPUTE_TYPE (T70: int8 for tiny, float32 for base and small). That
+    # is the right product default and the wrong benchmark row, so the mapping
+    # is checked by reading the explicit rows against each other rather than by
+    # measuring a row that cannot say what it ran.
     configs:
-      - label: auto
-        modes: [batch, streaming]
-        settings:
-          compute-type: auto
       - label: int8
         modes: [batch, streaming]
+        engines: [cpu]
         settings:
-          compute-type: int8
-      - label: float32
+          compute-type: int8_float32
+      - label: fp32
         modes: [batch, streaming]
         settings:
           compute-type: float32
+      - label: fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: float16
+      - label: int8-fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: int8_float16
 
   - snap: myna-parakeet
-    dir: parakeet-snap
+    files:
+      - parakeet-snap/myna-parakeet_*.snap
+      - parakeet-snap/myna-parakeet+*.comp
     # SilenceCut chunked-commit: stream-arm-seconds is the primary latency dial.
     # The window must reach arm_s before silence detection activates, so arm_s
     # sets the floor on TTFF. Sweep three points to expose the tradeoff curve;
@@ -97,23 +120,31 @@ targets:
           stream-arm-seconds: "15"
 
   - snap: myna-sherpa
-    dir: sherpa-snap
+    files:
+      - sherpa-snap/myna-sherpa_*.snap
+      - sherpa-snap/myna-sherpa+*.comp
     # Native 480 ms transducer chunks: latency is baked into the ONNX export,
     # no runtime knob.
 
   - snap: myna-funasr
-    dir: funasr-snap
+    files:
+      - funasr-snap/myna-funasr_*.snap
+      - funasr-snap/myna-funasr+*.comp
 
   # Pure-C CPU runtime. Measured RTF 4.47 on a Ryzen AI 7 350, so it is expected
   # to blow the budget and report usability_fail - measure it anyway, that is
   # the finding.
   - snap: myna-qwen
-    dir: qwen-snap
+    files:
+      - qwen-snap/myna-qwen_*.snap
+      - qwen-snap/myna-qwen+*.comp
 
   # Audio8-ASR-0.1B ONNX (feature 010). Ships both cpu and nvidia-gpu engines
   # (like whisper); auto-selection picks cpu on a GPU-less machine.
   - snap: myna-audio8
-    dir: audio8-snap
+    files:
+      - audio8-snap/myna-audio8_*.snap
+      - audio8-snap/myna-audio8+*.comp
 
   # nemotron ships only an `nvidia-gpu` engine (devices: allof gpu vendor-id
   # 0x10de, runtime nemo-cuda), so auto-selection finds nothing on a CPU-only
@@ -122,7 +153,9 @@ targets:
   # GPU-oriented FastConformer and would land as usability_fail anyway.
   # Uncomment on a machine with an NVIDIA card.
   # - snap: myna-nemotron
-  #   dir: nemotron-snap
+  #   files:
+  #     - nemotron-snap/myna-nemotron_*.snap
+  #     - nemotron-snap/myna-nemotron+*.comp
   #   # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
   #   # "70,0" = lowest latency (no right context); "70,33" = most context.
   #   configs:

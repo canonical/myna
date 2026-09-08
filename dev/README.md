@@ -22,8 +22,8 @@ Only the two configs stayed here:
 
 | File | What it is |
 | --- | --- |
-| `matrix.yaml` | The in-repo sweep: which snaps, which axes. Targets point at the `*-snap/` directories in this tree. |
-| `bench.yaml.example` | The template testers edit, pointing at downloaded artefacts instead. |
+| `bench.yaml` | The in-repo sweep: which snaps, which axes. Same format as the example below; its `files:` globs point into the `*-snap/` directories of this tree. |
+| `bench.yaml.example` | The template testers edit, pointing at downloaded artefacts instead. Carries the annotated schema both files share. |
 
 ## What is here
 

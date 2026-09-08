@@ -2,9 +2,18 @@
 
 `plan` is the answer to "what is this run going to measure", and it has to be
 answerable without root and without snapd - otherwise the only way to see the
-matrix is to run it. Everything here reads the source tree: the packed
-artefacts, each engine's `engine.yaml`, and the install hook that declares
-whether the snap has an emission-mode toggle at all.
+matrix is to run it. Everything it needs is a property of the packed snap:
+which engines it ships, which models each offers, which knobs each declares,
+what its CLI app is called, and whether it has an emission-mode toggle at all.
+
+Reading those out of the artefact is what leaves one way to name a target.
+There used to be two - `dir:` for a source tree and `files:` for copied
+artefacts - and only the first could be planned, so the config we ran here and
+the config testers ran were different shapes with different failure modes.
+
+Most of these tests hand `plan` that metadata directly rather than building a
+squashfs for it: the extraction is covered on its own below, and everything
+else here is about what `plan` does with the answer.
 
 The other half is `configs:`, the axis that makes a shipped knob measurable.
 Its rules are pinned here because getting them wrong is silent: a mode no entry
@@ -15,54 +24,111 @@ produce one row each.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 
 import pytest
 import yaml
 
+from myna.benchmarker import _run
 from myna.benchmarker._run import (
     BATCH,
     STREAMING,
-    SnapTarget,
-    TargetUnavailable,
     Variant,
-    _declared_components,
-    _modelctl_command,
-    _snap_files,
+    _engine_manifests,
+    _snap_yaml_command,
     cmd_plan,
-    declares_streaming,
-    engine_options,
     load_config,
     parse_variants,
     variants_for,
 )
 
 
-def make_snap_dir(
-    root,
-    snap="myna-whisper",
-    *,
-    components=("model-tiny", "model-base"),
-    packed=True,
-    pack_components=None,
-    apps=None,
-    engines=(("cpu", ["tiny", "base"], {"compute-type": "auto"}),),
-    streaming=False,
-):
-    """A source-tree snap directory: packed artefacts, recipe, engines, hook."""
-    snap_dir = root / f"{snap}-snap"
-    (snap_dir / "snap" / "hooks").mkdir(parents=True)
-    recipe = {"components": {c: {"type": "standard"} for c in components}}
-    if apps is not None:
-        recipe["apps"] = apps
-    (snap_dir / "snap" / "snapcraft.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+@pytest.fixture
+def snaps(tmp_path, monkeypatch):
+    """Build packed artefacts on disk and stub what unsquashing them would say.
 
-    hook = "#!/bin/sh\nmodelctl use-engine --auto\n"
-    if streaming:
-        hook += 'modelctl set --package streaming="true"\n'
-    (snap_dir / "snap" / "hooks" / "install").write_text(hook, encoding="utf-8")
+    Returns a `make(...)` that writes placeholder `.snap`/`.comp` files and
+    registers the metadata for that snap, so a test states its axes in one place
+    instead of assembling a filesystem the code only reads back.
+    """
+    metadata: dict[str, dict] = {}
 
-    for name, models, configurations in engines:
-        engine_dir = snap_dir / "engines" / name
+    def make(
+        snap="myna-whisper",
+        *,
+        version="0.1.0",
+        components=("model-tiny", "model-base"),
+        engines=(("cpu", ["tiny", "base"], {"compute-type": "auto"}),),
+        cli=None,
+        streaming=False,
+        packed=True,
+    ):
+        if packed:
+            packed_path = tmp_path / f"{snap}_{version}_amd64.snap"
+            packed_path.write_bytes(b"")
+            metadata[str(packed_path)] = {
+                "engines": {
+                    name: {"models": list(models), "configurations": dict(configurations)}
+                    for name, models, configurations in engines
+                },
+                "cli": cli or f"{snap}.{snap.split('-', 1)[-1]}",
+                "streaming": streaming,
+            }
+        for component in components:
+            (tmp_path / f"{snap}+{component}.comp").write_bytes(b"")
+        return tmp_path
+
+    monkeypatch.setattr(_run, "snap_metadata", lambda f: metadata.get(str(f), {}))
+    return make
+
+
+def target_files(snap="myna-whisper"):
+    return [f"{snap}_*.snap", f"{snap}+*.comp"]
+
+
+# ─── reading the packed snap ─────────────────────────────────────────────────
+
+
+def write_snap_yaml(tmp_path, snap, apps):
+    path = tmp_path / "snap.yaml"
+    path.write_text(yaml.safe_dump({"name": snap, "apps": apps}), encoding="utf-8")
+    return path
+
+
+def test_a_cli_app_named_after_the_snap_is_invoked_bare(tmp_path, snaps):
+    yml = write_snap_yaml(
+        tmp_path, "myna-whisper", {"myna-whisper": {}, "server": {"daemon": "simple"}}
+    )
+    assert _snap_yaml_command(yml) == "myna-whisper"
+
+
+def test_a_cli_app_named_after_the_adapter_is_invoked_dotted(tmp_path, snaps):
+    """myna-funasr names its CLI app `funasr`, so the command is
+    `myna-funasr.funasr`. Assuming the snap name works for whisper and fails
+    for funasr, which is exactly what it did."""
+    yml = write_snap_yaml(tmp_path, "myna-funasr", {"funasr": {}, "server": {"daemon": "simple"}})
+    assert _snap_yaml_command(yml) == "myna-funasr.funasr"
+
+
+def test_the_daemon_app_is_never_mistaken_for_the_cli(tmp_path, snaps):
+    yml = write_snap_yaml(tmp_path, "myna-whisper", {"server": {"daemon": "simple"}, "whisper": {}})
+    assert _snap_yaml_command(yml) == "myna-whisper.whisper"
+
+
+def test_a_snap_with_no_apps_at_all_names_no_command(tmp_path, snaps):
+    """The target then falls back to the snap name, which is what it did
+    before any of this was read."""
+    assert _snap_yaml_command(write_snap_yaml(tmp_path, "myna-whisper", {})) is None
+    assert _snap_yaml_command(tmp_path / "absent.yaml") is None
+
+
+def test_engine_manifests_report_each_engines_models_and_knobs(tmp_path, snaps):
+    for name, models, configurations in (
+        ("cpu", ["tiny", "base"], {"compute-type": "auto"}),
+        ("nvidia-gpu", ["base", "small"], {"compute-type": "float16"}),
+    ):
+        engine_dir = tmp_path / "engines" / name
         engine_dir.mkdir(parents=True)
         (engine_dir / "engine.yaml").write_text(
             yaml.safe_dump(
@@ -74,124 +140,14 @@ def make_snap_dir(
             ),
             encoding="utf-8",
         )
-
-    if packed:
-        (snap_dir / f"{snap}_0.1.0_amd64.snap").write_bytes(b"")
-    for component in components if pack_components is None else pack_components:
-        (snap_dir / f"{snap}+{component}.comp").write_bytes(b"")
-    return snap_dir
-
-
-# ─── source-tree artefacts ───────────────────────────────────────────────────
-
-
-def test_the_packed_snap_and_its_declared_components_are_found(tmp_path):
-    snap_dir = make_snap_dir(tmp_path)
-    names = [n.rsplit("/", 1)[-1] for n in _snap_files(snap_dir, "myna-whisper")]
-    assert names == [
-        "myna-whisper_0.1.0_amd64.snap",
-        "myna-whisper+model-base.comp",
-        "myna-whisper+model-tiny.comp",
-    ]
-
-
-def test_an_undeclared_comp_left_over_from_another_branch_is_ignored(tmp_path):
-    """A snap directory accumulates artefacts across branches and renames, and
-    installing a component the recipe does not declare fails outright."""
-    snap_dir = make_snap_dir(tmp_path)
-    (snap_dir / "myna-whisper+qwen-vllm.comp").write_bytes(b"")
-    assert not any("vllm" in name for name in _snap_files(snap_dir, "myna-whisper"))
-
-
-def test_a_declared_component_that_was_never_packed_is_an_error(tmp_path):
-    snap_dir = make_snap_dir(tmp_path, pack_components=["model-tiny"])
-    with pytest.raises(TargetUnavailable, match="not packed: \\['model-base'\\]"):
-        _snap_files(snap_dir, "myna-whisper")
-
-
-def test_an_unpacked_snap_says_so_rather_than_installing_nothing(tmp_path):
-    snap_dir = make_snap_dir(tmp_path, packed=False)
-    with pytest.raises(TargetUnavailable, match="pack it first"):
-        _snap_files(snap_dir, "myna-whisper")
-
-
-def test_two_packed_revisions_are_ambiguous_rather_than_arbitrary(tmp_path):
-    snap_dir = make_snap_dir(tmp_path)
-    (snap_dir / "myna-whisper_0.2.0_amd64.snap").write_bytes(b"")
-    with pytest.raises(TargetUnavailable, match="several"):
-        _snap_files(snap_dir, "myna-whisper")
-
-
-def test_components_come_from_the_recipe_not_the_directory(tmp_path):
-    snap_dir = make_snap_dir(tmp_path)
-    assert _declared_components(snap_dir) == {"model-tiny", "model-base"}
-
-
-def test_a_directory_with_no_recipe_declares_nothing(tmp_path):
-    (tmp_path / "empty").mkdir()
-    assert _declared_components(tmp_path / "empty") == set()
-
-
-# ─── the modelctl command ────────────────────────────────────────────────────
-
-
-def test_a_cli_app_named_after_the_snap_is_invoked_bare(tmp_path):
-    snap_dir = make_snap_dir(tmp_path, apps={"myna-whisper": {}, "server": {"daemon": "simple"}})
-    assert _modelctl_command(snap_dir, "myna-whisper") == "myna-whisper"
-
-
-def test_a_cli_app_named_after_the_adapter_is_invoked_dotted(tmp_path):
-    """myna-funasr names its CLI app `funasr`, so the command is
-    `myna-funasr.funasr`. Assuming the snap name works for whisper and fails
-    for funasr, which is exactly what it did."""
-    snap_dir = make_snap_dir(
-        tmp_path, snap="myna-funasr", apps={"funasr": {}, "server": {"daemon": "simple"}}
-    )
-    assert _modelctl_command(snap_dir, "myna-funasr") == "myna-funasr.funasr"
-
-
-def test_the_daemon_app_is_never_mistaken_for_the_cli(tmp_path):
-    snap_dir = make_snap_dir(tmp_path, apps={"server": {"daemon": "simple"}, "whisper": {}})
-    assert _modelctl_command(snap_dir, "myna-whisper") == "myna-whisper.whisper"
-
-
-def test_a_recipe_with_no_apps_falls_back_to_the_snap_name(tmp_path):
-    snap_dir = make_snap_dir(tmp_path)
-    assert _modelctl_command(snap_dir, "myna-whisper") == "myna-whisper"
-
-
-# ─── static axes ─────────────────────────────────────────────────────────────
-
-
-def test_engine_options_report_each_engines_models_and_knobs(tmp_path):
-    snap_dir = make_snap_dir(
-        tmp_path,
-        engines=(
-            ("cpu", ["tiny", "base"], {"compute-type": "auto"}),
-            ("nvidia-gpu", ["base", "small"], {"compute-type": "float16"}),
-        ),
-    )
-    options = engine_options(snap_dir)
+    options = _engine_manifests(tmp_path / "engines")
     assert options["cpu"]["models"] == ["tiny", "base"]
     assert options["nvidia-gpu"]["models"] == ["base", "small"]
     assert "compute-type" in options["nvidia-gpu"]["configurations"]
 
 
-def test_a_snap_with_no_engines_directory_reports_none(tmp_path):
-    (tmp_path / "bare").mkdir()
-    assert engine_options(tmp_path / "bare") == {}
-
-
-def test_the_install_hook_is_what_declares_an_emission_toggle(tmp_path):
-    """The config key *is* the capability declaration - an adapter with no
-    progressive path never sets it - and the hook is its only static record."""
-    assert declares_streaming(make_snap_dir(tmp_path / "a", streaming=True)) is True
-    assert declares_streaming(make_snap_dir(tmp_path / "b", streaming=False)) is False
-
-
-def test_a_target_with_no_hook_to_read_reports_unknown(tmp_path):
-    (tmp_path / "bare").mkdir()
-    assert declares_streaming(tmp_path / "bare") is None
+def test_a_snap_with_no_engines_directory_reports_none(tmp_path, snaps):
+    assert _engine_manifests(tmp_path / "absent") == {}
 
 
 # ─── configs: ────────────────────────────────────────────────────────────────
@@ -278,7 +234,7 @@ def write_config(path, **overrides):
     cfg = {
         "manifest": "corpus/manifest.json",
         "out": "results.jsonl",
-        "targets": [{"snap": "myna-whisper", "dir": "myna-whisper-snap"}],
+        "targets": [{"snap": "myna-whisper", "files": target_files()}],
     }
     cfg.update(overrides)
     path.write_text(json.dumps(cfg), encoding="utf-8")
@@ -294,10 +250,10 @@ class PlanArgs:
         self.label_suffix = label_suffix
 
 
-def test_relative_paths_resolve_against_the_config_not_the_cwd(tmp_path, monkeypatch):
+def test_relative_paths_resolve_against_the_config_not_the_cwd(tmp_path, snaps, monkeypatch):
     """The same config then works from any directory, which is what lets one
     file serve both an in-tree run and a tester's unpacked bundle."""
-    make_snap_dir(tmp_path)
+    snaps()
     config = write_config(tmp_path / "bench.yaml")
     monkeypatch.chdir(tmp_path.parent)
 
@@ -307,69 +263,47 @@ def test_relative_paths_resolve_against_the_config_not_the_cwd(tmp_path, monkeyp
     assert cfg.out == tmp_path / "results.jsonl"
 
 
-def test_an_explicit_root_moves_the_base_of_every_relative_path(tmp_path):
+def test_an_explicit_root_moves_the_base_of_every_relative_path(tmp_path, snaps):
     (tmp_path / "conf").mkdir()
-    make_snap_dir(tmp_path)
+    snaps()
     config = write_config(tmp_path / "conf" / "bench.yaml", root="..")
     cfg = load_config(config, only=None, out_override=None, budget_override=None)
     assert cfg.root == tmp_path
     assert cfg.out == tmp_path / "results.jsonl"
 
 
-def test_only_narrows_the_target_list(tmp_path):
-    make_snap_dir(tmp_path)
-    make_snap_dir(tmp_path, snap="myna-sherpa", components=())
+def test_only_narrows_the_target_list(tmp_path, snaps):
+    snaps()
+    snaps(snap="myna-sherpa", components=())
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
-            {"snap": "myna-whisper", "dir": "myna-whisper-snap"},
-            {"snap": "myna-sherpa", "dir": "myna-sherpa-snap"},
+            {"snap": "myna-whisper", "files": target_files()},
+            {"snap": "myna-sherpa", "files": ["myna-sherpa_*.snap"]},
         ],
     )
     cfg = load_config(config, only=["myna-sherpa"], out_override=None, budget_override=None)
     assert [t["snap"] for t in cfg.targets] == ["myna-sherpa"]
 
 
-def test_narrowing_to_nothing_is_an_error_not_an_empty_sweep(tmp_path):
-    make_snap_dir(tmp_path)
+def test_narrowing_to_nothing_is_an_error_not_an_empty_sweep(tmp_path, snaps):
+    snaps()
     config = write_config(tmp_path / "bench.yaml")
     with pytest.raises(SystemExit, match="no targets selected"):
         load_config(config, only=["myna-qwen"], out_override=None, budget_override=None)
 
 
-# ─── a source-tree target ────────────────────────────────────────────────────
-
-
-def test_a_dir_target_derives_its_files_and_cli_from_the_tree(tmp_path):
-    make_snap_dir(tmp_path, apps={"whisper": {}, "server": {"daemon": "simple"}})
-    target = SnapTarget({"snap": "myna-whisper", "dir": "myna-whisper-snap"}, tmp_path)
-    assert target.cli == "myna-whisper.whisper"
-    assert len(target.files) == 3  # snap + two components
-
-
-def test_an_explicit_files_list_wins_over_a_dir(tmp_path):
-    """A tester's bundle names artefacts directly; the tree is the in-repo
-    convenience, not the authority."""
-    make_snap_dir(tmp_path)
-    (tmp_path / "downloaded.snap").write_bytes(b"")
-    target = SnapTarget(
-        {"snap": "myna-whisper", "dir": "myna-whisper-snap", "files": ["downloaded.snap"]},
-        tmp_path,
-    )
-    assert target.files == [str(tmp_path / "downloaded.snap")]
-
-
 # ─── cmd_plan ────────────────────────────────────────────────────────────────
 
 
-def test_the_plan_names_every_row_the_sweep_would_produce(tmp_path, capsys):
-    make_snap_dir(tmp_path, streaming=True)
+def test_the_plan_names_every_row_the_sweep_would_produce(tmp_path, snaps, capsys):
+    snaps(streaming=True)
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
             {
                 "snap": "myna-whisper",
-                "dir": "myna-whisper-snap",
+                "files": target_files(),
                 "configs": [
                     {"label": "int8", "modes": ["batch"], "settings": {"compute-type": "int8"}}
                 ],
@@ -386,37 +320,48 @@ def test_the_plan_names_every_row_the_sweep_would_produce(tmp_path, capsys):
     assert "4 row(s)" in out  # 2 models x (1 batch config + 1 default streaming)
 
 
-def test_a_batch_only_snap_is_planned_without_streaming_rows(tmp_path, capsys):
-    make_snap_dir(tmp_path, snap="myna-funasr", components=(), streaming=False)
+def test_the_cli_command_comes_from_the_snap_not_the_config(tmp_path, snaps, capsys):
+    """It is named after the adapter, not the snap, and spelling it out by hand
+    was the one thing every tester's config got wrong."""
+    snaps(snap="myna-funasr", components=(), engines=(("cpu", ["sensevoice"], {}),))
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-funasr", "dir": "myna-funasr-snap"}],
+        targets=[{"snap": "myna-funasr", "files": ["myna-funasr_*.snap"]}],
+    )
+    cmd_plan(PlanArgs(config))
+    assert "cli=myna-funasr.funasr" in capsys.readouterr().out
+
+
+def test_a_batch_only_snap_is_planned_without_streaming_rows(tmp_path, snaps, capsys):
+    snaps(snap="myna-funasr", components=(), engines=(("cpu", ["sensevoice"], {}),))
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[{"snap": "myna-funasr", "files": ["myna-funasr_*.snap"]}],
     )
     cmd_plan(PlanArgs(config))
     assert "streaming" not in capsys.readouterr().out
 
 
-def test_the_models_allowlist_narrows_the_planned_rows(tmp_path, capsys):
-    make_snap_dir(tmp_path)
+def test_the_models_allowlist_narrows_the_planned_rows(tmp_path, snaps, capsys):
+    snaps()
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-whisper", "dir": "myna-whisper-snap", "models": ["tiny"]}],
+        targets=[{"snap": "myna-whisper", "files": target_files(), "models": ["tiny"]}],
     )
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
     assert "/tiny/" in out and "/base/" not in out
 
 
-def test_an_unpacked_target_is_reported_and_the_rest_still_planned(tmp_path, capsys):
+def test_an_unpacked_target_is_reported_and_the_rest_still_planned(tmp_path, snaps, capsys):
     """A plan that stops at the first unpacked snap hides every target after
     it, which is the half you needed to see."""
-    make_snap_dir(tmp_path, snap="myna-qwen", components=(), packed=False)
-    make_snap_dir(tmp_path)
+    snaps()
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
-            {"snap": "myna-qwen", "dir": "myna-qwen-snap"},
-            {"snap": "myna-whisper", "dir": "myna-whisper-snap"},
+            {"snap": "myna-qwen", "files": ["myna-qwen_*.snap"]},
+            {"snap": "myna-whisper", "files": target_files()},
         ],
     )
 
@@ -427,26 +372,226 @@ def test_an_unpacked_target_is_reported_and_the_rest_still_planned(tmp_path, cap
     assert "myna-whisper/cpu/tiny/batch" in out
 
 
-def test_a_config_naming_a_key_no_engine_declares_fails_the_plan(tmp_path, capsys):
-    """It would take a cell down mid-sweep, hours in. Catch it in the plan."""
-    make_snap_dir(tmp_path)
+# ─── artefact-only targets ───────────────────────────────────────────────────
+
+
+def make_packed_snap(tmp_path, snap="myna-whisper", engines=(("cpu", ["tiny"], {}),)):
+    """A real squashfs carrying the three files a source tree is read for."""
+    stage = tmp_path / "stage"
+    (stage / "meta" / "hooks").mkdir(parents=True)
+    (stage / "meta" / "snap.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": snap,
+                "apps": {"whisper": {"command": "bin/whisper"}, "server": {"daemon": "simple"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (stage / "meta" / "hooks" / "install").write_text(
+        'modelctl set --package streaming="false"\n', encoding="utf-8"
+    )
+    for name, models, configurations in engines:
+        engine_dir = stage / "engines" / name
+        engine_dir.mkdir(parents=True)
+        (engine_dir / "engine.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": name,
+                    "model": {"default": models[0], "options": models},
+                    "configurations": configurations,
+                }
+            ),
+            encoding="utf-8",
+        )
+    packed = tmp_path / f"{snap}_0.1.0_amd64.snap"
+    subprocess.run(
+        ["mksquashfs", str(stage), str(packed), "-noappend", "-quiet", "-no-progress"],
+        check=True,
+        capture_output=True,
+    )
+    return packed
+
+
+@pytest.mark.skipif(
+    shutil.which("mksquashfs") is None or shutil.which("unsquashfs") is None,
+    reason="squashfs-tools not installed",
+)
+def test_a_target_given_as_artefacts_is_planned_from_the_snap_itself(tmp_path, capsys):
+    """A tester's config lists files, not a source tree. Reading the .snap is
+    what lets `plan` answer for it at all, rather than saying "unknown" and
+    leaving a bad key to take a cell down hours in."""
+    packed = make_packed_snap(tmp_path, engines=(("cpu", ["tiny", "base"], {}),))
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[{"snap": "myna-whisper", "files": [packed.name]}],
+    )
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "myna-whisper/cpu/tiny/batch" in out
+    assert "myna-whisper/cpu/base/batch" in out
+    # And the CLI app name, which the snap name is not.
+    assert "cli=myna-whisper.whisper" in out
+
+
+@pytest.mark.skipif(
+    shutil.which("mksquashfs") is None or shutil.which("unsquashfs") is None,
+    reason="squashfs-tools not installed",
+)
+def test_a_bad_key_in_an_artefact_only_target_fails_the_plan(tmp_path, capsys):
+    packed = make_packed_snap(tmp_path, engines=(("cpu", ["tiny"], {"compute-type": "auto"}),))
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
             {
                 "snap": "myna-whisper",
-                "dir": "myna-whisper-snap",
+                "files": [packed.name],
                 "configs": [{"label": "x", "settings": {"not-a-key": "1"}}],
             }
         ],
     )
     with pytest.raises(SystemExit):
         cmd_plan(PlanArgs(config))
-    assert "no engine.yaml declares" in capsys.readouterr().out
+    assert "not declared by engine 'cpu'" in capsys.readouterr().out
 
 
-def test_the_plan_prices_the_sweep_in_wall_clock(tmp_path, capsys):
-    make_snap_dir(tmp_path)  # one cpu engine, two models, batch only
+# ─── explicit values, explicit engines ───────────────────────────────────────
+
+
+@pytest.mark.parametrize("value", ["auto", "default", "AUTO"])
+def test_a_config_point_that_defers_the_choice_is_refused(value):
+    """ "auto" is not a setting, it is a request for someone else to decide - and
+    whisper's resolves per model, so one auto row is int8 on tiny and float32 on
+    base under a single name. Both were measured that way."""
+    with pytest.raises(SystemExit, match="defers the choice"):
+        parse_variants(
+            {"configs": [{"label": "auto", "settings": {"compute-type": value}}]}, "myna-whisper"
+        )
+
+
+def test_a_config_point_can_be_scoped_to_the_engines_it_makes_sense_on():
+    variants = parse_variants(
+        {
+            "configs": [
+                {
+                    "label": "fp16",
+                    "engines": ["nvidia-gpu"],
+                    "settings": {"compute-type": "float16"},
+                },
+                {"label": "int8", "engines": ["cpu"], "settings": {"compute-type": "int8"}},
+            ]
+        },
+        "myna-whisper",
+    )
+    assert [v.label for v in variants_for(variants, BATCH, "cpu")] == ["int8"]
+    assert [v.label for v in variants_for(variants, BATCH, "nvidia-gpu")] == ["fp16"]
+
+
+def test_an_engine_whose_points_are_all_scoped_elsewhere_still_gets_one_row():
+    """Otherwise a config written for a GPU box drops the CPU target entirely."""
+    variants = parse_variants(
+        {
+            "configs": [
+                {
+                    "label": "fp16",
+                    "engines": ["nvidia-gpu"],
+                    "settings": {"compute-type": "float16"},
+                }
+            ]
+        },
+        "myna-whisper",
+    )
+    assert variants_for(variants, BATCH, "cpu") == [None]
+
+
+def test_a_key_missing_from_one_engine_is_fine_when_the_point_is_scoped_to_another(
+    tmp_path, snaps, capsys
+):
+    snaps(
+        engines=(
+            ("cpu", ["tiny"], {"sleep-idle-seconds": "300"}),
+            ("nvidia-gpu", ["tiny"], {"compute-type": "float16"}),
+        ),
+    )
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[
+            {
+                "snap": "myna-whisper",
+                "files": target_files(),
+                "configs": [
+                    {
+                        "label": "fp16",
+                        "engines": ["nvidia-gpu"],
+                        "settings": {"compute-type": "float16"},
+                    }
+                ],
+            }
+        ],
+    )
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "myna-whisper/nvidia-gpu/tiny/batch-fp16" in out
+    assert "myna-whisper/cpu/tiny/batch" in out
+
+
+def test_naming_an_engine_the_snap_does_not_ship_fails_the_plan(tmp_path, snaps, capsys):
+    snaps()
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[{"snap": "myna-whisper", "files": target_files(), "engines": ["nvidia-gpu"]}],
+    )
+    with pytest.raises(SystemExit):
+        cmd_plan(PlanArgs(config))
+    assert "this snap ships ['cpu']" in capsys.readouterr().out
+
+
+def test_named_engines_are_all_counted_where_auto_selection_counts_only_the_widest(
+    tmp_path, snaps, capsys
+):
+    """One machine runs one auto-selection, so an unnamed target is quoted its
+    largest engine; a target that names both actually measures both."""
+    engines = (("cpu", ["tiny"], {}), ("nvidia-gpu", ["tiny"], {}))
+    snaps(engines=engines)
+    auto = write_config(tmp_path / "auto.yaml", sweep_budget_seconds=3600)
+    cmd_plan(PlanArgs(auto))
+    assert "at most 1 will run here." in capsys.readouterr().out
+
+    both = write_config(
+        tmp_path / "both.yaml",
+        sweep_budget_seconds=3600,
+        targets=[
+            {
+                "snap": "myna-whisper",
+                "files": target_files(),
+                "engines": ["cpu", "nvidia-gpu"],
+            }
+        ],
+    )
+    cmd_plan(PlanArgs(both))
+    assert "at most 2 will run here." in capsys.readouterr().out
+
+
+def test_a_config_naming_a_key_no_engine_declares_fails_the_plan(tmp_path, snaps, capsys):
+    """It would take a cell down mid-sweep, hours in. Catch it in the plan."""
+    snaps()
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[
+            {
+                "snap": "myna-whisper",
+                "files": target_files(),
+                "configs": [{"label": "x", "settings": {"not-a-key": "1"}}],
+            }
+        ],
+    )
+    with pytest.raises(SystemExit):
+        cmd_plan(PlanArgs(config))
+    assert "not declared by engine 'cpu'" in capsys.readouterr().out
+
+
+def test_the_plan_prices_the_sweep_in_wall_clock(tmp_path, snaps, capsys):
+    snaps()  # one cpu engine, two models, batch only
     config = write_config(tmp_path / "bench.yaml", sweep_budget_seconds=3600)
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
@@ -454,11 +599,10 @@ def test_the_plan_prices_the_sweep_in_wall_clock(tmp_path, capsys):
     assert "2.0 h" in out
 
 
-def test_the_estimate_counts_one_engine_per_target_not_all_of_them(tmp_path, capsys):
+def test_the_estimate_counts_one_engine_per_target_not_all_of_them(tmp_path, snaps, capsys):
     """Exactly one engine runs. Summing them would quote a machine with an
     NVIDIA card double the sweep it is about to start."""
-    make_snap_dir(
-        tmp_path,
+    snaps(
         engines=(("cpu", ["tiny"], {}), ("nvidia-gpu", ["tiny"], {})),
     )
     config = write_config(tmp_path / "bench.yaml", sweep_budget_seconds=3600)
@@ -469,11 +613,10 @@ def test_the_estimate_counts_one_engine_per_target_not_all_of_them(tmp_path, cap
     assert "1.0 h" in out
 
 
-def test_every_engine_is_planned_and_the_choice_is_named_as_the_machines(tmp_path, capsys):
+def test_every_engine_is_planned_and_the_choice_is_named_as_the_machines(tmp_path, snaps, capsys):
     """Which engine wins is hardware detection at run time, so the plan is a
     prediction over all of them rather than a guess at one."""
-    make_snap_dir(
-        tmp_path,
+    snaps(
         engines=(("cpu", ["tiny"], {}), ("nvidia-gpu", ["tiny"], {})),
     )
     config = write_config(tmp_path / "bench.yaml")

@@ -322,14 +322,15 @@ feed like live dictation instead of pushing as fast as the socket accepts.
 ### Sweeping the matrix
 
 The full sweep measures what we actually ship. For each snap it purges any
-existing install, sideloads the locally packed snap and its components, lets
-`use-engine --auto` pick the engine on this machine, and then sweeps **every
-model the engine offers × every emission mode the snap supports (batch /
-streaming) × every config point the target declares** — one row each, cold
-sample then warm sweep, under a wall-clock budget. Config points are how the
-quantization axis is measured: whisper's `compute-type`, parakeet's
-`stream-arm-seconds`, nemotron's `att-context-size`, each naming the modes it
-applies to. Target list and axes live in `dev/matrix.yaml`.
+existing install, sideloads the locally packed snap and its components, selects
+an engine — whichever `use-engine --auto` picks, or each one the target names —
+and then sweeps **every model the engine offers × every emission mode the snap
+supports (batch / streaming) × every config point the target declares** — one
+row each, cold sample then warm sweep, under a wall-clock budget. Config points
+are how the quantization axis is measured: whisper's `compute-type`, parakeet's
+`stream-arm-seconds`, nemotron's `att-context-size`, each naming the modes and
+engines it applies to. Target list and axes live in `dev/bench.yaml`, and the
+`make bench-*` targets run `myna-bench.pyz` — the same artefact testers get.
 
 ```shell
 make bench-check            # is this machine fit to benchmark on?
