@@ -83,6 +83,9 @@ fn main() -> glib::ExitCode {
     app.run_with_args::<&str>(&[])
 }
 
+// Without `dev_lab` every recognised flag is terminal (`--lab`/`--serve-dbus`
+// become errors), so the loop provably runs at most one iteration.
+#[cfg_attr(not(dev_lab), allow(clippy::never_loop))]
 fn parse_mode() -> Result<Mode, String> {
     #[allow(unused_mut)]
     let mut mode = Mode::Hosted;

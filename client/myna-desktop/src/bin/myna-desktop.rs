@@ -65,7 +65,7 @@ use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
 use myna_desktop::{DesktopController, Indicator, Live};
 use myna_orchestrator::{
-    run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixBackend,
+    run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixIe115Backend,
 };
 use tokio::sync::mpsc;
 
@@ -499,7 +499,7 @@ fn make_session(
             Ok(socket) => socket,
             Err(e) => return no_backend(e),
         };
-        let backend = WsUnixBackend::new(&socket);
+        let backend = WsUnixIe115Backend::new(&socket);
         let mut builder = CaptureSource::builder(AudioFormat::default());
         if let Some(node) = &target {
             builder = builder.target(node.clone());
