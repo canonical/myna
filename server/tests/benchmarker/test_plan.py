@@ -38,6 +38,7 @@ from myna.benchmarker._run import (
     _engine_manifests,
     _snap_yaml_command,
     cmd_plan,
+    engine_blocked_here,
     load_config,
     parse_variants,
     variants_for,
@@ -69,7 +70,17 @@ def snaps(tmp_path, monkeypatch):
             packed_path.write_bytes(b"")
             metadata[str(packed_path)] = {
                 "engines": {
-                    name: {"models": list(models), "configurations": dict(configurations)}
+                    name: {
+                        "models": list(models),
+                        "configurations": dict(configurations),
+                        # A GPU engine states it in engine.yaml; that is what
+                        # lets a target be skipped before anything installs.
+                        "devices": (
+                            {"allof": [{"type": "gpu", "vendor-id": "0x10de"}]}
+                            if "gpu" in name
+                            else {}
+                        ),
+                    }
                     for name, models, configurations in engines
                 },
                 "cli": cli or f"{snap}.{snap.split('-', 1)[-1]}",
@@ -81,6 +92,27 @@ def snaps(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_run, "snap_metadata", lambda f: metadata.get(str(f), {}))
     return make
+
+
+@pytest.fixture(autouse=True)
+def machine(monkeypatch):
+    """What hardware detection says, stubbed.
+
+    `plan` prices the sweep for *this* machine, so it has to ask - and a test
+    that asks the real one says something different on a laptop with a GPU in
+    it. Defaults to no GPU; `machine.gpu("RTX 4090")` opts in.
+    """
+    from myna.benchmarker import machine as machine_module
+
+    state = {"type": "machine", "hostname": "test-box", "gpu": None, "gpu_vram_gb": None}
+    monkeypatch.setattr(machine_module, "collect", lambda: state)
+
+    class Machine:
+        @staticmethod
+        def gpu(name="NVIDIA Test", vram_gb=24.0):
+            state.update(gpu=name, gpu_vram_gb=vram_gb)
+
+    return Machine
 
 
 def target_files(snap="myna-whisper"):
@@ -368,7 +400,7 @@ def test_an_unpacked_target_is_reported_and_the_rest_still_planned(tmp_path, sna
     cmd_plan(PlanArgs(config))  # not packed is a state of the tree, not a config error
 
     out = capsys.readouterr().out
-    assert "UNAVAILABLE" in out and "pack it first" in out
+    assert "SKIPPED" in out and "pack it first" in out
     assert "myna-whisper/cpu/tiny/batch" in out
 
 
@@ -547,10 +579,11 @@ def test_naming_an_engine_the_snap_does_not_ship_fails_the_plan(tmp_path, snaps,
 
 
 def test_named_engines_are_all_counted_where_auto_selection_counts_only_the_widest(
-    tmp_path, snaps, capsys
+    tmp_path, snaps, machine, capsys
 ):
     """One machine runs one auto-selection, so an unnamed target is quoted its
     largest engine; a target that names both actually measures both."""
+    machine.gpu()
     engines = (("cpu", ["tiny"], {}), ("nvidia-gpu", ["tiny"], {}))
     snaps(engines=engines)
     auto = write_config(tmp_path / "auto.yaml", sweep_budget_seconds=3600)
@@ -570,6 +603,85 @@ def test_named_engines_are_all_counted_where_auto_selection_counts_only_the_wide
     )
     cmd_plan(PlanArgs(both))
     assert "at most 2 will run here." in capsys.readouterr().out
+
+
+# ─── what this machine can actually run ──────────────────────────────────────
+
+
+def test_a_gpu_only_target_is_skipped_on_a_machine_with_no_gpu(tmp_path, snaps, capsys):
+    """This is what let nemotron sit commented out: uncommented, it used to be
+    installed - several GB of components - and only then report broken."""
+    snaps(snap="myna-nemotron", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[{"snap": "myna-nemotron", "files": ["myna-nemotron_*.snap"]}],
+    )
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out and "no engine it ships can run here" in out
+    assert "at most 0 will run here." in out
+
+
+def test_the_same_target_is_planned_in_full_on_a_machine_with_a_gpu(
+    tmp_path, snaps, machine, capsys
+):
+    """Same config, no edit - which is the point of not commenting it out."""
+    machine.gpu()
+    snaps(snap="myna-nemotron", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[{"snap": "myna-nemotron", "files": ["myna-nemotron_*.snap"]}],
+    )
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "myna-nemotron/nvidia-gpu/streaming-multi/batch" in out
+    assert "at most 1 will run here." in out
+
+
+def test_a_gpu_engine_is_not_counted_toward_a_cpu_only_machines_wall_clock(tmp_path, snaps, capsys):
+    """whisper ships both. Quoting its GPU rows on a box with no GPU overstates
+    the sweep someone is planning a day around."""
+    snaps(
+        engines=(
+            ("cpu", ["tiny"], {}),
+            ("nvidia-gpu", ["tiny", "base", "small"], {}),
+        )
+    )
+    config = write_config(tmp_path / "bench.yaml", sweep_budget_seconds=3600)
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "needs a GPU; none detected here" in out
+    assert "at most 1 will run here." in out
+
+
+def test_an_engine_named_but_unrunnable_leaves_the_ones_that_are(tmp_path, snaps, capsys):
+    """`engines: [cpu, nvidia-gpu]` is one config for two kinds of machine."""
+    snaps(engines=(("cpu", ["tiny"], {}), ("nvidia-gpu", ["tiny"], {})))
+    config = write_config(
+        tmp_path / "bench.yaml",
+        targets=[
+            {
+                "snap": "myna-whisper",
+                "files": target_files(),
+                "engines": ["cpu", "nvidia-gpu"],
+            }
+        ],
+    )
+    cmd_plan(PlanArgs(config))
+    out = capsys.readouterr().out
+    assert "myna-whisper/cpu/tiny/batch" in out
+    assert "at most 1 will run here." in out
+
+
+def test_only_an_allof_clause_is_a_requirement():
+    """An anyof clause is one of several ways to qualify, so it never blocks -
+    whisper's cpu engine lists its architectures that way."""
+    gpu = {"allof": [{"type": "gpu", "vendor-id": "0x10de"}]}
+    cpu = {"anyof": [{"type": "cpu", "architecture": "amd64"}]}
+    assert engine_blocked_here(gpu, {"gpu": None}) == "needs a GPU; none detected here"
+    assert engine_blocked_here(gpu, {"gpu": "NVIDIA Test"}) is None
+    assert engine_blocked_here(cpu, {"gpu": None}) is None
+    assert engine_blocked_here({}, {"gpu": None}) is None
 
 
 def test_a_config_naming_a_key_no_engine_declares_fails_the_plan(tmp_path, snaps, capsys):

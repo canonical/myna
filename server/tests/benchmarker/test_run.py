@@ -1442,6 +1442,53 @@ def test_a_cell_the_engine_refuses_costs_that_cell_and_not_the_target(
     }
 
 
+def test_a_gpu_only_target_is_skipped_before_it_is_installed(
+    tmp_path, corpus, stub_sweep, stub_target, monkeypatch, capsys
+):
+    """The whole reason a GPU-only target had to be commented out: uncommented,
+    it installed several GB of components and only then reported broken."""
+    monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        stub_target,
+        "static_engines",
+        lambda self: (
+            {
+                "nvidia-gpu": {
+                    "models": ["streaming-multi"],
+                    "configurations": {},
+                    "devices": {"allof": [{"type": "gpu", "vendor-id": "0x10de"}]},
+                }
+            }
+            if self.snap == "myna-nemotron"
+            else {"cpu": {"models": ["tiny"], "configurations": {}, "devices": {}}}
+        ),
+    )
+    out = tmp_path / "results.jsonl"
+    config = write_config(
+        tmp_path / "bench.yaml",
+        manifest=str(corpus),
+        out=str(out),
+        targets=[
+            {"snap": "myna-nemotron", "files": [NEMOTRON_SNAP]},
+            {"snap": "myna-whisper", "files": [WHISPER_SNAP]},
+        ],
+    )
+
+    cmd_run(RunArgs(config, out=out))
+
+    assert [label for label, _, _ in stub_sweep] == ["myna-whisper/cpu/tiny/batch"]
+    assert stub_target.started == 1  # nemotron never installed
+    statuses = {
+        rec["label"]: rec["status"]
+        for rec in (json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines())
+        if "status" in rec
+    }
+    assert statuses["myna-nemotron"] == "skipped"
+    printed = capsys.readouterr().out
+    assert "no engine it ships can run here" in printed
+    assert "failed" not in printed  # a skip is not a failure to chase
+
+
 def test_a_target_whose_engine_cannot_be_selected_costs_only_itself(
     tmp_path, corpus, stub_sweep, stub_target, monkeypatch, capsys
 ):

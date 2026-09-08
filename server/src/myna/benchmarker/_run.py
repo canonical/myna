@@ -322,8 +322,34 @@ def _engine_manifests(engines_dir: Path) -> dict[str, dict]:
         out[parsed.get("name") or entry.name] = {
             "models": list((parsed.get("model") or {}).get("options") or []),
             "configurations": dict(parsed.get("configurations") or {}),
+            "devices": dict(parsed.get("devices") or {}),
         }
     return out
+
+
+def engine_blocked_here(devices: dict, machine: dict) -> str | None:
+    """Why this engine cannot run on this machine, or None if it might.
+
+    Deliberately one-sided. It answers for the single requirement that actually
+    varies between the machines we benchmark on - a GPU engine on a box with no
+    GPU - and nothing else. modelctl owns real device matching (``lscompute``
+    scores every clause against detected hardware); a second implementation here
+    would be one more thing to keep in step, and a wrong "cannot run" is worse
+    than a wasted install because it silently drops a row. So anything this
+    cannot be sure about runs.
+
+    Only ``allof`` clauses are requirements; an ``anyof`` clause is by
+    definition one of several ways to qualify, so it never blocks.
+
+    Knowing this before installing is the difference between a target that is
+    skipped and one that is *reported broken* after sideloading several GB to
+    find out - which is what a GPU-only snap in the config used to cost a
+    CPU-only machine, and why they were commented out instead.
+    """
+    required = list((devices or {}).get("allof") or [])
+    if any(clause.get("type") == "gpu" for clause in required) and not machine.get("gpu"):
+        return "needs a GPU; none detected here"
+    return None
 
 
 _SNAP_METADATA: dict[str, dict] = {}
@@ -552,6 +578,32 @@ class SnapTarget:
         # stamped onto every record it produces. Without it a label is the only
         # record of what ran, and a label is a name someone chose.
         self.applied: dict[str, str] = {}
+        # Engines this machine cannot run, filled in by check_machine.
+        self.blocked: dict[str, str] = {}
+
+    def check_machine(self, machine: dict) -> None:
+        """Rule out engines this machine cannot run, before anything installs.
+
+        A target left with none is unavailable in exactly the sense an unpacked
+        one is: a state of the machine, not a mistake in the config. That is
+        what lets a GPU-only target sit in the config permanently instead of
+        being commented out - on a GPU box it runs, on this one it is skipped,
+        and neither needs an edit.
+        """
+        engines = self.static_engines()
+        self.blocked = {
+            name: reason
+            for name, detail in engines.items()
+            if (reason := engine_blocked_here(detail.get("devices") or {}, machine))
+        }
+        wanted = self.only_engines or list(engines)
+        unrunnable = [e for e in wanted if e in self.blocked]
+        if engines and wanted and len(unrunnable) == len(wanted):
+            raise TargetUnavailable(
+                f"{self.snap}: no engine it ships can run here "
+                f"({'; '.join(f'{e}: {self.blocked[e]}' for e in unrunnable)})"
+            )
+
     def _metadata(self) -> dict:
         """Engines, CLI app and streaming toggle, read out of the packed snap."""
         return snap_metadata(self.snap_file)
@@ -656,16 +708,20 @@ class SnapTarget:
         it is being compared against, and a config written for both machines
         silently measures whichever half the hardware chose.
         """
-        if not self.only_engines:
-            return [None]
         available = self.static_engines() or {}
+        if not self.only_engines:
+            # Auto-selection, unless this machine has ruled some engines out and
+            # left exactly one standing - then name it, because `--auto` would
+            # be scoring engines it cannot pick against one it can.
+            runnable = [e for e in available if e not in self.blocked]
+            return [runnable[0]] if len(available) > 1 and len(runnable) == 1 else [None]
         unknown = [e for e in self.only_engines if available and e not in available]
         if unknown:
             raise SystemExit(
                 f"{self.snap}: engines: names {unknown}, which this snap does not ship "
                 f"(it has {sorted(available)})"
             )
-        return list(self.only_engines)
+        return [e for e in self.only_engines if e not in self.blocked]
 
     def stop(self) -> None:
         self.purge()
@@ -1173,15 +1229,19 @@ def cmd_plan(args) -> None:  # noqa: ANN001
     # a mistake that will take a cell down mid-sweep. Only the latter fails.
     unavailable: list[str] = []
     problems: list[str] = []
+    from myna.benchmarker.machine import collect as collect_machine
+
+    machine = collect_machine()
     for spec in cfg.targets:
         snap = spec.get("snap", "(unnamed)")
         try:
             target = SnapTarget(spec, cfg.root, args.label_suffix)
+            target.check_machine(machine)
         except TargetUnavailable as exc:
             # Collected, not fatal: a plan that stops at the first unpacked snap
             # hides every target after it, which is the half you needed to see.
             unavailable.append(str(exc))  # TargetUnavailable already names the snap
-            print(f"  {snap:20} UNAVAILABLE - {exc}")
+            print(f"  {snap:20} SKIPPED - {exc}")
             continue
         variants = target.variants
         print(f"  {snap:20} cli={target.cli}  socket={target.socket}")
@@ -1194,7 +1254,11 @@ def cmd_plan(args) -> None:  # noqa: ANN001
         modes = list(MODES) if streams else [BATCH]
         # Which engines actually run: the ones named, or the single one the
         # machine will pick from those shipped.
-        selected = set(target.only_engines) if target.only_engines else set(engines)
+        # What will actually run here: the engines named (minus any this machine
+        # rules out), or every engine it could auto-select between.
+        selected = {
+            e for e in (target.only_engines or engines) if e in engines and e not in target.blocked
+        }
         rows_by_engine: dict[str, list[str]] = {}
         for engine, detail in engines.items():
             models = detail["models"] or ["(engine default)"]
@@ -1208,11 +1272,17 @@ def cmd_plan(args) -> None:  # noqa: ANN001
                 for variant in variants_for(variants, mode, engine)
             ]
             total += len(rows_by_engine[engine])
-            mark = "" if engine in selected else "  (not selected)"
+            mark = (
+                f"  ({target.blocked[engine]})"
+                if engine in target.blocked
+                else ""
+                if engine in selected
+                else "  (not selected)"
+            )
             print(f"  {'':20} engine {engine}: {len(rows_by_engine[engine])} row(s){mark}")
             for row in rows_by_engine[engine]:
                 print(f"  {'':22} {row}")
-        run_here = [rows_by_engine[e] for e in engines if e in selected]
+        run_here = [rows_by_engine[e] for e in engines if e in selected and e not in target.blocked]
         # Named engines all run; an unnamed target runs exactly one, so quote
         # its largest rather than the sum - a box with a GPU in it would
         # otherwise be told to plan a day around double the sweep it will start.
@@ -1263,7 +1333,7 @@ def cmd_plan(args) -> None:  # noqa: ANN001
         f"{will_run * cfg.budget / 3600:.1f} h"
     )
     if unavailable:
-        print("\nnot packed (these targets will be skipped):")
+        print("\nthese targets will be skipped:")
         for item in unavailable:
             print(f"  - {item}")
     if problems:
@@ -1354,6 +1424,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
 
     broken: list[tuple[str, str]] = []
     unusable: list[tuple[str, str]] = []
+    skipped: list[str] = []
     detected: dict = {}
 
     with _JsonlWriter(cfg.out, machine["hostname"]) as out:
@@ -1363,10 +1434,13 @@ def cmd_run(args) -> None:  # noqa: ANN001
             snap = spec.get("snap", "(unnamed)")
             try:
                 target = SnapTarget(spec, cfg.root, args.label_suffix)
+                target.check_machine(machine)
             except TargetUnavailable as exc:
-                broken.append((snap, str(exc)))
-                out.status(snap, "broken", str(exc))
-                print(f"\n=== {snap} ===\nUNAVAILABLE: {exc} - skipping target")
+                # Not packed, or nothing it ships can run here. Neither is a
+                # failure to report as one: the sweep skips it and says so.
+                skipped.append(str(exc))
+                out.status(snap, "skipped", str(exc))
+                print(f"\n=== {snap} ===\nSKIPPED: {exc}")
                 continue
             print(f"\n=== {target.snap} ===")
             try:
@@ -1462,6 +1536,10 @@ def cmd_run(args) -> None:  # noqa: ANN001
     else:
         print("\nno results to aggregate - every target failed")
 
+    if skipped:
+        print(f"\n{len(skipped)} target(s) skipped:")
+        for reason in skipped:
+            print(f"  - {reason}")
     if unusable:
         print(f"\n{len(unusable)} cell(s) failed the usability budget:")
         for label, why in unusable:

@@ -178,6 +178,15 @@ A named engine that will not activate fails that pass rather than falling back:
 a CPU number under a GPU label is wrong in the one way nobody checks. The GPU
 engine also needs its runtime component present (`+faster-whisper-cuda.comp`).
 
+**An engine this machine cannot run is dropped before anything installs.** Each
+`engine.yaml` states its device requirements, and an `allof` clause naming a GPU
+is checked against detection at startup. So a GPU-only target (nemotron) stays
+in the config permanently: on a GPU box it runs, on a CPU-only box it is skipped
+with a reason and costs nothing. The same check keeps a GPU engine's rows out of
+the wall-clock estimate on a machine that will never run them. The rest of
+device matching is modelctl's job - this only rules out what it is certain
+about, so anything unclear still runs.
+
 ## Adding an axis
 
 Axes live in `dev/bench.yaml`. Models, emission mode and engine come from the
@@ -225,7 +234,7 @@ Two rules about values:
 | --- | --- |
 | `plan` says a target is not packed | `make snap-<name>`, then copy the new artefacts over |
 | a target is `BROKEN` immediately | `journalctl -u snap.<snap>.server` on that machine; usually a component that did not install |
-| `no engine could be selected` | the snap ships only a GPU engine and there is no GPU (nemotron is commented out of `dev/bench.yaml` for exactly this) |
+| a target is `SKIPPED` | either its artefacts are not packed, or no engine it ships can run here (a GPU-only snap on a CPU-only box). Neither is a failure: leave the target in the config and it runs on a machine that can |
 | WER is ~100% on long-form only | a long clip fed flat out can outrun a backend's websocket keepalive; re-check that row with `myna-bench bench --realtime` |
 | corpus id does not match | the `download-corpus` arguments differ from the ones used for the leaderboard's corpus |
 | `not a complete LibriSpeech archive` | an earlier download was interrupted; the message names the file to delete |

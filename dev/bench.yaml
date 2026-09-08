@@ -147,27 +147,28 @@ targets:
       - audio8-snap/myna-audio8+*.comp
 
   # nemotron ships only an `nvidia-gpu` engine (devices: allof gpu vendor-id
-  # 0x10de, runtime nemo-cuda), so auto-selection finds nothing on a CPU-only
-  # machine and the target can only fail. The adapter itself does support
-  # `--device cpu`, but packaging a CPU engine was judged not worth it: it is a
-  # GPU-oriented FastConformer and would land as usability_fail anyway.
-  # Uncomment on a machine with an NVIDIA card.
-  # - snap: myna-nemotron
-  #   files:
-  #     - nemotron-snap/myna-nemotron_*.snap
-  #     - nemotron-snap/myna-nemotron+*.comp
-  #   # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
-  #   # "70,0" = lowest latency (no right context); "70,33" = most context.
-  #   configs:
-  #     - label: ctx70.0
-  #       modes: [streaming]
-  #       settings:
-  #         att-context-size: "70,0"
-  #     - label: ctx70.13
-  #       modes: [streaming]
-  #       settings:
-  #         att-context-size: "70,13"
-  #     - label: ctx70.33
-  #       modes: [streaming]
-  #       settings:
-  #         att-context-size: "70,33"
+  # 0x10de, runtime nemo-cuda). On a machine with no NVIDIA card there is no
+  # engine it can activate, so the runner skips the target before installing it
+  # and says so - it does not need commenting out, and on a GPU box it runs
+  # without an edit. The adapter does support `--device cpu`, but packaging a
+  # CPU engine was judged not worth it: a GPU-oriented FastConformer would land
+  # as usability_fail anyway.
+  - snap: myna-nemotron
+    files:
+      - nemotron-snap/myna-nemotron_*.snap
+      - nemotron-snap/myna-nemotron+*.comp
+    # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
+    # "70,0" = lowest latency (no right context); "70,33" = most context.
+    configs:
+      - label: ctx70.0
+        modes: [streaming]
+        settings:
+          att-context-size: "70,0"
+      - label: ctx70.13
+        modes: [streaming]
+        settings:
+          att-context-size: "70,13"
+      - label: ctx70.33
+        modes: [streaming]
+        settings:
+          att-context-size: "70,33"
