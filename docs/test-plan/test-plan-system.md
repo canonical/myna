@@ -3,7 +3,7 @@
 **Scope**: system-level, end-to-end testing only — a human presses the hotkey,
 speaks, and judges what lands in a focused text field. This plan does **not**
 cover unit tests, contract/wire tests, or the automated WER/CER harness
-(`dev/bench.py`, `dev/matrix.py`, `pytest`) — those are already exercised
+(`myna-bench bench`, `myna-bench run`, `pytest`) — those are already exercised
 elsewhere and are out of scope here (see §11).
 
 **Audience**: internal dev/QA team first (dry run), then opened to community
@@ -598,8 +598,8 @@ This test plan explicitly does **not** cover:
 
 - Unit tests, contract/wire-protocol tests, or any part of the existing
   `pytest`/Rust test suites.
-- Automated WER/CER/RTF benchmarking (`dev/bench.py`, `dev/matrix.py`,
-  `dev/aggregate.py`) — those already exist and produce precise, repeatable
+- Automated WER/CER/RTF benchmarking (`myna-bench bench`, `myna-bench run`,
+  `myna-bench summarize`) — those already exist and produce precise, repeatable
   numbers; this plan is a human-perspective complement, not a replacement.
 - Non-GNOME desktop environments (KDE, wlroots compositors) and X11/XWayland.
 - arm64 hardware (whisper-snap declares an arm64 build target, but it is

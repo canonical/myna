@@ -158,18 +158,21 @@ bench: ## Build the standalone myna-bench.pyz zipapp (external distribution, not
 	./dev/build-bench.sh
 
 # BENCH_LABEL_SUFFIX=maxstack tags every label <snap>+maxstack so two builds of
-# one snap can share results/bench.jsonl (aggregate.py dedups by label).
+# one snap can share results/bench.jsonl (the summary dedups by label).
 BENCH_LABEL_SUFFIX ?=
 BENCH_LABEL_ARGS = $(if $(BENCH_LABEL_SUFFIX),--label-suffix $(BENCH_LABEL_SUFFIX))
 
-# In-repo benchmark run: dev/matrix.py sideloads the snap/component files
-# already sitting in each */-snap dir (no bench.yaml needed — see
-# dev/matrix.yaml for the target list) and sweeps corpus/english. Distinct from
-# `bench`/myna-bench.pyz above, which is the config-driven tool for testers
-# without a checkout.
+# Every bench target below drives the same tool, `myna.benchmarker` — the one
+# source of truth for corpus, scoring, sweep and aggregation. `make bench`
+# above packs that same package into myna-bench.pyz for testers without a
+# checkout; the only difference is that dev/matrix.yaml points at the snap
+# directories in this tree (dir:) instead of artefacts copied over (files:).
+BENCH = uv run python -m myna.benchmarker
+BENCH_ROOT = sudo server/.venv/bin/python -B -m myna.benchmarker
+
 .PHONY: bench-plan
-bench-plan: bench-corpus ## Print the matrix run plan without installing anything
-	cd server && uv run python ../dev/matrix.py --config ../dev/matrix.yaml --dry-run
+bench-plan: ## Print the sweep matrix without installing anything (no root)
+	cd server && $(BENCH) plan --config ../dev/matrix.yaml $(BENCH_LABEL_ARGS)
 
 # Installs and purges real snaps as root (snap remove --purge between
 # targets) — this modifies system state, run it yourself when ready. -B: root
@@ -177,20 +180,32 @@ bench-plan: bench-corpus ## Print the matrix run plan without installing anythin
 # which breaks every later `uv run`.
 .PHONY: bench-run
 bench-run: bench-corpus ## Full snap matrix sweep (sudo: installs/removes snaps); writes results/bench.jsonl
-	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml $(BENCH_LABEL_ARGS)
+	$(BENCH_ROOT) run --config dev/matrix.yaml $(BENCH_LABEL_ARGS)
 
 # --keep-results: unlike bench-run (a full sweep, meant to start clean),
 # bench-run-<snap> exists to be called once per snap across separate
-# invocations to build up one comparison — matrix.py resets results/bench.jsonl
+# invocations to build up one comparison — the runner resets results/bench.jsonl
 # on every run by default, which would make each scoped run erase the last.
-# Safe to re-run the same snap too: aggregate.py dedups by (label, clip),
+# Safe to re-run the same snap too: the summary dedups by (label, clip),
 # newest wins.
-bench-run-%: bench-corpus ## Matrix sweep scoped to one snap (bench-run-<snap>, e.g. bench-run-whisper)
-	sudo server/.venv/bin/python -B dev/matrix.py --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results $(BENCH_LABEL_ARGS)
+bench-run-%: bench-corpus ## Sweep scoped to one snap (bench-run-<snap>, e.g. bench-run-whisper)
+	$(BENCH_ROOT) run --config dev/matrix.yaml --only $(SNAPNAME_$*) --keep-results $(BENCH_LABEL_ARGS)
 
 .PHONY: bench-aggregate
-bench-aggregate: ## Re-print the comparison table from the last matrix run
-	cd server && uv run python ../dev/aggregate.py --by-category --in ../results/bench.jsonl
+bench-aggregate: ## Re-print the comparison table from the last sweep
+	cd server && $(BENCH) summarize --by-category --in ../results/bench.jsonl
+
+# Fold a submission back in. The leaderboard is one tracked file; re-running a
+# machine replaces that machine's rows rather than doubling them.
+.PHONY: bench-merge
+bench-merge: ## Merge submissions into the leaderboard (make bench-merge SUBMISSIONS="a.jsonl b.jsonl")
+	cd server && $(BENCH) merge $(abspath $(SUBMISSIONS)) \
+		--leaderboard $(abspath results/leaderboard.jsonl)
+	cd server && $(BENCH) summarize --in $(abspath results/leaderboard.jsonl)
+
+.PHONY: bench-check
+bench-check: ## Report whether this machine is fit to benchmark on (governor, load, competing servers)
+	cd server && $(BENCH) check --sweep
 
 # A whole LibriSpeech chapter concatenated in reading order (real speech, not
 # synthetic), category "long-form" — the per-utterance tiers are all a few
@@ -203,22 +218,24 @@ bench-aggregate: ## Re-print the comparison table from the last matrix run
 # automatically. bench-corpus-long is the standalone single-clip manifest for
 # ad hoc bench-long-<snap> runs against one already-running snap.
 .PHONY: bench-corpus
-bench-corpus: ## Regenerate the matrix's corpus (manifest-balanced.json) with the long-form clip included
-	cd server && uv run python ../dev/fetch_english_corpus.py \
+bench-corpus: ## Regenerate the sweep's corpus (manifest-balanced.json) with the long-form clip included
+	cd server && $(BENCH) download-corpus --out ../corpus/english --cache ../.cache/librispeech \
 		-n 80 --select balanced --manifest-name manifest-balanced.json --long-form-minutes 5
 
 .PHONY: bench-corpus-long
 bench-corpus-long: ## (Re)generate a standalone ~5min long-form clip (corpus/english/manifest-long.json)
-	cd server && uv run python ../dev/fetch_english_corpus.py \
+	cd server && $(BENCH) download-corpus --out ../corpus/english --cache ../.cache/librispeech \
 		-n 0 --manifest-name manifest-long.json --long-form-minutes 5
 
 # e.g. `make bench-long-whisper` — assumes the snap is already installed and
-# its server started (this only drives dev/bench.py against its socket, it
-# does not install/purge like bench-run does).
+# its server started (this only scores its socket, it does not install/purge
+# like bench-run does). --realtime: a long clip fed flat out can outrun a
+# backend's websocket keepalive, which reads as a 100% WER model failure.
 bench-long-%: ## Run the long-form clip against an already-running <snap> (bench-long-<snap>)
-	cd server && uv run python ../dev/bench.py \
+	cd server && $(BENCH) bench --realtime \
 		--socket /var/snap/$(SNAPNAME_$*)/common/run/ubustt.sock \
-		--manifest ../corpus/english/manifest-long.json --label $(SNAPNAME_$*)/long-form
+		--manifest ../corpus/english/manifest-long.json \
+		--out ../results/bench.jsonl --label $(SNAPNAME_$*)/long-form
 
 # ------------------------------------------------------------------------
 # tests / lint / coverage — delegate to the canonical Workshop environment

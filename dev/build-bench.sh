@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build myna-bench.pyz — the standalone benchmarker zipapp.
 #
-#   bash dev/build-bench.sh
+#   bash dev/build-bench.sh            (or: make bench)
+#   python3 myna-bench.pyz plan --config bench.yaml
 #   sudo python3 myna-bench.pyz run --config bench.yaml
 #
 # Produces a single self-contained executable that testers can download
@@ -11,11 +12,18 @@
 #   uv tool install shiv
 #
 # The resulting .pyz bundles:
-#   - myna.core, myna.testbed, myna.benchmarker  (from server/src/)
-#   - websockets, psutil, pyyaml                  (from PyPI)
+#   - myna.core, myna.testbed, myna.server, myna.benchmarker  (from server/src/)
+#   - websockets, psutil, pyyaml                              (from PyPI)
 #
-# Run with sudo for the ``run`` subcommand (snap install/remove).
-# Everything else (download-corpus, make-corpus, summarize) is unprivileged.
+# myna.benchmarker is the whole benchmarking surface - corpus builders, clip
+# scorer, snap sweep, aggregator and environment guard - so this zipapp and the
+# in-tree `make bench-run` measure the same thing by construction. It stays
+# light because the package leans only on myna.core (websockets), myna.testbed
+# (stdlib) and myna.server.lifecycle (stdlib): no torch, no onnxruntime.
+#
+# Run with sudo for the ``run`` subcommand (snap install/remove). Everything
+# else (plan, bench, download-corpus, make-corpus, summarize, check) is
+# unprivileged.
 
 set -euo pipefail
 
@@ -41,5 +49,6 @@ echo "done: $OUT"
 echo
 echo "usage:"
 echo "  python3 myna-bench.pyz download-corpus --out ./corpus"
+echo "  python3 myna-bench.pyz plan --config bench.yaml"
 echo "  sudo python3 myna-bench.pyz run --config bench.yaml"
-echo "  python3 myna-bench.pyz summarize --in results.jsonl"
+echo "  python3 myna-bench.pyz summarize --in results.jsonl --by-category"

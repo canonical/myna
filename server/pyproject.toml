@@ -66,8 +66,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5",
     "hypothesis>=6",
-    "pyyaml>=6",   # dev/matrix.py config
-    "psutil>=5",   # dev/matrix.py peak RSS/VRAM sampling
+    "pyyaml>=6",   # myna-bench run config
+    "psutil>=5",   # myna-bench run peak RSS/VRAM sampling
     # The adapter unit suites (audio8/funasr/parakeet/sherpa/streaming) are
     # deliberately model-free (they stub the ONNX runtimes) but still build PCM
     # with numpy. Only the heavy extras carried it, so their module-level
@@ -125,8 +125,6 @@ select = ["E", "W", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501", "E402"]  # importorskip precedes gated imports
-# One-off experiment scripts stay ungated (evaluation-harness tier).
-"../dev/spikes/**" = ["E501", "B007", "B905", "UP042"]
 
 [tool.mypy]
 # Scoped strict: only the shared contract package (myna.core) is load-bearing

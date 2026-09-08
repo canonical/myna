@@ -157,7 +157,7 @@ metric polices the *path* to that transcript; the latency metric prices it.
 
 This is the payoff of the multi-model harness: (a)-vs-(b), transducer-vs-AED
 partial behaviour, and the `att_context_size` latency dial all become
-measurable side-by-side, over the same real corpus, in `dev/matrix.py` once a
+measurable side-by-side, over the same real corpus, in `myna-bench run` once a
 streaming axis is added to the sweep (the T11 note already flags this).
 
 ## 7. Scope & sequencing

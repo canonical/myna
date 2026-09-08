@@ -1,6 +1,8 @@
-# Matrix runner config (T11) - see dev/matrix.py.
+# In-repo sweep config for the packaged inference snaps.
 #
-#   sudo server/.venv/bin/python dev/matrix.py --config dev/matrix.yaml
+#   make bench-plan          # what would be measured, no root, installs nothing
+#   make bench-run           # the full sweep (sudo: installs and purges snaps)
+#   make bench-run-whisper   # one snap
 #
 # Snaps only: the runner purges any existing install, sideloads the locally
 # packed snap plus its components, benchmarks it, and purges again. Anything
@@ -12,61 +14,85 @@
 # comes from `modelctl show-machine`. A config can only ever disagree with the
 # machine it runs on, so it is not asked.
 
+# Paths below are relative to this, which is relative to this file's directory.
+root: ..
+
 # Trustworthy WER needs real speech *and* more than one voice: the balanced
-# tier round-robins 40 LibriSpeech dev-clean speakers (fixtures/ is plumbing
-# only, and corpus/english/manifest.json is all speaker 2277). Swap in
+# tier round-robins 40 LibriSpeech dev-clean speakers (corpus/english/
+# manifest.json is all speaker 2277). Swap in
 # corpus/librispeech-other/manifest-balanced.json for the hard split.
 #
 # One entry is not an utterance but a whole chapter concatenated in reading
 # order (category "long-form", ~5 min) - regenerated alongside the rest by
-# `make bench-corpus` (dev/fetch_english_corpus.py --long-form-minutes). Rolling
-# windows, buffer growth, and drift only show up minutes into a session; no
-# individual utterance is long enough to exercise them.
+# `make bench-corpus`. Rolling windows, buffer growth, and drift only show up
+# minutes into a session; no individual utterance is long enough to exercise them.
 manifest: corpus/english/manifest-balanced.json
 out: results/bench.jsonl
-cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged --cold to measure model load
+cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged cold to measure model load
 # clips: []                              # warm sweep clips; omit = whole manifest
 
 # Wall clock for the warm sweep. The balanced tier is ~12 min of audio plus
 # the ~5 min long-form clip above (~17 min total), so this is roughly "must
-# beat 0.83x real time end to end" - unchanged from the pre-long-form bar,
-# just scaled to the larger corpus. A backend that overruns is stamped
+# beat 0.83x real time end to end". A backend that overruns is stamped
 # usability_fail with the clips it managed - a product verdict, measured per
 # run on the actual hardware rather than predicted from a spec sheet.
 sweep_budget_seconds: 850
 
 # Each snap is swept across every model variant its selected engine offers
 # (`modelctl list-models`) x every emission mode it supports (batch, and
-# streaming where the snap exposes the `streaming` config key), one row per
-# combination. Add `models: [tiny, base]` to a target to narrow the variant
-# axis - useful when a large weight is known to blow the budget and you only
-# want it measured occasionally.
+# streaming where the snap's install hook declares the `streaming` key) x every
+# entry in its `configs:`. One row per combination.
 #
-# streaming_configs: optional list of {label, settings} dicts, applied only
-# when streaming=true. Each entry produces a separate row in the results with
-# the label suffixed "-<label>" (e.g. "streaming-arm3s"). Batch mode is always
-# run once, unaffected. Snaps without streaming_configs get a single streaming
-# row at whatever defaults the snap shipped with.
+# configs: optional list of {label, modes, settings}. Each entry is a named
+# point on some shipped knob, and `modes` says which emission modes it applies
+# to - so a decode-precision knob can be swept in batch and a latency dial only
+# in streaming. A mode no config mentions still runs exactly once, at the
+# values the snap shipped with. Keys a config omits are restored to those
+# shipped values, so every row is an absolute configuration rather than a
+# difference from the row before it.
 targets:
   - snap: myna-whisper
     dir: whisper-snap
     # LocalAgreement re-decode: no user-facing latency dial. Commits when two
-    # consecutive 1 s-cadence decodes agree; TTFF is content-driven, not config.
+    # consecutive 2 s-cadence decodes agree; TTFF is content-driven, not config.
+    #
+    # compute-type is the quantization axis. `auto` is what ships, and defers to
+    # each model's measured MODEL_COMPUTE_TYPE (T70: INT8 for tiny, FP32 for
+    # base and small), so it must coincide with one of the two explicit rows per
+    # model - measuring it anyway is what checks that mapping is still true.
+    # Applies to both modes: precision is a decode property, not an emission one.
+    configs:
+      - label: auto
+        modes: [batch, streaming]
+        settings:
+          compute-type: auto
+      - label: int8
+        modes: [batch, streaming]
+        settings:
+          compute-type: int8
+      - label: float32
+        modes: [batch, streaming]
+        settings:
+          compute-type: float32
 
   - snap: myna-parakeet
     dir: parakeet-snap
     # SilenceCut chunked-commit: stream-arm-seconds is the primary latency dial.
     # The window must reach arm_s before silence detection activates, so arm_s
     # sets the floor on TTFF. Sweep three points to expose the tradeoff curve;
-    # arm15s is the shipped default (murmure's proven constant).
-    streaming_configs:
+    # arm15s is the shipped default (murmure's proven constant). Streaming only -
+    # in batch mode nothing is cut, so three rows would be three identical numbers.
+    configs:
       - label: arm3s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "3"
       - label: arm8s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "8"
       - label: arm15s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "15"
 
@@ -99,13 +125,16 @@ targets:
   #   dir: nemotron-snap
   #   # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
   #   # "70,0" = lowest latency (no right context); "70,33" = most context.
-  #   # streaming_configs:
-  #   #   - label: ctx70.0
-  #   #     settings:
-  #   #       att-context-size: "70,0"
-  #   #   - label: ctx70.13
-  #   #     settings:
-  #   #       att-context-size: "70,13"
-  #   #   - label: ctx70.33
-  #   #     settings:
-  #   #       att-context-size: "70,33"
+  #   configs:
+  #     - label: ctx70.0
+  #       modes: [streaming]
+  #       settings:
+  #         att-context-size: "70,0"
+  #     - label: ctx70.13
+  #       modes: [streaming]
+  #       settings:
+  #         att-context-size: "70,13"
+  #     - label: ctx70.33
+  #       modes: [streaming]
+  #       settings:
+  #         att-context-size: "70,33"

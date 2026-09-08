@@ -1,16 +1,21 @@
-# Myna benchmarker config — edit this file and pass it to:
+# Myna benchmarker config - edit this file and pass it to:
 #
-#   sudo python3 myna-bench.pyz run --config bench.yaml
+#   myna-bench plan --config bench.yaml        # what would be measured
+#   sudo myna-bench run --config bench.yaml    # measure it
 #
 # Download a corpus first (one-time, ~330 MB):
 #
-#   python3 myna-bench.pyz download-corpus --out ./corpus
+#   myna-bench download-corpus --out ./corpus --select balanced -n 80
 
 # Path to the corpus manifest produced by download-corpus or make-corpus.
 manifest: ./corpus/manifest.json
 
 # Results output file. Share this with the project team after the run.
 out: ./results.jsonl
+
+# Base for the relative paths in this file. Defaults to the directory the
+# config itself lives in, so a bundle keeps working wherever it is unpacked.
+# root: .
 
 # Optional: one clip run first, tagged as a cold-load sample.
 # It measures the model-load wait (key release -> first dictation ready).
@@ -22,17 +27,25 @@ out: ./results.jsonl
 sweep_budget_seconds: 600
 
 # One entry per snap to benchmark. List all .snap and .comp files you
-# downloaded. The snap and its components are installed and removed together.
+# downloaded; the snap and its components are installed and removed together.
 #
 # Optional per-target keys:
+#   dir:     a source-tree snap directory instead of files: - the packed snap
+#            and the components its snapcraft.yaml declares are found for you.
 #   cli:     modelctl command (default: the snap name). Every Myna inference
 #            snap names its CLI app after the adapter, not the snap, so the
 #            default never applies here: spell it out as "<snap>.<adapter>".
 #   service: snap service name (default: <snap>.server)
 #   socket:  UDS path (default: /var/snap/<snap>/common/run/ubustt.sock)
 #   models:  allowlist of model names to sweep (default: all available)
-#   streaming_configs: list of {label, settings} to sweep at multiple
-#            streaming knob values (only applied when streaming=true)
+#   configs: named points on a shipped knob - see below.
+#
+# Every target is swept across each model its engine offers x each emission
+# mode it supports (batch, and streaming where the snap declares it) x each
+# entry in configs:. `modes` says which emission modes a config applies to, so
+# a decode-precision knob can be swept in batch while a latency dial is swept
+# only in streaming. A mode no config mentions still runs exactly once, at the
+# values the snap shipped with.
 targets:
   - snap: myna-whisper
     cli: myna-whisper.whisper
@@ -40,20 +53,37 @@ targets:
       - ./snaps/myna-whisper_<version>_amd64.snap
       - ./snaps/myna-whisper+cpu.comp
       # - ./snaps/myna-whisper+nvidia-gpu.comp  # uncomment if you have an NVIDIA GPU
+    # Decode precision. On the cpu engine: auto (per-model default), int8,
+    # int8_float32, float32. On nvidia-gpu: float16, int8_float16 - so if you
+    # have a GPU, change these values to match the engine that will be chosen.
+    configs:
+      - label: auto
+        modes: [batch, streaming]
+        settings:
+          compute-type: auto
+      - label: int8
+        modes: [batch, streaming]
+        settings:
+          compute-type: int8
 
   - snap: myna-parakeet
     cli: myna-parakeet.parakeet
     files:
       - ./snaps/myna-parakeet_<version>_amd64.snap
       - ./snaps/myna-parakeet+cpu.comp
-    streaming_configs:
+    # Chunked-commit latency dial. Streaming only: in batch mode nothing is
+    # cut, so three rows would be three identical numbers.
+    configs:
       - label: arm3s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "3"
       - label: arm8s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "8"
       - label: arm15s
+        modes: [streaming]
         settings:
           stream-arm-seconds: "15"
 

@@ -195,7 +195,8 @@ actions:
   # whose package import pulls in `myna.core` and so the server's dependencies.
   corpus: |
     cd /project/server && uv sync -q
-    uv run python /project/dev/fetch_english_corpus.py --skip-complete
+    uv run python -m myna.benchmarker download-corpus --skip-complete \
+        --out /project/corpus/english --cache /project/.cache/librispeech
 
   # Real use-cases under instrumentation (both dialects; gated scenarios skip
   # cleanly), then merged (tests + use-cases) exports per language. Needs the

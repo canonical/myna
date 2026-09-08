@@ -1,15 +1,9 @@
-#!/usr/bin/env python3
-"""Environment guard for inference benchmarks (parakeet perf T02).
+"""Environment guard: refuse to record a benchmark number on a dirty machine.
 
-    cd server && uv run python ../dev/bench_guard.py                    # human-readable
-    cd server && uv run python ../dev/bench_guard.py --model whisper    # another profile
-    cd server && uv run python ../dev/bench_guard.py --json             # machine-readable
-    cd server && uv run python ../dev/bench_guard.py --force            # exit 0 regardless
-
-Run from ``server/`` (like every other dev/ script here, see
-``dev/parakeet/bench_parakeet.py``): the ``myna.server.lifecycle`` import below pulls
-in the full installed package, so ``uv run`` needs ``server/pyproject.toml``'s
-environment, not whatever (or nothing) resolves from the repo root.
+    myna-bench check                    # human-readable
+    myna-bench check --model whisper    # another profile
+    myna-bench check --json             # machine-readable
+    myna-bench check --force            # exit 0 regardless
 
 Makes it impossible to record a benchmark number on a contaminated machine
 without knowing it. The first pass of an early baseline was wrong by 18x
@@ -19,25 +13,20 @@ wall. Every check here has a demonstrated failure mode.
 
 Everything except the memory floor and the competing service is machine
 policy, not model policy, so the checks are shared and only those two vary:
-a ``Profile`` carries them per model family (see ``PROFILES``). It lives in
-``dev/`` rather than under one model's directory because it is the second
-model that proves it was never parakeet-specific - and because
-``dev/spikes/parakeet_prefix_reuse.py`` already imported it from here.
+a ``Profile`` carries them per model family (see ``PROFILES``).
 
 ``sample_majflt`` (the page-fault sampling primitive) and its threshold live
 in ``myna.server.lifecycle`` instead of here (T10, runtime memory-pressure
-detection): that module is part of the installed package and importable from
-a packaged snap, which this ``dev/`` script is not (see
-``myna.testbed.parakeet._default_model_dir`` for the same dev/package split).
-Importing it from there, rather than each keeping its own copy, is what keeps
-the dev-time guard and the runtime detector from drifting on what "a major
-fault" means.
+detection). Importing them from there, rather than each keeping its own copy,
+is what keeps this guard and the runtime detector from drifting on what "a
+major fault" means.
 
 Public surface:
-    Violation           -- one failed or warned check, with its one-line fix.
-    check()              -- all pre-run checks (everything but page faults).
-    sample_majflt()       -- current process's major-fault counter (re-exported).
-    check_page_faults()   -- post-run check: call with before/after samples.
+    Violation                 -- one failed or warned check, with its one-line fix.
+    check()                   -- all pre-run checks for an in-process model run.
+    check_sweep_environment() -- the subset that applies to a snap sweep.
+    sample_majflt()           -- current process's major-fault counter (re-exported).
+    check_page_faults()       -- post-run check: call with before/after samples.
 
 Fixing the environment is out of scope on purpose: writing to
 ``scaling_governor`` or ``memory.high`` from a benchmark tool is a surprising
@@ -46,19 +35,14 @@ side effect on a shared machine. The guard reports; the operator decides.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "server" / "src"))
-
-from myna.server.lifecycle import MAJOR_PAGE_FAULT_THRESHOLD, sample_majflt  # noqa: E402, F401
+from myna.server.lifecycle import MAJOR_PAGE_FAULT_THRESHOLD, sample_majflt  # noqa: F401
 
 HARD = "hard"
 WARN = "warn"
@@ -539,6 +523,35 @@ def check(profile: Profile, cpus: set[int] | None = None) -> list[Violation]:
     return violations
 
 
+def check_sweep_environment(profile: Profile | None = None) -> list[Violation]:
+    """The checks that mean something for a *snap* sweep, before any install.
+
+    Deliberately narrower than ``check()``. Two of its checks do not apply
+    when the thing being measured is a packaged daemon rather than an
+    in-process model:
+
+    - **cgroup memory** inspects the *caller's* scope, but a snap's inference
+      runs in ``snap.<snap>.<app>.service``, a different cgroup entirely. The
+      caller's cap says nothing about the measured process.
+    - **core homogeneity** fails whenever the affinity set is unpinned, which
+      is exactly how the daemon ships. Pinning the sweep would measure a
+      configuration no user runs. The heterogeneity is real and it is in the
+      product; it belongs in the variance, not in a refusal.
+
+    What is left is machine policy that does apply: the governor makes runs
+    repeatable, and another myna server on the box (a stale one from another
+    checkout is the recorded failure) silently takes cores from the sweep.
+    ``available_memory`` joins in when a profile is given.
+    """
+    violations: list[Violation] = []
+    violations += check_cpu_governor()
+    violations += check_competing_processes()
+    violations += check_system_load()
+    if profile is not None:
+        violations += check_available_memory(profile)
+    return violations
+
+
 def check_page_faults(before: int, after: int) -> Violation | None:
     """Necessarily post-run: pass ``sample_majflt()`` taken immediately before
     and immediately after the measured region."""
@@ -560,37 +573,21 @@ def check_page_faults(before: int, after: int) -> Violation | None:
     )
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    ap.add_argument(
-        "--force", action="store_true", help="exit 0 even if hard violations were found"
-    )
-    ap.add_argument("--json", action="store_true", help="print violations as a JSON array")
-    ap.add_argument(
-        "--model",
-        choices=sorted(PROFILES),
-        default="parakeet",
-        help="which model family's memory floor and competing service to check",
-    )
-    args = ap.parse_args()
-
-    violations = check(PROFILES[args.model])
+def cmd_check(args) -> None:  # noqa: ANN001
+    """``check`` subcommand: report, and exit non-zero on a hard violation."""
+    if args.model not in PROFILES:
+        raise SystemExit(f"unknown profile {args.model!r}; choose from {sorted(PROFILES)}")
+    profile = PROFILES[args.model]
+    violations = check_sweep_environment(profile) if args.sweep else check(profile)
     hard = [v for v in violations if v.severity == HARD]
 
     if args.json:
         print(json.dumps([asdict(v) for v in violations], indent=2))
+    elif not violations:
+        print("environment: clean")
     else:
-        if not violations:
-            print("environment: clean")
-        else:
-            for v in violations:
-                print(v)
+        for violation in violations:
+            print(violation)
 
     if hard and not args.force:
         raise SystemExit(1)
-
-
-if __name__ == "__main__":
-    main()

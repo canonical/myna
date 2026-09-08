@@ -20,11 +20,14 @@ from pathlib import Path
 import pytest
 from _records import record
 
-from myna.benchmarker import _run
+from myna.benchmarker import _bench, _run
 from myna.benchmarker._run import (
+    BATCH,
     DEFAULT_SWEEP_BUDGET_S,
+    STREAMING,
     ResourceSampler,
     SnapTarget,
+    Variant,
     _chown_to_invoker,
     _gpu_memory_by_pid,
     _JsonlWriter,
@@ -228,85 +231,99 @@ def test_home_is_left_alone_when_the_invoking_uid_has_no_passwd_entry(monkeypatc
 
 
 def test_target_defaults_cli_service_and_socket_from_the_snap_name(tmp_path):
-    target = SnapTarget({"snap": "whisper", "files": [str(tmp_path / "whisper.snap")]})
-    assert target.cli == "whisper"
-    assert target.service == "whisper.server"
-    assert target.socket == Path("/var/snap/whisper/common/run/ubustt.sock")
+    target = SnapTarget(
+        {"snap": "myna-whisper", "files": [str(tmp_path / "myna-whisper.snap")]}, ROOT
+    )
+    assert target.cli == "myna-whisper"
+    assert target.service == "myna-whisper.server"
+    assert target.socket == Path("/var/snap/myna-whisper/common/run/ubustt.sock")
 
 
 def test_target_overrides_win_over_the_defaults(tmp_path):
     target = SnapTarget(
         {
-            "snap": "whisper",
-            "files": [str(tmp_path / "whisper.snap")],
-            "cli": "whisper.ctl",
-            "service": "whisper.daemon",
+            "snap": "myna-whisper",
+            "files": [str(tmp_path / "myna-whisper.snap")],
+            "cli": "myna-whisper.ctl",
+            "service": "myna-whisper.daemon",
             "socket": "/tmp/custom.sock",
-        }
+        },
+        ROOT,
     )
-    assert (target.cli, target.service) == ("whisper.ctl", "whisper.daemon")
+    assert (target.cli, target.service) == ("myna-whisper.ctl", "myna-whisper.daemon")
     assert target.socket == Path("/tmp/custom.sock")
 
 
 def test_target_resolves_file_paths_at_parse_time(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "whisper.snap").write_bytes(b"")
-    target = SnapTarget({"snap": "whisper", "files": ["./whisper.snap"]})
-    assert target.files == [str(tmp_path / "whisper.snap")]
+    (tmp_path / "myna-whisper.snap").write_bytes(b"")
+    target = SnapTarget({"snap": "myna-whisper", "files": ["./myna-whisper.snap"]}, tmp_path)
+    assert target.files == [str(tmp_path / "myna-whisper.snap")]
 
 
-def test_a_target_with_no_files_is_rejected_by_name():
-    with pytest.raises(SystemExit, match="'whisper': no files listed"):
-        SnapTarget({"snap": "whisper", "files": []})
+def test_a_target_with_neither_files_nor_dir_is_rejected_by_name():
+    with pytest.raises(SystemExit, match="myna-whisper: target needs either files: or dir:"):
+        SnapTarget({"snap": "myna-whisper", "files": []}, ROOT)
 
 
-def test_a_target_with_a_missing_files_key_is_rejected():
-    with pytest.raises(SystemExit, match="no files listed"):
-        SnapTarget({"snap": "whisper"})
+def test_a_target_with_no_source_at_all_is_rejected():
+    with pytest.raises(SystemExit, match="needs either files: or dir:"):
+        SnapTarget({"snap": "myna-whisper"}, ROOT)
+
+
+def test_a_snap_outside_the_purge_allowlist_is_refused():
+    """This runner removes what it benchmarks, so an unrecognised name is not
+    a target to attempt - it is a `snap remove --purge` aimed at a stranger."""
+    with pytest.raises(SystemExit, match="not in the purge allowlist"):
+        SnapTarget({"snap": "firefox", "files": ["/tmp/firefox.snap"]}, ROOT)
+
+
+ROOT = Path("/")
 
 
 def target_for(**spec):
-    return SnapTarget({"snap": "whisper", "files": ["/tmp/whisper.snap"], **spec})
+    return SnapTarget({"snap": "myna-whisper", "files": ["/tmp/myna-whisper.snap"], **spec}, ROOT)
 
 
 def test_label_is_snap_engine_model_mode():
     target = target_for()
     target.engine, target.model = "cpu", "tiny"
-    assert target.label == "whisper/cpu/tiny/batch"
+    assert target.label == "myna-whisper/cpu/tiny/batch"
 
 
 def test_label_names_the_engine_as_unknown_before_describe():
-    assert target_for().label == "whisper/unknown-engine/batch"
+    assert target_for().label == "myna-whisper/unknown-engine/batch"
 
 
 def test_label_omits_the_model_when_the_snap_reports_none():
     target = target_for()
     target.engine = "cpu"
-    assert target.label == "whisper/cpu/batch"
+    assert target.label == "myna-whisper/cpu/batch"
 
 
 def test_label_distinguishes_streaming_from_batch():
     target = target_for()
     target.engine, target.model, target.streaming = "cpu", "tiny", True
-    assert target.label == "whisper/cpu/tiny/streaming"
+    assert target.label == "myna-whisper/cpu/tiny/streaming"
 
 
 def test_label_carries_the_streaming_variant_suffix():
     target = target_for()
     target.engine, target.model = "cpu", "tiny"
     target.streaming, target.config_suffix = True, "arm3s"
-    assert target.label == "whisper/cpu/tiny/streaming-arm3s"
+    assert target.label == "myna-whisper/cpu/tiny/streaming-arm3s"
 
 
-def test_a_batch_label_ignores_a_stale_variant_suffix():
+def test_a_batch_label_carries_its_own_config_suffix():
+    """Config points are not streaming-only any more: a batch cell measuring
+    compute-type=int8 has to be distinguishable from the default batch row."""
     target = target_for()
-    target.engine, target.config_suffix = "cpu", "arm3s"
-    assert target.label.endswith("/batch")
+    target.engine, target.config_suffix = "cpu", "int8"
+    assert target.label.endswith("/batch-int8")
 
 
 def test_purge_removes_the_snap(fake_run):
     target_for().purge()
-    assert fake_run.ran("snap", "remove", "--purge", "whisper")
+    assert fake_run.ran("snap", "remove", "--purge", "myna-whisper")
 
 
 def test_models_are_read_from_the_snap_cli(monkeypatch):
@@ -396,33 +413,50 @@ def test_unconnected_plugs_are_connected_and_connected_ones_left_alone(fake_run)
         "snap connections",
         stdout=(
             "Interface  Plug              Slot     Notes\n"
-            "audio      whisper:audio     :audio   -\n"
-            "hardware   whisper:hw        -        -\n"
+            "audio      myna-whisper:audio     :audio   -\n"
+            "hardware   myna-whisper:hw        -        -\n"
         ),
     )
     target_for()._connect_plugs()
-    assert fake_run.ran("snap", "connect", "whisper:hw")
-    assert not fake_run.ran("snap", "connect", "whisper:audio")
+    assert fake_run.ran("snap", "connect", "myna-whisper:hw")
+    assert not fake_run.ran("snap", "connect", "myna-whisper:audio")
 
 
-def test_engine_selection_prefers_auto_detection(fake_run):
+def test_auto_detection_is_used_where_there_is_a_choice_of_engine(fake_run):
+    fake_run.reply(
+        "list-engines", stdout=json.dumps({"engines": [{"name": "cpu"}, {"name": "nvidia-gpu"}]})
+    )
     target_for()._select_engine()
     assert fake_run.ran("use-engine", "--auto")
-    assert not fake_run.ran("list-engines", "--format=json")
+
+
+def test_a_single_engine_snap_is_not_asked_to_auto_detect(fake_run):
+    """Most of these snaps ship one CPU engine and carry neither pciutils nor a
+    hardware-observe plug, so --auto fails on lspci answering a question with
+    one possible answer."""
+    fake_run.reply("list-engines", stdout=json.dumps({"engines": [{"name": "cpu"}]}))
+    target_for()._select_engine()
+    assert fake_run.ran("use-engine", "cpu", "--assume-yes")
+    assert not fake_run.ran("use-engine", "--auto")
 
 
 def test_engine_selection_falls_back_to_the_first_listed_engine(fake_run):
     fake_run.reply("use-engine --auto", rc=1)
-    fake_run.reply("list-engines", stdout=json.dumps({"engines": [{"name": "cpu"}]}))
+    fake_run.reply(
+        "list-engines", stdout=json.dumps({"engines": [{"name": "cpu"}, {"name": "nvidia-gpu"}]})
+    )
     target_for()._select_engine()
     assert fake_run.ran("use-engine", "cpu", "--assume-yes")
 
 
-def test_engine_selection_gives_up_quietly_when_nothing_is_listed(fake_run, capsys):
-    fake_run.reply("use-engine --auto", rc=1)
+def test_a_target_with_no_selectable_engine_fails_loudly(fake_run):
+    """A snap with no active engine cannot serve, and its daemon exits 1 on
+    every start - better to lose this target now than to wait out a socket
+    timeout and report it as slow."""
+    fake_run.reply("use-engine", rc=1)
     fake_run.reply("list-engines", stdout=json.dumps({"engines": []}))
-    target_for()._select_engine()
-    assert "engine selection skipped" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="no engine could be selected"):
+        target_for()._select_engine()
 
 
 def test_start_fails_loudly_when_the_socket_never_appears(fake_run, monkeypatch, tmp_path):
@@ -441,7 +475,7 @@ def test_start_installs_connects_and_describes(fake_run, monkeypatch, capsys):
     target.start()
 
     assert fake_run.ran("snap", "install", "--dangerous")
-    assert fake_run.ran("snap", "start", "whisper.server")
+    assert fake_run.ran("snap", "start", "myna-whisper.server")
     assert target.engine == "cpu"
     assert "serving engine=cpu" in capsys.readouterr().out
 
@@ -452,22 +486,71 @@ def test_switching_to_streaming_clears_a_previous_variant_suffix(fake_run, monke
     target = target_for()
     target.config_suffix = "arm3s"
 
-    target.set_streaming(True)
+    target.apply(mode=STREAMING, variant=None, togglable=True)
 
     assert target.streaming is True
     assert target.config_suffix == ""
     assert fake_run.ran("set", "--assume-yes", "--no-restart", "streaming=true")
 
 
-def test_a_streaming_variant_passes_its_settings_through(fake_run, monkeypatch):
+def test_a_config_variant_passes_its_settings_through(fake_run, monkeypatch):
     monkeypatch.setattr(_run, "_run", fake_run)
     monkeypatch.setattr(_run, "wait_for_socket", lambda path, **kw: True)
     target = target_for()
 
-    target.set_streaming_variant({"stream-arm-seconds": "3"}, "arm3s")
+    target.apply(
+        mode=STREAMING,
+        variant=Variant("arm3s", (STREAMING,), {"stream-arm-seconds": "3"}),
+        togglable=True,
+    )
 
     assert target.streaming is True and target.config_suffix == "arm3s"
     assert fake_run.ran("set", "streaming=true", "stream-arm-seconds=3")
+
+
+def test_a_batch_config_variant_sets_the_toggle_false_and_still_applies(fake_run, monkeypatch):
+    """The quantization axis is a batch-mode knob; before configs carried their
+    own modes it could not be swept at all."""
+    monkeypatch.setattr(_run, "_run", fake_run)
+    monkeypatch.setattr(_run, "wait_for_socket", lambda path, **kw: True)
+    target = target_for()
+
+    target.apply(
+        mode=BATCH,
+        variant=Variant("int8", (BATCH,), {"compute-type": "int8"}),
+        togglable=True,
+    )
+
+    assert target.streaming is False and target.config_suffix == "int8"
+    assert fake_run.ran("set", "streaming=false", "compute-type=int8")
+
+
+def test_a_batch_only_snap_is_never_told_about_streaming(fake_run, monkeypatch):
+    """Setting the key on a snap that does not have one fails, and would take
+    the whole target down over a no-op."""
+    monkeypatch.setattr(_run, "_run", fake_run)
+    monkeypatch.setattr(_run, "wait_for_socket", lambda path, **kw: True)
+
+    target_for().apply(mode=BATCH, variant=None, togglable=False)
+
+    assert not any("streaming=" in " ".join(cmd) for cmd in fake_run.calls)
+
+
+def test_a_variant_omitting_a_key_restores_the_value_the_snap_shipped(fake_run, monkeypatch):
+    """Settings persist across a sweep, so a cell has to be an absolute
+    configuration rather than a difference from the cell before it."""
+    monkeypatch.setattr(_run, "_run", fake_run)
+    monkeypatch.setattr(_run, "wait_for_socket", lambda path, **kw: True)
+    target = target_for()
+    target._baseline = {"compute-type": "auto", "stream-arm-seconds": "15"}
+
+    target.apply(
+        mode=BATCH,
+        variant=Variant("int8", (BATCH,), {"compute-type": "int8"}),
+        togglable=False,
+    )
+
+    assert fake_run.ran("set", "compute-type=int8", "stream-arm-seconds=15")
 
 
 def test_a_model_switch_that_loses_the_socket_is_fatal(fake_run, monkeypatch):
@@ -478,17 +561,17 @@ def test_a_model_switch_that_loses_the_socket_is_fatal(fake_run, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("method", "args", "message"),
+    ("variant", "message"),
     [
-        ("set_streaming", (True,), "switching to streaming"),
-        ("set_streaming_variant", ({}, "arm3s"), "switching to streaming-arm3s"),
+        (None, "switching to .*/streaming"),
+        (Variant("arm3s", (STREAMING,), {"a": "1"}), "switching to .*/streaming-arm3s"),
     ],
 )
-def test_a_mode_switch_that_loses_the_socket_is_fatal(fake_run, monkeypatch, method, args, message):
+def test_a_mode_switch_that_loses_the_socket_is_fatal(fake_run, monkeypatch, variant, message):
     monkeypatch.setattr(_run, "_run", fake_run)
     monkeypatch.setattr(_run, "wait_for_socket", lambda path, **kw: False)
     with pytest.raises(SystemExit, match=message):
-        getattr(target_for(), method)(*args)
+        target_for().apply(mode=STREAMING, variant=variant, togglable=True)
 
 
 # ─── _JsonlWriter ────────────────────────────────────────────────────────────
@@ -532,11 +615,11 @@ class FakeClip:
 
 class FakeTarget:
     def __init__(self, pid=None, streaming=False):
-        self.snap = "whisper"
-        self.socket = Path("/tmp/whisper.sock")
+        self.snap = "myna-whisper"
+        self.socket = Path("/tmp/myna-whisper.sock")
         self.streaming = streaming
         self.pid = pid
-        self.label = "whisper/cpu/tiny/batch"
+        self.label = "myna-whisper/cpu/tiny/batch"
 
 
 def stub_run_clips(monkeypatch, *results):
@@ -548,7 +631,11 @@ def stub_run_clips(monkeypatch, *results):
         calls.append(kwargs)
         return queue.pop(0)
 
-    module = type("M", (), {"run_clips": staticmethod(run_clips)})
+    module = type(
+        "M",
+        (),
+        {"run_clips": staticmethod(run_clips), "AllClipsFailed": _bench.AllClipsFailed},
+    )
     monkeypatch.setitem(__import__("sys").modules, "myna.benchmarker._bench", module)
     return calls
 
@@ -588,13 +675,13 @@ def test_a_cold_sample_that_overruns_abandons_the_target(tmp_path, monkeypatch):
     calls = stub_run_clips(monkeypatch, (True, 0))
     kwargs = sweep(tmp_path, FakeTarget(), clips_cold=[FakeClip("clip-cold")])
     assert len(calls) == 1  # the warm sweep never started
-    assert kwargs["unusable"] == [("whisper/cpu/tiny/batch", "cold sample overran")]
+    assert kwargs["unusable"] == [("myna-whisper/cpu/tiny/batch", "cold sample overran")]
 
 
 def test_a_warm_sweep_over_budget_is_recorded_as_unusable(tmp_path, monkeypatch):
     stub_run_clips(monkeypatch, (True, 3))
     kwargs = sweep(tmp_path, FakeTarget())
-    assert kwargs["unusable"] == [("whisper/cpu/tiny/batch", "exceeded 60s budget")]
+    assert kwargs["unusable"] == [("myna-whisper/cpu/tiny/batch", "exceeded 60s budget")]
 
 
 def test_the_warm_sweep_budget_is_recorded_in_provenance(tmp_path, monkeypatch):
@@ -607,12 +694,14 @@ def test_a_crashing_target_is_recorded_and_does_not_propagate(tmp_path, monkeypa
     async def boom(**kwargs):
         raise RuntimeError("adapter died")
 
-    module = type("M", (), {"run_clips": staticmethod(boom)})
+    module = type(
+        "M", (), {"run_clips": staticmethod(boom), "AllClipsFailed": _bench.AllClipsFailed}
+    )
     monkeypatch.setitem(__import__("sys").modules, "myna.benchmarker._bench", module)
 
     kwargs = sweep(tmp_path, FakeTarget())
 
-    assert kwargs["broken"] == [("whisper/cpu/tiny/batch", "RuntimeError: adapter died")]
+    assert kwargs["broken"] == [("myna-whisper/cpu/tiny/batch", "RuntimeError: adapter died")]
     assert "FAILED: RuntimeError" in capsys.readouterr().out
 
 
@@ -620,12 +709,14 @@ def test_a_nonzero_subprocess_exit_is_recorded_by_return_code(tmp_path, monkeypa
     async def boom(**kwargs):
         raise subprocess.CalledProcessError(3, ["snap"])
 
-    module = type("M", (), {"run_clips": staticmethod(boom)})
+    module = type(
+        "M", (), {"run_clips": staticmethod(boom), "AllClipsFailed": _bench.AllClipsFailed}
+    )
     monkeypatch.setitem(__import__("sys").modules, "myna.benchmarker._bench", module)
 
     kwargs = sweep(tmp_path, FakeTarget())
 
-    assert kwargs["broken"] == [("whisper/cpu/tiny/batch", "exited 3")]
+    assert kwargs["broken"] == [("myna-whisper/cpu/tiny/batch", "exited 3")]
 
 
 def test_resource_peaks_are_written_to_the_sidecar_when_sampling(tmp_path, monkeypatch):
@@ -636,8 +727,8 @@ def test_resource_peaks_are_written_to_the_sidecar_when_sampling(tmp_path, monke
     sweep(tmp_path, FakeTarget(pid=os.getpid()), sample_resources=True, resources_path=resources)
 
     peak = json.loads(resources.read_text(encoding="utf-8").strip())
-    assert peak["label"] == "whisper/cpu/tiny/batch"
-    assert peak["snap"] == "whisper"
+    assert peak["label"] == "myna-whisper/cpu/tiny/batch"
+    assert peak["snap"] == "myna-whisper"
     assert peak["peak_rss_mb"] > 0
     assert peak["peak_vram_mb"] is None
 
@@ -646,7 +737,9 @@ def test_peaks_are_written_even_when_the_target_crashed(tmp_path, monkeypatch):
     async def boom(**kwargs):
         raise RuntimeError("adapter died")
 
-    module = type("M", (), {"run_clips": staticmethod(boom)})
+    module = type(
+        "M", (), {"run_clips": staticmethod(boom), "AllClipsFailed": _bench.AllClipsFailed}
+    )
     monkeypatch.setitem(__import__("sys").modules, "myna.benchmarker._bench", module)
     monkeypatch.setattr(_run, "_gpu_memory_by_pid", dict)
     resources = tmp_path / "resources.jsonl"
@@ -667,19 +760,34 @@ def test_no_sidecar_is_written_when_the_service_has_no_pid(tmp_path, monkeypatch
 
 
 class RunArgs:
-    def __init__(self, config, out=None, keep_results=False, no_resources=True, budget=None):
+    def __init__(
+        self,
+        config,
+        out=None,
+        keep_results=False,
+        no_resources=True,
+        budget=None,
+        only=None,
+        label_suffix="",
+        skip_env_check=True,
+    ):
         self.config = str(config)
         self.out = str(out) if out else None
         self.keep_results = keep_results
         self.no_resources = no_resources
         self.budget = budget
+        self.only = only
+        self.label_suffix = label_suffix
+        # The guard is on by default in production; the offline tests are not
+        # a benchmark and must not depend on the host's CPU governor.
+        self.skip_env_check = skip_env_check
 
 
 def write_config(path, **overrides):
     cfg = {
         "manifest": "corpus/manifest.json",
         "out": "results.jsonl",
-        "targets": [{"snap": "whisper", "files": ["/tmp/whisper.snap"]}],
+        "targets": [{"snap": "myna-whisper", "files": ["/tmp/myna-whisper.snap"]}],
     }
     cfg.update(overrides)
     path.write_text(json.dumps(cfg), encoding="utf-8")  # JSON is valid YAML
@@ -693,7 +801,7 @@ def test_a_missing_config_names_the_path_and_the_help_command(tmp_path):
 
 def test_a_config_with_no_targets_is_rejected(tmp_path):
     config = write_config(tmp_path / "bench.yaml", targets=[])
-    with pytest.raises(SystemExit, match="no targets in config"):
+    with pytest.raises(SystemExit, match="no targets selected"):
         cmd_run(RunArgs(config))
 
 
@@ -712,8 +820,87 @@ def test_run_refuses_without_root_before_touching_any_snap(tmp_path, monkeypatch
         _run.subprocess, "run", lambda *a, **kw: pytest.fail("ran a snap command as non-root")
     )
 
-    with pytest.raises(SystemExit, match="requires root"):
+    with pytest.raises(SystemExit, match="needs root"):
         cmd_run(RunArgs(config))
+
+
+def test_the_sweep_refuses_on_a_machine_the_guard_rejects(tmp_path, corpus, monkeypatch):
+    """A contaminated machine produces plausible, wrong numbers - and nothing
+    downstream can tell them from good ones, so this is the last chance."""
+    from myna.benchmarker import guard
+
+    monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        guard,
+        "check_sweep_environment",
+        lambda *a, **kw: [
+            guard.Violation(check="cpu_governor", severity=guard.HARD, message="powersave")
+        ],
+    )
+    config = write_config(tmp_path / "bench.yaml", manifest=str(corpus))
+
+    with pytest.raises(SystemExit, match="environment check failed"):
+        cmd_run(RunArgs(config, skip_env_check=False))
+
+
+def test_skip_env_check_records_the_number_anyway(
+    tmp_path, corpus, stub_sweep, stub_target, monkeypatch
+):
+    from myna.benchmarker import guard
+
+    monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        guard,
+        "check_sweep_environment",
+        lambda *a, **kw: pytest.fail("guard ran despite --skip-env-check"),
+    )
+    out = tmp_path / "results.jsonl"
+    config = write_config(tmp_path / "bench.yaml", manifest=str(corpus), out=str(out))
+
+    cmd_run(RunArgs(config, out=out, skip_env_check=True))
+
+    assert len(stub_sweep) == 1
+
+
+def test_every_cell_leaves_a_status_record(tmp_path, corpus, stub_target, monkeypatch):
+    """Zero clip records for a label is indistinguishable, from clip records
+    alone, from a category that was never scheduled."""
+    monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(stub_target, "supports_streaming", lambda self: True)
+    stub_run_clips(monkeypatch, (False, 1), (False, 1))
+    out = tmp_path / "results.jsonl"
+    config = write_config(tmp_path / "bench.yaml", manifest=str(corpus), out=str(out))
+
+    cmd_run(RunArgs(config, out=out))
+
+    statuses = {
+        rec["label"]: rec["status"]
+        for rec in (json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines())
+        if "status" in rec
+    }
+    assert statuses == {
+        "myna-whisper/cpu/tiny/batch": "ok",
+        "myna-whisper/cpu/tiny/streaming": "ok",
+    }
+
+
+def test_a_cell_that_overran_is_stamped_usability_fail_in_the_file(
+    tmp_path, corpus, stub_target, monkeypatch
+):
+    monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
+    stub_run_clips(monkeypatch, (True, 3))
+    out = tmp_path / "results.jsonl"
+    config = write_config(tmp_path / "bench.yaml", manifest=str(corpus), out=str(out))
+
+    cmd_run(RunArgs(config, out=out))
+
+    statuses = [
+        rec
+        for rec in (json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines())
+        if "status" in rec
+    ]
+    assert statuses[0]["status"] == "usability_fail"
+    assert "budget" in statuses[0]["reason"]
 
 
 def test_the_default_sweep_budget_applies_when_the_config_omits_one():
@@ -774,6 +961,7 @@ def stub_sweep(monkeypatch):
 @pytest.fixture
 def stub_target(monkeypatch):
     """A SnapTarget that never touches snapd."""
+    monkeypatch.setattr(_run, "show_machine", lambda cli: {})
 
     class Stub(SnapTarget):
         started = 0
@@ -792,11 +980,9 @@ def stub_target(monkeypatch):
         def supports_streaming(self):
             return False
 
-        def set_streaming(self, streaming):
-            self.streaming = streaming
-
-        def set_streaming_variant(self, settings, suffix):
-            self.streaming, self.config_suffix = True, suffix
+        def apply(self, *, mode, variant, togglable):
+            self.streaming = mode == STREAMING
+            self.config_suffix = variant.label if variant else ""
 
         def use_model(self, model):
             self.model = model
@@ -827,9 +1013,9 @@ def test_a_sweep_writes_the_machine_header_then_one_record_per_target(
 
     lines = [json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines()]
     assert lines[0]["type"] == "machine"
-    assert lines[1]["label"] == "whisper/cpu/tiny/batch"
+    assert lines[1]["label"] == "myna-whisper/cpu/tiny/batch"
     assert stub_target.started == 1 and stub_target.stopped == 1
-    assert "RESULTS" in capsys.readouterr().out
+    assert "MATRIX" in capsys.readouterr().out
 
 
 def test_the_cold_clip_is_held_out_of_the_warm_sweep(
@@ -930,20 +1116,20 @@ def test_a_target_that_fails_to_start_is_reported_and_the_sweep_continues(
         manifest=str(corpus),
         out=str(out),
         targets=[
-            {"snap": "whisper", "files": ["/tmp/whisper.snap"]},
-            {"snap": "parakeet", "files": ["/tmp/parakeet.snap"]},
+            {"snap": "myna-whisper", "files": ["/tmp/myna-whisper.snap"]},
+            {"snap": "myna-parakeet", "files": ["/tmp/myna-parakeet.snap"]},
         ],
     )
 
     cmd_run(RunArgs(config, out=out))
 
     printed = capsys.readouterr().out
-    assert "2 target(s) failed" in printed
+    assert "2 cell(s)/target(s) failed" in printed
     assert "snapd refused" in printed
     assert stub_target.stopped == 2  # both targets were purged regardless
 
 
-def test_streaming_variants_are_swept_one_per_config(
+def test_config_variants_are_swept_one_row_each(
     tmp_path, corpus, stub_sweep, stub_target, monkeypatch
 ):
     monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
@@ -955,11 +1141,19 @@ def test_streaming_variants_are_swept_one_per_config(
         out=str(out),
         targets=[
             {
-                "snap": "whisper",
-                "files": ["/tmp/whisper.snap"],
-                "streaming_configs": [
-                    {"label": "arm3s", "settings": {"stream-arm-seconds": "3"}},
-                    {"label": "arm5s", "settings": {"stream-arm-seconds": "5"}},
+                "snap": "myna-whisper",
+                "files": ["/tmp/myna-whisper.snap"],
+                "configs": [
+                    {
+                        "label": "arm3s",
+                        "modes": ["streaming"],
+                        "settings": {"stream-arm-seconds": "3"},
+                    },
+                    {
+                        "label": "arm5s",
+                        "modes": ["streaming"],
+                        "settings": {"stream-arm-seconds": "5"},
+                    },
                 ],
             }
         ],
@@ -969,9 +1163,9 @@ def test_streaming_variants_are_swept_one_per_config(
 
     labels = [label for label, _, _ in stub_sweep]
     assert labels == [
-        "whisper/cpu/tiny/batch",
-        "whisper/cpu/tiny/streaming-arm3s",
-        "whisper/cpu/tiny/streaming-arm5s",
+        "myna-whisper/cpu/tiny/batch",
+        "myna-whisper/cpu/tiny/streaming-arm3s",
+        "myna-whisper/cpu/tiny/streaming-arm5s",
     ]
 
 
@@ -986,8 +1180,8 @@ def test_a_togglable_snap_without_variants_sweeps_batch_then_streaming(
     cmd_run(RunArgs(config, out=out))
 
     assert [label for label, _, _ in stub_sweep] == [
-        "whisper/cpu/tiny/batch",
-        "whisper/cpu/tiny/streaming",
+        "myna-whisper/cpu/tiny/batch",
+        "myna-whisper/cpu/tiny/streaming",
     ]
 
 

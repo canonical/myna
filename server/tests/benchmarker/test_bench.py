@@ -14,7 +14,13 @@ import wave
 
 import pytest
 
-from myna.benchmarker._bench import bench_clip, run_clips, session_error, to_line
+from myna.benchmarker._bench import (
+    AllClipsFailed,
+    bench_clip,
+    run_clips,
+    session_error,
+    to_line,
+)
 from myna.benchmarker._summarize import _summarize
 from myna.core import TranscriptionError, TranscriptionFinal, serve_unix
 from myna.testbed import FakeAdapter, ScriptStep
@@ -85,14 +91,14 @@ async def wrong_socket(tmp_path):
 
 async def test_a_perfect_transcript_scores_zero_wer_and_cer(tmp_path, socket):
     clip = make_clip(tmp_path)
-    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False, batch=True)
+    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False)
     assert record.transcript == "hello world"
     assert (wer.rate, cer.rate) == (0.0, 0.0)
 
 
 async def test_a_wrong_transcript_scores_the_edits(tmp_path, wrong_socket):
     clip = make_clip(tmp_path)
-    _, wer, cer = await bench_clip(wrong_socket, clip, "fake/batch", streaming=False, batch=True)
+    _, wer, cer = await bench_clip(wrong_socket, clip, "fake/batch", streaming=False)
     assert wer.substitutions == 1
     assert wer.reference_length == 2
     assert cer.rate > 0
@@ -103,7 +109,7 @@ async def test_a_wrong_transcript_scores_the_edits(tmp_path, wrong_socket):
 
 async def test_a_healthy_session_reports_no_error(tmp_path, socket):
     clip = make_clip(tmp_path)
-    record, _, _ = await bench_clip(socket, clip, "fake/batch", streaming=False, batch=True)
+    record, _, _ = await bench_clip(socket, clip, "fake/batch", streaming=False)
     assert session_error(record) is None
 
 
@@ -111,7 +117,7 @@ async def test_an_adapter_failure_surfaces_as_a_coded_error(tmp_path):
     path = tmp_path / "broken.sock"
     async with serve_unix(failing(), path):
         clip = make_clip(tmp_path)
-        record, _, _ = await bench_clip(path, clip, "fake/batch", streaming=False, batch=True)
+        record, _, _ = await bench_clip(path, clip, "fake/batch", streaming=False)
     error = session_error(record)
     assert error is not None and error["code"] == "adapter_failed"
 
@@ -121,7 +127,7 @@ async def test_an_adapter_failure_surfaces_as_a_coded_error(tmp_path):
 
 async def test_a_record_row_is_json_serialisable_and_carries_provenance(tmp_path, socket):
     clip = make_clip(tmp_path)
-    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False, batch=True)
+    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False)
 
     line = to_line(
         clip,
@@ -148,7 +154,7 @@ async def test_a_record_row_is_json_serialisable_and_carries_provenance(tmp_path
 
 async def test_provenance_is_omitted_entirely_when_not_supplied(tmp_path, socket):
     clip = make_clip(tmp_path)
-    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False, batch=True)
+    record, wer, cer = await bench_clip(socket, clip, "fake/batch", streaming=False)
     line = to_line(
         clip,
         record,
@@ -314,17 +320,20 @@ async def test_a_failed_clip_is_written_but_not_counted_as_scored(tmp_path):
     path = tmp_path / "broken.sock"
     out = Collector()
     async with serve_unix(failing(), path):
-        overran, scored = await run_clips(
-            socket=path,
-            clips=[make_clip(tmp_path)],
-            label="fake/batch",
-            cold=False,
-            streaming=False,
-            provenance=None,
-            budget_seconds=None,
-            out_fp=out,
-        )
-    assert (overran, scored) == (False, 0)
+        # Not a 100%-WER data point: the backend never ran. The rows are still
+        # written, so the failure is on the record, but the sweep is told the
+        # target is broken rather than banking a plausible-looking score.
+        with pytest.raises(AllClipsFailed, match="adapter_failed"):
+            await run_clips(
+                socket=path,
+                clips=[make_clip(tmp_path)],
+                label="fake/batch",
+                cold=False,
+                streaming=False,
+                provenance=None,
+                budget_seconds=None,
+                out_fp=out,
+            )
     assert len(out.records) == 1
     assert out.records[0]["error"]["code"] == "adapter_failed"
 
@@ -346,10 +355,11 @@ async def test_the_sweep_output_aggregates_in_the_summarizer(tmp_path, socket):
 
     summary = _summarize(out.records)
 
-    assert list(summary) == ["fake/cpu/none/batch"]
-    assert summary["fake/cpu/none/batch"]["clips"] == 3
-    assert summary["fake/cpu/none/batch"]["wer"] == 0.0
-    assert summary["fake/cpu/none/batch"]["machine"] == "box"
+    key = ("box", "fake/cpu/none/batch")
+    assert list(summary) == [key]
+    assert summary[key]["clips"] == 3
+    assert summary[key]["wer"] == 0.0
+    assert summary[key]["machine"] == "box"
 
 
 async def test_the_progress_table_names_every_clip(tmp_path, socket, capsys):
@@ -369,3 +379,51 @@ async def test_the_progress_table_names_every_clip(tmp_path, socket, capsys):
     assert "clip-0" in printed and "clip-1" in printed
     assert "micro-averaged WER" in printed
     assert "audio streamed" in printed
+
+
+async def test_a_partly_failing_sweep_still_scores_the_clips_that_worked(tmp_path, socket):
+    """One bad clip is a data point; every clip bad is a broken target. Only
+    the second is worth stopping for."""
+    out = Collector()
+    good = make_clip(tmp_path, "good")
+    overran, scored = await run_clips(
+        socket=socket,
+        clips=[good],
+        label="fake/batch",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        out_fp=out,
+    )
+    assert (overran, scored) == (False, 1)
+
+
+async def test_realtime_pacing_is_opt_in(tmp_path, socket, capsys):
+    """The sweep feeds flat out, which is what makes a full matrix affordable;
+    real-time pacing exists for long clips that outrun a keepalive."""
+    out = Collector()
+    await run_clips(
+        socket=socket,
+        clips=[make_clip(tmp_path)],
+        label="fake/batch",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        out_fp=out,
+    )
+    assert "fast as possible" in capsys.readouterr().out
+
+    await run_clips(
+        socket=socket,
+        clips=[make_clip(tmp_path)],
+        label="fake/batch",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        out_fp=Collector(),
+        realtime=True,
+    )
+    assert "real-time pace" in capsys.readouterr().out

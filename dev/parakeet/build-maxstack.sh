@@ -43,7 +43,8 @@ if compgen -G "$repo_root/corpus/english/audio/*.wav" >/dev/null; then
     echo "corpus/english already present - skipping"
 else
     cd "$repo_root/server"
-    uv run --extra parakeet python "$repo_root/dev/fetch_english_corpus.py"
+    uv run --extra parakeet python -m myna.benchmarker download-corpus \
+        --out "$repo_root/corpus/english" --cache "$repo_root/.cache/librispeech"
 fi
 
 echo "== build =="

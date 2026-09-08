@@ -1,8 +1,8 @@
 """Shared record factory for the benchmarker tests.
 
-The benchmarker's JSONL schema is a contract shared with dev/matrix.py and
-dev/aggregate.py, so the tests build records through one factory: a schema
-change breaks here first, in one place, rather than in a dozen literals.
+The JSONL schema is the contract between the sweep runner, the clip scorer and
+the aggregator, so the tests build records through one factory: a schema change
+breaks here first, in one place, rather than in a dozen literals.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ BASE = {
     "rtf": 0.25,
     "commit_stability": None,
     "committed_segments": 1,
+    "corpus_id": "v1:testcorpus",
     "streaming_strategy": "batch",
     "started_at": "2026-08-20T00:00:00+00:00",
     "run_started": "2026-08-20T00:00:00+00:00",

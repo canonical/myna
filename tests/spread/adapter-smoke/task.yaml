@@ -1,6 +1,6 @@
 # Adapter wiring smoke test: a real inference snap, both emission modes.
 #
-# Not an accuracy test - the matrix runner (dev/matrix.py) measures WER on a
+# Not an accuracy test - the matrix runner (myna-bench run) measures WER on a
 # speaker-balanced corpus and this VM has no business duplicating that. What
 # this proves is that the shipped artifact is *wired up*: auto engine selection
 # lands on something, the daemon binds its socket, the content share reaches the
@@ -41,7 +41,7 @@ execute: |
     # Sideloading carries no snap declaration, so hardware-observe stays
     # unconnected and the install hook skips `use-engine --auto`, leaving no
     # active engine and a daemon that exits 1 on every start. Connect, select,
-    # then start - the same dance dev/matrix.py performs.
+    # then start - the same dance myna-bench run performs.
     install_snap "$ADAPTER_SNAP" "$COMPONENT"
     snap connect ${SNAP_UNDER_TEST}:hardware-observe
     snap stop ${SNAP_UNDER_TEST}.server || true

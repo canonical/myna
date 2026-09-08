@@ -1,6 +1,6 @@
 """Parakeet adapter units (008 US3) — model-free helpers only.
 
-The decode port itself is exercised end-to-end by dev/bench.py against the
+The decode port itself is exercised end-to-end by myna-bench bench against the
 staged int8 weights (671 MB — not a unit-test fixture); here we pin the pure
 text/vocab mechanics the emission loop depends on (I2 verbatim concat) and the
 session dispatch paths (batch I7, streaming strategy wiring).

@@ -11,7 +11,7 @@
 #
 # in server/.venv/.../_editable_impl_myna.pth. Whichever side synced last won,
 # and the other side got `ModuleNotFoundError: No module named 'myna'` from
-# anything importing it (dev/bench.py, dev/matrix.py). Silent, and the
+# anything importing it (myna-bench bench, myna-bench run). Silent, and the
 # traceback points at the script rather than the venv.
 #
 # Matching the mount paths cannot fix it: CI checks out at

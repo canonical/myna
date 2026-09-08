@@ -23,7 +23,7 @@ serves a scripted transcript over the in-process loopback transport:
 cd server && uv sync && uv run python -m myna.testbed   # fake adapter -> a ResultRecord
 ```
 
-To dictate for real, a Myna STT inference snap needs to be installed (or run one from this repo directly). You can then use the reference client to push audio at it and see transcription results. The LibriSpeech corpus is a good example (`uv run python ../dev/fetch_english_corpus.py`).
+To dictate for real, a Myna STT inference snap needs to be installed (or run one from this repo directly). You can then use the reference client to push audio at it and see transcription results. The LibriSpeech corpus is a good example (`uv run python -m myna.benchmarker download-corpus --out ../corpus/english`).
 
 ```shell
 # 1. serve Whisper on a Unix socket (downloads the `base` weights on first session)
@@ -73,7 +73,7 @@ out — over WebSocket-on-a-Unix-socket. Three roles play against it:
 - **Dictation client** (`client/`): owns capture and the hotkey and runs
   the session FSM. `myna-dictate` is the demo (WAV/corpus/live-mic);
   `myna-desktop` is the shipped app that injects into the focused app via IBus.
-- **Benchmark client** (`dev/bench.py`): replays a corpus through a backend and
+- **Benchmark client** (`myna.benchmarker`): replays a corpus through a backend and
   scores WER/CER offline, so accuracy work stays out of the dictation hot path.
 
 The wire is a **selectable dialect** — the internal `transcription.*`
@@ -126,8 +126,8 @@ cd server
 uv run pytest                                   # offline suite: contract + adapter logic
 uv run python -m myna.testbed                   # demo: fake adapter over loopback
 uv run python ../dev/generate_fixtures.py       # synthetic corpus -> server/fixtures/
-uv run python ../dev/fetch_english_corpus.py    # English LibriSpeech corpus -> corpus/english/
-uv run python ../dev/fetch_chinese_corpus.py    # FLEURS Mandarin corpus  -> corpus/chinese/
+uv run python -m myna.benchmarker download-corpus --out ../corpus/english     # LibriSpeech
+uv run python -m myna.benchmarker download-corpus-zh --out ../corpus/chinese  # FLEURS zh
 
 # serve a real adapter, then talk to it:
 uv run myna-server --adapter nemotron --socket /tmp/myna.sock
@@ -264,61 +264,98 @@ The real tiers, and what each is for:
 | `corpus/chinese/manifest.json` | 50 | ~9 min | Mandarin CER (FLEURS `cmn_hans_cn` test), for SenseVoice/FunASR against published figures. |
 
 Rebuild any of them from the cached downloads (no network needed once `.cache/`
-is populated):
+is populated). Every corpus, sweep and table comes out of one tool,
+`myna.benchmarker` — packed for external testers as `myna-bench.pyz` by
+`make bench`, and run in-tree as `python -m myna.benchmarker`:
 
 ```shell
-uv run python dev/fetch_english_corpus.py --select balanced -n 80 \
+cd server
+bench="uv run python -m myna.benchmarker"
+
+$bench download-corpus --out ../corpus/english --select balanced -n 80 \
     --manifest-name manifest-balanced.json     # speaker-balanced English (clean)
-uv run python dev/fetch_english_corpus.py --subset test-other --select balanced -n 80 \
-    --out corpus/librispeech-other --manifest-name manifest-balanced.json  # (hard)
-uv run python dev/fetch_english_corpus.py
-uv run python dev/fetch_chinese_corpus.py -n 50
+$bench download-corpus --out ../corpus/librispeech-other --subset test-other \
+    --select balanced -n 80 --manifest-name manifest-balanced.json   # (hard)
+$bench download-corpus --out ../corpus/english
+$bench download-corpus-zh --out ../corpus/chinese -n 50
 ```
 
 One LibriSpeech split per corpus dir - the `NOTICE` carries that split's
 attribution, so the builder refuses to mix them.
 
 Every clip records its `sha256`, and every manifest a `corpus_id` derived from
-those digests and the reference text the clips are scored against. `dev/bench.py`
-and `myna-bench run` hash the audio before a sweep and abort naming any clip that
-is not what the manifest says; each record carries the id, and `dev/aggregate.py`
-refuses a results file that mixes corpora or holds unstamped rows (`--corpus <id>`
-to narrow one deliberately). Two numbers are comparable when the ids match,
-whatever machine or month produced them.
+those digests and the reference text the clips are scored against. The sweep
+hashes the audio before it starts and aborts naming any clip that is not what
+the manifest says; each record carries the id, and `summarize` refuses a results
+file that mixes corpora or holds unstamped rows (`--corpus <id>` to narrow one
+deliberately). Two numbers are comparable when the ids match, whatever machine
+or month produced them.
+
+### Scoring one socket
+
+`bench` drives a server that is already up. Nothing is installed or removed:
 
 ```shell
 cd server
 uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock &
 
-# sweep the real corpus, tagging the run (appends to results/bench.jsonl):
-uv run python ../dev/bench.py --socket /tmp/myna.sock \
-    --manifest ../corpus/english/manifest-balanced.json --label whisper-base/cpu --batch
+uv run python -m myna.benchmarker bench --socket /tmp/myna.sock \
+    --manifest ../corpus/english/manifest-balanced.json \
+    --out ../results/bench.jsonl --label whisper-base/cpu
 
 # streaming-mode runs (server needs --streaming) record extra metrics:
-uv run python ../dev/bench.py --socket /tmp/myna.sock --streaming \
-    --manifest ../corpus/english/manifest-balanced.json --label whisper-tiny/streaming
+uv run python -m myna.benchmarker bench --socket /tmp/myna.sock --streaming \
+    --manifest ../corpus/english/manifest-balanced.json \
+    --out ../results/bench.jsonl --label whisper-tiny/streaming
 
-# collate every recorded run into a WER/CER matrix:
-uv run python ../dev/aggregate.py --by-category
+uv run python -m myna.benchmarker summarize --in ../results/bench.jsonl --by-category
 ```
 
-Each run also records latency from the event timeline — time-to-ready (cold model
+Each run records latency from the event timeline — time-to-ready (cold model
 load), time-to-first-snippet, finalize latency, and RTF — plus peak RSS/VRAM.
 Streaming runs additionally record `time_to_first_committed`, `committed_segments`,
 and `commit_stability` (the append-only invariant; baselines in
-`results/streaming-watermarks.json`).
-Pass `--cold` for the first request after a (re)start to capture the cold-load
-cost distinctly.
+`results/streaming-watermarks.json`). Pass `--cold` for the first request after a
+(re)start to capture the cold-load cost distinctly, and `--realtime` to pace the
+feed like live dictation instead of pushing as fast as the socket accepts.
 
-To sweep **several backends** in one command, use the config-driven matrix runner
-(provisions each target on a socket, samples a cold then a warm run, stamps
-hardware provenance):
+### Sweeping the matrix
+
+The full sweep measures what we actually ship. For each snap it purges any
+existing install, sideloads the locally packed snap and its components, lets
+`use-engine --auto` pick the engine on this machine, and then sweeps **every
+model the engine offers × every emission mode the snap supports (batch /
+streaming) × every config point the target declares** — one row each, cold
+sample then warm sweep, under a wall-clock budget. Config points are how the
+quantization axis is measured: whisper's `compute-type`, parakeet's
+`stream-arm-seconds`, nemotron's `att-context-size`, each naming the modes it
+applies to. Target list and axes live in `dev/matrix.yaml`.
 
 ```shell
-cd server
-uv run python ../dev/matrix.py --config ../dev/matrix.yaml --dry-run   # show the plan
-uv run python ../dev/matrix.py --config ../dev/matrix.yaml             # run it
+make bench-check            # is this machine fit to benchmark on?
+make bench-plan             # every row the sweep would produce; no root, installs nothing
+make bench-run              # the sweep itself (sudo: installs and purges snaps)
+make bench-run-whisper      # one snap
+make bench-aggregate        # re-print the table from the last run
 ```
+
+Labels come out as `<snap>/<engine>/<model>/<mode>[-<config>]`. A backend
+slower than the budget is stamped `usability_fail` with the clips it managed —
+a product verdict measured on this hardware, not predicted from a spec sheet —
+and a target that never ran leaves a `broken` status record, so a missing row
+can never be read as a clean pass.
+
+### Another machine, and the leaderboard
+
+Copy `myna-bench.pyz`, the packed `.snap`/`.comp` artefacts and a `bench.yaml`
+(from `dev/bench.yaml.example`) to the other machine. It rebuilds the corpus
+there - exactly reproducible, so the `corpus_id` matches - runs the sweep and
+sends back one `results.jsonl`. `make bench-merge SUBMISSIONS="..."` folds those
+into `results/leaderboard.jsonl`, where a row is identified by *(machine, label)*
+so every submission survives and is ranked against the others.
+
+**[docs/benchmarking.md](docs/benchmarking.md) is the cheat sheet** for that
+whole loop, plus what each column means and how to add an axis.
 
 WER normalisation lives in `myna.testbed.metrics` (Python-only, one source of
 truth — the Rust client emits transcripts + timings that feed the same scorer).

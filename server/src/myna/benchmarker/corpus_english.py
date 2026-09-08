@@ -1,18 +1,17 @@
-"""Build the English recorded-speech corpus tier (T25).
+"""Build the English recorded-speech corpus tier from LibriSpeech.
 
-    uv run python dev/fetch_english_corpus.py [--out corpus/english] [-n 12]
+    myna-bench download-corpus [--out corpus/english] [-n 12] [--select balanced]
 
-Real English human speech with exact reference transcripts, so WER is trustworthy — the
-synthetic espeak tier is out-of-distribution and its WER is misleading across
-architectures (Nemotron ~0% on real voice vs ~45% on espeak; plan T09/T25).
+Real English human speech with exact reference transcripts, so WER is
+trustworthy - the synthetic espeak tier is out-of-distribution and its WER is
+misleading across architectures (Nemotron ~0% on real voice vs ~45% on espeak).
 
-Source: LibriSpeech (Panayotov et al., ICASSP 2015), CC-BY-4.0, real read English
-at 16 kHz. ``--subset`` picks the split: the ``-clean`` ones are well-recorded
-speech, the ``-other`` ones LibriSpeech's deliberately harder half (accented,
-noisier, lower-fidelity) - the pair papers quote WER on. One split per output
-dir, so an ``-other`` tier needs its own ``--out``. Each ~330 MB download is
-cached under .cache/; corpora are regenerated on demand, not committed
-(gitignored like fixtures/).
+Source: LibriSpeech (Panayotov et al., ICASSP 2015), CC-BY-4.0, real read
+English at 16 kHz. ``--subset`` picks the split: the ``-clean`` ones are
+well-recorded speech, the ``-other`` ones LibriSpeech's deliberately harder half
+(accented, noisier, lower-fidelity) - the pair papers quote WER on. One split
+per output dir, so an ``-other`` tier needs its own ``--out``. Each ~330 MB
+download is cached; corpora are regenerated on demand, not committed.
 
 Two selection strategies (``--select``):
 
@@ -29,42 +28,31 @@ Two selection strategies (``--select``):
 
 Either way a couple of seeded-noise variants are appended. Speaker id is
 recoverable from the clip id (``librispeech-<speaker>-<chapter>-<utt>``), so
-per-speaker WER can be broken out without extra manifest fields. Accent
-diversity beyond the ``-other`` splits is still a follow-up (LibriSpeech is
-overwhelmingly US English; it needs an accent-labelled corpus such as Common
-Voice or EdAcc).
+per-speaker WER can be broken out without extra manifest fields.
 
 Requires ffmpeg (FLAC decode). Network is needed only for the download.
 """
 
 from __future__ import annotations
 
-import argparse
+import contextlib
+import gzip
 import json
 import subprocess
-import sys
 import tarfile
 import urllib.request
+import zlib
 from array import array
 from pathlib import Path
 
-# Reuse the synthetic tier's WAV writer + seeded-noise mixer (same house format).
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server" / "src"))
-from generate_fixtures import (  # noqa: E402
-    NOISE_SEED,
-    NOISE_SNR_DB,
-    mix_noise,
-    write_wav,
-)
-from myna.testbed.corpus import stamp_corpus  # noqa: E402
+from myna.benchmarker._audio import NOISE_SEED, NOISE_SNR_DB, mix_noise, write_wav
+from myna.testbed.corpus import stamp_corpus
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 RATE = 16_000
 BASE_URL = "https://www.openslr.org/resources/12"
 # The LibriSpeech splits worth sweeping. "clean" is well-recorded read speech;
 # "other" is the deliberately harder half (accented, noisier, lower-fidelity
-# recordings) — the pair papers report WER on, so numbers here are comparable
+# recordings) - the pair papers report WER on, so numbers here are comparable
 # to published figures.
 SUBSETS = ("dev-clean", "dev-other", "test-clean", "test-other")
 LICENSE = "CC-BY-4.0"
@@ -76,7 +64,7 @@ def notice_for(subset: str) -> str:
 Real recorded-speech corpus tier (T25)
 
 Derived from the LibriSpeech ASR corpus ({subset}), redistributed under its
-original licence. Regenerate with: uv run python dev/fetch_english_corpus.py
+original licence. Regenerate with: myna-bench download-corpus
 
   Source:  {BASE_URL}/{subset}.tar.gz
   Licence: CC-BY-4.0  (https://creativecommons.org/licenses/by/4.0/)
@@ -89,14 +77,72 @@ decoded to 16 kHz mono S16LE WAV; "noise" clips add seeded Gaussian noise at
 """
 
 
+def _remote_size(url: str) -> int | None:
+    """Content-Length for ``url``, or None when it cannot be asked."""
+    request = urllib.request.Request(url, method="HEAD")  # noqa: S310
+    try:
+        with urllib.request.urlopen(request, timeout=30) as resp:  # noqa: S310
+            return int(resp.headers.get("Content-Length") or 0) or None
+    except (OSError, ValueError):
+        return None
+
+
 def download(url: str, dest: Path) -> Path:
-    if dest.exists() and dest.stat().st_size:
-        return dest
+    """Fetch a split tarball, or reuse a *complete* cached one.
+
+    Two things here are not decoration. The download goes to a ``.part`` file
+    and is renamed only once it finishes, so an interrupted one can never be
+    mistaken for a cache hit; and a pre-existing cache is checked against the
+    server's Content-Length before it is trusted. Without either, a download
+    killed at 7% left a 25 MB stub that every later run reported as "using
+    cached" and then failed on deep inside tarfile, with a gzip EOFError that
+    names neither the file nor the cause.
+
+    The progress line matters more than it looks too: this is a 330 MB download
+    in a tool someone runs once, and a silent five-minute pause reads as a hang.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    print(f"downloading {url} (~330 MB per split)\n  -> {dest}")
-    with urllib.request.urlopen(url) as resp, dest.open("wb") as out:  # noqa: S310
-        while block := resp.read(1 << 20):
-            out.write(block)
+    expected = _remote_size(url)
+    if dest.exists() and dest.stat().st_size:
+        have = dest.stat().st_size
+        if expected is None:
+            # Offline, or a server that will not answer a HEAD. Use the cache
+            # and let the archive reader report it if it is short.
+            print(f"using cached {dest} ({have >> 20} MB, unverified - server did not answer)")
+            return dest
+        if have == expected:
+            print(f"using cached {dest} ({have >> 20} MB)")
+            return dest
+        print(
+            f"cached {dest} is {have >> 20} MB, expected {expected >> 20} MB "
+            "- refetching (an earlier download did not finish)"
+        )
+
+    part = dest.with_suffix(dest.suffix + ".part")
+    print(f"downloading {url}  ({(expected or 0) >> 20 or '~330'} MB)\n  -> {dest}")
+    try:
+        with urllib.request.urlopen(url) as resp, part.open("wb") as out:  # noqa: S310
+            total = int(resp.headers.get("Content-Length") or 0)
+            received = 0
+            while block := resp.read(1 << 20):
+                out.write(block)
+                received += len(block)
+                if total:
+                    pct = received / total * 100
+                    print(
+                        f"  {pct:5.1f}%  {received >> 20} / {total >> 20} MB\r",
+                        end="",
+                        flush=True,
+                    )
+        print()
+        if total and received != total:
+            raise OSError(f"got {received} bytes, expected {total}")
+    except BaseException:
+        # Includes KeyboardInterrupt: a half-written .part left behind is the
+        # whole failure mode this function exists to prevent.
+        part.unlink(missing_ok=True)
+        raise
+    part.replace(dest)
     return dest
 
 
@@ -124,11 +170,34 @@ def decode_flac(data: bytes) -> array:
     return array("h", pcm)
 
 
+def open_split(tar_path: Path):
+    """Open a split tarball, turning a short or corrupt one into advice.
+
+    A truncated archive fails deep inside tarfile with a gzip EOFError that
+    names neither the file nor the cause. This is reachable whenever the cache
+    predates the atomic download below, or the disk filled mid-write.
+    """
+
+    @contextlib.contextmanager
+    def _reader():
+        try:
+            with tarfile.open(tar_path, "r:gz") as tar:
+                yield tar
+        except (EOFError, tarfile.ReadError, gzip.BadGzipFile, zlib.error) as exc:
+            size = tar_path.stat().st_size if tar_path.exists() else 0
+            raise SystemExit(
+                f"{tar_path} is not a complete LibriSpeech archive ({size >> 20} MB): {exc}. "
+                f"Delete it and re-run - the download will restart:\n  rm {tar_path}"
+            ) from exc
+
+    return _reader()
+
+
 def collect(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]:
     """The first ``n`` utterances in archive order, with their transcripts."""
     pcm: dict[str, array] = {}
     text: dict[str, str] = {}
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with open_split(tar_path) as tar:
         for member in tar:
             name = member.name
             if not (member.isfile() and name.startswith(prefix)):
@@ -185,7 +254,7 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
     """
     text: dict[str, str] = {}
     by_speaker: dict[str, list[str]] = {}
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with open_split(tar_path) as tar:
         for member in tar:
             name = member.name
             if not (member.isfile() and name.startswith(prefix)):
@@ -204,7 +273,7 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
 
     remaining = set(wanted)
     pcm: dict[str, array] = {}
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with open_split(tar_path) as tar:
         for member in tar:
             if not (member.isfile() and member.name.endswith(".flac")):
                 continue
@@ -249,7 +318,7 @@ def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) 
 
     text: dict[str, str] = {}
     by_chapter: dict[str, list[str]] = {}
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with open_split(tar_path) as tar:
         for member in tar:
             name = member.name
             if not (member.isfile() and name.startswith(prefix)):
@@ -267,7 +336,7 @@ def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) 
     print(f"longest chapter: {chapter_id} ({len(utt_ids)} utterances)")
 
     pcm_by_id: dict[str, array] = {}
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with open_split(tar_path) as tar:
         wanted = set(utt_ids)
         for member in tar:
             if not (member.isfile() and member.name.endswith(".flac")):
@@ -403,7 +472,7 @@ def build(
         json.dumps(
             {
                 "schema_version": 1,
-                "generator": "dev/fetch_english_corpus.py",
+                "generator": "myna-bench download-corpus",
                 "generated": {
                     "dataset": "librispeech",
                     "subset": subset,
@@ -449,81 +518,46 @@ def is_complete(out_dir: Path, manifest_name: str, n: int, subset: str) -> bool:
     )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=REPO_ROOT / "corpus" / "english")
-    parser.add_argument("--cache", type=Path, default=REPO_ROOT / ".cache" / "librispeech")
-    parser.add_argument(
-        "--tarball",
-        type=Path,
-        default=None,
-        help="use an already-downloaded <subset>.tar.gz instead of fetching",
-    )
-    parser.add_argument(
-        "--subset",
-        choices=SUBSETS,
-        default="dev-clean",
-        help="LibriSpeech split to draw from (default dev-clean). The '-other'"
-        " splits are the harder, accented/low-fidelity half — give them their"
-        " own --out, one split per corpus dir",
-    )
-    parser.add_argument("-n", type=int, default=12, help="number of clean clips (default 12)")
-    parser.add_argument(
-        "--select",
-        choices=("archive", "balanced"),
-        default="archive",
-        help=(
-            "clip selection: 'archive' = first N in archive order (one speaker,"
-            " reproduces the original manifest.json); 'balanced' = round-robin"
-            " over every speaker in the split (use this for accuracy benchmarks)"
-        ),
-    )
-    parser.add_argument(
-        "--manifest-name",
-        default="manifest.json",
-        help="manifest filename inside --out (default manifest.json); use a"
-        " distinct name to add a tier alongside an existing one",
-    )
-    parser.add_argument(
-        "--long-form-minutes",
-        type=float,
-        default=None,
-        help="in addition to the -n per-utterance clips, concatenate one"
-        " whole LibriSpeech chapter (in reading order) into a single"
-        " continuous clip at least this many minutes long, category"
-        " 'long-form' — for rolling-window / buffer invariants that only"
-        " show up minutes into a session. Pass -n 0 for a manifest holding"
-        " only the long-form clip.",
-    )
-    parser.add_argument(
-        "--skip-complete",
-        action="store_true",
-        help="exit 0 without downloading when --out already holds exactly this"
-        " corpus (same split, clip count, and every WAV present); for CI, which"
-        " restores the tier from a cache",
-    )
-    args = parser.parse_args()
+def require_ffmpeg() -> None:
+    """Refuse before the 330 MB download, not after it.
+
+    Every clip is decoded from FLAC through ffmpeg, so a machine without it
+    cannot build a corpus at all - and finding that out on the first clip means
+    the download was wasted.
+    """
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+    except (OSError, subprocess.SubprocessError) as err:
+        raise SystemExit("ffmpeg is required for FLAC decode: sudo apt install ffmpeg") from err
+
+
+def cmd_download(args) -> None:  # noqa: ANN001
+    """``download-corpus``: fetch (or reuse) a split and write its manifest."""
+    out = Path(args.out)
     manifest_name = args.manifest_name
 
     if (
         not args.long_form_minutes
         and args.skip_complete
-        and is_complete(args.out, manifest_name, args.n, args.subset)
+        and is_complete(out, manifest_name, args.n, args.subset)
     ):
-        manifest_path = args.out / manifest_name
+        manifest_path = out / manifest_name
         # Stamp even on the skip path: a tier restored from a cache, or built
         # before ids existed, still has to say which corpus it is.
-        print(
-            f"{args.out} already holds this corpus (id {stamp_corpus(manifest_path)});"
-            " skipping fetch"
-        )
-        return 0
+        print(f"{out} already holds this corpus (id {stamp_corpus(manifest_path)}); skipping fetch")
+        return
 
-    tar_path = args.tarball or download(
-        f"{BASE_URL}/{args.subset}.tar.gz", args.cache / f"{args.subset}.tar.gz"
+    require_ffmpeg()
+    tar_path = (
+        Path(args.tarball)
+        if args.tarball
+        else download(
+            f"{BASE_URL}/{args.subset}.tar.gz",
+            Path(args.cache) / f"{args.subset}.tar.gz",
+        )
     )
     manifest = build(
-        args.out,
+        out,
         tar_path,
         args.n,
         subset=args.subset,
@@ -532,8 +566,4 @@ def main() -> int:
         long_form_minutes=args.long_form_minutes,
     )
     print(f"\nwrote {manifest}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    print(f"Use in bench.yaml:  manifest: {manifest}")

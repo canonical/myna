@@ -21,20 +21,24 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
-import math
-import random
 import sys
-import wave
 from array import array
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server" / "src"))
+# The house WAV format and the seeded noise mixer belong to the benchmarker:
+# the synthetic tier and the recorded LibriSpeech tier have to write byte-identical
+# audio, or their corpus ids drift apart for no reason anyone can see.
+from myna.benchmarker._audio import (  # noqa: E402
+    NOISE_SEED,
+    NOISE_SNR_DB,
+    mix_noise,
+    write_wav,
+)
 from myna.testbed.corpus import stamp_corpus  # noqa: E402
 
 TARGET_RATE = 16_000
-NOISE_SNR_DB = 10.0
-NOISE_SEED = 20260612  # fixed: regeneration must be deterministic
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -227,27 +231,6 @@ def resample_linear(samples: array, src_rate: int, dst_rate: int) -> array:
             frac = pos - j
             out[i] = int(samples[j] * (1.0 - frac) + samples[j + 1] * frac)
     return out
-
-
-def mix_noise(samples: array, snr_db: float, seed: int) -> array:
-    """Add seeded Gaussian noise at the given signal-to-noise ratio."""
-    rms = math.sqrt(sum(s * s for s in samples) / len(samples))
-    sigma = rms / (10.0 ** (snr_db / 20.0))
-    rng = random.Random(seed)
-    noisy = array("h", bytes(2 * len(samples)))
-    for i, s in enumerate(samples):
-        noisy[i] = max(-32768, min(32767, int(s + rng.gauss(0.0, sigma))))
-    return noisy
-
-
-def write_wav(path: Path, samples: array, rate: int) -> float:
-    """Write S16LE mono WAV; returns duration in seconds."""
-    with wave.open(str(path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(rate)
-        wav.writeframes(samples.tobytes())
-    return len(samples) / rate
 
 
 def generate(

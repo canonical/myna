@@ -159,7 +159,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: corpus/english
-          key: corpus-english-${{ hashFiles('dev/fetch_english_corpus.py', 'dev/generate_fixtures.py') }}
+          key: corpus-english-${{ hashFiles('server/src/myna/benchmarker/corpus_english.py', 'server/src/myna/benchmarker/_audio.py', 'dev/generate_fixtures.py') }}
 
       - uses: canonical/launch-workshop@v1
         with:

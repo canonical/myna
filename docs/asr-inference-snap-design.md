@@ -251,7 +251,7 @@ llama.cpp source.
 
 ## 7. Packaged adapter comparison (measured, feature 008)
 
-Working draft — feature 008 sweep data; extend per tier via `dev/matrix.py`.
+Working draft — feature 008 sweep data; extend per tier via `myna-bench run`.
 Numbers from `results/streaming-watermarks.json` on the long-stream corpus
 (26–33 s same-speaker streams). WER across rows is comparable in kind but not
 in corpus size — treat ±1 pp as noise.

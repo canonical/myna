@@ -1,7 +1,7 @@
 //! Per-model, per-hardware RTF tier assessment for the streaming gate (T039/T040).
 //!
 //! A [`TierAssessment`] is a measured RTF for one model on one machine,
-//! recorded in `results/streaming-tiers.json` by the lab (dev/matrix.py) and
+//! recorded in `results/streaming-tiers.json` by the lab (myna-bench run) and
 //! shipped as a static data file. The gate (FR-002): streaming is viable only
 //! when the recorded RTF for the active model is below the threshold (~1.0);
 //! no measurement → batch (safe default, FR-010).

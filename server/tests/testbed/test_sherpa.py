@@ -1,7 +1,7 @@
 """Sherpa adapter units (008 US4) — event routing over a stub recognizer.
 
 The recognizer itself (sherpa-onnx OnlineRecognizer) is exercised live by
-dev/bench.py; here we pin the adapter's disposition routing against a scripted
+myna-bench bench; here we pin the adapter's disposition routing against a scripted
 stub: partials → unstable, endpoints → committed (I1/I2/I4), tail flush (I5),
 verbatim-concat spacing (I2), off-format rejection (audio-push invariant).
 
