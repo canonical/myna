@@ -32,8 +32,7 @@ from pathlib import Path
 
 ARCHIVE = "sherpa-onnx-online-punct-en-2024-08-06"
 URL = (
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/"
-    f"{ARCHIVE}.tar.bz2"
+    f"https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/{ARCHIVE}.tar.bz2"
 )
 # The pin. A tag can move under a release asset, so identity is the hash of the
 # bytes, checked on every stage - see dev/model-pin.sh for the same argument on
