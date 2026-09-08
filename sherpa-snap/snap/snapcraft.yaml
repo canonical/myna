@@ -107,7 +107,23 @@ parts:
       # re-reads /proc/self/maps to confirm which copy actually mapped, so a
       # wheel that goes back to unbundling fails the build.
       export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
-      export PRUNE_GATE="import sherpa_onnx; assert sherpa_onnx.OnlineRecognizer; assert any('sherpa_onnx/lib/libonnxruntime' in l for l in open('/proc/self/maps')), 'sherpa-onnx stopped bundling libonnxruntime'"
+      # OnlinePunctuation as well as OnlineRecognizer: the snap commits
+      # punctuated text, so a wheel that dropped the punctuation bindings would
+      # otherwise pack fine and degrade every transcript to lowercase.
+      export PRUNE_GATE="import sherpa_onnx; assert sherpa_onnx.OnlineRecognizer; assert sherpa_onnx.OnlinePunctuation; assert any('sherpa_onnx/lib/libonnxruntime' in l for l in open('/proc/self/maps')), 'sherpa-onnx stopped bundling libonnxruntime'"
+      # The wheel's C and C++ APIs, for consumers that link sherpa-onnx from
+      # native code. Nothing here is one: the Python extension links neither
+      # (readelf -d names only libonnxruntime and libasound - it statically
+      # links the library itself), and nothing in the prime references either
+      # by name. The linter noticed only the C++ half, because the C half is
+      # "used" by the C++ half - dropping one alone leaves an orphan and the
+      # warning simply moves. 5.4 MB.
+      #
+      # Before the prune gate, not after: the gate imports sherpa_onnx, so a
+      # wheel that stops linking these statically fails the build here rather
+      # than a user's first transcribe.
+      rm -f "$site"/sherpa_onnx/lib/libsherpa-onnx-c-api.so \
+            "$site"/sherpa_onnx/lib/libsherpa-onnx-cxx-api.so
       "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PRIME/bin/python3"
       rm -f "$CRAFT_PRIME"/bin/pip* "$CRAFT_PRIME"/bin/onnxruntime_test
 
