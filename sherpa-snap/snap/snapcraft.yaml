@@ -142,6 +142,7 @@ parts:
     source: components
     organize:
       "model-fastconformer-480ms/*": (component/model-fastconformer-480ms)/
+      "model-punct-en/*": (component/model-punct-en)/
     prime:
       - -*
 
@@ -154,3 +155,12 @@ components:
       k2-fsa (sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8):
       encoder/decoder/joiner + tokens. 480 ms latency variant (80/1040 ms
       variants exist upstream).
+
+  model-punct-en:
+    type: standard
+    summary: English punctuation and truecasing (int8 ONNX, 7.5 MB)
+    description: |
+      k2-fsa's conversion of Edge-Punct-Casing (Apache-2.0,
+      https://arxiv.org/abs/2407.13142) - a CNN-BiLSTM that takes the
+      transducer's lowercase, unpunctuated text and returns it punctuated and
+      capitalised. Text in, text out: it never sees audio.

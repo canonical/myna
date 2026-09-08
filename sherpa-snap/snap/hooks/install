@@ -23,6 +23,10 @@ modelctl set --package sleep-idle-seconds="300"
 # flag so the same build can be measured both ways; the benchmark runner treats
 # the presence of this key as the snap declaring it supports streaming at all.
 modelctl set --package streaming="true"
+# Punctuation + truecasing over committed text. The transducer emits neither,
+# so false commits lowercase, unpunctuated text - kept reachable because it is
+# the baseline the restoration pass is measured against.
+modelctl set --package punctuation="true"
 
 #
 # Activate the single engine.

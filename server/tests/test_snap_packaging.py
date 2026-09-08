@@ -333,6 +333,28 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
         )
 
 
+def test_punctuation_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
+    """Same argument as the streaming toggle above, for the other output-shaping
+    choice a shipped snap makes.
+
+    A snap that restores punctuation must let an operator turn it off, because
+    the raw transducer output is the baseline the restoration is measured
+    against - and one that hardcodes `--sherpa-no-punct` would commit lowercase
+    text with nothing in the config surface saying why. Snaps whose model
+    punctuates natively mention neither flag, which is also fine.
+    """
+    snap_dir, name, _ = snap
+    for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
+        script = server.read_text(encoding="utf-8")
+        if "--sherpa-punct-model" not in script and "--sherpa-no-punct" not in script:
+            continue
+        assert "punct_args" in script and "modelctl get punctuation" in script, (
+            f"{name}: engines/{server.parent.name}/server hardcodes its punctuation "
+            "choice; read the `punctuation` config key instead so the unpunctuated "
+            "baseline stays measurable on the same build"
+        )
+
+
 def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     """Model metadata describes disk weights, not a runtime compute policy."""
     model_dir = REPO_ROOT / "whisper-snap" / "models"

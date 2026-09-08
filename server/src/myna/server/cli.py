@@ -129,6 +129,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
     )
     parser.add_argument(
+        "--sherpa-punct-model",
+        default=None,
+        help="directory holding the sherpa punctuation + truecasing model "
+        "(default: the staged cache - dev/fetch_sherpa_punct_model.py)",
+    )
+    parser.add_argument(
+        "--sherpa-no-punct",
+        action="store_true",
+        help="commit the transducer's raw lowercase, unpunctuated output",
+    )
+    parser.add_argument(
         "--funasr-language",
         default="auto",
         choices=("auto", "zh", "en", "yue", "ja", "ko"),
@@ -136,9 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--funasr-textnorm",
-        default="woitn",
+        default="withitn",
         choices=("woitn", "withitn"),
-        help="ITN mode: woitn (readable text, default), withitn (digits/dates)",
+        help="SenseVoice decoder prompt: withitn (punctuation, casing and "
+        "digits/dates, default), woitn (spoken form, unpunctuated)",
     )
     parser.add_argument(
         "--audio8-language",
@@ -221,7 +233,14 @@ def build_adapter(args: argparse.Namespace):
     if args.adapter == "sherpa":
         from myna.testbed.sherpa import SherpaAdapter
 
-        return SherpaAdapter(args.model, streaming=args.streaming)
+        return SherpaAdapter(
+            args.model,
+            streaming=args.streaming,
+            # getattr: programmatic callers may build the namespace without
+            # the adapter-specific flags (as the streaming ones already allow).
+            punct_dir=getattr(args, "sherpa_punct_model", None),
+            punctuate=not getattr(args, "sherpa_no_punct", False),
+        )
 
     if args.adapter == "funasr":
         from myna.testbed.funasr import FunasrAdapter

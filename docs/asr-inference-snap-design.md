@@ -279,7 +279,9 @@ Reading the table:
 - **Trade-off shorthand**: whisper = multilingual + tunable, moderate WER
   cost; nemotron = best GPU-tier profile but en-only and heavy (NeMo);
   parakeet = best CPU accuracy, no partials; sherpa = fastest partials,
-  no punctuation, endpoint-dependent commits.
+  punctuation restored by a 7.5 MB post-pass rather than decoded (so
+  per-segment in streaming mode, whole-transcript in batch),
+  endpoint-dependent commits.
 
 Hardware tiers: whisper rows are x86-64 CPU (whisper-tiny); nemotron row is
 RTX 4080 Laptop GPU. Per-tier watermarks live in

@@ -9,6 +9,12 @@ Batch mode runs the same push loop with the intermediate emissions withheld,
 so the "Batch path" section below pins the degenerate shape (I7) and the
 regression behind it: an endpoint firing mid-audio must not truncate the
 transcript at that endpoint.
+
+The routing tests take unpunctuated adapters: punctuation rewrites committed
+text, and asserting routing against rewritten text would make every one of them
+an assertion about the punctuation model instead. Where punctuation runs - which
+*is* a routing decision, and a different one per emission mode - has its own
+section at the end.
 """
 
 from __future__ import annotations
@@ -81,9 +87,26 @@ class StubRecognizer:
         self.resets += 1
 
 
-def make_adapter(steps, *, streaming: bool = True) -> SherpaAdapter:
-    adapter = SherpaAdapter(streaming=streaming)
+class StubPunct:
+    """Stand-in for ``OnlinePunctuation``: records every text it is handed."""
+
+    def __init__(self):
+        self.seen: list[str] = []
+
+    def add_punctuation_with_case(self, text):
+        self.seen.append(text)
+        return f"<{text}>"
+
+
+def make_adapter(steps, *, streaming: bool = True, punct=None) -> SherpaAdapter:
+    # punctuate=False: the routing suite asserts raw transducer text, and the
+    # adapter otherwise picks up a staged punctuation model from the XDG cache
+    # - so these would pass or fail on whether a developer had run
+    # dev/fetch_sherpa_punct_model.py.
+    adapter = SherpaAdapter(streaming=streaming, punctuate=False)
     adapter._recognizer = StubRecognizer(steps)
+    if punct is not None:
+        adapter._punct = punct
     return adapter
 
 
@@ -189,3 +212,53 @@ async def test_batch_session_empty_audio_emits_empty_done():
     done = events[-1]
     assert isinstance(done, TranscriptionDone)
     assert done.text == ""
+
+
+# --- Where punctuation runs (2026-09-08) ------------------------------------
+#
+# The transducer's vocabulary is 1025 tokens whose only punctuation is an
+# apostrophe, so committed text is punctuated by a second model or not at all.
+# Punctuation wants a whole sentence; I3/I4 say committed text is never
+# restated. The two modes resolve that differently, and both failure modes are
+# silent - punctuating per segment in batch would punctuate twice, punctuating
+# partials would spend the pass ~20x more often on text about to be replaced.
+
+
+@pytest.mark.asyncio
+async def test_streaming_punctuates_each_commit_and_never_a_partial():
+    punct = StubPunct()
+    # Trailing empty step so the flush has no tail to re-commit, as in
+    # test_streaming_empty_tail_not_committed above.
+    steps = [(False, "hello"), (True, "hello world"), (True, "goodbye now"), (False, "")]
+    events = await run(make_adapter(steps, punct=punct), audio_seconds=2.0)
+
+    finals = [e for e in events if isinstance(e, TranscriptionFinal)]
+    committed = [e.text for e in finals if e.disposition == Disposition.COMMITTED]
+    unstable = [e.text for e in finals if e.disposition == Disposition.UNSTABLE]
+
+    assert unstable == ["hello"]  # raw: display-only, and replaced on commit
+    # Punctuated before I2's synthetic leading space, which is spacing rather
+    # than text - the model must not be asked what the whitespace meant.
+    assert committed == ["<hello world>", " <goodbye now>"]
+    assert punct.seen == ["hello world", "goodbye now"]
+    assert events[-1].text == "<hello world> <goodbye now>"
+
+
+@pytest.mark.asyncio
+async def test_batch_punctuates_the_whole_transcript_exactly_once():
+    """Nothing commits until the end, so the one pass gets the full context -
+    the reason batch recovers the sentence-final marks streaming cannot."""
+    punct = StubPunct()
+    steps = [(True, "hello world"), (True, "goodbye now"), (False, "")]
+    events = await run(make_adapter(steps, streaming=False, punct=punct), audio_seconds=1.5)
+
+    assert punct.seen == ["hello world goodbye now"]  # once, over the join
+    finals = [e for e in events if isinstance(e, TranscriptionFinal)]
+    assert [e.text for e in finals] == ["<hello world goodbye now>"]
+    assert events[-1].text == "<hello world goodbye now>"
+
+
+@pytest.mark.asyncio
+async def test_unpunctuated_adapter_commits_the_transducer_output_verbatim():
+    events = await run(make_adapter([(True, "hello world"), (False, "")]), audio_seconds=1.0)
+    assert events[-1].text == "hello world"

@@ -18,11 +18,23 @@ streaming="$(modelctl get streaming 2>/dev/null || true)"
 stream_args=()
 [ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
 
+# Punctuation + truecasing (set at install, overridable with
+# `modelctl set punctuation=`). PUNCT_DIR comes from model.yaml, the same way
+# MODEL_DIR does, with the same direct fallback for the bypassed `modelctl run`.
+# The transducer decodes lowercase and unpunctuated, so off means committing
+# text the user has to fix by hand; it is a key so the raw output stays
+# measurable on the same build.
+PUNCT_DIR="${PUNCT_DIR:-$SNAP_COMPONENTS/model-punct-en}"
+punctuation="$(modelctl get punctuation 2>/dev/null || true)"
+punct_args=(--sherpa-punct-model "$PUNCT_DIR")
+[ "${punctuation:-true}" = "false" ] && punct_args=(--sherpa-no-punct)
+
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter sherpa \
     --model "$MODEL_DIR" \
     "${stream_args[@]}" \
+    "${punct_args[@]}" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
     "$@"

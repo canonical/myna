@@ -43,6 +43,9 @@ PINNED = {
     "parakeet-snap/dev/download-models.sh": r'^rev="murmure-model [0-9.]+"$',
     # Python fetchers.
     "dev/fetch_sherpa_model.py": r'^REVISION = "[0-9a-f]{40}"$',
+    # Not on the Hub - a GitHub release asset hanging off a mutable tag, so
+    # the bytes are the identity. Same shape as the qsilu header tarball.
+    "dev/fetch_sherpa_punct_model.py": r'^SHA256 = "[0-9a-f]{64}"$',
     "dev/fetch_audio8_model.py": r'^REVISION = "[0-9a-f]{40}"$',
     "dev/fetch_funasr_model.py": r'^REVISION = "v[0-9.]+"$',
     "dev/parakeet/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
@@ -96,6 +99,25 @@ def test_sherpa_pins_agree() -> None:
         "sherpa-snap/dev/download-models.sh and dev/fetch_sherpa_model.py stage "
         "the same upstream repo at different revisions - the snap would ship "
         "weights the local adapter runs never measured"
+    )
+
+
+def test_sherpa_punct_component_reads_the_pin_rather_than_copying_it() -> None:
+    """The packing script must derive the punctuation pin, not restate it.
+
+    Every other pair here is two literals held together by a cross-check,
+    which is a half-moved pin waiting to happen; this one has a single
+    literal and a script that reads it. Assert the reading, because a later
+    edit that inlines the sha256 "for clarity" would reintroduce the drift
+    the cross-checks above exist to catch.
+    """
+    script = _text("sherpa-snap/dev/download-models.sh")
+    assert "dev/fetch_sherpa_punct_model.py" in script, (
+        "sherpa-snap/dev/download-models.sh no longer reads the punctuation pin from its fetcher"
+    )
+    assert not re.search(r"[0-9a-f]{64}", script), (
+        "sherpa-snap/dev/download-models.sh inlines a sha256 - derive it from "
+        "dev/fetch_sherpa_punct_model.py so the two cannot disagree"
     )
 
 
