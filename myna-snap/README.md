@@ -316,7 +316,10 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   owned). Critical session errors are always printed to the daemon's
   stderr, so run `myna` from a terminal and read them there. For the full
   stage-by-stage trace add `MYNA_DEBUG=1` (`ctrl`/`capture`/`ws`/`inject`
-  lines - where the trail stops is the culprit). A
+  lines - where the trail stops is the culprit). That tier prints the
+  transcript text itself, and as a systemd service the daemon's stderr is
+  the journal, so it persists there until the journal rotates: set it for a
+  repro, unset it after. A
   `pipewire: mod.client-node: detected old client version 5` journal line
   at press time is benign: it's the snap-staged (older) libpipewire
   connecting, and since capture starts only per press, it proves the
