@@ -128,9 +128,13 @@ The language set matches SenseVoice's published `lid_dict`:
   capabilities should advertise the truth. We evaluate only zh/en because those
   are the corpora we have, but we don't artificially restrict the model.
 
-## Decision 5: Inverse text normalization — `woitn` as default, `withitn` as optional flag
+## Decision 5: Inverse text normalization - ~~`woitn`~~ `withitn` as default
 
-**Decision**: Run SenseVoice with `textnorm="woitn"` by default — this is the
+**Reversed 2026-09-08** (see the addendum at the end of this section): the
+decision below weighed ITN alone, before it was known that the same flag
+carries punctuation and capitalisation. `withitn` is now the default.
+
+**Original decision**: Run SenseVoice with `textnorm="woitn"` by default - this is the
 model's "without ITN" mode that produces readable text with digits/currency/etc
 rendered as spoken words. The `withitn` mode (ITN: "twenty twenty-five" →
 "2025") is exposed as an optional adapter constructor flag. Default to
@@ -153,12 +157,38 @@ into different (sometimes worse) text elsewhere. Default confirmed. **Also
 discovered: `withitn` makes SenseVoice natively emit punctuation (，。、) —
 the model can punctuate itself, which means the future post-processing
 feature may not need a separate CT-Transformer stage for SenseVoice (sherpa
-still needs one). Recorded for the post-processing spec.**
+still needs one). Recorded for the post-processing spec.** (Acted on
+2026-09-08: it needs none, and `withitn` became the default. sherpa's stage
+landed at the same time.)
 
 **Alternatives considered**:
 - `withitn` as default: rejected — the reference app's experience shows users
   prefer readable text; ITN mistakes (e.g., converting "one two three" to
   "123") cause more friction than no ITN.
+
+**Addendum (2026-09-08): reversed, and why the original weighing was wrong.**
+The rejection above treats the flag as an ITN switch. It is not: SenseVoice
+takes `textnorm` as an input tensor beside `language`
+(`funasr_onnx/sensevoice_bin.py`), so it conditions the one CTC head, and
+`withitn` conditions it to punctuate and capitalise as well as to normalise.
+Verified on `corpus/english` (6 clips) - not only Chinese:
+
+```
+woitn   : then he rang the bell no answer
+withitn : Then he rang the bell. No answer.
+woitn   : he rang again this time harder still no answer
+withitn : He rang again this time, harder. Still no answer.
+```
+
+Cost, interleaved over 62.2 s of `corpus/english` (RTF): `woitn`
+0.0167/0.0172 against `withitn` 0.0169/0.0165 - inside run-to-run spread, as
+it must be, since it is the same graph with one different prompt token.
+
+So the trade is not "ITN friction against nothing" but "ITN friction against
+punctuation and casing", and dictation output the user has to punctuate by hand
+is not finished output. `woitn` stays reachable as a constructor flag and as a
+shipped `modelctl set textnorm=` key for callers who want the spoken form; they
+give up punctuation with it, because the model offers no way to split the two.
 
 ## Decision 6: Tag stripping — regex post-pass matching the reference app
 

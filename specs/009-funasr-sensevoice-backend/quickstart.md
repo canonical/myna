@@ -31,7 +31,9 @@ Dictate an English utterance from the real corpus, internal dialect:
 ```
 
 Expected: `✓` with the transcript; no model control tags (`<|zh|>`, etc.)
-in the output. The result is unpunctuated.
+in the output. The result is punctuated and capitalised (the default `withitn`
+decoder prompt); re-run with `--funasr-textnorm woitn` for the spoken,
+unpunctuated form.
 
 Repeat with the IE115 dialect:
 
@@ -51,7 +53,7 @@ errors.
 ```
 
 Expected: Chinese transcript; auto-detected language (no `--language` flag
-needed). Output is unpunctuated Chinese text.
+needed). Output carries Chinese punctuation (，。、).
 
 Pin language:
 
@@ -75,7 +77,9 @@ asyncio.run(send_and_receive('/tmp/myna.sock'))
 ```
 
 Expected: `Capabilities(models=('sensevoice-small',), languages=('auto',
-'zh', 'en', 'yue', 'ja', 'ko'), punctuation=False, translation=False)`.
+'zh', 'en', 'yue', 'ja', 'ko'), punctuation=True, translation=False)`.
+`punctuation` tracks the active decoder prompt, so it reads `False` under
+`--funasr-textnorm woitn`.
 
 ## S4 — Accuracy evaluation
 

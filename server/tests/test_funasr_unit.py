@@ -125,13 +125,29 @@ def test_accepts_every_advertised_language():
 # --- capabilities + candidate ----------------------------------------------
 
 
-def test_capabilities_describe_multilingual_unpunctuated_model():
+def test_capabilities_describe_multilingual_punctuated_model():
     caps = FunasrAdapter().capabilities()
     assert caps.models == ("sensevoice-small",)
     assert caps.languages == ("auto", "zh", "en", "yue", "ja", "ko")
-    assert caps.punctuation is False  # FR-008: sherpa-compatible posture
+    assert caps.punctuation is True  # FR-008: withitn punctuates and cases
     assert caps.translation is False
     assert caps.input_formats == (FUNASR_FORMAT,)
+
+
+def test_capabilities_punctuation_follows_the_decoder_prompt():
+    """Not a property of the weights: the same model decodes either way.
+
+    Advertising a constant here would lie in whichever direction the flag was
+    not set, and the client uses this to decide whether to post-process.
+    """
+    assert FunasrAdapter(textnorm="withitn").capabilities().punctuation is True
+    assert FunasrAdapter(textnorm="woitn").capabilities().punctuation is False
+
+
+def test_default_decoder_prompt_is_punctuated():
+    """Committed text a user has to punctuate by hand is not finished text, and
+    this is the only backend that can punctuate Chinese at all."""
+    assert FunasrAdapter()._textnorm == "withitn"
 
 
 def test_candidate_labels_engine_as_onnx_cpu():
@@ -409,12 +425,12 @@ async def test_decode_failure_surfaces_as_error_event():
 
 
 async def test_decode_passes_language_and_textnorm_through():
-    adapter = FunasrAdapter(language="ja", textnorm="withitn")
+    adapter = FunasrAdapter(language="ja", textnorm="woitn")
     model = _StubModel()
     adapter._load_model = _stub_load(adapter, model)
     await _drive_session(adapter, SessionConfig(), [_pcm_seconds(0.1)])
     _, kwargs = model.calls[-1]
-    assert kwargs == {"language": "ja", "textnorm": "withitn"}
+    assert kwargs == {"language": "ja", "textnorm": "woitn"}
 
 
 async def test_decode_receives_normalised_float32_samples():

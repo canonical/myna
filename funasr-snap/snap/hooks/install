@@ -18,6 +18,11 @@ modelctl set --package verbose="false"
 # Idle-unload: release the model after this many idle seconds (0 = never).
 # 5 min keeps frequent dictation warm but frees RAM when you walk away.
 modelctl set --package sleep-idle-seconds="300"
+# SenseVoice decoder prompt. withitn = punctuation, casing and inverse text
+# normalisation; woitn = spoken form, unpunctuated. One flag drives all three,
+# so this is the key to turn if "2025" for "twenty twenty five" is unwanted -
+# at the price of committing unpunctuated text.
+modelctl set --package textnorm="withitn"
 
 #
 # Activate the single engine.

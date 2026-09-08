@@ -32,6 +32,15 @@ the existing session wire contract unchanged.
   post-processing feature. This supersedes the punctuation scope implied by the
   original feature input.
 
+  **Superseded 2026-09-08.** The premise was wrong: SenseVoice's CTC output is
+  unpunctuated only under the `woitn` decoder prompt. `withitn` conditions the
+  same head to emit punctuation *and* capitalisation, in English as well as
+  Chinese (measured on corpus/english; research.md Decision 5 records the
+  Chinese half). There is no restoration stage to defer, so FR-007/FR-008 below
+  now read the other way: the default is `withitn` and capabilities advertise
+  `punctuation: true`. The shared post-processing feature still owes sherpa a
+  restoration stage - it just does not owe this backend one.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Chinese dictation through the standard client (Priority: P1)
@@ -139,18 +148,19 @@ and complete a dictation session with the network disabled.
 - **FR-006**: The adapter MUST support language selection of `auto`, `zh`, `en`,
   `yue`, `ja`, and `ko`, with `auto` (model-side detection) as the default, and
   MUST advertise exactly this set via capabilities discovery.
-- **FR-007**: The adapter MUST support optional inverse text normalization
-  (digits, dates) as a decode-time choice, defaulting to `woitn` ("without
-  ITN" — spoken words rendered as-is, matching dictation expectations; per
-  research.md Decision 5). The `withitn` mode is available as a constructor
-  flag.
-- **FR-008**: The backend MUST emit transcripts as the model produces them —
-  unpunctuated, without capitalization restoration — and MUST advertise
-  `punctuation: false` in capabilities, matching the existing sherpa backend's
-  posture. Punctuation restoration and all other transcript post-processing
-  (e.g., a CT-Transformer stage, LLM polish) are out of scope here and will be
-  specced separately as a shared post-processing feature serving all
-  unpunctuated backends (sherpa included).
+- **FR-007**: The adapter MUST expose the decoder prompt as a decode-time
+  choice, defaulting to `withitn` - punctuation, capitalisation and inverse
+  text normalization together, since SenseVoice takes them as one input tensor
+  and not as three. `woitn` (spoken form, unpunctuated) MUST remain available
+  as a constructor flag and as a shipped `modelctl set textnorm=` key, for
+  callers who want "twenty twenty five" over "2025" and will accept
+  unpunctuated text as the price.
+- **FR-008**: The backend MUST emit transcripts as the model produces them, and
+  MUST advertise `punctuation` in capabilities as whatever the active decoder
+  prompt actually yields (`true` under `withitn`, `false` under `woitn`) rather
+  than as a constant. Punctuation *restoration* - a separate stage over
+  unpunctuated text, as sherpa needs - remains out of scope here; this backend
+  never needs one.
 - **FR-009**: The backend MUST perform a warm-up inference at load time so that
   the one-time runtime graph-optimization cost is incurred during the
   `preparing` phase, before the backend reports `ready`; first real-utterance
@@ -232,9 +242,10 @@ and complete a dictation session with the network disabled.
 - Hotword/biasing support is out of scope: the ONNX path has no native hotword
   mechanism, the wire contract has no hotword channel today, and the reference
   app's fuzzy post-replacement is judged too fragile to adopt.
-- Unpunctuated output is an accepted v1 limitation (sherpa precedent); accuracy
-  evaluation accounts for it (CER/WER normalization), and the post-processing
-  feature is expected to follow as its own spec.
+- ~~Unpunctuated output is an accepted v1 limitation (sherpa precedent)~~ -
+  retired 2026-09-08: `withitn` punctuates natively at no measurable cost, so
+  the limitation was self-inflicted. Accuracy evaluation is unaffected (CER/WER
+  normalization strips punctuation either way).
 - Chinese reference audio will come from a permissively licensed corpus (e.g., a
   Common Voice zh-CN subset or AISHELL sample), fetched by script and
   gitignored, mirroring `dev/fetch_english_corpus.py`.

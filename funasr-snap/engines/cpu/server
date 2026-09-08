@@ -5,10 +5,18 @@ idle="$(modelctl get sleep-idle-seconds)"
 
 # MODEL_DIR is exported from the active model.yaml and points at the
 # installed SenseVoice ONNX model component (see models/sensevoice/model.yaml).
-# Language/textnorm use the adapter defaults (auto / woitn).
+# Language uses the adapter default (auto).
+#
+# Decoder prompt (set at install, overridable with `modelctl set textnorm=`).
+# withitn is what makes the transcript punctuated and cased; it is a key rather
+# than the adapter default alone so the unpunctuated spoken form stays
+# reachable on a shipped snap.
+textnorm="$(modelctl get textnorm 2>/dev/null || true)"
+
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --adapter funasr \
+    --funasr-textnorm "${textnorm:-withitn}" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-funasr.funasr use-model sensevoice}" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \

@@ -1,9 +1,10 @@
 """FunASR / SenseVoice-Small adapter (feature 009).
 
 Batch-mode CTC recognition via ONNX Runtime. Multilingual: auto/zh/en/yue/ja/ko
-with auto-detection as default. Unpunctuated output (``punctuation: false``,
-sherpa-compatible posture — post-processing deferred to a shared feature).
-Both wire dialects supported unchanged through the existing codec.
+with auto-detection as default. Punctuated and truecased output, natively: the
+``textnorm`` flag is a prompt token the encoder consumes, and ``withitn`` makes
+the same CTC head emit punctuation and casing for free (see ``textnorm`` on the
+constructor). Both wire dialects supported unchanged through the existing codec.
 
 The runtime is the ``funasr-onnx`` PyPI package (MIT, Alibaba DAMO Academy) —
 ONNX Runtime + kaldi-native-fbank + sentencepiece, no torch/NeMo. Model
@@ -93,8 +94,26 @@ class FunasrAdapter:
         model_dir: str | None = None,
         *,
         language: str = "auto",
-        textnorm: str = "woitn",
+        textnorm: str = "withitn",
     ) -> None:
+        """``textnorm`` selects the decoder prompt, and with it whether the
+        transcript is punctuated.
+
+        SenseVoice takes it as an input tensor beside ``language`` (see
+        ``funasr_onnx.SenseVoiceSmall.__call__``), so it conditions the one CTC
+        head rather than adding a stage: ``withitn`` costs nothing and returns
+        punctuation *and* capitalisation. Measured 2026-09-08 over 62.2 s of
+        corpus/english, interleaved (RTF): woitn 0.0167/0.0172 against withitn
+        0.0169/0.0165 - inside run-to-run spread.
+
+        It is the default because dictation output that has to be punctuated by
+        hand is not finished output, and this backend is the only one that can
+        punctuate Chinese. The cost is that the flag is one flag: ITN rides
+        along, so "twenty twenty five" commits as "2025". That trade was taken
+        knowingly (009 research.md Decision 5, which measured CER as a wash:
+        13.21 % woitn against 13.81 % withitn); ``woitn`` remains for callers
+        who want the spoken form and will accept unpunctuated text with it.
+        """
         if language not in _LANGUAGES:
             raise ValueError(f"language must be one of {_LANGUAGES}, got {language!r}")
         if textnorm not in ("woitn", "withitn"):
@@ -129,7 +148,9 @@ class FunasrAdapter:
             models=(self.candidate.model,),
             languages=_LANGUAGES,
             input_formats=(FUNASR_FORMAT,),
-            punctuation=False,  # FR-008: unpunctuated
+            # Not a property of the weights but of the prompt they are given:
+            # woitn decodes the same model to unpunctuated, uncased text.
+            punctuation=self._textnorm == "withitn",
             translation=False,
         )
 

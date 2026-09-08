@@ -35,7 +35,7 @@ session); released on `unload()`.
 |---|---|---|
 | `model` | `SenseVoiceSmall` | ORT inference session — constructed once, reused across sessions |
 | `language` | `"auto"` \| `"zh"` \| `"en"` \| `"yue"` \| `"ja"` \| `"ko"` | Default `auto`; server-flag override |
-| `textnorm` | `"woitn"` \| `"withitn"` | Default `woitn`; constructor flag (FR-007) |
+| `textnorm` | `"woitn"` \| `"withitn"` | Default `withitn` (punctuation + casing + ITN, one prompt token); constructor flag (FR-007) |
 | `model_lock` | `asyncio.Lock` | Guards model load/unload (idempotent, thread-safe) |
 | `num_threads` | `int` | ORT intra-op threads (default 4 per SenseVoice defaults) |
 | `streaming` | `bool` | Always `False` for this feature (batch-only) |
@@ -78,7 +78,7 @@ session start → buffering → (end-of-audio) → decoding → final + done →
 | `models` | `("sensevoice-small",)` | Single model — no size variants in this feature |
 | `languages` | `("auto", "zh", "en", "yue", "ja", "ko")` | Full model-supported set (FR-006) |
 | `input_formats` | `(AudioFormat(sample_rate_hz=16000, channels=1, sample_width_bytes=2),)` | Standard format — audio-push invariant |
-| `punctuation` | `False` | Unpunctuated output (FR-008, sherpa-compatible) |
+| `punctuation` | `textnorm == "withitn"` | Tracks the decoder prompt, not the weights (FR-008) |
 | `translation` | `False` | Not a translation model |
 | `streaming` | `False` | Batch-only (FR-004); may become `True` in a future streaming feature |
 

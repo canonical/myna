@@ -11,8 +11,9 @@ Add a FunASR/SenseVoice-Small inference backend: a `myna.testbed` adapter in
 whisper/nemotron/qwen/sherpa), the runtime dependency as a `funasr` pip extra,
 and a strictly-confined `funasr-snap/` inference snap shipping ONNX-exported
 model weights as components. The surface is batch-mode only, both wire dialects,
-with capabilities advertising the 6-language set and `punctuation: false`
-(sherpa-compatible posture — post-processing deferred to a shared feature).
+with capabilities advertising the 6-language set and `punctuation: true`
+(the `withitn` decoder prompt punctuates and capitalises natively; no
+post-processing stage is needed for this backend).
 Clients, harness, and metrics all work unchanged.
 
 ## Technical Context
@@ -48,7 +49,7 @@ whisper-tiny baseline (SC-002); peak memory within small-model watermark
 tolerance (SC-005).
 
 **Constraints**: No network at runtime; no persisted audio; no transcription
-logging by default; unpunctuated output (punctuation: false); audio-push
+logging by default; audio-push
 invariant (reject off-format, never resample); batch/committed-only
 disposition; warm-up during `preparing` so first utterance latency excludes
 ORT graph-optimization cost.
