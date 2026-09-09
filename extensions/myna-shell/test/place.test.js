@@ -6,7 +6,7 @@
 
 import System from 'system';
 
-import {BOTTOM_MARGIN, chooseMonitorIndex, computePlacement, placementChanged, shrinkWorkAreaForDock} from '../place.js';
+import {BOTTOM_MARGIN, chooseMonitorIndex, computePlacement, placementChanged, pointerOverFrame, shrinkWorkAreaForDock} from '../place.js';
 
 let failures = 0;
 
@@ -204,6 +204,24 @@ const LEFT_SIDE = 3;   // St.Side.LEFT
             focusMonitor: 0, pointerMonitor: 0, primaryIndex: 0,
             monitorCount: 1,
         }), 0);
+}
+
+// --- hover fade: the pointer hit-test ------------------------------------
+
+{
+    const frame = {x: 100, y: 200, width: 360, height: 56};
+
+    check('the pointer inside the frame is a hover',
+        pointerOverFrame(frame, {x: 280, y: 228}));
+    check('the top-left corner is inside',
+        pointerOverFrame(frame, {x: 100, y: 200}));
+    check('the bottom-right corner is outside (exclusive edges)',
+        !pointerOverFrame(frame, {x: 460, y: 256}));
+    check('a pointer to the left is not a hover',
+        !pointerOverFrame(frame, {x: 99, y: 228}));
+    check('a pointer above is not a hover',
+        !pointerOverFrame(frame, {x: 280, y: 199}));
+    check('no frame yet is never a hover', !pointerOverFrame(null, {x: 0, y: 0}));
 }
 
 print(failures === 0 ? 'PASS place.test.js' : `FAIL place.test.js: ${failures} failure(s)`);

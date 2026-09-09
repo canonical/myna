@@ -135,3 +135,23 @@ export function chooseMonitorIndex({
     }
     return -1;
 }
+
+/**
+ * Whether the pointer is over the overlay's frame — the test behind the
+ * hover fade. The overlay's input region is empty, so no enter/leave event
+ * ever reaches the renderer and the host hit-tests the polled pointer
+ * position instead.
+ *
+ * Right and bottom edges are exclusive, as mutter's own rectangles are.
+ *
+ * @param {{x: number, y: number, width: number, height: number}} frame - the
+ *     window's frame rect, in global coordinates.
+ * @param {{x: number, y: number}} pointer - the pointer, in the same space.
+ * @returns {boolean}
+ */
+export function pointerOverFrame(frame, pointer) {
+    if (!frame || !pointer)
+        return false;
+    return pointer.x >= frame.x && pointer.x < frame.x + frame.width &&
+        pointer.y >= frame.y && pointer.y < frame.y + frame.height;
+}

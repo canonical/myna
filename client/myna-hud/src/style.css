@@ -35,8 +35,8 @@ window.myna-hud-window {
      * that appeared from nothing would resize the pill — and therefore the
      * overlay the host has placed — on every notice. */
     border: 1px solid rgba(255, 255, 255, 0.02);
-    /* Matches gnome-shell's `OsdWindow.FADE_TIME`. Drives the show/hide fade
-     * (`.myna-hud-fade-hidden`, window.rs). */
+    /* Matches gnome-shell's `OsdWindow.FADE_TIME`. Drives both the hover dim
+     * below and the show/hide fade (`.myna-hud-fade-hidden`, window.rs). */
     transition: opacity 100ms ease-out;
     /* No drop shadow. The window hugs the pill exactly, so a shadow has
      * nowhere to fade into: it is clipped by the surface edge and reads as
@@ -44,6 +44,12 @@ window.myna-hud-window {
      * visible against a light desktop. Restoring it would mean growing the
      * window with a transparent margin, which also moves the overlay's
      * extent and therefore the gap the host places it at (R21/R22). */
+}
+
+/* The pointer is over the overlay: fade almost out so the pill never masks
+ * the text being dictated into. */
+.myna-hud-pill.myna-hud-hover {
+    opacity: 0.2;
 }
 
 /* The show/hide fade (window.rs `set_hidden_faded`), so the pill fades out

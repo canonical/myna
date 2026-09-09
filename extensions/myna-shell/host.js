@@ -13,6 +13,7 @@
 // Meta.WaylandClient, Meta.Window and the Shell's signals, and holds the
 // live handles so disable() can tear everything down (XH7).
 
+import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -20,8 +21,9 @@ import Meta from 'gi://Meta';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import {getPointerWatcher} from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 
-import {computePlacement, placementChanged, shrinkWorkAreaForDock} from './place.js';
+import {computePlacement, placementChanged, pointerOverFrame, shrinkWorkAreaForDock} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
 import {DictationAnnouncer} from './announcer.js';
@@ -31,6 +33,18 @@ import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
 // disable() can cancel the wait rather than relying on a flag to ignore a
 // late callback. Promisified once at module load (idempotent).
 Gio._promisify(Gio.Subprocess.prototype, 'wait_async', 'wait_finish');
+
+/** Actor opacity (0–255) the overlay fades to under the pointer — 20%, low
+ * enough to read the text underneath, high enough to keep the pill legible. */
+const HOVER_OPACITY = 51;
+
+/** How long the fade in/out takes (ms). */
+const HOVER_FADE_MS = 150;
+
+/** Pointer poll interval (ms). The overlay is click-through, so there are no
+ * enter/leave events to react to — the host samples the pointer instead, at
+ * the rate the Shell's own pointer-driven UI uses. */
+const HOVER_POLL_MS = 100;
 
 /** A GLib-style env predicate: the file exists and is executable, OR it is a
  * bare command name found on PATH (for `snap`). */
@@ -101,6 +115,12 @@ export class OverlayHost {
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
         this._announcer = null;
+
+        // The pointer poll behind the hover fade, and whether the pointer is
+        // currently over the overlay. Both last exactly as long as an
+        // adopted window.
+        this._pointerWatch = null;
+        this._hovered = false;
 
         // Cancels the current subprocess wait. A fresh Cancellable is made
         // for each spawn rather than cancelling() one (reset is discouraged
@@ -190,6 +210,8 @@ export class OverlayHost {
         this._cancelPendingRestart();
         this._cancellable?.cancel();
         this._cancellable = null;
+
+        this._stopHoverWatch();
 
         // Return the actor to the window group before we drop the window, so
         // it is never orphaned above the overview.
@@ -409,6 +431,7 @@ export class OverlayHost {
         }
         this._makeOverlay(window);
         this._connectOverview();
+        this._startHoverWatch();
 
         // Window-scoped signals, keyed on a fresh per-adoption token so they
         // can be dropped when this window unmanages at idle without touching
@@ -439,6 +462,7 @@ export class OverlayHost {
         if (window !== this._window)
             return;
         this._disconnectOverview();
+        this._stopHoverWatch();
         this._disconnectWindowSignals();
         global.display.disconnectObject(this);
         global.backend.get_monitor_manager().disconnectObject(this);
@@ -527,6 +551,43 @@ export class OverlayHost {
         Main.overview.disconnectObject(this);
     }
 
+    // ── Hover fade ─────────────────────────────────────────────
+
+    /** Fade the overlay down while the pointer is over it, so it never masks
+     * the window being dictated into. The renderer cannot do this itself: its
+     * surface declares an empty input region (R22), so it receives no
+     * enter/leave events at all. */
+    _startHoverWatch() {
+        this._stopHoverWatch();
+        this._pointerWatch = getPointerWatcher().addWatch(
+            HOVER_POLL_MS, (x, y) => this._onPointerMoved(x, y));
+        const [x, y] = global.get_pointer();
+        this._onPointerMoved(x, y);
+    }
+
+    _stopHoverWatch() {
+        this._pointerWatch?.remove();
+        this._pointerWatch = null;
+        this._hovered = false;
+    }
+
+    _onPointerMoved(x, y) {
+        if (!this._window)
+            return;
+        const over = pointerOverFrame(this._window.get_frame_rect(), {x, y});
+        if (over === this._hovered)
+            return;
+        this._hovered = over;
+        const actor = this._window.get_compositor_private();
+        if (!actor)
+            return;
+        actor.ease({
+            opacity: over ? HOVER_OPACITY : 255,
+            duration: HOVER_FADE_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+    }
+
     // ── Positioning (XH1) ───────────────────────────────────────────────
 
     /** A display was plugged, unplugged or rearranged: the pinned index may
@@ -594,6 +655,7 @@ export class OverlayHost {
         // reconnects the map watch for the respawn, so it is dropped here too
         // rather than left dangling on the exited process's would-be windows.
         this._disconnectOverview();
+        this._stopHoverWatch();
         this._disconnectWindowSignals();
         this._disconnectSpawnSignals();
         global.display.disconnectObject(this);
