@@ -38,8 +38,7 @@ const TRACK_ALPHA: f64 = 0.1;
 
 /// The unfilled track: a neutral white groove. Tinting it with the accent
 /// made the fill harder to read.
-const TRACK_COLOR: gtk::gdk::RGBA =
-    gtk::gdk::RGBA::new(1.0, 1.0, 1.0, TRACK_ALPHA as f32);
+const TRACK_COLOR: gtk::gdk::RGBA = gtk::gdk::RGBA::new(1.0, 1.0, 1.0, TRACK_ALPHA as f32);
 
 /// The CSS class that switches the bar to the warning (recoverable) colour.
 /// Mirrors the pill's own `.myna-hud-severity-recoverable`.

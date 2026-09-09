@@ -332,8 +332,9 @@ impl Pill {
                                             if window.has_css_class("myna-hud-window") {
                                                 // The same fade as the
                                                 // window's own hide path.
-                                                this.pill
-                                                    .add_css_class(crate::window::FADE_HIDDEN_CLASS);
+                                                this.pill.add_css_class(
+                                                    crate::window::FADE_HIDDEN_CLASS,
+                                                );
                                                 let window = window.clone();
                                                 glib::timeout_add_local_once(
                                                     std::time::Duration::from_millis(
