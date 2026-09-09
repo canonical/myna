@@ -304,6 +304,12 @@ install-desktop: ## Install the Myna Settings desktop entry + icons for this use
 	-update-desktop-database $(HOME)/.local/share/applications
 	@echo "installed com.canonical.Myna.Config; a running app picks the icon up on its next start"
 
+# The settings app, run from the workspace. Needs `make install-schema` first:
+# unpackaged, it reads the host's schema copy, not the snap's.
+.PHONY: run-config
+run-config: ## Launch Myna Settings (myna-config) from the workspace
+	cd client && cargo run -p myna-config
+
 ##@ Snaps
 
 define snap_rule
