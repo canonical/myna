@@ -45,8 +45,10 @@ export class DictationAnnouncer {
         });
         Main.layoutManager.uiGroup.add_child(this._a11yActor);
 
-        // The shared proxy owns the name watch and is ready synchronously;
-        // the announcer just consumes its g-properties-changed.
+        // The shared proxy owns the name watch. The announcer is created
+        // only once a renderer window has been adopted, which cannot happen
+        // before the daemon appeared on that proxy, so it is live here — no
+        // whenReady() needed. It just consumes g-properties-changed.
         this._proxy.proxy.connectObject('g-properties-changed',
             (p, changed, _invalidated) => this._onPropertiesChanged(changed), this);
         this._reflect();

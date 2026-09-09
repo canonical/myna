@@ -9,7 +9,10 @@
 // `Gio.bus_watch_name`.
 //
 // The proxy is created asynchronously (so it can be cancelled on teardown)
-// and handed out through `proxy` once resolved. Nothing else is wrapped.
+// and handed out through `proxy` once resolved. Because creation never
+// completes within the enable() that starts it, consumers that need the live
+// object attach through `whenReady()` rather than reading `proxy` straight
+// away. Nothing else is wrapped.
 
 import Gio from 'gi://Gio';
 
@@ -75,10 +78,15 @@ export class DictationProxy {
         this._proxy = null;
     }
 
-    /** Run `callback` once the proxy exists, or right away if it already
-     * does. Creation is asynchronous, so a consumer that reaches for `proxy`
-     * immediately after start() would otherwise find null; a pending callback
-     * is dropped by stop(), so a teardown mid-creation never fires it. */
+    /** Run `callback` once the live proxy exists: immediately if it already
+     * does, otherwise when creation resolves.
+     *
+     * This is the only safe way to reach `proxy`. An extension enabled after
+     * startup (unlocking the screen re-enables them all) calls start() and
+     * enable() in the same main-loop iteration, so creation is still in
+     * flight when the consumers run; a waiter never fires if creation fails
+     * or stop() lands first, which leaves the consumer dormant rather than
+     * reading a null proxy. */
     whenReady(callback) {
         if (this._proxy)
             callback();
@@ -86,8 +94,8 @@ export class DictationProxy {
             this._readyCallbacks.push(callback);
     }
 
-    /** The live Gio.DBusProxy, or null while creation is in flight (start
-     * before most consumers, so it resolves before they need it). */
+    /** The live Gio.DBusProxy, or null while creation is in flight, after a
+     * failed creation, or after stop(). Use whenReady() to attach to it. */
     get proxy() {
         return this._proxy;
     }

@@ -160,9 +160,12 @@ export class OverlayHost {
      * Presence is the shared proxy's `g-name-owner`, watched directly on the
      * very Gio.DBusProxy both the host and the announcer read — one proxy,
      * one source of truth. The proxy is created with DO_NOT_AUTO_START, so
-     * watching never brings the daemon up. Creation is asynchronous, so the
-     * watch waits for it rather than reaching for a proxy that is still null
-     * at enable() time.
+     * watching never brings the daemon up.
+     *
+     * The proxy is built asynchronously, and an extension enabled after
+     * startup (unlocking the screen re-enables them all) gets here in the
+     * same main-loop iteration that started it — so attach through
+     * whenReady() rather than assuming a live object.
      */
     _watchDaemon() {
         this._proxy.whenReady(() => {
