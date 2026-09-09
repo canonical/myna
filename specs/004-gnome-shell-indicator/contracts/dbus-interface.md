@@ -38,6 +38,7 @@ this interface.
 | `AudioRms` | `d` | `[0.0, 1.0]` | RMS level; `0.0` when idle (E2) |
 | `AudioPeak` | `d` | `[0.0, 1.0]` | peak level; `0.0` when idle (E2) |
 | `StatusMessage` | `s` | content-free publisher-owned label; `""` while `State==idle` | user-facing status label (E3): every visible state has one, including `loading`, `recording`, `transcribing`, and `finalizing`. |
+| `HudStyle` | `s` | a `hud-style` settings nick (`bar`\|`ribbon`\|`vumeter`\|`progress`, additive); `""` from a publisher predating the property | **(2026-09-09)** which audio-level presentation the renderer should draw. The publisher is the only settings reader; the renderer is told, and resolves an unknown or empty nick to its default (C8). |
 
 ### Signals
 

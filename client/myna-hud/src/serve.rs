@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use zbus::interface;
 
+use crate::hud_logic::HudStyle;
 use crate::session_control::Session;
 use crate::simulator::{envelope_to_levels, PUBLISH_HZ};
 use crate::states::wire;
@@ -52,6 +53,11 @@ pub struct Shared {
     controls: Arc<Mutex<Controls>>,
     session: Arc<Mutex<Session>>,
     publishing: Arc<std::sync::atomic::AtomicBool>,
+    /// The `HudStyle` nick to advertise. Not part of [`Controls`]: the style
+    /// is a standing preference the real daemon carries from settings, not
+    /// per-tick session state, and it is published whether or not a session
+    /// is active.
+    hud_style: Arc<Mutex<String>>,
 }
 
 impl Default for Shared {
@@ -62,6 +68,7 @@ impl Default for Shared {
             controls: Arc::new(Mutex::new(Controls::default())),
             session: Arc::new(Mutex::new(Session::default())),
             publishing: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            hud_style: Arc::new(Mutex::new(HudStyle::default().nick().to_string())),
         }
     }
 }
@@ -79,6 +86,18 @@ impl Shared {
     pub fn set_publishing(&self, publishing: bool) {
         self.publishing
             .store(publishing, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The `HudStyle` nick currently advertised.
+    pub fn hud_style(&self) -> String {
+        self.hud_style.lock().unwrap().clone()
+    }
+
+    /// Advertise a different indicator style (the lab's style selector), so a
+    /// real `myna-hud` consuming this simulator exercises the same push path
+    /// the daemon uses.
+    pub fn set_hud_style(&self, nick: &str) {
+        *self.hud_style.lock().unwrap() = nick.to_string();
     }
 
     /// Replace the live controls (called by the lab UI).
@@ -127,17 +146,20 @@ pub struct Dictation {
     status_message: String,
     audio_rms: f64,
     audio_peak: f64,
+    hud_style: String,
 }
 
 impl Dictation {
     fn new(shared: Shared) -> Self {
         let (state, status_message, audio_rms, audio_peak) = shared.snapshot();
+        let hud_style = shared.hud_style();
         Self {
             shared,
             state,
             status_message,
             audio_rms,
             audio_peak,
+            hud_style,
         }
     }
 }
@@ -181,6 +203,11 @@ impl Dictation {
     #[zbus(property)]
     fn audio_peak(&self) -> f64 {
         self.audio_peak
+    }
+
+    #[zbus(property)]
+    fn hud_style(&self) -> String {
+        self.hud_style.clone()
     }
 }
 
@@ -262,6 +289,13 @@ async fn publish_once(connection: &zbus::Connection, shared: &Shared) -> zbus::R
     if iface.status_message != status_message {
         iface.status_message = status_message;
         iface.status_message_changed(emitter).await?;
+    }
+    // Deduplicated like the state descriptor: switching the meter rebuilds a
+    // widget in the consumer, which is not something to do 20 times a second.
+    let hud_style = shared.hud_style();
+    if iface.hud_style != hud_style {
+        iface.hud_style = hud_style;
+        iface.hud_style_changed(emitter).await?;
     }
     // Levels are pushed every tick, unconditionally — arrival time is part
     // of the stale-decay contract (R16a), so identical values still refresh.

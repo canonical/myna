@@ -10,6 +10,7 @@
 //! well-known name and serves `/com/canonical/Myna/Dictation` lands in the polish phase
 //! (contract publisher.md P13–P15).
 
+pub mod hud_style;
 pub mod pump;
 pub mod serve;
 pub mod status;
@@ -48,8 +49,8 @@ pub enum PropertyValue {
 /// testable without a session bus.
 #[async_trait]
 pub trait Bus: Send {
-    /// Set a property (`State` / `StatusMessage` / `AudioRms` / `AudioPeak`),
-    /// emitting `PropertiesChanged` on the real bus.
+    /// Set a property (`State` / `StatusMessage` / `AudioRms` / `AudioPeak` /
+    /// `HudStyle`), emitting `PropertiesChanged` on the real bus.
     async fn set_property(&mut self, name: &str, value: PropertyValue);
 }
 

@@ -46,6 +46,7 @@
 
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
+use std::sync::Arc;
 
 use futures_util::future::{BoxFuture, FutureExt};
 
@@ -216,14 +217,22 @@ fn pick(flag: &Option<String>, user: &Option<String>) -> Option<String> {
 /// on the command line still outranks a settings write made an hour later, and
 /// only the answer lands in these cells.
 ///
-/// The two keys here are the two whose readers ask for them again anyway -
-/// preedit at each transcript event, language at each press. `activation` and
-/// `hotkey` are bound into the trigger at startup and are *not* live; a change
-/// to either says so in the journal instead of pretending to apply.
+/// The two resolved keys here are the two whose readers ask for them again
+/// anyway - preedit at each transcript event, language at each press.
+/// `activation` and `hotkey` are bound into the trigger at startup and are
+/// *not* live; a change to either says so in the journal instead of pretending
+/// to apply.
+///
+/// `hud_style` is a third kind: not resolved against anything and never read
+/// by this daemon, only *carried* to the HUD over the bus. It lives here
+/// because this is where the one settings subscription is, and one
+/// subscription is the point - see [`myna_desktop::dbus::hud_style`] for the
+/// bug that a second, independently-backed settings reader caused.
 #[derive(Clone)]
 struct LiveSettings {
     preedit: Live<bool>,
     language: Live<Option<String>>,
+    hud_style: Arc<tokio::sync::watch::Sender<String>>,
 }
 
 impl LiveSettings {
@@ -231,19 +240,31 @@ impl LiveSettings {
         Self {
             preedit: Live::new(resolved.preedit),
             language: Live::new(resolved.language.clone()),
+            // The schema default until the first read in `follow`; a machine
+            // with no schema installed keeps it, which is the same answer
+            // `Settings::load` gives there.
+            hud_style: Arc::new(tokio::sync::watch::Sender::new(
+                myna_core::settings::DEFAULT_HUD_STYLE.to_string(),
+            )),
         }
     }
 
     /// Subscribe to the settings store, writing every change through these
     /// cells. The returned watch must outlive the controller - dropping it
     /// ends the subscription.
-    fn follow(&self, args: &Args, startup: &Resolved) -> Option<myna_core::SettingsWatch> {
+    fn follow(
+        &self,
+        args: &Args,
+        startup: &Resolved,
+        bus: Option<SharedBus>,
+    ) -> Option<myna_core::SettingsWatch> {
         let (activation, hotkey) = (startup.activation, startup.hotkey.clone());
         let watch = myna_core::settings::watch({
             let (args, live) = (args.clone(), self.clone());
             move |settings| {
                 let now = Resolved::new(&args, &settings);
                 live.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
+                live.carry_hud_style(&settings);
                 if now.activation != activation || now.hotkey != hotkey {
                     myna_core::info_log!(
                         "settings",
@@ -263,6 +284,7 @@ impl LiveSettings {
             let settings = myna_core::Settings::load();
             let now = Resolved::new(args, &settings);
             self.apply(&now, &preedit_reason(args.preedit, settings.streaming_mode));
+            self.carry_hud_style(&settings);
         } else {
             // Not a failure: the same missing schema that makes `Settings::load`
             // read defaults. Said out loud because "my change did nothing" is
@@ -273,7 +295,31 @@ impl LiveSettings {
                 myna_core::settings::SCHEMA_ID
             );
         }
+        // Started after the initial read above, so the HUD is told the real
+        // style once rather than the default and then a correction.
+        if let Some(bus) = bus {
+            tokio::spawn(myna_desktop::dbus::hud_style::run(
+                bus,
+                self.hud_style.subscribe(),
+            ));
+        }
         watch
+    }
+
+    /// Hand the `hud-style` nick to the forwarder. Unresolved and unvalidated
+    /// on purpose: the schema constrains it on the way in and the renderer
+    /// falls back on anything it does not know, so a daemon that "corrected" a
+    /// newer nick would be the thing stopping a newer HUD from honouring it.
+    fn carry_hud_style(&self, settings: &myna_core::Settings) {
+        let nick = settings
+            .hud_style
+            .clone()
+            .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string());
+        if *self.hud_style.borrow() == nick {
+            return;
+        }
+        myna_core::info_log!("settings", "hud-style -> {nick} (live, pushed to the HUD)");
+        self.hud_style.send_replace(nick);
     }
 
     /// Write the new resolution through, logging only what actually moved -
@@ -687,7 +733,7 @@ async fn run_controller(
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
-    let _settings_watch = live.follow(&args, &resolved);
+    let _settings_watch = live.follow(&args, &resolved, pump_bus.clone());
 
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))

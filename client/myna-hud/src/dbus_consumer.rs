@@ -33,19 +33,24 @@
 pub const BUS_NAME: &str = "com.canonical.Myna.Dictation";
 pub const OBJECT_PATH: &str = "/com/canonical/Myna/Dictation";
 
-/// A snapshot of the interface's four properties, as read from the proxy's
-/// cache (E1/E2/E3).
+/// A snapshot of the interface's properties, as read from the proxy's cache
+/// (E1/E2/E3).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub state: String,
     pub status_message: String,
     pub audio_rms: f64,
     pub audio_peak: f64,
+    /// The `hud-style` nick the publisher wants drawn. Empty from a publisher
+    /// that predates the property, which the renderer reads as its default —
+    /// the additive-compatibility rule, C8.
+    pub hud_style: String,
 }
 
 type StateCallback = Box<dyn Fn(&str, &str)>;
 type LevelCallback = Box<dyn Fn(f64, f64)>;
 type AvailabilityCallback = Box<dyn Fn(bool)>;
+type HudStyleCallback = Box<dyn Fn(&str)>;
 
 /// Builder for [`DictationService`] — the callbacks are all optional, in the
 /// GJS original's spirit.
@@ -54,6 +59,7 @@ pub struct DictationServiceBuilder {
     on_state_changed: Option<StateCallback>,
     on_level: Option<LevelCallback>,
     on_availability_changed: Option<AvailabilityCallback>,
+    on_hud_style_changed: Option<HudStyleCallback>,
 }
 
 impl DictationServiceBuilder {
@@ -77,14 +83,25 @@ impl DictationServiceBuilder {
         self
     }
 
+    /// Called with the `hud-style` nick whenever the publisher changes it,
+    /// and once on name-appeared. Deduplicated: switching the meter tears
+    /// down and rebuilds a widget, so re-asserting an unchanged style on
+    /// every level tick would be a visible cost at ~20 Hz.
+    pub fn on_hud_style_changed(mut self, f: impl Fn(&str) + 'static) -> Self {
+        self.on_hud_style_changed = Some(Box::new(f));
+        self
+    }
+
     pub fn build(self) -> DictationService {
         DictationService {
             on_state_changed: self.on_state_changed,
             on_level: self.on_level,
             on_availability_changed: self.on_availability_changed,
+            on_hud_style_changed: self.on_hud_style_changed,
             watching: false,
             available: false,
             last_state: None,
+            last_hud_style: None,
         }
     }
 }
@@ -95,10 +112,13 @@ pub struct DictationService {
     on_state_changed: Option<StateCallback>,
     on_level: Option<LevelCallback>,
     on_availability_changed: Option<AvailabilityCallback>,
+    on_hud_style_changed: Option<HudStyleCallback>,
     watching: bool,
     available: bool,
     /// The last `(state, status_message)` pair emitted, for the dedup rule.
     last_state: Option<(String, String)>,
+    /// The last `hud-style` nick emitted, for the same reason.
+    last_hud_style: Option<String>,
 }
 
 impl DictationService {
@@ -118,6 +138,7 @@ impl DictationService {
         self.watching = false;
         self.available = false;
         self.last_state = None;
+        self.last_hud_style = None;
     }
 
     /// Whether the name currently has an owner (E5).
@@ -151,6 +172,11 @@ impl DictationService {
         }
         self.available = false;
         self.last_state = Some((crate::states::wire::IDLE.to_string(), String::new()));
+        // The style is deliberately NOT cleared here. State is session data
+        // and a dead publisher means "not dictating"; the style is a standing
+        // preference, and resetting the meter to the default every time the
+        // daemon restarts would be a visible flicker that says nothing true.
+        // A publisher that comes back re-asserts it on name-appeared anyway.
         if let Some(cb) = &self.on_state_changed {
             cb(crate::states::wire::IDLE, "");
         }
@@ -169,6 +195,12 @@ impl DictationService {
     }
 
     fn reflect(&mut self, snapshot: Snapshot) {
+        if self.last_hud_style.as_deref() != Some(snapshot.hud_style.as_str()) {
+            self.last_hud_style = Some(snapshot.hud_style.clone());
+            if let Some(cb) = &self.on_hud_style_changed {
+                cb(&snapshot.hud_style);
+            }
+        }
         let pair = (snapshot.state.clone(), snapshot.status_message.clone());
         if self.last_state.as_ref() != Some(&pair) {
             self.last_state = Some(pair);

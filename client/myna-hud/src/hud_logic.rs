@@ -14,8 +14,10 @@
 use crate::ribbon::RibbonPhase;
 use crate::states::{DictationState, Severity};
 
-/// The HUD's audio-level presentation, selected by the `hud-style` GSettings
-/// key (`com.canonical.Myna.Dictation`).
+/// The HUD's audio-level presentation. Chosen by the `hud-style` setting, but
+/// read from the publisher's `HudStyle` property rather than from a settings
+/// store: see `myna_desktop::dbus::hud_style` for why the HUD has no reader
+/// of its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HudStyle {
     /// A simple level bar in the accent colour (the default; `vumeter.png`).
@@ -31,13 +33,25 @@ pub enum HudStyle {
 
 impl HudStyle {
     /// Parse a `hud-style` nick; anything unrecognised is the default (Bar) —
-    /// a foreign/newer value must never break the HUD.
+    /// a foreign/newer value must never break the HUD. This is also what an
+    /// *older* publisher's empty `HudStyle` resolves to (contract C8).
     pub fn from_nick(nick: &str) -> Self {
         match nick {
             "ribbon" => HudStyle::Ribbon,
             "vumeter" => HudStyle::Vumeter,
             "progress" => HudStyle::Progress,
             _ => HudStyle::Bar,
+        }
+    }
+
+    /// The nick this style is published as — the inverse of
+    /// [`from_nick`](Self::from_nick) for every value it can produce.
+    pub fn nick(self) -> &'static str {
+        match self {
+            HudStyle::Bar => "bar",
+            HudStyle::Ribbon => "ribbon",
+            HudStyle::Vumeter => "vumeter",
+            HudStyle::Progress => "progress",
         }
     }
 }

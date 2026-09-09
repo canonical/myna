@@ -109,7 +109,7 @@ impl Target {
     fn set_hud_style_override(&self, style: Option<crate::hud_logic::HudStyle>) {
         match self {
             Target::Window(w) => w.set_hud_style_override(style),
-            Target::Embedded(p) => p.set_hud_style(style),
+            Target::Embedded(p) => p.set_hud_style_override(style),
         }
     }
 
@@ -288,9 +288,10 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .build();
     accent_row.set_selected(0);
 
-    // Indicator style: the GSettings-backed `hud-style` (bar / ribbon /
-    // vumeter), overridable here for previewing each without touching the
-    // desktop store. `default` re-reads the desktop value (now `bar`).
+    // Indicator style: what the publisher sends on `HudStyle` (bar / ribbon /
+    // vumeter / progress), overridable here for previewing each. `default`
+    // releases the override and also makes the served publisher advertise the
+    // schema default, so `--serve-dbus` drives a real HUD down the real path.
     let hud_style_model =
         gtk::StringList::new(&["default", "bar", "ribbon", "vumeter", "progress"]);
     let hud_style_row = adw::ComboRow::builder()
@@ -320,6 +321,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     hud_style_row.connect_selected_notify({
         let target = target.clone();
         let controls = controls.clone();
+        let shared = shared.clone();
         move |row| {
             let style = match row.selected() {
                 1 => Some(crate::hud_logic::HudStyle::Bar),
@@ -330,6 +332,10 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             };
             controls.borrow_mut().hud_style = style;
             target.borrow().set_hud_style_override(style);
+            // Also advertise it, so an external `myna-hud` pointed at
+            // `--serve-dbus` swaps meters over the same property the daemon
+            // publishes rather than only this preview.
+            shared.set_hud_style(style.unwrap_or_default().nick());
         }
     });
 

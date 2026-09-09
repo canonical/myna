@@ -1,7 +1,8 @@
 //! The real `zbus`-backed [`Bus`]: serves `com.canonical.Myna.Dictation` at
 //! `/com/canonical/Myna/Dictation` on the session bus (feature 004, contract
-//! dbus-interface.md §Bus topology). State + level only — the property shapes
-//! are `s`/`d`, so no transcript-bearing value can cross (C3).
+//! dbus-interface.md §Bus topology). State, level and the HUD's presentation
+//! style only — the property shapes are `s`/`d`, so no transcript-bearing
+//! value can cross (C3).
 //!
 //! Name lifecycle: requested at [`ZbusBus::serve`], released when the
 //! connection drops at shutdown (P13/P14; the gated round-trip suite proves
@@ -56,12 +57,21 @@ struct ServedState {
     audio_rms: f64,
     audio_peak: f64,
     status_message: String,
+    hud_style: String,
 }
 
 impl ServedState {
     fn new() -> Self {
         Self {
             state: crate::indicator::dbus::wire_state::IDLE.to_string(),
+            // Read here, not left empty for the forwarder to fill: a HUD that
+            // connects between `serve()` and the first publish reads this
+            // snapshot, and a blank would make it render the wrong meter for
+            // that window. The daemon is the only settings reader (see
+            // `dbus::hud_style`), so this read is also the only one.
+            hud_style: myna_core::Settings::load()
+                .hud_style
+                .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string()),
             ..Default::default()
         }
     }
@@ -258,6 +268,19 @@ impl DictationObject {
             .lock()
             .expect("served state poisoned")
             .status_message
+            .clone()
+    }
+
+    /// `HudStyle`: which audio-level presentation the HUD should draw, as the
+    /// `hud-style` settings nick. The renderer reads no settings of its own —
+    /// see `dbus::hud_style` for why that reader was removed rather than
+    /// repaired.
+    #[zbus(property)]
+    async fn hud_style(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .hud_style
             .clone()
     }
 }
@@ -514,6 +537,7 @@ impl Bus for ZbusBus {
                     ("StatusMessage", PropertyValue::Str(s)) => served.status_message = s.clone(),
                     ("AudioRms", PropertyValue::F64(d)) => served.audio_rms = *d,
                     ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
+                    ("HudStyle", PropertyValue::Str(s)) => served.hud_style = s.clone(),
                     _ => {
                         myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
@@ -532,6 +556,7 @@ impl Bus for ZbusBus {
                 "StatusMessage" => iface.status_message_changed(emitter).await,
                 "AudioRms" => iface.audio_rms_changed(emitter).await,
                 "AudioPeak" => iface.audio_peak_changed(emitter).await,
+                "HudStyle" => iface.hud_style_changed(emitter).await,
                 _ => Ok(()),
             }
         }

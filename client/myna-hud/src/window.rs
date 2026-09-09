@@ -202,11 +202,16 @@ impl HudWindow {
         self.pill.set_reduced_motion_override(value);
     }
 
-    /// Override the HUD indicator style for lab testing (the `hud-style`
-    /// GSettings key); `None` returns to the desktop preference.
+    /// Set the HUD indicator style, as published on `HudStyle`.
+    pub fn set_hud_style(&self, style: crate::hud_logic::HudStyle) {
+        self.pill.set_hud_style(style);
+    }
+
+    /// Override the HUD indicator style for lab testing; `None` returns to
+    /// whatever the publisher last sent.
     #[cfg(dev_lab)]
     pub fn set_hud_style_override(&self, style: Option<crate::hud_logic::HudStyle>) {
-        self.pill.set_hud_style(style);
+        self.pill.set_hud_style_override(style);
     }
 
     /// Force the accent hex (lab override); `None` returns to the desktop.

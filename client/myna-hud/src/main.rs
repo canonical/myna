@@ -20,6 +20,7 @@ use libadwaita::prelude::*;
 
 use myna_hud::bus::{self, BusEvent};
 use myna_hud::dbus_consumer::DictationService;
+use myna_hud::hud_logic::HudStyle;
 use myna_hud::signals::quit_on_signal;
 use myna_hud::states::state_to_descriptor;
 use myna_hud::window::HudWindow;
@@ -170,6 +171,10 @@ fn activate_hosted(app: &adw::Application) {
             .on_level({
                 let hud = hud_for_events.clone();
                 move |rms, peak| hud.push_level(rms, peak)
+            })
+            .on_hud_style_changed({
+                let hud = hud_for_events.clone();
+                move |nick| hud.set_hud_style(HudStyle::from_nick(nick))
             })
             .build();
         service.enable();

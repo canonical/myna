@@ -103,8 +103,8 @@ fn run(sender: async_channel::Sender<BusEvent>) -> zbus::Result<()> {
                 };
                 for _ in changes {
                     // Re-read the whole set rather than merging the
-                    // signal's partial payload: the publisher pushes all
-                    // four properties together, and a full read cannot
+                    // signal's partial payload: the publisher pushes the
+                    // level properties together, and a full read cannot
                     // drift from the peer's actual state.
                     match read_snapshot(&properties) {
                         Ok(snapshot) => {
@@ -149,7 +149,7 @@ fn run(sender: async_channel::Sender<BusEvent>) -> zbus::Result<()> {
     Ok(())
 }
 
-/// Read all four properties in one round trip.
+/// Read the whole property set in one round trip.
 fn read_snapshot(properties: &PropertiesProxy<'_>) -> zbus::Result<Snapshot> {
     let interface: InterfaceName = INTERFACE.try_into()?;
     let all = properties.get_all(interface)?;
@@ -165,6 +165,7 @@ fn snapshot_from(map: &HashMap<String, OwnedValue>) -> Snapshot {
         status_message: string_of(map, "StatusMessage"),
         audio_rms: double_of(map, "AudioRms"),
         audio_peak: double_of(map, "AudioPeak"),
+        hud_style: string_of(map, "HudStyle"),
     }
 }
 

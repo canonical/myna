@@ -76,6 +76,7 @@ fn x8_name_appeared_reflects_the_current_state() {
         status_message: "Listening".into(),
         audio_rms: 0.2,
         audio_peak: 0.4,
+        ..Default::default()
     });
 
     let events = recorder.borrow().events.clone();
@@ -138,6 +139,7 @@ fn properties_changed_forwards_state_and_levels() {
         status_message: "Listening".into(),
         audio_rms: 0.5,
         audio_peak: 0.7,
+        ..Default::default()
     });
 
     let events = recorder.borrow().events.clone();
@@ -212,6 +214,7 @@ fn r16a_repeated_levels_are_still_forwarded() {
             status_message: "Listening".into(),
             audio_rms: 0.31,
             audio_peak: 0.42,
+            ..Default::default()
         });
     }
     let levels = recorder
@@ -247,6 +250,7 @@ fn repeated_states_are_deduplicated() {
             status_message: "Listening".into(),
             audio_rms: 0.1,
             audio_peak: 0.2,
+            ..Default::default()
         });
     }
     let states = recorder

@@ -60,6 +60,11 @@ pub const KEY_HUD_STYLE: &str = "hud-style";
 /// The accepted HUD style nicks.
 pub const HUD_STYLES: &[&str] = &["bar", "ribbon", "vumeter", "progress"];
 
+/// The `hud-style` the schema defaults to. Duplicated from the schema so the
+/// value survives a machine with no schema installed, which is exactly when
+/// [`Settings::hud_style`] reads `None`.
+pub const DEFAULT_HUD_STYLE: &str = "bar";
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

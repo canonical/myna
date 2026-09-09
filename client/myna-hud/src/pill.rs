@@ -96,9 +96,13 @@ struct PillState {
     /// when the colour genuinely changes rather than every frame.
     accent: Option<crate::shader::Rgb>,
     /// The HUD's audio-level presentation: the GPU ribbon or the classic
-    /// segmented meter. Read from `hud-style` at build, re-read live on a
-    /// settings change.
+    /// segmented meter. Pushed by the publisher over `HudStyle`, never read
+    /// from settings here — see `myna_desktop::dbus::hud_style`.
     hud_style: HudStyle,
+    #[cfg(dev_lab)]
+    /// Lab override: when `Some`, replaces the published `hud_style` and is
+    /// not clobbered by a publisher push, like `reduced_motion_override`.
+    hud_style_override: Option<HudStyle>,
     #[cfg(dev_lab)]
     /// Lab override: when `Some`, forces the accent hex instead of the
     /// desktop's — libadwaita has no public runtime accent setter (it is a
@@ -202,7 +206,12 @@ impl Pill {
             // ribbon is mapped.
             palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
             accent: None,
-            hud_style: platform::probe_hud_style(),
+            // The default until the publisher says otherwise: nothing is
+            // drawn before the first bus event anyway, so no wrong meter is
+            // ever visible.
+            hud_style: HudStyle::default(),
+            #[cfg(dev_lab)]
+            hud_style_override: None,
             #[cfg(dev_lab)]
             accent_override: None,
             #[cfg(dev_lab)]
@@ -562,17 +571,6 @@ impl Pill {
             // Recompute the non-ribbon views' pulse pace.
             this.push_reduced_motion();
 
-            // The hud-style has no lab override in the shipped pill; re-read
-            // the desktop preference live so `myna.config set hud-style …`
-            // swaps the meter without a restart.
-            if {
-                let state = this.state.borrow();
-                state.hud_style
-            } != platform::probe_hud_style()
-            {
-                this.set_hud_style(None);
-            }
-
             // High contrast is a plain setting too — unless the lab has
             // pinned it, re-read the desktop preference live.
             // (The override survives while set, like reduced-motion.)
@@ -651,14 +649,20 @@ impl Pill {
         self.progress.set_reduced_motion(reduced);
     }
 
-    /// Switch the audio-level presentation (the `hud-style` setting): the
-    /// accent level bar, the GPU ribbon, or the classic segmented meter.
-    /// `None` re-reads the desktop preference
-    /// (`com.canonical.Myna.Dictation hud-style`).
-    pub fn set_hud_style(self: &Rc<Self>, style: Option<HudStyle>) {
-        let style = style.unwrap_or_else(platform::probe_hud_style);
+    /// Switch the audio-level presentation: the accent level bar, the GPU
+    /// ribbon, the classic segmented meter or a plain progress bar.
+    ///
+    /// The value arrives from the publisher's `HudStyle` property; the HUD
+    /// reads no settings store of its own.
+    pub fn set_hud_style(self: &Rc<Self>, style: HudStyle) {
         {
             let mut state = self.state.borrow_mut();
+            // A lab override outranks the publisher and survives its pushes,
+            // exactly like the reduced-motion and high-contrast overrides.
+            #[cfg(dev_lab)]
+            if state.hud_style_override.is_some() {
+                return;
+            }
             if state.hud_style == style {
                 return;
             }
@@ -667,6 +671,22 @@ impl Pill {
         // Re-assert the visibility split so the newly shown indicator
         // reflects the current state immediately (not just at the next
         // descriptor).
+        self.apply_descriptor(self.current_descriptor());
+    }
+
+    /// Override the indicator style for lab previewing. `None` releases the
+    /// override; the next publisher push (or the current value until then)
+    /// takes over again.
+    #[cfg(dev_lab)]
+    pub fn set_hud_style_override(self: &Rc<Self>, style: Option<HudStyle>) {
+        {
+            let mut state = self.state.borrow_mut();
+            state.hud_style_override = style;
+            match style {
+                Some(style) if state.hud_style != style => state.hud_style = style,
+                _ => return,
+            }
+        }
         self.apply_descriptor(self.current_descriptor());
     }
 
