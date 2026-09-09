@@ -36,4 +36,4 @@ Only the two configs stayed here:
 | `spread-build.sh`, `spread-image.sh` | Confined end-to-end (spread) harness. |
 | `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py`, `shexli_gate.py`, `vulture_allowlist.py` | Coverage and static-analysis gates behind `make check`. |
 | `exercise.sh`, `gated-tests.sh`, `transcribe.py`, `capabilities.py` | Manual drivers for a running server. |
-| `i18n.sh`, `check-mermaid.py`, `ibus-doctor.sh` | Translation templates, docs diagrams, IBus diagnosis. |
+| `i18n.sh`, `ibus-doctor.sh` | Translation templates, IBus diagnosis. |
