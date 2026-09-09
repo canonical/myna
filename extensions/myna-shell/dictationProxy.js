@@ -22,6 +22,7 @@ export class DictationProxy {
         this._log = log;
         this._proxy = null;
         this._cancellable = null;
+        this._readyCallbacks = [];
     }
 
     /** Create the proxy asynchronously. DO_NOT_AUTO_START means it only
@@ -54,7 +55,12 @@ export class DictationProxy {
                 } catch (e) {
                     if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                         this._log(`dictation proxy unavailable: ${e.message ?? e}`);
+                    return;
                 }
+                const pending = this._readyCallbacks;
+                this._readyCallbacks = [];
+                for (const callback of pending)
+                    callback();
             }
         );
     }
@@ -64,8 +70,20 @@ export class DictationProxy {
     stop() {
         this._cancellable?.cancel();
         this._cancellable = null;
+        this._readyCallbacks = [];
         this._proxy?.disconnectObject(this);
         this._proxy = null;
+    }
+
+    /** Run `callback` once the proxy exists, or right away if it already
+     * does. Creation is asynchronous, so a consumer that reaches for `proxy`
+     * immediately after start() would otherwise find null; a pending callback
+     * is dropped by stop(), so a teardown mid-creation never fires it. */
+    whenReady(callback) {
+        if (this._proxy)
+            callback();
+        else
+            this._readyCallbacks.push(callback);
     }
 
     /** The live Gio.DBusProxy, or null while creation is in flight (start
