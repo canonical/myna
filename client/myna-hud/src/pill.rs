@@ -37,10 +37,11 @@ use crate::shader::hex_to_rgb;
 use crate::states::Descriptor;
 use crate::vumeter::levels_to_intensity;
 
-/// The pill's resting width, matching the extension's `PILL_WIDTH`. It is a
-/// FLOOR, not a fixed size: a long error reason grows the pill up to a
-/// ceiling and wraps beyond that (bounded by [`LABEL_MAX_CHARS`]).
-pub const PILL_WIDTH: i32 = 360;
+/// The pill's resting width: a floor just above the natural content width
+/// (icon + the bar's own 160px minimum) for a one-line status, so the pill
+/// hugs its content the way GNOME's OSD does. A long error reason still
+/// grows past it and wraps (bounded by [`LABEL_MAX_CHARS`]).
+pub const PILL_WIDTH: i32 = 240;
 
 /// The label's wrap width, in characters — what actually keeps the pill at
 /// [`PILL_WIDTH`] when a long reason arrives.
@@ -57,6 +58,10 @@ pub const LABEL_MAX_CHARS: i32 = 30;
 
 /// The ribbon's height, matching the extension's `RIBBON_HEIGHT`.
 pub const RIBBON_HEIGHT: i32 = 32;
+
+/// The pill's resting height with the default (`bar`) indicator: padding,
+/// one label line, the gap, and the 6px bar. A floor, like [`PILL_WIDTH`].
+pub const PILL_HEIGHT: i32 = 58;
 
 /// The CSS class that brightens the pill under a high-contrast preference
 /// (FR-022), defined in `style.css`.
@@ -135,7 +140,7 @@ impl Pill {
 
         let icon = gtk::Image::from_icon_name("audio-input-microphone-symbolic");
         icon.add_css_class("myna-hud-icon");
-        icon.set_pixel_size(20);
+        icon.set_pixel_size(24);
         icon.set_valign(gtk::Align::Center);
 
         let label = gtk::Label::new(None);
@@ -163,7 +168,7 @@ impl Pill {
         let meter = SegmentedMeterView::new();
         let progress = ProgressView::new();
 
-        let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
         content.set_hexpand(true);
         // A critical error hides the indicator, leaving the label alone in a
         // box that would otherwise pack it against the top edge.
@@ -325,7 +330,17 @@ impl Pill {
                                     if let Some(root) = this.pill.root() {
                                         if let Some(window) = root.downcast_ref::<gtk::Window>() {
                                             if window.has_css_class("myna-hud-window") {
-                                                window.set_visible(false);
+                                                // The same fade as the
+                                                // window's own hide path.
+                                                this.pill
+                                                    .add_css_class(crate::window::FADE_HIDDEN_CLASS);
+                                                let window = window.clone();
+                                                glib::timeout_add_local_once(
+                                                    std::time::Duration::from_millis(
+                                                        crate::window::FADE_MS,
+                                                    ),
+                                                    move || window.set_visible(false),
+                                                );
                                             }
                                         }
                                     }

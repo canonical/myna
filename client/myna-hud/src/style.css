@@ -22,14 +22,22 @@ window.myna-hud-window {
 }
 
 .myna-hud-pill {
-    padding: 10px 16px;
-    background-color: var(--dark-3);
+    /* GNOME's own OSD padding formula (base_padding 6px × 2, × 3). */
+    padding: 12px 18px;
+    /* gnome-shell's OSD popup background (`$osd_bg_color`, which resolves to
+     * #2f2f2f under Yaru, in both light and dark mode) — visibly lighter
+     * than the near-black desktop, unlike the GTK-app OSD colour used
+     * before. */
+    background-color: #2f2f2f;
     border-radius: 999px;
-    /* Legible against a busy or light wallpaper. The severity states draw a
-     * strong coloured border, and at 0.08 the ordinary states read as an
-     * edgeless dark blob by comparison — the pill needs a defined edge in
-     * every state, not just the alarming ones. */
-    border: 1px solid rgba(255, 255, 255, 0.28);
+    /* Present in every state at gnome-shell's `osd_outer_borders_color`
+     * alpha: barely visible until a severity state recolours it. A border
+     * that appeared from nothing would resize the pill — and therefore the
+     * overlay the host has placed — on every notice. */
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    /* Matches gnome-shell's `OsdWindow.FADE_TIME`. Drives the show/hide fade
+     * (`.myna-hud-fade-hidden`, window.rs). */
+    transition: opacity 100ms ease-out;
     /* No drop shadow. The window hugs the pill exactly, so a shadow has
      * nowhere to fade into: it is clipped by the surface edge and reads as
      * a hard grey band around the pill rather than a soft shadow — plainly
@@ -38,15 +46,23 @@ window.myna-hud-window {
      * extent and therefore the gap the host places it at (R21/R22). */
 }
 
+/* The show/hide fade (window.rs `set_hidden_faded`), so the pill fades out
+ * before its surface unmaps rather than popping. */
+.myna-hud-pill.myna-hud-fade-hidden {
+    opacity: 0;
+}
+
+/* gnome-shell's OSD `$osd_fg_color` — plain white, not the GTK-app OSD's
+ * `#eeeeec`. */
 .myna-hud-icon {
-    color: rgba(255, 255, 255, 0.92);
+    color: #ffffff;
 }
 
 .myna-hud-label {
     font-size: 11pt;
     font-weight: 600;
     letter-spacing: 0.2px;
-    color: rgba(255, 255, 255, 0.92);
+    color: #ffffff;
 }
 
 /* The ribbon's floor. Its actual width comes from hexpand, so it reaches the
@@ -82,11 +98,11 @@ window.myna-hud-window {
     color: var(--warning-bg-color);
 }
 
-/* The accent level bar (the `hud-style: bar` alternative). Same footprint.
- * The bar is painted by the widget, reading this resolved `color`. */
+/* The accent level bar (the `hud-style: bar` alternative). A thin rule
+ * under the label; the widget paints it, reading this resolved `color`. */
 .myna-hud-bar {
     color: var(--accent-bg-color);
-    min-height: 32px;
+    min-height: 6px;
     min-width: 160px;
 }
 
@@ -136,7 +152,10 @@ window.myna-hud-window {
  * rgba(58,12,12,0.88) did. Loading uses the accent colour. */
 .myna-hud-pill.myna-hud-severity-recoverable {
     border: 1px solid var(--warning-bg-color);
-    background-color: color-mix(in srgb, color-mix(in srgb, var(--warning-bg-color) 20%, black) 88%, transparent);
+    /* Solid, not translucent: mixing towards `transparent` (as a previous
+     * revision did) left the alpha below 1, which read as see-through
+     * against a bright wallpaper. */
+    background-color: color-mix(in srgb, var(--warning-bg-color) 20%, black);
 }
 
 .myna-hud-pill.myna-hud-severity-recoverable .myna-hud-icon,
@@ -146,7 +165,8 @@ window.myna-hud-window {
 
 .myna-hud-pill.myna-hud-severity-critical {
     border: 1px solid var(--error-bg-color);
-    background-color: color-mix(in srgb, color-mix(in srgb, var(--error-bg-color) 20%, black) 88%, transparent);
+    /* Solid, not translucent — see the recoverable rule above. */
+    background-color: color-mix(in srgb, var(--error-bg-color) 20%, black);
 }
 
 .myna-hud-pill.myna-hud-severity-critical .myna-hud-icon,

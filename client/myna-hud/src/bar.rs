@@ -26,16 +26,20 @@ use gtk4 as gtk;
 
 use crate::vumeter;
 
-/// The bar's height, matching the ribbon's and the other views', so the
-/// `hud-style` options occupy the same footprint.
-pub const METER_HEIGHT: i32 = 32;
+/// The bar's height: a thin rule under the label, not a tall box. Matches
+/// GNOME Shell's OSD level bar (`$osd_levelbar_height: 6px` in `_osd.scss`).
+pub const METER_HEIGHT: i32 = 6;
 
-/// The bar's height within the widget, leaving vertical breathing room so it
-/// reads as a thin bar, not a filled block.
-const BAR_HEIGHT_FRACTION: f64 = 0.42;
+/// The drawn thickness of the bar, in px.
+const BAR_THICKNESS: f64 = 6.0;
 
-/// Alpha of the dim track (the unfilled part of the bar).
-const TRACK_ALPHA: f64 = 0.18;
+/// Alpha of the dim track (the unfilled part), as GNOME Shell's `BarLevel`.
+const TRACK_ALPHA: f64 = 0.1;
+
+/// The unfilled track: a neutral white groove. Tinting it with the accent
+/// made the fill harder to read.
+const TRACK_COLOR: gtk::gdk::RGBA =
+    gtk::gdk::RGBA::new(1.0, 1.0, 1.0, TRACK_ALPHA as f32);
 
 /// The CSS class that switches the bar to the warning (recoverable) colour.
 /// Mirrors the pill's own `.myna-hud-severity-recoverable`.
@@ -97,7 +101,7 @@ mod imp {
             // The theme-resolved colour: accent, or warning when a notice.
             let color = widget.color();
 
-            let bar_h = h * BAR_HEIGHT_FRACTION;
+            let bar_h = h.min(BAR_THICKNESS);
             let bar_y = (h - bar_h) / 2.0;
             let radius = (bar_h / 2.0) as f32;
             let bar_bounds = graphene::Rect::new(0.0, bar_y as f32, w as f32, bar_h as f32);
@@ -105,7 +109,7 @@ mod imp {
 
             snapshot.push_rounded_clip(&rounded);
             let track = graphene::Rect::new(0.0, bar_y as f32, w as f32, bar_h as f32);
-            snapshot.append_color(&with_alpha(&color, TRACK_ALPHA), &track);
+            snapshot.append_color(&TRACK_COLOR, &track);
 
             match state.pulse {
                 // Indeterminate activity: a little block travelling back and
@@ -136,9 +140,16 @@ mod imp {
                 // A plain level (or a full warning fill): fraction of the bar.
                 None => {
                     let fraction = state.fraction.clamp(0.0, 1.0);
-                    let fill_w = (w * fraction) as f32;
-                    let fill = graphene::Rect::new(0.0, bar_y as f32, fill_w, bar_h as f32);
-                    snapshot.append_color(&with_alpha(&color, 1.0), &fill);
+                    if fraction > 0.0 {
+                        // Never narrower than the cap diameter, or a quiet
+                        // moment draws a sliver with no rounded end.
+                        let fill_w = (w * fraction).max(bar_h) as f32;
+                        let fill = graphene::Rect::new(0.0, bar_y as f32, fill_w, bar_h as f32);
+                        let fill_rounded = gsk::RoundedRect::from_rect(fill, radius);
+                        snapshot.push_rounded_clip(&fill_rounded);
+                        snapshot.append_color(&with_alpha(&color, 1.0), &fill);
+                        snapshot.pop();
+                    }
                 }
             }
 
@@ -254,9 +265,9 @@ impl BarView {
             peak,
             at: Instant::now(),
         });
-        // A fresh sample: reset the smoothing/last-frame so the next frame
-        // computes the level from scratch (no stale intermediate).
-        *imp.last_frame.borrow_mut() = None;
+        // The frame timeline is deliberately NOT reset here: `smooth_level`
+        // snaps to the target on a zero dt, which would jump the fill on
+        // every push instead of easing toward it.
         self.queue_draw();
     }
 

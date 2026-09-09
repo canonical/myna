@@ -21,30 +21,45 @@
 //! events always reach whatever is underneath — the HUD is an overlay, not
 //! a target, and carries no interactive control at all.
 
+use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gdk4_x11 as gdkx11;
 use gtk::cairo;
+use gtk::glib;
 use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::input_region::input_region_rects;
-use crate::pill::{Pill, PILL_WIDTH, RIBBON_HEIGHT};
+use crate::pill::{Pill, PILL_HEIGHT, PILL_WIDTH};
 use crate::states::Descriptor;
 
 /// Object-data key under which the window owns its [`HudWindow`].
 const SELF_KEY: &str = "myna-hud-instance";
 
 /// The window's resting height: the pill's natural height for a one-line
-/// status (ribbon + label + padding). A stable floor so the mapped window
-/// does not collapse when the pill hides at idle.
-const RESTING_HEIGHT: i32 = RIBBON_HEIGHT + 44;
+/// status with the default `bar` indicator. A floor, so the mapped window
+/// does not collapse when the pill hides at idle; a taller indicator grows
+/// the window past it.
+const RESTING_HEIGHT: i32 = PILL_HEIGHT;
+
+/// The show/hide fade, mirroring gnome-shell's `OsdWindow.FADE_TIME`: the
+/// pill fades its opacity over this long before the surface unmaps, and
+/// fades back in once mapped.
+pub(crate) const FADE_MS: u64 = 100;
+/// Drives the fade above — `opacity: 0`, transitioned by `style.css`.
+pub(crate) const FADE_HIDDEN_CLASS: &str = "myna-hud-fade-hidden";
 
 /// The HUD pill overlay window.
 pub struct HudWindow {
     window: gtk::ApplicationWindow,
     pill: Rc<Pill>,
+    /// The hidden state most recently requested, so a fade-out reversed
+    /// mid-flight (a visible descriptor arrives within `FADE_MS`) does not
+    /// go on to unmap a now-visible window.
+    pending_hidden: Cell<bool>,
 }
 
 impl HudWindow {
@@ -88,7 +103,11 @@ impl HudWindow {
         holder.append(pill.widget());
         window.set_child(Some(&holder));
 
-        let hud = Rc::new(Self { window, pill });
+        let hud = Rc::new(Self {
+            window,
+            pill,
+            pending_hidden: Cell::new(false),
+        });
 
         // Tie our lifetime to the window's: every callback holds a weak
         // reference (a strong one would keep the struct alive through its own
@@ -122,16 +141,49 @@ impl HudWindow {
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let hidden = descriptor.hidden;
         self.pill.apply_descriptor(descriptor);
-        // UNMAP at idle, do not merely go transparent: a compositor is free
-        // to ignore surface opacity on a toplevel (mutter does — the window
-        // reports opacity 0 but stays fully shown), so opacity cannot hide a
-        // window. `set_visible(false)` unmaps the surface, which the
-        // compositor cannot show. The window stays owned by the same
-        // Meta.WaylandClient across the unmap/remap, and the host re-asserts
-        // the overlay on the `map` signal, so a return from idle is
-        // re-adopted rather than lost.
-        self.window.set_visible(!hidden);
+        self.set_hidden_faded(hidden);
         self.apply_input_region();
+    }
+
+    /// Fade the pill to/from `hidden`, mapping or unmapping the surface only
+    /// once the fade completes, rather than popping in and out.
+    ///
+    /// The unmap at the end of a fade-out still has to happen for real: a
+    /// compositor is free to ignore surface opacity on an already-mapped
+    /// toplevel (mutter does — the window reports opacity 0 but stays fully
+    /// shown). `set_visible(false)` unmaps the surface, which the compositor
+    /// cannot show. The window stays owned by the same Meta.WaylandClient
+    /// across the unmap/remap, and the host re-asserts the overlay on the
+    /// `map` signal, so a return from idle is re-adopted rather than lost.
+    fn set_hidden_faded(self: &Rc<Self>, hidden: bool) {
+        self.pending_hidden.set(hidden);
+        let widget = self.pill.widget();
+        if hidden {
+            if !self.window.is_visible() {
+                return; // already unmapped — nothing to fade
+            }
+            widget.add_css_class(FADE_HIDDEN_CLASS);
+            let this = self.clone();
+            glib::timeout_add_local_once(Duration::from_millis(FADE_MS), move || {
+                // A later, un-hidden descriptor may have arrived mid-fade.
+                if this.pending_hidden.get() {
+                    this.window.set_visible(false);
+                }
+            });
+        } else if self.window.is_visible() {
+            // Already mapped, or a fade-out reversed mid-flight — let the CSS
+            // transition take it back to resting opacity.
+            widget.remove_css_class(FADE_HIDDEN_CLASS);
+        } else {
+            // Map at opacity 0, then drop the class on the next frame so the
+            // transition actually fades it in rather than popping at 1.
+            widget.add_css_class(FADE_HIDDEN_CLASS);
+            self.window.set_visible(true);
+            let widget = widget.clone();
+            glib::idle_add_local_once(move || {
+                widget.remove_css_class(FADE_HIDDEN_CLASS);
+            });
+        }
     }
 
     /// A level push from the publisher.

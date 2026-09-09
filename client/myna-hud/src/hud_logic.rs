@@ -301,6 +301,6 @@ pub fn smooth_level(previous: f64, target: f64, dt_ms: f64, reduced_motion: bool
 }
 
 /// Attack (rising) time constant for [`smooth_level`], ms.
-pub const ENVELOPE_ATTACK_MS: f64 = 90.0;
+pub const ENVELOPE_ATTACK_MS: f64 = 45.0;
 /// Release (falling) time constant for [`smooth_level`], ms.
-pub const ENVELOPE_RELEASE_MS: f64 = 480.0;
+pub const ENVELOPE_RELEASE_MS: f64 = 240.0;
