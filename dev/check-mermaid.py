@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Validate every ```mermaid block in the markdown files under docs/ and specs/.
+Validate every ```mermaid block in the markdown files under docs/, specs/, and
+knowledge-base directories.
 
 Usage:
     dev/check-mermaid.py [--puppeteer-cfg PATH] [FILE ...]
 
-If no FILEs are given it scans docs/ and specs/ (relative to the repo root,
-which is assumed to be the cwd or the directory two levels above this script).
+If no FILEs are given it scans docs/, specs/, and every .kb/ directory relative
+to the repository root.
 
 Exit code: 0 if all blocks are valid, 1 if any block fails.
 
@@ -93,7 +94,8 @@ def main() -> int:
     if args.files:
         md_files = find_md_files([Path(f) for f in args.files])
     else:
-        md_files = find_md_files([repo_root / "docs", repo_root / "specs"])
+        knowledge_dirs = sorted(path for path in repo_root.rglob(".kb") if path.is_dir())
+        md_files = find_md_files([repo_root / "docs", repo_root / "specs", *knowledge_dirs]))
 
     puppeteer_cfg = args.puppeteer_cfg
 

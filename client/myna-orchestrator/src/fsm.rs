@@ -1,9 +1,9 @@
 //! The orchestrator FSM (plan T40) — the centerpiece of Workstream G.
 //!
-//! This is the **pure, synchronous** core of the two-region async state machine
-//! from `docs/architecture/ie115-lifecycle.md`. It owns no sockets, channels, or
+//! This is the **pure, synchronous** core of the two-region async state machine.
+//! It owns no sockets, channels, or
 //! timers: it is a function of `(state, input) -> (state', actions)`, which is
-//! exactly what makes the async edge cases (§3A/§3B/§3C) exhaustively and
+//! exactly what makes async edge cases exhaustively and
 //! deterministically testable. The async wiring — reading backend events,
 //! pushing audio, driving a real session — lives one layer up in
 //! [`crate::driver`], which does nothing but pump inputs through `on_input` and

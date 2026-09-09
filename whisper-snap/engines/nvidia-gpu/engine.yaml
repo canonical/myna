@@ -6,8 +6,8 @@ description: |
   CUDA runtime (CTranslate2 + cuBLAS/cuDNN) ships as an on-demand component.
 vendor: Canonical Ltd
 
-# UNVERIFIED on hardware — scaffolded in T15. Build-verify on a CUDA box
-# before relying on auto-selection (see docs/asr-inference-snap-design.md §6).
+# UNVERIFIED on hardware — build-verify on a CUDA box before relying on
+# auto-selection.
 devices:
   allof:
     - type: gpu

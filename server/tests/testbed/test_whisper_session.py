@@ -105,7 +105,7 @@ async def test_blank_segments_are_dropped():
 
 async def test_ready_is_signalled_before_any_audio_is_pulled():
     """The client gates on ready; pulling audio first deadlocks the session
-    (docs/architecture/ie115-lifecycle.md 3A)."""
+    before consuming audio."""
     adapter = adapter_with(_Segment(" hi"))
     events = []
     phases_at_first_pull = []

@@ -4,7 +4,7 @@
 //! the results. This is the reusable core of the demo binary and the seam T21
 //! (hotkey → this) and T22 (this → injector) plug into.
 //!
-//! The audio-adapter contract (`docs/audio-adapter-api.md` §5) maps cleanly:
+//! The audio-adapter contract maps cleanly:
 //! a clean source end (hotkey release / WAV EOF) becomes `EndOfAudio`
 //! (finalize), and a capture fault becomes `CaptureFailed` — a visible
 //! `Failed` outcome (abandon the backend session, commit nothing, but tell the
@@ -34,7 +34,7 @@ const OUTPUT_CAPACITY: usize = 64;
 ///
 /// `config.audio_format` is overwritten with the source's actual format, so the
 /// service validates against what is really being sent (the source never
-/// resamples — audio-adapter-api §1/§7).
+/// resamples).
 pub async fn run_dictation<B, S, T>(
     backend: &B,
     mut config: SessionConfig,
@@ -52,9 +52,8 @@ where
     let (out_tx, mut out_rx) = mpsc::channel(OUTPUT_CAPACITY);
 
     // Capture starts NOW; only the *push* into the FSM waits for the first
-    // `Ready`. This is the client half of the accept-gate
-    // (ie115-lifecycle.md §3A) plus the capture-from-press requirement
-    // (audio-adapter-api.md §6, a T21 acceptance criterion): a live adapter
+    // `Ready`. This is the client half of the accept-gate plus the
+    // capture-from-press requirement: a live adapter
     // (`myna-audio::CaptureSource`) fills its bounded ring from `capture()`,
     // so speech during a cold load is buffered, not lost; a lazy/paced source
     // (WavFileSource) produces nothing until polled, so nothing drains into

@@ -6,8 +6,7 @@
 //! transcript events into the downstream channel while draining (and ignoring)
 //! the audio the FSM pushes up. That lets the orchestrator FSM and its driver be
 //! exercised end-to-end — including the full `STATUS` liveness sequence
-//! (`loading → ready → transcribing`) and the async edge cases from
-//! `docs/architecture/ie115-lifecycle.md` — with zero I/O and deterministic
+//! (`loading → ready → transcribing`) and async edge cases — with zero I/O and deterministic
 //! output.
 //!
 //! Unlike the ws wire (where the pump treats any `transcription.error` as

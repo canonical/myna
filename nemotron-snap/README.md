@@ -81,5 +81,4 @@ sudo snap restart myna-nemotron.server
 
 The server unloads the model after `sleep-idle-seconds` (default 300; `0` =
 never), freeing the bulk of GPU memory; the next request reloads it. Full
-process/VRAM release on idle (socket activation) is blocked upstream — see
-[`docs/asr-inference-snap-design.md`](../docs/asr-inference-snap-design.md) §4.
+process/VRAM release on idle (socket activation) is currently blocked upstream.

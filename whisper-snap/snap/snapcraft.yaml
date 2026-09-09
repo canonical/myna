@@ -1,6 +1,5 @@
 # Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
-# v2 from inference-snaps-cli). Differences from the LLM snaps, per
-# docs/asr-inference-snap-design.md:
+# v2 from inference-snaps-cli). Differences from the LLM snaps:
 #   - the server is the UbuSTT session server (myna-server) on a Unix socket,
 #     not an HTTP llama-server: no microphone access, no TCP port.
 #   - model weights ship as per-model snap components (T15): run

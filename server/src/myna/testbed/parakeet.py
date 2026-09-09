@@ -702,8 +702,7 @@ class ParakeetAdapter:
             # way LifecycleService itself re-arms idle-release on a fresh
             # session rather than staying silent forever after the first.
             model.pressure_monitor.begin_session()
-            # Ready BEFORE pulling audio — the client gates on it
-            # (docs/architecture/ie115-lifecycle.md §3A).
+            # Ready BEFORE pulling audio — the client gates on it.
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
             if self._streaming:

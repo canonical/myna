@@ -4,7 +4,7 @@
 //! Same transport (WebSocket over a Unix socket), different frame vocabulary.
 //! The FSM above this is **unchanged** — this is a second backend behind the
 //! same [`BackendClient`] trait, which is the whole point of the wire-agnostic
-//! FSM (T40). See `docs/architecture/ie115-wire.md` for the frame contract.
+//! FSM (T40). This module and its parity tests define the frame contract.
 //!
 //! Client→server: `session.update` (nested config) up front, then PCM as raw
 //! binary frames (default) or base64 `input_audio_buffer.append` (OpenAI-parity,
@@ -206,7 +206,7 @@ fn decode_frame(value: &Value, after_commit: bool) -> Vec<TranscriptionEvent> {
         }
         Some(TRANSCRIPTION_DELTA) => {
             // Committed, append-only segment text — the IE115 face of
-            // `transcription.final` (streaming contract, streaming.md §3a).
+            // `transcription.final`.
             // Parse disposition field (T12, feature 007); default to committed for backward-compat
             use myna_core::Disposition;
             let text = value
@@ -238,8 +238,7 @@ fn decode_frame(value: &Value, after_commit: bool) -> Vec<TranscriptionEvent> {
             // The utterance terminal: full transcript for this commit. Before
             // our commit, though, an empty transcript is the canonical
             // whisper-snap adapter's revision-reset signal (clear the partial,
-            // re-send from scratch), not the end of anything — see
-            // docs/interop/canonical-whisper-snap-report.md gap 3. After the
+            // re-send from scratch), not the end of anything. After the
             // commit it is the terminal for an utterance nobody spoke into.
             let text = value
                 .get("transcript")

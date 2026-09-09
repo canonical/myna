@@ -1,5 +1,5 @@
-//! Behavioral suite for the adapter over the fake backend (plan T50): the
-//! whole capture lifecycle from `docs/audio-adapter-api.md` — press → hold →
+//! Behavioral suite for the adapter over the fake backend: the whole capture
+//! lifecycle — press → hold →
 //! drain-at-ready, graceful stop, abort, overflow policy, faults — with no
 //! PipeWire anywhere.
 

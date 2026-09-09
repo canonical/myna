@@ -1,11 +1,10 @@
-//! The audio-capture boundary (plan T41) — re-exports the consumer contract
-//! from `myna_core::capture` (`docs/audio-adapter-api.md` §3, moved there in
-//! T50 so the `myna-audio` adapter crate never depends on the orchestrator),
+//! The audio-capture boundary — re-exports the consumer contract from
+//! `myna_core::capture` so the `myna-audio` adapter crate never depends on the orchestrator,
 //! plus the [`WavFileSource`] mock used to drive the orchestrator end-to-end.
 //! The real adapter (`myna-audio::CaptureSource`, T50–T52) drops in behind the
 //! same trait unchanged.
 //!
-//! Invariants honoured (audio-adapter-api §1): the client owns capture and
+//! Invariants honoured: the client owns capture and
 //! pushes PCM; the source produces **exactly** its declared [`AudioFormat`] and
 //! never resamples; nothing is persisted (a WAV file is read, but no audio is
 //! written); a fatal capture fault is an `Err` item on the stream, not a silent

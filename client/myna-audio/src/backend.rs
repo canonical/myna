@@ -1,4 +1,4 @@
-//! The capture-backend seam (audio-adapter-api §5). A [`CaptureBackend`] opens
+//! The capture-backend seam. A [`CaptureBackend`] opens
 //! the device and delivers raw PCM through a [`Producer`]; the adapter core
 //! ([`crate::CaptureSource`]) owns everything behind it — re-chunking, the
 //! stats tap, the bounded ring. Backends: [`crate::ScriptedBackend`] (fake,

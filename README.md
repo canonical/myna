@@ -57,8 +57,8 @@ The rest of this README expands on each piece.
   Easy to make your own — or run without it and fall back to notifications.
 - `*-snap/` — one inference snap per model family (strict-confinement packages
   of `myna-server` + a model + engines).
-- `docs/` — architecture and design notes; `docs/project-plan.md` is the living
-  task tracker.
+- `docs/` — human-run system test procedures and stable multilingual samples.
+  Agent-oriented knowledge is indexed from [`AGENTS.md`](AGENTS.md).
 
 ## How it fits together
 
@@ -68,8 +68,7 @@ out — over WebSocket-on-a-Unix-socket. Three roles play against it:
 - **Inference backend** (`myna-server` / a snap): hosts a model, listens on a
   socket, has *no* microphone — the client pushes PCM and the server rejects
   off-format audio rather than resampling. Swap models with
-  `--adapter whisper|nemotron|qwen-c|...|fake` (adapter comparison:
-  [docs/asr-inference-snap-design.md](docs/asr-inference-snap-design.md) §7).
+  `--adapter whisper|nemotron|qwen-c|...|fake`.
 - **Dictation client** (`client/`): owns capture and the hotkey and runs
   the session FSM. `myna-dictate` is the demo (WAV/corpus/live-mic);
   `myna-desktop` is the shipped app that injects into the focused app via IBus.
@@ -77,10 +76,9 @@ out — over WebSocket-on-a-Unix-socket. Three roles play against it:
   scores WER/CER offline, so accuracy work stays out of the dictation hot path.
 
 The wire is a **selectable dialect** — the internal `transcription.*`
-vocabulary or the **Myna STT API** (a compatibile subset of the OpenAI Realtime
-Transcription API, with additions). Referred to as IE115 internally — and both
-ends translate at the edge, so neither the models nor the FSM change when the
-dialect does (`docs/architecture/ie115-wire.md`).
+vocabulary or the **Myna STT API** (a compatible subset of the OpenAI Realtime
+Transcription API, with additions). Both ends translate at the edge, so neither
+the models nor the FSM change when the dialect does.
 
 ## Development environment
 
@@ -219,8 +217,7 @@ packaged app gets a portal app identity), `com.canonical.Myna.Dictation` is alwa
 served for the indicator below with a notification fallback, and in-field
 preedit follows the streaming tier gate. Force any of them with `--portal` /
 `--control` / `--stdin`, `--no-dbus`, `--preedit` / `--no-preedit`;
-`--hold` makes portal activation hold-to-talk. See
-`docs/desktop-injection.md`.
+`--hold` makes portal activation hold-to-talk.
 
 ### The GNOME Shell indicator
 
@@ -355,8 +352,8 @@ sends back one `results.jsonl`. `make bench-merge SUBMISSIONS="..."` folds those
 into `results/leaderboard.jsonl`, where a row is identified by *(machine, label)*
 so every submission survives and is ranked against the others.
 
-**[docs/benchmarking.md](docs/benchmarking.md) is the cheat sheet** for that
-whole loop, plus what each column means and how to add an axis.
+See [`server/.kb/benchmarking.md`](server/.kb/benchmarking.md) for the benchmark
+workflow and result semantics.
 
 WER normalisation lives in `myna.testbed.metrics` (Python-only, one source of
 truth — the Rust client emits transcripts + timings that feed the same scorer).
@@ -479,10 +476,10 @@ The snaps have their own README's with further details.
 ## Configuration UI prototype
 
 `dev/config-ui.py` is a **throwaway Tkinter prototype**, not a shipped surface
-and not a design commitment. It exists to explore the questions in
-[docs/configuration-api.md](docs/configuration-api.md) against real installed
-snaps: what is actually configurable today, what a Settings panel has to guess
-in the absence of a config schema, and what the running system costs.
+and not a design commitment. It explores the current configuration surface
+against real installed snaps: what is actually configurable today, what a
+Settings panel has to guess in the absence of a config schema, and what the
+running system costs.
 
 ```shell
 ./dev/config-ui.py                  # stdlib only, no deps beyond python3-tk
@@ -526,7 +523,7 @@ implementation, governed by the project constitution
 shipped Rust components, integration tests that run on a VM and on hardware
 unchanged, performance watermarks, the Workshop dev env, and privacy/offline
 invariants. If you're extending the project, start with the `speckit-specify`
-workflow rather than editing code directly, and read `docs/project-plan.md` for
-where things stand.
+workflow rather than editing code directly. Read `AGENTS.md` and the local
+knowledge documents for current architecture and constraints.
 
 See: https://github.com/github/spec-kit

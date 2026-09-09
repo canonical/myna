@@ -1,4 +1,4 @@
-//! [`CaptureSource`] — the adapter itself (audio-adapter-api §4): one public
+//! [`CaptureSource`] — the adapter itself: one public
 //! type implementing `AudioSource` over any [`CaptureBackend`], composing the
 //! re-chunker, the stats tap, and the bounded pre-ready ring.
 //!

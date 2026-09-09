@@ -1,6 +1,5 @@
-"""IE115 wire dialect — codec between the flat ``myna.core`` vocab and the
-OpenAI-Realtime-shaped subset the team settled on (``docs/IE115-resolution.md``,
-frame contract in ``docs/architecture/ie115-wire.md``, T44/T45).
+"""IE115 wire dialect — codec between the flat ``myna.core`` vocabulary and
+the supported OpenAI-Realtime-shaped subset.
 
 This is a *translation layer*, not a new protocol. The internal vocab
 (``myna.core.events`` / ``session``) stays the semantic core; the transport
@@ -8,15 +7,14 @@ This is a *translation layer*, not a new protocol. The internal vocab
 frame (``session.update`` = IE115, ``session.start`` = internal) and routes
 encode/decode through here for IE115 connections.
 
-What the mapping does (see the note for the full table + open questions):
+What the mapping does:
 
 - ``SessionConfig`` <-> nested ``session.audio.input.{format,transcription}``.
 - ``transcription.progress{phase}`` <-> additive ``STATUS{state}`` liveness event
   (``preparing``->``loading``). We deliberately do **not** emit OpenAI's
   ``server_error/model_loading`` — loading is a liveness property, not an error.
 - ``transcription.final`` <-> ``conversation.item.input_audio_transcription.delta``
-  — committed, append-only segment text (the streaming revision contract,
-  ``docs/architecture/streaming.md`` §3a). One ``item_id`` per utterance (we mint
+  — committed, append-only segment text. One ``item_id`` per utterance (we mint
   it; dictation has no conversation graph); every delta of the utterance and its
   ``completed`` share it.
 - ``transcription.done`` <-> ``conversation.item.input_audio_transcription.completed``
@@ -243,7 +241,7 @@ class Ie115Decoder:
             ]
         if ftype == TRANSCRIPTION_DELTA:
             # Committed, append-only segment text — the IE115 face of our
-            # `transcription.final` (streaming contract, streaming.md §3a).
+            # `transcription.final`.
             # Parse disposition field (T12, feature 007); default to committed for backward-compat
             disposition_str = frame.get("disposition", "committed")
             disposition = (

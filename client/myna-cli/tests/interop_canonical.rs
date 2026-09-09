@@ -14,8 +14,7 @@
 //! ```
 //!
 //! The clip must hold a single utterance: their `completed` fires per VAD
-//! segment, not per commit, so a pause ends the session early (2026-08-20,
-//! `docs/interop/canonical-whisper-snap-report.md`).
+//! segment, not per commit, so a pause ends the session early.
 
 use std::path::PathBuf;
 
@@ -32,9 +31,8 @@ fn clip(name: &str) -> Option<PathBuf> {
 /// Full round-trip against the live adapter: the session must complete with a
 /// non-empty transcript. Deltas from their backend arrive without a
 /// `disposition` field (backward-compat → committed), which today restates the
-/// growing hypothesis — the finding documented in
-/// `docs/interop/canonical-whisper-snap-report.md`. This test pins the
-/// session-level contract (completion, terminal done) regardless of how many
+/// growing hypothesis. This test pins the session-level contract (completion,
+/// terminal done) regardless of how many
 /// deltas precede it.
 #[tokio::test]
 #[ignore = "requires the canonical/whisper-snap adapter + WhisperLive docker backend"]

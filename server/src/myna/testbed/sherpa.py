@@ -318,8 +318,7 @@ class SherpaAdapter:
 
         try:
             recognizer = await self._load_model_with_heartbeat(emit)
-            # Ready BEFORE pulling audio — the client gates on it
-            # (docs/architecture/ie115-lifecycle.md §3A).
+            # Ready BEFORE pulling audio — the client gates on it.
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
             await self._run_push_loop(recognizer, audio, emit)

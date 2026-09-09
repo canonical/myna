@@ -5,7 +5,7 @@ members = ["myna-core", "myna-audio", "myna-orchestrator", "myna-cli", "myna-des
 # The Rust client subsystem (plan Workstreams D + G). `myna-core` mirrors the
 # Python `myna.core` wire contract (events / session / protocol / audio) plus
 # the capture-side consumer contract; `myna-audio` is the audio-capture adapter
-# (T50–T52, `docs/audio-adapter-api.md`); `myna-orchestrator` holds the session
+# (`client/.kb/audio-capture.md`); `myna-orchestrator` holds the session
 # + model-residency FSM (T40); `myna-cli` is the demo binary (T41). Every
 # external boundary is a trait with a mock — see the plan.
 

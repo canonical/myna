@@ -1,7 +1,6 @@
 //! Orchestrator subsystem — the client-side dictation brain (plan Workstream G).
 //!
-//! This crate holds the two-region async FSM from
-//! `docs/architecture/ie115-lifecycle.md`: the per-connection session track
+//! This crate holds the two-region async FSM: the per-connection session track
 //! (CREATED → ACTIVE → FINALIZING → DONE) running orthogonally to model
 //! residency (UNLOADED → LOADING → RESIDENT), with the accept-gate
 //! (`ACTIVE ∧ RESIDENT`), commit-drain (COMMIT ≠ done), and pre-ready-audio
@@ -16,7 +15,7 @@
 //!   ws+unix wire against the running Python `myna-server`; the in-process
 //!   [`backend::fake::FakeBackend`] (T40) is the scripted regression fixture.
 //! - [`audio::AudioSource`] — capture (T41), mocked by [`audio::WavFileSource`];
-//!   the real PipeWire adapter drops in per `docs/audio-adapter-api.md` §3.
+//!   the real PipeWire adapter implements the `myna-core` capture contract.
 //! - [`trigger::Trigger`] / [`sink::TextSink`] — hotkey and injector (T41),
 //!   mocked by [`trigger::StdinTrigger`] / [`sink::StdoutSink`]; the real
 //!   GlobalShortcuts hotkey (T21) and IBus injector (T22) implement the traits.

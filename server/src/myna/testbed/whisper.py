@@ -112,7 +112,7 @@ STREAM_BEAM_SIZE = 1  # greedy re-decode ticks
 # silence probe is near-silence, so "never helped" is a statement about what
 # can be tested, not about what a user will record.
 #
-# Deliberately NOT changed at the same time (docs/project-plan.md T82):
+# Deliberately not changed with the temperature ladder:
 # beam_size stays 5 - dropping it to 1 costs 0.50 pp of WER for ~15%, the same
 # trade shape as base int8, which was rejected in T70 - and
 # condition_on_previous_text stays True, which costs 0.20 pp for nothing.
@@ -324,7 +324,7 @@ class FasterWhisperAdapter:
             # Model resident, accept-gate may open: signal `ready` BEFORE pulling
             # audio. The client gates on this (IE115 STATUS{ready}) — without it
             # the client drops all audio waiting for readiness while we wait for
-            # audio, a deadlock (see docs/architecture/ie115-lifecycle.md §3A).
+            # audio, which would deadlock clients waiting for readiness.
             await emit(TranscriptionProgress(phase=PHASE_READY))
 
             if self._streaming:

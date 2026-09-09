@@ -1,5 +1,5 @@
 //! The in-memory capture buffer between the capture backend and the consumer
-//! stream (audio-adapter-api §6). It fills from hotkey press; the consumer
+//! stream. It fills from hotkey press; the consumer
 //! drains when it chooses (typically once the model is `ready`).
 //!
 //! **It never silently drops captured audio.** The buffer exists to hold speech

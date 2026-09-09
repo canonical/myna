@@ -1,8 +1,7 @@
 # whisper-snap
 
-Whisper speech-to-text inference snap for Myna, following the
-qwen3/gemma4 inference-snap pattern. Design rationale:
-[`docs/asr-inference-snap-design.md`](../docs/asr-inference-snap-design.md).
+Whisper speech-to-text inference snap for Myna, following the common Myna
+inference-snap pattern.
 
 The snap serves the Myna session API (WebSocket over a Unix domain socket)
 via `myna-server` — the same faster-whisper adapter the testbed harness
@@ -121,6 +120,6 @@ sudo myna-whisper.whisper set sleep-idle-seconds=600   # default 300; 0 = never 
 sudo snap restart myna-whisper.server
 ```
 
-Full process/VRAM release on idle (socket activation) is blocked upstream —
+Full process/VRAM release on idle (socket activation) is blocked upstream:
 `modelctl run` forks the server without passing the listening socket, so the
-snap uses in-process unload for now (see `docs/asr-inference-snap-design.md`).
+snap uses in-process unload for now.

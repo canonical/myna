@@ -40,8 +40,7 @@ def default_script() -> tuple[ScriptStep, ...]:
 
     Opens with the model-residency liveness (``preparing`` → ``ready``) so the
     client's accept-gate is exercised over the wire the way a real adapter drives
-    it (T42) — ``ready`` before any audio is required, matching
-    docs/architecture/ie115-lifecycle.md §3A.
+    it (T42) — ``ready`` before any audio is required.
     """
     return (
         ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),

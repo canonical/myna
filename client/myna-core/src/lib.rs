@@ -8,8 +8,7 @@
 //! shapes here must match the Python side exactly (verified against golden
 //! frames captured from `myna.core` in the module tests).
 //!
-//! Wire framing (see `docs/architecture/ie115-lifecycle.md` and
-//! `myna/core/transport_ws.py`):
+//! Wire framing (see Python `myna/core/transport_ws.py`):
 //! - Control frames carry a `"type"` key (`session.start`, `session.finish`,
 //!   `capabilities.query`, `session.created`) — see [`control`].
 //! - Transcript events carry an `"event"` key (`{"event": …, "data": {…}}`) —

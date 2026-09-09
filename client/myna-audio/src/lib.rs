@@ -1,5 +1,4 @@
-//! Audio-capture adapter for the myna dictation service — the settled
-//! contract in `docs/audio-adapter-api.md` (v2), plan T50–T52.
+//! Audio-capture adapter for the myna dictation service.
 //!
 //! One public type, [`CaptureSource`], implements the `myna_core`
 //! [`AudioSource`] trait over a pluggable [`CaptureBackend`]:
@@ -14,7 +13,7 @@
 //!     CaptureStream  ◀── drained when the consumer chooses
 //! ```
 //!
-//! Invariants (audio-adapter-api §1): the client owns capture and pushes PCM;
+//! Invariants: the client owns capture and pushes PCM;
 //! the source produces **exactly** its configured [`AudioFormat`] (the backend
 //! owns conversion); audio never persists — a bounded in-memory ring only,
 //! discarded on session end; no content logged (the stats tap carries levels

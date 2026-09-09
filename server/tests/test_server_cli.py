@@ -66,7 +66,7 @@ def test_whisper_streaming_defaults_are_the_measured_ones():
     fixed 30 s of padded mel), so streaming cost is ticks x a constant and the
     cadence is the only lever on it. 2.0 was chosen over the original 1.0 on a
     302 s measurement: encoder duty cycle 45.4% -> 18.2% at unchanged WER
-    (docs/project-plan.md T82). Pinned here so changing the literal has to come
+    Pinned here so changing the literal has to come
     with a new measurement.
 
     The CLI is asserted against the same constants because it used to repeat
@@ -109,7 +109,7 @@ def test_whisper_decode_options_are_the_measured_ones():
     is re-decoded at every higher temperature in turn. Measured 2026-09-02 on
     the balanced tier, capping it leaves WER unchanged (tiny 6.21%, base 4.53%
     to four decimals; small 3.41% -> 3.38%) and cuts p95 decode latency 26% on
-    tiny, 10% on base, 25% on small (docs/project-plan.md T82).
+    tiny, 10% on base, and 25% on small.
 
     beam_size and condition_on_previous_text are asserted *absent* on the
     batch path: both were measured and both lose (beam 1 costs 0.50 pp for

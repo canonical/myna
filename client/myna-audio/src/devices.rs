@@ -2,7 +2,7 @@
 //! 002-native-pipewire-backend, FR-008/FR-008a). Lists current PipeWire input
 //! sources and notifies an observer as devices appear/disappear, so a settings
 //! chooser stays current without polling. Read-only: no audio, nothing
-//! persisted (audio-adapter-api §9; constitution Principle V).
+//! persisted (constitution Principle V).
 //!
 //! The stable `node.name` this yields is exactly what feeds
 //! `CaptureSpec.target` for selection — enumeration and selection tie together
@@ -33,7 +33,7 @@ pub enum DeviceChange {
     Removed { node_name: String },
 }
 
-/// Live input-device enumerator (audio-adapter-api §9; FR-008/FR-008a).
+/// Live input-device enumerator (FR-008/FR-008a).
 ///
 /// A dedicated PipeWire main-loop thread watches the registry and maintains the
 /// current set of input sources. The latest full list is published on a

@@ -26,8 +26,8 @@ Wire protocol (PROVISIONAL — input to the IE115 reconciliation, T18/T35):
    is no per-session ack beyond it. (No ``session.updated`` on this dialect:
    there is no mid-session reconfig.)
 4. Client streams raw PCM as binary frames, in the declared audio format.
-   (Binary frames, deliberately not IE115's base64-in-JSON — see
-   ``docs/IE115-deviations.md`` §1.3. Turn detection is client-driven: there is
+   (Binary frames, deliberately not IE115's base64-in-JSON.) Turn detection is
+   client-driven: there is
    no server VAD; the client owns the boundary.)
 5. Client sends a text frame ``{"type": "session.finish"}`` when audio ends
    (hotkey released). Closing the connection instead aborts the session.

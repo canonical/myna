@@ -1,5 +1,5 @@
-//! The capture-side consumer contract (`docs/audio-adapter-api.md` §3) — what
-//! the orchestrator sees of an audio source, kept here beside
+//! The capture-side consumer contract — what the orchestrator sees of an audio
+//! source, kept here beside
 //! [`AudioFormat`]/[`PcmChunk`] so capture implementations (the `myna-audio`
 //! adapter crate) depend on the wire vocabulary only, never on the
 //! orchestrator.
@@ -8,7 +8,7 @@
 //! - `capture()` is the hotkey press: the device opens and the adapter's ring
 //!   starts filling the moment it is called.
 //! - Polling may be deferred: the consumer holds off draining until the model
-//!   is `ready`; nothing is lost up to the ring depth (audio-adapter-api §6).
+//!   is `ready`; nothing is lost up to the ring depth.
 //! - Graceful stop ([`StopHandle::stop`]) drains then ends; dropping the
 //!   stream aborts and discards.
 //! - A fatal fault is exactly one `Err`, then `None` — never an empty stream
@@ -23,7 +23,7 @@ use thiserror::Error;
 
 use crate::audio::{AudioFormat, PcmChunk};
 
-/// A capture-side fault (audio-adapter-api §3). Surfaced as an `Err` stream
+/// A capture-side fault. Surfaced as an `Err` stream
 /// item so the dictation service turns it into a terminal session error rather
 /// than a silent stall.
 #[derive(Debug, Error)]
@@ -46,7 +46,7 @@ pub enum CaptureError {
 /// (`None`) or a fatal fault (one `Err`, then `None`).
 pub type CaptureStream = Pin<Box<dyn Stream<Item = Result<PcmChunk, CaptureError>> + Send>>;
 
-/// A source of push-side PCM (audio-adapter-api §3). The dictation service
+/// A source of push-side PCM. The dictation service
 /// sets the exact [`AudioFormat`] from the STT service's advertised
 /// capabilities; the source produces exactly that and nothing else.
 pub trait AudioSource: Send {
@@ -69,7 +69,7 @@ impl AudioSource for Box<dyn AudioSource> {
     }
 }
 
-/// A cheap, cloneable graceful-stop handle (audio-adapter-api §3/§5): setting
+/// A cheap, cloneable graceful-stop handle: setting
 /// it makes an in-flight capture **drain then end** (stream yields `None`),
 /// which the orchestrator reads as end-of-audio — the clean hotkey-release
 /// path. Dropping the stream instead is the abort path.

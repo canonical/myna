@@ -40,8 +40,7 @@ pub enum Outbound {
     /// A chunk of PCM to transcribe (goes out as a binary frame).
     Audio(PcmChunk),
     /// End of audio, hotkey released (`session.finish`). The backend keeps
-    /// decoding the tail and finishes with a terminal event — see the
-    /// commit-drain edge case in `docs/architecture/ie115-lifecycle.md` §3C.
+    /// decoding the tail and finishes with a terminal event.
     Finish,
     /// Abandon the session: close the connection without finishing. The backend
     /// commits nothing.

@@ -1,12 +1,12 @@
 # Myna Test Reading Sample Corpus (Mandarin Chinese / 中文)
 
 Mandarin Chinese (`zh`) translation of the reading sample corpus used by
-`docs/test-plan-system.md`. Mirrors the structure of `docs/test-samples-en.md`
+`test-plan-system.md`. Mirrors the structure of `test-samples-en.md`
 §1–§6.
 
 > **Review status**: draft machine-assisted translation — **needs
 > native/fluent Mandarin speaker review before use**, per
-> `docs/test-plan-system.md` §2's requirement that accuracy judgments be
+> `test-plan-system.md` §2's requirement that accuracy judgments be
 > made only by a fluent/native speaker of the language being tested. This
 > draft is written in Simplified Chinese; confirm whether Traditional
 > Chinese should be preferred for any particular tester.

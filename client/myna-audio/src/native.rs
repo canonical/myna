@@ -8,7 +8,7 @@
 //! 002-native-pipewire-backend, FR-016). Adds what the subprocess couldn't do
 //! in-process: node selection by stable `node.name` (T021), channel
 //! pick/downmix on multi-channel interfaces (T025), and graph-side
-//! resample/downmix to the negotiated format (audio-adapter-api §7/§9). Real
+//! resample/downmix to the negotiated format. Real
 //! DSP stays in the PipeWire graph upstream of our node (§10) — this backend
 //! only selects, converts, observes.
 //!
@@ -41,8 +41,8 @@ use pipewire::{
 use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 
 /// How often the loop wakes to check the [`StopHandle`], so a graceful stop /
-/// abort is honored within the ~250 ms promptness contract (audio-adapter-api
-/// §5, FR-012) even when no audio is flowing.
+/// abort is honored within the ~250 ms promptness contract (FR-012) even when
+/// no audio is flowing.
 const STOP_POLL: Duration = Duration::from_millis(100);
 
 /// Dead-capture watchdog window (2026-07-21 hardware finding): a daemon with
@@ -187,8 +187,8 @@ impl PipeWireBackend {
 
 impl CaptureBackend for PipeWireBackend {
     fn start(self: Box<Self>, spec: CaptureSpec, producer: Producer) -> Result<(), CaptureError> {
-        // Only S16LE lives in the format universe today (audio-adapter-api §2,
-        // pending T33). Reject other widths up front — cheap, testable offline
+        // Only S16LE lives in the format universe today. Reject other widths
+        // up front — cheap, testable offline
         // (T008), no PipeWire connection needed.
         if spec.format.sample_width_bytes != 2 {
             return Err(CaptureError::UnsupportedFormat(spec.format));
@@ -540,7 +540,7 @@ fn run_capture(
 
 /// Pick channel indices `selected` from an interleaved S16LE frame stream that
 /// has `in_channels` channels, and downmix them to `out_channels` by averaging
-/// (audio-adapter-api §9). Frame-aligned; a trailing partial frame is dropped.
+/// Frame-aligned; a trailing partial frame is dropped.
 ///
 /// For `out_channels == 1`, all selected channels average into the single out
 /// channel. For `out_channels == selected.len()`, each selected channel maps

@@ -3,7 +3,7 @@
 
 Not a product: a design-space instrument. It renders every knob it can find on
 the installed snaps, shows what a Settings panel would have to guess because
-no config schema exists yet (docs/configuration-api.md 3.4), and puts the live
+no config schema exists yet, and puts the live
 status and resource cost of each backend next to those knobs.
 
 Reads are unprivileged (`snap run <backend> get|status|list-*`, systemd

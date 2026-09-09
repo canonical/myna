@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, BufReader, Stdin};
 
 /// A push-to-talk edge. `Press` starts an utterance; `Release` is the graceful
-/// stop (end-of-audio → finalize) — see `docs/audio-adapter-api.md` §5.
+/// stop (end-of-audio → finalize).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TriggerEdge {
     Press,

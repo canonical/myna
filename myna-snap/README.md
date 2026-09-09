@@ -225,7 +225,7 @@ was removed (T150).
 
 **Preedit**: in-field unstable hypotheses are on exactly when this machine
 resolves to streaming (your persisted `streaming_mode` through the RTF tier
-gate - see `docs/streaming-mode-settings.md`) *and* the injector has a real
+gate - see `client/.kb/runtime-settings.md`) *and* the injector has a real
 preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 
 **Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_LANGUAGE`.

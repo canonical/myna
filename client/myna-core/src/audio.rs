@@ -1,5 +1,4 @@
-//! Audio types, mirroring Python `myna.core.audio` and the Rust sketch in
-//! `docs/audio-adapter-api.md` §2.
+//! Audio types, mirroring Python `myna.core.audio`.
 //!
 //! Under the audio-push invariant the *client* owns capture and pushes PCM; the
 //! STT service never touches the microphone. PCM is carried as raw binary WS

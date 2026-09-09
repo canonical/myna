@@ -1,4 +1,4 @@
-//! The stats tap (audio-adapter-api §8) — capture health for a UI: level
+//! The stats tap — capture health for a UI: level
 //! meter, activity indicator, overflow warning. Pure observation: levels and
 //! counters, never samples (invariant §1.4), and it never affects what is
 //! sent. Updated at capture time (as chunks enter the ring), so the meter
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 /// Snapshot of capture health. Levels are linear full-scale `[0, 1]` (a UI
 /// converts to dBFS as it likes) and assume S16LE samples — the only encoding
-/// in the format universe today (audio-adapter-api §2, pending T33).
+/// in the format universe today.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AudioStats {
     /// RMS level of the last captured chunk.

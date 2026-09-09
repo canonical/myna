@@ -1,16 +1,13 @@
 """Transcript event vocabulary.
 
-PROVISIONAL — this tracks the working vocabulary in CLAUDE.md, which simplifies
-earlier IE114 drafts (no ``partial``/``replace``/epochs; retraction semantics
-were dropped as confusing). If you add an event type, document it in CLAUDE.md
-and flag it provisional. The compat policy is **additive** (aligned with the
-IE115 direction, 2026-07-06): ``event_from_wire`` returns ``None`` for an
+The vocabulary has no ``partial``/``replace``/epochs; retraction semantics are
+intentionally absent. The compatibility policy is **additive**:
+``event_from_wire`` returns ``None`` for an
 unknown event type and clients skip it, so adding an event is not a breaking
 change. Bump ``myna.core.protocol.PROTOCOL_VERSION`` only for *semantic*
 changes to existing events or config/capabilities shapes.
 
-IE115 reconciliation (T36, see ``docs/IE115-deviations.md`` §1.1): we keep these
-flat ``transcription.*`` names rather than adopting IE115's five-deep OpenAI
+We keep flat ``transcription.*`` names rather than adopting IE115's five-deep OpenAI
 ``conversation.item.input_audio_transcription.{delta,completed,failed}`` — there
 is no conversation in dictation, only a stream becoming text. Mapping for anyone
 porting an IE115/OpenAI client (revised 2026-07-06 for persistent multi-commit
@@ -35,8 +32,8 @@ Semantics:
   liveness we already emit rather than a new ``session.starting`` event — and
   phase values, not a full state machine (the audio-push model makes
   "listening" the client's own business). The three phases map onto the IE115
-  additive ``STATUS`` liveness event (``state: loading|ready|transcribing``,
-  see ``docs/architecture/ie115-lifecycle.md``); ``ready`` was added
+  additive ``STATUS`` liveness event (``state: loading|ready|transcribing``);
+  ``ready`` was added
   (2026-07-01, plan T42) so the client can gate audio on model residency — the
   accept-gate — over the wire, not just infer it. ``warning`` (plan T10,
   2026-08-29) is an additive, optional, human-readable string for a

@@ -1,18 +1,16 @@
 # myna client (Rust) — Workstreams D + G
 
-The dictation **client**: it owns microphone capture and the hotkey, runs the
-wire-agnostic session + model-residency FSM (from
-`../docs/architecture/ie115-lifecycle.md`) against an inference backend, and
-injects transcribed text into the focused application. See
-`../docs/project-plan.md` (Workstream D — audio; Workstream G — orchestrator;
-T21/T22 — the desktop last-mile) and `../docs/desktop-injection.md`.
+The dictation **client** owns microphone capture and activation, runs the
+wire-agnostic session and model-residency FSM against an inference backend, and
+injects transcribed text into the focused application. See `AGENTS.md` for the
+current client knowledge index.
 
 ## Crates
 
 | crate | role | task |
 |---|---|---|
 | `myna-core` | wire contract: events, session config, protocol version, audio types + JSON codec, mirroring Python `myna.core` | **T38 (done)** |
-| `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` (`../docs/audio-adapter-api.md`) — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
+| `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
 | `myna-cli` (`myna-dictate`) | demo binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
 | `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: GlobalShortcuts hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
@@ -25,7 +23,7 @@ T21/T22 — the desktop last-mile) and `../docs/desktop-injection.md`.
   OpenAI-Realtime-shaped **IE115** wire is layered on (T43) as a *second*
   `BackendClient` (`ws_unix_ie115::WsUnixIe115Backend`) — the FSM and driver are
   unchanged, proving the trait boundary. Pick it at runtime with
-  `myna-dictate --dialect ie115` (see `../docs/architecture/ie115-wire.md`).
+  `myna-dictate --dialect ie115`.
 - **Every boundary is a trait with a mock.** The Python `myna-server` stands in
   for the inference snap; `myna-audio` is the capture adapter (mock:
   `ScriptedBackend`); the hotkey is `Trigger` (`StdinTrigger` /
@@ -99,8 +97,7 @@ as a snap/flatpak, which GNOME grants an app identity; bind the key once with
 desktop notifications; on GNOME the myna-shell extension hosts the richer
 overlay HUD (feature 004). The former GTK `--overlay` was removed in T150.
 
-See `../docs/desktop-injection.md` for the settled T21/T22 contract (controller
-state model, the three seams, the IBus-over-zbus backend, the GTK indicator).
+See `.kb/desktop-integration.md` for the controller and injection invariants.
 
 ### Settings store (unpackaged)
 
