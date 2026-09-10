@@ -248,6 +248,16 @@ actions:
   workflow-lint: |
     export PATH=/usr/local/cargo-bin:$PATH
     cd /project && actionlint .github/workflows/*.yml
+  # Translation templates. `i18n` regenerates the committed .pot files;
+  # `i18n-check` regenerates to a scratch file and diffs (ignoring the
+  # creation-date header), so an edited string that nobody re-extracted fails
+  # the static battery instead of drifting silently. Runs here, not on the
+  # host, so both sides use one xgettext.
+  i18n: |
+    /project/dev/i18n.sh
+  i18n-check: |
+    /project/dev/i18n.sh --check
+
 
   # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
   audit: |

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 17:25+0000\n"
+"POT-Creation-Date: 2026-09-12 21:42+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,23 +17,23 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/indicator/mod.rs:100
+#: src/indicator/mod.rs:99
 msgid "Loading model…"
 msgstr ""
 
-#: src/indicator/mod.rs:101
+#: src/indicator/mod.rs:100
 msgid "Listening"
 msgstr ""
 
-#: src/indicator/mod.rs:102
+#: src/indicator/mod.rs:101
 msgid "Transcribing"
 msgstr ""
 
-#: src/indicator/mod.rs:103
+#: src/indicator/mod.rs:102
 msgid "Finishing"
 msgstr ""
 
-#: src/indicator/mod.rs:107
+#: src/indicator/mod.rs:106
 #, c-format
 msgid "Error: %s"
 msgstr ""
@@ -78,15 +78,15 @@ msgstr ""
 msgid "Dictation target closed"
 msgstr ""
 
-#: src/controller.rs:583
+#: src/controller.rs:596
 msgid "Refusing to type into a password field"
 msgstr ""
 
-#: src/controller.rs:584
+#: src/controller.rs:597
 msgid "No text field is focused"
 msgstr ""
 
-#: src/shortcut/retry.rs:243
+#: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
 msgstr ""
