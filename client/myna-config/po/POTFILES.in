@@ -6,12 +6,17 @@ data/backend-page.blp
 data/diagnostics-page.blp
 data/main-window.blp
 data/myna-page.blp
+data/onboarding-components.blp
+data/onboarding-shortcut.blp
+data/onboarding-welcome.blp
+data/onboarding-window.blp
 data/operation-error-dialog.blp
 data/sidebar-row.blp
 data/status-page.blp
 src/app.rs
 src/active_backend.rs
 src/backend_ui.rs
+src/onboarding_ui.rs
 src/diagnostics.rs
 src/myna_settings.rs
 ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml

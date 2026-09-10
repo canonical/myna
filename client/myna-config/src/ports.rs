@@ -3,6 +3,7 @@ use thiserror::Error;
 use async_trait::async_trait;
 
 use crate::active_backend::SwitchPlan;
+use crate::adapters::snapd_client::ProgressSink;
 use crate::backend_apply::ApplyPreview;
 use crate::command::{CancellationToken, CommandRequest};
 use crate::diagnostics::InstalledSnap;
@@ -10,6 +11,7 @@ use crate::domain::{
     BackendIdentity, BackendSnapshot, BackendSurfaceError, ClientSetting, ClientSettingMetadata,
     ClientSettingValue, CommandResult, ConnectionSnapshot,
 };
+use crate::onboarding::InstallTarget;
 
 pub type ClientSettingsCallback = Box<dyn Fn(ClientSetting) + 'static>;
 
@@ -50,6 +52,20 @@ pub trait BackendRepository {
         &self,
         cancellation: CancellationToken,
     ) -> Result<ConnectionSnapshot, BackendSurfaceError>;
+}
+
+/// Installs one of the typed onboarding targets.
+///
+/// Deliberately narrower than "install a snap": the caller names a target the
+/// application knows about, never a string.
+#[async_trait(?Send)]
+pub trait SnapInstaller {
+    async fn install(
+        &self,
+        target: InstallTarget,
+        progress: Option<ProgressSink>,
+        cancellation: CancellationToken,
+    ) -> Result<(), SystemConfiguratorError>;
 }
 
 #[async_trait(?Send)]

@@ -14,6 +14,7 @@ use crate::myna_settings::{
     choice_display_label, DebouncedTextCommit, MynaSettingsController, PageState,
     PersistenceRequest, PersistenceWriter, SettingRow, SettingsEvent,
 };
+use crate::onboarding::{assess, needs_onboarding, Machine};
 use crate::ports::{ClientSettings, ClientSettingsError};
 use crate::ui;
 use crate::APP_ID;
@@ -24,11 +25,19 @@ const SMOKE_ENV: &str = "MYNA_CONFIG_SMOKE_BUILD";
 const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
+const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
 /// The probes must never claim the real application id: registering it while a
 /// Myna Settings is already running takes the remote-instance path, and
 /// `gtk_window_set_application` then segfaults against an application that was
 /// never started.
 const PROBE_APP_ID: &str = "com.canonical.Myna.Config.Probe";
+
+/// One id per probe *process*: the probes run in parallel under one `cargo
+/// test`, and two of them sharing an id is the same remote-instance hazard
+/// described above, with the same segfault.
+fn probe_app_id() -> String {
+    format!("{PROBE_APP_ID}.p{}", std::process::id())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppearancePolicy {
@@ -74,6 +83,10 @@ pub fn run() -> glib::ExitCode {
         return typing_probe();
     }
 
+    if smoke_requested(std::env::var_os(ONBOARDING_ENV).as_deref()) {
+        return onboarding_probe();
+    }
+
     if smoke_requested(std::env::var_os(SMOKE_ENV).as_deref()) {
         return match GioClientSettings::open()
             .map(|settings| Rc::new(settings) as Rc<dyn ClientSettings>)
@@ -109,7 +122,7 @@ fn accessibility_probe() -> glib::ExitCode {
     }
 
     let application = adw::Application::builder()
-        .application_id(PROBE_APP_ID)
+        .application_id(probe_app_id())
         .build();
     let _ = application.register(None::<&gio::Cancellable>);
 
@@ -142,7 +155,7 @@ fn accessibility_probe() -> glib::ExitCode {
 
     split_view.set_content(Some(&diagnostics));
     add_narrow_breakpoint(&window, &split_view);
-    install_appearance_policy(&window);
+    install_appearance_policy(window.upcast_ref());
     window.present();
     settle_gtk();
 
@@ -230,6 +243,127 @@ fn accessibility_probe() -> glib::ExitCode {
     glib::ExitCode::SUCCESS
 }
 
+/// Walk the onboarding wizard by activating its buttons, holding nothing but
+/// the widgets - exactly what production does.
+///
+/// The regression this exists for: `present` returned the only strong
+/// reference to the controller, the caller dropped it, and every button was
+/// left upgrading a dead weak reference. Everything rendered and nothing
+/// worked, so the probe must assert on widget state after dropping that
+/// reference, never through the controller it just released.
+fn onboarding_probe() -> glib::ExitCode {
+    use crate::onboarding::{assess, Machine};
+    use crate::onboarding_ui::OnboardingUi;
+
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config onboarding probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    let application = adw::Application::builder()
+        .application_id(probe_app_id())
+        .build();
+    let _ = application.register(None::<&gio::Cancellable>);
+
+    let step = |window: &ui::OnboardingWindow| {
+        window
+            .stack()
+            .visible_child_name()
+            .map(|name| name.to_string())
+            .unwrap_or_default()
+    };
+
+    // A machine with nothing installed: the flow opens, and its component step
+    // refuses to advance.
+    let (window, start_button) = {
+        let ui = OnboardingUi::present(&application, assess(Machine::default()), Box::new(|| {}));
+        (ui.window(), ui.start_button())
+    };
+    settle_gtk();
+    if step(&window) != "welcome" {
+        eprintln!("the wizard did not open on its first step");
+        return glib::ExitCode::FAILURE;
+    }
+    start_button.emit_clicked();
+    settle_gtk();
+    if step(&window) != "components" {
+        eprintln!("activating the welcome button did not reach the component step");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-start: advanced");
+
+    let forward = window.forward_button();
+    if forward.is_sensitive() {
+        eprintln!("the component step offered to advance with required components missing");
+        return glib::ExitCode::FAILURE;
+    }
+    forward.emit_clicked();
+    settle_gtk();
+    if step(&window) != "components" {
+        eprintln!("an insensitive forward button still advanced the flow");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-gate: held");
+    window.close();
+    settle_gtk();
+
+    // A machine missing only the optional extension walks to the end, and
+    // finishing hands control back to the caller.
+    let installed = [crate::diagnostics::InstalledSnap {
+        name: crate::onboarding::MYNA_SNAP.to_owned(),
+        version: "1".to_owned(),
+    }];
+    let completed = Rc::new(Cell::new(false));
+    let (window, start_button) = {
+        let ui = OnboardingUi::present(
+            &application,
+            assess(Machine::new(&installed, 1, false)),
+            Box::new({
+                let completed = completed.clone();
+                move || completed.set(true)
+            }),
+        );
+        (ui.window(), ui.start_button())
+    };
+    settle_gtk();
+    start_button.emit_clicked();
+    settle_gtk();
+    let forward = window.forward_button();
+    if !forward.is_sensitive() {
+        eprintln!("the component step refused to advance with only the extension missing");
+        return glib::ExitCode::FAILURE;
+    }
+    forward.emit_clicked();
+    settle_gtk();
+    if step(&window) != "shortcut" {
+        eprintln!("the component step did not reach the shortcut step");
+        return glib::ExitCode::FAILURE;
+    }
+    let back = window.back_button();
+    if !back.is_visible() {
+        eprintln!("the shortcut step offers no way back");
+        return glib::ExitCode::FAILURE;
+    }
+    back.emit_clicked();
+    settle_gtk();
+    if step(&window) != "components" {
+        eprintln!("the back button did not return to the component step");
+        return glib::ExitCode::FAILURE;
+    }
+    forward.emit_clicked();
+    settle_gtk();
+    println!("onboarding-walk: reached the last step");
+
+    forward.emit_clicked();
+    settle_gtk();
+    if !completed.get() {
+        eprintln!("finishing the wizard did not hand control back");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-finish: handed back");
+    glib::ExitCode::SUCCESS
+}
+
 fn template_probe() -> glib::ExitCode {
     ui::register_resources();
     if let Err(error) = gtk::init() {
@@ -238,7 +372,7 @@ fn template_probe() -> glib::ExitCode {
     }
 
     let application = adw::Application::builder()
-        .application_id(PROBE_APP_ID)
+        .application_id(probe_app_id())
         .build();
     let _ = application.register(None::<&gio::Cancellable>);
     for resource in [
@@ -249,6 +383,10 @@ fn template_probe() -> glib::ExitCode {
         "diagnostics-page.ui",
         "main-window.ui",
         "myna-page.ui",
+        "onboarding-components.ui",
+        "onboarding-shortcut.ui",
+        "onboarding-welcome.ui",
+        "onboarding-window.ui",
         "operation-error-dialog.ui",
         "sidebar-row.ui",
         "status-page.ui",
@@ -307,6 +445,28 @@ fn template_probe() -> glib::ExitCode {
         diagnostics.refresh_button(),
     );
     println!("DiagnosticsPage");
+    let welcome = ui::OnboardingWelcome::new();
+    let _ = (welcome.status(), welcome.start_button());
+    println!("OnboardingWelcome");
+    let components = ui::OnboardingComponents::new();
+    let _ = (components.subtitle(), components.list());
+    println!("OnboardingComponents");
+    let shortcut = ui::OnboardingShortcut::new();
+    let _ = (
+        shortcut.description(),
+        shortcut.shortcut_box(),
+        shortcut.change_button(),
+    );
+    println!("OnboardingShortcut");
+    let onboarding = ui::OnboardingWindow::new(&application);
+    let _ = (
+        onboarding.overlay(),
+        onboarding.window_title(),
+        onboarding.stack(),
+        onboarding.back_button(),
+        onboarding.forward_button(),
+    );
+    println!("OnboardingWindow");
     let sidebar = ui::SidebarRow::new();
     let _ = sidebar.icon();
     println!("SidebarRow");
@@ -328,6 +488,10 @@ fn template_probe() -> glib::ExitCode {
     glib::ExitCode::SUCCESS
 }
 
+/// Read the machine once, then open either the onboarding wizard or the
+/// settings window. The read is the same two subprocesses a startup refresh
+/// already budgets for (`snap list`, `snap connections`), and the wizard is
+/// handed the result rather than repeating it.
 fn build_window(application: &adw::Application) {
     ui::register_resources();
     if let Some(window) = application.active_window() {
@@ -336,6 +500,58 @@ fn build_window(application: &adw::Application) {
     }
 
     gtk::Window::set_default_icon_name(APP_ID);
+    let application = application.clone();
+    // Nothing is on screen while the machine is read, and a GApplication with
+    // no window and no held use count quits the moment `activate` returns.
+    let hold = application.hold();
+    glib::spawn_future_local(async move {
+        let components = assess_machine().await;
+        if needs_onboarding(&components) {
+            let settings_application = application.clone();
+            crate::onboarding_ui::OnboardingUi::present(
+                &application,
+                components,
+                Box::new(move || build_settings_window(&settings_application)),
+            );
+        } else {
+            build_settings_window(&application);
+        }
+        drop(hold);
+    });
+}
+
+/// One assessment of what dictation is missing on this machine. A surface that
+/// cannot be read counts as nothing found, which opens the wizard: the flow
+/// then shows what it could not verify rather than a settings window with no
+/// backends and no explanation.
+async fn assess_machine() -> Vec<crate::onboarding::Component> {
+    use crate::adapters::snap_backend::SnapBackendRepository;
+    use crate::command::{CancellationToken, GioCommandRunner};
+    use crate::ports::BackendRepository;
+
+    let repository = SnapBackendRepository::new(std::sync::Arc::new(GioCommandRunner));
+    let installed = repository
+        .installed_snaps(CancellationToken::new())
+        .await
+        .unwrap_or_default();
+    let backends = repository
+        .discover(CancellationToken::new())
+        .await
+        .map(|snapshot| snapshot.backends().len())
+        .unwrap_or_default();
+    assess(Machine::new(
+        &installed,
+        backends,
+        crate::onboarding_ui::shell_extension_installed(),
+    ))
+}
+
+fn build_settings_window(application: &adw::Application) {
+    if let Some(window) = application.active_window() {
+        window.present();
+        return;
+    }
+
     let window = ui::MainWindow::new(application);
     let split_view = window.split_view();
     let sidebar_list = window.sidebar_list();
@@ -350,7 +566,7 @@ fn build_window(application: &adw::Application) {
     )));
     sidebar_list.select_row(Some(&myna_row));
     add_narrow_breakpoint(&window, &split_view);
-    install_appearance_policy(&window);
+    install_appearance_policy(window.upcast_ref());
     window.present();
 
     glib::idle_add_local_once(glib::clone!(
@@ -421,7 +637,7 @@ fn current_appearance_policy() -> AppearancePolicy {
     )
 }
 
-fn apply_appearance_policy(window: &ui::MainWindow) {
+fn apply_appearance_policy(window: &gtk::Widget) {
     let policy = current_appearance_policy();
     adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
     if policy.reduced_motion {
@@ -436,7 +652,7 @@ fn apply_appearance_policy(window: &ui::MainWindow) {
     }
 }
 
-fn install_appearance_policy(window: &ui::MainWindow) {
+pub(crate) fn install_appearance_policy(window: &gtk::Widget) {
     let provider = gtk::CssProvider::new();
     provider.load_from_resource("/com/canonical/Myna/Config/ui/appearance.css");
     gtk::style_context_add_provider_for_display(

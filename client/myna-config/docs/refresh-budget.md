@@ -11,6 +11,11 @@ during a refresh cycle:
 | `BackendSelected`          | `BACKEND_REFRESH_PROCESS_BUDGET` (9 = `snap get` + `snap info` + at most 4 prioritized app probes + 3 modelctl reads) |
 | `DiagnosticsRequested(n)`  | `2 + n * BACKEND_REFRESH_PROCESS_BUDGET`                    |
 
+Startup additionally pays one `Startup`-sized assessment before any window
+exists, to decide between the settings window and the onboarding wizard
+(`docs/onboarding.md`). The result is handed to the wizard rather than
+re-read there.
+
 `RefreshPolicy::periodic_interval()` is **always `None`**: there is no
 background poll. Refreshes are triggered by (a) startup, (b) sidebar selection,
 (c) a user tap on the diagnostics *Refresh* button, and (d) explicit

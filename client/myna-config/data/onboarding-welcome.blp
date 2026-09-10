@@ -1,0 +1,18 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $OnboardingWelcome: Adw.Bin {
+  child: Adw.StatusPage status {
+    title: _("Set up Dictation");
+    description: _("Dictation runs locally, with no data leaving your computer.");
+
+    child: Gtk.Button start_button {
+      label: _("Get started");
+      halign: center;
+
+      accessibility {
+        description: _("Begin setting dictation up on this computer.");
+      }
+    };
+  };
+}

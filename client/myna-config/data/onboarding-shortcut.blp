@@ -1,0 +1,47 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $OnboardingShortcut: Adw.Bin {
+  child: Adw.Clamp {
+    maximum-size: 640;
+    valign: center;
+
+    child: Gtk.Box {
+      orientation: vertical;
+      spacing: 12;
+      margin-start: 24;
+      margin-end: 24;
+
+      Gtk.Label {
+        label: _("How to dictate");
+        justify: center;
+        wrap: true;
+
+        styles [
+          "title-1",
+        ]
+      }
+
+      Gtk.Label description {
+        justify: center;
+        wrap: true;
+        margin-bottom: 24;
+      }
+
+      Gtk.Box shortcut_box {
+        halign: center;
+        spacing: 8;
+        margin-bottom: 24;
+      }
+
+      Gtk.Button change_button {
+        label: _("Change shortcut");
+        halign: center;
+
+        accessibility {
+          description: _("Open the desktop keyboard settings, where the dictation shortcut is listed.");
+        }
+      }
+    };
+  };
+}

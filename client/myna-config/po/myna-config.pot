@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 19:58+0100\n"
+"POT-Creation-Date: 2026-09-10 01:33+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -116,7 +116,7 @@ msgid "Settings"
 msgstr ""
 
 #: data/main-window.blp:29 data/myna-page.blp:5 data/myna-page.blp:12
-#: data/status-page.blp:5
+#: data/status-page.blp:5 src/onboarding_ui.rs:489
 msgid "Myna"
 msgstr ""
 
@@ -148,7 +148,8 @@ msgstr ""
 msgid "Switch"
 msgstr ""
 
-#: data/myna-page.blp:37
+#: data/myna-page.blp:37 data/onboarding-window.blp:7
+#: data/onboarding-window.blp:14 src/onboarding_ui.rs:481
 msgid "Dictation"
 msgstr ""
 
@@ -159,6 +160,63 @@ msgid ""
 "for this machine."
 msgstr ""
 
+#: data/onboarding-components.blp:16 src/onboarding_ui.rs:482
+msgid "Install components"
+msgstr ""
+
+#: data/onboarding-components.blp:26 src/onboarding_ui.rs:242
+msgid "You need to install some components for Dictation to work."
+msgstr ""
+
+#: data/onboarding-components.blp:40
+msgid "Components to install"
+msgstr ""
+
+#: data/onboarding-shortcut.blp:16 src/onboarding_ui.rs:483
+msgid "How to dictate"
+msgstr ""
+
+#: data/onboarding-shortcut.blp:38
+msgid "Change shortcut"
+msgstr ""
+
+#: data/onboarding-shortcut.blp:42
+msgid ""
+"Open the desktop keyboard settings, where the dictation shortcut is listed."
+msgstr ""
+
+#: data/onboarding-welcome.blp:6
+msgid "Set up Dictation"
+msgstr ""
+
+#: data/onboarding-welcome.blp:7
+msgid "Dictation runs locally, with no data leaving your computer."
+msgstr ""
+
+#: data/onboarding-welcome.blp:10
+msgid "Get started"
+msgstr ""
+
+#: data/onboarding-welcome.blp:14
+msgid "Begin setting dictation up on this computer."
+msgstr ""
+
+#: data/onboarding-window.blp:33
+msgid "Back"
+msgstr ""
+
+#: data/onboarding-window.blp:36
+msgid "Return to the previous onboarding step."
+msgstr ""
+
+#: data/onboarding-window.blp:45 src/onboarding_ui.rs:213
+msgid "Next"
+msgstr ""
+
+#: data/onboarding-window.blp:53
+msgid "Continue to the next onboarding step."
+msgstr ""
+
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
 msgstr ""
@@ -167,7 +225,7 @@ msgstr ""
 msgid "Full details are shown below. You can copy them to share with support."
 msgstr ""
 
-#: data/operation-error-dialog.blp:11
+#: data/operation-error-dialog.blp:11 src/onboarding_ui.rs:341
 msgid "Close"
 msgstr ""
 
@@ -179,31 +237,31 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:12 src/app.rs:333 src/app.rs:478
+#: data/status-page.blp:12 src/app.rs:430 src/app.rs:669
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:13 src/app.rs:334 src/app.rs:479
+#: data/status-page.blp:13 src/app.rs:431 src/app.rs:670
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:483
+#: src/app.rs:674
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:484
+#: src/app.rs:675
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:500
+#: src/app.rs:691
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:786
+#: src/app.rs:986
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:845 src/app.rs:848
+#: src/app.rs:1045 src/app.rs:1048
 msgid "Reset to the schema default"
 msgstr ""
 
@@ -468,7 +526,7 @@ msgstr ""
 msgid "Copy install command"
 msgstr ""
 
-#: src/backend_ui.rs:1283
+#: src/backend_ui.rs:1283 src/onboarding_ui.rs:354
 msgid "Install command copied to clipboard"
 msgstr ""
 
@@ -800,6 +858,125 @@ msgstr ""
 
 #: src/backend_ui.rs:2538
 msgid "previous switch is unresolved"
+msgstr ""
+
+#: src/onboarding_ui.rs:215
+msgid "Done"
+msgstr ""
+
+#: src/onboarding_ui.rs:235
+msgid "Everything Dictation needs is installed."
+msgstr ""
+
+#: src/onboarding_ui.rs:258
+msgid "Install"
+msgstr ""
+
+#: src/onboarding_ui.rs:271
+msgid "How to install"
+msgstr ""
+
+#: src/onboarding_ui.rs:295
+msgid "Starting…"
+msgstr ""
+
+#: src/onboarding_ui.rs:316
+msgid "Connecting…"
+msgstr ""
+
+#: src/onboarding_ui.rs:321
+msgid "Could not enable the backend"
+msgstr ""
+
+#: src/onboarding_ui.rs:328
+msgid "Could not install the component"
+msgstr ""
+
+#: src/onboarding_ui.rs:343
+msgid "Copy command"
+msgstr ""
+
+#: src/onboarding_ui.rs:374
+msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
+msgstr ""
+
+#: src/onboarding_ui.rs:376
+msgid ""
+"Dictation is triggered by the keyboard shortcut you chose the first time "
+"Myna asked for one. It is listed under Myna in the desktop keyboard settings."
+msgstr ""
+
+#: src/onboarding_ui.rs:409
+msgid "Could not open the keyboard settings"
+msgstr ""
+
+#: src/onboarding_ui.rs:433
+msgid "The installed backend did not appear in snap connections."
+msgstr ""
+
+#: src/onboarding_ui.rs:441
+msgid "The installed backend is not available to switch to."
+msgstr ""
+
+#: src/onboarding_ui.rs:454
+msgid "The change was cancelled."
+msgstr ""
+
+#: src/onboarding_ui.rs:456
+msgid "The backend changed while it was being enabled."
+msgstr ""
+
+#: src/onboarding_ui.rs:490
+msgid "Recommended speech-to-text model"
+msgstr ""
+
+#: src/onboarding_ui.rs:491
+msgid "Shell extension"
+msgstr ""
+
+#: src/onboarding_ui.rs:497
+msgid "The dictation client itself"
+msgstr ""
+
+#: src/onboarding_ui.rs:500
+#, rust-format
+msgid "Parakeet · {size} MB"
+msgstr ""
+
+#: src/onboarding_ui.rs:504
+msgid "Needed to show dictation status in the desktop"
+msgstr ""
+
+#: src/onboarding_ui.rs:514
+msgid "Install Myna"
+msgstr ""
+
+#: src/onboarding_ui.rs:516
+msgid ""
+"Myna runs as a user service, which snapd only installs once user daemons are "
+"enabled. Run both commands in a terminal."
+msgstr ""
+
+#: src/onboarding_ui.rs:523
+msgid "Install the speech-to-text model"
+msgstr ""
+
+#: src/onboarding_ui.rs:524
+msgid "Run this command in a terminal."
+msgstr ""
+
+#: src/onboarding_ui.rs:528
+msgid "Install the shell extension"
+msgstr ""
+
+#: src/onboarding_ui.rs:530
+msgid ""
+"The extension is not published in a store yet. Copy it into the extensions "
+"directory and enable it, then log out and back in."
+msgstr ""
+
+#: src/onboarding_ui.rs:539
+msgid "Installing…"
 msgstr ""
 
 #: src/diagnostics.rs:293

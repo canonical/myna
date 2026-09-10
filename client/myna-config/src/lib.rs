@@ -13,6 +13,8 @@ pub mod domain;
 pub mod machine;
 pub mod markup;
 pub mod myna_settings;
+pub mod onboarding;
+pub mod onboarding_ui;
 pub mod operation_gate;
 pub mod ports;
 pub mod presentation;

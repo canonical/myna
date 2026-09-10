@@ -1,0 +1,59 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $OnboardingWindow: Adw.ApplicationWindow {
+  default-width: 800;
+  default-height: 600;
+  title: _("Dictation");
+
+  content: Adw.ToastOverlay overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        title-widget: Adw.WindowTitle window_title {
+          title: _("Dictation");
+        };
+      }
+
+      content: Gtk.Stack stack {
+        transition-type: crossfade;
+        hhomogeneous: true;
+        vhomogeneous: true;
+      };
+
+      [bottom]
+      Gtk.Box actions {
+        margin-start: 24;
+        margin-end: 24;
+        margin-top: 12;
+        margin-bottom: 24;
+        spacing: 12;
+
+        Gtk.Button back_button {
+          label: _("Back");
+
+          accessibility {
+            description: _("Return to the previous onboarding step.");
+          }
+        }
+
+        Gtk.Box {
+          hexpand: true;
+        }
+
+        Gtk.Button forward_button {
+          label: _("Next");
+          sensitive: false;
+
+          styles [
+            "suggested-action",
+          ]
+
+          accessibility {
+            description: _("Continue to the next onboarding step.");
+          }
+        }
+      }
+    };
+  };
+}

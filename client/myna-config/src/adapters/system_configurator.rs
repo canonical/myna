@@ -348,7 +348,7 @@ fn snapd_timeout_message(
     format!("{} timed out after {elapsed:?}", context.description())
 }
 
-fn snapd_error_to_system_error(
+pub(crate) fn snapd_error_to_system_error(
     request: CommandRequest,
     error: SnapdError,
 ) -> SystemConfiguratorError {

@@ -9,6 +9,10 @@ const BLUEPRINTS: &[(&str, &str)] = &[
     ("diagnostics-page.blp", "diagnostics-page.ui"),
     ("main-window.blp", "main-window.ui"),
     ("myna-page.blp", "myna-page.ui"),
+    ("onboarding-components.blp", "onboarding-components.ui"),
+    ("onboarding-shortcut.blp", "onboarding-shortcut.ui"),
+    ("onboarding-welcome.blp", "onboarding-welcome.ui"),
+    ("onboarding-window.blp", "onboarding-window.ui"),
     ("sidebar-row.blp", "sidebar-row.ui"),
     ("status-page.blp", "status-page.ui"),
 ];

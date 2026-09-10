@@ -6,3 +6,13 @@
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
+
+/* Keyboard caps on the onboarding shortcut step. */
+.keycap {
+  background: alpha(currentColor, 0.08);
+  border: 1px solid alpha(currentColor, 0.2);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 1.2em;
+}

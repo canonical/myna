@@ -216,6 +216,102 @@ struct Slot<'a> {
     slot: &'a str,
 }
 
+/// One typed install this application is allowed to make.
+///
+/// Built from an [`crate::onboarding::InstallTarget`] rather than from a name
+/// carried around by the UI, and re-validated on the way out, so nothing but a
+/// known snap can ever reach `/v2/snaps/{name}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstallAction {
+    snap: String,
+    components: Vec<String>,
+}
+
+impl InstallAction {
+    pub fn new(target: crate::onboarding::InstallTarget) -> Self {
+        Self {
+            snap: target.snap().to_owned(),
+            components: target
+                .components()
+                .iter()
+                .map(|component| (*component).to_owned())
+                .collect(),
+        }
+    }
+
+    pub fn snap(&self) -> &str {
+        &self.snap
+    }
+
+    pub fn components(&self) -> &[String] {
+        &self.components
+    }
+
+    /// The request path, with the snap name re-validated: an unchecked name
+    /// here would append path segments or a query to the request line.
+    pub fn path(&self) -> Result<String, SnapdError> {
+        if !is_valid_snap_name(&self.snap) {
+            return Err(SnapdError::Transport {
+                message: format!("invalid snap name: {}", self.snap),
+            });
+        }
+        Ok(format!("/v2/snaps/{}", self.snap))
+    }
+
+    /// Validate the action and produce the exact JSON body snapd expects.
+    /// Components are named with the same grammar as snaps.
+    pub fn to_request_body(&self) -> Result<String, SnapdError> {
+        if !is_valid_snap_name(&self.snap) {
+            return Err(SnapdError::Transport {
+                message: format!("invalid snap name: {}", self.snap),
+            });
+        }
+        for component in &self.components {
+            if !is_valid_snap_name(component) {
+                return Err(SnapdError::Transport {
+                    message: format!("invalid component name: {component}"),
+                });
+            }
+        }
+        let request = InstallRequest {
+            action: "install",
+            components: &self.components,
+        };
+        serde_json::to_string(&request).map_err(|error| SnapdError::Transport {
+            message: format!("could not encode snapd request: {error}"),
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct InstallRequest<'a> {
+    action: &'a str,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    components: &'a [String],
+}
+
+/// How far an install has got, as snapd's change tasks report it. A download
+/// of several hundred megabytes is the whole of onboarding's waiting, so the
+/// wizard shows this rather than an unattributed spinner.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InstallProgress {
+    /// snapd's own label for the running task ("Download snap …").
+    pub label: String,
+    pub done: u64,
+    pub total: u64,
+}
+
+impl InstallProgress {
+    /// `None` while snapd reports no measurable total, which is every task
+    /// that is not a download.
+    pub fn fraction(&self) -> Option<f64> {
+        (self.total > 0).then(|| (self.done as f64 / self.total as f64).clamp(0.0, 1.0))
+    }
+}
+
+/// Called on the main context between change polls.
+pub type ProgressSink = std::rc::Rc<dyn Fn(InstallProgress)>;
+
 /// Reject any snap name that does not match the standard snap name grammar
 /// (`[a-z0-9][a-z0-9-]*[a-z0-9]`, no double hyphens, length 1..=40).
 pub fn is_valid_snap_name(name: &str) -> bool {
@@ -336,6 +432,255 @@ impl UnixSocketSnapdClient {
 impl Default for UnixSocketSnapdClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// An install is dominated by a download of several hundred megabytes on
+/// whatever connection the machine has, so its total budget is generous where
+/// the interface operations' is tight. Each individual request stays bounded
+/// by `per_request`.
+pub const INSTALL_TOTAL_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+/// Poll cadence for an install change. Slower than the interface poll: the
+/// user is watching a download, not a sub-second operation.
+pub const INSTALL_POLL_INTERVAL: Duration = Duration::from_millis(750);
+
+impl UnixSocketSnapdClient {
+    /// Install a snap and its components, reporting snapd's own task progress
+    /// as it goes.
+    ///
+    /// Unlike the interface operations this drives the change poll from the
+    /// main context - one `spawn_blocking` per request - so the wizard can
+    /// render progress between polls instead of after the whole change.
+    pub async fn install(
+        &self,
+        action: InstallAction,
+        progress: Option<ProgressSink>,
+        cancellation: CancellationToken,
+    ) -> Result<ChangeReport, SnapdError> {
+        let socket_path = self.socket_path.clone();
+        let mut timeouts = self.timeouts;
+        timeouts.total = INSTALL_TOTAL_TIMEOUT;
+        timeouts.poll_interval = INSTALL_POLL_INTERVAL;
+        let start = Instant::now();
+        let deadline = start + timeouts.total;
+
+        let change_id = {
+            let socket_path = socket_path.clone();
+            let cancellation = cancellation.clone();
+            spawn_snapd_blocking(move || {
+                blocking_start_install(
+                    &socket_path,
+                    timeouts,
+                    &action,
+                    cancellation,
+                    start,
+                    deadline,
+                )
+            })
+            .await?
+        };
+        let Some(change_id) = change_id else {
+            return Ok(ChangeReport {
+                change_id: String::new(),
+                status: "Done".to_owned(),
+            });
+        };
+
+        loop {
+            if cancellation.is_cancelled() {
+                return Err(SnapdError::Cancelled);
+            }
+            let poll = {
+                let socket_path = socket_path.clone();
+                let change_id = change_id.clone();
+                let cancellation = cancellation.clone();
+                spawn_snapd_blocking(move || {
+                    blocking_poll_install_once(
+                        &socket_path,
+                        &change_id,
+                        timeouts,
+                        cancellation,
+                        start,
+                        deadline,
+                    )
+                })
+                .await?
+            };
+            if let (Some(sink), Some(reported)) = (progress.as_ref(), poll.progress.clone()) {
+                sink(reported);
+            }
+            if poll.ready {
+                if let Some(message) = poll.error {
+                    return Err(SnapdError::Snapd {
+                        status_code: 200,
+                        kind: Some("change-failed".to_owned()),
+                        message,
+                    });
+                }
+                return Ok(ChangeReport {
+                    change_id,
+                    status: poll.status,
+                });
+            }
+            if Instant::now() >= deadline {
+                return Err(SnapdError::Timeout {
+                    elapsed: start.elapsed(),
+                    context: SnapdTimeoutContext::ChangePolling,
+                });
+            }
+            gio::glib::timeout_future(timeouts.poll_interval).await;
+        }
+    }
+}
+
+/// Run one blocking snapd request off the main loop, flattening the join
+/// failure into a transport error.
+async fn spawn_snapd_blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, SnapdError> + Send + 'static,
+) -> Result<T, SnapdError> {
+    gio::spawn_blocking(work)
+        .await
+        .map_err(|error| SnapdError::Transport {
+            message: format!("snapd worker join failed: {error:?}"),
+        })?
+}
+
+/// One poll of an install change.
+struct InstallPoll {
+    ready: bool,
+    status: String,
+    error: Option<String>,
+    progress: Option<InstallProgress>,
+}
+
+/// `Ok(None)` when snapd completed the install synchronously.
+fn blocking_start_install(
+    socket_path: &Path,
+    timeouts: SnapdTimeouts,
+    action: &InstallAction,
+    cancellation: CancellationToken,
+    start: Instant,
+    deadline: Instant,
+) -> Result<Option<String>, SnapdError> {
+    if cancellation.is_cancelled() {
+        return Err(SnapdError::Cancelled);
+    }
+    let path = action.path()?;
+    let body = action.to_request_body()?;
+    let response = do_request(
+        socket_path,
+        "POST",
+        &path,
+        Some(&body),
+        SnapdTimeoutContext::Request,
+        &timeouts,
+        &cancellation,
+        start,
+        deadline,
+    )?;
+    match parse_envelope(&response)? {
+        Envelope::Sync { .. } => Ok(None),
+        Envelope::Async { change_id } => {
+            if !is_valid_change_id(&change_id) {
+                return Err(SnapdError::Protocol {
+                    message: format!("snapd returned an invalid change id: {change_id:?}"),
+                    body: truncate(&response, 512),
+                });
+            }
+            Ok(Some(change_id))
+        }
+        Envelope::Error {
+            status_code,
+            kind,
+            message,
+        } => Err(classify_error(status_code, kind, message)),
+    }
+}
+
+fn blocking_poll_install_once(
+    socket_path: &Path,
+    change_id: &str,
+    timeouts: SnapdTimeouts,
+    cancellation: CancellationToken,
+    start: Instant,
+    deadline: Instant,
+) -> Result<InstallPoll, SnapdError> {
+    debug_assert!(is_valid_change_id(change_id));
+    if !is_valid_change_id(change_id) {
+        return Err(SnapdError::Protocol {
+            message: format!("refusing to poll invalid change id: {change_id:?}"),
+            body: String::new(),
+        });
+    }
+    let path = format!("/v2/changes/{change_id}");
+    let response = do_request(
+        socket_path,
+        "GET",
+        &path,
+        None,
+        SnapdTimeoutContext::ChangePolling,
+        &timeouts,
+        &cancellation,
+        start,
+        deadline,
+    )?;
+    match parse_envelope(&response)? {
+        Envelope::Sync { result_json } => {
+            let change: ChangeBody =
+                serde_json::from_value(result_json.clone()).map_err(|error| {
+                    SnapdError::Protocol {
+                        message: format!("could not parse change body: {error}"),
+                        body: result_json.to_string(),
+                    }
+                })?;
+            Ok(InstallPoll {
+                ready: change.ready,
+                progress: change.progress(),
+                error: change.err,
+                status: change.status,
+            })
+        }
+        Envelope::Async { .. } => Err(SnapdError::Protocol {
+            message: "snapd returned an async envelope for a change query".to_owned(),
+            body: truncate(&response, 512),
+        }),
+        Envelope::Error {
+            status_code,
+            kind,
+            message,
+        } => Err(classify_error(status_code, kind, message)),
+    }
+}
+
+#[async_trait(?Send)]
+impl crate::ports::SnapInstaller for UnixSocketSnapdClient {
+    async fn install(
+        &self,
+        target: crate::onboarding::InstallTarget,
+        progress: Option<ProgressSink>,
+        cancellation: CancellationToken,
+    ) -> Result<(), crate::ports::SystemConfiguratorError> {
+        let action = InstallAction::new(target);
+        // The request shape snapd is asked for, described the way the user
+        // would run it, so a failure reads as a command they can retry.
+        let described = crate::command::CommandRequest::new(
+            "snap".to_owned(),
+            std::iter::once("install".to_owned())
+                .chain(std::iter::once(action.snap().to_owned()))
+                .chain(
+                    action
+                        .components()
+                        .iter()
+                        .map(|component| format!("+{component}")),
+                )
+                .collect(),
+        );
+        self.install(action, progress, cancellation)
+            .await
+            .map(|_| ())
+            .map_err(|error| {
+                crate::adapters::system_configurator::snapd_error_to_system_error(described, error)
+            })
     }
 }
 
@@ -682,6 +1027,56 @@ struct ChangeBody {
     status: String,
     #[serde(default)]
     err: Option<String>,
+    #[serde(default)]
+    tasks: Vec<ChangeTask>,
+}
+
+#[derive(Deserialize)]
+struct ChangeTask {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    progress: TaskProgress,
+}
+
+#[derive(Default, Deserialize)]
+struct TaskProgress {
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    done: u64,
+    #[serde(default)]
+    total: u64,
+}
+
+impl ChangeBody {
+    /// The task snapd is running now, or the last one it finished. Snapd's own
+    /// client reports the same thing: a change's progress is whichever task is
+    /// `Doing`.
+    fn progress(&self) -> Option<InstallProgress> {
+        let task = self
+            .tasks
+            .iter()
+            .find(|task| task.status == "Doing")
+            .or_else(|| {
+                self.tasks
+                    .iter()
+                    .rev()
+                    .find(|task| task.status == "Done" || task.status == "Doing")
+            })?;
+        let label = if task.progress.label.is_empty() {
+            task.summary.clone()
+        } else {
+            task.progress.label.clone()
+        };
+        Some(InstallProgress {
+            label,
+            done: task.progress.done,
+            total: task.progress.total,
+        })
+    }
 }
 
 /// Snapd HTTP+JSON envelope.
@@ -1391,6 +1786,67 @@ mod tests {
             parse_headers("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nTransfer-Encoding: chunked"),
             Err(SnapdError::Protocol { .. })
         ));
+    }
+
+    #[test]
+    fn the_recommended_install_asks_for_the_snap_and_its_model_component() {
+        let action = InstallAction::new(crate::onboarding::InstallTarget::RecommendedModel);
+        assert_eq!(action.path().unwrap(), "/v2/snaps/myna-parakeet");
+        assert_eq!(
+            action.to_request_body().unwrap(),
+            r#"{"action":"install","components":["model-parakeet-int8"]}"#
+        );
+    }
+
+    #[test]
+    fn an_install_body_refuses_a_name_that_would_alter_the_request() {
+        let action = InstallAction {
+            snap: "myna-parakeet/../../secrets".to_owned(),
+            components: Vec::new(),
+        };
+        assert!(matches!(action.path(), Err(SnapdError::Transport { .. })));
+        assert!(matches!(
+            action.to_request_body(),
+            Err(SnapdError::Transport { .. })
+        ));
+
+        let action = InstallAction {
+            snap: "myna-parakeet".to_owned(),
+            components: vec!["model with space".to_owned()],
+        };
+        assert!(matches!(
+            action.to_request_body(),
+            Err(SnapdError::Transport { .. })
+        ));
+    }
+
+    #[test]
+    fn change_progress_follows_the_running_task() {
+        let change: ChangeBody = serde_json::from_str(
+            r#"{"ready":false,"status":"Doing","tasks":[
+                {"status":"Done","summary":"Ensure prerequisites","progress":{"done":1,"total":1}},
+                {"status":"Doing","summary":"Download snap","progress":{"label":"Download snap \"myna-parakeet\"","done":300,"total":690}}
+            ]}"#,
+        )
+        .unwrap();
+        let progress = change.progress().unwrap();
+        assert_eq!(progress.done, 300);
+        assert_eq!(progress.total, 690);
+        assert!(progress.label.starts_with("Download snap"));
+        assert!((progress.fraction().unwrap() - 300.0 / 690.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_task_with_no_measurable_total_reports_no_fraction() {
+        let change: ChangeBody = serde_json::from_str(
+            r#"{"ready":false,"status":"Doing","tasks":[
+                {"status":"Doing","summary":"Mount snap","progress":{"done":0,"total":0}}
+            ]}"#,
+        )
+        .unwrap();
+        let progress = change.progress().unwrap();
+        assert_eq!(progress.label, "Mount snap");
+        assert_eq!(progress.fraction(), None);
     }
 
     #[test]

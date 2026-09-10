@@ -30,6 +30,10 @@ fn every_top_level_template_instantiates_headlessly_when_enabled() {
         "SidebarRow",
         "StatusPage",
         "OperationErrorDialog",
+        "OnboardingWelcome",
+        "OnboardingComponents",
+        "OnboardingShortcut",
+        "OnboardingWindow",
     ] {
         assert!(stdout.contains(name), "{name} was not instantiated");
     }
@@ -113,4 +117,31 @@ fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
         !stderr.contains("did not receive a focus-out event"),
         "typing probe emitted the GtkText focus-out warning: {stderr}"
     );
+}
+
+/// The wizard's buttons must actually drive it: the regression was a presented
+/// window whose controller had already been dropped.
+#[test]
+fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
+        .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_CONFIG_ONBOARDING_TEST", "1")
+        .output()
+        .expect("run onboarding probe");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "onboarding probe failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in [
+        "onboarding-start: advanced",
+        "onboarding-gate: held",
+        "onboarding-walk: reached the last step",
+        "onboarding-finish: handed back",
+    ] {
+        assert!(stdout.contains(line), "onboarding probe missing: {line}");
+    }
 }

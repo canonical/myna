@@ -1,0 +1,45 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $OnboardingComponents: Adw.Bin {
+  child: Adw.Clamp {
+    maximum-size: 640;
+    valign: center;
+
+    child: Gtk.Box {
+      orientation: vertical;
+      spacing: 12;
+      margin-start: 24;
+      margin-end: 24;
+
+      Gtk.Label {
+        label: _("Install components");
+        justify: center;
+        wrap: true;
+
+        styles [
+          "title-1",
+        ]
+      }
+
+      Gtk.Label subtitle {
+        label: _("You need to install some components for Dictation to work.");
+        justify: center;
+        wrap: true;
+        margin-bottom: 24;
+      }
+
+      Gtk.ListBox list {
+        selection-mode: none;
+
+        styles [
+          "boxed-list",
+        ]
+
+        accessibility {
+          label: _("Components to install");
+        }
+      }
+    };
+  };
+}
