@@ -176,6 +176,48 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
     return drop
 
 
+def _drop_resegmented(kept: list, words: list, committed_word_texts: list[str]) -> list:
+    """Drop the leading surviving word when it is the last committed word
+    re-segmented into a truncation of itself.
+
+    The third dedupe signal, for what the other two structurally cannot see
+    (measured live 2026-09-11, real dedupe trace):
+
+        through=1.560  tail=['little','wrinkles','gathered']
+        in=[' Many'(0.56,0.70), ' little'(0.70,0.94), ' wrinkles'(0.94,1.22),
+            ' gather'(1.22,1.61), ' between', ...]
+        -> kept=[' gather', ' between', ...]      # "gathered gather"
+
+    "gathered" was committed; the re-decode of the overlap emitted "gather" —
+    the trailing "ed" migrated to the next token. Neither existing signal sees
+    it: the word ends *after* the committed frontier (so the timestamp rule
+    keeps it) and [`_alignment_drop`] is anchored on the committed tail's
+    suffix, which a truncation of its last word cannot contain.
+
+    Applied to the *surviving* head rather than the raw input head: which
+    signal removed the words in front of it varies (here it was timestamps,
+    with the alignment abstaining), so the rule keys off the boundary itself.
+
+    Gated on something having been dropped in front of it — i.e. this really is
+    the far edge of an overlap region. That gate is what protects genuinely new
+    speech which happens to repeat a prefix of the committed tail: with no
+    overlap, nothing precedes it and the rule never fires.
+
+    Only the prefix direction is handled. The reverse — committed "gather",
+    re-decoded as "gathered" — would have to drop the whole word to remove the
+    duplicate, losing the new suffix with it; per this module's policy
+    (under-drop leaks a visible duplicate, over-drop silently loses words), on
+    that ambiguity keep the words.
+    """
+    if not kept or len(kept) == len(words) or not committed_word_texts:
+        return kept
+    head = _squash(_norm(kept[0].text))
+    last = _squash(committed_word_texts[-1])
+    if len(head) < _MIN_OVERLAP_CHARS or head == last or not last.startswith(head):
+        return kept
+    return kept[1:]
+
+
 def _drop_committed(
     words: list,
     committed_word_texts: list[str],
@@ -183,10 +225,13 @@ def _drop_committed(
 ) -> list:
     """Overlap dedupe (I2): drop words a previous commit already emitted.
 
-    Two signals, unioned (a word is dropped if EITHER marks it old):
+    Three signals, unioned (a word is dropped if ANY marks it old):
     (a) timestamp — the word ends at/before the committed coverage;
     (b) character-level text alignment — the word sits inside the duplicate
-    region reaching the committed frontier ([`_alignment_drop`]). The
+    region reaching the committed frontier ([`_alignment_drop`]);
+    (c) the leading *surviving* word is the last committed word re-segmented
+    re-segmented the last committed word ([`_drop_resegmented`]), which (a) and
+    (b) structurally cannot see. The
     alignment drop is **not** gated on timestamps: after a long silence the
     (VAD-free) re-decode compresses the pause and re-times already-committed
     overlap words arbitrarily late — observed live 2026-07-28 ("quite well."
@@ -201,7 +246,8 @@ def _drop_committed(
     tail = committed_word_texts[-_OVERLAP_LOOKBACK:]
     new = [_norm(w.text) for w in words]
     drop = _alignment_drop(tail, new)
-    return [w for i, w in enumerate(words) if not (w.end <= committed_through + 1e-3 or i < drop)]
+    kept = [w for i, w in enumerate(words) if not (w.end <= committed_through + 1e-3 or i < drop)]
+    return _drop_resegmented(kept, words, committed_word_texts)
 
 
 def _norm(text: str) -> str:
