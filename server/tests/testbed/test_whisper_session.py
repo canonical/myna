@@ -31,14 +31,26 @@ from myna.testbed.whisper import FasterWhisperAdapter
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
 
 
-class _Segment:
-    """One faster-whisper segment (the attributes the adapter reads)."""
+class _Word:
+    """One faster-whisper word (the attributes the adapter reads)."""
 
-    def __init__(self, text, start=0.0, end=1.0, avg_logprob=-0.1):
+    def __init__(self, word, start, end, probability=0.9):
+        self.word = word
+        self.start = start
+        self.end = end
+        self.probability = probability
+
+
+class _Segment:
+    """One faster-whisper segment (the attributes the adapter reads).
+    ``words`` is None unless the decode asked for the alignment pass."""
+
+    def __init__(self, text, start=0.0, end=1.0, avg_logprob=-0.1, words=None):
         self.text = text
         self.start = start
         self.end = end
         self.avg_logprob = avg_logprob
+        self.words = words
 
 
 class _FakeWhisperModel:
@@ -155,6 +167,65 @@ async def test_timestamps_are_attached_only_when_asked_for():
     segment = finals(with_stamps)[0].segments[0]
     assert (segment.start, segment.end, segment.score) == (0.25, 1.5, -0.3)
     assert segment.text == "hi"
+
+
+async def test_asking_for_timestamps_turns_on_the_alignment_pass():
+    """Whisper's own segment boundaries are quantised to whole seconds, so a
+    timestamp request has to buy the word alignment to be worth anything."""
+    adapter = adapter_with(_Segment(" hi"))
+    await run_session(adapter)
+    assert "word_timestamps" not in adapter._model.calls[0]
+
+    adapter = adapter_with(_Segment(" hi"))
+    await run_session(adapter, timestamp_granularity="segment")
+    assert adapter._model.calls[0]["word_timestamps"] is True
+
+
+async def test_segment_timestamps_follow_the_word_alignment():
+    """The cue spans the words, not the segment's rounded-off boundaries."""
+    adapter = adapter_with(
+        _Segment(
+            " hi there",
+            start=0.0,
+            end=2.0,
+            words=[_Word(" hi", 0.42, 0.68), _Word(" there", 0.71, 1.13)],
+        )
+    )
+
+    events = await run_session(adapter, timestamp_granularity="segment")
+
+    (segment,) = finals(events)[0].segments
+    assert (segment.start, segment.end) == (0.42, 1.13)
+    assert segment.text == "hi there"
+
+
+async def test_word_granularity_yields_one_entry_per_word():
+    adapter = adapter_with(
+        _Segment(
+            " hi there",
+            words=[_Word(" hi", 0.42, 0.68, probability=0.8), _Word(" there", 0.71, 1.13)],
+        )
+    )
+
+    events = await run_session(adapter, timestamp_granularity="word")
+
+    segments = finals(events)[0].segments
+    assert [(s.text, s.start, s.end) for s in segments] == [
+        ("hi", 0.42, 0.68),
+        ("there", 0.71, 1.13),
+    ]
+    assert segments[0].score == 0.8
+
+
+async def test_word_granularity_degrades_to_the_segment_span():
+    """A client that asked for timestamps gets one even if alignment produced
+    no words."""
+    adapter = adapter_with(_Segment(" hi", start=0.25, end=1.5))
+
+    events = await run_session(adapter, timestamp_granularity="word")
+
+    (segment,) = finals(events)[0].segments
+    assert (segment.start, segment.end, segment.text) == (0.25, 1.5, "hi")
 
 
 async def test_region_subtags_are_dropped_for_the_decoder():
