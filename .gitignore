@@ -81,3 +81,6 @@ audio8-snap/*.snap
 audio8-snap/*.comp
 # FunASR model staged by dev/fetch_funasr_model.py (default --target)
 funasr_model/
+# mutation testing scratch (cargo-mutants, mutmut)
+client/mutants.out/
+server/mutants/

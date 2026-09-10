@@ -22,6 +22,9 @@ from pathlib import Path
 
 import pytest
 
+# Reads the repository outside server/ (see [tool.mutmut] in pyproject.toml).
+pytestmark = pytest.mark.repo_tree
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Fetcher -> the pattern proving it names a revision. Kept explicit rather than

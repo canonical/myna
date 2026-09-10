@@ -87,6 +87,7 @@ dev = [
     # of the nemotron extra; pinned here directly so a parakeet-only sync
     # still has it. Dev-only -- never imported at runtime.
     "onnx>=1.19",
+    "mutmut>=3.8.0",
 ]
 
 [build-system]
@@ -96,9 +97,25 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/myna"]
 
+# Mutation testing (`make mutate-server MUTATE='myna.core.session*'`). Scoped
+# runs only: mutmut copies src/ into mutants/ and runs the offline suite once
+# per surviving mutant, so the whole package is hours.
+[tool.mutmut]
+source_paths = ["src/myna"]
+pytest_add_cli_args_test_selection = ["tests"]
+# mutmut runs the suite from a copy under mutants/, where the tests marked
+# repo_tree (they read snap scripts, dev/ scripts and manifests relative to
+# the repository root) find nothing. None of them tests src/ logic. The
+# populations test imports its dev/ script at module level, so a marker is
+# too late for it (deselection happens after collection): ignore the file.
+pytest_add_cli_args = ["-m", "not repo_tree", "--ignore=tests/test_coverage_populations.py"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "repo_tree: reads the repository outside server/ (excluded under mutmut)",
+]
 
 [tool.coverage.run]
 source = ["myna"]

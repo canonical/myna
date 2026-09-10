@@ -13,6 +13,9 @@ from xml.sax.saxutils import escape
 
 import pytest
 
+# Reads the repository outside server/ (see [tool.mutmut] in pyproject.toml).
+pytestmark = pytest.mark.repo_tree
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "dev"))
 

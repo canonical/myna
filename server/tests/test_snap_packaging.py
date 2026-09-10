@@ -30,6 +30,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+# Reads the repository outside server/ (see [tool.mutmut] in pyproject.toml).
+pytestmark = pytest.mark.repo_tree
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # dir -> snap name. Kept explicit rather than globbed: a new inference snap
