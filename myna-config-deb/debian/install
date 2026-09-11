@@ -1,0 +1,4 @@
+data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml usr/share/glib-2.0/schemas
+data/icons/hicolor/scalable/apps/com.canonical.Myna.Config.svg usr/share/icons/hicolor/scalable/apps
+data/icons/hicolor/symbolic/apps/com.canonical.Myna.Config-symbolic.svg usr/share/icons/hicolor/symbolic/apps
+myna-config/data/com.canonical.Myna.Config.desktop usr/share/applications

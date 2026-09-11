@@ -1,0 +1,31 @@
+.TH MYNA-CONFIG 1 "2026-09-11" "myna-config" "User Commands"
+.SH NAME
+myna-config \- settings and onboarding for Myna dictation
+.SH SYNOPSIS
+.B myna-config
+.RI [ OPTION ]
+.SH DESCRIPTION
+Myna Settings configures the Myna dictation service: it installs the myna
+snap and a speech backend snap, connects the backend, binds the dictation
+shortcut and edits the dictation settings the daemon reads live. With no
+option it opens the settings window, or the onboarding wizard when dictation
+is not yet set up.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Print usage and exit.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.BI \-\-apply\-plan " JSON"
+Run a backend apply plan as root. Used internally through
+.BR pkexec (1);
+not for interactive use.
+.SH FILES
+.TP
+.I ~/snap/myna/common/.config/glib-2.0/settings/keyfile
+The settings store shared with the myna snap.
+.SH SEE ALSO
+.BR snap (8),
+.BR pkexec (1)

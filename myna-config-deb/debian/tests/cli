@@ -1,0 +1,7 @@
+#!/bin/sh
+# The installed binary answers without a display, and the schema it and the
+# daemon share compiled into the system schema source.
+set -eu
+myna-config --version | grep -q '^myna-config '
+myna-config --help >/dev/null
+gsettings list-keys com.canonical.Myna.Dictation | grep -qx streaming-mode

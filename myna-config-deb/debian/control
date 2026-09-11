@@ -1,0 +1,35 @@
+Source: myna-config
+Section: gnome
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Charles <charles05@canonical.com>
+Build-Depends: debhelper-compat (= 13),
+               blueprint-compiler,
+               cargo,
+               gir1.2-adw-1,
+               gir1.2-gtk-4.0,
+               libadwaita-1-dev (>= 1.5),
+               libglib2.0-dev,
+               libgtk-4-dev (>= 4.14),
+               pkgconf,
+               rustc (>= 1.75),
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+
+Package: myna-config
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         pkexec,
+         snapd,
+Description: settings and onboarding for Myna dictation
+ Myna Settings is the desktop application that sets up and configures Myna,
+ the local speech-to-text dictation service shipped as the myna snap. It
+ installs the myna snap and a speech backend snap, connects them, binds the
+ dictation shortcut, and exposes the dictation settings (streaming mode,
+ language, HUD style) that the daemon reads live.
+ .
+ It runs unconfined on the host because it drives snapd and runs snap
+ commands as root through polkit, which a confined snap cannot do. The
+ GSettings schema the daemon and this application share is installed by this
+ package.

@@ -1,0 +1,14 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: myna
+Upstream-Contact: Charles <charles05@canonical.com>
+Comment: vendor/ holds the crates.io dependencies, vendored so the package
+ builds offline. The per-crate stanzas below are generated from each crate's
+ Cargo.toml by myna-config-deb/vendor-copyright.py in the upstream tree.
+
+Files: *
+Copyright: 2025-2026 Canonical Ltd.
+License: GPL-3.0-only
+
+Files: debian/*
+Copyright: 2026 Canonical Ltd.
+License: GPL-3.0-only

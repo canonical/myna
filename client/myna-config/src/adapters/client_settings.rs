@@ -237,6 +237,6 @@ fn private_keyfile_path() -> Result<PathBuf, ClientSettingsError> {
 fn schema_unavailable() -> ClientSettingsError {
     ClientSettingsError::SchemaUnavailable {
         schema_id: SCHEMA_ID,
-        guidance: "Install Myna's GSettings schema (or reinstall the Myna snap), then restart Myna Settings.",
+        guidance: "The com.canonical.Myna.Dictation schema is not installed. Reinstall the myna-config package, then restart Myna Settings.",
     }
 }

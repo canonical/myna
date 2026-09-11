@@ -1,0 +1,34 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export CARGO_HOME = $(CURDIR)/debian/cargo-home
+export CARGO_INCREMENTAL = 0
+# The release profile strips debuginfo at link since cargo 1.77 unless the
+# profile asks for it, so RUSTFLAGS alone leaves the dbgsym empty.
+export CARGO_PROFILE_RELEASE_DEBUG = 2
+
+CARGO = cargo --offline --locked
+
+%:
+	dh $@
+
+# Every crates.io dependency is in vendor/; the config that points cargo at it
+# lives in CARGO_HOME so the source tree itself stays free of .cargo/.
+override_dh_auto_configure:
+	mkdir -p $(CARGO_HOME)
+	printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s"\n' \
+	    "$(CURDIR)/vendor" > $(CARGO_HOME)/config.toml
+
+override_dh_auto_build:
+	$(CARGO) build --release --workspace
+
+override_dh_auto_test:
+	$(CARGO) test --release --workspace
+
+override_dh_auto_install:
+	install -Dm755 target/release/myna-config debian/myna-config/usr/bin/myna-config
+
+# dh_clean deletes *.orig, and cargo checks each vendored crate's
+# Cargo.toml.orig against the checksum in .cargo-checksum.json.
+override_dh_clean:
+	dh_clean -Xvendor/

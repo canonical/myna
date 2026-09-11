@@ -226,6 +226,17 @@ mutate-server: ## mutmut over the Python package, scoped by MUTATE (mutant name 
 build-client: ## Build the Rust client workspace (release, on the host)
 	cd client && cargo build --release
 
+# Myna Settings ships as a deb (myna-config-deb/README.md), not in the snap.
+# The staged source lands in target/deb/; the built packages land in sbuild's
+# $build_dir, not here.
+.PHONY: build-deb-source
+build-deb-source: ## Stage the myna-config Debian source (orig tarball + tree) into target/deb
+	./myna-config-deb/build-source.sh
+
+.PHONY: build-deb
+build-deb: build-deb-source ## Build the myna-config deb in a clean chroot (sbuild)
+	cd target/deb/myna-config-*/ && sbuild
+
 # The host venv, for editors and the in-tree bench scripts. The workshop has
 # its own (shadowing this one with a mount), so nothing under `test` or
 # `coverage` needs this; and a snapcraft build container that mounts the tree

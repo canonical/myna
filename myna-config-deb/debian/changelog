@@ -1,0 +1,5 @@
+myna-config (0.1.0-0ubuntu1) stonking; urgency=medium
+
+  * Initial packaging.
+
+ -- Charles <charles05@canonical.com>  Fri, 11 Sep 2026 10:00:00 +0100
