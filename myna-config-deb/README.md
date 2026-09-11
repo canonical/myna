@@ -10,6 +10,13 @@ root through polkit, neither of which a confined snap can do.
     make deb          # the above, then sbuild in a clean chroot for the
                       # series named in debian/changelog
 
+`make deb SBUILD_ARGS=...` passes flags through to sbuild. Two that matter on
+a developer machine: the unshare chroot unpacks under `$TMPDIR` (default
+`/tmp`), and a full-debuginfo build needs several GB there, so run with
+`TMPDIR=/var/tmp` when `/tmp` is a tmpfs; and
+`--chroot-setup-commands='...'` is where a mirror or apt proxy for the chroot
+goes.
+
 `build-source.sh` reads HEAD, not the working tree. It stages a two-crate
 workspace (`myna-core`, `myna-config`, `client/data`), vendors the crates.io
 dependencies for the Ubuntu build targets, and writes a reproducible

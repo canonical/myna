@@ -234,8 +234,8 @@ build-deb-source: ## Stage the myna-config Debian source (orig tarball + tree) i
 	./myna-config-deb/build-source.sh
 
 .PHONY: build-deb
-build-deb: build-deb-source ## Build the myna-config deb in a clean chroot (sbuild)
-	cd target/deb/myna-config-*/ && sbuild
+build-deb: build-deb-source ## Build the myna-config deb in a clean chroot (sbuild; extra flags via SBUILD_ARGS)
+	cd target/deb/myna-config-*/ && sbuild $(SBUILD_ARGS)
 
 # The host venv, for editors and the in-tree bench scripts. The workshop has
 # its own (shadowing this one with a mount), so nothing under `test` or
