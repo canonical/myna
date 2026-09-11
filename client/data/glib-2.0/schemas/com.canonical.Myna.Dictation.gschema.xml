@@ -40,11 +40,12 @@
 
     <key name="language" type="s">
       <default>''</default>
-      <summary>Output language</summary>
+      <summary>Spoken language</summary>
       <description>
-        A BCP-47-ish code (en, fr, zh). Backends that translate (whisper) emit
-        this language whatever is spoken; the rest take it as a recognition
-        hint. Empty lets the backend decide.
+        A BCP-47-ish code (en, fr, zh) for the language you dictate in. The
+        backend skips language detection and decodes in this language; a code
+        that does not match what is spoken degrades the transcript. Empty lets
+        the backend decide.
       </description>
     </key>
 

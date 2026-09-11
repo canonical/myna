@@ -44,7 +44,7 @@ pub const SCHEMA_ID: &str = "com.canonical.Myna.Dictation";
 /// The persisted streaming-mode preference.
 pub const KEY_STREAMING_MODE: &str = "streaming-mode";
 
-/// The output language passed to the backend; empty means "backend decides".
+/// The spoken language passed to the backend; empty means "backend decides".
 pub const KEY_LANGUAGE: &str = "language";
 
 /// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave),
