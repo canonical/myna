@@ -222,8 +222,15 @@ actions:
     cd /project/server && uv sync -q
     /project/server/.venv/bin/python /project/dev/patch_cov.py "$@"
 
-  # --- static gates (FR-010/FR-011) ---
+  # --- formatters (write) ---
   fmt: |
+    cd /project/client && cargo fmt
+  py-fmt: |
+    cd /project/server && uv sync -q
+    uv run ruff format src tests ../dev
+
+  # --- static gates (FR-010/FR-011) ---
+  fmt-check: |
     cd /project/client && cargo fmt --check
   machete: |
     export PATH=/usr/local/cargo-bin:$PATH
@@ -284,12 +291,6 @@ actions:
   py-mutants: |
     cd /project/server && uv sync -q
     uv run mutmut run "$@"
-
-  # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
-  audit: |
-    export PATH=/usr/local/cargo-bin:$PATH
-    cd /project/client && cargo audit
-    cd /project/server && uv sync -q && uv run pip-audit
 
   # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
   audit: |

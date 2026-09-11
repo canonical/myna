@@ -4,7 +4,8 @@
 #
 # Run locally (needs KVM):   make spread        (whole suite; primes the VM
 #                             image and builds spread on first run)
-# Single task / debug a failure:  make spread-smoke | spread-e2e | spread-debug
+# Single task:  make spread-<dir under tests/spread>, e.g. spread-adapter-smoke
+# Debug a failure (keep the VM):  make spread-adapter-smoke SPREAD_FLAGS=-debug
 #
 # spread is built from the pinned commit by dev/spread-build.sh (same as CI),
 # NOT the snap (no kvm plug), with one local patch: `-cpu host` for the guest

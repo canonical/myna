@@ -29,7 +29,7 @@ make bench-run-whisper
 make bench-aggregate
 ```
 
-For another machine, build `myna-bench.pyz` with `make bench`, copy it with the selected `.snap` and `.comp` artifacts and a configuration based on `dev/bench.yaml.example`, then run:
+For another machine, build `myna-bench.pyz` with `make build-bench`, copy it with the selected `.snap` and `.comp` artifacts and a configuration based on `dev/bench.yaml.example`, then run:
 
 ```shell
 python3 myna-bench.pyz download-corpus --out ./corpus \
