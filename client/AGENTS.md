@@ -8,6 +8,10 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 The client is a Rust workspace that turns activation events into bounded microphone capture, drives a backend session, and injects committed text into the previously focused application. The orchestrator stays independent of concrete transports and desktop services.
 
+# Important
+
+- Verify with `make lint-client test-client` (add `make mutate-client MUTATE='-p <crate> -f <file>'` for a suite whose strength is in doubt); the repository-wide rules are in the root `.kb/verification.md`.
+
 # Directory
 
 - `myna-core/` - Shared audio, event, settings, and wire types.

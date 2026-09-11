@@ -10,6 +10,10 @@ Myna is an offline speech-to-text system for Ubuntu Desktop. A Rust client captu
 
 The repository also contains model evaluation, benchmarking, packaging, and desktop integration tooling. Durable agent knowledge belongs in nearby `.kb/` documents; user instructions remain in README files; merged feature specifications under `specs/` are historical snapshots rather than live documentation.
 
+# Important
+
+- A change is done when `make check` and `make test-<component>` are green for every component touched, and `make coverage` passes its patch gate when logic was added or moved. `make preflight` is the merge bar. The rules, the red/green test discipline and when to reach for mutation testing are in `.kb/verification.md`.
+
 # Architecture
 
 Myna has three primary boundaries:
@@ -37,6 +41,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/repository-layout.md` - Repository boundaries and placement rules.
 - `.kb/session-contract.md` - Durable cross-language session and streaming semantics.
 - `.kb/system-architecture.md` - High-level runtime components and trust boundaries.
+- `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
 - `client/AGENTS.md` - Rust client architecture and local knowledge.
 - `server/AGENTS.md` - Python server, inference, packaging, and benchmark knowledge.
 - `docs/AGENTS.md` - Scope and maintenance rules for human test documentation.
