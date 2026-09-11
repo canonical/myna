@@ -318,6 +318,46 @@ def test_drop_committed_merged_boundary_token():
     assert [w.text for w in kept] == [" García"]
 
 
+def test_drop_committed_resegmented_word_after_alignment():
+    # Live bug (2026-09-10, myna-whisper base/int8_float32 streaming). Inputs
+    # below are the measured dedupe trace, not a reconstruction:
+    #   through=1.560 tail=['little','wrinkles','gathered']
+    #   in=[' Many'(0.56,0.7), ' little'(0.7,0.94), ' wrinkles'(0.94,1.22), ...]
+    #   drop=3 -> kept=[' gather', ' between', ...]
+    # "gathered" was committed; the re-decode of the overlap emitted "gather"
+    # (the trailing "ed" migrated), so the alignment matched the overlap
+    # through the word *before* it and stopped one short. Emitted transcript:
+    # "Many little wrinkles gathered gather between his eyes" - an insertion in
+    # append-only committed text. The timestamp signal cannot see it either:
+    # the re-timed word ends after the committed frontier.
+    committed = ["many", "little", "wrinkles", "gathered"]
+    through = 1.560
+    words = [
+        Word(text=" Many", start=0.56, end=0.70),
+        Word(text=" little", start=0.70, end=0.94),
+        Word(text=" wrinkles", start=0.94, end=1.22),
+        Word(text=" gather", start=1.22, end=1.61),  # re-segmented "gathered"
+        Word(text=" between", start=1.61, end=1.90),
+        Word(text=" his", start=1.90, end=2.02),
+    ]
+    kept = _drop_committed(words, committed, through)
+    assert [w.text for w in kept] == [" between", " his"]
+
+
+def test_drop_committed_keeps_new_word_that_prefixes_committed_tail():
+    # The guard: a genuinely new word that happens to be a prefix of the last
+    # committed word must survive. With no overlap region matched there is no
+    # alignment drop to extend, so the re-segmentation rule never fires.
+    committed = ["i", "watched", "them", "gathered"]
+    through = 2.40
+    words = [
+        Word(text=" gather", start=2.60, end=2.95),  # genuinely new speech
+        Word(text=" here", start=2.95, end=3.20),
+    ]
+    kept = _drop_committed(words, committed, through)
+    assert [w.text for w in kept] == [" gather", " here"]
+
+
 def test_drop_committed_keeps_genuine_repetition():
     # "no. No way.": the overlap re-decode re-transcribes the OLD "no" too —
     # the leftmost match drops only that instance; the genuine one survives.
