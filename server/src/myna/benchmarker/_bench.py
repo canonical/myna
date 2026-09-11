@@ -10,16 +10,30 @@ what gets measured and what a record row contains.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
+from myna.benchmarker._summarize import Record
 from myna.core import SessionConfig, WsUnixClient
-from myna.testbed import Harness, character_error_rate, word_error_rate
+from myna.testbed import (
+    ErrorRate,
+    Harness,
+    ResultRecord,
+    character_error_rate,
+    word_error_rate,
+)
 from myna.testbed.adapter import Candidate
 from myna.testbed.corpus import Clip
+
+
+class RecordSink(Protocol):
+    def write(self, record: Mapping[str, object]) -> None: ...
 
 
 class AllClipsFailed(Exception):
@@ -32,7 +46,7 @@ class AllClipsFailed(Exception):
     """
 
 
-def session_error(record) -> dict | None:
+def session_error(record: ResultRecord) -> dict[str, str | None] | None:
     """The backend's ``transcription.error``, if the session failed."""
     for te in record.events:
         if te.event.type == "transcription.error":
@@ -45,7 +59,7 @@ def session_error(record) -> dict | None:
 
 async def bench_clip(
     socket: Path, clip: Clip, label: str, *, streaming: bool, realtime: bool = False
-):
+) -> tuple[ResultRecord, ErrorRate, ErrorRate]:
     """Run one clip against the socket; return (record, wer, cer).
 
     ``realtime`` paces the feed like live dictation. The sweep feeds as fast as
@@ -71,9 +85,9 @@ async def bench_clip(
 
 def to_line(
     clip: Clip,
-    record,
-    wer,
-    cer,
+    record: ResultRecord,
+    wer: ErrorRate,
+    cer: ErrorRate,
     *,
     label: str,
     cold: bool,
@@ -82,13 +96,13 @@ def to_line(
     usability_fail: bool,
     clips_scored: int,
     clips_requested: int,
-    provenance: dict | None,
+    provenance: dict[str, object] | None,
     corpus: dict[str, str] | None = None,
-) -> dict:
+) -> Record:
     """Serialise a single-clip result to the JSONL record schema."""
     m = record.metrics
     error = session_error(record)
-    line: dict = {
+    line: Record = {
         "error": error,
         "label": label,
         "cold": cold,
@@ -137,7 +151,7 @@ def to_line(
     return line
 
 
-def _fmt(x, spec: str = "6.2f") -> str:
+def _fmt(x: object, spec: str = "6.2f") -> str:
     return format(x, spec) if isinstance(x, (int, float)) else "   -- "
 
 
@@ -148,9 +162,9 @@ async def run_clips(
     label: str,
     cold: bool,
     streaming: bool,
-    provenance: dict | None,
+    provenance: dict[str, object] | None,
     budget_seconds: float | None,
-    out_fp,
+    out_fp: RecordSink,
     corpus: dict[str, str] | None = None,
     realtime: bool = False,
 ) -> tuple[bool, int]:
@@ -171,8 +185,8 @@ async def run_clips(
         print(f"(capabilities query failed: {type(exc).__name__}: {exc})")
 
     run_started = datetime.now(UTC).isoformat()
-    lines: list[dict] = []
-    failed: list[dict] = []
+    lines: list[Record] = []
+    failed: list[Record] = []
     tot_edits = tot_words = 0
     tot_audio = 0.0
     finals: list[float] = []
@@ -304,7 +318,7 @@ class _JsonlFile:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._fp = path.open("a", encoding="utf-8")
 
-    def write(self, record: dict) -> None:
+    def write(self, record: Mapping[str, object]) -> None:
         self._fp.write(json.dumps(record) + "\n")
         self._fp.flush()
 
@@ -312,7 +326,7 @@ class _JsonlFile:
         self._fp.close()
 
 
-def cmd_bench(args) -> None:  # noqa: ANN001
+def cmd_bench(args: argparse.Namespace) -> None:
     """Sweep a manifest against one socket that is already serving."""
     from myna.testbed.corpus import load_manifest, verify_corpus
 

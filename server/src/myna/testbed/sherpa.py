@@ -32,8 +32,10 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from myna.core import (
     PHASE_PREPARING,
@@ -87,7 +89,8 @@ def _default_model_dir() -> str:
     cache — dev/fetch_sherpa_model.py stages it)."""
     from huggingface_hub import snapshot_download
 
-    return snapshot_download(HF_REPO_ID)
+    path: str = snapshot_download(HF_REPO_ID)
+    return path
 
 
 def _default_punct_dir() -> str | None:
@@ -171,8 +174,8 @@ class SherpaAdapter:
             )
         else:
             self._punct_dir = resolved
-        self._recognizer = None
-        self._punct = None
+        self._recognizer: Any | None = None
+        self._punct: Any | None = None
         self._model_lock = asyncio.Lock()
 
     @property
@@ -210,7 +213,7 @@ class SherpaAdapter:
             translation=False,
         )
 
-    async def _load_model(self):
+    async def _load_model(self) -> Any:
         async with self._model_lock:
             if self._recognizer is None:
                 import sherpa_onnx
@@ -235,7 +238,7 @@ class SherpaAdapter:
                 )
         return self._recognizer
 
-    async def _load_punct(self):
+    async def _load_punct(self) -> Any | None:
         """The punctuation model, loaded once. None when none is staged.
 
         Held under the same lock as the recognizer and released by the same
@@ -283,7 +286,7 @@ class SherpaAdapter:
             self._punct = None
         gc.collect()
 
-    async def _load_model_with_heartbeat(self, emit: EventSink):
+    async def _load_model_with_heartbeat(self, emit: EventSink) -> Any:
         load = asyncio.ensure_future(self._load_model())
         await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         while not load.done():
@@ -329,7 +332,7 @@ class SherpaAdapter:
 
     async def _run_push_loop(
         self,
-        recognizer,
+        recognizer: Any,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
     ) -> None:
@@ -430,7 +433,7 @@ class SherpaAdapter:
         await emit(TranscriptionDone(text=transcript))
 
     @staticmethod
-    def _push(recognizer, stream, samples: np.ndarray) -> tuple[bool, str]:
+    def _push(recognizer: Any, stream: Any, samples: NDArray[np.float32]) -> tuple[bool, str]:
         """Push one chunk and decode all ready frames. Returns (endpoint, text)
         — on endpoint, text is the segment to commit; otherwise the current
         partial (may be empty)."""
@@ -444,7 +447,7 @@ class SherpaAdapter:
         return False, recognizer.get_result(stream)
 
     @staticmethod
-    def _flush(recognizer, stream) -> str:
+    def _flush(recognizer: Any, stream: Any) -> str:
         """Drain the audio left over after the last chunk.
 
         The encoder only ever consumes whole windows, so when the audio stops
@@ -459,4 +462,5 @@ class SherpaAdapter:
         stream.input_finished()
         while recognizer.is_ready(stream):
             recognizer.decode_stream(stream)
-        return recognizer.get_result(stream)
+        text: str = recognizer.get_result(stream)
+        return text

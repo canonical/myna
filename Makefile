@@ -106,7 +106,7 @@ lint-client: ## Rust format check + clippy with warnings as errors
 	$(WS) lint
 
 .PHONY: lint-server
-lint-server: ## Python ruff check + format check + mypy on the contract package
+lint-server: ## Python ruff check + format check + mypy strict over the package
 	$(WS) py-lint
 	$(WS) py-types
 

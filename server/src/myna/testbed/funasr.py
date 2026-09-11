@@ -21,8 +21,10 @@ import os
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from myna.core import (
     PHASE_PREPARING,
@@ -121,7 +123,7 @@ class FunasrAdapter:
         self._model_dir = model_dir
         self._language = language
         self._textnorm = textnorm
-        self._model = None
+        self._model: Any | None = None
         self._model_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -158,7 +160,7 @@ class FunasrAdapter:
     # Model lifecycle (T27 idle-unload compatible)
     # ------------------------------------------------------------------
 
-    async def _load_model(self):
+    async def _load_model(self) -> Any:
         async with self._model_lock:
             if self._model is not None:
                 return self._model
@@ -209,14 +211,16 @@ class FunasrAdapter:
         synth = (
             rng.standard_normal(int(FUNASR_RATE * _WARMUP_SECONDS)) * _WARMUP_AMPLITUDE
         ).astype(np.float32)
-        await asyncio.to_thread(self._model, synth)
+        model = self._model
+        assert model is not None
+        await asyncio.to_thread(model, synth)
         # SenseVoice output includes noise/empty tags; discard.
 
     # ------------------------------------------------------------------
     # Session (FR-001: myna.core session contract)
     # ------------------------------------------------------------------
 
-    async def _load_model_with_heartbeat(self, emit: EventSink):
+    async def _load_model_with_heartbeat(self, emit: EventSink) -> Any:
         load = asyncio.ensure_future(self._load_model())
         await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         while not load.done():
@@ -292,10 +296,12 @@ class FunasrAdapter:
     # Decode
     # ------------------------------------------------------------------
 
-    def _decode(self, samples: np.ndarray) -> str:
+    def _decode(self, samples: NDArray[np.float32]) -> str:
         """Run SenseVoiceSmall(waveform) with language + textnorm. Returns
         raw model output (control tags intact — stripped by caller)."""
-        result = self._model(
+        model = self._model
+        assert model is not None
+        result = model(
             samples,
             language=self._language,
             textnorm=self._textnorm,

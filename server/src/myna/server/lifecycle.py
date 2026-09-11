@@ -37,8 +37,12 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from myna.core import EventSink, PcmChunk, SessionConfig
+from myna.core import Capabilities, EventSink, PcmChunk, SessionConfig
+
+if TYPE_CHECKING:
+    from myna.testbed.adapter import Adapter, Candidate
 
 
 def _malloc_trim() -> bool:
@@ -251,14 +255,14 @@ class MemoryPressureMonitor:
 class LifecycleService:
     """Wraps an ``SttService``, tracking activity for idle release."""
 
-    def __init__(self, service) -> None:
+    def __init__(self, service: Adapter) -> None:
         self._service = service
         self._active = 0
         self._last = time.monotonic()
         self._released = False
 
     @property
-    def candidate(self):
+    def candidate(self) -> Candidate:
         return self._service.candidate
 
     @property
@@ -266,7 +270,7 @@ class LifecycleService:
         """Delegate streaming mode to the wrapped adapter (T027)."""
         return getattr(self._service, "streaming", None)
 
-    def capabilities(self):
+    def capabilities(self) -> Capabilities:
         return self._service.capabilities()
 
     async def run_session(

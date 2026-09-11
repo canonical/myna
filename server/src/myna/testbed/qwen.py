@@ -149,7 +149,7 @@ class _QwenLib:
         lib.qwen_set_prompt.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 
     def load(self, model_dir: str) -> int:
-        ctx = self._lib.qwen_load(model_dir.encode())
+        ctx: int | None = self._lib.qwen_load(model_dir.encode())
         if not ctx:
             raise RuntimeError(f"qwen_load failed for {model_dir!r}")
         return ctx
@@ -167,7 +167,7 @@ class _QwenLib:
     def set_prompt(self, ctx: int, prompt: str | None) -> None:
         self._lib.qwen_set_prompt(ctx, prompt.encode() if prompt else None)
 
-    def transcribe_audio(self, ctx: int, samples: array.array) -> str:
+    def transcribe_audio(self, ctx: int, samples: array.array[float]) -> str:
         """``samples`` is a stdlib ``array('f')`` of normalised mono float32."""
         buf = (ctypes.c_float * len(samples)).from_buffer(samples)
         ptr = self._lib.qwen_transcribe_audio(ctx, buf, len(samples))
@@ -206,8 +206,7 @@ def _candidate_lib_paths(explicit: str | None) -> list[str]:
     candidates.append(f"/snap/qwen/current/lib/{_LIB_NAME}")
     candidates.extend(sorted(glob.glob(f"/snap/qwen/*/lib/{_LIB_NAME}"), reverse=True))
     candidates.append(_LIB_NAME)  # loader search path (LD_LIBRARY_PATH etc.)
-    seen: set[str] = set()  # de-dupe, preserving order
-    return [c for c in candidates if not (c in seen or seen.add(c))]
+    return list(dict.fromkeys(candidates))  # de-dupe, preserving order
 
 
 def _resolve_lib_path(explicit: str | None) -> str:

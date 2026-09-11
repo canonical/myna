@@ -26,6 +26,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 from myna.core import (
     PHASE_PREPARING,
@@ -44,6 +45,10 @@ from myna.core import (
 )
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
 
 _log = logging.getLogger(__name__)
 
@@ -121,7 +126,7 @@ _TEMPERATURE_LADDER = (0.0, 0.2)
 
 def batch_decode_options(
     language: str | None, prompt: str | None, *, word_timestamps: bool = False
-) -> dict:
+) -> dict[str, object]:
     """Decode parameters for the batch path, in one place.
 
     Extracted so ``dev/whisper/bench_whisper.py`` and
@@ -134,7 +139,7 @@ def batch_decode_options(
     because whisper's unaligned segment boundaries are quantised to whole
     seconds.
     """
-    options = {
+    options: dict[str, object] = {
         "language": _iso639_1(language),
         "initial_prompt": prompt,
         "log_prob_threshold": _LOG_PROB_THRESHOLD,
@@ -145,7 +150,9 @@ def batch_decode_options(
     return options
 
 
-def stream_decode_options(language: str | None, prompt: str | None, beam_size: int) -> dict:
+def stream_decode_options(
+    language: str | None, prompt: str | None, beam_size: int
+) -> dict[str, object]:
     """Decode parameters for a streaming re-decode tick. Same rationale as
     [`batch_decode_options`]; the differences from batch are the greedy beam
     and ``word_timestamps``, which the local-agreement strategy needs.
@@ -164,7 +171,7 @@ def stream_decode_options(language: str | None, prompt: str | None, beam_size: i
     }
 
 
-def _timed_segments(segment, text: str, granularity: str | None) -> tuple[Segment, ...]:
+def _timed_segments(segment: Any, text: str, granularity: str | None) -> tuple[Segment, ...]:
     """Timestamps for one decoded segment: ``"word"`` yields an entry per word,
     ``"segment"`` one entry spanning the segment, ``None`` nothing.
 
@@ -223,7 +230,7 @@ class FasterWhisperAdapter:
         # streaming duty cycle is invisible on the wire, so this is the only
         # way to measure it - see StreamingTelemetry's docstring.
         self._stream_telemetry = stream_telemetry
-        self._model = None
+        self._model: Any | None = None
         self._model_lock = asyncio.Lock()
 
     @property
@@ -285,25 +292,26 @@ class FasterWhisperAdapter:
                 f"{self._device!r}; this build supports {sorted(supported)}"
             )
 
-    async def _load_model(self):
+    async def _load_model(self) -> Any:
         async with self._model_lock:
             if self._model is None:
                 from faster_whisper import WhisperModel
 
                 self._check_compute_type()
                 # blocking download + load: keep it off the event loop
-                self._model = await asyncio.to_thread(
+                model = await asyncio.to_thread(
                     WhisperModel,
                     self._model_size,
                     device=self._device,
                     compute_type=self._compute_type,
                     download_root=self._download_root,
                 )
+                self._model = model
                 _log.info(
                     "Loaded Whisper model with requested compute type %s; "
                     "effective CTranslate2 compute type is %s",
                     self._compute_type,
-                    self._model.model.compute_type,
+                    model.model.compute_type,
                 )
         return self._model
 
@@ -317,7 +325,7 @@ class FasterWhisperAdapter:
             self._model = None
         gc.collect()
 
-    async def _load_model_with_heartbeat(self, emit: EventSink):
+    async def _load_model_with_heartbeat(self, emit: EventSink) -> Any:
         """Load the model, emitting a ``preparing`` heartbeat throughout so the
         client shows "loading model…" during a slow cold load rather than a
         silent gap. Emits at least once even when the model is already warm."""
@@ -407,7 +415,7 @@ class FasterWhisperAdapter:
 
     async def _run_streaming_session(
         self,
-        model,
+        model: Any,
         config: SessionConfig,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
@@ -421,7 +429,7 @@ class FasterWhisperAdapter:
 
         options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
 
-        def decode(samples, offset: float) -> Hypothesis:
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             segments, _info = model.transcribe(samples, **options)
             words: list[Word] = []
             for seg in segments:  # drain the generator (we're in a thread)
@@ -440,7 +448,7 @@ class FasterWhisperAdapter:
         )
         await emit(TranscriptionDone(text=transcript))
 
-    def _transcribe(self, model, pcm: bytes, config: SessionConfig) -> list:
+    def _transcribe(self, model: Any, pcm: bytes, config: SessionConfig) -> list[Any]:
         """Blocking decode; runs in a worker thread. Audio is already
         ``WHISPER_FORMAT`` (validated in ``run_session``) — no conversion."""
         import numpy as np

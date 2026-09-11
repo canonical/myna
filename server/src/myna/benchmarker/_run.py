@@ -98,6 +98,7 @@ Config format::
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import glob
 import json
@@ -108,10 +109,18 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Self, TypedDict
 
 import yaml
+
+if TYPE_CHECKING:
+    import psutil
+
+    from myna.benchmarker.machine import Machine
+    from myna.testbed.corpus import Clip
 
 DEFAULT_SWEEP_BUDGET_S = 600.0
 
@@ -162,11 +171,11 @@ def wait_for_socket(path: Path, timeout: float = 120.0) -> bool:
     return False
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, **kw)
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(cmd, check=True)
 
 
-def _capture(cmd: list[str], timeout: float = 30.0) -> subprocess.CompletedProcess:
+def _capture(cmd: list[str], timeout: float = 30.0) -> subprocess.CompletedProcess[str]:
     """Run a probe and never raise: a missing tool is an answer, not a crash.
 
     Everything that goes through here is asking the machine a question it is
@@ -218,7 +227,7 @@ class ResourceSampler(threading.Thread):
         self.peak_rss_mb = 0.0
         self.peak_vram_mb: float | None = None
 
-    def _tree(self):
+    def _tree(self) -> list[psutil.Process]:
         try:
             import psutil
 
@@ -309,11 +318,23 @@ def _resolve_files(patterns: list[str], root: Path, snap: str) -> list[str]:
     return files
 
 
-def _engine_manifests(engines_dir: Path) -> dict[str, dict]:
+class EngineInfo(TypedDict):
+    models: list[str]
+    configurations: dict[str, Any]
+    devices: dict[str, Any]
+
+
+class SnapMetadata(TypedDict, total=False):
+    engines: dict[str, EngineInfo]
+    cli: str | None
+    streaming: bool | None
+
+
+def _engine_manifests(engines_dir: Path) -> dict[str, EngineInfo]:
     """``{engine: {"models": [...], "configurations": {...}}}`` from engine.yaml."""
     if not engines_dir.is_dir():
         return {}
-    out: dict[str, dict] = {}
+    out: dict[str, EngineInfo] = {}
     for entry in sorted(p for p in engines_dir.iterdir() if p.is_dir()):
         manifest = entry / "engine.yaml"
         if not manifest.exists():
@@ -327,7 +348,7 @@ def _engine_manifests(engines_dir: Path) -> dict[str, dict]:
     return out
 
 
-def engine_blocked_here(devices: dict, machine: dict) -> str | None:
+def engine_blocked_here(devices: dict[str, Any], machine: Machine) -> str | None:
     """Why this engine cannot run on this machine, or None if it might.
 
     Deliberately one-sided. It answers for the single requirement that actually
@@ -352,10 +373,10 @@ def engine_blocked_here(devices: dict, machine: dict) -> str | None:
     return None
 
 
-_SNAP_METADATA: dict[str, dict] = {}
+_SNAP_METADATA: dict[str, SnapMetadata] = {}
 
 
-def snap_metadata(snap_file: Path) -> dict:
+def snap_metadata(snap_file: Path) -> SnapMetadata:
     """``{"engines": ..., "cli": ..., "streaming": ...}`` read out of a packed snap.
 
     Every axis but the corpus is a property of the artefact, so this is where
@@ -375,7 +396,7 @@ def snap_metadata(snap_file: Path) -> dict:
     key = str(snap_file)
     if key in _SNAP_METADATA:
         return _SNAP_METADATA[key]
-    meta: dict = {}
+    meta: SnapMetadata = {}
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "snap"
         extracted = subprocess.run(
@@ -454,7 +475,7 @@ class Variant:
     engines: tuple[str, ...] = ()
 
 
-def parse_variants(spec: dict, snap: str) -> list[Variant]:
+def parse_variants(spec: dict[str, Any], snap: str) -> list[Variant]:
     """Read and validate a target's ``configs:`` list."""
     if "streaming_configs" in spec:
         raise SystemExit(
@@ -535,7 +556,7 @@ def variants_for(
 class SnapTarget:
     """A packed snap: purge, sideload, measure, purge."""
 
-    def __init__(self, spec: dict, root: Path, label_suffix: str = ""):
+    def __init__(self, spec: dict[str, Any], root: Path, label_suffix: str = ""):
         self.snap: str = spec["snap"]
         if self.snap not in PURGEABLE:
             raise SystemExit(
@@ -581,7 +602,7 @@ class SnapTarget:
         # Engines this machine cannot run, filled in by check_machine.
         self.blocked: dict[str, str] = {}
 
-    def check_machine(self, machine: dict) -> None:
+    def check_machine(self, machine: Machine) -> None:
         """Rule out engines this machine cannot run, before anything installs.
 
         A target left with none is unavailable in exactly the sense an unpacked
@@ -604,11 +625,11 @@ class SnapTarget:
                 f"({'; '.join(f'{e}: {self.blocked[e]}' for e in unrunnable)})"
             )
 
-    def _metadata(self) -> dict:
+    def _metadata(self) -> SnapMetadata:
         """Engines, CLI app and streaming toggle, read out of the packed snap."""
         return snap_metadata(self.snap_file)
 
-    def static_engines(self) -> dict[str, dict]:
+    def static_engines(self) -> dict[str, EngineInfo]:
         """Engines this snap ships, read without installing it."""
         return self._metadata().get("engines") or {}
 
@@ -931,8 +952,9 @@ class SnapTarget:
             return None
         if isinstance(data, dict):
             for key in keys:
-                if isinstance(data.get(key), str):
-                    return data[key]
+                value = data.get(key)
+                if isinstance(value, str):
+                    return value
         return None
 
     @property
@@ -946,7 +968,7 @@ class SnapTarget:
         return int(value) if value.isdigit() and int(value) > 0 else None
 
 
-def show_machine(cli: str) -> dict:
+def show_machine(cli: str) -> dict[str, Any]:
     """Hardware detection straight from modelctl, not hand-annotated YAML.
 
     Hardware is a property of the machine, so any installed inference snap can
@@ -957,9 +979,10 @@ def show_machine(cli: str) -> dict:
     if out.returncode != 0:
         return {}
     try:
-        return json.loads(out.stdout)
+        machine: dict[str, Any] = json.loads(out.stdout)
     except json.JSONDecodeError:
         return {}
+    return machine
 
 
 # ---------------------------------------------------------------------------
@@ -975,7 +998,7 @@ class _JsonlWriter:
         self._machine = machine
         self._fp = path.open("a", encoding="utf-8")
 
-    def write(self, record: dict) -> None:
+    def write(self, record: Mapping[str, object]) -> None:
         self._fp.write(json.dumps(record) + "\n")
         self._fp.flush()
 
@@ -999,10 +1022,10 @@ class _JsonlWriter:
     def close(self) -> None:
         self._fp.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *_: object) -> None:
         self.close()
 
 
@@ -1017,11 +1040,11 @@ def _sweep_one(
     mode: str,
     variant: Variant | None,
     togglable: bool,
-    clips_cold: list,
-    clips_warm: list,
+    clips_cold: list[Clip],
+    clips_warm: list[Clip],
     budget: float,
     out: _JsonlWriter,
-    provenance: dict,
+    provenance: dict[str, object],
     corpus: dict[str, str],
     resources_path: Path,
     sample_resources: bool,
@@ -1155,7 +1178,7 @@ class SweepConfig:
     cold_clip: str | None
     warm_clip_ids: list[str]
     budget: float
-    targets: list[dict]
+    targets: list[dict[str, Any]]
 
 
 def load_config(
@@ -1199,7 +1222,7 @@ def load_config(
 # ---------------------------------------------------------------------------
 
 
-def cmd_plan(args) -> None:  # noqa: ANN001
+def cmd_plan(args: argparse.Namespace) -> None:
     """Print the rows this config would produce. No root, no install.
 
     Everything here is read off the source tree, so it is a prediction, not a
@@ -1348,7 +1371,7 @@ def cmd_plan(args) -> None:  # noqa: ANN001
 # ---------------------------------------------------------------------------
 
 
-def cmd_run(args) -> None:  # noqa: ANN001
+def cmd_run(args: argparse.Namespace) -> None:
     cfg = load_config(
         Path(args.config), only=args.only, out_override=args.out, budget_override=args.budget
     )
@@ -1425,7 +1448,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
     broken: list[tuple[str, str]] = []
     unusable: list[tuple[str, str]] = []
     skipped: list[str] = []
-    detected: dict = {}
+    detected: dict[str, Any] = {}
 
     with _JsonlWriter(cfg.out, machine["hostname"]) as out:
         out.write(machine)
@@ -1457,7 +1480,7 @@ def cmd_run(args) -> None:  # noqa: ANN001
                         # all would. Detection is a property of the box, not the
                         # snap.
                         detected = show_machine(target.cli)
-                    provenance = {
+                    provenance: dict[str, object] = {
                         "machine": machine["hostname"],
                         "cpu": machine["cpu"],
                         "ram_gb": machine["ram_gb"],
@@ -1477,7 +1500,8 @@ def cmd_run(args) -> None:  # noqa: ANN001
                         f"[{target.snap}] engine={target.engine} "
                         f"models={models or '(none reported)'} cells={described}"
                     )
-                    for model in models or [None]:
+                    model_axis: list[str | None] = list(models) or [None]
+                    for model in model_axis:
                         # Every weight the engine offers. `use-model` restarts
                         # the snap, so each variant loads cold and only one is
                         # resident at a time - the same property the purge gives
@@ -1520,14 +1544,11 @@ def cmd_run(args) -> None:  # noqa: ANN001
         print("\n===================== MATRIX =====================")
         from myna.benchmarker._summarize import cmd_summarize
 
-        class _SummarizeArgs:
-            infile = str(cfg.out)
-            by_category = True
-            sort = "wer"
-            corpus = None
-
+        summarize_args = argparse.Namespace(
+            infile=str(cfg.out), by_category=True, sort="wer", corpus=None
+        )
         try:
-            cmd_summarize(_SummarizeArgs())
+            cmd_summarize(summarize_args)
         except SystemExit as exc:
             # Aggregation refusing (e.g. every target failed, so no clip rows)
             # must not bury the per-target reasons printed below, which are the

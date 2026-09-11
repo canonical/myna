@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 # Keep word chars, whitespace, and intra-word apostrophes; drop the rest.
@@ -59,7 +60,7 @@ class ErrorRate:
         return self.reference_length - self.substitutions - self.deletions
 
 
-def _align(reference: list, hypothesis: list) -> ErrorRate:
+def _align(reference: Sequence[str], hypothesis: Sequence[str]) -> ErrorRate:
     """Levenshtein alignment with S/D/I backtrace over arbitrary token lists."""
     n, m = len(reference), len(hypothesis)
     if n == 0:

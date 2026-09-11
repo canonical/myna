@@ -9,6 +9,7 @@ each other even though the audio is not ours to publish.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from myna.testbed.corpus import stamp_corpus
 SCHEMA_VERSION = 1
 
 
-def cmd_make(args) -> None:  # noqa: ANN001
+def cmd_make(args: argparse.Namespace) -> None:
     src_dir = Path(args.dir)
     out_dir = Path(args.out) if args.out else src_dir
     language: str = args.language
@@ -31,7 +32,7 @@ def cmd_make(args) -> None:  # noqa: ANN001
     if not wavs:
         raise SystemExit(f"no *.wav files found in {src_dir}")
 
-    entries: list[dict] = []
+    entries: list[dict[str, object]] = []
     skipped: list[str] = []
     for wav in wavs:
         txt_path = wav.with_suffix(".txt")

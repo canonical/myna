@@ -48,9 +48,10 @@ import functools
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 
 import numpy as np
+from numpy.typing import NDArray
 
 from myna.core import (
     Disposition,
@@ -61,7 +62,7 @@ from myna.core import (
 )
 from myna.testbed.harness import StreamingTelemetry
 
-from .strategies import Hypothesis, Word
+from .strategies import Hypothesis, LocalAgreement, SilenceCut, Word
 from .window import RATE, RollingWindow
 
 # Tracy frame marks (dev tooling only, see myna.testbed.parakeet._TRACY):
@@ -76,7 +77,7 @@ except ImportError:
     _TRACY = False
 
 
-def _frame(name: str):
+def _frame(name: str) -> AbstractContextManager[None]:
     return _TracyFrame(name) if _TRACY else nullcontext()
 
 
@@ -176,7 +177,9 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
     return drop
 
 
-def _drop_resegmented(kept: list, words: list, committed_word_texts: list[str]) -> list:
+def _drop_resegmented(
+    kept: list[Word], words: list[Word], committed_word_texts: list[str]
+) -> list[Word]:
     """Drop the leading surviving word when it is the last committed word
     re-segmented into a truncation of itself.
 
@@ -219,10 +222,10 @@ def _drop_resegmented(kept: list, words: list, committed_word_texts: list[str]) 
 
 
 def _drop_committed(
-    words: list,
+    words: list[Word],
     committed_word_texts: list[str],
     committed_through: float,
-) -> list:
+) -> list[Word]:
     """Overlap dedupe (I2): drop words a previous commit already emitted.
 
     Three signals, unioned (a word is dropped if ANY marks it old):
@@ -254,7 +257,7 @@ def _norm(text: str) -> str:
     return text.strip().lower().strip(".,!?;:\"'“”")
 
 
-def _join_natural(words: list) -> str:
+def _join_natural(words: list[Word]) -> str:
     """Verbatim word-text join (natural spacing): whisper word texts carry
     their own leading whitespace, so joining verbatim keeps inter-word
     spaces. Only trailing whitespace is trimmed."""
@@ -271,7 +274,7 @@ def _utterance_edge(text: str, first: bool) -> str:
 
 async def _chunked_partial(
     window: RollingWindow,
-    run_decode: Callable[[np.ndarray, float], Awaitable[Hypothesis]],
+    run_decode: Callable[[NDArray[np.float32], float], Awaitable[Hypothesis]],
     fresh_words: Callable[[list[Word]], list[Word]],
     tail_seconds: float | None,
 ) -> list[Word] | None:
@@ -305,8 +308,8 @@ async def _chunked_partial(
 async def run_streaming_loop(
     audio: AsyncIterator[PcmChunk],
     emit: EventSink,
-    decode: Callable[[np.ndarray, float], Hypothesis],
-    strategy,
+    decode: Callable[[NDArray[np.float32], float], Hypothesis],
+    strategy: LocalAgreement | SilenceCut,
     cadence_seconds: float = 1.0,
     window_cap_seconds: float = 30.0,
     overlap_seconds: float = 1.0,
@@ -325,7 +328,7 @@ async def run_streaming_loop(
     # parallelises inside one.
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="myna-decode")
 
-    async def run_decode(samples: np.ndarray, offset: float) -> Hypothesis:
+    async def run_decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
         return await asyncio.get_running_loop().run_in_executor(executor, decode, samples, offset)
 
     try:
@@ -348,8 +351,8 @@ async def run_streaming_loop(
 async def _run(
     audio: AsyncIterator[PcmChunk],
     emit: EventSink,
-    run_decode: Callable[[np.ndarray, float], Awaitable[Hypothesis]],
-    strategy,
+    run_decode: Callable[[NDArray[np.float32], float], Awaitable[Hypothesis]],
+    strategy: LocalAgreement | SilenceCut,
     cadence_seconds: float,
     window_cap_seconds: float,
     overlap_seconds: float,
@@ -362,7 +365,7 @@ async def _run(
     # decode and costs nothing.
     session_t0 = time.perf_counter() if telemetry is not None else 0.0
 
-    async def timed_decode(samples: np.ndarray, offset: float, kind: str) -> Hypothesis:
+    async def timed_decode(samples: NDArray[np.float32], offset: float, kind: str) -> Hypothesis:
         with _frame(f"decode:{kind}"):
             if telemetry is None:
                 return await run_decode(samples, offset)
@@ -406,7 +409,7 @@ async def _run(
     async for chunk in audio:
         window.append(chunk.data, chunk.duration_seconds)
 
-        if getattr(strategy, "mode", "redecode") == "chunked":
+        if isinstance(strategy, SilenceCut):
             cut = strategy.observe(window.samples(), window.frontier, window.end)
             if cut is not None and cut - window.frontier >= MIN_DECODE_S:
                 samples = window.region_before(cut)

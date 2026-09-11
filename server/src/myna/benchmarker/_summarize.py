@@ -13,8 +13,12 @@ re-running a label replaces its old rows rather than double-counting.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
+from typing import Any, TypedDict
+
+Record = dict[str, Any]
 
 # A row's identity in a results file. The machine is half of it: a leaderboard
 # holds the same <snap>/<engine>/<model>/<mode> measured on many machines, and
@@ -23,7 +27,23 @@ from pathlib import Path
 RowKey = tuple[str, str]
 
 
-def machine_of(record: dict) -> str:
+class SummaryRow(TypedDict):
+    clips: int
+    label: str
+    machine: str
+    wer: float | None
+    cer: float | None
+    rtf: float | None
+    median_final: float | None
+    p95_final: float | None
+    cold_ready: float | None
+    warm_ready: float | None
+    audio: float
+    peak_rss_mb: float | None
+    peak_vram_mb: float | None
+
+
+def machine_of(record: Record) -> str:
     """Which machine produced a row. ``unknown`` for rows written before
     provenance was stamped, so they group together instead of vanishing."""
     provenance = record.get("provenance")
@@ -32,11 +52,11 @@ def machine_of(record: dict) -> str:
     return record.get("machine") or "unknown"
 
 
-def row_key(record: dict) -> RowKey:
+def row_key(record: Record) -> RowKey:
     return machine_of(record), record["label"]
 
 
-def _load_latest(path: Path) -> tuple[list[dict], dict[RowKey, tuple[str, str]]]:
+def _load_latest(path: Path) -> tuple[list[Record], dict[RowKey, tuple[str, str]]]:
     """Return (clip records, {(machine, label): (status, reason)}), last wins.
 
     Cold samples are keyed separately so a clip measured both cold and warm
@@ -53,7 +73,7 @@ def _load_latest(path: Path) -> tuple[list[dict], dict[RowKey, tuple[str, str]]]
     """
     if not path.exists():
         raise SystemExit(f"no results at {path}")
-    latest: dict[tuple[str, str, str, bool], dict] = {}
+    latest: dict[tuple[str, str, str, bool], Record] = {}
     statuses: dict[RowKey, tuple[str, str]] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
@@ -75,7 +95,7 @@ def _load_latest(path: Path) -> tuple[list[dict], dict[RowKey, tuple[str, str]]]
     return list(latest.values()), statuses
 
 
-def one_machine_per_name(records: list[dict]) -> None:
+def one_machine_per_name(records: list[Record]) -> None:
     """Refuse a file where one machine name covers two different CPUs.
 
     Hostnames are not unique across a team, and rows are keyed by name - two
@@ -99,7 +119,7 @@ def one_machine_per_name(records: list[dict]) -> None:
         )
 
 
-def one_corpus(records: list[dict], wanted: str | None) -> tuple[list[dict], str]:
+def one_corpus(records: list[Record], wanted: str | None) -> tuple[list[Record], str]:
     """Records for a single corpus. Two corpora in one file is not a table to
     be qualified, it is a comparison that cannot be made."""
     ids = {r.get("corpus_id") for r in records}
@@ -110,13 +130,14 @@ def one_corpus(records: list[dict], wanted: str | None) -> tuple[list[dict], str
             "records with no corpus_id: they were measured before the corpus was "
             "stamped, and nothing says what audio produced them - drop them"
         )
+    known = {i for i in ids if i is not None}
     if wanted is None:
-        if len(ids) > 1:
+        if len(known) > 1:
             raise SystemExit(
-                "records span " + ", ".join(sorted(ids)) + " - a WER micro-averaged "
+                "records span " + ", ".join(sorted(known)) + " - a WER micro-averaged "
                 "across two corpora compares nothing; re-run on one, or pass --corpus"
             )
-        wanted = ids.pop()
+        wanted = known.pop()
     return [r for r in records if r["corpus_id"] == wanted], wanted
 
 
@@ -127,17 +148,17 @@ def _pct(values: list[float], q: float) -> float | None:
     return s[min(len(s) - 1, int(q * len(s)))]
 
 
-def _summarize(records: list[dict]) -> dict[RowKey, dict]:
+def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
     """Group records by (machine, label) and micro-average the metrics.
 
     Accuracy and warm latency come from the warm rows; cold-load latency is
     reported separately from the cold samples (``--cold`` bench runs).
     """
-    groups: dict[RowKey, list[dict]] = {}
+    groups: dict[RowKey, list[Record]] = {}
     for rec in records:
         groups.setdefault(row_key(rec), []).append(rec)
 
-    summary = {}
+    summary: dict[RowKey, SummaryRow] = {}
     for key, recs in groups.items():
         machine, label = key
         warm = [r for r in recs if not r.get("cold", False)]
@@ -174,14 +195,14 @@ def _summarize(records: list[dict]) -> dict[RowKey, dict]:
     return summary
 
 
-def _load_resources(path: Path) -> dict[RowKey, dict]:
+def _load_resources(path: Path) -> dict[RowKey, Record]:
     """Read the sweep's peak RAM/VRAM sidecar, keyed like every other row.
 
     Last occurrence wins. Absent file -> empty (resource columns are hidden).
     """
     if not path.exists():
         return {}
-    peaks: dict[RowKey, dict] = {}
+    peaks: dict[RowKey, Record] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if raw:
@@ -195,16 +216,16 @@ def resources_path_for(out: Path) -> Path:
     return out.parent / (out.stem + "-resources.jsonl")
 
 
-def _f(x, spec: str = "6.2f") -> str:
+def _f(x: object, spec: str = "6.2f") -> str:
     return format(x, spec) if isinstance(x, (int, float)) else "    --"
 
 
-def _scaled(rate) -> float | None:
+def _scaled(rate: object) -> float | None:
     """An error rate as a percentage, keeping "not scored" distinct from zero."""
     return rate * 100 if isinstance(rate, (int, float)) else None
 
 
-def _speed(rtf) -> str:
+def _speed(rtf: object) -> str:
     """Format RTF as a human-readable speed multiplier.
 
     0.018 -> '55x', 0.046 -> '22x', 1.682 -> '0.6x'.  Values >= 10x are
@@ -230,7 +251,7 @@ RANK_FIELDS = {
 
 
 def ranked_labels(
-    summary: dict[RowKey, dict], sort: str, statuses: dict[RowKey, tuple[str, str]]
+    summary: dict[RowKey, SummaryRow], sort: str, statuses: dict[RowKey, tuple[str, str]]
 ) -> list[RowKey]:
     """Rows ordered best-first by ``sort``; missing values sort last.
 
@@ -259,7 +280,9 @@ def ranked_labels(
 
 
 def _print_overall(
-    summary: dict[RowKey, dict], order: list[RowKey], statuses: dict[RowKey, tuple[str, str]]
+    summary: dict[RowKey, SummaryRow],
+    order: list[RowKey],
+    statuses: dict[RowKey, tuple[str, str]],
 ) -> None:
     # The machine column is unconditional once a file holds more than one: on a
     # leaderboard the machine is half of what a row means, and a table that
@@ -315,7 +338,7 @@ def _print_overall(
 
 
 def _print_by_category(
-    records: list[dict], order: list[RowKey], statuses: dict[RowKey, tuple[str, str]]
+    records: list[Record], order: list[RowKey], statuses: dict[RowKey, tuple[str, str]]
 ) -> None:
     records = [r for r in records if not r.get("cold", False)]  # warm only
     present = {row_key(r) for r in records}
@@ -347,7 +370,7 @@ def _print_by_category(
         print(f"{name:{lw}} " + " ".join(cells) + marker)
 
 
-def cmd_summarize(args) -> None:  # noqa: ANN001
+def cmd_summarize(args: argparse.Namespace) -> None:
     infile = Path(args.infile)
     records, statuses = _load_latest(infile)
     records, corpus = one_corpus(records, getattr(args, "corpus", None))
@@ -374,11 +397,11 @@ def cmd_summarize(args) -> None:  # noqa: ANN001
 # ---------------------------------------------------------------------------
 
 
-def _rows_of(path: Path) -> list[dict]:
+def _rows_of(path: Path) -> list[Record]:
     """Every non-header record in a results file, in order."""
     if not path.exists():
         raise SystemExit(f"no results at {path}")
-    rows = []
+    rows: list[Record] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if raw and json.loads(raw).get("type") != "machine":
@@ -386,7 +409,7 @@ def _rows_of(path: Path) -> list[dict]:
     return rows
 
 
-def cmd_merge(args) -> None:  # noqa: ANN001
+def cmd_merge(args: argparse.Namespace) -> None:
     """Append submissions to a leaderboard file, replacing each machine's rows.
 
     A leaderboard is one file tracked in git, so the merge is deliberately
@@ -402,7 +425,7 @@ def cmd_merge(args) -> None:  # noqa: ANN001
     """
     out = Path(args.leaderboard)
     existing = _rows_of(out) if out.exists() else []
-    incoming: list[dict] = []
+    incoming: list[Record] = []
     for name in args.results:
         rows = _rows_of(Path(name))
         if not rows:
@@ -413,8 +436,11 @@ def cmd_merge(args) -> None:  # noqa: ANN001
     if not incoming:
         raise SystemExit("nothing to merge")
 
-    corpora = {r.get("corpus_id") for r in incoming + existing if "clip" in r}
-    corpora.discard(None)
+    corpora = {
+        r["corpus_id"]
+        for r in incoming + existing
+        if "clip" in r and r.get("corpus_id") is not None
+    }
     if len(corpora) > 1 and not args.allow_mixed_corpora:
         raise SystemExit(
             "submissions span more than one corpus (" + ", ".join(sorted(corpora)) + ") - a "

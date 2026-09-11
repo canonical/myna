@@ -27,6 +27,7 @@ import difflib
 from dataclasses import dataclass, field
 
 import numpy as np
+from numpy.typing import NDArray
 
 # Words ending within this of the window tail have insufficient right context
 # to commit (whisper boundary heuristic, contracts/emission-semantics.md).
@@ -161,8 +162,6 @@ class SilenceCut:
     keeps the noise floor (murmure reset_silence_state parity).
     """
 
-    mode = "chunked"
-
     def __init__(
         self,
         arm_seconds: float = SC_ARM_S,
@@ -176,7 +175,9 @@ class SilenceCut:
         self._silence_run = 0.0
         self._scanned = 0.0  # absolute seconds; audio before this was VAD-fed
 
-    def observe(self, samples: np.ndarray, window_start: float, window_end: float) -> float | None:
+    def observe(
+        self, samples: NDArray[np.float32], window_start: float, window_end: float
+    ) -> float | None:
         """Return an absolute cut time if the window should be committed now."""
         duration = window_end - window_start
         if duration >= self._force_cut:

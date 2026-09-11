@@ -20,7 +20,9 @@ NOISE_SNR_DB = 10.0
 NOISE_SEED = 20260612  # fixed: regeneration must be deterministic
 
 
-def mix_noise(samples: array, snr_db: float = NOISE_SNR_DB, seed: int = NOISE_SEED) -> array:
+def mix_noise(
+    samples: array[int], snr_db: float = NOISE_SNR_DB, seed: int = NOISE_SEED
+) -> array[int]:
     """Add seeded Gaussian noise at the given signal-to-noise ratio."""
     rms = math.sqrt(sum(s * s for s in samples) / len(samples))
     sigma = rms / (10.0 ** (snr_db / 20.0))
@@ -31,7 +33,7 @@ def mix_noise(samples: array, snr_db: float = NOISE_SNR_DB, seed: int = NOISE_SE
     return noisy
 
 
-def write_wav(path: Path, samples: array, rate: int = RATE) -> float:
+def write_wav(path: Path, samples: array[int], rate: int = RATE) -> float:
     """Write S16LE mono WAV; returns duration in seconds."""
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)

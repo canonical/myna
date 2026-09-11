@@ -19,6 +19,7 @@ tool that mutates the environment it is measuring is exactly the surprise
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import re
@@ -27,6 +28,7 @@ import sys
 import tarfile
 from io import BytesIO
 from pathlib import Path
+from types import ModuleType
 
 from myna.testbed.corpus import stamp_corpus
 
@@ -48,7 +50,7 @@ def _clean_reference(text: str) -> str:
     return _CJK_SPACE_RE.sub("", text).strip()
 
 
-def _require(module: str, install: str):
+def _require(module: str, install: str) -> ModuleType:
     try:
         return __import__(module)
     except ImportError as exc:
@@ -67,7 +69,7 @@ def _download(name: str, cache: Path) -> Path:
     return Path(hf_hub_download(REPO_ID, name, repo_type="dataset", cache_dir=str(cache)))
 
 
-def cmd_download_zh(args) -> None:  # noqa: ANN001
+def cmd_download_zh(args: argparse.Namespace) -> None:
     out = Path(args.out)
     cache = Path(args.cache)
     limit: int = args.n
@@ -95,7 +97,7 @@ def cmd_download_zh(args) -> None:  # noqa: ANN001
     _require("soundfile", "soundfile")
     import soundfile as sf
 
-    clips: list[dict] = []
+    clips: list[dict[str, object]] = []
     count = 0
     with tarfile.open(tar_path, "r:gz") as tar:
         for member in tar:

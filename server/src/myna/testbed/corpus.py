@@ -22,6 +22,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from myna.testbed.sources import WavFileSource
 
@@ -94,7 +95,7 @@ def digest_files(paths: Iterable[Path | str]) -> str:
     return h.hexdigest()
 
 
-def _corpus_id(manifest: dict, where: Path) -> str:
+def _corpus_id(manifest: dict[str, Any], where: Path) -> str:
     h = hashlib.sha256()
     for entry in sorted(manifest["clips"], key=lambda c: c["id"]):
         if not entry.get("sha256"):

@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from myna.core import (
     AudioSource,
@@ -150,7 +151,7 @@ class StreamingTelemetry:
         values = sorted(s.window_seconds for s in self.samples)
         return {"min": values[0], "median": statistics.median(values), "max": values[-1]}
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, object]:
         """Streaming duty-cycle telemetry, derived quantities included, for
         printing or writing out."""
         return {
@@ -180,7 +181,7 @@ class ResultRecord:
     # every non-streaming or non-instrumented run.
     streaming_telemetry: StreamingTelemetry | None = None
 
-    def to_json(self) -> dict:
+    def to_json(self) -> dict[str, Any]:
         record = asdict(self)
         record["events"] = [{"t": te.t, **event_to_wire(te.event)} for te in self.events]
         if self.streaming_telemetry is not None:

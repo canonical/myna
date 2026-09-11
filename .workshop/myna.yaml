@@ -243,7 +243,7 @@ actions:
     uv run ruff check src tests ../dev && uv run ruff format --check src tests ../dev
   py-types: |
     cd /project/server && uv sync -q
-    uv run mypy src/myna/core
+    uv run mypy src/myna
   shell-lint: |
     cd /project
     shellcheck -x dev/*.sh \

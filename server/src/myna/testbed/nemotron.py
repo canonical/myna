@@ -37,6 +37,7 @@ import contextlib
 import os
 import re
 from collections.abc import AsyncIterator
+from typing import Any
 
 from myna.core import (
     PHASE_PREPARING,
@@ -67,7 +68,7 @@ _TAIL_GUARD_WORDS = 2
 DEFAULT_MODEL = "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
 
 
-def _unwrap_transcript(result) -> str:
+def _unwrap_transcript(result: Any) -> str:
     """Pull the transcript text out of NeMo's ``transcribe()`` return value,
     which has drifted across versions: hybrid models hand back a ``(best, all)``
     tuple, and items are ``Hypothesis`` objects (``.text``) on newer NeMo, plain
@@ -75,7 +76,8 @@ def _unwrap_transcript(result) -> str:
     if isinstance(result, tuple):
         result = result[0]
     item = result[0]
-    return getattr(item, "text", item)
+    text: str = getattr(item, "text", item)
+    return text
 
 
 def _parse_att_context_size(value: str | None) -> list[int] | None:
@@ -135,7 +137,7 @@ class _StreamDecoder:
     Synchronous and blocking (GPU work) — call via ``asyncio.to_thread``.
     """
 
-    def __init__(self, model) -> None:
+    def __init__(self, model: Any) -> None:
         import torch
         from nemo.collections.asr.parts.utils.streaming_utils import (
             CacheAwareStreamingAudioBuffer,
@@ -149,7 +151,7 @@ class _StreamDecoder:
             self._cache_last_time,
             self._cache_last_channel_len,
         ) = model.encoder.get_initial_cache_state(batch_size=1)
-        self._hyps = None
+        self._hyps: Any | None = None
         self._stream_id = -1
         self._step = 0
         sched = model.encoder.streaming_cfg
@@ -157,7 +159,7 @@ class _StreamDecoder:
         self._shift_size = sched.shift_size
 
     @staticmethod
-    def _sched(value, first: bool) -> int:
+    def _sched(value: int | list[int], first: bool) -> int:
         """First-chunk vs steady-state schedule entry (lists are [first, rest])."""
         if isinstance(value, list):
             return value[0] if first else value[1]
@@ -235,7 +237,8 @@ class _StreamDecoder:
             return ""
         ids = self._hyps[0].y_sequence
         ids = ids.tolist() if hasattr(ids, "tolist") else list(ids)
-        return self._model.tokenizer.ids_to_text([int(i) for i in ids if int(i) >= 0])
+        text: str = self._model.tokenizer.ids_to_text([int(i) for i in ids if int(i) >= 0])
+        return text
 
 
 class _StreamEmitter:
@@ -266,9 +269,9 @@ class _StreamEmitter:
     def transcript(self) -> str:
         return "".join(self._emitted)
 
-    def update(self, text: str) -> list:
+    def update(self, text: str) -> list[TranscriptionFinal]:
         """One decode tick; returns the events to emit (may be empty)."""
-        events = []
+        events: list[TranscriptionFinal] = []
         boundary = _stable_commit_boundary(self._last_text, text, self._committed_len)
         if boundary is not None and boundary > self._committed_len:
             event = self._commit(text[self._committed_len : boundary])
@@ -283,9 +286,9 @@ class _StreamEmitter:
         self._last_text = text
         return events
 
-    def finish(self, final_text: str) -> list:
+    def finish(self, final_text: str) -> list[TranscriptionFinal]:
         """End-of-audio: commit the remaining tail (I5); returns events."""
-        events = []
+        events: list[TranscriptionFinal] = []
         if final_text.startswith("".join(self._raw)):
             remainder = self._remainder(final_text)
         else:
@@ -330,7 +333,7 @@ class NemotronAdapter:
         self._device = device
         self._att_context_size = att_context_size
         self._streaming = streaming
-        self._model = None
+        self._model: Any | None = None
         self._model_lock = asyncio.Lock()
 
     @property
@@ -371,13 +374,13 @@ class NemotronAdapter:
             translation=False,
         )
 
-    async def _load_model(self):
+    async def _load_model(self) -> Any:
         async with self._model_lock:
             if self._model is None:
                 self._model = await asyncio.to_thread(self._load_blocking)
         return self._model
 
-    def _load_blocking(self):  # pragma: no cover - real NeMo load; hardware-only
+    def _load_blocking(self) -> Any:  # pragma: no cover - real NeMo load; hardware-only
         from nemo.collections.asr.models import ASRModel
 
         # A local .nemo checkpoint (snap model component) is restored directly;
@@ -407,7 +410,7 @@ class NemotronAdapter:
 
             torch.cuda.empty_cache()
 
-    async def _load_model_with_heartbeat(self, emit: EventSink):
+    async def _load_model_with_heartbeat(self, emit: EventSink) -> Any:
         """Emit a ``preparing`` heartbeat while the (slow, cold) model loads —
         NeMo/torch import + CUDA init makes this gap especially long."""
         load = asyncio.ensure_future(self._load_model())
@@ -477,7 +480,7 @@ class NemotronAdapter:
 
     async def _run_streaming_session(
         self,
-        model,
+        model: Any,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
     ) -> None:
@@ -501,11 +504,12 @@ class NemotronAdapter:
                 seconds_since_progress = 0.0
                 await emit(TranscriptionProgress())  # liveness on quiet ticks
         final_text = await asyncio.to_thread(decoder.push, b"", final=True)
+        assert final_text is not None
         for event in emitter.finish(final_text):
             await emit(event)
         await emit(TranscriptionDone(text=emitter.transcript))
 
-    def _transcribe(self, model, pcm: bytes) -> str:
+    def _transcribe(self, model: Any, pcm: bytes) -> str:
         """Blocking decode; runs in a worker thread. Returns the transcript.
         Audio is already ``NEMO_FORMAT`` (validated in ``run_session``)."""
         import numpy as np

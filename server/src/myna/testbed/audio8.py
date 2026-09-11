@@ -28,6 +28,8 @@ import sys
 import wave
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 import numpy as np
 
@@ -125,7 +127,7 @@ def _default_model_dir() -> str:
     )
 
 
-def _load_runtime(model_dir: str):
+def _load_runtime(model_dir: str) -> ModuleType:
     """importlib-load ``asr_onnx_runtime.py`` from the staged dir.
 
     The runtime uses an absolute ``from hotword.hotword_trie import ...``, so
@@ -144,6 +146,8 @@ def _load_runtime(model_dir: str):
     if _MODULE_NAME in sys.modules:
         return sys.modules[_MODULE_NAME]
     spec = importlib.util.spec_from_file_location(_MODULE_NAME, runtime_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"no loader for {runtime_path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[_MODULE_NAME] = module
     spec.loader.exec_module(module)
@@ -185,7 +189,7 @@ class Audio8Adapter:
         self._device = device
         self._silence_threshold = silence_threshold
         self._punctuation = punctuation  # spike-confirmed True (T005, FR-007)
-        self._engine = None
+        self._engine: Any | None = None
         self._max_audio_seconds: float | None = None
         # Engine decode-budget internals, read at load for the max_new_tokens
         # clamp (the cache decoder caps prompt+output at max_total_len tokens).
@@ -223,7 +227,7 @@ class Audio8Adapter:
     # Model lifecycle (idle-unload compatible)
     # ------------------------------------------------------------------
 
-    async def _load_model(self):
+    async def _load_model(self) -> Any:
         async with self._model_lock:
             if self._engine is not None:
                 return self._engine
@@ -289,8 +293,10 @@ class Audio8Adapter:
             rng.standard_normal(int(AUDIO8_RATE * _WARMUP_SECONDS)) * _WARMUP_AMPLITUDE
         ).astype(np.float32)
         wav = _to_wav_bytes((np.clip(synth, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
+        engine = self._engine
+        assert engine is not None
         await asyncio.to_thread(
-            self._engine.transcribe,
+            engine.transcribe,
             wav,
             language=self._language_code(),
             max_new_tokens=8,  # discard path — smallest bounded decode
@@ -301,7 +307,7 @@ class Audio8Adapter:
     # Session (FR-001: myna.core session contract)
     # ------------------------------------------------------------------
 
-    async def _load_model_with_heartbeat(self, emit: EventSink):
+    async def _load_model_with_heartbeat(self, emit: EventSink) -> Any:
         load = asyncio.ensure_future(self._load_model())
         await emit(TranscriptionProgress(phase=PHASE_PREPARING))
         while not load.done():
@@ -399,7 +405,9 @@ class Audio8Adapter:
     def _decode_chunk(self, pcm: bytes) -> str:
         """One ≤ max_audio_seconds decode: WAV-wrap, clamp the output-token
         budget (FR-008), sanitize (Decision 5)."""
-        result = self._engine.transcribe(
+        engine = self._engine
+        assert engine is not None
+        result = engine.transcribe(
             _to_wav_bytes(pcm),
             language=self._language_code(),
             max_new_tokens=self._clamp_max_new_tokens(len(pcm) // 2),

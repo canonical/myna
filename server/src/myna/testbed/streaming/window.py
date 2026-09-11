@@ -14,6 +14,7 @@ never persisted.
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 RATE = 16_000  # all current adapters serve 16 kHz mono
 
@@ -55,11 +56,11 @@ class RollingWindow:
     def over_cap(self) -> bool:
         return self.window_seconds > self.window_cap_seconds
 
-    def samples(self) -> np.ndarray:
+    def samples(self) -> NDArray[np.float32]:
         """The uncommitted window as float32 mono (fresh array)."""
         return np.frombuffer(bytes(self._buf), dtype=np.int16).astype(np.float32) / 32768.0
 
-    def region_before(self, cut_abs: float) -> np.ndarray:
+    def region_before(self, cut_abs: float) -> NDArray[np.float32]:
         """Samples in [frontier, cut_abs) as float32 mono (fresh array)."""
         span = max(0, int((cut_abs - self.frontier) * RATE) * 2)
         return np.frombuffer(bytes(self._buf[:span]), dtype=np.int16).astype(np.float32) / 32768.0

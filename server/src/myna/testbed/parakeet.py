@@ -50,11 +50,12 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from myna.core import (
     PHASE_PREPARING,
@@ -94,7 +95,7 @@ except ImportError:
     _TRACY = False
 
 
-def _zone(name: str):
+def _zone(name: str) -> AbstractContextManager[None]:
     return _TracyZone(name) if _TRACY else nullcontext()
 
 
@@ -303,11 +304,13 @@ class _JointBuffers:
     `_ParakeetOnnx._joint_buffers`."""
 
     io: object  # onnxruntime.IOBinding, left untyped to avoid an import here
-    encoder_step: np.ndarray  # (1, 1024, 1), written in place per step
-    target: np.ndarray  # (1, 1) int32, written in place per step
-    state_in: tuple[np.ndarray, np.ndarray]  # (2,1,640) each: current committed state
-    state_out: tuple[np.ndarray, np.ndarray]  # (2,1,640) each: scratch for the new state
-    logits: np.ndarray  # (vocab+durations,), a view into the reused output buffer
+    encoder_step: NDArray[np.float32]  # (1, 1024, 1), written in place per step
+    target: NDArray[np.int32]  # (1, 1) int32, written in place per step
+    # (2,1,640) each: current committed state
+    state_in: tuple[NDArray[np.float32], NDArray[np.float32]]
+    # (2,1,640) each: scratch for the new state
+    state_out: tuple[NDArray[np.float32], NDArray[np.float32]]
+    logits: NDArray[np.float32]  # (vocab+durations,), a view into the reused output buffer
 
 
 class _ParakeetOnnx:
@@ -426,8 +429,8 @@ class _ParakeetOnnx:
         self,
         buffers: _JointBuffers,
         prev_token: int,
-        encoder_step: np.ndarray,  # [1024]
-    ) -> np.ndarray:
+        encoder_step: NDArray[np.float32],  # [1024]
+    ) -> NDArray[np.float32]:
         """One decoder_joint call via `buffers` (T09: was a fresh dict, fresh
         output allocation and a reshape+astype copy per call; see
         `_joint_buffers`). The returned array is a view into `buffers`'
@@ -445,7 +448,7 @@ class _ParakeetOnnx:
         return buffers.logits
 
     def _decode_sequence(
-        self, encodings: np.ndarray, encodings_len: int, *, bench: BenchSink | None = None
+        self, encodings: NDArray[np.float32], encodings_len: int, *, bench: BenchSink | None = None
     ) -> tuple[list[str], list[float]]:
         """Greedy TDT decode (murmure decode_sequence_greedy): argmax vocab
         token; on non-blank update the decoder state; the duration head skips
@@ -502,7 +505,7 @@ class _ParakeetOnnx:
         return tokens, timestamps
 
     def transcribe(
-        self, samples: np.ndarray, *, bench: BenchSink | None = None
+        self, samples: NDArray[np.float32], *, bench: BenchSink | None = None
     ) -> tuple[list[str], list[float]]:
         """float32 mono 16 kHz → (tokens, token timestamps in region seconds).
 
@@ -542,7 +545,7 @@ class _ParakeetOnnx:
                 bench("transpose", time.perf_counter() - t0)
             return self._decode_sequence(encoder_out[0], int(encoder_lens[0]), bench=bench)
 
-    def _transcribe_guarded(self, samples: np.ndarray) -> tuple[list[str], list[float]]:
+    def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
         """`transcribe`, with one retry when the result looks collapsed.
 
         The retry pads silence onto both ends, which is enough of a nudge to
@@ -562,11 +565,11 @@ class _ParakeetOnnx:
             return tokens, timestamps
         return retry_tokens, [max(0.0, t - _COLLAPSE_RETRY_PAD_S) for t in retry_timestamps]
 
-    def transcribe_text(self, samples: np.ndarray) -> str:
+    def transcribe_text(self, samples: NDArray[np.float32]) -> str:
         tokens, _ = self._transcribe_guarded(samples)
         return _detokenize(tokens)
 
-    def transcribe_words(self, samples: np.ndarray) -> list[Word]:
+    def transcribe_words(self, samples: NDArray[np.float32]) -> list[Word]:
         tokens, timestamps = self._transcribe_guarded(samples)
         return _tokens_to_words(tokens, timestamps)
 
@@ -580,6 +583,8 @@ def _default_model_dir() -> str:
 
     fetch = Path(__file__).resolve().parents[4] / "dev" / "parakeet" / "fetch_parakeet_onnx.py"
     spec = importlib.util.spec_from_file_location("fetch_parakeet_onnx", fetch)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"no loader for {fetch}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return str(mod.stage(mod.default_model_dir()))
@@ -654,8 +659,13 @@ class ParakeetAdapter:
     async def _load_model(self) -> _ParakeetOnnx:
         async with self._model_lock:
             if self._model is None:
-                model_dir = self._model_dir or await asyncio.to_thread(_default_model_dir)
-                self._model = await asyncio.to_thread(_ParakeetOnnx, model_dir)
+                model_dir = (
+                    self._model_dir
+                    if self._model_dir
+                    else await asyncio.to_thread(_default_model_dir)
+                )
+                model = await asyncio.to_thread(_ParakeetOnnx, model_dir)
+                self._model = model
         return self._model
 
     async def unload(self) -> None:
@@ -761,13 +771,16 @@ class ParakeetAdapter:
         # once per session; nothing downstream depends on its timing).
         event_loop = asyncio.get_running_loop()
 
-        def decode(samples: np.ndarray, offset: float) -> Hypothesis:
+        async def emit_on_loop(event: TranscriptionProgress) -> None:
+            await emit(event)
+
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             majflt_before = sample_majflt()
             words = model.transcribe_words(samples)
             warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
             if warning is not None:
                 progress = TranscriptionProgress(warning=warning)
-                asyncio.run_coroutine_threadsafe(emit(progress), event_loop)
+                asyncio.run_coroutine_threadsafe(emit_on_loop(progress), event_loop)
             return Hypothesis(words=[Word(w.text, w.start + offset, w.end + offset) for w in words])
 
         transcript = await run_streaming_loop(

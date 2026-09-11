@@ -21,6 +21,10 @@ import os
 import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from myna.testbed.adapter import Adapter
 
 log = logging.getLogger("myna.server")
 
@@ -179,7 +183,7 @@ def _default_if_none(value: float | None, fallback: float) -> float:
     return fallback if value is None else value
 
 
-def build_adapter(args: argparse.Namespace):
+def build_adapter(args: argparse.Namespace) -> Adapter:
     """Construct the chosen adapter, importing its extra lazily so --help and
     the other adapter work without it installed."""
     if args.adapter == "fake":
@@ -302,8 +306,12 @@ async def serve(args: argparse.Namespace) -> None:
     from myna.server.lifecycle import LifecycleService, idle_monitor
 
     if args.preload:
-        log.info("preloading adapter=%s model=%s", args.adapter, args.model or "(default)")
-        await adapter._load_model()
+        load = getattr(adapter, "_load_model", None)
+        if load is None:
+            log.info("adapter=%s has nothing to preload", args.adapter)
+        else:
+            log.info("preloading adapter=%s model=%s", args.adapter, args.model or "(default)")
+            await load()
 
     lifecycle = LifecycleService(adapter)
     stop = asyncio.Event()

@@ -88,6 +88,8 @@ dev = [
     # still has it. Dev-only -- never imported at runtime.
     "onnx>=1.19",
     "mutmut>=3.8.0",
+    "types-psutil>=7.2.2.20260906",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]
@@ -144,16 +146,24 @@ select = ["E", "W", "F", "I", "UP", "B"]
 "tests/**" = ["E501", "E402"]  # importorskip precedes gated imports
 
 [tool.mypy]
-# Scoped strict: only the shared contract package (myna.core) is load-bearing
-# enough for strict typing; the testbed/adapters stay harness-tier (FR-010).
+# Strict over the whole package. The optional model runtimes ship no types
+# and are not installed in the dev environment (they ride the snap extras),
+# so their imports are the one thing not checked; everything written here is.
 mypy_path = "src"
 strict = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = "myna.testbed.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "myna.server.*"
-ignore_errors = true
+module = [
+    "ctranslate2.*",
+    "faster_whisper.*",
+    "funasr_onnx.*",
+    "huggingface_hub.*",
+    "nemo.*",
+    "onnxruntime.*",
+    "sherpa_onnx.*",
+    "soundfile.*",
+    "torch.*",
+    "tracy_client.*",
+]
+ignore_missing_imports = true

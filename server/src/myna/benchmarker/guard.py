@@ -35,6 +35,7 @@ side effect on a shared machine. The guard reports; the operator decides.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -573,7 +574,7 @@ def check_page_faults(before: int, after: int) -> Violation | None:
     )
 
 
-def cmd_check(args) -> None:  # noqa: ANN001
+def cmd_check(args: argparse.Namespace) -> None:
     """``check`` subcommand: report, and exit non-zero on a hard violation."""
     if args.model not in PROFILES:
         raise SystemExit(f"unknown profile {args.model!r}; choose from {sorted(PROFILES)}")

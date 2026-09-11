@@ -35,6 +35,7 @@ Requires ffmpeg (FLAC decode). Network is needed only for the download.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import gzip
 import json
@@ -43,6 +44,7 @@ import tarfile
 import urllib.request
 import zlib
 from array import array
+from collections.abc import Iterator
 from pathlib import Path
 
 from myna.benchmarker._audio import NOISE_SEED, NOISE_SNR_DB, mix_noise, write_wav
@@ -146,7 +148,7 @@ def download(url: str, dest: Path) -> Path:
     return dest
 
 
-def decode_flac(data: bytes) -> array:
+def decode_flac(data: bytes) -> array[int]:
     """Decode FLAC bytes to 16 kHz mono S16LE samples via ffmpeg (piped)."""
     pcm = subprocess.run(
         [
@@ -170,7 +172,7 @@ def decode_flac(data: bytes) -> array:
     return array("h", pcm)
 
 
-def open_split(tar_path: Path):
+def open_split(tar_path: Path) -> contextlib.AbstractContextManager[tarfile.TarFile]:
     """Open a split tarball, turning a short or corrupt one into advice.
 
     A truncated archive fails deep inside tarfile with a gzip EOFError that
@@ -179,7 +181,7 @@ def open_split(tar_path: Path):
     """
 
     @contextlib.contextmanager
-    def _reader():
+    def _reader() -> Iterator[tarfile.TarFile]:
         try:
             with tarfile.open(tar_path, "r:gz") as tar:
                 yield tar
@@ -193,9 +195,15 @@ def open_split(tar_path: Path):
     return _reader()
 
 
-def collect(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]:
+def _read_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+    stream = tar.extractfile(member)
+    assert stream is not None
+    return stream.read()
+
+
+def collect(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array[int], str]]:
     """The first ``n`` utterances in archive order, with their transcripts."""
-    pcm: dict[str, array] = {}
+    pcm: dict[str, array[int]] = {}
     text: dict[str, str] = {}
     with open_split(tar_path) as tar:
         for member in tar:
@@ -203,11 +211,11 @@ def collect(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]
             if not (member.isfile() and name.startswith(prefix)):
                 continue
             if name.endswith(".trans.txt"):
-                for line in tar.extractfile(member).read().decode().splitlines():
+                for line in _read_member(tar, member).decode().splitlines():
                     utt_id, _, transcript = line.partition(" ")
                     text[utt_id] = transcript
             elif name.endswith(".flac") and len(pcm) < n:
-                pcm[Path(name).stem] = decode_flac(tar.extractfile(member).read())
+                pcm[Path(name).stem] = decode_flac(_read_member(tar, member))
     return [(uid, pcm[uid], text[uid]) for uid in pcm if uid in text]
 
 
@@ -245,7 +253,7 @@ def _round_robin(by_speaker: dict[str, list[str]], n: int) -> list[str]:
     return picked
 
 
-def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array, str]]:
+def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array[int], str]]:
     """``n`` utterances spread round-robin over every speaker in the split.
 
     Two passes over the tarball: the first indexes utterance ids and
@@ -260,7 +268,7 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
             if not (member.isfile() and name.startswith(prefix)):
                 continue
             if name.endswith(".trans.txt"):
-                for line in tar.extractfile(member).read().decode().splitlines():
+                for line in _read_member(tar, member).decode().splitlines():
                     utt_id, _, transcript = line.partition(" ")
                     text[utt_id] = transcript
             elif name.endswith(".flac"):
@@ -272,14 +280,14 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
     print(f"selected {len(wanted)} clips across {len({_speaker(u) for u in wanted})} speakers")
 
     remaining = set(wanted)
-    pcm: dict[str, array] = {}
+    pcm: dict[str, array[int]] = {}
     with open_split(tar_path) as tar:
         for member in tar:
             if not (member.isfile() and member.name.endswith(".flac")):
                 continue
             utt_id = Path(member.name).stem
             if utt_id in remaining:
-                pcm[utt_id] = decode_flac(tar.extractfile(member).read())
+                pcm[utt_id] = decode_flac(_read_member(tar, member))
                 remaining.discard(utt_id)
                 if not remaining:
                     break
@@ -292,7 +300,9 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
 LONG_FORM_GAP_SECONDS = 0.4
 
 
-def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) -> dict:
+def long_form_entry(
+    out_dir: Path, tar_path: Path, minutes: float, subset: str
+) -> dict[str, object]:
     """One continuous clip: a whole LibriSpeech chapter, read in order.
 
     Individual LibriSpeech utterances are single sentences (a few seconds
@@ -324,7 +334,7 @@ def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) 
             if not (member.isfile() and name.startswith(prefix)):
                 continue
             if name.endswith(".trans.txt"):
-                for line in tar.extractfile(member).read().decode().splitlines():
+                for line in _read_member(tar, member).decode().splitlines():
                     utt_id, _, transcript = line.partition(" ")
                     text[utt_id] = transcript
             elif name.endswith(".flac"):
@@ -335,7 +345,7 @@ def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) 
     utt_ids = sorted(utt_ids)
     print(f"longest chapter: {chapter_id} ({len(utt_ids)} utterances)")
 
-    pcm_by_id: dict[str, array] = {}
+    pcm_by_id: dict[str, array[int]] = {}
     with open_split(tar_path) as tar:
         wanted = set(utt_ids)
         for member in tar:
@@ -343,7 +353,7 @@ def long_form_entry(out_dir: Path, tar_path: Path, minutes: float, subset: str) 
                 continue
             utt_id = Path(member.name).stem
             if utt_id in wanted:
-                pcm_by_id[utt_id] = decode_flac(tar.extractfile(member).read())
+                pcm_by_id[utt_id] = decode_flac(_read_member(tar, member))
                 wanted.discard(utt_id)
                 if not wanted:
                     break
@@ -418,9 +428,9 @@ def build(
     if not clips and not long_form_minutes:
         raise SystemExit(f"no clips selected — is this the LibriSpeech {subset} tarball?")
 
-    entries: list[dict] = []
+    entries: list[dict[str, object]] = []
 
-    def add(clip_id: str, samples: array, txt: str, category: str, source: str) -> None:
+    def add(clip_id: str, samples: array[int], txt: str, category: str, source: str) -> None:
         duration = write_wav(audio_dir / f"{clip_id}.wav", samples, RATE)
         entries.append(
             {
@@ -531,7 +541,7 @@ def require_ffmpeg() -> None:
         raise SystemExit("ffmpeg is required for FLAC decode: sudo apt install ffmpeg") from err
 
 
-def cmd_download(args) -> None:  # noqa: ANN001
+def cmd_download(args: argparse.Namespace) -> None:
     """``download-corpus``: fetch (or reuse) a split and write its manifest."""
     out = Path(args.out)
     manifest_name = args.manifest_name

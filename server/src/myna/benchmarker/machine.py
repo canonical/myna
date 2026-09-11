@@ -12,6 +12,20 @@ import socket
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
+
+
+class Machine(TypedDict):
+    type: str
+    hostname: str
+    cpu: str | None
+    cpu_cores: int | None
+    ram_gb: float | None
+    gpu: str | None
+    gpu_vram_gb: float | None
+    ubuntu: str | None
+    kernel: str
+    collected_at: str
 
 
 def _cpu_model() -> str | None:
@@ -75,7 +89,7 @@ def _ubuntu_version() -> str | None:
     return None
 
 
-def collect() -> dict:
+def collect() -> Machine:
     """Return a machine-summary dict to write as the JSONL header record."""
     gpu_model, gpu_vram_gb = _gpu()
     return {
