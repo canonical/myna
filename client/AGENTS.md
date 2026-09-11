@@ -20,6 +20,7 @@ The client is a Rust workspace that turns activation events into bounded microph
 - `myna-cli/` - `myna-dictate` development and testbed binary.
 - `myna-desktop/` - Desktop activation, IBus injection, and state publication.
 - `myna-hud/` - Focus-safe dictation status renderer.
+- `myna-config/` - Myna Settings, the unconfined GTK onboarding and configuration application.
 - `data/` - Shared schemas and packaged client data.
 
 # Documents
@@ -28,3 +29,4 @@ The client is a Rust workspace that turns activation events into bounded microph
 - `.kb/crate-architecture.md` - Cargo dependencies and runtime integration boundaries.
 - `.kb/desktop-integration.md` - Activation, focus, injection, and indication behavior.
 - `.kb/runtime-settings.md` - Persisted client settings and streaming-mode resolution.
+- `myna-config/AGENTS.md` - Privilege paths, plan executor, and refresh budget of Myna Settings.
