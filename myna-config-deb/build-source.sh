@@ -32,6 +32,19 @@ commit_time=$(git -C "$root" log -1 --format=%ct)
 if ! git -C "$root" describe --tags --exact-match --match "v$upstream" >/dev/null 2>&1; then
     upstream="$upstream~git$(date -u -d "@$commit_time" +%Y%m%d).$commit"
 fi
+# PPA=N appends ~ppaN, which dput requires for a PPA target and which sorts
+# below the archive version. SERIES=<name> retargets a series other than the
+# changelog's, tagged ~<release> before ~ppaN so an older series sorts below
+# a newer one: ~24.04~ppa1 < ~26.04~ppa1 < ~ppa1.
+series=$(dpkg-parsechangelog -l "$here/debian/changelog" -S Distribution)
+if [ -n "${SERIES:-}" ] && [ "$SERIES" != "$series" ]; then
+    release=$(ubuntu-distro-info --series="$SERIES" -r | sed 's/ LTS$//')
+    revision="$revision~$release"
+    series=$SERIES
+fi
+if [ -n "${PPA:-}" ]; then
+    revision="$revision~ppa$PPA"
+fi
 version="$upstream-$revision"
 stage="$out/myna-config-$upstream"
 
@@ -70,7 +83,7 @@ tar -C "$out" -cJf "$out/myna-config_$upstream.orig.tar.xz" \
     "myna-config-$upstream"
 
 cp -a "$here/debian" "$stage/debian"
-sed -i "1s/($changelog_version)/($version)/" "$stage/debian/changelog"
+sed -i "1s/($changelog_version) [a-z-]*;/($version) $series;/" "$stage/debian/changelog"
 python3 "$here/vendor-copyright.py" "$stage/vendor" "$here/debian/copyright.in" > "$stage/debian/copyright"
 rm "$stage/debian/copyright.in"
 

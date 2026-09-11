@@ -28,4 +28,10 @@ dependencies for the Ubuntu build targets, and writes a reproducible
 `debian/changelog` carries the release version. Untagged commits build as
 `<upstream>~git<date>.<sha>`, which sorts below the release and gives every
 commit its own orig tarball. Tag `v<upstream>` to build the release itself.
-Uploads to a PPA take a `~ppaN` suffix on top; never commit that.
+Uploads to a PPA take a `~ppaN` suffix on top; never commit that:
+
+    PPA=1 make deb-source                   # stonking, ...-0ubuntu1~ppa1
+    PPA=1 SERIES=resolute make deb-source   # ...-0ubuntu1~26.04~ppa1
+
+One PPA (`ppa:charles05/myna-config`) carries every series; the `~<release>`
+tag keeps an older series' build below a newer one's.
