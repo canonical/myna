@@ -25,7 +25,7 @@ async-trait.workspace = true
 gio.workspace = true
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 gtk4 = { version = "0.11", features = ["v4_14"] }
-libadwaita = { version = "0.9", features = ["v1_6"] }
+libadwaita = { version = "0.9", features = ["v1_5"] }
 myna-core = { path = "../myna-core" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
