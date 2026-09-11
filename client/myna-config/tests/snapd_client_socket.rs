@@ -27,15 +27,11 @@ fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Under the system temp dir, not `CARGO_TARGET_TMPDIR`: a Unix socket path
+/// is capped at `SUN_LEN` (108 bytes), which a package build's
+/// `/build/<source>-<version>/target/release/tmp/` prefix already exceeds.
 fn socket_path() -> PathBuf {
-    let dir = std::env::var_os("CARGO_TARGET_TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let mut d = std::env::current_dir().unwrap();
-            d.push("target");
-            d
-        });
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = std::env::temp_dir();
     let index = COUNTER.fetch_add(1, Ordering::SeqCst);
     let pid = std::process::id();
     dir.join(format!("myna-snapd-fake-{pid}-{index}.sock"))
