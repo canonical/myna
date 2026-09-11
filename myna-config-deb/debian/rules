@@ -1,7 +1,11 @@
 #!/usr/bin/make -f
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/pkg-info.mk
+
 export CARGO_HOME = $(CURDIR)/debian/cargo-home
+# Panic locations and debuginfo would otherwise carry the build directory.
+export RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/usr/src/$(DEB_SOURCE)-$(DEB_VERSION_UPSTREAM)
 export CARGO_INCREMENTAL = 0
 # The release profile strips debuginfo at link since cargo 1.77 unless the
 # profile asks for it, so RUSTFLAGS alone leaves the dbgsym empty.

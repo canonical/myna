@@ -22,7 +22,7 @@ COMMON = {
 # embedded. First match wins.
 FILES = {
     "MIT": ["LICENSE-MIT", "LICENSE-MIT.md", "LICENSE", "LICENSE.txt", "LICENSE.md"],
-    "Apache-2.0 with LLVM-exception": ["LICENSE-APACHE", "LICENSE"],
+    "Apache-2.0 with LLVM exception": ["LICENSE-APACHE", "LICENSE"],
     "Unlicense": ["UNLICENSE", "LICENSE-UNLICENSE", "LICENSE"],
     "Unicode-3.0": ["LICENSE-UNICODE", "LICENSE"],
     "Zlib": ["LICENSE-ZLIB", "LICENSE"],
@@ -33,11 +33,12 @@ FILES = {
 
 
 def dep5_expression(spdx: str) -> str:
-    """`MIT/Apache-2.0` and `A OR B` in Cargo become `A or B` in DEP-5."""
+    """`MIT/Apache-2.0` and `A OR B` in Cargo become `A or B` in DEP-5, and an
+    SPDX `WITH LLVM-exception` becomes DEP-5's `with LLVM exception`."""
     spdx = spdx.replace("/", " OR ")
     spdx = re.sub(r"\s+OR\s+", " or ", spdx)
     spdx = re.sub(r"\s+AND\s+", " and ", spdx)
-    spdx = re.sub(r"\s+WITH\s+", " with ", spdx)
+    spdx = re.sub(r"\s+WITH\s+(\S+)-exception", r" with \1 exception", spdx)
     return spdx
 
 
@@ -62,9 +63,11 @@ for crate in sorted(vendor.iterdir()):
     for atom in atoms(expression):
         first_crate.setdefault(atom, []).append(crate)
 
+# Licences the hand-written header already spells out get no second stanza.
+defined = set(re.findall(r"^License: (.+)$", header, re.MULTILINE))
 out = [header.rstrip("\n"), ""]
 out.extend(stanzas)
-for atom in sorted(first_crate):
+for atom in sorted(set(first_crate) - defined):
     out.append(f"License: {atom}")
     base, _, exception = atom.partition(" with ")
     if atom in COMMON:

@@ -1,3 +1,2 @@
 Tests: cli
 Depends: myna-config, libglib2.0-bin
-Restrictions: superficial
