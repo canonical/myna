@@ -1,15 +1,18 @@
 #!/bin/sh
 # The installed binary without a display: version, help, and the apply-plan
-# executor that pkexec runs as root. An empty plan runs nothing and reports
-# an empty result list; a plan naming anything but `snap` is refused before
-# anything executes. Then the schema it shares with the daemon, compiled
-# into the system schema source.
+# executor that pkexec runs as root, which must refuse an empty plan and a
+# plan naming anything but `snap` before executing anything. Then the schema
+# it shares with the daemon, compiled into the system schema source.
 set -eu
 myna-config --version | grep -q '^myna-config '
 myna-config --help >/dev/null
-[ "$(myna-config --apply-plan '[]')" = '[]' ]
-if myna-config --apply-plan '[{"executable":"sh","arguments":["-c","true"]}]' 2>/dev/null; then
-    echo "hostile plan was accepted" >&2
-    exit 1
-fi
+refused() {
+    if out=$(myna-config --apply-plan "$1" 2>&1); then
+        echo "plan was accepted: $1" >&2
+        exit 1
+    fi
+    echo "$out" | grep -q 'invalid apply plan'
+}
+refused '[]'
+refused '[{"executable":"sh","arguments":["-c","true"]}]'
 gsettings list-keys com.canonical.Myna.Dictation | grep -qx streaming-mode
