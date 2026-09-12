@@ -5,8 +5,11 @@
 # The launch-workshop action installs Workshop on the hosted runner and builds
 # one workshop per job. `myna` (Rust toolchain + uv + the in-project pipewire
 # SDK) carries the client/server suites; `myna-shell` carries the GNOME Shell
-# extension's, on a base new enough to run the Shell it targets. The named
-# actions (`lint`, `test`, `py-test`, `gjs-test`) are defined alongside each.
+# extension's, on a base new enough to run the Shell it targets.
+#
+# Every job runs one Makefile gate and nothing else (`check`, `test-*`,
+# `coverage`), so the gate's definition lives in one place and `make
+# preflight` locally is exactly what blocks a merge here.
 name: CI
 
 concurrency:
@@ -35,24 +38,14 @@ jobs:
             rust:cargo-registry
             uv:cache
 
-      - name: Rust lint (clippy -D warnings)
-        run: make lint-client
-
-      - name: Rust tests (cargo test --workspace)
-        run: make test-client
-
-      # GPU render smoke check (xvfb + render_check). Catches the kind of
-      # regression that compiled-and-passed-unit-tests but produced a
-      # broken overlay (see be8d380 / 2e45c68: a wrong `count` argument
-      # to glUniform4fv for an array uniform silently corrupted the next
-      # uniforms and the ribbon became a flat saturated block).
-      - name: Renderer UI check (xvfb + render_check)
-        run: make ui-check
-
-      # Offline Python suite (fake-adapter contract + adapter logic; the
-      # real-model / GPU tests skip cleanly). `uv run` syncs the base env first.
-      - name: Python tests (pytest)
-        run: make test-server
+      # The myna-workshop half of `make test`: every Rust suite (hermetic,
+      # the env-gated hardware suites with private services stood up, and the
+      # renderer smoke check under xvfb that catches a compiled-and-passed
+      # but visually broken overlay, see be8d380 / 2e45c68) plus the offline
+      # Python suite. `test-extension` is the job below, in its own workshop.
+      # Clippy is a static gate: `make check`, the `static` job.
+      - name: Client + server suites
+        run: make test-client test-server
 
 
   # The GNOME Shell extension, in its own workshop and so its own job: the
@@ -129,10 +122,11 @@ jobs:
             rust:cargo-registry
             uv:cache
 
-      # fmt, lint-server, lint-snaps, machete, deny, py-types, shell-lint,
-      # workflow-lint - see the `check` target for the authoritative list.
-      # Snap manifest lint runs modelctl itself (pinned release; the script
-      # fetches the CLI tarball, no Workshop toolchain).
+      # Format checks, clippy, ruff + mypy, cargo machete/deny, snap manifest
+      # lint, shellcheck, actionlint, translation-template freshness - see the
+      # `check` target for the authoritative list. Snap manifest lint runs
+      # modelctl itself (pinned release; the script fetches the CLI tarball,
+      # no Workshop toolchain).
       - name: Static gates
         run: make check
 
@@ -168,33 +162,29 @@ jobs:
             rust:cargo-registry
             uv:cache
 
-      - name: Provision english-speech corpus
-        run: make workshop-corpus
+      # corpus, cov-client, cov-server, cov-extension, exercise, deadcode,
+      # then the blocking patch gate (FR-008: 80% of changed coverable lines,
+      # 5-line floor, deletion-only and excluded paths cannot false-fail; exit
+      # 2 = fail) against the PR's base. The reports below are published even
+      # when the gate fails, which is when they are most wanted.
+      - name: Coverage, dead-code report, patch gate
+        run: make coverage COV_BASE="origin/${{ github.base_ref || 'main' }}"
 
-      - name: Rust coverage (tests)
-        run: make cov
-
-      - name: Python coverage (tests)
-        run: make py-cov
-
-      - name: GJS extension coverage (tests)
-        run: make gjs-cov
-
-      - name: Use-case exercise (merged exports)
-        run: make workshop-exercise
-
-      # The digest (populations, per-component debt, hot spots, never-entered
-      # functions, static findings) goes to the job summary, so the number is
-      # read on every run rather than only when someone downloads the artifact.
-      - name: Dead-code report
+      # The digests (populations, per-component debt, hot spots, never-entered
+      # functions, static findings; the GJS summary) go to the job summary, so
+      # the numbers are read on every run rather than only when someone
+      # downloads the artifact.
+      - name: Coverage summaries
+        if: always()
         run: |
-          make workshop-deadcode
-          cat client/target/coverage/populations-summary.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: GJS coverage report
-        run: cat extensions/myna-shell/target/coverage/gjs-summary.md >> "$GITHUB_STEP_SUMMARY"
+          for f in client/target/coverage/populations-summary.md \
+                   extensions/myna-shell/target/coverage/gjs-summary.md; do
+            [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
 
       - name: Upload coverage reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports
@@ -204,8 +194,3 @@ jobs:
             server/htmlcov/
             server/coverage-*.xml
             extensions/myna-shell/target/coverage/
-
-      # Blocking gate (FR-008): 80% of changed coverable lines, 5-line floor,
-      # deletion-only and excluded paths cannot false-fail. Exit 2 = fail.
-      - name: Patch coverage gate
-        run: workshop run myna patch-cov --base "origin/${{ github.base_ref || 'main' }}"

@@ -263,7 +263,7 @@ The real tiers, and what each is for:
 Rebuild any of them from the cached downloads (no network needed once `.cache/`
 is populated). Every corpus, sweep and table comes out of one tool,
 `myna.benchmarker` — packed for external testers as `myna-bench.pyz` by
-`make bench`, and run in-tree as `python -m myna.benchmarker`:
+`make build-bench`, and run in-tree as `python -m myna.benchmarker`:
 
 ```shell
 cd server

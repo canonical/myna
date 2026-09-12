@@ -7,7 +7,7 @@ Everything here is a tool for working *on* Myna. Nothing here is shipped.
 There is one benchmarking tool, `myna.benchmarker`
 (`server/src/myna/benchmarker/`): corpus builders, the clip scorer, the snap
 sweep, the aggregator and the environment guard. Run it in-tree with the
-`make bench-*` targets, or pack it for external testers with `make bench`
+`make bench-*` targets, or pack it for external testers with `make build-bench`
 (`myna-bench.pyz`). It has no dependency on this directory, which is what lets
 the same code run from a checkout and from a tester's download.
 
@@ -34,6 +34,6 @@ Only the two configs stayed here:
 | `parakeet/build_maxstack_encoder.py`, `parakeet/requantize_encoder.py`, `parakeet/collapse_probe.py`, `parakeet/build-maxstack.sh`, `parakeet/qsilu/` | Build and validate alternative Parakeet encoders. |
 | `stage-qwen-c.sh`, `model-pin.sh`, `lint-packages.sh` | Snap staging and packaging checks. |
 | `spread-build.sh`, `spread-image.sh` | Confined end-to-end (spread) harness. |
-| `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py`, `shexli_gate.py`, `vulture_allowlist.py` | Coverage and static-analysis gates behind `make check`. |
+| `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py`, `shexli_gate.py`, `vulture_allowlist.py` | Coverage reports and gates behind `make coverage` (and the shexli gate CI's `extension-review` job runs). |
 | `exercise.sh`, `gated-tests.sh`, `transcribe.py`, `capabilities.py` | Manual drivers for a running server. |
 | `i18n.sh`, `ibus-doctor.sh` | Translation templates, IBus diagnosis. |

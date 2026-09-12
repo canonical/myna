@@ -118,7 +118,7 @@ jobs:
       # no-op after the step above), builds spread at the pinned commit, and
       # runs confined-e2e. The task resolves the snaps from the project dir.
       - name: Run confined-e2e
-        run: make spread-e2e
+        run: make spread-confined-e2e
 
       # Runs here rather than local-only (as user-daemon-session does) because
       # it needs no snap beyond the client one built above: the image is
@@ -127,4 +127,4 @@ jobs:
       # control-socket activation cannot bind without `network-bind`, and
       # nothing unpackaged can notice, since there is no seccomp filter there.
       - name: Run control-socket
-        run: make spread-control
+        run: make spread-control-socket

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build myna-bench.pyz — the standalone benchmarker zipapp.
 #
-#   bash dev/build-bench.sh            (or: make bench)
+#   bash dev/build-bench.sh            (or: make build-bench)
 #   python3 myna-bench.pyz plan --config bench.yaml
 #   sudo python3 myna-bench.pyz run --config bench.yaml
 #
