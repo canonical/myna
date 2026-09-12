@@ -258,6 +258,38 @@ actions:
   i18n-check: |
     /project/dev/i18n.sh --check
 
+  # --- mutation testing (scoped; not a gate) ---
+  # cargo-mutants is not part of the coverage SDK's pinned battery because it
+  # gates nothing; it is fetched prebuilt on first use, pinned here, into the
+  # workshop user's cargo bin (the same lazy, idempotent shape as the
+  # llvm-tools component in `cov`). Pass cargo-mutants args to scope the run,
+  # e.g. `-p myna-orchestrator -f src/session.rs`; unscoped is hours.
+  # Results land in client/mutants.out/ (gitignored).
+  mutants: |
+    export PATH="$HOME/.cargo/bin:/usr/local/cargo-bin:$PATH"
+    if ! command -v cargo-mutants >/dev/null; then
+      mkdir -p "$HOME/.cargo/bin"
+      /usr/local/cargo-binstall/bin/cargo-binstall --no-confirm --no-symlinks \
+        --disable-strategies compile --install-path "$HOME/.cargo/bin" \
+        cargo-mutants@27.1.0
+    fi
+    (cd /project/server && uv sync -q)
+    cd /project/client && cargo mutants "$@"
+  # mutmut (server dev group; config in server/pyproject.toml [tool.mutmut]).
+  # Scope with mutant-name globs, e.g. `myna.core.session*`. Copies the tree
+  # into server/mutants/ (gitignored) and runs pytest there.
+  # The run prints one verdict per mutant (killed / survived / timeout);
+  # `uv run mutmut browse` in the server dir opens the TUI over the same
+  # results, and `mutmut show <name>` prints one mutant's diff.
+  py-mutants: |
+    cd /project/server && uv sync -q
+    uv run mutmut run "$@"
+
+  # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
+  audit: |
+    export PATH=/usr/local/cargo-bin:$PATH
+    cd /project/client && cargo audit
+    cd /project/server && uv sync -q && uv run pip-audit
 
   # Weekly advisory audits (FR-012): scheduled workflow, not per-PR.
   audit: |
