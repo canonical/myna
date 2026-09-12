@@ -8,6 +8,8 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 The Makefile is the one definition of every gate CI enforces. The top-level targets are CI's jobs, one each: `check` (static gates), `test` (every blocking suite), `coverage` (coverage reports, the dead-code digest and the patch-coverage gate), `spread` (confined end-to-end in a VM) and `snaps` (package every snap). `make preflight` runs the first three, which is exactly what blocks a merge. Everything under those gates runs inside the Workshop environment, so green locally is green in CI.
 
+CodeQL (`.github/workflows/codeql.yml`) runs on every pull request as well, advisory: its findings appear in the repository's Security tab and on the PR, and each is triaged as a decision, never allow-listed to unblock a merge.
+
 Component-scoped targets are `<verb>-<component>`: `fmt`, `lint`, `test`, `cov`, `mutate` and `build` over `client`, `server` and `extension`, with a third part for a sub-suite (`test-client-gated`). `make help` lists them grouped by purpose.
 
 # Important
