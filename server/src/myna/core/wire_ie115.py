@@ -16,7 +16,9 @@ What the mapping does:
 - ``transcription.final`` <-> ``conversation.item.input_audio_transcription.delta``
   — committed, append-only segment text. One ``item_id`` per utterance (we mint
   it; dictation has no conversation graph); every delta of the utterance and its
-  ``completed`` share it.
+  ``completed`` share it. Timed ``segments`` ride along as an additive field
+  when the session asked for them, so a caption or subtitle client can place
+  the text in time; dictation never asks and never sees it.
 - ``transcription.done`` <-> ``conversation.item.input_audio_transcription.completed``
   — one per ``input_audio_buffer.commit``, carrying the full utterance
   transcript. This is the utterance terminal: **the connection stays open**
@@ -44,6 +46,7 @@ from myna.core.events import (
     PHASE_READY,
     PHASE_TRANSCRIBING,
     Disposition,
+    Segment,
     TranscriptionDone,
     TranscriptionError,
     TranscriptionEvent,
@@ -88,6 +91,39 @@ _ERROR_TO_IE115 = {
 }
 
 
+# --- timed segments <-> additive `segments` field --------------------------------
+
+
+def segments_to_ie115(segments: tuple[Segment, ...]) -> list[dict[str, Any]]:
+    """Timed segments as wire objects. ``score`` is omitted when the adapter
+    did not supply one rather than sent as null."""
+    return [
+        {
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text,
+            **({"score": seg.score} if seg.score is not None else {}),
+        }
+        for seg in segments
+    ]
+
+
+def segments_from_ie115(raw: Any) -> tuple[Segment, ...]:
+    """Wire objects back to timed segments. An entry without both bounds is
+    dropped: a segment whose time is unknown is worth less than no segment,
+    and a malformed frame must not take the client down."""
+    return tuple(
+        Segment(
+            start=float(seg["start"]),
+            end=float(seg["end"]),
+            text=seg.get("text", ""),
+            score=seg.get("score"),
+        )
+        for seg in (raw or ())
+        if isinstance(seg, dict) and "start" in seg and "end" in seg
+    )
+
+
 # --- session config <-> nested IE115 `session` object ---------------------------
 
 
@@ -103,6 +139,8 @@ def session_config_to_ie115(
         transcription["language"] = config.language
     if config.prompt is not None:
         transcription["prompt"] = config.prompt  # note §7.3: kept here, not top-level
+    if config.timestamp_granularity is not None:
+        transcription["timestamp_granularity"] = config.timestamp_granularity
     session: dict[str, Any] = {
         "type": "realtime",
         "audio": {
@@ -133,6 +171,7 @@ def session_config_from_ie115(session: dict[str, Any]) -> SessionConfig:
         audio_format=AudioFormat(sample_rate_hz=int(rate)),
         language=transcription.get("language"),
         prompt=transcription.get("prompt") or session.get("prompt"),
+        timestamp_granularity=transcription.get("timestamp_granularity"),
     )
 
 
@@ -195,16 +234,21 @@ class Ie115Encoder:
             # Add segment_index only for committed segments (T13, feature 007)
             if event.disposition == event.disposition.COMMITTED and event.segment_index is not None:
                 frame["segment_index"] = event.segment_index
+            if event.segments:
+                frame["segments"] = segments_to_ie115(event.segments)
             return frame
         if isinstance(event, TranscriptionDone):
             item = self._item()
             self._item_id = None  # completed retires the utterance's item
-            return {
+            frame = {
                 "type": TRANSCRIPTION_COMPLETED,
                 "item_id": item,
                 "content_index": 0,
                 "transcript": event.text,
             }
+            if event.segments:
+                frame["segments"] = segments_to_ie115(event.segments)
+            return frame
         if isinstance(event, TranscriptionError):
             etype, ecode = _ERROR_TO_IE115.get(event.code, ("server_error", "server_error"))
             return {
@@ -253,11 +297,17 @@ class Ie115Decoder:
                     text=frame.get("delta") or "",
                     disposition=disposition,
                     segment_index=segment_index,
+                    segments=segments_from_ie115(frame.get("segments")),
                 )
             ]
         if ftype == TRANSCRIPTION_COMPLETED:
             self._terminated = True
-            return [TranscriptionDone(text=frame.get("transcript", ""))]
+            return [
+                TranscriptionDone(
+                    text=frame.get("transcript", ""),
+                    segments=segments_from_ie115(frame.get("segments")),
+                )
+            ]
         if ftype == ERROR:
             self._terminated = True
             err = frame.get("error") or {}

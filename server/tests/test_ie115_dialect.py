@@ -19,6 +19,7 @@ from myna.core import (
     AudioFormat,
     EventSink,
     PcmChunk,
+    Segment,
     SessionConfig,
     TranscriptionDone,
     TranscriptionError,
@@ -143,6 +144,88 @@ def test_decoder_delta_is_committed_final_and_completed_is_done():
     )
     assert isinstance(done, TranscriptionDone) and done.text == "one two"
     assert dec.on_close() == []  # terminal already delivered; close is just close
+
+
+def test_timestamp_granularity_round_trips_through_ie115():
+    """The switch that makes an adapter produce timing has to survive the wire,
+    or no client can ask for it."""
+    config = SessionConfig(language="en", timestamp_granularity="segment")
+
+    session = w.session_config_to_ie115(config)
+
+    assert session["audio"]["input"]["transcription"]["timestamp_granularity"] == "segment"
+    assert w.session_config_from_ie115(session).timestamp_granularity == "segment"
+    # absent when not asked for, so a dictation session's frame is unchanged
+    assert (
+        "timestamp_granularity"
+        not in w.session_config_to_ie115(SessionConfig())["audio"]["input"]["transcription"]
+    )
+
+
+def test_encoder_attaches_timed_segments_only_when_the_adapter_supplied_them():
+    enc = w.Ie115Encoder()
+    segments = (Segment(start=0.42, end=1.13, text="hi there", score=-0.3),)
+
+    delta = enc.encode(TranscriptionFinal(text="hi there", segments=segments))
+    assert delta["segments"] == [{"start": 0.42, "end": 1.13, "text": "hi there", "score": -0.3}]
+
+    done = enc.encode(TranscriptionDone(text="hi there", segments=segments))
+    assert done["segments"] == delta["segments"]
+
+    # a dictation final carries no timing, and the frame stays exactly as it was
+    assert "segments" not in w.Ie115Encoder().encode(TranscriptionFinal(text="hi there"))
+
+
+def test_encoder_omits_a_score_the_adapter_did_not_supply():
+    enc = w.Ie115Encoder()
+    frame = enc.encode(
+        TranscriptionFinal(text="hi", segments=(Segment(start=0.0, end=1.0, text="hi"),))
+    )
+    assert frame["segments"] == [{"start": 0.0, "end": 1.0, "text": "hi"}]  # no null score
+
+
+def test_decoder_recovers_timed_segments():
+    dec = w.Ie115Decoder()
+    (final,) = dec.decode(
+        {
+            "type": w.TRANSCRIPTION_DELTA,
+            "item_id": "i1",
+            "delta": "hi there",
+            "segments": [{"start": 0.42, "end": 1.13, "text": "hi there", "score": -0.3}],
+        }
+    )
+    assert final.segments == (Segment(start=0.42, end=1.13, text="hi there", score=-0.3),)
+
+    (done,) = dec.decode(
+        {
+            "type": w.TRANSCRIPTION_COMPLETED,
+            "item_id": "i1",
+            "transcript": "hi there",
+            "segments": [{"start": 0.42, "end": 1.13, "text": "hi there"}],
+        }
+    )
+    assert done.segments == (Segment(start=0.42, end=1.13, text="hi there", score=None),)
+
+
+def test_decoder_drops_a_segment_that_is_missing_its_bounds():
+    """A malformed frame must not take the client down, and a segment whose
+    time is unknown is worth less than no segment at all."""
+    dec = w.Ie115Decoder()
+    (final,) = dec.decode(
+        {
+            "type": w.TRANSCRIPTION_DELTA,
+            "item_id": "i1",
+            "delta": "hi",
+            "segments": [{"text": "hi"}, {"start": 1.0, "end": 2.0, "text": "hi"}],
+        }
+    )
+    assert final.segments == (Segment(start=1.0, end=2.0, text="hi", score=None),)
+
+
+def test_decoder_survives_a_delta_with_no_segments_field():
+    dec = w.Ie115Decoder()
+    (final,) = dec.decode({"type": w.TRANSCRIPTION_DELTA, "item_id": "i1", "delta": "hi"})
+    assert final.segments == ()
 
 
 def test_decoder_close_before_completed_is_an_error_not_a_done():
@@ -363,3 +446,18 @@ async def test_ie115_connection_persists_across_commits(tmp_path):
                         break
     assert transcripts == ["The quick brown fox jumps over the lazy dog."] * 2
     assert items[0] != items[1]  # one conversation item per utterance
+
+
+async def test_ie115_carries_timed_segments_over_the_wire(tmp_path):
+    """The codec unit tests above prove the translation; this proves the whole
+    socket path, which is the only thing a subtitle client actually uses."""
+    segments = (Segment(start=0.42, end=1.13, text="hi there", score=-0.3),)
+    adapter = FakeAdapter(
+        script=(ScriptStep(0.0, TranscriptionFinal(text="hi there", segments=segments)),),
+        done_after_audio_ends=False,
+    )
+
+    record = await _run(tmp_path, adapter=adapter)
+
+    finals = [te.event for te in record.events if te.event.type == "transcription.final"]
+    assert [f.segments for f in finals] == [segments]
