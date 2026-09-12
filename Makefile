@@ -420,7 +420,7 @@ spread-%: spread-build ## Run one suite: spread-<dir under tests/spread>, e.g. s
 ci: ## Trigger the CI workflow on GitHub for the current branch
 	gh workflow run ci.yml --ref $(BRANCH)
 
-ci-%: ## Trigger another workflow: ci-snap, ci-spread, ci-audit, ci-codeql (.github/workflows/<name>.yml)
+ci-%: ## Trigger another workflow: ci-snap, ci-spread, ci-audit (.github/workflows/<name>.yml)
 	gh workflow run $*.yml --ref $(BRANCH)
 
 .PHONY: ci-watch
