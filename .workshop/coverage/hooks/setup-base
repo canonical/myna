@@ -1,0 +1,76 @@
+#!/bin/bash
+# setup-base — runs as root at SDK install. Installs the pinned quality-gate
+# toolchain (feature 006) into /usr/local/cargo-bin (on PATH via the profile
+# drop-in below): prebuilt binaries via cargo-binstall, no per-user cargo
+# builds. shellcheck and actionlint are fetched prebuilt and pinned the same
+# way, so every tool this gate battery runs has its version stated here.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+BIN=/usr/local/cargo-bin
+mkdir -p "$BIN"
+
+apt-get update
+apt-get install --yes --no-install-recommends curl ca-certificates xz-utils
+
+# ShellCheck for the shell-lint gate, pinned like every other tool here. It
+# used to come from apt, which left the gate's version as whatever the base
+# image happened to ship, stated nowhere in the repo. That is a real drift:
+# diagnostics move between releases, and 0.11 reports a trap-only function as
+# SC2329 where 0.9 reports its body as SC2317, so a script can lint clean
+# against a contributor's distro tool and still fail the gate. Pinning is what
+# makes `workshop run myna shell-lint` the single answer. Bumping the version
+# is a deliberate change, with the tree re-linted against it.
+#
+# (Capitalised above on purpose: a comment line opening with the lowercase
+# name is read as a directive and fails to parse.)
+SHELLCHECK_VERSION=0.9.0
+curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+  | tar -xJ -C "$BIN" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+chmod +x "$BIN/shellcheck"
+
+# cargo-binstall (bootstrap — its installer drops the binary in
+# $CARGO_HOME/bin), then pinned prebuilt tool binaries.
+BINSTALL_HOME=/usr/local/cargo-binstall
+if [ ! -x "$BINSTALL_HOME/bin/cargo-binstall" ]; then
+  curl -fsSL https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
+    | CARGO_HOME="$BINSTALL_HOME" bash
+fi
+
+export CARGO_HOME="$BINSTALL_HOME"
+
+# --disable-strategies compile: all four publish prebuilt linux-gnu tarballs,
+# so a miss means the *fetch* hiccupped, not that the binary is unavailable.
+# Left enabled, binstall answers a hiccup by falling back to `cargo install`,
+# which (a) cannot work here - this hook runs as root, which has no cargo, by
+# design - and (b) rejects --install-path, so the whole batch dies on
+# "cargo-install does not support `--install-path`" with nothing about the
+# fetch that actually failed. Fail on the fetch instead, and retry it.
+binstall_attempt=0
+until "$BINSTALL_HOME/bin/cargo-binstall" --no-confirm --no-symlinks \
+  --disable-strategies compile --install-path "$BIN" \
+  cargo-llvm-cov@0.6.21 \
+  cargo-deny@0.20.2 \
+  cargo-machete@0.9.1 \
+  cargo-audit@0.22.1; do
+  binstall_attempt=$((binstall_attempt + 1))
+  [ "$binstall_attempt" -lt 3 ] || { echo "cargo-binstall failed 3 times" >&2; exit 1; }
+  echo "cargo-binstall attempt $binstall_attempt failed; retrying" >&2
+  sleep $((binstall_attempt * 5))
+done
+
+# actionlint (workflow-lint gate), pinned.
+ACTIONLINT_VERSION=1.7.7
+curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+  | tar -xz -C "$BIN" actionlint
+chmod +x "$BIN/actionlint"
+
+# binstall can exit 0 after skipping a crate whose prebuilt fetch failed
+# (observed: QuickInstall hiccup installed 2 of 4). Fail the hook instead.
+for tool in cargo-llvm-cov cargo-deny cargo-machete cargo-audit; do
+  [ -x "$BIN/$tool" ] || { echo "missing $tool after binstall" >&2; exit 1; }
+done
+
+# On PATH for login shells (workshop run/exec).
+# shellcheck disable=SC2016  # $PATH must stay literal in the profile drop-in
+printf 'export PATH="%s:$PATH"\n' "$BIN" > /etc/profile.d/zz-myna-coverage.sh

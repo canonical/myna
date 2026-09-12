@@ -1,0 +1,19 @@
+name: fastconformer-transducer-480ms
+description: NeMo streaming FastConformer transducer (English, 480ms latency) — int8 ONNX, k2-fsa export
+model-card-url: https://huggingface.co/csukuangfj/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8
+quantization: int8
+disk-size: 230M
+# Weights shipped as snap components. modelctl installs them on use-model;
+# the server loads from the directories, so no network access is needed.
+#
+# Two components, not one: the transducer decodes lowercase and unpunctuated
+# (its tokens.txt is 1025 entries whose only punctuation is an apostrophe), so
+# a second model restores punctuation and case. It is paired with *this* model
+# because it is English-only, as this model is - a Chinese transducer would
+# pair with a different one.
+components:
+  - model-fastconformer-480ms
+  - model-punct-en
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-fastconformer-480ms
+  - PUNCT_DIR=$SNAP_COMPONENTS/model-punct-en

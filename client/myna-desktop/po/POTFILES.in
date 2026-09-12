@@ -1,0 +1,11 @@
+# List of source files containing translatable strings, one per line,
+# relative to the crate root (client/myna-desktop). Keep in sync with the files
+# that call gettext. Extracted with:
+#   xgettext --from-code=UTF-8 --keyword=gettext --add-comments=TRANSLATORS \
+#     --output=po/myna-desktop.pot --files-from=po/POTFILES.in
+src/indicator/mod.rs
+src/indicator/notify.rs
+src/controller.rs
+src/shortcut/retry.rs
+src/backend.rs
+src/inject/mod.rs

@@ -1,0 +1,17 @@
+#!/bin/bash
+# setup-base - runs as root at SDK install (and when this SDK's revision
+# changes). Installs what extensions/myna-shell/test/ needs and nothing else:
+#   - gjs        : runs the pure contract suites (test/*.test.js); no Shell
+#   - gnome-shell: the real compositor test/entrance-visual.sh drives the HUD
+#                  against, which is the whole point of this SDK - the pure
+#                  suites have no stage, no frame clock and no Clutter easing,
+#                  so they cannot see anything hud.js *presents*
+#   - dbus       : dbus-run-session, the private session bus that Shell runs on
+# No GTK4/IBus/portal here: those belong to myna-desktop, which ships in a
+# core24 snap and is tested in the main workshop.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends \
+  gjs \
+  gnome-shell \
+  dbus

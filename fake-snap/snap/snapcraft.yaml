@@ -1,0 +1,59 @@
+# myna-fake-backend — minimal test backend snap (feature 006, US5).
+#
+# The honest confined topology for the spread confined-e2e: a backend snap
+# providing the `ubustt-socket` content slot, serving the *fake* adapter (a
+# scripted transcript, no model, no GPU) so the end-to-end runs on any VM
+# (constitution II: no hardware dependency). Mirrors the real inference
+# snaps' slot/socket layout exactly ($SNAP_COMMON/run/ubustt.sock).
+#
+# Test-only: grade devel, never published.
+name: myna-fake-backend
+base: core24
+version: 0.1.0-dev
+summary: Myna fake STT backend (test fixture)
+description: |
+  Serves the myna fake adapter (scripted transcript) on a Unix socket
+  exported via the ubustt-socket content share. Exists so confined
+  end-to-end tests can exercise the client snap <-> backend snap seam
+  without model weights or GPU.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+apps:
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - network-bind # snapd seccomp gates listen() even for Unix sockets
+
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+hooks:
+  install: {}
+
+parts:
+  # The Python server package (server/ staged into this project by
+  # dev/prepare.sh, same pattern as myna-snap).
+  server:
+    plugin: nil
+    source: stage
+    override-build: |
+      pip install --no-cache-dir --prefix "$CRAFT_PART_INSTALL/usr" ./server
+      mkdir -p "$CRAFT_PART_INSTALL/bin"
+      cp scripts/server.sh "$CRAFT_PART_INSTALL/bin/server.sh"
+      chmod +x "$CRAFT_PART_INSTALL/bin/server.sh"
+    build-packages:
+      - python3-pip
+      - python3-venv
+    stage:
+      - usr/**
+      - bin/**

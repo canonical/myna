@@ -1,0 +1,174 @@
+# In-repo sweep config for the packaged inference snaps.
+#
+#   make bench-plan          # what would be measured, no root, installs nothing
+#   make bench-run           # the full sweep (sudo: installs and purges snaps)
+#   make bench-run-whisper   # one snap
+#
+# Those targets run myna-bench.pyz - the same artefact testers download - against
+# this file, which is the same shape as the bench.yaml they write. The only
+# difference is where the artefacts are: globs into the `*-snap/` directories of
+# this tree rather than a directory of files copied over.
+#
+# Snaps only: the runner purges any existing install, sideloads the locally
+# packed snap plus its components, benchmarks it, and purges again. Anything
+# measured outside a snap is not what we ship.
+#
+# No hardware annotation: machine provenance comes from `modelctl show-machine`,
+# and a config can only ever disagree with the machine it runs on. The engine is
+# left to `use-engine --auto` here too, which is right for an in-repo sweep -
+# add `engines: [cpu, nvidia-gpu]` to a target to measure both on one box, which
+# is the only way to compare them (a machine makes one auto-selection).
+
+# Paths below are relative to this, which is relative to this file's directory.
+root: ..
+
+# Trustworthy WER needs real speech *and* more than one voice: the balanced
+# tier round-robins 40 LibriSpeech dev-clean speakers (corpus/english/
+# manifest.json is all speaker 2277). Swap in
+# corpus/librispeech-other/manifest-balanced.json for the hard split.
+#
+# One entry is not an utterance but a whole chapter concatenated in reading
+# order (category "long-form", ~5 min) - regenerated alongside the rest by
+# `make bench-corpus`. Rolling windows, buffer growth, and drift only show up
+# minutes into a session; no individual utterance is long enough to exercise them.
+manifest: corpus/english/manifest-balanced.json
+out: results/bench.jsonl
+cold_clip: librispeech-84-121123-0000    # one clip, run first, tagged cold to measure model load
+# clips: []                              # warm sweep clips; omit = whole manifest
+
+# Wall clock for the warm sweep. The balanced tier is ~12 min of audio plus
+# the ~5 min long-form clip above (~17 min total), so this is roughly "must
+# beat 0.83x real time end to end". A backend that overruns is stamped
+# usability_fail with the clips it managed - a product verdict, measured per
+# run on the actual hardware rather than predicted from a spec sheet.
+sweep_budget_seconds: 850
+
+# The schema - files:, engines:, models:, configs: and their rules - is written
+# out once, for testers, in dev/bench.yaml.example. This file is the same format
+# and only records what is specific to this tree: which snaps we sweep, which
+# points on their knobs are worth a row, and why. Comments below are the
+# rationale for each choice, not a description of the format.
+targets:
+  - snap: myna-whisper
+    files:
+      - whisper-snap/myna-whisper_*.snap
+      - whisper-snap/myna-whisper+*.comp
+    # LocalAgreement re-decode: no user-facing latency dial. Commits when two
+    # consecutive 2 s-cadence decodes agree; TTFF is content-driven, not config.
+    #
+    # compute-type is the quantization axis, and it is engine-specific.
+    # Measured against CTranslate2 4.8.1 by loading model-base-ct2 on cpu and
+    # reading back the type it settled on:
+    #
+    #   cpu:  int8 -> int8_float32, int8_float32 -> int8_float32,
+    #         float32 -> float32; float16 and int8_float16 raise.
+    #   cuda: float16, int8_float16, float32.
+    #
+    # So the CPU engine has exactly two distinct precisions, not three - `int8`
+    # and `int8_float32` are one row spelled two ways - and float16 belongs to
+    # the GPU engine alone. The points are scoped accordingly; the ones for the
+    # engine that is not active simply do not run.
+    # Both modes: precision is a decode property, not an emission one.
+    #
+    # What ships is `compute-type: auto`, which defers to each model's measured
+    # MODEL_COMPUTE_TYPE (T70: int8 for tiny, float32 for base and small). That
+    # is the right product default and the wrong benchmark row, so the mapping
+    # is checked by reading the explicit rows against each other rather than by
+    # measuring a row that cannot say what it ran.
+    configs:
+      - label: int8
+        modes: [batch, streaming]
+        engines: [cpu]
+        settings:
+          compute-type: int8_float32
+      - label: fp32
+        modes: [batch, streaming]
+        settings:
+          compute-type: float32
+      - label: fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: float16
+      - label: int8-fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: int8_float16
+
+  - snap: myna-parakeet
+    files:
+      - parakeet-snap/myna-parakeet_*.snap
+      - parakeet-snap/myna-parakeet+*.comp
+    # SilenceCut chunked-commit: stream-arm-seconds is the primary latency dial.
+    # The window must reach arm_s before silence detection activates, so arm_s
+    # sets the floor on TTFF. Sweep three points to expose the tradeoff curve;
+    # arm15s is the shipped default (murmure's proven constant). Streaming only -
+    # in batch mode nothing is cut, so three rows would be three identical numbers.
+    configs:
+      - label: arm3s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "3"
+      - label: arm8s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "8"
+      - label: arm15s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "15"
+
+  - snap: myna-sherpa
+    files:
+      - sherpa-snap/myna-sherpa_*.snap
+      - sherpa-snap/myna-sherpa+*.comp
+    # Native 480 ms transducer chunks: latency is baked into the ONNX export,
+    # no runtime knob.
+
+  - snap: myna-funasr
+    files:
+      - funasr-snap/myna-funasr_*.snap
+      - funasr-snap/myna-funasr+*.comp
+
+  # Pure-C CPU runtime. Measured RTF 4.47 on a Ryzen AI 7 350, so it is expected
+  # to blow the budget and report usability_fail - measure it anyway, that is
+  # the finding.
+  - snap: myna-qwen
+    files:
+      - qwen-snap/myna-qwen_*.snap
+      - qwen-snap/myna-qwen+*.comp
+
+  # Audio8-ASR-0.1B ONNX (feature 010). Ships both cpu and nvidia-gpu engines
+  # (like whisper); auto-selection picks cpu on a GPU-less machine.
+  - snap: myna-audio8
+    files:
+      - audio8-snap/myna-audio8_*.snap
+      - audio8-snap/myna-audio8+*.comp
+
+  # nemotron ships only an `nvidia-gpu` engine (devices: allof gpu vendor-id
+  # 0x10de, runtime nemo-cuda). On a machine with no NVIDIA card there is no
+  # engine it can activate, so the runner skips the target before installing it
+  # and says so - it does not need commenting out, and on a GPU box it runs
+  # without an edit. The adapter does support `--device cpu`, but packaging a
+  # CPU engine was judged not worth it: a GPU-oriented FastConformer would land
+  # as usability_fail anyway.
+  - snap: myna-nemotron
+    files:
+      - nemotron-snap/myna-nemotron_*.snap
+      - nemotron-snap/myna-nemotron+*.comp
+    # Cache-aware streaming RNNT: att-context-size is the latency/accuracy dial.
+    # "70,0" = lowest latency (no right context); "70,33" = most context.
+    configs:
+      - label: ctx70.0
+        modes: [streaming]
+        settings:
+          att-context-size: "70,0"
+      - label: ctx70.13
+        modes: [streaming]
+        settings:
+          att-context-size: "70,13"
+      - label: ctx70.33
+        modes: [streaming]
+        settings:
+          att-context-size: "70,33"

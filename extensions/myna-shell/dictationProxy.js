@@ -1,0 +1,108 @@
+// dictationProxy.js — the single well-known-name proxy for
+// com.canonical.Myna.Dictation, shared by every consumer in the extension.
+//
+// Both the overlay host (to run the renderer only while the daemon is on the
+// bus) and the announcer (to read State/StatusMessage) talk to the daemon.
+// Creating the proxy once here means one `Gio.DBusProxy` and one source of
+// truth; consumers connect to its native signals (`g-name-owner`,
+// `g-properties-changed`) rather than each running their own
+// `Gio.bus_watch_name`.
+//
+// The proxy is created asynchronously (so it can be cancelled on teardown)
+// and handed out through `proxy` once resolved. Because creation never
+// completes within the enable() that starts it, consumers that need the live
+// object attach through `whenReady()` rather than reading `proxy` straight
+// away. Nothing else is wrapped.
+
+import Gio from 'gi://Gio';
+
+const BUS_NAME = 'com.canonical.Myna.Dictation';
+const OBJECT_PATH = '/com/canonical/Myna/Dictation';
+const IFACE = 'com.canonical.Myna.Dictation';
+
+export class DictationProxy {
+    constructor({log = () => {}} = {}) {
+        this._log = log;
+        this._proxy = null;
+        this._cancellable = null;
+        this._readyCallbacks = [];
+    }
+
+    /** Create the proxy asynchronously. DO_NOT_AUTO_START means it only
+     * reflects whether the name is owned, so it never brings the daemon up.
+     * Cancellable, so a teardown that happens while creation is in flight can
+     * abort it.
+     *
+     * Named start()/stop() rather than connect()/disconnect(): in GJS those
+     * two names mean "attach/detach a signal handler" on every object that
+     * has them, and this class is not a GObject. */
+    start() {
+        if (this._proxy)
+            return;
+
+        this._cancellable?.cancel();
+        const cancellable = new Gio.Cancellable();
+        this._cancellable = cancellable;
+        Gio.DBusProxy.new_for_bus(
+            Gio.BusType.SESSION,
+            Gio.DBusProxyFlags.DO_NOT_CONNECT_SIGNALS |
+            Gio.DBusProxyFlags.DO_NOT_AUTO_START,
+            null,
+            BUS_NAME,
+            OBJECT_PATH,
+            IFACE,
+            cancellable,
+            (source, res) => {
+                try {
+                    this._proxy = Gio.DBusProxy.new_for_bus_finish(res);
+                } catch (e) {
+                    if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                        this._log(`dictation proxy unavailable: ${e.message ?? e}`);
+                    return;
+                }
+                const pending = this._readyCallbacks;
+                this._readyCallbacks = [];
+                for (const callback of pending)
+                    callback();
+            }
+        );
+    }
+
+    /** Drop the proxy, cancelling any in-flight creation. Consumers'
+     * disconnectObject() handles the signals they attached. */
+    stop() {
+        this._cancellable?.cancel();
+        this._cancellable = null;
+        this._readyCallbacks = [];
+        this._proxy?.disconnectObject(this);
+        this._proxy = null;
+    }
+
+    /** Run `callback` once the live proxy exists: immediately if it already
+     * does, otherwise when creation resolves.
+     *
+     * This is the only safe way to reach `proxy`. An extension enabled after
+     * startup (unlocking the screen re-enables them all) calls start() and
+     * enable() in the same main-loop iteration, so creation is still in
+     * flight when the consumers run; a waiter never fires if creation fails
+     * or stop() lands first, which leaves the consumer dormant rather than
+     * reading a null proxy. */
+    whenReady(callback) {
+        if (this._proxy)
+            callback();
+        else
+            this._readyCallbacks.push(callback);
+    }
+
+    /** The live Gio.DBusProxy, or null while creation is in flight, after a
+     * failed creation, or after stop(). Use whenReady() to attach to it. */
+    get proxy() {
+        return this._proxy;
+    }
+
+    /** Whether the daemon currently owns the name (null before resolution /
+     * after stop reads as absent). */
+    get present() {
+        return (this._proxy?.get_name_owner() ?? null) !== null;
+    }
+}

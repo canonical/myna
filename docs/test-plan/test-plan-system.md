@@ -3,17 +3,16 @@
 **Scope**: system-level, end-to-end testing only — a human presses the hotkey,
 speaks, and judges what lands in a focused text field. This plan does **not**
 cover unit tests, contract/wire tests, or the automated WER/CER harness
-(`dev/bench.py`, `dev/matrix.py`, `pytest`) — those are already exercised
+(`myna-bench bench`, `myna-bench run`, `pytest`) — those are already exercised
 elsewhere and are out of scope here (see §11).
 
 **Audience**: internal dev/QA team first (dry run), then opened to community
 testers in a later wave. Crowd-testing submission tooling is intentionally
 **not** specified in this document (deferred).
 
-**Status of inputs used**: current model set (Whisper, Nemotron, Qwen3-ASR),
-current streaming/batch mode implementation (features 007/008), and current
-snap hardware verification status, as of 2026-07-29. See `docs/project-plan.md`
-for the authoritative task tracker.
+**Baseline under test**: Whisper, Nemotron, and Qwen3-ASR in batch and supported
+streaming configurations. Confirm available models and engines from the
+installed snaps before each run; this procedure is not a release-status tracker.
 
 ---
 
@@ -52,14 +51,14 @@ this round).
   and non-GNOME compositors (KDE, wlroots) are **not** supported test targets
   for this round — do not file accuracy/performance bugs against them; a
   single "doesn't work outside GNOME/Wayland" note is sufficient if tried.
-- `myna` client snap installed, plus at least one of: `whisper-snap`,
-  `nemotron-snap`, `qwen-snap` (install whichever models are under test — see
+- `myna` client snap installed, plus at least one inference snap (install the
+  models under test — see
   §3).
 - A working microphone, tested independently (e.g. via GNOME Settings sound
   input meter) before starting — mic problems should not be logged as myna
   bugs.
-- Hotkey configured per `docs/desktop-injection.md` (default `Super+D`,
-  toggle- or hold-to-talk depending on install path).
+- A working activation shortcut, configured for toggle- or hold-to-talk as
+  appropriate for the installation.
 
 **Hardware tiers to cover** (tester self-reports actual specs; laptop or
 desktop doesn't matter):
@@ -99,7 +98,7 @@ report (T12 is still open on the engineering side).
 
 The full English reading sample corpus (six passage categories, plus two
 short non-English probe sentences for TC-07/TC-08) lives in a standalone
-file: **[`docs/test-samples-en.md`](test-samples-en.md)**.
+file: **[`test-samples-en.md`](test-samples-en.md)**.
 
 The same six-section corpus (§1–§6) has also been translated into 9
 additional languages, each in its own file, to cover script/phonetic
@@ -598,8 +597,8 @@ This test plan explicitly does **not** cover:
 
 - Unit tests, contract/wire-protocol tests, or any part of the existing
   `pytest`/Rust test suites.
-- Automated WER/CER/RTF benchmarking (`dev/bench.py`, `dev/matrix.py`,
-  `dev/aggregate.py`) — those already exist and produce precise, repeatable
+- Automated WER/CER/RTF benchmarking (`myna-bench bench`, `myna-bench run`,
+  `myna-bench summarize`) — those already exist and produce precise, repeatable
   numbers; this plan is a human-perspective complement, not a replacement.
 - Non-GNOME desktop environments (KDE, wlroots compositors) and X11/XWayland.
 - arm64 hardware (whisper-snap declares an arm64 build target, but it is
@@ -616,52 +615,3 @@ This test plan explicitly does **not** cover:
   machine-assisted translations.
 - Formal, numeric latency SLOs (no ratified hardware-tier performance
   contract exists yet in this project).
-
----
-
-## 12. Improvements (deferred)
-
-The following improvements were identified during review. They are collected
-here for tracking and future implementation.
-
-### Model coverage — Parakeet and Sherpa
-
-Parakeet and Sherpa are expected to be packaged soon and should be added to
-the model set in §3 and the test matrix in §5 once available.
-
-### Audio sample collection
-
-Collecting the actual audio recordings produced during test sessions would
-add value — the LibreSpeech corpus likely covers much of what is needed, but
-only a small subset has been pulled into the benchmark suite so far. A
-process for contributors to submit recordings alongside their results
-transcripts should be defined.
-
-### Microphone quality alerting
-
-Poorly configured microphones produce worse accuracy results but are not
-currently distinguishable from a model accuracy problem. Two approaches to
-address this:
-
-1. A warning in the indicator when the detected input quality is low.
-2. Documentation explaining how to benchmark and tune the microphone before
-   running a test session.
-
-### Default hotkey — replace Super+D
-
-`Super+D` is not a good default hotkey choice. Instructions in several places
-still reference it. The recommended default should be updated to `Super+T`
-(which works correctly) across all documentation and install paths.
-
-### Qwen3-ASR GPU support via VLLM
-
-The currently packaged Qwen3-ASR runtime is CPU-only. VLLM ports exist that
-can use GPU acceleration hardware. Packaging a GPU-enabled Qwen3-ASR variant
-should be tracked as a future engineering item.
-
-### Hardware reporting script
-
-Testers are currently asked to manually record CPU model, RAM, and GPU model.
-A script should be provided to capture and format this information
-consistently, reducing transcription errors and making the results table
-easier to compare across submissions.

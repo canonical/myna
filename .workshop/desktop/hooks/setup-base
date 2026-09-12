@@ -1,0 +1,48 @@
+#!/bin/bash
+# setup-base — runs as root at SDK install (and when this SDK's revision
+# changes). Installs the system build + test dependencies for myna-desktop
+# (feature 003-desktop-injection):
+#   Build:
+#   - libgtk-4-dev  : GTK4 headers/libs; gtk4-rs links these via pkg-config
+#                     (only needed for the `ui-gtk` feature; the hermetic
+#                     suite builds --no-default-features without GTK)
+#   - libglib2.0-dev, pkg-config : glib-rs build + library discovery
+#   Gated-integration runtime services (skip cleanly when the gates are unset):
+#   - ibus          : the IBus daemon the MYNA_IBUS_TESTS suite injects through
+#   - xdg-desktop-portal, xdg-desktop-portal-gnome : the portal + a
+#                     GlobalShortcuts backend for the MYNA_PORTAL_TESTS suite
+#   - dbus, dbus-daemon : a D-Bus session bus (dbus-run-session) for both suites,
+#                     and for feature 004's MYNA_DBUS_TESTS com.canonical.Myna.Dictation
+#                     round-trip suite
+#   Feature 004 (GNOME Shell indicator):
+#   - gnome-session : the session bits the desktop last-mile's own gated
+#                     suites expect to find.
+#   Feature 004 (GPU render smoke check, ui-check action):
+#   - xvfb          : provides xvfb-run, used to run render_check headless.
+#   i18n test (src/bin/myna-desktop.rs both_domains_load_through_default_data_dirs):
+#   - gettext       : msgfmt, to compile the test catalogs through the real
+#                     gettext toolchain (the test skips only when unavailable).
+#   - locales       : localedef, to build an it_IT.UTF-8 locale for the test
+#                     without touching the host's locale archive.
+# The extension's *test* dependencies are no longer here. This SDK sits on the
+# main workshop's ubuntu@24.04 base, which is the snap's core24 and cannot have
+# the Shell 50/51 the extension targets, so its suites moved to the `myna-shell`
+# workshop and the `shell` SDK - see .workshop/myna-shell.yaml.
+# zbus/ashpd are pure-Rust (no system -dev headers).
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends \
+  libadwaita-1-dev \
+  libepoxy-dev \
+  libegl-dev \
+  libgl1-mesa-dev \
+  pkg-config \
+  ibus \
+  xdg-desktop-portal \
+  xdg-desktop-portal-gnome \
+  dbus \
+  dbus-daemon \
+  gnome-session \
+  xvfb \
+  gettext \
+  locales

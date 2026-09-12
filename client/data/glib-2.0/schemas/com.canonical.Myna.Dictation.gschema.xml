@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Myna client settings.
+
+  This schema is the shared store the settings live in. The backend is
+  glib's keyfile backend everywhere: the confined `myna` snap selects it per
+  app with GSETTINGS_BACKEND + XDG_CONFIG_HOME (myna-snap/snap/snapcraft.yaml),
+  so the store is the snap-private
+  $SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile; unpackaged dev launches
+  export the same pair (dev/gated-tests.sh).
+
+  Installed twice from this one source: into the snap at
+  $SNAP/usr/share/glib-2.0/schemas (myna-snap/snap/snapcraft.yaml), and onto
+  the host by `make install-schema` until the extension deb carries it.
+-->
+<schemalist>
+  <enum id="com.canonical.Myna.Dictation.Activation">
+    <value nick="auto" value="0"/>
+    <value nick="portal" value="1"/>
+    <value nick="control" value="2"/>
+  </enum>
+
+  <enum id="com.canonical.Myna.Dictation.StreamingMode">
+    <value nick="auto" value="0"/>
+    <value nick="streaming" value="1"/>
+    <value nick="batch" value="2"/>
+  </enum>
+
+  <enum id="com.canonical.Myna.Dictation.HudStyle">
+    <value nick="ribbon" value="0"/>
+    <value nick="vumeter" value="1"/>
+    <value nick="bar" value="2"/>
+    <value nick="progress" value="3"/>
+  </enum>
+
+  <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
+    <key name="streaming-mode" enum="com.canonical.Myna.Dictation.StreamingMode">
+      <default>'auto'</default>
+      <summary>How transcripts are emitted</summary>
+      <description>
+        streaming: partial hypotheses appear in the field as you speak.
+        batch: the transcript is injected once, when the utterance ends.
+        auto: resolved per machine against the measured RTF tier table, which
+        is also what decides whether in-field partials are shown at all.
+      </description>
+    </key>
+
+    <key name="language" type="s">
+      <default>''</default>
+      <summary>Language hint sent to the backend</summary>
+      <description>
+        A BCP-47-ish code (en, fr, zh) passed to the inference backend as a
+        session hint. Empty means "let the backend decide", which is what a
+        multilingual model does best.
+      </description>
+    </key>
+
+    <key name="activation" enum="com.canonical.Myna.Dictation.Activation">
+      <default>'auto'</default>
+      <summary>How a press reaches the daemon</summary>
+      <description>
+        auto: the portal where the app is packaged (the compositor can only
+        identify a packaged app), the control socket otherwise. portal and
+        control force one - a wrong choice here means the hotkey does nothing,
+        so auto is nearly always right.
+      </description>
+    </key>
+
+    <key name="hotkey" type="s">
+      <default>''</default>
+      <summary>Preferred shortcut offered to the portal</summary>
+      <description>
+        An accelerator such as '&lt;Super&gt;d'. It is a *preference*: under
+        portal activation the desktop's own bind dialog owns the final choice,
+        and empty means "offer no preference".
+      </description>
+    </key>
+
+    <key name="hud-style" enum="com.canonical.Myna.Dictation.HudStyle">
+      <default>'bar'</default>
+      <summary>The HUD indicator style</summary>
+      <description>
+        bar: a simple level bar in the accent colour (the default). ribbon:
+        the flowing GPU wave ribbon. vumeter: the classic segmented bar meter.
+        progress: a plain GtkProgressBar.
+        All are driven by the same calibrated audio envelope; only the
+        presentation differs.
+      </description>
+    </key>
+  </schema>
+</schemalist>

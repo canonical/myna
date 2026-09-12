@@ -1,0 +1,18 @@
+#!/bin/bash -eu
+
+# Pure-C Qwen3-ASR engine. QWEN_ASR_LIB (the libqwen_asr.so path) is exported by
+# runtimes/qwen-c/runtime.yaml; MODEL_DIR points at the installed model
+# component (see models/*/model.yaml). The QwenCAdapter is dependency-free, so
+# this runs the base venv's myna-server directly.
+# Idle-unload (T27): free the C context after sleep-idle-seconds, keep serving.
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+exec "$SNAP/bin/myna-server" \
+    --adapter qwen-c \
+    --socket "$socket_path" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-qwen.qwen use-model 0-6b}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

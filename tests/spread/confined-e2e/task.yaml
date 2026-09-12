@@ -1,0 +1,51 @@
+# Confined end-to-end dictation (feature 006, FR-015): client snap + fake
+# backend snap connected over the ubustt-socket content share, WAV-driven
+# dictation, transcript asserted. No microphone, no model, no GPU
+# (constitution II).
+summary: Install myna + fake backend snaps, connect, dictate a WAV clip
+
+prepare: |
+    # `myna` declares a user daemon, and snapd rejects the *install* of one
+    # unless this is set or the snap-id is allowlisted upstream - a sideload
+    # has no snap-id at all
+    snap set system experimental.user-daemons=true
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
+    test -f "$FAKE_SNAP" || { echo "fake-backend snap missing: build fake-snap first"; exit 1; }
+
+execute: |
+    set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    install_snap "$FAKE_SNAP"
+    install_snap "$MYNA_SNAP"
+    snap connect myna:backend myna-fake-backend:ubustt-socket
+
+    # The fake backend daemon serves the scripted transcript once the socket
+    # directory exists on both sides of the share.
+    for i in $(seq 1 60); do
+        [ -S /var/snap/myna-fake-backend/common/run/ubustt.sock ] && break
+        sleep 1
+    done
+    test -S /var/snap/myna-fake-backend/common/run/ubustt.sock
+
+    # Virtual audio source, not a microphone (constitution II): the clip is
+    # pushed as a WAV file; the fake adapter ignores content and returns its
+    # scripted transcript. Confined, myna.testbed cannot read the spread
+    # project dir (home plug covers neither it nor /root), so stage the
+    # fixture into the snap's own data dir, which confinement always grants.
+    cp "$SPREAD_PATH/tests/spread/confined-e2e/fixture.wav" /var/snap/myna/current/fixture.wav
+    # myna.testbed is the confined myna-dictate; it is stdin-triggered
+    # (Enter starts the utterance), so feed it one Enter then hold the pipe.
+    ( printf '\n'; sleep 15 ) | \
+        myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
+            --clip /var/snap/myna/current/fixture.wav \
+            > transcript.out 2>&1 || true
+    cat transcript.out
+    grep -qF "The quick brown fox jumps over the lazy dog." transcript.out
+
+restore: |
+    snap remove --purge myna || true
+    snap remove --purge myna-fake-backend || true

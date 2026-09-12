@@ -1,0 +1,198 @@
+# Qwen3-ASR inference snap (UbuSTT).
+#
+# Ships the **CPU pure-C runtime**: the cpu engine drives the pure-C runtime
+# (antirez/qwen-asr) — OpenBLAS + a ~170 KB libqwen_asr.so, no torch/CUDA,
+# baked into the base snap and driven via ctypes by the QwenCAdapter
+# (myna[no extra] — dependency-free). It proves the inference-snap architecture
+# plugs in another model family with a parsimonious, multilingual, no-GPU
+# runtime.
+#
+# A vLLM/GPU engine for the same family lives on the qwen3-vllm-gpu branch
+# (verified out-of-confinement; strict-confinement parked on Triton/libcuda —
+# see docs/qwen-vllm-confinement.md there). It is kept off this branch so the
+# shipped snap carries no dead weight.
+#
+# As with the other snaps the server is myna-server on a Unix socket (no mic,
+# no TCP), weights ship as per-model components (run ./dev/download-models.sh
+# before packing), and there is no runtime download / `network`.
+name: myna-qwen
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: Qwen3-ASR speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Unix domain socket. Wraps multilingual Qwen3-ASR with a dependency-light
+  pure-C runtime on CPU, via the IE108-compliant modelctl CLI.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  qwen:
+    command: bin/qwen
+    completer: bin/snap-completer.bash
+    plugs:
+      - hardware-observe
+      - opengl
+      # No `network`: weights ship as components and modelctl has
+      # nothing to fetch at runtime. The plug contradicted this
+      # snap's own stated invariant (see the header) and the other
+      # inference snaps, which never had it.
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      - opengl
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (T14c — the myna orchestrator
+# snap plugs this). A *writable* content share: snapd adds AppArmor rw rules on
+# the exported dir, which is exactly what a named-socket connect() through the
+# bind mount needs (interfaces/builtin/content.go). The socket itself appears
+# once the server daemon has run (it mkdirs $SNAP_COMMON/run). Identity-based
+# access control beyond "an admin connected the plug" remains T17.
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+    override-build: |
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
+      ln --symbolic ./modelctl bin/qwen
+      craftctl default
+
+  # myna-server in a base venv — bare wheel, NO extra: the C adapter needs only
+  # ctypes (stdlib) + libqwen_asr.so, so the CPU engine carries no pip deps.
+  server-app:
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl
+    build-packages:
+      - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # This snap's Python side is just the session server; inference is the
+      # qwen-c-runtime part. Only build-time payloads go.
+      export PRUNE_GATE="import myna.core, websockets"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip*
+
+  # The pure-C runtime, built from antirez/qwen-asr (MIT) into libqwen_asr.so
+  # and baked into the base snap (it is tiny). OpenBLAS provides BLAS at runtime.
+  # runtimes/qwen-c/runtime.yaml points QWEN_ASR_LIB at the staged library.
+  qwen-c-runtime:
+    plugin: nil
+    source: https://github.com/antirez/qwen-asr.git
+    source-type: git
+    # Pinned commit (upstream has no release tags): the exact source the FFI
+    # adapter was verified against (2026-06-15).
+    source-commit: b00b789b17051aea61e9717458171100662318a4
+    build-packages:
+      - gcc
+      - libopenblas-dev
+    stage-packages:
+      - libopenblas0-pthread
+    override-build: |
+      # -march baseline kept portable (not the upstream Makefile's -march=native,
+      # which bakes in the build host's CPU). x86-64-v3 covers AVX2; tune later.
+      gcc -shared -fPIC -O3 -march=x86-64-v3 -ffast-math \
+        -DUSE_BLAS -DUSE_OPENBLAS -I/usr/include/openblas \
+        qwen_asr.c qwen_asr_kernels.c qwen_asr_kernels_generic.c \
+        qwen_asr_kernels_neon.c qwen_asr_kernels_avx.c qwen_asr_audio.c \
+        qwen_asr_encoder.c qwen_asr_decoder.c qwen_asr_tokenizer.c \
+        qwen_asr_safetensors.c \
+        -o libqwen_asr.so -lm -lpthread -lopenblas
+      install -D -m644 libqwen_asr.so "$CRAFT_PART_INSTALL/lib/libqwen_asr.so"
+      craftctl default
+
+  # Engine manifests (cpu → the pure-C runtime).
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  # Runtime manifests (qwen-c → libqwen_asr.so via QWEN_ASR_LIB).
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  # Model weights as components. Populate components/ with
+  # ./dev/download-models.sh before packing. Each Qwen3-ASR-* directory
+  # (safetensors + tokenizer) routes into its own component, kept out of base.
+  # To also ship 1.7B: `./dev/download-models.sh 1.7B`, then add the matching
+  # organize line + `model-1-7b` component + engine option + models/1-7b/ (see
+  # README "Adding the 1.7B model"). Kept to only-downloaded models so the build
+  # never declares an empty component.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "Qwen3-ASR-0.6B/*": (component/model-0-6b)/
+    prime:
+      - -*
+
+components:
+  model-0-6b:
+    type: standard
+    summary: Qwen3-ASR 0.6B weights
+    description: Qwen3-ASR-0.6B safetensors + tokenizer (Apache-2.0).
+  # model-1-7b: (add when shipping 1.7B — see model-components part / README)

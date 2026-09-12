@@ -1,0 +1,136 @@
+# Myna benchmarker config - edit this file and pass it to:
+#
+#   myna-bench plan --config bench.yaml        # what would be measured
+#   sudo myna-bench run --config bench.yaml    # measure it
+#
+# Download a corpus first (one-time, ~330 MB):
+#
+#   myna-bench download-corpus --out ./corpus --select balanced -n 80
+
+# Path to the corpus manifest produced by download-corpus or make-corpus.
+manifest: ./corpus/manifest.json
+
+# Results output file. Share this with the project team after the run.
+out: ./results.jsonl
+
+# Base for the relative paths in this file. Defaults to the directory the
+# config itself lives in, so a bundle keeps working wherever it is unpacked.
+# root: .
+
+# Optional: one clip run first, tagged as a cold-load sample.
+# It measures the model-load wait (key release -> first dictation ready).
+# Must be a clip id present in the manifest; omit to skip cold sampling.
+# cold_clip: librispeech-84-121123-0000
+
+# Wall-clock budget for the warm sweep per target, in seconds.
+# A target that overruns is marked usability_fail in the results.
+sweep_budget_seconds: 600
+
+# One entry per snap to benchmark. `files:` lists the .snap and .comp files you
+# downloaded; the snap and its components are installed and removed together.
+# Entries are globs, so `./snaps/myna-whisper_*.snap` survives a version bump.
+# Exactly one .snap must match: two are the two revisions a re-download leaves
+# behind, and picking either would benchmark a build you did not mean.
+#
+# Optional per-target keys:
+#   engines: which engines to measure, each in turn (default: one pass on
+#            whatever hardware detection picks). See "CPU or GPU" below.
+#   cli:     modelctl command. Read out of the snap, so you should not need it.
+#   service: snap service name (default: <snap>.server)
+#   socket:  UDS path (default: /var/snap/<snap>/common/run/ubustt.sock)
+#   models:  allowlist of model names to sweep (default: all available)
+#   configs: named points on a shipped knob - see below.
+#
+# Every target is swept across each model its engine offers x each emission
+# mode it supports (batch, and streaming where the snap declares it) x each
+# entry in configs:. `modes` says which emission modes a config applies to and
+# `engines` which engines it is legal on, so a decode-precision knob can be
+# swept in batch on the engine that has it while a latency dial is swept only
+# in streaming. A mode or engine no config claims still runs exactly once, at
+# the values the snap shipped with.
+#
+# Settings must name a value. "auto" and "default" are refused: they defer the
+# choice to the model or the runtime, so the row cannot say what it measured -
+# whisper's `compute-type: auto` is int8 on tiny and float32 on base.
+#
+# CPU or GPU
+# ----------
+# The device is not a setting; it is the engine, and each snap ships the
+# engines it supports (`myna-whisper.whisper list-engines`). Left alone, the
+# runner asks the snap to pick one by hardware detection, which is what a
+# machine would do. To measure a specific engine - or both, which no machine
+# will do on its own - name them:
+#
+#   engines: [cpu, nvidia-gpu]
+#
+# Each is installed, configured and swept in turn, and the engine appears in
+# every label. A named engine that will not activate fails that pass rather
+# than quietly falling back to another one. The GPU engine also needs its
+# runtime component in files: (myna-whisper+faster-whisper-cuda.comp).
+targets:
+  - snap: myna-whisper
+    files:
+      - ./snaps/myna-whisper_*.snap
+      # Every component you downloaded. A model component you leave out is a
+      # model that is not swept; the faster-whisper-cuda one is what the
+      # nvidia-gpu engine needs, and is dead weight without a GPU.
+      - ./snaps/myna-whisper+*.comp
+    # Uncomment to measure both engines on a machine that has a GPU. Without
+    # it you get whichever one hardware detection picks, which is never both.
+    # engines: [cpu, nvidia-gpu]
+    #
+    # Decode precision (CTranslate2). The legal values differ by engine, so each
+    # point says where it applies and the ones for the engine you are not
+    # running are skipped. The CPU engine has two distinct precisions
+    # (int8_float32 and float32 - `int8` is a spelling of the first); float16
+    # and int8_float16 exist only on CUDA, where the CPU engine rejects them.
+    configs:
+      - label: int8
+        modes: [batch, streaming]
+        engines: [cpu]
+        settings:
+          compute-type: int8_float32
+      - label: fp32
+        modes: [batch, streaming]
+        settings:
+          compute-type: float32
+      - label: fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: float16
+      - label: int8-fp16
+        modes: [batch, streaming]
+        engines: [nvidia-gpu]
+        settings:
+          compute-type: int8_float16
+
+  - snap: myna-parakeet
+    files:
+      - ./snaps/myna-parakeet_*.snap
+      - ./snaps/myna-parakeet+*.comp
+    # Chunked-commit latency dial. Streaming only: in batch mode nothing is
+    # cut, so three rows would be three identical numbers.
+    configs:
+      - label: arm3s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "3"
+      - label: arm8s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "8"
+      - label: arm15s
+        modes: [streaming]
+        settings:
+          stream-arm-seconds: "15"
+
+  - snap: myna-sherpa
+    files:
+      - ./snaps/myna-sherpa_*.snap
+      - ./snaps/myna-sherpa+*.comp
+
+  - snap: myna-funasr
+    files:
+      - ./snaps/myna-funasr_*.snap
+      - ./snaps/myna-funasr+*.comp

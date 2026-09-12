@@ -1,12 +1,12 @@
 # Myna Test Reading Sample Corpus (Portuguese / Português)
 
 Portuguese (`pt`) translation of the reading sample corpus used by
-`docs/test-plan-system.md`. Mirrors the structure of `docs/test-samples-en.md`
+`test-plan-system.md`. Mirrors the structure of `test-samples-en.md`
 §1–§6.
 
 > **Review status**: draft machine-assisted translation — **needs
 > native/fluent Portuguese speaker review before use**, per
-> `docs/test-plan-system.md` §2's requirement that accuracy judgments be
+> `test-plan-system.md` §2's requirement that accuracy judgments be
 > made only by a fluent/native speaker of the language being tested. This
 > draft is written in a broadly neutral Portuguese; confirm whether a
 > European or Brazilian Portuguese variant should be preferred for actual

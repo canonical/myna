@@ -1,0 +1,7 @@
+# List of source files containing translatable strings, one per line,
+# relative to the crate root (client/myna-orchestrator). Keep in sync with the
+# files that call `tr`. Extracted with:
+#   xgettext --from-code=UTF-8 --keyword=gettext --keyword=tr \
+#     --add-comments=TRANSLATORS \
+#     --output=po/myna-orchestrator.pot --files-from=po/POTFILES.in
+src/backend/mod.rs

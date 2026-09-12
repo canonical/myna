@@ -1,0 +1,125 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-01 13:43+0200\n"
+"PO-Revision-Date: 2026-09-01 11:51+0000\n"
+"Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/indicator/mod.rs:94
+msgid "Loading model…"
+msgstr "Chargement du modèle…"
+
+#: src/indicator/mod.rs:95
+msgid "Listening"
+msgstr "En écoute"
+
+#: src/indicator/mod.rs:96
+msgid "Transcribing"
+msgstr "Transcription en cours"
+
+#: src/indicator/mod.rs:97
+msgid "Finishing"
+msgstr "Finalisation"
+
+#: src/indicator/mod.rs:107
+#, c-format
+msgid "Error: %s"
+msgstr "Erreur : %s"
+
+#: src/indicator/notify.rs:60
+msgid "🎤 Dictation: listening"
+msgstr "🎤 Dictée : à l'écoute"
+
+#: src/indicator/notify.rs:61
+msgid "Speak now — tap your shortcut again to stop."
+msgstr "Parlez maintenant — appuyez à nouveau sur votre raccourci pour arrêter."
+
+#: src/indicator/notify.rs:64
+msgid "💬 Dictation: transcribing"
+msgstr "💬 Dictée : transcription en cours"
+
+#: src/indicator/notify.rs:65
+msgid "Converting speech to text…"
+msgstr "Conversion de la voix en texte…"
+
+#: src/indicator/notify.rs:68
+msgid "⏳ Dictation: finishing"
+msgstr "⏳ Dictée : finalisation"
+
+#: src/indicator/notify.rs:69
+msgid "Inserting the final text…"
+msgstr "Insertion du texte final…"
+
+#: src/indicator/notify.rs:72
+msgid "⚠️ Dictation error"
+msgstr "⚠️ Erreur de dictée"
+
+#: src/controller.rs:196
+msgid "Focus lost"
+msgstr "Focus perdu"
+
+#: src/controller.rs:198
+msgid "No speech detected"
+msgstr "Aucune voix détectée"
+
+#: src/controller.rs:522
+msgid "Dictation target closed"
+msgstr "Cible de dictée fermée"
+
+#: src/controller.rs:583
+msgid "Refusing to type into a password field"
+msgstr "Refus d'écrire dans un champ de mot de passe"
+
+#: src/controller.rs:584
+msgid "No text field is focused"
+msgstr "Aucun champ de texte n'est focalisé"
+
+#: src/shortcut/retry.rs:243
+msgid "dictation hotkey unavailable: %s"
+msgstr "raccourci de dictée indisponible: %s"
+
+#: src/backend.rs:47
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+"aucun backend n'est connecté - installez-en un et connectez-le, ex. `sudo "
+"snap connect myna:backend myna-whisper`"
+
+#: src/backend.rs:54
+#, c-format
+msgid ""
+"%s backends are connected; disconnect all but one (`snap connections myna`)"
+msgstr ""
+"%s backends sont connectés ; déconnectez-en tous sauf un (`snap "
+"connections myna`)"
+
+#: src/inject/mod.rs:80
+msgid "focused field is secure (password); refusing to inject"
+msgstr "le champ focalisé est protégé (mot de passe) ; refus d'écrire"
+
+#: src/inject/mod.rs:83
+msgid "no editable target is focused"
+msgstr "aucun champ de texte éditable n'est focalisé"
+
+#: src/inject/mod.rs:88
+#, c-format
+msgid "injection backend unavailable: %s"
+msgstr "backend d'insertion indisponible : %s"
+
+#: src/inject/mod.rs:93
+#, c-format
+msgid "injection backend error: %s"
+msgstr "erreur du backend d'insertion : %s"

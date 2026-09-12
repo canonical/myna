@@ -1,0 +1,28 @@
+name: nvidia-gpu
+summary: NVIDIA CUDA FastConformer via NeMo
+description: |
+  Runs NVIDIA's cache-aware streaming FastConformer-RNNT on NVIDIA GPUs,
+  serving the UbuSTT Unix-socket session API. Natively streaming transducer
+  with an att-context-size latency/accuracy dial.
+vendor: Canonical Ltd
+
+devices:
+  allof:
+    - type: gpu
+      vendor-id: 0x10de # NVIDIA Corporation
+  anyof:
+    - type: cpu
+      architecture: amd64
+
+runtime: nemo-cuda
+
+model:
+  default: streaming-multi
+  options:
+    - streaming-multi
+
+configurations:
+  # Latency/accuracy dial for the cache-aware streaming model. Left blank uses
+  # NeMo's default; set e.g. "70,0" (lowest latency) .. "70,33" (most context).
+  att-context-size: ""
+  sleep-idle-seconds: 300

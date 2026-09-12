@@ -1,0 +1,170 @@
+# FunASR / SenseVoice-Small inference snap (UbuSTT, feature 009).
+#
+# Follows the whisper-snap pattern (engine/runtime/model manifests + modelctl v2).
+# Differences from whisper-snap:
+#   - the adapter is `funasr` (not `whisper`), using `funasr-onnx` instead of
+#     faster-whisper
+#   - single model component (sensevoice-onnx) — no size variants
+#   - CPU only (GPU acceleration out of scope for 009)
+name: myna-funasr
+base: core24
+version: 0.1.0-dev
+assumes:
+  - snapd2.68 # components support
+summary: FunASR SenseVoice-Small speech-to-text inference snap (UbuSTT)
+description: |
+  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Unix domain socket. Wraps SenseVoice-Small (FunASR, Alibaba DAMO Academy)
+  served via ONNX Runtime, covering Chinese, English, Cantonese, Japanese, and
+  Korean.
+
+  The service receives PCM audio pushed by clients; it has no access to the
+  microphone or any audio hardware.
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # Path modelctl/runtimes use to reach installed components.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+apps:
+  funasr:
+    command: bin/funasr
+    completer: bin/snap-completer.bash
+    plugs:
+      - hardware-observe
+      - opengl
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - hardware-observe
+      - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
+      # No `process-control`: it exists only to lift seccomp's
+      # sched_setaffinity filter so ORT can pin its thread pool, and ORT pins
+      # only when it sizes that pool itself. This adapter caps the pool
+      # explicitly (T65: ORT's own sizing measured 12-16% slower), so nothing
+      # here ever pins and the plug would be a broad grant
+      # (kill/setscheduler/cgroup writes) that does nothing.
+      - opengl
+      # Weights are a component (no runtime download), so no `network`.
+      - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
+
+hooks:
+  install:
+    plugs: &hook-plugs
+      - hardware-observe
+      - opengl
+  post-refresh:
+    plugs: *hook-plugs
+
+# Expose the session socket to confined clients (same content-share slot as
+# whisper-snap — the myna client snap plugs this).
+slots:
+  ubustt-socket:
+    interface: content
+    content: ubustt-socket
+    source:
+      write: [$SNAP_COMMON/run]
+
+parts:
+  cli:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-arm64.tar.xz
+    override-build: |
+      # Named symlink so cobra picks up the snap command name.
+      # The tarball ships bin/modelctl + bin/snap-completer.bash.
+      ln --symbolic ./modelctl bin/funasr
+      craftctl default
+
+  server-app:
+    # myna-server + funasr-onnx in a venv. The myna wheel is staged into
+    # wheels/ by dev/prepare.sh before packing.
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives. Not find-links, which
+    # loses to the index whenever the version ties.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel,
+      # and its retries do not cover a mid-stream read.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-packages:
+      - ./myna-0.0.1-py3-none-any.whl[funasr]
+    build-packages:
+      - python3-venv
+    override-prime: |
+      craftctl default
+      site=$(echo "$CRAFT_PRIME"/lib/python3*/site-packages)
+      # Prune ~470 MB of declared-but-unused deps. funasr-onnx imports librosa
+      # and jieba at module level, but only *uses* them on code paths this snap
+      # never executes (file-path audio loading; the out-of-scope CT-Transformer
+      # punc path — FR-008). The librosa chain (numba 33M, llvmlite 173M,
+      # scipy 141M, sklearn 49M) and the jieba dict (42M) go; import-compatible
+      # shims in shims/ keep the module-level imports working.
+      rm -rf "$site"/{numba,llvmlite,scipy,scipy.libs,sklearn,librosa,jieba,pip,soundfile,_soundfile_data,joblib,threadpoolctl,narwhals,pooch,audioread,soxr,cffi,pycparser,lazy_loader,decorator,msgpack,platformdirs}
+      rm -rf "$site"/{numba,llvmlite,scipy,scikit_learn,sklearn,librosa,jieba,pip,soundfile,audioread,soxr,pooch,joblib,threadpoolctl,narwhals,decorator,msgpack,lazy_loader,cffi,pycparser,platformdirs}-*.dist-info
+      cp "$CRAFT_PROJECT_DIR/shims/librosa.py" "$CRAFT_PROJECT_DIR/shims/jieba.py" "$site/"
+      # Fail the build loudly if the prune/shim didn't land (no set -e here).
+      test -f "$site/librosa.py" && test -f "$site/jieba.py" && test ! -d "$site/llvmlite"
+      # onnxruntime stays - it is the runtime. This takes its build-time
+      # tooling and numpy's tests, and gates the shims above by importing
+      # through them.
+      export PRUNE_GATE="import funasr_onnx, onnxruntime; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PRIME/bin/python3"
+      rm -f "$CRAFT_PRIME"/bin/pip* "$CRAFT_PRIME"/bin/onnxruntime_test
+
+  engines:
+    plugin: dump
+    source: engines
+    organize:
+      "*": engines/
+
+  runtimes:
+    plugin: dump
+    source: runtimes
+    organize:
+      "*": runtimes/
+
+  models:
+    plugin: dump
+    source: models
+    organize:
+      "*": models/
+
+  scripts:
+    plugin: dump
+    source: scripts
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  # Model weights as a component. Populate components/model-sensevoice-onnx/
+  # with dev/fetch_funasr_model.py before packing.
+  model-components:
+    plugin: dump
+    source: components
+    organize:
+      "model-sensevoice-onnx/*": (component/model-sensevoice)/
+    prime:
+      - -*
+
+components:
+  model-sensevoice:
+    type: standard
+    summary: SenseVoice-Small ONNX weights
+    description: |
+      ONNX-exported SenseVoice-Small (FunASR, Apache-2.0). Multilingual
+      CTC encoder covering Chinese, English, Cantonese, Japanese, and Korean
+      with automatic language detection.

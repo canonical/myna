@@ -1,6 +1,6 @@
 # Myna Test Reading Sample Corpus (English)
 
-Six passage categories used by `docs/test-plan-system.md`. Non-English
+Six passage categories used by `test-plan-system.md`. Non-English
 translations are **explicitly deferred** pending review of this English
 version — do not translate ad hoc.
 
@@ -108,7 +108,7 @@ box with five dozen liquor jugs.")*
 A single uninterrupted, multi-sentence read — not disconnected clips — to
 exercise multiple commit boundaries, natural silence gaps, and mid-sentence
 pauses. Use this specifically for the streaming-mode checks (see
-`docs/test-plan-system.md` §9).
+`test-plan-system.md` §9).
 
 > Source: adapted from Wikinews-style contemporary reporting text
 > (CC BY 2.5) plus a US government (NASA, public domain) mission-update
@@ -131,7 +131,7 @@ pauses. Use this specifically for the streaming-mode checks (see
 Two short failure-mode probe sentences — not full accuracy passages, and not
 translations of the §5 pangram (a literal translation of an English pangram
 usually isn't itself a pangram in the target language). Each targets a
-specific documented model limitation from `docs/test-plan-system.md` §3.
+specific documented model limitation from `test-plan-system.md` §3.
 
 **7.1 — French sentence, for TC-07 (Nemotron given non-English speech)**
 
@@ -151,7 +151,7 @@ list), Qwen only**
 
 Estonian is confirmed **not** present in Qwen3-ASR's supported list (zh, en,
 yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da,
-fi, pl, cs, fil, fa, el, ro, hu, mk — see `docs/test-plan-system.md` §3).
+fi, pl, cs, fil, fa, el, ro, hu, mk — see `test-plan-system.md` §3).
 Whisper's multilingual checkpoints do support Estonian, so **this probe is
 scoped to Qwen3-ASR only** — running it against Whisper would not
 demonstrate an out-of-vocabulary failure.

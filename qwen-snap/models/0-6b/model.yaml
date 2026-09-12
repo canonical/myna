@@ -1,0 +1,11 @@
+name: 0-6b
+description: Qwen3-ASR-0.6B — multilingual (30 languages), CPU sweet spot
+model-card-url: https://huggingface.co/Qwen/Qwen3-ASR-0.6B
+quantization: bf16
+disk-size: 1.8G
+# Weights shipped as a snap component (Qwen3-ASR-0.6B, Apache-2.0). modelctl
+# installs it on use-model; both runtimes load from the directory (no network).
+components:
+  - model-0-6b
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-0-6b
