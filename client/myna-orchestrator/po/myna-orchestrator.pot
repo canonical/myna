@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 16:41+0000\n"
+"POT-Creation-Date: 2026-09-12 21:42+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,31 +17,31 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/backend/mod.rs:75
+#: src/backend/mod.rs:74
 #, c-format
 msgid "cannot reach backend: %s"
 msgstr ""
 
-#: src/backend/mod.rs:78
+#: src/backend/mod.rs:77
 #, c-format
 msgid "handshake failed: %s"
 msgstr ""
 
-#: src/backend/mod.rs:83
+#: src/backend/mod.rs:82
 #, c-format
 msgid "session rejected: %1$s: %2$s"
 msgstr ""
 
-#: src/backend/mod.rs:90
+#: src/backend/mod.rs:89
 #, c-format
 msgid "malformed event from backend: %s"
 msgstr ""
 
-#: src/backend/mod.rs:92
+#: src/backend/mod.rs:91
 msgid "backend connection closed unexpectedly"
 msgstr ""
 
-#: src/backend/mod.rs:94
+#: src/backend/mod.rs:93
 #, c-format
 msgid "transport error: %s"
 msgstr ""
