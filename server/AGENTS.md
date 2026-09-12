@@ -8,6 +8,10 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 The server project exposes model adapters through one session contract and also provides the offline evaluation and benchmark tooling. Production deployments package the same server code and model-specific extras into inference snaps.
 
+# Important
+
+- Verify with `make lint-server test-server` (add `make mutate-server MUTATE='<module glob>*'` for a suite whose strength is in doubt); the repository-wide rules are in the root `.kb/verification.md`. Tests that read the repository outside `server/` carry the `repo_tree` marker.
+
 # Directory
 
 - `src/myna/core/` - Session, event, audio, capability, and transport contract.
