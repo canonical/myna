@@ -119,20 +119,30 @@ STREAM_BEAM_SIZE = 1  # greedy re-decode ticks
 _TEMPERATURE_LADDER = (0.0, 0.2)
 
 
-def batch_decode_options(language: str | None, prompt: str | None) -> dict:
+def batch_decode_options(
+    language: str | None, prompt: str | None, *, word_timestamps: bool = False
+) -> dict:
     """Decode parameters for the batch path, in one place.
 
     Extracted so ``dev/whisper/bench_whisper.py`` and
     ``dev/lab/whisper_decode_sweep.py`` measure the shipped decode rather than
     a copy of it that drifts. Everything not named here is faster-whisper's
     own default.
+
+    ``word_timestamps`` buys a DTW alignment pass: off for dictation, which
+    never asks the time, and on whenever the session requests timestamps,
+    because whisper's unaligned segment boundaries are quantised to whole
+    seconds.
     """
-    return {
+    options = {
         "language": _iso639_1(language),
         "initial_prompt": prompt,
         "log_prob_threshold": _LOG_PROB_THRESHOLD,
         "temperature": list(_TEMPERATURE_LADDER),
     }
+    if word_timestamps:
+        options["word_timestamps"] = True
+    return options
 
 
 def stream_decode_options(language: str | None, prompt: str | None, beam_size: int) -> dict:
@@ -152,6 +162,28 @@ def stream_decode_options(language: str | None, prompt: str | None, beam_size: i
         "log_prob_threshold": _LOG_PROB_THRESHOLD,
         "temperature": list(_TEMPERATURE_LADDER),
     }
+
+
+def _timed_segments(segment, text: str, granularity: str | None) -> tuple[Segment, ...]:
+    """Timestamps for one decoded segment: ``"word"`` yields an entry per word,
+    ``"segment"`` one entry spanning the segment, ``None`` nothing.
+
+    Both timed forms take their boundaries from the word alignment rather than
+    ``segment.start``/``end``, which whisper rounds to whole seconds. Word
+    granularity degrades to the segment span if the alignment produced nothing,
+    so a client that asked for timestamps always gets one.
+    """
+    if granularity is None:
+        return ()
+    words = [w for w in (segment.words or ()) if w.word.strip()]
+    if granularity == "word" and words:
+        return tuple(
+            Segment(start=w.start, end=w.end, text=w.word.strip(), score=w.probability)
+            for w in words
+        )
+    start = words[0].start if words else segment.start
+    end = words[-1].end if words else segment.end
+    return (Segment(start=start, end=end, text=text, score=segment.avg_logprob),)
 
 
 _PROGRESS_INTERVAL_SECONDS = 1.0
@@ -346,7 +378,7 @@ class FasterWhisperAdapter:
 
             segments = await asyncio.to_thread(self._transcribe, model, bytes(buffered), config)
 
-            want_timestamps = config.timestamp_granularity is not None
+            granularity = config.timestamp_granularity
             finals: list[str] = []
             for segment in segments:
                 # Natural spacing: segment texts carry leading whitespace;
@@ -364,18 +396,7 @@ class FasterWhisperAdapter:
                     TranscriptionFinal(
                         text=text,
                         disposition=Disposition.COMMITTED,
-                        segments=(
-                            (
-                                Segment(
-                                    start=segment.start,
-                                    end=segment.end,
-                                    text=text,
-                                    score=segment.avg_logprob,
-                                ),
-                            )
-                            if want_timestamps
-                            else ()
-                        ),
+                        segments=_timed_segments(segment, text, granularity),
                     )
                 )
             await emit(TranscriptionDone(text="".join(finals)))
@@ -427,6 +448,11 @@ class FasterWhisperAdapter:
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
         segments, _info = model.transcribe(
-            samples, **batch_decode_options(config.language, config.prompt)
+            samples,
+            **batch_decode_options(
+                config.language,
+                config.prompt,
+                word_timestamps=config.timestamp_granularity is not None,
+            ),
         )
         return list(segments)  # drain the generator while still in the thread
