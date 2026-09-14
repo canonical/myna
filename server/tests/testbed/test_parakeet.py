@@ -27,6 +27,7 @@ from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
     BASE_ENCODER_FILE,
+    BATCH_WINDOW_CAP_S,
     MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
     PARTIAL_CADENCE_S,
@@ -64,7 +65,7 @@ class _FakeParakeetModel:
 
     def transcribe_words(self, samples) -> list[Word]:
         self.calls.append(len(samples))
-        return [Word(w, i, i + 1) for i, w in enumerate(self._text.split())]
+        return [Word(f" {w}", i, i + 1) for i, w in enumerate(self._text.split())]
 
 
 async def pcm_audio(seconds: float, chunk_s: float = 0.5):
@@ -246,7 +247,33 @@ async def test_batch_session_emits_complete_transcript_and_satisfies_i7():
     assert_batch_degenerate(events)
     done = events[-1]
     assert done.text == "he had never been father lover husband friend"
-    assert model.calls, "model.transcribe_text was never called"
+    assert model.calls, "the model was never called"
+
+
+@pytest.mark.asyncio
+async def test_batch_session_decodes_a_short_utterance_whole():
+    adapter = ParakeetAdapter(streaming=False)
+    model = _FakeParakeetModel("hello")
+    adapter._model = model
+
+    await run_session(adapter, audio_seconds=20.0)
+
+    assert model.calls == [20 * PARAKEET_RATE]
+
+
+@pytest.mark.asyncio
+async def test_batch_session_bounds_every_decode_on_a_long_session():
+    """One pass over a whole 5 minute clip peaked at 3.9 GB RSS."""
+    adapter = ParakeetAdapter(streaming=False)
+    model = _FakeParakeetModel("hello")
+    adapter._model = model
+
+    events = await run_session(adapter, audio_seconds=300.0)
+
+    assert_batch_degenerate(events)
+    assert len(model.calls) > 1
+    assert max(model.calls) <= BATCH_WINDOW_CAP_S * PARAKEET_RATE
+    assert sum(model.calls) >= 300 * PARAKEET_RATE
 
 
 @pytest.mark.asyncio

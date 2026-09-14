@@ -208,6 +208,14 @@ _PROGRESS_INTERVAL_SECONDS = 1.0
 _COLLAPSE_WORDS_PER_SECOND = 0.5  # 5x below conversational speech (~2.5 w/s)
 _COLLAPSE_RETRY_PAD_S = 0.2
 
+# Batch decodes are windowed too: one pass over a whole 5 minute session peaked
+# at 3.9 GB RSS, and a toggle session has no length cap. An utterance up to the
+# arm point still decodes whole; past it the first pause cuts, and the force cut
+# bounds a pause-free stretch.
+BATCH_ARM_S = 30.0
+BATCH_FORCE_CUT_S = SC_FORCE_CUT_S
+BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
+
 # Unstable-partial dials. Was 0.5 s (reads as continuous without the preedit
 # region thrashing) until perf T04 (2026-08-29) mapped display quality
 # against measured encoder cost (T03's StreamingTelemetry) across the
@@ -729,28 +737,10 @@ class ParakeetAdapter:
                 await self._run_streaming_session(model, audio, emit)
                 return
 
-            buffered = bytearray()
-            seconds_since_progress = 0.0
-            async for chunk in audio:
-                buffered.extend(chunk.data)
-                seconds_since_progress += chunk.duration_seconds
-                if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
-                    seconds_since_progress = 0.0
-                    await emit(TranscriptionProgress())
-
-            if not buffered:
+            text = await self._run_batch_session(model, audio, emit)
+            if text is None:
                 await emit(TranscriptionDone(text=""))
                 return
-
-            samples = np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
-            # T10: sample from this thread, straddling the whole decode -- ORT
-            # aggregates page faults process-wide (RUSAGE_SELF), so a worker
-            # thread's faults count here regardless.
-            majflt_before = sample_majflt()
-            text = await asyncio.to_thread(model.transcribe_text, samples)
-            warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
-            if warning is not None:
-                await emit(TranscriptionProgress(warning=warning))
             # Batch mode is degenerate streaming (I7): one committed final.
             await emit(TranscriptionFinal(text=text, disposition=Disposition.COMMITTED))
             await emit(TranscriptionDone(text=text))
@@ -758,6 +748,58 @@ class ParakeetAdapter:
             await emit(
                 TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
             )
+
+    async def _run_batch_session(
+        self,
+        model: _ParakeetOnnx,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
+    ) -> str | None:
+        """The chunked loop with nothing shown between cuts: its commits are
+        collected rather than emitted, so the session still ends in one final.
+        None when no audio arrived at all."""
+        from myna.testbed.streaming.loop import run_streaming_loop
+        from myna.testbed.streaming.strategies import SilenceCut
+
+        received = False
+
+        async def tracked() -> AsyncIterator[PcmChunk]:
+            nonlocal received
+            async for chunk in audio:
+                received = True
+                yield chunk
+
+        async def progress_only(event: object) -> None:
+            if isinstance(event, TranscriptionProgress):
+                await emit(event)
+
+        warnings: list[TranscriptionProgress] = []
+
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+            majflt_before = sample_majflt()
+            words = model.transcribe_words(samples)
+            warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
+            if warning is not None:
+                warnings.append(TranscriptionProgress(warning=warning))
+            return Hypothesis(words=[Word(w.text, w.start + offset, w.end + offset) for w in words])
+
+        text = await run_streaming_loop(
+            tracked(),
+            progress_only,
+            decode,
+            SilenceCut(
+                arm_seconds=BATCH_ARM_S,
+                silence_cut_seconds=self._stream_silence_cut_s,
+                force_cut_seconds=BATCH_FORCE_CUT_S,
+            ),
+            cadence_seconds=_PROGRESS_INTERVAL_SECONDS,
+            window_cap_seconds=BATCH_WINDOW_CAP_S,
+            overlap_seconds=1.0,
+        )
+        for warning in warnings:
+            await emit(warning)
+        # Words keep their tokens verbatim; this is the whole-pass spacing.
+        return _detokenize([text]) if received else None
 
     async def _run_streaming_session(
         self,
