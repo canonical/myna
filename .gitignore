@@ -88,6 +88,7 @@ audio8-snap/*.comp
 funasr_model/
 # mutation testing scratch (cargo-mutants, mutmut)
 client/mutants.out/
+client/mutants.out.old/
 server/mutants/
 # License text staged into each snap by dev/stage-licenses.sh
 *-snap/licenses/
