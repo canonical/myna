@@ -1406,26 +1406,6 @@ async fn a_toggle_session_ends_itself_after_the_silence_timeout() {
 }
 
 #[tokio::test]
-async fn the_cap_ends_a_toggle_session_even_with_the_silence_timeout_off() {
-    let (inject_log, _states, resynced, state) = run_toggle(
-        Then::WaitForResync,
-        AutoStop {
-            silence: Duration::ZERO,
-            cap: Duration::from_millis(700),
-        },
-        silent_then_live,
-    )
-    .await;
-
-    assert_eq!(
-        inject_log.lock().unwrap().commits,
-        vec!["the quick brown fox jumps over the lazy dog."]
-    );
-    assert_eq!(state, DictationState::Idle);
-    assert!(resynced.load(std::sync::atomic::Ordering::SeqCst));
-}
-
-#[tokio::test]
 async fn with_auto_stop_off_only_the_user_ends_the_session() {
     // Hold-to-talk's contract: a second of silence sits there until the
     // user's own Release, and no resync happens because that Release was

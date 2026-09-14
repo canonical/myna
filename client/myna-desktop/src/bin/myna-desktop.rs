@@ -1668,8 +1668,7 @@ mod tests {
     }
 
     /// Only a toggle activation gets the policy: a hold has a release edge,
-    /// the debug stdin trigger is a hold in disguise, and the timeout setting
-    /// lands under the fixed cap.
+    /// and the debug stdin trigger is a hold in disguise.
     #[test]
     fn auto_stop_follows_the_activation_shape() {
         assert_eq!(

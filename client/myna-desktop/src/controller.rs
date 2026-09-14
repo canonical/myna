@@ -266,66 +266,34 @@ fn quality_of(stats: &watch::Receiver<AudioStats>) -> InputQuality {
 /// When the controller ends a session on its own. Toggle activation has no
 /// release edge: a forgotten session would otherwise stream the room until
 /// focus moves. Hold-to-talk keeps the key as the whole authority and runs
-/// with both limits off.
+/// with the policy off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AutoStop {
     /// Finalize once this much captured audio has passed since voice was
     /// last heard (or since the start, if it never was). Zero = never.
     pub silence: Duration,
-    /// Finalize once this much audio has been captured, voice or not - the
-    /// net under the silence policy. Zero = never.
-    pub cap: Duration,
 }
 
 impl AutoStop {
-    /// The wall-clock cap a toggle session gets regardless of the silence
-    /// setting.
-    pub const TOGGLE_CAP: Duration = Duration::from_secs(300);
-
     /// Hold-to-talk: never.
     pub fn off() -> Self {
         Self::default()
     }
 
-    /// Toggle: the user's silence timeout (zero = off) under the fixed cap.
+    /// Toggle: the user's silence timeout, zero = never.
     pub fn toggle(silence: Duration) -> Self {
-        Self {
-            silence,
-            cap: Self::TOGGLE_CAP,
-        }
-    }
-}
-
-/// Why a session is ending by policy rather than by the user.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AutoStopReason {
-    Silence,
-    Cap,
-}
-
-impl std::fmt::Display for AutoStopReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Silence => "silence timeout",
-            Self::Cap => "session cap",
-        })
+        Self { silence }
     }
 }
 
 /// Whether `policy` says this session is over, given the latest stats.
 /// Measured in captured audio, so a device that stops delivering (already
 /// its own fault, in capture) cannot look like a silent user.
-pub fn auto_stop_due(stats: &AudioStats, policy: AutoStop) -> Option<AutoStopReason> {
-    if policy.cap > Duration::ZERO && stats.captured >= policy.cap {
-        return Some(AutoStopReason::Cap);
-    }
+pub fn auto_stop_due(stats: &AudioStats, policy: AutoStop) -> bool {
     let since_voice = stats
         .captured
         .saturating_sub(stats.last_voice.unwrap_or(Duration::ZERO));
-    if policy.silence > Duration::ZERO && since_voice >= policy.silence {
-        return Some(AutoStopReason::Silence);
-    }
-    None
+    policy.silence > Duration::ZERO && since_voice >= policy.silence
 }
 
 /// A tap for a session that never opened the microphone: never polled, and
@@ -476,7 +444,7 @@ impl DesktopControllerBuilder {
         self
     }
 
-    /// End sessions by policy (silence timeout, session cap). Off by default,
+    /// End sessions by policy (the silence timeout). Off by default,
     /// which is hold-to-talk's contract and what every existing test expects.
     pub fn auto_stop(mut self, policy: impl Into<Live<AutoStop>>) -> Self {
         self.auto_stop = policy.into();
@@ -679,8 +647,8 @@ impl DesktopController {
                 changed = stats.changed(), if stats_open => {
                     if changed.is_err() {
                         stats_open = false;
-                    } else if let Some(reason) = auto_stop_due(&stats.borrow(), auto_stop.get()) {
-                        myna_core::info_log!("ctrl", "{reason}: graceful stop, finalizing");
+                    } else if auto_stop_due(&stats.borrow(), auto_stop.get()) {
+                        myna_core::info_log!("ctrl", "silence timeout: graceful stop, finalizing");
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
                         trigger.resync().await;
@@ -1267,53 +1235,27 @@ mod tests {
 
     #[test]
     fn off_never_stops() {
-        let policy = AutoStop::off();
-        assert_eq!(auto_stop_due(&progress(3_600_000, None), policy), None);
+        assert!(!auto_stop_due(&progress(3_600_000, None), AutoStop::off()));
     }
 
     #[test]
     fn silence_counts_from_the_start_when_nothing_was_said() {
         let policy = AutoStop::toggle(Duration::from_secs(30));
-        assert_eq!(auto_stop_due(&progress(29_900, None), policy), None);
-        assert_eq!(
-            auto_stop_due(&progress(30_000, None), policy),
-            Some(AutoStopReason::Silence)
-        );
+        assert!(!auto_stop_due(&progress(29_900, None), policy));
+        assert!(auto_stop_due(&progress(30_000, None), policy));
     }
 
     #[test]
     fn silence_counts_from_the_last_voice() {
         let policy = AutoStop::toggle(Duration::from_secs(30));
-        assert_eq!(auto_stop_due(&progress(40_000, Some(20_000)), policy), None);
-        assert_eq!(
-            auto_stop_due(&progress(50_000, Some(20_000)), policy),
-            Some(AutoStopReason::Silence)
-        );
+        assert!(!auto_stop_due(&progress(40_000, Some(20_000)), policy));
+        assert!(auto_stop_due(&progress(50_000, Some(20_000)), policy));
     }
 
     #[test]
-    fn a_zero_silence_setting_leaves_only_the_cap() {
+    fn a_zero_silence_setting_never_stops_however_long_the_session() {
         let policy = AutoStop::toggle(Duration::ZERO);
-        assert_eq!(auto_stop_due(&progress(299_900, None), policy), None);
-        assert_eq!(
-            auto_stop_due(&progress(300_000, None), policy),
-            Some(AutoStopReason::Cap)
-        );
-    }
-
-    #[test]
-    fn the_cap_wins_over_a_long_silence_setting() {
-        let policy = AutoStop::toggle(Duration::from_secs(600));
-        assert_eq!(
-            auto_stop_due(&progress(300_000, Some(299_000)), policy),
-            Some(AutoStopReason::Cap)
-        );
-    }
-
-    #[test]
-    fn the_journal_names_why_a_session_ended_itself() {
-        assert_eq!(AutoStopReason::Silence.to_string(), "silence timeout");
-        assert_eq!(AutoStopReason::Cap.to_string(), "session cap");
+        assert!(!auto_stop_due(&progress(3_600_000, None), policy));
     }
 
     #[test]
