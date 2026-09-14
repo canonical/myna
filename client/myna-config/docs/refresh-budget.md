@@ -16,6 +16,11 @@ exists, to decide between the settings window and the onboarding wizard
 (`docs/onboarding.md`). The result is handed to the wizard rather than
 re-read there.
 
+Every discovery also runs the CPU clock probe (`docs/performance-warnings.md`)
+on the blocking pool. It is a thread, not a process, so it is outside the
+budget above; it loads one core for 300 ms per frequency class and finishes
+before the snapd reads it runs alongside.
+
 `RefreshPolicy::periodic_interval()` is **always `None`**: there is no
 background poll. Refreshes are triggered by (a) startup, (b) sidebar selection,
 (c) a user tap on the diagnostics *Refresh* button, and (d) explicit

@@ -200,3 +200,205 @@ fn refresh_policy_has_no_idle_poll_and_enforces_process_budgets() {
     );
     assert_eq!(policy.debounce(), Duration::from_millis(250));
 }
+
+mod performance_warnings {
+    use myna_config::diagnostics::{present_diagnostics, DiagnosticInput, InstalledSnap};
+    use myna_config::performance::{
+        ClockClass, ClockFacts, PerformanceFacts, PowerFacts, Pressure,
+    };
+
+    fn class(cpu: u32, hardware: u64, policy: u64, achieved: Option<u64>) -> ClockClass {
+        ClockClass {
+            cpu,
+            cores: 8,
+            hardware_max_khz: hardware,
+            policy_max_khz: policy,
+            min_khz: 623_377,
+            achieved_khz: achieved,
+        }
+    }
+
+    fn ready_input(performance: Option<PerformanceFacts>) -> DiagnosticInput {
+        DiagnosticInput {
+            inventory_complete: true,
+            installed_snaps: vec![InstalledSnap {
+                name: "myna".into(),
+                version: "0.1.0".into(),
+            }],
+            performance,
+            ..DiagnosticInput::default()
+        }
+    }
+
+    #[test]
+    fn a_firmware_clamp_is_a_warning_with_a_remedy_and_does_not_block_ready() {
+        let report = present_diagnostics(ready_input(Some(PerformanceFacts {
+            clock: ClockFacts {
+                classes: vec![
+                    class(0, 5_090_910, 5_090_910, Some(858_836)),
+                    class(1, 3_506_494, 3_506_494, Some(602_579)),
+                ],
+                power: PowerFacts {
+                    platform_profile: Some("balanced".into()),
+                    on_mains: Some(true),
+                    battery_status: Some("Not charging".into()),
+                },
+            },
+            pressure: Some(Pressure::default()),
+        })));
+        let text = report.copy_text();
+
+        assert_eq!(report.warnings().len(), 1, "{text}");
+        let warning = &report.warnings()[0];
+        assert!(
+            warning
+                .cause
+                .contains("Firmware is holding the CPU at its lowest clock"),
+            "{}",
+            warning.cause
+        );
+        assert!(
+            warning.cause.contains("cpu0 reached 0.86 GHz of 5.09 GHz"),
+            "{}",
+            warning.cause
+        );
+        assert!(
+            warning.remedy.contains("Unplug the charger"),
+            "{}",
+            warning.remedy
+        );
+        assert!(text.contains("Warnings:\n  Firmware is holding"), "{text}");
+        assert!(
+            text.contains("Clock      cpu0 reached 0.86 GHz of 5.09 GHz, 8 cores in this class"),
+            "{text}"
+        );
+        assert!(text.contains("Profile    balanced"), "{text}");
+        assert!(
+            text.contains("Power      mains, battery not charging"),
+            "{text}"
+        );
+        assert!(text.contains("Pressure   cpu 0.00%"), "{text}");
+        // A warning is not a problem: the machine is set up.
+        assert!(text.contains("Problems:\n  (none)"), "{text}");
+        assert_ne!(
+            report.onboarding(),
+            myna_config::diagnostics::OnboardingState::Unavailable
+        );
+        assert!(!text.contains('/'), "{text}");
+    }
+
+    #[test]
+    fn a_software_cap_names_the_policy_file_and_both_ceilings() {
+        let report = present_diagnostics(ready_input(Some(PerformanceFacts {
+            clock: ClockFacts {
+                classes: vec![class(0, 5_090_910, 1_500_000, Some(1_480_000))],
+                power: PowerFacts::default(),
+            },
+            pressure: None,
+        })));
+        let warning = &report.warnings()[0];
+        assert!(
+            warning.cause.contains("capped by system policy"),
+            "{}",
+            warning.cause
+        );
+        assert!(
+            warning.cause.contains("1.50 GHz of 5.09 GHz"),
+            "{}",
+            warning.cause
+        );
+        assert!(
+            warning.remedy.contains("scaling_max_freq"),
+            "{}",
+            warning.remedy
+        );
+        assert!(
+            report.copy_text().contains("(policy allows 1.50 GHz)"),
+            "{}",
+            report.copy_text()
+        );
+    }
+
+    #[test]
+    fn a_low_power_profile_points_at_the_power_settings() {
+        let report = present_diagnostics(ready_input(Some(PerformanceFacts {
+            clock: ClockFacts {
+                classes: vec![class(0, 5_090_910, 5_090_910, Some(1_200_000))],
+                power: PowerFacts {
+                    platform_profile: Some("low-power".into()),
+                    ..PowerFacts::default()
+                },
+            },
+            pressure: None,
+        })));
+        let warning = &report.warnings()[0];
+        assert!(warning.cause.contains("low-power"), "{}", warning.cause);
+        assert!(
+            warning.remedy.contains("Balanced or Performance"),
+            "{}",
+            warning.remedy
+        );
+    }
+
+    #[test]
+    fn pressure_warnings_stand_on_their_own() {
+        let report = present_diagnostics(ready_input(Some(PerformanceFacts {
+            clock: ClockFacts {
+                classes: vec![class(0, 5_090_910, 5_090_910, Some(4_900_000))],
+                power: PowerFacts::default(),
+            },
+            pressure: Some(Pressure {
+                cpu_some: 0,
+                memory_some: 42_10,
+                io_full: 15_00,
+            }),
+        })));
+        let causes: Vec<&str> = report
+            .warnings()
+            .iter()
+            .map(|warning| warning.cause.as_str())
+            .collect();
+        assert_eq!(causes.len(), 2, "{causes:?}");
+        assert!(
+            causes[0].starts_with("The system is short of memory (42.10%"),
+            "{causes:?}"
+        );
+        assert!(
+            causes[1].starts_with("Disk activity is stalling the system (15.00%"),
+            "{causes:?}"
+        );
+    }
+
+    #[test]
+    fn healthy_unknown_and_unmeasured_hosts_raise_nothing() {
+        let healthy = present_diagnostics(ready_input(Some(PerformanceFacts {
+            clock: ClockFacts {
+                classes: vec![class(0, 5_090_910, 5_090_910, Some(4_900_000))],
+                power: PowerFacts::default(),
+            },
+            pressure: Some(Pressure::default()),
+        })));
+        assert!(healthy.warnings().is_empty());
+        assert!(healthy.copy_text().contains("Warnings:\n  (none)"));
+
+        let unknown = present_diagnostics(ready_input(Some(PerformanceFacts::default())));
+        assert!(unknown.warnings().is_empty());
+        assert!(
+            unknown
+                .copy_text()
+                .contains("Clock      (no cpufreq information)"),
+            "{}",
+            unknown.copy_text()
+        );
+
+        let unmeasured = present_diagnostics(ready_input(None));
+        assert!(unmeasured.warnings().is_empty());
+        assert!(
+            unmeasured
+                .copy_text()
+                .contains("Clock      (not measured yet)"),
+            "{}",
+            unmeasured.copy_text()
+        );
+    }
+}

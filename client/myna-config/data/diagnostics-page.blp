@@ -36,6 +36,12 @@ template $DiagnosticsPage: Adw.NavigationPage {
       title: _("About and Diagnostics");
       icon-name: "dialog-information-symbolic";
 
+      Adw.PreferencesGroup warnings_group {
+        title: _("Performance warnings");
+        description: _("This machine is set up, but it is not currently delivering the CPU that dictation needs.");
+        visible: false;
+      }
+
       Adw.PreferencesGroup report_group {
         title: _("Copyable diagnostics");
         description: _(

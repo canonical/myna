@@ -1231,6 +1231,7 @@ dependencies = [
  "glib-build-tools",
  "gtk4",
  "libadwaita",
+ "libc",
  "myna-core",
  "serde",
  "serde_json",

@@ -35,6 +35,7 @@ use crate::diagnostics::{
 use crate::domain::{ActiveBackendState, BackendIdentity, ConfigValue, ServiceState};
 use crate::markup::escape_markup;
 use crate::operation_gate::{OperationCoordinator, OperationKind};
+use crate::performance::PerformanceFacts;
 use crate::ports::{BackendRepository, SystemConfigurator};
 use crate::presentation::{ControlType, Sensitivity};
 use crate::ui;
@@ -67,6 +68,9 @@ pub struct BackendUi {
     installed_snaps: RefCell<Vec<InstalledSnap>>,
     inventory_complete: std::cell::Cell<bool>,
     inventory_failure: RefCell<Option<String>>,
+    /// The last clock probe and pressure reading. Refreshed with every
+    /// discovery, off the main thread, so the page never spins a core itself.
+    performance: RefCell<Option<PerformanceFacts>>,
     last_diagnostics_refresh: std::cell::Cell<Option<Instant>>,
 }
 
@@ -272,6 +276,7 @@ impl BackendUi {
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
+            performance: RefCell::new(None),
             last_diagnostics_refresh: std::cell::Cell::new(None),
         });
 
@@ -1182,6 +1187,7 @@ impl BackendUi {
             machine: Some(crate::machine::machine_facts()),
             daemon: crate::machine::snap_process("myna"),
             drops: crate::machine::audio_drops(),
+            performance: self.performance.borrow().clone(),
             backends: pages
                 .iter()
                 .map(|page| backend_diagnostic_from(page, &snaps))
@@ -1230,6 +1236,20 @@ impl BackendUi {
                     "Diagnostics copied to clipboard",
                 )));
             });
+        }
+
+        // Warnings first: the page exists to say why dictation is slow.
+        let warnings_group = widget.warnings_group();
+        warnings_group.set_visible(!report.warnings().is_empty());
+        for warning in report.warnings() {
+            let row = adw::ActionRow::builder()
+                .title(escape_markup(&warning.cause))
+                .subtitle(escape_markup(&warning.remedy))
+                .build();
+            let icon = gtk::Image::from_icon_name("dialog-warning-symbolic");
+            icon.add_css_class("warning");
+            row.add_prefix(&icon);
+            warnings_group.add(&row);
         }
 
         // Fill the read-only report view.
@@ -1328,12 +1348,19 @@ impl BackendUi {
         let inventory_token = token.clone();
         let ui = Rc::downgrade(self);
         glib::spawn_future_local(async move {
+            // The probe loads a core for a fraction of a second; it runs on
+            // the blocking pool alongside the snapd reads, not on this thread.
+            let probe = gio::spawn_blocking(crate::performance::performance_facts);
             let inventory = repository.installed_snaps(inventory_token).await;
             let result = repository.refresh(token).await;
+            let performance = probe.await.ok();
             if let Some(ui) = ui.upgrade() {
                 let accepted = ui.controller.complete_discovery(request, result);
                 if !accepted {
                     return;
+                }
+                if performance.is_some() {
+                    *ui.performance.borrow_mut() = performance;
                 }
                 match inventory {
                     Ok(snaps) => {
@@ -2727,6 +2754,7 @@ mod tests {
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
+            performance: RefCell::new(None),
             last_diagnostics_refresh: std::cell::Cell::new(None),
         });
         ui.connect_sidebar_selection();

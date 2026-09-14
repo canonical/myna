@@ -11,6 +11,9 @@
 use std::time::Duration;
 
 use crate::machine::{bytes, AudioDrops, MachineFacts, ProcessMemory};
+use crate::performance::{
+    assess_clock, assess_pressure, ClockClass, ClockVerdict, PerformanceFacts, PressureWarning,
+};
 
 /// Copy-safe onboarding instructions surfaced when Myna itself is missing.
 pub const NO_MYNA_COMMAND: &str = "sudo snap install myna";
@@ -96,6 +99,9 @@ pub struct DiagnosticInput {
     pub machine: Option<MachineFacts>,
     pub daemon: Option<ProcessMemory>,
     pub drops: Option<AudioDrops>,
+    /// `None` until the probe has run once; the report says so rather than
+    /// claiming a clock it did not measure.
+    pub performance: Option<PerformanceFacts>,
     pub backends: Vec<BackendDiagnostic>,
     pub problems: Vec<String>,
 }
@@ -113,16 +119,32 @@ pub enum OnboardingState {
     Unavailable,
 }
 
+/// One thing that will make dictation slow, already worded for the page.
+/// Unlike a problem, a warning does not block the ready state: the machine is
+/// set up, it is just not currently delivering.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Warning {
+    /// What is wrong, one sentence.
+    pub cause: String,
+    /// What to do about it, one sentence.
+    pub remedy: String,
+}
+
 /// Output of the diagnostics presenter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticReport {
     onboarding: OnboardingState,
+    warnings: Vec<Warning>,
     body: String,
 }
 
 impl DiagnosticReport {
     pub fn onboarding(&self) -> OnboardingState {
         self.onboarding
+    }
+
+    pub fn warnings(&self) -> &[Warning] {
+        &self.warnings
     }
 
     pub fn onboarding_command(&self) -> Option<&'static str> {
@@ -269,8 +291,129 @@ impl RefreshPolicy {
 /// Produce the diagnostics report for the given input.
 pub fn present_diagnostics(input: DiagnosticInput) -> DiagnosticReport {
     let onboarding = classify_onboarding(&input);
-    let body = render_body(&input, onboarding);
-    DiagnosticReport { onboarding, body }
+    let warnings = input
+        .performance
+        .as_ref()
+        .map(performance_warnings)
+        .unwrap_or_default();
+    let body = render_body(&input, onboarding, &warnings);
+    DiagnosticReport {
+        onboarding,
+        warnings,
+        body,
+    }
+}
+
+fn performance_warnings(facts: &PerformanceFacts) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    match assess_clock(&facts.clock) {
+        ClockVerdict::Unknown | ClockVerdict::Healthy => {}
+        ClockVerdict::SoftwareCap {
+            cpu,
+            policy_max_khz,
+            hardware_max_khz,
+        } => warnings.push(Warning {
+            cause: format!(
+                "{} (cpu{} {} {} {} {})",
+                gettextrs::gettext("The CPU clock is capped by system policy"),
+                cpu,
+                gettextrs::gettext("limited to"),
+                ghz(policy_max_khz),
+                gettextrs::gettext("of"),
+                ghz(hardware_max_khz),
+            ),
+            remedy: gettextrs::gettext(
+                "Dictation will be slow. Raise scaling_max_freq, or find the power tool that lowered it.",
+            ),
+        }),
+        ClockVerdict::LowPowerProfile {
+            cpu,
+            achieved_khz,
+            hardware_max_khz,
+        } => warnings.push(Warning {
+            cause: format!(
+                "{} ({})",
+                gettextrs::gettext("The power profile is set to low-power"),
+                reached(cpu, achieved_khz, hardware_max_khz),
+            ),
+            remedy: gettextrs::gettext(
+                "Dictation will be slow. Switch to Balanced or Performance in the system power settings.",
+            ),
+        }),
+        ClockVerdict::FirmwareClamp {
+            cpu,
+            achieved_khz,
+            hardware_max_khz,
+        } => warnings.push(Warning {
+            cause: format!(
+                "{} ({})",
+                gettextrs::gettext("Firmware is holding the CPU at its lowest clock"),
+                reached(cpu, achieved_khz, hardware_max_khz),
+            ),
+            remedy: gettextrs::gettext(
+                "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it back in. If that does not help, power off fully and start again.",
+            ),
+        }),
+    }
+    for warning in facts.pressure.map(assess_pressure).unwrap_or_default() {
+        warnings.push(match warning {
+            PressureWarning::Memory(stall) => Warning {
+                cause: format!(
+                    "{} ({})",
+                    gettextrs::gettext("The system is short of memory"),
+                    stalled(stall)
+                ),
+                remedy: gettextrs::gettext(
+                    "Dictation will stutter. Close applications until the machine stops swapping.",
+                ),
+            },
+            PressureWarning::Io(stall) => Warning {
+                cause: format!(
+                    "{} ({})",
+                    gettextrs::gettext("Disk activity is stalling the system"),
+                    stalled(stall)
+                ),
+                remedy: gettextrs::gettext(
+                    "Dictation will stutter. Wait for the transfer or indexing to finish.",
+                ),
+            },
+            PressureWarning::Cpu(stall) => Warning {
+                cause: format!(
+                    "{} ({})",
+                    gettextrs::gettext("Other programs are saturating the CPU"),
+                    stalled(stall)
+                ),
+                remedy: gettextrs::gettext(
+                    "Dictation will be slow. Pause the build or workload before dictating.",
+                ),
+            },
+        });
+    }
+    warnings
+}
+
+fn reached(cpu: u32, achieved_khz: u64, hardware_max_khz: u64) -> String {
+    format!(
+        "cpu{cpu} {} {} {} {}",
+        gettextrs::gettext("reached"),
+        ghz(achieved_khz),
+        gettextrs::gettext("of"),
+        ghz(hardware_max_khz)
+    )
+}
+
+/// A pressure-stall share, from hundredths of a percent.
+fn stalled(hundredths: u32) -> String {
+    format!(
+        "{}.{:02}% {}",
+        hundredths / 100,
+        hundredths % 100,
+        gettextrs::gettext("of the last 10 s stalled")
+    )
+}
+
+fn ghz(khz: u64) -> String {
+    format!("{:.2} GHz", khz as f64 / 1_000_000.0)
 }
 
 fn classify_onboarding(input: &DiagnosticInput) -> OnboardingState {
@@ -306,7 +449,11 @@ pub fn diagnostic_connection_label(connection: DiagnosticConnection) -> String {
     }
 }
 
-fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
+fn render_body(
+    input: &DiagnosticInput,
+    onboarding: OnboardingState,
+    warnings: &[Warning],
+) -> String {
     let mut out = String::new();
     out.push_str(&gettextrs::gettext("Myna Settings"));
     out.push(' ');
@@ -345,6 +492,51 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
             &mut out,
             &gettextrs::gettext("CPU"),
             &gettextrs::gettext("(no backend answered show-machine)"),
+        ),
+    }
+
+    out.push('\n');
+    out.push_str(&gettextrs::gettext("Performance"));
+    out.push_str(":\n");
+    match &input.performance {
+        Some(facts) => {
+            if facts.clock.classes.is_empty() {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Clock"),
+                    &gettextrs::gettext("(no cpufreq information)"),
+                );
+            }
+            for class in &facts.clock.classes {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Clock"),
+                    &clock_summary(class),
+                );
+            }
+            if let Some(profile) = &facts.clock.power.platform_profile {
+                field(&mut out, &gettextrs::gettext("Profile"), profile);
+            }
+            if let Some(power) = power_summary(&facts.clock.power) {
+                field(&mut out, &gettextrs::gettext("Power"), &power);
+            }
+            if let Some(pressure) = facts.pressure {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Pressure"),
+                    &format!(
+                        "cpu {} memory {} io {}",
+                        stalled(pressure.cpu_some),
+                        stalled(pressure.memory_some),
+                        stalled(pressure.io_full)
+                    ),
+                );
+            }
+        }
+        None => field(
+            &mut out,
+            &gettextrs::gettext("Clock"),
+            &gettextrs::gettext("(not measured yet)"),
         ),
     }
 
@@ -450,7 +642,69 @@ fn render_body(input: &DiagnosticInput, onboarding: OnboardingState) -> String {
         out.push('\n');
     }
 
+    out.push('\n');
+    out.push_str(&gettextrs::gettext("Warnings"));
+    out.push_str(":\n");
+    if warnings.is_empty() {
+        out.push_str("  ");
+        out.push_str(&gettextrs::gettext("(none)"));
+        out.push('\n');
+    }
+    for warning in warnings {
+        out.push_str("  ");
+        out.push_str(&warning.cause);
+        out.push_str(". ");
+        out.push_str(&warning.remedy);
+        out.push('\n');
+    }
+
     out
+}
+
+/// One frequency class: what one loaded core reached against what the
+/// silicon and the policy allow. The probe number is the fact; the two
+/// ceilings say which layer is in the way when it is low.
+fn clock_summary(class: &ClockClass) -> String {
+    let achieved = class
+        .achieved_khz
+        .map(ghz)
+        .unwrap_or_else(|| gettextrs::gettext("not probed"));
+    let mut summary = format!(
+        "cpu{} {} {} {} {}",
+        class.cpu,
+        gettextrs::gettext("reached"),
+        achieved,
+        gettextrs::gettext("of"),
+        ghz(class.hardware_max_khz),
+    );
+    if class.policy_max_khz < class.hardware_max_khz {
+        summary.push_str(&format!(
+            " ({} {})",
+            gettextrs::gettext("policy allows"),
+            ghz(class.policy_max_khz)
+        ));
+    }
+    summary.push_str(&format!(
+        ", {} {}",
+        class.cores,
+        gettextrs::gettext("cores in this class")
+    ));
+    summary
+}
+
+fn power_summary(power: &crate::performance::PowerFacts) -> Option<String> {
+    let mains = match power.on_mains? {
+        true => gettextrs::gettext("mains"),
+        false => gettextrs::gettext("battery"),
+    };
+    Some(match &power.battery_status {
+        Some(status) => format!(
+            "{mains}, {} {}",
+            gettextrs::gettext("battery"),
+            status.to_lowercase()
+        ),
+        None => mains,
+    })
 }
 
 fn field(out: &mut String, label: &str, value: &str) {
@@ -665,6 +919,7 @@ mod tests {
                 not_resident: 3,
                 not_active: 0,
             }),
+            performance: None,
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
                 version: "0.1.0".into(),

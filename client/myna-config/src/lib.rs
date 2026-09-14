@@ -16,6 +16,7 @@ pub mod myna_settings;
 pub mod onboarding;
 pub mod onboarding_ui;
 pub mod operation_gate;
+pub mod performance;
 pub mod ports;
 pub mod presentation;
 pub mod ui;

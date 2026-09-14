@@ -14,6 +14,7 @@ Myna Settings is a host application, not a snap. It talks to snapd on the user's
 - The `--apply-plan` executor is the trust boundary. It accepts only operations matching the exact shapes the UI produces (`apply_plan.rs`, `system_configurator.rs`). Extend the whitelist deliberately and with a test; never pass free-form argv through it.
 - Nothing runs through a shell. Build every subprocess as a `CommandRequest` and run it through the `CommandRunner` port so tests can substitute a fixture.
 - Subprocess spawning is budgeted per refresh reason (`docs/refresh-budget.md`). A new `snap` read must fit the budget or change it explicitly.
+- The diagnostics page measures CPU clock under load and pressure stalls on every refresh (`docs/performance-warnings.md`). Verdicts are enums in `performance.rs`; wording lives in the presenter. A host the reader cannot understand must render as unknown, never as a warning.
 - Domain and controller modules are GTK-free and tested headlessly. Keep GTK to `ui/`, `*_ui.rs`, and `app.rs`.
 - Every user-visible string goes through gettext. Adding or changing one requires `make i18n` and committing the template; `make check` fails while it drifts.
 - Strict confinement was measured and rejected (`docs/confinement.md`). Do not reopen it without new evidence.
@@ -29,6 +30,6 @@ Hexagonal. `ports.rs` declares the traits the application depends on (backend re
 - `src/ui/` - One module per Blueprint template in `data/`.
 - `src/bin/` - Test fixture that stands in for a real command runner.
 - `data/` - Blueprint templates, CSS, desktop entry, man page, gresource manifest.
-- `docs/` - Decision records: confinement gate, onboarding flow, refresh budget.
+- `docs/` - Decision records: confinement gate, onboarding flow, refresh budget, performance warnings.
 - `po/` - gettext template and translator instructions.
 - `tests/` - Contract tests per port and adapter. `snap_packaging.rs` covers the `myna.config` gsettings wrapper the snap ships, which is a shell script and not this application.
