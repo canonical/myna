@@ -7,9 +7,11 @@ discovery surface IE114 comment [ac] asked for.
 
 ``input_formats`` is also the audio-format advertisement: under the audio-push
 model the client owns capture and conversion (PipeWire), so the service states
-what it accepts and the client delivers exactly that — the service never
-resamples (see ``myna.core.audio`` and the adapters, which reject off-format
-audio rather than converting it).
+what it accepts and the client delivers exactly that — the adapters never
+resample (see ``myna.core.audio``; they reject off-format audio rather than
+converting it). The one conversion in the server is the IE115 dialect edge,
+where a stock OpenAI client's 24 kHz is brought to the served rate before the
+adapter sees it (``myna.core.resample``).
 
 Model *selection* is out of band (the IE108/modelctl CLI per IE114's
 Configuration API); a running server serves one model, so ``models`` reports

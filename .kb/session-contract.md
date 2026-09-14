@@ -6,7 +6,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 # Architecture
 
-The client owns microphone capture and pushes PCM to the inference backend over WebSocket on a Unix socket. Backends do not access audio devices and reject unsupported formats rather than resampling.
+The client owns microphone capture and pushes PCM to the inference backend over WebSocket on a Unix socket. Backends do not access audio devices and reject unsupported formats rather than resampling. The one place that resamples is the IE115 dialect edge in the transport: a stock OpenAI client sends 24 kHz, the adapter receives its own rate and never learns the wire's.
 
 A connection may carry multiple committed utterances. For each utterance:
 
@@ -23,4 +23,5 @@ Committed transcript text is append-only and must never be retracted. Unstable h
 - Never send audio before readiness and never silently drop captured speech.
 - Keep session parameters on the transcription connection. Provisioning and persistent backend configuration are separate control planes.
 - Change Python and Rust contract types together and update their wire-parity tests in the same change.
+- The IE115 dialect is a subset of the OpenAI Realtime Transcription API. `server/tests/test_openai_realtime_conformance.py` validates every server frame against the `openai` SDK's models (the pinned SDK version is the spec revision claimed); a new event or field on that wire is either a valid OpenAI one or a declared addition there, and the 16 kHz PCM rate is the only declared deviation.
 - Keep exact event names, JSON fields, framing, and compatibility behavior in `server/src/myna/core/`, `client/myna-core/`, and their tests rather than duplicating them here.

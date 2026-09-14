@@ -32,6 +32,19 @@ What the mapping does:
 Audio: ``input_audio_buffer.append`` carries base64 PCM16 in JSON; the transport
 also accepts raw WS binary frames (the frame-type hatch). Encoding/decoding of
 the base64 payload lives here.
+
+Conformance (``tests/test_openai_realtime_conformance.py`` holds every server
+frame to the ``openai`` SDK's models): every frame carries a unique
+``event_id``; a commit is acknowledged with ``input_audio_buffer.committed``
+naming the utterance's item; ``completed`` carries ``usage`` in the duration
+form (seconds of PCM consumed - we have no tokens to bill); the session object
+is ``type: "transcription"``.
+
+Audio rate: OpenAI's ``audio/pcm`` is 24 kHz and nothing else, so that is the
+dialect's default and what the greeting advertises. The adapters take 16 kHz;
+the transport resamples at this edge (``myna.core.resample``) and the adapter
+never learns the wire rate. Our own clients state their real capture rate
+(any rate is accepted and resampled), the one addition on the client side.
 """
 
 from __future__ import annotations
@@ -58,12 +71,18 @@ from myna.core.session import SessionConfig
 # Additive liveness event (agreed 2026-07-01; name is provisional — note §7.5).
 STATUS_EVENT = "status"
 
+# OpenAI's one PCM rate: the dialect default when a client states no format,
+# and the greeting's advertisement. Pinned against the SDK by the conformance
+# suite.
+IE115_PCM_RATE = 24_000
+
 # IE115 frame type constants.
 SESSION_UPDATE = "session.update"
 SESSION_CREATED = "session.created"
 SESSION_UPDATED = "session.updated"
 INPUT_AUDIO_APPEND = "input_audio_buffer.append"
 INPUT_AUDIO_COMMIT = "input_audio_buffer.commit"
+INPUT_AUDIO_COMMITTED = "input_audio_buffer.committed"
 TRANSCRIPTION_DELTA = "conversation.item.input_audio_transcription.delta"
 TRANSCRIPTION_COMPLETED = "conversation.item.input_audio_transcription.completed"
 ERROR = "error"
@@ -89,6 +108,12 @@ _ERROR_TO_IE115 = {
     "adapter_crash": ("server_error", "server_error"),
     "internal": ("server_error", "server_error"),
 }
+
+
+def new_event_id() -> str:
+    """A fresh ``event_id``: OpenAI stamps one on every server event and
+    clients key logs and error attribution on it."""
+    return f"event_{uuid.uuid4().hex[:12]}"
 
 
 # --- timed segments <-> additive `segments` field --------------------------------
@@ -142,7 +167,7 @@ def session_config_to_ie115(
     if config.timestamp_granularity is not None:
         transcription["timestamp_granularity"] = config.timestamp_granularity
     session: dict[str, Any] = {
-        "type": "realtime",
+        "type": "transcription",
         "audio": {
             "input": {
                 "format": {
@@ -159,14 +184,20 @@ def session_config_to_ie115(
     return session
 
 
+def ie115_session_defaults() -> SessionConfig:
+    """What a connection is before the client says anything: OpenAI's audio
+    (24 kHz mono 16-bit), no language, no prompt."""
+    return SessionConfig(audio_format=AudioFormat(sample_rate_hz=IE115_PCM_RATE))
+
+
 def session_config_from_ie115(session: dict[str, Any]) -> SessionConfig:
     """Nested IE115 ``session`` object -> flat ``SessionConfig``. Channels/width
     are not expressible in IE115's ``format`` (note §7.2) so we assume our only
-    accepted shape: mono 16-bit PCM."""
+    accepted shape: mono 16-bit PCM. A missing rate is OpenAI's rate."""
     audio_input = ((session.get("audio") or {}).get("input")) or {}
     fmt = audio_input.get("format") or {}
     transcription = audio_input.get("transcription") or {}
-    rate = fmt.get("rate", AudioFormat().sample_rate_hz)
+    rate = fmt.get("rate", IE115_PCM_RATE)
     return SessionConfig(
         audio_format=AudioFormat(sample_rate_hz=int(rate)),
         language=transcription.get("language"),
@@ -204,15 +235,34 @@ class Ie115Encoder:
 
     def __init__(self) -> None:
         self._item_id: str | None = None
+        self._previous_item_id: str | None = None
 
     def _item(self) -> str:
         if self._item_id is None:
             self._item_id = f"item_{uuid.uuid4().hex[:12]}"
         return self._item_id
 
-    def encode(self, event: TranscriptionEvent) -> dict[str, Any]:
+    def committed(self) -> dict[str, Any]:
+        """The ``input_audio_buffer.committed`` acknowledging the client's
+        commit: it names the utterance's item, which is how a stock client
+        joins the deltas and the ``completed`` that follow."""
+        return {
+            "type": INPUT_AUDIO_COMMITTED,
+            "event_id": new_event_id(),
+            "item_id": self._item(),
+            "previous_item_id": self._previous_item_id,
+        }
+
+    def encode(self, event: TranscriptionEvent, *, audio_seconds: float = 0.0) -> dict[str, Any]:
         """Return the IE115 frame for ``event``. Every event has a frame:
-        ``done`` is the utterance's ``completed`` (the connection stays open)."""
+        ``done`` is the utterance's ``completed`` (the connection stays open),
+        reporting ``audio_seconds`` - the PCM the utterance consumed, which
+        only the transport knows - as its ``usage``."""
+        frame = self._encode(event, audio_seconds)
+        frame["event_id"] = new_event_id()
+        return frame
+
+    def _encode(self, event: TranscriptionEvent, audio_seconds: float) -> dict[str, Any]:
         if isinstance(event, TranscriptionProgress):
             frame: dict[str, Any] = {
                 "type": STATUS_EVENT,
@@ -240,11 +290,13 @@ class Ie115Encoder:
         if isinstance(event, TranscriptionDone):
             item = self._item()
             self._item_id = None  # completed retires the utterance's item
+            self._previous_item_id = item
             frame = {
                 "type": TRANSCRIPTION_COMPLETED,
                 "item_id": item,
                 "content_index": 0,
                 "transcript": event.text,
+                "usage": {"type": "duration", "seconds": audio_seconds},
             }
             if event.segments:
                 frame["segments"] = segments_to_ie115(event.segments)
@@ -272,9 +324,10 @@ class Ie115Decoder:
 
     def decode(self, frame: dict[str, Any]) -> list[TranscriptionEvent]:
         """Zero or more internal events for one IE115 frame. Control frames
-        (``session.created``/``session.updated``) yield nothing."""
+        (``session.created``/``session.updated``/``input_audio_buffer.committed``)
+        yield nothing."""
         ftype = frame.get("type")
-        if ftype in (SESSION_CREATED, SESSION_UPDATED):
+        if ftype in (SESSION_CREATED, SESSION_UPDATED, INPUT_AUDIO_COMMITTED):
             return []
         if ftype == STATUS_EVENT:
             phase = _STATE_TO_PHASE.get(str(frame.get("state") or ""), PHASE_TRANSCRIBING)

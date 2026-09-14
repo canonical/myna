@@ -8,6 +8,18 @@ requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
     "websockets>=16.0",
+    # The IE115 edge resampler (myna.core.resample): a stock OpenAI client
+    # sends 24 kHz, the adapters take 16 kHz. Every adapter extra already
+    # pulls numpy; this makes the core path (and the fake snap) honest.
+    #
+    # Split by interpreter on purpose. numpy 1.26 predates Python 3.13: built
+    # from sdist on 3.14 (the workshop) it silently mutates the operands of
+    # any expression on an array above ~32 KB inside a function (`b = a * 2`
+    # changes `a`; its temporary elision misreads 3.14's reference counts).
+    # 2.3 is the first release that supports 3.14. The snaps are core24, so
+    # they resolve the first line.
+    "numpy>=1.26; python_version < '3.13'",
+    "numpy>=2.3; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +50,10 @@ sherpa = [
 # transitive deps (onnxruntime, kaldi-native-fbank, sentencepiece, numpy,
 # PyYAML, jieba, librosa, scipy, soundfile).
 funasr = [
-    "funasr-onnx>=0.4.2",
+    # funasr-onnx caps numpy at 1.26.4, and in a universal lock that cap would
+    # pin every interpreter to it (see the numpy note above). It has no
+    # interpreter newer than 3.12 to run on anyway; the funasr snap is core24.
+    "funasr-onnx>=0.4.2; python_version < '3.13'",
 ]
 # Audio8-ASR batch adapter (feature 010): the publisher's self-contained ONNX
 # cache engine (staged at fetch time, research.md Decision 2), no torch, no
@@ -68,13 +83,6 @@ dev = [
     "hypothesis>=6",
     "pyyaml>=6",   # myna-bench run config
     "psutil>=5",   # myna-bench run peak RSS/VRAM sampling
-    # The adapter unit suites (audio8/funasr/parakeet/sherpa/streaming) are
-    # deliberately model-free (they stub the ONNX runtimes) but still build PCM
-    # with numpy. Only the heavy extras carried it, so their module-level
-    # importorskip made the whole suite vanish from CI: 11 files, 119 tests,
-    # ~800 lines of coverage. numpy is a test dependency in its own right, so
-    # it belongs here, not behind an extra.
-    "numpy>=1.26",
     # Quality gates (feature 006): patch-coverage gate, lint, scoped types,
     # dead-code scan, scheduled lockfile audit.
     "diff-cover>=9",
@@ -88,6 +96,11 @@ dev = [
     # still has it. Dev-only -- never imported at runtime.
     "onnx>=1.19",
     "mutmut>=3.8.0",
+    # The OpenAI Realtime API conformance oracle (tests/test_openai_realtime_
+    # conformance.py): the SDK's pydantic models are generated from OpenAI's
+    # published OpenAPI spec, so validating our IE115 frames against them is
+    # validating against the spec itself. Dev-only, never imported at runtime.
+    "openai>=3.13",
     "types-psutil>=7.2.2.20260906",
     "types-pyyaml>=6.0.12.20260906",
 ]
@@ -110,7 +123,13 @@ pytest_add_cli_args_test_selection = ["tests"]
 # the repository root) find nothing. None of them tests src/ logic. The
 # populations test imports its dev/ script at module level, so a marker is
 # too late for it (deselection happens after collection): ignore the file.
-pytest_add_cli_args = ["-m", "not repo_tree", "--ignore=tests/test_coverage_populations.py"]
+# The GJS coverage test imports dev/gjs_coverage.py the same way.
+pytest_add_cli_args = [
+    "-m",
+    "not repo_tree",
+    "--ignore=tests/test_coverage_populations.py",
+    "--ignore=tests/test_gjs_coverage.py",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

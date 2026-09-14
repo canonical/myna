@@ -106,7 +106,7 @@ fn session_update_frame(config: &SessionConfig) -> Value {
     json!({
         "type": SESSION_UPDATE,
         "session": {
-            "type": "realtime",
+            "type": "transcription",
             "audio": { "input": Value::Object(input) },
         }
     })
@@ -369,6 +369,8 @@ mod tests {
         };
         let frame = session_update_frame(&cfg);
         assert_eq!(frame["type"], SESSION_UPDATE);
+        // OpenAI's transcription session, not its speech-to-speech one.
+        assert_eq!(frame["session"]["type"], "transcription");
         let input = &frame["session"]["audio"]["input"];
         assert_eq!(input["format"]["rate"], 16_000);
         assert_eq!(input["format"]["type"], "audio/pcm");
@@ -442,5 +444,12 @@ mod tests {
     fn decoder_ignores_control_frames() {
         assert!(decode_frame(&json!({"type": "session.created", "session": {}}), false).is_empty());
         assert!(decode_frame(&json!({"type": "session.updated", "session": {}}), false).is_empty());
+        // The commit acknowledgement (server-side conformance, 2026-09-13)
+        // names the item, but carries no transcript: still a control frame.
+        assert!(decode_frame(
+            &json!({"type": "input_audio_buffer.committed", "event_id": "e", "item_id": "i1"}),
+            false
+        )
+        .is_empty());
     }
 }

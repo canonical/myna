@@ -17,6 +17,7 @@ import contextlib
 
 from myna.core import (
     AudioFormat,
+    Disposition,
     EventSink,
     PcmChunk,
     Segment,
@@ -34,6 +35,11 @@ from myna.testbed import FakeAdapter, Harness, ScriptStep, SilenceSource
 TERMINAL = ("transcription.done", "transcription.error")
 
 
+def _sans_id(frame):
+    """The frame without its ``event_id`` (fresh per frame, asserted separately)."""
+    return {k: v for k, v in frame.items() if k != "event_id"}
+
+
 # --- codec unit tests -----------------------------------------------------------
 
 
@@ -43,7 +49,7 @@ def test_session_config_round_trips_through_ie115():
     )
     session = w.session_config_to_ie115(config, model="whisper-base")
     # nested OpenAI shape
-    assert session["type"] == "realtime"
+    assert session["type"] == "transcription"
     inp = session["audio"]["input"]
     assert inp["format"] == {"type": "audio/pcm", "rate": 16_000}
     assert inp["transcription"] == {
@@ -58,9 +64,20 @@ def test_session_config_round_trips_through_ie115():
     assert back.prompt == "proper nouns"
 
 
+def test_session_config_to_ie115_advertises_streaming_only_when_told():
+    """The greeting's ``streaming`` flag (feature 007, T027) is additive: absent
+    on adapters that do not define it, echoed verbatim otherwise."""
+    config = SessionConfig()
+    assert "streaming" not in w.session_config_to_ie115(config)
+    assert w.session_config_to_ie115(config, streaming=True)["streaming"] is True
+    assert w.session_config_to_ie115(config, streaming=False)["streaming"] is False
+
+
 def test_session_config_from_ie115_defaults_when_sparse():
-    back = w.session_config_from_ie115({"type": "realtime"})
-    assert back.audio_format == AudioFormat()  # mono 16-bit 16k default
+    """No format stated means OpenAI's format: 24 kHz mono 16-bit, which is
+    what a stock client that never read the greeting will send."""
+    back = w.session_config_from_ie115({"type": "transcription"})
+    assert back.audio_format == AudioFormat(sample_rate_hz=24_000)
     assert back.language is None
 
 
@@ -79,14 +96,33 @@ def test_encoder_progress_phases_map_to_status_states():
     assert enc.encode(TranscriptionProgress(phase="preparing"))["state"] == "loading"
     assert enc.encode(TranscriptionProgress(phase="ready"))["state"] == "ready"
     transcribing = enc.encode(TranscriptionProgress(phase="transcribing", snippet="hi"))
-    assert transcribing == {"type": w.STATUS_EVENT, "state": "transcribing", "snippet": "hi"}
+    assert _sans_id(transcribing) == {
+        "type": w.STATUS_EVENT,
+        "state": "transcribing",
+        "snippet": "hi",
+    }
+    assert transcribing["event_id"]
+    # a phase this table has never heard of still leaves as a live, named state
+    assert enc.encode(TranscriptionProgress(phase="warming"))["state"] == "transcribing"
+
+
+def test_decoder_status_round_trips_snippet_and_falls_back_to_transcribing():
+    dec = w.Ie115Decoder()
+    [event] = dec.decode({"type": w.STATUS_EVENT, "state": "transcribing", "snippet": "hi"})
+    assert event == TranscriptionProgress(phase="transcribing", snippet="hi")
+    [unknown] = dec.decode({"type": w.STATUS_EVENT, "state": "warming"})
+    assert unknown.phase == "transcribing"
 
 
 def test_encoder_progress_warning_is_additive_and_round_trips():
     # T10: memory-pressure notice rides the same additive STATUS frame.
     enc = w.Ie115Encoder()
     frame = enc.encode(TranscriptionProgress(phase="transcribing", warning="low on memory"))
-    assert frame == {"type": w.STATUS_EVENT, "state": "transcribing", "warning": "low on memory"}
+    assert _sans_id(frame) == {
+        "type": w.STATUS_EVENT,
+        "state": "transcribing",
+        "warning": "low on memory",
+    }
     dec = w.Ie115Decoder()
     [event] = dec.decode(frame)
     assert event == TranscriptionProgress(phase="transcribing", warning="low on memory")
@@ -108,15 +144,75 @@ def test_encoder_done_becomes_completed_and_retires_the_item():
     assert done["type"] == w.TRANSCRIPTION_COMPLETED
     assert done["transcript"] == "one two"
     assert done["item_id"] == delta["item_id"]  # completed closes the same item
+    assert done["content_index"] == 0  # one content part per item, always the first
     # the next utterance on the same (persistent) connection is a new item
     next_done = enc.encode(TranscriptionDone(text="three"))
-    assert next_done["item_id"] != done["item_id"]
+    assert next_done["item_id"] and next_done["item_id"] != done["item_id"]
+
+
+def test_encoder_stamps_every_frame_with_a_fresh_event_id():
+    enc = w.Ie115Encoder()
+    frames = [
+        enc.encode(TranscriptionProgress(phase="ready")),
+        enc.encode(TranscriptionFinal(text="one")),
+        enc.committed(),
+        enc.encode(TranscriptionDone(text="one")),
+        enc.encode(TranscriptionError(code="internal", message="boom")),
+    ]
+    ids = [f["event_id"] for f in frames]
+    assert all(ids) and len(set(ids)) == len(ids)
+
+
+def test_encoder_committed_names_the_item_and_chains_to_the_previous_one():
+    """``committed`` carries the utterance's item whether it fires before the
+    first delta (batch) or after some (streaming); ``previous_item_id`` links
+    the utterances of one persistent connection, and is null on the first."""
+    enc = w.Ie115Encoder()
+    first = enc.committed()
+    assert first["type"] == w.INPUT_AUDIO_COMMITTED
+    assert first["previous_item_id"] is None
+    assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
+    done = enc.encode(TranscriptionDone(text="one"))
+    assert done["item_id"] == first["item_id"]
+    delta = enc.encode(TranscriptionFinal(text="two"))  # streaming: delta before commit
+    second = enc.committed()
+    assert second["item_id"] == delta["item_id"] != first["item_id"]
+    assert second["previous_item_id"] == first["item_id"]
+
+
+def test_encoder_done_reports_the_audio_it_was_told_about_as_usage():
+    enc = w.Ie115Encoder()
+    done = enc.encode(TranscriptionDone(text="one"), audio_seconds=1.25)
+    assert done["usage"] == {"type": "duration", "seconds": 1.25}
+    assert enc.encode(TranscriptionDone(text="two"))["usage"]["seconds"] == 0.0
+
+
+def test_encoder_gates_segment_index_on_a_committed_delta_that_has_one():
+    """``segment_index`` is the committed-segment counter (feature 007): absent
+    on an unstable delta even if the adapter numbered it, and absent rather
+    than null when a committed delta carries none."""
+    enc = w.Ie115Encoder()
+    unstable = enc.encode(
+        TranscriptionFinal(text="hyp", disposition=Disposition.UNSTABLE, segment_index=3)
+    )
+    assert unstable["disposition"] == "unstable" and "segment_index" not in unstable
+    unnumbered = enc.encode(TranscriptionFinal(text="one"))
+    assert "segment_index" not in unnumbered
+    numbered = enc.encode(TranscriptionFinal(text="two", segment_index=1))
+    assert numbered["segment_index"] == 1
+
+
+def test_encoder_maps_an_unlisted_code_to_a_server_error():
+    """Adapters mint codes; one this table has never heard of still leaves as
+    a well-formed IE115 error rather than a KeyError mid-session."""
+    frame = w.Ie115Encoder().encode(TranscriptionError(code="brand_new_code", message="m"))
+    assert frame["error"] == {"type": "server_error", "code": "server_error", "message": "m"}
 
 
 def test_encoder_error_maps_lossily_and_decoder_recovers_ie115_code():
     enc = w.Ie115Encoder()
     frame = enc.encode(TranscriptionError(code="adapter_crash", message="boom"))
-    assert frame == {
+    assert _sans_id(frame) == {
         "type": w.ERROR,
         "error": {"type": "server_error", "code": "server_error", "message": "boom"},
     }
@@ -244,6 +340,14 @@ def test_decoder_no_double_terminal_after_error():
         {"type": w.ERROR, "error": {"type": "server_error", "code": "server_error", "message": "x"}}
     )
     assert dec.on_close() == []  # error already terminal
+
+
+def test_decoder_treats_committed_as_a_control_frame():
+    """The commit acknowledgement carries no transcript; the terminal is
+    still the ``completed`` it points at."""
+    dec = w.Ie115Decoder()
+    assert dec.decode(w.Ie115Encoder().committed()) == []
+    assert dec.on_close() != []  # nothing terminal has arrived yet
 
 
 def test_decoder_ignores_control_frames():
