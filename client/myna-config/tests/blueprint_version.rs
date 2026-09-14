@@ -1,5 +1,11 @@
-#[path = "../build/blueprint_version.rs"]
-mod blueprint_version;
+// Not `#[path]`: a path through tests/ falls under cargo-llvm-cov's default
+// ignore and the module vanishes from coverage.
+mod blueprint_version {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/build/blueprint_version.rs"
+    ));
+}
 
 use blueprint_version::{check, MINIMUM};
 
