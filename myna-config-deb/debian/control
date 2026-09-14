@@ -17,7 +17,7 @@ Standards-Version: 4.7.4
 Rules-Requires-Root: no
 
 Package: myna-config
-Architecture: any
+Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          pkexec,
