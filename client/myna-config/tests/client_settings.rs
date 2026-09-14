@@ -210,36 +210,43 @@ fn schema_validation_rejects_wrong_types_and_values() {
     ));
 }
 
+/// A private thread-default context: the global default one also holds the
+/// keyfile monitors of every other test thread, and dispatching those here
+/// reloads their backends mid-write.
 #[test]
 fn external_keyfile_changes_are_notified_live() {
-    let files = TestFiles::new("notifications");
-    let source = real_schema_source(&files);
-    let path = files.0.join("settings/keyfile");
-    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let reader = GioClientSettings::open_with_source(&source, &path).unwrap();
-    let _subscription = reader
-        .subscribe({
-            let observed = Arc::clone(&observed);
-            Box::new(move |change| observed.lock().unwrap().push(change))
+    let context = glib::MainContext::new();
+    context
+        .with_thread_default(|| {
+            let files = TestFiles::new("notifications");
+            let source = real_schema_source(&files);
+            let path = files.0.join("settings/keyfile");
+            let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let reader = GioClientSettings::open_with_source(&source, &path).unwrap();
+            let _subscription = reader
+                .subscribe({
+                    let observed = Arc::clone(&observed);
+                    Box::new(move |change| observed.lock().unwrap().push(change))
+                })
+                .unwrap();
+            let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
+
+            writer
+                .set("streaming-mode", ClientSettingValue::Choice("batch".into()))
+                .unwrap();
+
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while observed.lock().unwrap().is_empty() && Instant::now() < deadline {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let observed = observed.lock().unwrap();
+            assert!(observed.iter().any(|change| {
+                change.key().as_str() == "streaming-mode"
+                    && change.value() == &ClientSettingValue::Choice("batch".into())
+            }));
         })
         .unwrap();
-    let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
-
-    writer
-        .set("streaming-mode", ClientSettingValue::Choice("batch".into()))
-        .unwrap();
-
-    let context = glib::MainContext::default();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while observed.lock().unwrap().is_empty() && Instant::now() < deadline {
-        while context.iteration(false) {}
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let observed = observed.lock().unwrap();
-    assert!(observed.iter().any(|change| {
-        change.key().as_str() == "streaming-mode"
-            && change.value() == &ClientSettingValue::Choice("batch".into())
-    }));
 }
 
 #[test]
