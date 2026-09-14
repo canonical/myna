@@ -155,6 +155,8 @@ actions:
       -p myna-audio --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+    # Four exports over every profraw, silent until the summary table.
+    echo "cov: tests done; exporting reports (about two minutes, no output until the summary)" >&2
     cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml
     cargo llvm-cov report --lcov --output-path target/coverage/rust.lcov
     cargo llvm-cov report --html --output-dir target/coverage/html

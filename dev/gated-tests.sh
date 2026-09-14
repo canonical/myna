@@ -148,6 +148,12 @@ if [ "${1:-}" = "--inner" ]; then
     }
     trap inner_cleanup EXIT
 
+    # GIO in ibus-daemon would otherwise ask this scratch bus to activate
+    # org.gtk.vfs.Daemon; dbus-daemon spawns gvfsd as its own child, and when
+    # dbus-run-session tears the bus down the orphan prints "A connection to
+    # the bus can't be made" as the run's last line. Nothing here needs a VFS.
+    export GIO_USE_VFS=local
+
     if command -v ibus-daemon >/dev/null 2>&1 && command -v ibus >/dev/null 2>&1; then
         # An explicit address, so clients never go looking for an address file:
         # `--daemonize` forks and the parent exits, and if the child then dies
