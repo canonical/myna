@@ -1,5 +1,5 @@
 # Confined end-to-end dictation (feature 006, FR-015): client snap + fake
-# backend snap connected over the ubustt-socket content share, WAV-driven
+# backend snap connected over the inference-provider content share, WAV-driven
 # dictation, transcript asserted. No microphone, no model, no GPU
 # (constitution II).
 summary: Install myna + fake backend snaps, connect, dictate a WAV clip
@@ -21,15 +21,17 @@ execute: |
     FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
     install_snap "$FAKE_SNAP"
     install_snap "$MYNA_SNAP"
-    snap connect myna:backend myna-fake-backend:ubustt-socket
+    snap connect myna:backend myna-fake-backend:provider
 
     # The fake backend daemon serves the scripted transcript once the socket
     # directory exists on both sides of the share.
     for i in $(seq 1 60); do
-        [ -S /var/snap/myna-fake-backend/common/run/ubustt.sock ] && break
+        [ -S /var/snap/myna-fake-backend/common/share/provider/myna.sock ] && break
         sleep 1
     done
-    test -S /var/snap/myna-fake-backend/common/run/ubustt.sock
+    test -S /var/snap/myna-fake-backend/common/share/provider/myna.sock
+    # The resolver finds the socket only through provider.env.
+    grep -qx 'UNIX_SOCKET=myna.sock' /var/snap/myna-fake-backend/common/share/provider/provider.env
 
     # Virtual audio source, not a microphone (constitution II): the clip is
     # pushed as a WAV file; the fake adapter ignores content and returns its
@@ -40,7 +42,7 @@ execute: |
     # myna.testbed is the confined myna-dictate; it is stdin-triggered
     # (Enter starts the utterance), so feed it one Enter then hold the pipe.
     ( printf '\n'; sleep 15 ) | \
-        myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
+        myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
             --clip /var/snap/myna/current/fixture.wav \
             > transcript.out 2>&1 || true
     cat transcript.out

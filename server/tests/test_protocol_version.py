@@ -21,7 +21,7 @@ from myna.testbed import FakeAdapter
 
 @pytest.fixture
 async def server(tmp_path):
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(FakeAdapter(), socket_path):
         yield socket_path
 

@@ -37,7 +37,7 @@ sweep_budget_seconds: 600
 #            whatever hardware detection picks). See "CPU or GPU" below.
 #   cli:     modelctl command. Read out of the snap, so you should not need it.
 #   service: snap service name (default: <snap>.server)
-#   socket:  UDS path (default: /var/snap/<snap>/common/run/ubustt.sock)
+#   socket:  UDS path (default: /var/snap/<snap>/common/share/provider/myna.sock)
 #   models:  allowlist of model names to sweep (default: all available)
 #   configs: named points on a shipped knob - see below.
 #

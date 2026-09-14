@@ -65,7 +65,7 @@ execute: |
     ${MODELCTL} use-model "$MODEL" --assume-yes
 
     install_snap "$MYNA_SNAP"
-    snap connect myna:backend ${SNAP_UNDER_TEST}:ubustt-socket
+    snap connect myna:backend ${SNAP_UNDER_TEST}:provider
 
     # Confinement: the client cannot read the spread project dir, so stage the
     # clip where its own plugs reach.
@@ -78,14 +78,14 @@ execute: |
         ${MODELCTL} set streaming="$streaming" --assume-yes --no-restart
         snap restart ${SNAP_UNDER_TEST}.server
 
-        # The server binds in its own $SNAP_COMMON/run (host-visible); the
-        # content share into the myna snap exists only inside myna's mount
+        # The server binds in its own $SNAP_COMMON/share/provider (host-visible);
+        # the content share into the myna snap exists only inside myna's mount
         # namespace, so the host-side wait must target the backend's own path.
         for _ in $(seq 1 90); do
-            [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ] && break
+            [ -S /var/snap/${SNAP_UNDER_TEST}/common/share/provider/myna.sock ] && break
             sleep 1
         done
-        if ! [ -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock ]; then
+        if ! [ -S /var/snap/${SNAP_UNDER_TEST}/common/share/provider/myna.sock ]; then
             echo "=== socket missing in $mode mode; daemon state ==="
             snap services ${SNAP_UNDER_TEST}.server || true
             snap logs -n 80 ${SNAP_UNDER_TEST}.server || true
@@ -94,11 +94,13 @@ execute: |
             sudo ${MODELCTL} get ws.unix-socket 2>&1 || true
             sudo ${MODELCTL} run -- echo run-ok 2>&1 || true
         fi
-        test -S /var/snap/${SNAP_UNDER_TEST}/common/run/ubustt.sock
+        test -S /var/snap/${SNAP_UNDER_TEST}/common/share/provider/myna.sock
+        # The resolver finds the socket only through provider.env.
+        grep -qx 'UNIX_SOCKET=myna.sock' /var/snap/${SNAP_UNDER_TEST}/common/share/provider/provider.env
 
         # The content share itself: assert from inside the myna snap's mount
         # namespace (the path does not exist on the host at all).
-        if ! sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/run/ubustt.sock'; then
+        if ! sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/provider/myna.sock'; then
             echo "=== content share not visible inside the myna snap ==="
             snap connections myna || true
             sudo snap run --shell myna.testbed -c 'ls -laR /var/snap/myna/current/backend/ 2>&1' || true
@@ -108,7 +110,7 @@ execute: |
         # myna.testbed is stdin-triggered (Enter starts the utterance); feed it
         # one Enter and hold the pipe open while the clip plays out.
         ( printf '\n'; sleep 60 ) | \
-            myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
+            myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
                 --clip /var/snap/myna/current/fixture.wav \
                 --language en --mode "$mode" --no-realtime \
                 > "$mode.out" 2>&1 || true

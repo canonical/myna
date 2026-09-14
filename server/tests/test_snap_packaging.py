@@ -397,6 +397,18 @@ def test_modelctl_does_not_write_provider_env(snap_dir: str) -> None:
             )
 
 
+def test_runtimes_name_their_server_myna(snap) -> None:
+    """The server key names the entrypoint in `modelctl status`."""
+    snap_dir, name, _ = snap
+    manifests = sorted((REPO_ROOT / snap_dir / "runtimes").glob("*/runtime.yaml"))
+    assert manifests, f"{name}: no runtime manifests"
+    for path in manifests:
+        servers = yaml.safe_load(path.read_text(encoding="utf-8")).get("servers") or {}
+        assert list(servers) == ["myna"], (
+            f"{name}: runtimes/{path.parent.name} names its servers {list(servers)}, not [myna]"
+        )
+
+
 def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
     """`--streaming` baked into an engine script is not a user-facing choice.
 

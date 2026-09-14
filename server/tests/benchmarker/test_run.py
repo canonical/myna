@@ -93,7 +93,7 @@ def fake_run(monkeypatch):
 
 
 def test_wait_for_socket_returns_true_once_the_path_appears(tmp_path):
-    sock = tmp_path / "ubustt.sock"
+    sock = tmp_path / "myna.sock"
     sock.write_bytes(b"")
     assert wait_for_socket(sock, timeout=1.0) is True
 
@@ -249,7 +249,7 @@ def test_target_defaults_cli_service_and_socket_from_the_snap_name(tmp_path):
     )
     assert target.cli == "myna-whisper"
     assert target.service == "myna-whisper.server"
-    assert target.socket == Path("/var/snap/myna-whisper/common/run/ubustt.sock")
+    assert target.socket == Path("/var/snap/myna-whisper/common/share/provider/myna.sock")
 
 
 def test_target_overrides_win_over_the_defaults(tmp_path):

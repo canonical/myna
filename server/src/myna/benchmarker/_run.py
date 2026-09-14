@@ -86,7 +86,7 @@ Config format::
           - ./snaps/myna-whisper+*.comp
         cli: myna-whisper.whisper   # modelctl command (default: read from the snap)
         service: myna-whisper.server
-        socket: /var/snap/myna-whisper/common/run/ubustt.sock
+        socket: /var/snap/myna-whisper/common/share/provider/myna.sock
         models: [tiny, base]        # optional allowlist
         engines: [cpu, nvidia-gpu]  # optional; omitted = one auto-selected pass
         configs:
@@ -577,7 +577,7 @@ class SnapTarget:
         self.cli: str = spec.get("cli") or self._metadata().get("cli") or self.snap
         self.service: str = spec.get("service") or f"{self.snap}.server"
         self.socket: Path = Path(
-            spec.get("socket") or f"/var/snap/{self.snap}/common/run/ubustt.sock"
+            spec.get("socket") or f"/var/snap/{self.snap}/common/share/provider/myna.sock"
         )
         # Optional allowlist: which model variants to sweep. Omitted = every
         # option the active engine declares.

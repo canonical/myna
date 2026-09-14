@@ -2,7 +2,7 @@
   "engine": "cpu",
   "services": {"server": "active"},
   "entrypoints": {
-    "ubustt": {
+    "myna": {
       "unix-socket": "/var/snap/myna-parakeet/common/share/provider/myna.sock",
       "unix-socket-url": "ws://unix/v1"
     }

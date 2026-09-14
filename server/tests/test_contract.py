@@ -33,7 +33,7 @@ async def loopback_transport(service, tmp_path):
 
 @contextlib.asynccontextmanager
 async def ws_unix_transport(service, tmp_path):
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(service, socket_path):
         yield WsUnixClient(socket_path)
 

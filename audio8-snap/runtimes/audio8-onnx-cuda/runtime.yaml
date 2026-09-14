@@ -13,7 +13,7 @@
 name: audio8-onnx-cuda
 
 servers:
-  ubustt:
+  myna:
     protocol: ws+unix
     base-path: /v1
 

@@ -1,6 +1,7 @@
 """Query a running UbuSTT socket for its capabilities (T24).
 
-    uv run python dev/capabilities.py --socket /var/snap/myna-whisper/common/run/ubustt.sock
+    uv run python dev/capabilities.py \
+        --socket /var/snap/myna-whisper/common/share/provider/myna.sock
 
 Verification client: asks the server what it can do (models, input languages,
 accepted audio formats, punctuation/translation) before opening a session, and

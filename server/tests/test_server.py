@@ -35,7 +35,7 @@ def tiny_model_cached():
 
 
 async def test_server_subprocess_end_to_end(tiny_model_cached, tmp_path):
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",

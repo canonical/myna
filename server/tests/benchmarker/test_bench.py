@@ -73,7 +73,7 @@ def failing(code="adapter_failed"):
 @pytest.fixture
 async def socket(tmp_path):
     """A fake adapter served over a UDS, transcribing 'hello world'."""
-    path = tmp_path / "ubustt.sock"
+    path = tmp_path / "myna.sock"
     async with serve_unix(transcribing("hello world"), path):
         yield path
 

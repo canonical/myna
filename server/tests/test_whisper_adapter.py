@@ -66,9 +66,9 @@ async def test_whisper_tiny_transcribes_fixture_clip(adapter):
 async def test_whisper_over_ws_unix_transport(adapter, tmp_path):
     clips = {clip.id: clip for clip in load_manifest(MANIFEST)}
     clip = clips["quiet-pangram"]
-    async with serve_unix(adapter, tmp_path / "ubustt.sock"):
+    async with serve_unix(adapter, tmp_path / "myna.sock"):
         record = await Harness().run(
-            client=WsUnixClient(tmp_path / "ubustt.sock"),
+            client=WsUnixClient(tmp_path / "myna.sock"),
             candidate=adapter.candidate,
             source=clip.open_source(realtime=True),  # paced like live dictation
             config=SessionConfig(audio_format=clip.open_source().format, language="en"),

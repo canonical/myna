@@ -1,8 +1,8 @@
 """Transcribe a fixture clip (or any WAV) against a running UbuSTT socket.
 
     uv run python dev/transcribe.py \
-        --socket /var/snap/myna-whisper/common/run/ubustt.sock quiet-weather
-    uv run python dev/transcribe.py --socket /tmp/ubustt.sock --wav some.wav
+        --socket /var/snap/myna-whisper/common/share/provider/myna.sock quiet-weather
+    uv run python dev/transcribe.py --socket /tmp/myna.sock --wav some.wav
 
 Verification client for the whisper snap / myna-server: streams the audio at
 real-time pace (like live dictation), prints the events as they arrive, then

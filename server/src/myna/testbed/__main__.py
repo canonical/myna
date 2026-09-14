@@ -27,7 +27,7 @@ async def main(transport: str) -> None:
         )
     else:
         with tempfile.TemporaryDirectory() as tmp:
-            socket_path = Path(tmp) / "ubustt.sock"
+            socket_path = Path(tmp) / "myna.sock"
             async with serve_unix(adapter, socket_path):
                 record = await Harness().run(
                     client=WsUnixClient(socket_path),

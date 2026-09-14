@@ -5,7 +5,7 @@
 name: audio8-onnx-cpu
 
 servers:
-  ubustt:
+  myna:
     protocol: ws+unix
     base-path: /v1
 

@@ -330,7 +330,7 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   connecting, and since capture starts only per press, it proves the
   hotkey fired. Classic silent-death cause: `--socket` /
   `MYNA_BACKEND_SOCKET` pointing at a backend snap's
-  `/var/snap/<snap>/common/run/...` directly - confinement denies it (the
+  `/var/snap/<snap>/common/share/provider/...` directly - confinement denies it (the
   `backend` content share exists precisely for this); the denial shows in
   `sudo journalctl -k`. Live state without restarting: read the
   `State`/`StatusMessage` properties as above.

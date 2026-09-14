@@ -426,7 +426,7 @@ bench-corpus-long: build-bench ## (Re)generate a standalone ~5min long-form clip
 # backend's websocket keepalive, which reads as a 100% WER model failure.
 bench-long-%: build-bench ## Run the long-form clip against an already-running <snap> (bench-long-<snap>)
 	$(BENCH) bench --realtime \
-		--socket /var/snap/$(SNAPNAME_$*)/common/run/ubustt.sock \
+		--socket /var/snap/$(SNAPNAME_$*)/common/share/provider/myna.sock \
 		--manifest corpus/english/manifest-long.json \
 		--out results/bench.jsonl --label $(SNAPNAME_$*)/long-form
 

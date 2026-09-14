@@ -1,6 +1,6 @@
 """Command-line entry point for the UbuSTT server.
 
-    myna-server --socket /path/to/ubustt.sock --model tiny
+    myna-server --socket /path/to/myna.sock --model tiny
     python -m myna.server --socket ... --model base --preload
 
 Serves transcription sessions over WebSocket on the given Unix socket until

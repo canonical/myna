@@ -361,7 +361,7 @@ def test_decoder_ignores_control_frames():
 
 @contextlib.asynccontextmanager
 async def ie115_transport(service, tmp_path, *, base64_audio=False):
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(service, socket_path):
         yield WsUnixIe115Client(socket_path, base64_audio=base64_audio)
 
@@ -445,7 +445,7 @@ async def test_ie115_stock_client_can_wait_for_the_greeting(tmp_path):
 
     from websockets.asyncio.client import unix_connect
 
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(FakeAdapter(), socket_path):
         async with unix_connect(str(socket_path)) as ws:
             greeting = json.loads(await ws.recv())  # before sending anything
@@ -471,7 +471,7 @@ async def test_ie115_rejects_a_model_this_server_does_not_serve(tmp_path):
 
     from websockets.asyncio.client import unix_connect
 
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(FakeAdapter(), socket_path):  # serves only "fake"
         async with unix_connect(str(socket_path)) as ws:
             json.loads(await ws.recv())  # the greeting
@@ -500,7 +500,7 @@ async def test_ie115_serves_a_correctly_named_model(tmp_path):
 
     from websockets.asyncio.client import unix_connect
 
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(FakeAdapter(), socket_path):
         async with unix_connect(str(socket_path)) as ws:
             json.loads(await ws.recv())  # the greeting
@@ -528,7 +528,7 @@ async def test_ie115_connection_persists_across_commits(tmp_path):
 
     from websockets.asyncio.client import unix_connect
 
-    socket_path = tmp_path / "ubustt.sock"
+    socket_path = tmp_path / "myna.sock"
     async with serve_unix(FakeAdapter(), socket_path):
         async with unix_connect(str(socket_path)) as ws:
             await ws.send(json.dumps({"type": w.SESSION_UPDATE, "session": {"type": "realtime"}}))

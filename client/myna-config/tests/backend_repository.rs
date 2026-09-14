@@ -268,7 +268,7 @@ fn modelctl_values_are_the_user_scope_and_the_effective_configuration() {
 stream-arm-seconds: 21
 streaming: false
 verbose: false
-ws.unix-socket: /var/snap/myna-parakeet/common/run/custom.sock
+ws.unix-socket: /var/snap/myna-parakeet/common/share/provider/custom.sock
 ";
     let (repository, _) = repository([
         ok(PARAKEET_INFO),
@@ -296,7 +296,7 @@ ws.unix-socket: /var/snap/myna-parakeet/common/run/custom.sock
     assert_eq!(
         configuration.effective("ws.unix-socket"),
         Some(&ConfigValue::Text(
-            "/var/snap/myna-parakeet/common/run/custom.sock".into()
+            "/var/snap/myna-parakeet/common/share/provider/custom.sock".into()
         ))
     );
     assert!(configuration
