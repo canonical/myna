@@ -20,6 +20,7 @@ base: core24
 version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
+license: AGPL-3.0-or-later
 summary: Qwen3-ASR speech-to-text inference snap (UbuSTT)
 description: |
   Local, offline speech-to-text service exposing the UbuSTT session API on a
@@ -82,6 +83,14 @@ slots:
       write: [$SNAP_COMMON/run]
 
 parts:
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (model attribution), staged into
+  # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
+  licenses:
+    plugin: dump
+    source: licenses
+    organize:
+      "*": usr/share/doc/myna-qwen/
+
   cli:
     plugin: dump
     source:

@@ -17,6 +17,7 @@ set -euo pipefail
 
 snap_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(dirname "$snap_dir")"
+"$repo_root/dev/stage-licenses.sh" "$snap_dir"
 wheels="$snap_dir/wheels"
 
 cd "$repo_root/server"

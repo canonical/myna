@@ -4,6 +4,7 @@
 # server/pyproject.toml references ../README.md and ../LICENSE, so the stage
 # tree mirrors the repo layout: stage/server/ + stage/README.md + LICENSE.
 cd "$(dirname "$0")/.."
+../dev/stage-licenses.sh .
 rm -rf stage
 mkdir -p stage/server stage/scripts
 cp -r ../server/src ../server/pyproject.toml stage/server/

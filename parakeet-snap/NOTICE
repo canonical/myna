@@ -1,0 +1,35 @@
+Third-party notices for the myna-parakeet snap
+==============================================
+
+Model components
+----------------
+
+model-parakeet-int8: NVIDIA's Parakeet TDT 0.6B v3
+(https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), Copyright NVIDIA
+Corporation, licensed under the Creative Commons Attribution 4.0 International
+License (CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/), converted
+to ONNX and quantised to int8. The derivative files and their authors, each
+also published under CC-BY-4.0:
+
+- decoder_joint-model.int8.onnx, nemo128.onnx, vocab.txt: the ONNX export by
+  istupakov, https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx.
+- encoder-model.int8.onnx (base build): the SmoothQuant int8 encoder by
+  Olicorne (thiswillbeyourgithub),
+  https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx.
+- encoder-model.int8.maxstack.onnx and libqsilu.so (maxstack build): a
+  further requantisation of that encoder by Canonical Ltd. (dev/parakeet/ in
+  the Myna source tree).
+
+The files are staged from the parakeet-tdt-0.6b-v3-int8 bundle assembled and
+released by Kieirra as murmure-model
+(https://github.com/Kieirra/murmure-model). No model was retrained.
+
+Runtimes
+--------
+
+onnxruntime is Apache License, Version 2.0; each wheel's own license file is
+installed alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.

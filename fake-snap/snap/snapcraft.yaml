@@ -10,6 +10,7 @@
 name: myna-fake-backend
 base: core24
 version: 0.1.0-dev
+license: AGPL-3.0-or-later
 summary: Myna fake STT backend (test fixture)
 description: |
   Serves the myna fake adapter (scripted transcript) on a Unix socket
@@ -41,6 +42,14 @@ hooks:
   install: {}
 
 parts:
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (model attribution), staged into
+  # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
+  licenses:
+    plugin: dump
+    source: licenses
+    organize:
+      "*": usr/share/doc/myna-fake-backend/
+
   # The Python server package (server/ staged into this project by
   # dev/prepare.sh, same pattern as myna-snap).
   server:

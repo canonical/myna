@@ -8,7 +8,7 @@ Downloads the publisher's self-contained ONNX runtime release from Hugging Face
 (``asr_onnx_runtime.py`` + ``hotword/``) AND the ``model_bundle/`` graphs. The
 adapter loads the engine from the staged directory (``AUDIO8_MODEL_DIR`` env
 override, else the HF cache snapshot); nothing CC-BY-NC-licensed is committed
-to the git tree (myna is GPLv3; research.md Decision 2).
+to the git tree (myna is AGPLv3; research.md Decision 2).
 
 License: the checkpoint AND the runtime source are CC-BY-NC-4.0
 (non-commercial). This script surfaces that license and requires explicit

@@ -1,0 +1,25 @@
+Third-party notices for the myna-whisper snap
+=============================================
+
+Model components
+----------------
+
+model-tiny, model-base, model-small: CTranslate2 conversions of OpenAI's
+Whisper tiny, base and small, published as Systran/faster-whisper-tiny,
+Systran/faster-whisper-base and Systran/faster-whisper-small on Hugging Face
+(https://huggingface.co/Systran) under the MIT License. The original Whisper
+weights are Copyright (c) 2022 OpenAI, MIT License
+(https://github.com/openai/whisper). No model was retrained; the conversion
+changes the storage format only.
+
+Runtime components
+------------------
+
+faster-whisper-cuda: the faster-whisper and CTranslate2 wheels (MIT) and the
+NVIDIA cuBLAS and cuDNN redistributable wheels, which ship under the NVIDIA
+Software License Agreement carried inside each wheel. Every wheel's own
+license file is installed alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.

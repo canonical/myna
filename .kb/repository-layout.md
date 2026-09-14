@@ -41,6 +41,7 @@ Each inference family has its own `*-snap/` directory. The snap packages `myna-s
 # Important
 
 - Keep Python `myna.core` and Rust `myna-core` as peer implementations; do not join their build graphs.
+- Myna is AGPL-3.0-or-later, not GPL. `server/src/myna/testbed/parakeet.py` and `streaming/strategies.py` port AGPL code from Murmure and carry Kieirra's notice; keep those notices, and do not relicense the project or those files.
 - Treat code, schema, and parity tests as authoritative for protocol details.
 - Put durable subsystem knowledge beside that subsystem instead of adding root-level design notes.
 - Treat merged `specs/NNN-*` content as a design-time snapshot. Do not update it as live documentation.

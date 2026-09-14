@@ -1,0 +1,29 @@
+Third-party notices for the myna-sherpa snap
+============================================
+
+Model components
+----------------
+
+model-fastconformer-480ms: k2-fsa's int8 ONNX export
+(https://huggingface.co/csukuangfj/sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8)
+of NVIDIA's stt_en_fastconformer_hybrid_large_streaming_multi checkpoint,
+Copyright NVIDIA Corporation, licensed under the Creative Commons Attribution
+4.0 International License (CC-BY-4.0,
+https://creativecommons.org/licenses/by/4.0/). The export changes the storage
+format and quantises to int8; no model was retrained.
+
+model-punct-en: k2-fsa's ONNX conversion of Edge-Punct-Casing
+(https://arxiv.org/abs/2407.13142), Apache License, Version 2.0, fetched from
+the sherpa-onnx `punctuation-models` release
+(https://github.com/k2-fsa/sherpa-onnx/releases/tag/punctuation-models).
+
+Runtimes
+--------
+
+sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx) and onnxruntime are
+Apache License, Version 2.0; each wheel's own license file is installed
+alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.

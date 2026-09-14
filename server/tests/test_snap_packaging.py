@@ -465,3 +465,61 @@ def test_thread_capped_adapters_are_exactly_the_declared_ones() -> None:
         "is already 0/None) unless the cap buys more than pinning does, and keep "
         "ORT_PINNING_SNAPS in step either way"
     )
+
+
+# Every snap directory, not only the inference ones: the license text must
+# reach every package we distribute, the client and the fake backend included.
+ALL_SNAPS = sorted(
+    p.name for p in REPO_ROOT.glob("*-snap") if (p / "snap" / "snapcraft.yaml").exists()
+)
+
+PROJECT_LICENSE = "AGPL-3.0-or-later"
+
+
+@pytest.mark.parametrize("snap_dir", ALL_SNAPS)
+def test_declares_the_project_license(snap_dir: str) -> None:
+    """The store shows `license`, and it must match the tree's LICENSE."""
+    recipe = _recipe(snap_dir)
+    assert recipe.get("license") == PROJECT_LICENSE, (
+        f"{snap_dir}: snapcraft.yaml declares license={recipe.get('license')!r}; "
+        f"the tree is {PROJECT_LICENSE}"
+    )
+
+
+@pytest.mark.parametrize("snap_dir", ALL_SNAPS)
+def test_ships_the_license_text(snap_dir: str) -> None:
+    """AGPL section 6: a binary distribution carries the license text.
+
+    ``dev/stage-licenses.sh`` copies LICENSE (and the snap's NOTICE, when it
+    has one) into ``<snap>/licenses/``, and a ``licenses`` part dumps that
+    directory under ``usr/share/doc/<snap>/``. The store's `license` field
+    alone does not put the text in the package.
+    """
+    recipe = _recipe(snap_dir)
+    part = (recipe.get("parts") or {}).get("licenses")
+    assert part, f"{snap_dir}: no `licenses` part"
+    assert part.get("plugin") == "dump" and part.get("source") == "licenses", (
+        f"{snap_dir}: the licenses part must dump the staged licenses/ directory"
+    )
+    assert part.get("organize") == {"*": f"usr/share/doc/{recipe['name']}/"}, (
+        f"{snap_dir}: licenses must land under usr/share/doc/{recipe['name']}/"
+    )
+    prepare = (REPO_ROOT / snap_dir / "dev" / "prepare.sh").read_text(encoding="utf-8")
+    assert "dev/stage-licenses.sh" in prepare, (
+        f"{snap_dir}/dev/prepare.sh does not stage licenses/ (dev/stage-licenses.sh)"
+    )
+
+
+def test_every_component_is_attributed_in_the_notice(snap) -> None:
+    """Model weights ship under their own licenses (CC-BY-4.0, MIT, ...).
+
+    Attribution travels with the snap as NOTICE, staged next to LICENSE. A
+    component that NOTICE does not name is a redistribution with no
+    attribution, which is exactly what CC-BY forbids.
+    """
+    snap_dir, name, recipe = snap
+    notice_path = REPO_ROOT / snap_dir / "NOTICE"
+    assert notice_path.exists(), f"{name}: no {snap_dir}/NOTICE"
+    notice = notice_path.read_text(encoding="utf-8")
+    for component in recipe.get("components") or {}:
+        assert component in notice, f"{name}: component {component!r} is not attributed in NOTICE"

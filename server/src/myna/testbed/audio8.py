@@ -9,7 +9,7 @@ Decision 1).
 
 The runtime is the publisher's ONNX release, staged as *data* alongside the
 model bundle by ``dev/fetch_audio8_model.py`` — nothing CC-BY-NC-licensed is
-committed to this GPLv3 tree (research.md Decision 2). The adapter importlib-
+committed to this AGPLv3 tree (research.md Decision 2). The adapter importlib-
 loads ``asr_onnx_runtime.py`` from the staged dir (``AUDIO8_MODEL_DIR`` env
 override → HF cache snapshot), mirroring the qwen adapter's library pattern.
 

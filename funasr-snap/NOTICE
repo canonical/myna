@@ -1,0 +1,26 @@
+Third-party notices for the myna-funasr snap
+============================================
+
+Model components
+----------------
+
+model-sensevoice: the ONNX export of SenseVoice-Small published on ModelScope
+as botaruibo/SenseVoiceSmall-onnx
+(https://modelscope.cn/models/botaruibo/SenseVoiceSmall-onnx) under the
+Apache License, Version 2.0. The underlying weights are FunAudioLLM's
+SenseVoiceSmall (https://huggingface.co/FunAudioLLM/SenseVoiceSmall),
+Copyright Alibaba Group, distributed under the FunASR Model Open Source
+License Agreement
+(https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE), which
+requires this attribution and that the model name be retained. The model
+name is SenseVoice-Small; no model was retrained.
+
+Runtimes
+--------
+
+funasr-onnx and onnxruntime are Apache License, Version 2.0; each wheel's own
+license file is installed alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.

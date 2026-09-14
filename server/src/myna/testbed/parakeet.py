@@ -1,3 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Canonical Ltd.
+#
+# The greedy TDT decode loop, vocabulary handling and detokenisation below are
+# ported from Murmure <https://github.com/Kieirra/murmure> (src-tauri
+# engine.rs), Copyright (C) 2025-2026 Kieirra, licensed under the GNU Affero
+# General Public License version 3. Modified by Canonical Ltd. in 2026: ported
+# from Rust to numpy/onnxruntime and adapted to Myna's session contract; see
+# the git history for the changes. The rest of this file is Canonical's and is
+# offered under AGPL-3.0-or-later; the file as a whole is AGPL-3.0-only.
 """Parakeet TDT 0.6B v3 adapter — int8 ONNX via onnxruntime, no torch (008 US3).
 
 The CPU-tier transducer arm of the streaming investigation: a fraction of the

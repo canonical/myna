@@ -1,3 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Canonical Ltd.
+#
+# _AdaptiveVad and the SilenceCut chunking policy below are ported from
+# Murmure <https://github.com/Kieirra/murmure> (src-tauri audio/vad.rs and
+# audio/chunking.rs), Copyright (C) 2025-2026 Kieirra, licensed under the GNU
+# Affero General Public License version 3. Modified by Canonical Ltd. in 2026:
+# ported from Rust to Python and fitted to the streaming strategy seam; see the
+# git history for the changes. The rest of this file is Canonical's and is
+# offered under AGPL-3.0-or-later; the file as a whole is AGPL-3.0-only.
 """Commit strategy for streaming re-decode (feature 008).
 
 The seam (research.md Decision 2): the whisper adapter's loop re-decodes the

@@ -2,7 +2,7 @@
 
 The staged ONNX bundle and the publisher's engine source live here as the
 source for the `model-audio8-onnx` snap component. They are **not** committed
-(CC-BY-NC-4.0, GPLv3 boundary — research.md Decision 2); populate before
+(CC-BY-NC-4.0, AGPLv3 boundary — research.md Decision 2); populate before
 packing:
 
 ```shell

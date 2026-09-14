@@ -5,7 +5,7 @@ description = "Speech to text on Ubuntu — dictation client and candidate-adapt
 requires-python = ">=3.12"
 # SPDX expression, not a file: hatchling refuses metadata paths outside the
 # project dir, and the licence text lives at the repo root (../LICENSE).
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 dependencies = [
     "websockets>=16.0",
 ]

@@ -74,8 +74,8 @@ allow = [
   "BSD-3-Clause",
   "ISC",
   "Unicode-3.0",
-  # The workspace's own crates (repo LICENSE is GPL-3.0).
-  "GPL-3.0-only",
+  # The workspace's own crates (repo LICENSE is AGPL-3.0-or-later).
+  "AGPL-3.0-or-later",
 ]
 confidence-threshold = 0.8
 

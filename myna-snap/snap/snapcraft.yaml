@@ -3,6 +3,7 @@ base: core24
 version: 0.1.0-dev
 assumes:
   - snapd2.75 # pipewire interface + writable content shares
+license: AGPL-3.0-or-later
 summary: Speech to text desktop client for the Ubuntu Desktop
 description: |
   Local, offline speech-to-text for the Ubuntu desktop. Invoke
@@ -225,6 +226,14 @@ slots:
     name: com.canonical.Myna.Hud
 
 parts:
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (model attribution), staged into
+  # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
+  licenses:
+    plugin: dump
+    source: licenses
+    organize:
+      "*": usr/share/doc/myna/
+
   # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:
   # its prologue env validation runs before any part builds, and with rustup
   # 1.29 both its checks (`rustup dump-testament` with no default toolchain;
