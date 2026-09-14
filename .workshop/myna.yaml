@@ -181,9 +181,14 @@ actions:
     OUT="$EXT/target/coverage"
     RAW="$OUT/raw"
     rm -rf "$OUT"; mkdir -p "$RAW"
-    cd "$EXT"
-    for t in test/*.test.js; do
-      gjs -m --coverage-prefix="$EXT" --coverage-output="$RAW/$(basename "$t")" "$t" || exit 1
+    # gjs matches the prefix against script URIs resolved as cwd-relative paths,
+    # so run from / with a file:// prefix: from $EXT every resource:// and gi://
+    # script matched too, and failing to copy one silently dropped the rest.
+    # fatal-criticals turns any failed coverage write into a failed run.
+    cd /
+    for t in "$EXT"/test/*.test.js; do
+      G_DEBUG=fatal-criticals gjs -m --coverage-prefix="file://$EXT" \
+        --coverage-output="$RAW/$(basename "$t")" "$t" || exit 1
     done
     # gjs writes one coverage.lcov per run; merge them into one lcov.
     cat "$RAW"/*/coverage.lcov > "$OUT/gjs.lcov"
