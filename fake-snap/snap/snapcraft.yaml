@@ -1,10 +1,10 @@
 # myna-fake-backend — minimal test backend snap (feature 006, US5).
 #
 # The honest confined topology for the spread confined-e2e: a backend snap
-# providing the `ubustt-socket` content slot, serving the *fake* adapter (a
+# providing the `provider` content slot, serving the *fake* adapter (a
 # scripted transcript, no model, no GPU) so the end-to-end runs on any VM
 # (constitution II: no hardware dependency). Mirrors the real inference
-# snaps' slot/socket layout exactly ($SNAP_COMMON/run/ubustt.sock).
+# snaps' slot/socket layout exactly ($SNAP_COMMON/share/provider/myna.sock).
 #
 # Test-only: grade devel, never published.
 name: myna-fake-backend
@@ -14,7 +14,7 @@ license: AGPL-3.0-or-later
 summary: Myna fake STT backend (test fixture)
 description: |
   Serves the myna fake adapter (scripted transcript) on a Unix socket
-  exported via the ubustt-socket content share. Exists so confined
+  exported via the inference-provider content share. Exists so confined
   end-to-end tests can exercise the client snap <-> backend snap seam
   without model weights or GPU.
 grade: devel
@@ -31,12 +31,19 @@ apps:
     plugs:
       - network-bind # snapd seccomp gates listen() even for Unix sockets
 
+# The inference-provider content share. Consumers (the myna snap's `backend`
+# plug) find this snap by the provider.env that `myna-server --share-provider`
+# writes here, naming the snap and the socket beside it. Writable, not read:
+# snapd then adds AppArmor rw rules on the directory, which a named-socket
+# connect() through the bind mount needs (interfaces/builtin/content.go). Both
+# files appear once the server daemon has run. Identity-based access control
+# beyond "an admin connected the plug" remains T17.
 slots:
-  ubustt-socket:
+  provider:
     interface: content
-    content: ubustt-socket
+    content: inference-provider
     source:
-      write: [$SNAP_COMMON/run]
+      write: [$SNAP_COMMON/share/provider]
 
 hooks:
   install: {}

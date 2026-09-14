@@ -41,17 +41,18 @@ network/GPU components — `snapcraft pack` produces `myna-qwen_*.snap` +
 Model IDs are `0-6b` / `1-7b` (component names can't contain dots): e.g.
 `myna-qwen.qwen use-model 0-6b`.
 
-## Confined clients (the `ubustt-socket` slot)
+## Confined clients (the `provider` slot)
 
-`$SNAP_COMMON/run` (the session-socket dir) is exposed as a writable content
-share for strictly-confined clients — the `myna` dictation snap
-(`myna-snap/`):
+`$SNAP_COMMON/share/provider` (the session socket and its `provider.env`) is
+exposed as a writable content share for strictly-confined clients — the `myna`
+dictation snap (`myna-snap/`):
 
 ```shell
-sudo snap connect myna:backend myna-qwen:ubustt-socket
+sudo snap connect myna:backend myna-qwen:provider
 ```
 
-The socket then appears in the client at `$SNAP_DATA/backend/run/ubustt.sock`.
+The share then appears in the client as `$SNAP_DATA/backend/provider/`, holding
+`provider.env` and `myna.sock` (snapd suffixes `-2`, `-3` for further providers).
 Access control is "an admin connected the plug"; identity-based control is
 T17. **Note:** the slot is in `snap/snapcraft.yaml`; rebuild + reinstall the
 snap to get it.

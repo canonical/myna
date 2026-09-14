@@ -21,6 +21,7 @@ stream_args=()
 
 exec python3 -m myna.server \
     --socket "$socket_path" \
+    --share-provider \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-whisper.whisper use-model small}" \
     --device cuda \
     --compute-type "${compute_type:-float16}" \

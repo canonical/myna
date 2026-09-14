@@ -31,6 +31,7 @@ punct_args=(--sherpa-punct-model "$PUNCT_DIR")
 
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
+    --share-provider \
     --adapter sherpa \
     --model "$MODEL_DIR" \
     "${stream_args[@]}" \

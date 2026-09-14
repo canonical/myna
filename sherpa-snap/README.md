@@ -64,5 +64,5 @@ sudo snap install --dangerous \
 The snap is CPU-only and does not require `hardware-observe`. Session socket:
 
 ```text
-/var/snap/myna-sherpa/common/run/ubustt.sock
+/var/snap/myna-sherpa/common/share/provider/myna.sock
 ```

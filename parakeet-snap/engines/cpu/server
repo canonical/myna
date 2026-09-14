@@ -31,6 +31,7 @@ stream_args=()
 
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
+    --share-provider \
     --adapter parakeet \
     --model "$MODEL_DIR" \
     "${stream_args[@]}" \

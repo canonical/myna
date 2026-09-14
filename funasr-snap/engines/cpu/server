@@ -15,6 +15,7 @@ textnorm="$(modelctl get textnorm 2>/dev/null || true)"
 
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
+    --share-provider \
     --adapter funasr \
     --funasr-textnorm "${textnorm:-withitn}" \
     --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-funasr.funasr use-model sensevoice}" \

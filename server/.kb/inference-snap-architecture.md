@@ -14,8 +14,8 @@ flowchart LR
     hardware["Host hardware metadata"]
 
     subgraph backend["One strictly confined inference snap"]
-        slot["ubustt-socket<br/>writable content slot"]
-        uds[("$SNAP_COMMON/run<br/>Unix socket")]
+        slot["provider<br/>content slot"]
+        uds[("$SNAP_COMMON/share/provider<br/>provider.env and Unix socket")]
 
         subgraph control["Control plane"]
             cli["modelctl CLI"]
@@ -44,6 +44,7 @@ flowchart LR
     adapter --> models
     runtimes --> launcher
     myna_server -->|"transcript events"| uds
+    myna_server -->|"writes provider.env"| uds
     uds --> slot
     slot --> client
 

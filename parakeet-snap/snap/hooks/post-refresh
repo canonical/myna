@@ -5,11 +5,9 @@ tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
 exec 1> >(tee >(logger --tag="$tag"))
 exec 2> >(logger --stderr --priority error --tag="$tag")
 
-# The install hook sets this, but a refresh from a revision that predates the
-# key would leave `modelctl status` with no entrypoint to report.
-if ! modelctl get ws.unix-socket >/dev/null 2>&1; then
-    modelctl set --package ws.unix-socket="$SNAP_COMMON/run/ubustt.sock"
-fi
+# Unconditional: revisions from before the provider share carry the old socket
+# path in package scope, which a presence check would keep.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/share/provider/myna.sock"
 
 # Defaults for refreshes from revisions that predate the SilenceCut config
 # knobs. Preserve any user-set values.

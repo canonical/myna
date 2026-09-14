@@ -18,13 +18,15 @@ packaging, and the spread e2e ran only the fake backend. A snapcraft.yaml is
 data, so assert against it directly - the cheapest possible place to notice
 that one snap has drifted from its siblings.
 
-Scope: the *inference* snaps (the ones exposing modelctl + the UbuSTT socket).
-The client and the fake backend are deliberately excluded; they have neither.
+Scope: the *inference* snaps (the ones exposing modelctl + the session socket).
+The client is excluded. The fake backend has no modelctl, so it joins only the
+provider-share checks.
 """
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -52,6 +54,11 @@ INFERENCE_SNAPS = {
 # status entrypoints) move with the CLI, and a drifted snap breaks silently.
 MODELCTL_RELEASE = "v2.0.0-beta.14"
 
+# Every snap exposing a backend over the inference-provider content interface.
+PROVIDER_SNAPS = sorted([*INFERENCE_SNAPS, "fake-snap"])
+SHARE_DIR = "$SNAP_COMMON/share/provider"
+SOCKET_PATH = f"{SHARE_DIR}/myna.sock"
+
 
 def _recipe(snap_dir: str) -> dict:
     path = REPO_ROOT / snap_dir / "snap" / "snapcraft.yaml"
@@ -72,6 +79,26 @@ def _cli_app(recipe: dict) -> tuple[str, dict]:
         if isinstance(app, dict) and "daemon" not in app:
             return name, app
     raise AssertionError(f"{recipe.get('name')}: no non-daemon app")
+
+
+def _launchers(snap_dir: str) -> list[Path]:
+    """Scripts on the daemon's path to myna-server: the service script and engines."""
+    root = REPO_ROOT / snap_dir
+    return sorted([*root.glob("scripts/*"), *root.glob("engines/*/server")])
+
+
+def _commands(script: str) -> list[str]:
+    """Logical shell lines, backslash continuations joined."""
+    return [" ".join(line.split()) for line in re.sub(r"\\\n", " ", script).splitlines()]
+
+
+def _server_execs(path: Path) -> list[str]:
+    """The `exec` lines that start myna-server."""
+    return [
+        c
+        for c in _commands(path.read_text(encoding="utf-8"))
+        if c.startswith("exec ") and ("myna-server" in c or "myna.server" in c)
+    ]
 
 
 @pytest.fixture(params=sorted(INFERENCE_SNAPS), ids=sorted(INFERENCE_SNAPS))
@@ -298,7 +325,7 @@ def test_socket_config_key_is_ws_unix_socket(snap) -> None:
     install = (REPO_ROOT / snap_dir / "snap" / "hooks" / "install").read_text(encoding="utf-8")
     assert "ws.unix-socket" in install, (
         f"{name}: the install hook does not set ws.unix-socket, so "
-        "`modelctl status` cannot report the UbuSTT entrypoint"
+        "`modelctl status` cannot report the session entrypoint"
     )
     for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
         script = server.read_text(encoding="utf-8")
@@ -307,14 +334,67 @@ def test_socket_config_key_is_ws_unix_socket(snap) -> None:
         )
 
 
-def test_exposes_the_session_socket(snap) -> None:
-    """Confined clients reach the backend over the ubustt-socket content share."""
-    _, name, recipe = snap
-    slot = (recipe.get("slots") or {}).get("ubustt-socket")
-    assert isinstance(slot, dict), f"{name}: no ubustt-socket slot; confined clients cannot connect"
-    assert slot.get("content") == "ubustt-socket", (
-        f"{name}: ubustt-socket slot has the wrong content"
+@pytest.mark.parametrize("snap_dir", PROVIDER_SNAPS)
+def test_exposes_the_session_socket(snap_dir: str) -> None:
+    """Confined clients reach the backend over the inference-provider content share."""
+    slot = (_recipe(snap_dir).get("slots") or {}).get("provider")
+    assert isinstance(slot, dict), f"{snap_dir}: no provider slot; confined clients cannot connect"
+    assert slot.get("interface") == "content"
+    assert slot.get("content") == "inference-provider", (
+        f"{snap_dir}: provider slot has the wrong content id"
     )
+    # write, not read: connect() on a socket through the bind mount needs rw.
+    assert slot.get("source") == {"write": [SHARE_DIR]}, (
+        f"{snap_dir}: provider slot must share exactly {SHARE_DIR} writable"
+    )
+
+
+def test_hooks_put_the_socket_in_the_share(snap) -> None:
+    """The socket lives in the shared directory, where myna-server writes provider.env.
+
+    post-refresh sets it unconditionally: revisions from before the share carry
+    the old path in package scope, so a presence guard would keep it.
+    """
+    snap_dir, name, _ = snap
+    hooks = REPO_ROOT / snap_dir / "snap" / "hooks"
+    expected = f'modelctl set --package ws.unix-socket="{SOCKET_PATH}"'
+    for hook in ("install", "post-refresh"):
+        commands = _commands((hooks / hook).read_text(encoding="utf-8"))
+        assert expected in commands, f"{name}: {hook} hook does not run `{expected}`"
+    post_refresh = (hooks / "post-refresh").read_text(encoding="utf-8")
+    assert "modelctl get ws.unix-socket" not in post_refresh, (
+        f"{name}: post-refresh guards ws.unix-socket, so a refresh keeps the pre-share path"
+    )
+
+
+@pytest.mark.parametrize("snap_dir", PROVIDER_SNAPS)
+def test_launchers_share_the_provider(snap_dir: str) -> None:
+    """Without --share-provider no provider.env is written and no consumer finds us."""
+    execs = [(p, c) for p in _launchers(snap_dir) for c in _server_execs(p)]
+    assert execs, f"{snap_dir}: no launcher starts myna-server"
+    for path, command in execs:
+        assert "--share-provider" in command.split(), (
+            f"{path.relative_to(REPO_ROOT)}: myna-server is started without --share-provider"
+        )
+
+
+def test_fake_backend_serves_in_the_share() -> None:
+    [command] = _server_execs(REPO_ROOT / "fake-snap" / "scripts" / "server.sh")
+    assert f'--socket "{SOCKET_PATH}"' in command
+
+
+@pytest.mark.parametrize("snap_dir", PROVIDER_SNAPS)
+def test_modelctl_does_not_write_provider_env(snap_dir: str) -> None:
+    """modelctl's writer omits UNIX_SOCKET and would clobber myna-server's file."""
+    for path in _launchers(snap_dir):
+        for command in _commands(path.read_text(encoding="utf-8")):
+            if "modelctl run" not in command:
+                continue
+            options = command.partition(" -- ")[0]
+            assert "--share-provider" not in options, (
+                f"{path.relative_to(REPO_ROOT)}: `modelctl run --share-provider` "
+                "overwrites provider.env without UNIX_SOCKET"
+            )
 
 
 def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
