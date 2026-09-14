@@ -18,6 +18,7 @@ use myna_config::domain::{
 use myna_config::ports::BackendRepository;
 
 const CONNECTIONS: &str = include_str!("fixtures/snap-connections.txt");
+const CONTENT_INTERFACE: &str = include_str!("fixtures/snap-interface-content.txt");
 const GET: &str = include_str!("fixtures/modelctl-get.txt");
 const VERSION: &str = include_str!("fixtures/modelctl-version.json");
 const STATUS: &str = include_str!("fixtures/modelctl-status.json");
@@ -86,9 +87,9 @@ fn argv(call: &CommandRequest) -> (&str, Vec<&str>) {
 #[test]
 fn discovers_installed_connected_and_unconnected_backends_once() {
     let duplicated = format!(
-        "{CONNECTIONS}content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n"
+        "{CONNECTIONS}content[inference-provider] myna:backend myna-parakeet:provider manual\n"
     );
-    let (repository, runner) = repository([ok(&duplicated)]);
+    let (repository, runner) = repository([ok(&duplicated), ok(CONTENT_INTERFACE)]);
 
     let discovered =
         block_on(repository.discover(CancellationToken::new())).expect("discovery succeeds");
@@ -96,37 +97,41 @@ fn discovers_installed_connected_and_unconnected_backends_once() {
     assert_eq!(
         discovered.backends(),
         &[
-            BackendIdentity::new("myna-parakeet"),
-            BackendIdentity::new("myna-whisper")
+            BackendIdentity::new("myna-parakeet", "provider"),
+            BackendIdentity::new("myna-whisper", "provider")
         ]
     );
     assert_eq!(
         discovered.active_state(),
-        ActiveBackendState::Connected(BackendIdentity::new("myna-parakeet"))
+        ActiveBackendState::Connected(BackendIdentity::new("myna-parakeet", "provider"))
     );
     assert_eq!(
         runner.calls().iter().map(argv).collect::<Vec<_>>(),
-        [("snap", vec!["connections", "--all"])]
+        [
+            ("snap", vec!["connections", "--all"]),
+            ("snap", vec!["interface", "content", "--attrs"])
+        ]
     );
-    assert_eq!(
-        runner.calls()[0]
-            .environment()
-            .get("LC_ALL")
-            .map(String::as_str),
-        Some("C")
-    );
+    for call in runner.calls() {
+        assert_eq!(
+            call.environment().get("LC_ALL").map(String::as_str),
+            Some("C")
+        );
+    }
 }
 
 #[test]
 fn no_installed_backends_is_a_successful_empty_discovery() {
-    let (repository, runner) =
-        repository([ok(include_str!("fixtures/snap-connections-empty.txt"))]);
+    let (repository, runner) = repository([
+        ok(include_str!("fixtures/snap-connections-empty.txt")),
+        ok("name: content\n"),
+    ]);
 
     let discovered = block_on(repository.discover(CancellationToken::new())).unwrap();
 
     assert!(discovered.backends().is_empty());
     assert_eq!(discovered.active_state(), ActiveBackendState::Disconnected);
-    assert_eq!(runner.calls().len(), 1);
+    assert_eq!(runner.calls().len(), 2);
 }
 
 #[test]
@@ -136,9 +141,21 @@ fn discovery_and_installed_app_listing_fail_explicitly() {
     assert_eq!(discovery.surface(), BackendSurface::Connections);
     assert_eq!(discovery.stderr(), "connections failed");
 
+    let (failed_repository, _) = repository([ok(CONNECTIONS), failed("interface")]);
+    let discovery = block_on(failed_repository.discover(CancellationToken::new())).unwrap_err();
+    assert_eq!(discovery.surface(), BackendSurface::Connections);
+    assert_eq!(discovery.arguments(), ["interface", "content", "--attrs"]);
+    assert_eq!(discovery.stderr(), "interface failed");
+
+    let (unparseable_repository, _) = repository([ok(CONNECTIONS), ok("not snap output\n")]);
+    let discovery =
+        block_on(unparseable_repository.discover(CancellationToken::new())).unwrap_err();
+    assert_eq!(discovery.surface(), BackendSurface::Connections);
+    assert_eq!(discovery.arguments(), ["interface", "content", "--attrs"]);
+
     let (repository, runner) = repository([failed("snap info")]);
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("myna-parakeet"),
+        &BackendIdentity::new("myna-parakeet", "provider"),
         CancellationToken::new(),
     ));
     assert_eq!(snapshot.errors().len(), 1);
@@ -158,7 +175,7 @@ fn reads_the_installed_parakeet_shape_without_per_setting_commands() {
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("myna-parakeet"),
+        &BackendIdentity::new("myna-parakeet", "provider"),
         CancellationToken::new(),
     ));
 
@@ -178,7 +195,7 @@ fn reads_the_installed_parakeet_shape_without_per_setting_commands() {
             .configuration()
             .get(ConfigScope::User, "ws.unix-socket"),
         Some(&ConfigValue::Text(
-            "/var/snap/myna-parakeet/common/run/ubustt.sock".into()
+            "/var/snap/myna-parakeet/common/share/provider/myna.sock".into()
         ))
     );
     assert_eq!(runner.calls().len(), 6);
@@ -229,7 +246,7 @@ fn reads_multi_engine_model_shape() {
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("community-asr"),
+        &BackendIdentity::new("community-asr", "provider"),
         CancellationToken::new(),
     ));
 
@@ -263,7 +280,7 @@ ws.unix-socket: /var/snap/myna-parakeet/common/run/custom.sock
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("myna-parakeet"),
+        &BackendIdentity::new("myna-parakeet", "provider"),
         CancellationToken::new(),
     ));
     let configuration = snapshot.configuration();
@@ -311,6 +328,7 @@ fn cached_apps_are_verified_and_invalidated_on_failure_and_refresh() {
         ok(MODELS),
         ok(ENGINES),
         ok(include_str!("fixtures/snap-connections-empty.txt")),
+        ok("name: content\n"),
         ok(PARAKEET_INFO),
         ok(VERSION),
         ok(STATUS),
@@ -318,7 +336,7 @@ fn cached_apps_are_verified_and_invalidated_on_failure_and_refresh() {
         ok(MODELS),
         ok(ENGINES),
     ]);
-    let backend = BackendIdentity::new("myna-parakeet");
+    let backend = BackendIdentity::new("myna-parakeet", "provider");
 
     let first = block_on(repository.read_snapshot(&backend, CancellationToken::new()));
     assert!(first.errors().is_empty());
@@ -364,7 +382,7 @@ fn a_backend_with_no_engine_selected_is_a_state_not_a_failure() {
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("myna-parakeet"),
+        &BackendIdentity::new("myna-parakeet", "provider"),
         CancellationToken::new(),
     ));
 
@@ -397,7 +415,7 @@ installed: 2.0
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("community-asr"),
+        &BackendIdentity::new("community-asr", "provider"),
         CancellationToken::new(),
     ));
 
@@ -438,7 +456,7 @@ installed: 2.0
     ]);
 
     let snapshot = block_on(repository.read_snapshot(
-        &BackendIdentity::new("community-asr"),
+        &BackendIdentity::new("community-asr", "provider"),
         CancellationToken::new(),
     ));
 
@@ -469,7 +487,7 @@ fn any_modelctl_surface_failure_invalidates_the_verified_app() {
         ok(MODELS),
         ok(ENGINES),
     ]);
-    let backend = BackendIdentity::new("myna-parakeet");
+    let backend = BackendIdentity::new("myna-parakeet", "provider");
 
     let partial = block_on(repository.read_snapshot(&backend, CancellationToken::new()));
     assert!(partial.error(BackendSurface::ModelctlConfig).is_some());
@@ -530,6 +548,7 @@ impl CommandRunner for RefreshRaceRunner {
         match arguments.first().map(String::as_str) {
             Some("info") => ok(PARAKEET_INFO),
             Some("connections") => ok(include_str!("fixtures/snap-connections-empty.txt")),
+            Some("interface") => ok("name: content\n"),
             Some("run") if arguments.get(2).map(String::as_str) == Some("version") => {
                 if !self.state.status_started.swap(true, Ordering::SeqCst) {
                     poll_fn(|context| {
@@ -562,7 +581,7 @@ impl CommandRunner for RefreshRaceRunner {
 fn refresh_prevents_an_in_flight_resolver_from_repopulating_the_cache() {
     let runner = RefreshRaceRunner::new();
     let repository = SnapBackendRepository::new(Arc::new(runner.clone()));
-    let backend = BackendIdentity::new("myna-parakeet");
+    let backend = BackendIdentity::new("myna-parakeet", "provider");
 
     block_on(async {
         let mut in_flight = Box::pin(repository.read_snapshot(&backend, CancellationToken::new()));
@@ -615,7 +634,7 @@ fn every_read_surface_can_fail_without_discarding_the_others() {
         let (repository, runner) = repository(outcomes);
 
         let snapshot = block_on(repository.read_snapshot(
-            &BackendIdentity::new("myna-parakeet"),
+            &BackendIdentity::new("myna-parakeet", "provider"),
             CancellationToken::new(),
         ));
 

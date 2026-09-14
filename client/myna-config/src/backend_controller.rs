@@ -24,7 +24,7 @@ use crate::ports::BackendRepository;
 use crate::presentation::{present_configuration, PresentationRow, PresentationSource};
 
 /// Whether the `myna:backend` plug is currently attached to this backend's
-/// `:ubustt-socket` slot.
+/// `inference-provider` slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectionKind {
     /// The backend is installed but not connected to the Myna daemon.
@@ -776,22 +776,23 @@ mod tests {
     };
 
     fn parakeet() -> BackendIdentity {
-        BackendIdentity::new("myna-parakeet")
+        BackendIdentity::new("myna-parakeet", "provider")
     }
 
     fn whisper() -> BackendIdentity {
-        BackendIdentity::new("myna-whisper")
+        BackendIdentity::new("myna-whisper", "provider")
     }
 
     fn nemotron() -> BackendIdentity {
-        BackendIdentity::new("myna-nemotron")
+        BackendIdentity::new("myna-nemotron", "provider")
     }
 
     fn discovery_connected_parakeet() -> ConnectionSnapshot {
         parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n\
-             content[ubustt-socket] - myna-whisper:ubustt-socket -\n",
+             content[inference-provider] myna:backend myna-parakeet:provider manual\n\
+             content - myna-whisper:provider -\n",
+            "name: content\nslots:\n  - myna-whisper:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -799,7 +800,8 @@ mod tests {
     fn discovery_only_parakeet() -> ConnectionSnapshot {
         parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+             content[inference-provider] myna:backend myna-parakeet:provider manual\n",
+            "name: content\n",
         )
         .expect("connections parse")
     }
@@ -807,8 +809,9 @@ mod tests {
     fn discovery_multi_connected() -> ConnectionSnapshot {
         parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n\
-             content[ubustt-socket] myna:backend myna-whisper:ubustt-socket manual\n",
+             content[inference-provider] myna:backend myna-parakeet:provider manual\n\
+             content[inference-provider] myna:backend myna-whisper:provider manual\n",
+            "name: content\n",
         )
         .expect("connections parse")
     }
@@ -816,9 +819,10 @@ mod tests {
     fn discovery_three() -> ConnectionSnapshot {
         parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n\
-             content[ubustt-socket] - myna-whisper:ubustt-socket -\n\
-             content[ubustt-socket] - myna-nemotron:ubustt-socket -\n",
+             content[inference-provider] myna:backend myna-parakeet:provider manual\n\
+             content - myna-whisper:provider -\n\
+             content - myna-nemotron:provider -\n",
+            "name: content\nslots:\n  - myna-whisper:provider:\n      content: inference-provider\n  - myna-nemotron:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -888,10 +892,11 @@ mod tests {
         let request = controller.begin_discovery();
         controller.complete_discovery(
             request,
-            Ok(
-                parse_connections(include_str!("../tests/fixtures/snap-connections-empty.txt"))
-                    .unwrap(),
-            ),
+            Ok(parse_connections(
+                include_str!("../tests/fixtures/snap-connections-empty.txt"),
+                "name: content\n",
+            )
+            .unwrap()),
         );
 
         assert!(!controller.discovery_loading());

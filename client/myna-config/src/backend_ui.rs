@@ -2795,13 +2795,16 @@ mod tests {
         let request = controller.begin_discovery();
         let connections = crate::domain::parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+             content[inference-provider] myna:backend myna-parakeet:provider manual\n",
+            "name: content\n",
         )
         .expect("connections parse");
         controller.complete_discovery(request, Ok(connections));
         let request = controller.begin_snapshot("myna-parakeet").unwrap();
-        let mut snapshot =
-            crate::domain::BackendSnapshot::empty(BackendIdentity::new("myna-parakeet"));
+        let mut snapshot = crate::domain::BackendSnapshot::empty(BackendIdentity::new(
+            "myna-parakeet",
+            "provider",
+        ));
         snapshot.set_modelctl_config(
             crate::domain::parse_modelctl_config("stream-silence-cut-seconds: 0.5\n")
                 .expect("modelctl parse"),

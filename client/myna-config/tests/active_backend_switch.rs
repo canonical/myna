@@ -17,19 +17,22 @@ use myna_config::ports::{
     BackendRepository, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
 };
 
-fn connections(slots: &[&str], connected: &[&str]) -> ConnectionSnapshot {
-    let mut text = String::from("Interface Plug Slot Notes\n");
-    for slot in slots {
-        let plug = if connected.contains(slot) {
-            "myna:backend"
+fn connections(snaps: &[&str], connected: &[&str]) -> ConnectionSnapshot {
+    let mut rows = String::from("Interface Plug Slot Notes\n");
+    let mut slots = String::from("name: content\nslots:\n");
+    for snap in snaps {
+        if connected.contains(snap) {
+            rows.push_str(&format!(
+                "content[inference-provider] myna:backend {snap}:provider manual\n"
+            ));
         } else {
-            "-"
-        };
-        text.push_str(&format!(
-            "content[ubustt-socket] {plug} {slot}:ubustt-socket manual\n"
+            rows.push_str(&format!("content - {snap}:provider -\n"));
+        }
+        slots.push_str(&format!(
+            "  - {snap}:provider:\n      content: inference-provider\n"
         ));
     }
-    parse_connections(&text).unwrap()
+    parse_connections(&rows, &slots).unwrap()
 }
 
 fn argv(plan: &SwitchPlan) -> Vec<(&str, Vec<&str>)> {
@@ -48,7 +51,7 @@ fn argv(plan: &SwitchPlan) -> Vec<(&str, Vec<&str>)> {
 fn plan_connects_from_zero_connections() {
     let plan = SwitchPlan::new(
         &connections(&["myna-parakeet"], &[]),
-        BackendIdentity::new("myna-parakeet"),
+        BackendIdentity::new("myna-parakeet", "provider"),
     )
     .unwrap();
     assert_eq!(
@@ -56,7 +59,7 @@ fn plan_connects_from_zero_connections() {
         [
             (
                 "snap",
-                vec!["connect", "myna:backend", "myna-parakeet:ubustt-socket"]
+                vec!["connect", "myna:backend", "myna-parakeet:provider"]
             ),
             ("snap", vec!["restart", "myna.myna"])
         ]
@@ -67,7 +70,7 @@ fn plan_connects_from_zero_connections() {
 fn plan_switches_one_connection_disconnect_first() {
     let plan = SwitchPlan::new(
         &connections(&["myna-parakeet", "myna-whisper"], &["myna-parakeet"]),
-        BackendIdentity::new("myna-whisper"),
+        BackendIdentity::new("myna-whisper", "provider"),
     )
     .unwrap();
     assert_eq!(
@@ -75,11 +78,11 @@ fn plan_switches_one_connection_disconnect_first() {
         [
             (
                 "snap",
-                vec!["disconnect", "myna:backend", "myna-parakeet:ubustt-socket"]
+                vec!["disconnect", "myna:backend", "myna-parakeet:provider"]
             ),
             (
                 "snap",
-                vec!["connect", "myna:backend", "myna-whisper:ubustt-socket"]
+                vec!["connect", "myna:backend", "myna-whisper:provider"]
             ),
             ("snap", vec!["restart", "myna.myna"])
         ]
@@ -93,7 +96,7 @@ fn plan_disconnects_every_multiple_connection_before_connecting() {
             &["myna-parakeet", "myna-whisper", "other"],
             &["myna-parakeet", "myna-whisper"],
         ),
-        BackendIdentity::new("other"),
+        BackendIdentity::new("other", "provider"),
     )
     .unwrap();
     assert_eq!(plan.operations().len(), 4);
@@ -107,7 +110,7 @@ fn plan_disconnects_every_multiple_connection_before_connecting() {
 fn same_backend_as_exactly_one_connection_is_noop() {
     let plan = SwitchPlan::new(
         &connections(&["myna-parakeet"], &["myna-parakeet"]),
-        BackendIdentity::new("myna-parakeet"),
+        BackendIdentity::new("myna-parakeet", "provider"),
     )
     .unwrap();
     assert!(plan.operations().is_empty());
@@ -121,7 +124,7 @@ fn selecting_one_of_multiple_connections_still_converges_to_one() {
             &["myna-parakeet", "myna-whisper"],
             &["myna-parakeet", "myna-whisper"],
         ),
-        BackendIdentity::new("myna-parakeet"),
+        BackendIdentity::new("myna-parakeet", "provider"),
     )
     .unwrap();
     assert_eq!(
@@ -129,15 +132,15 @@ fn selecting_one_of_multiple_connections_still_converges_to_one() {
         [
             (
                 "snap",
-                vec!["disconnect", "myna:backend", "myna-parakeet:ubustt-socket"]
+                vec!["disconnect", "myna:backend", "myna-parakeet:provider"]
             ),
             (
                 "snap",
-                vec!["disconnect", "myna:backend", "myna-whisper:ubustt-socket"]
+                vec!["disconnect", "myna:backend", "myna-whisper:provider"]
             ),
             (
                 "snap",
-                vec!["connect", "myna:backend", "myna-parakeet:ubustt-socket"]
+                vec!["connect", "myna:backend", "myna-parakeet:provider"]
             ),
             ("snap", vec!["restart", "myna.myna"]),
         ]
@@ -149,10 +152,10 @@ fn missing_selected_backend_is_rejected() {
     assert_eq!(
         SwitchPlan::new(
             &connections(&["myna-parakeet"], &[]),
-            BackendIdentity::new("vanished"),
+            BackendIdentity::new("vanished", "provider"),
         )
         .unwrap_err(),
-        PrepareSwitchError::BackendUnavailable(BackendIdentity::new("vanished"))
+        PrepareSwitchError::BackendUnavailable(BackendIdentity::new("vanished", "provider"))
     );
 }
 
@@ -160,12 +163,12 @@ fn missing_selected_backend_is_rejected() {
 fn preview_is_exact_shell_free_and_honest_about_snapd_authorization() {
     let plan = SwitchPlan::new(
         &connections(&["old$backend", "new;backend"], &["old$backend"]),
-        BackendIdentity::new("new;backend"),
+        BackendIdentity::new("new;backend", "provider"),
     )
     .unwrap();
     let text = plan.confirmation_text();
-    assert!(text.contains(r#"["snap", "disconnect", "myna:backend", "old$backend:ubustt-socket"]"#));
-    assert!(text.contains(r#"["snap", "connect", "myna:backend", "new;backend:ubustt-socket"]"#));
+    assert!(text.contains(r#"["snap", "disconnect", "myna:backend", "old$backend:provider"]"#));
+    assert!(text.contains(r#"["snap", "connect", "myna:backend", "new;backend:provider"]"#));
     assert!(text.contains(r#"["snap", "restart", "myna.myna"]"#));
     assert!(
         text.contains("without a shell") || text.contains("Nothing is executed through a shell")
@@ -295,7 +298,7 @@ fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
 fn execution_rediscovers_before_and_after_and_reports_agreement() {
     let initial = connections(&["old", "new"], &["old"]);
     let final_state = connections(&["old", "new"], &["new"]);
-    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new", "provider")).unwrap();
     let repository = FakeRepository::new([Ok(initial), Ok(final_state.clone())]);
     let configurator = FakeConfigurator::returning(Ok(success(&plan)));
 
@@ -323,7 +326,7 @@ fn stale_discovery_and_disappearing_selection_are_blocked_without_privilege() {
         connections(&["old"], &["old"]),
     ] {
         let original = connections(&["old", "new"], &["old"]);
-        let plan = SwitchPlan::new(&original, BackendIdentity::new("new")).unwrap();
+        let plan = SwitchPlan::new(&original, BackendIdentity::new("new", "provider")).unwrap();
         let repository = FakeRepository::new([Ok(current.clone())]);
         let configurator = FakeConfigurator::returning(Ok(vec![]));
         let outcome = block_on(execute_switch(
@@ -346,7 +349,7 @@ fn stale_discovery_and_disappearing_selection_are_blocked_without_privilege() {
 fn cached_noop_is_rechecked_and_external_change_is_reported_without_privilege() {
     let cached = connections(&["old", "new"], &["new"]);
     let changed = connections(&["old", "new"], &["old"]);
-    let plan = SwitchPlan::new(&cached, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&cached, BackendIdentity::new("new", "provider")).unwrap();
     assert!(plan.is_noop());
     let repository = FakeRepository::new([Ok(changed.clone())]);
     let configurator = FakeConfigurator::returning(Ok(vec![]));
@@ -370,7 +373,7 @@ fn cached_noop_is_rechecked_and_external_change_is_reported_without_privilege() 
 #[test]
 fn verified_noop_returns_the_final_reread_state_without_authorization() {
     let cached = connections(&["old", "new"], &["new"]);
-    let plan = SwitchPlan::new(&cached, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&cached, BackendIdentity::new("new", "provider")).unwrap();
     let repository = FakeRepository::new([Ok(cached.clone())]);
     let configurator = FakeConfigurator::returning(Ok(vec![]));
 
@@ -393,7 +396,7 @@ fn verified_noop_returns_the_final_reread_state_without_authorization() {
 #[test]
 fn every_operation_failure_and_auth_denial_still_rediscover_actual_state() {
     let initial = connections(&["old", "new"], &["old"]);
-    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new", "provider")).unwrap();
     let disconnected = connections(&["old", "new"], &[]);
     for (completed, error, final_state) in [
         (
@@ -440,7 +443,7 @@ fn every_operation_failure_and_auth_denial_still_rediscover_actual_state() {
 #[test]
 fn cancellation_and_confirmation_rejection_rediscover_without_false_rollback() {
     let initial = connections(&["old", "new"], &["old"]);
-    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new", "provider")).unwrap();
     for confirmed in [false, true] {
         let final_state = connections(&["old", "new"], &[]);
         let repository = FakeRepository::new(if confirmed {
@@ -476,7 +479,7 @@ fn cancellation_and_confirmation_rejection_rediscover_without_false_rollback() {
 #[test]
 fn partial_reconciliation_and_post_operation_disagreement_are_honest() {
     let initial = connections(&["old", "new", "external"], &["old", "external"]);
-    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new", "provider")).unwrap();
     let disagreement = connections(&["old", "new", "external"], &["external"]);
     let repository = FakeRepository::new([Ok(initial), Ok(disagreement.clone())]);
     let configurator = FakeConfigurator::returning(Ok(success(&plan)));
@@ -497,7 +500,7 @@ fn partial_reconciliation_and_post_operation_disagreement_are_honest() {
 #[test]
 fn failed_final_rediscovery_is_exposed() {
     let initial = connections(&["old", "new"], &["old"]);
-    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&initial, BackendIdentity::new("new", "provider")).unwrap();
     let repository = FakeRepository::new([Ok(initial), Err(error("refresh failed"))]);
     let configurator = FakeConfigurator::returning(Ok(success(&plan)));
     assert!(matches!(
@@ -516,15 +519,21 @@ fn failed_final_rediscovery_is_exposed() {
 fn controller_serializes_operations_ignores_stale_tokens_and_applies_final_discovery() {
     let initial = connections(&["old", "new"], &["old"]);
     let controller = ActiveBackendController::new(initial.clone());
-    let first = controller.begin(BackendIdentity::new("new")).unwrap();
+    let first = controller
+        .begin(BackendIdentity::new("new", "provider"))
+        .unwrap();
     assert_eq!(
-        controller.begin(BackendIdentity::new("old")).unwrap_err(),
+        controller
+            .begin(BackendIdentity::new("old", "provider"))
+            .unwrap_err(),
         PrepareSwitchError::Busy
     );
     controller.cancel();
     assert!(first.cancellation().is_cancelled());
     assert_eq!(
-        controller.begin(BackendIdentity::new("new")).unwrap_err(),
+        controller
+            .begin(BackendIdentity::new("new", "provider"))
+            .unwrap_err(),
         PrepareSwitchError::Busy
     );
     let actual = connections(&["old", "new"], &["new"]);
@@ -536,7 +545,9 @@ fn controller_serializes_operations_ignores_stale_tokens_and_applies_final_disco
             final_snapshot: initial.clone(),
         }
     ));
-    let second = controller.begin(BackendIdentity::new("new")).unwrap();
+    let second = controller
+        .begin(BackendIdentity::new("new", "provider"))
+        .unwrap();
     assert!(!controller.complete(
         first.operation_token(),
         SwitchOutcome::Applied {
@@ -553,7 +564,7 @@ fn controller_serializes_operations_ignores_stale_tokens_and_applies_final_disco
     ));
     assert_eq!(
         controller.snapshot().active_state(),
-        ActiveBackendState::Connected(BackendIdentity::new("new"))
+        ActiveBackendState::Connected(BackendIdentity::new("new", "provider"))
     );
 }
 
@@ -566,12 +577,16 @@ fn controller_uses_the_shared_apply_switch_gate() {
     );
     let apply = gate.begin(OperationKind::BackendApply).unwrap();
     assert_eq!(
-        controller.begin(BackendIdentity::new("new")).unwrap_err(),
+        controller
+            .begin(BackendIdentity::new("new", "provider"))
+            .unwrap_err(),
         PrepareSwitchError::Busy
     );
     assert!(gate.complete(apply.token()));
 
-    let switch = controller.begin(BackendIdentity::new("new")).unwrap();
+    let switch = controller
+        .begin(BackendIdentity::new("new", "provider"))
+        .unwrap();
     assert!(gate.begin(OperationKind::BackendApply).is_err());
     controller.cancel();
     assert!(switch.cancellation().is_cancelled());

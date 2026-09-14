@@ -7,7 +7,7 @@ during a refresh cycle:
 | Reason                     | Process budget (upper bound)                                |
 | -------------------------- | ----------------------------------------------------------- |
 | `Idle`                     | `0`                                                         |
-| `Startup`                  | `APP_REFRESH_PROCESS_BUDGET` (2 = `snap list` + `snap connections`) |
+| `Startup`                  | `APP_REFRESH_PROCESS_BUDGET` (3 = `snap list` + `snap connections` + `snap interface content`) |
 | `BackendSelected`          | `BACKEND_REFRESH_PROCESS_BUDGET` (9 = `snap get` + `snap info` + at most 4 prioritized app probes + 3 modelctl reads) |
 | `DiagnosticsRequested(n)`  | `2 + n * BACKEND_REFRESH_PROCESS_BUDGET`                    |
 

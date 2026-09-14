@@ -6,8 +6,8 @@ use async_trait::async_trait;
 
 use crate::active_backend::SwitchPlan;
 use crate::adapters::snapd_client::{
-    is_valid_snap_name, InterfaceAction, SnapdClient, SnapdError, UnixSocketSnapdClient,
-    BACKEND_SLOT_NAME,
+    is_valid_slot_name, is_valid_snap_name, InterfaceAction, SnapdClient, SnapdError,
+    UnixSocketSnapdClient,
 };
 use crate::apply_plan::{self, APPLY_PLAN_FLAG};
 use crate::backend_apply::ApplyPreview;
@@ -294,21 +294,23 @@ fn validate_operation(request: &CommandRequest) -> Result<SwitchStep, String> {
             if args[1] != ALLOWED_PLUG {
                 return Err(format!("unexpected plug {}", args[1]));
             }
-            let (backend, suffix) = args[2]
+            let (backend, slot) = args[2]
                 .split_once(':')
                 .ok_or_else(|| format!("malformed slot {}", args[2]))?;
-            if suffix != BACKEND_SLOT_NAME {
-                return Err(format!("unexpected slot suffix {suffix}"));
-            }
             if !is_valid_snap_name(backend) {
                 return Err(format!("invalid backend snap name: {backend}"));
+            }
+            if !is_valid_slot_name(slot) {
+                return Err(format!("invalid backend slot name: {slot}"));
             }
             let action = match args[0].as_str() {
                 "connect" => InterfaceAction::Connect {
                     backend_snap: backend.to_owned(),
+                    backend_slot: slot.to_owned(),
                 },
                 "disconnect" => InterfaceAction::Disconnect {
                     backend_snap: backend.to_owned(),
+                    backend_slot: slot.to_owned(),
                 },
                 _ => unreachable!(),
             };
@@ -630,7 +632,8 @@ mod tests {
 
     fn preview() -> ApplyPreview {
         ApplyPreview::new(
-            BackendIdentity::with_modelctl_app("myna-parakeet", "myna-parakeet.parakeet"),
+            BackendIdentity::new("myna-parakeet", "provider")
+                .with_modelctl_app("myna-parakeet.parakeet"),
             vec![StagedChange::new(
                 ConfigScope::Package,
                 "verbose",
@@ -927,21 +930,27 @@ mod tests {
     fn switch_plan() -> SwitchPlan {
         let snapshot = parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend old:ubustt-socket manual\n\
-             content[ubustt-socket] - new:ubustt-socket -\n",
+             content[inference-provider] myna:backend old:provider manual\n\
+             content - new:provider -\n",
+            "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
         )
         .unwrap();
-        SwitchPlan::new(&snapshot, BackendIdentity::new("new")).unwrap()
+        SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap()
     }
 
     fn invalid_switch_plan(operations: Vec<CommandRequest>) -> SwitchPlan {
         let snapshot = parse_connections(
             "Interface Plug Slot Notes\n\
-             content[ubustt-socket] myna:backend old:ubustt-socket manual\n\
-             content[ubustt-socket] - new:ubustt-socket -\n",
+             content[inference-provider] myna:backend old:provider manual\n\
+             content - new:provider -\n",
+            "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
         )
         .unwrap();
-        SwitchPlan::with_operations_for_test(snapshot, BackendIdentity::new("new"), operations)
+        SwitchPlan::with_operations_for_test(
+            snapshot,
+            BackendIdentity::new("new", "provider"),
+            operations,
+        )
     }
 
     #[test]
@@ -964,10 +973,10 @@ mod tests {
         assert_eq!(completed.len(), 3);
         let calls = snapd.calls.lock().unwrap().clone();
         assert!(
-            matches!(&calls[0], SnapdCall::Interface(InterfaceAction::Disconnect { backend_snap }) if backend_snap == "old")
+            matches!(&calls[0], SnapdCall::Interface(InterfaceAction::Disconnect { backend_snap, backend_slot }) if backend_snap == "old" && backend_slot == "provider")
         );
         assert!(
-            matches!(&calls[1], SnapdCall::Interface(InterfaceAction::Connect { backend_snap }) if backend_snap == "new")
+            matches!(&calls[1], SnapdCall::Interface(InterfaceAction::Connect { backend_snap, backend_slot }) if backend_snap == "new" && backend_slot == "provider")
         );
         assert_eq!(calls[2], SnapdCall::RestartMynaService);
     }
@@ -1084,7 +1093,7 @@ mod tests {
                 vec![
                     "disconnect".into(),
                     "myna:backend".into(),
-                    "old:ubustt-socket".into(),
+                    "old:provider".into(),
                 ],
             ),
             CommandRequest::new(
@@ -1092,7 +1101,7 @@ mod tests {
                 vec![
                     "connect".into(),
                     "myna:backend".into(),
-                    "new:ubustt-socket".into(),
+                    "new:provider".into(),
                 ],
             ),
         ]);
@@ -1123,7 +1132,7 @@ mod tests {
                         vec![
                             "connect".into(),
                             "myna:backend".into(),
-                            "new:ubustt-socket".into(),
+                            "new:provider".into(),
                         ],
                     ),
                 ]),
@@ -1136,7 +1145,7 @@ mod tests {
                         vec![
                             "connect".into(),
                             "myna:backend".into(),
-                            "new:ubustt-socket".into(),
+                            "new:provider".into(),
                         ],
                     ),
                     CommandRequest::new("snap".into(), vec!["restart".into(), "myna.myna".into()]),
@@ -1151,7 +1160,7 @@ mod tests {
                         vec![
                             "connect".into(),
                             "myna:backend".into(),
-                            "new:ubustt-socket".into(),
+                            "new:provider".into(),
                         ],
                     ),
                     CommandRequest::new(
@@ -1180,6 +1189,48 @@ mod tests {
     }
 
     #[test]
+    fn switch_operation_carries_any_valid_slot_name_to_snapd() {
+        let request = CommandRequest::new(
+            "snap".into(),
+            vec![
+                "disconnect".into(),
+                "myna:backend".into(),
+                "community-asr:speech".into(),
+            ],
+        );
+        assert_eq!(
+            validate_operation(&request),
+            Ok(SwitchStep::Interface {
+                request: request.clone(),
+                action: InterfaceAction::Disconnect {
+                    backend_snap: "community-asr".into(),
+                    backend_slot: "speech".into(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn switch_operation_rejects_a_malformed_slot() {
+        for (slot, expected) in [
+            ("new", "malformed slot new"),
+            ("new:Provider", "invalid backend slot name: Provider"),
+            ("new:", "invalid backend slot name: "),
+            (
+                "new:provider:extra",
+                "invalid backend slot name: provider:extra",
+            ),
+            ("bad;snap:provider", "invalid backend snap name: bad;snap"),
+        ] {
+            let request = CommandRequest::new(
+                "snap".into(),
+                vec!["connect".into(), "myna:backend".into(), slot.into()],
+            );
+            assert_eq!(validate_operation(&request), Err(expected.to_owned()));
+        }
+    }
+
+    #[test]
     fn backend_switch_rejects_duplicate_restart_when_final() {
         let plan = invalid_switch_plan(vec![
             CommandRequest::new(
@@ -1187,7 +1238,7 @@ mod tests {
                 vec![
                     "connect".into(),
                     "myna:backend".into(),
-                    "new:ubustt-socket".into(),
+                    "new:provider".into(),
                 ],
             ),
             CommandRequest::new("snap".into(), vec!["restart".into(), "myna.myna".into()]),
@@ -1215,7 +1266,7 @@ mod tests {
                 vec![
                     "connect".into(),
                     "myna:backend".into(),
-                    "new:ubustt-socket".into(),
+                    "new:provider".into(),
                 ],
             ),
             CommandRequest::new(
@@ -1223,7 +1274,7 @@ mod tests {
                 vec![
                     "disconnect".into(),
                     "myna:backend".into(),
-                    "old:ubustt-socket".into(),
+                    "old:provider".into(),
                 ],
             ),
             CommandRequest::new("snap".into(), vec!["restart".into(), "myna.myna".into()]),

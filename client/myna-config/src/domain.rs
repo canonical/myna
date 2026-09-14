@@ -6,25 +6,22 @@ use serde::Deserialize;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BackendIdentity {
     snap_name: String,
+    slot_name: String,
     modelctl_app: Option<String>,
 }
 
 impl BackendIdentity {
-    pub fn new(snap_name: impl Into<String>) -> Self {
+    pub fn new(snap_name: impl Into<String>, slot_name: impl Into<String>) -> Self {
         Self {
             snap_name: snap_name.into(),
+            slot_name: slot_name.into(),
             modelctl_app: None,
         }
     }
 
-    pub fn with_modelctl_app(
-        snap_name: impl Into<String>,
-        modelctl_app: impl Into<String>,
-    ) -> Self {
-        Self {
-            snap_name: snap_name.into(),
-            modelctl_app: Some(modelctl_app.into()),
-        }
+    pub fn with_modelctl_app(mut self, modelctl_app: impl Into<String>) -> Self {
+        self.modelctl_app = Some(modelctl_app.into());
+        self
     }
 
     pub fn snap_name(&self) -> &str {
@@ -32,7 +29,7 @@ impl BackendIdentity {
     }
 
     pub fn slot(&self) -> String {
-        format!("{}:ubustt-socket", self.snap_name)
+        format!("{}:{}", self.snap_name, self.slot_name)
     }
 
     pub fn modelctl_app(&self) -> Option<&str> {
@@ -294,8 +291,20 @@ impl ConnectionSnapshot {
     }
 }
 
-pub fn parse_connections(input: &str) -> Result<ConnectionSnapshot, ParseError> {
-    let mut lines = input.lines();
+/// Content id of the slots Myna's `backend` plug can connect to.
+pub const PROVIDER_CONTENT_ID: &str = "inference-provider";
+
+/// Builds the snapshot from `snap connections --all` and
+/// `snap interface content --attrs`.
+///
+/// snapd prints `content[<id>]` only on established connections; an
+/// unconnected slot's row says `content`, so its content id comes from the
+/// interface listing.
+pub fn parse_connections(
+    connections: &str,
+    content_interface: &str,
+) -> Result<ConnectionSnapshot, ParseError> {
+    let mut lines = connections.lines();
     let header = lines.next().unwrap_or_default();
     if !header
         .split_whitespace()
@@ -307,21 +316,26 @@ pub fn parse_connections(input: &str) -> Result<ConnectionSnapshot, ParseError> 
             "missing Interface/Plug/Slot header",
         ));
     }
+    let providers = parse_provider_slots(content_interface)?;
+    let established = format!("content[{PROVIDER_CONTENT_ID}]");
 
     let mut discovered = BTreeSet::new();
     let mut connected = BTreeSet::new();
     for line in lines {
         let columns: Vec<_> = line.split_whitespace().collect();
-        if columns.len() < 3 || !columns[2].ends_with(":ubustt-socket") {
+        if columns.len() < 3 {
             continue;
         }
-        let snap_name = columns[2]
-            .strip_suffix(":ubustt-socket")
-            .expect("suffix checked");
-        if snap_name.is_empty() {
+        let Some((snap_name, slot_name)) = columns[2].split_once(':') else {
+            continue;
+        };
+        if snap_name.is_empty() || slot_name.is_empty() {
             continue;
         }
-        let backend = BackendIdentity::new(snap_name);
+        let backend = BackendIdentity::new(snap_name, slot_name);
+        if columns[0] != established && !providers.contains(&backend) {
+            continue;
+        }
         discovered.insert(backend.clone());
         if columns[1] == "myna:backend" {
             connected.insert(backend);
@@ -338,6 +352,58 @@ pub fn parse_connections(input: &str) -> Result<ConnectionSnapshot, ParseError> 
         backends: discovered.into_iter().collect(),
         active_state,
     })
+}
+
+/// Slots whose own `content` attribute is [`PROVIDER_CONTENT_ID`]. Only the
+/// item lines of the `slots:` section and their direct attributes (six-space
+/// indent) are read; nested attribute maps and lists are skipped.
+fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseError> {
+    let mut lines = input.lines();
+    let header = lines.next().unwrap_or_default();
+    if !header
+        .split_once(':')
+        .is_some_and(|(key, name)| key == "name" && name.trim() == "content")
+    {
+        return Err(ParseError::new(
+            "snap interface",
+            "missing content interface name",
+        ));
+    }
+
+    let mut providers = BTreeSet::new();
+    let mut in_slots = false;
+    let mut current: Option<BackendIdentity> = None;
+    for line in lines {
+        if !line.starts_with(' ') {
+            in_slots = line == "slots:";
+            current = None;
+            continue;
+        }
+        if !in_slots {
+            continue;
+        }
+        if let Some(item) = line.strip_prefix("  - ") {
+            let reference = item.split_whitespace().next().unwrap_or_default();
+            let reference = reference.strip_suffix(':').unwrap_or(reference);
+            // snapd prints a slot named after the interface as the bare snap.
+            let (snap_name, slot_name) =
+                reference.split_once(':').unwrap_or((reference, "content"));
+            current = Some(BackendIdentity::new(snap_name, slot_name));
+            continue;
+        }
+        let Some(attribute) = line.strip_prefix("      ") else {
+            continue;
+        };
+        if attribute.starts_with(' ') {
+            continue;
+        }
+        if let (Some(slot), Some((key, value))) = (&current, attribute.split_once(':')) {
+            if key == "content" && value.trim() == PROVIDER_CONTENT_ID {
+                providers.insert(slot.clone());
+            }
+        }
+    }
+    Ok(providers)
 }
 
 pub fn parse_modelctl_config(input: &str) -> Result<BackendConfiguration, ParseError> {

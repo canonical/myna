@@ -889,7 +889,8 @@ mod tests {
     }
 
     fn backend() -> BackendIdentity {
-        BackendIdentity::with_modelctl_app("myna-parakeet", "myna-parakeet.modelctl")
+        BackendIdentity::new("myna-parakeet", "provider")
+            .with_modelctl_app("myna-parakeet.modelctl")
     }
 
     fn modelctl_set(assignments: &[&str]) -> Vec<&'static str> {
@@ -909,7 +910,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1038,7 +1040,8 @@ mod tests {
     #[test]
     fn preview_serializes_mixed_types_with_stable_safe_single_batch_argv() {
         let preview = ApplyPreview::new(
-            BackendIdentity::with_modelctl_app("myna-whisper", "myna-whisper.whisper"),
+            BackendIdentity::new("myna-whisper", "provider")
+                .with_modelctl_app("myna-whisper.whisper"),
             vec![
                 StagedChange::new(
                     ConfigScope::Package,
@@ -1174,7 +1177,7 @@ mod tests {
     #[test]
     fn selector_change_without_resolved_modelctl_is_invalid() {
         let error = ApplyPreview::new(
-            BackendIdentity::new("myna-parakeet"),
+            BackendIdentity::new("myna-parakeet", "provider"),
             vec![StagedChange::new(
                 ConfigScope::User,
                 "model",
@@ -1272,7 +1275,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1331,7 +1335,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1364,7 +1369,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1836,7 +1842,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1888,7 +1895,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );
@@ -1960,7 +1968,8 @@ mod tests {
         controller.complete_discovery(
             request,
             Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[ubustt-socket] myna:backend myna-parakeet:ubustt-socket manual\n",
+                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
+                "name: content\n",
             )
             .unwrap()),
         );

@@ -1,0 +1,26 @@
+name:          content
+summary:       allows sharing code and data with other snaps
+documentation: https://snapcraft.io/docs/content-interface
+plugs:
+  - firefox:gnome-42-2204:
+      content:          gnome-42-2204
+      default-provider: gnome-42-2204
+      target:           $SNAP/gnome-platform
+  - myna:backend:
+      content: inference-provider
+      target:  $SNAP_DATA/backend
+slots:
+  - gnome-42-2204:gnome-42-2204:
+      content: gnome-42-2204
+      read:
+        - /
+  - myna-parakeet:provider:
+      content: inference-provider
+      source:
+        write:
+          - $SNAP_COMMON/share/provider
+  - myna-whisper:provider:
+      content: inference-provider
+      source:
+        write:
+          - $SNAP_COMMON/share/provider

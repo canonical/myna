@@ -69,7 +69,7 @@ Build and install on the target image:
 cd config-ui/confinement-probe
 snapcraft pack
 sudo snap install --dangerous ./myna-confinement-probe_1_amd64.snap
-sudo snap connect myna-confinement-probe:backend myna-parakeet:ubustt-socket
+sudo snap connect myna-confinement-probe:backend myna-parakeet:provider
 myna-confinement-probe.probe
 sudo snap remove --purge myna-confinement-probe
 ```
@@ -86,7 +86,7 @@ caused the failure.
 | Private GSettings | probe `get`, `set`, `reset` of its own keyfile schema | `before='' after='t014' reset=''` in `$SNAP_USER_COMMON` | measured 2026-09-05 |
 | Snap namespace | probe and host `readlink /proc/self/ns/mnt` | host `mnt:[4026531832]`; probe `mnt:[4026533656]` | measured 2026-09-05 |
 | snapd discovery/read | host and strict-probe `curl --unix-socket /run/snapd.socket` for system info, connections, and backend config | host returned HTTP 200; every strict request failed before HTTP with curl exit 7 | measured pre-HTTP transport denial, 2026-09-05 |
-| Cross-snap data | connect probe `backend` content plug, then `find "$SNAP_DATA/backend"` | only `backend/run/ubustt.sock` was exposed; no modelctl config/schema data or executable | measured 2026-09-05 |
+| Cross-snap data | connect probe `backend` content plug, then `find "$SNAP_DATA/backend"` | only the backend's socket share was exposed; no modelctl config/schema data or executable | measured 2026-09-05 against the retired `run/` share; the `provider/` share (`myna.sock`, `provider.env`) is to be re-measured |
 | Connect/disconnect | probe `POST /v2/interfaces` with `X-Allow-Interaction: true` and nonexistent endpoint | both failed before HTTP with curl exit 7; no state change | measured pre-HTTP transport denial, 2026-09-05 |
 | `snap set` equivalent | probe `PUT /v2/snaps/.../conf` with `X-Allow-Interaction: true` and nonexistent snap | failed before HTTP with curl exit 7; no state change | measured pre-HTTP transport denial, 2026-09-05 |
 | Authorization UX | same explicit write probes | no dialog appeared; request did not reach HTTP | measured observation, 2026-09-05 |
@@ -107,7 +107,7 @@ probe-version=1 snap=myna-confinement-probe revision=x1
 mount-namespace=mnt:[4026533656]
 snapd-socket=mode=666 owner=root group=root type=socket
 private-gsettings: before='' after='t014' reset=''
-# content-share lists only backend/run/ubustt.sock
+# content-share listed only the socket share (pre-provider layout)
 # all six HTTP probes report curl-exit=7 before an HTTP response
 ```
 

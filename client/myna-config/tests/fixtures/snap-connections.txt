@@ -1,4 +1,4 @@
 Interface                         Plug           Slot                                  Notes
-content[ubustt-socket]            myna:backend   myna-parakeet:ubustt-socket           manual
-content                           -              myna-whisper:ubustt-socket            -
+content[inference-provider]       myna:backend   myna-parakeet:provider                manual
+content                           -              myna-whisper:provider                 -
 network                           browser:network :network                             -

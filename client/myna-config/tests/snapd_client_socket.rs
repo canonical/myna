@@ -175,6 +175,7 @@ fn request_shape_uses_typed_plug_slot_and_allow_interaction_header() {
     let outcome = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "myna-parakeet".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -193,7 +194,7 @@ fn request_shape_uses_typed_plug_slot_and_allow_interaction_header() {
             && request.contains("\"snap\":\"myna\"")
             && request.contains("\"plug\":\"backend\"")
             && request.contains("\"snap\":\"myna-parakeet\"")
-            && request.contains("\"slot\":\"ubustt-socket\"")
+            && request.contains("\"slot\":\"provider\"")
             && !request.contains("\"name\":")
     );
 }
@@ -236,6 +237,7 @@ fn async_change_polling_completes_when_change_becomes_ready() {
     let outcome = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -265,6 +267,7 @@ fn authorization_denial_is_mapped() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -299,6 +302,7 @@ fn per_call_timeout_is_reported() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -324,6 +328,7 @@ fn cancellation_before_dispatch_returns_cancelled() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         cancellation,
     ))
@@ -343,6 +348,7 @@ fn malformed_envelope_is_reported_as_protocol_error() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -366,6 +372,7 @@ fn chunked_transfer_encoded_body_is_decoded() {
     let outcome = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -385,6 +392,7 @@ fn early_connection_close_is_reported_as_protocol_error() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -453,6 +461,7 @@ fn async_response_with_hostile_change_id_is_rejected_before_second_request() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -484,6 +493,7 @@ fn response_headers_larger_than_the_cap_are_rejected_with_a_protocol_error() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -513,6 +523,7 @@ fn duplicate_conflicting_content_length_is_rejected() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -540,6 +551,7 @@ fn unsupported_transfer_encoding_is_rejected() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -569,6 +581,7 @@ fn timeout_message_reports_a_positive_elapsed_duration() {
     let error = block_on(client.apply_interface_action(
         InterfaceAction::Connect {
             backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
         },
         CancellationToken::new(),
     ))
@@ -891,11 +904,12 @@ fn backend_switch_requests_disconnect_connect_restart_then_service_readiness() {
         PkexecSystemConfigurator::with_snapd_client(Arc::new(FakeCommandRunner::default()), client);
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
-         content[ubustt-socket] myna:backend old:ubustt-socket manual\n\
-         content[ubustt-socket] - new:ubustt-socket -\n",
+         content[inference-provider] myna:backend old:provider manual\n\
+         content - new:provider -\n",
+        "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
     )
     .unwrap();
-    let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();
 
     let completed =
         block_on(adapter.execute_backend_switch(&plan, CancellationToken::new())).unwrap();
@@ -904,8 +918,8 @@ fn backend_switch_requests_disconnect_connect_restart_then_service_readiness() {
     let calls = fake.calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 5);
     assert!(calls[0].contains("POST /v2/interfaces HTTP/1.1"));
-    assert!(calls[0].contains(r#"{"action":"disconnect","plugs":[{"snap":"myna","plug":"backend"}],"slots":[{"snap":"old","slot":"ubustt-socket"}]}"#));
-    assert!(calls[1].contains(r#"{"action":"connect","plugs":[{"snap":"myna","plug":"backend"}],"slots":[{"snap":"new","slot":"ubustt-socket"}]}"#));
+    assert!(calls[0].contains(r#"{"action":"disconnect","plugs":[{"snap":"myna","plug":"backend"}],"slots":[{"snap":"old","slot":"provider"}]}"#));
+    assert!(calls[1].contains(r#"{"action":"connect","plugs":[{"snap":"myna","plug":"backend"}],"slots":[{"snap":"new","slot":"provider"}]}"#));
     assert!(calls[2].contains("POST /v2/apps HTTP/1.1"));
     assert!(calls[2]
         .contains(r#"{"action":"restart","names":["myna.myna"],"scope":["user"],"users":"self"}"#));
@@ -927,10 +941,11 @@ fn noop_backend_switch_makes_no_snapd_requests() {
         PkexecSystemConfigurator::with_snapd_client(Arc::new(FakeCommandRunner::default()), client);
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
-         content[ubustt-socket] myna:backend new:ubustt-socket manual\n",
+         content[inference-provider] myna:backend new:provider manual\n",
+        "name: content\n",
     )
     .unwrap();
-    let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new")).unwrap();
+    let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();
 
     let completed =
         block_on(adapter.execute_backend_switch(&plan, CancellationToken::new())).unwrap();

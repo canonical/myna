@@ -7,8 +7,9 @@
 //!
 //! * `POST /v2/interfaces` with a body of the form
 //!   `{"action": "connect"|"disconnect", "plugs":[{"snap":"myna","plug":"backend"}],
-//!    "slots":[{"snap":<backend>,"slot":"ubustt-socket"}]}` where `<backend>` is
-//!   a validated snap name.
+//!    "slots":[{"snap":<backend>,"slot":<slot>}]}` where `<backend>` is a
+//!   validated snap name and `<slot>` the validated slot name discovery
+//!   recorded for it.
 //! * `POST /v2/apps` with the exact body
 //!   `{"action":"restart","names":["myna.myna"],"scope":["user"],"users":"self"}`
 //!   to restart Myna's current-user service after the backend content mount
@@ -61,10 +62,6 @@ pub const MYNA_PLUG_SNAP: &str = "myna";
 pub const MYNA_PLUG_NAME: &str = "backend";
 pub const MYNA_SERVICE_NAME: &str = "myna.myna";
 const MYNA_SERVICE_READINESS_PATH: &str = "/v2/apps?names=myna.myna&select=service&global=false";
-
-/// Fixed slot name suffix on the backend side. The concrete snap comes from a
-/// validated [`InterfaceAction`].
-pub const BACKEND_SLOT_NAME: &str = "ubustt-socket";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnapdTimeoutContext {
@@ -153,14 +150,30 @@ impl std::error::Error for SnapdError {}
 /// One typed interface action the client is allowed to make.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InterfaceAction {
-    Connect { backend_snap: String },
-    Disconnect { backend_snap: String },
+    Connect {
+        backend_snap: String,
+        backend_slot: String,
+    },
+    Disconnect {
+        backend_snap: String,
+        backend_slot: String,
+    },
 }
 
 impl InterfaceAction {
     pub fn backend_snap(&self) -> &str {
         match self {
-            Self::Connect { backend_snap } | Self::Disconnect { backend_snap } => backend_snap,
+            Self::Connect { backend_snap, .. } | Self::Disconnect { backend_snap, .. } => {
+                backend_snap
+            }
+        }
+    }
+
+    pub fn backend_slot(&self) -> &str {
+        match self {
+            Self::Connect { backend_slot, .. } | Self::Disconnect { backend_slot, .. } => {
+                backend_slot
+            }
         }
     }
 
@@ -172,12 +185,18 @@ impl InterfaceAction {
     }
 
     /// Validate the action and produce the exact JSON body snapd expects.
-    /// Rejects any snap name that does not match the strict snap-name grammar.
+    /// Rejects any snap or slot name that does not match snapd's grammar.
     pub fn to_request_body(&self) -> Result<String, SnapdError> {
         let backend = self.backend_snap();
         if !is_valid_snap_name(backend) {
             return Err(SnapdError::Transport {
                 message: format!("invalid backend snap name: {backend}"),
+            });
+        }
+        let slot = self.backend_slot();
+        if !is_valid_slot_name(slot) {
+            return Err(SnapdError::Transport {
+                message: format!("invalid backend slot name: {slot}"),
             });
         }
         let request = InterfaceRequest {
@@ -188,7 +207,7 @@ impl InterfaceAction {
             }],
             slots: [Slot {
                 snap: backend,
-                slot: BACKEND_SLOT_NAME,
+                slot,
             }],
         };
         serde_json::to_string(&request).map_err(|error| SnapdError::Transport {
@@ -314,6 +333,18 @@ pub type ProgressSink = std::rc::Rc<dyn Fn(InstallProgress)>;
 
 /// Reject any snap name that does not match the standard snap name grammar
 /// (`[a-z0-9][a-z0-9-]*[a-z0-9]`, no double hyphens, length 1..=40).
+/// snapd's plug/slot name grammar: `^[a-z](?:-?[a-z0-9])*$`.
+pub fn is_valid_slot_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    if !bytes.first().is_some_and(u8::is_ascii_lowercase) || bytes.last() == Some(&b'-') {
+        return false;
+    }
+    !name.contains("--")
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
 pub fn is_valid_snap_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 40 {
         return false;
@@ -1664,6 +1695,7 @@ mod tests {
     fn interface_action_body_uses_myna_backend_plug_and_typed_slot() {
         let body = InterfaceAction::Connect {
             backend_snap: "myna-parakeet".to_owned(),
+            backend_slot: "provider".to_owned(),
         }
         .to_request_body()
         .unwrap();
@@ -1673,15 +1705,80 @@ mod tests {
         assert_eq!(value["plugs"][0]["plug"], "backend");
         assert!(value["plugs"][0].get("name").is_none());
         assert_eq!(value["slots"][0]["snap"], "myna-parakeet");
-        assert_eq!(value["slots"][0]["slot"], "ubustt-socket");
+        assert_eq!(value["slots"][0]["slot"], "provider");
         assert!(value["slots"][0].get("name").is_none());
+    }
+
+    #[test]
+    fn interface_action_body_is_exact_for_a_provider_slot() {
+        let body = InterfaceAction::Connect {
+            backend_snap: "myna-parakeet".to_owned(),
+            backend_slot: "provider".to_owned(),
+        }
+        .to_request_body()
+        .unwrap();
+        assert_eq!(
+            body,
+            r#"{"action":"connect","plugs":[{"snap":"myna","plug":"backend"}],"slots":[{"snap":"myna-parakeet","slot":"provider"}]}"#
+        );
+    }
+
+    #[test]
+    fn interface_action_body_uses_the_recorded_slot_name() {
+        let body = InterfaceAction::Disconnect {
+            backend_snap: "community-asr".to_owned(),
+            backend_slot: "speech".to_owned(),
+        }
+        .to_request_body()
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["action"], "disconnect");
+        assert_eq!(value["slots"][0]["slot"], "speech");
+    }
+
+    #[test]
+    fn interface_action_rejects_invalid_slot_name() {
+        for slot in [
+            "",
+            "Provider",
+            "9provider",
+            "-provider",
+            "provider-",
+            "pro--vider",
+            "a:b",
+        ] {
+            assert!(
+                matches!(
+                    InterfaceAction::Connect {
+                        backend_snap: "myna-parakeet".to_owned(),
+                        backend_slot: slot.to_owned(),
+                    }
+                    .to_request_body(),
+                    Err(SnapdError::Transport { .. })
+                ),
+                "{slot:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn slot_name_validation_matches_grammar() {
+        assert!(is_valid_slot_name("provider"));
+        assert!(is_valid_slot_name("a"));
+        assert!(is_valid_slot_name("provider-2"));
+        assert!(!is_valid_slot_name(""));
+        assert!(!is_valid_slot_name("2provider"));
+        assert!(!is_valid_slot_name("provider-"));
+        assert!(!is_valid_slot_name("pro--vider"));
+        assert!(!is_valid_slot_name("pro_vider"));
     }
 
     #[test]
     fn interface_action_rejects_invalid_snap_name() {
         assert!(matches!(
             InterfaceAction::Connect {
-                backend_snap: "bad;name".to_owned()
+                backend_snap: "bad;name".to_owned(),
+                backend_slot: "provider".to_owned(),
             }
             .to_request_body(),
             Err(SnapdError::Transport { .. })

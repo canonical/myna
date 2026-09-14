@@ -311,23 +311,21 @@ impl BackendRepository for SnapBackendRepository {
         &self,
         cancellation: CancellationToken,
     ) -> Result<ConnectionSnapshot, BackendSurfaceError> {
-        let arguments = strings(&["connections", "--all"]);
-        let request = CommandRequest::new("snap".to_owned(), arguments.clone())
-            .with_environment(BTreeMap::from([("LC_ALL".to_owned(), "C".to_owned())]));
-        let output = self
-            .runner
-            .run(request, cancellation)
-            .await
-            .map_err(|error| {
-                command_error(
-                    BackendSurface::Connections,
-                    "snap",
-                    arguments.clone(),
-                    error,
-                )
-            })?;
-        parse_connections(output.stdout())
-            .map_err(|error| parse_error(BackendSurface::Connections, "snap", arguments, error))
+        let connections = self
+            .read_connections_surface(&["connections", "--all"], cancellation.clone())
+            .await?;
+        let interface_arguments = ["interface", "content", "--attrs"];
+        let content_interface = self
+            .read_connections_surface(&interface_arguments, cancellation)
+            .await?;
+        parse_connections(&connections, &content_interface).map_err(|error| {
+            let arguments = if error.source_name() == "snap interface" {
+                strings(&interface_arguments)
+            } else {
+                strings(&["connections", "--all"])
+            };
+            parse_error(BackendSurface::Connections, "snap", arguments, error)
+        })
     }
 
     async fn read_snapshot(
@@ -344,10 +342,7 @@ impl BackendRepository for SnapBackendRepository {
                 app,
                 cache_generation,
             }) => {
-                snapshot.set_identity(BackendIdentity::with_modelctl_app(
-                    backend.snap_name(),
-                    app.clone(),
-                ));
+                snapshot.set_identity(backend.clone().with_modelctl_app(app.clone()));
                 self.modelctl_status(&app, cancellation.clone(), &mut snapshot)
                     .await;
                 if self.modelctl_data(&app, cancellation, &mut snapshot).await {
@@ -355,10 +350,7 @@ impl BackendRepository for SnapBackendRepository {
                 }
             }
             Ok(ModelctlResolution::CachedProbeFailed { app, error }) => {
-                snapshot.set_identity(BackendIdentity::with_modelctl_app(
-                    backend.snap_name(),
-                    app.clone(),
-                ));
+                snapshot.set_identity(backend.clone().with_modelctl_app(app.clone()));
                 snapshot.add_error(error);
                 self.modelctl_status(&app, cancellation.clone(), &mut snapshot)
                     .await;
@@ -386,6 +378,26 @@ impl BackendRepository for SnapBackendRepository {
             cache.apps.clear();
         }
         self.discover(cancellation).await
+    }
+}
+
+impl SnapBackendRepository {
+    async fn read_connections_surface(
+        &self,
+        arguments: &[&str],
+        cancellation: CancellationToken,
+    ) -> Result<String, BackendSurfaceError> {
+        let arguments = strings(arguments);
+        let request = CommandRequest::new("snap".to_owned(), arguments.clone())
+            .with_environment(BTreeMap::from([("LC_ALL".to_owned(), "C".to_owned())]));
+        let output = self
+            .runner
+            .run(request, cancellation)
+            .await
+            .map_err(|error| {
+                command_error(BackendSurface::Connections, "snap", arguments, error)
+            })?;
+        Ok(output.stdout().to_owned())
     }
 }
 

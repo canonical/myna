@@ -6,9 +6,9 @@ case it opens a three-step wizard instead of the settings window.
 
 ## What opens it
 
-`myna_config::onboarding` assesses three components from two observations the
-application already makes at startup (`snap list` and `snap connections`) plus a
-directory probe:
+`myna_config::onboarding` assesses three components from the observations the
+application already makes at startup (`snap list`, `snap connections` and
+`snap interface content`) plus a directory probe:
 
 | Component       | Required | Satisfied when                             | Remedy       |
 | --------------- | -------- | ------------------------------------------ | ------------ |
