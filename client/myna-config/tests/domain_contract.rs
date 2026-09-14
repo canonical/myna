@@ -137,6 +137,33 @@ fn connections_discover_a_provider_whose_slot_is_not_named_provider() {
 }
 
 #[test]
+fn connections_ignore_a_stale_connection_labelled_with_the_plug_content_id() {
+    // snapd labels a connection with the plug's content id and keeps it across
+    // the refresh that changed the plug, so only the slot's attribute counts.
+    let snapshot = parse_connections(
+        "Interface Plug Slot Notes\n\
+         content[inference-provider] myna:backend myna-audio8:ubustt-socket manual\n\
+         content[inference-provider] myna:backend myna-parakeet:provider manual\n",
+        "name: content\n\
+         slots:\n  \
+         - myna-audio8:ubustt-socket:\n      \
+         content: ubustt-socket\n      \
+         source:\n        \
+         write:\n          \
+         - $SNAP_COMMON/run\n  \
+         - myna-parakeet:provider:\n      \
+         content: inference-provider\n",
+    )
+    .unwrap();
+    let parakeet = BackendIdentity::new("myna-parakeet", "provider");
+    assert_eq!(snapshot.backends(), std::slice::from_ref(&parakeet));
+    assert_eq!(
+        snapshot.active_state(),
+        ActiveBackendState::Connected(parakeet)
+    );
+}
+
+#[test]
 fn connections_ignore_content_slots_with_another_content_id() {
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\

@@ -911,7 +911,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1276,7 +1276,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1336,7 +1336,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1370,7 +1370,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1843,7 +1843,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1896,7 +1896,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );
@@ -1969,7 +1969,7 @@ mod tests {
             request,
             Ok(parse_connections(
                 "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\n",
+                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
             )
             .unwrap()),
         );

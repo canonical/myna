@@ -2796,7 +2796,7 @@ mod tests {
         let connections = crate::domain::parse_connections(
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend myna-parakeet:provider manual\n",
-            "name: content\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse");
         controller.complete_discovery(request, Ok(connections));

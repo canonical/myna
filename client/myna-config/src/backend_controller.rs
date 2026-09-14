@@ -792,7 +792,7 @@ mod tests {
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend myna-parakeet:provider manual\n\
              content - myna-whisper:provider -\n",
-            "name: content\nslots:\n  - myna-whisper:provider:\n      content: inference-provider\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n  - myna-whisper:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -801,7 +801,7 @@ mod tests {
         parse_connections(
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend myna-parakeet:provider manual\n",
-            "name: content\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -811,7 +811,7 @@ mod tests {
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend myna-parakeet:provider manual\n\
              content[inference-provider] myna:backend myna-whisper:provider manual\n",
-            "name: content\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n  - myna-whisper:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -822,7 +822,7 @@ mod tests {
              content[inference-provider] myna:backend myna-parakeet:provider manual\n\
              content - myna-whisper:provider -\n\
              content - myna-nemotron:provider -\n",
-            "name: content\nslots:\n  - myna-whisper:provider:\n      content: inference-provider\n  - myna-nemotron:provider:\n      content: inference-provider\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n  - myna-whisper:provider:\n      content: inference-provider\n  - myna-nemotron:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }

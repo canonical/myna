@@ -28,6 +28,8 @@ sudo snap install --dangerous ./myna_*.snap
 # 3. Connect the two manual interfaces
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
 sudo snap connect myna:backend myna-whisper:provider         # the backend session socket
+#    Upgrading from a build with the old `ubustt-socket` slot? snapd keeps that
+#    connection across the refresh: `sudo snap disconnect myna:backend` first.
 
 # 4. Focus a text field, tap the key, speak, tap again →
 #    transcript injected.

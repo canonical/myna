@@ -906,7 +906,7 @@ fn backend_switch_requests_disconnect_connect_restart_then_service_readiness() {
         "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend old:provider manual\n\
          content - new:provider -\n",
-        "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
+        "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n  - new:provider:\n      content: inference-provider\n",
     )
     .unwrap();
     let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();
@@ -942,7 +942,7 @@ fn noop_backend_switch_makes_no_snapd_requests() {
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend new:provider manual\n",
-        "name: content\n",
+        "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
     )
     .unwrap();
     let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();

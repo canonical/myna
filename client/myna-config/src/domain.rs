@@ -297,9 +297,9 @@ pub const PROVIDER_CONTENT_ID: &str = "inference-provider";
 /// Builds the snapshot from `snap connections --all` and
 /// `snap interface content --attrs`.
 ///
-/// snapd prints `content[<id>]` only on established connections; an
-/// unconnected slot's row says `content`, so its content id comes from the
-/// interface listing.
+/// A slot's content id comes only from the interface listing. The
+/// `content[<id>]` label on an established row is the plug's, and snapd keeps
+/// a connection across a refresh that changed the plug's content id.
 pub fn parse_connections(
     connections: &str,
     content_interface: &str,
@@ -317,7 +317,6 @@ pub fn parse_connections(
         ));
     }
     let providers = parse_provider_slots(content_interface)?;
-    let established = format!("content[{PROVIDER_CONTENT_ID}]");
 
     let mut discovered = BTreeSet::new();
     let mut connected = BTreeSet::new();
@@ -333,7 +332,7 @@ pub fn parse_connections(
             continue;
         }
         let backend = BackendIdentity::new(snap_name, slot_name);
-        if columns[0] != established && !providers.contains(&backend) {
+        if !providers.contains(&backend) {
             continue;
         }
         discovered.insert(backend.clone());
