@@ -27,7 +27,7 @@ sudo snap install --dangerous ./myna_*.snap
 
 # 3. Connect the two manual interfaces
 sudo snap connect myna:pipewire                          # mic capture (snapd gates it)
-sudo snap connect myna:backend myna-whisper:ubustt-socket     # the backend session socket
+sudo snap connect myna:backend myna-whisper:provider         # the backend session socket
 
 # 4. Focus a text field, tap the key, speak, tap again →
 #    transcript injected.
@@ -178,12 +178,16 @@ There is no `/snap/bin/myna` - snapd skips wrappers for service apps
 
 ## The backend socket
 
-The `backend` plug is a writable content share of the backend snap's
-`$SNAP_COMMON/run` (T14c): after connecting, the session socket appears at
-`/var/snap/myna/current/backend/run/ubustt.sock`. One backend at a time
-(whisper / nemotron / qwen provide the same slot; multi-backend selection
-is T48). The backend daemon must have run at least once for the socket to
-exist (`sudo snap start myna-whisper.server`).
+The `backend` plug consumes the `inference-provider` content interface: a
+backend snap's `provider` slot shares its `$SNAP_COMMON/share/provider`, which
+lands at `/var/snap/myna/current/backend/provider` (`provider-2`, … for further
+connections). Each share holds a `provider.env` naming the snap and its
+`UNIX_SOCKET`, here `myna.sock`. The daemon reads them at every press: a share
+without `provider.env` is ignored, a provider offering no Unix socket (a
+TCP-only LLM snap) or whose server is not running is named in the "not
+connected" message, and more than one usable provider is an error rather than
+a guess (multi-backend selection is T48). The backend server must be running
+for the socket to exist (`sudo snap start myna-whisper.server`).
 
 ## Activation
 
@@ -260,8 +264,9 @@ settings   com.canonical.Myna.Dictation (schema installed)
                   streaming-mode Auto resolves to Batch on tier x86_64-cpu-generic
 
 backend
-  configured      /var/snap/myna/current/backend/*/ubustt.sock
-  resolves to     /var/snap/myna/current/backend/run/ubustt.sock
+  configured      /var/snap/myna/current/backend/*/provider.env
+  provider        myna-whisper
+  resolves to     /var/snap/myna/current/backend/provider/myna.sock
 
 daemon     com.canonical.Myna.Dictation
   state           idle
@@ -277,7 +282,7 @@ unreachable. It says so when it notices.
 
 ```shell
 # 1. testbed round-trip through the content-shared socket
-myna.testbed --socket /var/snap/myna/current/backend/run/ubustt.sock \
+myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
     --language en --clip ~/path/to/clip.wav
 
 # 2. device enumeration over the confined PipeWire socket

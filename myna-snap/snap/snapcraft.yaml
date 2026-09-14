@@ -203,16 +203,17 @@ apps:
       - home
       - backend
 
-# The backend session socket, shared by an inference snap (whisper /
-# nemotron / qwen). Manual connect (different publishers):
-#   sudo snap connect myna:backend myna-whisper:ubustt-socket
-# snapd appends the slot's source basename, so the socket lands at
-# $SNAP_DATA/backend/run/ubustt.sock. One active backend at a time;
-# multi-backend discovery/selection is T48.
+# The backend session socket, shared by an inference snap's
+# inference-provider slot. Manual connect (different publishers):
+#   sudo snap connect myna:backend myna-whisper:provider
+# snapd appends the slot's source basename, so each share lands at
+# $SNAP_DATA/backend/provider (provider-2, ... for further connections),
+# holding provider.env and the socket it names. One active backend at a
+# time; multi-backend discovery/selection is T48.
 plugs:
   backend:
     interface: content
-    content: ubustt-socket
+    content: inference-provider
     target: $SNAP_DATA/backend
 
 slots:

@@ -91,7 +91,7 @@ overrides below.
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server
     --backend-dir <d>  directory to find the backend socket under, re-checked at
-                       every press (<d>/*/ubustt.sock - how the snap wires the
+                       every press (<d>/*/provider.env - how the snap wires the
                        `backend` content share). One of these two is required.
     --language <lang>  language hint sent in the session config (e.g. en)
     --target <node>    PipeWire node.name to capture from (default: system default)
@@ -531,7 +531,7 @@ fn make_session(
         // Re-resolved per Press, so a backend connected (or refreshed, or
         // swapped) after the daemon started is picked up without a restart.
         let socket = match backend_socket.resolve() {
-            Ok(socket) => socket,
+            Ok(provider) => provider.socket,
             Err(e) => return no_backend(e),
         };
         let backend = WsUnixIe115Backend::new(&socket);
@@ -1147,13 +1147,14 @@ fn print_status(args: &Args) -> ExitCode {
         Some(backend) => {
             println!("  {:<15} {}", "configured", backend.describe());
             match backend.resolve() {
-                Ok(path) => {
-                    println!("  {:<15} {}", "resolves to", path.display());
-                    // The resolved path names snapd's mount point (a generic
-                    // "run", "run-2", … - see `BackendSocket::describe`), not
-                    // the backend serving it, so ask the backend itself (T24
-                    // capabilities discovery) rather than guess from the path.
-                    match rt.block_on(myna_orchestrator::query_capabilities(&path)) {
+                Ok(provider) => {
+                    if let Some(name) = &provider.snap_name {
+                        println!("  {:<15} {name}", "provider");
+                    }
+                    println!("  {:<15} {}", "resolves to", provider.socket.display());
+                    // The share names the snap, not the model it serves, so
+                    // ask the backend itself (T24 capabilities discovery).
+                    match rt.block_on(myna_orchestrator::query_capabilities(&provider.socket)) {
                         Ok(caps) if caps.models.is_empty() => {
                             println!("  {:<15} (backend did not report one)", "model");
                         }

@@ -22,7 +22,7 @@ flowchart LR
     end
 
     subgraph inference["Inference backend snap"]
-        socket["ubustt-socket<br/>content interface"]
+        socket["inference-provider<br/>content interface"]
         server["myna-server"]
         engine["Selected inference engine"]
         artifacts[("Model and runtime<br/>components")]
@@ -51,4 +51,4 @@ flowchart LR
     modelctl -->|"selects model and engine"| engine
 ```
 
-The client is the only component with microphone and desktop access. Inference backends receive PCM through a connected local Unix socket and do not access the network or microphone. Unstable text remains presentation state; only committed text reaches IBus.
+The client is the only component with microphone and desktop access. Inference backends receive PCM through a connected local Unix socket and do not access the network or microphone. A backend shares its socket through an `inference-provider` content slot whose directory holds a `provider.env` naming the snap and the socket; the client reads every connected share at each activation and uses the one that offers a live Unix socket, refusing to choose when more than one does. Unstable text remains presentation state; only committed text reaches IBus.

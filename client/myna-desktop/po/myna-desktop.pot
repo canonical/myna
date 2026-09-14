@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-13 16:00+0100\n"
+"POT-Creation-Date: 2026-09-14 19:10+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -78,15 +78,15 @@ msgstr ""
 msgid "Background noise is high"
 msgstr ""
 
-#: src/controller.rs:747
+#: src/controller.rs:704
 msgid "Dictation target closed"
 msgstr ""
 
-#: src/controller.rs:825
+#: src/controller.rs:782
 msgid "Refusing to type into a password field"
 msgstr ""
 
-#: src/controller.rs:826
+#: src/controller.rs:783
 msgid "No text field is focused"
 msgstr ""
 
@@ -95,16 +95,32 @@ msgstr ""
 msgid "dictation hotkey unavailable: %s"
 msgstr ""
 
-#: src/backend.rs:47
+#: src/backend.rs:73
 msgid ""
 "no backend is connected - install one and connect it, e.g. `sudo snap "
 "connect myna:backend myna-whisper`"
 msgstr ""
 
-#: src/backend.rs:54
+#: src/backend.rs:80
+#, c-format
+msgid "%s is connected but offers no Unix socket"
+msgstr ""
+
+#: src/backend.rs:85
+#, c-format
+msgid "%s is connected but its server is not running"
+msgstr ""
+
+#: src/backend.rs:91
+#, c-format
+msgid "connected shares with an unreadable provider.env: %s"
+msgstr ""
+
+#: src/backend.rs:101
 #, c-format
 msgid ""
-"%s backends are connected; disconnect all but one (`snap connections myna`)"
+"%1$s backends are connected (%2$s); disconnect all but one (`snap "
+"connections myna`)"
 msgstr ""
 
 #: src/inject/mod.rs:83

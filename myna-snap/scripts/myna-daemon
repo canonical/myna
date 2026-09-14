@@ -16,7 +16,8 @@
 #
 # The backend is handed over as a *directory*, not a socket. snapd appends the
 # slot's source basename to the content target, so the share lands at
-# $SNAP_DATA/backend/run (and run-2, run-3, … for further connections), a
+# $SNAP_DATA/backend/provider (and provider-2, provider-3, … for further
+# connections), each holding a provider.env that names its socket, a
 # `snap refresh` of the backend re-creates it, and before the first
 # `snap connect` there is nothing there at all. myna-desktop re-resolves it at
 # every press, so a backend installed, connected or refreshed *after* login
