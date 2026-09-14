@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "build/blueprint_version.rs"]
+mod blueprint_version;
+
 const BLUEPRINTS: &[(&str, &str)] = &[
     ("active-backend-dialog.blp", "active-backend-dialog.ui"),
     ("apply-dialog.blp", "apply-dialog.ui"),
@@ -56,15 +59,25 @@ fn main() {
 
 fn find_blueprint_compiler() -> PathBuf {
     match Command::new("blueprint-compiler").arg("--version").output() {
-        Ok(output) if output.status.success() => PathBuf::from("blueprint-compiler"),
+        Ok(output) if output.status.success() => {
+            if let Err(error) = blueprint_version::check(&String::from_utf8_lossy(&output.stdout)) {
+                fail("unsupported blueprint-compiler", &error);
+            }
+            PathBuf::from("blueprint-compiler")
+        }
         Ok(output) => fail(
             "blueprint-compiler was found but did not run successfully",
             String::from_utf8_lossy(&output.stderr).trim(),
         ),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fail(
-            "blueprint-compiler is required to build myna-config",
-            "install blueprint-compiler 0.20.4 and ensure it is on PATH",
-        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let (major, minor, patch) = blueprint_version::MINIMUM;
+            fail(
+                "blueprint-compiler is required to build myna-config",
+                &format!(
+                    "install blueprint-compiler {major}.{minor}.{patch} or newer and ensure it is on PATH"
+                ),
+            )
+        }
         Err(error) => fail("could not launch blueprint-compiler", &error.to_string()),
     }
 }

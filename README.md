@@ -476,7 +476,7 @@ The snaps have their own README's with further details.
 ## Native configuration UI prototype
 
 `client/myna-config` is the host-run GTK4/libadwaita prototype. On a supported
-Ubuntu release, install Rust plus GTK 4.14+, libadwaita 1.6+, Blueprint, and
+Ubuntu release, install Rust plus GTK 4.14+, libadwaita 1.6+, Blueprint 0.16+, and
 gettext development tools:
 
 ```shell
