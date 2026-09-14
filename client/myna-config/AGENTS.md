@@ -15,7 +15,7 @@ Myna Settings is a host application, not a snap. It talks to snapd on the user's
 - Nothing runs through a shell. Build every subprocess as a `CommandRequest` and run it through the `CommandRunner` port so tests can substitute a fixture.
 - Subprocess spawning is budgeted per refresh reason (`docs/refresh-budget.md`). A new `snap` read must fit the budget or change it explicitly.
 - Domain and controller modules are GTK-free and tested headlessly. Keep GTK to `ui/`, `*_ui.rs`, and `app.rs`.
-- Every user-visible string goes through gettext. Adding or changing one requires `make i18n`; nothing fails when the template drifts.
+- Every user-visible string goes through gettext. Adding or changing one requires `make i18n` and committing the template; `make check` fails while it drifts.
 - Strict confinement was measured and rejected (`docs/confinement.md`). Do not reopen it without new evidence.
 - The GSettings schema this application writes is owned by `client/data/` and shared with the daemon.
 

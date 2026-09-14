@@ -16,6 +16,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATES=(
     "client/myna-desktop:"
     "client/myna-orchestrator:--keyword=tr"
+    "client/myna-config:--keyword=_"
 )
 
 check=0
@@ -25,18 +26,23 @@ case "${1:-}" in
     *) echo "usage: $0 [--check]" >&2; exit 2 ;;
 esac
 
-# gettext 0.23 has no Rust lexer, so the C one reads the sources: it extracts
-# gettext("...") calls correctly (the committed templates are its output), but
-# it does not know lifetimes, and every `'static` / `'_` is an "unterminated
-# character constant" to it. Name the language so xgettext stops guessing it
-# from the extension, and drop that one warning; anything else it says is
-# still shown. Switch to --language=Rust once the workshop's gettext has it.
+# gettext 0.23 has no Rust lexer, so xgettext falls back to the C one for .rs
+# (and Blueprint .blp) sources: it extracts gettext("...") calls correctly (the
+# committed templates are its output), but it does not know lifetimes, and
+# every `'static` / `'_` is an "unterminated character constant" to it. The
+# lexer is left to xgettext to pick per file rather than fixed with
+# --language=C because myna-config's POTFILES.in also lists the GSettings
+# schema, whose <summary> strings only the GSettings lexer finds. The two
+# warnings the fallback produces are dropped; anything else it says is still
+# shown. The .rs fallback goes away by itself once the workshop's gettext has
+# a Rust lexer.
 extract() {
     local crate=$1 keywords=$2 out=$3
     # shellcheck disable=SC2086  # keywords is a space-separated flag list
-    (cd "$REPO_ROOT/$crate" && xgettext --from-code=UTF-8 --language=C --keyword=gettext $keywords \
+    (cd "$REPO_ROOT/$crate" && xgettext --from-code=UTF-8 --keyword=gettext $keywords \
         --add-comments=TRANSLATORS --files-from=po/POTFILES.in --output="$out" \
-        2> >(grep -v 'unterminated character constant' >&2))
+        2> >(grep -v -e 'unterminated character constant' \
+                     -e "extension '[a-z]*' is unknown; will try C" >&2))
 }
 
 # The template minus what changes without any string changing: the creation

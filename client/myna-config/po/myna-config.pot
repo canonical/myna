@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-11 18:04+0100\n"
+"POT-Creation-Date: 2026-09-13 08:35+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -62,7 +62,7 @@ msgid "Refresh backend data"
 msgstr ""
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:36
-#: data/main-window.blp:41
+#: data/main-window.blp:41 src/app.rs:598
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -245,6 +245,10 @@ msgstr ""
 msgid "Reading the installed settings schema…"
 msgstr ""
 
+#: src/app.rs:599
+msgid "Backend diagnostics will appear after discovery."
+msgstr ""
+
 #: src/app.rs:807
 msgid "No Myna Settings"
 msgstr ""
@@ -294,7 +298,6 @@ msgid "Not connected"
 msgstr ""
 
 #: src/active_backend.rs:169
-#, rust-format
 msgid "Switch the active backend to {backend}."
 msgstr ""
 
@@ -939,7 +942,6 @@ msgid "The dictation client itself"
 msgstr ""
 
 #: src/onboarding_ui.rs:520
-#, rust-format
 msgid "Parakeet · {size} MB"
 msgstr ""
 

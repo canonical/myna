@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-12 21:42+0100\n"
+"POT-Creation-Date: 2026-09-13 08:35+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -74,15 +74,15 @@ msgstr ""
 msgid "No speech detected"
 msgstr ""
 
-#: src/controller.rs:522
+#: src/controller.rs:546
 msgid "Dictation target closed"
 msgstr ""
 
-#: src/controller.rs:596
+#: src/controller.rs:620
 msgid "Refusing to type into a password field"
 msgstr ""
 
-#: src/controller.rs:597
+#: src/controller.rs:621
 msgid "No text field is focused"
 msgstr ""
 
