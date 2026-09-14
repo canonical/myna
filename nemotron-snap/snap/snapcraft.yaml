@@ -1,4 +1,4 @@
-# Nemotron / FastConformer inference snap (UbuSTT).
+# Nemotron / FastConformer inference snap (Myna).
 #
 # Sibling of whisper-snap (one snap per model family). Same pattern: modelctl
 # v2 engine/runtime/model manifests; the testbed adapter (myna-server
@@ -15,9 +15,9 @@ version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: NVIDIA Nemotron/FastConformer speech-to-text inference snap (UbuSTT)
+summary: NVIDIA Nemotron/FastConformer speech-to-text inference snap (Myna)
 description: |
-  Local, offline speech-to-text exposing the UbuSTT session API on a Unix
+  Local, offline speech-to-text exposing the Myna session API on a Unix
   domain socket, served by NVIDIA's cache-aware streaming FastConformer-RNNT
   via the NeMo toolkit. Natively streaming transducer with a latency/accuracy
   dial (att-context-size) and native punctuation/capitalisation. English-only.

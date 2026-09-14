@@ -1,8 +1,8 @@
 # nemotron-snap
 
-NVIDIA Nemotron/FastConformer speech-to-text inference snap (UbuSTT), the
+NVIDIA Nemotron/FastConformer speech-to-text inference snap (Myna), the
 GPU-native sibling of [`whisper-snap`](../whisper-snap) (one snap per model
-family). It serves the same UbuSTT session API (WebSocket over a Unix domain
+family). It serves the same Myna session API (WebSocket over a Unix domain
 socket) via `myna-server --adapter nemotron` — the same adapter the testbed
 harness measures — and has **no microphone access**.
 

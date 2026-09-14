@@ -1,4 +1,4 @@
-# Audio8-ASR on onnxruntime-gpu (CUDA execution provider) serving the UbuSTT
+# Audio8-ASR on onnxruntime-gpu (CUDA execution provider) serving the Myna
 # session API.
 #
 # UNVERIFIED on hardware — scaffolded. Unlike the cpu runtime (whose venv is

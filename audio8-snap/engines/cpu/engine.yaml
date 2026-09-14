@@ -3,7 +3,7 @@ summary: CPU Audio8-ASR-0.1B via ONNX Runtime
 description: |
   Runs Audio8-ASR-0.1B with the publisher's ONNX cache engine on amd64/arm64
   CPUs (int8 decoder default). Commit-on-finalize transcription over the
-  UbuSTT Unix-socket session API.
+  Myna Unix-socket session API.
 vendor: Canonical Ltd
 
 devices:

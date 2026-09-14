@@ -2,7 +2,7 @@ name: nvidia-gpu
 summary: NVIDIA CUDA Audio8-ASR-0.1B via onnxruntime-gpu
 description: |
   Runs Audio8-ASR-0.1B with the ONNX cache engine on the CUDA execution
-  provider (NVIDIA GPUs). Same commit-on-finalize UbuSTT Unix-socket session
+  provider (NVIDIA GPUs). Same commit-on-finalize Myna Unix-socket session
   API as the cpu engine; the onnxruntime-gpu runtime ships as an on-demand
   component.
 vendor: Canonical Ltd

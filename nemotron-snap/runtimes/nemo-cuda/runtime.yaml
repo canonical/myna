@@ -1,4 +1,4 @@
-# NeMo + torch (CUDA) runtime serving the UbuSTT session API.
+# NeMo + torch (CUDA) runtime serving the Myna session API.
 #
 # UNVERIFIED in confinement. The nemo-cuda component is a pip --target tree
 # (myna[nemotron]: nemo_toolkit[asr] + torch). torch bundles its own CUDA libs

@@ -1,4 +1,4 @@
-# sherpa-onnx inference snap (UbuSTT) — feature 008 US4.
+# sherpa-onnx inference snap (Myna) - feature 008 US4.
 #
 # The turnkey small streaming snap: a NeMo-family streaming FastConformer
 # transducer (k2-fsa export, int8) via sherpa-onnx's OnlineRecognizer —
@@ -12,9 +12,9 @@ version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: sherpa-onnx streaming speech-to-text snap (UbuSTT)
+summary: sherpa-onnx streaming speech-to-text snap (Myna)
 description: |
-  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps a streaming FastConformer transducer (NeMo
   family, k2-fsa ONNX export, int8) served via sherpa-onnx's
   OnlineRecognizer: continuous partial hypotheses plus endpoint-driven

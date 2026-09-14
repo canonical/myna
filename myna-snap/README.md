@@ -1,6 +1,6 @@
 # myna-snap
 
-The UbuSTT dictation **client** snap — ships the Rust orchestrator
+The Myna dictation **client** snap - ships the Rust orchestrator
 (`client/myna-desktop`, the push-to-talk app, plus the `myna-dictate`
 testbed CLI). Feature `005-myna-orchestrator-snap`
 (`specs/005-myna-orchestrator-snap/`); plan task T57.

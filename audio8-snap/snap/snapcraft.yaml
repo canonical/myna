@@ -1,4 +1,4 @@
-# Audio8-ASR inference snap (UbuSTT).
+# Audio8-ASR inference snap (Myna).
 #
 # Follows the whisper-snap pattern (engine/runtime/model manifests + modelctl v2).
 # Differences from whisper-snap:

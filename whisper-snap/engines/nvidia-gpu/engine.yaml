@@ -2,7 +2,7 @@ name: nvidia-gpu
 summary: NVIDIA CUDA Whisper via faster-whisper
 description: |
   Runs Whisper models with CUDA CTranslate2 on NVIDIA GPUs. Same
-  commit-on-finalize UbuSTT Unix-socket session API as the cpu engine; the
+  commit-on-finalize Myna Unix-socket session API as the cpu engine; the
   CUDA runtime (CTranslate2 + cuBLAS/cuDNN) ships as an on-demand component.
 vendor: Canonical Ltd
 

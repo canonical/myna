@@ -1,4 +1,4 @@
-# qwen-snap — Qwen3-ASR inference snap (UbuSTT)
+# qwen-snap - Qwen3-ASR inference snap (Myna)
 
 Adds Qwen3-ASR as a third model family — the snap that proves the
 inference-snap architecture plugs in any model. **Ships the CPU pure-C engine.**

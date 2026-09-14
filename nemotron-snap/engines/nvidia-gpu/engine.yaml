@@ -2,7 +2,7 @@ name: nvidia-gpu
 summary: NVIDIA CUDA FastConformer via NeMo
 description: |
   Runs NVIDIA's cache-aware streaming FastConformer-RNNT on NVIDIA GPUs,
-  serving the UbuSTT Unix-socket session API. Natively streaming transducer
+  serving the Myna Unix-socket session API. Natively streaming transducer
   with an att-context-size latency/accuracy dial.
 vendor: Canonical Ltd
 

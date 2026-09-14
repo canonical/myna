@@ -1,4 +1,4 @@
-# Parakeet inference snap (UbuSTT) — feature 008 US3.
+# Parakeet inference snap (Myna) - feature 008 US3.
 #
 # The small CPU-tier transducer snap: Parakeet TDT 0.6B v3 int8 ONNX via
 # onnxruntime (no torch), a fraction of the full NeMo snap's size (SC-005).
@@ -16,9 +16,9 @@ version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: Parakeet TDT speech-to-text inference snap (UbuSTT)
+summary: Parakeet TDT speech-to-text inference snap (Myna)
 description: |
-  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps NVIDIA's Parakeet TDT 0.6B v3 (25 languages,
   punctuation) as an int8 ONNX export served via onnxruntime, with chunked
   progressive commit (pause-delimited chunks decoded once and committed while

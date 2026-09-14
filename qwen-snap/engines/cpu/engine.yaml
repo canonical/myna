@@ -3,7 +3,7 @@ summary: CPU Qwen3-ASR via the pure-C runtime
 description: |
   Runs Qwen3-ASR with the dependency-light pure-C engine (antirez/qwen-asr,
   OpenBLAS) on amd64/arm64 CPUs, driven via ctypes. Commit-on-finalize
-  transcription over the UbuSTT Unix-socket session API. No torch/CUDA — the
+  transcription over the Myna Unix-socket session API. No torch/CUDA - the
   parsimonious, multilingual, no-GPU-required runtime for the family.
 vendor: Canonical Ltd
 

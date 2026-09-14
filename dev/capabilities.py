@@ -1,4 +1,4 @@
-"""Query a running UbuSTT socket for its capabilities (T24).
+"""Query a running Myna socket for its capabilities (T24).
 
     uv run python dev/capabilities.py \
         --socket /var/snap/myna-whisper/common/share/provider/myna.sock

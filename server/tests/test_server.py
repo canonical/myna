@@ -1,4 +1,4 @@
-"""Integration test for the standalone UbuSTT server (T14a).
+"""Integration test for the standalone Myna server (T14a).
 
 Spawns ``python -m myna.server`` as a real subprocess and transcribes a
 fixture clip through its Unix socket — the same path the whisper snap's

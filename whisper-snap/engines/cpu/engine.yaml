@@ -2,7 +2,7 @@ name: cpu
 summary: CPU-optimized Whisper via faster-whisper
 description: |
   Runs Whisper models with CTranslate2 on amd64/arm64 CPUs. Commit-on-finalize
-  transcription over the UbuSTT Unix-socket session API.
+  transcription over the Myna Unix-socket session API.
 vendor: Canonical Ltd
 
 devices:

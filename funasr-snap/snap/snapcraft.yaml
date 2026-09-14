@@ -1,4 +1,4 @@
-# FunASR / SenseVoice-Small inference snap (UbuSTT, feature 009).
+# FunASR / SenseVoice-Small inference snap (Myna, feature 009).
 #
 # Follows the whisper-snap pattern (engine/runtime/model manifests + modelctl v2).
 # Differences from whisper-snap:
@@ -12,9 +12,9 @@ version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: FunASR SenseVoice-Small speech-to-text inference snap (UbuSTT)
+summary: FunASR SenseVoice-Small speech-to-text inference snap (Myna)
 description: |
-  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps SenseVoice-Small (FunASR, Alibaba DAMO Academy)
   served via ONNX Runtime, covering Chinese, English, Cantonese, Japanese, and
   Korean.

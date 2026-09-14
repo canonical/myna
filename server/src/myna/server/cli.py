@@ -1,4 +1,4 @@
-"""Command-line entry point for the UbuSTT server.
+"""Command-line entry point for the Myna server.
 
     myna-server --socket /path/to/myna.sock --model tiny
     python -m myna.server --socket ... --model base --preload

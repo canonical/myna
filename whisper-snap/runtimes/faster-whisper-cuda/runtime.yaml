@@ -1,4 +1,4 @@
-# faster-whisper (CUDA CTranslate2) serving the UbuSTT session API.
+# faster-whisper (CUDA CTranslate2) serving the Myna session API.
 #
 # UNVERIFIED on hardware — scaffolded in T15. Unlike the cpu runtime (whose
 # venv is baked into the base snap), the GPU stack ships as a component: the

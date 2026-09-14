@@ -1,4 +1,4 @@
-"""Transcribe a fixture clip (or any WAV) against a running UbuSTT socket.
+"""Transcribe a fixture clip (or any WAV) against a running Myna socket.
 
     uv run python dev/transcribe.py \
         --socket /var/snap/myna-whisper/common/share/provider/myna.sock quiet-weather

@@ -1,4 +1,4 @@
-# Qwen3-ASR inference snap (UbuSTT).
+# Qwen3-ASR inference snap (Myna).
 #
 # Ships the **CPU pure-C runtime**: the cpu engine drives the pure-C runtime
 # (antirez/qwen-asr) — OpenBLAS + a ~170 KB libqwen_asr.so, no torch/CUDA,
@@ -21,9 +21,9 @@ version: 0.1.0-dev
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: Qwen3-ASR speech-to-text inference snap (UbuSTT)
+summary: Qwen3-ASR speech-to-text inference snap (Myna)
 description: |
-  Local, offline speech-to-text service exposing the UbuSTT session API on a
+  Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps multilingual Qwen3-ASR with a dependency-light
   pure-C runtime on CPU, via the IE108-compliant modelctl CLI.
 
