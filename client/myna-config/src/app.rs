@@ -61,6 +61,7 @@ pub fn smoke_build(settings: Rc<dyn ClientSettings>) -> Result<Vec<WidgetPlan>, 
             let plan = widget_plan(metadata);
             if plan.title.trim().is_empty()
                 || (plan.kind == WidgetKind::Choice && plan.choices.is_empty())
+                || (plan.kind == WidgetKind::Number && plan.bounds.is_none())
             {
                 Err(format!("{} has incomplete widget metadata", plan.key))
             } else {
@@ -835,6 +836,11 @@ enum RowBinding {
         writable: bool,
         updating: Rc<Cell<bool>>,
     },
+    Number {
+        row: adw::SpinRow,
+        writable: bool,
+        updating: Rc<Cell<bool>>,
+    },
     Text {
         row: adw::EntryRow,
         key: String,
@@ -887,6 +893,18 @@ impl RowBinding {
                     if let Some(index) = choices.iter().position(|choice| choice == value) {
                         row.set_selected(index as u32);
                     }
+                }
+                row.set_sensitive(*writable);
+                updating.set(false);
+            }
+            Self::Number {
+                row,
+                writable,
+                updating,
+            } => {
+                updating.set(true);
+                if let Some(value) = value.as_integer() {
+                    row.set_value(value as f64);
                 }
                 row.set_sensitive(*writable);
                 updating.set(false);
@@ -989,6 +1007,42 @@ fn ready_page(
                     RowBinding::Choice {
                         row: row.clone(),
                         choices: plan.choices,
+                        writable: plan.writable,
+                        updating,
+                    },
+                );
+                group.add(&row);
+            }
+            WidgetKind::Number => {
+                let (minimum, maximum) = plan.bounds.expect("Number plans carry bounds");
+                let row = adw::SpinRow::with_range(minimum as f64, maximum as f64, 1.0);
+                row.set_title(&plan.title);
+                row.set_sensitive(plan.writable);
+                row.set_value(setting.value().as_integer().unwrap_or(minimum) as f64);
+                describe(&row, &plan.description);
+                row.add_suffix(&reset);
+                let updating = Rc::new(Cell::new(false));
+                row.connect_value_notify({
+                    let controller = controller.clone();
+                    let key = plan.key.clone();
+                    let updating = updating.clone();
+                    let writer = writer.clone();
+                    move |row| {
+                        if updating.get() {
+                            return;
+                        }
+                        let value = row.value().round() as i64;
+                        if let Ok(request) =
+                            controller.set(&key, ClientSettingValue::Integer(value))
+                        {
+                            persist_request(writer.clone(), controller.clone(), request, None);
+                        }
+                    }
+                });
+                bindings.borrow_mut().insert(
+                    plan.key.clone(),
+                    RowBinding::Number {
+                        row: row.clone(),
                         writable: plan.writable,
                         updating,
                     },

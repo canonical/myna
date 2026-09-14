@@ -194,6 +194,7 @@ fn snap_config_writes_through_to_the_snap_private_keyfile() {
     // falling back to string parsing when GVariant parsing fails.
     assert!(snap.run(&["set", "language", "en"]).status.success());
     assert!(snap.run(&["set", "hud-style", "ribbon"]).status.success());
+    assert!(snap.run(&["set", "silence-timeout", "45"]).status.success());
 
     assert_eq!(
         snap.store(),
@@ -201,6 +202,7 @@ fn snap_config_writes_through_to_the_snap_private_keyfile() {
             "[com/canonical/myna/dictation]",
             "hud-style='ribbon'",
             "language='en'",
+            "silence-timeout=45",
         ]
     );
     assert_eq!(

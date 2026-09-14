@@ -14,9 +14,12 @@
 //! Everything here is hermetic: the boundaries are trait objects, so tests drive
 //! the whole lifecycle with mocks (no D-Bus / IBus / portal / display).
 
+use std::time::Duration;
+
 use futures_util::stream::{BoxStream, StreamExt};
 use gettextrs::gettext;
-use tokio::sync::mpsc;
+use myna_audio::AudioStats;
+use tokio::sync::{mpsc, watch};
 
 use crate::indicator::{Indicator, IndicatorState};
 use crate::inject::{FocusEvent, InjectError, Injector};
@@ -142,6 +145,7 @@ pub fn event_to_indicator(
     event: &OrchestratorEvent,
     state: DictationState,
     focus_lost: bool,
+    quality: InputQuality,
 ) -> Option<IndicatorState> {
     let still_listening = matches!(
         state,
@@ -155,7 +159,9 @@ pub fn event_to_indicator(
             // Finalizing (or any later state) with Recording.
             still_listening.then_some(IndicatorState::Recording)
         }
-        OrchestratorEvent::Done(text) => Some(completion_indicator_state(text, focus_lost)),
+        OrchestratorEvent::Done(text) => {
+            Some(completion_indicator_state(text, focus_lost, quality))
+        }
         OrchestratorEvent::Error { message, .. } => Some(IndicatorState::critical(message.clone())),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
@@ -188,18 +194,144 @@ pub fn event_to_indicator(
 /// `DbusIndicator::publish`'s existing per-wire-state dedup (C2). Both call
 /// sites are threaded the same `focus_lost` value for the same utterance.
 ///
+/// `quality` is the capture's verdict on the input ([`input_quality`]): a
+/// session that produced text over a noisy input still gets a recoverable
+/// notice, so the user learns why the transcript is worse than it should be.
+/// An empty transcript keeps its own, more actionable, message.
+///
 /// This is an interim, client-inferred classification, not a true wire-level
 /// error disposition — that remains T31/T62's job (spec Assumptions).
-pub fn completion_indicator_state(transcript: &str, focus_lost: bool) -> IndicatorState {
+pub fn completion_indicator_state(
+    transcript: &str,
+    focus_lost: bool,
+    quality: InputQuality,
+) -> IndicatorState {
     if transcript.trim().is_empty() {
         if focus_lost {
             IndicatorState::recoverable(gettext("Focus lost"))
         } else {
             IndicatorState::recoverable(gettext("No speech detected"))
         }
+    } else if quality == InputQuality::Noisy {
+        IndicatorState::recoverable(gettext("Background noise is high"))
     } else {
         IndicatorState::Hidden
     }
+}
+
+// ── Input quality ─────────────────────────────────────────────────────────────
+
+/// The capture's verdict on the microphone input, read off the stats tap once
+/// a session has ended. Energy statistics only, never samples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputQuality {
+    Ok,
+    /// The input's quietest moment is loud, or speech barely clears it:
+    /// broadband noise that degrades every model's transcript.
+    Noisy,
+}
+
+/// A noise floor above this (linear full scale, -50 dBFS) is noisy on its
+/// own. A healthy headset sits near -80 dBFS; a laptop with its fan on near
+/// -55 dBFS. Prototype calibration, from the HUD meter's headset baseline.
+pub const NOISE_FLOOR_LIMIT: f32 = 0.003_16;
+
+/// Speech must clear the floor by this ratio (15 dB) to count as clean.
+pub const MIN_SPEECH_TO_NOISE: f32 = 5.6;
+
+/// Classify a session's input from its final stats snapshot.
+pub fn input_quality(stats: &AudioStats) -> InputQuality {
+    if stats.noise_floor <= 0.0 {
+        // Digital silence: a muted or absent input, which the empty
+        // transcript already reports as "No speech detected".
+        return InputQuality::Ok;
+    }
+    if stats.noise_floor > NOISE_FLOOR_LIMIT {
+        return InputQuality::Noisy;
+    }
+    if stats.speech_level > 0.0 && stats.speech_level / stats.noise_floor < MIN_SPEECH_TO_NOISE {
+        return InputQuality::Noisy;
+    }
+    InputQuality::Ok
+}
+
+/// The verdict for a session: `Ok` where there was no capture to judge, since
+/// a closed tap still holds the default snapshot.
+fn quality_of(stats: &watch::Receiver<AudioStats>) -> InputQuality {
+    input_quality(&stats.borrow())
+}
+
+// ── Auto-stop ─────────────────────────────────────────────────────────────────
+
+/// When the controller ends a session on its own. Toggle activation has no
+/// release edge: a forgotten session would otherwise stream the room until
+/// focus moves. Hold-to-talk keeps the key as the whole authority and runs
+/// with both limits off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AutoStop {
+    /// Finalize once this much captured audio has passed since voice was
+    /// last heard (or since the start, if it never was). Zero = never.
+    pub silence: Duration,
+    /// Finalize once this much audio has been captured, voice or not - the
+    /// net under the silence policy. Zero = never.
+    pub cap: Duration,
+}
+
+impl AutoStop {
+    /// The wall-clock cap a toggle session gets regardless of the silence
+    /// setting.
+    pub const TOGGLE_CAP: Duration = Duration::from_secs(300);
+
+    /// Hold-to-talk: never.
+    pub fn off() -> Self {
+        Self::default()
+    }
+
+    /// Toggle: the user's silence timeout (zero = off) under the fixed cap.
+    pub fn toggle(silence: Duration) -> Self {
+        Self {
+            silence,
+            cap: Self::TOGGLE_CAP,
+        }
+    }
+}
+
+/// Why a session is ending by policy rather than by the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutoStopReason {
+    Silence,
+    Cap,
+}
+
+impl std::fmt::Display for AutoStopReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Silence => "silence timeout",
+            Self::Cap => "session cap",
+        })
+    }
+}
+
+/// Whether `policy` says this session is over, given the latest stats.
+/// Measured in captured audio, so a device that stops delivering (already
+/// its own fault, in capture) cannot look like a silent user.
+pub fn auto_stop_due(stats: &AudioStats, policy: AutoStop) -> Option<AutoStopReason> {
+    if policy.cap > Duration::ZERO && stats.captured >= policy.cap {
+        return Some(AutoStopReason::Cap);
+    }
+    let since_voice = stats
+        .captured
+        .saturating_sub(stats.last_voice.unwrap_or(Duration::ZERO));
+    if policy.silence > Duration::ZERO && since_voice >= policy.silence {
+        return Some(AutoStopReason::Silence);
+    }
+    None
+}
+
+/// A tap for a session that never opened the microphone: never polled, and
+/// its snapshot is the default, which classifies as `Ok`.
+fn closed_tap() -> watch::Receiver<AudioStats> {
+    watch::channel(AudioStats::default()).1
 }
 
 // ── Session seam ───────────────────────────────────────────────────────────────
@@ -210,21 +342,42 @@ pub fn completion_indicator_state(transcript: &str, focus_lost: bool) -> Indicat
 pub type SessionRun =
     futures_util::future::BoxFuture<'static, Result<SessionOutcome, BackendError>>;
 
-/// Builds one dictation utterance per Press (fresh backend + capture source),
-/// returning the running future and a [`StopHandle`] that ends capture early
-/// (Release / focus-out → graceful finalize). The controller never starts a
-/// session — hence never captures audio — outside a Press→Release window
-/// (FR-004).
-pub trait SessionFactory: Send {
-    fn start(&mut self, events: mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle);
+/// One started utterance: the running future, the [`StopHandle`] that ends
+/// capture early (Release / focus-out → graceful finalize), and the capture
+/// stats tap when there is capture to observe (a session that failed before
+/// opening the microphone has none).
+pub struct Session {
+    pub run: SessionRun,
+    pub stop: StopHandle,
+    pub stats: Option<watch::Receiver<AudioStats>>,
 }
 
-impl<F> SessionFactory for F
+/// A session with nothing to observe, so every existing factory - and every
+/// test that never looks at audio - keeps returning the bare pair.
+impl From<(SessionRun, StopHandle)> for Session {
+    fn from((run, stop): (SessionRun, StopHandle)) -> Self {
+        Self {
+            run,
+            stop,
+            stats: None,
+        }
+    }
+}
+
+/// Builds one dictation utterance per Press (fresh backend + capture source).
+/// The controller never starts a session - hence never captures audio -
+/// outside a Press→Release window (FR-004).
+pub trait SessionFactory: Send {
+    fn start(&mut self, events: mpsc::Sender<OrchestratorEvent>) -> Session;
+}
+
+impl<F, S> SessionFactory for F
 where
-    F: FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send,
+    F: FnMut(mpsc::Sender<OrchestratorEvent>) -> S + Send,
+    S: Into<Session>,
 {
-    fn start(&mut self, events: mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) {
-        (self)(events)
+    fn start(&mut self, events: mpsc::Sender<OrchestratorEvent>) -> Session {
+        (self)(events).into()
     }
 }
 
@@ -254,6 +407,9 @@ pub struct DesktopController {
     /// can change the streaming mode it follows from without restarting the
     /// daemon; read per event, so a change lands mid-utterance.
     preedit: Live<bool>,
+    /// Policy-driven session end (see [`AutoStop`]). Live for the same
+    /// reason: the silence timeout is a user setting.
+    auto_stop: Live<AutoStop>,
 }
 
 /// This session's accept-gate drop counts, published as they happen.
@@ -284,6 +440,7 @@ pub struct DesktopControllerBuilder {
     indicator: Option<Box<dyn Indicator>>,
     session: Option<Box<dyn SessionFactory>>,
     preedit: Live<bool>,
+    auto_stop: Live<AutoStop>,
 }
 
 impl DesktopControllerBuilder {
@@ -319,6 +476,13 @@ impl DesktopControllerBuilder {
         self
     }
 
+    /// End sessions by policy (silence timeout, session cap). Off by default,
+    /// which is hold-to-talk's contract and what every existing test expects.
+    pub fn auto_stop(mut self, policy: impl Into<Live<AutoStop>>) -> Self {
+        self.auto_stop = policy.into();
+        self
+    }
+
     /// Finish the controller. Panics if any boundary is missing (a wiring bug).
     pub fn build(self) -> DesktopController {
         DesktopController {
@@ -332,6 +496,7 @@ impl DesktopControllerBuilder {
                 .expect("DesktopController needs a SessionFactory"),
             state: DictationState::Idle,
             preedit: self.preedit,
+            auto_stop: self.auto_stop,
         }
     }
 }
@@ -387,7 +552,13 @@ impl DesktopController {
 
         // Start the session (capture begins at press, inside the factory).
         let (events_tx, mut events_rx) = mpsc::channel::<OrchestratorEvent>(64);
-        let (run, stop) = self.session.start(events_tx);
+        let Session { run, stop, stats } = self.session.start(events_tx);
+        // Policed only while capture is live; a session that never opened the
+        // microphone has nothing to police and must not even wake the loop.
+        let (mut stats, mut stats_open) = match stats {
+            Some(stats) => (stats, true),
+            None => (closed_tap(), false),
+        };
 
         advance(&mut self.state, DictationState::Recording);
         self.indicator.set_state(IndicatorState::Recording).await;
@@ -404,6 +575,7 @@ impl DesktopController {
         // change mid-utterance is honored by the next hypothesis rather than
         // at the next press.
         let preedit = self.preedit.clone();
+        let auto_stop = self.auto_stop.clone();
 
         tokio::pin!(run);
         let mut trigger_open = true;
@@ -500,6 +672,22 @@ impl DesktopController {
                         enter_finalizing(state, indicator.as_mut()).await;
                     }
                 },
+                // A fresh stats snapshot: the policy's chance to end a toggle
+                // session the user walked away from. Ends exactly like a
+                // Release, plus the trigger-parity resync a FocusOut needs,
+                // because no edge was read off the trigger for this end.
+                changed = stats.changed(), if stats_open => {
+                    if changed.is_err() {
+                        stats_open = false;
+                    } else if let Some(reason) = auto_stop_due(&stats.borrow(), auto_stop.get()) {
+                        myna_core::info_log!("ctrl", "{reason}: graceful stop, finalizing");
+                        stop.stop();
+                        enter_finalizing(state, indicator.as_mut()).await;
+                        trigger.resync().await;
+                        trigger_open = false;
+                        stats_open = false;
+                    }
+                }
                 Some(ev) = events_rx.recv() => {
                     route_event(
                         ev,
@@ -510,6 +698,7 @@ impl DesktopController {
                             commit_allowed: !commits_suppressed,
                             focus_lost,
                             preedit: preedit.get(),
+                            quality: quality_of(&stats),
                         },
                         &mut buffer,
                         &mut drops,
@@ -528,6 +717,7 @@ impl DesktopController {
                             commit_allowed: !commits_suppressed,
                             focus_lost,
                             preedit: preedit.get(),
+                            quality: quality_of(&stats),
                         },
                         &mut buffer,
                         &mut drops,
@@ -566,7 +756,11 @@ impl DesktopController {
                     // never happen; a redundant repeat here is a no-op under
                     // DbusIndicator::publish's dedup (C2).
                     self.indicator
-                        .set_state(completion_indicator_state(&transcript, focus_lost))
+                        .set_state(completion_indicator_state(
+                            &transcript,
+                            focus_lost,
+                            quality_of(&stats),
+                        ))
                         .await;
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
@@ -711,6 +905,7 @@ async fn route_event(
         commit_allowed,
         focus_lost,
         preedit,
+        quality,
     } = flags;
     // A non-Final event is a boundary: flush the buffered final burst as one
     // commit before handling it (so ordering with `done`/indicator holds).
@@ -723,7 +918,7 @@ async fn route_event(
             advance(state, DictationState::Transcribing);
         }
     }
-    if let Some(indicator_state) = event_to_indicator(&event, *state, focus_lost) {
+    if let Some(indicator_state) = event_to_indicator(&event, *state, focus_lost, quality) {
         indicator.set_state(indicator_state).await;
     }
     if let OrchestratorEvent::AudioDropped(reason) = &event {
@@ -773,6 +968,8 @@ struct RouteFlags {
     focus_lost: bool,
     /// Streaming-preedit opt-in (R9).
     preedit: bool,
+    /// The capture's verdict on the input so far, for the `Done` notice.
+    quality: InputQuality,
 }
 
 /// Committed text buffered for coalesced insertion, for one utterance.
@@ -922,12 +1119,18 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Loading,
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::Recording)
         );
         assert_eq!(
-            event_to_indicator(&OrchestratorEvent::Ready, DictationState::Recording, false),
+            event_to_indicator(
+                &OrchestratorEvent::Ready,
+                DictationState::Recording,
+                false,
+                InputQuality::Ok
+            ),
             Some(IndicatorState::Recording)
         );
     }
@@ -944,7 +1147,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Transcribing,
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::Recording)
         );
@@ -952,7 +1156,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Transcribing,
                 DictationState::Transcribing,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::Recording),
             "still listening once state has itself advanced to Transcribing"
@@ -975,11 +1180,134 @@ mod tests {
             OrchestratorEvent::Transcribing,
         ] {
             assert_eq!(
-                event_to_indicator(&event, DictationState::Finalizing, false),
+                event_to_indicator(&event, DictationState::Finalizing, false, InputQuality::Ok),
                 None,
                 "{event:?} arriving once Finalizing must not touch the indicator"
             );
         }
+    }
+
+    #[test]
+    fn done_over_a_noisy_input_maps_to_the_noise_notice() {
+        assert_eq!(
+            event_to_indicator(
+                &OrchestratorEvent::Done("all done".into()),
+                DictationState::Finalizing,
+                false,
+                InputQuality::Noisy
+            ),
+            Some(IndicatorState::recoverable("Background noise is high"))
+        );
+        // An empty transcript keeps its own, more actionable, message.
+        assert_eq!(
+            completion_indicator_state("", false, InputQuality::Noisy),
+            IndicatorState::recoverable("No speech detected")
+        );
+        assert_eq!(
+            completion_indicator_state("", true, InputQuality::Noisy),
+            IndicatorState::recoverable("Focus lost")
+        );
+    }
+
+    // ── Input quality ─────────────────────────────────────────────────────────
+
+    fn stats(noise_floor: f32, speech_level: f32) -> AudioStats {
+        AudioStats {
+            noise_floor,
+            speech_level,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_quiet_input_with_clear_speech_is_ok() {
+        // The HUD meter's headset baseline: -80 dBFS floor, -41 dBFS speech.
+        assert_eq!(input_quality(&stats(1e-4, 0.009)), InputQuality::Ok);
+        // A quiet room where nothing was said: nothing to judge.
+        assert_eq!(input_quality(&stats(1e-4, 0.0)), InputQuality::Ok);
+    }
+
+    #[test]
+    fn digital_silence_is_not_noise() {
+        assert_eq!(input_quality(&stats(0.0, 0.0)), InputQuality::Ok);
+        assert_eq!(input_quality(&stats(-1.0, 0.5)), InputQuality::Ok);
+    }
+
+    #[test]
+    fn a_loud_floor_is_noisy_on_its_own() {
+        assert_eq!(input_quality(&stats(0.004, 0.0)), InputQuality::Noisy);
+        assert_eq!(input_quality(&stats(0.004, 0.5)), InputQuality::Noisy);
+        assert_eq!(
+            input_quality(&stats(NOISE_FLOOR_LIMIT, 0.5)),
+            InputQuality::Ok,
+            "the limit itself is still fine"
+        );
+    }
+
+    #[test]
+    fn speech_barely_above_the_floor_is_noisy() {
+        assert_eq!(input_quality(&stats(0.002, 0.005)), InputQuality::Noisy);
+        assert_eq!(input_quality(&stats(0.002, 0.0113)), InputQuality::Ok);
+        // Exactly 15 dB is clean (powers of two keep the ratio exact).
+        assert_eq!(
+            input_quality(&stats(0.001_953_125, 0.010_937_5)),
+            InputQuality::Ok
+        );
+    }
+
+    // ── Auto-stop ─────────────────────────────────────────────────────────────
+
+    fn progress(captured_ms: u64, last_voice_ms: Option<u64>) -> AudioStats {
+        AudioStats {
+            captured: Duration::from_millis(captured_ms),
+            last_voice: last_voice_ms.map(Duration::from_millis),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn off_never_stops() {
+        let policy = AutoStop::off();
+        assert_eq!(auto_stop_due(&progress(3_600_000, None), policy), None);
+    }
+
+    #[test]
+    fn silence_counts_from_the_start_when_nothing_was_said() {
+        let policy = AutoStop::toggle(Duration::from_secs(30));
+        assert_eq!(auto_stop_due(&progress(29_900, None), policy), None);
+        assert_eq!(
+            auto_stop_due(&progress(30_000, None), policy),
+            Some(AutoStopReason::Silence)
+        );
+    }
+
+    #[test]
+    fn silence_counts_from_the_last_voice() {
+        let policy = AutoStop::toggle(Duration::from_secs(30));
+        assert_eq!(auto_stop_due(&progress(40_000, Some(20_000)), policy), None);
+        assert_eq!(
+            auto_stop_due(&progress(50_000, Some(20_000)), policy),
+            Some(AutoStopReason::Silence)
+        );
+    }
+
+    #[test]
+    fn a_zero_silence_setting_leaves_only_the_cap() {
+        let policy = AutoStop::toggle(Duration::ZERO);
+        assert_eq!(auto_stop_due(&progress(299_900, None), policy), None);
+        assert_eq!(
+            auto_stop_due(&progress(300_000, None), policy),
+            Some(AutoStopReason::Cap)
+        );
+    }
+
+    #[test]
+    fn the_cap_wins_over_a_long_silence_setting() {
+        let policy = AutoStop::toggle(Duration::from_secs(600));
+        assert_eq!(
+            auto_stop_due(&progress(300_000, Some(299_000)), policy),
+            Some(AutoStopReason::Cap)
+        );
     }
 
     #[test]
@@ -988,7 +1316,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Done("all done".into()),
                 DictationState::Finalizing,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::Hidden)
         );
@@ -1004,7 +1333,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Done("".into()),
                 DictationState::Finalizing,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::recoverable("No speech detected"))
         );
@@ -1012,7 +1342,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Done("   ".into()),
                 DictationState::Finalizing,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::recoverable("No speech detected")),
             "whitespace-only transcript counts as empty"
@@ -1029,7 +1360,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Done("".into()),
                 DictationState::Finalizing,
-                true
+                true,
+                InputQuality::Ok
             ),
             Some(IndicatorState::recoverable("Focus lost"))
         );
@@ -1044,7 +1376,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Done("hello".into()),
                 DictationState::Finalizing,
-                true
+                true,
+                InputQuality::Ok
             ),
             Some(IndicatorState::Hidden)
         );
@@ -1055,15 +1388,15 @@ mod tests {
     #[test]
     fn completion_indicator_state_splits_on_empty_transcript() {
         assert_eq!(
-            completion_indicator_state("", false),
+            completion_indicator_state("", false, InputQuality::Ok),
             IndicatorState::recoverable("No speech detected")
         );
         assert_eq!(
-            completion_indicator_state("   ", false),
+            completion_indicator_state("   ", false, InputQuality::Ok),
             IndicatorState::recoverable("No speech detected")
         );
         assert_eq!(
-            completion_indicator_state("hello", false),
+            completion_indicator_state("hello", false, InputQuality::Ok),
             IndicatorState::Hidden
         );
     }
@@ -1073,16 +1406,16 @@ mod tests {
     #[test]
     fn completion_indicator_state_focus_lost_overrides_empty_transcript_message() {
         assert_eq!(
-            completion_indicator_state("", true),
+            completion_indicator_state("", true, InputQuality::Ok),
             IndicatorState::recoverable("Focus lost")
         );
         assert_eq!(
-            completion_indicator_state("   ", true),
+            completion_indicator_state("   ", true, InputQuality::Ok),
             IndicatorState::recoverable("Focus lost"),
             "whitespace-only transcript still counts as empty"
         );
         assert_eq!(
-            completion_indicator_state("hello", true),
+            completion_indicator_state("hello", true, InputQuality::Ok),
             IndicatorState::Hidden,
             "captured text hides the indicator even if focus was later lost"
         );
@@ -1113,7 +1446,8 @@ mod tests {
                     message: "boom".into()
                 },
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             Some(IndicatorState::critical("boom"))
         );
@@ -1127,7 +1461,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Snippet("hi".into()),
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             None
         );
@@ -1135,7 +1470,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::Final("hello".into()),
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             None
         );
@@ -1143,7 +1479,8 @@ mod tests {
             event_to_indicator(
                 &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotResident),
                 DictationState::Recording,
-                false
+                false,
+                InputQuality::Ok
             ),
             None
         );

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-13 14:01+0100\n"
+"POT-Creation-Date: 2026-09-13 16:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -62,7 +62,7 @@ msgid "Refresh backend data"
 msgstr ""
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:36
-#: data/main-window.blp:41 src/app.rs:598
+#: data/main-window.blp:41 src/app.rs:599
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -247,35 +247,35 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:12 src/app.rs:563 src/app.rs:802
+#: data/status-page.blp:12 src/app.rs:564 src/app.rs:803
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:13 src/app.rs:564 src/app.rs:803
+#: data/status-page.blp:13 src/app.rs:565 src/app.rs:804
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:599
+#: src/app.rs:600
 msgid "Backend diagnostics will appear after discovery."
 msgstr ""
 
-#: src/app.rs:807
+#: src/app.rs:808
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:808
+#: src/app.rs:809
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:824
+#: src/app.rs:825
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:1119
+#: src/app.rs:1173
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:1178 src/app.rs:1181
+#: src/app.rs:1232 src/app.rs:1235
 msgid "Reset to the schema default"
 msgstr ""
 
@@ -1222,31 +1222,31 @@ msgstr ""
 msgid "before the model was ready"
 msgstr ""
 
-#: src/myna_settings.rs:51
+#: src/myna_settings.rs:61
 msgid "Automatic"
 msgstr ""
 
-#: src/myna_settings.rs:52
+#: src/myna_settings.rs:62
 msgid "Streaming"
 msgstr ""
 
-#: src/myna_settings.rs:53
+#: src/myna_settings.rs:63
 msgid "Batch"
 msgstr ""
 
-#: src/myna_settings.rs:54
+#: src/myna_settings.rs:64
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:55
+#: src/myna_settings.rs:65
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:56
+#: src/myna_settings.rs:66
 msgid "Bar"
 msgstr ""
 
-#: src/myna_settings.rs:57
+#: src/myna_settings.rs:67
 msgid "Progress"
 msgstr ""
 
@@ -1281,4 +1281,15 @@ msgid ""
 "All four render the same calibrated audio envelope: Bar is a level bar in "
 "the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter, "
 "Progress a plain progress bar."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:65
+msgid "Stop after silence (seconds)"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:66
+msgid ""
+"With tap-to-start activation, end the dictation session on its own after "
+"this many seconds without speech. 0 keeps it running until the next tap. "
+"Hold-to-talk always ends with the key."
 msgstr ""

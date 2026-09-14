@@ -111,7 +111,14 @@ fn every_real_schema_key_round_trips_and_resets_in_the_private_keyfile() {
                     .clone(),
             ),
             SettingRange::Unrestricted => ClientSettingValue::Text("round trip".into()),
-            other => panic!("unexpected range in real schema: {other:?}"),
+            SettingRange::Range { minimum, .. } => {
+                let floor = minimum.as_integer().expect("integer range");
+                let default = metadata
+                    .default_value()
+                    .as_integer()
+                    .expect("integer default");
+                ClientSettingValue::Integer(if default == floor { floor + 1 } else { floor })
+            }
         };
         adapter.set(metadata.key().as_str(), value.clone()).unwrap();
         assert_eq!(adapter.get(metadata.key().as_str()).unwrap(), value);
@@ -271,6 +278,62 @@ fn missing_schema_is_explicit_and_actionable() {
     assert!(error.to_string().contains("restart"));
 }
 
+/// The schema declares `u`; a signed `i` key takes the other branch of the
+/// width conversion, and a width the page does not hold stays refused.
+#[test]
+fn signed_integer_keys_round_trip_and_wider_ones_are_refused() {
+    let files = TestFiles::new("signed-integer");
+    let schema_dir = files.0.join("schemas");
+    std::fs::create_dir_all(&schema_dir).unwrap();
+    std::fs::write(
+        schema_dir.join("com.canonical.Myna.Dictation.gschema.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
+    <key name="offset" type="i"><default>-2</default><range min="-10" max="10"/></key>
+    <key name="wide" type="x"><default>7</default></key>
+  </schema>
+</schemalist>
+"#,
+    )
+    .unwrap();
+    assert!(std::process::Command::new("glib-compile-schemas")
+        .arg(&schema_dir)
+        .status()
+        .unwrap()
+        .success());
+    let source = gio::SettingsSchemaSource::from_directory(&schema_dir, None, false).unwrap();
+    let adapter =
+        GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
+
+    assert_eq!(
+        adapter.get("offset").unwrap(),
+        ClientSettingValue::Integer(-2)
+    );
+    adapter
+        .set("offset", ClientSettingValue::Integer(-10))
+        .unwrap();
+    assert_eq!(
+        adapter.get("offset").unwrap(),
+        ClientSettingValue::Integer(-10)
+    );
+    assert!(matches!(
+        adapter.set("offset", ClientSettingValue::Integer(11)),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+    assert!(matches!(
+        adapter.get("wide"),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+    assert!(matches!(
+        adapter.set("wide", ClientSettingValue::Integer(1)),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+
+    assert_eq!(ClientSettingValue::Integer(3).as_str(), None);
+    assert_eq!(ClientSettingValue::Text("3".into()).as_integer(), None);
+}
+
 #[test]
 fn explicit_backend_does_not_change_process_settings_environment() {
     let files = TestFiles::new("environment");
@@ -310,8 +373,46 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans = smoke_build(std::rc::Rc::new(adapter)).unwrap();
 
-    assert_eq!(plans.len(), 3);
+    assert_eq!(plans.len(), 4);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
+    let number = plans
+        .iter()
+        .find(|plan| plan.kind == WidgetKind::Number)
+        .expect("silence-timeout is a bounded integer");
+    assert_eq!(number.key, "silence-timeout");
+    assert_eq!(number.bounds, Some((0, 600)));
     assert!(plans.iter().all(|plan| !plan.description.is_empty()));
+}
+
+#[test]
+fn the_silence_timeout_is_a_bounded_integer_that_rejects_values_outside_its_range() {
+    let files = TestFiles::new("silence-timeout");
+    let adapter = open_adapter(&files);
+
+    assert_eq!(
+        adapter.get("silence-timeout").unwrap(),
+        ClientSettingValue::Integer(30)
+    );
+    adapter
+        .set("silence-timeout", ClientSettingValue::Integer(0))
+        .unwrap();
+    assert_eq!(
+        open_adapter(&files).get("silence-timeout").unwrap(),
+        ClientSettingValue::Integer(0)
+    );
+    for outside in [-1, 601] {
+        assert!(matches!(
+            adapter.set("silence-timeout", ClientSettingValue::Integer(outside)),
+            Err(ClientSettingsError::InvalidValue { key, .. }) if key == "silence-timeout"
+        ));
+    }
+    assert!(matches!(
+        adapter.set("silence-timeout", ClientSettingValue::Text("30".into())),
+        Err(ClientSettingsError::InvalidValue { key, .. }) if key == "silence-timeout"
+    ));
+    assert_eq!(
+        adapter.get("silence-timeout").unwrap(),
+        ClientSettingValue::Integer(0)
+    );
 }

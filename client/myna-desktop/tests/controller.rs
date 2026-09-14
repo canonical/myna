@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use myna_audio::{AudioFormat, CaptureSource, ScriptedBackend, Step};
 use myna_core::{AudioSource, CaptureStream, SessionConfig};
-use myna_desktop::controller::{ChannelSink, SessionRun};
+use myna_desktop::controller::{AutoStop, ChannelSink, Session, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::indicator::IndicatorState;
 use myna_desktop::inject::mock::{AcquireOutcome, MockInjector};
@@ -23,6 +23,7 @@ use myna_orchestrator::{
     TriggerEdge,
 };
 use tokio::sync::mpsc;
+use tokio::sync::Notify;
 
 // ── Session-factory helpers ─────────────────────────────────────────────────
 
@@ -1243,4 +1244,252 @@ async fn preedit_suppressed_with_commits_after_focus_loss() {
     assert!(log.commits.is_empty(), "nothing committed after focus-out");
     assert!(log.preedits.is_empty(), "no preedit after focus-out");
     assert_eq!(controller.state(), DictationState::Idle);
+}
+
+// ── Auto-stop (toggle sessions end themselves) and input quality ─────────────
+
+/// A session over a scripted capture that hands the controller the stats tap,
+/// the way the daemon's factory does.
+fn observed_session(
+    steps: impl Fn() -> Vec<Step> + Send + 'static,
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> Session + Send {
+    move |events: mpsc::Sender<OrchestratorEvent>| {
+        let backend = FakeBackend::commit_drain();
+        let source = CaptureSource::builder(AudioFormat::default())
+            .backend(Box::new(ScriptedBackend::new(steps())))
+            .build();
+        let stop = source.stop_handle();
+        let stats = source.stats();
+        let run: SessionRun = Box::pin(async move {
+            let mut sink = ChannelSink(events);
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await
+        });
+        Session {
+            run,
+            stop,
+            stats: Some(stats),
+        }
+    }
+}
+
+/// What a toggle trigger does after its Press.
+enum Then {
+    /// A second poke after this long: the user ending the session.
+    ReleaseAfter(Duration),
+    /// Nothing, until the controller resyncs parity (an end it decided on
+    /// its own); then the trigger runs out, ending the controller.
+    WaitForResync,
+    /// The Release was delivered; the next poll ends the controller.
+    Exhausted,
+}
+
+/// A toggle trigger faithful to the control socket: one Press, then either a
+/// timed Release or silence until the controller resyncs it. Cancellation
+/// safe like the real ones: the controller's select loop drops and recreates
+/// the `next_edge` future on every other event, so the deadline is fixed at
+/// the first call and the resync wait is a re-checkable flag.
+struct ProbeTrigger {
+    pressed: bool,
+    then: Then,
+    release_at: Option<tokio::time::Instant>,
+    resynced: Arc<std::sync::atomic::AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+impl ProbeTrigger {
+    fn new(then: Then) -> Self {
+        Self {
+            pressed: false,
+            then,
+            release_at: None,
+            resynced: Arc::default(),
+            notify: Arc::default(),
+        }
+    }
+
+    fn resynced(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.resynced.clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for ProbeTrigger {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        if !self.pressed {
+            self.pressed = true;
+            return Some(TriggerEdge::Press);
+        }
+        match self.then {
+            Then::ReleaseAfter(delay) => {
+                let at = *self
+                    .release_at
+                    .get_or_insert_with(|| tokio::time::Instant::now() + delay);
+                tokio::time::sleep_until(at).await;
+                self.then = Then::Exhausted;
+                Some(TriggerEdge::Release)
+            }
+            Then::WaitForResync => {
+                while !self.resynced.load(std::sync::atomic::Ordering::SeqCst) {
+                    self.notify.notified().await;
+                }
+                None
+            }
+            Then::Exhausted => None,
+        }
+    }
+
+    async fn resync(&mut self) {
+        self.resynced
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+}
+
+/// A second of digital silence delivered at once, then a live-paced wait the
+/// stop flag interrupts: a user who tapped and never spoke.
+fn silent_then_live() -> Vec<Step> {
+    vec![
+        Step::Silence(Duration::from_secs(1)),
+        Step::Wait(Duration::from_secs(30)),
+    ]
+}
+
+async fn run_toggle(
+    then: Then,
+    policy: AutoStop,
+    steps: impl Fn() -> Vec<Step> + Send + 'static,
+) -> (
+    Arc<Mutex<myna_desktop::inject::mock::InjectorLog>>,
+    Arc<Mutex<Vec<IndicatorState>>>,
+    Arc<std::sync::atomic::AtomicBool>,
+    DictationState,
+) {
+    let trigger = ProbeTrigger::new(then);
+    let resynced = trigger.resynced();
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let states = indicator.log();
+    let mut controller = DesktopController::builder()
+        .trigger(trigger)
+        .injector(injector)
+        .indicator(indicator)
+        .session(observed_session(steps))
+        .auto_stop(policy)
+        .build();
+    tokio::time::timeout(Duration::from_secs(10), controller.run())
+        .await
+        .expect("the controller must come back to idle on its own");
+    (inject_log, states, resynced, controller.state())
+}
+
+#[tokio::test]
+async fn a_toggle_session_ends_itself_after_the_silence_timeout() {
+    let (inject_log, states, resynced, state) = run_toggle(
+        Then::WaitForResync,
+        AutoStop::toggle(Duration::from_millis(500)),
+        silent_then_live,
+    )
+    .await;
+
+    // Ended like a Release: finalized, the tail committed, back to Idle...
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.commits,
+        vec!["the quick brown fox jumps over the lazy dog."]
+    );
+    assert!(states.lock().unwrap().contains(&IndicatorState::Finalizing));
+    assert_eq!(state, DictationState::Idle);
+    // ...and with the toggle's parity resynced, since no edge was read off the
+    // trigger for this end (the FocusOut lesson).
+    assert!(resynced.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn the_cap_ends_a_toggle_session_even_with_the_silence_timeout_off() {
+    let (inject_log, _states, resynced, state) = run_toggle(
+        Then::WaitForResync,
+        AutoStop {
+            silence: Duration::ZERO,
+            cap: Duration::from_millis(700),
+        },
+        silent_then_live,
+    )
+    .await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["the quick brown fox jumps over the lazy dog."]
+    );
+    assert_eq!(state, DictationState::Idle);
+    assert!(resynced.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn with_auto_stop_off_only_the_user_ends_the_session() {
+    // Hold-to-talk's contract: a second of silence sits there until the
+    // user's own Release, and no resync happens because that Release was
+    // read off the trigger.
+    let (inject_log, _states, resynced, state) = run_toggle(
+        Then::ReleaseAfter(Duration::from_millis(800)),
+        AutoStop::off(),
+        silent_then_live,
+    )
+    .await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["the quick brown fox jumps over the lazy dog."]
+    );
+    assert_eq!(state, DictationState::Idle);
+    assert!(!resynced.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+fn constant(sample: i16, ms: usize) -> Vec<u8> {
+    std::iter::repeat(sample.to_le_bytes())
+        .take(16 * ms)
+        .flatten()
+        .collect()
+}
+
+#[tokio::test]
+async fn a_noisy_input_raises_the_noise_notice_when_the_session_completes() {
+    // -34 dBFS of steady noise under -26 dBFS of "speech": text comes out,
+    // and the user is told why it is worse than it should be.
+    let (inject_log, states, _resynced, _state) = run_toggle(
+        Then::ReleaseAfter(Duration::from_millis(300)),
+        AutoStop::off(),
+        || {
+            vec![
+                Step::Bytes(constant(655, 500)),
+                Step::Bytes(constant(1638, 500)),
+                Step::Wait(Duration::from_secs(30)),
+            ]
+        },
+    )
+    .await;
+
+    assert!(!inject_log.lock().unwrap().commits.is_empty());
+    assert_eq!(
+        states.lock().unwrap().last(),
+        Some(&IndicatorState::recoverable("Background noise is high"))
+    );
+}
+
+#[tokio::test]
+async fn a_quiet_input_completes_without_a_notice() {
+    let (_inject_log, states, _resynced, _state) = run_toggle(
+        Then::ReleaseAfter(Duration::from_millis(300)),
+        AutoStop::off(),
+        || {
+            vec![
+                Step::Bytes(constant(3, 500)),
+                Step::Bytes(constant(328, 500)),
+                Step::Wait(Duration::from_secs(30)),
+            ]
+        },
+    )
+    .await;
+
+    assert_eq!(states.lock().unwrap().last(), Some(&IndicatorState::Hidden));
 }

@@ -58,5 +58,16 @@
         meter, Progress a plain progress bar.
       </description>
     </key>
+
+    <key name="silence-timeout" type="u">
+      <default>30</default>
+      <range min="0" max="600"/>
+      <summary>Stop after silence (seconds)</summary>
+      <description>
+        With tap-to-start activation, end the dictation session on its own
+        after this many seconds without speech. 0 keeps it running until the
+        next tap. Hold-to-talk always ends with the key.
+      </description>
+    </key>
   </schema>
 </schemalist>

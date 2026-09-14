@@ -109,6 +109,15 @@ impl ClientSettings for GioClientSettings {
         let variant = match (&range, &value) {
             (SettingRange::Choices(_), ClientSettingValue::Choice(value))
             | (SettingRange::Unrestricted, ClientSettingValue::Text(value)) => value.to_variant(),
+            (
+                SettingRange::Range { .. } | SettingRange::Unrestricted,
+                ClientSettingValue::Integer(value),
+            ) => integer_variant(*value, &schema_key.value_type()).ok_or_else(|| {
+                ClientSettingsError::InvalidValue {
+                    key: key.to_owned(),
+                    message: "value is outside the schema range".into(),
+                }
+            })?,
             _ => {
                 return Err(ClientSettingsError::InvalidValue {
                     key: key.to_owned(),
@@ -216,6 +225,9 @@ fn value_from_variant(
     range: &SettingRange,
     key: &str,
 ) -> Result<ClientSettingValue, ClientSettingsError> {
+    if let Some(integer) = integer_from_variant(value) {
+        return Ok(ClientSettingValue::Integer(integer));
+    }
     let value = value
         .get::<String>()
         .ok_or_else(|| ClientSettingsError::InvalidValue {
@@ -226,6 +238,28 @@ fn value_from_variant(
         SettingRange::Choices(_) => ClientSettingValue::Choice(value),
         _ => ClientSettingValue::Text(value),
     })
+}
+
+/// The integer widths a settings row holds (`i` and `u`, the two GSettings
+/// schemas use), widened to `i64`. Any other width stays a string to the
+/// page, which then refuses it the way it refuses any unknown type.
+fn integer_from_variant(value: &glib::Variant) -> Option<i64> {
+    value
+        .get::<i32>()
+        .map(i64::from)
+        .or_else(|| value.get::<u32>().map(i64::from))
+}
+
+/// `value` in the key's own integer width, or `None` when it does not fit -
+/// which the schema's range check would have refused anyway.
+fn integer_variant(value: i64, kind: &glib::VariantTy) -> Option<glib::Variant> {
+    if *kind == *glib::VariantTy::INT32 {
+        i32::try_from(value).ok().map(|v| v.to_variant())
+    } else if *kind == *glib::VariantTy::UINT32 {
+        u32::try_from(value).ok().map(|v| v.to_variant())
+    } else {
+        None
+    }
 }
 
 fn private_keyfile_path() -> Result<PathBuf, ClientSettingsError> {

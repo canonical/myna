@@ -47,6 +47,7 @@
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::future::{BoxFuture, FutureExt};
 
@@ -64,7 +65,7 @@ use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlT
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
-use myna_desktop::{DesktopController, Indicator, Live};
+use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
 use myna_orchestrator::{
     run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixIe115Backend,
 };
@@ -167,16 +168,36 @@ struct Resolved {
     language: Option<String>,
     hotkey: Option<String>,
     preedit: bool,
+    auto_stop: AutoStop,
 }
 
 impl Resolved {
     fn new(args: &Args, settings: &myna_core::Settings) -> Self {
+        let activation = args.activation.unwrap_or_else(Activation::from_packaging);
         Self {
-            activation: args.activation.unwrap_or_else(Activation::from_packaging),
+            activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
             hotkey: args.shortcut.clone(),
             preedit: resolve_preedit(args.preedit, settings.streaming_mode),
+            auto_stop: resolve_auto_stop(activation, args.hold, settings.silence_timeout),
         }
+    }
+}
+
+/// The session-ending policy for this activation. Only a toggle has no
+/// release edge to end on: the portal without `--hold`, and the control
+/// socket, whose every poke flips. Hold-to-talk and the debug stdin trigger
+/// keep the key as the whole authority.
+fn resolve_auto_stop(activation: Activation, hold: bool, silence_secs: u32) -> AutoStop {
+    let toggle = match activation {
+        Activation::Portal => !hold,
+        Activation::Control => true,
+        Activation::Stdin => false,
+    };
+    if toggle {
+        AutoStop::toggle(Duration::from_secs(u64::from(silence_secs)))
+    } else {
+        AutoStop::off()
     }
 }
 
@@ -201,6 +222,9 @@ impl Resolved {
 struct LiveSettings {
     preedit: Live<bool>,
     language: Live<Option<String>>,
+    /// Read at every stats tick of a running session, so a changed timeout
+    /// applies to the session in progress.
+    auto_stop: Live<AutoStop>,
     hud_style: Arc<tokio::sync::watch::Sender<String>>,
 }
 
@@ -209,6 +233,7 @@ impl LiveSettings {
         Self {
             preedit: Live::new(resolved.preedit),
             language: Live::new(resolved.language.clone()),
+            auto_stop: Live::new(resolved.auto_stop),
             // The schema default until the first read in `follow`; a machine
             // with no schema installed keeps it, which is the same answer
             // `Settings::load` gives there.
@@ -298,6 +323,14 @@ impl LiveSettings {
                 resolved.language.as_deref().unwrap_or("(backend default)")
             );
             self.language.set(resolved.language.clone());
+        }
+        if self.auto_stop.get() != resolved.auto_stop {
+            myna_core::info_log!(
+                "settings",
+                "silence timeout -> {:?} (live, applies to a running session)",
+                resolved.auto_stop.silence
+            );
+            self.auto_stop.set(resolved.auto_stop);
         }
     }
 }
@@ -489,7 +522,7 @@ fn make_session(
     live: &LiveSettings,
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
-) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> (SessionRun, StopHandle) + Send + 'static {
+) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> Session + Send + 'static {
     let backend_socket = args.backend().expect("daemon requires a backend");
     let language = live.language.clone();
     let target = args.target.clone();
@@ -507,6 +540,9 @@ fn make_session(
         }
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let stop = source.stop_handle();
+        // The controller reads the same tap the level pump does, for the
+        // silence timeout and the end-of-session input verdict.
+        let stats = source.stats();
         let config = SessionConfig {
             // Read here rather than captured above, for the same reason the
             // backend socket is: a value changed after login applies at the
@@ -553,7 +589,11 @@ fn make_session(
                 }
             }
         });
-        (run, stop)
+        Session {
+            run,
+            stop,
+            stats: Some(stats),
+        }
     }
 }
 
@@ -562,9 +602,9 @@ fn make_session(
 /// other backend error. Not exiting matters - "no backend yet" is the normal
 /// state between `snap install myna` and the first `snap connect`, and it is a
 /// state the user fixes without touching the daemon.
-fn no_backend(e: myna_desktop::backend::ResolveError) -> (SessionRun, StopHandle) {
+fn no_backend(e: myna_desktop::backend::ResolveError) -> Session {
     let run: SessionRun = Box::pin(async move { Err(BackendError::Connect(e.to_string())) });
-    (run, StopHandle::default())
+    (run, StopHandle::default()).into()
 }
 
 /// Binds the portal shortcut, re-binding whenever the portal goes away.
@@ -694,7 +734,8 @@ async fn run_controller(
         .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
         .session(make_session(&args, &live, readiness, pump_bus.clone()))
-        .preedit(live.preedit.clone());
+        .preedit(live.preedit.clone())
+        .auto_stop(live.auto_stop.clone());
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -1626,6 +1667,72 @@ mod tests {
         );
     }
 
+    /// Only a toggle activation gets the policy: a hold has a release edge,
+    /// the debug stdin trigger is a hold in disguise, and the timeout setting
+    /// lands under the fixed cap.
+    #[test]
+    fn auto_stop_follows_the_activation_shape() {
+        assert_eq!(
+            resolve_auto_stop(Activation::Portal, false, 30),
+            AutoStop::toggle(Duration::from_secs(30))
+        );
+        assert_eq!(
+            resolve_auto_stop(Activation::Control, false, 0),
+            AutoStop::toggle(Duration::ZERO)
+        );
+        assert_eq!(
+            resolve_auto_stop(Activation::Portal, true, 30),
+            AutoStop::off()
+        );
+        assert_eq!(
+            resolve_auto_stop(Activation::Stdin, false, 30),
+            AutoStop::off()
+        );
+        let a = Args {
+            activation: Some(Activation::Control),
+            ..Default::default()
+        };
+        let settings = myna_core::Settings {
+            silence_timeout: 45,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolved(&a, &settings).auto_stop,
+            AutoStop::toggle(Duration::from_secs(45))
+        );
+    }
+
+    /// A settings change lands in the live cell the controller reads, and an
+    /// unchanged resolution leaves it (and the journal) alone.
+    #[test]
+    fn a_silence_timeout_change_reaches_the_live_cell() {
+        let a = Args {
+            activation: Some(Activation::Control),
+            ..Default::default()
+        };
+        let live = LiveSettings::new(&resolved(&a, &unset()));
+        assert_eq!(
+            live.auto_stop.get(),
+            AutoStop::toggle(Duration::from_secs(
+                myna_core::settings::DEFAULT_SILENCE_TIMEOUT_SECS.into()
+            ))
+        );
+        let changed = myna_core::Settings {
+            silence_timeout: 5,
+            ..Default::default()
+        };
+        live.apply(&resolved(&a, &changed), "test");
+        assert_eq!(
+            live.auto_stop.get(),
+            AutoStop::toggle(Duration::from_secs(5))
+        );
+        live.apply(&resolved(&a, &changed), "test");
+        assert_eq!(
+            live.auto_stop.get(),
+            AutoStop::toggle(Duration::from_secs(5))
+        );
+    }
+
     #[test]
     fn conflicting_activation_flags_are_rejected() {
         // Last-one-wins would make `--portal --stdin` look like it worked.
@@ -1788,7 +1895,7 @@ mod tests {
         let (events_tx, _events_rx) = mpsc::channel(1);
         // Calling the factory is synchronous; `run` below is deliberately
         // never polled/awaited, proving the reset can't be hiding inside it.
-        let (_run, _stop) = factory(events_tx);
+        let _session = factory(events_tx);
 
         assert!(
             !readiness.ready_seen(),

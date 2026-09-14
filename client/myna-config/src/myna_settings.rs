@@ -13,6 +13,8 @@ use crate::ports::{ClientSettings, ClientSettingsError, ClientSettingsSubscripti
 pub enum WidgetKind {
     Choice,
     Text,
+    /// A bounded integer: a spin row over the schema range.
+    Number,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,12 +24,19 @@ pub struct WidgetPlan {
     pub description: String,
     pub kind: WidgetKind,
     pub choices: Vec<String>,
+    /// The schema's inclusive bounds; present exactly for [`WidgetKind::Number`].
+    pub bounds: Option<(i64, i64)>,
     pub writable: bool,
 }
 
 pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
+    let bounds = match metadata.range() {
+        SettingRange::Range { minimum, maximum } => minimum.as_integer().zip(maximum.as_integer()),
+        _ => None,
+    };
     let kind = match metadata.range() {
         SettingRange::Choices(_) => WidgetKind::Choice,
+        _ if bounds.is_some() => WidgetKind::Number,
         _ => WidgetKind::Text,
     };
     WidgetPlan {
@@ -42,6 +51,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
             SettingRange::Choices(choices) => choices.clone(),
             _ => Vec::new(),
         },
+        bounds,
         writable: metadata.writable(),
     }
 }

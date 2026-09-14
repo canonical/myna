@@ -59,9 +59,17 @@ pub const HUD_STYLES: &[&str] = &["bar", "ribbon", "vumeter", "progress"];
 /// [`Settings::hud_style`] reads `None`.
 pub const DEFAULT_HUD_STYLE: &str = "bar";
 
+/// How long a toggle session may go without voice before the daemon ends it
+/// on its own, in seconds; `0` turns the timeout off.
+pub const KEY_SILENCE_TIMEOUT: &str = "silence-timeout";
+
+/// The schema default for [`KEY_SILENCE_TIMEOUT`], also what a machine with
+/// no schema installed gets - a forgotten session should end there too.
+pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub streaming_mode: StreamingMode,
     /// `None` where the key is empty - "unset" and "" are the same intent, and
@@ -70,6 +78,20 @@ pub struct Settings {
     /// The HUD indicator style nick (`ribbon` | `vumeter`), or `None` when
     /// unset (the schema default applies).
     pub hud_style: Option<String>,
+    /// Seconds of silence after which a toggle session ends itself; `0` = never.
+    pub silence_timeout: u32,
+}
+
+/// What a machine with no schema installed reads: every key's schema default.
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            streaming_mode: StreamingMode::default(),
+            language: None,
+            hud_style: None,
+            silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
+        }
+    }
 }
 
 impl Settings {
@@ -89,6 +111,7 @@ impl Settings {
             streaming_mode: store.streaming_mode(),
             language: store.text(KEY_LANGUAGE),
             hud_style: store.text(KEY_HUD_STYLE),
+            silence_timeout: store.seconds(KEY_SILENCE_TIMEOUT),
         }
     }
 }
@@ -143,6 +166,11 @@ impl Store {
     pub fn text(&self, key: &str) -> Option<String> {
         let value = self.settings.string(key).to_string();
         (!value.is_empty()).then_some(value)
+    }
+
+    /// An unsigned-seconds key. The schema bounds it; nothing to interpret.
+    pub fn seconds(&self, key: &str) -> u32 {
+        self.settings.uint(key)
     }
 }
 
@@ -528,6 +556,26 @@ mod tests {
     fn an_unset_key_reads_the_schema_default() {
         assert_eq!(test_store().streaming_mode(), StreamingMode::Auto);
         assert_eq!(Settings::default().streaming_mode, StreamingMode::Auto);
+    }
+
+    /// The silence timeout's schema default and the no-schema fallback are
+    /// one number, so a machine without the schema still ends a forgotten
+    /// session; a written value reads back through `from_store`.
+    #[test]
+    fn silence_timeout_reads_the_schema_default_and_round_trips() {
+        let store = test_store();
+        assert_eq!(
+            store.seconds(KEY_SILENCE_TIMEOUT),
+            DEFAULT_SILENCE_TIMEOUT_SECS
+        );
+        assert_eq!(
+            Settings::from_store(&store).silence_timeout,
+            Settings::default().silence_timeout
+        );
+        assert!(store.settings.set_uint(KEY_SILENCE_TIMEOUT, 0).is_ok());
+        assert_eq!(Settings::from_store(&store).silence_timeout, 0);
+        assert!(store.settings.set_uint(KEY_SILENCE_TIMEOUT, 120).is_ok());
+        assert_eq!(Settings::from_store(&store).silence_timeout, 120);
     }
 
     /// The schema's nicks and this module's parser are one contract; a value

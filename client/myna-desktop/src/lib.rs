@@ -34,7 +34,8 @@ pub mod policy;
 pub mod shortcut;
 
 pub use controller::{
-    event_to_indicator, ChannelSink, DesktopController, DesktopControllerBuilder, DictationState,
+    auto_stop_due, event_to_indicator, input_quality, AutoStop, AutoStopReason, ChannelSink,
+    DesktopController, DesktopControllerBuilder, DictationState, InputQuality, Session,
     SessionFactory, SessionRun,
 };
 pub use indicator::{Indicator, IndicatorState};
