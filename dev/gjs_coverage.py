@@ -5,7 +5,8 @@ GJS emits lcov-format coverage when run with
 `--coverage-prefix=PREFIX --coverage-output=DIR`. Across several `gjs` runs
 that output lands in one lcov file per run; this tool merges a directory of
 them (or a single file), keeps only the records whose source path lives under
-the extension tree, and reports line / branch totals and per-file detail.
+the extension tree, folds the runs that recorded the same module into one
+record, and reports line / branch totals and per-file detail.
 
 Inputs:
   <lcov>            merged lcov (or a directory of coverage.lcov files) from gjs
@@ -28,17 +29,45 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
 @dataclass
 class Record:
     source: str
-    lf: int
-    lh: int
-    brf: int
-    brh: int
+    lines: dict[int, int] = field(default_factory=dict)
+    # (line, block, branch) -> times taken; None is lcov's "-", the block never ran.
+    branches: dict[tuple[int, int, int], int | None] = field(default_factory=dict)
+    functions: dict[str, int] = field(default_factory=dict)
+    function_hits: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def lf(self) -> int:
+        return len(self.lines)
+
+    @property
+    def lh(self) -> int:
+        return sum(1 for hits in self.lines.values() if hits)
+
+    @property
+    def brf(self) -> int:
+        return len(self.branches)
+
+    @property
+    def brh(self) -> int:
+        return sum(1 for taken in self.branches.values() if taken)
+
+    def merge(self, other: Record) -> None:
+        """Fold another run's record of the same source into this one."""
+        for line, hits in other.lines.items():
+            self.lines[line] = self.lines.get(line, 0) + hits
+        for key, taken in other.branches.items():
+            mine = self.branches.get(key)
+            self.branches[key] = taken if mine is None else mine + (taken or 0)
+        self.functions.update(other.functions)
+        for name, hits in other.function_hits.items():
+            self.function_hits[name] = self.function_hits.get(name, 0) + hits
 
 
 def physical_lines(path: Path) -> int:
@@ -77,22 +106,27 @@ def iter_lcov(path: Path):
 
 
 def parse_record(lines: list[str]) -> Record | None:
-    source = None
-    lf = lh = brf = brh = 0
+    record: Record | None = None
     for line in lines:
-        if line.startswith("SF:"):
-            source = line[len("SF:") :].strip()
-        elif line.startswith("LF:"):
-            lf = int(line[len("LF:") :])
-        elif line.startswith("LH:"):
-            lh = int(line[len("LH:") :])
-        elif line.startswith("BRF:"):
-            brf = int(line[len("BRF:") :])
-        elif line.startswith("BRH:"):
-            brh = int(line[len("BRH:") :])
-    if source is None:
-        return None
-    return Record(source=source, lf=lf, lh=lh, brf=brf, brh=brh)
+        tag, _, value = line.partition(":")
+        if tag == "SF":
+            record = Record(source=value.strip())
+        elif record is None:
+            continue
+        elif tag == "DA":
+            number, hits = value.split(",")[:2]
+            record.lines[int(number)] = int(hits)
+        elif tag == "BRDA":
+            line_no, block, branch, taken = value.split(",")
+            key = (int(line_no), int(block), int(branch))
+            record.branches[key] = None if taken == "-" else int(taken)
+        elif tag == "FN":
+            first, name = value.split(",", 1)
+            record.functions[name] = int(first)
+        elif tag == "FNDA":
+            hits, name = value.split(",", 1)
+            record.function_hits[name] = int(hits)
+    return record
 
 
 def collect_records(lcov_arg: Path) -> list[Record]:
@@ -140,7 +174,7 @@ def main() -> int:
     # the lcov SF paths point at those copies (under <raw>/<run>/), not the tree.
     # Map each copy back to its real source: drop the run dir, re-anchor on
     # <source_root>, and keep only files that actually exist there. That drops
-    # gjs internals (org/gnome/gjs/...) and the test harness; the Shell-bound
+    # the test harness, and gjs internals should a run record any; the Shell-bound
     # modules (host.js/extension.js) aren't importable headlessly so they simply
     # never appear - an honest "counted for what ran".
     raw = args.raw.resolve() if args.raw else None
@@ -164,46 +198,54 @@ def main() -> int:
             return None
         return cand
 
-    mapped = [(r, real_source(r)) for r in records]
-    kept = [(r, rs) for r, rs in mapped if rs is not None]
-    if not kept:
+    # A module imported by several suites is recorded once per run.
+    merged: dict[Path, Record] = {}
+    for rec in records:
+        rs = real_source(rec)
+        if rs is None:
+            continue
+        if rs in merged:
+            merged[rs].merge(rec)
+        else:
+            merged[rs] = rec
+    if not merged:
         raise SystemExit(
             f"gjs_coverage: no extension records under {args.source_root} "
             f"(saw {len(records)} total; prefix/--raw may be wrong)"
         )
 
-    seen = {rs for _, rs in kept}
-
     # The honest denominator: every shipped module, not just the ones that ran.
     # The Shell-bound files (host.js/extension.js, …) can't be imported without
     # a live Shell, so they never appear in the lcov - list them as 0% rather
     # than hiding the gap. Tests and generated coverage output are not counted.
-    zeros: list[tuple[Record, Path]] = []
+    zeros: dict[Path, int] = {}
     for src in sorted(root.rglob("*.js")):
         rel = src.relative_to(root)
         if rel.parts[0] in ("test", "target", "po"):
             continue
-        if src in seen:
+        if src in merged:
             continue
-        zeros.append((Record(source=str(src), lf=physical_lines(src), lh=0, brf=0, brh=0), src))
+        zeros[src] = physical_lines(src)
 
-    all_records = kept + zeros
+    # (source, lines, lines hit, branches, branches hit)
+    rows = [(rs, r.lf, r.lh, r.brf, r.brh) for rs, r in merged.items()]
+    rows += [(src, lf, 0, 0, 0) for src, lf in zeros.items()]
 
-    t_lf = sum(r.lf for r, _ in all_records)
-    t_lh = sum(r.lh for r, _ in all_records)
-    t_brf = sum(r.brf for r, _ in all_records)
-    t_brh = sum(r.brh for r, _ in all_records)
+    t_lf = sum(row[1] for row in rows)
+    t_lh = sum(row[2] for row in rows)
+    t_brf = sum(row[3] for row in rows)
+    t_brh = sum(row[4] for row in rows)
 
     by_file = sorted(
         (
             {
                 "source": str(rs.relative_to(root.parent)),
-                "lines": r.lf,
-                "lines_hit": r.lh,
-                "line_pct": round(pct(r.lh, r.lf), 1),
+                "lines": lf,
+                "lines_hit": lh,
+                "line_pct": round(pct(lh, lf), 1),
             }
-            for r, rs in all_records
-            if r.lf > 0 or rs in {z for _, z in zeros}
+            for rs, lf, lh, _, _ in rows
+            if lf > 0 or rs in zeros
         ),
         key=lambda d: (d["line_pct"], d["source"]),
     )
@@ -243,13 +285,24 @@ def main() -> int:
         # Restricted lcov for genhtml / downstream merging, re-anchored on the
         # real source tree so genhtml can find the sources.
         with (args.out / "gjs-extension.lcov").open("w", encoding="utf-8") as fh:
-            for r, rs in kept:
+            for rs, r in merged.items():
                 fh.write(f"SF:{rs}\n")
-                fh.write(f"LF:{r.lf}\n")
-                fh.write(f"LH:{r.lh}\n")
+                for name, first in r.functions.items():
+                    fh.write(f"FN:{first},{name}\n")
+                for name, hits in r.function_hits.items():
+                    fh.write(f"FNDA:{hits},{name}\n")
+                if r.functions:
+                    fh.write(f"FNF:{len(r.functions)}\n")
+                    fh.write(f"FNH:{sum(1 for hits in r.function_hits.values() if hits)}\n")
+                for (line, block, branch), taken in sorted(r.branches.items()):
+                    fh.write(f"BRDA:{line},{block},{branch},{'-' if taken is None else taken}\n")
                 if r.brf:
                     fh.write(f"BRF:{r.brf}\n")
                     fh.write(f"BRH:{r.brh}\n")
+                for line, hits in sorted(r.lines.items()):
+                    fh.write(f"DA:{line},{hits}\n")
+                fh.write(f"LF:{r.lf}\n")
+                fh.write(f"LH:{r.lh}\n")
                 fh.write("end_of_record\n")
 
     return 0
