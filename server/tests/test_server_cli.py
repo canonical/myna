@@ -1,14 +1,16 @@
-"""Tests for the server CLI's streaming-flag validation and adapter dispatch.
+"""Tests for the server CLI's streaming-flag validation, adapter dispatch and
+provider.env sharing.
 
 The re-decode tuning flags are whisper-only (contracts/strategy-config.md) and
 misuse only warns, so the log is the whole signal - assert on it.
 """
 
+import contextlib
 import logging
 
 import pytest
 
-from myna.server.cli import _validate_streaming_args, build_adapter, build_parser
+from myna.server.cli import _validate_streaming_args, build_adapter, build_parser, main
 
 
 def parse(*extra):
@@ -134,3 +136,71 @@ def test_whisper_decode_options_are_the_measured_ones():
     assert stream["beam_size"] == 1
     assert stream["word_timestamps"] is True
     assert stream["vad_filter"] is False  # T71: costs accuracy on base
+
+
+SNAP_ENV = {"SNAP_NAME": "myna-whisper", "SNAP_INSTANCE_NAME": "myna-whisper_dev"}
+
+
+async def _serve_until_bound(args, monkeypatch):
+    """Run serve() on the fake adapter, recording whether provider.env existed
+    when the server was asked to bind."""
+    import asyncio
+
+    import myna.core
+    from myna.server.cli import serve
+
+    real_serve_unix = myna.core.serve_unix
+    env_file_at_bind = []
+
+    def recording_serve_unix(service, socket_path=None, *, sock=None):
+        env_file_at_bind.append((args.socket.parent / "provider.env").exists())
+        return real_serve_unix(service, socket_path, sock=sock)
+
+    monkeypatch.setattr(myna.core, "serve_unix", recording_serve_unix)
+    task = asyncio.ensure_future(serve(args))
+    try:
+        for _ in range(200):
+            if args.socket.exists() or task.done():
+                break
+            await asyncio.sleep(0.01)
+        assert args.socket.exists(), "server did not bind"
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    return env_file_at_bind
+
+
+async def test_share_provider_writes_provider_env_before_binding(tmp_path, monkeypatch):
+    for key, value in SNAP_ENV.items():
+        monkeypatch.setenv(key, value)
+    socket = tmp_path / "share" / "provider" / "myna.sock"
+    args = build_parser().parse_args(
+        ["--socket", str(socket), "--adapter", "fake", "--share-provider"]
+    )
+
+    assert await _serve_until_bound(args, monkeypatch) == [True]
+    assert (socket.parent / "provider.env").read_text() == (
+        "SNAP_NAME=myna-whisper\nSNAP_INSTANCE_NAME=myna-whisper_dev\nUNIX_SOCKET=myna.sock\n"
+    )
+
+
+async def test_without_share_provider_no_env_file_is_written(tmp_path, monkeypatch):
+    for key, value in SNAP_ENV.items():
+        monkeypatch.setenv(key, value)
+    socket = tmp_path / "myna.sock"
+    args = build_parser().parse_args(["--socket", str(socket), "--adapter", "fake"])
+
+    assert await _serve_until_bound(args, monkeypatch) == [False]
+    assert not (tmp_path / "provider.env").exists()
+
+
+def test_share_provider_without_snap_identity_exits_before_binding(tmp_path, monkeypatch):
+    monkeypatch.setenv("SNAP_NAME", "myna-whisper")
+    monkeypatch.delenv("SNAP_INSTANCE_NAME", raising=False)
+    socket = tmp_path / "myna.sock"
+
+    with pytest.raises(SystemExit, match="SNAP_INSTANCE_NAME"):
+        main(["--socket", str(socket), "--adapter", "fake", "--share-provider"])
+
+    assert list(tmp_path.iterdir()) == []

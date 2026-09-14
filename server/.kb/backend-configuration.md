@@ -14,7 +14,7 @@ Keep three control layers separate:
 
 The transcription socket is an unprivileged data plane, not a privileged configuration API. A session model request tests compatibility with the running server; it does not switch the installed backend model.
 
-Inference backends communicate over a Unix socket exposed by the `ubustt-socket` content interface. TCP is not the product transport. Configuration reads should remain unprivileged; mutations that require privilege belong behind snapd authorization.
+Inference backends communicate over a Unix socket shared through a content slot with content id `inference-provider`, per the IE115 spec. The shared directory holds the socket and a `provider.env` naming `SNAP_NAME`, `SNAP_INSTANCE_NAME` and `UNIX_SOCKET` (the socket's name relative to that directory); `myna-server --share-provider` is its only writer, atomically and before it binds, and consumers iterate every shared directory rather than trusting its name. TCP is not the product transport, so Myna neither writes nor reads `OPENAI_BASE_URL`. Configuration reads should remain unprivileged; mutations that require privilege belong behind snapd authorization.
 
 Engine auto-selection matches hardware capabilities, not free memory capacity. Manual engine selection is a supported diagnostic and expert override. Failure to load a model must be surfaced explicitly rather than hidden by fallback.
 

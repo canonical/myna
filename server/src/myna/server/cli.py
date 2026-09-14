@@ -62,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="octal permission bits for the socket file (default world-connectable; "
         "tighten via dir permissions or dedicated group in production)",
     )
+    parser.add_argument(
+        "--share-provider",
+        action="store_true",
+        help="write provider.env (SNAP_NAME, SNAP_INSTANCE_NAME, UNIX_SOCKET) beside the "
+        "socket for the inference-provider content interface; needs the snap environment",
+    )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(
         "--streaming",
@@ -294,6 +300,13 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
 
 
 async def serve(args: argparse.Namespace) -> None:
+    # Before anything slow, so a snap missing its identity fails at once.
+    # Written from --socket under socket activation too: the path is the share.
+    if args.share_provider:
+        from myna.server import provider_env
+
+        provider_env.share(args.socket, os.environ)
+
     # Imported here so --help works without the adapter's extra installed.
     try:
         adapter = build_adapter(args)
