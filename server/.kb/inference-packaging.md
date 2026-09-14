@@ -15,6 +15,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 # Important
 
 - Keep the `modelctl` release aligned across inference snaps.
+- Every model manifest declares `capabilities: [realtime-transcription]`, the value modelctl reserves for the realtime session API. Set `format` only when the weights are in a modelctl-supported format (`CTranslate2` for faster-whisper); ONNX, `.nemo` and raw safetensors have no value, so leave it unset.
 - Expose `ubustt-socket`; grant `network-bind` for Unix-socket `listen()`, but do not add the `network` plug for runtime downloads.
 - Grant `hardware-observe` only to apps and hooks that perform hardware discovery.
 - Ensure installation selects a usable engine where a deterministic choice exists.

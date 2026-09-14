@@ -1,7 +1,10 @@
 name: small
 description: Whisper small (244M params) — best accuracy of the CPU options
 model-card-url: https://huggingface.co/Systran/faster-whisper-small
+format: CTranslate2
 quantization: float16
+capabilities:
+  - realtime-transcription
 disk-size: 500M
 components:
   - model-small

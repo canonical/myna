@@ -94,7 +94,7 @@ parts:
   cli:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.12/inference-snaps-cli-linux-amd64.tar.xz
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v2.0.0-beta.14/inference-snaps-cli-linux-amd64.tar.xz
     override-build: |
       # Named symlink so cobra picks up the snap command name.
       # The tarball ships bin/modelctl + bin/snap-completer.bash.

@@ -50,7 +50,7 @@ INFERENCE_SNAPS = {
 # The inference-snaps-cli (modelctl) release every snap must pin. One version
 # across all snaps: manifest semantics (runtime `name`, model identifiers,
 # status entrypoints) move with the CLI, and a drifted snap breaks silently.
-MODELCTL_RELEASE = "v2.0.0-beta.12"
+MODELCTL_RELEASE = "v2.0.0-beta.14"
 
 
 def _recipe(snap_dir: str) -> dict:
@@ -358,6 +358,18 @@ def test_punctuation_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
         )
 
 
+def test_models_declare_realtime_transcription(snap) -> None:
+    """modelctl filters and reports models by capability; ours serve the realtime API."""
+    snap_dir, name, _ = snap
+    manifests = sorted((REPO_ROOT / snap_dir / "models").glob("*/model.yaml"))
+    assert manifests, f"{name}: no model manifests"
+    for path in manifests:
+        manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert "realtime-transcription" in (manifest.get("capabilities") or []), (
+            f"{name}: models/{path.parent.name} does not declare realtime-transcription"
+        )
+
+
 def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     """Model metadata describes disk weights, not a runtime compute policy."""
     model_dir = REPO_ROOT / "whisper-snap" / "models"
@@ -370,6 +382,7 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     for name, compute_type in expected_compute_type.items():
         manifest = yaml.safe_load((model_dir / name / "model.yaml").read_text(encoding="utf-8"))
         assert manifest["quantization"] == "float16"
+        assert manifest["format"] == "CTranslate2"
         assert f"MODEL_COMPUTE_TYPE={compute_type}" in manifest["environment"]
 
 

@@ -8,7 +8,7 @@
 # capabilities, components not declared in snapcraft.yaml.
 set -euo pipefail
 
-MODELCTL_RELEASE="v2.0.0-beta.12"
+MODELCTL_RELEASE="v2.0.0-beta.14"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/myna/modelctl-${MODELCTL_RELEASE}"
 
