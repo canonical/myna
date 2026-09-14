@@ -20,5 +20,5 @@ Input devices are identified by stable PipeWire `node.name` values. Live device 
 - Keep buffering bounded, in memory, and scoped to one capture session.
 - Surface capture faults; never turn overflow or unsupported formats into silent loss.
 - `stop()` means graceful drain and end. Dropping the source is cancellation.
-- Telemetry may expose levels, duration, clipping, and counters, but never samples.
-- Treat the hotkey as voice activity detection; do not add implicit VAD to capture.
+- Telemetry may expose levels, duration, clipping, counters and voice-activity marks, but never samples. The stats tap carries a noise floor, a speech level and the capture time voice was last heard (`myna-audio/src/voice.rs`, a port of murmure's adaptive VAD); consumers classify, capture never does.
+- Capture never gates, trims or delays audio on voice activity. Ending a session on silence is a desktop session policy (`client/.kb/desktop-integration.md`), never a capture behaviour; hold-to-talk keeps the key as the only authority.

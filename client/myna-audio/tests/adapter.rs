@@ -236,6 +236,47 @@ async fn stats_track_signal_levels() {
 }
 
 #[tokio::test]
+async fn stats_track_voice_activity() {
+    // A quiet lead-in, one second of speech-level signal, then quiet again:
+    // the tap marks where sustained voice last ended and reports the input's
+    // floor and speech level, so a policy can act on either without samples.
+    let quiet = |ms: usize| -> Vec<u8> {
+        std::iter::repeat(3i16.to_le_bytes())
+            .take(16 * ms)
+            .flatten()
+            .collect()
+    };
+    let speech: Vec<u8> = std::iter::repeat(328i16.to_le_bytes())
+        .take(16_000)
+        .flatten()
+        .collect();
+    let backend = ScriptedBackend::new(vec![
+        Step::Bytes(quiet(300)),
+        Step::Bytes(speech),
+        Step::Bytes(quiet(1_000)),
+    ]);
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
+    let mut stats = source.stats();
+    let _stream = Box::new(source).capture();
+
+    let snapshot = wait_stats(&mut stats, |s| s.captured >= secs(2.3)).await;
+    let mark = snapshot.last_voice.expect("voice was heard");
+    assert!(mark > secs(1.3) && mark <= secs(1.4), "mark {mark:?}");
+    assert!(
+        snapshot.noise_floor < 2e-4,
+        "floor {}",
+        snapshot.noise_floor
+    );
+    assert!(
+        snapshot.speech_level > 0.009,
+        "speech {}",
+        snapshot.speech_level
+    );
+}
+
+#[tokio::test]
 async fn short_final_chunk_flushes_whole_frames_only() {
     // Stereo (4-byte frames): 402 bytes pushed → 400 delivered, the trailing
     // partial frame dropped, never padded (§4).

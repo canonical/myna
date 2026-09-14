@@ -13,6 +13,7 @@ use tokio::sync::watch;
 
 use crate::ring::Ring;
 use crate::stats::AudioStats;
+use crate::voice::{VoiceTracker, FRAME as VOICE_FRAME};
 
 /// What to capture. The adapter passes this through from its builder.
 pub struct CaptureSpec {
@@ -40,6 +41,7 @@ pub struct Producer {
     pending: BytesMut,
     captured: Duration,
     session_peak: f32,
+    voice: VoiceTracker,
 }
 
 impl Producer {
@@ -59,6 +61,7 @@ impl Producer {
             pending: BytesMut::new(),
             captured: Duration::ZERO,
             session_peak: 0.0,
+            voice: VoiceTracker::default(),
         }
     }
 
@@ -93,6 +96,9 @@ impl Producer {
     fn emit(&mut self, data: Bytes) {
         let chunk = PcmChunk::new(data, self.format);
         let (rms, peak, clipped) = levels(&chunk);
+        for (frame_rms, frame) in frame_levels(&chunk) {
+            self.voice.observe(frame_rms, frame);
+        }
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
         self.ring.push(chunk);
@@ -102,6 +108,9 @@ impl Producer {
             session_peak: self.session_peak,
             clipped,
             captured: self.captured,
+            noise_floor: self.voice.noise_floor(),
+            speech_level: self.voice.speech_level(),
+            last_voice: self.voice.last_voice(),
         });
     }
 }
@@ -136,6 +145,38 @@ fn levels(chunk: &PcmChunk) -> (f32, f32, bool) {
     (rms, peak as f32 / 32768.0, clipped)
 }
 
+/// The chunk cut into [`VOICE_FRAME`]-long frames, each with its RMS and its
+/// actual duration (the last frame of a short final chunk may be shorter).
+/// Non-S16LE chunks yield nothing, like [`levels`].
+fn frame_levels(chunk: &PcmChunk) -> Vec<(f32, Duration)> {
+    if chunk.format.sample_width_bytes != 2 {
+        return Vec::new();
+    }
+    let frame_bytes = (chunk.format.channels as usize * 2).max(1);
+    let per_frame = (chunk.format.sample_rate_hz as f64 * VOICE_FRAME.as_secs_f64()) as usize;
+    let bytes = (per_frame * frame_bytes).max(frame_bytes);
+    chunk
+        .data
+        .chunks(bytes)
+        .filter(|frame| frame.len() >= 2)
+        .map(|frame| {
+            let sum_sq: f64 = frame
+                .chunks_exact(2)
+                .map(|s| {
+                    let v = i16::from_le_bytes([s[0], s[1]]) as f64;
+                    v * v
+                })
+                .sum();
+            let n = (frame.len() / 2) as f64;
+            let rms = ((sum_sq / n).sqrt() / 32768.0) as f32;
+            let duration = Duration::from_secs_f64(
+                frame.len() as f64 / chunk.format.bytes_per_second().max(1) as f64,
+            );
+            (rms, duration)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +207,34 @@ mod tests {
     #[test]
     fn silence_is_silent() {
         assert_eq!(levels(&s16_chunk(0, 1600)), (0.0, 0.0, false));
+    }
+
+    #[test]
+    fn a_chunk_cuts_into_twenty_millisecond_frames() {
+        let frames = frame_levels(&s16_chunk(3277, 1600));
+        assert_eq!(frames.len(), 5);
+        for (rms, duration) in frames {
+            assert!((rms - 0.1).abs() < 0.01, "rms {rms}");
+            assert_eq!(duration, Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn a_short_final_chunk_keeps_its_partial_frame() {
+        let frames = frame_levels(&s16_chunk(0, 400));
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[1].1, Duration::from_millis(5));
+    }
+
+    #[test]
+    fn wide_samples_yield_no_frames() {
+        let chunk = PcmChunk::new(
+            vec![0u8; 64],
+            AudioFormat {
+                sample_width_bytes: 4,
+                ..AudioFormat::default()
+            },
+        );
+        assert!(frame_levels(&chunk).is_empty());
     }
 }

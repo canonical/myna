@@ -24,4 +24,15 @@ pub struct AudioStats {
     pub clipped: bool,
     /// Total audio captured this session.
     pub captured: Duration,
+    /// The quietest ~60 ms heard this session, linear full scale. A UI reads
+    /// it against the speech level to tell a noisy input from a quiet room.
+    pub noise_floor: f32,
+    /// The loudest smoothed level heard while voice was sustained; `0.0`
+    /// until voice has been heard.
+    pub speech_level: f32,
+    /// Capture time at which sustained voice was last heard (see
+    /// [`crate::VoiceTracker`]); `None` until it has been. Measured in
+    /// captured audio, not wall-clock, so a stalled device does not read as
+    /// a silent user.
+    pub last_voice: Option<Duration>,
 }

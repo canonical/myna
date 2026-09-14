@@ -39,6 +39,7 @@ mod native;
 mod ring;
 mod source;
 mod stats;
+mod voice;
 
 pub use backend::{CaptureBackend, CaptureSpec, Producer};
 pub use devices::{DeviceChange, InputDevice, InputDevices};
@@ -46,6 +47,7 @@ pub use fake::{ScriptedBackend, Step};
 pub use native::PipeWireBackend;
 pub use source::{CaptureSource, CaptureSourceBuilder, DEFAULT_CHUNK, DEFAULT_RING_DEPTH};
 pub use stats::AudioStats;
+pub use voice::{VoiceTracker, FRAME as VOICE_FRAME, SUSTAIN as VOICE_SUSTAIN};
 
 // The consumer contract this crate implements, re-exported for convenience.
 pub use myna_core::{AudioFormat, AudioSource, CaptureError, CaptureStream, PcmChunk, StopHandle};
