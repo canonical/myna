@@ -10,6 +10,10 @@ root through polkit, neither of which a confined snap can do.
     make build-deb          # the above, then sbuild in a clean chroot for the
                             # series named in debian/changelog
 
+The `.deb`, `.changes` and `.buildinfo` land in `target/deb/`, overriding any
+`$build_dir` in the sbuild config. The next `make build-deb-source` wipes that
+directory.
+
 `make build-deb SBUILD_ARGS=...` passes flags through to sbuild. Two that matter on
 a developer machine: the unshare chroot unpacks under `$TMPDIR` (default
 `/tmp`), and a full-debuginfo build needs several GB there, so run with
