@@ -13,6 +13,7 @@ const BLUEPRINTS: &[(&str, &str)] = &[
     ("onboarding-shortcut.blp", "onboarding-shortcut.ui"),
     ("onboarding-welcome.blp", "onboarding-welcome.ui"),
     ("onboarding-window.blp", "onboarding-window.ui"),
+    ("operation-error-dialog.blp", "operation-error-dialog.ui"),
     ("sidebar-row.blp", "sidebar-row.ui"),
     ("status-page.blp", "status-page.ui"),
 ];
@@ -66,6 +67,18 @@ fn cargo_build_pipeline_has_an_explicit_sorted_blueprint_contract() {
             "generated UI must remain in OUT_DIR: {output}"
         );
     }
+
+    let mut on_disk: Vec<String> = fs::read_dir(root.join("data"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.ends_with(".blp"))
+        .collect();
+    on_disk.sort();
+    let listed: Vec<&str> = BLUEPRINTS.iter().map(|(source, _)| *source).collect();
+    assert_eq!(
+        on_disk, listed,
+        "every data/*.blp must be in the contract list"
+    );
 
     assert!(build.contains("blueprint-compiler"));
     assert!(build.contains("compile_resources"));
