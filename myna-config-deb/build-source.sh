@@ -54,7 +54,7 @@ git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/data clie
     | tar -x -C "$stage" --strip-components=1
 
 # Tests that read the repository (snapcraft.yaml, docs) have nothing to read here.
-rm "$stage/myna-config/tests/snap_packaging.rs" "$stage/myna-config/tests/developer_entrypoints.rs"
+rm "$stage/myna-config/tests/snap_packaging.rs"
 
 members='members = ["myna-core", "myna-config"]'
 if [ "$(grep -c '^members = ' "$stage/Cargo.toml")" != 1 ]; then
