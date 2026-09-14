@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Command;
 
 use myna_config::app::{appearance_policy, AppearancePolicy};
@@ -101,9 +102,26 @@ fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
     }
 
     let store = std::env::temp_dir().join(format!("myna-config-typing-{}", std::process::id()));
+    // The probe opens the store through the default schema source, and a
+    // build machine has no com.canonical.Myna.Dictation installed: compile the
+    // crate's own copy into the scratch dir and add it to that source.
+    let schemas = store.join("schemas");
+    std::fs::create_dir_all(&schemas).expect("create scratch schema dir");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml"),
+        schemas.join("com.canonical.Myna.Dictation.gschema.xml"),
+    )
+    .expect("stage schema");
+    assert!(Command::new("glib-compile-schemas")
+        .arg(&schemas)
+        .status()
+        .expect("glib-compile-schemas")
+        .success());
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         // A scratch store, so the probe's write never touches the real one.
         .env("GSETTINGS_BACKEND", "keyfile")
+        .env("GSETTINGS_SCHEMA_DIR", &schemas)
         .env("XDG_CONFIG_HOME", &store)
         .env("MYNA_CONFIG_TYPING_TEST", "1")
         .output()
