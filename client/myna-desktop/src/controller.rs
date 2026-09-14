@@ -1311,6 +1311,12 @@ mod tests {
     }
 
     #[test]
+    fn the_journal_names_why_a_session_ended_itself() {
+        assert_eq!(AutoStopReason::Silence.to_string(), "silence timeout");
+        assert_eq!(AutoStopReason::Cap.to_string(), "session cap");
+    }
+
+    #[test]
     fn done_maps_to_hidden() {
         assert_eq!(
             event_to_indicator(
