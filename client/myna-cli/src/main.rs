@@ -1,11 +1,10 @@
-//! `myna-dictate` — the orchestrator demo binary (plan T41): the Rust analogue
-//! of `dev/dictate.py`. It wires the three boundary mocks to the wire-agnostic
-//! FSM and runs push-to-talk against a real backend:
+//! `myna-dictate` — the orchestrator demo binary It wires the three boundary
+//! mocks to the wire-agnostic FSM and runs push-to-talk against a real backend:
 //!
 //! ```text
 //!   StdinTrigger ──press/release──▶ ┌─────────────┐
 //!   WavFileSource ──PCM chunks────▶ │  FSM driver │ ──WS/UDS──▶ myna-server
-//!   StdoutSink   ◀──transcript──── └─────────────┘
+//!   StdoutSink   ◀──transcript────  └─────────────┘
 //! ```
 //!
 //! Run it against a live Python `myna-server` (any adapter):
@@ -13,7 +12,7 @@
 //! ```text
 //!   myna-server --adapter fake --socket /tmp/myna.sock &
 //!   myna-dictate --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
-//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone (T52, native PipeWire)
+//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone
 //! ```
 //!
 //! Press Enter to start an utterance, Enter again to stop (or let the clip play
