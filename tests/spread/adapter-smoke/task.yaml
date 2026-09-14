@@ -24,6 +24,10 @@ environment:
     MODEL: tiny
 
 prepare: |
+    # `myna` declares a user daemon, and snapd rejects the *install* of one
+    # unless this is set or the snap-id is allowlisted upstream - a sideload
+    # has no snap-id at all
+    snap set system experimental.user-daemons=true
     MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
     COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
