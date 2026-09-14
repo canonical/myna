@@ -490,7 +490,7 @@ Then launch it from the workspace:
 cd client
 cargo run -p myna-config
 # or, from the repository root:
-make config-ui
+make run-config
 ```
 
 The prototype uses GNOME Blueprint at build time and embeds the generated

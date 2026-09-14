@@ -41,6 +41,6 @@ fn retired_tk_prototype_has_no_live_entrypoint() {
     assert!(readme.contains("shipping `myna.config` wrapper"));
     assert!(readme.contains("until that dependency is approved and available"));
     assert!(readme.contains("config-ui/confinement.md"));
-    assert!(makefile.contains("run-settings: ## Launch the native Myna configuration UI"));
+    assert!(makefile.contains("\nrun-config:"));
     assert!(makefile.contains("cd client && cargo run -p myna-config"));
 }

@@ -409,4 +409,4 @@ dispatch must be:
 
 Until that gate succeeds, bare `myna.config` continues its current
 `list-recursively` behavior. The native host prototype remains available via
-`make config-ui`.
+`make run-config`.
