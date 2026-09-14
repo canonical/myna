@@ -122,9 +122,10 @@ apps:
     slots:
       - dictation # com.canonical.Myna.Dictation for the GNOME Shell indicator
 
-  # Poke the running daemon. Only meaningful under control-socket activation
-  # (`myna --control`), which a packaged build does not default to: bind
-  # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
+  # Poke the running daemon. Only meaningful under control-socket activation,
+  # which a packaged build falls back to when the portal offers no
+  # GlobalShortcuts (Noble): bind `/snap/bin/myna.toggle` to a shortcut, or run
+  # `myna.install-shortcut`.
   toggle:
     command: bin/myna-desktop --toggle
     # Reads the settings store to work out which activation is in force, and

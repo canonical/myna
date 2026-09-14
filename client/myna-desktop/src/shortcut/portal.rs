@@ -39,6 +39,11 @@ pub enum TriggerError {
     /// costs one bus round trip and is worth re-checking often.
     #[error("no portal running yet: {0}")]
     PortalNotRunning(String),
+    /// The portal is up and exports no GlobalShortcuts interface, because no
+    /// backend in this session implements it (xdg-desktop-portal-gnome before
+    /// 48, so Noble). Unlike [`Self::PortalUnavailable`] no retry changes it.
+    #[error("the portal offers no GlobalShortcuts: {0}")]
+    NoGlobalShortcuts(String),
     /// The backend took the bind request and never answered it within
     /// [`BIND_TIMEOUT`]. Deliberately *not* [`Self::BindRejected`]: nobody
     /// declined anything, there was simply nobody in front of the sheet (a
@@ -607,12 +612,24 @@ async fn open_session(
     // zbus `Connection` clone is a handle to the one socket).
     let shortcuts = GlobalShortcuts::with_connection(conn.clone())
         .await
-        .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
+        .map_err(proxy_error)?;
     let session = shortcuts
         .create_session(Default::default())
         .await
         .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
     Ok((shortcuts, session))
+}
+
+/// Why the GlobalShortcuts proxy could not be made. ashpd reads `version` on
+/// construction and names the interface when the portal answers that it has
+/// no such interface, which is the one failure retrying cannot fix.
+fn proxy_error(e: ashpd::Error) -> TriggerError {
+    match e {
+        ashpd::Error::PortalNotFound(interface) => TriggerError::NoGlobalShortcuts(format!(
+            "org.freedesktop.portal.Desktop does not export {interface}"
+        )),
+        e => TriggerError::PortalUnavailable(e.to_string()),
+    }
 }
 
 /// The bindings the portal already holds for this app.
@@ -879,6 +896,27 @@ impl Trigger for GlobalShortcutTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_portal_without_the_interface_is_not_a_retryable_failure() {
+        let missing = ashpd::Error::PortalNotFound(
+            zbus::names::OwnedInterfaceName::try_from("org.freedesktop.portal.GlobalShortcuts")
+                .unwrap(),
+        );
+        match proxy_error(missing) {
+            TriggerError::NoGlobalShortcuts(reason) => {
+                assert!(
+                    reason.contains("org.freedesktop.portal.GlobalShortcuts"),
+                    "{reason}"
+                );
+            }
+            other => panic!("expected NoGlobalShortcuts, got {other:?}"),
+        }
+        assert!(matches!(
+            proxy_error(ashpd::Error::RequiresVersion(2, 1)),
+            TriggerError::PortalUnavailable(_)
+        ));
+    }
 
     fn trigger(signals: Vec<PortalSignal>) -> GlobalShortcutTrigger {
         GlobalShortcutTrigger::from_signals_with_mode(

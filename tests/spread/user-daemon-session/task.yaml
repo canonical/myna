@@ -78,7 +78,7 @@ execute: |
     systemctl --user -M "$USER_NAME@" show-environment > env.out
     ! grep -q "^XDG_CURRENT_DESKTOP=" env.out
     journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
-        | grep -q "nothing owns org.freedesktop.portal.Desktop yet"
+        | grep -q "nothing owns org.freedesktop.portal.Desktop"
     systemctl --user -M "$USER_NAME@" is-active xdg-desktop-portal.service > portal.out || true
     cat portal.out
     grep -qx "inactive" portal.out

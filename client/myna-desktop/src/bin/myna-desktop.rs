@@ -100,8 +100,8 @@ OPTIONS:
     --status           print what this daemon has resolved, what the running one
                        is doing, and whether the backend is reachable, then exit
     --toggle           poke the running daemon over the control socket. Control
-                       activation only - a portal daemon has no control socket
-                       and is driven by its portal shortcut instead.
+                       activation, or a portal daemon whose portal offers no
+                       GlobalShortcuts; otherwise the portal shortcut drives it.
     --bind-shortcut    bind (or rebind) the dictation shortcut through the
                        desktop's own GlobalShortcuts dialog. Portal activation
                        only, and the one thing that raises that dialog: the
@@ -477,7 +477,8 @@ fn toggle_hint_for(activation: Activation, hotkey: Option<&str>) -> Vec<String> 
     match activation {
         Activation::Portal => vec![
             "activation is Portal: the daemon takes its trigger from the GlobalShortcuts \
-             portal and opens no control socket, so --toggle cannot reach it."
+             portal and opens a control socket only where the portal offers no \
+             GlobalShortcuts, so --toggle cannot reach it here."
                 .into(),
             match hotkey {
                 Some(key) => format!("press {key} instead."),
@@ -610,6 +611,8 @@ fn no_backend(e: myna_desktop::backend::ResolveError) -> Session {
 /// Binds the portal shortcut, re-binding whenever the portal goes away.
 struct PortalRebind {
     mode: ActivationMode,
+    /// Where the control socket goes when the portal has no GlobalShortcuts.
+    control: PathBuf,
     /// The last attempt failed because there was no portal to talk to, so the
     /// next wait can be spent asleep on the bus telling us one arrived.
     awaiting_portal: bool,
@@ -639,10 +642,21 @@ impl Rebind for PortalRebind {
     async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
         self.awaiting_portal = false;
         self.awaiting_new_backend = false;
-        GlobalShortcutTrigger::attach("dictate", self.mode)
-            .await
-            .map(|t| Box::new(t) as Box<dyn Trigger>)
-            .map_err(|e| match e {
+        match GlobalShortcutTrigger::attach("dictate", self.mode).await {
+            Ok(trigger) => Ok(Box::new(trigger)),
+            // Noble's portal: no backend implements GlobalShortcuts, and no
+            // retry will add one. The control socket is the activation that
+            // still works, driven by a custom keybinding to `myna.toggle`.
+            Err(TriggerError::NoGlobalShortcuts(reason)) => {
+                let trigger = bind_control(&self.control)?;
+                myna_core::info_log!(
+                    "trigger",
+                    "{reason}; activation falls back to the control socket {}",
+                    self.control.display()
+                );
+                Ok(trigger)
+            }
+            Err(e) => Err(match e {
                 // No portal to reach, and we decline to conjure one. Nothing
                 // was asked of anyone, so check again in a second: the answer
                 // flips when the desktop comes up and the hotkey should be
@@ -676,7 +690,10 @@ impl Rebind for PortalRebind {
                     "{e}; run `{}` to bind one",
                     bind_shortcut_command()
                 )),
-            })
+                // Handled above, before this mapping.
+                TriggerError::NoGlobalShortcuts(_) => BindFailure::Unavailable(e.to_string()),
+            }),
+        }
     }
 }
 
@@ -689,17 +706,21 @@ struct ControlRebind {
 #[async_trait::async_trait]
 impl Rebind for ControlRebind {
     async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
-        // Always `Unavailable`: a socket bind has no user-facing step to
-        // refuse, so every failure is "not there yet" and worth retrying fast.
-        ControlTrigger::bind(&self.path)
-            .map(|t| Box::new(t) as Box<dyn Trigger>)
-            .map_err(|e| {
-                BindFailure::Unavailable(format!(
-                    "cannot bind control socket {}: {e}",
-                    self.path.display()
-                ))
-            })
+        bind_control(&self.path)
     }
+}
+
+/// Always `Unavailable` on failure: a socket bind has no user-facing step to
+/// refuse, so every failure is "not there yet" and worth retrying fast.
+fn bind_control(path: &std::path::Path) -> Result<Box<dyn Trigger>, BindFailure> {
+    ControlTrigger::bind(path)
+        .map(|t| Box::new(t) as Box<dyn Trigger>)
+        .map_err(|e| {
+            BindFailure::Unavailable(format!(
+                "cannot bind control socket {}: {e}",
+                path.display()
+            ))
+        })
 }
 
 /// Build and run the controller with the given indicator (tokio side).
@@ -745,6 +766,7 @@ async fn run_controller(
             let mode = activation_mode(&args);
             let trigger = RetryingTrigger::new(PortalRebind {
                 mode,
+                control: control_path(&args),
                 awaiting_portal: false,
                 awaiting_new_backend: false,
             });
@@ -1070,7 +1092,7 @@ fn print_status(args: &Args) -> ExitCode {
     // daemon was never going to open. Say it where someone debugging looks.
     if resolved.activation == Activation::Portal {
         println!(
-            "  {:<15} no control socket in this mode - `--toggle` does nothing; press {}",
+            "  {:<15} no control socket unless the portal lacks GlobalShortcuts - otherwise `--toggle` does nothing; press {}",
             "",
             resolved.hotkey.as_deref().unwrap_or("your shortcut")
         );
@@ -1929,6 +1951,31 @@ mod tests {
         // not appear in that panel, which is where this used to send people.
         assert!(hint.contains("Apps"), "should point at Settings: {hint}");
         assert!(!hint.contains("Keyboard"), "{hint}");
+    }
+
+    // The Noble fallback binds exactly what `--toggle` pokes, and a bind that
+    // seccomp refuses stays retryable with the reason the journal shows.
+    #[tokio::test]
+    async fn the_control_fallback_binds_the_socket_toggle_reaches() {
+        let path = std::env::temp_dir().join(format!("myna-fallback-{}.sock", std::process::id()));
+        let mut trigger = match bind_control(&path) {
+            Ok(trigger) => trigger,
+            Err(failure) => panic!("bind failed: {failure:?}"),
+        };
+        send_toggle(&path).await.unwrap();
+        assert_eq!(
+            trigger.next_edge().await,
+            Some(myna_desktop::shortcut::TriggerEdge::Press)
+        );
+
+        let unbindable = std::path::Path::new("/nonexistent-myna-dir/myna-desktop.sock");
+        match bind_control(unbindable) {
+            Err(BindFailure::Unavailable(reason)) => {
+                assert!(reason.contains("cannot bind control socket"), "{reason}");
+            }
+            Err(other) => panic!("expected Unavailable, got {other:?}"),
+            Ok(_) => panic!("bound under a directory that does not exist"),
+        }
     }
 
     // Control activation is the one case the old advice was right for.

@@ -8,7 +8,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 `myna-desktop` composes three replaceable boundaries around the orchestrator:
 
-- `Trigger` produces activation edges. Unpackaged GNOME uses a control socket and custom shortcut; packaged builds can use the GlobalShortcuts portal; stdin is debug-only.
+- `Trigger` produces activation edges. Unpackaged GNOME uses a control socket and custom shortcut; packaged builds use the GlobalShortcuts portal, and fall back to the control socket when the running portal exports no GlobalShortcuts (xdg-desktop-portal-gnome before 48, so Noble). A portal that is merely not running yet is waited for, never a reason to fall back. Stdin is debug-only.
 - `Injector` commits text to the focused application. The production implementation is an IBus engine; tests use a mock.
 - `Indicator` publishes dictation state. Notifications are the fallback, while the GNOME extension hosts the standalone `myna-hud` renderer.
 

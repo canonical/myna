@@ -23,10 +23,17 @@
 # what pins the cause to the interface rather than to something incidental
 # about the VM.
 #
-# No desktop is needed and none is installed: control mode is the path that
-# asks nothing of the session, so a lingering headless user is a faithful host
-# (same setup as user-daemon-session).
-summary: Control-socket activation binds its socket once network-bind is connected
+# The packaged daemon reaches control mode on its own: a running portal that
+# exports no GlobalShortcuts is what Noble looks like, and the daemon falls
+# back to the control socket there. So the test starts exactly that portal - the
+# frontend with no backend implementing GlobalShortcuts - rather than
+# selecting the mode by hand. The `activation` settings key that used to
+# select it is gone.
+#
+# No desktop is needed and none is installed: control mode asks nothing else
+# of the session, so a lingering headless user is a faithful host (same setup
+# as user-daemon-session).
+summary: A portal without GlobalShortcuts falls back to the control socket, which binds once network-bind is connected
 
 environment:
     # Deliberately not user-daemon-session's `mynaspread`: spread runs every
@@ -42,6 +49,9 @@ prepare: |
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     # `snap run` refuses to start for an account whose home is outside /home.
     useradd --create-home --shell /bin/bash "$USER_NAME"
+    # The frontend alone: without xdg-desktop-portal-gnome nothing implements
+    # GlobalShortcuts, so the portal does not export it - Noble's situation.
+    apt-get install -y --no-install-recommends xdg-desktop-portal
 
 execute: |
     set -x
@@ -53,12 +63,6 @@ execute: |
     # guards is a snapcraft.yaml that quietly dropped it.
     snap connections myna | grep -q "network-bind .*myna:network-bind"
 
-    # Control activation is a per-user setting in the snap's keyfile store.
-    # The daemon live-reloads it; the restart below is for the seccomp
-    # profile, not the setting. Written directly because dconf (D-Bus to a
-    # session service) never allowed a lingering headless user this at all.
-    su - "$USER_NAME" -c 'mkdir -p ~/snap/myna/common/.config/glib-2.0/settings && printf "[com/canonical/myna/dictation]\nactivation='"'"'control'"'"'\n" > ~/snap/myna/common/.config/glib-2.0/settings/keyfile'
-
     USER_UID=$(id -u "$USER_NAME")
     SOCK="/run/user/$USER_UID/snap.myna/myna-desktop.sock"
 
@@ -68,6 +72,10 @@ execute: |
         systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service && break
         sleep 1
     done
+
+    # The daemon never starts a portal (user-daemon-session), so this does.
+    systemctl --user -M "$USER_NAME@" start xdg-desktop-portal.service
+    systemctl --user -M "$USER_NAME@" is-active xdg-desktop-portal.service
 
     # Seccomp filters are installed at exec, so a running daemon keeps the
     # profile it started with: connect/disconnect *then* restart.
@@ -124,9 +132,8 @@ execute: |
         exit 1
     fi
 
-    # The setting actually resolved to control activation - a daemon that fell
-    # back to the portal would leave no socket, but say so for the next reader.
-    daemon_log "$before" | grep -q "activation Control"
+    # The socket came from the fallback, for the reason this test sets up.
+    daemon_log "$before" | grep -q "does not export org.freedesktop.portal.GlobalShortcuts; activation falls back to the control socket"
     denials=$(daemon_log "$before" | grep -c "cannot bind control socket" || true)
     test "$denials" -eq 0
 
