@@ -27,6 +27,7 @@ const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
 const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
+const BACKENDS_ENV: &str = "MYNA_CONFIG_BACKENDS_TEST";
 /// The probes must never claim the real application id: registering it while a
 /// Myna Settings is already running takes the remote-instance path, and
 /// `gtk_window_set_application` then segfaults against an application that was
@@ -91,6 +92,10 @@ pub fn run() -> glib::ExitCode {
 
     if smoke_requested(std::env::var_os(SHORTCUT_ENV).as_deref()) {
         return shortcut_probe();
+    }
+
+    if smoke_requested(std::env::var_os(BACKENDS_ENV).as_deref()) {
+        return backends_probe();
     }
 
     if smoke_requested(std::env::var_os(SMOKE_ENV).as_deref()) {
@@ -954,18 +959,334 @@ fn shortcut_probe() -> glib::ExitCode {
     glib::ExitCode::SUCCESS
 }
 
-fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
-    if let Ok(row) = widget.clone().downcast::<adw::EntryRow>() {
-        return Some(row);
+/// A machine with Parakeet connected and Whisper installed, answering from the
+/// fixtures the repository adapter's own tests use. It is also the privileged
+/// configurator: a `set` it executes is what the next `get` returns, so an
+/// apply reads back the way it does on a real backend.
+#[derive(Clone)]
+struct ProbeMachine {
+    configuration: std::sync::Arc<std::sync::Mutex<BTreeMap<String, String>>>,
+    applied: std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>,
+}
+
+impl ProbeMachine {
+    fn new() -> Self {
+        let configuration = include_str!("../tests/fixtures/modelctl-get.txt")
+            .lines()
+            .filter_map(|line| line.split_once(": "))
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect();
+        Self {
+            configuration: std::sync::Arc::new(std::sync::Mutex::new(configuration)),
+            applied: std::sync::Arc::default(),
+        }
+    }
+
+    fn applied(&self) -> Vec<Vec<String>> {
+        self.applied.lock().expect("probe machine lock").clone()
+    }
+
+    fn snap(&self, arguments: &[&str]) -> Option<String> {
+        let fixture = |text: &str| Some(text.to_owned());
+        match arguments {
+            ["list", "--unicode=never"] => fixture(
+                "Name  Version  Rev  Tracking  Publisher  Notes\n\
+                 myna  1.2.3  7  latest/stable  canonical**  -\n\
+                 myna-parakeet  0.1.0  8  latest/stable  canonical**  -\n\
+                 myna-whisper  0.1.0  9  latest/stable  canonical**  -\n",
+            ),
+            ["connections", "--all"] => {
+                fixture(include_str!("../tests/fixtures/snap-connections.txt"))
+            }
+            ["interface", "content", "--attrs"] => {
+                fixture(include_str!("../tests/fixtures/snap-interface-content.txt"))
+            }
+            ["info", snap] => Some(
+                include_str!("../tests/fixtures/snap-info-parakeet.txt")
+                    .replace("myna-parakeet", snap),
+            ),
+            ["run", _, "version", "--format=json"] => {
+                fixture(include_str!("../tests/fixtures/modelctl-version.json"))
+            }
+            ["run", _, "status", "--format=json"] => {
+                fixture(include_str!("../tests/fixtures/modelctl-status.json"))
+            }
+            ["run", _, "list-models", "--format=json"] => {
+                fixture(include_str!("../tests/fixtures/modelctl-list-models.json"))
+            }
+            ["run", _, "list-engines", "--format=json"] => {
+                fixture(include_str!("../tests/fixtures/modelctl-list-engines.json"))
+            }
+            ["run", _, "get"] => Some(
+                self.configuration
+                    .lock()
+                    .expect("probe machine lock")
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}\n"))
+                    .collect(),
+            ),
+            _ => None,
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl crate::command::CommandRunner for ProbeMachine {
+    async fn run(
+        &self,
+        request: crate::command::CommandRequest,
+        _cancellation: crate::command::CancellationToken,
+    ) -> Result<crate::command::CommandOutput, crate::command::CommandError> {
+        let arguments: Vec<&str> = request.arguments().iter().map(String::as_str).collect();
+        match (request.executable(), self.snap(&arguments)) {
+            ("snap", Some(stdout)) => Ok(crate::command::CommandOutput::new(Some(0), stdout, "")),
+            _ => Err(crate::command::CommandError::NonZero {
+                exit_status: Some(1),
+                stdout: String::new(),
+                stderr: format!("the probe machine cannot run {request:?}"),
+            }),
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl crate::ports::SystemConfigurator for ProbeMachine {
+    async fn execute_privileged(
+        &self,
+        operations: &[crate::command::CommandRequest],
+        _cancellation: crate::command::CancellationToken,
+    ) -> Result<Vec<crate::domain::CommandResult>, crate::ports::SystemConfiguratorFailure> {
+        let mut results = Vec::new();
+        for operation in operations {
+            let arguments = operation.arguments().to_vec();
+            if arguments.get(2).map(String::as_str) == Some("set") {
+                let mut configuration = self.configuration.lock().expect("probe machine lock");
+                for assignment in &arguments[3..] {
+                    if let Some((key, value)) = assignment.split_once('=') {
+                        configuration.insert(key.to_owned(), value.to_owned());
+                    }
+                }
+            }
+            self.applied
+                .lock()
+                .expect("probe machine lock")
+                .push(arguments.clone());
+            results.push(crate::domain::CommandResult::new(
+                operation.executable(),
+                arguments,
+                Some(0),
+                "",
+                "",
+            ));
+        }
+        Ok(results)
+    }
+}
+
+/// Drive the backend pages through the real repository adapter against a
+/// fixture machine: discovery fills the sidebar, a backend page reads its
+/// snapshot, an edit stages, and a confirmed apply is written and read back.
+fn backends_probe() -> glib::ExitCode {
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config backends probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    let application = adw::Application::builder()
+        .application_id(probe_app_id())
+        .build();
+    let _ = application.register(None::<&gio::Cancellable>);
+
+    let window = ui::MainWindow::new(&application);
+    let split_view = window.split_view();
+    let sidebar_list = window.sidebar_list();
+    let overlay = window.overlay();
+    let myna_row = window.myna_row().upcast::<gtk::ListBoxRow>();
+    let diagnostics_row = window.diagnostics_row().upcast::<gtk::ListBoxRow>();
+    let myna_page = match GioClientSettings::open() {
+        Ok(settings) => build_myna_page(
+            MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>),
+            PersistenceWriter::spawn(GioClientSettings::open),
+            &overlay,
+        ),
+        Err(error) => {
+            eprintln!("myna-config backends probe could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    split_view.set_content(Some(&myna_page));
+    window.present();
+
+    let machine = ProbeMachine::new();
+    let ui = crate::backend_ui::BackendUi::install_with_ports(
+        Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+            std::sync::Arc::new(machine.clone()),
+        )),
+        Rc::new(machine.clone()),
+        &split_view,
+        &overlay,
+        myna_row,
+        myna_page,
+        diagnostics_row.clone(),
+        status_page("About and Diagnostics", "", "dialog-information-symbolic"),
+        sidebar_list.clone(),
+    );
+
+    let settles = |done: &dyn Fn() -> bool| {
+        for _ in 0..100 {
+            if done() {
+                return true;
+            }
+            settle_gtk();
+        }
+        done()
+    };
+    let content = || {
+        split_view
+            .content()
+            .map(|page| page.upcast::<gtk::Widget>())
+    };
+    let rows = || {
+        (0..)
+            .take_while(|index| sidebar_list.row_at_index(*index).is_some())
+            .count()
+    };
+
+    // Myna, the two backends, Diagnostics.
+    if !settles(&|| rows() == 4) {
+        eprintln!(
+            "discovery never listed the fixture backends ({} rows)",
+            rows()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("backends-discovered: 2");
+
+    let Some(parakeet) = sidebar_list.row_at_index(1) else {
+        eprintln!("the first backend row vanished");
+        return glib::ExitCode::FAILURE;
+    };
+    sidebar_list.select_row(Some(&parakeet));
+    let idle_entry = || {
+        content()
+            .and_then(|page| {
+                find_descendant(&page, &|widget| {
+                    widget.widget_name() == "myna-setting-sleep-idle-seconds"
+                })
+            })
+            .and_then(|widget| widget.downcast::<adw::EntryRow>().ok())
+    };
+    if !settles(&|| idle_entry().is_some_and(|entry| entry.text() == "300")) {
+        eprintln!("the Parakeet page never showed the snapshot it read");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("backend-snapshot: read");
+
+    idle_entry().expect("idle entry").set_text("600");
+    let apply_button = || {
+        content()
+            .and_then(|page| {
+                find_descendant(&page, &|widget| widget.is::<ui::BackendApplyControls>())
+            })
+            .and_then(|widget| widget.downcast::<ui::BackendApplyControls>().ok())
+            .map(|controls| controls.apply_button())
+    };
+    if !settles(&|| apply_button().is_some_and(|button| button.is_sensitive())) {
+        eprintln!("staging an edit never offered to apply it");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("backend-edit: staged");
+
+    apply_button().expect("apply button").emit_clicked();
+    let dialog = || {
+        window
+            .visible_dialog()
+            .and_then(|dialog| dialog.downcast::<adw::AlertDialog>().ok())
+    };
+    if !settles(&|| dialog().is_some()) {
+        eprintln!("apply never asked for confirmation");
+        return glib::ExitCode::FAILURE;
+    }
+    dialog()
+        .expect("confirmation dialog")
+        .emit_by_name::<()>("response", &[&"apply"]);
+    let confirmed = || {
+        content().is_some_and(|page| {
+            find_descendant(&page, &|widget| {
+                widget
+                    .downcast_ref::<adw::PreferencesRow>()
+                    .is_some_and(|row| row.title() == "Changes applied")
+            })
+            .is_some()
+        })
+    };
+    if !settles(&confirmed) {
+        eprintln!(
+            "the apply was never confirmed by read-back; the machine ran {:?}",
+            machine.applied()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    let wrote = machine.applied().iter().any(|operation| {
+        operation
+            .iter()
+            .any(|argument| argument == "sleep-idle-seconds=600")
+    });
+    if !wrote || !idle_entry().is_some_and(|entry| entry.text() == "600") {
+        eprintln!(
+            "the apply did not write and show the staged value; the machine ran {:?}",
+            machine.applied()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("backend-apply: read back");
+
+    sidebar_list.select_row(Some(&diagnostics_row));
+    let report = || {
+        content()
+            .and_then(|page| page.downcast::<ui::DiagnosticsPage>().ok())
+            .map(|page| {
+                let buffer = page.report_view().buffer();
+                buffer
+                    .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                    .to_string()
+            })
+            .unwrap_or_default()
+    };
+    if !settles(&|| report().contains("myna-parakeet")) {
+        eprintln!(
+            "diagnostics never reported the fixture backends:\n{}",
+            report()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("diagnostics-report: lists backends");
+
+    ui.shutdown();
+    window.close();
+    glib::ExitCode::SUCCESS
+}
+
+fn find_descendant(
+    widget: &gtk::Widget,
+    matches: &dyn Fn(&gtk::Widget) -> bool,
+) -> Option<gtk::Widget> {
+    if matches(widget) {
+        return Some(widget.clone());
     }
     let mut child = widget.first_child();
     while let Some(current) = child {
-        if let Some(found) = first_entry_row(&current) {
+        if let Some(found) = find_descendant(&current, matches) {
             return Some(found);
         }
         child = current.next_sibling();
     }
     None
+}
+
+fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
+    find_descendant(widget, &|widget| widget.is::<adw::EntryRow>())
+        .and_then(|widget| widget.downcast().ok())
 }
 
 fn settle_gtk() {

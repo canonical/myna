@@ -208,3 +208,41 @@ fn the_shortcut_row_binds_through_the_daemon_and_shows_the_key() {
         assert!(stdout.contains(line), "shortcut probe missing: {line}");
     }
 }
+
+/// The backend pages end to end through the real repository adapter, against a
+/// fixture machine: discovery, a page's snapshot, staging an edit, and a
+/// confirmed apply that is written and read back.
+#[test]
+fn backend_pages_discover_stage_and_apply_against_a_fixture_machine() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let (store, schemas) = scratch_store("backends");
+    let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
+        .env("GSETTINGS_BACKEND", "memory")
+        .env("GSETTINGS_SCHEMA_DIR", &schemas)
+        .env("XDG_CONFIG_HOME", &store)
+        // Never the live session's bus, where a real daemon would answer.
+        .env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            "unix:path=/nonexistent/myna-config-probe",
+        )
+        .env("MYNA_CONFIG_BACKENDS_TEST", "1")
+        .output()
+        .expect("run backends probe");
+    std::fs::remove_dir_all(&store).ok();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "backends probe failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in [
+        "backends-discovered: 2",
+        "backend-snapshot: read",
+        "backend-edit: staged",
+        "backend-apply: read back",
+        "diagnostics-report: lists backends",
+    ] {
+        assert!(stdout.contains(line), "backends probe missing: {line}");
+    }
+}

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 12:23+0100\n"
+"POT-Creation-Date: 2026-09-15 12:45+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -27,7 +27,7 @@ msgid ""
 msgstr ""
 
 #: data/active-backend-dialog.blp:11 data/apply-dialog.blp:11
-#: src/backend_ui.rs:2088
+#: src/backend_ui.rs:2062
 msgid "Cancel"
 msgstr ""
 
@@ -57,17 +57,17 @@ msgstr ""
 msgid "Revert"
 msgstr ""
 
-#: data/backend-page.blp:12 src/backend_ui.rs:2379 src/backend_ui.rs:2679
+#: data/backend-page.blp:12 src/backend_ui.rs:2353 src/backend_ui.rs:2653
 msgid "Refresh backend data"
 msgstr ""
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:36
-#: data/main-window.blp:41 src/app.rs:615
+#: data/main-window.blp:41 src/app.rs:620
 msgid "About and Diagnostics"
 msgstr ""
 
 #: data/diagnostics-page.blp:13 data/diagnostics-page.blp:16
-#: src/backend_ui.rs:1212 src/backend_ui.rs:1214
+#: src/backend_ui.rs:1186 src/backend_ui.rs:1188
 msgid "Refresh diagnostics"
 msgstr ""
 
@@ -75,11 +75,11 @@ msgstr ""
 msgid "Re-read the machine, the daemon, and every backend."
 msgstr ""
 
-#: data/diagnostics-page.blp:24 src/backend_ui.rs:1225
+#: data/diagnostics-page.blp:24 src/backend_ui.rs:1199
 msgid "Copy privacy-safe diagnostics"
 msgstr ""
 
-#: data/diagnostics-page.blp:27 src/backend_ui.rs:1227
+#: data/diagnostics-page.blp:27 src/backend_ui.rs:1201
 msgid "Copy diagnostics"
 msgstr ""
 
@@ -109,7 +109,7 @@ msgid ""
 "audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:67 src/backend_ui.rs:1259
+#: data/diagnostics-page.blp:67 src/backend_ui.rs:1233
 msgid "Diagnostic report"
 msgstr ""
 
@@ -146,15 +146,15 @@ msgstr ""
 msgid "Choose which installed speech backend serves Myna."
 msgstr ""
 
-#: data/myna-page.blp:20 src/backend_ui.rs:1772
+#: data/myna-page.blp:20 src/backend_ui.rs:1746
 msgid "Backend"
 msgstr ""
 
-#: data/myna-page.blp:21 src/backend_ui.rs:523
+#: data/myna-page.blp:21 src/backend_ui.rs:497
 msgid "Choose which installed backend Myna uses for dictation."
 msgstr ""
 
-#: data/myna-page.blp:25 src/backend_ui.rs:549
+#: data/myna-page.blp:25 src/backend_ui.rs:523
 msgid "Switch"
 msgstr ""
 
@@ -246,35 +246,35 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:12 src/app.rs:580 src/app.rs:988
+#: data/status-page.blp:12 src/app.rs:585 src/app.rs:1309
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:13 src/app.rs:581 src/app.rs:989
+#: data/status-page.blp:13 src/app.rs:586 src/app.rs:1310
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:616
+#: src/app.rs:621
 msgid "Backend diagnostics will appear after discovery."
 msgstr ""
 
-#: src/app.rs:993
+#: src/app.rs:1314
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:994
+#: src/app.rs:1315
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:1010
+#: src/app.rs:1331
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:1368
+#: src/app.rs:1689
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:1427 src/app.rs:1430
+#: src/app.rs:1748 src/app.rs:1751
 msgid "Reset to the schema default"
 msgstr ""
 
@@ -294,11 +294,11 @@ msgstr ""
 msgid "Installed"
 msgstr ""
 
-#: src/active_backend.rs:69 src/backend_ui.rs:1787 src/diagnostics.rs:446
+#: src/active_backend.rs:69 src/backend_ui.rs:1761 src/diagnostics.rs:446
 msgid "Connected"
 msgstr ""
 
-#: src/active_backend.rs:71 src/backend_ui.rs:1789 src/diagnostics.rs:448
+#: src/active_backend.rs:71 src/backend_ui.rs:1763 src/diagnostics.rs:448
 msgid "Not connected"
 msgstr ""
 
@@ -321,550 +321,550 @@ msgstr ""
 msgid "Exact snapd interface actions:"
 msgstr ""
 
-#: src/backend_ui.rs:339
+#: src/backend_ui.rs:313
 msgid "The selected backend is no longer installed. Refresh and choose again."
 msgstr ""
 
-#: src/backend_ui.rs:400
+#: src/backend_ui.rs:374
 msgid "Active backend switched."
 msgstr ""
 
-#: src/backend_ui.rs:403
+#: src/backend_ui.rs:377
 msgid "That backend is already the sole active connection."
 msgstr ""
 
-#: src/backend_ui.rs:408
+#: src/backend_ui.rs:382
 msgid ""
 "Commands completed, but the connections now differ from the requested state."
 msgstr ""
 
-#: src/backend_ui.rs:414
+#: src/backend_ui.rs:388
 msgid ""
 "Connections changed before authorization. Review the refreshed state and try "
 "again."
 msgstr ""
 
-#: src/backend_ui.rs:426
+#: src/backend_ui.rs:400
 msgid "Backend switch failed and final connections could not be refreshed."
 msgstr ""
 
-#: src/backend_ui.rs:429
+#: src/backend_ui.rs:403
 msgid "Backend switch failed. Actual connections were refreshed."
 msgstr ""
 
-#: src/backend_ui.rs:440
+#: src/backend_ui.rs:414
 msgid "Backend switch failed"
 msgstr ""
 
-#: src/backend_ui.rs:451
+#: src/backend_ui.rs:425
 msgid "Backend switch cancelled, but final connections could not be refreshed."
 msgstr ""
 
-#: src/backend_ui.rs:455
+#: src/backend_ui.rs:429
 msgid ""
 "Backend switch cancelled. Actual connections were refreshed; no rollback is "
 "claimed."
 msgstr ""
 
-#: src/backend_ui.rs:461
+#: src/backend_ui.rs:435
 msgid "Could not verify final backend connections."
 msgstr ""
 
-#: src/backend_ui.rs:466
+#: src/backend_ui.rs:440
 msgid "Backend switch verification failed"
 msgstr ""
 
-#: src/backend_ui.rs:512
+#: src/backend_ui.rs:486
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
 
-#: src/backend_ui.rs:517
+#: src/backend_ui.rs:491
 msgid "No backend is connected. Choose an installed backend to connect."
 msgstr ""
 
-#: src/backend_ui.rs:520
+#: src/backend_ui.rs:494
 msgid ""
 "Multiple backends are connected. Choose one to make it the sole active "
 "backend."
 msgstr ""
 
-#: src/backend_ui.rs:526
+#: src/backend_ui.rs:500
 msgid ""
 "The previous switch did not complete. The displayed connections are the "
 "actual refreshed state."
 msgstr ""
 
-#: src/backend_ui.rs:547
+#: src/backend_ui.rs:521
 msgid "Switching…"
 msgstr ""
 
-#: src/backend_ui.rs:639
+#: src/backend_ui.rs:613
 msgid "Cancelling backend apply…"
 msgstr ""
 
-#: src/backend_ui.rs:661
+#: src/backend_ui.rs:635
 msgid "Finish the active backend operation before applying changes."
 msgstr ""
 
-#: src/backend_ui.rs:674
+#: src/backend_ui.rs:648
 msgid "Waiting for change confirmation…"
 msgstr ""
 
-#: src/backend_ui.rs:687 src/backend_ui.rs:860
+#: src/backend_ui.rs:661 src/backend_ui.rs:834
 msgid "Apply cancelled"
 msgstr ""
 
-#: src/backend_ui.rs:688 src/backend_ui.rs:861
+#: src/backend_ui.rs:662 src/backend_ui.rs:835
 msgid "No administrator authorization was requested."
 msgstr ""
 
-#: src/backend_ui.rs:698
+#: src/backend_ui.rs:672
 msgid "Nothing to apply"
 msgstr ""
 
-#: src/backend_ui.rs:699
+#: src/backend_ui.rs:673
 msgid "There are no staged backend changes."
 msgstr ""
 
-#: src/backend_ui.rs:705
+#: src/backend_ui.rs:679
 msgid "Invalid values"
 msgstr ""
 
-#: src/backend_ui.rs:807
+#: src/backend_ui.rs:781
 msgid "Changes applied"
 msgstr ""
 
-#: src/backend_ui.rs:808
+#: src/backend_ui.rs:782
 msgid "Requested values were confirmed by read-back."
 msgstr ""
 
-#: src/backend_ui.rs:816
+#: src/backend_ui.rs:790
 msgid "Read-back mismatch"
 msgstr ""
 
-#: src/backend_ui.rs:818
+#: src/backend_ui.rs:792
 msgid "The backend returned different values than those requested."
 msgstr ""
 
-#: src/backend_ui.rs:826
+#: src/backend_ui.rs:800
 msgid "Backend restart failed"
 msgstr ""
 
-#: src/backend_ui.rs:828
+#: src/backend_ui.rs:802
 msgid "The settings were written, but the backend did not become ready."
 msgstr ""
 
-#: src/backend_ui.rs:836
+#: src/backend_ui.rs:810
 msgid "Read-back failed"
 msgstr ""
 
-#: src/backend_ui.rs:838
+#: src/backend_ui.rs:812
 msgid "The settings were changed, but the saved values could not be verified."
 msgstr ""
 
-#: src/backend_ui.rs:867 src/backend_ui.rs:1476
+#: src/backend_ui.rs:841 src/backend_ui.rs:1450
 msgid "Apply interrupted"
 msgstr ""
 
-#: src/backend_ui.rs:869
+#: src/backend_ui.rs:843
 msgid "The write outcome is uncertain. Refresh the backend before retrying."
 msgstr ""
 
-#: src/backend_ui.rs:877
+#: src/backend_ui.rs:851
 msgid "Verification cancelled"
 msgstr ""
 
-#: src/backend_ui.rs:879
+#: src/backend_ui.rs:853
 msgid ""
 "The write completed, but read-back was cancelled. Refresh to verify "
 "persisted values."
 msgstr ""
 
-#: src/backend_ui.rs:884 src/backend_ui.rs:1482
+#: src/backend_ui.rs:858 src/backend_ui.rs:1456
 msgid "Authorization denied"
 msgstr ""
 
-#: src/backend_ui.rs:889
+#: src/backend_ui.rs:863
 msgid "snapd or polkit rejected the request."
 msgstr ""
 
-#: src/backend_ui.rs:896 src/backend_ui.rs:1486
+#: src/backend_ui.rs:870 src/backend_ui.rs:1460
 msgid "Backend rejected changes"
 msgstr ""
 
-#: src/backend_ui.rs:903 src/backend_ui.rs:1490
+#: src/backend_ui.rs:877 src/backend_ui.rs:1464
 msgid "Apply failed"
 msgstr ""
 
-#: src/backend_ui.rs:980
+#: src/backend_ui.rs:954
 msgid "Could not read installed backends"
 msgstr ""
 
-#: src/backend_ui.rs:1236
+#: src/backend_ui.rs:1210
 msgid "Diagnostics copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:1266
+#: src/backend_ui.rs:1240
 msgid "Install Myna to get started"
 msgstr ""
 
-#: src/backend_ui.rs:1268
+#: src/backend_ui.rs:1242
 msgid ""
 "The Myna snap is not installed. Copy this command and run it in a terminal — "
 "installation is never automatic."
 msgstr ""
 
-#: src/backend_ui.rs:1272
+#: src/backend_ui.rs:1246
 msgid "Install a backend to enable dictation"
 msgstr ""
 
-#: src/backend_ui.rs:1274
+#: src/backend_ui.rs:1248
 msgid ""
 "No inference backend was discovered. Copy this command and run it in a "
 "terminal — installation is never automatic."
 msgstr ""
 
-#: src/backend_ui.rs:1286
+#: src/backend_ui.rs:1260
 msgid "Copy and run in a terminal"
 msgstr ""
 
-#: src/backend_ui.rs:1292 src/backend_ui.rs:1295
+#: src/backend_ui.rs:1266 src/backend_ui.rs:1269
 msgid "Copy install command"
 msgstr ""
 
-#: src/backend_ui.rs:1303 src/onboarding_ui.rs:378
+#: src/backend_ui.rs:1277 src/onboarding_ui.rs:378
 msgid "Install command copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:1478
+#: src/backend_ui.rs:1452
 msgid ""
 "Apply was cancelled after some operations completed. Persisted values were "
 "read back."
 msgstr ""
 
-#: src/backend_ui.rs:1500 src/backend_ui.rs:1574
+#: src/backend_ui.rs:1474 src/backend_ui.rs:1548
 msgid "Executable:"
 msgstr ""
 
-#: src/backend_ui.rs:1504 src/backend_ui.rs:1582
+#: src/backend_ui.rs:1478 src/backend_ui.rs:1556
 msgid "Arguments:"
 msgstr ""
 
-#: src/backend_ui.rs:1514 src/backend_ui.rs:1592 src/backend_ui.rs:1638
-#: src/backend_ui.rs:2473 src/backend_ui.rs:2513
+#: src/backend_ui.rs:1488 src/backend_ui.rs:1566 src/backend_ui.rs:1612
+#: src/backend_ui.rs:2447 src/backend_ui.rs:2487
 msgid "Exit status:"
 msgstr ""
 
-#: src/backend_ui.rs:1522 src/backend_ui.rs:1600 src/backend_ui.rs:1647
-#: src/backend_ui.rs:2482 src/backend_ui.rs:2522
+#: src/backend_ui.rs:1496 src/backend_ui.rs:1574 src/backend_ui.rs:1621
+#: src/backend_ui.rs:2456 src/backend_ui.rs:2496
 msgid "Standard error:"
 msgstr ""
 
-#: src/backend_ui.rs:1527 src/backend_ui.rs:1605
+#: src/backend_ui.rs:1501 src/backend_ui.rs:1579
 msgid "Message:"
 msgstr ""
 
-#: src/backend_ui.rs:1622
+#: src/backend_ui.rs:1596
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:1626
+#: src/backend_ui.rs:1600
 msgid "No privileged operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:1628
+#: src/backend_ui.rs:1602
 msgid "Completed operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1654
+#: src/backend_ui.rs:1628
 msgid "Failure:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1658
+#: src/backend_ui.rs:1632
 msgid "Reconciliation read-back:\n"
 msgstr ""
 
-#: src/backend_ui.rs:1670
+#: src/backend_ui.rs:1644
 msgid "Backend:"
 msgstr ""
 
-#: src/backend_ui.rs:1676
+#: src/backend_ui.rs:1650
 msgid "Services: —"
 msgstr ""
 
-#: src/backend_ui.rs:1678
+#: src/backend_ui.rs:1652
 msgid "Services:"
 msgstr ""
 
-#: src/backend_ui.rs:1690
+#: src/backend_ui.rs:1664
 msgid "Status: unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:1697
+#: src/backend_ui.rs:1671
 msgid "Post-failure surface errors:"
 msgstr ""
 
-#: src/backend_ui.rs:1777
+#: src/backend_ui.rs:1751
 msgid "Some information could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:1788 src/diagnostics.rs:447
+#: src/backend_ui.rs:1762 src/diagnostics.rs:447
 msgid "Multiple connections"
 msgstr ""
 
-#: src/backend_ui.rs:1794 src/backend_ui.rs:1939
+#: src/backend_ui.rs:1768 src/backend_ui.rs:1913
 msgid "Refreshing…"
 msgstr ""
 
-#: src/backend_ui.rs:1796
+#: src/backend_ui.rs:1770
 msgid "Partial data"
 msgstr ""
 
-#: src/backend_ui.rs:1813
+#: src/backend_ui.rs:1787
 msgid "Overview"
 msgstr ""
 
-#: src/backend_ui.rs:1818
+#: src/backend_ui.rs:1792
 msgid "Connection"
 msgstr ""
 
-#: src/backend_ui.rs:1820
+#: src/backend_ui.rs:1794
 msgid "Active — this backend serves Myna."
 msgstr ""
 
-#: src/backend_ui.rs:1822
+#: src/backend_ui.rs:1796
 msgid "Multiple backends are connected. Only one should be active at a time."
 msgstr ""
 
-#: src/backend_ui.rs:1824
+#: src/backend_ui.rs:1798
 msgid "Not connected to the Myna daemon."
 msgstr ""
 
-#: src/backend_ui.rs:1830
+#: src/backend_ui.rs:1804
 msgid "Active model"
 msgstr ""
 
-#: src/backend_ui.rs:1836
+#: src/backend_ui.rs:1810
 msgid "Active engine"
 msgstr ""
 
-#: src/backend_ui.rs:1839
+#: src/backend_ui.rs:1813
 msgid "None selected — choose one below."
 msgstr ""
 
-#: src/backend_ui.rs:1856 src/diagnostics.rs:613
+#: src/backend_ui.rs:1830 src/diagnostics.rs:613
 msgid "Services"
 msgstr ""
 
-#: src/backend_ui.rs:1858
+#: src/backend_ui.rs:1832
 msgid "No service health reported"
 msgstr ""
 
-#: src/backend_ui.rs:1869
+#: src/backend_ui.rs:1843
 msgid "Loading"
 msgstr ""
 
-#: src/backend_ui.rs:1871
+#: src/backend_ui.rs:1845
 msgid "Reading configuration from this backend…"
 msgstr ""
 
-#: src/backend_ui.rs:1881
+#: src/backend_ui.rs:1855
 msgid "No configuration reported"
 msgstr ""
 
-#: src/backend_ui.rs:1883
+#: src/backend_ui.rs:1857
 msgid "The backend accepted requests but reported no configurable settings."
 msgstr ""
 
-#: src/backend_ui.rs:1893
+#: src/backend_ui.rs:1867
 msgid "Some data is unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:1895
+#: src/backend_ui.rs:1869
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:1993
+#: src/backend_ui.rs:1967
 msgid "Fix invalid values before applying these backend changes."
 msgstr ""
 
-#: src/backend_ui.rs:1996
+#: src/backend_ui.rs:1970
 msgid ""
 "Review staged changes, authorize one privileged operation, then verify read-"
 "back."
 msgstr ""
 
-#: src/backend_ui.rs:2000
+#: src/backend_ui.rs:1974
 msgid "Staged changes"
 msgstr ""
 
-#: src/backend_ui.rs:2042
+#: src/backend_ui.rs:2016
 msgid "Applying backend changes…"
 msgstr ""
 
-#: src/backend_ui.rs:2044
+#: src/backend_ui.rs:2018
 msgid "A single authorization applies all staged changes together."
 msgstr ""
 
-#: src/backend_ui.rs:2107
+#: src/backend_ui.rs:2081
 msgid "General"
 msgstr ""
 
-#: src/backend_ui.rs:2108
+#: src/backend_ui.rs:2082
 msgid "Runtime"
 msgstr ""
 
-#: src/backend_ui.rs:2109
+#: src/backend_ui.rs:2083
 msgid "Advanced"
 msgstr ""
 
-#: src/backend_ui.rs:2110
+#: src/backend_ui.rs:2084
 msgid "Sensitive"
 msgstr ""
 
-#: src/backend_ui.rs:2117
+#: src/backend_ui.rs:2091
 msgid "Common backend preferences."
 msgstr ""
 
-#: src/backend_ui.rs:2120
+#: src/backend_ui.rs:2094
 msgid "Runtime and performance related settings."
 msgstr ""
 
-#: src/backend_ui.rs:2123
+#: src/backend_ui.rs:2097
 msgid ""
 "Advanced values. The backend supplies no richer metadata for these keys."
 msgstr ""
 
-#: src/backend_ui.rs:2126
+#: src/backend_ui.rs:2100
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
 
-#: src/backend_ui.rs:2141
+#: src/backend_ui.rs:2115
 msgid "Sensitive value (redacted)"
 msgstr ""
 
-#: src/backend_ui.rs:2280
+#: src/backend_ui.rs:2254
 msgid "Active"
 msgstr ""
 
-#: src/backend_ui.rs:2281
+#: src/backend_ui.rs:2255
 msgid "Inactive"
 msgstr ""
 
-#: src/backend_ui.rs:2282
+#: src/backend_ui.rs:2256
 msgid "Failed"
 msgstr ""
 
-#: src/backend_ui.rs:2284
+#: src/backend_ui.rs:2258
 msgid "Unknown"
 msgstr ""
 
-#: src/backend_ui.rs:2349
+#: src/backend_ui.rs:2323
 msgid "Installed snaps"
 msgstr ""
 
-#: src/backend_ui.rs:2350
+#: src/backend_ui.rs:2324
 msgid "Backend connections"
 msgstr ""
 
-#: src/backend_ui.rs:2351
+#: src/backend_ui.rs:2325
 msgid "Model control command"
 msgstr ""
 
-#: src/backend_ui.rs:2352
+#: src/backend_ui.rs:2326
 msgid "Backend configuration"
 msgstr ""
 
-#: src/backend_ui.rs:2353
+#: src/backend_ui.rs:2327
 msgid "Backend status"
 msgstr ""
 
-#: src/backend_ui.rs:2354
+#: src/backend_ui.rs:2328
 msgid "Available models"
 msgstr ""
 
-#: src/backend_ui.rs:2355
+#: src/backend_ui.rs:2329
 msgid "Available engines"
 msgstr ""
 
-#: src/backend_ui.rs:2361
+#: src/backend_ui.rs:2335
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:2374 src/backend_ui.rs:2685
+#: src/backend_ui.rs:2348 src/backend_ui.rs:2659
 msgid "Applying backend changes and verifying restart…"
 msgstr ""
 
-#: src/backend_ui.rs:2377 src/backend_ui.rs:2675
+#: src/backend_ui.rs:2351 src/backend_ui.rs:2649
 msgid "Refreshing backend data…"
 msgstr ""
 
-#: src/backend_ui.rs:2385
+#: src/backend_ui.rs:2359
 msgid "Applying backend changes and waiting for restart/readiness…"
 msgstr ""
 
-#: src/backend_ui.rs:2387
+#: src/backend_ui.rs:2361
 msgid "Applying backend changes and verifying read-back…"
 msgstr ""
 
-#: src/backend_ui.rs:2406
+#: src/backend_ui.rs:2380
 msgid "missing"
 msgstr ""
 
-#: src/backend_ui.rs:2435
+#: src/backend_ui.rs:2409
 msgid "Backend switch failed."
 msgstr ""
 
-#: src/backend_ui.rs:2441
+#: src/backend_ui.rs:2415
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:2449
+#: src/backend_ui.rs:2423
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:2454
+#: src/backend_ui.rs:2428
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2461
+#: src/backend_ui.rs:2435
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2463 src/backend_ui.rs:2503
+#: src/backend_ui.rs:2437 src/backend_ui.rs:2477
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2489
+#: src/backend_ui.rs:2463
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2500
+#: src/backend_ui.rs:2474
 msgid ""
 "Backend switch succeeded, but the final connection state could not be "
 "verified.\n"
 "\n"
 msgstr ""
 
-#: src/backend_ui.rs:2529
+#: src/backend_ui.rs:2503
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2537
+#: src/backend_ui.rs:2511
 msgid "no backend connected"
 msgstr ""
 
-#: src/backend_ui.rs:2542
+#: src/backend_ui.rs:2516
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:2552
+#: src/backend_ui.rs:2526
 msgid "multiple backends"
 msgstr ""
 
-#: src/backend_ui.rs:2555
+#: src/backend_ui.rs:2529
 msgid "previous switch is unresolved"
 msgstr ""
 

@@ -210,33 +210,7 @@ impl BackendUi {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn install_with_repository(
-        repository: Rc<dyn BackendRepository>,
-        split_view: &adw::NavigationSplitView,
-        overlay: &adw::ToastOverlay,
-        myna_row: gtk::ListBoxRow,
-        myna_page: adw::NavigationPage,
-        diagnostics_row: gtk::ListBoxRow,
-        diagnostics_page: adw::NavigationPage,
-        sidebar_list: gtk::ListBox,
-    ) -> Rc<Self> {
-        let configurator: Rc<dyn SystemConfigurator> =
-            Rc::new(PkexecSystemConfigurator::new(Arc::new(GioCommandRunner)));
-        Self::install_with_ports(
-            repository,
-            configurator,
-            split_view,
-            overlay,
-            myna_row,
-            myna_page,
-            diagnostics_row,
-            diagnostics_page,
-            sidebar_list,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn install_with_ports(
+    pub(crate) fn install_with_ports(
         repository: Rc<dyn BackendRepository>,
         configurator: Rc<dyn SystemConfigurator>,
         split_view: &adw::NavigationSplitView,
