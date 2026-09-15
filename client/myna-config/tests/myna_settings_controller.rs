@@ -20,7 +20,6 @@ struct FakeSettings {
     values: RefCell<BTreeMap<String, ClientSettingValue>>,
     callbacks: RefCell<Vec<ClientSettingsCallback>>,
     writes: RefCell<Vec<(String, ClientSettingValue)>>,
-    resets: RefCell<Vec<String>>,
     list_error: RefCell<Option<ClientSettingsError>>,
     write_error: RefCell<Option<ClientSettingsError>>,
 }
@@ -79,23 +78,6 @@ impl ClientSettings for FakeSettings {
             return Err(error);
         }
         self.values.borrow_mut().insert(key.to_owned(), value);
-        Ok(())
-    }
-
-    fn reset(&self, key: &str) -> Result<(), ClientSettingsError> {
-        self.resets.borrow_mut().push(key.to_owned());
-        if let Some(error) = self.write_error.borrow_mut().take() {
-            return Err(error);
-        }
-        let default = self
-            .rows
-            .borrow()
-            .iter()
-            .find(|row| row.key().as_str() == key)
-            .unwrap()
-            .default_value()
-            .clone();
-        self.values.borrow_mut().insert(key.to_owned(), default);
         Ok(())
     }
 
@@ -234,32 +216,6 @@ fn failed_save_rolls_back_and_reports_actionable_error() {
 }
 
 #[test]
-fn reset_restores_schema_default_immediately() {
-    let mut changed = rows();
-    changed[1] = ClientSettingMetadata::new(
-        ClientSettingKey::new("language").unwrap(),
-        Some("Language".into()),
-        Some("Hint".into()),
-        ClientSettingValue::Text(String::new()),
-        SettingRange::Unrestricted,
-        ClientSettingValue::Text("fr".into()),
-        true,
-    );
-    let fake = FakeSettings::with_rows(changed);
-    let controller = MynaSettingsController::load(fake.clone());
-
-    let request = controller.reset("language").unwrap();
-    let result = request.persist(fake.as_ref());
-    controller.complete(request, result);
-
-    assert_eq!(fake.resets.borrow().as_slice(), &["language"]);
-    assert_eq!(
-        controller.row("language").unwrap().value(),
-        &ClientSettingValue::Text(String::new())
-    );
-}
-
-#[test]
 fn external_change_updates_only_the_affected_row() {
     let fake = FakeSettings::with_rows(rows());
     let controller = MynaSettingsController::load(fake.clone());
@@ -360,7 +316,7 @@ fn an_empty_schema_has_an_explicit_empty_state() {
 }
 
 #[test]
-fn read_only_rows_never_attempt_a_write_or_reset() {
+fn read_only_rows_never_attempt_a_write() {
     let fake = FakeSettings::with_rows(vec![metadata(
         "managed",
         ClientSettingValue::Text("policy".into()),
@@ -373,12 +329,7 @@ fn read_only_rows_never_attempt_a_write_or_reset() {
         controller.set("managed", ClientSettingValue::Text("changed".into())),
         Err(ClientSettingsError::NotWritable { .. })
     ));
-    assert!(matches!(
-        controller.reset("managed"),
-        Err(ClientSettingsError::NotWritable { .. })
-    ));
     assert!(fake.writes.borrow().is_empty());
-    assert!(fake.resets.borrow().is_empty());
 }
 
 #[test]

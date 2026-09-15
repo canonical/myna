@@ -21,7 +21,6 @@ pub trait ClientSettings {
     fn list(&self) -> Result<Vec<ClientSettingMetadata>, ClientSettingsError>;
     fn get(&self, key: &str) -> Result<ClientSettingValue, ClientSettingsError>;
     fn set(&self, key: &str, value: ClientSettingValue) -> Result<(), ClientSettingsError>;
-    fn reset(&self, key: &str) -> Result<(), ClientSettingsError>;
     fn subscribe(
         &self,
         callback: ClientSettingsCallback,

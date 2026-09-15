@@ -167,12 +167,6 @@ pub enum SettingsEvent {
 
 type Observer = Box<dyn Fn(SettingsEvent)>;
 
-#[derive(Clone, Debug)]
-enum PersistenceOperation {
-    Set(ClientSettingValue),
-    Reset,
-}
-
 #[derive(Debug)]
 struct PersistenceGate {
     revision: AtomicU64,
@@ -185,7 +179,6 @@ pub struct PersistenceRequest {
     revision: u64,
     original: ClientSettingValue,
     requested: ClientSettingValue,
-    operation: PersistenceOperation,
     gate: Arc<PersistenceGate>,
     writer: Arc<Mutex<()>>,
 }
@@ -210,27 +203,15 @@ impl PersistenceRequest {
         if self.gate.revision.load(Ordering::Acquire) != self.revision {
             return Ok(PersistenceCompletion::Superseded(self.requested.clone()));
         }
-        match &self.operation {
-            PersistenceOperation::Set(value) => {
-                settings.set(&self.key, value.clone())?;
-                *self.gate.persisted.lock().map_err(|_| {
-                    ClientSettingsError::StoreUnavailable {
-                        message: "the settings persistence state is unavailable".into(),
-                    }
-                })? = value.clone();
-                Ok(PersistenceCompletion::Written(value.clone()))
-            }
-            PersistenceOperation::Reset => {
-                settings.reset(&self.key)?;
-                let value = settings.get(&self.key)?;
-                *self.gate.persisted.lock().map_err(|_| {
-                    ClientSettingsError::StoreUnavailable {
-                        message: "the settings persistence state is unavailable".into(),
-                    }
-                })? = value.clone();
-                Ok(PersistenceCompletion::Written(value))
-            }
-        }
+        settings.set(&self.key, self.requested.clone())?;
+        *self
+            .gate
+            .persisted
+            .lock()
+            .map_err(|_| ClientSettingsError::StoreUnavailable {
+                message: "the settings persistence state is unavailable".into(),
+            })? = self.requested.clone();
+        Ok(PersistenceCompletion::Written(self.requested.clone()))
     }
 
     fn rollback_value(&self) -> ClientSettingValue {
@@ -428,30 +409,7 @@ impl MynaSettingsController {
             key: key.to_owned(),
             revision,
             original,
-            requested: value.clone(),
-            operation: PersistenceOperation::Set(value),
-            gate,
-            writer: Arc::clone(&self.persistence_writer),
-        })
-    }
-
-    pub fn reset(&self, key: &str) -> Result<PersistenceRequest, ClientSettingsError> {
-        self.ensure_writable(key)?;
-        let row = self
-            .row(key)
-            .ok_or_else(|| ClientSettingsError::UnknownKey {
-                key: key.to_owned(),
-            })?;
-        let original = row.value;
-        let target = row.metadata.default_value().clone();
-        let (revision, gate) = self.next_revision(key);
-        self.update_row(key, target.clone(), true);
-        Ok(PersistenceRequest {
-            key: key.to_owned(),
-            revision,
-            original,
-            requested: target,
-            operation: PersistenceOperation::Reset,
+            requested: value,
             gate,
             writer: Arc::clone(&self.persistence_writer),
         })

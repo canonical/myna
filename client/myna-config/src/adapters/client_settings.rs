@@ -140,13 +140,6 @@ impl ClientSettings for GioClientSettings {
         Ok(())
     }
 
-    fn reset(&self, key: &str) -> Result<(), ClientSettingsError> {
-        self.schema_key(key)?;
-        self.ensure_writable(key)?;
-        self.settings.reset(key);
-        Ok(())
-    }
-
     fn subscribe(
         &self,
         callback: ClientSettingsCallback,

@@ -97,7 +97,7 @@ fn enumerates_the_real_schema_and_its_metadata() {
 }
 
 #[test]
-fn every_real_schema_key_round_trips_and_resets_in_the_private_keyfile() {
+fn every_real_schema_key_round_trips_in_the_private_keyfile() {
     let files = TestFiles::new("round-trip");
     let adapter = open_adapter(&files);
 
@@ -125,15 +125,6 @@ fn every_real_schema_key_round_trips_and_resets_in_the_private_keyfile() {
 
         let reopened = open_adapter(&files);
         assert_eq!(reopened.get(metadata.key().as_str()).unwrap(), value);
-        reopened.reset(metadata.key().as_str()).unwrap();
-        assert_eq!(
-            reopened.get(metadata.key().as_str()).unwrap(),
-            metadata.default_value().clone()
-        );
-        assert_eq!(
-            open_adapter(&files).get(metadata.key().as_str()).unwrap(),
-            metadata.default_value().clone()
-        );
     }
 }
 
@@ -354,7 +345,7 @@ fn explicit_backend_does_not_change_process_settings_environment() {
 }
 
 #[test]
-fn non_writable_keys_reject_set_and_reset_without_claiming_success() {
+fn non_writable_keys_reject_set_without_claiming_success() {
     let files = TestFiles::new("non-writable");
     let source = real_schema_source(&files);
     let backend = gio::functions::null_settings_backend_new();
@@ -364,10 +355,6 @@ fn non_writable_keys_reject_set_and_reset_without_claiming_success() {
 
     assert!(matches!(
         adapter.set(key, ClientSettingValue::Choice("batch".into())),
-        Err(ClientSettingsError::NotWritable { key: failed_key }) if failed_key == key
-    ));
-    assert!(matches!(
-        adapter.reset(key),
         Err(ClientSettingsError::NotWritable { key: failed_key }) if failed_key == key
     ));
     assert_eq!(adapter.get(key).unwrap(), original);

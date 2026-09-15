@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 17:28+0200\n"
+"POT-Creation-Date: 2026-09-15 17:28+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -57,7 +57,7 @@ msgstr ""
 msgid "Revert"
 msgstr ""
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:593
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:592
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -121,7 +121,7 @@ msgstr ""
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:29 data/myna-page.blp:16 src/app.rs:588
+#: data/main-window.blp:29 data/myna-page.blp:16 src/app.rs:587
 msgid "Backend"
 msgstr ""
 
@@ -227,35 +227,35 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:12 src/app.rs:583 src/app.rs:1292
+#: data/status-page.blp:12 src/app.rs:582 src/app.rs:1291
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:13 src/app.rs:584 src/app.rs:1293
+#: data/status-page.blp:13 src/app.rs:583 src/app.rs:1292
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:589
+#: src/app.rs:588
 msgid "Backend details will appear after discovery."
 msgstr ""
 
-#: src/app.rs:594
+#: src/app.rs:593
 msgid "Backend diagnostics will appear after discovery."
 msgstr ""
 
-#: src/app.rs:1297
+#: src/app.rs:1296
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:1298
+#: src/app.rs:1297
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:1314
+#: src/app.rs:1313
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:1667
+#: src/app.rs:1666
 msgid "Could not save the setting"
 msgstr ""
 
