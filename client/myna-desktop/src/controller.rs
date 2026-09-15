@@ -548,7 +548,6 @@ impl DesktopController {
         tokio::pin!(run);
         let mut trigger_open = true;
         let mut focus_open = true;
-        let mut quit_after = false;
         let mut cancelled = false;
         // After focus-loss we must not commit further text (it would land in the
         // now-focused wrong surface): finalize what's already committed, discard
@@ -635,7 +634,6 @@ impl DesktopController {
                     Some(TriggerEdge::Press) => {} // ignore an extra press while recording
                     None => {
                         trigger_open = false;
-                        quit_after = true;
                         stop.stop();
                         enter_finalizing(state, indicator.as_mut()).await;
                     }
@@ -772,7 +770,6 @@ impl DesktopController {
         // a ghost Recording→Finalizing cycle per spam poke. No-op for
         // hold-to-talk triggers (portal / stdin) where every edge is real.
         self.trigger.discard_pending().await;
-        let _ = quit_after; // the outer `run` loop re-reads the trigger (now None)
     }
 
     /// A pre-capture failure (secure field / no target / unreachable backend):

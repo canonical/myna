@@ -57,24 +57,6 @@ fn p10_duplicate_start_is_deduped_to_one_press() {
     assert_eq!(next_edge_sync(&mut trigger), Some(TriggerEdge::Press));
 }
 
-// --- P11: Start reports (false, content-free reason) when it cannot -------
-// The DbusTrigger itself cannot "fail to start" (there is no target here);
-// the (false, reason) shape belongs to the served method, which consults a
-// startability gate. Pinned so the trigger never panics on a refused start.
-
-#[test]
-fn p11_start_never_panics_and_reports_a_shape() {
-    let (mut trigger, source) = trigger();
-    // A refused start (simulated: the gate is closed) must not push an edge
-    // and must not panic.
-    source.refuse();
-    assert_eq!(
-        next_edge_sync(&mut trigger),
-        None,
-        "a refused start pushes nothing"
-    );
-}
-
 // --- P12: exhaustion ends the edge stream cleanly ------------------------
 
 #[test]

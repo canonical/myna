@@ -45,21 +45,12 @@ impl Indicator for DynamicIndicator {
     }
 
     async fn set_state(&mut self, state: IndicatorState) {
-        let is_hidden = matches!(state, IndicatorState::Hidden);
         // Always publish via D-Bus for the HUD(s).
         self.dbus.set_state(state.clone()).await;
-        // Suppress the notification fallback while any HUD is present;
-        // otherwise forward to it. When a HUD appears while a fallback
-        // notification is already visible, the next state transition will
-        // hide it (and `hide()` below also handles the idle transition).
+        // Suppress the notification fallback while any HUD is present,
+        // closing a toast left over from before the HUD appeared.
         if self.has_clients() {
-            if is_hidden {
-                self.notify.hide().await;
-            } else {
-                // Ensure any previous fallback toast is closed — we are now
-                // suppressing.
-                self.notify.hide().await;
-            }
+            self.notify.hide().await;
         } else {
             self.notify.set_state(state).await;
         }

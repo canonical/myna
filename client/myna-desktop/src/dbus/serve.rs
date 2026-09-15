@@ -135,15 +135,6 @@ impl ClientRegistry {
     pub fn len(&self) -> usize {
         self.clients.lock().expect("client registry poisoned").len()
     }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    fn snapshot(&self) -> HashSet<String> {
-        self.clients
-            .lock()
-            .expect("client registry poisoned")
-            .clone()
-    }
 }
 
 /// The `com.canonical.Myna.Dictation` object. Properties read the shared [`ServedState`]
@@ -176,9 +167,7 @@ impl DictationObject {
         if let Some(trigger) = &self.trigger {
             trigger.start();
         }
-        // The reason is content-free and this object is only a surface; a
-        // startability refusal (C7/P11) is signalled upstream before the
-        // trigger is pushed, so here it always succeeds.
+        // No startability gate exists (C7/P11 unimplemented): always succeeds.
         (true, String::new())
     }
 

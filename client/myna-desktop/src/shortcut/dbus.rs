@@ -9,11 +9,6 @@
 //! maps to a [`TriggerEdge`] with the same Press/Release alternation and
 //! duplicate-suppression `ControlTrigger` uses (P9/P10). The trigger's
 //! [`Trigger::next_edge`] yields those edges to the controller.
-//!
-//! `Start` also answers the `(ok, reason)` shape (C7/P11): the reason is
-//! content-free, and a refused start pushes no edge — the trigger never
-//! panics. The startability gate itself is the controller's concern; the
-//! source exposes [`DbusTriggerSource::refuse`] for the refused path.
 
 use std::sync::{Arc, Mutex};
 
@@ -82,10 +77,6 @@ impl DbusTriggerSource {
             self.edge(TriggerEdge::Release);
         }
     }
-
-    /// A refused start: pushes no edge (P11) — the served method reports the
-    /// `(false, reason)` and the session never begins.
-    pub fn refuse(&self) {}
 }
 
 /// The [`Trigger`] half: yields the edges the source pushed.
