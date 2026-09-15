@@ -106,8 +106,12 @@ impl Drop for TestSnap {
 
 const SCHEMA_FILE: &str = "com.canonical.Myna.Dictation.gschema.xml";
 
+/// The checkout. `MYNA_REPO_ROOT` names it when `client/` runs as a copy of
+/// its own, which is how cargo-mutants builds.
 fn repository_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    std::env::var_os("MYNA_REPO_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
 }
 
 fn schema_source() -> PathBuf {

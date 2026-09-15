@@ -291,6 +291,9 @@ actions:
         cargo-mutants@27.1.0
     fi
     (cd /project/server && uv sync -q)
+    # cargo-mutants copies client/ alone; tests that reach the rest of the
+    # checkout (snap packaging, the server venv) find it through this.
+    export MYNA_REPO_ROOT=/project
     cd /project/client && cargo mutants "$@"
   # mutmut (server dev group; config in server/pyproject.toml [tool.mutmut]).
   # Scope with mutant-name globs, e.g. `myna.core.session*`. Copies the tree

@@ -26,13 +26,20 @@ impl Drop for ServerGuard {
     }
 }
 
+/// The checkout (`<repo>/client/myna-orchestrator` is two levels down).
+/// `MYNA_REPO_ROOT` names it when `client/` runs as a copy of its own, which
+/// is how cargo-mutants builds; without it the venv server is never found and
+/// the test skips.
 fn repo_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR = <repo>/rust/myna-orchestrator
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("repo root is two levels up")
-        .to_path_buf()
+    std::env::var_os("MYNA_REPO_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .expect("repo root is two levels up")
+                .to_path_buf()
+        })
 }
 
 fn unique_socket_path() -> PathBuf {
