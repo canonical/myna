@@ -63,7 +63,7 @@ funasr = [
 audio8 = [
     "onnxruntime>=1.27,<1.28",
     "tokenizers>=0.22",
-    "transformers>=4.57",
+    "transformers>=5.10.1",
     "numpy>=1.26",
     "psutil>=5",
 ]
