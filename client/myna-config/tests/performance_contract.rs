@@ -217,9 +217,20 @@ fn pressure_is_read_in_hundredths_of_a_percent() {
     );
 }
 
+/// `cpuinfo_max_freq` is not a ceiling everywhere: cppc_cpufreq and
+/// acpi-cpufreq report the nominal clock while `scaling_cur_freq` includes
+/// boost. A GitHub runner reported 2.3 GHz and reached 3.6 GHz.
+#[test]
+fn a_core_boosting_past_its_reported_maximum_is_healthy() {
+    let sys = FakeSys::new("pastmax");
+    sys.cpu(0, 2_300_000, 2_300_000, 800_000);
+    let facts = read_clock_facts(sys.path(), |_| Some(3_600_178));
+    assert_eq!(assess_clock(&facts), ClockVerdict::Healthy);
+}
+
 /// The one test against the live host: the probe must produce a number on
-/// any Linux box with cpufreq, and that number must be a clock a loaded core
-/// can plausibly report. No verdict is asserted; that depends on the host.
+/// any Linux box with cpufreq. No verdict or ceiling is asserted; both depend
+/// on the host and its cpufreq driver.
 #[test]
 fn the_live_probe_reports_a_loaded_core() {
     let facts = read_clock_facts(Path::new("/sys"), spin_probe);
@@ -230,7 +241,6 @@ fn the_live_probe_reports_a_loaded_core() {
     for class in &facts.classes {
         let achieved = class.achieved_khz.expect("the probe returned nothing");
         assert!(achieved > 0, "{class:?}");
-        assert!(achieved <= class.hardware_max_khz * 11 / 10, "{class:?}");
     }
     eprintln!("live verdict: {:?} from {facts:?}", assess_clock(&facts));
 }
