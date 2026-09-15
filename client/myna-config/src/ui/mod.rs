@@ -15,7 +15,6 @@ mod onboarding_shortcut;
 mod onboarding_welcome;
 mod onboarding_window;
 mod operation_error_dialog;
-mod sidebar_row;
 mod status_page;
 
 pub use active_backend_dialog::ActiveBackendDialog;
@@ -30,7 +29,6 @@ pub use onboarding_shortcut::OnboardingShortcut;
 pub use onboarding_welcome::OnboardingWelcome;
 pub use onboarding_window::OnboardingWindow;
 pub use operation_error_dialog::OperationErrorDialog;
-pub use sidebar_row::SidebarRow;
 pub use status_page::StatusPage;
 
 static RESOURCES: Once = Once::new();

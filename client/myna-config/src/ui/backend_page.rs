@@ -13,8 +13,6 @@ mod imp {
     pub struct BackendPage {
         #[template_child]
         pub preferences_page: gtk::TemplateChild<adw::PreferencesPage>,
-        #[template_child]
-        pub refresh_button: gtk::TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -51,10 +49,6 @@ impl BackendPage {
 
     pub fn preferences_page(&self) -> adw::PreferencesPage {
         self.imp().preferences_page.get()
-    }
-
-    pub fn refresh_button(&self) -> gtk::Button {
-        self.imp().refresh_button.get()
     }
 
     pub fn set_display_title(&self, title: &str) {

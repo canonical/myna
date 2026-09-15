@@ -1,4 +1,4 @@
-//! GTK/libadwaita wiring for backend pages and the dynamic sidebar.
+//! GTK/libadwaita wiring for backend pages and the top-level tab bar.
 //!
 //! This module glues [`BackendController`] to the widgets. It is deliberately
 //! thin: no domain decisions live here — the controller decides which pages
@@ -46,25 +46,24 @@ fn refresh_policy() -> RefreshPolicy {
     RefreshPolicy::default()
 }
 
-/// Runtime coordinator that keeps sidebar + content in sync with a
-/// [`BackendController`].
+/// Runtime coordinator that keeps the Model/Diagnostics tabs in sync with a
+/// [`BackendController`]. The Model tab always shows the single active
+/// backend; there is no chooser or per-backend list to maintain.
 pub struct BackendUi {
     controller: Rc<BackendController>,
     configurator: Rc<dyn SystemConfigurator>,
-    sidebar_list: gtk::ListBox,
-    split_view: adw::NavigationSplitView,
+    view_stack: adw::ViewStack,
+    backend_nav: adw::NavigationView,
+    diagnostics_nav: adw::NavigationView,
     overlay: adw::ToastOverlay,
-    myna_row: gtk::ListBoxRow,
-    myna_page: RefCell<Option<adw::NavigationPage>>,
     myna_selector: Option<ui::MynaPage>,
     operation_coordinator: OperationCoordinator,
     active_backend: ActiveBackendController,
-    diagnostics_row: gtk::ListBoxRow,
     diagnostics_page: RefCell<Option<adw::NavigationPage>>,
-    backend_rows: RefCell<BTreeMap<String, ui::SidebarRow>>,
     backend_pages: RefCell<BTreeMap<String, adw::NavigationPage>>,
     apply_state: RefCell<BTreeMap<String, BackendApplyState>>,
-    selected: RefCell<Selection>,
+    /// The snap name currently displayed in the Model tab, if any.
+    shown_backend: RefCell<Option<String>>,
     installed_snaps: RefCell<Vec<InstalledSnap>>,
     inventory_complete: std::cell::Cell<bool>,
     inventory_failure: RefCell<Option<String>>,
@@ -72,13 +71,6 @@ pub struct BackendUi {
     /// discovery, off the main thread, so the page never spins a core itself.
     performance: RefCell<Option<PerformanceFacts>>,
     last_diagnostics_refresh: std::cell::Cell<Option<Instant>>,
-}
-
-#[derive(Clone, Debug)]
-enum Selection {
-    Myna,
-    Backend(String),
-    Diagnostics,
 }
 
 #[derive(Clone, Copy)]
@@ -184,13 +176,12 @@ fn abandon_all_apply_state(
 
 impl BackendUi {
     pub fn install(
-        split_view: &adw::NavigationSplitView,
+        view_stack: &adw::ViewStack,
+        backend_nav: &adw::NavigationView,
+        diagnostics_nav: &adw::NavigationView,
         overlay: &adw::ToastOverlay,
-        myna_row: gtk::ListBoxRow,
         myna_page: adw::NavigationPage,
-        diagnostics_row: gtk::ListBoxRow,
         diagnostics_page: adw::NavigationPage,
-        sidebar_list: gtk::ListBox,
     ) -> Rc<Self> {
         let repository: Rc<dyn BackendRepository> =
             Rc::new(SnapBackendRepository::new(Arc::new(GioCommandRunner)));
@@ -199,13 +190,12 @@ impl BackendUi {
         Self::install_with_ports(
             repository,
             configurator,
-            split_view,
+            view_stack,
+            backend_nav,
+            diagnostics_nav,
             overlay,
-            myna_row,
             myna_page,
-            diagnostics_row,
             diagnostics_page,
-            sidebar_list,
         )
     }
 
@@ -213,25 +203,24 @@ impl BackendUi {
     pub(crate) fn install_with_ports(
         repository: Rc<dyn BackendRepository>,
         configurator: Rc<dyn SystemConfigurator>,
-        split_view: &adw::NavigationSplitView,
+        view_stack: &adw::ViewStack,
+        backend_nav: &adw::NavigationView,
+        diagnostics_nav: &adw::NavigationView,
         overlay: &adw::ToastOverlay,
-        myna_row: gtk::ListBoxRow,
         myna_page: adw::NavigationPage,
-        diagnostics_row: gtk::ListBoxRow,
         diagnostics_page: adw::NavigationPage,
-        sidebar_list: gtk::ListBox,
     ) -> Rc<Self> {
         let controller = BackendController::new(repository);
-        let myna_selector = myna_page.clone().downcast::<ui::MynaPage>().ok();
+        let myna_selector = myna_page.downcast::<ui::MynaPage>().ok();
         let operation_coordinator = OperationCoordinator::new();
+        diagnostics_nav.replace(std::slice::from_ref(&diagnostics_page));
         let ui = Rc::new(Self {
             controller,
             configurator,
-            sidebar_list: sidebar_list.clone(),
-            split_view: split_view.clone(),
+            view_stack: view_stack.clone(),
+            backend_nav: backend_nav.clone(),
+            diagnostics_nav: diagnostics_nav.clone(),
             overlay: overlay.clone(),
-            myna_row: myna_row.clone(),
-            myna_page: RefCell::new(Some(myna_page)),
             myna_selector,
             active_backend: ActiveBackendController::with_coordinator(
                 crate::domain::ConnectionSnapshot::new(
@@ -241,12 +230,10 @@ impl BackendUi {
                 operation_coordinator.clone(),
             ),
             operation_coordinator,
-            diagnostics_row: diagnostics_row.clone(),
             diagnostics_page: RefCell::new(Some(diagnostics_page)),
-            backend_rows: RefCell::new(BTreeMap::new()),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
-            selected: RefCell::new(Selection::Myna),
+            shown_backend: RefCell::new(None),
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
@@ -254,7 +241,7 @@ impl BackendUi {
             last_diagnostics_refresh: std::cell::Cell::new(None),
         });
 
-        ui.connect_sidebar_selection();
+        ui.connect_view_stack_selection();
         ui.connect_active_backend_selector();
 
         ui.controller.observe({
@@ -325,7 +312,7 @@ impl BackendUi {
                 return;
             };
             let confirmed = dialog
-                .choose_future(Some(owner.split_view.upcast_ref::<gtk::Widget>()))
+                .choose_future(Some(owner.overlay.upcast_ref::<gtk::Widget>()))
                 .await
                 == "switch";
             owner.run_backend_switch(request, confirmed);
@@ -452,7 +439,7 @@ impl BackendUi {
 
     fn present_operation_error_dialog(&self, heading: &str, summary: &str, details: &str) {
         let dialog = ui::OperationErrorDialog::new(heading, summary, details);
-        dialog.present(Some(self.split_view.upcast_ref::<gtk::Widget>()));
+        dialog.present(Some(self.overlay.upcast_ref::<gtk::Widget>()));
     }
 
     fn sync_active_backend(self: &Rc<Self>) {
@@ -467,6 +454,7 @@ impl BackendUi {
                 .set_health(page.identity().snap_name(), backend_health(&page));
         }
         self.render_active_backend_selector();
+        self.sync_backend_tab();
     }
 
     fn render_active_backend_selector(&self) {
@@ -525,17 +513,22 @@ impl BackendUi {
         button.set_label(&label);
     }
 
-    fn connect_sidebar_selection(self: &Rc<Self>) {
-        self.sidebar_list.connect_row_selected({
+    fn connect_view_stack_selection(self: &Rc<Self>) {
+        self.view_stack.connect_visible_child_name_notify({
             let ui = Rc::downgrade(self);
-            move |_, row| {
+            move |stack| {
                 let Some(ui) = ui.upgrade() else {
                     return;
                 };
-                let Some(row) = row else {
-                    return;
-                };
-                ui.on_row_selected(row);
+                match stack.visible_child_name().as_deref() {
+                    Some("diagnostics") => ui.on_diagnostics_page_shown(),
+                    Some("backend") => {
+                        if let Some(name) = ui.shown_backend.borrow().clone() {
+                            ui.trigger_snapshot(&name);
+                        }
+                    }
+                    _ => {}
+                }
             }
         });
     }
@@ -686,7 +679,7 @@ impl BackendUi {
     async fn confirm_apply(&self, preview: &ApplyPreview) -> bool {
         let dialog = ui::ApplyDialog::new(preview.confirmation_text());
         dialog
-            .choose_future(Some(self.split_view.upcast_ref::<gtk::Widget>()))
+            .choose_future(Some(self.overlay.upcast_ref::<gtk::Widget>()))
             .await
             == "apply"
     }
@@ -883,36 +876,6 @@ impl BackendUi {
         }
     }
 
-    fn on_row_selected(self: &Rc<Self>, row: &gtk::ListBoxRow) {
-        let selection = if row == &self.myna_row {
-            Selection::Myna
-        } else if row == &self.diagnostics_row {
-            Selection::Diagnostics
-        } else {
-            let Some(name) = self
-                .backend_rows
-                .borrow()
-                .iter()
-                .find(|(_, backend_row)| backend_row.upcast_ref::<gtk::ListBoxRow>() == row)
-                .map(|(name, _)| name.clone())
-            else {
-                return;
-            };
-            Selection::Backend(name)
-        };
-        let previous = self.selected.borrow().clone();
-        if let Some(name) = backend_to_cancel(&previous, &selection) {
-            self.controller.cancel_page(name);
-        }
-        *self.selected.borrow_mut() = selection.clone();
-        self.show_selection(&selection);
-        match &selection {
-            Selection::Backend(name) => self.trigger_snapshot(name),
-            Selection::Diagnostics => self.on_diagnostics_page_shown(),
-            Selection::Myna => {}
-        }
-    }
-
     fn on_controller_event(self: &Rc<Self>, event: &ControllerEvent) {
         match event {
             ControllerEvent::DiscoveryStarted => {
@@ -920,8 +883,8 @@ impl BackendUi {
                 self.rebuild_diagnostics_page();
             }
             ControllerEvent::DiscoveryChanged => {
+                self.prune_missing_backends();
                 self.sync_active_backend();
-                self.sync_sidebar();
                 for page in self.controller.pages() {
                     self.rebuild_backend_page(page.identity().snap_name());
                 }
@@ -941,9 +904,6 @@ impl BackendUi {
                     if !page.dirty_keys().is_empty() {
                         self.clear_apply_feedback(identity.snap_name());
                     }
-                    if let Some(row) = self.backend_rows.borrow().get(identity.snap_name()) {
-                        update_backend_row(row, &page);
-                    }
                 }
                 self.refresh_staged_changes(identity.snap_name());
             }
@@ -958,56 +918,79 @@ impl BackendUi {
         }
     }
 
-    fn sync_sidebar(self: &Rc<Self>) {
-        let pages = self.controller.pages();
-        let mut previous = self.backend_rows.borrow_mut();
-        let existing_names: Vec<String> = previous.keys().cloned().collect();
-        let new_names: Vec<String> = pages
+    /// Drops cached pages and staged-apply state for backends that
+    /// disappeared from discovery. The Model tab itself is kept in sync
+    /// separately by [`Self::sync_backend_tab`].
+    fn prune_missing_backends(self: &Rc<Self>) {
+        let known: Vec<String> = self
+            .controller
+            .pages()
             .iter()
             .map(|page| page.identity().snap_name().to_owned())
             .collect();
+        let stale: Vec<String> = self
+            .backend_pages
+            .borrow()
+            .keys()
+            .filter(|name| !known.contains(*name))
+            .cloned()
+            .collect();
+        for name in stale {
+            self.backend_pages.borrow_mut().remove(&name);
+            remove_apply_state(
+                &mut self.apply_state.borrow_mut(),
+                &self.operation_coordinator,
+                &name,
+            );
+            self.controller.cancel_page(&name);
+        }
+    }
 
-        for name in &existing_names {
-            if !new_names.contains(name) {
-                if let Some(row) = previous.remove(name) {
-                    self.sidebar_list.remove(&row);
-                }
-                self.backend_pages.borrow_mut().remove(name);
-                remove_apply_state(
-                    &mut self.apply_state.borrow_mut(),
-                    &self.operation_coordinator,
-                    name,
-                );
-                self.controller.cancel_page(name);
+    /// Keeps the Model tab showing the single active backend. Called
+    /// whenever the active-backend snapshot changes.
+    fn sync_backend_tab(self: &Rc<Self>) {
+        let active_name = match self.active_backend.snapshot().active_state() {
+            ActiveBackendState::Connected(identity) => Some(identity.snap_name().to_owned()),
+            _ => None,
+        };
+        let previous = self.shown_backend.borrow().clone();
+        if previous.as_deref() == active_name.as_deref() {
+            return;
+        }
+        if let Some(name) = previous.as_deref() {
+            self.controller.cancel_page(name);
+        }
+        *self.shown_backend.borrow_mut() = active_name.clone();
+        match active_name {
+            Some(name) => {
+                self.rebuild_backend_page(&name);
+                self.trigger_snapshot(&name);
             }
+            None => self.show_backend_placeholder(),
         }
+    }
 
-        let diagnostics_index = self.diagnostics_row.index();
-        for (offset, page) in pages.iter().enumerate() {
-            let name = page.identity().snap_name().to_owned();
-            let row = previous.entry(name.clone()).or_insert_with(|| {
-                let sidebar_row = ui::SidebarRow::new();
-                sidebar_row.set_icon_name("audio-x-generic-symbolic");
-                sidebar_row
-                    .upcast_ref::<gtk::ListBoxRow>()
-                    .set_selectable(true);
-                let insertion_index = diagnostics_index.max(0) + offset as i32;
-                self.sidebar_list
-                    .insert(sidebar_row.upcast_ref::<gtk::Widget>(), insertion_index);
-                sidebar_row
-            });
-            update_backend_row(row, page);
-        }
-
-        let selected = self.selected.borrow().clone();
-        if let Selection::Backend(name) = &selected {
-            if !previous.contains_key(name) {
-                *self.selected.borrow_mut() = Selection::Myna;
-                self.sidebar_list.select_row(Some(&self.myna_row));
-                self.show_selection(&Selection::Myna);
-            }
-        }
-        drop(previous);
+    fn show_backend_placeholder(self: &Rc<Self>) {
+        let (title, description) = match self.active_backend.snapshot().active_state() {
+            ActiveBackendState::Disconnected => (
+                gettextrs::gettext("No Active Backend"),
+                gettextrs::gettext("Choose an installed backend on the General tab to connect it."),
+            ),
+            ActiveBackendState::MultiplyConnected(_) => (
+                gettextrs::gettext("Multiple Backends Connected"),
+                gettextrs::gettext("Choose a single backend on the General tab to make it active."),
+            ),
+            ActiveBackendState::FailedSwitch { .. } => (
+                gettextrs::gettext("Backend Switch Unresolved"),
+                gettextrs::gettext("The previous switch did not complete. Check the General tab."),
+            ),
+            ActiveBackendState::Connected(_) => (
+                gettextrs::gettext("Loading Backend"),
+                gettextrs::gettext("Reading configuration from the active backend…"),
+            ),
+        };
+        let page = model_status_page(&title, &description, "audio-x-generic-symbolic");
+        self.backend_nav.replace(&[page]);
     }
 
     /// Rebuilds only the staged-changes group, leaving the setting widgets
@@ -1037,15 +1020,12 @@ impl BackendUi {
         let Some(page) = self.controller.page(snap_name) else {
             return;
         };
-        if let Some(row) = self.backend_rows.borrow().get(snap_name) {
-            update_backend_row(row, &page);
-        }
         let widget = build_backend_page(&page, self);
         self.backend_pages
             .borrow_mut()
-            .insert(snap_name.to_owned(), widget);
-        if matches!(&*self.selected.borrow(), Selection::Backend(current) if current == snap_name) {
-            self.show_selection(&Selection::Backend(snap_name.to_owned()));
+            .insert(snap_name.to_owned(), widget.clone());
+        if self.shown_backend.borrow().as_deref() == Some(snap_name) {
+            self.backend_nav.replace(&[widget]);
             if let Some(focus) = focus {
                 self.restore_backend_focus(&focus);
             }
@@ -1054,7 +1034,7 @@ impl BackendUi {
 
     fn backend_focus(&self, snap_name: &str) -> Option<BackendFocus> {
         let page = self.backend_pages.borrow().get(snap_name)?.clone();
-        let window = self.split_view.root()?.downcast::<gtk::Window>().ok()?;
+        let window = self.overlay.root()?.downcast::<gtk::Window>().ok()?;
         let mut current = gtk::prelude::GtkWindowExt::focus(&window);
         while let Some(widget) = current {
             let widget_name = widget.widget_name();
@@ -1078,7 +1058,7 @@ impl BackendUi {
     }
 
     fn restore_backend_focus(&self, focus: &BackendFocus) {
-        let Some(page) = self.split_view.content() else {
+        let Some(page) = self.backend_nav.visible_page() else {
             return;
         };
         let Some(widget) = find_named_descendant(page.upcast_ref(), &focus.widget_name) else {
@@ -1097,11 +1077,9 @@ impl BackendUi {
     fn rebuild_diagnostics_page(self: &Rc<Self>) {
         let focus = self.diagnostics_focus();
         let page = self.build_diagnostics_page();
-        *self.diagnostics_page.borrow_mut() = Some(page);
-        if matches!(&*self.selected.borrow(), Selection::Diagnostics) {
-            self.show_selection(&Selection::Diagnostics);
-            self.restore_diagnostics_focus(focus);
-        }
+        *self.diagnostics_page.borrow_mut() = Some(page.clone());
+        self.diagnostics_nav.replace(&[page]);
+        self.restore_diagnostics_focus(focus);
     }
 
     fn diagnostics_focus(&self) -> Option<DiagnosticsFocus> {
@@ -1112,7 +1090,7 @@ impl BackendUi {
             .clone()
             .downcast::<ui::DiagnosticsPage>()
             .ok()?;
-        let window = self.split_view.root()?.downcast::<gtk::Window>().ok()?;
+        let window = self.overlay.root()?.downcast::<gtk::Window>().ok()?;
         let focus = gtk::prelude::GtkWindowExt::focus(&window)?;
         if focus == page.copy_button().upcast::<gtk::Widget>() {
             Some(DiagnosticsFocus::Copy)
@@ -1292,27 +1270,6 @@ impl BackendUi {
         self.on_diagnostics_requested();
     }
 
-    fn show_selection(self: &Rc<Self>, selection: &Selection) {
-        let page = match selection {
-            Selection::Myna => self.myna_page.borrow().clone(),
-            Selection::Diagnostics => self.diagnostics_page.borrow().clone(),
-            Selection::Backend(name) => {
-                self.backend_pages.borrow().get(name).cloned().or_else(|| {
-                    self.controller
-                        .page(name)
-                        .map(|snapshot_page| build_backend_page(&snapshot_page, self))
-                })
-            }
-        };
-        if let Some(page) = page {
-            self.split_view.set_content(Some(&page));
-            self.split_view.set_show_content(true);
-            if self.split_view.is_collapsed() {
-                let _ = page.child_focus(gtk::DirectionType::TabForward);
-            }
-        }
-    }
-
     fn trigger_discovery(self: &Rc<Self>) {
         let Some(repository) = self.controller.repository().cloned() else {
             return;
@@ -1349,7 +1306,7 @@ impl BackendUi {
                 }
                 ui.inventory_complete.set(true);
                 ui.rebuild_diagnostics_page();
-                if matches!(&*ui.selected.borrow(), Selection::Diagnostics) {
+                if ui.view_stack.visible_child_name().as_deref() == Some("diagnostics") {
                     for page in ui.controller.pages() {
                         if !page.loading() {
                             ui.trigger_snapshot(page.identity().snap_name());
@@ -1728,53 +1685,10 @@ fn find_named_descendant(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> 
     None
 }
 
-fn backend_to_cancel<'a>(previous: &'a Selection, next: &Selection) -> Option<&'a str> {
-    match previous {
-        Selection::Backend(name) if !matches!(next, Selection::Backend(next_name) if next_name == name) => {
-            Some(name)
-        }
-        _ => None,
-    }
-}
-
-fn update_backend_row(row: &ui::SidebarRow, page: &BackendPage) {
-    let short = page.short_status();
-    row.set_title(&display_title_for(page.identity().snap_name()));
-    row.set_subtitle(&escape_markup(&subtitle_for(&short)));
-    let mut description = format!(
-        "{}. {}",
-        gettextrs::gettext("Backend"),
-        subtitle_for(&short)
-    );
-    if page.partial() {
-        description.push(' ');
-        description.push_str(&gettextrs::gettext("Some information could not be read."));
-    }
-    row.upcast_ref::<gtk::Widget>()
-        .update_property(&[gtk::accessible::Property::Description(&description)]);
-}
-
-fn subtitle_for(status: &crate::backend_controller::BackendShortStatus) -> String {
-    let mut parts = Vec::new();
-    parts.push(
-        match status.connection {
-            ConnectionKind::Active => gettextrs::gettext("Connected"),
-            ConnectionKind::Contested => gettextrs::gettext("Multiple connections"),
-            ConnectionKind::Disconnected => gettextrs::gettext("Not connected"),
-        }
-        .to_owned(),
-    );
-    if status.loading {
-        parts.push(gettextrs::gettext("Refreshing…"));
-    } else if status.partial {
-        parts.push(gettextrs::gettext("Partial data"));
-    }
-    if let Some(model) = &status.active_model {
-        parts.push(model.clone());
-    } else if let Some(engine) = &status.active_engine {
-        parts.push(engine.clone());
-    }
-    parts.join(" · ")
+fn model_status_page(title: &str, description: &str, icon: &str) -> adw::NavigationPage {
+    let page = ui::StatusPage::new();
+    page.set_status(title, description, icon);
+    page.upcast()
 }
 
 fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::NavigationPage {
@@ -1787,6 +1701,11 @@ fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::Navigation
         .title(gettextrs::gettext("Overview"))
         .description(escape_markup(&overview_description(page)))
         .build();
+    let refresh = gtk::Button::builder()
+        .icon_name("view-refresh-symbolic")
+        .valign(gtk::Align::Center)
+        .build();
+    overview.set_header_suffix(Some(&refresh));
     let short = page.short_status();
     let health = adw::ActionRow::builder()
         .title(gettextrs::gettext("Connection"))
@@ -1874,7 +1793,6 @@ fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::Navigation
 
     let applying = ui.apply_state_view(page.identity().snap_name()).in_progress;
     let (refresh_enabled, refresh_label) = refresh_control_state(page.loading(), applying);
-    let refresh = page_widget.refresh_button();
     refresh.set_icon_name(if page.loading() || applying {
         "content-loading-symbolic"
     } else {
@@ -1898,6 +1816,7 @@ fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::Navigation
     });
     actions.add_action(&refresh_action);
     page_widget.insert_action_group("backend", Some(&actions));
+    refresh.set_action_name(Some("backend.refresh"));
 
     page_widget.upcast()
 }
@@ -2630,19 +2549,6 @@ mod tests {
     }
 
     #[test]
-    fn subtitle_summarises_connection_and_extras() {
-        let status = crate::backend_controller::BackendShortStatus {
-            connection: ConnectionKind::Active,
-            active_model: Some("parakeet".to_owned()),
-            active_engine: None,
-            loading: false,
-            partial: false,
-        };
-        let subtitle = subtitle_for(&status);
-        assert!(subtitle.contains("parakeet"));
-    }
-
-    #[test]
     fn refresh_control_is_pending_and_disabled_while_loading() {
         assert_eq!(
             refresh_control_state(true, false),
@@ -2661,29 +2567,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn replacing_a_selected_page_does_not_cancel_its_refresh() {
-        let backend = Selection::Backend("myna-parakeet".to_owned());
-        assert_eq!(backend_to_cancel(&backend, &backend), None);
-        assert_eq!(
-            backend_to_cancel(&backend, &Selection::Diagnostics),
-            Some("myna-parakeet")
-        );
-    }
-
     struct TestUi {
         ui: Rc<BackendUi>,
-        myna_row: gtk::ListBoxRow,
-        diagnostics_row: gtk::ListBoxRow,
+        view_stack: adw::ViewStack,
     }
 
     fn test_ui(controller: Rc<BackendController>) -> TestUi {
-        let split_view = adw::NavigationSplitView::new();
-        let sidebar_list = gtk::ListBox::new();
-        let myna_row = gtk::ListBoxRow::new();
-        let diagnostics_row = gtk::ListBoxRow::new();
-        sidebar_list.append(&myna_row);
-        sidebar_list.append(&diagnostics_row);
+        let view_stack = adw::ViewStack::new();
+        let backend_nav = adw::NavigationView::new();
+        let diagnostics_nav = adw::NavigationView::new();
+        view_stack.add_named(&backend_nav, Some("backend"));
+        view_stack.add_named(&diagnostics_nav, Some("diagnostics"));
         let page = |title: &str| {
             adw::NavigationPage::builder()
                 .title(title)
@@ -2694,11 +2588,10 @@ mod tests {
         let ui = Rc::new(BackendUi {
             controller,
             configurator: Rc::new(PkexecSystemConfigurator::new(Arc::new(GioCommandRunner))),
-            sidebar_list,
-            split_view,
+            view_stack: view_stack.clone(),
+            backend_nav,
+            diagnostics_nav,
             overlay: adw::ToastOverlay::new(),
-            myna_row: myna_row.clone(),
-            myna_page: RefCell::new(Some(page("Myna"))),
             myna_selector: None,
             active_backend: ActiveBackendController::with_coordinator(
                 crate::domain::ConnectionSnapshot::new(
@@ -2708,24 +2601,18 @@ mod tests {
                 operation_coordinator.clone(),
             ),
             operation_coordinator,
-            diagnostics_row: diagnostics_row.clone(),
             diagnostics_page: RefCell::new(Some(page("Diagnostics"))),
-            backend_rows: RefCell::new(BTreeMap::new()),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
-            selected: RefCell::new(Selection::Myna),
+            shown_backend: RefCell::new(None),
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
             performance: RefCell::new(None),
             last_diagnostics_refresh: std::cell::Cell::new(None),
         });
-        ui.connect_sidebar_selection();
-        TestUi {
-            ui,
-            myna_row,
-            diagnostics_row,
-        }
+        ui.connect_view_stack_selection();
+        TestUi { ui, view_stack }
     }
 
     /// GTK binds to the first thread that initializes it and libtest gives
@@ -2740,19 +2627,12 @@ mod tests {
     }
 
     #[test]
-    fn every_valid_sidebar_selection_reveals_content() {
+    fn switching_to_the_diagnostics_tab_triggers_a_refresh() {
         on_gtk_thread(|| {
-            let TestUi {
-                ui,
-                myna_row,
-                diagnostics_row,
-            } = test_ui(BackendController::detached());
-
-            for row in [&diagnostics_row, &myna_row] {
-                ui.split_view.set_show_content(false);
-                ui.sidebar_list.select_row(Some(row));
-                assert!(ui.split_view.shows_content());
-            }
+            let TestUi { ui, view_stack } = test_ui(BackendController::detached());
+            assert!(ui.last_diagnostics_refresh.get().is_none());
+            view_stack.set_visible_child_name("diagnostics");
+            assert!(ui.last_diagnostics_refresh.get().is_some());
         });
     }
 
@@ -2780,7 +2660,7 @@ mod tests {
         );
         controller.complete_snapshot(request, snapshot);
 
-        let TestUi { ui, .. } = test_ui(controller);
+        let TestUi { ui, view_stack } = test_ui(controller);
         ui.controller.observe({
             let ui = Rc::downgrade(&ui);
             move |event| {
@@ -2789,16 +2669,14 @@ mod tests {
                 }
             }
         });
-        let window = gtk::Window::builder().child(&ui.split_view).build();
-        let selection = Selection::Backend("myna-parakeet".to_owned());
-        *ui.selected.borrow_mut() = selection.clone();
-        ui.show_selection(&selection);
+        let window = gtk::Window::builder().child(&view_stack).build();
+        ui.sync_active_backend();
         pause_length_entry(&ui).grab_focus();
         (ui, window)
     }
 
     fn pause_length_entry(ui: &BackendUi) -> adw::EntryRow {
-        let page = ui.split_view.content().expect("backend page shown");
+        let page = ui.backend_nav.visible_page().expect("backend page shown");
         find_named_descendant(page.upcast_ref(), "myna-setting-stream-silence-cut-seconds")
             .expect("pause length entry")
             .downcast()

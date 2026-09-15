@@ -19,7 +19,6 @@ const BLUEPRINTS: &[(&str, &str)] = &[
     ("onboarding-welcome.blp", "onboarding-welcome.ui"),
     ("onboarding-window.blp", "onboarding-window.ui"),
     ("operation-error-dialog.blp", "operation-error-dialog.ui"),
-    ("sidebar-row.blp", "sidebar-row.ui"),
     ("status-page.blp", "status-page.ui"),
 ];
 

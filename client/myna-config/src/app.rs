@@ -138,7 +138,8 @@ fn accessibility_probe() -> glib::ExitCode {
     let _ = application.register(None::<&gio::Cancellable>);
 
     let window = ui::MainWindow::new(&application);
-    let split_view = window.split_view();
+    let diagnostics_nav = window.diagnostics_nav();
+    let view_stack = window.view_stack();
 
     let diagnostics = ui::DiagnosticsPage::new();
     let copy_button = diagnostics.copy_button();
@@ -164,8 +165,8 @@ fn accessibility_probe() -> glib::ExitCode {
     }
     println!("template-metadata: verified");
 
-    split_view.set_content(Some(&diagnostics));
-    add_narrow_breakpoint(&window, &split_view);
+    diagnostics_nav.replace(&[diagnostics.clone().upcast()]);
+    view_stack.set_visible_child_name("diagnostics");
     install_appearance_policy(window.upcast_ref());
     window.present();
     settle_gtk();
@@ -189,8 +190,8 @@ fn accessibility_probe() -> glib::ExitCode {
 
     window.set_default_size(500, 500);
     settle_gtk();
-    if !split_view.is_collapsed() {
-        eprintln!("diagnostics layout did not collapse below the 600sp breakpoint");
+    if !window.view_switcher_bar().reveals() {
+        eprintln!("view switcher did not collapse below the 600sp breakpoint");
         return glib::ExitCode::FAILURE;
     }
     println!("narrow-layout: collapsed");
@@ -419,10 +420,10 @@ fn template_probe() -> glib::ExitCode {
     let window = ui::MainWindow::new(&application);
     let _ = (
         window.overlay(),
-        window.split_view(),
-        window.sidebar_list(),
-        window.myna_row(),
-        window.diagnostics_row(),
+        window.view_stack(),
+        window.general_nav(),
+        window.backend_nav(),
+        window.diagnostics_nav(),
     );
     println!("MainWindow");
     let _switch = ui::ActiveBackendDialog::new("preview");
@@ -451,7 +452,7 @@ fn template_probe() -> glib::ExitCode {
     );
     println!("MynaPage");
     let backend = ui::BackendPage::new();
-    let _ = (backend.preferences_page(), backend.refresh_button());
+    let _ = backend.preferences_page();
     backend.set_display_title("Backend");
     if backend.title() != "Backend" || backend.preferences_page().title() != "Backend" {
         eprintln!("backend template did not propagate its navigation title");
@@ -489,9 +490,6 @@ fn template_probe() -> glib::ExitCode {
         onboarding.forward_button(),
     );
     println!("OnboardingWindow");
-    let sidebar = ui::SidebarRow::new();
-    let _ = sidebar.icon();
-    println!("SidebarRow");
     let status = ui::StatusPage::new();
     let _ = status.status();
     println!("StatusPage");
@@ -575,33 +573,44 @@ fn build_settings_window(application: &adw::Application) {
     }
 
     let window = ui::MainWindow::new(application);
-    let split_view = window.split_view();
-    let sidebar_list = window.sidebar_list();
+    let general_nav = window.general_nav();
+    let backend_nav = window.backend_nav();
+    let diagnostics_nav = window.diagnostics_nav();
+    let view_stack = window.view_stack();
     let overlay = window.overlay();
-    let myna_row = window.myna_row().upcast::<gtk::ListBoxRow>();
-    let diagnostics_row = window.diagnostics_row().upcast::<gtk::ListBoxRow>();
 
-    split_view.set_content(Some(&status_page(
+    general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
         &gettextrs::gettext("Reading the installed settings schema…"),
         "content-loading-symbolic",
-    )));
-    sidebar_list.select_row(Some(&myna_row));
-    add_narrow_breakpoint(&window, &split_view);
+    )]);
+    backend_nav.replace(&[status_page(
+        &gettextrs::gettext("Backend"),
+        &gettextrs::gettext("Backend details will appear after discovery."),
+        "content-loading-symbolic",
+    )]);
+    let diagnostics_page = status_page(
+        &gettextrs::gettext("About and Diagnostics"),
+        &gettextrs::gettext("Backend diagnostics will appear after discovery."),
+        "dialog-information-symbolic",
+    );
+    diagnostics_nav.replace(std::slice::from_ref(&diagnostics_page));
     install_appearance_policy(window.upcast_ref());
     window.present();
 
     glib::idle_add_local_once(glib::clone!(
         #[weak]
-        split_view,
+        general_nav,
+        #[weak]
+        backend_nav,
+        #[weak]
+        diagnostics_nav,
+        #[weak]
+        view_stack,
         #[weak]
         overlay,
-        #[weak]
-        sidebar_list,
         #[strong]
-        myna_row,
-        #[strong]
-        diagnostics_row,
+        diagnostics_page,
         #[weak]
         window,
         move || {
@@ -614,22 +623,15 @@ fn build_settings_window(application: &adw::Application) {
                 }
                 Err(error) => error_page(&error.to_string()),
             };
-            split_view.set_content(Some(&myna_page));
-
-            let diagnostics_page = status_page(
-                &gettextrs::gettext("About and Diagnostics"),
-                &gettextrs::gettext("Backend diagnostics will appear after discovery."),
-                "dialog-information-symbolic",
-            );
+            general_nav.replace(std::slice::from_ref(&myna_page));
 
             let ui = crate::backend_ui::BackendUi::install(
-                &split_view,
+                &view_stack,
+                &backend_nav,
+                &diagnostics_nav,
                 &overlay,
-                myna_row.clone(),
                 myna_page,
-                diagnostics_row.clone(),
                 diagnostics_page,
-                sidebar_list.clone(),
             );
             window.connect_close_request(move |_| {
                 ui.shutdown();
@@ -637,16 +639,6 @@ fn build_settings_window(application: &adw::Application) {
             });
         }
     ));
-}
-
-fn add_narrow_breakpoint(window: &ui::MainWindow, split_view: &adw::NavigationSplitView) {
-    let narrow = adw::Breakpoint::new(adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MaxWidth,
-        600.0,
-        adw::LengthUnit::Sp,
-    ));
-    narrow.add_setter(split_view, "collapsed", Some(&true.to_value()));
-    window.add_breakpoint(narrow);
 }
 
 fn current_appearance_policy() -> AppearancePolicy {
@@ -1098,11 +1090,11 @@ fn backends_probe() -> glib::ExitCode {
     let _ = application.register(None::<&gio::Cancellable>);
 
     let window = ui::MainWindow::new(&application);
-    let split_view = window.split_view();
-    let sidebar_list = window.sidebar_list();
+    let view_stack = window.view_stack();
+    let general_nav = window.general_nav();
+    let backend_nav = window.backend_nav();
+    let diagnostics_nav = window.diagnostics_nav();
     let overlay = window.overlay();
-    let myna_row = window.myna_row().upcast::<gtk::ListBoxRow>();
-    let diagnostics_row = window.diagnostics_row().upcast::<gtk::ListBoxRow>();
     let myna_page = match GioClientSettings::open() {
         Ok(settings) => build_myna_page(
             MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>),
@@ -1114,7 +1106,7 @@ fn backends_probe() -> glib::ExitCode {
             return glib::ExitCode::FAILURE;
         }
     };
-    split_view.set_content(Some(&myna_page));
+    general_nav.replace(std::slice::from_ref(&myna_page));
     window.present();
 
     let machine = ProbeMachine::new();
@@ -1123,13 +1115,12 @@ fn backends_probe() -> glib::ExitCode {
             std::sync::Arc::new(machine.clone()),
         )),
         Rc::new(machine.clone()),
-        &split_view,
+        &view_stack,
+        &backend_nav,
+        &diagnostics_nav,
         &overlay,
-        myna_row,
         myna_page,
-        diagnostics_row.clone(),
         status_page("About and Diagnostics", "", "dialog-information-symbolic"),
-        sidebar_list.clone(),
     );
 
     let settles = |done: &dyn Fn() -> bool| {
@@ -1142,31 +1133,22 @@ fn backends_probe() -> glib::ExitCode {
         done()
     };
     let content = || {
-        split_view
-            .content()
+        backend_nav
+            .visible_page()
             .map(|page| page.upcast::<gtk::Widget>())
     };
-    let rows = || {
-        (0..)
-            .take_while(|index| sidebar_list.row_at_index(*index).is_some())
-            .count()
-    };
 
-    // Myna, the two backends, Diagnostics.
-    if !settles(&|| rows() == 4) {
+    // The Model tab always shows the single active backend, so the fixture's
+    // active parakeet page should appear with no explicit selection.
+    if !settles(&|| ui.controller().pages().len() == 2) {
         eprintln!(
-            "discovery never listed the fixture backends ({} rows)",
-            rows()
+            "discovery never listed the fixture backends ({} backends)",
+            ui.controller().pages().len()
         );
         return glib::ExitCode::FAILURE;
     }
     println!("backends-discovered: 2");
 
-    let Some(parakeet) = sidebar_list.row_at_index(1) else {
-        eprintln!("the first backend row vanished");
-        return glib::ExitCode::FAILURE;
-    };
-    sidebar_list.select_row(Some(&parakeet));
     let idle_entry = || {
         content()
             .and_then(|page| {
@@ -1241,9 +1223,10 @@ fn backends_probe() -> glib::ExitCode {
     }
     println!("backend-apply: read back");
 
-    sidebar_list.select_row(Some(&diagnostics_row));
+    view_stack.set_visible_child_name("diagnostics");
     let report = || {
-        content()
+        diagnostics_nav
+            .visible_page()
             .and_then(|page| page.downcast::<ui::DiagnosticsPage>().ok())
             .map(|page| {
                 let buffer = page.report_view().buffer();

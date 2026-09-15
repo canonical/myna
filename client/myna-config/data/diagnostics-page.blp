@@ -4,72 +4,72 @@ using Adw 1;
 template $DiagnosticsPage: Adw.NavigationPage {
   title: _("About and Diagnostics");
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      [end]
-      Gtk.Button refresh_button {
-        icon-name: "view-refresh-symbolic";
-        tooltip-text: _("Refresh diagnostics");
+  child: Adw.PreferencesPage preferences_page {
+    title: _("About and Diagnostics");
+    icon-name: "dialog-information-symbolic";
 
-        accessibility {
-          label: _("Refresh diagnostics");
-          description: _("Re-read the machine, the daemon, and every backend.");
-        }
-      }
-
-      [end]
-      Gtk.Button copy_button {
-        icon-name: "edit-copy-symbolic";
-        tooltip-text: _("Copy privacy-safe diagnostics");
-
-        accessibility {
-          label: _("Copy diagnostics");
-          description: _(
-            "Copies a privacy-safe diagnostic report to the clipboard. Audio, transcripts, and filesystem paths are excluded."
-          );
-        }
-      }
+    Adw.PreferencesGroup warnings_group {
+      title: _("Performance warnings");
+      description: _("This machine is set up, but it is not currently delivering the CPU that dictation needs.");
+      visible: false;
     }
 
-    content: Adw.PreferencesPage preferences_page {
-      title: _("About and Diagnostics");
-      icon-name: "dialog-information-symbolic";
+    Adw.PreferencesGroup report_group {
+      title: _("Diagnostics");
+      description: _(
+        "No audio, transcript, or filesystem path is ever included."
+      );
 
-      Adw.PreferencesGroup warnings_group {
-        title: _("Performance warnings");
-        description: _("This machine is set up, but it is not currently delivering the CPU that dictation needs.");
-        visible: false;
-      }
+      [header-suffix]
+      Gtk.Box {
+        spacing: 6;
 
-      Adw.PreferencesGroup report_group {
-        title: _("Copyable diagnostics");
-        description: _(
-          "Machine, memory, versions, active engines, and anything currently wrong. No audio, transcript, or filesystem path is ever included."
-        );
+        Gtk.Button refresh_button {
+          icon-name: "view-refresh-symbolic";
+          tooltip-text: _("Refresh");
+          valign: center;
 
-        Gtk.ScrolledWindow {
-          hscrollbar-policy: automatic;
-          vscrollbar-policy: automatic;
-          min-content-height: 240;
+          accessibility {
+            label: _("Refresh diagnostics");
+            description: _("Re-read the machine, the daemon, and every backend.");
+          }
+        }
 
-          Gtk.TextView report_view {
-            editable: false;
-            monospace: true;
-            cursor-visible: false;
-            wrap-mode: word_char;
-            top-margin: 8;
-            bottom-margin: 8;
-            left-margin: 8;
-            right-margin: 8;
+        Gtk.Button copy_button {
+          icon-name: "edit-copy-symbolic";
+          tooltip-text: _("Copy");
+          valign: center;
 
-            accessibility {
-              label: _("Diagnostic report");
-              description: _("Read-only privacy-safe diagnostic text.");
-            }
+          accessibility {
+            label: _("Copy diagnostics");
+            description: _(
+              "Copies a privacy-safe diagnostic report to the clipboard. Does not include audio, transcripts, or filesystem paths."
+            );
           }
         }
       }
-    };
+
+      Gtk.ScrolledWindow {
+        hscrollbar-policy: automatic;
+        vscrollbar-policy: automatic;
+        min-content-height: 240;
+
+        Gtk.TextView report_view {
+          editable: false;
+          monospace: true;
+          cursor-visible: false;
+          wrap-mode: word_char;
+          top-margin: 8;
+          bottom-margin: 8;
+          left-margin: 8;
+          right-margin: 8;
+
+          accessibility {
+            label: _("Diagnostic report");
+            description: _("Read-only privacy-safe diagnostic text.");
+          }
+        }
+      }
+    }
   };
 }

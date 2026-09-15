@@ -28,7 +28,6 @@ fn every_top_level_template_instantiates_headlessly_when_enabled() {
         "MynaPage",
         "BackendPage",
         "DiagnosticsPage",
-        "SidebarRow",
         "StatusPage",
         "OperationErrorDialog",
         "OnboardingWelcome",

@@ -2,19 +2,8 @@ using Gtk 4.0;
 using Adw 1;
 
 template $BackendPage: Adw.NavigationPage {
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      [end]
-      Gtk.Button refresh_button {
-        action-name: "backend.refresh";
-        icon-name: "view-refresh-symbolic";
-        tooltip-text: _("Refresh backend data");
-      }
-    }
-
-    content: Adw.PreferencesPage preferences_page {
-      icon-name: "audio-x-generic-symbolic";
-    };
+  child: Adw.PreferencesPage preferences_page {
+    icon-name: "audio-x-generic-symbolic";
+    vexpand: true;
   };
 }

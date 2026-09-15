@@ -13,13 +13,15 @@ mod imp {
         #[template_child]
         pub overlay: gtk::TemplateChild<adw::ToastOverlay>,
         #[template_child]
-        pub split_view: gtk::TemplateChild<adw::NavigationSplitView>,
+        pub view_stack: gtk::TemplateChild<adw::ViewStack>,
         #[template_child]
-        pub sidebar_list: gtk::TemplateChild<gtk::ListBox>,
+        pub general_nav: gtk::TemplateChild<adw::NavigationView>,
         #[template_child]
-        pub myna_row: gtk::TemplateChild<adw::ActionRow>,
+        pub backend_nav: gtk::TemplateChild<adw::NavigationView>,
         #[template_child]
-        pub diagnostics_row: gtk::TemplateChild<adw::ActionRow>,
+        pub diagnostics_nav: gtk::TemplateChild<adw::NavigationView>,
+        #[template_child]
+        pub view_switcher_bar: gtk::TemplateChild<adw::ViewSwitcherBar>,
     }
 
     #[glib::object_subclass]
@@ -63,19 +65,23 @@ impl MainWindow {
         self.imp().overlay.get()
     }
 
-    pub fn split_view(&self) -> adw::NavigationSplitView {
-        self.imp().split_view.get()
+    pub fn view_stack(&self) -> adw::ViewStack {
+        self.imp().view_stack.get()
     }
 
-    pub fn sidebar_list(&self) -> gtk::ListBox {
-        self.imp().sidebar_list.get()
+    pub fn general_nav(&self) -> adw::NavigationView {
+        self.imp().general_nav.get()
     }
 
-    pub fn myna_row(&self) -> adw::ActionRow {
-        self.imp().myna_row.get()
+    pub fn backend_nav(&self) -> adw::NavigationView {
+        self.imp().backend_nav.get()
     }
 
-    pub fn diagnostics_row(&self) -> adw::ActionRow {
-        self.imp().diagnostics_row.get()
+    pub fn diagnostics_nav(&self) -> adw::NavigationView {
+        self.imp().diagnostics_nav.get()
+    }
+
+    pub fn view_switcher_bar(&self) -> adw::ViewSwitcherBar {
+        self.imp().view_switcher_bar.get()
     }
 }

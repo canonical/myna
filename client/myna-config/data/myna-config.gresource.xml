@@ -14,7 +14,6 @@
     <file>onboarding-welcome.ui</file>
     <file>onboarding-window.ui</file>
     <file>operation-error-dialog.ui</file>
-    <file>sidebar-row.ui</file>
     <file>status-page.ui</file>
   </gresource>
 </gresources>

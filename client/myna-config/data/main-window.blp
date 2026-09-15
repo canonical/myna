@@ -7,49 +7,51 @@ template $MainWindow: Adw.ApplicationWindow {
   title: _("Myna Settings");
 
   content: Adw.ToastOverlay overlay {
-    child: Adw.NavigationSplitView split_view {
-      show-content: true;
-
-      sidebar: Adw.NavigationPage {
-        title: _("Settings");
-
-        child: Adw.ToolbarView {
-          [top]
-          Adw.HeaderBar {}
-
-          content: Gtk.ListBox sidebar_list {
-            styles [
-              "navigation-sidebar",
-            ]
-
-            selection-mode: single;
-
-            Adw.ActionRow myna_row {
-              activatable: true;
-              title: _("Myna");
-              subtitle: _("Dictation preferences");
-
-              [prefix]
-              Gtk.Image {
-                icon-name: "audio-input-microphone-symbolic";
-                accessible-role: presentation;
-              }
-            }
-
-            Adw.ActionRow diagnostics_row {
-              activatable: true;
-              title: _("About and Diagnostics");
-              subtitle: _("Backend status and error details");
-
-              [prefix]
-              Gtk.Image {
-                icon-name: "dialog-information-symbolic";
-                accessible-role: presentation;
-              }
-            }
-          };
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar header_bar {
+        title-widget: Adw.ViewSwitcher view_switcher {
+          stack: view_stack;
+          policy: wide;
         };
+      }
+
+      content: Adw.ViewStack view_stack {
+        Adw.ViewStackPage {
+          name: "general";
+          title: _("General");
+          icon-name: "audio-input-microphone-symbolic";
+          child: Adw.NavigationView general_nav {};
+        }
+
+        Adw.ViewStackPage {
+          name: "backend";
+          title: _("Backend");
+          icon-name: "emblem-system-symbolic";
+          child: Adw.NavigationView backend_nav {};
+        }
+
+        Adw.ViewStackPage {
+          name: "diagnostics";
+          title: _("Diagnostics");
+          icon-name: "dialog-information-symbolic";
+          child: Adw.NavigationView diagnostics_nav {};
+        }
       };
+
+      [bottom]
+      Adw.ViewSwitcherBar view_switcher_bar {
+        stack: view_stack;
+      }
     };
   };
+
+  Adw.Breakpoint {
+    condition ("max-width: 600sp")
+
+    setters {
+      header_bar.title-widget: null;
+      view_switcher_bar.reveal: true;
+    }
+  }
 }
