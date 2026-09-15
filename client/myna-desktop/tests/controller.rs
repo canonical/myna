@@ -302,7 +302,7 @@ async fn no_speech_session_commits_nothing() {
     );
 }
 
-// ── T015: acquire NoTarget / Unavailable → Error state, no capture ────────────
+// ── T015: acquire Secure / NoTarget / Unavailable → Error state, no capture ───
 
 async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
     let probe = Arc::new(Mutex::new(0usize));
@@ -348,6 +348,54 @@ async fn no_target_surfaces_error_without_capturing() {
 async fn unavailable_surfaces_error_without_capturing() {
     assert_acquire_error_aborts_without_capture(AcquireOutcome::Unavailable("ibus down".into()))
         .await;
+}
+
+#[tokio::test]
+async fn secure_field_is_refused_before_capture() {
+    // Two pokes over a toggle trigger: the second only reaches acquire if the
+    // refusal resynced the trigger's parity.
+    let probe = Arc::new(Mutex::new(0usize));
+    let injector = MockInjector::new().with_acquires([AcquireOutcome::Secure]);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+
+    let session_probe = probe.clone();
+    let session = move |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        *session_probe.lock().unwrap() += 1; // must never happen
+        (
+            Box::pin(async { Ok(SessionOutcome::Aborted) }),
+            StopHandle::default(),
+        )
+    };
+
+    let mut controller = DesktopController::builder()
+        .trigger(ToggleMockTrigger::new(2))
+        .injector(injector)
+        .indicator(indicator)
+        .session(session)
+        .build();
+    controller.run().await;
+
+    assert_eq!(
+        *probe.lock().unwrap(),
+        0,
+        "no session/capture on a secure field"
+    );
+    {
+        let log = inject_log.lock().unwrap();
+        assert_eq!(log.acquires, 2, "the refusal must resync the trigger");
+        assert!(log.commits.is_empty());
+        assert!(log.activity.is_empty());
+        // Released defensively on each refusal; nothing was acquired to restore.
+        assert_eq!(log.cancels, 2);
+        assert_eq!(log.restores, 0);
+    }
+    assert_eq!(
+        indicate_log.lock().unwrap().clone(),
+        vec![IndicatorState::critical("Refusing to type into a password field"); 2],
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
 }
 
 // ── T016: literal text only; cancel/end idempotent + restore-once on error ────
