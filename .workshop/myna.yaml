@@ -111,14 +111,19 @@ actions:
   ui-check: |
     set -uo pipefail
     export RUST_BACKTRACE=1
+    # GTK asks the session bus for portals. The workshop inherits the host's,
+    # where each lookup waits out a 25 s timeout (render_check took 50 s, the
+    # template suite 174 s); a private bus answers at once. GIO_USE_VFS as in
+    # dev/gated-tests.sh.
+    export GIO_USE_VFS=local
     cd /project/client
     # The example has the rendered ribbon checked end-to-end (compile +
     # link + render + read_pixels + body-bands-on-centre-row assertions).
     cargo build --workspace --example render_check
-    xvfb-run -a -s "-screen 0 800x600x24" \
+    dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \
       ./target/debug/examples/render_check
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
-      xvfb-run -a -s "-screen 0 1024x768x24" \
+      dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
       cargo test --workspace --lib --test template_instantiation -- --test-threads=1
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
@@ -161,13 +166,15 @@ actions:
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       --workspace --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
     # Myna Settings' GTK probes spawn the instrumented binary, so the UI they
-    # drive is measured; `ui-check` runs the same suite uninstrumented.
+    # drive is measured; `ui-check` runs the same suite uninstrumented, and
+    # explains the private bus.
+    export GIO_USE_VFS=local
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
-      xvfb-run -a -s "-screen 0 1024x768x24" \
+      dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
       cargo llvm-cov --no-report --workspace --lib --test template_instantiation -- --test-threads=1
     # The ribbon renderer only runs with a GL context, which no test has:
     # `ui-check`'s render_check is its test, so measure it here too.
-    xvfb-run -a -s "-screen 0 800x600x24" \
+    dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \
       cargo llvm-cov run --no-report --example render_check
     # Four exports over every profraw, silent until the summary table.
     echo "cov: tests done; exporting reports (about two minutes, no output until the summary)" >&2
