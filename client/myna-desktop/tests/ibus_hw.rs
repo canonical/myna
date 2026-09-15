@@ -48,6 +48,9 @@ const SENTINEL: &str = "after";
 
 /// `IBusInputPurpose::PASSWORD`.
 const PURPOSE_PASSWORD: u32 = 8;
+/// `IBusInputHints::PRIVATE` and `HIDDEN_TEXT`.
+const HINT_PRIVATE: u32 = 1 << 11;
+const HINT_HIDDEN_TEXT: u32 = 1 << 12;
 
 /// True when the IBus integration suite is enabled. Unset gate → skip.
 fn ibus_enabled() -> bool {
@@ -386,6 +389,35 @@ async fn field_turning_secure_mid_session_gets_no_text() {
         commit_until(&mut field, &mut injector, SENTINEL, false).await,
         "commit never accepted the field after it turned ordinary"
     );
+
+    injector.end().await;
+    field.close().await;
+}
+
+#[tokio::test]
+async fn pin_field_marked_hidden_text_is_refused() {
+    if !ibus_enabled() {
+        eprintln!("skipping pin_field_marked_hidden_text_is_refused: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    // GNOME Shell forwards a Wayland PIN as purpose 0 with PRIVATE|HIDDEN_TEXT.
+    let (field, mut injector) = session(0, HINT_PRIVATE | HINT_HIDDEN_TEXT).await;
+    assert_acquire_refused(&mut injector).await;
+
+    injector.end().await;
+    field.close().await;
+}
+
+#[tokio::test]
+async fn private_field_is_not_refused() {
+    if !ibus_enabled() {
+        eprintln!("skipping private_field_is_not_refused: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let (mut field, mut injector) = session(0, HINT_PRIVATE).await;
+    injector.acquire().await.expect("acquire a private field");
+    injector.commit("hello").await.expect("commit hello");
+    assert_eq!(field.next().await, Seen::Commit("hello".into()));
 
     injector.end().await;
     field.close().await;

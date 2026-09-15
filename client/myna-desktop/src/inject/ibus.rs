@@ -53,6 +53,8 @@ const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
 /// `IBusInputPurpose` values we refuse to inject into.
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
+/// `IBusInputHints::HIDDEN_TEXT`.
+const HINT_HIDDEN_TEXT: u32 = 1 << 12;
 
 /// `IBusPreeditFocusMode::CLEAR`: the preedit is discarded on focus-out (never
 /// implicitly committed) — the only safe mode for volatile dictation text.
@@ -72,7 +74,10 @@ struct ContentType {
 impl ContentType {
     /// Whether this is a secure field we refuse to inject into.
     fn is_secure(self) -> bool {
-        self.purpose == PURPOSE_PASSWORD || self.purpose == PURPOSE_PIN
+        // GNOME Shell forwards no PIN purpose; PRIVATE alone is not refused.
+        self.purpose == PURPOSE_PASSWORD
+            || self.purpose == PURPOSE_PIN
+            || self.hints & HINT_HIDDEN_TEXT != 0
     }
 }
 
@@ -986,10 +991,10 @@ mod tests {
     #[test]
     fn secure_content_type_classification() {
         let ct = |purpose, hints| ContentType { purpose, hints };
-        for refused in [ct(8, 0), ct(9, 0), ct(8, u32::MAX)] {
+        for refused in [ct(8, 0), ct(9, 0), ct(0, 4096), ct(0, 6144), ct(1, 4096)] {
             assert!(refused.is_secure(), "{refused:?} must be refused");
         }
-        let mut accepted = vec![ct(0, 0), ct(0, 1 << 11), ct(255, 0)];
+        let mut accepted = vec![ct(0, 0), ct(0, 2048), ct(0, u32::MAX ^ 4096)];
         accepted.extend((0..=7).chain([10, 15]).map(|purpose| ct(purpose, 0)));
         for accepted in accepted {
             assert!(!accepted.is_secure(), "{accepted:?} must be injectable");
