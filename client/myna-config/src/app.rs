@@ -1423,11 +1423,10 @@ impl RowBinding {
     }
 }
 
-/// The schema description is hover-only: a permanent subtitle turns a
-/// two-row page into a wall of prose.
+/// No visible subtitle: the schema description is exposed to assistive tech
+/// only, keeping the row a single line.
 fn describe(row: &impl IsA<gtk::Widget>, description: &str) {
     let row = row.as_ref();
-    row.set_tooltip_text(Some(description));
     row.update_property(&[gtk::accessible::Property::Description(description)]);
 }
 
@@ -1453,7 +1452,6 @@ fn ready_page(
 
     for setting in rows {
         let plan = widget_plan(setting.metadata());
-        let reset = reset_button(&plan.key, &controller, &writer);
         match plan.kind {
             WidgetKind::Choice => {
                 let display_labels: Vec<_> = plan
@@ -1469,7 +1467,6 @@ fn ready_page(
                     .sensitive(plan.writable)
                     .build();
                 describe(&row, &plan.description);
-                row.add_suffix(&reset);
                 if let Some(index) = setting
                     .value()
                     .as_str()
@@ -1519,7 +1516,6 @@ fn ready_page(
                 row.set_sensitive(plan.writable);
                 row.set_value(setting.value().as_integer().unwrap_or(minimum) as f64);
                 describe(&row, &plan.description);
-                row.add_suffix(&reset);
                 let updating = Rc::new(Cell::new(false));
                 row.connect_value_notify({
                     let controller = controller.clone();
@@ -1556,7 +1552,6 @@ fn ready_page(
                     .show_apply_button(true)
                     .build();
                 describe(&row, &plan.description);
-                row.add_suffix(&reset);
                 let updating = Rc::new(Cell::new(false));
                 let commit = Rc::new(RefCell::new(DebouncedTextCommit::new(
                     setting.value().as_str().unwrap_or_default(),
@@ -1719,31 +1714,6 @@ fn persist_request(
         controller.complete(request, result);
         drop(hold);
     });
-}
-
-fn reset_button(
-    key: &str,
-    controller: &Rc<MynaSettingsController>,
-    writer: &PersistenceWriter,
-) -> gtk::Button {
-    let button = gtk::Button::builder()
-        .icon_name("edit-undo-symbolic")
-        .tooltip_text(gettextrs::gettext("Reset to the schema default"))
-        .valign(gtk::Align::Center)
-        .build();
-    let accessible_label = gettextrs::gettext("Reset to the schema default");
-    button.update_property(&[gtk::accessible::Property::Label(&accessible_label)]);
-    button.connect_clicked({
-        let key = key.to_owned();
-        let controller = controller.clone();
-        let writer = writer.clone();
-        move |_| {
-            if let Ok(request) = controller.reset(&key) {
-                persist_request(writer.clone(), controller.clone(), request, None);
-            }
-        }
-    });
-    button
 }
 
 #[cfg(test)]

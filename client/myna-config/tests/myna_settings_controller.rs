@@ -515,11 +515,11 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
         labels,
         [
             "Automatic",
-            "Streaming",
-            "Batch",
+            "As you speak",
+            "When you stop",
             "Ribbon",
             "VU meter",
-            "Bar",
+            "Default",
             "Progress",
             "future-mode",
         ]
@@ -533,11 +533,11 @@ fn enum_display_labels_are_extracted_into_the_gettext_template() {
     let pot = include_str!("../po/myna-config.pot");
     for label in [
         "Automatic",
-        "Streaming",
-        "Batch",
+        "As you speak",
+        "When you stop",
         "Ribbon",
         "VU meter",
-        "Bar",
+        "Default",
         "Progress",
     ] {
         assert!(pot.contains(&format!("msgid \"{label}\"")), "{label}");

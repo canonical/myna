@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 16:51+0200\n"
+"POT-Creation-Date: 2026-09-15 17:28+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -159,13 +159,6 @@ msgstr ""
 msgid "Set Up Shortcut"
 msgstr ""
 
-#: data/myna-page.blp:56
-msgid ""
-"Changes are saved immediately. Each setting explains whether it applies live "
-"or after a daemon restart. “Auto” choices let Myna select the best behavior "
-"for this machine."
-msgstr ""
-
 #: data/onboarding-components.blp:16 src/onboarding_ui.rs:460
 msgid "Install components"
 msgstr ""
@@ -262,12 +255,8 @@ msgstr ""
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:1672
+#: src/app.rs:1667
 msgid "Could not save the setting"
-msgstr ""
-
-#: src/app.rs:1731 src/app.rs:1734
-msgid "Reset to the schema default"
 msgstr ""
 
 #: src/active_backend.rs:32
@@ -1228,11 +1217,11 @@ msgid "Automatic"
 msgstr ""
 
 #: src/myna_settings.rs:62
-msgid "Streaming"
+msgid "As you speak"
 msgstr ""
 
 #: src/myna_settings.rs:63
-msgid "Batch"
+msgid "When you stop"
 msgstr ""
 
 #: src/myna_settings.rs:64
@@ -1244,7 +1233,7 @@ msgid "VU meter"
 msgstr ""
 
 #: src/myna_settings.rs:66
-msgid "Bar"
+msgid "Default"
 msgstr ""
 
 #: src/myna_settings.rs:67
@@ -1252,14 +1241,14 @@ msgid "Progress"
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:33
-msgid "How transcripts are emitted"
+msgid "When to transcribe"
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:34
 msgid ""
-"Streaming shows partial text in the field as you speak; Batch injects once, "
-"when the utterance ends; Automatic picks per machine from the measured RTF "
-"table."
+"As you speak shows partial text in the field while you talk; When you stop "
+"injects the whole transcript once the utterance ends; Automatic picks per "
+"machine from the measured RTF table."
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:43
@@ -1274,13 +1263,13 @@ msgid ""
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:54
-msgid "The HUD indicator style"
+msgid "Indicator style"
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:55
 msgid ""
-"All four render the same calibrated audio envelope: Bar is a level bar in "
-"the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter, "
+"All four render the same calibrated audio envelope: Default is a level bar "
+"in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter, "
 "Progress a plain progress bar."
 msgstr ""
 

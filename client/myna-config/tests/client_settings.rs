@@ -82,7 +82,7 @@ fn enumerates_the_real_schema_and_its_metadata() {
         .iter()
         .find(|setting| setting.key().as_str() == "streaming-mode")
         .unwrap();
-    assert_eq!(streaming.summary(), Some("How transcripts are emitted"));
+    assert_eq!(streaming.summary(), Some("When to transcribe"));
     assert!(streaming.description().unwrap().contains("partial text"));
     assert_eq!(
         streaming.default_value(),

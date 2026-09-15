@@ -21,20 +21,20 @@
   </enum>
 
   <enum id="com.canonical.Myna.Dictation.HudStyle">
-    <value nick="ribbon" value="0"/>
-    <value nick="vumeter" value="1"/>
-    <value nick="bar" value="2"/>
+    <value nick="bar" value="0"/>
+    <value nick="ribbon" value="1"/>
+    <value nick="vumeter" value="2"/>
     <value nick="progress" value="3"/>
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
     <key name="streaming-mode" enum="com.canonical.Myna.Dictation.StreamingMode">
       <default>'auto'</default>
-      <summary>How transcripts are emitted</summary>
+      <summary>When to transcribe</summary>
       <description>
-        Streaming shows partial text in the field as you speak; Batch injects
-        once, when the utterance ends; Automatic picks per machine from the
-        measured RTF table.
+        As you speak shows partial text in the field while you talk; When you
+        stop injects the whole transcript once the utterance ends; Automatic
+        picks per machine from the measured RTF table.
       </description>
     </key>
 
@@ -51,11 +51,11 @@
 
     <key name="hud-style" enum="com.canonical.Myna.Dictation.HudStyle">
       <default>'bar'</default>
-      <summary>The HUD indicator style</summary>
+      <summary>Indicator style</summary>
       <description>
-        All four render the same calibrated audio envelope: Bar is a level bar
-        in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented
-        meter, Progress a plain progress bar.
+        All four render the same calibrated audio envelope: Default is a level
+        bar in the accent colour, Ribbon a flowing GPU wave, VU meter a
+        segmented meter, Progress a plain progress bar.
       </description>
     </key>
 

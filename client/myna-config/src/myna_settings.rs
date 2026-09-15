@@ -59,11 +59,11 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
 pub fn choice_display_label(choice: &str) -> String {
     match choice {
         "auto" => gettextrs::gettext("Automatic"),
-        "streaming" => gettextrs::gettext("Streaming"),
-        "batch" => gettextrs::gettext("Batch"),
+        "streaming" => gettextrs::gettext("As you speak"),
+        "batch" => gettextrs::gettext("When you stop"),
         "ribbon" => gettextrs::gettext("Ribbon"),
         "vumeter" => gettextrs::gettext("VU meter"),
-        "bar" => gettextrs::gettext("Bar"),
+        "bar" => gettextrs::gettext("Default"),
         "progress" => gettextrs::gettext("Progress"),
         unknown => unknown.to_owned(),
     }
