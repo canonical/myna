@@ -12,7 +12,7 @@ Component-scoped targets are `<verb>-<component>`: `fmt`, `lint`, `test`, `cov`,
 
 # Important
 
-- After every code change, run `make check` and `make test-<component>` for each component touched. Both must be green before the change is reported done; report a red gate as red, with its output. Run `make preflight` before proposing a merge.
+- After every code change, run `make check` and `make test-<component>` for each component touched. Both must be green before the change is reported done; report a red gate as red, with its output. Run `make preflight` before proposing a merge. While iterating, scope the loop with `make test-client-hermetic TEST='-p <crate> --test <file>'` (cargo test args, seconds on a warm target) or `make test-server TEST='<pytest args>'`; the unscoped run is still what counts.
 - Fix the code, not the gate. Never silence a lint, skip a test, lower a threshold or widen an allowlist to get green; if a gate is wrong, change it in its own commit with the reason in the commit body.
 - Coverage is judged on the patch. `make coverage` runs the reports and ends with `cov-patch`, the blocking gate: 80% of the changed coverable lines, five-line floor, measured against `COV_BASE` (default `origin/main`). Run it whenever a change adds or moves logic, and read the dead-code digest it prints before writing tests for coverage.
 - Never-executed is not dead. Code no production caller reaches (tests do not count) is deleted, not tested. Code something does call but no measured run reaches is a measurement gap: the GL renderer, whose only test is an uninstrumented example, or a GTK page no probe builds. Close that by running its existing test under instrumentation, or by writing one. Check the callers before deleting anything the digest lists.

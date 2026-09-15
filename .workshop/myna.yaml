@@ -71,7 +71,9 @@ actions:
     # fail) when it is absent, so sync first or they silently stop testing.
     (cd /project/server && uv sync -q)
     export RUST_BACKTRACE=1
-    cd /project/client && cargo test --workspace "$@"
+    # No --workspace: the virtual manifest already tests every member bare,
+    # and the flag would override a scoping `-p <crate>`.
+    cd /project/client && cargo test "$@"
   # The env-gated hardware suites, with their services stood up (features
   # 002/003). `test` above stays hermetic; this is the same suites with the
   # gates on, and it is what `cov` folds in.

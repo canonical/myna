@@ -137,12 +137,17 @@ i18n-check: ## Fail if a committed .pot is stale against the sources it lists
 
 ##@ Test
 
+# Scope a test loop, e.g.:
+#   make test-client-hermetic TEST='-p myna-desktop --test dbus_trigger'
+#   make test-server TEST='tests/test_contract.py -k final'
+TEST ?=
+
 .PHONY: test-client
 test-client: test-client-hermetic test-client-gated test-client-ui ## Every Rust suite: hermetic + gated hardware + renderer smoke
 
 .PHONY: test-client-hermetic
-test-client-hermetic: ## cargo test --workspace, no services needed (workshop: test)
-	$(WS) test
+test-client-hermetic: ## cargo test over every member, no services needed, scoped by TEST (workshop: test)
+	$(WS) test $(TEST)
 
 .PHONY: test-client-gated
 test-client-gated: ## Env-gated PipeWire/IBus/D-Bus suites with private services stood up (workshop: test-gated)
@@ -153,8 +158,8 @@ test-client-ui: ## HUD renderer paints a wave under xvfb (workshop: ui-check)
 	$(WS) ui-check
 
 .PHONY: test-server
-test-server: ## Python offline suite (workshop: py-test)
-	$(WS) py-test
+test-server: ## Python offline suite, scoped by TEST (workshop: py-test)
+	$(WS) py-test $(TEST)
 
 # Its own workshop, not `myna`: the Shell version a test can reach comes from
 # the workshop's base, and the extension targets a newer one than the core24
