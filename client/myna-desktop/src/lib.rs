@@ -21,7 +21,7 @@
 //!   tests). The former GTK overlay was removed in T150.
 //!
 //! Real IBus/portal/GTK behavior lives behind env-gated integration suites
-//! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS` / a display gate); the hermetic
+//! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS`); the hermetic
 //! suite drives the controller through the mocks.
 
 pub mod backend;
@@ -30,7 +30,6 @@ pub mod dbus;
 pub mod indicator;
 pub mod inject;
 pub mod live;
-pub mod policy;
 pub mod shortcut;
 
 pub use controller::{

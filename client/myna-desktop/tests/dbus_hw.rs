@@ -75,51 +75,6 @@ async fn the_name_is_a_singleton_lock() {
     }
 }
 
-/// C12/C13 are legacy presence checks; fallback now uses `RegisterClient`
-/// client set (C14/C15). Kept as a smoke test for the old helper.
-#[tokio::test]
-async fn shell_presence_round_trips_and_suppresses_the_fallback() {
-    if !dbus_enabled() {
-        return;
-    }
-
-    // `probe_shell_presence` is now deprecated and always reports absent
-    // (fallback suppression now uses `ClientRegistry`).
-    assert!(
-        !myna_desktop::policy::probe_shell_presence().await,
-        "probe now always reports no shell owner"
-    );
-    let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(false);
-    assert!(decision.uses_notify_fallback, "P21: fallback restored");
-
-    // The old presence name can still be claimed, but the helper no
-    // longer watches it — this just proves the bus works.
-    let connection = zbus::Connection::session().await.expect("session bus");
-    connection
-        .request_name("com.canonical.Myna.TestShell.example")
-        .await
-        .expect("claim example name");
-
-    // Even though the name is now owned, the deprecated probe still
-    // reports absent (new code uses `ClientRegistry`).
-    assert!(
-        !myna_desktop::policy::probe_shell_presence().await,
-        "deprecated probe ignores shell host"
-    );
-    let decision = myna_desktop::policy::SurfaceDecision::for_shell_presence(true);
-    assert!(
-        !decision.uses_notify_fallback,
-        "P20: pure SurfaceDecision still suppresses when told present"
-    );
-
-    drop(connection);
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    assert!(
-        !myna_desktop::policy::probe_shell_presence().await,
-        "probe still reports absent"
-    );
-}
-
 /// A minimal consumer proxy for the served interface's methods.
 #[zbus::proxy(
     interface = "com.canonical.Myna.Dictation",
