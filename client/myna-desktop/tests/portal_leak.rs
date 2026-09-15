@@ -31,7 +31,11 @@ use zbus::object_server::ObjectServer;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{interface, Connection};
 
-use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
+use myna_desktop::dbus::serve::ZbusBus;
+use myna_desktop::dbus::{FakeBus, PropertyValue, BUS_NAME, OBJECT_PATH};
+use myna_desktop::shortcut::portal::{
+    ActivationMode, GlobalShortcutTrigger, TriggerError, DEFAULT_TRIGGER,
+};
 
 /// True when a session bus is available. Same gate as `dbus_hw`: the fake
 /// portal needs a bus to own a name on, and nothing else.
@@ -58,6 +62,8 @@ struct Ledger {
     binds: usize,
     /// `ListShortcuts` calls received - i.e. silent lookups.
     lists: usize,
+    /// Every `preferred_trigger` a `BindShortcuts` offered.
+    preferred: Vec<String>,
     /// Request paths handed out and not yet `Close`d.
     live_requests: HashSet<String>,
     /// Session paths handed out and not yet `Close`d.
@@ -213,7 +219,7 @@ impl GlobalShortcutsFake {
     async fn bind_shortcuts(
         &self,
         _session_handle: OwnedObjectPath,
-        _shortcuts: Vec<(String, HashMap<String, OwnedValue>)>,
+        shortcuts: Vec<(String, HashMap<String, OwnedValue>)>,
         _parent_window: String,
         options: HashMap<String, OwnedValue>,
         #[zbus(header)] hdr: Header<'_>,
@@ -237,6 +243,14 @@ impl GlobalShortcutsFake {
         {
             let mut ledger = self.ledger.lock().unwrap();
             ledger.binds += 1;
+            ledger
+                .preferred
+                .extend(shortcuts.iter().filter_map(|(_, options)| {
+                    options
+                        .get("preferred_trigger")
+                        .and_then(|v| <&str>::try_from(v).ok())
+                        .map(str::to_string)
+                }));
             ledger.live_requests.insert(request.clone());
             ledger.peak_live_requests = ledger.peak_live_requests.max(ledger.live_requests.len());
         }
@@ -392,7 +406,7 @@ async fn an_abandoned_bind_does_not_leave_its_sheet_on_screen() {
         let outcome = GlobalShortcutTrigger::bind_with_connection_timeout(
             client,
             "dictate",
-            Some("SUPER+j"),
+            Some(DEFAULT_TRIGGER),
             ActivationMode::Toggle,
             Duration::from_secs(2),
         )
@@ -638,4 +652,173 @@ async fn a_dismissed_re_bind_is_a_refusal_not_a_binding() {
         !consent.is_given(),
         "a dismissed sheet has to spend consent"
     );
+}
+
+/// The granted key is what `Shortcut` publishes, from either path to a binding.
+#[tokio::test(flavor = "multi_thread")]
+async fn attaching_reports_the_granted_trigger() {
+    if !dbus_enabled() {
+        return;
+    }
+    let (portal, _ledger) = fake_portal_holding(&["dictate"]).await;
+    let client = zbus::Connection::session().await.expect("client bus");
+    let listed =
+        GlobalShortcutTrigger::attach_with_connection(client, "dictate", ActivationMode::Toggle)
+            .await
+            .expect("attach to the listed binding");
+    assert_eq!(listed.shortcut(), "Super+T");
+    drop(listed);
+    portal.shutdown().await;
+
+    let (portal, _ledger) = fake_portal_with(&[], Answer::Grant).await;
+    let _consent = Consent::given();
+    let client = zbus::Connection::session().await.expect("client bus");
+    let rebound =
+        GlobalShortcutTrigger::attach_with_connection(client, "dictate", ActivationMode::Toggle)
+            .await
+            .expect("re-bind from the store");
+    assert_eq!(rebound.shortcut(), "Super+T");
+    portal.shutdown().await;
+}
+
+/// A rebind in Settings arrives as `ShortcutsChanged` on the live session and
+/// has to reach `Shortcut` without a restart.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rebind_in_settings_reaches_the_published_shortcut() {
+    if !dbus_enabled() {
+        return;
+    }
+    let (portal, ledger) = fake_portal_holding(&["dictate"]).await;
+    let client = zbus::Connection::session().await.expect("client bus");
+    let bus = FakeBus::new();
+    let mut trigger =
+        GlobalShortcutTrigger::attach_with_connection(client, "dictate", ActivationMode::Toggle)
+            .await
+            .expect("attach")
+            .publish_shortcut_on(Arc::new(tokio::sync::Mutex::new(bus.clone())))
+            .await;
+    assert_eq!(
+        bus.property("Shortcut"),
+        Some(PropertyValue::Str("Super+T".into()))
+    );
+
+    let session = ledger
+        .lock()
+        .unwrap()
+        .live_sessions
+        .iter()
+        .next()
+        .cloned()
+        .expect("a live session");
+    let mut meta: HashMap<&str, Value> = HashMap::new();
+    meta.insert("description", Value::from("myna dictation"));
+    meta.insert("trigger_description", Value::from("Super+K"));
+    let listener = tokio::spawn(async move {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            myna_orchestrator::Trigger::next_edge(&mut trigger),
+        )
+        .await;
+    });
+    // The signal match is installed before attach returns, so there is no race
+    // with the listener starting.
+    portal
+        .conn
+        .emit_signal(
+            None::<&str>,
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.GlobalShortcuts",
+            "ShortcutsChanged",
+            &(
+                OwnedObjectPath::try_from(session.as_str()).unwrap(),
+                vec![("dictate", meta)],
+            ),
+        )
+        .await
+        .expect("emit ShortcutsChanged");
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while bus.property("Shortcut") != Some(PropertyValue::Str("Super+K".into()))
+        && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    listener.abort();
+    portal.shutdown().await;
+    assert_eq!(
+        bus.property("Shortcut"),
+        Some(PropertyValue::Str("Super+K".into()))
+    );
+}
+
+/// A bind that the portal grants reports the key it granted.
+#[tokio::test(flavor = "multi_thread")]
+async fn binding_reports_the_granted_trigger() {
+    if !dbus_enabled() {
+        return;
+    }
+    let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
+    let client = zbus::Connection::session().await.expect("client bus");
+
+    let trigger = GlobalShortcutTrigger::bind_with_connection_timeout(
+        client,
+        "dictate",
+        Some(DEFAULT_TRIGGER),
+        ActivationMode::Toggle,
+        Duration::from_secs(2),
+    )
+    .await
+    .expect("a granted bind");
+    portal.shutdown().await;
+
+    assert_eq!(trigger.shortcut(), "Super+T");
+    assert_eq!(ledger.lock().unwrap().preferred, vec![DEFAULT_TRIGGER]);
+}
+
+/// Myna Settings binds through the daemon. `BindShortcut("")` offers the
+/// default trigger, publishes the grant as `Shortcut`, records consent, and
+/// wakes the retry loop parked on the unbound recheck.
+#[tokio::test(flavor = "multi_thread")]
+async fn binding_through_the_daemon_offers_the_default_and_publishes_the_grant() {
+    if !dbus_enabled() {
+        return;
+    }
+    let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
+    let consent = Consent::none();
+    let bound = Arc::new(tokio::sync::Notify::new());
+    let _daemon = ZbusBus::serve_for_portal(Some(ActivationMode::Toggle), Arc::clone(&bound))
+        .await
+        .expect("serve the daemon object");
+
+    let (ok, message) = myna_desktop::dbus::status::bind_shortcut(None)
+        .await
+        .expect("BindShortcut answers");
+
+    assert!(ok, "{message}");
+    assert_eq!(message, "bound to Super+T");
+    assert_eq!(ledger.lock().unwrap().preferred, vec![DEFAULT_TRIGGER]);
+    assert!(consent.is_given(), "a granted bind is consent to re-bind");
+    tokio::time::timeout(Duration::from_secs(1), bound.notified())
+        .await
+        .expect("the retry loop was not woken");
+
+    let client = zbus::Connection::session().await.expect("client bus");
+    let published: String = zbus::fdo::PropertiesProxy::builder(&client)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
+        .await
+        .expect("properties proxy")
+        .get(
+            zbus::names::InterfaceName::try_from(BUS_NAME).unwrap(),
+            "Shortcut",
+        )
+        .await
+        .expect("Shortcut")
+        .try_into()
+        .expect("a string");
+    portal.shutdown().await;
+    assert_eq!(published, "Super+T");
 }

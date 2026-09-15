@@ -56,7 +56,7 @@ use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::backend::BackendSocket;
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
-use myna_desktop::dbus::{DictationService, SharedBus};
+use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
 use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
@@ -103,15 +103,17 @@ OPTIONS:
                        activation, or a portal daemon whose portal offers no
                        GlobalShortcuts; otherwise the portal shortcut drives it.
     --bind-shortcut    bind (or rebind) the dictation shortcut through the
-                       desktop's own GlobalShortcuts dialog. Portal activation
+                       desktop's own GlobalShortcuts dialog, offering Super+J
+                       unless --shortcut names another. Portal activation
                        only, and the one thing that raises that dialog: the
                        daemon never asks for a key by itself.
     --install-shortcut bind a GNOME custom keybinding to --toggle (e.g.
                        '<Super>t'), then exit. Control activation only: on a
                        portal daemon it would shadow the portal's own binding,
-                       so it refuses. Rebind there in Settings → Keyboard.
-    --shortcut <accel> preferred trigger in portal activation (the portal's bind
-                       dialog may still let you pick a different key)
+                       so it refuses. Rebind there in Settings → Apps.
+    --shortcut <trigger>
+                       trigger --bind-shortcut offers, in shortcuts-spec syntax
+                       (default LOGO+j; the dialog may still pick another key)
     --hold             portal activation: hold-to-talk instead (hold = record)
 
 ACTIVATION (default: portal when packaged — $SNAP set — else control socket):
@@ -621,6 +623,23 @@ struct PortalRebind {
     /// *for* except a different one: re-asking the same backend is just the
     /// same dialog again.
     awaiting_new_backend: bool,
+    /// The portal holds no binding yet. `BindShortcut` runs in this daemon
+    /// and notifies `bound`, so that wait ends the moment it succeeds.
+    awaiting_binding: bool,
+    bound: Arc<tokio::sync::Notify>,
+    /// Where `Shortcut` is published.
+    shortcut: Option<SharedBus>,
+}
+
+impl PortalRebind {
+    async fn clear_shortcut(&self) {
+        if let Some(bus) = &self.shortcut {
+            bus.lock()
+                .await
+                .set_property("Shortcut", PropertyValue::Str(String::new()))
+                .await;
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -634,6 +653,10 @@ impl Rebind for PortalRebind {
             myna_desktop::shortcut::portal::await_portal(delay).await;
         } else if self.awaiting_new_backend {
             myna_desktop::shortcut::portal::await_portal_change(delay).await;
+        } else if self.awaiting_binding {
+            // The net covers a key bound some other way, such as an unpackaged
+            // `--bind-shortcut` that bound in its own process.
+            let _ = tokio::time::timeout(delay, self.bound.notified()).await;
         } else {
             tokio::time::sleep(delay).await;
         }
@@ -642,12 +665,17 @@ impl Rebind for PortalRebind {
     async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
         self.awaiting_portal = false;
         self.awaiting_new_backend = false;
+        self.awaiting_binding = false;
         match GlobalShortcutTrigger::attach("dictate", self.mode).await {
-            Ok(trigger) => Ok(Box::new(trigger)),
+            Ok(trigger) => Ok(match self.shortcut.clone() {
+                Some(bus) => Box::new(trigger.publish_shortcut_on(bus).await),
+                None => Box::new(trigger),
+            }),
             // Noble's portal: no backend implements GlobalShortcuts, and no
             // retry will add one. The control socket is the activation that
             // still works, driven by a custom keybinding to `myna.toggle`.
             Err(TriggerError::NoGlobalShortcuts(reason)) => {
+                self.clear_shortcut().await;
                 let trigger = bind_control(&self.control)?;
                 myna_core::info_log!(
                     "trigger",
@@ -684,12 +712,16 @@ impl Rebind for PortalRebind {
                     self.awaiting_new_backend = true;
                     BindFailure::Unanswered(e.to_string())
                 }
-                // Never reached from `attach`, which raises no sheet, but the
-                // mapping is exhaustive by construction rather than by luck.
-                TriggerError::NoShortcutBound(_) => BindFailure::Unbound(format!(
-                    "{e}; run `{}` to bind one",
-                    bind_shortcut_command()
-                )),
+                // Nothing bound and no consent to ask: wait for the user to
+                // bind one, and stop naming a key the portal no longer holds.
+                TriggerError::NoShortcutBound(_) => {
+                    self.awaiting_binding = true;
+                    self.clear_shortcut().await;
+                    BindFailure::Unbound(format!(
+                        "{e}; run `{}` to bind one",
+                        bind_shortcut_command()
+                    ))
+                }
                 // Handled above, before this mapping.
                 TriggerError::NoGlobalShortcuts(_) => BindFailure::Unavailable(e.to_string()),
             }),
@@ -745,6 +777,7 @@ async fn run_controller(
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
     bus_lost: Option<BoxFuture<'static, ()>>,
+    bound: Arc<tokio::sync::Notify>,
 ) -> ExitCode {
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
@@ -769,6 +802,9 @@ async fn run_controller(
                 control: control_path(&args),
                 awaiting_portal: false,
                 awaiting_new_backend: false,
+                awaiting_binding: false,
+                bound,
+                shortcut: pump_bus.clone(),
             });
             builder.trigger(with_status(trigger, pump_bus)).build()
         }
@@ -934,17 +970,9 @@ fn bind_shortcut(args: &Args) -> ExitCode {
 }
 
 async fn bind_here(preferred: Option<&str>, mode: ActivationMode) -> (bool, String) {
-    use myna_desktop::shortcut::portal::{configure, Configured};
+    use myna_desktop::shortcut::portal::{bind_report, configure};
 
-    match configure("dictate", preferred, mode).await {
-        Ok(Configured::Bound(triggers)) if triggers.is_empty() => (true, "shortcut bound".into()),
-        Ok(Configured::Bound(triggers)) => (true, format!("bound to {}", triggers.join(", "))),
-        Ok(Configured::DialogOpened) => (
-            true,
-            "already bound; opened the desktop's shortcut settings".into(),
-        ),
-        Err(e) => (false, e.to_string()),
-    }
+    bind_report(&configure("dictate", preferred, mode).await)
 }
 
 /// Why `--install-shortcut` must not run, where that is the case.
@@ -1350,6 +1378,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             None,
             None,
             None,
+            Arc::default(),
         ))
     } else {
         rt.block_on(run_headless_dbus(args, resolved))
@@ -1365,7 +1394,8 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
     let bind_mode = (resolved.activation == Activation::Portal).then(|| activation_mode(&args));
-    match ZbusBus::serve_for_portal(bind_mode).await {
+    let bound = Arc::new(tokio::sync::Notify::new());
+    match ZbusBus::serve_for_portal(bind_mode, Arc::clone(&bound)).await {
         Ok(bus) => {
             let clients = bus.client_registry();
             let bus_lost = bus.lost().boxed();
@@ -1383,6 +1413,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Some(readiness),
                 Some(pump_bus),
                 Some(bus_lost),
+                bound,
             )
             .await
         }
@@ -1395,7 +1426,16 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
             );
             eprintln!("  falling back to desktop notifications for this instance");
             eprintln!("  (the first owner keeps the hotkey; this instance will not receive presses while it lives — stop it first, or use --no-dbus for an intentional second instance)");
-            run_controller(args, resolved, NotifyIndicator::new(), None, None, None).await
+            run_controller(
+                args,
+                resolved,
+                NotifyIndicator::new(),
+                None,
+                None,
+                None,
+                bound,
+            )
+            .await
         }
         Err(ServeError::Bus(e)) => {
             eprintln!("cannot serve com.canonical.Myna.Dictation ({e}); falling back");
@@ -1403,7 +1443,16 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 "  (a 'GUID mismatch' means DBUS_SESSION_BUS_ADDRESS is stale - e.g. a tmux/screen"
             );
             eprintln!("   server surviving logout; fix with: export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus)");
-            run_controller(args, resolved, NotifyIndicator::new(), None, None, None).await
+            run_controller(
+                args,
+                resolved,
+                NotifyIndicator::new(),
+                None,
+                None,
+                None,
+                bound,
+            )
+            .await
         }
     }
 }
@@ -1927,6 +1976,40 @@ mod tests {
         );
     }
 
+    fn unbound_rebind(bound: Arc<tokio::sync::Notify>) -> PortalRebind {
+        PortalRebind {
+            mode: ActivationMode::Toggle,
+            control: PathBuf::new(),
+            awaiting_portal: false,
+            awaiting_new_backend: false,
+            awaiting_binding: true,
+            bound,
+            shortcut: None,
+        }
+    }
+
+    // A key bound through `BindShortcut` has to work when the user presses it,
+    // not after the next unbound recheck.
+    #[tokio::test(start_paused = true)]
+    async fn a_binding_made_through_the_daemon_ends_the_unbound_wait() {
+        let bound = Arc::new(tokio::sync::Notify::new());
+        let mut rebind = unbound_rebind(Arc::clone(&bound));
+        bound.notify_one();
+
+        let started = tokio::time::Instant::now();
+        rebind.wait_before_retry(Duration::from_secs(15)).await;
+        assert!(started.elapsed() < Duration::from_secs(15));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn with_nothing_bound_the_unbound_wait_runs_its_course() {
+        let mut rebind = unbound_rebind(Arc::new(tokio::sync::Notify::new()));
+
+        let started = tokio::time::Instant::now();
+        rebind.wait_before_retry(Duration::from_secs(15)).await;
+        assert!(started.elapsed() >= Duration::from_secs(15));
+    }
+
     // A portal daemon never opens a control socket, so `--toggle` failing is
     // its *healthy* behaviour. The hint has to say that instead of blaming a
     // missing process, and it has to name the key that does work.
@@ -1943,8 +2026,8 @@ mod tests {
         );
     }
 
-    // Unbound is the shipped state (the daemon offers no preferred trigger),
-    // so the no-hotkey branch still has to give somewhere to look.
+    // Unbound is the state until the user confirms a key in the portal's
+    // dialog, so the no-hotkey branch still has to give somewhere to look.
     #[test]
     fn portal_toggle_hint_without_a_hotkey_says_where_to_find_one() {
         let hint = toggle_hint_for(Activation::Portal, None).join(" ");

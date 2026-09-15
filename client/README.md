@@ -91,7 +91,8 @@ myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running
 
 Other activation modes: `--portal` (GlobalShortcuts — only works when packaged
 as a snap/flatpak, which GNOME grants an app identity; bind the key once with
-`--bind-shortcut`, which is the only thing that raises the portal's dialog);
+`--bind-shortcut`, which offers Super+J and is the only thing that raises the
+portal's dialog);
 `--stdin`
 (terminal debug — injects back into the terminal). Feedback defaults to
 desktop notifications; on GNOME the myna-shell extension hosts the richer

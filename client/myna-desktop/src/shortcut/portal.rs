@@ -23,6 +23,12 @@ use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};
 
 use super::{Trigger, TriggerEdge};
+use crate::dbus::{PropertyValue, SharedBus};
+
+/// The trigger offered to the portal's bind dialog when the user names none.
+/// Shortcuts-spec syntax: xdg-desktop-portal-gnome maps `LOGO` to `<super>`
+/// and copies unknown modifier names through verbatim.
+pub const DEFAULT_TRIGGER: &str = "LOGO+j";
 
 /// Why binding the global shortcut failed.
 #[derive(Debug, thiserror::Error)]
@@ -59,12 +65,15 @@ pub enum TriggerError {
     NoShortcutBound(String),
 }
 
-/// A raw portal activation edge (before dedup). Public so the hermetic test can
-/// script a signal stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A raw portal signal (before dedup). Public so the hermetic test can script a
+/// signal stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PortalSignal {
     Activated,
     Deactivated,
+    /// The binding changed (a rebind in Settings); carries the portal's new
+    /// trigger description, empty when the shortcut is gone.
+    Changed(String),
 }
 
 /// How portal activations map to dictation edges.
@@ -135,7 +144,8 @@ impl Dedup {
                     self.pressed = false;
                     Some(TriggerEdge::Release)
                 }
-                PortalSignal::Deactivated => None, // spurious release — ignore
+                // A spurious release, or a binding change.
+                _ => None,
             },
             ActivationMode::Toggle => match signal {
                 PortalSignal::Activated if !self.key_down => {
@@ -147,11 +157,12 @@ impl Dedup {
                         TriggerEdge::Release
                     })
                 }
-                PortalSignal::Activated => None, // autorepeat while held — ignore
                 PortalSignal::Deactivated => {
                     self.key_down = false; // rearm; never an edge in toggle mode
                     None
                 }
+                // Autorepeat while held, or a binding change.
+                _ => None,
             },
         }
     }
@@ -173,6 +184,10 @@ enum Keepalive {
 pub struct GlobalShortcutTrigger {
     signals: BoxStream<'static, PortalSignal>,
     dedup: Dedup,
+    /// The portal's trigger description for the binding, empty when unknown.
+    shortcut: String,
+    /// Where `Shortcut` is published as the binding changes.
+    publisher: Option<SharedBus>,
     _keepalive: Keepalive,
 }
 
@@ -191,8 +206,29 @@ impl GlobalShortcutTrigger {
         Self {
             signals,
             dedup: Dedup::with_mode(mode),
+            shortcut: String::new(),
+            publisher: None,
             _keepalive: Keepalive::None,
         }
+    }
+
+    /// Record the portal's trigger description for the binding.
+    pub fn with_shortcut(mut self, shortcut: impl Into<String>) -> Self {
+        self.shortcut = shortcut.into();
+        self
+    }
+
+    /// The portal's trigger description for the binding, empty when unknown.
+    pub fn shortcut(&self) -> &str {
+        &self.shortcut
+    }
+
+    /// Publish `Shortcut` on `bus` now and whenever the portal reports a
+    /// rebind.
+    pub async fn publish_shortcut_on(mut self, bus: SharedBus) -> Self {
+        publish_shortcut(Some(&bus), &self.shortcut).await;
+        self.publisher = Some(bus);
+        self
     }
 
     /// Re-establish the binding the user asked for, without asking again.
@@ -247,9 +283,11 @@ impl GlobalShortcutTrigger {
         )
         .await
         {
-            Ok(signals) => Ok(Self {
+            Ok((signals, shortcut)) => Ok(Self {
                 signals,
                 dedup: Dedup::with_mode(mode),
+                shortcut,
+                publisher: None,
                 _keepalive: Keepalive::Portal(shortcuts, session),
             }),
             Err(e) => {
@@ -266,7 +304,7 @@ impl GlobalShortcutTrigger {
         shortcut_id: &str,
         mode: ActivationMode,
         answer_within: std::time::Duration,
-    ) -> Result<BoxStream<'static, PortalSignal>, TriggerError> {
+    ) -> Result<(BoxStream<'static, PortalSignal>, String), TriggerError> {
         let bound = list_shortcuts(shortcuts, session).await?;
         if let Some(shortcut) = bound.iter().find(|s| s.id() == shortcut_id) {
             let trigger = shortcut.trigger_description().to_string();
@@ -275,7 +313,7 @@ impl GlobalShortcutTrigger {
                 "portal",
                 "attached '{shortcut_id}' ({trigger}); session live"
             );
-            return Ok(signals);
+            return Ok((signals, trigger));
         }
 
         if !consent::given() {
@@ -367,9 +405,11 @@ impl GlobalShortcutTrigger {
         )
         .await
         {
-            Ok(signals) => Ok(Self {
+            Ok((signals, shortcut)) => Ok(Self {
                 signals,
                 dedup: Dedup::with_mode(mode),
+                shortcut,
+                publisher: None,
                 _keepalive: Keepalive::Portal(shortcuts, session),
             }),
             Err(e) => {
@@ -391,7 +431,7 @@ impl GlobalShortcutTrigger {
         preferred_trigger: Option<&str>,
         mode: ActivationMode,
         answer_within: std::time::Duration,
-    ) -> Result<BoxStream<'static, PortalSignal>, TriggerError> {
+    ) -> Result<(BoxStream<'static, PortalSignal>, String), TriggerError> {
         use ashpd::desktop::global_shortcuts::NewShortcut;
 
         let shortcut =
@@ -406,14 +446,17 @@ impl GlobalShortcutTrigger {
             shortcuts.bind_shortcuts(session, &[shortcut], None, Default::default()),
         )
         .await;
-        match bound {
-            // ashpd resolves the call once `Response` arrives whatever it says, so a
-            // dismissed sheet is only visible in the response.
-            Ok(Ok(request)) => {
-                request
-                    .response()
-                    .map_err(|e| TriggerError::BindRejected(e.to_string()))?;
-            }
+        // ashpd resolves the call once `Response` arrives whatever it says, so a
+        // dismissed sheet is only visible in the response.
+        let trigger = match bound {
+            Ok(Ok(request)) => request
+                .response()
+                .map_err(|e| TriggerError::BindRejected(e.to_string()))?
+                .shortcuts()
+                .iter()
+                .find(|s| s.id() == shortcut_id)
+                .map(|s| s.trigger_description().to_string())
+                .unwrap_or_default(),
             Ok(Err(e)) => return Err(TriggerError::BindRejected(e.to_string())),
             Err(_) => {
                 return Err(TriggerError::BindUnanswered(format!(
@@ -421,15 +464,15 @@ impl GlobalShortcutTrigger {
                     answer_within.as_secs()
                 )));
             }
-        }
+        };
 
         let signals = Self::subscribe(conn, shortcuts, shortcut_id).await?;
         myna_core::info_log!(
             "portal",
-            "bound '{shortcut_id}' (preferred {}, {mode:?}); session live",
-            preferred_trigger.unwrap_or("portal default")
+            "bound '{shortcut_id}' ({trigger}; preferred {}, {mode:?}); session live",
+            preferred_trigger.unwrap_or("none")
         );
-        Ok(signals)
+        Ok((signals, trigger))
     }
 
     /// Fold the two edge signals for `shortcut_id` into one stream, ending it
@@ -444,6 +487,7 @@ impl GlobalShortcutTrigger {
 
         let id_a = shortcut_id.to_string();
         let id_d = shortcut_id.to_string();
+        let id_c = shortcut_id.to_string();
         let activated = shortcuts
             .receive_activated()
             .await
@@ -458,6 +502,19 @@ impl GlobalShortcutTrigger {
             .filter_map(move |e| {
                 future::ready((e.shortcut_id() == id_d).then_some(PortalSignal::Deactivated))
             });
+        let changed = shortcuts
+            .receive_shortcuts_changed()
+            .await
+            .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?
+            .map(move |e| {
+                PortalSignal::Changed(
+                    e.shortcuts()
+                        .iter()
+                        .find(|s| s.id() == id_c)
+                        .map(|s| s.trigger_description().to_string())
+                        .unwrap_or_default(),
+                )
+            });
         // The portal can restart under a long-lived daemon (a package upgrade,
         // a crash, `systemctl --user restart`). Its session dies with it, but
         // these are *bus-level* signal matches, so the streams above stay
@@ -467,9 +524,11 @@ impl GlobalShortcutTrigger {
         // turns that into a plain rebind, which `retry::RetryingTrigger`
         // already knows how to do.
         let restarted = portal_owner_changed(conn).await?;
-        Ok(stream::select(activated, deactivated)
-            .take_until(restarted)
-            .boxed())
+        Ok(
+            stream::select(stream::select(activated, deactivated), changed)
+                .take_until(restarted)
+                .boxed(),
+        )
     }
 }
 
@@ -494,6 +553,7 @@ pub async fn configure(
         .iter()
         .any(|s| s.id() == shortcut_id);
 
+    let preferred_trigger = preferred_trigger.or(Some(DEFAULT_TRIGGER));
     let outcome = if already {
         shortcuts
             .configure_shortcuts(&session, None, Default::default())
@@ -594,6 +654,30 @@ pub enum Configured {
     Bound(Vec<String>),
     /// Already bound, so the portal's rebind dialog was raised instead.
     DialogOpened,
+}
+
+impl Configured {
+    /// The trigger description the portal granted, when it named one.
+    pub fn shortcut(&self) -> Option<&str> {
+        match self {
+            Self::Bound(triggers) => triggers.first().map(String::as_str),
+            Self::DialogOpened => None,
+        }
+    }
+}
+
+/// The `(ok, message)` a bind request answers with, over D-Bus or on the
+/// command line.
+pub fn bind_report(outcome: &Result<Configured, TriggerError>) -> (bool, String) {
+    match outcome {
+        Ok(Configured::Bound(triggers)) if triggers.is_empty() => (true, "shortcut bound".into()),
+        Ok(Configured::Bound(triggers)) => (true, format!("bound to {}", triggers.join(", "))),
+        Ok(Configured::DialogOpened) => (
+            true,
+            "already bound; opened the desktop's shortcut settings".into(),
+        ),
+        Err(e) => (false, e.to_string()),
+    }
 }
 
 /// Open a GlobalShortcuts session, refusing to start a portal to do it.
@@ -872,6 +956,15 @@ async fn portal_owner_changed(
     })
 }
 
+async fn publish_shortcut(bus: Option<&SharedBus>, shortcut: &str) {
+    if let Some(bus) = bus {
+        bus.lock()
+            .await
+            .set_property("Shortcut", PropertyValue::Str(shortcut.to_string()))
+            .await;
+    }
+}
+
 #[async_trait]
 impl Trigger for GlobalShortcutTrigger {
     async fn next_edge(&mut self) -> Option<TriggerEdge> {
@@ -879,6 +972,13 @@ impl Trigger for GlobalShortcutTrigger {
         // closed / shortcut unbound) ends the trigger (`None`).
         loop {
             match self.signals.next().await {
+                Some(PortalSignal::Changed(shortcut)) => {
+                    myna_core::info_log!("portal", "binding changed ({shortcut})");
+                    // Owned copies: `&self` holds the stream, which is not
+                    // `Sync`, so it cannot be borrowed across the await.
+                    publish_shortcut(self.publisher.clone().as_ref(), &shortcut).await;
+                    self.shortcut = shortcut;
+                }
                 Some(sig) => {
                     myna_core::dbg_log!("portal", "signal {sig:?}");
                     if let Some(edge) = self.dedup.on(sig) {
@@ -1055,6 +1155,114 @@ mod tests {
         ]))
         .await;
         assert_eq!(edges, vec![TriggerEdge::Press]);
+    }
+
+    // xdg-desktop-portal-gnome translates only the shortcuts spec's modifier
+    // names and copies anything else through, so `SUPER+j` reached GNOME as
+    // the accelerator `SUPERj`.
+    #[test]
+    fn the_default_trigger_uses_only_spec_modifiers() {
+        let (modifiers, key) = DEFAULT_TRIGGER.rsplit_once('+').expect("modifiers+key");
+        assert!(!key.is_empty());
+        for modifier in modifiers.split('+') {
+            assert!(
+                ["CTRL", "SHIFT", "ALT", "NUM", "LOGO"].contains(&modifier),
+                "{modifier} is not a shortcuts-spec modifier"
+            );
+        }
+        assert_eq!(DEFAULT_TRIGGER, "LOGO+j");
+    }
+
+    #[test]
+    fn a_new_binding_reports_the_granted_trigger() {
+        let outcome = Ok(Configured::Bound(vec!["Press <Super>j".into()]));
+        assert_eq!(
+            bind_report(&outcome),
+            (true, "bound to Press <Super>j".to_string())
+        );
+        assert_eq!(
+            outcome.as_ref().ok().and_then(Configured::shortcut),
+            Some("Press <Super>j")
+        );
+    }
+
+    #[test]
+    fn a_binding_without_a_trigger_description_still_reports_success() {
+        let outcome = Ok(Configured::Bound(vec![]));
+        assert_eq!(bind_report(&outcome), (true, "shortcut bound".to_string()));
+        assert_eq!(outcome.as_ref().ok().and_then(Configured::shortcut), None);
+    }
+
+    #[test]
+    fn an_opened_rebind_dialog_names_no_trigger() {
+        let outcome = Ok(Configured::DialogOpened);
+        assert!(bind_report(&outcome).0);
+        assert_eq!(outcome.as_ref().ok().and_then(Configured::shortcut), None);
+    }
+
+    #[test]
+    fn a_dismissed_bind_reports_failure() {
+        let outcome = Err(TriggerError::BindRejected("Cancelled".into()));
+        assert_eq!(
+            bind_report(&outcome),
+            (false, "shortcut bind rejected: Cancelled".to_string())
+        );
+    }
+
+    fn fake_bus() -> (crate::dbus::FakeBus, crate::dbus::SharedBus) {
+        let bus = crate::dbus::FakeBus::new();
+        (
+            bus.clone(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(bus)),
+        )
+    }
+
+    fn shortcut(bus: &crate::dbus::FakeBus) -> Option<crate::dbus::PropertyValue> {
+        bus.property("Shortcut")
+    }
+
+    #[tokio::test]
+    async fn the_granted_shortcut_is_published_when_attached() {
+        let (bus, shared) = fake_bus();
+        let _trigger = toggle_trigger(vec![])
+            .with_shortcut("Press <Super>j")
+            .publish_shortcut_on(shared)
+            .await;
+        assert_eq!(
+            shortcut(&bus),
+            Some(crate::dbus::PropertyValue::Str("Press <Super>j".into()))
+        );
+    }
+
+    // A rebind in Settings reaches the daemon as `ShortcutsChanged`, which is
+    // not an activation.
+    #[tokio::test]
+    async fn a_rebind_is_published_and_yields_no_edge() {
+        let (bus, shared) = fake_bus();
+        let trigger = toggle_trigger(vec![
+            PortalSignal::Changed("Press <Super>k".into()),
+            PortalSignal::Activated,
+            PortalSignal::Deactivated,
+        ])
+        .with_shortcut("Press <Super>j")
+        .publish_shortcut_on(shared)
+        .await;
+        assert_eq!(drain(trigger).await, vec![TriggerEdge::Press]);
+        assert_eq!(
+            shortcut(&bus),
+            Some(crate::dbus::PropertyValue::Str("Press <Super>k".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rebind_without_a_bus_still_delivers_edges() {
+        let trigger = toggle_trigger(vec![
+            PortalSignal::Changed("Press <Super>k".into()),
+            PortalSignal::Activated,
+        ]);
+        let mut trigger = trigger;
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert_eq!(trigger.shortcut(), "Press <Super>k");
     }
 
     // The portal shows this string next to the key in Settings → Keyboard, so

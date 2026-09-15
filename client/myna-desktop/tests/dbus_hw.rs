@@ -198,3 +198,47 @@ async fn served_toggle_method_feeds_the_trigger() {
     .await
     .expect_err("a duplicate Start must NOT start a second session");
 }
+
+/// `Shortcut` is what Myna Settings renders: a publish reaches a reader.
+#[tokio::test]
+async fn the_published_shortcut_is_readable_on_the_bus() {
+    use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
+
+    if !dbus_enabled() {
+        return;
+    }
+    let mut owner = match ZbusBus::serve().await {
+        Ok(owner) => owner,
+        Err(ServeError::AlreadyRunning { .. }) => {
+            eprintln!("skipping published_shortcut: another test owns the name");
+            return;
+        }
+        Err(other) => panic!("serve failed: {other}"),
+    };
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
+        .await
+        .expect("properties proxy");
+    let interface = zbus::names::InterfaceName::try_from(BUS_NAME).unwrap();
+    let read = |value: zbus::zvariant::OwnedValue| String::try_from(value).unwrap();
+
+    let initial = properties
+        .get(interface.clone(), "Shortcut")
+        .await
+        .expect("Shortcut is served");
+    assert_eq!(read(initial), "");
+
+    owner
+        .set_property("Shortcut", PropertyValue::Str("Press <Super>j".into()))
+        .await;
+    let published = properties
+        .get(interface, "Shortcut")
+        .await
+        .expect("Shortcut after publish");
+    assert_eq!(read(published), "Press <Super>j");
+}

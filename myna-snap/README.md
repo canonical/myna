@@ -199,8 +199,10 @@ portal only serves apps the compositor can identify, so `$SNAP` being set
 *is* the availability test:
 
 - **GlobalShortcuts portal (default here, because this is a snap)** — the
-  sandboxed-native trigger. On xdg-desktop-portal-gnome 51~alpha the **first**
-  bind raises a shortcut sheet; accept it and pick a key. It is remembered
+  sandboxed-native trigger. The **first** bind raises the desktop's shortcut
+  sheet offering Super+J; confirm it or pick another key. Myna Settings' Set Up
+  Shortcut and `myna.bind-shortcut` raise it; the daemon never does on its own.
+  It is remembered
   after that - later daemon starts and portal restarts re-bind silently in
   ~50ms (measured 2026-08-25, correcting an earlier "auto-accepted, no sheet"
   note from 2026-08-18). An unanswered sheet leaves the bind pending
@@ -208,8 +210,8 @@ portal only serves apps the compositor can identify, so `$SNAP` being set
   call timeout applies. The daemon bounds that at 120s and retries.
   `myna --hold` switches it to hold-to-talk.
 
-  To change the key afterwards: **Settings → Keyboard**, where it is listed
-  under myna. Do *not* bind a GNOME custom shortcut to `myna.toggle` for this -
+  To change the key afterwards: **Settings → Apps → myna** (Myna Settings'
+  Change Shortcut opens it). Do *not* bind a GNOME custom shortcut to `myna.toggle` for this -
   `gsd-media-keys` serves custom keybindings and portal global shortcuts alike,
   so a custom binding on the same accel shadows the portal's own and the key
   stops working. `myna.install-shortcut` refuses under portal activation for

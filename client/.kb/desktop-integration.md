@@ -12,6 +12,8 @@ Read the top-level `.kb/agents.md` file before continuing below.
 - `Injector` commits text to the focused application. The production implementation is an IBus engine; tests use a mock.
 - `Indicator` publishes dictation state. Notifications are the fallback, while the GNOME extension hosts the standalone `myna-hud` renderer.
 
+The daemon never raises the portal's bind dialog on its own. `BindShortcut` on the bus does, from Myna Settings or `--bind-shortcut`, offering `DEFAULT_TRIGGER` (Super+J); the user confirms it in the dialog. A successful bind wakes the retry loop, so the key works at once rather than at the next unbound recheck. The portal's trigger description is published as `Shortcut`, follows `ShortcutsChanged`, and is empty while nothing is bound or activation fell back to the control socket.
+
 The controller acquires the target before capture, refuses known secure fields, starts capture on activation, and finalizes on release or focus loss. Text buffered when focus is lost is discarded rather than sent to a different target.
 
 Toggle activation has no release edge, so the controller also ends a session by policy (`AutoStop`): after the user's silence timeout without sustained voice, measured in captured audio from the stats tap. It ends exactly like a release, plus the trigger-parity resync a focus loss needs. Hold-to-talk and the debug stdin trigger run with the policy off. There is no session length cap: a model with an input limit is the backend's to window, as audio8 does at `max_audio_seconds`.
@@ -78,5 +80,6 @@ whether a portable IM/text-injection interface ever standardises; until then
 - Never inject into a known secure field or after focus has moved.
 - Do not let the indicator or HUD take keyboard focus.
 - Keep activation, injection, and indication behind mockable traits.
+- Write portal triggers in shortcuts-spec syntax (`LOGO+j`, never `SUPER+j`): xdg-desktop-portal-gnome copies unknown modifier names into the accelerator.
 - A `BindShortcuts` call resolves on any `Response`; read the response, because a dismissed sheet arrives as a successful call.
 - Treat source and tests in `myna-desktop` as authoritative for IBus serialization details.

@@ -58,6 +58,9 @@ struct ServedState {
     audio_peak: f64,
     status_message: String,
     hud_style: String,
+    /// The portal's trigger description for the dictation shortcut, empty
+    /// while nothing is bound.
+    shortcut: String,
     audio_dropped_not_resident: u64,
     audio_dropped_not_active: u64,
 }
@@ -160,6 +163,10 @@ struct DictationObject {
     // no hermetic double — so under `cfg(test)` nothing reads this.
     #[cfg_attr(test, allow(dead_code))]
     bind_mode: Option<crate::shortcut::portal::ActivationMode>,
+    /// Woken when `BindShortcut` binds, so the retry loop attaches at once
+    /// instead of at its next unbound recheck.
+    #[cfg_attr(test, allow(dead_code))]
+    bound: Arc<tokio::sync::Notify>,
 }
 
 #[zbus::interface(name = "com.canonical.Myna.Dictation")]
@@ -191,11 +198,16 @@ impl DictationObject {
 
     /// `BindShortcut`: raise the portal's own bind dialog for the dictation
     /// shortcut, or its rebind dialog if one is already bound. `preferred` is
-    /// an accelerator to offer the dialog, or empty for the portal's default.
+    /// a shortcuts-spec trigger to offer the dialog, or empty for
+    /// [`DEFAULT_TRIGGER`](crate::shortcut::portal::DEFAULT_TRIGGER).
     /// Returns `(ok, message)`.
     #[cfg(not(test))]
-    async fn bind_shortcut(&self, preferred: &str) -> (bool, String) {
-        use crate::shortcut::portal::{configure, Configured};
+    async fn bind_shortcut(
+        &self,
+        preferred: &str,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+    ) -> (bool, String) {
+        use crate::shortcut::portal::{bind_report, configure};
 
         let Some(mode) = self.bind_mode else {
             return (
@@ -204,17 +216,17 @@ impl DictationObject {
             );
         };
         let preferred = (!preferred.is_empty()).then_some(preferred);
-        match configure("dictate", preferred, mode).await {
-            Ok(Configured::Bound(triggers)) if triggers.is_empty() => {
-                (true, "shortcut bound".into())
+        let outcome = configure("dictate", preferred, mode).await;
+        if let Ok(configured) = &outcome {
+            if let Some(shortcut) = configured.shortcut() {
+                self.served.lock().expect("served state poisoned").shortcut = shortcut.into();
+                if let Err(e) = self.shortcut_changed(&emitter).await {
+                    myna_core::dbg_log!("dbus", "Shortcut change not emitted: {e}");
+                }
             }
-            Ok(Configured::Bound(triggers)) => (true, format!("bound to {}", triggers.join(", "))),
-            Ok(Configured::DialogOpened) => (
-                true,
-                "already bound; opened the desktop's shortcut settings".into(),
-            ),
-            Err(e) => (false, e.to_string()),
+            self.bound.notify_one();
         }
+        bind_report(&outcome)
     }
 
     /// `RegisterClient`: a HUD client announces itself. The sender's unique
@@ -297,6 +309,17 @@ impl DictationObject {
     /// `hud-style` settings nick. The renderer reads no settings of its own —
     /// see `dbus::hud_style` for why that reader was removed rather than
     /// repaired.
+    /// `Shortcut`: the portal's own description of the dictation shortcut, as
+    /// it would render it; empty while nothing is bound.
+    #[zbus(property)]
+    async fn shortcut(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .shortcut
+            .clone()
+    }
+
     #[zbus(property)]
     async fn hud_style(&self) -> String {
         self.served
@@ -334,11 +357,13 @@ impl ZbusBus {
 
     /// [`serve`](Self::serve) plus the activation mode `BindShortcut` binds
     /// with. `None` leaves the method refusing, which is right for every
-    /// activation that owns no portal shortcut.
+    /// activation that owns no portal shortcut. `bound` is notified after
+    /// every successful bind.
     pub async fn serve_for_portal(
         mode: Option<crate::shortcut::portal::ActivationMode>,
+        bound: Arc<tokio::sync::Notify>,
     ) -> Result<Self, ServeError> {
-        Self::serve_inner(None, mode).await
+        Self::serve_inner(None, mode, bound).await
     }
 
     /// Like [`serve`](Self::serve), but attaches a [`DbusTriggerSource`] so
@@ -347,7 +372,7 @@ impl ZbusBus {
     pub async fn serve_with_trigger(
         trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
     ) -> Result<Self, ServeError> {
-        Self::serve_inner(trigger, None).await
+        Self::serve_inner(trigger, None, Arc::default()).await
     }
 
     async fn serve_inner(
@@ -357,6 +382,7 @@ impl ZbusBus {
         #[cfg_attr(test, allow(dead_code))] bind_mode: Option<
             crate::shortcut::portal::ActivationMode,
         >,
+        bound: Arc<tokio::sync::Notify>,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
@@ -369,6 +395,7 @@ impl ZbusBus {
                     trigger,
                     clients: Arc::clone(&clients),
                     bind_mode,
+                    bound,
                 },
             )
             .await?;
@@ -560,6 +587,7 @@ impl Bus for ZbusBus {
                     ("AudioRms", PropertyValue::F64(d)) => served.audio_rms = *d,
                     ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
                     ("HudStyle", PropertyValue::Str(s)) => served.hud_style = s.clone(),
+                    ("Shortcut", PropertyValue::Str(s)) => served.shortcut = s.clone(),
                     ("AudioDroppedNotResident", PropertyValue::U64(v)) => {
                         served.audio_dropped_not_resident = *v
                     }
@@ -585,6 +613,7 @@ impl Bus for ZbusBus {
                 "AudioRms" => iface.audio_rms_changed(emitter).await,
                 "AudioPeak" => iface.audio_peak_changed(emitter).await,
                 "HudStyle" => iface.hud_style_changed(emitter).await,
+                "Shortcut" => iface.shortcut_changed(emitter).await,
                 "AudioDroppedNotResident" => {
                     iface.audio_dropped_not_resident_changed(emitter).await
                 }
