@@ -29,12 +29,19 @@
 # `snap connect` / start services without hitting "install-snap change in
 # progress".
 
-# Wait until snapd has no changes in the `Doing` state. A snapd self-refresh
-# and an in-progress snap install both show up as Doing.
+# True while snapd has a change queued or running (a self-refresh, an install,
+# an auto-refresh) or cannot be reached. `snap changes` has no machine format;
+# Status is its second column.
+snapd_busy() {
+    local changes
+    changes=$(snap changes 2>/dev/null) || return 0
+    awk 'NR > 1 && $2 ~ /^(Do|Doing|Undo|Undoing|Wait)$/ { busy = 1 } END { exit !busy }' <<<"$changes"
+}
+
 wait_snapd_idle() {
     local i
     for i in $(seq 1 90); do
-        if ! snap changes --format=json 2>/dev/null | grep -q '"status":"Doing"'; then
+        if ! snapd_busy; then
             return 0
         fi
         sleep 5
@@ -47,6 +54,10 @@ install_snap() {
     local snap="$1"; shift
     local name
     name=$(basename "$snap"); name=${name%%_*}
+    # An auto-refresh (a base, snapd) locks the snaps it touches, so a
+    # following `snap connect` fails with "has auto-refresh change in
+    # progress". Holding blocks only auto-refreshes, not the tasks' own.
+    snap refresh --hold >/dev/null
     for i in $(seq 1 8); do
         wait_snapd_idle
         if snap list "$name" >/dev/null 2>&1; then
@@ -70,8 +81,7 @@ install_snap() {
         cat "/tmp/install-$name.err" >&2
         # Wait for snapd to be reachable and idle again; the pending install
         # may have completed on its own.
-        local j
-        for j in $(seq 1 30); do
+        for _ in $(seq 1 30); do
             snap list >/dev/null 2>&1 && break
             sleep 2
         done
