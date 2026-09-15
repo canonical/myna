@@ -174,3 +174,38 @@ impl BackendHandle {
         (self.sink, self.events, self.protocol_version)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::BackendError;
+
+    // With no catalog installed the domain is the identity, so the rendered
+    // message is the English template with its placeholders filled.
+    #[test]
+    fn errors_render_their_messages_with_placeholders_filled() {
+        assert_eq!(
+            BackendError::Connect("no socket".into()).to_string(),
+            "cannot reach backend: no socket"
+        );
+        assert_eq!(
+            BackendError::Handshake("timeout".into()).to_string(),
+            "handshake failed: timeout"
+        );
+        assert_eq!(
+            BackendError::Rejected {
+                code: "unsupported_protocol_version".into(),
+                message: "want 2".into(),
+            }
+            .to_string(),
+            "session rejected: unsupported_protocol_version: want 2"
+        );
+        assert_eq!(
+            BackendError::Closed.to_string(),
+            "backend connection closed unexpectedly"
+        );
+        assert_eq!(
+            BackendError::Transport("reset".into()).to_string(),
+            "transport error: reset"
+        );
+    }
+}
