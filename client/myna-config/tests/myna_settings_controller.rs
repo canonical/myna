@@ -446,6 +446,29 @@ fn failed_latest_save_rolls_back_past_a_superseded_optimistic_edit() {
 }
 
 #[test]
+fn a_choice_row_lists_the_schema_default_first_then_schema_order() {
+    let hud_style = ClientSettingMetadata::new(
+        ClientSettingKey::new("hud-style").unwrap(),
+        Some("Indicator style".into()),
+        None,
+        ClientSettingValue::Choice("bar".into()),
+        SettingRange::Choices(vec![
+            "ribbon".into(),
+            "vumeter".into(),
+            "bar".into(),
+            "progress".into(),
+        ]),
+        ClientSettingValue::Choice("ribbon".into()),
+        true,
+    );
+
+    assert_eq!(
+        widget_plan(&hud_style).choices,
+        ["bar", "ribbon", "vumeter", "progress"]
+    );
+}
+
+#[test]
 fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
     let raw = [
         "auto",

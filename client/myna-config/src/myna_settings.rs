@@ -48,12 +48,19 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         description: metadata.description().unwrap_or_default().trim().to_owned(),
         kind,
         choices: match metadata.range() {
-            SettingRange::Choices(choices) => choices.clone(),
+            SettingRange::Choices(choices) => default_first(choices, metadata.default_value()),
             _ => Vec::new(),
         },
         bounds,
         writable: metadata.writable(),
     }
+}
+
+/// Schema order is storage order; the dropdown leads with the default.
+fn default_first(choices: &[String], default: &ClientSettingValue) -> Vec<String> {
+    let mut ordered = choices.to_vec();
+    ordered.sort_by_key(|choice| Some(choice.as_str()) != default.as_str());
+    ordered
 }
 
 pub fn choice_display_label(choice: &str) -> String {

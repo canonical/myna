@@ -21,9 +21,9 @@
   </enum>
 
   <enum id="com.canonical.Myna.Dictation.HudStyle">
-    <value nick="bar" value="0"/>
-    <value nick="ribbon" value="1"/>
-    <value nick="vumeter" value="2"/>
+    <value nick="ribbon" value="0"/>
+    <value nick="vumeter" value="1"/>
+    <value nick="bar" value="2"/>
     <value nick="progress" value="3"/>
   </enum>
 

@@ -1212,31 +1212,31 @@ msgstr ""
 msgid "before the model was ready"
 msgstr ""
 
-#: src/myna_settings.rs:61
+#: src/myna_settings.rs:68
 msgid "Automatic"
 msgstr ""
 
-#: src/myna_settings.rs:62
+#: src/myna_settings.rs:69
 msgid "As you speak"
 msgstr ""
 
-#: src/myna_settings.rs:63
+#: src/myna_settings.rs:70
 msgid "When you stop"
 msgstr ""
 
-#: src/myna_settings.rs:64
+#: src/myna_settings.rs:71
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:65
+#: src/myna_settings.rs:72
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:66
+#: src/myna_settings.rs:73
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:67
+#: src/myna_settings.rs:74
 msgid "Progress"
 msgstr ""
 
