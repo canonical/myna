@@ -22,7 +22,7 @@ budget above; it loads one core for 300 ms per frequency class and finishes
 before the snapd reads it runs alongside.
 
 `RefreshPolicy::periodic_interval()` is **always `None`**: there is no
-background poll. Refreshes are triggered by (a) startup, (b) sidebar selection,
+background poll. Refreshes are triggered by (a) startup, (b) selecting the Backend or Diagnostics tab,
 (c) a user tap on the diagnostics *Refresh* button, and (d) explicit
 apply/switch operations. All user-initiated refreshes are debounced by
 `RefreshPolicy::debounce()` (250 ms).

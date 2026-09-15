@@ -1,6 +1,6 @@
 //! GTK-independent controller/presenter for backend pages.
 //!
-//! The controller owns the state that the adaptive sidebar and per-backend
+//! The controller owns the state that the Backend and Diagnostics tabs
 //! preferences pages render. It coordinates discovery and snapshot refreshes
 //! through the async [`BackendRepository`], but does not itself perform any
 //! I/O — callers drive it through `begin_*`/`complete_*` request pairs so the
@@ -107,7 +107,7 @@ impl BackendPage {
         &self.dirty_keys
     }
 
-    /// Concise summary suitable for the sidebar subtitle.
+    /// Concise summary of a backend's connection, model and refresh state.
     pub fn short_status(&self) -> BackendShortStatus {
         BackendShortStatus {
             connection: self.connection,
@@ -127,7 +127,7 @@ impl BackendPage {
     }
 }
 
-/// Sidebar-friendly summary of a backend's high-level state.
+/// Summary of a backend's high-level state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackendShortStatus {
     pub connection: ConnectionKind,

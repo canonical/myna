@@ -46,8 +46,8 @@ fn refresh_policy() -> RefreshPolicy {
     RefreshPolicy::default()
 }
 
-/// Runtime coordinator that keeps the Model/Diagnostics tabs in sync with a
-/// [`BackendController`]. The Model tab always shows the single active
+/// Runtime coordinator that keeps the Backend/Diagnostics tabs in sync with a
+/// [`BackendController`]. The Backend tab always shows the single active
 /// backend; there is no chooser or per-backend list to maintain.
 pub struct BackendUi {
     controller: Rc<BackendController>,
@@ -62,7 +62,7 @@ pub struct BackendUi {
     diagnostics_page: RefCell<Option<adw::NavigationPage>>,
     backend_pages: RefCell<BTreeMap<String, adw::NavigationPage>>,
     apply_state: RefCell<BTreeMap<String, BackendApplyState>>,
-    /// The snap name currently displayed in the Model tab, if any.
+    /// The snap name currently displayed in the Backend tab, if any.
     shown_backend: RefCell<Option<String>>,
     installed_snaps: RefCell<Vec<InstalledSnap>>,
     inventory_complete: std::cell::Cell<bool>,
@@ -919,7 +919,7 @@ impl BackendUi {
     }
 
     /// Drops cached pages and staged-apply state for backends that
-    /// disappeared from discovery. The Model tab itself is kept in sync
+    /// disappeared from discovery. The Backend tab itself is kept in sync
     /// separately by [`Self::sync_backend_tab`].
     fn prune_missing_backends(self: &Rc<Self>) {
         let known: Vec<String> = self
@@ -946,7 +946,7 @@ impl BackendUi {
         }
     }
 
-    /// Keeps the Model tab showing the single active backend. Called
+    /// Keeps the Backend tab showing the single active backend. Called
     /// whenever the active-backend snapshot changes.
     fn sync_backend_tab(self: &Rc<Self>) {
         let active_name = match self.active_backend.snapshot().active_state() {

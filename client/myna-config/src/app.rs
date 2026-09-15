@@ -407,7 +407,6 @@ fn template_probe() -> glib::ExitCode {
         "onboarding-welcome.ui",
         "onboarding-window.ui",
         "operation-error-dialog.ui",
-        "sidebar-row.ui",
         "status-page.ui",
     ] {
         let path = format!("/com/canonical/Myna/Config/ui/{resource}");
@@ -1076,7 +1075,7 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
 }
 
 /// Drive the backend pages through the real repository adapter against a
-/// fixture machine: discovery fills the sidebar, a backend page reads its
+/// fixture machine: discovery lists the backends, the active one's page reads its
 /// snapshot, an edit stages, and a confirmed apply is written and read back.
 fn backends_probe() -> glib::ExitCode {
     ui::register_resources();
@@ -1138,7 +1137,7 @@ fn backends_probe() -> glib::ExitCode {
             .map(|page| page.upcast::<gtk::Widget>())
     };
 
-    // The Model tab always shows the single active backend, so the fixture's
+    // The Backend tab always shows the single active backend, so the fixture's
     // active parakeet page should appear with no explicit selection.
     if !settles(&|| ui.controller().pages().len() == 2) {
         eprintln!(

@@ -245,7 +245,7 @@ impl RefreshPlan {
 }
 
 /// Pure refresh policy. Deliberately does not schedule background polling —
-/// refreshes must be event-driven (startup, sidebar selection, explicit
+/// refreshes must be event-driven (startup, tab selection, explicit
 /// user request) so that idle sessions produce zero subprocess churn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RefreshPolicy {
