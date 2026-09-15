@@ -16,3 +16,9 @@
   padding: 8px 14px;
   font-size: 1.2em;
 }
+
+.keycap.compact {
+  border-bottom-width: 2px;
+  padding: 2px 8px;
+  font-size: 1em;
+}

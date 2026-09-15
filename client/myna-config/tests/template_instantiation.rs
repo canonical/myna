@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use myna_config::app::{appearance_policy, AppearancePolicy};
@@ -91,20 +91,11 @@ fn appearance_policy_tracks_system_contrast_and_motion_preferences() {
     );
 }
 
-/// The regression: a row desensitized while its own write was in flight took
-/// keyboard focus away from the entry the user was still typing in, and GTK
-/// warned that its `GtkText` never received a focus-out.
-#[test]
-fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
-    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
-        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
-        return;
-    }
-
-    let store = std::env::temp_dir().join(format!("myna-config-typing-{}", std::process::id()));
-    // The probe opens the store through the default schema source, and a
-    // build machine has no com.canonical.Myna.Dictation installed: compile the
-    // crate's own copy into the scratch dir and add it to that source.
+/// A scratch config home and schema dir for a probe that opens the settings
+/// store. The probe reads the default schema source, and a build machine has no
+/// com.canonical.Myna.Dictation installed: compile the crate's own copy there.
+fn scratch_store(tag: &str) -> (PathBuf, PathBuf) {
+    let store = std::env::temp_dir().join(format!("myna-config-{tag}-{}", std::process::id()));
     let schemas = store.join("schemas");
     std::fs::create_dir_all(&schemas).expect("create scratch schema dir");
     std::fs::copy(
@@ -118,6 +109,20 @@ fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
         .status()
         .expect("glib-compile-schemas")
         .success());
+    (store, schemas)
+}
+
+/// The regression: a row desensitized while its own write was in flight took
+/// keyboard focus away from the entry the user was still typing in, and GTK
+/// warned that its `GtkText` never received a focus-out.
+#[test]
+fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let (store, schemas) = scratch_store("typing");
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         // A scratch store, so the probe's write never touches the real one.
         .env("GSETTINGS_BACKEND", "keyfile")
@@ -149,6 +154,11 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
         .env("MYNA_CONFIG_ONBOARDING_TEST", "1")
+        // Never the live session's bus, where a real daemon would answer.
+        .env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            "unix:path=/nonexistent/myna-config-probe",
+        )
         .output()
         .expect("run onboarding probe");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -158,8 +168,43 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-start: advanced",
         "onboarding-gate: held",
         "onboarding-walk: reached the last step",
+        "onboarding-shortcut: waits for the daemon",
         "onboarding-finish: handed back",
     ] {
         assert!(stdout.contains(line), "onboarding probe missing: {line}");
+    }
+}
+
+/// Against a running daemon the Myna page offers set-up for an unbound
+/// shortcut, asks the daemon for its default, and renders the granted key.
+#[test]
+fn the_shortcut_row_binds_through_the_daemon_and_shows_the_key() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let (store, schemas) = scratch_store("shortcut");
+    // A private bus: the probe serves its stand-in daemon there. No portals,
+    // which that bus would otherwise start on GTK's behalf.
+    let output = Command::new("dbus-run-session")
+        .arg("--")
+        .arg(env!("CARGO_BIN_EXE_myna-config"))
+        .env("GSETTINGS_BACKEND", "memory")
+        .env("GSETTINGS_SCHEMA_DIR", &schemas)
+        .env("XDG_CONFIG_HOME", &store)
+        .env("GDK_DEBUG", "no-portals")
+        .env("MYNA_CONFIG_SHORTCUT_TEST", "1")
+        .output()
+        .expect("run the shortcut probe under dbus-run-session");
+    std::fs::remove_dir_all(&store).ok();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "shortcut probe failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in [
+        "shortcut-unbound: offered set-up",
+        "shortcut-bound: Super+J",
+    ] {
+        assert!(stdout.contains(line), "shortcut probe missing: {line}");
     }
 }

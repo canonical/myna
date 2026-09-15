@@ -19,6 +19,14 @@ mod imp {
         #[template_child]
         pub switch_backend_button: gtk::TemplateChild<gtk::Button>,
         #[template_child]
+        pub shortcut_group: gtk::TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub shortcut_row: gtk::TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub shortcut_keys: gtk::TemplateChild<gtk::Box>,
+        #[template_child]
+        pub shortcut_button: gtk::TemplateChild<gtk::Button>,
+        #[template_child]
         pub settings_group: gtk::TemplateChild<adw::PreferencesGroup>,
     }
 
@@ -72,6 +80,22 @@ impl MynaPage {
 
     pub fn switch_backend_button(&self) -> gtk::Button {
         self.imp().switch_backend_button.get()
+    }
+
+    pub fn shortcut_group(&self) -> adw::PreferencesGroup {
+        self.imp().shortcut_group.get()
+    }
+
+    pub fn shortcut_row(&self) -> adw::ActionRow {
+        self.imp().shortcut_row.get()
+    }
+
+    pub fn shortcut_keys(&self) -> gtk::Box {
+        self.imp().shortcut_keys.get()
+    }
+
+    pub fn shortcut_button(&self) -> gtk::Button {
+        self.imp().shortcut_button.get()
     }
 }
 impl Default for MynaPage {

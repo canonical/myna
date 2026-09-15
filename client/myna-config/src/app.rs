@@ -26,6 +26,7 @@ const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
+const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
 /// The probes must never claim the real application id: registering it while a
 /// Myna Settings is already running takes the remote-instance path, and
 /// `gtk_window_set_application` then segfaults against an application that was
@@ -86,6 +87,10 @@ pub fn run() -> glib::ExitCode {
 
     if smoke_requested(std::env::var_os(ONBOARDING_ENV).as_deref()) {
         return onboarding_probe();
+    }
+
+    if smoke_requested(std::env::var_os(SHORTCUT_ENV).as_deref()) {
+        return shortcut_probe();
     }
 
     if smoke_requested(std::env::var_os(SMOKE_ENV).as_deref()) {
@@ -315,7 +320,7 @@ fn onboarding_probe() -> glib::ExitCode {
         version: "1".to_owned(),
     }];
     let completed = Rc::new(Cell::new(false));
-    let (window, start_button) = {
+    let (window, start_button, shortcut_button) = {
         let ui = OnboardingUi::present(
             &application,
             assess(Machine::new(&installed, 1, false)),
@@ -324,7 +329,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 move || completed.set(true)
             }),
         );
-        (ui.window(), ui.start_button())
+        (ui.window(), ui.start_button(), ui.shortcut_button())
     };
     settle_gtk();
     start_button.emit_clicked();
@@ -354,6 +359,13 @@ fn onboarding_probe() -> glib::ExitCode {
     forward.emit_clicked();
     settle_gtk();
     println!("onboarding-walk: reached the last step");
+
+    // No daemon runs under the probe, and nothing can bind a key without one.
+    if shortcut_button.is_sensitive() {
+        eprintln!("the shortcut step offered to bind a key with no daemon to bind it");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-shortcut: waits for the daemon");
 
     forward.emit_clicked();
     settle_gtk();
@@ -427,6 +439,10 @@ fn template_probe() -> glib::ExitCode {
         myna.active_backend_row(),
         myna.switch_backend_button(),
         myna.settings_group(),
+        myna.shortcut_group(),
+        myna.shortcut_row(),
+        myna.shortcut_keys(),
+        myna.shortcut_button(),
     );
     println!("MynaPage");
     let backend = ui::BackendPage::new();
@@ -456,7 +472,7 @@ fn template_probe() -> glib::ExitCode {
     let _ = (
         shortcut.description(),
         shortcut.shortcut_box(),
-        shortcut.change_button(),
+        shortcut.shortcut_button(),
     );
     println!("OnboardingShortcut");
     let onboarding = ui::OnboardingWindow::new(&application);
@@ -769,6 +785,175 @@ fn typing_probe() -> glib::ExitCode {
     glib::ExitCode::SUCCESS
 }
 
+/// The part of the daemon's interface Myna Settings uses, served in-process by
+/// the shortcut probe.
+// Single-quoted attributes: xgettext cannot parse a raw string literal.
+const PROBE_DICTATION_XML: &str = "<node>\
+  <interface name='com.canonical.Myna.Dictation'>\
+    <method name='BindShortcut'>\
+      <arg name='preferred' type='s' direction='in'/>\
+      <arg name='ok' type='b' direction='out'/>\
+      <arg name='message' type='s' direction='out'/>\
+    </method>\
+    <property name='Shortcut' type='s' access='read'/>\
+  </interface>\
+</node>";
+
+/// Drive the Myna page's shortcut row against a stand-in daemon on the session
+/// bus, which the caller makes private.
+fn shortcut_probe() -> glib::ExitCode {
+    use std::collections::HashMap;
+
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config shortcut probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    adw::init().expect("libadwaita init");
+
+    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
+        eprintln!("myna-config shortcut probe needs a session bus");
+        return glib::ExitCode::FAILURE;
+    };
+    let Some(interface) = gio::DBusNodeInfo::for_xml(PROBE_DICTATION_XML)
+        .ok()
+        .and_then(|node| node.lookup_interface("com.canonical.Myna.Dictation"))
+    else {
+        eprintln!("the probe's daemon interface did not parse");
+        return glib::ExitCode::FAILURE;
+    };
+    let shortcut = Rc::new(RefCell::new(String::new()));
+    let asked = Rc::new(RefCell::new(None::<String>));
+    let registered = connection
+        .register_object("/com/canonical/Myna/Dictation", &interface)
+        .method_call({
+            let shortcut = shortcut.clone();
+            let asked = asked.clone();
+            move |connection, _, path, interface, _, parameters, invocation| {
+                asked.replace(parameters.get::<(String,)>().map(|(preferred,)| preferred));
+                shortcut.replace("Press <Super>j".to_owned());
+                let changed =
+                    HashMap::from([("Shortcut".to_owned(), shortcut.borrow().to_variant())]);
+                let _ = connection.emit_signal(
+                    None,
+                    path,
+                    "org.freedesktop.DBus.Properties",
+                    "PropertiesChanged",
+                    Some(
+                        &(interface.unwrap_or_default(), changed, Vec::<String>::new())
+                            .to_variant(),
+                    ),
+                );
+                invocation.return_value(Some(&(true, "bound to Press <Super>j").to_variant()));
+            }
+        })
+        .property({
+            let shortcut = shortcut.clone();
+            move |_, _, _, _, _| shortcut.borrow().to_variant()
+        })
+        .build();
+    let owned = connection.call_sync(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "RequestName",
+        Some(&("com.canonical.Myna.Dictation", 4u32).to_variant()),
+        None,
+        gio::DBusCallFlags::NONE,
+        1_000,
+        gio::Cancellable::NONE,
+    );
+    if registered.is_err() || owned.is_err() {
+        eprintln!("the probe could not serve its stand-in daemon");
+        return glib::ExitCode::FAILURE;
+    }
+
+    let settings = match GioClientSettings::open() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("myna-config shortcut probe could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let controller = MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
+    let writer = PersistenceWriter::spawn(GioClientSettings::open);
+    let overlay = adw::ToastOverlay::new();
+    let PageState::Ready(rows) = controller.state() else {
+        eprintln!("myna-config shortcut probe found no settings rows");
+        return glib::ExitCode::FAILURE;
+    };
+    let page = ready_page(controller, writer, rows, &overlay);
+    let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
+        eprintln!("the settings page is not the Myna page");
+        return glib::ExitCode::FAILURE;
+    };
+    overlay.set_child(Some(&page));
+    let window = adw::Window::builder().content(&overlay).build();
+    window.present();
+
+    let settles = |done: &dyn Fn() -> bool| {
+        for _ in 0..40 {
+            if done() {
+                return true;
+            }
+            settle_gtk();
+        }
+        done()
+    };
+    let button = myna.shortcut_button();
+    let keys = myna.shortcut_keys();
+    let caps = || {
+        let mut caps = Vec::new();
+        let mut child = keys.first_child();
+        while let Some(widget) = child {
+            if widget.has_css_class("keycap") {
+                if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+                    caps.push(label.label().to_string());
+                }
+            }
+            child = widget.next_sibling();
+        }
+        caps
+    };
+
+    if !settles(&|| button.is_sensitive()) {
+        eprintln!("the shortcut row never offered to bind against a running daemon");
+        return glib::ExitCode::FAILURE;
+    }
+    if button.label().as_deref() != Some("Set Up Shortcut") || keys.is_visible() {
+        eprintln!(
+            "an unbound daemon rendered {:?} with keys visible: {}",
+            button.label(),
+            keys.is_visible()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("shortcut-unbound: offered set-up");
+
+    button.emit_clicked();
+    if !settles(&|| !caps().is_empty()) {
+        eprintln!("the granted shortcut never rendered as keys");
+        return glib::ExitCode::FAILURE;
+    }
+    if caps() != ["Super", "J"] {
+        eprintln!("expected Super+J key caps, got {:?}", caps());
+        return glib::ExitCode::FAILURE;
+    }
+    if asked.borrow().as_deref() != Some("") {
+        eprintln!(
+            "set-up asked for {:?}, not the daemon's default",
+            asked.borrow()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    if button.label().as_deref() != Some("Change Shortcut") {
+        eprintln!("a bound shortcut offered {:?}", button.label());
+        return glib::ExitCode::FAILURE;
+    }
+    println!("shortcut-bound: Super+J");
+    glib::ExitCode::SUCCESS
+}
+
 fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
     if let Ok(row) = widget.clone().downcast::<adw::EntryRow>() {
         return Some(row);
@@ -949,6 +1134,16 @@ fn ready_page(
     overlay: &adw::ToastOverlay,
 ) -> adw::NavigationPage {
     let page = ui::MynaPage::new();
+    crate::shortcut_ui::ShortcutControl::attach(
+        page.shortcut_keys(),
+        page.shortcut_button(),
+        overlay.clone(),
+        true,
+        Box::new({
+            let row = page.shortcut_row();
+            move |state| row.set_subtitle(&crate::shortcut_ui::row_subtitle(state))
+        }),
+    );
     let group = page.settings_group();
     let bindings = Rc::new(RefCell::new(BTreeMap::<String, RowBinding>::new()));
 

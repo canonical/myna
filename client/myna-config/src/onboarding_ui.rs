@@ -27,9 +27,6 @@ use crate::onboarding::{
 use crate::ports::{BackendRepository, SnapInstaller, SystemConfigurator};
 use crate::ui;
 
-/// The desktop panel listing global shortcuts, including the portal's.
-const KEYBOARD_SETTINGS_COMMAND: &str = "gnome-control-center keyboard";
-
 pub struct OnboardingUi {
     window: ui::OnboardingWindow,
     welcome: ui::OnboardingWelcome,
@@ -119,14 +116,18 @@ impl OnboardingUi {
                 }
             }
         });
-        shortcut_page.change_button().connect_clicked({
-            let ui = Rc::downgrade(&ui);
-            move |_| {
-                if let Some(ui) = ui.upgrade() {
-                    ui.open_keyboard_settings();
+        crate::shortcut_ui::ShortcutControl::attach(
+            shortcut_page.shortcut_box(),
+            shortcut_page.shortcut_button(),
+            window.overlay(),
+            false,
+            Box::new({
+                let description = shortcut_page.description();
+                move |state| {
+                    description.set_label(&crate::shortcut_ui::onboarding_description(state))
                 }
-            }
-        });
+            }),
+        );
         // The application owns the window, so it outlives this call; without a
         // strong reference living alongside it every button would upgrade a
         // dead weak reference and do nothing. The reference is dropped when
@@ -140,7 +141,6 @@ impl OnboardingUi {
         });
 
         crate::app::install_appearance_policy(window.upcast_ref());
-        ui.render_shortcut();
         ui.render();
         window.present();
         ui
@@ -205,6 +205,10 @@ impl OnboardingUi {
 
     pub fn start_button(&self) -> gtk::Button {
         self.welcome.start_button()
+    }
+
+    pub fn shortcut_button(&self) -> gtk::Button {
+        self.shortcut_page.shortcut_button()
     }
 
     fn notify_finished(self: &Rc<Self>) {
@@ -383,52 +387,6 @@ impl OnboardingUi {
     fn report_failure(self: &Rc<Self>, title: &str, details: &str) {
         let dialog = ui::OperationErrorDialog::new(title, title, details);
         dialog.present(Some(&self.window));
-    }
-
-    /// The shortcut is the desktop's, not ours: under portal activation the
-    /// key is bound by the compositor's own dialog and changed in its keyboard
-    /// panel.
-    fn render_shortcut(self: &Rc<Self>) {
-        let known = crate::machine::dictation_shortcut();
-        self.shortcut_page.description().set_label(&match &known {
-            Some(_) => gettextrs::gettext("You can trigger Dictation anytime by using the keyboard shortcut:"),
-            None => gettextrs::gettext(
-                "Dictation is triggered by the keyboard shortcut you chose the first time Myna asked for one. It is listed under Myna in the desktop keyboard settings.",
-            ),
-        });
-        let shortcut_box = self.shortcut_page.shortcut_box();
-        while let Some(child) = shortcut_box.first_child() {
-            shortcut_box.remove(&child);
-        }
-        let Some(shortcut) = known else {
-            shortcut_box.set_visible(false);
-            return;
-        };
-        shortcut_box.set_visible(true);
-        for (index, key) in shortcut.split('+').map(str::trim).enumerate() {
-            if index > 0 {
-                shortcut_box.append(&gtk::Label::new(Some("+")));
-            }
-            let cap = gtk::Label::new(Some(key));
-            cap.add_css_class("keycap");
-            shortcut_box.append(&cap);
-        }
-    }
-
-    fn open_keyboard_settings(self: &Rc<Self>) {
-        let launched = gio::AppInfo::create_from_commandline(
-            KEYBOARD_SETTINGS_COMMAND,
-            None,
-            gio::AppInfoCreateFlags::NONE,
-        )
-        .and_then(|app| app.launch(&[], gio::AppLaunchContext::NONE));
-        if launched.is_err() {
-            self.window
-                .overlay()
-                .add_toast(adw::Toast::new(&gettextrs::gettext(
-                    "Could not open the keyboard settings",
-                )));
-        }
     }
 }
 

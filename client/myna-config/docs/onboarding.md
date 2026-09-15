@@ -48,17 +48,37 @@ finishing the flow leaves dictation working rather than merely installed.
 
 ## The keyboard shortcut
 
-Under portal activation the accelerator belongs to the compositor: the portal
-raises its own shortcut sheet at the daemon's first bind, and the key is changed
-in the desktop's keyboard panel. Only the daemon holding the portal session can
-see what was granted, so the last step reads a `Shortcut` property from
-`com.canonical.Myna.Dictation` and renders key caps when the daemon publishes
-one. No daemon publishes it yet, so today the step states where the shortcut
-lives and opens the keyboard panel rather than naming a key it did not verify.
+Under portal activation the accelerator belongs to the compositor, and only the
+daemon holding the portal session sees what was granted. The daemon republishes
+the portal's own description of the binding as the `Shortcut` property on
+`com.canonical.Myna.Dictation`. The last step and the Myna page follow it
+through a live proxy, so a daemon starting or a rebind in Settings shows up
+without a refresh:
+
+| Daemon                       | Shows                       | Button                    |
+| ---------------------------- | --------------------------- | ------------------------- |
+| not running                  | that it has to start first  | Set Up Shortcut, disabled |
+| `Shortcut` empty             | that no key is bound        | Set Up Shortcut           |
+| `Shortcut` set               | key caps                    | Change Shortcut           |
+| no `Shortcut` (older daemon) | where the key is listed     | Change Shortcut           |
+
+Set Up Shortcut calls `BindShortcut("")`, and the daemon offers `LOGO+j`
+(Super+J) to the portal's dialog. There is no silent default: GNOME grants a new
+binding only through that dialog. Seeding gnome-settings-daemon's store instead
+would bypass the consent, depend on a private schema, and key on an app id that
+has already regressed once. The call goes through the daemon because the portal
+files a binding under the caller's app id.
+
+GNOME describes a binding as a translated sentence around a GTK accelerator
+(`Press <Super>j`). The accelerator becomes key caps; a description without one
+is shown verbatim. Change Shortcut opens `gnome-control-center applications
+myna_myna`, where GNOME rebinds portal shortcuts: GlobalShortcuts version 1 has
+no `ConfigureShortcuts`, and the portal has no unbind.
 
 ## Cost
 
 The startup assessment is the same two subprocesses as a `RefreshReason::Startup`
 refresh, run before any window exists, and it is handed to the wizard rather
-than repeated there. A refresh after an install costs another `snap list` plus
+than repeated there. The shortcut proxy spawns nothing: it is one D-Bus match
+per surface. A refresh after an install costs another `snap list` plus
 the discovery the switch already performs.

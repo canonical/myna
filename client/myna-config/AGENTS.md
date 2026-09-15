@@ -22,7 +22,7 @@ Myna Settings is a host application, not a snap. It talks to snapd on the user's
 
 # Architecture
 
-Hexagonal. `ports.rs` declares the traits the application depends on (backend repository, system configurator, snap installer, client settings). `adapters/` implements them against real snapd, `snap`, `pkexec`, and Gio. `domain.rs`, `active_backend.rs`, `backend_apply.rs`, `onboarding.rs`, and `machine.rs` hold the pure decision logic. The `*_controller.rs` and `*_ui.rs` pairs bind that logic to GTK, and `operation_gate.rs` ensures one privileged operation runs at a time.
+Hexagonal. `ports.rs` declares the traits the application depends on (backend repository, system configurator, snap installer, client settings). `adapters/` implements them against real snapd, `snap`, `pkexec`, and Gio. `domain.rs`, `active_backend.rs`, `backend_apply.rs`, `onboarding.rs`, `shortcut.rs`, and `machine.rs` hold the pure decision logic. The `*_controller.rs` and `*_ui.rs` pairs bind that logic to GTK, and `operation_gate.rs` ensures one privileged operation runs at a time.
 
 # Directory
 

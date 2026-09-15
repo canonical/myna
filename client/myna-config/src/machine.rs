@@ -199,39 +199,6 @@ pub struct AudioDrops {
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
 const DICTATION_PATH: &str = "/com/canonical/Myna/Dictation";
 
-/// The keyboard shortcut the daemon says dictation is bound to.
-///
-/// `None` when the daemon is not running, and on any daemon that does not
-/// publish the property: under portal activation the accelerator belongs to
-/// the compositor, and only the daemon holding the portal session can see what
-/// it granted. The wizard states the shortcut when it can and points at the
-/// desktop's keyboard settings when it cannot, rather than naming a key it did
-/// not verify.
-pub fn dictation_shortcut() -> Option<String> {
-    use gio::glib::variant::ToVariant;
-
-    let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
-    let reply = connection
-        .call_sync(
-            Some(DICTATION_BUS),
-            DICTATION_PATH,
-            "org.freedesktop.DBus.Properties",
-            "GetAll",
-            Some(&(DICTATION_BUS,).to_variant()),
-            None,
-            gio::DBusCallFlags::NONE,
-            1_000,
-            gio::Cancellable::NONE,
-        )
-        .ok()?;
-    let properties = gio::glib::VariantDict::new(Some(&reply.child_value(0)));
-    properties
-        .lookup::<String>("Shortcut")
-        .ok()
-        .flatten()
-        .filter(|shortcut| !shortcut.trim().is_empty())
-}
-
 /// `None` when the daemon is not running, which is not an error: "not running"
 /// is a perfectly good diagnostic answer and the report says so.
 pub fn audio_drops() -> Option<AudioDrops> {

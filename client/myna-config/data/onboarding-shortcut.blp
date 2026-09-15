@@ -34,13 +34,10 @@ template $OnboardingShortcut: Adw.Bin {
         margin-bottom: 24;
       }
 
-      Gtk.Button change_button {
-        label: _("Change shortcut");
+      Gtk.Button shortcut_button {
+        label: _("Set Up Shortcut");
         halign: center;
-
-        accessibility {
-          description: _("Open the desktop keyboard settings, where the dictation shortcut is listed.");
-        }
+        sensitive: false;
       }
     };
   };

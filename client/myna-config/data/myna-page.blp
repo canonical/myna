@@ -33,6 +33,27 @@ template $MynaPage: Adw.NavigationPage {
         }
       }
 
+      Adw.PreferencesGroup shortcut_group {
+        title: _("Keyboard Shortcut");
+
+        Adw.ActionRow shortcut_row {
+          title: _("Dictation");
+
+          [suffix]
+          Gtk.Box shortcut_keys {
+            spacing: 4;
+            valign: center;
+          }
+
+          [suffix]
+          Gtk.Button shortcut_button {
+            label: _("Set Up Shortcut");
+            sensitive: false;
+            valign: center;
+          }
+        }
+      }
+
       Adw.PreferencesGroup settings_group {
         title: _("Dictation");
         description: _(

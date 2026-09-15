@@ -15,7 +15,7 @@ mod imp {
         #[template_child]
         pub shortcut_box: gtk::TemplateChild<gtk::Box>,
         #[template_child]
-        pub change_button: gtk::TemplateChild<gtk::Button>,
+        pub shortcut_button: gtk::TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -58,8 +58,8 @@ impl OnboardingShortcut {
         self.imp().shortcut_box.get()
     }
 
-    pub fn change_button(&self) -> gtk::Button {
-        self.imp().change_button.get()
+    pub fn shortcut_button(&self) -> gtk::Button {
+        self.imp().shortcut_button.get()
     }
 }
 
