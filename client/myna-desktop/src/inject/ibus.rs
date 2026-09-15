@@ -4,8 +4,9 @@
 //! (research R1): no FFI, no GObject-introspection, no subprocess. It registers
 //! an IBus component + engine, is made the active (global) engine per session,
 //! commits committed segments via the engine's `CommitText` signal, and restores
-//! the prior engine on session end. Focus and secure-field state arrive through
-//! the engine's `FocusIn`/`FocusOut`/`SetContentType` callbacks (R4/R5).
+//! the prior engine on session end. Focus arrives through the engine's
+//! `FocusIn`/`FocusOut` methods and secure-field state through its write-only
+//! `ContentType` property (R4/R5).
 //!
 //! Commit-only by default; with the controller's opt-in `--preedit` (R9), the
 //! volatile streaming hypothesis is rendered via `UpdatePreeditText` (underlined,
@@ -26,7 +27,6 @@
 use std::collections::HashMap;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,7 +50,7 @@ const ENGINE_NAME: &str = "myna-stt";
 const FACTORY_PATH: &str = "/org/freedesktop/IBus/Factory";
 const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
 
-/// GTK/IBus input purposes we treat as secure (refuse to inject).
+/// `IBusInputPurpose` values we refuse to inject into.
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
 
@@ -62,22 +62,28 @@ const PURPOSE_PIN: u32 = 9;
 /// mode. (Root-caused 2026-07-28: commits landed but preedit never rendered.)
 const PREEDIT_MODE_CLEAR: u32 = 0;
 
-/// Whether an IBus input-purpose is a secure field we refuse to inject into.
-fn is_secure_purpose(purpose: u32) -> bool {
-    purpose == PURPOSE_PASSWORD || purpose == PURPOSE_PIN
+/// A field's `(purpose, hints)` as the daemon writes it to the engine.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ContentType {
+    purpose: u32,
+    hints: u32,
+}
+
+impl ContentType {
+    /// Whether this is a secure field we refuse to inject into.
+    fn is_secure(self) -> bool {
+        self.purpose == PURPOSE_PASSWORD || self.purpose == PURPOSE_PIN
+    }
 }
 
 /// How long `acquire` waits for the daemon to focus our engine before checking
-/// the content-type. Secure fields (PASSWORD/PIN) reliably drive `FocusIn`
-/// immediately, so this window catches them; a slow/absent `FocusIn` is the
-/// normal-field case and we proceed (a hard-fail here breaks legitimate
-/// dictation into fields IBus focuses differently).
+/// the content type. A slow or absent `FocusIn` is the ordinary-field case and
+/// we proceed: a hard-fail here breaks dictation into fields IBus focuses
+/// differently.
 const FOCUS_WAIT: Duration = Duration::from_millis(400);
 
-/// After `FocusIn`, how long to let `SetContentType` settle before reading the
-/// purpose. IBus delivers the content-type in the same burst as focus for a
-/// secure field, so this short grace closes the FocusIn/SetContentType race
-/// without adding perceptible latency (the security-relevant window).
+/// After `FocusIn`, how long to let the `ContentType` write land. The daemon
+/// writes it after `FocusIn` to a newly activated engine, asynchronously.
 const CONTENT_TYPE_GRACE: Duration = Duration::from_millis(50);
 
 // ── GVariant builders (IBus serializable objects) ───────────────────────────
@@ -456,15 +462,15 @@ fn pick_address(
 
 // ── Engine + Factory D-Bus objects ──────────────────────────────────────────
 
-/// Shared engine state: the daemon's `FocusIn`/`FocusOut`/`SetContentType`
-/// callbacks land on the object; this state relays them to the injector.
+/// Shared engine state: the daemon's focus calls and `ContentType` writes land
+/// on the object; this state relays them to the injector.
 struct EngineState {
     /// Focus-loss events are **broadcast**: every utterance subscribes its own
     /// receiver, so focus-loss safety holds for session N, not just the first
     /// (a single-consumer channel silently disabled it after utterance 1).
     focus_tx: broadcast::Sender<FocusEvent>,
-    /// Latest input-purpose from `SetContentType` (0 until one arrives).
-    purpose: AtomicU32,
+    /// Latest `ContentType` the daemon wrote (default until one arrives).
+    content_type: watch::Sender<ContentType>,
     /// Whether the daemon has focused our engine on a context.
     ///
     /// A `watch` rather than a `Notify`: the daemon delivers `FocusIn` *during*
@@ -472,8 +478,8 @@ struct EngineState {
     /// `Notify::notify_waiters` only wakes tasks already parked. A waiter
     /// created after that call therefore missed the notification every time, so
     /// `acquire` always saw `focus_received=false` and never ran its
-    /// `SetContentType` grace (the secure-field check below). A `watch` retains
-    /// the latest value, so a waiter that starts late still observes it.
+    /// content-type grace. A `watch` retains the latest value, so a waiter that
+    /// starts late still observes it.
     focused: watch::Sender<bool>,
 }
 
@@ -488,10 +494,15 @@ impl EngineState {
             .is_ok();
         arrived
     }
+
+    fn content_type(&self) -> ContentType {
+        *self.content_type.borrow()
+    }
 }
 
 /// The `org.freedesktop.IBus.Engine` object the daemon drives. Most callbacks
-/// are inert (commit-only MVP); focus + content-type are relayed to the injector.
+/// are inert (commit-only MVP); focus and content type are relayed to the
+/// injector.
 struct EngineObject {
     state: Arc<EngineState>,
 }
@@ -520,19 +531,25 @@ impl EngineObject {
         self.focus_out().await;
     }
 
-    /// `SetContentType(purpose, hints)` — the secure-field signal (R5).
-    /// Metadata only (never field content), so safe to debug-log.
-    async fn set_content_type(&self, purpose: u32, hints: u32) {
+    /// Write-only, as in `ibus-engine-simple`: the daemon only ever
+    /// `Properties.Set`s it, and discards the error. Metadata only, so safe to
+    /// debug-log.
+    #[zbus(property)]
+    async fn set_content_type(&self, value: (u32, u32)) {
+        let content_type = ContentType {
+            purpose: value.0,
+            hints: value.1,
+        };
         myna_core::dbg_log!(
             "inject",
-            "IBus SetContentType: purpose={purpose} hints={hints}{}",
-            if is_secure_purpose(purpose) {
+            "IBus ContentType: {content_type:?}{}",
+            if content_type.is_secure() {
                 " (SECURE)"
             } else {
                 ""
             }
         );
-        self.state.purpose.store(purpose, Ordering::SeqCst);
+        self.state.content_type.send_replace(content_type);
     }
 
     /// Keys pass straight through — we synthesize no input (commit-only, FR-015).
@@ -622,7 +639,7 @@ impl IbusInjector {
         let (focus_tx, _) = broadcast::channel(16);
         let state = Arc::new(EngineState {
             focus_tx,
-            purpose: AtomicU32::new(0),
+            content_type: watch::Sender::new(ContentType::default()),
             focused: watch::Sender::new(false),
         });
         Ok(Self {
@@ -733,40 +750,27 @@ impl Injector for IbusInjector {
         self.call("RegisterComponent", &(ibus_component(),)).await?;
         self.serve_objects().await?;
         self.state.focused.send_replace(false);
-        self.state.purpose.store(0, Ordering::SeqCst);
+        self.state.content_type.send_replace(ContentType::default());
         self.call("SetGlobalEngine", &(ENGINE_NAME,)).await?;
         self.active = true;
 
-        // Wait for the daemon to focus our engine on the current context, then read
-        // the content-type (secure-field check, R5). The security model: a secure
-        // field (PASSWORD/PIN) reliably drives `FocusIn` immediately followed by
-        // `SetContentType` in the same burst. So we wait for `FocusIn` (bounded by
-        // FOCUS_WAIT), then give `SetContentType` a short grace to settle before
-        // reading `purpose` — this closes the FocusIn→SetContentType race that a
-        // bare read would lose. We do NOT hard-fail on a slow/absent `FocusIn`:
-        // that is the ordinary-field case (IBus focuses different widgets on
-        // different schedules), and refusing there breaks legitimate dictation.
+        // The daemon writes ContentType after FocusIn to a newly activated
+        // engine, so wait for focus and give the write a grace to land.
         let focus_received = self.state.focus_arrived().await;
         if focus_received {
-            // Focus arrived — let SetContentType land so a password field can't slip
-            // through on the race between the two callbacks.
             tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
 
-        let purpose = self.state.purpose.load(Ordering::SeqCst);
-        if is_secure_purpose(purpose) {
-            // Refuse and restore immediately — never inject into a secure field.
-            myna_core::dbg_log!(
-                "inject",
-                "acquire refused: secure field (purpose={purpose})"
-            );
+        let content_type = self.state.content_type();
+        if content_type.is_secure() {
+            myna_core::dbg_log!("inject", "acquire refused: secure field {content_type:?}");
             self.restore_prior_engine().await;
             return Err(InjectError::SecureField);
         }
 
         myna_core::dbg_log!(
             "inject",
-            "acquire ok: focus_received={focus_received} purpose={purpose}"
+            "acquire ok: focus_received={focus_received} {content_type:?}"
         );
         Ok(InjectionTarget::new(ENGINE_PATH))
     }
@@ -782,15 +786,10 @@ impl Injector for IbusInjector {
         if text.is_empty() {
             return Ok(());
         }
-        // Commit-time secure-field re-check (F2 hardening): `SetContentType` can
-        // arrive *after* `acquire` returned — late delivery on the
-        // Wayland/text-input-v3 path, or a mid-session focus change into a
-        // secure field. `acquire`'s check alone can't cover that window, so
-        // re-read the latest purpose here and never commit into a known-secure
-        // field (I5, FR-021).
-        let purpose = self.state.purpose.load(Ordering::SeqCst);
-        if is_secure_purpose(purpose) {
-            myna_core::dbg_log!("inject", "commit REFUSED: secure field (purpose={purpose})");
+        // The content type can change after `acquire` (I5, FR-021).
+        let content_type = self.state.content_type();
+        if content_type.is_secure() {
+            myna_core::dbg_log!("inject", "commit REFUSED: secure field {content_type:?}");
             return Err(InjectError::SecureField);
         }
         self.conn
@@ -808,12 +807,9 @@ impl Injector for IbusInjector {
     async fn set_preedit(&mut self, text: &str) {
         // Same guard as `commit` (F2/I5): never render even volatile text into
         // a known-secure field — preedit is still text in the target.
-        let purpose = self.state.purpose.load(Ordering::SeqCst);
-        if is_secure_purpose(purpose) {
-            myna_core::dbg_log!(
-                "inject",
-                "preedit REFUSED: secure field (purpose={purpose})"
-            );
+        let content_type = self.state.content_type();
+        if content_type.is_secure() {
+            myna_core::dbg_log!("inject", "preedit REFUSED: secure field {content_type:?}");
             return;
         }
         if text.is_empty() {
@@ -933,7 +929,7 @@ mod tests {
         let (focus_tx, _) = broadcast::channel(16);
         Arc::new(EngineState {
             focus_tx,
-            purpose: AtomicU32::new(0),
+            content_type: watch::Sender::new(ContentType::default()),
             focused: watch::Sender::new(false),
         })
     }
@@ -943,8 +939,7 @@ mod tests {
     /// already been dispatched. That must still count as focus received: with
     /// the earlier `Notify::notify_waiters` this notification was dropped on
     /// the floor (no task was parked yet), `focus_received` was false on every
-    /// acquire, and the `SetContentType` grace that guards the secure-field
-    /// check never ran.
+    /// acquire, and the content-type grace never ran.
     #[tokio::test]
     async fn focus_in_delivered_before_the_wait_starts_is_not_lost() {
         let state = engine_state();
@@ -986,19 +981,53 @@ mod tests {
         assert!(!state.focus_arrived().await);
     }
 
-    /// I5/FR-021: PASSWORD and PIN purposes are the secure set, checked both at
-    /// `acquire` and at `commit` (late SetContentType delivery).
+    /// I5/FR-021: which content types `acquire`, `commit` and `set_preedit`
+    /// refuse.
     #[test]
-    fn secure_purpose_classification() {
-        assert!(is_secure_purpose(PURPOSE_PASSWORD));
-        assert!(is_secure_purpose(PURPOSE_PIN));
-        // 0 (unknown/default) and ordinary purposes must not refuse.
-        for purpose in [0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 255] {
-            assert!(
-                !is_secure_purpose(purpose),
-                "purpose {purpose} must be injectable"
-            );
+    fn secure_content_type_classification() {
+        let ct = |purpose, hints| ContentType { purpose, hints };
+        for refused in [ct(8, 0), ct(9, 0), ct(8, u32::MAX)] {
+            assert!(refused.is_secure(), "{refused:?} must be refused");
         }
+        let mut accepted = vec![ct(0, 0), ct(0, 1 << 11), ct(255, 0)];
+        accepted.extend((0..=7).chain([10, 15]).map(|purpose| ct(purpose, 0)));
+        for accepted in accepted {
+            assert!(!accepted.is_secure(), "{accepted:?} must be injectable");
+        }
+    }
+
+    /// The daemon only `Properties.Set`s `ContentType (uu)` and drops the
+    /// error, so a method of that name is never called.
+    #[test]
+    fn engine_takes_content_type_as_a_write_only_property() {
+        let engine = EngineObject {
+            state: engine_state(),
+        };
+        let mut xml = String::new();
+        zbus::object_server::Interface::introspect_to_writer(&engine, &mut xml, 0);
+        assert!(
+            xml.contains(r#"<property name="ContentType" type="(uu)" access="write">"#),
+            "{xml}"
+        );
+        assert!(!xml.contains("SetContentType"), "{xml}");
+    }
+
+    #[tokio::test]
+    async fn content_type_write_updates_the_snapshot() {
+        let state = engine_state();
+        let engine = EngineObject {
+            state: Arc::clone(&state),
+        };
+        engine.set_content_type((8, 1 << 11)).await;
+        assert_eq!(
+            state.content_type(),
+            ContentType {
+                purpose: 8,
+                hints: 1 << 11
+            }
+        );
+        engine.set_content_type((0, 0)).await;
+        assert_eq!(state.content_type(), ContentType::default());
     }
 
     /// Snap confinement (feature 005): the real home is recovered from

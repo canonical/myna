@@ -99,8 +99,9 @@ impl std::error::Error for InjectError {}
 #[async_trait]
 pub trait Injector: Send {
     /// Bind the surface focused *now* as the session target. `Err(SecureField)`
-    /// where a password purpose is detectable; `Err(NoTarget)` where nothing
-    /// editable is focused; `Err(Unavailable)` where the backend is unreachable.
+    /// where the field's content type is detectably secure; `Err(NoTarget)`
+    /// where nothing editable is focused; `Err(Unavailable)` where the backend
+    /// is unreachable.
     async fn acquire(&mut self) -> Result<InjectionTarget, InjectError>;
 
     /// Reflect recording/transcription activity on the injection channel where

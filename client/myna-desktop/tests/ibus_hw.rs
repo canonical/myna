@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use myna_desktop::inject::ibus::IbusInjector;
-use myna_desktop::inject::{FocusEvent, Injector};
+use myna_desktop::inject::{FocusEvent, InjectError, Injector};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, MessageStream};
 
@@ -45,6 +45,9 @@ const PRIOR_ENGINE: &str = "xkb:us::eng";
 const HANG_GUARD: Duration = Duration::from_secs(5);
 
 const SENTINEL: &str = "after";
+
+/// `IBusInputPurpose::PASSWORD`.
+const PURPOSE_PASSWORD: u32 = 8;
 
 /// True when the IBus integration suite is enabled. Unset gate → skip.
 fn ibus_enabled() -> bool {
@@ -224,6 +227,56 @@ async fn global_engine() -> Option<String> {
         .await
 }
 
+/// A focused field of the given content type, the prior engine global, and an
+/// injector that has not acquired yet.
+async fn session(purpose: u32, hints: u32) -> (Field, IbusInjector) {
+    let field = Field::open(purpose, hints).await;
+    field.use_prior_engine().await;
+    let injector = IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon");
+    (field, injector)
+}
+
+async fn assert_acquire_refused(injector: &mut IbusInjector) {
+    let acquired = injector.acquire().await;
+    assert!(
+        matches!(acquired, Err(InjectError::SecureField)),
+        "acquire must refuse a secure field: {acquired:?}"
+    );
+    assert_eq!(
+        global_engine().await.as_deref(),
+        Some(PRIOR_ENGINE),
+        "a refused acquire restores the prior engine"
+    );
+}
+
+/// Commit `text` until its result is `refused`, bounded: the daemon writes the
+/// content type to the engine asynchronously. Every accepted commit must reach
+/// the field. Returns whether the wanted result was seen.
+async fn commit_until(
+    field: &mut Field,
+    injector: &mut IbusInjector,
+    text: &str,
+    refused: bool,
+) -> bool {
+    for _ in 0..100 {
+        match injector.commit(text).await {
+            Err(InjectError::SecureField) if refused => return true,
+            Err(InjectError::SecureField) => {}
+            Ok(()) => {
+                assert_eq!(field.next().await, Seen::Commit(text.into()));
+                if !refused {
+                    return true;
+                }
+            }
+            Err(other) => panic!("commit {text:?}: {other:?}"),
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    false
+}
+
 #[test]
 fn gate_skips_cleanly_when_unset() {
     if ibus_enabled() {
@@ -241,11 +294,7 @@ async fn ordinary_field_receives_preedit_and_commit() {
         eprintln!("skipping ordinary_field_receives_preedit_and_commit: MYNA_IBUS_TESTS unset");
         return;
     }
-    let mut field = Field::open(0, 0).await;
-    field.use_prior_engine().await;
-    let mut injector = IbusInjector::connect()
-        .await
-        .expect("connect to IBus daemon");
+    let (mut field, mut injector) = session(0, 0).await;
     injector.acquire().await.expect("acquire an ordinary field");
 
     injector.set_preedit("hel").await;
@@ -273,11 +322,7 @@ async fn focus_leaving_the_field_ends_the_session() {
         eprintln!("skipping focus_leaving_the_field_ends_the_session: MYNA_IBUS_TESTS unset");
         return;
     }
-    let field = Field::open(0, 0).await;
-    field.use_prior_engine().await;
-    let mut injector = IbusInjector::connect()
-        .await
-        .expect("connect to IBus daemon");
+    let (field, mut injector) = session(0, 0).await;
     injector.acquire().await.expect("acquire an ordinary field");
     let mut events = injector.focus_events();
 
@@ -286,6 +331,61 @@ async fn focus_leaving_the_field_ends_the_session() {
         .await
         .expect("a focus event within the hang guard");
     assert_eq!(event, Some(FocusEvent::FocusOut));
+
+    injector.end().await;
+    field.close().await;
+}
+
+#[tokio::test]
+async fn password_field_is_refused_at_acquire() {
+    if !ibus_enabled() {
+        eprintln!("skipping password_field_is_refused_at_acquire: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let (mut field, mut injector) = session(PURPOSE_PASSWORD, 0).await;
+    assert_acquire_refused(&mut injector).await;
+
+    field.set_content_type(0, 0).await;
+    injector
+        .acquire()
+        .await
+        .expect("acquire the field once ordinary");
+    field.expect_only_sentinel(&mut injector).await;
+
+    injector.end().await;
+    field.close().await;
+}
+
+#[tokio::test]
+async fn field_turning_secure_mid_session_gets_no_text() {
+    if !ibus_enabled() {
+        eprintln!("skipping field_turning_secure_mid_session_gets_no_text: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let (mut field, mut injector) = session(0, 0).await;
+    injector.acquire().await.expect("acquire an ordinary field");
+    injector.commit("hello").await.expect("commit hello");
+    assert_eq!(field.next().await, Seen::Commit("hello".into()));
+
+    // PASSWORD rather than HIDDEN_TEXT: the daemon masks preedit and re-sends
+    // it when HIDDEN_TEXT changes, which would muddy the sentinel.
+    field.set_content_type(PURPOSE_PASSWORD, 0).await;
+    assert!(
+        commit_until(&mut field, &mut injector, "probe", true).await,
+        "commit never refused the field after it turned secure"
+    );
+    injector.set_preedit("secret").await;
+    let committed = injector.commit("secret").await;
+    assert!(
+        matches!(committed, Err(InjectError::SecureField)),
+        "commit into a secure field: {committed:?}"
+    );
+
+    field.set_content_type(0, 0).await;
+    assert!(
+        commit_until(&mut field, &mut injector, SENTINEL, false).await,
+        "commit never accepted the field after it turned ordinary"
+    );
 
     injector.end().await;
     field.close().await;
@@ -332,78 +432,4 @@ async fn ibus_preedit_visual_probe() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     injector.end().await;
     eprintln!("probe done — was the preedit visible and underlined?");
-}
-
-/// T035 / I5, I8: focus-out from a focused entry emits `FocusEvent::FocusOut`,
-/// and a password-purpose entry (`SetContentType` PASSWORD) makes both
-/// `acquire` and `commit` return `Err(SecureField)`.
-///
-/// Both require a **focused GUI input context** (a real editable widget / a
-/// password field) that the isolated headless daemon does not provide, so the
-/// automated body only asserts the injector connects; the focus-out and
-/// secure-refusal edges are the manual GUI acceptance (quickstart step 4). The
-/// detection code lives in `inject::ibus` (FocusOut→stream; PASSWORD→SecureField
-/// at acquire AND at commit — the commit re-check covers `SetContentType`
-/// arriving after acquire, which the Wayland/text-input-v3 path does).
-/// Diagnose per-field with `MYNA_DEBUG=1`: every `FocusIn`/`FocusOut`/
-/// `SetContentType`, the acquire purpose read, and commit refusals are logged.
-#[tokio::test]
-async fn ibus_focus_and_secure_detection() {
-    if !ibus_enabled() {
-        eprintln!("skipping ibus_focus_and_secure_detection: MYNA_IBUS_TESTS unset");
-        return;
-    }
-    let injector = IbusInjector::connect()
-        .await
-        .expect("connect to IBus daemon");
-    eprintln!(
-        "connected (global engine = {:?}); focus a normal field then a password \
-         field and verify FocusOut / SecureField manually (quickstart step 4)",
-        injector.global_engine().await
-    );
-}
-
-/// Fail-closed security property: `acquire` requires a positive focus signal
-/// before allowing injection into a secure field. The security model (F2): a
-/// secure field (PASSWORD/PIN) reliably drives `FocusIn` immediately followed
-/// by `SetContentType`; `acquire` waits for `FocusIn`, then lets
-/// `SetContentType` settle (CONTENT_TYPE_GRACE) before reading `purpose`, so a
-/// password field can't slip through on the race between the two callbacks.
-///
-/// A *slow/absent* `FocusIn` is NOT a hard-fail: that is the ordinary-field
-/// case (IBus focuses different widgets on different schedules), and refusing
-/// there would break legitimate dictation. So in headless mode (no GUI field,
-/// purpose stays 0) `acquire` succeeds — there is no actual secure field to
-/// protect.
-///
-/// The security-relevant assertion (PASSWORD → `Err(SecureField)`) requires a
-/// real focused password field and is the manual quickstart step 4; here we
-/// assert the safe-default path (no secure content-type → acquire succeeds,
-/// then cleanly restores).
-#[tokio::test]
-async fn ibus_secure_default_path() {
-    if !ibus_enabled() {
-        eprintln!("skipping ibus_secure_default_path: MYNA_IBUS_TESTS unset");
-        return;
-    }
-
-    let mut injector = IbusInjector::connect()
-        .await
-        .expect("connect to IBus daemon");
-    // Headless: no secure content-type delivered → purpose stays 0 → safe.
-    match injector.acquire().await {
-        Ok(_target) => {
-            // Safe default: no known-secure field, injection permitted.
-            injector.end().await;
-        }
-        Err(myna_desktop::inject::InjectError::Backend(msg)) => {
-            // Running against a real session: SetGlobalEngine can conflict. Skip.
-            eprintln!("⚠️  Backend error: {msg}");
-            eprintln!("⚠️  Tests should run in an isolated session (see module docs)");
-        }
-        Err(myna_desktop::inject::InjectError::SecureField) => {
-            panic!("unexpected SecureField in headless mode (no password field focused)");
-        }
-        Err(other) => panic!("unexpected acquire error: {other:?}"),
-    }
 }
