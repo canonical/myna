@@ -155,6 +155,11 @@ actions:
       -p myna-audio --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+    # Myna Settings' GTK probes spawn the instrumented binary, so the UI they
+    # drive is measured; `ui-check` runs the same suite uninstrumented.
+    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
+      xvfb-run -a -s "-screen 0 1024x768x24" \
+      cargo llvm-cov --no-report -p myna-config --test template_instantiation -- --test-threads=1
     # Four exports over every profraw, silent until the summary table.
     echo "cov: tests done; exporting reports (about two minutes, no output until the summary)" >&2
     cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml
