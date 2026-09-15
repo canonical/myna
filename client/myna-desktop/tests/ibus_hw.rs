@@ -1,148 +1,294 @@
 //! Env-gated IBus integration suite (`MYNA_IBUS_TESTS=1`).
 //!
-//! Exercises the real `IbusInjector` against a running IBus daemon: connect,
-//! make our engine the active one, commit text, and restore the prior engine —
-//! contracts I1, I11 (and, on the desktop VM with a focused test entry, the
-//! "hello lands in the field" acceptance of I1/SC-001). Focus/secure detection
-//! (I5, I8) lands in the safety branch 003e (T035).
+//! The suite is a real IBus input-context client. `Field` creates and focuses
+//! a context and observes what the daemon actually delivers to it, while
+//! `IbusInjector` drives the engine side, so a case asserts the text that
+//! reaches a field rather than that a signal was sent.
 //!
-//! ⚠️ **IMPORTANT**: This test changes the **global input engine** while it runs.
-//! Run it in an **isolated** session, NOT against your real desktop IBus daemon:
+//! It changes the global input engine, so run it only against the private
+//! daemon `dev/gated-tests.sh` stands up, never a desktop session:
 //!
 //! ```sh
-//! cd client
-//! dbus-run-session -- bash -c '
-//!   export XDG_CONFIG_HOME=$(mktemp -d) XDG_CACHE_HOME=$(mktemp -d)
-//!   unset WAYLAND_DISPLAY DISPLAY
-//!   ibus-daemon --daemonize --panel disable --xim
-//!   sleep 2
-//!   MYNA_IBUS_TESTS=1 cargo test -p myna-desktop --test ibus_hw -- --test-threads=1
-//! '
+//! make test-client-gated
+//! # or scoped, from client/ inside the workshop:
+//! ../dev/gated-tests.sh cargo test -p myna-desktop --test ibus_hw -- --test-threads=1
 //! ```
 //!
-//! Running without `dbus-run-session` will interfere with your desktop session
-//! and cause test failures due to engine conflicts.
-//!
-//! **Note**: Tests must run serially (`--test-threads=1`) because they manipulate
-//! the global IBus engine state.
+//! Cases share one daemon and must run serially. Every field is closed with its
+//! content type reset first: when a focused context loses focus the daemon
+//! copies its purpose and hints onto its fake context, which would otherwise
+//! carry a PASSWORD into the next case.
 //!
 //! It skips cleanly when the gate is unset, so the suite compiles and runs as a
-//! no-op offline (Principle II).
+//! no-op offline.
 
+use std::time::Duration;
+
+use futures_util::StreamExt;
 use myna_desktop::inject::ibus::IbusInjector;
-use myna_desktop::inject::Injector;
+use myna_desktop::inject::{FocusEvent, Injector};
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::{Connection, MessageStream};
+
+const IBUS_SERVICE: &str = "org.freedesktop.IBus";
+const IBUS_PATH: &str = "/org/freedesktop/IBus";
+const IC_IFACE: &str = "org.freedesktop.IBus.InputContext";
+
+/// `IBusCapabilite`: the field renders preedit itself and takes focus.
+const CAP_PREEDIT_TEXT: u32 = 1 << 0;
+const CAP_FOCUS: u32 = 1 << 3;
+
+/// Served by ibus-engine-simple, which the headless daemon can spawn.
+const PRIOR_ENGINE: &str = "xkb:us::eng";
+
+/// Guards a hang only; every wait ends on the event it awaits.
+const HANG_GUARD: Duration = Duration::from_secs(5);
+
+const SENTINEL: &str = "after";
 
 /// True when the IBus integration suite is enabled. Unset gate → skip.
 fn ibus_enabled() -> bool {
     std::env::var("MYNA_IBUS_TESTS").as_deref() == Ok("1")
 }
 
+/// What the daemon delivered to a field.
+#[derive(Debug, PartialEq)]
+enum Seen {
+    Commit(String),
+    /// Text and the visible flag.
+    Preedit(String, bool),
+    HidePreedit,
+}
+
+/// A focused IBus input context, as a text field in an application holds one.
+struct Field {
+    conn: Connection,
+    stream: MessageStream,
+    ic: OwnedObjectPath,
+}
+
+impl Field {
+    async fn open(purpose: u32, hints: u32) -> Self {
+        let address = std::env::var("IBUS_ADDRESS").expect("IBUS_ADDRESS from dev/gated-tests.sh");
+        let conn = zbus::conn::Builder::address(address.as_str())
+            .expect("parse IBUS_ADDRESS")
+            .max_queued(1024)
+            .build()
+            .await
+            .expect("connect the field to IBus");
+        // Opened before any call, so no signal to the context can be missed.
+        let stream = MessageStream::from(&conn);
+        let ic = conn
+            .call_method(
+                Some(IBUS_SERVICE),
+                IBUS_PATH,
+                Some(IBUS_SERVICE),
+                "CreateInputContext",
+                &("myna-ibus-hw",),
+            )
+            .await
+            .expect("CreateInputContext")
+            .body()
+            .deserialize::<OwnedObjectPath>()
+            .expect("input context path");
+        let field = Self { conn, stream, ic };
+        field
+            .ic_call(
+                IC_IFACE,
+                "SetCapabilities",
+                &(CAP_PREEDIT_TEXT | CAP_FOCUS,),
+            )
+            .await;
+        field.set_content_type(purpose, hints).await;
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+        field
+    }
+
+    async fn ic_call(
+        &self,
+        iface: &str,
+        member: &str,
+        body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
+    ) {
+        self.conn
+            .call_method(Some(IBUS_SERVICE), &self.ic, Some(iface), member, body)
+            .await
+            .unwrap_or_else(|e| panic!("{iface}.{member} on {}: {e}", self.ic));
+    }
+
+    /// The daemon takes the content type only as a write-only property.
+    async fn set_content_type(&self, purpose: u32, hints: u32) {
+        self.ic_call(
+            "org.freedesktop.DBus.Properties",
+            "Set",
+            &(IC_IFACE, "ContentType", Value::from((purpose, hints))),
+        )
+        .await;
+    }
+
+    async fn focus_out(&self) {
+        self.ic_call(IC_IFACE, "FocusOut", &()).await;
+    }
+
+    /// Make `PRIOR_ENGINE` global, so an injector's `end` has one to restore.
+    async fn use_prior_engine(&self) {
+        self.conn
+            .call_method(
+                Some(IBUS_SERVICE),
+                IBUS_PATH,
+                Some(IBUS_SERVICE),
+                "SetGlobalEngine",
+                &(PRIOR_ENGINE,),
+            )
+            .await
+            .expect("SetGlobalEngine to the prior engine");
+        assert_eq!(global_engine().await.as_deref(), Some(PRIOR_ENGINE));
+    }
+
+    async fn next(&mut self) -> Seen {
+        let ic = self.ic.clone();
+        let stream = &mut self.stream;
+        let seen = async move {
+            while let Some(msg) = stream.next().await {
+                let msg = msg.expect("message from IBus");
+                let header = msg.header();
+                if header.message_type() != zbus::message::Type::Signal
+                    || header.path().map(|p| p.as_str()) != Some(ic.as_str())
+                {
+                    continue;
+                }
+                let body = msg.body();
+                match header.member().map(|m| m.as_str()) {
+                    Some("CommitText") => {
+                        let text: OwnedValue = body.deserialize().expect("CommitText (v)");
+                        return Seen::Commit(ibus_text(text));
+                    }
+                    Some("UpdatePreeditText") => {
+                        let (text, _cursor, visible): (OwnedValue, u32, bool) =
+                            body.deserialize().expect("UpdatePreeditText (vub)");
+                        let text = ibus_text(text);
+                        // The daemon's clear on every engine switch; it carries
+                        // no text, and Myna hides preedit rather than send it.
+                        if text.is_empty() && !visible {
+                            continue;
+                        }
+                        return Seen::Preedit(text, visible);
+                    }
+                    Some("HidePreeditText") => return Seen::HidePreedit,
+                    _ => {}
+                }
+            }
+            panic!("IBus closed the field's connection");
+        };
+        tokio::time::timeout(HANG_GUARD, seen)
+            .await
+            .unwrap_or_else(|_| panic!("nothing delivered to {} within {HANG_GUARD:?}", self.ic))
+    }
+
+    /// Prove nothing reached the field since the last `next`: the sentinel
+    /// travels the same ordered path, so anything sent before it arrives first.
+    async fn expect_only_sentinel(&mut self, injector: &mut IbusInjector) {
+        injector
+            .commit(SENTINEL)
+            .await
+            .expect("commit the sentinel");
+        assert_eq!(self.next().await, Seen::Commit(SENTINEL.into()));
+    }
+
+    async fn close(self) {
+        self.set_content_type(0, 0).await;
+        // Refocus so the reset reaches the fake context even after a focus_out.
+        self.ic_call(IC_IFACE, "FocusIn", &()).await;
+        self.focus_out().await;
+        self.ic_call("org.freedesktop.IBus.Service", "Destroy", &())
+            .await;
+    }
+}
+
+/// The string field of a serialized `IBusText`.
+fn ibus_text(value: OwnedValue) -> String {
+    match Value::from(value) {
+        Value::Structure(s) => match s.fields().get(2) {
+            Some(Value::Str(text)) => text.to_string(),
+            other => panic!("IBusText without a string: {other:?}"),
+        },
+        other => panic!("not an IBusText: {other:?}"),
+    }
+}
+
+async fn global_engine() -> Option<String> {
+    IbusInjector::connect()
+        .await
+        .expect("connect to IBus daemon")
+        .global_engine()
+        .await
+}
+
 #[test]
 fn gate_skips_cleanly_when_unset() {
     if ibus_enabled() {
-        eprintln!("MYNA_IBUS_TESTS set: see ibus_commit_and_restore for the real assertions");
+        eprintln!(
+            "MYNA_IBUS_TESTS set: see ordinary_field_receives_preedit_and_commit for the real assertions"
+        );
     } else {
         eprintln!("skipping ibus_hw: set MYNA_IBUS_TESTS=1 with a running IBus daemon");
     }
 }
 
-/// I1 + I11: IBus wire protocol integration test — connect, acquire (become the
-/// active engine), commit "hello", end, and restore the prior engine.
-///
-/// In a headless/isolated IBus session there is no focused GUI field, so no
-/// secure content-type is delivered; `purpose` stays 0 and `acquire` succeeds
-/// (the security model refuses only a *known-secure* PASSWORD/PIN field, never
-/// a slow/absent focus — that is the ordinary-field case). The end-to-end
-/// "hello lands in the field" acceptance still needs a real GUI (quickstart
-/// step 4).
 #[tokio::test]
-async fn ibus_commit_and_restore() {
+async fn ordinary_field_receives_preedit_and_commit() {
     if !ibus_enabled() {
-        eprintln!("skipping ibus_commit_and_restore: MYNA_IBUS_TESTS unset");
+        eprintln!("skipping ordinary_field_receives_preedit_and_commit: MYNA_IBUS_TESTS unset");
         return;
     }
-
-    // Record the engine active before we touch anything.
-    let probe = IbusInjector::connect()
-        .await
-        .expect("connect to IBus daemon");
-    let before = probe.global_engine().await;
-    eprintln!(
-        "Connected to IBus daemon (global engine = {})",
-        before.as_deref().unwrap_or("none")
-    );
-    drop(probe);
-
+    let mut field = Field::open(0, 0).await;
+    field.use_prior_engine().await;
     let mut injector = IbusInjector::connect()
         .await
         .expect("connect to IBus daemon");
-    match injector.acquire().await {
-        Ok(_target) => {}
-        Err(myna_desktop::inject::InjectError::Backend(msg)) => {
-            // Running against a real (non-isolated) session: SetGlobalEngine can
-            // conflict with the live engine. Skip with a warning.
-            eprintln!("⚠️  Backend error: {msg}");
-            eprintln!("⚠️  Tests should run in an isolated session (see module docs)");
-            return;
-        }
-        Err(other) => panic!("unexpected acquire error: {other:?}"),
-    }
+    injector.acquire().await.expect("acquire an ordinary field");
 
-    // Commit-only: a literal segment. On the VM this lands in the focused test
-    // entry (I1/SC-001); here we assert the wire call succeeds.
+    injector.set_preedit("hel").await;
+    assert_eq!(field.next().await, Seen::Preedit("hel".into(), true));
     injector.commit("hello").await.expect("commit hello");
+    assert_eq!(field.next().await, Seen::HidePreedit);
+    assert_eq!(field.next().await, Seen::Commit("hello".into()));
+    // No preedit is up, so clearing it sends nothing.
+    injector.set_preedit("").await;
+    field.expect_only_sentinel(&mut injector).await;
 
-    // End restores the prior engine (idempotent — call twice).
     injector.end().await;
     injector.end().await;
-
-    // I11: if there was a prior global engine, it is restored exactly once.
-    let after = IbusInjector::connect()
-        .await
-        .expect("reconnect")
-        .global_engine()
-        .await;
-    if before.is_some() {
-        assert_eq!(after, before, "prior global engine must be restored on end");
-    } else {
-        eprintln!("no prior engine in this session; wire cycle completed (after = {after:?})");
-    }
+    assert_eq!(
+        global_engine().await.as_deref(),
+        Some(PRIOR_ENGINE),
+        "end restores the prior engine"
+    );
+    field.close().await;
 }
 
-/// I13 (live): the preedit wire cycle — `UpdatePreeditText` (replace) →
-/// `commit` (clears the region, inserts stable text) → `end` — succeeds against
-/// a real daemon. The *visual* acceptance (the underlined hypothesis appears in
-/// a focused GTK entry, is replaced as it updates, and is replaced by committed
-/// text) is manual: run `myna-desktop --preedit` against `myna-server
-/// --adapter whisper --streaming` and dictate into a focused editor.
 #[tokio::test]
-async fn ibus_preedit_cycle() {
+async fn focus_leaving_the_field_ends_the_session() {
     if !ibus_enabled() {
-        eprintln!("skipping ibus_preedit_cycle: MYNA_IBUS_TESTS unset");
+        eprintln!("skipping focus_leaving_the_field_ends_the_session: MYNA_IBUS_TESTS unset");
         return;
     }
+    let field = Field::open(0, 0).await;
+    field.use_prior_engine().await;
     let mut injector = IbusInjector::connect()
         .await
         .expect("connect to IBus daemon");
-    match injector.acquire().await {
-        Ok(_target) => {}
-        Err(myna_desktop::inject::InjectError::Backend(msg)) => {
-            eprintln!("⚠️  Backend error: {msg} (run in an isolated session)");
-            return;
-        }
-        Err(other) => panic!("unexpected acquire error: {other:?}"),
-    }
-    assert!(myna_desktop::inject::Injector::supports_preedit(&injector));
-    // Replace: two successive unstable hypotheses, then an explicit clear.
-    injector.set_preedit("hel").await;
-    injector.set_preedit("hello wor").await;
-    injector.set_preedit("").await;
-    // Commit clears the region; end is safe after (idempotent hide).
-    injector
-        .commit("hello world")
+    injector.acquire().await.expect("acquire an ordinary field");
+    let mut events = injector.focus_events();
+
+    field.focus_out().await;
+    let event = tokio::time::timeout(HANG_GUARD, events.next())
         .await
-        .expect("commit after preedit");
+        .expect("a focus event within the hang guard");
+    assert_eq!(event, Some(FocusEvent::FocusOut));
+
     injector.end().await;
+    field.close().await;
 }
 
 /// Live **visual** probe for the preedit path (R9): shows an underlined
