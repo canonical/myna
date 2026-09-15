@@ -17,11 +17,11 @@ use std::rc::Rc;
 
 use crate::command::CancellationToken;
 use crate::domain::{
-    ActiveBackendState, BackendConfiguration, BackendIdentity, BackendSnapshot,
-    BackendSurfaceError, ConfigScope, ConfigValue, ConnectionSnapshot,
+    ActiveBackendState, BackendIdentity, BackendSnapshot, BackendSurfaceError, ConfigValue,
+    ConnectionSnapshot,
 };
 use crate::ports::BackendRepository;
-use crate::presentation::{present_configuration, PresentationRow, PresentationSource};
+use crate::presentation::{present_configuration, PresentationRow};
 
 /// Whether the `myna:backend` plug is currently attached to this backend's
 /// `inference-provider` slot.
@@ -66,7 +66,6 @@ pub struct BackendPage {
     connection: ConnectionKind,
     loading: bool,
     partial: bool,
-    load_error: Option<String>,
     snapshot: Option<BackendSnapshot>,
     rows: Vec<BackendRow>,
     errors: Vec<BackendSurfaceError>,
@@ -90,10 +89,6 @@ impl BackendPage {
     /// is being shown in a degraded state.
     pub fn partial(&self) -> bool {
         self.partial
-    }
-
-    pub fn load_error(&self) -> Option<&str> {
-        self.load_error.as_deref()
     }
 
     pub fn snapshot(&self) -> Option<&BackendSnapshot> {
@@ -128,7 +123,6 @@ impl BackendPage {
                 .and_then(|engines| engines.active().map(str::to_owned)),
             loading: self.loading,
             partial: self.partial,
-            unavailable: self.load_error.is_some(),
         }
     }
 }
@@ -141,7 +135,6 @@ pub struct BackendShortStatus {
     pub active_engine: Option<String>,
     pub loading: bool,
     pub partial: bool,
-    pub unavailable: bool,
 }
 
 /// Events emitted whenever controller state changes.
@@ -227,7 +220,6 @@ struct PageEntry {
     latest_completed_snapshot: u64,
     inflight_token: Option<CancellationToken>,
     loading: bool,
-    load_error: Option<String>,
 }
 
 impl BackendController {
@@ -387,30 +379,8 @@ impl BackendController {
             entry.latest_completed_snapshot = request.generation;
             entry.loading = false;
             entry.inflight_token = None;
-            entry.load_error = None;
             entry.snapshot = Some(snapshot);
             prune_stale_dirty_edits(entry);
-            events.push(ControllerEvent::BackendChanged(entry.identity.clone()));
-        }
-        self.emit(events);
-    }
-
-    pub fn fail_snapshot(&self, request: SnapshotRequest, error: BackendSurfaceError) {
-        let mut events = Vec::new();
-        {
-            let mut inner = self.inner.borrow_mut();
-            let Some(entry) = inner.pages.get_mut(&request.snap) else {
-                return;
-            };
-            if request.generation <= entry.latest_completed_snapshot
-                || request.generation != entry.snapshot_generation
-            {
-                return;
-            }
-            entry.latest_completed_snapshot = request.generation;
-            entry.loading = false;
-            entry.inflight_token = None;
-            entry.load_error = Some(error.message().to_owned());
             events.push(ControllerEvent::BackendChanged(entry.identity.clone()));
         }
         self.emit(events);
@@ -437,24 +407,6 @@ impl BackendController {
                 entry.dirty.insert(key.to_owned(), value);
                 events.push(ControllerEvent::BackendDirtyChanged(entry.identity.clone()));
                 true
-            }
-        };
-        self.emit(events);
-        changed
-    }
-
-    pub fn revert_edit(&self, snap: &str, key: &str) -> bool {
-        let mut events = Vec::new();
-        let changed = {
-            let mut inner = self.inner.borrow_mut();
-            let Some(entry) = inner.pages.get_mut(snap) else {
-                return false;
-            };
-            if entry.dirty.remove(key).is_some() {
-                events.push(ControllerEvent::BackendDirtyChanged(entry.identity.clone()));
-                true
-            } else {
-                false
             }
         };
         self.emit(events);
@@ -491,7 +443,6 @@ impl BackendController {
                 token.cancel();
             }
             entry.loading = false;
-            entry.load_error = None;
             entry.snapshot = Some(snapshot);
             prune_stale_dirty_edits(entry);
             events.push(ControllerEvent::BackendChanged(entry.identity.clone()));
@@ -595,7 +546,6 @@ fn apply_discovery(
                     latest_completed_snapshot: 0,
                     inflight_token: None,
                     loading: false,
-                    load_error: None,
                 },
             );
             structure_changed = true;
@@ -705,7 +655,6 @@ fn build_page(entry: &PageEntry) -> BackendPage {
         connection: entry.connection,
         loading: entry.loading,
         partial,
-        load_error: entry.load_error.clone(),
         snapshot,
         rows,
         errors,
@@ -723,48 +672,6 @@ fn build_row(dirty: &BTreeMap<String, ConfigValue>, presentation: PresentationRo
         effective_value,
         dirty: dirty_value.is_some(),
     }
-}
-
-/// Convenience: iterate over dirty edits as `(scope, key, value)` triples for
-/// downstream consumers. Unknown keys default to package scope; known keys
-/// are classified by their catalog metadata later.
-pub fn dirty_edits(page: &BackendPage) -> Vec<(ConfigScope, String, ConfigValue)> {
-    page.rows
-        .iter()
-        .filter(|row| row.dirty)
-        .map(|row| {
-            let scope = match row.presentation.source() {
-                PresentationSource::Configuration(scope) => scope,
-                _ => ConfigScope::Package,
-            };
-            (
-                scope,
-                row.presentation.key().to_owned(),
-                row.effective_value.clone(),
-            )
-        })
-        .collect()
-}
-
-/// Helper used by callers that want to inspect a backend's configuration with
-/// dirty edits applied (for future write construction).
-pub fn overlay_dirty(
-    page: &BackendPage,
-    configuration: &BackendConfiguration,
-) -> BTreeMap<String, ConfigValue> {
-    let mut merged: BTreeMap<String, ConfigValue> = BTreeMap::new();
-    for (_, key, value) in configuration.iter() {
-        merged.insert(key.to_owned(), value.clone());
-    }
-    for row in &page.rows {
-        if row.dirty {
-            merged.insert(
-                row.presentation.key().to_owned(),
-                row.effective_value.clone(),
-            );
-        }
-    }
-    merged
 }
 
 #[cfg(test)]

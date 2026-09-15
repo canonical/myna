@@ -768,7 +768,7 @@ impl Injector for IbusInjector {
             "inject",
             "acquire ok: focus_received={focus_received} purpose={purpose}"
         );
-        Ok(InjectionTarget::new(ENGINE_PATH, false))
+        Ok(InjectionTarget::new(ENGINE_PATH))
     }
 
     async fn set_activity(&mut self, _active: bool) {

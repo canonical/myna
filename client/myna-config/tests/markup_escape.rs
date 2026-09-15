@@ -63,7 +63,7 @@ fn widget_level_hostile_subtitles_and_descriptions() {
             "engine=onnx &amp; backend=&lt;invalid&gt;",
         ),
         (
-            // A backend-provided load_error surfaced into a description.
+            // A backend-provided surface error surfaced into a description.
             "modelctl exited 1: /var/snap/myna-x/data missing",
             "modelctl exited 1: /var/snap/myna-x/data missing",
         ),

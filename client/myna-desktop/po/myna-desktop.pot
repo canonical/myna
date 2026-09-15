@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-14 19:10+0100\n"
+"POT-Creation-Date: 2026-09-15 12:23+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -123,20 +123,20 @@ msgid ""
 "connections myna`)"
 msgstr ""
 
-#: src/inject/mod.rs:83
+#: src/inject/mod.rs:75
 msgid "focused field is secure (password); refusing to inject"
 msgstr ""
 
-#: src/inject/mod.rs:87
+#: src/inject/mod.rs:79
 msgid "no editable target is focused"
 msgstr ""
 
-#: src/inject/mod.rs:92
+#: src/inject/mod.rs:84
 #, c-format
 msgid "injection backend unavailable: %s"
 msgstr ""
 
-#: src/inject/mod.rs:97
+#: src/inject/mod.rs:89
 #, c-format
 msgid "injection backend error: %s"
 msgstr ""

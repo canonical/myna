@@ -16,27 +16,19 @@ pub mod ibus;
 pub mod lazy;
 pub mod mock;
 
-/// An opaque handle to the surface focused when the session started. Carries the
-/// **secure flag** (from the field's content-type) and enough identity to detect
-/// a focus change / disappearance. Never exposes text content (Principle V).
+/// An opaque handle to the surface focused when the session started, with
+/// enough identity to detect a focus change / disappearance. Never exposes
+/// text content (Principle V). A secure field is refused at `acquire` or
+/// `commit` with `InjectError::SecureField`, never carried here.
 #[derive(Debug, Clone)]
 pub struct InjectionTarget {
-    secure: bool,
     id: String,
 }
 
 impl InjectionTarget {
     /// Build a target handle (backends construct this from the focused context).
-    pub fn new(id: impl Into<String>, secure: bool) -> Self {
-        Self {
-            secure,
-            id: id.into(),
-        }
-    }
-
-    /// Whether the focused field is a password/secure field (injection refused).
-    pub fn is_secure(&self) -> bool {
-        self.secure
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
     }
 
     /// Opaque identity of the acquired surface (never its text).

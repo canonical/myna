@@ -133,7 +133,7 @@ impl Injector for MockInjector {
         match self.next_acquire() {
             AcquireOutcome::Ok(id) => {
                 self.acquired = true;
-                Ok(InjectionTarget::new(id, false))
+                Ok(InjectionTarget::new(id))
             }
             AcquireOutcome::Secure => Err(InjectError::SecureField),
             AcquireOutcome::NoTarget => Err(InjectError::NoTarget),

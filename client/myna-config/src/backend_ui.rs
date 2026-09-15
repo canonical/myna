@@ -1452,9 +1452,7 @@ impl BackendUi {
 }
 
 fn backend_health(page: &BackendPage) -> BackendHealth {
-    if page.load_error().is_some() {
-        BackendHealth::Unavailable
-    } else if page.loading() || page.snapshot().is_none() {
+    if page.loading() || page.snapshot().is_none() {
         BackendHealth::Unknown
     } else if page.partial()
         || page.snapshot().is_some_and(|snapshot| {
@@ -1794,8 +1792,6 @@ fn subtitle_for(status: &crate::backend_controller::BackendShortStatus) -> Strin
     );
     if status.loading {
         parts.push(gettextrs::gettext("Refreshing…"));
-    } else if status.unavailable {
-        parts.push(gettextrs::gettext("Unavailable"));
     } else if status.partial {
         parts.push(gettextrs::gettext("Partial data"));
     }
@@ -1868,13 +1864,7 @@ fn build_backend_page(page: &BackendPage, ui: &Rc<BackendUi>) -> adw::Navigation
     }
     preferences.add(&overview);
 
-    if let Some(message) = page.load_error() {
-        let unavailable = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Unavailable"))
-            .description(escape_markup(message))
-            .build();
-        preferences.add(&unavailable);
-    } else if page.loading() && page.snapshot().is_none() {
+    if page.loading() && page.snapshot().is_none() {
         let loading = adw::PreferencesGroup::builder()
             .title(gettextrs::gettext("Loading"))
             .description(gettextrs::gettext(
@@ -2673,7 +2663,6 @@ mod tests {
             active_engine: None,
             loading: false,
             partial: false,
-            unavailable: false,
         };
         let subtitle = subtitle_for(&status);
         assert!(subtitle.contains("parakeet"));

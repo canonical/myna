@@ -91,19 +91,6 @@ impl FakeBackend {
             FakeStep::Emit(error(code, message)),
         ])
     }
-
-    /// §3A slow load: a run of `loading` before `ready`, so audio pushed early is
-    /// gated out. (Determinism of the *drop* is covered by the pure FSM tests;
-    /// this staging simply exercises the same sequence over the wire.)
-    pub fn slow_ready() -> Self {
-        Self::new(vec![
-            FakeStep::Emit(loading()),
-            FakeStep::WaitForFinish,
-            FakeStep::Emit(ready()),
-            FakeStep::Emit(final_seg("late")),
-            FakeStep::Emit(done("late")),
-        ])
-    }
 }
 
 #[async_trait::async_trait]

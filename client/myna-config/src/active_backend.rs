@@ -22,7 +22,6 @@ pub enum PrepareSwitchError {
 pub enum BackendHealth {
     Healthy,
     Degraded,
-    Unavailable,
     #[default]
     Unknown,
 }
@@ -32,7 +31,6 @@ impl BackendHealth {
         match self {
             Self::Healthy => gettextrs::gettext("Healthy"),
             Self::Degraded => gettextrs::gettext("Degraded"),
-            Self::Unavailable => gettextrs::gettext("Unavailable"),
             Self::Unknown => gettextrs::gettext("Health unknown"),
         }
     }
@@ -514,12 +512,6 @@ impl ActiveBackendController {
         let mut inner = self.inner.borrow_mut();
         if let Some((token, _)) = inner.pending.take() {
             self.coordinator.abandon(token);
-        }
-    }
-
-    pub fn request_cancel(&self) {
-        if let Some((_, cancellation)) = self.inner.borrow().pending.as_ref() {
-            cancellation.cancel();
         }
     }
 
