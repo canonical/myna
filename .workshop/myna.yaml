@@ -114,7 +114,7 @@ actions:
       ./target/debug/examples/render_check
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
       xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo test -p myna-config --test template_instantiation -- --test-threads=1
+      cargo test -p myna-config --lib --test template_instantiation -- --test-threads=1
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
@@ -159,7 +159,7 @@ actions:
     # drive is measured; `ui-check` runs the same suite uninstrumented.
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
       xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo llvm-cov --no-report -p myna-config --test template_instantiation -- --test-threads=1
+      cargo llvm-cov --no-report -p myna-config --lib --test template_instantiation -- --test-threads=1
     # Four exports over every profraw, silent until the summary table.
     echo "cov: tests done; exporting reports (about two minutes, no output until the summary)" >&2
     cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml

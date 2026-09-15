@@ -2754,32 +2754,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_valid_sidebar_selection_reveals_content() {
-        if gtk::init().is_err() {
+    /// GTK binds to the first thread that initializes it and libtest gives
+    /// every test its own, so GTK tests share gtk's one test thread. Gated like
+    /// the probes: `ui-check` and `cov` run them under Xvfb.
+    fn on_gtk_thread(test: impl FnOnce() + Send + std::panic::UnwindSafe + 'static) {
+        if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+            eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
             return;
         }
+        gtk::test_synced(test);
+    }
 
-        let TestUi {
-            ui,
-            myna_row,
-            diagnostics_row,
-        } = test_ui(BackendController::detached());
+    #[test]
+    fn every_valid_sidebar_selection_reveals_content() {
+        on_gtk_thread(|| {
+            let TestUi {
+                ui,
+                myna_row,
+                diagnostics_row,
+            } = test_ui(BackendController::detached());
 
-        for row in [&diagnostics_row, &myna_row] {
-            ui.split_view.set_show_content(false);
-            ui.sidebar_list.select_row(Some(row));
-            assert!(ui.split_view.shows_content());
-        }
+            for row in [&diagnostics_row, &myna_row] {
+                ui.split_view.set_show_content(false);
+                ui.sidebar_list.select_row(Some(row));
+                assert!(ui.split_view.shows_content());
+            }
+        });
     }
 
     /// A connected parakeet backend whose only setting is the pause-length
     /// number, shown on screen with the entry row focused as a user typing
     /// into it would have it.
-    fn focused_pause_length_entry() -> Option<(Rc<BackendUi>, gtk::Window)> {
-        if gtk::init().is_err() {
-            return None;
-        }
+    fn focused_pause_length_entry() -> (Rc<BackendUi>, gtk::Window) {
         let controller = BackendController::detached();
         let request = controller.begin_discovery();
         let connections = crate::domain::parse_connections(
@@ -2814,7 +2820,7 @@ mod tests {
         *ui.selected.borrow_mut() = selection.clone();
         ui.show_selection(&selection);
         pause_length_entry(&ui).grab_focus();
-        Some((ui, window))
+        (ui, window)
     }
 
     fn pause_length_entry(ui: &BackendUi) -> adw::EntryRow {
@@ -2836,27 +2842,27 @@ mod tests {
 
     #[test]
     fn typing_a_fraction_into_a_number_entry_keeps_every_keystroke() {
-        let Some((ui, _window)) = focused_pause_length_entry() else {
-            return;
-        };
+        on_gtk_thread(|| {
+            let (ui, _window) = focused_pause_length_entry();
 
-        // Typing "0.2" over the default: the first two keystrokes are not yet
-        // a valid setting, and the rebuild each one triggers must not rewrite
-        // the text the user is still typing.
-        for (typed, staged) in [
-            ("0", ConfigValue::Integer(0)),
-            ("0.", ConfigValue::Number(0.0)),
-            ("0.2", ConfigValue::Number(0.2)),
-        ] {
-            let entry = pause_length_entry(&ui);
-            entry.set_text(typed);
-            assert_eq!(
-                staged_pause_length(&ui),
-                Some(staged),
-                "staged after {typed:?}"
-            );
-            assert_eq!(pause_length_entry(&ui).text().as_str(), typed);
-        }
+            // Typing "0.2" over the default: the first two keystrokes are not
+            // yet a valid setting, and the rebuild each one triggers must not
+            // rewrite the text the user is still typing.
+            for (typed, staged) in [
+                ("0", ConfigValue::Integer(0)),
+                ("0.", ConfigValue::Number(0.0)),
+                ("0.2", ConfigValue::Number(0.2)),
+            ] {
+                let entry = pause_length_entry(&ui);
+                entry.set_text(typed);
+                assert_eq!(
+                    staged_pause_length(&ui),
+                    Some(staged),
+                    "staged after {typed:?}"
+                );
+                assert_eq!(pause_length_entry(&ui).text().as_str(), typed);
+            }
+        });
     }
 
     #[test]
