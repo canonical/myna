@@ -11,7 +11,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use myna_core::{AudioFormat, PcmChunk, SessionConfig, TranscriptionEvent};
 use myna_orchestrator::{BackendClient, WsUnixBackend};
@@ -42,15 +43,14 @@ fn repo_root() -> PathBuf {
         })
 }
 
+/// Tests run in parallel in this process, so a clock reading is not an
+/// identity: two equal paths put both clients on one server.
 fn unique_socket_path() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     std::env::temp_dir().join(format!(
         "myna-orch-t39-{}-{}.sock",
         std::process::id(),
-        nanos
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ))
 }
 

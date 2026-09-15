@@ -177,12 +177,10 @@ mod tests {
         out.extend_from_slice(&(data.len() as u32).to_le_bytes());
         out.extend_from_slice(&data);
 
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("myna-runner-{}-{}.wav", std::process::id(), nanos));
+        // Tests share this process; a clock reading is not a unique name.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("myna-runner-{}-{n}.wav", std::process::id()));
         std::fs::write(&path, out).unwrap();
         path
     }

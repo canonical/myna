@@ -193,12 +193,10 @@ mod tests {
     }
 
     fn temp_wav(bytes: &[u8]) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("myna-wav-{}-{}.wav", std::process::id(), nanos));
+        // Tests share this process; a clock reading is not a unique name.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("myna-wav-{}-{n}.wav", std::process::id()));
         std::fs::write(&path, bytes).unwrap();
         path
     }
