@@ -16,6 +16,8 @@ The daemon never raises the portal's bind dialog on its own. `BindShortcut` on t
 
 The controller acquires the target before capture, refuses known secure fields, starts capture on activation, and finalizes on release or focus loss. Text buffered when focus is lost is discarded rather than sent to a different target.
 
+A field is secure when its purpose is PASSWORD or PIN, or its hints include HIDDEN_TEXT; the guard runs at acquire, at every commit and for preedit. ibus-daemon delivers content type only by setting the engine's write-only `ContentType (uu)` property, after FocusIn, and this holds on GNOME Wayland, where the Shell forwards text-input-v3 content type. GNOME has no PIN purpose mapping, so a PIN field arrives as purpose 0 with PRIVATE and HIDDEN_TEXT, which the HIDDEN_TEXT rule catches. PRIVATE alone is accepted because browsers set it on every private-window field.
+
 Toggle activation has no release edge, so the controller also ends a session by policy (`AutoStop`): after the user's silence timeout without sustained voice, measured in captured audio from the stats tap. It ends exactly like a release, plus the trigger-parity resync a focus loss needs. Hold-to-talk and the debug stdin trigger run with the policy off. There is no session length cap: a model with an input limit is the backend's to window, as audio8 does at `max_audio_seconds`.
 
 On completion the controller classifies the input from the same tap (`input_quality`): a noise floor above -50 dBFS, or speech under 15 dB above it, raises the recoverable "Background noise is high" notice on every such session. An empty transcript keeps its own message. Thresholds are prototype calibration from the HUD meter's headset baseline; the remedy stays in the PipeWire graph.
@@ -24,7 +26,7 @@ Committed segments may be coalesced before IBus insertion because rapid adjacent
 
 In streaming mode, unstable hypotheses may replace the target's preedit region when the injector supports it. Preedit is volatile, clears before commits and on cancellation, and follows the same secure-field and focus-loss guards as committed text.
 
-# Why an input method, not emulated input
+## Why an input method, not emulated input
 
 The cross-desktop direction for synthetic input is libei/libeis mediated by the
 `org.freedesktop.portal.RemoteDesktop` portal, and Mutter already carries libei
@@ -78,6 +80,7 @@ whether a portable IM/text-injection interface ever standardises; until then
 
 - Never inject unstable hypotheses with `CommitText`.
 - Never inject into a known secure field or after focus has moved.
+- Implement what ibus-daemon sets on an engine as D-Bus properties, and check declarations against a real engine's introspection (e.g. `gdbus introspect --address "$(ibus address)"` on `ibus-engine-simple`): the daemon discards error replies, so a wrong declaration fails silently.
 - Do not let the indicator or HUD take keyboard focus.
 - Keep activation, injection, and indication behind mockable traits.
 - Write portal triggers in shortcuts-spec syntax (`LOGO+j`, never `SUPER+j`): xdg-desktop-portal-gnome copies unknown modifier names into the accelerator.
