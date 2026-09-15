@@ -75,9 +75,19 @@ struct GlobalShortcutsFake {
     conn: Arc<std::sync::OnceLock<Connection>>,
     /// Shortcut ids `ListShortcuts` reports as already bound.
     stored: Vec<String>,
-    /// Answer `BindShortcuts` instead of sitting on it - what a real portal
-    /// does when it has a stored binding to answer from.
-    answers_bind: bool,
+    /// How `BindShortcuts` is answered.
+    answer: Answer,
+}
+
+/// What the fake does with a `BindShortcuts`.
+#[derive(Clone, Copy)]
+enum Answer {
+    /// Sit on it: the sheet nobody is in front of.
+    Never,
+    /// Grant it - what a real portal does with a stored binding to answer from.
+    Grant,
+    /// Answer with response 1: the user dismissed the sheet.
+    Dismiss,
 }
 
 /// The client picks its own handle tokens and computes the object path it will
@@ -231,12 +241,19 @@ impl GlobalShortcutsFake {
             ledger.peak_live_requests = ledger.peak_live_requests.max(ledger.live_requests.len());
         }
 
-        if self.answers_bind {
+        let response = match self.answer {
+            Answer::Never => None,
+            Answer::Grant => Some(0u32),
+            Answer::Dismiss => Some(1u32),
+        };
+        if let Some(response) = response {
             let mut meta: HashMap<&str, Value> = HashMap::new();
             meta.insert("description", Value::from("myna dictation"));
             meta.insert("trigger_description", Value::from("Super+T"));
             let mut results: HashMap<&str, Value> = HashMap::new();
-            results.insert("shortcuts", Value::from(vec![("dictate", meta)]));
+            if response == 0 {
+                results.insert("shortcuts", Value::from(vec![("dictate", meta)]));
+            }
             self.conn
                 .get()
                 .expect("connection published before serving")
@@ -245,7 +262,7 @@ impl GlobalShortcutsFake {
                     request.as_str(),
                     "org.freedesktop.portal.Request",
                     "Response",
-                    &(0u32, results),
+                    &(response, results),
                 )
                 .await?;
         }
@@ -316,11 +333,11 @@ async fn fake_portal() -> (Portal, Shared) {
 
 /// As [`fake_portal`], but reporting `stored` from `ListShortcuts`.
 async fn fake_portal_holding(stored: &[&str]) -> (Portal, Shared) {
-    fake_portal_with(stored, false).await
+    fake_portal_with(stored, Answer::Never).await
 }
 
-/// As [`fake_portal_holding`], but answering `BindShortcuts` too.
-async fn fake_portal_with(stored: &[&str], answers_bind: bool) -> (Portal, Shared) {
+/// As [`fake_portal_holding`], answering `BindShortcuts` as `answer` says.
+async fn fake_portal_with(stored: &[&str], answer: Answer) -> (Portal, Shared) {
     let serial = SERIAL.lock().await;
     let ledger: Shared = Arc::new(Mutex::new(Ledger::default()));
     let slot = Arc::new(std::sync::OnceLock::new());
@@ -335,7 +352,7 @@ async fn fake_portal_with(stored: &[&str], answers_bind: bool) -> (Portal, Share
                 ledger: Arc::clone(&ledger),
                 conn: Arc::clone(&slot),
                 stored: stored.iter().map(|s| s.to_string()).collect(),
-                answers_bind,
+                answer,
             },
         )
         .expect("desktop path is valid")
@@ -536,7 +553,7 @@ async fn a_shortcut_the_user_asked_for_is_re_bound_at_startup() {
     if !dbus_enabled() {
         return;
     }
-    let (portal, ledger) = fake_portal_with(&[], true).await;
+    let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
     let _consent = Consent::given();
     let client = zbus::Connection::session().await.expect("client bus");
 
@@ -562,8 +579,8 @@ async fn a_dismissed_sheet_is_not_raised_again_next_login() {
     if !dbus_enabled() {
         return;
     }
-    // `answers_bind: false` - the sheet goes up and nobody answers it.
-    let (portal, ledger) = fake_portal_with(&[], false).await;
+    // `Answer::Never` - the sheet goes up and nobody answers it.
+    let (portal, ledger) = fake_portal_with(&[], Answer::Never).await;
     let consent = Consent::given();
     let client = zbus::Connection::session().await.expect("client bus");
 
@@ -593,5 +610,32 @@ async fn a_dismissed_sheet_is_not_raised_again_next_login() {
         ledger.lock().unwrap().binds,
         1,
         "the sheet went up more than once"
+    );
+}
+
+/// ashpd resolves `BindShortcuts` once `Response` arrives, whatever it says. A
+/// dismissed sheet is a refusal, and it spends the consent that raised it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dismissed_re_bind_is_a_refusal_not_a_binding() {
+    if !dbus_enabled() {
+        return;
+    }
+    let (portal, _ledger) = fake_portal_with(&[], Answer::Dismiss).await;
+    let consent = Consent::given();
+    let client = zbus::Connection::session().await.expect("client bus");
+
+    let outcome =
+        GlobalShortcutTrigger::attach_with_connection(client, "dictate", ActivationMode::Toggle)
+            .await;
+    portal.shutdown().await;
+
+    assert!(
+        matches!(outcome, Err(TriggerError::BindRejected(_))),
+        "a dismissed sheet was taken as a binding: {:?}",
+        outcome.err()
+    );
+    assert!(
+        !consent.is_given(),
+        "a dismissed sheet has to spend consent"
     );
 }

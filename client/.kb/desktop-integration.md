@@ -78,4 +78,5 @@ whether a portable IM/text-injection interface ever standardises; until then
 - Never inject into a known secure field or after focus has moved.
 - Do not let the indicator or HUD take keyboard focus.
 - Keep activation, injection, and indication behind mockable traits.
+- A `BindShortcuts` call resolves on any `Response`; read the response, because a dismissed sheet arrives as a successful call.
 - Treat source and tests in `myna-desktop` as authoritative for IBus serialization details.

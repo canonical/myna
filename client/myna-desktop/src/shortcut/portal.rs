@@ -407,7 +407,13 @@ impl GlobalShortcutTrigger {
         )
         .await;
         match bound {
-            Ok(Ok(_)) => {}
+            // ashpd resolves the call once `Response` arrives whatever it says, so a
+            // dismissed sheet is only visible in the response.
+            Ok(Ok(request)) => {
+                request
+                    .response()
+                    .map_err(|e| TriggerError::BindRejected(e.to_string()))?;
+            }
             Ok(Err(e)) => return Err(TriggerError::BindRejected(e.to_string())),
             Err(_) => {
                 return Err(TriggerError::BindUnanswered(format!(
