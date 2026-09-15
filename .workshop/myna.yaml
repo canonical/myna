@@ -71,19 +71,22 @@ actions:
     # fail) when it is absent, so sync first or they silently stop testing.
     (cd /project/server && uv sync -q)
     export RUST_BACKTRACE=1
-    # No --workspace: the virtual manifest already tests every member bare,
-    # and the flag would override a scoping `-p <crate>`.
+    # The virtual manifest already tests every member bare. Scope with
+    # `--workspace --test <file>` rather than `-p <crate>`: resolver 2 unifies
+    # features over the selected packages only, so `-p` builds a second copy of
+    # glib and the crates above it, and every edit compiles once per copy.
     cd /project/client && cargo test "$@"
   # The env-gated hardware suites, with their services stood up (features
   # 002/003). `test` above stays hermetic; this is the same suites with the
-  # gates on, and it is what `cov` folds in.
+  # gates on, and it is what `cov` folds in. `--workspace` for the reason
+  # given under `test`.
   test-gated: |
     export PATH=/usr/local/cargo-bin:$PATH
     export RUST_BACKTRACE=1
     cd /project/client
-    /project/dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
-    /project/dev/gated-tests.sh cargo test \
-      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+    /project/dev/gated-tests.sh cargo test --workspace --test pipewire_hw
+    /project/dev/gated-tests.sh cargo test --workspace \
+      --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
 
   # Rust lints as errors.
   lint: |
@@ -111,12 +114,12 @@ actions:
     cd /project/client
     # The example has the rendered ribbon checked end-to-end (compile +
     # link + render + read_pixels + body-bands-on-centre-row assertions).
-    cargo build -p myna-hud --example render_check
+    cargo build --workspace --example render_check
     xvfb-run -a -s "-screen 0 800x600x24" \
       ./target/debug/examples/render_check
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
       xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo test -p myna-config --lib --test template_instantiation -- --test-threads=1
+      cargo test --workspace --lib --test template_instantiation -- --test-threads=1
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
@@ -154,18 +157,18 @@ actions:
     # up, so a runner without one skips exactly as it does offline. ibus_hw
     # drives the session-global input engine and must run serially.
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
-      -p myna-audio --test pipewire_hw
+      --workspace --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
-      -p myna-desktop --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+      --workspace --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
     # Myna Settings' GTK probes spawn the instrumented binary, so the UI they
     # drive is measured; `ui-check` runs the same suite uninstrumented.
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
       xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo llvm-cov --no-report -p myna-config --lib --test template_instantiation -- --test-threads=1
+      cargo llvm-cov --no-report --workspace --lib --test template_instantiation -- --test-threads=1
     # The ribbon renderer only runs with a GL context, which no test has:
     # `ui-check`'s render_check is its test, so measure it here too.
     xvfb-run -a -s "-screen 0 800x600x24" \
-      cargo llvm-cov run --no-report -p myna-hud --example render_check
+      cargo llvm-cov run --no-report --example render_check
     # Four exports over every profraw, silent until the summary table.
     echo "cov: tests done; exporting reports (about two minutes, no output until the summary)" >&2
     cargo llvm-cov report --cobertura --output-path target/coverage/rust-tests.cobertura.xml

@@ -138,7 +138,7 @@ i18n-check: ## Fail if a committed .pot is stale against the sources it lists
 ##@ Test
 
 # Scope a test loop, e.g.:
-#   make test-client-hermetic TEST='-p myna-desktop --test dbus_trigger'
+#   make test-client-hermetic TEST='--workspace --test dbus_trigger'
 #   make test-server TEST='tests/test_contract.py -k final'
 TEST ?=
 

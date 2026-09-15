@@ -75,8 +75,8 @@ if ! ls "$CLIENT"/target/llvm-cov-target/*.profraw >/dev/null 2>&1; then
   (cd "$CLIENT" \
     && env -u MYNA_PIPEWIRE_TESTS -u MYNA_IBUS_TESTS -u MYNA_DBUS_TESTS \
          cargo llvm-cov --workspace --no-report >/dev/null \
-    && cargo llvm-cov --no-report -p myna-audio --test pipewire_hw >/dev/null \
-    && cargo llvm-cov --no-report -p myna-desktop \
+    && cargo llvm-cov --no-report --workspace --test pipewire_hw >/dev/null \
+    && cargo llvm-cov --no-report --workspace \
          --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1 >/dev/null)
 fi
 # Python: the test-suite data file, stashed by the py-cov action.

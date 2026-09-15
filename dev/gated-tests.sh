@@ -8,8 +8,8 @@
 # them off: this script stands the services up, exports the gates, and runs the
 # command inside them.
 #
-#   dev/gated-tests.sh cargo test -p myna-audio --test pipewire_hw
-#   dev/gated-tests.sh cargo llvm-cov --no-report -p myna-audio --test pipewire_hw
+#   dev/gated-tests.sh cargo test --workspace --test pipewire_hw
+#   dev/gated-tests.sh cargo llvm-cov --no-report --workspace --test pipewire_hw
 #
 # Everything is private on purpose. ibus_hw changes the *global* input engine
 # for the session it runs in, so a developer running this on their desktop must
