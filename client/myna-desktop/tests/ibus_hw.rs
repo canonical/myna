@@ -428,17 +428,18 @@ async fn private_field_is_not_refused() {
 /// Run it and click into any editable text field when prompted:
 ///
 /// ```text
-/// MYNA_IBUS_TESTS=1 cargo test -p myna-desktop --test ibus_hw \
-///     ibus_preedit_visual_probe -- --nocapture
+/// MYNA_IBUS_TESTS=1 cargo test --workspace --test ibus_hw \
+///     ibus_preedit_visual_probe -- --ignored --nocapture
 /// ```
 ///
 /// Expected: "unstable one" appears underlined in the field, is *replaced* by
 /// "unstable two", then disappears as "probe: committed." is inserted. If the
 /// text appears but is NOT underlined, the app renders preedit without
 /// attributes (fine); if nothing appears, the app/daemon drops
-/// `UpdatePreeditText` — report which app you focused. Takes over the global
+/// `UpdatePreeditText` - report which app you focused. Takes over the global
 /// IME for ~12 s (same caveat as every test in this file).
 #[tokio::test]
+#[ignore = "manual: needs a person watching a focused field"]
 async fn ibus_preedit_visual_probe() {
     if !ibus_enabled() {
         eprintln!("skipping ibus_preedit_visual_probe: MYNA_IBUS_TESTS unset");
