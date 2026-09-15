@@ -424,27 +424,37 @@ error-taxonomy work (T31).
 
 ### TC-09 — Secure-field injection behavior (GNOME/Wayland)
 
-**Description**: Tracks the known, currently unresolved gap where myna
-cannot distinguish a password field from a normal text field on
-GNOME/Wayland. See §8 for full background — this test case is the
-executable form of that check.
+**Description**: Verifies that myna refuses to type into password and PIN
+fields on GNOME/Wayland, while still typing into ordinary fields, including
+those in a browser private window. See §8 for background; this test case is
+the executable form of that check.
 
 **Preconditions**: Any model installed; a GNOME/Wayland-native app with a
-password field available (e.g. GNOME Settings → change password dialog).
+password field (e.g. the GNOME Settings change password dialog, or a login
+form); a PIN field if one is available; a normal text field (e.g. GNOME
+Text Editor); a browser private window with a normal text field (e.g. a
+search box).
 
 **Steps**:
 1. Focus the password field.
 2. Press the hotkey and say: "test password one two three" (never a real
-   password).
-3. Stop recording.
-4. Observe whether text appears in the password field.
+   password). Stop recording if it started.
+3. Observe any notice shown and whether text appears in the field.
+4. Repeat steps 1-3 in the PIN field, if available.
+5. Repeat steps 1-3 in the normal text field.
+6. Repeat steps 1-3 in the normal text field of the browser private window.
 
-**Expected Result**: Currently expected (not a new bug): the dictated text
-is injected into the password field, since secure-field detection does not
-reach the IBus injector on GNOME/Wayland today. Log the exact observed
-behavior every run — this is a tracked awareness test, and any change in
-behavior (e.g. injection now correctly refused) is itself a significant
-signal worth flagging prominently.
+**Expected Result**:
+- Password and PIN fields: pressing the hotkey shows the notice "Refusing to
+  type into a password field", no recording starts, and the field receives
+  no text.
+- Normal field and private-window normal field: the dictated text is
+  inserted as usual.
+
+Pass only if every field behaves as above. Any dictated text landing in a
+password or PIN field is a blocking security bug. Known limitation, not a
+failure: a field that merely hides its text without the app declaring it a
+password field is not detected, and myna types into it.
 
 ---
 
@@ -528,28 +538,27 @@ For each test run, note (rough categories are fine — "instant" /
 
 ## 8. Security / edge-case test: secure-field behavior
 
-**Background**: on GNOME/Wayland, this project has a documented, currently
-unresolved gap — the desktop's secure-field marking (used for password
-fields) does not reach the IBus injector, meaning myna cannot currently tell
-a password field apart from a normal text field. On X11/XWayland this
-detection works correctly, but X11 is not a primary supported target in this
-round.
+**Background**: myna must never type dictated text into a password or PIN
+field. When the focused field is marked as a password or PIN field, myna
+refuses at the start of dictation: it shows the notice "Refusing to type
+into a password field" and does not start recording. Ordinary fields,
+including those in a browser private window, are not refused.
 
-**Test case** (log the observed outcome every time — this is a known issue,
-not a surprise, but must be tracked so a future fix can be verified against
-this same test):
+**Test case** (pass/fail; execute as TC-09):
 
 1. Focus a password field in a GNOME/Wayland-native app (e.g. a login form,
    GNOME Settings password change dialog).
 2. Trigger the hotkey and dictate a short phrase (do **not** use a real
-   password — use e.g. "test password one two three").
-3. Record whether myna:
-   - Refuses to inject (correct/expected long-term behavior), or
-   - Injects the dictated text into the password field (currently the
-     expected/known outcome on GNOME/Wayland today).
+   password; use e.g. "test password one two three").
+3. Pass if the notice "Refusing to type into a password field" appears and
+   the field receives no text.
+4. Repeat steps 1-3 in a PIN field, if one is available.
+5. Repeat steps 1-2 in a normal text field, then in a normal text field of a
+   browser private window. Pass if the dictated text is inserted in both.
 
-This is not a blocking bug for this test round — it's an awareness/tracking
-test. Do not spend extended time trying to work around it.
+Any dictated text landing in a password or PIN field is a **blocking**
+security bug. Known limitation, not a failure: a field that merely hides its
+text without the app declaring it a password field is not detected.
 
 ---
 
@@ -587,7 +596,7 @@ Additional free-text notes to capture per run where relevant:
 - Background noise conditions (quiet room vs. not).
 - Any expected-failure cases from §3 that were observed (mark as
   "expected", not a bug).
-- Secure-field observation from §8.
+- Secure-field cases run from §8 (password, PIN, normal, private window).
 
 ---
 
