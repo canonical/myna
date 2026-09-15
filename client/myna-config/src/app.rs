@@ -1137,8 +1137,6 @@ fn backends_probe() -> glib::ExitCode {
             .map(|page| page.upcast::<gtk::Widget>())
     };
 
-    // The Backend tab always shows the single active backend, so the fixture's
-    // active parakeet page should appear with no explicit selection.
     if !settles(&|| ui.controller().pages().len() == 2) {
         eprintln!(
             "discovery never listed the fixture backends ({} backends)",
@@ -1147,6 +1145,9 @@ fn backends_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("backends-discovered: 2");
+
+    // The Backend tab shows the one active backend, and opening it reads it.
+    view_stack.set_visible_child_name("backend");
 
     let idle_entry = || {
         content()

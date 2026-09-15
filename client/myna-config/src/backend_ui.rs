@@ -62,8 +62,9 @@ pub struct BackendUi {
     diagnostics_page: RefCell<Option<adw::NavigationPage>>,
     backend_pages: RefCell<BTreeMap<String, adw::NavigationPage>>,
     apply_state: RefCell<BTreeMap<String, BackendApplyState>>,
-    /// The snap name currently displayed in the Backend tab, if any.
-    shown_backend: RefCell<Option<String>>,
+    /// The active-backend state the Backend tab last rendered.
+    shown_state: RefCell<Option<ActiveBackendState>>,
+    backend_tab_shown: std::cell::Cell<bool>,
     installed_snaps: RefCell<Vec<InstalledSnap>>,
     inventory_complete: std::cell::Cell<bool>,
     inventory_failure: RefCell<Option<String>>,
@@ -233,7 +234,10 @@ impl BackendUi {
             diagnostics_page: RefCell::new(Some(diagnostics_page)),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
-            shown_backend: RefCell::new(None),
+            shown_state: RefCell::new(None),
+            backend_tab_shown: std::cell::Cell::new(
+                view_stack.visible_child_name().as_deref() == Some("backend"),
+            ),
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
@@ -520,10 +524,18 @@ impl BackendUi {
                 let Some(ui) = ui.upgrade() else {
                     return;
                 };
-                match stack.visible_child_name().as_deref() {
+                let tab = stack.visible_child_name();
+                let backend_shown = tab.as_deref() == Some("backend");
+                let shown = ui.shown_backend();
+                if ui.backend_tab_shown.replace(backend_shown) && !backend_shown {
+                    if let Some(name) = &shown {
+                        ui.controller.cancel_page(name);
+                    }
+                }
+                match tab.as_deref() {
                     Some("diagnostics") => ui.on_diagnostics_page_shown(),
                     Some("backend") => {
-                        if let Some(name) = ui.shown_backend.borrow().clone() {
+                        if let Some(name) = shown {
                             ui.trigger_snapshot(&name);
                         }
                     }
@@ -946,32 +958,26 @@ impl BackendUi {
         }
     }
 
-    /// Keeps the Backend tab showing the single active backend. Called
-    /// whenever the active-backend snapshot changes.
+    /// Keeps the Backend tab showing the single active backend, or why there
+    /// is none. Called whenever the active-backend snapshot changes.
     fn sync_backend_tab(self: &Rc<Self>) {
-        let active_name = match self.active_backend.snapshot().active_state() {
-            ActiveBackendState::Connected(identity) => Some(identity.snap_name().to_owned()),
-            _ => None,
-        };
-        let previous = self.shown_backend.borrow().clone();
-        if previous.as_deref() == active_name.as_deref() {
+        let state = self.active_backend.snapshot().active_state();
+        if self.shown_state.borrow().as_ref() == Some(&state) {
             return;
         }
-        if let Some(name) = previous.as_deref() {
-            self.controller.cancel_page(name);
+        if let Some(name) = self.shown_backend() {
+            self.controller.cancel_page(&name);
         }
-        *self.shown_backend.borrow_mut() = active_name.clone();
-        match active_name {
-            Some(name) => {
-                self.rebuild_backend_page(&name);
-                self.trigger_snapshot(&name);
+        *self.shown_state.borrow_mut() = Some(state.clone());
+        let (title, description) = match state {
+            ActiveBackendState::Connected(identity) => {
+                let name = identity.snap_name();
+                self.rebuild_backend_page(name);
+                if self.backend_tab_shown.get() {
+                    self.trigger_snapshot(name);
+                }
+                return;
             }
-            None => self.show_backend_placeholder(),
-        }
-    }
-
-    fn show_backend_placeholder(self: &Rc<Self>) {
-        let (title, description) = match self.active_backend.snapshot().active_state() {
             ActiveBackendState::Disconnected => (
                 gettextrs::gettext("No Active Backend"),
                 gettextrs::gettext("Choose an installed backend on the General tab to connect it."),
@@ -984,13 +990,17 @@ impl BackendUi {
                 gettextrs::gettext("Backend Switch Unresolved"),
                 gettextrs::gettext("The previous switch did not complete. Check the General tab."),
             ),
-            ActiveBackendState::Connected(_) => (
-                gettextrs::gettext("Loading Backend"),
-                gettextrs::gettext("Reading configuration from the active backend…"),
-            ),
         };
         let page = model_status_page(&title, &description, "audio-x-generic-symbolic");
         self.backend_nav.replace(&[page]);
+    }
+
+    /// The snap whose page the Backend tab shows, if any.
+    fn shown_backend(&self) -> Option<String> {
+        match self.shown_state.borrow().as_ref() {
+            Some(ActiveBackendState::Connected(identity)) => Some(identity.snap_name().to_owned()),
+            _ => None,
+        }
     }
 
     /// Rebuilds only the staged-changes group, leaving the setting widgets
@@ -1024,7 +1034,7 @@ impl BackendUi {
         self.backend_pages
             .borrow_mut()
             .insert(snap_name.to_owned(), widget.clone());
-        if self.shown_backend.borrow().as_deref() == Some(snap_name) {
+        if self.shown_backend().as_deref() == Some(snap_name) {
             self.backend_nav.replace(&[widget]);
             if let Some(focus) = focus {
                 self.restore_backend_focus(&focus);
@@ -2576,6 +2586,7 @@ mod tests {
         let view_stack = adw::ViewStack::new();
         let backend_nav = adw::NavigationView::new();
         let diagnostics_nav = adw::NavigationView::new();
+        view_stack.add_named(&gtk::Label::new(None), Some("general"));
         view_stack.add_named(&backend_nav, Some("backend"));
         view_stack.add_named(&diagnostics_nav, Some("diagnostics"));
         let page = |title: &str| {
@@ -2604,7 +2615,10 @@ mod tests {
             diagnostics_page: RefCell::new(Some(page("Diagnostics"))),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
-            shown_backend: RefCell::new(None),
+            shown_state: RefCell::new(None),
+            backend_tab_shown: std::cell::Cell::new(
+                view_stack.visible_child_name().as_deref() == Some("backend"),
+            ),
             installed_snaps: RefCell::new(Vec::new()),
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
@@ -2636,18 +2650,119 @@ mod tests {
         });
     }
 
+    const PARAKEET_SLOT: &str =
+        "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n";
+    const PARAKEET_CONNECTED: &str = "Interface Plug Slot Notes\n\
+         content[inference-provider] myna:backend myna-parakeet:provider manual\n";
+    const PARAKEET_DISCONNECTED: &str =
+        "Interface Plug Slot Notes\ncontent - myna-parakeet:provider -\n";
+
+    /// Never answers, so a read the UI starts stays in flight.
+    struct UnansweredRepository;
+
+    #[async_trait::async_trait(?Send)]
+    impl BackendRepository for UnansweredRepository {
+        async fn discover(
+            &self,
+            _cancellation: CancellationToken,
+        ) -> Result<crate::domain::ConnectionSnapshot, crate::domain::BackendSurfaceError> {
+            std::future::pending().await
+        }
+
+        async fn read_snapshot(
+            &self,
+            _backend: &BackendIdentity,
+            _cancellation: CancellationToken,
+        ) -> crate::domain::BackendSnapshot {
+            std::future::pending().await
+        }
+
+        async fn refresh(
+            &self,
+            _cancellation: CancellationToken,
+        ) -> Result<crate::domain::ConnectionSnapshot, crate::domain::BackendSurfaceError> {
+            std::future::pending().await
+        }
+    }
+
+    fn discovered(connections: &str) -> Rc<BackendController> {
+        let controller = BackendController::new(Rc::new(UnansweredRepository));
+        let request = controller.begin_discovery();
+        let snapshot = crate::domain::parse_connections(connections, PARAKEET_SLOT)
+            .expect("connections parse");
+        controller.complete_discovery(request, Ok(snapshot));
+        controller
+    }
+
+    fn parakeet_loading(ui: &BackendUi) -> bool {
+        ui.controller
+            .page("myna-parakeet")
+            .expect("parakeet discovered")
+            .loading()
+    }
+
+    #[test]
+    fn the_active_backend_is_read_only_once_its_tab_is_shown() {
+        on_gtk_thread(|| {
+            let TestUi { ui, view_stack } = test_ui(discovered(PARAKEET_CONNECTED));
+            ui.sync_active_backend();
+            assert!(!parakeet_loading(&ui));
+
+            view_stack.set_visible_child_name("backend");
+            assert!(parakeet_loading(&ui));
+        });
+    }
+
+    #[test]
+    fn leaving_the_backend_tab_cancels_its_read() {
+        on_gtk_thread(|| {
+            let TestUi { ui, view_stack } = test_ui(discovered(PARAKEET_CONNECTED));
+            ui.sync_active_backend();
+            view_stack.set_visible_child_name("backend");
+            assert!(parakeet_loading(&ui));
+
+            view_stack.set_visible_child_name("general");
+            assert!(!parakeet_loading(&ui));
+        });
+    }
+
+    #[test]
+    fn moving_between_other_tabs_leaves_a_read_running() {
+        on_gtk_thread(|| {
+            let TestUi { ui, view_stack } = test_ui(discovered(PARAKEET_CONNECTED));
+            ui.sync_active_backend();
+            view_stack.set_visible_child_name("diagnostics");
+            ui.trigger_snapshot("myna-parakeet");
+
+            view_stack.set_visible_child_name("general");
+            assert!(parakeet_loading(&ui));
+        });
+    }
+
+    #[test]
+    fn a_machine_with_no_active_backend_says_so_on_the_backend_tab() {
+        on_gtk_thread(|| {
+            let TestUi { ui, .. } = test_ui(discovered(PARAKEET_DISCONNECTED));
+            ui.sync_active_backend();
+
+            let page = ui
+                .backend_nav
+                .visible_page()
+                .expect("the backend tab shows a page")
+                .downcast::<ui::StatusPage>()
+                .expect("a status page");
+            assert_eq!(page.status().title(), "No Active Backend");
+        });
+    }
+
     /// A connected parakeet backend whose only setting is the pause-length
     /// number, shown on screen with the entry row focused as a user typing
     /// into it would have it.
     fn focused_pause_length_entry() -> (Rc<BackendUi>, gtk::Window) {
         let controller = BackendController::detached();
         let request = controller.begin_discovery();
-        let connections = crate::domain::parse_connections(
-            "Interface Plug Slot Notes\n\
-             content[inference-provider] myna:backend myna-parakeet:provider manual\n",
-            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
-        )
-        .expect("connections parse");
+        let connections = crate::domain::parse_connections(PARAKEET_CONNECTED, PARAKEET_SLOT)
+            .expect("connections parse");
         controller.complete_discovery(request, Ok(connections));
         let request = controller.begin_snapshot("myna-parakeet").unwrap();
         let mut snapshot = crate::domain::BackendSnapshot::empty(BackendIdentity::new(
