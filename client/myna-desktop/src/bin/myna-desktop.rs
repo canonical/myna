@@ -65,7 +65,9 @@ use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlT
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
-use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
+use myna_desktop::{
+    AutoStop, ChimingIndicator, DesktopController, Indicator, Live, PipeWireChimePlayer, Session,
+};
 use myna_orchestrator::{
     run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixIe115Backend,
 };
@@ -171,6 +173,9 @@ struct Resolved {
     hotkey: Option<String>,
     preedit: bool,
     auto_stop: AutoStop,
+    /// Whether to play the start/stop/error chimes — a settings-only knob (no
+    /// argv override; there was no debugging case for one).
+    chimes_enabled: bool,
 }
 
 impl Resolved {
@@ -182,6 +187,7 @@ impl Resolved {
             hotkey: args.shortcut.clone(),
             preedit: resolve_preedit(args.preedit, settings.streaming_mode),
             auto_stop: resolve_auto_stop(activation, args.hold, settings.silence_timeout),
+            chimes_enabled: settings.chimes_enabled,
         }
     }
 }
@@ -783,6 +789,16 @@ async fn run_controller(
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
+
+    // Chimes layer on top of whichever indicator was chosen above (D-Bus,
+    // notify, or the dynamic mix) — boxed so both arms share one type (the
+    // `Box<dyn Indicator>` blanket impl lets it still go into `.indicator()`,
+    // which wants `impl Indicator + 'static`, not an already-boxed one).
+    let indicator: Box<dyn Indicator> = if resolved.chimes_enabled {
+        Box::new(ChimingIndicator::new(indicator, PipeWireChimePlayer))
+    } else {
+        Box::new(indicator)
+    };
 
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))

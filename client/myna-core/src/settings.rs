@@ -67,6 +67,13 @@ pub const KEY_SILENCE_TIMEOUT: &str = "silence-timeout";
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
 
+/// Whether to play the start/stop/error dictation chimes (STT UX spec).
+pub const KEY_CHIMES_ENABLED: &str = "chimes-enabled";
+
+/// The schema default for [`KEY_CHIMES_ENABLED`] - chimes on by default, per
+/// spec ("Sound chimes should be enabled by default").
+pub const DEFAULT_CHIMES_ENABLED: bool = true;
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +87,8 @@ pub struct Settings {
     pub hud_style: Option<String>,
     /// Seconds of silence after which a toggle session ends itself; `0` = never.
     pub silence_timeout: u32,
+    /// Whether to play the start/stop/error dictation chimes.
+    pub chimes_enabled: bool,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -90,6 +99,7 @@ impl Default for Settings {
             language: None,
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
+            chimes_enabled: DEFAULT_CHIMES_ENABLED,
         }
     }
 }
@@ -112,6 +122,7 @@ impl Settings {
             language: store.text(KEY_LANGUAGE),
             hud_style: store.text(KEY_HUD_STYLE),
             silence_timeout: store.seconds(KEY_SILENCE_TIMEOUT),
+            chimes_enabled: store.boolean(KEY_CHIMES_ENABLED),
         }
     }
 }
@@ -171,6 +182,11 @@ impl Store {
     /// An unsigned-seconds key. The schema bounds it; nothing to interpret.
     pub fn seconds(&self, key: &str) -> u32 {
         self.settings.uint(key)
+    }
+
+    /// A boolean-valued key.
+    pub fn boolean(&self, key: &str) -> bool {
+        self.settings.boolean(key)
     }
 }
 

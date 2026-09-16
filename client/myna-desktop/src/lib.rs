@@ -20,11 +20,17 @@
 //!   myna-shell overlay for GNOME; [`indicator::mock::MockIndicator`] for
 //!   tests). The former GTK overlay was removed in T150.
 //!
+//! [`chime::ChimingIndicator`] is an optional `Indicator` decorator playing
+//! start/stop/error chimes (STT UX spec's state-cue table) alongside
+//! whichever indicator above is in use; wired in when the `chimes-enabled`
+//! setting is on.
+//!
 //! Real IBus/portal/GTK behavior lives behind env-gated integration suites
 //! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS`); the hermetic
 //! suite drives the controller through the mocks.
 
 pub mod backend;
+pub mod chime;
 pub mod controller;
 pub mod dbus;
 pub mod indicator;
@@ -32,6 +38,7 @@ pub mod inject;
 pub mod live;
 pub mod shortcut;
 
+pub use chime::{Chime, ChimePlayer, ChimingIndicator, PipeWireChimePlayer};
 pub use controller::{
     auto_stop_due, event_to_indicator, input_quality, AutoStop, ChannelSink, DesktopController,
     DesktopControllerBuilder, DictationState, InputQuality, Session, SessionFactory, SessionRun,

@@ -69,5 +69,14 @@
         next tap. Hold-to-talk always ends with the key.
       </description>
     </key>
+
+    <key name="chimes-enabled" type="b">
+      <default>true</default>
+      <summary>Play dictation chimes</summary>
+      <description>
+        Play a short sound when dictation starts recording, stops, and on an
+        unrecoverable error. Disable for a silent indicator only.
+      </description>
+    </key>
   </schema>
 </schemalist>
