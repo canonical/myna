@@ -21,7 +21,9 @@ snap logs -n5 myna-whisper.server
 #    flag unless the snap-id is allowlisted. Without this the INSTALL fails.
 sudo snap set system experimental.user-daemons=true
 
-# 2. Build + install this snap
+# 2. Build + install this snap. The version comes from git, as snapcraft's
+#    `version: git` would give it: 0+git.<sha>, -dirty for uncommitted changes
+#    (dev/snap-version.sh).
 ./dev/prepare.sh && snapcraft pack
 sudo snap install --dangerous ./myna_*.snap
 
