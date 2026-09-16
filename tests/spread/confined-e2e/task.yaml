@@ -42,8 +42,7 @@ execute: |
     # myna.testbed is the confined myna-testbed; it is stdin-triggered
     # (Enter starts the utterance), so feed it one Enter then hold the pipe.
     ( printf '\n'; sleep 15 ) | \
-        myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
-            --clip /var/snap/myna/current/fixture.wav \
+        myna.testbed --clip /var/snap/myna/current/fixture.wav \
             > transcript.out 2>&1 || true
     cat transcript.out
     grep -qF "The quick brown fox jumps over the lazy dog." transcript.out

@@ -30,6 +30,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use myna_audio::{AudioStats, CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
+use myna_orchestrator::backend::share::BackendSocket;
 use myna_orchestrator::{
     run_dictation, BackendClient, SessionOutcome, StdinTrigger, StdoutSink, TextSink, Trigger,
     TriggerEdge, WavFileSource, WsUnixBackend, WsUnixIe115Backend,
@@ -68,10 +69,13 @@ const USAGE: &str = "\
 myna-testbed - drive a backend session from WAV clips, a corpus or the microphone
 
 USAGE:
-    myna-testbed --socket <path> (--clip <wav> | --corpus <dir> | --mic) [options]
+    myna-testbed (--socket <path> | --backend-dir <d>) (--clip <wav> | --corpus <dir> | --mic) [options]
 
 OPTIONS:
-    --socket <path>    Unix socket of a running myna-server (required)
+    --socket <path>    Unix socket of a running myna-server
+    --backend-dir <d>  directory to find the backend socket under
+                       (<d>/*/provider.env - how the snap wires the `backend`
+                       content share). One of these two is required.
     --clip <wav>       a single PCM WAV clip to dictate (repeatable)
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
     --mic              capture the live microphone (myna-audio / native PipeWire)
@@ -94,6 +98,7 @@ OPTIONS:
 
 fn parse_args() -> Result<Args, String> {
     let mut socket = None;
+    let mut backend_dir = None;
     let mut clips = Vec::new();
     let mut mic = false;
     let mut target = None;
@@ -112,6 +117,7 @@ fn parse_args() -> Result<Args, String> {
                 std::process::exit(0);
             }
             "--socket" => socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
+            "--backend-dir" => backend_dir = Some(PathBuf::from(next(&mut it, "--backend-dir")?)),
             "--clip" => clips.push(Clip {
                 path: PathBuf::from(next(&mut it, "--clip")?),
                 reference: None,
@@ -144,7 +150,8 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
-    let socket = socket.ok_or_else(|| format!("--socket is required\n\n{USAGE}"))?;
+    let backend = BackendSocket::from_flags(socket, backend_dir)?
+        .ok_or_else(|| format!("--socket or --backend-dir is required\n\n{USAGE}"))?;
     if mic && !clips.is_empty() {
         return Err("--mic and --clip/--corpus are mutually exclusive".into());
     }
@@ -165,6 +172,7 @@ fn parse_args() -> Result<Args, String> {
     // T049/T050: the --mode flag overrides the persisted setting; the persisted
     // setting (Auto default) is resolved against the tier gate below.
     let mode = mode.unwrap_or_else(|| myna_core::Settings::load().streaming_mode);
+    let socket = backend.resolve().map_err(|e| e.to_string())?.socket;
 
     Ok(Args {
         socket,

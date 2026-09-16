@@ -339,8 +339,11 @@ impl LiveSettings {
 
 #[derive(Clone, Debug, Default)]
 struct Args {
-    socket: Option<PathBuf>,
-    backend_dir: Option<PathBuf>,
+    /// Where to look for the backend. Deliberately *not* resolved here: the
+    /// socket a content share supplies can appear, move and vanish under a
+    /// `snap refresh` of the backend, so the daemon must not bake a path in at
+    /// startup (see [`BackendSocket`]).
+    backend: Option<BackendSocket>,
     language: Option<String>,
     target: Option<String>,
     control: Option<PathBuf>,
@@ -365,14 +368,15 @@ fn parse_args_from(
     mut it: std::iter::Peekable<impl Iterator<Item = String>>,
 ) -> Result<Args, String> {
     let mut a = Args::default();
+    let (mut socket, mut backend_dir) = (None, None);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
             }
-            "--socket" => a.socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
-            "--backend-dir" => a.backend_dir = Some(PathBuf::from(next(&mut it, "--backend-dir")?)),
+            "--socket" => socket = Some(PathBuf::from(next(&mut it, "--socket")?)),
+            "--backend-dir" => backend_dir = Some(PathBuf::from(next(&mut it, "--backend-dir")?)),
             "--language" => a.language = Some(next(&mut it, "--language")?),
             "--target" => a.target = Some(next(&mut it, "--target")?),
             "--control-socket" => {
@@ -395,9 +399,7 @@ fn parse_args_from(
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
-    if a.socket.is_some() && a.backend_dir.is_some() {
-        return Err("--socket and --backend-dir are alternatives (pick one)".into());
-    }
+    a.backend = BackendSocket::from_flags(socket, backend_dir)?;
     Ok(a)
 }
 
@@ -500,20 +502,6 @@ fn toggle_hint_for(activation: Activation, hotkey: Option<&str>) -> Vec<String> 
     }
 }
 
-impl Args {
-    /// Where to look for the backend, or `None` when neither form was given.
-    /// Deliberately *not* resolved here: the socket a content share supplies
-    /// can appear, move and vanish under a `snap refresh` of the backend, so
-    /// the daemon must not bake a path in at startup (see [`BackendSocket`]).
-    fn backend(&self) -> Option<BackendSocket> {
-        match (&self.socket, &self.backend_dir) {
-            (Some(path), _) => Some(BackendSocket::Fixed(path.clone())),
-            (_, Some(dir)) => Some(BackendSocket::Search(dir.clone())),
-            _ => None,
-        }
-    }
-}
-
 /// Build the per-Press session factory: a fresh backend connection + live
 /// capture source, run through the orchestrator (capture-at-press, ready-gated).
 ///
@@ -526,7 +514,7 @@ fn make_session(
     readiness: Option<Readiness>,
     pump_bus: Option<SharedBus>,
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> Session + Send + 'static {
-    let backend_socket = args.backend().expect("daemon requires a backend");
+    let backend_socket = args.backend.clone().expect("daemon requires a backend");
     let language = live.language.clone();
     let target = args.target.clone();
     move |events: mpsc::Sender<OrchestratorEvent>| {
@@ -844,7 +832,11 @@ fn with_status(trigger: RetryingTrigger, bus: Option<SharedBus>) -> RetryingTrig
 }
 
 fn banner(args: &Args, resolved: &Resolved) {
-    let sock = args.backend().map(|b| b.describe()).unwrap_or_default();
+    let sock = args
+        .backend
+        .as_ref()
+        .map(|b| b.describe())
+        .unwrap_or_default();
     match resolved.activation {
         Activation::Stdin => println!(
             "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
@@ -1167,7 +1159,7 @@ fn print_status(args: &Args) -> ExitCode {
     };
 
     println!("\nbackend");
-    match args.backend() {
+    match &args.backend {
         None => println!(
             "  {:<15} (none - pass --socket or --backend-dir)",
             "configured"
@@ -1308,7 +1300,7 @@ fn main() -> ExitCode {
         };
     }
 
-    if args.backend().is_none() {
+    if args.backend.is_none() {
         eprintln!("--socket or --backend-dir is required to run the daemon\n\n{USAGE}");
         return ExitCode::FAILURE;
     }
@@ -1944,7 +1936,9 @@ mod tests {
     #[test]
     fn make_session_resets_readiness_synchronously_before_run_is_polled() {
         let args = Args {
-            socket: Some(PathBuf::from("/tmp/myna-desktop-test-unused.sock")),
+            backend: Some(BackendSocket::Fixed(PathBuf::from(
+                "/tmp/myna-desktop-test-unused.sock",
+            ))),
             ..Default::default()
         };
         let readiness = Readiness::new();

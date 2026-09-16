@@ -287,9 +287,9 @@ unreachable. It says so when it notices.
 ## Verify (confined, end to end)
 
 ```shell
-# 1. testbed round-trip through the content-shared socket
-myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
-    --language en --clip ~/path/to/clip.wav
+# 1. testbed round-trip through the content-shared socket (found the way the
+#    daemon finds it: --backend-dir $SNAP_DATA/backend, passed by the wrapper)
+myna.testbed --language en --clip ~/path/to/clip.wav
 
 # 2. device enumeration over the confined PipeWire socket
 myna.testbed --list-devices

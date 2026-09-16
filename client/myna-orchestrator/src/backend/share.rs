@@ -211,6 +211,22 @@ pub enum BackendSocket {
 }
 
 impl BackendSocket {
+    /// The backend a `--socket <path>` / `--backend-dir <dir>` pair names, or
+    /// `None` when neither was given.
+    pub fn from_flags(
+        socket: Option<PathBuf>,
+        backend_dir: Option<PathBuf>,
+    ) -> Result<Option<Self>, String> {
+        match (socket, backend_dir) {
+            (Some(_), Some(_)) => {
+                Err("--socket and --backend-dir are alternatives (pick one)".into())
+            }
+            (Some(path), None) => Ok(Some(Self::Fixed(path))),
+            (None, Some(dir)) => Ok(Some(Self::Search(dir))),
+            (None, None) => Ok(None),
+        }
+    }
+
     /// The socket to connect this utterance to.
     pub fn resolve(&self) -> Result<Provider, ResolveError> {
         match self {
@@ -500,6 +516,26 @@ mod tests {
         assert_eq!(parsed.len(), 7);
         assert_eq!(parse_env("NO_EQUALS\n"), None);
         assert_eq!(parse_env("=value\n"), None);
+    }
+
+    #[test]
+    fn flags_name_at_most_one_backend() {
+        let socket = || Some(PathBuf::from("/run/x.sock"));
+        let dir = || Some(PathBuf::from("/var/snap/myna/x1/backend"));
+
+        assert!(matches!(
+            BackendSocket::from_flags(socket(), None),
+            Ok(Some(BackendSocket::Fixed(path))) if path == Path::new("/run/x.sock")
+        ));
+        assert!(matches!(
+            BackendSocket::from_flags(None, dir()),
+            Ok(Some(BackendSocket::Search(path))) if path == Path::new("/var/snap/myna/x1/backend")
+        ));
+        assert!(matches!(BackendSocket::from_flags(None, None), Ok(None)));
+        assert_eq!(
+            BackendSocket::from_flags(socket(), dir()).unwrap_err(),
+            "--socket and --backend-dir are alternatives (pick one)"
+        );
     }
 
     #[test]
