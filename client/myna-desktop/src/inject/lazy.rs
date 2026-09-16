@@ -13,9 +13,8 @@
 //! worth replacing and exactly when the user is present to see it fail.
 
 use async_trait::async_trait;
-use futures_util::stream::{self, BoxStream, StreamExt};
 
-use super::{FocusEvent, InjectError, InjectionTarget, Injector};
+use super::{InjectError, Injector, Target};
 
 /// Opens a fresh connection to an injection backend.
 #[async_trait]
@@ -64,7 +63,7 @@ impl LazyInjector {
 
 #[async_trait]
 impl Injector for LazyInjector {
-    async fn acquire(&mut self) -> Result<InjectionTarget, InjectError> {
+    async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         let held = self.inner.is_some();
         if !held {
             self.inner = Some(self.connect.connect().await?);
@@ -103,54 +102,8 @@ impl Injector for LazyInjector {
         }
     }
 
-    async fn set_activity(&mut self, active: bool) {
-        if let Some(inner) = &mut self.inner {
-            inner.set_activity(active).await;
-        }
-    }
-
-    async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
-        let Some(inner) = &mut self.inner else {
-            return Err(InjectError::Unavailable(
-                "injection backend disconnected mid-session".into(),
-            ));
-        };
-        let result = inner.commit(text).await;
-        if let Err(err) = &result {
-            self.note(err);
-        }
-        result
-    }
-
-    async fn set_preedit(&mut self, text: &str) {
-        if let Some(inner) = &mut self.inner {
-            inner.set_preedit(text).await;
-        }
-    }
-
     fn supports_preedit(&self) -> bool {
         self.connect.supports_preedit()
-    }
-
-    async fn cancel(&mut self) {
-        if let Some(inner) = &mut self.inner {
-            inner.cancel().await;
-        }
-    }
-
-    async fn end(&mut self) {
-        if let Some(inner) = &mut self.inner {
-            inner.end().await;
-        }
-    }
-
-    fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
-        match &mut self.inner {
-            Some(inner) => inner.focus_events(),
-            // No connection means `acquire` already failed and the controller
-            // is aborting this utterance; an empty stream just never fires.
-            None => stream::empty().boxed(),
-        }
     }
 }
 
@@ -242,17 +195,8 @@ mod tests {
 
     #[async_trait]
     impl Injector for Stale {
-        async fn acquire(&mut self) -> Result<InjectionTarget, InjectError> {
+        async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
             Err(InjectError::Unavailable("Broken pipe".into()))
-        }
-        async fn set_activity(&mut self, _: bool) {}
-        async fn commit(&mut self, _: &str) -> Result<(), InjectError> {
-            Err(InjectError::Unavailable("Broken pipe".into()))
-        }
-        async fn cancel(&mut self) {}
-        async fn end(&mut self) {}
-        fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
-            stream::empty().boxed()
         }
     }
 
@@ -290,8 +234,12 @@ mod tests {
             stale: 0,
             attempts: Arc::clone(&attempts),
         });
-        injector.acquire().await.expect("first press connects");
-        injector.end().await;
+        injector
+            .acquire()
+            .await
+            .expect("first press connects")
+            .release()
+            .await;
 
         // IBus restarts under the held connection.
         injector.inner = Some(Box::new(Stale));
@@ -345,8 +293,7 @@ mod tests {
     #[tokio::test]
     async fn a_live_connection_is_reused() {
         let (mut injector, attempts) = flaky(0);
-        injector.acquire().await.expect("acquire");
-        injector.end().await;
+        injector.acquire().await.expect("acquire").release().await;
         injector.acquire().await.expect("acquire");
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }

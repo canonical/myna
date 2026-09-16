@@ -3,8 +3,7 @@
 //! Backend-agnostic (FR-016): the controller drives committed transcripts at an
 //! [`Injector`] without knowing whether the target is filled via IBus, a future
 //! Wayland `input_method_v2`, or a uinput fallback. [`ibus::IbusInjector`] is the
-//! shipped implementor (branch 003b); [`mock::MockInjector`] is the hermetic test
-//! fixture. See `specs/003-desktop-injection/contracts/injector.md`.
+//! shipped implementor; [`mock::MockInjector`] is the hermetic test fixture.
 
 use std::fmt;
 
@@ -15,27 +14,6 @@ use gettextrs::gettext;
 pub mod ibus;
 pub mod lazy;
 pub mod mock;
-
-/// An opaque handle to the surface focused when the session started, with
-/// enough identity to detect a focus change / disappearance. Never exposes
-/// text content (Principle V). A secure field is refused at `acquire` or
-/// `commit` with `InjectError::SecureField`, never carried here.
-#[derive(Debug, Clone)]
-pub struct InjectionTarget {
-    id: String,
-}
-
-impl InjectionTarget {
-    /// Build a target handle (backends construct this from the focused context).
-    pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into() }
-    }
-
-    /// Opaque identity of the acquired surface (never its text).
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-}
 
 /// Focus/target-loss events for the acquired target, so the controller can end
 /// safely (FR-014, FR-022).
@@ -59,6 +37,8 @@ pub enum InjectError {
     SecureField,
     /// Nothing editable is focused — a clear failure, not a silent no-op (FR-023).
     NoTarget,
+    /// Focus left the acquired target; its right to write is gone (FR-014).
+    FocusLost,
     /// The injection backend is not reachable (e.g. IBus daemon down).
     Unavailable(String),
     /// A backend-specific failure (with context).
@@ -78,6 +58,7 @@ impl fmt::Display for InjectError {
             InjectError::NoTarget => {
                 write!(f, "{}", gettext("no editable target is focused"))
             }
+            InjectError::FocusLost => write!(f, "{}", gettext("Focus lost")),
             InjectError::Unavailable(inner) => write!(
                 f,
                 "{}",
@@ -94,51 +75,50 @@ impl fmt::Display for InjectError {
 
 impl std::error::Error for InjectError {}
 
-/// The text-injection seam. All mutating operations are async; the focus stream
-/// is `'static` so the controller can own it while still driving the injector.
+/// The text-injection seam: hands out one [`Target`] per utterance.
 #[async_trait]
 pub trait Injector: Send {
-    /// Bind the surface focused *now* as the session target. `Err(SecureField)`
-    /// where the field's content type is detectably secure; `Err(NoTarget)`
-    /// where nothing editable is focused; `Err(Unavailable)` where the backend
-    /// is unreachable.
-    async fn acquire(&mut self) -> Result<InjectionTarget, InjectError>;
-
-    /// Reflect recording/transcription activity on the injection channel where
-    /// the backend supports it (no-op otherwise).
-    async fn set_activity(&mut self, active: bool);
-
-    /// Insert stable committed text (never modified afterwards). Commit-only.
-    /// May return `Err(SecureField)` when the target's secure state became
-    /// known only after `acquire` (late content-type delivery) — backends
-    /// re-check on every commit (I5, FR-021).
-    async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
-
-    /// Streaming preedit (R9): render a volatile in-flight hypothesis in the
-    /// target's preedit region, replaced on the next call and cleared by
-    /// `commit` (empty string clears explicitly). Default no-op; only backends
-    /// with a real preedit region honor it. The controller calls this only
-    /// when its opt-in preedit mode is on AND `supports_preedit()` — the
-    /// commit-only default (FR-012) never routes unstable text here.
-    async fn set_preedit(&mut self, _text: &str) {}
+    /// Bind the surface focused *now* as the utterance's target. All or
+    /// nothing: on error, whatever was taken (the engine switch) is already
+    /// rolled back, as far as the backend can roll it back - IBus can only
+    /// restore an input method it was able to read. `Err(SecureField)` where the field's content type is
+    /// detectably secure; `Err(NoTarget)` where nothing editable is focused;
+    /// `Err(FocusLost)` where focus moved while acquiring; `Err(Unavailable)`
+    /// where the backend is unreachable.
+    async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError>;
 
     /// Whether this backend has a replacement-safe preedit region (IBus / future
     /// Wayland input-method-v2 → true; uinput/wtype fallback → false).
     fn supports_preedit(&self) -> bool {
         false
     }
+}
 
-    /// Abort without injecting anything further. Idempotent.
-    async fn cancel(&mut self);
+/// The sole owner of one utterance's right to write into the acquired
+/// surface. The right ends when focus leaves it, when a newer target is
+/// acquired, or at [`Target::release`]; every output operation checks it.
+#[async_trait]
+pub trait Target: Send + fmt::Debug {
+    /// Insert stable committed text (never modified afterwards). Commit-only.
+    /// `Err(FocusLost)` once the right to write is gone; `Err(SecureField)`
+    /// when the target's secure state became known only after `acquire`
+    /// (late content-type delivery, I5, FR-021).
+    async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
 
-    /// Finalize and release the target/engine. Idempotent.
-    async fn end(&mut self);
+    /// Streaming preedit (R9): render a volatile in-flight hypothesis in the
+    /// target's preedit region, replaced on the next call and cleared by
+    /// `commit` (empty string clears explicitly). Skipped once the right to
+    /// write is gone or the field is secure. The controller calls this only
+    /// when its opt-in preedit mode is on AND the injector
+    /// `supports_preedit()` - the commit-only default (FR-012) never routes
+    /// unstable text here.
+    async fn set_preedit(&mut self, _text: &str) {}
 
-    /// Take the focus/target-loss event stream for the acquired target. Returns
-    /// an owned (`'static`) stream so the controller can select on it while
-    /// continuing to drive the injector (`commit`/`end`). Called **once per
-    /// session** — implementations MUST deliver focus events on every call, not
-    /// just the first (a single-consumer stream silently disables focus-loss
-    /// safety for utterances 2+).
-    fn focus_events(&mut self) -> BoxStream<'static, FocusEvent>;
+    /// Yields `FocusOut` once the right to write is gone, including when it
+    /// was lost before this call.
+    fn focus_events(&self) -> BoxStream<'static, FocusEvent>;
+
+    /// Give up the target: clear what it shows and restore the input method
+    /// it displaced.
+    async fn release(self: Box<Self>);
 }

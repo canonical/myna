@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 12:23+0100\n"
+"POT-Creation-Date: 2026-09-16 09:52+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,23 +17,23 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/indicator/mod.rs:99
+#: src/indicator/mod.rs:84
 msgid "Loading model…"
 msgstr ""
 
-#: src/indicator/mod.rs:100
+#: src/indicator/mod.rs:85
 msgid "Listening"
 msgstr ""
 
-#: src/indicator/mod.rs:101
+#: src/indicator/mod.rs:86
 msgid "Transcribing"
 msgstr ""
 
-#: src/indicator/mod.rs:102
+#: src/indicator/mod.rs:87
 msgid "Finishing"
 msgstr ""
 
-#: src/indicator/mod.rs:106
+#: src/indicator/mod.rs:91
 #, c-format
 msgid "Error: %s"
 msgstr ""
@@ -66,27 +66,27 @@ msgstr ""
 msgid "⚠️ Dictation error"
 msgstr ""
 
-#: src/controller.rs:211
+#: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
 msgstr ""
 
-#: src/controller.rs:213
+#: src/controller.rs:211
 msgid "No speech detected"
 msgstr ""
 
-#: src/controller.rs:216
+#: src/controller.rs:213
 msgid "Background noise is high"
 msgstr ""
 
-#: src/controller.rs:704
+#: src/controller.rs:763
 msgid "Dictation target closed"
 msgstr ""
 
-#: src/controller.rs:782
+#: src/controller.rs:828
 msgid "Refusing to type into a password field"
 msgstr ""
 
-#: src/controller.rs:783
+#: src/controller.rs:829
 msgid "No text field is focused"
 msgstr ""
 
@@ -123,20 +123,20 @@ msgid ""
 "connections myna`)"
 msgstr ""
 
-#: src/inject/mod.rs:75
+#: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
 msgstr ""
 
-#: src/inject/mod.rs:79
+#: src/inject/mod.rs:59
 msgid "no editable target is focused"
 msgstr ""
 
-#: src/inject/mod.rs:84
+#: src/inject/mod.rs:65
 #, c-format
 msgid "injection backend unavailable: %s"
 msgstr ""
 
-#: src/inject/mod.rs:89
+#: src/inject/mod.rs:70
 #, c-format
 msgid "injection backend error: %s"
 msgstr ""

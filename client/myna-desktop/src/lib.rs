@@ -33,10 +33,11 @@ pub mod live;
 pub mod shortcut;
 
 pub use controller::{
-    auto_stop_due, event_to_indicator, input_quality, AutoStop, ChannelSink, DesktopController,
-    DesktopControllerBuilder, DictationState, InputQuality, Session, SessionFactory, SessionRun,
+    auto_stop_due, event_to_indicator, input_quality, AutoStop, ChannelSink, Delivery,
+    DesktopController, DesktopControllerBuilder, DictationState, InputQuality, Session,
+    SessionFactory, SessionRun,
 };
 pub use indicator::{Indicator, IndicatorState};
-pub use inject::{FocusEvent, InjectError, InjectionTarget, Injector};
+pub use inject::{FocusEvent, InjectError, Injector, Target};
 pub use live::Live;
 pub use shortcut::{Trigger, TriggerEdge};

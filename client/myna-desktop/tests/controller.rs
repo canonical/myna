@@ -111,7 +111,7 @@ async fn commit_drain_commits_each_segment_once_in_order() {
         vec!["the quick brown fox jumps over the lazy dog."]
     );
     assert_eq!(log.commits.len(), 1);
-    assert_eq!(log.restores, 1);
+    assert_eq!(log.releases, 1);
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
@@ -282,11 +282,8 @@ async fn no_speech_session_commits_nothing() {
         inject_log.lock().unwrap().commits.is_empty(),
         "no speech → no commit"
     );
-    // Teardown still released the engine cleanly (one restore via end/cancel).
-    {
-        let log = inject_log.lock().unwrap();
-        assert_eq!(log.ends + log.cancels, 1);
-    }
+    // Teardown still released the engine cleanly (one restore).
+    assert_eq!(inject_log.lock().unwrap().releases, 1);
     assert_eq!(controller.state(), DictationState::Idle);
 
     // T015/C11 (2026-07-30): the live `Done("")` event and the finalize-block
@@ -386,10 +383,8 @@ async fn secure_field_is_refused_before_capture() {
         let log = inject_log.lock().unwrap();
         assert_eq!(log.acquires, 2, "the refusal must resync the trigger");
         assert!(log.commits.is_empty());
-        assert!(log.activity.is_empty());
-        // Released defensively on each refusal; nothing was acquired to restore.
-        assert_eq!(log.cancels, 2);
-        assert_eq!(log.restores, 0);
+        // Each refusal rolled itself back; no target was handed out to release.
+        assert_eq!(log.releases, 0);
     }
     assert_eq!(
         indicate_log.lock().unwrap().clone(),
@@ -398,10 +393,10 @@ async fn secure_field_is_refused_before_capture() {
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
-// ── T016: literal text only; cancel/end idempotent + restore-once on error ────
+// ── T016: literal text only; restore-once on error ─────────────────────────────
 
 #[tokio::test]
-async fn error_path_cancels_and_restores_exactly_once() {
+async fn error_path_releases_exactly_once() {
     // mid_stream_error: some progress then a terminal error instead of done.
     let injector = MockInjector::new();
     let inject_log = injector.log();
@@ -417,7 +412,7 @@ async fn error_path_cancels_and_restores_exactly_once() {
 
     let log = inject_log.lock().unwrap();
     // The engine is restored exactly once even on the error path (I11).
-    assert_eq!(log.restores, 1);
+    assert_eq!(log.releases, 1);
     // Only literal transcript text was ever committed — no key-combo tokens.
     for c in &log.commits {
         assert!(!c.contains('\t') && !c.to_lowercase().contains("alt+") && !c.contains("Super"));
@@ -430,20 +425,18 @@ async fn error_path_cancels_and_restores_exactly_once() {
 }
 
 #[tokio::test]
-async fn mock_injector_cancel_and_end_are_idempotent() {
-    // Direct seam check: repeated cancel/end restore the prior engine once.
+async fn mock_target_release_restores_once() {
+    // Direct seam check: release consumes the target, so the prior engine is
+    // restored once.
     use myna_desktop::inject::Injector;
     let mut injector = MockInjector::new();
     let log = injector.log();
-    let _ = injector.acquire().await.unwrap();
-    injector.cancel().await;
-    injector.cancel().await;
-    injector.end().await;
-    injector.end().await;
-    let log = log.lock().unwrap();
-    assert_eq!(log.restores, 1, "prior engine restored exactly once");
-    assert_eq!(log.cancels, 2);
-    assert_eq!(log.ends, 2);
+    injector.acquire().await.unwrap().release().await;
+    assert_eq!(
+        log.lock().unwrap().releases,
+        1,
+        "prior engine restored exactly once"
+    );
 }
 
 // ── Foundational: full lifecycle indicator timeline (kept from 003a) ──────────
@@ -662,7 +655,7 @@ async fn focus_out_finalizes_and_makes_no_further_commits() {
     // T032 / I8 / SC-007: focus moves away mid-session — already-committed text
     // stays, but NO further segment is committed (nothing lands in the new
     // surface).
-    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let injector = MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut);
     let inject_log = injector.log();
     let mut controller = build(
         [TriggerEdge::Press],
@@ -690,7 +683,7 @@ async fn focus_out_protection_holds_for_every_utterance() {
     // on an empty one and focus-loss was ignored; a session started in a
     // terminal committed into a password field after a mid-session click
     // (FR-014/FR-022 violation). Every utterance must receive focus events.
-    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let injector = MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut);
     let inject_log = injector.log();
     let mut controller = build(
         [TriggerEdge::Press, TriggerEdge::Press],
@@ -718,7 +711,7 @@ async fn focus_out_protection_holds_for_every_utterance() {
 async fn target_gone_cancels_and_makes_no_further_commits() {
     // T033 / I9 / FR-022: the target window closes mid-session — discard the
     // uncommitted tail, cancel (restore the engine), and notify (Error state).
-    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::TargetGone]);
+    let injector = MockInjector::new().with_focus_event(myna_desktop::FocusEvent::TargetGone);
     let inject_log = injector.log();
     let indicator = MockIndicator::new();
     let indicate_log = indicator.log();
@@ -737,8 +730,10 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
         log.commits.is_empty(),
         "nothing committed after target-gone"
     );
-    assert!(log.cancels >= 1, "target-gone must cancel");
-    assert_eq!(log.restores, 1, "engine restored exactly once");
+    assert_eq!(
+        log.releases, 1,
+        "target-gone releases, restoring the engine once"
+    );
     assert!(
         matches!(
             indicate_log.lock().unwrap().last(),
@@ -755,7 +750,7 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
 /// transcript doesn't mean the user said nothing.
 #[tokio::test]
 async fn focus_out_with_empty_transcript_surfaces_focus_lost_not_no_speech() {
-    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let injector = MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut);
     let indicator = MockIndicator::new();
     let indicate_log = indicator.log();
     let mut controller = build(
@@ -779,6 +774,255 @@ async fn focus_out_with_empty_transcript_surfaces_focus_lost_not_no_speech() {
         "an empty-transcript completion caused by focus-loss must say \
          \"Focus lost\", never \"No speech detected\""
     );
+}
+
+/// The session has finished, but its last Final and Done are still queued
+/// when focus leaves: the tail must not follow focus into the new surface.
+#[tokio::test]
+async fn focus_out_while_draining_a_finished_session_commits_nothing() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut focus = Some(injector.focus_sender());
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let focus = focus.take().expect("single-use session");
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Final("tail".into())).await;
+            let _ = tx.send(OrchestratorEvent::Done("tail".into())).await;
+            // Within the poll that completes the run, so the controller has
+            // already passed its focus branch and sees the queue next.
+            focus.send(myna_desktop::FocusEvent::FocusOut);
+            Ok(SessionOutcome::Completed {
+                transcript: "tail".into(),
+            })
+        });
+        (run, StopHandle::default())
+    };
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        session,
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert!(
+        log.commits.is_empty(),
+        "a FocusOut during the final drain must suppress the tail, got {:?}",
+        log.commits
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// A segment buffered while the target was still ours, then focus leaves
+/// before the session's terminal event. The safety flush after the loop is
+/// guarded by the ending AND the outcome: the pending burst is discarded, not
+/// inserted into whatever holds focus now. Guarding on the outcome alone would
+/// walk the text into the new surface.
+#[tokio::test]
+async fn a_segment_buffered_before_focus_loss_is_never_flushed_after_it() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut focus = Some(injector.focus_sender());
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let focus = focus.take().expect("single-use session");
+        let run: SessionRun = Box::pin(async move {
+            // Nothing follows it, so it is still buffered when the loop ends -
+            // the shape the safety flush exists for.
+            let _ = tx.send(OrchestratorEvent::Final("tail".into())).await;
+            // Let the controller route (and buffer) the Final before focus goes.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            focus.send(myna_desktop::FocusEvent::FocusOut);
+            Ok(SessionOutcome::Completed {
+                transcript: "tail".into(),
+            })
+        });
+        (run, StopHandle::default())
+    };
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        session,
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert!(
+        log.commits.is_empty(),
+        "text buffered before the focus loss must not reach the new surface, got {:?}",
+        log.commits
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// Focus leaves while the target is still being acquired, before the
+/// controller holds a focus stream: `acquire` is all or nothing, so the
+/// utterance must abort before it captures anything and say why.
+#[tokio::test]
+async fn focus_out_while_acquiring_commits_nothing() {
+    let probe = Arc::new(Mutex::new(0usize));
+    let injector =
+        MockInjector::new().with_focus_event_during_acquire(myna_desktop::FocusEvent::FocusOut);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+
+    let session_probe = probe.clone();
+    let session = move |_events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        *session_probe.lock().unwrap() += 1; // must never happen
+        (
+            Box::pin(async { Ok(SessionOutcome::Aborted) }),
+            StopHandle::default(),
+        )
+    };
+
+    let mut controller = build([TriggerEdge::Press], injector, indicator, session);
+    controller.run().await;
+
+    assert_eq!(
+        *probe.lock().unwrap(),
+        0,
+        "a lease lost while acquiring must abort before the microphone opens"
+    );
+    {
+        let log = inject_log.lock().unwrap();
+        assert!(
+            log.commits.is_empty(),
+            "a FocusOut during acquire must suppress every commit, got {:?}",
+            log.commits
+        );
+        assert_eq!(
+            log.releases, 0,
+            "acquire rolled itself back; there is no target to release"
+        );
+    }
+    assert_eq!(
+        indicate_log.lock().unwrap().last(),
+        Some(&IndicatorState::critical("Focus lost")),
+        "the user is told the field stopped being theirs, not some raw error"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// A target that refuses a commit has lost its lease, and the controller must
+/// believe it there and then: the preedit tail drawn by the same event must
+/// not follow the text into the new surface. The lease dies mid-flight, so no
+/// focus event could have reached the select loop ahead of the refusal.
+#[tokio::test]
+async fn a_commit_refused_mid_flight_suppresses_the_preedit_after_it() {
+    let injector = MockInjector::new()
+        .with_preedit_support()
+        .with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut);
+    let inject_log = injector.log();
+    let mut controller = build_preedit(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Final("hello".into()),
+                // Flushes "hello" (refused), then would draw this tail.
+                OrchestratorEvent::Unstable("hello wor".into()),
+                OrchestratorEvent::Final("world".into()),
+                OrchestratorEvent::Done("hello world".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello world".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(
+        log.commits,
+        vec!["hello"],
+        "only the write that lost the lease was attempted"
+    );
+    assert!(
+        log.preedits.is_empty(),
+        "the preedit after a refused commit must not be drawn, got {:?}",
+        log.preedits
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// The safety flush after the loop is the one write no focus poll follows, so
+/// the target's refusal is the only signal that nothing landed: the completion
+/// must report the focus loss rather than blaming the user for silence.
+#[tokio::test]
+async fn a_refused_final_flush_reports_focus_lost_not_no_speech() {
+    let injector =
+        MockInjector::new().with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        indicator,
+        // The last event is a `Final` with nothing after it, so the segment is
+        // still buffered when the session completes - the shape the safety
+        // flush exists for - and the cut-short session's own transcript is
+        // empty (as in `focus_out_with_empty_transcript_...` above).
+        events_session(
+            vec![OrchestratorEvent::Final("tail".into())],
+            SessionOutcome::Completed {
+                transcript: String::new(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["tail"],
+        "the safety flush is attempted once"
+    );
+    assert_eq!(
+        indicate_log.lock().unwrap().last(),
+        Some(&IndicatorState::recoverable("Focus lost")),
+        "a refused final flush inserted nothing, so the completion must say so"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+/// The same refusal with words in the transcript: the flush carrying them was
+/// refused, so they reached no field at all. Hiding the indicator would report
+/// a completed insertion that never happened - only text that actually landed
+/// may end an utterance silently.
+#[tokio::test]
+async fn a_refused_flush_that_carried_text_does_not_report_success() {
+    let injector =
+        MockInjector::new().with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut);
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let indicate_log = indicator.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        indicator,
+        events_session(
+            vec![OrchestratorEvent::Final("tail".into())],
+            SessionOutcome::Completed {
+                transcript: "tail".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["tail"],
+        "the safety flush is attempted once"
+    );
+    assert_eq!(
+        indicate_log.lock().unwrap().last(),
+        Some(&IndicatorState::recoverable("Focus lost")),
+        "the target refused the only write, so the transcript never landed"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
 }
 
 // ── Regression: FocusOut must resync the trigger's toggle parity ───────────
@@ -838,7 +1082,7 @@ async fn focus_out_resyncs_trigger_so_the_very_next_poke_starts_a_new_utterance(
     // the fix (`trigger.resync()` called on FocusOut), poke 2 correctly
     // delivers a fresh `Press`, and utterance 2 runs.
     let trigger = ToggleMockTrigger::new(2);
-    let injector = MockInjector::new().with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+    let injector = MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut);
     let inject_log = injector.log();
     let mut controller = DesktopController::builder()
         .trigger(trigger)
@@ -1257,7 +1501,7 @@ async fn preedit_suppressed_with_commits_after_focus_loss() {
     // (new) surface, commits AND preedit alike.
     let injector = MockInjector::new()
         .with_preedit_support()
-        .with_focus_events([myna_desktop::FocusEvent::FocusOut]);
+        .with_focus_event(myna_desktop::FocusEvent::FocusOut);
     let inject_log = injector.log();
     let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
         let _ = tx.try_send(OrchestratorEvent::Final("first".into()));

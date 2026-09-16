@@ -4,9 +4,10 @@
 //! (research R1): no FFI, no GObject-introspection, no subprocess. It registers
 //! an IBus component + engine, is made the active (global) engine per session,
 //! commits committed segments via the engine's `CommitText` signal, and restores
-//! the prior engine on session end. Focus arrives through the engine's
-//! `FocusIn`/`FocusOut` methods and secure-field state through its write-only
-//! `ContentType` property (R4/R5).
+//! the prior engine on release. Focus arrives through the engine's
+//! `FocusInId`/`FocusOutId` methods, which bind each utterance's lease to one
+//! input context, and secure-field state through its write-only `ContentType`
+//! property (R4/R5).
 //!
 //! Commit-only by default; with the controller's opt-in `--preedit` (R9), the
 //! volatile streaming hypothesis is rendered via `UpdatePreeditText` (underlined,
@@ -27,18 +28,18 @@
 use std::collections::HashMap;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures_util::stream::{BoxStream, StreamExt};
-use tokio::sync::{broadcast, watch};
-use tokio_stream::wrappers::BroadcastStream;
+use futures_util::stream::{self, BoxStream, StreamExt};
+use tokio::sync::watch;
 use zbus::address::transport::{Transport, Unix, UnixSocket};
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
 use zbus::{Address, Connection};
 
-use super::{FocusEvent, InjectError, InjectionTarget, Injector};
+use super::{FocusEvent, InjectError, Injector, Target};
 
 const IBUS_SERVICE: &str = "org.freedesktop.IBus";
 const IBUS_PATH: &str = "/org/freedesktop/IBus";
@@ -49,6 +50,11 @@ const COMPONENT_NAME: &str = "org.freedesktop.IBus.Myna";
 const ENGINE_NAME: &str = "myna-stt";
 const FACTORY_PATH: &str = "/org/freedesktop/IBus/Factory";
 const ENGINE_PATH: &str = "/org/freedesktop/IBus/Engine/Myna";
+
+/// The client string ibus-daemon gives its own placeholder input context, the
+/// one it focuses after every `FocusOut` (1.5.34). The path it holds looks
+/// like any other context's, so the client is what names it.
+const FAKE_CLIENT: &str = "fake";
 
 /// `IBusInputPurpose` values we refuse to inject into.
 const PURPOSE_PASSWORD: u32 = 8;
@@ -84,7 +90,8 @@ impl ContentType {
 /// How long `acquire` waits for the daemon to focus our engine before checking
 /// the content type. A slow or absent `FocusIn` is the ordinary-field case and
 /// we proceed: a hard-fail here breaks dictation into fields IBus focuses
-/// differently.
+/// differently. The lease then cannot name its context, so the next focus call
+/// ends it.
 const FOCUS_WAIT: Duration = Duration::from_millis(400);
 
 /// After `FocusIn`, how long to let the `ContentType` write land. The daemon
@@ -467,37 +474,219 @@ fn pick_address(
 
 // ── Engine + Factory D-Bus objects ──────────────────────────────────────────
 
+/// The input context an identified focus call names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Context<'a> {
+    path: &'a str,
+    client: &'a str,
+}
+
+impl Context<'_> {
+    /// Whether this is the daemon's own placeholder context, which no
+    /// application ever writes into.
+    fn is_fake(self) -> bool {
+        self.client == FAKE_CLIENT
+    }
+}
+
+/// What one focus call from the daemon says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusChange<'a> {
+    /// `FocusInId(path, client)`, or plain `FocusIn` (`None`).
+    In(Option<Context<'a>>),
+    /// `FocusOut` or `FocusOutId`.
+    Out,
+}
+
+/// The input context a lease may write to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Binding {
+    /// Minted before the engine switch; no focus yet. The previous release's
+    /// restore may still be delivering focus calls, which are not this
+    /// lease's (see [`Lease::focus`]).
+    Pending,
+    /// Focused through plain `FocusIn`. A daemon that has not read `FocusId`
+    /// yet sends that first, then re-sends focus as `FocusInId` with no
+    /// `FocusOut` between, which names the context.
+    Unnamed,
+    /// Focused on this input context.
+    Context(String),
+    /// No focus arrived while acquiring, so any focus call ends the lease.
+    Unfocused,
+    /// Focus left, a newer lease was minted, or the target was released.
+    Lost,
+}
+
+/// What ending a lease found, which is what a releasing target knows about
+/// its own standing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Retired {
+    /// Still held: this target owned the field until now.
+    Held,
+    /// Focus had already left it.
+    Lost,
+    /// A newer lease replaced it; that lease's target owns the engine now.
+    Superseded,
+}
+
+impl Retired {
+    /// Whether this target hands back the displaced input method. A superseded
+    /// one must not: the lease that replaced it carries that responsibility
+    /// now, so switching here takes the engine from a live utterance.
+    fn restores(self) -> bool {
+        self != Retired::Superseded
+    }
+}
+
+/// One utterance's right to write, as the daemon's focus calls shape it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Lease {
+    id: u64,
+    binding: Binding,
+}
+
+impl Lease {
+    fn held_by(&self, id: u64) -> bool {
+        self.id == id && self.binding != Binding::Lost
+    }
+
+    /// Only focus staying on, or first naming, the bound context keeps it.
+    ///
+    /// A `Pending` lease ignores the two calls our own restore delivers - a
+    /// `FocusOut`, then focus on the daemon's fake context - because nothing
+    /// orders the object server's dispatch of them against the next `mint`.
+    /// Neither can name this lease's field: the daemon sends no `FocusOut`
+    /// before the first `FocusIn` on a newly activated engine, and the fake
+    /// context is never a field. Once focused, both end the lease.
+    fn focus(&mut self, change: FocusChange<'_>) {
+        let next = match (&self.binding, change) {
+            (Binding::Pending, FocusChange::Out) => return,
+            (Binding::Pending, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
+            (Binding::Pending, FocusChange::In(None)) => Binding::Unnamed,
+            (Binding::Pending | Binding::Unnamed, FocusChange::In(Some(ctx))) if !ctx.is_fake() => {
+                Binding::Context(ctx.path.to_owned())
+            }
+            (Binding::Context(bound), FocusChange::In(Some(ctx))) if bound == ctx.path => return,
+            _ => Binding::Lost,
+        };
+        self.binding = next;
+    }
+}
+
 /// Shared engine state: the daemon's focus calls and `ContentType` writes land
-/// on the object; this state relays them to the injector.
+/// on the object; this state relays them to the injector and its targets.
 struct EngineState {
-    /// Focus-loss events are **broadcast**: every utterance subscribes its own
-    /// receiver, so focus-loss safety holds for session N, not just the first
-    /// (a single-consumer channel silently disabled it after utterance 1).
-    focus_tx: broadcast::Sender<FocusEvent>,
     /// Latest `ContentType` the daemon wrote (default until one arrives).
     content_type: watch::Sender<ContentType>,
-    /// Whether the daemon has focused our engine on a context.
-    ///
-    /// A `watch` rather than a `Notify`: the daemon delivers `FocusIn` *during*
-    /// the `SetGlobalEngine` round trip that triggers it, and
-    /// `Notify::notify_waiters` only wakes tasks already parked. A waiter
-    /// created after that call therefore missed the notification every time, so
-    /// `acquire` always saw `focus_received=false` and never ran its
-    /// content-type grace. A `watch` retains the latest value, so a waiter that
-    /// starts late still observes it.
-    focused: watch::Sender<bool>,
+    /// The current lease. A `watch` retains it, so a wait or focus stream that
+    /// starts late still observes a change: the daemon focuses the engine
+    /// *during* the `SetGlobalEngine` round trip, before `acquire` waits.
+    lease: watch::Sender<Lease>,
+    /// Source of lease ids for this engine. Only targets born here consult it.
+    next_lease: AtomicU64,
+    /// The input method our activation displaced, held until some release
+    /// hands it back. It is the connection's, not one utterance's: a target
+    /// that supersedes another finds `myna-stt` global and must not take that
+    /// for the user's engine.
+    displaced: watch::Sender<Option<String>>,
 }
 
 impl EngineState {
-    /// Whether the daemon focused our engine on a context, waiting up to
-    /// `FOCUS_WAIT` for a `FocusIn` that has not landed yet. Safe to call after
-    /// the triggering call has already returned (see `focused`).
-    async fn focus_arrived(&self) -> bool {
-        let mut rx = self.focused.subscribe();
-        let arrived = tokio::time::timeout(FOCUS_WAIT, rx.wait_for(|focused| *focused))
-            .await
-            .is_ok();
-        arrived
+    fn new() -> Self {
+        Self {
+            content_type: watch::Sender::new(ContentType::default()),
+            lease: watch::Sender::new(Lease {
+                id: 0,
+                binding: Binding::Lost,
+            }),
+            next_lease: AtomicU64::new(1),
+            displaced: watch::Sender::new(None),
+        }
+    }
+
+    /// Mint the lease for the next target, ending any earlier one.
+    fn mint(&self) -> u64 {
+        let id = self.next_lease.fetch_add(1, Ordering::Relaxed);
+        self.lease.send_replace(Lease {
+            id,
+            binding: Binding::Pending,
+        });
+        id
+    }
+
+    fn holds(&self, id: u64) -> bool {
+        self.lease.borrow().held_by(id)
+    }
+
+    fn focus(&self, change: FocusChange<'_>) {
+        self.lease.send_modify(|lease| lease.focus(change));
+    }
+
+    /// End lease `id`, saying what ending it found.
+    fn retire(&self, id: u64) -> Retired {
+        let mut retired = Retired::Superseded;
+        self.lease.send_if_modified(|lease| {
+            if lease.id != id {
+                return false;
+            }
+            let held = lease.binding != Binding::Lost;
+            retired = if held { Retired::Held } else { Retired::Lost };
+            lease.binding = Binding::Lost;
+            held
+        });
+        retired
+    }
+
+    /// Record the engine an activation displaces, `current` being what
+    /// `GetGlobalEngine` named just before the switch. Ours means an earlier
+    /// activation is still standing: what it displaced is what the user is
+    /// owed, so it is kept. `myna-stt` is never something to restore.
+    fn displace(&self, current: Option<String>) {
+        self.displaced.send_if_modified(|displaced| match current {
+            Some(name) if !name.is_empty() && name != ENGINE_NAME => {
+                *displaced = Some(name);
+                true
+            }
+            _ => false,
+        });
+    }
+
+    /// The engine a retiring target hands back, consuming the responsibility
+    /// so no later release switches again. A superseded target takes nothing:
+    /// the lease that displaced it in turn owes the restore.
+    fn reclaim(&self, retired: Retired) -> Option<String> {
+        if !retired.restores() {
+            return None;
+        }
+        self.displaced.send_replace(None)
+    }
+
+    /// Whether the daemon focused the engine for lease `id`, waiting up to
+    /// `FOCUS_WAIT`. If it did not, the lease becomes `Unfocused`.
+    async fn focus_arrived(&self, id: u64) -> bool {
+        let mut rx = self.lease.subscribe();
+        let _ = tokio::time::timeout(
+            FOCUS_WAIT,
+            rx.wait_for(|l| l.id != id || l.binding != Binding::Pending),
+        )
+        .await;
+        !self.lease.send_if_modified(|lease| {
+            let pending = lease.id == id && lease.binding == Binding::Pending;
+            if pending {
+                lease.binding = Binding::Unfocused;
+            }
+            pending
+        })
+    }
+
+    /// Yields `FocusOut` once lease `id` is no longer held.
+    fn loss(&self, id: u64) -> BoxStream<'static, FocusEvent> {
+        let mut rx = self.lease.subscribe();
+        stream::once(async move {
+            let _ = rx.wait_for(|l| !l.held_by(id)).await;
+            FocusEvent::FocusOut
+        })
+        .boxed()
     }
 
     fn content_type(&self) -> ContentType {
@@ -507,33 +696,51 @@ impl EngineState {
 
 /// The `org.freedesktop.IBus.Engine` object the daemon drives. Most callbacks
 /// are inert (commit-only MVP); focus and content type are relayed to the
-/// injector.
+/// injector. Not spawned per call, so focus calls apply in the order the daemon
+/// sent them.
 struct EngineObject {
     state: Arc<EngineState>,
 }
 
-#[zbus::interface(name = "org.freedesktop.IBus.Engine")]
+#[zbus::interface(name = "org.freedesktop.IBus.Engine", spawn = false)]
 impl EngineObject {
     async fn focus_in(&self) {
         myna_core::dbg_log!("inject", "IBus FocusIn received");
-        self.state.focused.send_replace(true);
+        self.state.focus(FocusChange::In(None));
     }
 
-    /// Newer IBus delivers focus with context/client ids.
     #[zbus(name = "FocusInId")]
-    async fn focus_in_id(&self, _object_path: String, _client: String) {
-        self.focus_in().await;
+    async fn focus_in_id(&self, object_path: String, client: String) {
+        myna_core::dbg_log!("inject", "IBus FocusInId {object_path} ({client})");
+        self.state.focus(FocusChange::In(Some(Context {
+            path: &object_path,
+            client: &client,
+        })));
     }
 
     async fn focus_out(&self) {
-        self.state.focused.send_replace(false);
         myna_core::dbg_log!("inject", "IBus FocusOut received");
-        let _ = self.state.focus_tx.send(FocusEvent::FocusOut);
+        self.state.focus(FocusChange::Out);
     }
 
     #[zbus(name = "FocusOutId")]
-    async fn focus_out_id(&self, _object_path: String) {
-        self.focus_out().await;
+    async fn focus_out_id(&self, object_path: String) {
+        myna_core::dbg_log!("inject", "IBus FocusOutId {object_path}");
+        self.state.focus(FocusChange::Out);
+    }
+
+    /// Read-only, as in `ibus-engine-simple`: asks the daemon to name the input
+    /// context in `FocusInId`/`FocusOutId`.
+    #[zbus(property(emits_changed_signal = "const"))]
+    async fn focus_id(&self) -> bool {
+        true
+    }
+
+    /// Read-only, as in `ibus-engine-simple`. The daemon re-sends the first
+    /// focus as `FocusInId` only once it has read this.
+    #[zbus(property(emits_changed_signal = "const"))]
+    async fn active_surrounding_text(&self) -> bool {
+        false
     }
 
     /// Write-only, as in `ibus-engine-simple`: the daemon only ever
@@ -605,26 +812,32 @@ fn classify(member: &str, e: zbus::Error) -> InjectError {
     }
 }
 
+async fn call(
+    conn: &Connection,
+    member: &str,
+    body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
+) -> Result<zbus::Message, InjectError> {
+    conn.call_method(
+        Some(IBUS_SERVICE),
+        IBUS_PATH,
+        Some(IBUS_IFACE),
+        member,
+        body,
+    )
+    .await
+    .map_err(|e| classify(member, e))
+}
+
 /// IBus engine-over-`zbus` injector (the shipped backend).
 pub struct IbusInjector {
     conn: Connection,
     state: Arc<EngineState>,
-    /// The global engine to restore on teardown (saved at `acquire`).
-    prior_engine: Option<String>,
-    /// True while our engine is the active/global one (drives restore-once).
-    active: bool,
     objects_served: bool,
-    /// True while a preedit region is showing in the target (so `commit` and
-    /// teardown clear it exactly when needed, never emitting redundant
-    /// `HidePreeditText` signals).
-    preedit_active: bool,
 }
 
 impl std::fmt::Debug for IbusInjector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IbusInjector")
-            .field("active", &self.active)
-            .finish()
+        f.debug_struct("IbusInjector").finish_non_exhaustive()
     }
 }
 
@@ -638,45 +851,16 @@ impl IbusInjector {
             .build()
             .await
             .map_err(|e| InjectError::Unavailable(format!("cannot connect to IBus: {e}")))?;
-
-        // Capacity is generous for a 2-event vocabulary; a lagging session is
-        // treated as focus-lost (fail-safe) by `focus_events`.
-        let (focus_tx, _) = broadcast::channel(16);
-        let state = Arc::new(EngineState {
-            focus_tx,
-            content_type: watch::Sender::new(ContentType::default()),
-            focused: watch::Sender::new(false),
-        });
         Ok(Self {
             conn,
-            state,
-            prior_engine: None,
-            active: false,
+            state: Arc::new(EngineState::new()),
             objects_served: false,
-            preedit_active: false,
         })
-    }
-
-    async fn call(
-        &self,
-        member: &str,
-        body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
-    ) -> Result<zbus::Message, InjectError> {
-        self.conn
-            .call_method(
-                Some(IBUS_SERVICE),
-                IBUS_PATH,
-                Some(IBUS_IFACE),
-                member,
-                body,
-            )
-            .await
-            .map_err(|e| classify(member, e))
     }
 
     /// Read the currently active global engine's name (to restore later).
     async fn global_engine_name(&self) -> Option<String> {
-        let msg = self.call("GetGlobalEngine", &()).await.ok()?;
+        let msg = call(&self.conn, "GetGlobalEngine", &()).await.ok()?;
         let v: OwnedValue = msg.body().deserialize().ok()?;
         if let Value::Structure(s) = Value::from(v) {
             if let Some(Value::Str(name)) = s.fields().get(2) {
@@ -712,64 +896,48 @@ impl IbusInjector {
         self.objects_served = true;
         Ok(())
     }
-
-    /// Emit `HidePreeditText` if a preedit region is up. Best-effort: a
-    /// failed hide at teardown must not mask the engine restore.
-    async fn hide_preedit(&mut self) {
-        if !self.preedit_active {
-            return;
-        }
-        self.preedit_active = false;
-        let _ = self
-            .conn
-            .emit_signal(
-                None::<&str>,
-                ENGINE_PATH,
-                ENGINE_IFACE,
-                "HidePreeditText",
-                &(),
-            )
-            .await;
-    }
-
-    async fn restore_prior_engine(&mut self) {
-        if !self.active {
-            return;
-        }
-        if let Some(prior) = self.prior_engine.take() {
-            if !prior.is_empty() {
-                let _ = self.call("SetGlobalEngine", &(prior,)).await;
-            }
-        }
-        self.active = false;
-    }
 }
 
 #[async_trait]
 impl Injector for IbusInjector {
-    async fn acquire(&mut self) -> Result<InjectionTarget, InjectError> {
-        // Save the engine we will restore on teardown.
-        self.prior_engine = self.global_engine_name().await;
+    async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
+        // Read before the switch; recorded once it has succeeded.
+        let displaced = self.global_engine_name().await;
 
         // Register our component + serve the factory/engine, then become active.
-        self.call("RegisterComponent", &(ibus_component(),)).await?;
+        call(&self.conn, "RegisterComponent", &(ibus_component(),)).await?;
         self.serve_objects().await?;
-        self.state.focused.send_replace(false);
         self.state.content_type.send_replace(ContentType::default());
-        self.call("SetGlobalEngine", &(ENGINE_NAME,)).await?;
-        self.active = true;
+        // Before the switch, which focuses the engine before it returns.
+        let lease = self.state.mint();
+        if let Err(err) = call(&self.conn, "SetGlobalEngine", &(ENGINE_NAME,)).await {
+            self.state.retire(lease);
+            return Err(err);
+        }
+        self.state.displace(displaced);
+        let target = Box::new(IbusTarget {
+            conn: self.conn.clone(),
+            state: self.state.clone(),
+            lease,
+            preedit_active: false,
+        });
 
         // The daemon writes ContentType after FocusIn to a newly activated
         // engine, so wait for focus and give the write a grace to land.
-        let focus_received = self.state.focus_arrived().await;
+        let focus_received = self.state.focus_arrived(lease).await;
         if focus_received {
             tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
 
+        if !self.state.holds(lease) {
+            myna_core::dbg_log!("inject", "acquire refused: focus moved while acquiring");
+            target.release().await;
+            return Err(InjectError::FocusLost);
+        }
         let content_type = self.state.content_type();
         if content_type.is_secure() {
             myna_core::dbg_log!("inject", "acquire refused: secure field {content_type:?}");
-            self.restore_prior_engine().await;
+            target.release().await;
             return Err(InjectError::SecureField);
         }
 
@@ -777,17 +945,67 @@ impl Injector for IbusInjector {
             "inject",
             "acquire ok: focus_received={focus_received} {content_type:?}"
         );
-        Ok(InjectionTarget::new(ENGINE_PATH))
+        Ok(target)
     }
 
-    async fn set_activity(&mut self, _active: bool) {
-        // No dedicated IBus activity channel in the commit-only MVP.
+    fn supports_preedit(&self) -> bool {
+        // IBus has a replacement-safe preedit region (R9). Whether it is *used*
+        // is the controller's call (opt-in `--preedit`); commit-only otherwise.
+        true
+    }
+}
+
+/// One utterance's hold on the engine: writes only while its lease is held,
+/// and on release hands back the input method the connection displaced, unless
+/// a newer lease superseded it.
+struct IbusTarget {
+    conn: Connection,
+    state: Arc<EngineState>,
+    lease: u64,
+    /// True while a preedit region is showing in the target (so `commit` and
+    /// release clear it exactly when needed, never emitting redundant
+    /// `HidePreeditText` signals).
+    preedit_active: bool,
+}
+
+impl std::fmt::Debug for IbusTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IbusTarget")
+            .field("lease", &self.lease)
+            .finish_non_exhaustive()
+    }
+}
+
+impl IbusTarget {
+    async fn emit(
+        &self,
+        member: &str,
+        body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
+    ) -> zbus::Result<()> {
+        self.conn
+            .emit_signal(None::<&str>, ENGINE_PATH, ENGINE_IFACE, member, body)
+            .await
     }
 
+    /// Emit `HidePreeditText` if a preedit region is up and still ours.
+    /// Best-effort; focus-out already discards it (`PREEDIT_MODE_CLEAR`).
+    async fn hide_preedit(&mut self) {
+        if std::mem::take(&mut self.preedit_active) && self.state.holds(self.lease) {
+            let _ = self.emit("HidePreeditText", &()).await;
+        }
+    }
+}
+
+#[async_trait]
+impl Target for IbusTarget {
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
         // A commit clears the preedit region (contract injector.md): the
         // volatile tail is superseded by stable text.
         self.hide_preedit().await;
+        if !self.state.holds(self.lease) {
+            myna_core::dbg_log!("inject", "commit REFUSED: focus lost");
+            return Err(InjectError::FocusLost);
+        }
         if text.is_empty() {
             return Ok(());
         }
@@ -797,19 +1015,16 @@ impl Injector for IbusInjector {
             myna_core::dbg_log!("inject", "commit REFUSED: secure field {content_type:?}");
             return Err(InjectError::SecureField);
         }
-        self.conn
-            .emit_signal(
-                None::<&str>,
-                ENGINE_PATH,
-                ENGINE_IFACE,
-                "CommitText",
-                &(ibus_text(text),),
-            )
+        self.emit("CommitText", &(ibus_text(text),))
             .await
             .map_err(|e| classify("CommitText", e))
     }
 
     async fn set_preedit(&mut self, text: &str) {
+        if !self.state.holds(self.lease) {
+            myna_core::dbg_log!("inject", "preedit REFUSED: focus lost");
+            return;
+        }
         // Same guard as `commit` (F2/I5): never render even volatile text into
         // a known-secure field — preedit is still text in the target.
         let content_type = self.state.content_type();
@@ -828,11 +1043,7 @@ impl Injector for IbusInjector {
         // text, never commit it.
         let cursor = text.chars().count() as u32;
         match self
-            .conn
-            .emit_signal(
-                None::<&str>,
-                ENGINE_PATH,
-                ENGINE_IFACE,
+            .emit(
                 "UpdatePreeditText",
                 &(ibus_preedit_text(text), cursor, true, PREEDIT_MODE_CLEAR),
             )
@@ -843,30 +1054,22 @@ impl Injector for IbusInjector {
         }
     }
 
-    fn supports_preedit(&self) -> bool {
-        // IBus has a replacement-safe preedit region (R9). Whether it is *used*
-        // is the controller's call (opt-in `--preedit`); commit-only otherwise.
-        true
+    fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
+        self.state.loss(self.lease)
     }
 
-    async fn cancel(&mut self) {
-        self.hide_preedit().await;
-        self.restore_prior_engine().await;
-    }
-
-    async fn end(&mut self) {
-        self.hide_preedit().await;
-        self.restore_prior_engine().await;
-    }
-
-    fn focus_events(&mut self) -> BoxStream<'static, FocusEvent> {
-        // Fresh subscription per utterance. If a session ever lags the
-        // broadcast (missed focus events), fail safe: synthesize a FocusOut so
-        // the controller finalizes instead of committing across a possible
-        // focus boundary (FR-014/FR-022).
-        BroadcastStream::new(self.state.focus_tx.subscribe())
-            .map(|r| r.unwrap_or(FocusEvent::FocusOut))
-            .boxed()
+    async fn release(mut self: Box<Self>) {
+        // Retired first: the restore focuses our engine out.
+        let retired = self.state.retire(self.lease);
+        if std::mem::take(&mut self.preedit_active) && retired == Retired::Held {
+            let _ = self.emit("HidePreeditText", &()).await;
+        }
+        match self.state.reclaim(retired) {
+            Some(displaced) => {
+                let _ = call(&self.conn, "SetGlobalEngine", &(displaced,)).await;
+            }
+            None => myna_core::dbg_log!("inject", "release: nothing to restore ({retired:?})"),
+        }
     }
 }
 
@@ -931,12 +1134,28 @@ mod tests {
     }
 
     fn engine_state() -> Arc<EngineState> {
-        let (focus_tx, _) = broadcast::channel(16);
-        Arc::new(EngineState {
-            focus_tx,
-            content_type: watch::Sender::new(ContentType::default()),
-            focused: watch::Sender::new(false),
-        })
+        Arc::new(EngineState::new())
+    }
+
+    fn engine(state: &Arc<EngineState>) -> EngineObject {
+        EngineObject {
+            state: Arc::clone(state),
+        }
+    }
+
+    const FIELD: &str = "/org/freedesktop/IBus/InputContext_7";
+    const OTHER: &str = "/org/freedesktop/IBus/InputContext_8";
+    /// The daemon's own placeholder context, which it focuses after every
+    /// `FocusOut`. It is created before any application's, so it holds the
+    /// first path; the client string is what names it (traced against
+    /// ibus-daemon 1.5.34: every restore delivered
+    /// `FocusInId('/org/freedesktop/IBus/InputContext_1', 'fake')`).
+    const FAKE: &str = "/org/freedesktop/IBus/InputContext_1";
+
+    /// The two calls our own `SetGlobalEngine(prior)` delivers on release.
+    async fn restore_focus_calls(engine: &EngineObject) {
+        engine.focus_out().await;
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
     }
 
     /// The daemon delivers `FocusIn` *during* the `SetGlobalEngine` round trip
@@ -945,45 +1164,353 @@ mod tests {
     /// the earlier `Notify::notify_waiters` this notification was dropped on
     /// the floor (no task was parked yet), `focus_received` was false on every
     /// acquire, and the content-type grace never ran.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn focus_in_delivered_before_the_wait_starts_is_not_lost() {
         let state = engine_state();
-        let engine = EngineObject {
-            state: Arc::clone(&state),
-        };
+        let lease = state.mint();
 
         // Happens inside `SetGlobalEngine`, before anyone awaits.
-        engine.focus_in().await;
+        engine(&state).focus_in_id(FIELD.into(), "app".into()).await;
 
+        let started = tokio::time::Instant::now();
         assert!(
-            state.focus_arrived().await,
+            state.focus_arrived(lease).await,
             "FocusIn dispatched before the wait began must still be observed"
         );
+        // Not just the right answer: focus already in hand must be seen at
+        // once, or every utterance pays the whole grace before it starts.
+        assert!(
+            started.elapsed() < FOCUS_WAIT,
+            "focus already in hand must not wait out FOCUS_WAIT"
+        );
+        assert!(state.holds(lease));
     }
 
     /// The flip side: with no `FocusIn` the wait times out rather than
     /// reporting focus, so `acquire` keeps treating a silent context as the
-    /// ordinary-field case instead of claiming the grace period ran.
+    /// ordinary-field case instead of claiming the grace period ran. The lease
+    /// never learned its context, so the next focus call of any kind ends it.
     #[tokio::test(start_paused = true)]
-    async fn no_focus_in_times_out() {
+    async fn no_focus_in_times_out_and_any_later_focus_ends_the_lease() {
         let state = engine_state();
-        assert!(!state.focus_arrived().await);
+        let lease = state.mint();
+        let started = tokio::time::Instant::now();
+        assert!(!state.focus_arrived(lease).await);
+        // Given up only after the whole grace, never early: a field the daemon
+        // is slow to focus is still an ordinary field.
+        assert!(
+            started.elapsed() >= FOCUS_WAIT,
+            "a silent context must be given the whole grace before giving up"
+        );
+        assert!(state.holds(lease));
+
+        engine(&state).focus_in_id(FIELD.into(), "app".into()).await;
+        assert!(!state.holds(lease));
+    }
+
+    /// The daemon's first focus on a freshly activated engine arrives as plain
+    /// `FocusIn`, before it has read `ActiveSurroundingText`. The method has to
+    /// relay it: otherwise `acquire` waits out `FOCUS_WAIT` and treats a
+    /// focused ordinary field as a silent one.
+    #[tokio::test(start_paused = true)]
+    async fn a_plain_focus_in_is_relayed_by_the_engine_object() {
+        let state = engine_state();
+        let lease = state.mint();
+        engine(&state).focus_in().await;
+
+        let started = tokio::time::Instant::now();
+        assert!(
+            state.focus_arrived(lease).await,
+            "a plain FocusIn is still focus"
+        );
+        assert!(started.elapsed() < FOCUS_WAIT);
+        assert!(state.holds(lease));
+    }
+
+    /// The property *values*, not just their declarations: `FocusId` is what
+    /// makes ibus-daemon name the context in `FocusInId`/`FocusOutId`, and
+    /// `ActiveSurroundingText` is what makes it re-send that first focus as
+    /// `FocusInId`. The daemon discards error replies, so a wrong value here
+    /// costs the lease its context and fails silently.
+    #[tokio::test]
+    async fn the_engine_asks_the_daemon_to_identify_focus() {
+        let engine = engine(&engine_state());
+        assert!(
+            engine.focus_id().await,
+            "FocusId=false leaves every focus unnamed"
+        );
+        assert!(
+            !engine.active_surrounding_text().await,
+            "we consume no surrounding text; claiming otherwise asks the \
+             daemon for content we never read"
+        );
     }
 
     /// A stale `FocusIn` from the previous utterance must not satisfy the next
-    /// `acquire`: it resets the flag before `SetGlobalEngine`.
+    /// `acquire`: minting resets the binding before `SetGlobalEngine`.
     #[tokio::test(start_paused = true)]
     async fn focus_from_a_prior_session_does_not_carry_over() {
         let state = engine_state();
-        let engine = EngineObject {
-            state: Arc::clone(&state),
-        };
-        engine.focus_in().await;
-        assert!(state.focus_arrived().await);
+        let first = state.mint();
+        engine(&state).focus_in_id(FIELD.into(), "app".into()).await;
+        assert!(state.focus_arrived(first).await);
 
-        // What `acquire` does at the top of the next session.
-        state.focused.send_replace(false);
-        assert!(!state.focus_arrived().await);
+        let next = state.mint();
+        assert!(!state.focus_arrived(next).await);
+    }
+
+    #[tokio::test]
+    async fn refocusing_the_bound_context_keeps_the_lease() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        assert!(state.holds(lease));
+    }
+
+    /// Focus reaching another context, the daemon's fake one included, means
+    /// it left ours; coming back does not restore the right to write.
+    #[tokio::test]
+    async fn focus_in_on_another_context_ends_the_lease() {
+        for (path, client) in [(OTHER, "app"), (FAKE, "fake")] {
+            let state = engine_state();
+            let lease = state.mint();
+            let engine = engine(&state);
+            engine.focus_in_id(FIELD.into(), "app".into()).await;
+            engine.focus_in_id(path.into(), client.into()).await;
+            assert!(!state.holds(lease), "{client} took focus from the lease");
+
+            engine.focus_in_id(FIELD.into(), "app".into()).await;
+            assert!(!state.holds(lease), "a lost lease stays lost");
+        }
+    }
+
+    /// The same for a lease focused but not yet named: the fake context is
+    /// never a field, so focus reaching it is focus leaving ours.
+    #[tokio::test]
+    async fn the_fake_context_ends_a_lease_focused_through_a_plain_focus_in() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in().await;
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        assert!(!state.holds(lease));
+    }
+
+    #[tokio::test]
+    async fn focus_out_of_the_bound_context_ends_the_lease() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        engine.focus_out_id(FIELD.into()).await;
+        assert!(!state.holds(lease));
+    }
+
+    /// A `FocusOut` before any focus arrived is never the user's: the daemon
+    /// handles a focus change it sees before our engine is attached without
+    /// telling the engine at all, and delivers no `FocusOut` during our own
+    /// `SetGlobalEngine(myna-stt)` (traced, ibus 1.5.34). What does arrive
+    /// there is the previous release's restore, so the pending lease ignores
+    /// it and still binds the focus it is waiting for.
+    #[tokio::test]
+    async fn focus_out_while_pending_is_our_own_restore_and_is_ignored() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_out().await;
+        assert!(state.holds(lease), "a pending lease survives it");
+
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        assert!(state.holds(lease), "the real focus still binds the lease");
+        // Plain `FocusOut`, which is what the daemon sends our engine: the
+        // identified form has its own case below.
+        engine.focus_out().await;
+        assert!(
+            !state.holds(lease),
+            "once focused, a FocusOut ends the lease"
+        );
+    }
+
+    /// Both halves of the restore, dispatched *after* the next press minted
+    /// its lease - nothing orders the object server's dispatch against
+    /// `mint`. Neither may be taken for this lease's own focus: the
+    /// `FocusOut` would report a focus loss on a good press, and binding the
+    /// fake context would kill the lease at the daemon's next call.
+    #[tokio::test]
+    async fn a_restore_dispatched_after_the_next_mint_leaves_that_lease_alone() {
+        let state = engine_state();
+        let engine = engine(&state);
+        let first = state.mint();
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        state.retire(first);
+
+        let next = state.mint();
+        restore_focus_calls(&engine).await;
+        assert!(
+            state.holds(next),
+            "our own restore must not end a fresh lease"
+        );
+
+        engine.focus_in_id(OTHER.into(), "app".into()).await;
+        engine.focus_in_id(OTHER.into(), "app".into()).await;
+        assert!(
+            state.holds(next),
+            "the lease must have bound the real context, not the fake one"
+        );
+    }
+
+    /// ibus-daemon reads `FocusId` asynchronously the first time it activates
+    /// an engine name: that focus arrives plain, then again as `FocusInId`
+    /// with no `FocusOut` between. The resend names the context once.
+    #[tokio::test]
+    async fn plain_focus_in_is_named_by_the_daemons_resend() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in().await;
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        assert!(state.holds(lease));
+
+        engine.focus_in_id(OTHER.into(), "app".into()).await;
+        assert!(!state.holds(lease));
+    }
+
+    #[tokio::test]
+    async fn plain_focus_calls_after_the_first_end_the_lease() {
+        for second in [FocusChange::In(None), FocusChange::Out] {
+            let state = engine_state();
+            let lease = state.mint();
+            state.focus(FocusChange::In(None));
+            state.focus(second);
+            assert!(!state.holds(lease), "{second:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_newer_lease_ends_the_older() {
+        let state = engine_state();
+        let older = state.mint();
+        engine(&state).focus_in_id(FIELD.into(), "app".into()).await;
+        let newer = state.mint();
+        assert!(!state.holds(older));
+        assert!(state.holds(newer));
+    }
+
+    /// Release retires its lease before restoring the prior engine, whose
+    /// switch focuses our engine out and then focuses its fake context in;
+    /// neither call may reach the lease the next acquire mints.
+    #[tokio::test]
+    async fn restore_does_not_trip_a_live_lease() {
+        let state = engine_state();
+        let engine = engine(&state);
+        let first = state.mint();
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        state.retire(first);
+        restore_focus_calls(&engine).await;
+        let next = state.mint();
+        assert!(state.holds(next));
+    }
+
+    /// Release has to know why a lease ended: only a superseded target leaves
+    /// the engine to the target that displaced it.
+    #[tokio::test]
+    async fn retire_says_whether_the_lease_was_held_lost_or_superseded() {
+        let state = engine_state();
+        let engine = engine(&state);
+
+        let held = state.mint();
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        assert_eq!(state.retire(held), Retired::Held);
+
+        let lost = state.mint();
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        engine.focus_out_id(FIELD.into()).await;
+        assert_eq!(state.retire(lost), Retired::Lost);
+
+        let older = state.mint();
+        let newer = state.mint();
+        assert_eq!(state.retire(older), Retired::Superseded);
+        assert!(
+            state.holds(newer),
+            "retiring a superseded lease must not end the live one"
+        );
+    }
+
+    #[test]
+    fn only_a_superseded_target_leaves_the_engine_to_its_successor() {
+        assert!(Retired::Held.restores());
+        assert!(
+            Retired::Lost.restores(),
+            "focus left, but this target still displaced the engine"
+        );
+        assert!(!Retired::Superseded.restores());
+    }
+
+    const USER_ENGINE: &str = "xkb:us::eng";
+
+    /// The user's input method is displaced once per connection, not once per
+    /// utterance: the activation that supersedes a live lease reads `myna-stt`
+    /// from `GetGlobalEngine`, and recording that would lose the user's engine
+    /// for the rest of the session.
+    #[test]
+    fn a_superseding_activation_keeps_what_the_first_one_displaced() {
+        let state = engine_state();
+        state.displace(Some(USER_ENGINE.into()));
+        state.displace(Some(ENGINE_NAME.into()));
+        assert_eq!(
+            state.reclaim(Retired::Held).as_deref(),
+            Some(USER_ENGINE),
+            "the second activation recorded our own engine over the user's"
+        );
+    }
+
+    /// Restoring `myna-stt` restores nothing, so no path may record it, nor
+    /// the empty name a daemon with no global engine answers with.
+    #[test]
+    fn our_own_engine_is_never_recorded_as_something_to_restore() {
+        for current in [Some(ENGINE_NAME.to_owned()), Some(String::new()), None] {
+            let state = engine_state();
+            state.displace(current.clone());
+            assert_eq!(state.reclaim(Retired::Held), None, "{current:?}");
+        }
+    }
+
+    /// One displacement, one restore: the release that hands the engine back
+    /// consumes the record, so a later release does not switch again.
+    #[test]
+    fn the_restoring_release_consumes_the_displaced_engine_once() {
+        let state = engine_state();
+        state.displace(Some(USER_ENGINE.into()));
+        assert_eq!(state.reclaim(Retired::Lost).as_deref(), Some(USER_ENGINE));
+        assert_eq!(state.reclaim(Retired::Held), None);
+    }
+
+    /// A superseded release restores nothing and keeps the record for the live
+    /// target, which is the one still writing into the user's field.
+    #[test]
+    fn a_superseded_release_leaves_the_displaced_engine_for_the_live_target() {
+        let state = engine_state();
+        state.displace(Some(USER_ENGINE.into()));
+        assert_eq!(state.reclaim(Retired::Superseded), None);
+        assert_eq!(state.reclaim(Retired::Held).as_deref(), Some(USER_ENGINE));
+    }
+
+    /// A focus stream taken after the loss still reports it.
+    #[tokio::test]
+    async fn loss_is_reported_to_a_stream_taken_afterwards() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FIELD.into(), "app".into()).await;
+        let mut live = state.loss(lease);
+        assert!(futures_util::FutureExt::now_or_never(live.next()).is_none());
+
+        engine.focus_out_id(FIELD.into()).await;
+        let mut late = state.loss(lease);
+        assert_eq!(late.next().await, Some(FocusEvent::FocusOut));
+        assert_eq!(live.next().await, Some(FocusEvent::FocusOut));
     }
 
     /// I5/FR-021: which content types `acquire`, `commit` and `set_preedit`
@@ -1015,6 +1542,48 @@ mod tests {
             "{xml}"
         );
         assert!(!xml.contains("SetContentType"), "{xml}");
+    }
+
+    /// Declared as `ibus-engine-simple` does (`readonly (b) FocusId`,
+    /// `FocusInId(s object_path, s client)`, `FocusOutId(s object_path)`), and
+    /// dispatched in order: zbus spawns a task per call by default, which could
+    /// apply a `FocusOutId` after the `FocusInId` that followed it.
+    #[test]
+    fn engine_asks_for_identified_focus_and_handles_it_in_order() {
+        let engine = EngineObject {
+            state: engine_state(),
+        };
+        let mut xml = String::new();
+        zbus::object_server::Interface::introspect_to_writer(&engine, &mut xml, 0);
+        for property in ["FocusId", "ActiveSurroundingText"] {
+            assert!(
+                xml.contains(&format!(
+                    r#"<property name="{property}" type="b" access="read""#
+                )),
+                "{xml}"
+            );
+        }
+        let method = |name: &str| {
+            let start = xml
+                .find(&format!(r#"<method name="{name}">"#))
+                .unwrap_or_else(|| panic!("{name} missing: {xml}"));
+            let end = start + xml[start..].find("</method>").expect("method end");
+            xml[start..end].to_string()
+        };
+        let focus_in = method("FocusInId");
+        assert!(
+            focus_in.contains(r#"name="object_path" type="s""#),
+            "{focus_in}"
+        );
+        assert!(focus_in.contains(r#"name="client" type="s""#), "{focus_in}");
+        let focus_out = method("FocusOutId");
+        assert!(
+            focus_out.contains(r#"name="object_path" type="s""#),
+            "{focus_out}"
+        );
+        assert!(!zbus::object_server::Interface::spawn_tasks_for_methods(
+            &engine
+        ));
     }
 
     #[tokio::test]

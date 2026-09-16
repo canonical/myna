@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use myna_desktop::inject::ibus::IbusInjector;
-use myna_desktop::inject::{FocusEvent, InjectError, Injector};
+use myna_desktop::inject::{FocusEvent, InjectError, Injector, Target};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, MessageStream};
 
@@ -41,8 +41,14 @@ const CAP_FOCUS: u32 = 1 << 3;
 /// Served by ibus-engine-simple, which the headless daemon can spawn.
 const PRIOR_ENGINE: &str = "xkb:us::eng";
 
+/// The engine `IbusInjector` registers.
+const MYNA_ENGINE: &str = "myna-stt";
+
 /// Guards a hang only; every wait ends on the event it awaits.
 const HANG_GUARD: Duration = Duration::from_secs(5);
+
+/// How long a focus loss the engine already received may take to surface.
+const NOTICE: Duration = Duration::from_secs(1);
 
 const SENTINEL: &str = "after";
 
@@ -136,7 +142,7 @@ impl Field {
         self.ic_call(IC_IFACE, "FocusOut", &()).await;
     }
 
-    /// Make `PRIOR_ENGINE` global, so an injector's `end` has one to restore.
+    /// Make `PRIOR_ENGINE` global, so a target's `release` has one to restore.
     async fn use_prior_engine(&self) {
         self.conn
             .call_method(
@@ -149,6 +155,43 @@ impl Field {
             .await
             .expect("SetGlobalEngine to the prior engine");
         assert_eq!(global_engine().await.as_deref(), Some(PRIOR_ENGINE));
+    }
+
+    /// Receive the daemon's `GlobalEngineChanged` broadcasts.
+    async fn watch_global_engine(&self) {
+        self.conn
+            .call_method(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                Some("org.freedesktop.DBus"),
+                "AddMatch",
+                &("type='signal',interface='org.freedesktop.IBus',member='GlobalEngineChanged'",),
+            )
+            .await
+            .expect("AddMatch GlobalEngineChanged");
+    }
+
+    /// Wait for `GlobalEngineChanged(engine)`. The daemon emits it once the
+    /// engine is attached to the focused context and focused, before it
+    /// answers `SetGlobalEngine`.
+    async fn wait_global_engine(&mut self, engine: &str) {
+        let stream = &mut self.stream;
+        let changed = async move {
+            while let Some(msg) = stream.next().await {
+                let msg = msg.expect("message from IBus");
+                let header = msg.header();
+                if header.message_type() == zbus::message::Type::Signal
+                    && header.member().map(|m| m.as_str()) == Some("GlobalEngineChanged")
+                    && msg.body().deserialize::<String>().ok().as_deref() == Some(engine)
+                {
+                    return;
+                }
+            }
+            panic!("IBus closed the field's connection");
+        };
+        tokio::time::timeout(HANG_GUARD, changed)
+            .await
+            .unwrap_or_else(|_| panic!("global engine never became {engine}"));
     }
 
     async fn next(&mut self) -> Seen {
@@ -193,11 +236,8 @@ impl Field {
 
     /// Prove nothing reached the field since the last `next`: the sentinel
     /// travels the same ordered path, so anything sent before it arrives first.
-    async fn expect_only_sentinel(&mut self, injector: &mut IbusInjector) {
-        injector
-            .commit(SENTINEL)
-            .await
-            .expect("commit the sentinel");
+    async fn expect_only_sentinel(&mut self, target: &mut dyn Target) {
+        target.commit(SENTINEL).await.expect("commit the sentinel");
         assert_eq!(self.next().await, Seen::Commit(SENTINEL.into()));
     }
 
@@ -259,12 +299,12 @@ async fn assert_acquire_refused(injector: &mut IbusInjector) {
 /// the field. Returns whether the wanted result was seen.
 async fn commit_until(
     field: &mut Field,
-    injector: &mut IbusInjector,
+    target: &mut dyn Target,
     text: &str,
     refused: bool,
 ) -> bool {
     for _ in 0..100 {
-        match injector.commit(text).await {
+        match target.commit(text).await {
             Err(InjectError::SecureField) if refused => return true,
             Err(InjectError::SecureField) => {}
             Ok(()) => {
@@ -298,23 +338,22 @@ async fn ordinary_field_receives_preedit_and_commit() {
         return;
     }
     let (mut field, mut injector) = session(0, 0).await;
-    injector.acquire().await.expect("acquire an ordinary field");
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
 
-    injector.set_preedit("hel").await;
+    target.set_preedit("hel").await;
     assert_eq!(field.next().await, Seen::Preedit("hel".into(), true));
-    injector.commit("hello").await.expect("commit hello");
+    target.commit("hello").await.expect("commit hello");
     assert_eq!(field.next().await, Seen::HidePreedit);
     assert_eq!(field.next().await, Seen::Commit("hello".into()));
     // No preedit is up, so clearing it sends nothing.
-    injector.set_preedit("").await;
-    field.expect_only_sentinel(&mut injector).await;
+    target.set_preedit("").await;
+    field.expect_only_sentinel(target.as_mut()).await;
 
-    injector.end().await;
-    injector.end().await;
+    target.release().await;
     assert_eq!(
         global_engine().await.as_deref(),
         Some(PRIOR_ENGINE),
-        "end restores the prior engine"
+        "release restores the prior engine"
     );
     field.close().await;
 }
@@ -326,8 +365,8 @@ async fn focus_leaving_the_field_ends_the_session() {
         return;
     }
     let (field, mut injector) = session(0, 0).await;
-    injector.acquire().await.expect("acquire an ordinary field");
-    let mut events = injector.focus_events();
+    let target = injector.acquire().await.expect("acquire an ordinary field");
+    let mut events = target.focus_events();
 
     field.focus_out().await;
     let event = tokio::time::timeout(HANG_GUARD, events.next())
@@ -335,8 +374,181 @@ async fn focus_leaving_the_field_ends_the_session() {
         .expect("a focus event within the hang guard");
     assert_eq!(event, Some(FocusEvent::FocusOut));
 
-    injector.end().await;
+    target.release().await;
     field.close().await;
+}
+
+/// A target whose lease a newer acquire superseded no longer owns anything:
+/// releasing it must leave the engine alone, because the live target is still
+/// writing into the user's field with it. The restoration responsibility moves
+/// to the live target rather than dying with the superseded one: the engine the
+/// connection displaced is the user's own, never ours, whichever release ends
+/// up handing it back.
+#[tokio::test]
+async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
+    if !ibus_enabled() {
+        eprintln!(
+            "skipping releasing_a_superseded_target_leaves_the_live_engine_alone: MYNA_IBUS_TESTS unset"
+        );
+        return;
+    }
+    let (mut field, mut injector) = session(0, 0).await;
+    let superseded = injector.acquire().await.expect("acquire the field");
+    let mut live = injector
+        .acquire()
+        .await
+        .expect("acquire it again, superseding the first lease");
+
+    superseded.release().await;
+    assert_eq!(
+        global_engine().await.as_deref(),
+        Some(MYNA_ENGINE),
+        "the superseded target restored the engine from under the live one"
+    );
+    live.commit("still ours").await.expect("commit while live");
+    assert_eq!(field.next().await, Seen::Commit("still ours".into()));
+
+    live.release().await;
+    assert_eq!(
+        global_engine().await.as_deref(),
+        Some(PRIOR_ENGINE),
+        "the last release must hand back the user's own input method, not ours"
+    );
+    field.close().await;
+}
+
+/// The hide on release is conditional on this target actually showing a
+/// preedit region: a live one is cleared, and a target that showed none sends
+/// nothing ahead of the next utterance's text.
+#[tokio::test]
+async fn release_clears_a_live_preedit_and_sends_nothing_without_one() {
+    if !ibus_enabled() {
+        eprintln!(
+            "skipping release_clears_a_live_preedit_and_sends_nothing_without_one: MYNA_IBUS_TESTS unset"
+        );
+        return;
+    }
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire the field");
+    target.set_preedit("unstable").await;
+    assert_eq!(field.next().await, Seen::Preedit("unstable".into(), true));
+
+    target.release().await;
+    assert_eq!(
+        field.next().await,
+        Seen::HidePreedit,
+        "release left the volatile region showing in the field"
+    );
+
+    // Nothing is showing now, so the next release must emit no hide at all.
+    // The sentinel travels the same ordered path, so a stray one arrives first.
+    let quiet = injector.acquire().await.expect("reacquire the field");
+    let seen = sentinel_via_fresh_acquire(&mut field, &mut injector, Some(quiet)).await;
+    assert_eq!(
+        seen,
+        Seen::Commit(SENTINEL.into()),
+        "release hid a preedit region it never showed"
+    );
+
+    field.close().await;
+}
+
+#[tokio::test]
+async fn text_never_follows_focus_into_another_field() {
+    if !ibus_enabled() {
+        eprintln!("skipping text_never_follows_focus_into_another_field: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let (first, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire the first field");
+
+    first.focus_out().await;
+    let mut other = Field::open(0, 0).await;
+    let committed = target.commit("stray").await;
+
+    let seen = sentinel_via_fresh_acquire(&mut other, &mut injector, Some(target)).await;
+    assert_eq!(
+        seen,
+        Seen::Commit(SENTINEL.into()),
+        "text acquired for the first field reached the other one (commit returned {committed:?})"
+    );
+    assert!(
+        committed.is_err(),
+        "commit after focus left the acquired field must fail: {committed:?}"
+    );
+
+    other.close().await;
+    first.close().await;
+}
+
+#[tokio::test]
+async fn focus_lost_while_acquiring_is_not_missed() {
+    if !ibus_enabled() {
+        eprintln!("skipping focus_lost_while_acquiring_is_not_missed: MYNA_IBUS_TESTS unset");
+        return;
+    }
+    let (mut first, injector) = session(0, 0).await;
+    first.watch_global_engine().await;
+    let acquiring = tokio::spawn(async move {
+        let mut injector = injector;
+        let acquired = injector.acquire().await;
+        (injector, acquired)
+    });
+
+    first.wait_global_engine(MYNA_ENGINE).await;
+    first.focus_out().await;
+    assert!(
+        !acquiring.is_finished(),
+        "the FocusOut must reach the engine while acquire is still running"
+    );
+    let (mut injector, mut acquired) = acquiring.await.expect("acquire task");
+
+    let noticed = match &acquired {
+        Err(_) => true,
+        Ok(target) => {
+            let mut events = target.focus_events();
+            matches!(
+                tokio::time::timeout(NOTICE, events.next()).await,
+                Ok(Some(FocusEvent::FocusOut))
+            )
+        }
+    };
+    let mut other = Field::open(0, 0).await;
+    let committed = match &mut acquired {
+        Ok(target) => Some(target.commit("stray").await),
+        Err(_) => None,
+    };
+    let acquired_as = format!("{acquired:?}");
+    let seen = sentinel_via_fresh_acquire(&mut other, &mut injector, acquired.ok()).await;
+    assert!(
+        noticed && seen == Seen::Commit(SENTINEL.into()),
+        "focus lost during acquire: acquire returned {acquired_as}, loss noticed: {noticed}, \
+         commit returned {committed:?}, then the other field saw {seen:?}"
+    );
+
+    other.close().await;
+    first.close().await;
+}
+
+/// Release `earlier`, acquire `field` afresh and commit the sentinel. It
+/// travels the injector's connection after anything committed earlier, so
+/// `field` sees that first if it received it.
+async fn sentinel_via_fresh_acquire(
+    field: &mut Field,
+    injector: &mut IbusInjector,
+    earlier: Option<Box<dyn Target>>,
+) -> Seen {
+    if let Some(earlier) = earlier {
+        earlier.release().await;
+    }
+    let mut target = injector
+        .acquire()
+        .await
+        .expect("reacquire for the sentinel");
+    target.commit(SENTINEL).await.expect("commit the sentinel");
+    let seen = field.next().await;
+    target.release().await;
+    seen
 }
 
 #[tokio::test]
@@ -349,13 +561,13 @@ async fn password_field_is_refused_at_acquire() {
     assert_acquire_refused(&mut injector).await;
 
     field.set_content_type(0, 0).await;
-    injector
+    let mut target = injector
         .acquire()
         .await
         .expect("acquire the field once ordinary");
-    field.expect_only_sentinel(&mut injector).await;
+    field.expect_only_sentinel(target.as_mut()).await;
 
-    injector.end().await;
+    target.release().await;
     field.close().await;
 }
 
@@ -366,19 +578,19 @@ async fn field_turning_secure_mid_session_gets_no_text() {
         return;
     }
     let (mut field, mut injector) = session(0, 0).await;
-    injector.acquire().await.expect("acquire an ordinary field");
-    injector.commit("hello").await.expect("commit hello");
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    target.commit("hello").await.expect("commit hello");
     assert_eq!(field.next().await, Seen::Commit("hello".into()));
 
     // PASSWORD rather than HIDDEN_TEXT: the daemon masks preedit and re-sends
     // it when HIDDEN_TEXT changes, which would muddy the sentinel.
     field.set_content_type(PURPOSE_PASSWORD, 0).await;
     assert!(
-        commit_until(&mut field, &mut injector, "probe", true).await,
+        commit_until(&mut field, target.as_mut(), "probe", true).await,
         "commit never refused the field after it turned secure"
     );
-    injector.set_preedit("secret").await;
-    let committed = injector.commit("secret").await;
+    target.set_preedit("secret").await;
+    let committed = target.commit("secret").await;
     assert!(
         matches!(committed, Err(InjectError::SecureField)),
         "commit into a secure field: {committed:?}"
@@ -386,11 +598,11 @@ async fn field_turning_secure_mid_session_gets_no_text() {
 
     field.set_content_type(0, 0).await;
     assert!(
-        commit_until(&mut field, &mut injector, SENTINEL, false).await,
+        commit_until(&mut field, target.as_mut(), SENTINEL, false).await,
         "commit never accepted the field after it turned ordinary"
     );
 
-    injector.end().await;
+    target.release().await;
     field.close().await;
 }
 
@@ -404,7 +616,6 @@ async fn pin_field_marked_hidden_text_is_refused() {
     let (field, mut injector) = session(0, HINT_PRIVATE | HINT_HIDDEN_TEXT).await;
     assert_acquire_refused(&mut injector).await;
 
-    injector.end().await;
     field.close().await;
 }
 
@@ -415,11 +626,11 @@ async fn private_field_is_not_refused() {
         return;
     }
     let (mut field, mut injector) = session(0, HINT_PRIVATE).await;
-    injector.acquire().await.expect("acquire a private field");
-    injector.commit("hello").await.expect("commit hello");
+    let mut target = injector.acquire().await.expect("acquire a private field");
+    target.commit("hello").await.expect("commit hello");
     assert_eq!(field.next().await, Seen::Commit("hello".into()));
 
-    injector.end().await;
+    target.release().await;
     field.close().await;
 }
 
@@ -450,19 +661,19 @@ async fn ibus_preedit_visual_probe() {
     let mut injector = IbusInjector::connect()
         .await
         .expect("connect to IBus daemon");
-    match injector.acquire().await {
-        Ok(_target) => {}
+    let mut target = match injector.acquire().await {
+        Ok(target) => target,
         Err(other) => panic!("unexpected acquire error: {other:?}"),
-    }
+    };
     eprintln!(">>> showing preedit 'unstable one' (3 s)");
-    injector.set_preedit("unstable one").await;
+    target.set_preedit("unstable one").await;
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     eprintln!(">>> replacing with 'unstable two' (3 s)");
-    injector.set_preedit("unstable two").await;
+    target.set_preedit("unstable two").await;
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     eprintln!(">>> committing 'probe: committed.' — preedit must clear");
-    injector.commit("probe: committed.").await.expect("commit");
+    target.commit("probe: committed.").await.expect("commit");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    injector.end().await;
+    target.release().await;
     eprintln!("probe done — was the preedit visible and underlined?");
 }
