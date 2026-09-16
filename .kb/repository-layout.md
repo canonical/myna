@@ -17,7 +17,7 @@ Myna is intentionally polyglot. The production client uses Rust for native deskt
 - `myna-core` defines audio, session, event, settings, and wire types shared by Rust client components.
 - `myna-audio` owns native PipeWire capture.
 - `myna-orchestrator` owns the wire-agnostic session and model-residency state machines.
-- `myna-cli` provides the `myna-dictate` development and testbed client.
+- `myna-cli` provides the `myna-testbed` development client.
 - `myna-desktop` owns desktop activation and text injection.
 - `myna-hud` renders dictation state without taking keyboard focus.
 

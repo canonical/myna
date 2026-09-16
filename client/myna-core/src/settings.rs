@@ -218,7 +218,7 @@ pub fn store_path() -> Option<PathBuf> {
 /// [`Settings`] value and hands it to the callback.
 ///
 /// Reading the settings once at startup made a *restart* the only way to be
-/// heard, for every writer there is - `gsettings`, `myna-dictate`, a Settings
+/// heard, for every writer there is - `gsettings`, `myna-testbed`, a Settings
 /// page, another snap growing a configuration API (T54). GSettings already
 /// broadcasts its changes, so the subscription belongs next to the store
 /// rather than in each writer, which would otherwise need the daemon's unit

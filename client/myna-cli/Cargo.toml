@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "Demo binary for the myna dictation orchestrator."
 
 [[bin]]
-name = "myna-dictate"
+name = "myna-testbed"
 path = "src/main.rs"
 
 [dependencies]

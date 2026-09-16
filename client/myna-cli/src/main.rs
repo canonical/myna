@@ -1,5 +1,6 @@
-//! `myna-dictate` — the orchestrator demo binary It wires the three boundary
-//! mocks to the wire-agnostic FSM and runs push-to-talk against a real backend:
+//! `myna-testbed` - drives backend sessions from WAV clips, a corpus or the
+//! microphone. It wires the three boundary mocks to the wire-agnostic FSM and
+//! runs push-to-talk against a real backend:
 //!
 //! ```text
 //!   StdinTrigger ──press/release──▶ ┌─────────────┐
@@ -11,8 +12,8 @@
 //!
 //! ```text
 //!   myna-server --adapter fake --socket /tmp/myna.sock &
-//!   myna-dictate --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
-//!   myna-dictate --socket /tmp/myna.sock --mic          # live microphone
+//!   myna-testbed --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
+//!   myna-testbed --socket /tmp/myna.sock --mic          # live microphone
 //! ```
 //!
 //! Press Enter to start an utterance, Enter again to stop (or let the clip play
@@ -64,10 +65,10 @@ struct Clip {
 }
 
 const USAGE: &str = "\
-myna-dictate — orchestrator push-to-talk demo (T41)
+myna-testbed - drive a backend session from WAV clips, a corpus or the microphone
 
 USAGE:
-    myna-dictate --socket <path> (--clip <wav> | --corpus <dir> | --mic) [options]
+    myna-testbed --socket <path> (--clip <wav> | --corpus <dir> | --mic) [options]
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server (required)

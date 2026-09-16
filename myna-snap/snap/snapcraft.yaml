@@ -192,11 +192,11 @@ apps:
     command: bin/myna-config
     environment: *settings-env
 
-  # The testbed CLI (myna-dictate): device listing, WAV-clip sessions, wire
+  # The testbed CLI (myna-testbed): device listing, WAV-clip sessions, wire
   # dialect selection. `home` lets it read clips from the user's files.
   testbed:
-    command: bin/myna-testbed
-    # myna-dictate resolves streaming-mode from the settings store (keyfile).
+    command: bin/myna-testbed-wrapper
+    # myna-testbed resolves streaming-mode from the settings store (keyfile).
     environment: *settings-env
     plugs:
       - pipewire
@@ -361,7 +361,7 @@ parts:
       # pointing at them. Over-pruning is not silent: snapcraft's `library`
       # linter reports anything left with a missing dependency.
        keep=$(mktemp) todo=$(mktemp) next=$(mktemp)
-      { ls bin/myna-desktop bin/myna-dictate bin/myna-hud usr/bin/* usr/libexec/* 2>/dev/null
+      { ls bin/myna-desktop bin/myna-testbed bin/myna-hud usr/bin/* usr/libexec/* 2>/dev/null
         find "$lib"/pipewire-0.3 "$lib"/spa-0.2 "$lib"/gio -name '*.so' 2>/dev/null
       } > "$todo" || true
       while [ -s "$todo" ]; do
@@ -442,6 +442,6 @@ parts:
       "myna-daemon": bin/myna-daemon
       "myna-config": bin/myna-config
       "myna-status": bin/myna-status
-      "myna-testbed": bin/myna-testbed
+      "myna-testbed-wrapper": bin/myna-testbed-wrapper
       "myna-install-shortcut": bin/myna-install-shortcut
       "myna-runtime-links": bin/myna-runtime-links

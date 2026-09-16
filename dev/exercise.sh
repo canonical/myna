@@ -132,10 +132,10 @@ stop_hud() {
 notice "scenario 1: fake-adapter dictation, internal dialect"
 SOCK="$WORK/internal.sock"; rm -f "$SOCK"
 start_server internal "$SOCK"
-# myna-dictate is stdin-triggered: Enter starts the utterance; the clip then
+# myna-testbed is stdin-triggered: Enter starts the utterance; the clip then
 # plays out and EOF quits the CLI.
 ( sleep 1; printf '\n'; sleep 6 ) | \
-(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
   --socket "$SOCK" --clip "$CLIP") | tee "$WORK/internal.out"
 stop_server
 grep -qF "$EXPECTED" "$WORK/internal.out" \
@@ -146,7 +146,7 @@ notice "scenario 2: fake-adapter dictation, IE115 dialect"
 SOCK="$WORK/ie115.sock"; rm -f "$SOCK"
 start_server ie115 "$SOCK"
 ( sleep 1; printf '\n'; sleep 6 ) | \
-(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
   --socket "$SOCK" --clip "$CLIP" --dialect ie115) | tee "$WORK/ie115.out"
 stop_server
 grep -qF "$EXPECTED" "$WORK/ie115.out" \
@@ -231,7 +231,7 @@ if [ -n "$MIC_WHAT" ]; then
   SOCK="$WORK/live.sock"; rm -f "$SOCK"
   start_server live "$SOCK"
   ( sleep 1; printf '\n'; sleep 5; printf '\n'; sleep 2 ) | \
-  (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+  (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
     --socket "$SOCK" --mic "${MIC_TARGET[@]}") \
     | tee "$WORK/live.out" || die "live-capture scenario failed (see $WORK/live.out)"
   stop_server
@@ -247,7 +247,7 @@ fi
 notice "scenario 5: fake-adapter dictation from a corpus manifest"
 CORPUS_DIR="$WORK/corpus"; rm -rf "$CORPUS_DIR"; mkdir -p "$CORPUS_DIR"
 cp "$CLIP" "$CORPUS_DIR/clip.wav"
-# Stamped like a generated tier: myna-dictate hashes each clip against the
+# Stamped like a generated tier: myna-testbed hashes each clip against the
 # digest the manifest records and refuses a manifest with no corpus id.
 cat >"$CORPUS_DIR/manifest.json" <<JSON
 {"schema_version": 1,
@@ -260,7 +260,7 @@ JSON
 SOCK="$WORK/corpus.sock"; rm -f "$SOCK"
 start_server corpus "$SOCK"
 ( sleep 1; printf '\n'; sleep 6; printf '\n'; sleep 6 ) | \
-(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-dictate -- \
+(cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
   --socket "$SOCK" --corpus "$CORPUS_DIR") | tee "$WORK/corpus.out"
 stop_server
 grep -qF "$EXPECTED" "$WORK/corpus.out" \
@@ -279,13 +279,13 @@ run_cli() { # <binary> <outfile> <args...>
     >"$WORK/$out" 2>&1 || true
 }
 
-run_cli myna-dictate cli-help.out --help
-grep -qi "usage" "$WORK/cli-help.out" || die "myna-dictate --help printed no usage"
+run_cli myna-testbed cli-help.out --help
+grep -qi "usage" "$WORK/cli-help.out" || die "myna-testbed --help printed no usage"
 
 # Mutually exclusive selection: the validation in parse_args, not parse_args_from.
-run_cli myna-dictate cli-badargs.out --socket "$WORK/none.sock" --mic --clip "$CLIP"
+run_cli myna-testbed cli-badargs.out --socket "$WORK/none.sock" --mic --clip "$CLIP"
 grep -qF -- "--mic and --clip/--corpus are mutually exclusive" "$WORK/cli-badargs.out" \
-  || die "myna-dictate accepted --mic with --clip (see $WORK/cli-badargs.out)"
+  || die "myna-testbed accepted --mic with --clip (see $WORK/cli-badargs.out)"
 
 run_cli myna-desktop desktop-help.out --help
 grep -qi "usage" "$WORK/desktop-help.out" || die "myna-desktop --help printed no usage"

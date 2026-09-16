@@ -23,7 +23,7 @@
 //! Status: `myna-core` (wire contract, T38), the backend seam (T39), the
 //! two-region FSM + async driver (T40, [`fsm`] / [`driver`]), and the boundary
 //! mocks + one-utterance runner (T41, [`audio`] / [`trigger`] / [`sink`] /
-//! [`runner`], wired in the `myna-dictate` binary) have all landed.
+//! [`runner`], wired in the `myna-testbed` binary) have all landed.
 
 pub mod audio;
 pub mod backend;

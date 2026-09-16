@@ -39,7 +39,7 @@ execute: |
     # project dir (home plug covers neither it nor /root), so stage the
     # fixture into the snap's own data dir, which confinement always grants.
     cp "$SPREAD_PATH/tests/spread/confined-e2e/fixture.wav" /var/snap/myna/current/fixture.wav
-    # myna.testbed is the confined myna-dictate; it is stdin-triggered
+    # myna.testbed is the confined myna-testbed; it is stdin-triggered
     # (Enter starts the utterance), so feed it one Enter then hold the pipe.
     ( printf '\n'; sleep 15 ) | \
         myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \

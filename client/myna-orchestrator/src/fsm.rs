@@ -106,7 +106,7 @@ pub enum OrchestratorEvent {
     Final(String),
     /// Unstable hypothesis text — provisional, may be superseded. NEVER
     /// injected (FR-007); display-only, and only when the user opts in
-    /// (e.g. myna-dictate --show-unstable). Injectors ignore this variant.
+    /// (e.g. myna-testbed --show-unstable). Injectors ignore this variant.
     Unstable(String),
     /// Utterance complete — the full transcript. Terminal.
     Done(String),

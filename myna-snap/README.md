@@ -1,8 +1,8 @@
 # myna-snap
 
 The Myna dictation **client** snap - ships the Rust orchestrator
-(`client/myna-desktop`, the push-to-talk app, plus the `myna-dictate`
-testbed CLI). Feature `005-myna-orchestrator-snap`
+(`client/myna-desktop`, the push-to-talk app, plus the `myna-testbed`
+CLI). Feature `005-myna-orchestrator-snap`
 (`specs/005-myna-orchestrator-snap/`); plan task T57.
 
 This snap is the mirror image of the inference snaps: **it** owns the
@@ -250,7 +250,7 @@ preedit region. `myna --preedit` / `myna --no-preedit` force it either way.
 | `myna.config` | query/change the persisted settings: glib's gsettings over the snap's keyfile store. Bare, it lists every key; `set`/`get`/`reset` take bare values (`myna.config set language fr`) |
 | `myna.toggle` | poke the daemon's control socket (start/stop). **Control activation only** - the default (portal) daemon has no control socket |
 | `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf). **Control activation only** - refuses under portal, where it would shadow the portal's own binding. Needed on Noble/Jammy (no GlobalShortcuts backend there); the one app with the `gsettings` plug |
-| `myna.testbed` | the `myna-dictate` testbed CLI (`--list-devices`, `--clip`, `--dialect`, …) |
+| `myna.testbed` | the `myna-testbed` CLI (`--list-devices`, `--clip`, `--dialect`, …) |
 
 ### `myna.status`
 

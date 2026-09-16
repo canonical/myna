@@ -50,7 +50,7 @@ Watch it: `sudo snap logs -f myna-nemotron.server`; the socket appears at
 `/var/snap/myna-nemotron/common/share/provider/myna.sock`. Transcribe / dictate from the repo:
 
 ```shell
-myna-dictate --socket /var/snap/myna-nemotron/common/share/provider/myna.sock --mic
+myna-testbed --socket /var/snap/myna-nemotron/common/share/provider/myna.sock --mic
 ```
 
 ## Confined clients (the `provider` slot)

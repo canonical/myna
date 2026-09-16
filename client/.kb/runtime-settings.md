@@ -12,7 +12,7 @@ Client settings use GSettings schema `com.canonical.Myna.Dictation` with the key
 
 The snap stores settings below `$SNAP_USER_COMMON/.config`; unpackaged development uses the host configuration directory and requires `make install-schema`. `myna_core::Settings` is the shared access layer.
 
-`myna_core::effective_mode` is the single resolver used by `myna-dictate` and `myna-desktop`:
+`myna_core::effective_mode` is the single resolver used by `myna-testbed` and `myna-desktop`:
 
 - `batch` delays display and injection until the utterance completes.
 - `streaming` displays committed deltas as they arrive and enables preedit when supported.

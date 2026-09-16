@@ -14,7 +14,7 @@ flowchart TB
         core["myna-core<br/>contract types, wire codecs, settings"]
         audio["myna-audio<br/>PipeWire capture and devices"]
         orchestrator["myna-orchestrator<br/>session and residency FSMs"]
-        cli["myna-cli<br/>myna-dictate"]
+        cli["myna-cli<br/>myna-testbed"]
         desktop["myna-desktop<br/>activation, controller, injection"]
         hud["myna-hud<br/>focus-safe GTK renderer"]
 

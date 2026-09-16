@@ -12,7 +12,7 @@ current client knowledge index.
 | `myna-core` | wire contract: events, session config, protocol version, audio types + JSON codec, mirroring Python `myna.core` | **T38 (done)** |
 | `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
-| `myna-cli` (`myna-dictate`) | demo binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
+| `myna-cli` (`myna-testbed`) | testbed binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
 | `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: GlobalShortcuts hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
 | `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app — GPU wave ribbon, pill chrome, accent/motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
 
@@ -23,7 +23,7 @@ current client knowledge index.
   OpenAI-Realtime-shaped **IE115** wire is layered on (T43) as a *second*
   `BackendClient` (`ws_unix_ie115::WsUnixIe115Backend`) — the FSM and driver are
   unchanged, proving the trait boundary. Pick it at runtime with
-  `myna-dictate --dialect ie115`.
+  `myna-testbed --dialect ie115`.
 - **Every boundary is a trait with a mock.** The Python `myna-server` stands in
   for the inference snap; `myna-audio` is the capture adapter (mock:
   `ScriptedBackend`); the hotkey is `Trigger` (`StdinTrigger` /
@@ -56,20 +56,20 @@ and skip cleanly otherwise: `MYNA_PIPEWIRE_TESTS=1` (capture), `MYNA_IBUS_TESTS=
 
 ## Run
 
-### Testbed demo — `myna-dictate` (WAV / corpus / live mic)
+### Testbed - `myna-testbed` (WAV / corpus / live mic)
 
 Against a running Python `myna-server` (any adapter) on a Unix socket:
 
 ```sh
 # internal myna.core wire (default) — Enter to start, Enter/clip-end to stop, Ctrl-D quits
-myna-dictate --socket /tmp/myna.sock --language en --clip corpus/english/audio/<id>.wav
+myna-testbed --socket /tmp/myna.sock --language en --clip corpus/english/audio/<id>.wav
 
 # IE115 (OpenAI-Realtime-shaped) wire — same FSM, second backend
-myna-dictate --socket /tmp/myna.sock --dialect ie115 --language en --clip <wav>
+myna-testbed --socket /tmp/myna.sock --dialect ie115 --language en --clip <wav>
 
 # live microphone via the native PipeWire backend (no subprocess)
-myna-dictate --socket /tmp/myna.sock --language en --mic
-myna-dictate --list-devices
+myna-testbed --socket /tmp/myna.sock --language en --mic
+myna-testbed --list-devices
 ```
 
 ### The dictation app — `myna-desktop` (hotkey → IBus injection)
