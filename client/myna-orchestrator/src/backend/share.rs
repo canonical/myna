@@ -18,7 +18,7 @@ use std::io;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Component, Path, PathBuf};
 
-use gettextrs::gettext;
+use crate::i18n::tr;
 
 /// The identity file every `inference-provider` share holds.
 const PROVIDER_ENV: &str = "provider.env";
@@ -50,7 +50,7 @@ impl Unusable {
 
 /// Why no single backend socket could be named.
 ///
-/// `Display` renders user-facing messages through the desktop gettext domain;
+/// `Display` renders user-facing messages through this crate's gettext domain;
 /// with no .mo installed it is the identity, so the strings below double as
 /// the source templates for translation.
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl fmt::Display for ResolveError {
             ResolveError::NotConnected(unusable) if unusable.is_empty() => write!(
                 f,
                 "{}",
-                gettext(
+                tr(
                     "no backend is connected - install one and connect it, e.g. `sudo snap connect myna:backend myna-whisper`"
                 )
             ),
@@ -77,18 +77,18 @@ impl fmt::Display for ResolveError {
                 let mut parts = Vec::new();
                 for name in &unusable.no_unix_socket {
                     parts.push(
-                        gettext("%s is connected but offers no Unix socket").replace("%s", name),
+                        tr("%s is connected but offers no Unix socket").replace("%s", name),
                     );
                 }
                 for name in &unusable.not_serving {
                     parts.push(
-                        gettext("%s is connected but its server is not running")
+                        tr("%s is connected but its server is not running")
                             .replace("%s", name),
                     );
                 }
                 if unusable.malformed > 0 {
                     parts.push(
-                        gettext("connected shares with an unreadable provider.env: %s")
+                        tr("connected shares with an unreadable provider.env: %s")
                             .replace("%s", &unusable.malformed.to_string()),
                     );
                 }
@@ -97,7 +97,7 @@ impl fmt::Display for ResolveError {
             ResolveError::Ambiguous(names) => write!(
                 f,
                 "{}",
-                gettext(
+                tr(
                     "%1$s backends are connected (%2$s); disconnect all but one (`snap connections myna`)"
                 )
                 .replace("%1$s", &names.len().to_string())

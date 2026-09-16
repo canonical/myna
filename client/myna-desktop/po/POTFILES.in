@@ -7,5 +7,4 @@ src/indicator/mod.rs
 src/indicator/notify.rs
 src/controller.rs
 src/shortcut/retry.rs
-src/backend.rs
 src/inject/mod.rs

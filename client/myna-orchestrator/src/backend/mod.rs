@@ -11,6 +11,7 @@
 //! the same channels.
 
 pub mod fake;
+pub mod share;
 pub mod ws_unix;
 pub mod ws_unix_ie115;
 

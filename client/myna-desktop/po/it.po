@@ -90,14 +90,6 @@ msgstr "Nessun campo di testo a fuoco"
 msgid "dictation hotkey unavailable: %s"
 msgstr "scorciatoia per la registrazione non disponibile: %s"
 
-#: src/backend.rs:47
-msgid ""
-"no backend is connected - install one and connect it, e.g. `sudo snap "
-"connect myna:backend myna-whisper`"
-msgstr ""
-"nessun backend è collegato - installane uno e collegalo, es. `sudo snap "
-"connect myna:backend myna-whisper`"
-
 #: src/backend.rs:54
 #, c-format
 msgid ""

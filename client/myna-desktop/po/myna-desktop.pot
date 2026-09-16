@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-16 09:52+0100\n"
+"POT-Creation-Date: 2026-09-16 21:37+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -93,34 +93,6 @@ msgstr ""
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr ""
-
-#: src/backend.rs:73
-msgid ""
-"no backend is connected - install one and connect it, e.g. `sudo snap "
-"connect myna:backend myna-whisper`"
-msgstr ""
-
-#: src/backend.rs:80
-#, c-format
-msgid "%s is connected but offers no Unix socket"
-msgstr ""
-
-#: src/backend.rs:85
-#, c-format
-msgid "%s is connected but its server is not running"
-msgstr ""
-
-#: src/backend.rs:91
-#, c-format
-msgid "connected shares with an unreadable provider.env: %s"
-msgstr ""
-
-#: src/backend.rs:101
-#, c-format
-msgid ""
-"%1$s backends are connected (%2$s); disconnect all but one (`snap "
-"connections myna`)"
 msgstr ""
 
 #: src/inject/mod.rs:55

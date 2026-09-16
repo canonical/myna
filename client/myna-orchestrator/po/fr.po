@@ -45,3 +45,11 @@ msgstr "connexion au backend fermée inopinément"
 #, c-format
 msgid "transport error: %s"
 msgstr "erreur de transport : %s"
+
+#: src/backend/share.rs:73
+msgid ""
+"no backend is connected - install one and connect it, e.g. `sudo snap "
+"connect myna:backend myna-whisper`"
+msgstr ""
+"aucun backend n'est connecté - installez-en un et connectez-le, ex. `sudo "
+"snap connect myna:backend myna-whisper`"

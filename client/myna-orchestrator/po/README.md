@@ -2,7 +2,8 @@
 
 User-visible strings owned by this crate live in this `po/` directory, in the
 gettext domain **`myna-orchestrator`**. Today that is the `BackendError`
-templates rendered by `Display` (`src/backend/mod.rs`).
+templates rendered by `Display` (`src/backend/mod.rs`) and the backend-socket
+resolution errors (`src/backend/share.rs`).
 
 The desktop package (and any embedding application) initializes this domain at
 startup via `myna_orchestrator::i18n::bind`, binding it to the same locale

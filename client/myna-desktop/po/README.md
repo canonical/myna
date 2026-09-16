@@ -9,11 +9,11 @@ gettext domain **`myna-desktop`** (R25).
   (`src/indicator/mod.rs`) — translated before publication
   in the D-Bus `StatusMessage` property, so every consumer sees the same
   final label.
-- The user-facing error templates this crate owns: the backend-socket
-  resolution errors (`src/backend.rs`) and the injection errors
+- The user-facing error templates this crate owns: the injection errors
   (`src/inject/mod.rs`), translated at the point their `Display` is rendered.
 
-Backend transport errors (e.g. "cannot reach backend") are owned by the
+Backend errors (transport, e.g. "cannot reach backend", and socket
+resolution, e.g. "no backend is connected") are owned by the
 `myna-orchestrator` crate and live in its own `po/` (see
 `client/myna-orchestrator/po/README.md`).
 

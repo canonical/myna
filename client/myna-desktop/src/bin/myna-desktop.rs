@@ -53,7 +53,6 @@ use futures_util::future::{BoxFuture, FutureExt};
 
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
-use myna_desktop::backend::BackendSocket;
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
@@ -66,6 +65,7 @@ use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, Trig
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
 use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
+use myna_orchestrator::backend::share::{BackendSocket, ResolveError};
 use myna_orchestrator::{
     run_dictation, BackendError, OrchestratorEvent, StdinTrigger, StopHandle, WsUnixIe115Backend,
 };
@@ -605,7 +605,7 @@ fn make_session(
 /// other backend error. Not exiting matters - "no backend yet" is the normal
 /// state between `snap install myna` and the first `snap connect`, and it is a
 /// state the user fixes without touching the daemon.
-fn no_backend(e: myna_desktop::backend::ResolveError) -> Session {
+fn no_backend(e: ResolveError) -> Session {
     let run: SessionRun = Box::pin(async move { Err(BackendError::Connect(e.to_string())) });
     (run, StopHandle::default()).into()
 }

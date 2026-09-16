@@ -90,14 +90,6 @@ msgstr "Aucun champ de texte n'est focalisé"
 msgid "dictation hotkey unavailable: %s"
 msgstr "raccourci de dictée indisponible: %s"
 
-#: src/backend.rs:47
-msgid ""
-"no backend is connected - install one and connect it, e.g. `sudo snap "
-"connect myna:backend myna-whisper`"
-msgstr ""
-"aucun backend n'est connecté - installez-en un et connectez-le, ex. `sudo "
-"snap connect myna:backend myna-whisper`"
-
 #: src/backend.rs:54
 #, c-format
 msgid ""

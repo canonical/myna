@@ -90,14 +90,6 @@ msgstr "Ningún campo de texto está enfocado"
 msgid "dictation hotkey unavailable: %s"
 msgstr "atajo de dictado no disponible: %s"
 
-#: src/backend.rs:47
-msgid ""
-"no backend is connected - install one and connect it, e.g. `sudo snap "
-"connect myna:backend myna-whisper`"
-msgstr ""
-"no hay ningún backend conectado - instala uno y conéctalo, p. ej. `sudo "
-"snap connect myna:backend myna-whisper`"
-
 #: src/backend.rs:54
 #, c-format
 msgid ""
