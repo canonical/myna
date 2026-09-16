@@ -15,6 +15,8 @@ pub enum WidgetKind {
     Text,
     /// A bounded integer: a spin row over the schema range.
     Number,
+    /// A boolean key: a switch row.
+    Toggle,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +39,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
     let kind = match metadata.range() {
         SettingRange::Choices(_) => WidgetKind::Choice,
         _ if bounds.is_some() => WidgetKind::Number,
+        _ if metadata.default_value().as_bool().is_some() => WidgetKind::Toggle,
         _ => WidgetKind::Text,
     };
     WidgetPlan {

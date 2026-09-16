@@ -110,25 +110,36 @@ fn chime_for(from: Phase, to: Phase) -> Option<Chime> {
 /// An [`Indicator`] that plays a [`ChimePlayer`] chime alongside whatever the
 /// wrapped indicator renders, per [`chime_for`]. Delegates every call
 /// unchanged — this only observes the state sequence, never alters it.
+///
+/// `enabled` is a [`Live<bool>`] (the `chimes-enabled` setting) rather than a
+/// plain `bool` so toggling it in Myna Settings takes effect on the very next
+/// state change, not at the next daemon restart — the same live-reload
+/// contract `preedit`/`auto_stop` already get. The phase is still tracked
+/// while muted, so re-enabling mid-session does not misfire on the next
+/// transition.
 pub struct ChimingIndicator<I, P> {
     inner: I,
     player: P,
     phase: Phase,
+    enabled: crate::live::Live<bool>,
 }
 
 impl<I: Indicator, P: ChimePlayer> ChimingIndicator<I, P> {
-    pub fn new(inner: I, player: P) -> Self {
+    pub fn new(inner: I, player: P, enabled: crate::live::Live<bool>) -> Self {
         Self {
             inner,
             player,
             phase: Phase::Idle,
+            enabled,
         }
     }
 
     fn observe(&mut self, state: &IndicatorState) {
         let to = phase_of(state);
-        if let Some(chime) = chime_for(self.phase, to) {
-            self.player.play(chime);
+        if self.enabled.get() {
+            if let Some(chime) = chime_for(self.phase, to) {
+                self.player.play(chime);
+            }
         }
         self.phase = to;
     }
@@ -156,6 +167,7 @@ mod tests {
     use super::mock::MockChimePlayer;
     use super::*;
     use crate::indicator::mock::MockIndicator;
+    use crate::live::Live;
 
     fn recoverable() -> IndicatorState {
         IndicatorState::recoverable("no speech detected")
@@ -165,10 +177,14 @@ mod tests {
         IndicatorState::critical("boom")
     }
 
+    fn chiming(player: MockChimePlayer) -> ChimingIndicator<MockIndicator, MockChimePlayer> {
+        ChimingIndicator::new(MockIndicator::new(), player, Live::new(true))
+    }
+
     #[tokio::test]
     async fn chimes_start_once_then_stop_on_finalizing() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         chiming.set_state(IndicatorState::Transcribing).await;
@@ -181,7 +197,7 @@ mod tests {
     #[tokio::test]
     async fn direct_cancel_without_finalizing_still_stops() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         // No Finalizing in between and no Error either — a clean abrupt end
@@ -194,7 +210,7 @@ mod tests {
     #[tokio::test]
     async fn finalizing_does_not_double_stop_on_the_terminal_resting_state() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         chiming.set_state(IndicatorState::Finalizing).await;
@@ -206,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn recoverable_notice_chimes_error_in_addition_to_the_stop_already_played() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         chiming.set_state(IndicatorState::Finalizing).await;
@@ -220,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn a_critical_error_straight_from_listening_skips_the_stop_chime() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         // No Finalizing in between (e.g. the dictation target closed).
@@ -232,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn pre_capture_abort_chimes_error_only_no_start_or_stop() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(critical()).await;
 
@@ -242,11 +258,30 @@ mod tests {
     #[tokio::test]
     async fn hide_is_equivalent_to_a_resting_state() {
         let player = MockChimePlayer::new();
-        let mut chiming = ChimingIndicator::new(MockIndicator::new(), player.clone());
+        let mut chiming = chiming(player.clone());
 
         chiming.set_state(IndicatorState::Recording).await;
         chiming.hide().await;
 
         assert_eq!(player.log(), vec![Chime::Start, Chime::Stop]);
+    }
+
+    #[tokio::test]
+    async fn disabling_mutes_playback_without_losing_phase_tracking() {
+        let player = MockChimePlayer::new();
+        let enabled = Live::new(true);
+        let mut chiming =
+            ChimingIndicator::new(MockIndicator::new(), player.clone(), enabled.clone());
+
+        chiming.set_state(IndicatorState::Recording).await;
+        enabled.set(false);
+        // Muted mid-session: Finalizing plays nothing...
+        chiming.set_state(IndicatorState::Finalizing).await;
+        enabled.set(true);
+        // ...but phase tracking kept up, so re-enabling doesn't replay Stop or
+        // misfire Start on the next real transition.
+        chiming.set_state(IndicatorState::Hidden).await;
+
+        assert_eq!(player.log(), vec![Chime::Start]);
     }
 }

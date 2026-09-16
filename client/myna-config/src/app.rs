@@ -28,6 +28,11 @@ const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
 const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
 const BACKENDS_ENV: &str = "MYNA_CONFIG_BACKENDS_TEST";
+/// Dev-only override: go straight to the settings window, skipping the
+/// `assess_machine` probe entirely. For testing the settings page on a box
+/// where the `snap` probe cannot be trusted (e.g. a confined dev terminal) or
+/// while a required component is genuinely missing but you just want the page.
+const SKIP_ONBOARDING_ENV: &str = "MYNA_CONFIG_SKIP_ONBOARDING";
 /// The probes must never claim the real application id: registering it while a
 /// Myna Settings is already running takes the remote-instance path, and
 /// `gtk_window_set_application` then segfaults against an application that was
@@ -520,6 +525,10 @@ fn build_window(application: &adw::Application) {
 
     gtk::Window::set_default_icon_name(APP_ID);
     let application = application.clone();
+    if smoke_requested(std::env::var_os(SKIP_ONBOARDING_ENV).as_deref()) {
+        build_settings_window(&application);
+        return;
+    }
     // Nothing is on screen while the machine is read, and a GApplication with
     // no window and no held use count quits the moment `activate` returns.
     let hold = application.hold();
@@ -1330,6 +1339,11 @@ enum RowBinding {
         writable: bool,
         updating: Rc<Cell<bool>>,
     },
+    Toggle {
+        row: adw::SwitchRow,
+        writable: bool,
+        updating: Rc<Cell<bool>>,
+    },
     Text {
         row: adw::EntryRow,
         key: String,
@@ -1394,6 +1408,18 @@ impl RowBinding {
                 updating.set(true);
                 if let Some(value) = value.as_integer() {
                     row.set_value(value as f64);
+                }
+                row.set_sensitive(*writable);
+                updating.set(false);
+            }
+            Self::Toggle {
+                row,
+                writable,
+                updating,
+            } => {
+                updating.set(true);
+                if let Some(value) = value.as_bool() {
+                    row.set_active(value);
                 }
                 row.set_sensitive(*writable);
                 updating.set(false);
@@ -1537,6 +1563,40 @@ fn ready_page(
                 bindings.borrow_mut().insert(
                     plan.key.clone(),
                     RowBinding::Number {
+                        row: row.clone(),
+                        writable: plan.writable,
+                        updating,
+                    },
+                );
+                group.add(&row);
+            }
+            WidgetKind::Toggle => {
+                let row = adw::SwitchRow::builder()
+                    .title(&plan.title)
+                    .sensitive(plan.writable)
+                    .active(setting.value().as_bool().unwrap_or(false))
+                    .build();
+                describe(&row, &plan.description);
+                let updating = Rc::new(Cell::new(false));
+                row.connect_active_notify({
+                    let controller = controller.clone();
+                    let key = plan.key.clone();
+                    let updating = updating.clone();
+                    let writer = writer.clone();
+                    move |row| {
+                        if updating.get() {
+                            return;
+                        }
+                        if let Ok(request) =
+                            controller.set(&key, ClientSettingValue::Boolean(row.is_active()))
+                        {
+                            persist_request(writer.clone(), controller.clone(), request, None);
+                        }
+                    }
+                });
+                bindings.borrow_mut().insert(
+                    plan.key.clone(),
+                    RowBinding::Toggle {
                         row: row.clone(),
                         writable: plan.writable,
                         updating,

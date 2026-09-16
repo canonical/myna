@@ -233,6 +233,9 @@ struct LiveSettings {
     /// Read at every stats tick of a running session, so a changed timeout
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
+    /// Read on every `Indicator` call by `ChimingIndicator` (chime.rs), so a
+    /// toggle in Myna Settings applies to the session in progress too.
+    chimes_enabled: Live<bool>,
     hud_style: Arc<tokio::sync::watch::Sender<String>>,
 }
 
@@ -242,6 +245,7 @@ impl LiveSettings {
             preedit: Live::new(resolved.preedit),
             language: Live::new(resolved.language.clone()),
             auto_stop: Live::new(resolved.auto_stop),
+            chimes_enabled: Live::new(resolved.chimes_enabled),
             // The schema default until the first read in `follow`; a machine
             // with no schema installed keeps it, which is the same answer
             // `Settings::load` gives there.
@@ -339,6 +343,14 @@ impl LiveSettings {
                 resolved.auto_stop.silence
             );
             self.auto_stop.set(resolved.auto_stop);
+        }
+        if self.chimes_enabled.get() != resolved.chimes_enabled {
+            myna_core::info_log!(
+                "settings",
+                "chimes enabled -> {} (live, applies to a running session)",
+                resolved.chimes_enabled
+            );
+            self.chimes_enabled.set(resolved.chimes_enabled);
         }
     }
 }
@@ -790,15 +802,12 @@ async fn run_controller(
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
 
-    // Chimes layer on top of whichever indicator was chosen above (D-Bus,
-    // notify, or the dynamic mix) — boxed so both arms share one type (the
-    // `Box<dyn Indicator>` blanket impl lets it still go into `.indicator()`,
-    // which wants `impl Indicator + 'static`, not an already-boxed one).
-    let indicator: Box<dyn Indicator> = if resolved.chimes_enabled {
-        Box::new(ChimingIndicator::new(indicator, PipeWireChimePlayer))
-    } else {
-        Box::new(indicator)
-    };
+    // Always layered on top of whichever indicator was chosen above (D-Bus,
+    // notify, or the dynamic mix): `chimes_enabled` is read live off
+    // `live.chimes_enabled` (chime.rs), so toggling the setting applies to the
+    // session in progress rather than needing a restart.
+    let indicator =
+        ChimingIndicator::new(indicator, PipeWireChimePlayer, live.chimes_enabled.clone());
 
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))

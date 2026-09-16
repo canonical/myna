@@ -61,6 +61,7 @@ pub enum ClientSettingValue {
     /// An integer-typed key (any GVariant integer width); the schema range
     /// bounds it.
     Integer(i64),
+    Boolean(bool),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,14 +88,21 @@ impl ClientSettingValue {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Choice(value) | Self::Text(value) => Some(value),
-            Self::Integer(_) => None,
+            Self::Integer(_) | Self::Boolean(_) => None,
         }
     }
 
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Self::Integer(value) => Some(*value),
-            Self::Choice(_) | Self::Text(_) => None,
+            Self::Choice(_) | Self::Text(_) | Self::Boolean(_) => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Boolean(value) => Some(*value),
+            Self::Choice(_) | Self::Text(_) | Self::Integer(_) => None,
         }
     }
 }

@@ -358,6 +358,20 @@ fn headless_smoke_build_maps_schema_metadata_to_widget_kinds() {
 }
 
 #[test]
+fn a_boolean_valued_key_maps_to_a_toggle_widget() {
+    let chimes = ClientSettingMetadata::new(
+        ClientSettingKey::new("chimes-enabled").unwrap(),
+        Some("Sounds on start, stop and error".into()),
+        Some(String::new()),
+        ClientSettingValue::Boolean(true),
+        SettingRange::Unrestricted,
+        ClientSettingValue::Boolean(true),
+        true,
+    );
+    assert_eq!(widget_plan(&chimes).kind, WidgetKind::Toggle);
+}
+
+#[test]
 fn superseded_debounced_edits_and_apply_cannot_commit_stale_or_duplicate_values() {
     let mut policy = DebouncedTextCommit::new("en");
 

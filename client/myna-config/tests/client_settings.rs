@@ -110,7 +110,10 @@ fn every_real_schema_key_round_trips_in_the_private_keyfile() {
                     .unwrap_or(&choices[0])
                     .clone(),
             ),
-            SettingRange::Unrestricted => ClientSettingValue::Text("round trip".into()),
+            SettingRange::Unrestricted => match metadata.default_value() {
+                ClientSettingValue::Boolean(default) => ClientSettingValue::Boolean(!default),
+                _ => ClientSettingValue::Text("round trip".into()),
+            },
             SettingRange::Range { minimum, .. } => {
                 let floor = minimum.as_integer().expect("integer range");
                 let default = metadata
@@ -367,9 +370,10 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans = smoke_build(std::rc::Rc::new(adapter)).unwrap();
 
-    assert_eq!(plans.len(), 4);
+    assert_eq!(plans.len(), 5);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
+    assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Toggle));
     let number = plans
         .iter()
         .find(|plan| plan.kind == WidgetKind::Number)
@@ -408,5 +412,31 @@ fn the_silence_timeout_is_a_bounded_integer_that_rejects_values_outside_its_rang
     assert_eq!(
         adapter.get("silence-timeout").unwrap(),
         ClientSettingValue::Integer(0)
+    );
+}
+
+#[test]
+fn the_chimes_enabled_flag_is_a_boolean_that_rejects_the_wrong_type() {
+    let files = TestFiles::new("chimes-enabled");
+    let adapter = open_adapter(&files);
+
+    assert_eq!(
+        adapter.get("chimes-enabled").unwrap(),
+        ClientSettingValue::Boolean(true)
+    );
+    adapter
+        .set("chimes-enabled", ClientSettingValue::Boolean(false))
+        .unwrap();
+    assert_eq!(
+        open_adapter(&files).get("chimes-enabled").unwrap(),
+        ClientSettingValue::Boolean(false)
+    );
+    assert!(matches!(
+        adapter.set("chimes-enabled", ClientSettingValue::Text("false".into())),
+        Err(ClientSettingsError::InvalidValue { key, .. }) if key == "chimes-enabled"
+    ));
+    assert_eq!(
+        adapter.get("chimes-enabled").unwrap(),
+        ClientSettingValue::Boolean(false)
     );
 }

@@ -111,23 +111,3 @@ pub trait Indicator: Send {
     /// can obtain for itself.
     async fn set_audio_drops(&mut self, _not_resident: u64, _not_active: u64) {}
 }
-
-/// A boxed indicator is an indicator — lets a caller pick/wrap an
-/// implementation at runtime (e.g. conditionally layering
-/// [`crate::chime::ChimingIndicator`]) and still hand it to
-/// [`crate::controller::DesktopControllerBuilder::indicator`], which takes
-/// `impl Indicator + 'static` rather than an already-boxed trait object.
-#[async_trait]
-impl Indicator for Box<dyn Indicator> {
-    async fn set_state(&mut self, state: IndicatorState) {
-        (**self).set_state(state).await;
-    }
-
-    async fn hide(&mut self) {
-        (**self).hide().await;
-    }
-
-    async fn set_audio_drops(&mut self, not_resident: u64, not_active: u64) {
-        (**self).set_audio_drops(not_resident, not_active).await;
-    }
-}
