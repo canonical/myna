@@ -31,11 +31,16 @@
 //! etc.) is PipeWire
 //! filter-chain territory upstream of the capture node — this crate observes,
 //! it never transforms (§10).
+//!
+//! [`playback`] is the one output-direction exception: fire-and-forget
+//! playback of a short, fixed PCM clip (the dictation start/stop/error
+//! chimes owned by `myna-desktop`'s `chime` module).
 
 mod backend;
 mod devices;
 mod fake;
 mod native;
+pub mod playback;
 mod ring;
 mod source;
 mod stats;
@@ -45,6 +50,7 @@ pub use backend::{CaptureBackend, CaptureSpec, Producer};
 pub use devices::{DeviceChange, InputDevice, InputDevices};
 pub use fake::{ScriptedBackend, Step};
 pub use native::PipeWireBackend;
+pub use playback::{play as play_clip, Clip};
 pub use source::{CaptureSource, CaptureSourceBuilder, DEFAULT_CHUNK, DEFAULT_RING_DEPTH};
 pub use stats::AudioStats;
 pub use voice::{VoiceTracker, FRAME as VOICE_FRAME, SUSTAIN as VOICE_SUSTAIN};
