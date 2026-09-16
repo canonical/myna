@@ -552,9 +552,6 @@ export class OverlayHost {
     }
 
     _disconnectOverview() {
-        // Make sure the actor is back in the window group before we stop
-        // tracking, or it would be orphaned above the overview.
-        this._raiseAboveOverview(false);
         Main.overview.disconnectObject(this);
     }
 
