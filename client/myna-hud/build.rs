@@ -1,4 +1,8 @@
+#[path = "../build-support/version.rs"]
+mod version;
+
 fn main() {
+    version::emit();
     println!("cargo:rustc-check-cfg=cfg(dev_lab)");
     println!("cargo:rustc-check-cfg=cfg(coverage)");
     // Coverage builds instrument with `--cfg coverage`; the lab is dev-only

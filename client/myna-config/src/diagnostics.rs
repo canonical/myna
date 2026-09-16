@@ -457,7 +457,7 @@ fn render_body(
     let mut out = String::new();
     out.push_str(&gettextrs::gettext("Myna Settings"));
     out.push(' ');
-    out.push_str(env!("CARGO_PKG_VERSION"));
+    out.push_str(env!("MYNA_VERSION"));
     out.push('\n');
     out.push_str(&gettextrs::gettext("Onboarding"));
     out.push_str(": ");

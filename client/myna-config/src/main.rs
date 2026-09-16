@@ -17,7 +17,7 @@ fn main() -> glib::ExitCode {
             glib::ExitCode::SUCCESS
         }
         Ok(Command::PrintVersion) => {
-            println!("myna-config {}", env!("CARGO_PKG_VERSION"));
+            println!("myna-config {}", env!("MYNA_VERSION"));
             glib::ExitCode::SUCCESS
         }
         Ok(Command::ApplyPlan(plan)) => {

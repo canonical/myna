@@ -22,6 +22,7 @@ The client is a Rust workspace that turns activation events into bounded microph
 - `myna-hud/` - Focus-safe dictation status renderer.
 - `myna-config/` - Myna Settings, the unconfined GTK onboarding and configuration application.
 - `data/` - Shared schemas and packaged client data.
+- `build-support/` - Build-script logic shared across crates: the `MYNA_VERSION` the binaries report, matching the snap version.
 
 # Documents
 

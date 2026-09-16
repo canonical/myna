@@ -109,7 +109,7 @@ fn parse_mode() -> Result<Mode, String> {
             ))
             }
             "--version" => {
-                println!("myna-hud {}", env!("CARGO_PKG_VERSION"));
+                println!("myna-hud {}", env!("MYNA_VERSION"));
                 std::process::exit(0);
             }
             "--help" | "-h" => {

@@ -4,9 +4,9 @@
 # HEAD, <tag>+git<n>.<sha> past one, the bare tag on it. That keyword cannot
 # run here because build instances mount only the snap directory, not .git.
 #
-# Usage: dev/snap-version.sh <path>...
+# Usage: dev/snap-version.sh [<path>...]
 # The paths, relative to the repository root, are what the snap packs: -dirty
-# is appended only when they differ from HEAD.
+# is appended only when they differ from HEAD. Without paths it never is.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,7 +21,7 @@ else
     version="0+git.$(git -C "$repo_root" rev-parse --short HEAD)"
 fi
 
-if ! git -C "$repo_root" diff --quiet HEAD -- "$@"; then
+if (($#)) && ! git -C "$repo_root" diff --quiet HEAD -- "$@"; then
     version+="-dirty"
 fi
 echo "$version"

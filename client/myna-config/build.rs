@@ -5,6 +5,8 @@ use std::process::Command;
 
 #[path = "build/blueprint_version.rs"]
 mod blueprint_version;
+#[path = "../build-support/version.rs"]
+mod version;
 
 const BLUEPRINTS: &[(&str, &str)] = &[
     ("active-backend-dialog.blp", "active-backend-dialog.ui"),
@@ -23,6 +25,7 @@ const BLUEPRINTS: &[(&str, &str)] = &[
 ];
 
 fn main() {
+    version::emit();
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));

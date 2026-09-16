@@ -250,7 +250,8 @@ parts:
 
   # The Rust workspace (client/), staged into this project by dev/prepare.sh
   # (craft-parts local sources must live inside the project dir), with the
-  # snap version it resolved from git. Builds the shipped app + the testbed CLI.
+  # snap version it resolved from git. Builds the shipped app + the testbed CLI,
+  # which report that version too (client/build-support/version.rs).
   client:
     plugin: nil
     after: [rust-deps]

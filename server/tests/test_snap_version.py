@@ -4,7 +4,7 @@ Snap build instances mount only the snap directory, so snapcraft's
 ``version: git`` has no repository to describe. The script resolves the same
 string on the host: ``0+git.<sha>`` with no annotated tag behind HEAD,
 ``<tag>+git<n>.<sha>`` past one, the bare tag on it, and ``-dirty`` when the
-paths the snap packs differ from HEAD.
+paths the snap packs differ from HEAD (never, given no paths).
 """
 
 from __future__ import annotations
@@ -96,3 +96,9 @@ def test_dirty_only_for_the_packed_paths(repo: Path) -> None:
     assert _version(repo, "client") == f"0+git.{sha}"
     (repo / "client" / "a").write_text("2", encoding="utf-8")
     assert _version(repo, "client") == f"0+git.{sha}-dirty"
+
+
+def test_without_paths_dirty_is_not_reported(repo: Path) -> None:
+    sha = _commit(repo, "client/a", "1")
+    (repo / "client" / "a").write_text("2", encoding="utf-8")
+    assert _version(repo) == f"0+git.{sha}"
