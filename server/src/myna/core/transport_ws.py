@@ -74,7 +74,6 @@ from myna.core.protocol import (
     SUPPORTED_PROTOCOL_VERSIONS,
     is_supported,
 )
-from myna.core.resample import Resampler
 from myna.core.session import (
     SessionConfig,
     session_config_from_wire,
@@ -277,6 +276,10 @@ class _SessionHandler:
             served_format, sample_rate_hz=served_format.sample_rate_hz
         )
         adapter_config = dataclasses.replace(config, audio_format=adapter_format)
+        # Here, not at module scope: the resampler is numpy, and the benchmarker
+        # zipapp imports this module on machines that have none.
+        from myna.core.resample import Resampler
+
         resampler = Resampler(config.audio_format.sample_rate_hz, adapter_format.sample_rate_hz)
 
         # One model per process: a request for a model this server does not

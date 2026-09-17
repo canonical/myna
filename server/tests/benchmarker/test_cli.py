@@ -300,3 +300,30 @@ def test_check_sweep_narrows_to_the_snap_relevant_subset(monkeypatch, dispatched
     args = dispatched["args"]
     assert args.sweep is True
     assert args.model == "whisper"
+
+
+# ─── the zipapp's dependency floor ───────────────────────────────────────────
+
+
+def test_handlers_import_without_numpy():
+    """dev/build-bench.sh bundles websockets, psutil and pyyaml, nothing
+    compiled: a tester's python3 has no numpy, and a bundled wheel would be
+    built for the wrong interpreter anyway. Only the Chinese corpus builder may
+    need it, and it asks for it by name when run."""
+    import subprocess
+    import sys
+
+    script = """
+import importlib, importlib.abc, sys
+
+class NoNumpy(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path, target=None):
+        if name == "numpy" or name.startswith("numpy."):
+            raise ImportError("numpy is not installed")
+
+sys.meta_path.insert(0, NoNumpy())
+for module in ("_run", "_bench", "corpus_english", "_corpus", "_summarize", "guard"):
+    importlib.import_module("myna.benchmarker." + module)
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
