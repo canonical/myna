@@ -26,6 +26,7 @@ from websockets.asyncio.server import Server
 from websockets.exceptions import ConnectionClosed
 
 from myna.core import (
+    AudioAborted,
     AudioFormat,
     EventSink,
     PcmChunk,
@@ -40,6 +41,8 @@ from myna.core.protocol import PROTOCOL_VERSION
 from myna.core.session import session_config_to_wire
 from myna.core.transport_ws import _BOUNDARY, _Boundary, _Ingress
 from myna.testbed import FakeAdapter
+from myna.testbed.streaming.batch import run_deferred_batch
+from myna.testbed.streaming.strategies import Hypothesis
 
 BOUND = 5.0
 MIB = 1 << 20
@@ -198,14 +201,16 @@ class Gated:
         self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
     ) -> None:
         self.sessions.append([])
-        await self.release.wait()
-        await self._then(self, audio, emit)
+        try:
+            await self.release.wait()
+            await self._then(self, audio, emit)
+        finally:
+            self.ended.set()
 
     async def record(self, audio: AsyncIterator[PcmChunk]) -> None:
         heard = self.sessions[-1]
         async for chunk in audio:
             heard.append(chunk.data)
-        self.ended.set()
 
 
 async def record_then_done(adapter: Gated, audio: AsyncIterator[PcmChunk], emit: EventSink) -> None:
@@ -241,6 +246,25 @@ def test_an_adapter_failing_with_a_full_queue_releases_the_reader(dialect, scena
             assert (await terminal(ws)).get("event", "error") in ("transcription.error", "error")
             await asyncio.wait_for(feed, BOUND)
             await ws.close()
+
+    scenario.run(main)
+
+
+def test_an_ie115_client_leaving_while_a_failed_utterance_drains_closes_cleanly(scenario):
+    """The adapter failed without reading its audio, so the server discards
+    the rest of the utterance up to its commit; the client leaving instead
+    of committing ends that discard, not the server's handler."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(fail)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND] * 3)
+            assert (await terminal(ws))["type"] == w.ERROR
+            ws.transport.abort()
+            await asyncio.wait_for(ws.wait_closed(), BOUND)
 
     scenario.run(main)
 
@@ -319,6 +343,126 @@ def test_a_clean_close_mid_utterance_ends_the_adapter(dialect, scenario):
             await ws.close()
             adapter.release.set()
             await asyncio.wait_for(adapter.ended.wait(), BOUND)
+
+    scenario.run(main)
+
+
+class Decoding:
+    """The production batch driver (bounded regions, a final decode once the
+    audio ends) over a decode that holds its worker thread for ``hold``
+    seconds or until released, recording every call."""
+
+    def __init__(self, hold: float) -> None:
+        self.hold = hold
+        self.heard = 0
+        self.decodes: list[tuple[float, float]] = []
+        self.heard_five_seconds = asyncio.Event()
+        self.decoding = asyncio.Event()
+        self.ended = asyncio.Event()
+        self.release = threading.Event()
+
+    def capabilities(self):
+        return FakeAdapter().capabilities()
+
+    async def run_session(
+        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+    ) -> None:
+        loop = asyncio.get_running_loop()
+
+        def decode(samples: Any, offset: float) -> Hypothesis:
+            self.decodes.append((offset, offset + len(samples) / 16_000))
+            loop.call_soon_threadsafe(self.decoding.set)
+            self.release.wait(self.hold)
+            return Hypothesis()
+
+        async def counted() -> AsyncIterator[PcmChunk]:
+            async for chunk in audio:
+                self.heard += len(chunk.data)
+                if self.heard >= 5 * len(SECOND):
+                    self.heard_five_seconds.set()
+                yield chunk
+
+        async def keep(text: str, words: list[Any]) -> None:
+            pass
+
+        try:
+            await run_deferred_batch(counted(), emit, decode, keep)
+            await emit(TranscriptionDone(text=""))
+        finally:
+            self.ended.set()
+
+
+EXITS = ("disconnect", "close", "shutdown")
+
+
+async def leave(how: str, ws: ClientConnection, server: Any) -> asyncio.Future[Any]:
+    """End the session the way ``how`` says; the returned future is the
+    client's close or the server's shutdown, to await once it may finish."""
+    if how == "disconnect":
+        ws.transport.abort()  # no close handshake: the process died
+        return asyncio.ensure_future(ws.wait_closed())
+    if how == "close":
+        return asyncio.ensure_future(ws.close())
+    return asyncio.ensure_future(server.__aexit__(None, None, None))
+
+
+@pytest.mark.parametrize("how", EXITS)
+@pytest.mark.parametrize("dialect", DIALECTS)
+def test_an_aborted_utterance_is_never_transcribed(dialect, how, scenario):
+    """Abort releases the session without a final decode: nobody is left to
+    hear it, and a decode of a long region would hold the connection (and a
+    server shutdown) for its whole duration."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Decoding(hold=0.25)
+        server = serve_unix(adapter, path)
+        await server.__aenter__()
+        ended: asyncio.Future[Any] | None = None
+        try:
+            ws = await open_session(path, dialect)
+            await send_all(ws, [SECOND] * 5)
+            await asyncio.wait_for(adapter.heard_five_seconds.wait(), BOUND)
+            ended = await leave(how, ws, server)
+            await asyncio.wait_for(adapter.ended.wait(), BOUND)
+            assert adapter.decodes == []
+            await asyncio.wait_for(ended, BOUND)
+        finally:
+            if how != "shutdown":
+                await server.__aexit__(None, None, None)
+            elif ended is not None:
+                await ended
+
+    scenario.run(main)
+
+
+@pytest.mark.parametrize("how", EXITS)
+@pytest.mark.parametrize("dialect", DIALECTS)
+def test_an_abort_during_the_final_decode_releases_the_session(dialect, how, scenario):
+    """The client finished, then left (or the server is shutting down) while
+    the final decode runs: the session ends without waiting for it, and
+    nothing decodes after it."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Decoding(hold=3 * BOUND)
+        server = serve_unix(adapter, path)
+        await server.__aenter__()
+        ended: asyncio.Future[Any] | None = None
+        try:
+            ws = await open_session(path, dialect)
+            await send_all(ws, [*[SECOND] * 5, finish_frame(dialect)])
+            await asyncio.wait_for(adapter.decoding.wait(), BOUND)
+            ended = await leave(how, ws, server)
+            await asyncio.wait_for(adapter.ended.wait(), BOUND)
+            await asyncio.wait_for(ended, BOUND)
+            assert adapter.decodes == [(0.0, 5.0)]
+        finally:
+            adapter.release.set()
+            if how != "shutdown":
+                await server.__aexit__(None, None, None)
+            elif ended is not None:
+                await ended
 
     scenario.run(main)
 
@@ -563,15 +707,42 @@ async def test_abort_releases_a_blocked_producer_and_discards_the_backlog():
     await asyncio.wait_for(putter, BOUND)
     await ingress.put(b"a2")  # after abort: discarded, never waits
     await ingress.put_boundary()
-    assert await ingress.get() is None
+    ingress.close()  # the reader's exit closes after aborting
+    with pytest.raises(AudioAborted):
+        await ingress.get()
 
 
-async def test_abort_wakes_a_waiting_consumer():
+async def test_abort_wakes_a_waiting_consumer_with_an_error_not_an_end():
     ingress = _Ingress(FMT)
     getter = asyncio.create_task(ingress.get())
     await settle()
     ingress.abort()
-    assert await asyncio.wait_for(getter, BOUND) is None
+    with pytest.raises(AudioAborted):
+        await asyncio.wait_for(getter, BOUND)
+
+
+async def test_abort_cancels_the_session_consuming_the_stream():
+    ingress = _Ingress(FMT)
+    finished = asyncio.ensure_future(asyncio.sleep(0))
+    await finished
+    ingress.serve(finished)
+    session = asyncio.ensure_future(asyncio.Event().wait())
+    ingress.serve(session)
+    await settle()
+    assert not session.done()
+    ingress.abort()
+    await asyncio.wait({session})
+    assert session.cancelled()
+    assert not finished.cancelled()
+
+
+async def test_a_session_served_after_an_abort_is_cancelled_at_once():
+    ingress = _Ingress(FMT)
+    ingress.abort()
+    session = asyncio.ensure_future(asyncio.Event().wait())
+    ingress.serve(session)
+    await asyncio.wait({session})
+    assert session.cancelled()
 
 
 async def test_a_cancelled_producer_queues_nothing_and_loses_no_wakeup():

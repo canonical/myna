@@ -251,20 +251,26 @@ async def test_a_malformed_append_is_an_openai_error_not_a_hang(tmp_path):
 
 
 async def test_a_client_that_vanishes_mid_utterance_does_not_hang_the_adapter(tmp_path):
-    """A stock client that drops the socket before committing ends the
-    utterance: the adapter's audio runs out and its session returns, so the
-    server neither hangs nor keeps the tail for a peer that is gone."""
+    """A stock client that drops the socket before committing aborts the
+    utterance: the adapter's session ends without reaching the end of its
+    audio, so the server neither hangs nor transcribes the tail for a peer
+    that is gone."""
     finished = asyncio.Event()
+    transcribed = False
 
     class Ending:
         def capabilities(self):
             return FakeAdapter().capabilities()
 
         async def run_session(self, config, audio, emit):
-            async for _ in audio:
-                pass
-            finished.set()
-            await emit(TranscriptionDone(text=""))
+            nonlocal transcribed
+            try:
+                async for _ in audio:
+                    pass
+                transcribed = True
+                await emit(TranscriptionDone(text=""))
+            finally:
+                finished.set()
 
     socket_path = tmp_path / "myna.sock"
     async with serve_unix(Ending(), socket_path):
@@ -282,6 +288,7 @@ async def test_a_client_that_vanishes_mid_utterance_does_not_hang_the_adapter(tm
         )
         ws.transport.abort()  # no close handshake: the process died
         await asyncio.wait_for(finished.wait(), timeout=5)
+    assert not transcribed
 
 
 def test_additions_on_a_delta_do_not_break_the_event():

@@ -82,7 +82,7 @@ from myna.core.session import (
     session_config_from_wire,
     session_config_to_wire,
 )
-from myna.core.transport import EventSink, SttService
+from myna.core.transport import AudioAborted, EventSink, SttService
 from myna.core.wire_ie115 import (
     INPUT_AUDIO_APPEND,
     INPUT_AUDIO_COMMIT,
@@ -143,7 +143,8 @@ class _Ingress:
     Ending it never waits on capacity, so every exit path can end it:
     ``close`` is the end of the client's audio (the adapter drains what was
     accepted, then sees the end); ``abort`` gives up on the stream (queued
-    audio is discarded, a blocked ``put`` returns, later ones discard).
+    audio is discarded, a blocked ``put`` returns, later ones discard, the
+    adapter session is cancelled and ``get`` raises ``AudioAborted``).
     """
 
     def __init__(
@@ -161,6 +162,7 @@ class _Ingress:
         self._boundary_pending = False
         self._closed = False
         self._aborted = False
+        self._session: asyncio.Future[None] | None = None
         self._putters: list[asyncio.Future[None]] = []
         self._getters: list[asyncio.Future[None]] = []
 
@@ -172,10 +174,23 @@ class _Ingress:
     async def put_boundary(self) -> None:
         await self._put(_BOUNDARY)
 
+    @property
+    def aborted(self) -> bool:
+        return self._aborted
+
+    def serve(self, session: asyncio.Future[None]) -> None:
+        """``session`` is the adapter consuming the stream now: an abort
+        cancels it."""
+        self._session = session
+        if self._aborted:
+            session.cancel()
+
     async def get(self) -> PcmChunk | _Boundary | None:
         """The next chunk or boundary; ``None`` once the stream has ended."""
         while not self._items and not (self._closed or self._aborted):
             await self._wait(self._getters)
+        if self._aborted:
+            raise AudioAborted
         if not self._items:
             return None
         item = self._items.popleft()
@@ -193,6 +208,8 @@ class _Ingress:
     def abort(self) -> None:
         self._aborted = True
         self._items.clear()
+        if self._session is not None:
+            self._session.cancel()
         self._wake(self._putters)
         self._wake(self._getters)
 
@@ -546,8 +563,9 @@ class _SessionHandler:
                 (e.g. rejected the format) so leftover audio of this utterance
                 is discarded, not misread as the next one."""
                 if not self.ended:
-                    async for _ in self.audio():
-                        pass
+                    with contextlib.suppress(AudioAborted):
+                        async for _ in self.audio():
+                            pass
 
             async def emit(self, event: TranscriptionEvent) -> None:
                 if event.type in _TERMINAL:
@@ -563,14 +581,15 @@ class _SessionHandler:
                 # the adapter's load-heartbeat and `ready` must flow first,
                 # because a well-behaved client gates its audio on `ready`
                 # (lifecycle §3A / T42 — waiting for audio here would deadlock
-                # against a client waiting for `ready`). The cost is one empty
-                # adapter run when the client closes between utterances; its
-                # sends are suppressed and an empty utterance is cheap.
+                # against a client waiting for `ready`). A client closing
+                # between utterances cancels it.
                 utterance = _Utterance()
-                await self._run_utterance(adapter_config, utterance.audio(), utterance.emit)
+                await self._run_utterance(
+                    ingress, adapter_config, utterance.audio(), utterance.emit
+                )
                 await utterance.drain()
-                if utterance.closed:
-                    break  # the audio stream ended: normal end
+                if utterance.closed or ingress.aborted:
+                    break  # the audio stream ended or was given up on
                 if not utterance.terminal_seen:
                     # Adapter broke the exactly-one-terminal contract; a compat
                     # client is now waiting on `completed` — fail the utterance
@@ -605,7 +624,9 @@ class _SessionHandler:
                         await ingress.put(framer.feed(frame))
                     elif json.loads(frame).get("type") == "session.finish":
                         framer.flush()
-                        return
+                        ingress.close()
+                        await _discard_frames(ws)  # leaving before the terminal aborts
+                        break
                 ingress.abort()
             except ConnectionClosed:
                 ingress.abort()  # client abort
@@ -618,18 +639,28 @@ class _SessionHandler:
 
         reader = asyncio.ensure_future(read_frames())
         try:
-            await self._run_utterance(config, audio_iter(), emit)
+            await self._run_utterance(ingress, config, audio_iter(), emit)
         finally:
             await self._end_connection(ws, ingress, reader)
 
     async def _run_utterance(
-        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+        self,
+        ingress: _Ingress,
+        config: SessionConfig,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
     ) -> None:
         """Run one adapter session, surfacing adapter bugs as a terminal error
-        event (shared by both dialects)."""
-        try:
-            await self._service.run_session(config, audio, emit)
-        except Exception as exc:
+        event (shared by both dialects). It runs as its own task so that an
+        abort can cancel it wherever it is, a decode included."""
+        session = asyncio.ensure_future(self._service.run_session(config, audio, emit))
+        ingress.serve(session)
+        await asyncio.wait({session})  # the handler's exit aborts, cancelling it too
+        if session.cancelled():
+            ingress.abort()  # the adapter gave up on the stream
+            return
+        # After an abort this reports to a connection already closing.
+        if (exc := session.exception()) is not None:
             await emit(
                 TranscriptionError(code="adapter_crash", message=f"{type(exc).__name__}: {exc}")
             )

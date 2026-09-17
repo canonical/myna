@@ -35,6 +35,7 @@ from myna.core.session import (
     session_config_to_wire,
 )
 from myna.core.transport import (
+    AudioAborted,
     EventSink,
     LoopbackClient,
     SttClient,
@@ -54,6 +55,7 @@ __all__ = [
     "PHASE_TRANSCRIBING",
     "PROTOCOL_VERSION",
     "SUPPORTED_PROTOCOL_VERSIONS",
+    "AudioAborted",
     "AudioFormat",
     "AudioSource",
     "Capabilities",
