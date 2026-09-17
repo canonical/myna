@@ -453,11 +453,15 @@ async def test_decode_receives_normalised_float32_samples():
 _RATE = FUNASR_RATE
 
 
-def _positional_speech(seconds: float) -> np.ndarray:
+def _positional_speech(seconds: float, pauses=()) -> np.ndarray:
     """Loud PCM that encodes its own position: magnitude 8000 + index // 1600
-    with alternating sign, so a decode input can tell where it starts."""
+    with alternating sign, so a decode input can tell where it starts.
+    ``pauses`` are (start, seconds) spans of digital silence on tenths."""
     idx = np.arange(round(seconds * _RATE))
-    return (np.where(idx % 2, -1, 1) * (8000 + idx // 1600)).astype(np.int16)
+    pcm = (np.where(idx % 2, -1, 1) * (8000 + idx // 1600)).astype(np.int16)
+    for start, length in pauses:
+        pcm[round(start * _RATE) : round((start + length) * _RATE)] = 0
+    return pcm
 
 
 def _chunked(pcm: np.ndarray, chunk_seconds: float = 1.0) -> list[PcmChunk]:
@@ -468,14 +472,24 @@ def _chunked(pcm: np.ndarray, chunk_seconds: float = 1.0) -> list[PcmChunk]:
     ]
 
 
+def _written(words: list[str]) -> str:
+    """Words as SenseVoice writes them: spaces only between spaced words."""
+    text = ""
+    for word in words:
+        if text and text[-1].isascii() and word[0].isascii():
+            text += " "
+        text += word
+    return text
+
+
 class _PositionalSenseVoice(_StubModel):
     """Hears one word per whole second T whose onset T + 0.1 lies in its
     input, rendered by ``say``; returns SenseVoice's tag prefix."""
 
-    def __init__(self, say=lambda t: f"w{t}", joiner=" "):
+    def __init__(self, pcm, say=lambda t: f"w{t}"):
         super().__init__()
+        self._pcm = pcm
         self._say = say
-        self._joiner = joiner
         self.inputs: list[tuple[int, int]] = []
 
     def __call__(self, samples, **kwargs):
@@ -483,25 +497,32 @@ class _PositionalSenseVoice(_StubModel):
         if len(self.calls) == 1:
             return ["<|nospeech|>"]  # warm-up
         values = np.round(samples * 32768).astype(np.int64)
-        tenth = abs(int(values[0])) - 8000
-        run = int(np.argmax(np.abs(values) != abs(int(values[0])))) or len(values)
-        first = (tenth + 1) * 1600 - run
+        k = int(np.flatnonzero(values)[0])
+        tenth = abs(int(values[k])) - 8000
+        run = int(np.argmax(np.abs(values[k:]) != abs(int(values[k])))) or len(values) - k
+        first = (tenth + 1) * 1600 - run - k
         self.inputs.append((first, len(samples)))
         start, end = first / _RATE, (first + len(samples)) / _RATE
-        words = [self._say(t) for t in range(int(start), int(end) + 1) if start <= t + 0.1 < end]
-        return ["<|en|><|NEUTRAL|><|Speech|><|withitn|>" + self._joiner.join(words)]
+        words = [
+            self._say(t)
+            for t in range(int(start), int(end) + 1)
+            if start <= t + 0.1 < end and self._pcm[round((t + 0.1) * _RATE)]
+        ]
+        return ["<|en|><|NEUTRAL|><|Speech|><|withitn|>" + _written(words)]
 
 
-async def _positional_session(seconds: float, model):
+async def _positional_session(seconds: float, *, pauses=(), **say):
+    pcm = _positional_speech(seconds, pauses)
+    model = _PositionalSenseVoice(pcm, **say)
     adapter = FunasrAdapter()
     adapter._load_model = _stub_load(adapter, model)
-    return await _drive_session(adapter, SessionConfig(), _chunked(_positional_speech(seconds)))
+    events = await _drive_session(adapter, SessionConfig(), _chunked(pcm, 0.1))
+    return model, events
 
 
 @pytest.mark.parametrize("seconds", [130.0, 250.0])
 async def test_long_audio_decodes_in_bounded_regions_into_one_final(seconds):
-    model = _PositionalSenseVoice()
-    events = await _positional_session(seconds, model)
+    model, events = await _positional_session(seconds)
 
     assert max(n for _, n in model.inputs) <= 65 * _RATE
     finals = [e for e in events if isinstance(e, TranscriptionFinal)]
@@ -518,8 +539,7 @@ async def test_regions_of_unspaced_script_join_without_a_space():
     def say(t: int) -> str:
         return "".join(chr(0x4E00 + 3 * t + k) for k in range(3))
 
-    model = _PositionalSenseVoice(say=say, joiner="")
-    events = await _positional_session(130.0, model)
+    model, events = await _positional_session(130.0, say=say)
 
     assert len(model.inputs) == 3
     assert events[-1].text == "".join(say(t) for t in range(130))
@@ -536,3 +556,38 @@ async def test_long_silence_stays_bounded_and_commits_nothing():
     assert max(len(samples) for samples, _ in model.calls) <= 65 * _RATE
     assert not any(isinstance(e, TranscriptionFinal) for e in events)
     assert events[-1] == TranscriptionDone(text="")
+
+
+_PAUSES = ((31.0, 1.0), (63.0, 1.0))
+
+
+def _spoken(seconds, pauses, say):
+    silent = {t for start, length in pauses for t in range(int(start), int(start + length))}
+    return [say(t) for t in range(int(seconds)) if t not in silent]
+
+
+async def test_regions_split_at_pauses_join_with_one_space():
+    model, events = await _positional_session(70.0, pauses=_PAUSES)
+
+    assert [first for first, _ in model.inputs][1:] == [
+        first + n for first, n in model.inputs[:-1]
+    ], "pause cuts carry no overlap"
+    assert len(model.inputs) == 3
+    assert events[-1].text == " ".join(_spoken(70.0, _PAUSES, lambda t: f"w{t}"))
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        pytest.param(lambda t: chr(0x4E00 + t), id="unspaced"),
+        pytest.param(lambda t: chr(0x4E00 + t) if t < 32 else f"w{t}", id="unspaced-then-spaced"),
+        pytest.param(lambda t: f"w{t}" if t < 64 else chr(0x4E00 + t), id="spaced-then-unspaced"),
+        pytest.param(lambda t: f"w{t}{chr(0x4E00 + t)}", id="ends-unspaced"),
+        pytest.param(lambda t: f"{chr(0x4E00 + t)}w{t}", id="starts-unspaced"),
+    ],
+)
+async def test_regions_split_at_pauses_join_without_a_space_beside_unspaced_text(say):
+    model, events = await _positional_session(70.0, pauses=_PAUSES, say=say)
+
+    assert len(model.inputs) == 3
+    assert events[-1].text == _written(_spoken(70.0, _PAUSES, say))

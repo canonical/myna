@@ -745,3 +745,20 @@ async def test_deferred_batch_bounds_retention_and_emits_only_progress(retained,
     # Pause-free audio: every cut is forced at 60 s and re-decodes 1 s.
     starts = [first for first, _ in decoder.inputs]
     assert starts == [k * 59 * RATE for k in range(len(starts))]
+
+
+@pytest.mark.asyncio
+async def test_deferred_batch_does_not_cut_at_a_pause_before_thirty_seconds():
+    from myna.testbed.streaming.batch import run_deferred_batch
+
+    decoder = _Decoder(ramp=False)
+
+    async def ignore(*_args) -> None:
+        pass
+
+    plan = [(20.0, True), (1.0, False), (20.0, True), (1.0, False), (5.0, True)]
+    await run_deferred_batch(_speech_audio(plan, chunk_seconds=0.1), ignore, decoder, ignore)
+
+    assert len(decoder.inputs) == 2, decoder.inputs
+    first, n = decoder.inputs[0]
+    assert first == 0 and 41 * RATE <= n <= 42 * RATE

@@ -537,6 +537,7 @@ async def test_batch_segment_timestamps_span_the_words_the_final_carries():
         words = e.text.split()
         assert segment.text == e.text
         assert segment.start == pytest.approx(int(words[0][1:]) + 0.1)
+        assert segment.end == pytest.approx(int(words[-1][1:]) + 0.6)
 
 
 async def test_batch_asks_for_word_alignment_only_where_it_must_deduplicate():
@@ -603,7 +604,7 @@ async def test_batch_unaligned_segments_are_timed_in_absolute_seconds():
                 stripped.append(segment)
             return iter(stripped), info
 
-    plan = [(31.0, True), (1.0, False), (31.0, True)]
+    plan = [(31.0, True), (1.0, False), (98.0, True)]
     pcm = _speech_pcm(plan)
     adapter = FasterWhisperAdapter("tiny")
     adapter._model = _Unaligned(pcm)
@@ -615,8 +616,11 @@ async def test_batch_unaligned_segments_are_timed_in_absolute_seconds():
     cfg = SessionConfig(audio_format=FORMAT, language="en", timestamp_granularity="word")
     await adapter.run_session(cfg, _chunks(pcm, 0.1, []), emit)
 
-    assert len(adapter._model.calls) == 2
+    assert len(adapter._model.calls) == 3, "a pause cut, then a forced cut"
     for final in finals(events):
         (segment,) = final.segments
-        assert segment.start == pytest.approx(int(final.text.split()[0][1:]) + 0.1)
+        words = final.text.split()
+        if len(words) == 4:  # unaligned, a trimmed segment can only keep its span
+            assert segment.start == pytest.approx(int(words[0][1:]) + 0.1)
+            assert segment.end == pytest.approx(int(words[-1][1:]) + 0.6)
     assert "".join(f.text for f in finals(events)).split() == _labels(plan)
