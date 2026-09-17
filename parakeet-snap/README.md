@@ -70,24 +70,28 @@ sudo snap install --dangerous \
     ./myna-parakeet+onnxruntime-cuda.comp
 sudo snap connect myna-parakeet:hardware-observe
 sudo snap connect myna-parakeet:opengl
-sudo myna-parakeet.parakeet use-engine --auto
+sudo myna-parakeet.parakeet use-engine --auto --assume-yes
 ```
 
 A sideload does not auto-connect `hardware-observe`, so the install hook
 selects `cpu`; `use-engine --auto` re-scores once it is connected.
 
-One model, `parakeet-tdt-0.6b-v3-fp32` (default and only option). Measured
-on an RTX 4080 Laptop GPU over the 82-clip balanced corpus, against the
-int8 cpu engine on the same machine:
+One model, `parakeet-tdt-0.6b-v3-fp32` (default and only option). Its
+transcripts are identical to NeMo PyTorch's (0.00% WER between them; the int8
+cpu model differs by 0.73%). Measured with `myna-bench` against the installed
+snap on an RTX 4080 Laptop GPU, 82-clip balanced corpus plus 5 min long-form,
+2026-09-17:
 
-| model | WER | vs NeMo PyTorch | real-time factor | 60 s window | peak VRAM |
+| engine | mode | WER | speed | final latency median / p95 | peak VRAM |
 |---|---|---|---|---|---|
-| cpu int8 | 1.62% | 0.73% | 58x | 1.44 s | - |
-| fp32 | 1.62% | 0.00% | 145x | 0.21 s | 5.2 GB |
+| cpu int8 | batch | 1.46% | 60x | 0.143 / 0.350 s | - |
+| cpu int8 | streaming | 1.54% | 6.0x | 1.38 / 7.09 s | - |
+| nvidia-gpu fp32 | batch | 1.42% | 122x | 0.065 / 0.099 s | 3.8 GB |
+| nvidia-gpu fp32 | streaming | 1.42% | 9.6x | 0.84 / 2.74 s | 4.6 GB |
 
-The real-time factor is the first decode of each length, which is what
-streaming sees: every window is a new length, and the CUDA provider pays
-kernel setup per shape (repeat lengths reach 240x).
+The CUDA provider pays kernel setup for every new input length, and streaming
+windows are nearly always new lengths, so GPU streaming gains less over cpu
+than batch does.
 
 No fp16 model ships: the naive `onnxruntime.transformers.float16` conversion
 measured slower than fp32 on fresh window lengths and lost accuracy on long
