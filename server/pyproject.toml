@@ -68,7 +68,7 @@ dev = [
     # dev/requantize_encoder.py (perf T06): onnxruntime.quantization needs the
     # onnx package to load/rewrite the graph. Pinned here directly so a
     # parakeet-only sync has it. Dev-only -- never imported at runtime.
-    "onnx>=1.19",
+    "onnx>=1.22.0",
     "mutmut>=3.8.0",
     # The OpenAI Realtime API conformance oracle (tests/test_openai_realtime_
     # conformance.py): the SDK's pydantic models are generated from OpenAI's
