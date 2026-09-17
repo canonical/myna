@@ -780,13 +780,17 @@ class _EdgeDecoder(_Decoder):
     utterance cut mid-sentence). A word straddling the input end keeps only
     the heard fraction of its text, at least one character. Every other call
     renders the words capitalised with a trailing comma, so a re-decode never
-    reproduces the text it overlaps exactly."""
+    reproduces the text it overlaps exactly. A word starting within ``deaf_s``
+    of a later input's start is not heard at all."""
 
-    def __init__(self, timeline: list[Word], total: float, *, omit_s: float = 0.6) -> None:
+    def __init__(
+        self, timeline: list[Word], total: float, *, omit_s: float = 0.6, deaf_s: float = 0.0
+    ) -> None:
         super().__init__(ramp=False)
         self._words = timeline
         self._total = total
         self._omit = omit_s
+        self._deaf = deaf_s
 
     def __call__(self, samples: np.ndarray, offset: float) -> Hypothesis:
         super().__call__(samples, offset)
@@ -795,7 +799,7 @@ class _EdgeDecoder(_Decoder):
         vary = len(self.inputs) % 2 == 0
         words = []
         for w in self._words:
-            if not offset <= w.start < end:
+            if not offset <= w.start < end or (offset and w.start < offset + self._deaf):
                 continue
             text = w.text
             if w.end > end:
@@ -854,6 +858,39 @@ async def test_a_word_the_region_before_a_pause_cut_with_overlap_omitted_is_reco
 
     assert len(decoder.inputs) == 2
     assert _plain(transcript) == ["alpha", "omega", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_a_pause_cut_commits_a_word_that_ends_before_its_last_half_second():
+    """Holding it back for the next region, which starts 1 s before the cut,
+    leaves it at that decode's edge where a model can miss it (parakeet
+    long-form, "send me." + "I emphasized")."""
+    timeline = [Word(" alpha", 14.0, 14.5), Word(" me", 15.9, 16.3)]
+    decoder = _EdgeDecoder(timeline, total=21.0, omit_s=0.0, deaf_s=0.2)
+    _, transcript = await _run(
+        _speech_audio([(16.0, True), (1.0, False), (4.0, True)], chunk_seconds=0.1),
+        decoder,
+        SilenceCut(),
+        cap=65.0,
+        cadence=1_000.0,
+    )
+
+    assert [first for first, _ in decoder.inputs] == [0, round(15.77 * RATE)]
+    assert _plain(transcript) == ["alpha", "me"]
+
+
+@pytest.mark.asyncio
+async def test_a_full_window_cut_by_a_chunked_strategy_keeps_its_overlap():
+    decoder = _Decoder(ramp=False)
+    await _run(
+        _audio(30.0, 1.0, ramp=False),
+        decoder,
+        SilenceCut(force_cut_seconds=60.0),
+        cap=12.0,
+        silence_cut_overlap=False,
+    )
+
+    assert [first for first, _ in decoder.inputs] == [0, 11 * RATE, 22 * RATE]
 
 
 @pytest.mark.asyncio

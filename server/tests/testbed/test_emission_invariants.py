@@ -468,6 +468,10 @@ def test_alignment_drop_steps_over_punctuation_inside_the_overlap():
     assert _alignment_drop(["no", "answer"], ["no", "-", "answer", "yes"]) == 3
 
 
+def test_punctuation_does_not_count_toward_the_overlap_bound():
+    assert _alignment_drop(list("abcde"), ["a", "-", "b", "c", "d", "e", "x"]) == 6
+
+
 def test_alignment_drop_keeps_punctuation_after_the_overlap():
     assert _alignment_drop(["我", "们", "去"], ["们", "去", "。", "公", "园"]) == 2
 

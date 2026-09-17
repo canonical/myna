@@ -258,3 +258,36 @@ def test_silence_cut_refuses_samples_that_skip_unscanned_audio():
     with pytest.raises(ValueError, match="unscanned_offset"):
         cut.observe(audio[16_000:], 0.0, 2.0, offset=16_000)
     assert cut.observe(audio[15_840:], 0.0, 2.0, offset=15_840) is None
+
+
+def test_speech_between_short_pauses_restarts_the_silence_run():
+    cut = SilenceCut()
+    parts = [_speech(16.0)]
+    for _ in range(12):
+        parts += [_silence(0.4), _speech(1.0)]
+    audio = np.concatenate(parts)
+    for end in np.arange(0.5, len(audio) / RATE, 0.5):
+        assert cut.observe(audio[: int(end * RATE)], 0.0, float(end)) is None
+
+
+def test_the_unscanned_offset_is_the_frame_holding_the_scan_position():
+    cut = SilenceCut(force_cut_seconds=600.0)
+    n = 60 * RATE + 470
+    assert cut.observe(_speech(61.0)[:n], 0.0, n / RATE) is None
+    assert cut.unscanned_offset(0.0) == 60 * RATE
+
+
+def test_a_pause_cut_lands_on_a_frame_boundary():
+    cut = SilenceCut(arm_seconds=1.0)
+    audio = np.concatenate([_speech(2.0), _silence(2.0)])
+    at = cut.observe(audio, 0.0, 4.0)
+    assert at is not None
+    assert round(at * RATE) % 480 == 0
+    assert at * RATE == round(at * RATE)
+
+
+def test_the_first_silence_after_the_arm_point_starts_a_fresh_run():
+    cut = SilenceCut(arm_seconds=15.0)
+    # Silent before the arm point, and only 0.2 s of it past it.
+    audio = np.concatenate([_speech(14.0), _silence(1.2), _speech(1.0)])
+    assert cut.observe(audio, 0.0, len(audio) / RATE) is None
