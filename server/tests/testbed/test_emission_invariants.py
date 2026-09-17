@@ -2,8 +2,8 @@
 
 Assertions I1–I7 from specs/008-progressive-emission/contracts/emission-semantics.md,
 plus loop-level tests over `run_streaming_loop` with a scripted decode (no
-model loads). Reused by every backend story (whisper, parakeet,
-sherpa) — the checker functions take any recorded event list.
+model loads). Reused by every backend story (whisper, parakeet)
+— the checker functions take any recorded event list.
 
 Events here are the myna.core dataclasses (or TimedEvent-wrapped ones).
 """

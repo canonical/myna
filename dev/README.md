@@ -30,9 +30,9 @@ Only the two configs stayed here:
 | Script | What it does |
 | --- | --- |
 | `generate_fixtures.py` | Synthetic espeak fixture tier for the offline test suite. Not a WER corpus — the synthetic voice is out of distribution and scores misleadingly across architectures. |
-| `fetch_funasr_model.py`, `fetch_sherpa_model.py`, `parakeet/fetch_parakeet_onnx.py` | Fetch and stage model weights into a snap directory. Driven by the `snap-*` make targets. |
+| `fetch_funasr_model.py`, `parakeet/fetch_parakeet_onnx.py` | Fetch and stage model weights into a snap directory. Driven by the `snap-*` make targets. |
 | `parakeet/build_maxstack_encoder.py`, `parakeet/requantize_encoder.py`, `parakeet/collapse_probe.py`, `parakeet/build-maxstack.sh`, `parakeet/qsilu/` | Build and validate alternative Parakeet encoders. |
-| `stage-qwen-c.sh`, `model-pin.sh`, `lint-packages.sh`, `snap-version.sh` | Snap staging, packaging checks, and the git-derived snap version. |
+| `model-pin.sh`, `lint-packages.sh`, `snap-version.sh` | Snap staging, packaging checks, and the git-derived snap version. |
 | `spread-build.sh`, `spread-image.sh` | Confined end-to-end (spread) harness. |
 | `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py`, `shexli_gate.py`, `vulture_allowlist.py` | Coverage reports and gates behind `make coverage` (and the shexli gate CI's `extension-review` job runs). |
 | `exercise.sh`, `gated-tests.sh`, `transcribe.py`, `capabilities.py` | Manual drivers for a running server. |

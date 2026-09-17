@@ -26,19 +26,10 @@ dependencies = [
 whisper = [
     "faster-whisper>=1.2.1",
 ]
-# Small transducer snaps (feature 008): Parakeet TDT int8 ONNX via ONNX
-# Runtime (no torch), and the sherpa-onnx turnkey streaming runtime.
+# Parakeet TDT int8 ONNX via ONNX Runtime (feature 008, no torch).
 parakeet = [
-    # 1.27.x exactly: sherpa-onnx 1.13.x's native lib needs the VERS_1.27.0
-    # version node, and each onnxruntime lib exports only its own (1.28
-    # dropped VERS_1.27.0). The sherpa extra resolves its libonnxruntime
-    # from this package.
-    "onnxruntime>=1.27,<1.28",
-]
-sherpa = [
-    "sherpa-onnx>=1.10",
-    # sherpa-onnx's native lib resolves libonnxruntime from this package (the
-    # wheel doesn't bundle it); same 1.27.x pin as the parakeet extra.
+    # Capped at 1.27.x for sherpa-onnx's VERS_1.27.0 symbol version; sherpa is
+    # gone, but lifting the cap moves the runtime the perf baseline measured.
     "onnxruntime>=1.27,<1.28",
 ]
 # FunASR / SenseVoice batch adapter (feature 009): ONNX Runtime + fbank +
@@ -162,7 +153,6 @@ module = [
     "funasr_onnx.*",
     "huggingface_hub.*",
     "onnxruntime.*",
-    "sherpa_onnx.*",
     "soundfile.*",
     "tracy_client.*",
 ]

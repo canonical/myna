@@ -3,7 +3,7 @@
 
 Usage (from repo root):
     cd server
-    uv run python ../dev/adapter_coverage.py [--adapter whisper sherpa ...]
+    uv run python ../dev/adapter_coverage.py [--adapter whisper parakeet ...]
 
 Each adapter loads its real model weights, receives a fixture WAV via the
 standard Harness, and coverage data is written to .coverage.adapter-<name>.
@@ -12,8 +12,6 @@ After all adapters have run, the script:
      if present, otherwise runs pytest first.
   2. Prints a per-file report showing test-only vs merged coverage so
      use-case-only and never-executed lines stand out.
-
-Adapters skipped by default (no model available locally): qwen-c.
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ DEFAULT_CLIP_ID = "quiet-pangram"
 # Second clip gives longer audio with more varied sentences.
 EXTRA_CLIP_ID = "quiet-weather"
 
-ADAPTERS_DEFAULT = ["whisper", "sherpa", "parakeet", "funasr"]
+ADAPTERS_DEFAULT = ["whisper", "parakeet", "funasr"]
 
 
 # ---------------------------------------------------------------------------
@@ -50,11 +48,6 @@ def _build_adapter(name: str, model: str | None):
         from myna.testbed.whisper import FasterWhisperAdapter
 
         return FasterWhisperAdapter(model or "tiny")
-
-    if name == "sherpa":
-        from myna.testbed.sherpa import SherpaAdapter, _default_model_dir
-
-        return SherpaAdapter(model_dir=model or _default_model_dir())
 
     if name == "parakeet":
         from myna.testbed.parakeet import ParakeetAdapter, _default_model_dir

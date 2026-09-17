@@ -17,7 +17,7 @@ SHELL := /bin/bash
 # dev/lint-packages.sh (SNAP_DIRS) and tests/spread/*/task.yaml each name the
 # backends they cover; a new one has to be added there by hand, and nothing
 # fails when it is forgotten. Derive them from here, or check them against it.
-BACKENDS := whisper parakeet qwen sherpa funasr fake
+BACKENDS := whisper parakeet funasr fake
 SNAPS := $(BACKENDS) myna
 
 # Conventions, with the exceptions stated once each:

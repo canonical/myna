@@ -46,7 +46,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # One-time import: modelscope is NOT a server runtime dep — this script is
-    # a dev/build-time tool only (mirrors dev/fetch_sherpa_model.py).
+    # a dev/build-time tool only.
     try:
         from modelscope.hub.snapshot_download import snapshot_download  # type: ignore
     except ImportError:

@@ -22,7 +22,7 @@ class Candidate:
     streaming_strategy examples:
     - "commit-on-finalize" — single final at end of audio (Phase 2)
     - "chunked-redecode"   — AED bolt-on streaming, e.g. LocalAgreement (Phase 3)
-    - "native-transducer"  — natively streaming, e.g. sherpa-onnx streaming Zipformer (Phase 3+)
+    - "native-transducer"  — natively streaming transducer (Phase 3+)
     - "scripted"           — fake adapter, no model
     """
 

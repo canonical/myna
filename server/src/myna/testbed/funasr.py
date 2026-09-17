@@ -72,7 +72,7 @@ def _default_model_dir() -> str:
     session time. ``funasr_onnx``'s own auto-download fallback is never
     exercised — it requires modelscope at runtime (not a server dep) and
     raises a bare string on failure, which is the TypeError seen when the
-    dir doesn't exist locally. Mirrors sherpa.py's ``_default_model_dir``.
+    dir doesn't exist locally. Mirrors parakeet.py's ``_default_model_dir``.
     """
     cache = Path(os.environ.get("MODELSCOPE_CACHE") or (Path.home() / ".cache" / "modelscope"))
     for pattern in (
@@ -269,7 +269,7 @@ class FunasrAdapter:
 
             text = ""
             if buffered:
-                # Convert s16le → float32 ndarray, same path as sherpa/qwen.
+                # Convert s16le → float32 ndarray, same path as whisper.
                 samples = (
                     np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
                 )
@@ -280,7 +280,7 @@ class FunasrAdapter:
             # Silence decodes to control tags alone, leaving nothing to commit.
             # An empty final is not harmless: the harness counts it as a
             # committed segment and dates time_to_first_final from it. Same
-            # guard as the whisper/qwen adapters.
+            # guard as the whisper adapter.
             if stripped:
                 await emit(TranscriptionFinal(text=stripped, disposition=Disposition.COMMITTED))
             await emit(TranscriptionDone(text=stripped))

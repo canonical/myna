@@ -42,9 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 INFERENCE_SNAPS = {
     "whisper-snap": "myna-whisper",
     "parakeet-snap": "myna-parakeet",
-    "sherpa-snap": "myna-sherpa",
     "funasr-snap": "myna-funasr",
-    "qwen-snap": "myna-qwen",
 }
 
 # The inference-snaps-cli (modelctl) release every snap must pin. One version
@@ -535,28 +533,6 @@ def test_streaming_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
         )
 
 
-def test_punctuation_toggle_is_a_config_key_not_a_hardcoded_flag(snap) -> None:
-    """Same argument as the streaming toggle above, for the other output-shaping
-    choice a shipped snap makes.
-
-    A snap that restores punctuation must let an operator turn it off, because
-    the raw transducer output is the baseline the restoration is measured
-    against - and one that hardcodes `--sherpa-no-punct` would commit lowercase
-    text with nothing in the config surface saying why. Snaps whose model
-    punctuates natively mention neither flag, which is also fine.
-    """
-    snap_dir, name, _ = snap
-    for server in sorted((REPO_ROOT / snap_dir / "engines").glob("*/server")):
-        script = server.read_text(encoding="utf-8")
-        if "--sherpa-punct-model" not in script and "--sherpa-no-punct" not in script:
-            continue
-        assert "punct_args" in script and "modelctl get punctuation" in script, (
-            f"{name}: engines/{server.parent.name}/server hardcodes its punctuation "
-            "choice; read the `punctuation` config key instead so the unpunctuated "
-            "baseline stays measurable on the same build"
-        )
-
-
 def test_models_declare_realtime_transcription(snap) -> None:
     """modelctl filters and reports models by capability; ours serve the realtime API."""
     snap_dir, name, _ = snap
@@ -642,9 +618,9 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
 # Snaps whose adapter leaves ORT to size its own pool, so ORT also pins it
 # (T65). Empty, and that is the finding rather than an oversight: every ORT
 # adapter here measured faster with a small explicit pool than with ORT's own
-# sizing, pinning included (parakeet ~2x, sherpa 4.9x, funasr 12%), so none of
-# them pins and none of them may plug process-control. whisper/qwen are not
-# ORT at all (CTranslate2 and a ctypes libqwen_asr.so) and never pinned either.
+# sizing, pinning included (parakeet ~2x, funasr 12%), so none of them pins
+# and none of them may plug process-control. whisper is not ORT at all
+# (CTranslate2) and never pinned either.
 ORT_PINNING_SNAPS: set[str] = set()
 
 # Adapters that cap ORT's intra-op pool, and so give up pinning. Kept as an

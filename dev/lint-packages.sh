@@ -25,9 +25,7 @@ fi
 SNAP_DIRS=(
     whisper-snap
     parakeet-snap
-    sherpa-snap
     funasr-snap
-    qwen-snap
 )
 
 failed=0

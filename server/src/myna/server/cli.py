@@ -35,14 +35,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "qwen-c", "parakeet", "sherpa", "funasr", "fake"),
+        choices=("whisper", "parakeet", "funasr", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
         "--model",
         default=None,
         help="model id/path; default per adapter (whisper: tiny; "
-        "sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
+        "funasr: ONNX model dir — default: staged cache snapshot)",
     )
     parser.add_argument(
         "--device",
@@ -136,17 +136,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
     )
     parser.add_argument(
-        "--sherpa-punct-model",
-        default=None,
-        help="directory holding the sherpa punctuation + truecasing model "
-        "(default: the staged cache - dev/fetch_sherpa_punct_model.py)",
-    )
-    parser.add_argument(
-        "--sherpa-no-punct",
-        action="store_true",
-        help="commit the transducer's raw lowercase, unpunctuated output",
-    )
-    parser.add_argument(
         "--funasr-language",
         default="auto",
         choices=("auto", "zh", "en", "yue", "ja", "ko"),
@@ -219,37 +208,16 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
             ),
         )
 
-    if args.adapter == "sherpa":
-        from myna.testbed.sherpa import SherpaAdapter
-
-        return SherpaAdapter(
-            args.model,
-            streaming=args.streaming,
-            # getattr: programmatic callers may build the namespace without
-            # the adapter-specific flags (as the streaming ones already allow).
-            punct_dir=getattr(args, "sherpa_punct_model", None),
-            punctuate=not getattr(args, "sherpa_no_punct", False),
-        )
-
     if args.adapter == "funasr":
         from myna.testbed.funasr import FunasrAdapter
 
-        # --model is the ONNX model dir, like sherpa; absent = the staged
+        # --model is the ONNX model dir; absent = the staged
         # ModelScope cache snapshot (dev/fetch_funasr_model.py).
         return FunasrAdapter(
             args.model,
             language=args.funasr_language,
             textnorm=args.funasr_textnorm,
         )
-
-    if args.adapter == "qwen-c":
-        # The C runtime needs a local model directory (no downloading); the
-        # shared library is located via QWEN_ASR_LIB (set by the snap runtime).
-        from myna.testbed.qwen import QwenCAdapter
-
-        if not args.model:
-            raise SystemExit("--adapter qwen-c requires --model <model dir>")
-        return QwenCAdapter(args.model)
 
     raise ValueError(f"unknown adapter: {args.adapter!r}")
 

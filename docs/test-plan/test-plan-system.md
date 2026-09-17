@@ -10,8 +10,8 @@ elsewhere and are out of scope here (see §11).
 testers in a later wave. Crowd-testing submission tooling is intentionally
 **not** specified in this document (deferred).
 
-**Baseline under test**: Whisper and Qwen3-ASR in batch and supported
-streaming configurations. Confirm available models and engines from the
+**Baseline under test**: Whisper, Parakeet, and FunASR (SenseVoice) in batch
+and supported streaming configurations. Confirm available models and engines from the
 installed snaps before each run; this procedure is not a release-status tracker.
 
 ---
@@ -67,7 +67,7 @@ desktop doesn't matter):
   installed).
 - **NVIDIA GPU** machine (CUDA-capable card, GPU-enabled snap variant
   installed where available - currently whisper and parakeet ship
-  GPU engines; qwen is CPU-only regardless of hardware).
+  GPU engines; funasr is CPU-only regardless of hardware).
 
 Record exact CPU model, RAM, and GPU model (if any) in the results table
 (§9) — this is the closest thing this project currently has to a hardware-tier
@@ -80,15 +80,14 @@ report (T12 is still open on the engineering side).
 | Model | License | Language coverage | Mode support (shipped) | Snap | Notes for testers |
 |---|---|---|---|---|---|
 | **Whisper** (faster-whisper) | MIT | Multilingual (`*`) on non-`.en` checkpoints; English-only on `.en` checkpoints | Batch + streaming (local-agreement) | `whisper-snap` | CPU and NVIDIA GPU engines both shipped |
-| **Qwen3-ASR** (`qwen-c`) | Apache-2.0 | 30 languages: zh, en, yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da, fi, pl, cs, fil, fa, el, ro, hu, mk | Batch (streaming exists but is sub-realtime on weaker CPUs — expect it to lag) | `qwen-snap` | CPU only in this shipped build |
+| **Parakeet** (TDT 0.6B v3) | CC-BY-4.0 | 25 European languages: bg, hr, cs, da, nl, en, et, fi, fr, de, el, hu, it, lv, lt, mt, pl, pt, ro, sk, sl, es, sv, ru, uk | Batch + streaming (commits at pauses; streaming is the default) | `parakeet-snap` | CPU and NVIDIA GPU engines both shipped |
+| **FunASR** (SenseVoice-Small) | Apache-2.0 | 5 languages: zh, en, yue, ja, ko | Batch only | `funasr-snap` | CPU only in this shipped build |
 
 **Expected failure modes** (not bugs — record as "expected" if observed):
 
-- Any model given a language outside its supported set (e.g. a language
-  outside Qwen's 30 list) via a language not English: expect garbled,
-  empty, or misrecognized-as-a-different-language output.
-- Qwen streaming mode on a modest CPU: expect visibly laggy/delayed partials,
-  not necessarily wrong text.
+- Any model given a language outside its supported set (e.g. Arabic,
+  Hindi, or Mandarin on Parakeet; anything but zh/en/yue/ja/ko on FunASR):
+  expect garbled, empty, or misrecognized-as-a-different-language output.
 
 ---
 
@@ -100,7 +99,7 @@ file: **[`test-samples-en.md`](test-samples-en.md)**.
 
 The same six-section corpus (§1–§6) has also been translated into 9
 additional languages, each in its own file, to cover script/phonetic
-diversity and give Qwen3-ASR and Whisper real accuracy signal beyond
+diversity and give Whisper, Parakeet, and FunASR real accuracy signal beyond
 English. **All translations are draft, machine-assisted, and require
 native/fluent-speaker review before use** (per §2's fluent-speaker
 requirement) — do not run a test session against an unreviewed file.
@@ -132,23 +131,24 @@ Each language file mirrors `test-samples-en.md`'s structure — quick index
 - §5 — Pangram / phonetic smoke-test — used by TC-06
 - §6 — Long continuous passage for streaming tests (30s+) — used by TC-02, §9
 - §7 (English file only) — Unsupported-language probe: Estonian sentence
-  (TC-07, Qwen only) — still needs native/fluent-speaker review before use
+  (TC-07, FunASR only) — still needs native/fluent-speaker review before use
 
-**Model applicability per language**: all 9 non-English languages above are
-within Qwen3-ASR's 30-language list, so each can be tested on both
-Qwen3-ASR and Whisper.
+**Model applicability per language**: Whisper covers all 9 non-English
+languages above. Parakeet covers Spanish, French, Italian, Portuguese,
+German, and Czech, but not Arabic, Hindi, or Mandarin. FunASR covers only
+Mandarin among them.
 
 ---
 
 ## 5. Test matrix
 
 Cross the following dimensions. Not every cell applies to every model — use
-§3's mode/language support to skip inapplicable combinations (e.g. Qwen has
-no GPU engine in this build).
+§3's mode/language support to skip inapplicable combinations (e.g. FunASR
+has no GPU engine or streaming mode in this build).
 
 | Dimension | Values |
 |---|---|
-| Model | Whisper, Qwen3-ASR |
+| Model | Whisper, Parakeet, FunASR |
 | Language | English (all passages, `test-samples-en.md` §1–§6); Spanish, French, Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin (full §1–§6 corpus per language, pending native review — see §4 table); Estonian (one short probe sentence only, `test-samples-en.md` §7, TC-07) |
 | Mode | `batch`, `streaming`, `auto` (real-world default) |
 | Hardware | CPU-only, NVIDIA GPU |
@@ -238,7 +238,7 @@ multiple commit boundaries and natural pauses, and verifies the
 unstable/committed distinction is respected end-to-end.
 
 **Preconditions**: Model with streaming support installed (Whisper or
-Qwen3-ASR — see §3); mode set to `streaming`; `--show-unstable` (or desktop
+Parakeet — see §3); mode set to `streaming`; `--show-unstable` (or desktop
 equivalent) enabled; plain-text app focused and empty; language file for
 the language under test has passed native-speaker review (see §4).
 
@@ -374,15 +374,15 @@ issue to note and move past.
 
 ---
 
-### TC-07 — Unsupported-language probe: language outside Qwen's 30-language list
+### TC-07 — Unsupported-language probe: language outside FunASR's 5-language list
 
-**Description**: Confirms behavior when Qwen3-ASR is given a language it
-was never trained to support, using the Estonian sentence in
-`test-samples-en.md` §7.1. **Scoped to Qwen3-ASR only** — Whisper's
-multilingual checkpoints support Estonian, so running this probe against
-Whisper would not demonstrate an out-of-vocabulary failure.
+**Description**: Confirms behavior when FunASR (SenseVoice) is given a
+language it was never trained to support, using the Estonian sentence in
+`test-samples-en.md` §7.1. **Scoped to FunASR only** — Whisper's
+multilingual checkpoints and Parakeet both support Estonian, so running this
+probe against them would not demonstrate an out-of-vocabulary failure.
 
-**Preconditions**: Qwen3-ASR (`qwen-snap`) installed; plain-text app
+**Preconditions**: FunASR (`funasr-snap`) installed; plain-text app
 focused and empty.
 
 **Steps**:
@@ -591,7 +591,7 @@ This test plan explicitly does **not** cover:
 - Languages beyond the 9-language diversity set in §4 (Spanish, French,
   Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin) plus the
   §7 probe sentence (TC-07 Estonian) — further language
-  expansion (e.g. covering the rest of Qwen's 30-language list) is
+  expansion (e.g. covering the rest of Parakeet's 25-language list) is
   deferred to a later round.
 - Running any translated-corpus test session before its file has passed
   native/fluent-speaker review (see the per-file review-status notes in

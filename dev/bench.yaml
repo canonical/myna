@@ -119,22 +119,7 @@ targets:
         settings:
           stream-arm-seconds: "15"
 
-  - snap: myna-sherpa
-    files:
-      - sherpa-snap/myna-sherpa_*.snap
-      - sherpa-snap/myna-sherpa+*.comp
-    # Native 480 ms transducer chunks: latency is baked into the ONNX export,
-    # no runtime knob.
-
   - snap: myna-funasr
     files:
       - funasr-snap/myna-funasr_*.snap
       - funasr-snap/myna-funasr+*.comp
-
-  # Pure-C CPU runtime. Measured RTF 4.47 on a Ryzen AI 7 350, so it is expected
-  # to blow the budget and report usability_fail - measure it anyway, that is
-  # the finding.
-  - snap: myna-qwen
-    files:
-      - qwen-snap/myna-qwen_*.snap
-      - qwen-snap/myna-qwen+*.comp

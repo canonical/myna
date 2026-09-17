@@ -34,20 +34,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # are checked entry by entry rather than with a search: one pinned entry
 # alongside a floating one would satisfy any "is there a SHA in here" test
 # while still packing an unreproducible weight.
-REVISION_MAPS = (
-    "whisper-snap/dev/download-models.sh",
-    "qwen-snap/dev/download-models.sh",
-)
+REVISION_MAPS = ("whisper-snap/dev/download-models.sh",)
 
 PINNED = {
     # Single-model scripts.
-    "sherpa-snap/dev/download-models.sh": r"^rev=[0-9a-f]{40}$",
     "parakeet-snap/dev/download-models.sh": r'^rev="murmure-model [0-9.]+"$',
     # Python fetchers.
-    "dev/fetch_sherpa_model.py": r'^REVISION = "[0-9a-f]{40}"$',
-    # Not on the Hub - a GitHub release asset hanging off a mutable tag, so
-    # the bytes are the identity. Same shape as the qsilu header tarball.
-    "dev/fetch_sherpa_punct_model.py": r'^SHA256 = "[0-9a-f]{64}"$',
     "dev/fetch_funasr_model.py": r'^REVISION = "v[0-9.]+"$',
     "dev/parakeet/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
     # NVIDIA's checkpoint the float exports are made from: a commit, and the
@@ -92,37 +84,6 @@ def test_hf_download_passes_the_revision(rel: str) -> None:
     assert calls, f"{rel}: no `hf download` invocation found"
     for line in calls:
         assert "--revision" in line, f"{rel}: `{line.strip()}` ignores the pin"
-
-
-def test_sherpa_pins_agree() -> None:
-    """The packed component and the adapter-run staging share one revision."""
-    bash = re.search(r"^rev=([0-9a-f]{40})$", _text("sherpa-snap/dev/download-models.sh"), re.M)
-    py = re.search(r'^REVISION = "([0-9a-f]{40})"$', _text("dev/fetch_sherpa_model.py"), re.M)
-    assert bash and py
-    assert bash.group(1) == py.group(1), (
-        "sherpa-snap/dev/download-models.sh and dev/fetch_sherpa_model.py stage "
-        "the same upstream repo at different revisions - the snap would ship "
-        "weights the local adapter runs never measured"
-    )
-
-
-def test_sherpa_punct_component_reads_the_pin_rather_than_copying_it() -> None:
-    """The packing script must derive the punctuation pin, not restate it.
-
-    Every other pair here is two literals held together by a cross-check,
-    which is a half-moved pin waiting to happen; this one has a single
-    literal and a script that reads it. Assert the reading, because a later
-    edit that inlines the sha256 "for clarity" would reintroduce the drift
-    the cross-checks above exist to catch.
-    """
-    script = _text("sherpa-snap/dev/download-models.sh")
-    assert "dev/fetch_sherpa_punct_model.py" in script, (
-        "sherpa-snap/dev/download-models.sh no longer reads the punctuation pin from its fetcher"
-    )
-    assert not re.search(r"[0-9a-f]{64}", script), (
-        "sherpa-snap/dev/download-models.sh inlines a sha256 - derive it from "
-        "dev/fetch_sherpa_punct_model.py so the two cannot disagree"
-    )
 
 
 def test_parakeet_pins_agree() -> None:

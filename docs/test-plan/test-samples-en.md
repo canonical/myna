@@ -133,15 +133,13 @@ a translation of the §5 pangram (a literal translation of an English pangram
 usually isn't itself a pangram in the target language). Targets a
 specific documented model limitation from `test-plan-system.md` §3.
 
-**7.1 — Estonian sentence, for TC-07 (language outside Qwen's 30-language
-list), Qwen only**
+**7.1 — Estonian sentence, for TC-07 (language outside FunASR's 5-language
+list), FunASR only**
 
-Estonian is confirmed **not** present in Qwen3-ASR's supported list (zh, en,
-yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da,
-fi, pl, cs, fil, fa, el, ro, hu, mk — see `test-plan-system.md` §3).
-Whisper's multilingual checkpoints do support Estonian, so **this probe is
-scoped to Qwen3-ASR only** — running it against Whisper would not
-demonstrate an out-of-vocabulary failure.
+Estonian is **not** in FunASR (SenseVoice)'s supported list (zh, en, yue, ja,
+ko — see `test-plan-system.md` §3). Whisper's multilingual checkpoints and
+Parakeet both support Estonian, so **this probe is scoped to FunASR only** —
+running it against them would not demonstrate an out-of-vocabulary failure.
 
 > "Eile õhtul sadas Tallinnas tugevat vihma ja tänavad muutusid libedaks."
 

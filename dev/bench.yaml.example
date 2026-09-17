@@ -125,11 +125,6 @@ targets:
         settings:
           stream-arm-seconds: "15"
 
-  - snap: myna-sherpa
-    files:
-      - ./snaps/myna-sherpa_*.snap
-      - ./snaps/myna-sherpa+*.comp
-
   - snap: myna-funasr
     files:
       - ./snaps/myna-funasr_*.snap

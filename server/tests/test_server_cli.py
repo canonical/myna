@@ -56,11 +56,6 @@ def test_fake_adapter_builds_without_any_extra():
     assert isinstance(build_adapter(parse("--adapter", "fake")), FakeAdapter)
 
 
-def test_qwen_c_refuses_to_start_without_a_model_dir():
-    with pytest.raises(SystemExit, match="requires --model"):
-        build_adapter(parse("--adapter", "qwen-c"))
-
-
 def test_whisper_streaming_defaults_are_the_measured_ones():
     """The re-decode cadence is a measured value, not a taste.
 

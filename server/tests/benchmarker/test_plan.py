@@ -306,23 +306,23 @@ def test_an_explicit_root_moves_the_base_of_every_relative_path(tmp_path, snaps)
 
 def test_only_narrows_the_target_list(tmp_path, snaps):
     snaps()
-    snaps(snap="myna-sherpa", components=())
+    snaps(snap="myna-parakeet", components=())
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
             {"snap": "myna-whisper", "files": target_files()},
-            {"snap": "myna-sherpa", "files": ["myna-sherpa_*.snap"]},
+            {"snap": "myna-parakeet", "files": ["myna-parakeet_*.snap"]},
         ],
     )
-    cfg = load_config(config, only=["myna-sherpa"], out_override=None, budget_override=None)
-    assert [t["snap"] for t in cfg.targets] == ["myna-sherpa"]
+    cfg = load_config(config, only=["myna-parakeet"], out_override=None, budget_override=None)
+    assert [t["snap"] for t in cfg.targets] == ["myna-parakeet"]
 
 
 def test_narrowing_to_nothing_is_an_error_not_an_empty_sweep(tmp_path, snaps):
     snaps()
     config = write_config(tmp_path / "bench.yaml")
     with pytest.raises(SystemExit, match="no targets selected"):
-        load_config(config, only=["myna-qwen"], out_override=None, budget_override=None)
+        load_config(config, only=["myna-funasr"], out_override=None, budget_override=None)
 
 
 # ─── cmd_plan ────────────────────────────────────────────────────────────────
@@ -392,7 +392,7 @@ def test_an_unpacked_target_is_reported_and_the_rest_still_planned(tmp_path, sna
     config = write_config(
         tmp_path / "bench.yaml",
         targets=[
-            {"snap": "myna-qwen", "files": ["myna-qwen_*.snap"]},
+            {"snap": "myna-funasr", "files": ["myna-funasr_*.snap"]},
             {"snap": "myna-whisper", "files": target_files()},
         ],
     )

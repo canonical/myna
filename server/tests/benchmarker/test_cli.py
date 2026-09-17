@@ -148,9 +148,9 @@ def test_run_accepts_every_sweep_override(monkeypatch, dispatched):
 def test_plan_takes_the_same_target_selection_as_run(monkeypatch, dispatched):
     """A plan that could not be narrowed the way the run is would describe a
     different sweep from the one about to happen."""
-    run_cli(monkeypatch, "plan", "--config", "c.yaml", "--only", "myna-sherpa", "--budget", "10")
+    run_cli(monkeypatch, "plan", "--config", "c.yaml", "--only", "myna-parakeet", "--budget", "10")
     args = dispatched["args"]
-    assert (args.config, args.only, args.budget) == ("c.yaml", ["myna-sherpa"], 10.0)
+    assert (args.config, args.only, args.budget) == ("c.yaml", ["myna-parakeet"], 10.0)
 
 
 # ─── download-corpus ─────────────────────────────────────────────────────────

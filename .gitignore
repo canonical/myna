@@ -1,4 +1,4 @@
-# Local reference checkouts (qwen3-snap, gemma4-snap, inference-snaps-cli).
+# Local reference checkouts (gemma4-snap, inference-snaps-cli).
 # These carry their own .git and would commit as broken gitlinks — keep out.
 reference/
 
@@ -18,9 +18,6 @@ corpus/
 .pip-cache/
 whisper-snap/wheels/
 whisper-snap/.hf-cache/
-qwen-snap/wheels/
-qwen-snap/.hf-cache/
-qwen-snap/build.log
 *.snap
 *.comp
 
@@ -63,10 +60,6 @@ parakeet-snap/wheels/
 parakeet-snap/wheelhouse-cuda/
 parakeet-snap/*.snap
 parakeet-snap/*.comp
-sherpa-snap/components/model-*/
-sherpa-snap/wheels/
-sherpa-snap/*.snap
-sherpa-snap/*.comp
 # Coverage artifacts (feature 006)
 client/target/coverage/
 server/.coverage*

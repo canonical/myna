@@ -71,8 +71,6 @@ exclude:
     - whisper-snap/myna-whisper+model-base.comp
     - whisper-snap/myna-whisper+model-small.comp
     - whisper-snap/myna-whisper+faster-whisper-cuda.comp
-    - qwen-snap
-    - sherpa-snap
     - parakeet-snap
     - funasr-snap
     - fake-snap/stage
