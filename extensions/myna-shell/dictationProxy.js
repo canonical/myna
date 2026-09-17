@@ -1,9 +1,9 @@
 // dictationProxy.js — the single well-known-name proxy for
 // com.canonical.Myna.Dictation, shared by every consumer in the extension.
 //
-// Both the overlay host (to run the renderer only while the daemon is on the
-// bus) and the announcer (to read State/StatusMessage) talk to the daemon.
-// Creating the proxy once here means one `Gio.DBusProxy` and one source of
+// The overlay host runs the renderer only while the daemon is on the bus, and
+// reads State/StatusMessage to drive it. Creating the proxy once here means
+// one `Gio.DBusProxy` and one source of
 // truth; consumers connect to its native signals (`g-name-owner`,
 // `g-properties-changed`) rather than each running their own
 // `Gio.bus_watch_name`.

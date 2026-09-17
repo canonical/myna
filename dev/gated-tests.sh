@@ -14,12 +14,14 @@
 # Everything is private on purpose. ibus_hw changes the *global* input engine
 # for the session it runs in, so a developer running this on their desktop must
 # not have their real input method (or audio graph) touched: the PipeWire
-# daemon, the D-Bus session bus, and the IBus daemon are all scratch instances
-# under a temporary XDG_RUNTIME_DIR / XDG_CONFIG_HOME, torn down on exit.
+# daemon, the D-Bus session bus, the IBus daemon, and the accessibility bus are
+# all scratch instances under a temporary XDG_RUNTIME_DIR / XDG_CONFIG_HOME,
+# torn down on exit.
 #
 # A service that fails to come up leaves its gate unset, so its suite skips
 # cleanly (the same no-op it is offline) rather than failing the run. That
-# keeps the script safe to use on a machine that has no PipeWire or no IBus.
+# keeps the script safe to use on a machine that has no PipeWire, no IBus, or
+# no AT-SPI.
 set -uo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -138,12 +140,17 @@ if [ "${1:-}" = "--inner" ]; then
     IBUS_DIR="$SCRATCH/ibus"
     mkdir -p "$IBUS_DIR"
     IBUS_PID=""
+    ATSPI_PID=""
     # Invoked via trap, which shellcheck cannot see. Older shellcheck flags the
     # body as unreachable (SC2317), newer flags the function (SC2329).
     # shellcheck disable=SC2317,SC2329
     inner_cleanup() {
         [ -n "$IBUS_PID" ] && kill "$IBUS_PID" 2>/dev/null
         [ -n "$IBUS_PID" ] && wait "$IBUS_PID" 2>/dev/null
+        # The launcher's own child bus goes with it: it is a dbus-daemon the
+        # launcher spawned and reaps.
+        [ -n "$ATSPI_PID" ] && kill "$ATSPI_PID" 2>/dev/null
+        [ -n "$ATSPI_PID" ] && wait "$ATSPI_PID" 2>/dev/null
         return 0
     }
     trap inner_cleanup EXIT
@@ -187,6 +194,39 @@ if [ "${1:-}" = "--inner" ]; then
 
     # The session bus itself is all dbus_hw needs.
     export MYNA_DBUS_TESTS=1
+
+    # The accessibility bus atspi_hw needs. `at-spi-bus-launcher` owns
+    # `org.a11y.Bus` on the *session* bus and hands out the address of a
+    # second, separate bus that AT-SPI traffic actually runs on — so this has
+    # to happen inside the scratch session bus, and the launcher must be left
+    # running for as long as that bus is wanted.
+    #
+    # `--launch-immediately` skips the launcher's default wait for a client
+    # to ask, which never comes here: nothing in this run is a desktop
+    # session starting up.
+    if command -v /usr/libexec/at-spi-bus-launcher >/dev/null 2>&1; then
+        /usr/libexec/at-spi-bus-launcher --launch-immediately \
+            >"$SCRATCH/atspi.log" 2>&1 &
+        ATSPI_PID=$!
+
+        # Probe the way the suite connects: ask the launcher for the address
+        # over the session bus. A launcher that is up but has not yet claimed
+        # the name answers with an error, which is the case the poll exists
+        # for. Asking on the session bus is safe here — unlike the IBus probe
+        # above there is no activation to be fooled by, because this scratch
+        # bus has no service file for org.a11y.Bus.
+        if wait_for 150 gdbus call --session --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.a11y.Bus.GetAddress; then
+            export MYNA_ATSPI_TESTS=1
+            echo "gated-tests: accessibility bus serving (MYNA_ATSPI_TESTS=1)" >&2
+        else
+            echo "gated-tests: org.a11y.Bus never served; atspi_hw will skip" >&2
+            sed 's/^/gated-tests:   atspi: /' "$SCRATCH/atspi.log" >&2
+        fi
+    else
+        echo "gated-tests: no at-spi-bus-launcher; atspi_hw will skip" >&2
+    fi
 
     "$@"
     exit $?

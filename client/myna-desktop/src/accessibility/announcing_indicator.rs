@@ -15,6 +15,25 @@ use super::format::format_state_announcement;
 use super::AccessibilityAnnouncer;
 use crate::indicator::{Indicator, IndicatorState};
 
+/// A critical failure — one the user must acknowledge, as opposed to a
+/// recoverable notice that clears itself.
+///
+/// Exempt from the dedup below (FR-024/FR-025). The dedup exists for
+/// `controller.rs`'s deliberate double-call on the completed-session state,
+/// and `completion_indicator_state` only ever yields recoverable notices or
+/// `Hidden` — so no critical failure is ever published twice by accident.
+/// When one *is*, the user has retried and hit the same wall, and being told
+/// nothing the second time reads as the key having done nothing at all.
+fn is_critical(state: &IndicatorState) -> bool {
+    matches!(
+        state,
+        IndicatorState::Error {
+            recoverable: false,
+            ..
+        }
+    )
+}
+
 /// Wraps a visual [`Indicator`] and a non-visual [`AccessibilityAnnouncer`];
 /// implements `Indicator` itself so it drops into any seam that already
 /// expects one — no other code needs to change.
@@ -57,7 +76,7 @@ where
         // used before this wrapper existed (no change to the visual timing
         // contract) — non-visual is additive, not replacing.
         self.indicator.set_state(state.clone()).await;
-        if self.last_announced.as_ref() == Some(&state) {
+        if self.last_announced.as_ref() == Some(&state) && !is_critical(&state) {
             return;
         }
         self.last_announced = Some(state.clone());
@@ -168,5 +187,57 @@ mod tests {
             vec!["Listening", "Transcribing", "Finishing", "Idle"],
             "loading→listening→transcribing→finishing→idle: each included transition announced exactly once (Acceptance Scenario 2)"
         );
+    }
+
+    // ── FR-024/FR-025: a repeated critical failure is repeated news ───────
+
+    fn announce_texts(log: &std::sync::Arc<std::sync::Mutex<Vec<Recorded>>>) -> Vec<String> {
+        log.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|c| match c {
+                Recorded::Announce { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Retrying into the same wall — the microphone is still missing, the
+    /// field is still protected — is the user's action failing again, not a
+    /// state that has not changed. `controller.rs` publishes the failure
+    /// with no intervening state on the pre-capture abort path, so without
+    /// this the second attempt is answered with complete silence.
+    #[tokio::test]
+    async fn the_same_critical_failure_is_announced_again_each_time_it_happens() {
+        let fake = FakeAnnouncer::new();
+        let log = fake.log();
+        let mut wrapped = AnnouncingIndicator::new(MockIndicator::new(), fake);
+
+        let failure = IndicatorState::critical("No microphone available");
+        wrapped.set_state(failure.clone()).await;
+        wrapped.set_state(failure).await;
+
+        assert_eq!(
+            announce_texts(&log).len(),
+            2,
+            "a repeated critical failure must be announced again, not swallowed"
+        );
+    }
+
+    /// The dedup's original subject is untouched: `controller.rs` calls
+    /// `set_state` twice for the same completed-session state by design (the
+    /// live per-event path and the finalize-block safety net), and those
+    /// states are always recoverable.
+    #[tokio::test]
+    async fn a_repeated_recoverable_notice_is_still_announced_only_once() {
+        let fake = FakeAnnouncer::new();
+        let log = fake.log();
+        let mut wrapped = AnnouncingIndicator::new(MockIndicator::new(), fake);
+
+        let notice = IndicatorState::recoverable("No speech detected");
+        wrapped.set_state(notice.clone()).await;
+        wrapped.set_state(notice).await;
+
+        assert_eq!(announce_texts(&log).len(), 1);
     }
 }

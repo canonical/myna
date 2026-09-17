@@ -34,8 +34,8 @@ export default class MynaShellExtension extends Extension {
         if (!isWayland)
             return;
 
-        // One proxy for the daemon, shared by the host (renderer lifetime
-        // from `g-name-owner`) and the announcer (State/StatusMessage). A
+        // One proxy for the daemon: the host takes the renderer lifetime
+        // from `g-name-owner` and the state from `g-properties-changed`. A
         // single name watch; avoid a second bus_watch_name.
         this._proxy = new DictationProxy({log: msg =>
             console.log(`[myna-shell] ${msg}`)});

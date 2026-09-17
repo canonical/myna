@@ -776,10 +776,13 @@ const ANNOUNCE_COALESCE_WINDOW: Duration = Duration::from_millis(300);
 /// root-cause writeup and fix) and has been re-verified against a real
 /// Orca session without a repeat of the hang.
 ///
-/// The GJS-side `a11y.js` `Announcer` that once accompanied this was deleted
-/// along with the rest of the in-Shell renderer surface (T170); the extension
-/// now announces via `extensions/myna-shell/announcer.js`'s
-/// `DictationAnnouncer`, hosted by `host.js`.
+/// This is the only announcement path. The GJS side announced in parallel for
+/// a while, via a hidden `St.Label` live region anchored to shell chrome —
+/// the approach research.md R1 had already rejected as not reliably
+/// decoupled from focus. It predated this module emitting on `org.a11y.Bus`
+/// directly, which needs no focus and no chrome to anchor to, and it read no
+/// settings, so it kept speaking after `announcement-verbosity` was turned
+/// off. Announcing from the Shell again would reintroduce both faults.
 async fn build_announcer() -> RecoveringAnnouncer<
     CoalescingAnnouncer<
         VerbosityGatedAnnouncer<Box<dyn AccessibilityAnnouncer>, GSettingsPreferences>,

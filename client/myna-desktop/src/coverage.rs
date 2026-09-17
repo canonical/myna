@@ -1,7 +1,12 @@
 //! The state-to-channel coverage matrix (SC-002, FR-032,
 //! `contracts/coverage-matrix.md`): loads and validates the checked-in
-//! `extensions/myna-shell/coverage-matrix.json`, and the contrast-ratio
-//! regression check (FR-013) over the shipped stylesheet colours.
+//! `extensions/myna-shell/coverage-matrix.json`.
+//!
+//! The contrast-ratio regression check (FR-013) used to live here too,
+//! against the Shell extension's `stylesheet.css`. The HUD is now the
+//! standalone `myna-hud` renderer and owns its own stylesheet, so the check
+//! moved to `myna_hud::contrast`, where `include_str!` keeps it tied to the
+//! file it describes.
 
 use std::collections::HashSet;
 
@@ -96,93 +101,6 @@ pub fn check_exhaustive(matrix: &CoverageMatrix) -> Vec<CoverageViolation> {
         .collect()
 }
 
-// ── Contrast (FR-013, K1/K2) ─────────────────────────────────────────────
-
-/// An RGBA colour with 0.0–1.0 channels (sRGB, non-premultiplied alpha).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rgba {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-    pub a: f64,
-}
-
-impl Rgba {
-    pub const fn new(r: f64, g: f64, b: f64, a: f64) -> Self {
-        Self { r, g, b, a }
-    }
-
-    /// Alpha-composite `self` over an opaque `background` (both channels in
-    /// 0.0–1.0), returning the resulting opaque colour.
-    pub fn over(&self, background: Rgba) -> Rgba {
-        Rgba {
-            r: self.r * self.a + background.r * (1.0 - self.a),
-            g: self.g * self.a + background.g * (1.0 - self.a),
-            b: self.b * self.a + background.b * (1.0 - self.a),
-            a: 1.0,
-        }
-    }
-
-    /// WCAG relative luminance (sRGB → linear, then the standard weights).
-    pub fn relative_luminance(&self) -> f64 {
-        fn channel(c: f64) -> f64 {
-            if c <= 0.03928 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
-            }
-        }
-        0.2126 * channel(self.r) + 0.7152 * channel(self.g) + 0.0722 * channel(self.b)
-    }
-}
-
-pub const WHITE: Rgba = Rgba::new(1.0, 1.0, 1.0, 1.0);
-pub const BLACK: Rgba = Rgba::new(0.0, 0.0, 0.0, 1.0);
-
-/// The WCAG contrast ratio between two opaque colours (always ≥ 1.0).
-pub fn contrast_ratio(a: Rgba, b: Rgba) -> f64 {
-    let (l1, l2) = (a.relative_luminance(), b.relative_luminance());
-    let (lighter, darker) = if l1 >= l2 { (l1, l2) } else { (l2, l1) };
-    (lighter + 0.05) / (darker + 0.05)
-}
-
-/// The worst-case contrast ratio of `foreground` over `background` when
-/// `background` may itself be translucent over an arbitrary (unknown)
-/// desktop surface — computed by compositing both over white and over
-/// black and taking the lower ratio. This is the correct, conservative
-/// check for chrome (like the HUD pill) that floats over content this
-/// feature does not control.
-pub fn worst_case_contrast(foreground: Rgba, background: Rgba) -> f64 {
-    let bg_over_white = background.over(WHITE);
-    let bg_over_black = background.over(BLACK);
-    let fg_over_white_bg = foreground.over(bg_over_white);
-    let fg_over_black_bg = foreground.over(bg_over_black);
-    let ratio_on_white = contrast_ratio(fg_over_white_bg, bg_over_white);
-    let ratio_on_black = contrast_ratio(fg_over_black_bg, bg_over_black);
-    ratio_on_white.min(ratio_on_black)
-}
-
-/// The declared text/non-text colour pairs from
-/// `extensions/myna-shell/stylesheet.css` (FR-013, K1/K2). Hand-extracted
-/// rather than CSS-parsed: the stylesheet is small and hand-authored, and a
-/// general CSS colour-pair parser (resolving which rule's foreground pairs
-/// with which rule's background) is disproportionate to this feature's
-/// scope. Kept in sync by the doc comment cross-reference below — a change
-/// to these colours in the stylesheet without a matching update here is
-/// still caught the moment it regresses a threshold, just not the moment
-/// the source values diverge.
-pub mod stylesheet_colours {
-    use super::Rgba;
-
-    /// `.myna-hud-pill { background-color: rgba(20, 22, 28, 0.82); }`
-    pub const PILL_BACKGROUND: Rgba = Rgba::new(20.0 / 255.0, 22.0 / 255.0, 28.0 / 255.0, 0.82);
-    /// `.myna-hud-label { color: rgba(255, 255, 255, 0.92); }` (text, K1)
-    pub const LABEL_TEXT: Rgba = Rgba::new(1.0, 1.0, 1.0, 0.92);
-    /// `.myna-hud-icon { color: rgba(255, 255, 255, 0.92); }` (non-text
-    /// meaningful element — the mic icon, K2)
-    pub const ICON: Rgba = Rgba::new(1.0, 1.0, 1.0, 0.92);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,38 +151,6 @@ mod tests {
         assert_eq!(
             check_invariants(&matrix),
             vec![CoverageViolation::ColourOnly("idle".to_string())]
-        );
-    }
-
-    // ── T026: contrast thresholds (K1/K2) ────────────────────────────────────
-
-    #[test]
-    fn identical_colours_have_a_ratio_of_one() {
-        assert!((contrast_ratio(WHITE, WHITE) - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn black_on_white_is_maximal() {
-        assert!((contrast_ratio(BLACK, WHITE) - 21.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn label_text_on_pill_background_meets_the_text_threshold() {
-        use stylesheet_colours::*;
-        let ratio = worst_case_contrast(LABEL_TEXT, PILL_BACKGROUND);
-        assert!(
-            ratio >= 4.5,
-            "label text worst-case contrast {ratio} is below the 4.5:1 threshold (K1)"
-        );
-    }
-
-    #[test]
-    fn icon_on_pill_background_meets_the_non_text_threshold() {
-        use stylesheet_colours::*;
-        let ratio = worst_case_contrast(ICON, PILL_BACKGROUND);
-        assert!(
-            ratio >= 3.0,
-            "icon worst-case contrast {ratio} is below the 3:1 threshold (K2)"
         );
     }
 }

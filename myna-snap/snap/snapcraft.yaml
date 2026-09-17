@@ -296,7 +296,11 @@ parts:
       # and the core's (myna-core, the plain-language failure text every
       # surface renders) — each compiled to its own <domain>.mo. Build-time
       # msgfmt (gettext) is provided by the build-packages list above.
+      # A domain whose catalogue is still template-only contributes no .po,
+      # leaving its glob unexpanded — skip it rather than feeding msgfmt a
+      # literal `*.po`, so a domain can ship before its first translation.
       for po in myna-desktop/po/*.po myna-orchestrator/po/*.po myna-core/po/*.po; do
+        [ -e "$po" ] || continue
         lang=$(basename "$po" .po)
         domain=$(basename "$(dirname "$(dirname "$po")")")
         mkdir -p "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES"

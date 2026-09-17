@@ -26,7 +26,6 @@ import {getPointerWatcher} from 'resource:///org/gnome/shell/ui/pointerWatcher.j
 import {computePlacement, placementChanged, pointerOverFrame, shrinkWorkAreaForDock} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
-import {DictationAnnouncer} from './announcer.js';
 import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
 
 // Await the subprocess with a Cancellable instead of a bare callback, so
@@ -114,7 +113,6 @@ export class OverlayHost {
 
         this._restartTimeoutId = 0;
         this._launchedAtMs = 0;
-        this._announcer = null;
 
         // The pointer poll behind the hover fade, and whether the pointer is
         // currently over the overlay. Both last exactly as long as an
@@ -158,8 +156,8 @@ export class OverlayHost {
      * install and refresh of the snap it belongs to.
      *
      * Presence is the shared proxy's `g-name-owner`, watched directly on the
-     * very Gio.DBusProxy both the host and the announcer read — one proxy,
-     * one source of truth. The proxy is created with DO_NOT_AUTO_START, so
+     * very Gio.DBusProxy this host reads its state from — one proxy, one
+     * source of truth. The proxy is created with DO_NOT_AUTO_START, so
      * watching never brings the daemon up.
      *
      * The proxy is built asynchronously, and an extension enabled after
@@ -249,8 +247,6 @@ export class OverlayHost {
         this._subprocess = null;
         this._client = null;
         this._window = null;
-        this._announcer?.disable();
-        this._announcer = null;
     }
 
     /** Whether the host has given up after exhausting the restart budget
@@ -427,15 +423,6 @@ export class OverlayHost {
         // move; the idle unmap clears it, so the next dictation re-targets.
         this._monitorIndex = this._resolveTargetMonitor();
         this._log(`adopted renderer window (monitor ${this._monitorIndex})`);
-        // Announcer lives exactly as long as the adopted window — no window,
-        // no a11y speech (passive, no RegisterClient).
-        if (!this._announcer) {
-            this._announcer = new DictationAnnouncer({
-                proxy: this._proxy,
-                log: this._log,
-            });
-            this._announcer.enable();
-        }
         this._makeOverlay(window);
         this._connectOverview();
         this._startHoverWatch();
@@ -475,8 +462,6 @@ export class OverlayHost {
         global.backend.get_monitor_manager().disconnectObject(this);
         this._window = null;
         this._monitorIndex = -1;
-        this._announcer?.disable();
-        this._announcer = null;
         // The renderer is still running (this is an idle hide, not an exit);
         // the next non-idle state maps a fresh window that _onWindowMapped
         // adopts.
@@ -669,8 +654,6 @@ export class OverlayHost {
         this._monitorIndex = -1;
         this._client = null;
         this._subprocess = null;
-        this._announcer?.disable();
-        this._announcer = null;
         this._scheduleRestart(/* expected= */ false, uptimeMs);
     }
 

@@ -337,3 +337,26 @@ from #2.
 4. US4 → validate independently → merge.
 5. US5 → validate independently → merge.
 6. Polish → full regression → merge.
+
+---
+
+## Phase 9: Convergence
+
+Remaining work found by assessing the codebase against spec.md, plan.md, and
+the tasks above. Two findings are consequences of the rebase onto
+`integration-220627`, which replaced the GJS HUD (`hud.js`, `states.js`,
+`accent.js`, `stylesheet.css`) with the `myna-hud` renderer the Shell extension
+now merely hosts: FR-006's "both indicators identically" is satisfied by there
+being one renderer, but a gate and a comment were left pointing at files that
+no longer exist.
+
+- [ ] T083 Measure the sound-cue/announcement WER delta against a silent baseline on real hardware and check the result in as a baseline with its declared tolerance — or, if the acoustic path genuinely cannot be measured, re-ratify SC-006's watermark as explicitly unmeasurable so the gap is a recorded decision rather than an unmet MUST, per Constitution III and SC-006 (missing) — CRITICAL
+- [ ] T084 Re-point the contrast regression gate at the shipped stylesheet: `client/myna-desktop/src/coverage.rs`'s `stylesheet_colours` pins its pairs to the deleted `extensions/myna-shell/stylesheet.css`, while the HUD now ships `client/myna-hud/src/style.css` with different values, so the gate no longer guards any rendered colour, per FR-013/FR-032/SC-005 (contradicts)
+- [ ] T085 Make the impending silence auto-stop perceivable before it fires — `client/myna-desktop/src/controller.rs`'s `auto_stop_due` branch logs and stops with no prior signal on any channel, per FR-018 and US2/AC4 (missing)
+- [ ] T086 Run `quickstart.md` Scenarios 1–8 against a real GNOME session and record the results and any gaps in `quickstart.md`, per FR-031 and SC-001/SC-005/SC-007 (missing) — completes T078
+- [ ] T087 Run the packaged subset of `quickstart.md` against the strictly confined `myna` snap (now buildable via `make snap-myna`) and record any confinement-specific finding, notably whether the `desktop` plug alone reaches `org.a11y.Bus`, per FR-033 and SC-009 (missing) — completes T079
+- [ ] T088 Emit the periodic "work is still progressing" indication during long operations, which needs a deliberate-repeat path through `accessibility::AnnouncingIndicator`'s same-state dedup; the past-threshold actionable message (T070) already lands, per FR-027 (partial)
+- [ ] T089 Re-announce a repeated identical critical failure that `DbusIndicator::publish`'s per-wire-state dedup currently swallows, so a non-visual user perceives the second occurrence, per FR-024/FR-025 and `docs/project-plan.md` T79 (partial)
+- [ ] T090 Stand up an `org.a11y.Bus` in `dev/gated-tests.sh` and enrol the `MYNA_ATSPI_TESTS`-gated `atspi_hw` suite in `test-gated`, which now reaches CI through `make test-client`, per FR-030 and Constitution IV (partial) — completes T081
+- [ ] T091 Correct the stale comment at `extensions/myna-shell/host.js`'s proxy-presence block, which still describes "both the host and the announcer" reading one proxy after the GJS announcer was removed (contradicts)
+- [ ] T092 Justify or hand off the `myna-config` SwitchRow rendering added on this branch: spec Assumptions place the settings UI with a separate team, so this surface is outside the feature's stated scope even though the accessibility keys need somewhere to appear (unrequested)
