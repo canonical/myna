@@ -7,7 +7,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use futures_util::stream::SplitSink;
-use futures_util::{FutureExt, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use myna_core::TranscriptionEvent;
 use tokio::net::UnixStream;
 use tokio::sync::watch;
@@ -67,12 +67,10 @@ async fn pump<D: Dialect>(
     loop {
         tokio::select! {
             biased;
+            // Abort is the socket ending: the owner drops these events right
+            // after aborting, which would cancel any close handshake anyway.
             () = outbox.abort.aborted() => {
                 myna_core::dbg_log!("ws", "-> abort");
-                if let Some(mut writer) = idle.take() {
-                    // A close frame only if the socket takes it right away.
-                    let _ = writer.close().now_or_never();
-                }
                 return;
             }
             (writer, sent, finish) = in_flight(&mut writing), if writing.is_some() => {

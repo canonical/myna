@@ -148,6 +148,7 @@ impl Server {
 struct Received {
     audio_bytes: usize,
     finished: bool,
+    close_frame: bool,
 }
 
 struct Conn {
@@ -230,7 +231,10 @@ impl Conn {
                         }
                     }
                 }
-                Message::Close(_) => break,
+                Message::Close(_) => {
+                    received.close_frame = true;
+                    break;
+                }
                 _ => {}
             }
         }
@@ -584,7 +588,10 @@ async fn abort_closes_the_connection_while_events_are_still_held() {
         let (mut handle, mut conn) =
             futures_util::future::join(server.open(), server.accept()).await;
         handle.sink.abort();
-        bounded("the connection closing", conn.read(false)).await;
+        // Abort is the socket ending, not a close handshake, even with an
+        // idle writer that could take a close frame.
+        let received = bounded("the connection closing", conn.read(false)).await;
+        assert!(!received.close_frame, "{dialect:?}");
         let next = bounded("the event stream ending", handle.events.next()).await;
         assert!(next.is_none(), "{dialect:?}: {next:?}");
     }
