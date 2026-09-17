@@ -350,13 +350,50 @@ now merely hosts: FR-006's "both indicators identically" is satisfied by there
 being one renderer, but a gate and a comment were left pointing at files that
 no longer exist.
 
-- [ ] T083 Measure the sound-cue/announcement WER delta against a silent baseline on real hardware and check the result in as a baseline with its declared tolerance — or, if the acoustic path genuinely cannot be measured, re-ratify SC-006's watermark as explicitly unmeasurable so the gap is a recorded decision rather than an unmet MUST, per Constitution III and SC-006 (missing) — CRITICAL
-- [ ] T084 Re-point the contrast regression gate at the shipped stylesheet: `client/myna-desktop/src/coverage.rs`'s `stylesheet_colours` pins its pairs to the deleted `extensions/myna-shell/stylesheet.css`, while the HUD now ships `client/myna-hud/src/style.css` with different values, so the gate no longer guards any rendered colour, per FR-013/FR-032/SC-005 (contradicts)
-- [ ] T085 Make the impending silence auto-stop perceivable before it fires — `client/myna-desktop/src/controller.rs`'s `auto_stop_due` branch logs and stops with no prior signal on any channel, per FR-018 and US2/AC4 (missing)
+- [X] T083 Measure the sound-cue/announcement WER delta against a silent baseline on real hardware and check the result in as a baseline with its declared tolerance — or, if the acoustic path genuinely cannot be measured, re-ratify SC-006's watermark as explicitly unmeasurable so the gap is a recorded decision rather than an unmet MUST, per Constitution III and SC-006 (missing) — CRITICAL
+- [X] T084 Re-point the contrast regression gate at the shipped stylesheet: `client/myna-desktop/src/coverage.rs`'s `stylesheet_colours` pins its pairs to the deleted `extensions/myna-shell/stylesheet.css`, while the HUD now ships `client/myna-hud/src/style.css` with different values, so the gate no longer guards any rendered colour, per FR-013/FR-032/SC-005 (contradicts)
+- [X] T085 Make the impending silence auto-stop perceivable before it fires — `client/myna-desktop/src/controller.rs`'s `auto_stop_due` branch logs and stops with no prior signal on any channel, per FR-018 and US2/AC4 (missing)
 - [ ] T086 Run `quickstart.md` Scenarios 1–8 against a real GNOME session and record the results and any gaps in `quickstart.md`, per FR-031 and SC-001/SC-005/SC-007 (missing) — completes T078
 - [ ] T087 Run the packaged subset of `quickstart.md` against the strictly confined `myna` snap (now buildable via `make snap-myna`) and record any confinement-specific finding, notably whether the `desktop` plug alone reaches `org.a11y.Bus`, per FR-033 and SC-009 (missing) — completes T079
-- [ ] T088 Emit the periodic "work is still progressing" indication during long operations, which needs a deliberate-repeat path through `accessibility::AnnouncingIndicator`'s same-state dedup; the past-threshold actionable message (T070) already lands, per FR-027 (partial)
-- [ ] T089 Re-announce a repeated identical critical failure that `DbusIndicator::publish`'s per-wire-state dedup currently swallows, so a non-visual user perceives the second occurrence, per FR-024/FR-025 and `docs/project-plan.md` T79 (partial)
-- [ ] T090 Stand up an `org.a11y.Bus` in `dev/gated-tests.sh` and enrol the `MYNA_ATSPI_TESTS`-gated `atspi_hw` suite in `test-gated`, which now reaches CI through `make test-client`, per FR-030 and Constitution IV (partial) — completes T081
-- [ ] T091 Correct the stale comment at `extensions/myna-shell/host.js`'s proxy-presence block, which still describes "both the host and the announcer" reading one proxy after the GJS announcer was removed (contradicts)
-- [ ] T092 Justify or hand off the `myna-config` SwitchRow rendering added on this branch: spec Assumptions place the settings UI with a separate team, so this surface is outside the feature's stated scope even though the accessibility keys need somewhere to appear (unrequested)
+- [X] T088 Emit the periodic "work is still progressing" indication during long operations, which needs a deliberate-repeat path through `accessibility::AnnouncingIndicator`'s same-state dedup; the past-threshold actionable message (T070) already lands, per FR-027 (partial)
+- [X] T089 Re-announce a repeated identical critical failure that `DbusIndicator::publish`'s per-wire-state dedup currently swallows, so a non-visual user perceives the second occurrence, per FR-024/FR-025 and `docs/project-plan.md` T79 (partial)
+- [X] T090 Stand up an `org.a11y.Bus` in `dev/gated-tests.sh` and enrol the `MYNA_ATSPI_TESTS`-gated `atspi_hw` suite in `test-gated`, which now reaches CI through `make test-client`, per FR-030 and Constitution IV (partial) — completes T081
+- [X] T091 Correct the stale comment at `extensions/myna-shell/host.js`'s proxy-presence block, which still describes "both the host and the announcer" reading one proxy after the GJS announcer was removed (contradicts)
+- [X] T092 Justify or hand off the `myna-config` SwitchRow rendering added on this branch: spec Assumptions place the settings UI with a separate team, so this surface is outside the feature's stated scope even though the accessibility keys need somewhere to appear (unrequested)
+
+### Phase 9 outcomes
+
+Eight of the ten landed as code or as a recorded decision. Two did not, and
+are not "nearly done" — they need hardware this branch cannot reach:
+
+- **T086** needs a real GNOME session with a running screen reader. It cannot
+  be run from a headless or sandboxed environment: the AppArmor confinement in
+  some dev sandboxes blocks `org.a11y.Bus` outright, and Scenarios 1–8 turn on
+  what a user *hears and sees*, which no automated harness substitutes for.
+  Everything that can be checked without a session already is — `atspi_hw` now
+  runs against a real accessibility bus in CI (T090), so the bus protocol
+  itself is covered; what remains is the human half.
+- **T087** needs the strictly confined `myna` snap installed on that same
+  desktop. `make snap-myna` builds it, but installing and exercising a
+  confined snap is a privileged operation on a real machine. Its open question
+  is specific and worth stating: whether snapd's `desktop` plug alone reaches
+  `org.a11y.Bus`, or whether an extra interface connection is needed. plan.md
+  records this as expected-but-unconfirmed, and it stays unconfirmed.
+
+Both are left unticked deliberately. Ticking them on the strength of the
+automated coverage would misrepresent what has been verified — SC-001, SC-005,
+SC-007, and SC-009 all rest on these runs.
+
+Resolutions worth carrying forward:
+
+- **T083** did not produce a watermark, because none can be produced honestly:
+  the only way a sound cue can affect a transcript is acoustic, and neither CI
+  nor the corpus harness has an acoustic path. Re-ratified as an exempt
+  live-hardware check in plan.md's post-design re-check, with the reasoning,
+  rather than left as an unmet MUST.
+- **T088**'s repeat carries the elapsed time, so each progress indication
+  genuinely differs. No "repeat this on purpose" escape hatch was added to the
+  `Indicator` seam: the dedup keeps its guarantee for every other surface.
+- **T089** exempts only critical failures from the dedup, at both the announcer
+  and the D-Bus publisher. Safe because `completion_indicator_state` — the
+  deliberate double-call the dedup exists for — never yields one.

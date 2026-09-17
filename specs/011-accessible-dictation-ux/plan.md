@@ -149,7 +149,7 @@ Constitution v1.3.0. This feature spans the same two tiers as feature 004:
 |---|---|---|
 | I. Red-Green TDD | `AccessibilityAnnouncer` trait, coverage-matrix loader/validator, contrast-threshold checker, sound-cue player, and terminal-output changes land test-first behind fakes (Rust). GJS: pure `a11y.js`/coverage-matrix-loading modules get contract tests; actor/bus/animation code is harness-tier (manual acceptance). | PASS (Rust); EXEMPT (extension actor/bus code) |
 | II. Integration-Test Readiness | Hermetic tests use a fake `AccessibilityAnnouncer`/fake bus; a new `MYNA_ATSPI_TESTS`-gated suite exercises the real `org.a11y` bus identically on the Workshop VM and hardware, mirroring `MYNA_DBUS_TESTS`. Sound-cue playback integration reuses the existing PipeWire virtual-audio-VM story (`myna-audio`). | PASS (by design) |
-| III. Performance Watermarks | Announcement latency (≤500 ms, SC-003) and the "inert when no AT listening" cost (FR-007) are measured Rust watermarks; sound-cue WER delta (SC-006) is measured against the existing real-corpus benchmark harness (`dev/fetch_real_corpus.py` family). Extension fps/latency stays a manual observation (harness-tier exemption, as in feature 004). | GATED — watermark tasks scoped in tasks.md |
+| III. Performance Watermarks | Announcement latency (≤500 ms, SC-003) and the "inert when no AT listening" cost (FR-007) are measured Rust watermarks. Sound-cue WER delta (SC-006) has no honest measurement: the only mechanism is acoustic coupling, which neither the VM nor the corpus harness has — re-ratified as an exempt, live-hardware manual check in the post-design re-check below. Extension fps/latency stays a manual observation (harness-tier exemption, as in feature 004). | PASS (SC-003/FR-007); EXEMPT (SC-006, recorded decision) |
 | IV. Workshop-Based Dev Environment | New test-only dependency: an AT-SPI bus for `MYNA_ATSPI_TESTS` (e.g. `at-spi2-core`'s bus launcher) added to the Workshop desktop SDK in the same PR as the `atspi` crate. No new *runtime* snap plug expected — snapd's existing `desktop` plug (already declared) grants `org.a11y.Bus` access; confined-build verification (FR-033) confirms this rather than assuming it. | GATED — tracked as a Setup task |
 | V. Privacy-First, Offline-First | Announcements, coverage-matrix entries, and sound cues are content-free by construction (state/severity/recovery-action text only, authored once — FR-003, FR-024a); no transcript or raw audio reaches the accessibility bus, a sound file, or a log; no network; audio buffers unchanged (sound-cue playback is output-only, decoupled from the capture buffer). | PASS (by design) |
 
@@ -253,6 +253,7 @@ feature's decision to cover all three desktop-side surfaces (Shell HUD,
 | **GJS extension emits AT-SPI directly via raw `Gio.DBusConnection`, not a toolkit convenience call** | St/Clutter (unlike GTK 4.14+) has no `announce()`-equivalent (confirmed against `gjs.guide`'s accessibility documentation, which covers roles/relationships/states only). | Polling/mutating `Atk.StateType`/labels on an `St.Widget` does not reliably produce a *proactive* announcement independent of focus — it is the same limitation feature 004 already accepted for the Shell's visual layer; going straight to the AT-SPI protocol primitive is the smallest correct fix and is exactly what GTK does underneath `gtk_accessible_announce()`. |
 | **Extension accessibility code (`a11y.js` bus calls, `hud.js` wiring) stays harness-tier, not test-first** | Same GJS/no-nested-compositor constraint already accepted in feature 004's Constitution Check; unchanged here. | Would require a real GNOME Shell session to unit-test the actual bus call — not available headlessly (spec Edge Cases); the pure formatting/coalescing/coverage-matrix logic is extracted and *is* test-first, narrowing the exempt surface to the minimum. |
 | **New sound-output code path in `myna-desktop`** (no prior audio-*out* plumbing existed — project-plan T61) | FR-010/011 require optional, WER-safe sound cues; reusing `myna-audio`'s vendored `pipewire` crate for a playback stream is the smallest addition. | `libcanberra` (the freedesktop-standard UI-sound library) was considered and rejected: it is a new C dependency with its own sound-theme/XDG data files, working against this project's explicit, documented size-pruning effort (project-plan T66 removed GTK's icon themes for exactly this reason); PipeWire is already vendored and already the constitution's named primary audio server. |
+| **Boolean rendering added to `myna-config`**, whose settings UI the spec Assumptions place with a separate, out-of-scope feature | Not a control surface this feature designed — a repair to one it broke. `sound-cues-enabled` (FR-010) is the client schema's first boolean key, and `myna-config` enumerates that schema at runtime; before this it understood only `Choice`/`Text`/`Integer` and aborted with "unsupported GVariant type b". The spec disclaims *building* the settings UI; it does not licence leaving a shipped app crashing on a key this feature added. | (a) Omitting the key from the schema — FR-010 requires the preference to exist and persist, and the schema is where it lives; (b) leaving the app broken and handing the repair on — hands over a regression this feature caused, and the fix is one `WidgetKind` arm selected from the schema type rather than the range. The scope line still holds: no new window, page, or flow was designed, and the existing `headless_widget_smoke_covers_every_real_schema_key` contract is what proves every key renders. |
 
 ## Constitution re-check (post-design)
 
@@ -270,15 +271,47 @@ Re-evaluated after Phase 1 (research.md, data-model.md, contracts/, quickstart.m
   existing `MYNA_DBUS_TESTS`/`MYNA_PIPEWIRE_TESTS` pattern exactly (fake bus
   hermetically, real bus behind an env gate, same on VM and hardware); sound-cue
   playback reuses `myna-audio`'s existing PipeWire integration story. PASS.
-- **III. Performance Watermarks** — SC-003 (≤500 ms announce latency), FR-007
-  (inert when unobserved), and SC-006 (WER delta ≤0.5pp) are each a named,
-  measurable watermark with a declared tolerance, scoped as tasks in tasks.md.
-  GATED — tracked, not yet measured (expected: measured in the corresponding
-  implementation task, per Principle III's "MUST ship with measurements").
-- **IV. Workshop** — one new Workshop dependency identified (an AT-SPI bus for
-  `MYNA_ATSPI_TESTS`); scoped as a Setup-phase task. No new *runtime* snap plug
-  expected (existing `desktop` plug), confirmed rather than assumed by
-  quickstart.md Scenario 7. GATED — tracked.
+- **III. Performance Watermarks** — SC-003 (≤500 ms announce latency) and
+  FR-007 (inert when unobserved) are named watermarks with declared tolerances,
+  measured by `client/myna-desktop/tests/watermarks.rs` and run in CI behind
+  `MYNA_ATSPI_TESTS` (T090 stood the accessibility bus up in
+  `dev/gated-tests.sh`, so the gate is on for `make test-client`). PASS.
+
+  SC-006 (WER delta ≤0.5 pp with sound cues enabled) is **re-ratified as not
+  measurable as a checked-in watermark**, deliberately and not by omission.
+  Principle III asks for a baseline with a declared tolerance; there is no
+  environment in which this one can be produced honestly:
+
+  - The only mechanism by which a cue could change a transcript is acoustic —
+    the cue playing through speakers and re-entering an open microphone in the
+    same room. `sound::SoundCuePlayer` plays output-only on its own short-lived
+    PipeWire stream and never touches the capture buffer, so there is no
+    in-process path to measure (quickstart.md Scenario 6 states the argument in
+    full).
+  - The Workshop VM and CI have no acoustic coupling at all: a null sink and a
+    separate null source cannot bleed into one another. A run there would
+    report 0.0 pp for any build, including a broken one — a baseline that
+    passes unconditionally is worse than no baseline, because it reads as
+    evidence.
+  - `dev/bench.py`'s corpus harness feeds clip files straight to the backend
+    over the ASR socket, opening neither a microphone nor a speaker. Running it
+    with cues on and off would compare two identical code paths.
+
+  The substitute is quickstart.md Scenario 6's live-hardware acoustic check,
+  run on real speakers and a real microphone, recorded as a manual result.
+  This is the same treatment Principle III already gives the extension's
+  fps/latency observation. The number is not checked in because inventing one
+  would be fabricating data, which is the failure mode the principle exists to
+  prevent. If a future change makes the acoustic path harder to reason about —
+  a persistent or looping cue, or real echo-cancellation coupling with
+  `myna-audio` capture — this decision must be revisited, and the tool is the
+  live protocol, not the corpus harness. EXEMPT (recorded decision).
+- **IV. Workshop** — the AT-SPI bus `MYNA_ATSPI_TESTS` needs is installed by the
+  desktop SDK (`at-spi2-core`) and stood up per-run by `dev/gated-tests.sh`, so
+  the suite runs in CI rather than only on a developer's desktop. No new
+  *runtime* snap plug expected (existing `desktop` plug), confirmed rather than
+  assumed by quickstart.md Scenario 7. PASS (tooling); GATED (confined
+  confirmation, Scenario 7).
 - **V. Privacy** — every new artifact (announcements, coverage matrix, sound
   cues, failure presentations) is content-free and authored-once by
   construction; no new network dependency; no capture-path change. PASS.

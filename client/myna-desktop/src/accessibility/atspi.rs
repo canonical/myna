@@ -4,37 +4,119 @@
 //! `Announcement` events (research.md R1). Headless — no GTK dependency
 //! required.
 //!
-//! ## Strict snap confinement only permits `/org/a11y/atspi/**`
+//! ## Strict snap confinement allows a narrow member allowlist, not a prefix
 //!
-//! **Found 2026-09-01.** snapd's `desktop` interface grants exactly one
-//! blanket accessibility-bus rule (quoting the generated profile: *"unfortunate,
-//! but org.a11y.atspi is not designed for separation"*):
+//! **Found 2026-09-01, corrected 2026-09-17 against the generated profile on
+//! snapd 2.78** (`/var/lib/snapd/apparmor/profiles/snap.myna.myna`), probing
+//! from inside `snap run --shell myna.myna`. An earlier revision of this
+//! comment claimed snapd's `desktop` interface grants a blanket
+//! `dbus (receive, send) bus=accessibility path=/org/a11y/atspi/**`. **It does
+//! not.** The only blanket rule is *receive*:
 //!
 //! ```text
-//! dbus (receive, send)
+//! # Allow the accessibility services in the user session to send us any events
+//! dbus (receive)
 //!     bus=accessibility
-//!     path=/org/a11y/atspi/**
 //!     peer=(label=unconfined),
 //! ```
 //!
-//! `desktop-legacy` adds only a narrower allowlist of specific members on
-//! `/org/a11y/atspi/accessible/{root,[0-9]*}` — `Announcement` is not among
-//! them. So `/org/a11y/atspi/**` is the *entire* accessibility-bus surface a
-//! confined snap has, and an object path outside it is denied outright.
+//! Every *send* is an explicit `(path, interface, member)` triple from
+//! `desktop-legacy`, plus `{Hello,AddMatch,RemoveMatch,GetNameOwner,
+//! NameHasOwner,StartServiceByName}` on `/org/freedesktop/DBus` from
+//! `abstractions/dbus-accessibility-strict`, plus `org.a11y.Bus.GetAddress` on
+//! the *session* bus. Staying under `/org/a11y/atspi/` is therefore necessary
+//! but nowhere near sufficient — the member has to be on the list too.
 //!
-//! This module used to export at `/org/myna/dictation`, which is outside that
-//! prefix — every announcement would have been a silent AppArmor denial in the
-//! packaged build, while continuing to work perfectly in unconfined dev runs.
-//! [`OBJECT_PATH`] is now the conventional application root
-//! (`/org/a11y/atspi/accessible/root`), which is both what every real toolkit
-//! uses and inside the permitted prefix.
+//! The practical consequence for this module is that
+//! `org.freedesktop.DBus.Properties.GetAll` is permitted **only** on
+//! `/org/a11y/atspi/accessible/[0-9]*`. Probed under confinement, it is denied
+//! on every path a connection bootstrap would otherwise touch:
 //!
-//! The same rule is why `myna-snap`'s `hud` app sets `NO_AT_BRIDGE=1`: GTK's
-//! bridge derives its path from the app's bus name
-//! (`/com/canonical/Myna/Hud/a11y/**`), also outside the prefix, and is denied
-//! with no way to override the path from application code. A daemon speaking
-//! AT-SPI directly, as this module does, *can* choose its path — which is what
-//! makes the confined path viable here and not there.
+//! | path | interface | result |
+//! | --- | --- | --- |
+//! | `/org/freedesktop/DBus` | `org.freedesktop.DBus` | `AccessDenied` |
+//! | `/org/a11y/atspi/registry` | `org.a11y.atspi.Registry` | `AccessDenied` |
+//! | `/org/a11y/atspi/accessible/root` | `org.a11y.atspi.Accessible` | `AccessDenied` |
+//!
+//! (The `member="Get*"` rule that does exist on the application root is scoped
+//! to `org.a11y.atspi.Accessible`, so it does not cover `Properties.GetAll`.)
+//!
+//! This is why [`AtspiAnnouncer::connect`] builds its own [`zbus::Connection`]
+//! rather than calling `AccessibilityConnection::new()`. That constructor
+//! (`atspi-connection` 0.14, `from_address`) builds a `RegistryProxy` *and* a
+//! `zbus::fdo::DBusProxy` with zbus's default property caching; the raw
+//! `Builder::address(..).build()` underneath them is fine, because `Hello` is
+//! allowed. Every proxy this module does construct sets
+//! [`CacheProperties::No`], and the session-bus address lookup is a direct
+//! `call_method` rather than a proxy, so no property read ever happens.
+//! `tests/atspi_confined.rs` pins this against a `dbus-daemon` whose policy
+//! mirrors those denials, so the packaged-snap failure reproduces on a
+//! developer machine without a snap build.
+//!
+//! ## Connecting is necessary but not sufficient: `Announcement` is not allowed
+//!
+//! **Found 2026-09-17.** Fixing the bootstrap above lets the daemon reach the
+//! accessibility bus under confinement. It does not yet make an announcement
+//! *audible*, because `Announcement` is the one `Event.Object` member
+//! `desktop-legacy` does not grant:
+//!
+//! ```text
+//! dbus (send)
+//!     bus=accessibility
+//!     path=/org/a11y/atspi/accessible/root
+//!     interface=org.a11y.atspi.Event.Object
+//!     member="{ChildrenChanged,PropertyChange,StateChanged,TextCaretMoved}"
+//!     peer=(name=org.freedesktop.DBus, label=unconfined),
+//! ```
+//!
+//! Measured by A/B against that rule, sending from `snap run --shell myna.myna`:
+//!
+//! | member | on the allowlist? | outcome |
+//! | --- | --- | --- |
+//! | `ChildrenChanged` | yes | delivered; no denial logged |
+//! | `Announcement` | no | `apparmor="DENIED" operation="dbus_signal" mask="send"` |
+//!
+//! Two traps make this easy to measure wrongly, and this investigation fell
+//! into both before landing on the table above:
+//!
+//! - **`dbus-monitor` is not a policy oracle.** It joins with `BecomeMonitor`
+//!   and is handed traffic regardless of whether policy would have delivered
+//!   it, so it reports everything as arriving. The giveaway was a control
+//!   signal on a path matched by no rule at all, which it also "received". Use
+//!   a real subscriber — a `Gio.DBusConnection` calling `signal_subscribe`.
+//! - **The subscriber has to be genuinely unconfined**, because the rule ends
+//!   `peer=(label=unconfined)`. A subscriber started from a VS Code terminal
+//!   inherits the `vscode` label, and then *every* member is denied — briefly
+//!   making this look like a much broader problem than it is. `systemd-run
+//!   --user` gives an unconfined one.
+//!
+//! The denials are logged by `dbus-broker`, in userspace, via the *user*
+//! journal — not by the kernel. `journalctl -k` shows nothing, which is not
+//! evidence of permission:
+//!
+//! ```text
+//! journalctl --user | grep 'apparmor="DENIED".*accessibility'
+//! ```
+//!
+//! So the remaining work is a one-member addition to snapd's `desktop-legacy`
+//! interface, not a change here. Until it lands, a packaged build connects
+//! cleanly and stays silent, and `announce` cannot detect that: a signal is
+//! fire-and-forget, so the send reports success either way. Callers who need a
+//! guarantee that something was actually spoken should use the
+//! speech-dispatcher path, whose socket
+//! (`/run/user/[0-9]*/speech-dispatcher/speechd.sock`) the profile does grant
+//! and which was verified end-to-end from inside confinement on the same day.
+//!
+//! This module also used to export at `/org/myna/dictation`, outside
+//! `/org/a11y/atspi/` entirely. [`OBJECT_PATH`] is now the conventional
+//! application root, which is both what every real toolkit uses and inside the
+//! permitted prefix.
+//!
+//! The path constraint is also why `myna-snap`'s `hud` app sets
+//! `NO_AT_BRIDGE=1`: GTK's bridge derives its path from the app's bus name
+//! (`/com/canonical/Myna/Hud/a11y/**`), outside the prefix, with no way to
+//! override the path from application code. A daemon speaking AT-SPI directly,
+//! as this module does, *can* choose its path.
 //!
 //! ## The object `AnnouncementEvent.item` points at must actually answer
 //!
@@ -81,14 +163,16 @@
 //! container ever received the event at all.
 
 use async_trait::async_trait;
-use atspi::connection::AccessibilityConnection;
 use atspi::events::object::AnnouncementEvent;
+use atspi::events::{DBusInterface, DBusMember, MessageConversion};
 use atspi::proxy::socket::SocketProxy;
 use atspi::{
     Interface, InterfaceSet, ObjectRef, ObjectRefOwned, Politeness, RelationType, Role, StateSet,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use zbus::proxy::CacheProperties;
+use zbus::Address;
 
 use super::{AccessibilityAnnouncer, AnnounceError, AnnouncementText, Severity};
 
@@ -101,11 +185,44 @@ use super::{AccessibilityAnnouncer, AnnounceError, AnnouncementText, Severity};
 /// application is correct rather than a collision.
 ///
 /// **Must stay under `/org/a11y/atspi/`** (see module docs, "Strict snap
-/// confinement only permits `/org/a11y/atspi/**`"): snapd's `desktop`
-/// interface grants `dbus (receive, send) bus=accessibility
-/// path=/org/a11y/atspi/**` and nothing outside it, so a bespoke path makes
-/// every announcement a silent AppArmor denial in the packaged build.
+/// confinement allows a narrow member allowlist, not a prefix"): a bespoke
+/// path matches no `desktop-legacy` rule at all, making every announcement a
+/// silent AppArmor denial in the packaged build.
 const OBJECT_PATH: &str = "/org/a11y/atspi/accessible/root";
+
+/// Resolves the accessibility bus address the way at-spi2-core itself does:
+/// `AT_SPI_BUS_ADDRESS` if set, otherwise `org.a11y.Bus.GetAddress` on the
+/// session bus.
+///
+/// Uses [`zbus::Connection::call_method`] rather than a generated proxy on
+/// purpose: snapd permits exactly `member=GetAddress` on `/org/a11y/bus`, so a
+/// proxy that cached properties there would be denied before it ever asked for
+/// the address (see module docs).
+async fn accessibility_bus_address() -> Result<String, AnnounceError> {
+    if let Ok(address) = std::env::var("AT_SPI_BUS_ADDRESS") {
+        if !address.is_empty() {
+            return Ok(address);
+        }
+    }
+
+    let session = zbus::Connection::session()
+        .await
+        .map_err(|e| AnnounceError(format!("could not reach the session bus: {e}")))?;
+    let reply = session
+        .call_method(
+            Some("org.a11y.Bus"),
+            "/org/a11y/bus",
+            Some("org.a11y.Bus"),
+            "GetAddress",
+            &(),
+        )
+        .await
+        .map_err(|e| AnnounceError(format!("org.a11y.Bus.GetAddress failed: {e}")))?;
+    reply
+        .body()
+        .deserialize()
+        .map_err(|e| AnnounceError(format!("org.a11y.Bus.GetAddress returned no address: {e}")))
+}
 
 /// Maps this crate's [`Severity`] to AT-SPI's [`Politeness`] (ARIA live-region
 /// convention): a critical failure interrupts (`Assertive`), everything else
@@ -297,7 +414,7 @@ impl ApplicationObject {
 /// `org.a11y.atspi.Accessible` D-Bus interface a generic AT can discover
 /// unprompted — see the module doc comment.
 pub struct AtspiAnnouncer {
-    connection: AccessibilityConnection,
+    connection: zbus::Connection,
     item: ObjectRefOwned,
     state: Arc<Mutex<SharedAccessibleState>>,
 }
@@ -317,11 +434,31 @@ impl AtspiAnnouncer {
     /// still works correctly without it — only cross-application discovery
     /// (e.g. a "list running accessible applications" query) would miss us.
     pub async fn connect() -> Result<Self, AnnounceError> {
-        let connection = AccessibilityConnection::new()
+        let address = accessibility_bus_address().await?;
+        Self::connect_to(&address).await
+    }
+
+    /// [`connect`](Self::connect) against an explicit bus address, skipping
+    /// the `org.a11y.Bus` lookup.
+    ///
+    /// This is the whole of `connect()` bar address discovery, so
+    /// `tests/atspi_confined.rs` can point it at a `dbus-daemon` whose policy
+    /// mirrors the snap's AppArmor denials and exercise the real bootstrap.
+    pub async fn connect_to(address: &str) -> Result<Self, AnnounceError> {
+        let address: Address = address
+            .parse()
+            .map_err(|e| AnnounceError(format!("malformed accessibility bus address: {e}")))?;
+        // Deliberately not `AccessibilityConnection::new()`: it builds a
+        // `RegistryProxy` and a `zbus::fdo::DBusProxy` with zbus's default
+        // property caching, and `Properties.GetAll` is denied on both their
+        // paths under strict confinement (see module docs). The raw builder
+        // only sends `Hello`, which is allowed.
+        let connection = zbus::connection::Builder::address(address)
+            .map_err(|e| AnnounceError(format!("could not connect to org.a11y.Bus: {e}")))?
+            .build()
             .await
             .map_err(|e| AnnounceError(format!("could not connect to org.a11y.Bus: {e}")))?;
         let unique_name = connection
-            .connection()
             .unique_name()
             .ok_or_else(|| AnnounceError("accessibility connection has no unique name".into()))?
             .to_owned();
@@ -332,7 +469,7 @@ impl AtspiAnnouncer {
 
         let state = Arc::new(Mutex::new(SharedAccessibleState::default()));
 
-        let object_server = connection.connection().object_server();
+        let object_server = connection.object_server();
         object_server
             .at(
                 path.clone(),
@@ -349,7 +486,11 @@ impl AtspiAnnouncer {
             .await
             .map_err(|e| AnnounceError(format!("could not export the application object: {e}")))?;
 
-        match SocketProxy::builder(connection.connection()).build().await {
+        match SocketProxy::builder(&connection)
+            .cache_properties(CacheProperties::No)
+            .build()
+            .await
+        {
             Ok(socket) => {
                 if let Err(e) = socket.embed(&(unique_name.as_str(), path.as_ref())).await {
                     eprintln!(
@@ -416,8 +557,25 @@ impl AccessibilityAnnouncer for AtspiAnnouncer {
             text: text.as_str().to_string(),
             live: politeness_for(severity),
         };
+        // The hand-rolled equivalent of `AccessibilityConnection::send_event`,
+        // which is unavailable here because this module owns a plain
+        // `zbus::Connection` (see module docs on why).
+        let message = zbus::Message::signal(
+            OBJECT_PATH,
+            <AnnouncementEvent as DBusInterface>::DBUS_INTERFACE,
+            <AnnouncementEvent as DBusMember>::DBUS_MEMBER,
+        )
+        .and_then(|builder| {
+            builder.sender(
+                self.connection
+                    .unique_name()
+                    .expect("a bus-connected announcer always has a unique name"),
+            )
+        })
+        .and_then(|builder| builder.build(&event.body()))
+        .map_err(|e| AnnounceError(format!("failed to build Announcement: {e}")))?;
         self.connection
-            .send_event(event)
+            .send(&message)
             .await
             .map_err(|e| AnnounceError(format!("failed to emit Announcement: {e}")))
     }

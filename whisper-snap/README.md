@@ -40,12 +40,30 @@ sudo snap install --dangerous \
 
 sudo snap connect myna-whisper:hardware-observe
 sudo snap connect myna-whisper:opengl   # if not auto-connected
+sudo snap connect myna-whisper:system-observe   # the server daemon needs this
 
 # Sideloaded snaps don't auto-connect interfaces before the install hook,
 # so select the engine manually once:
 sudo myna-whisper.whisper use-engine --auto --assume-yes
 sudo snap restart myna-whisper.server
 ```
+
+`system-observe` is not optional on a sideload: CTranslate2/ONNX Runtime read
+`/sys/fs/cgroup/**` and `/proc/**` for CPU topology at startup, so without it
+the `server` daemon exits immediately and keeps doing so until systemd's start
+limit trips — `Job for snap.myna-whisper.server.service failed because start of
+the service was attempted too often`. Clearing that needs a `reset-failed`,
+because systemd will not retry on its own:
+
+```shell
+sudo snap connect myna-whisper:system-observe
+sudo systemctl reset-failed snap.myna-whisper.server.service
+sudo snap start myna-whisper.server
+```
+
+`snap connections myna-whisper` is the quickest check — any plug showing `-` in
+the Slot column is unconnected. Reach for it before `snap logs`, which is
+typically empty in this failure mode (the process dies before it logs).
 
 Watch the server: `sudo snap logs -f myna-whisper.server`. The socket appears at
 `/var/snap/myna-whisper/common/share/provider/myna.sock`.

@@ -40,18 +40,29 @@ use myna_orchestrator::{
 /// `silence_auto_stop_seconds`) — this is a fixed backstop, not a session
 /// policy.
 ///
-/// **Known scope decision**: FR-027 also describes a *periodic* non-visual
-/// progress ping before this threshold — deliberately not implemented. A
-/// repeat announcement of an unchanged state (there is no new
-/// `IndicatorState` to move to while still waiting on `Ready`) would be
-/// silently swallowed by `accessibility::AnnouncingIndicator`'s intentional
-/// same-state dedup (added for US1 to fix a real double-`set_state` bug),
-/// which has no "repeat this on purpose" escape hatch today. Adding one
-/// would mean either a new `Indicator` trait method (rippling through every
-/// implementor: `dbus`/`gtk`/`notify`/`mock`) or relaxing a dedup guarantee
-/// other surfaces rely on — judged out of scope for this pass; tracked as a
-/// follow-up in `docs/project-plan.md` rather than worked around here.
+/// **Repeating without an escape hatch**: the indication repeats every
+/// [`MODEL_LOAD_PING_INTERVAL`] thereafter, and each repeat carries the
+/// elapsed time as its detail. That is not decoration to dodge
+/// `AnnouncingIndicator`'s same-state dedup — it is the content the
+/// requirement asks for. "Still loading" said again is only marginally more
+/// informative than silence; "still loading, 45 seconds" is what lets a user
+/// judge whether to keep waiting. Because each indication genuinely differs,
+/// no "repeat this on purpose" escape hatch is needed in the `Indicator`
+/// seam, and the dedup keeps its guarantee intact for every other surface.
 const MODEL_LOAD_THRESHOLD: Duration = Duration::from_secs(15);
+
+/// How often the "still working" indication repeats once
+/// [`MODEL_LOAD_THRESHOLD`] has passed (FR-027). A single notice tells the
+/// user the load is slow; only a repeat tells them it is still alive, which
+/// is the difference between waiting and giving up.
+const MODEL_LOAD_PING_INTERVAL: Duration = Duration::from_secs(15);
+
+/// How long after a `Loading` window opened the `pings_sent`-th (0-based)
+/// progress indication is due. Pure, so the deadline arithmetic the select
+/// loop depends on is testable without a clock.
+fn load_ping_offset(pings_sent: u32) -> Duration {
+    MODEL_LOAD_THRESHOLD + MODEL_LOAD_PING_INTERVAL * pings_sent
+}
 
 /// Has `elapsed` (time since a `Loading` phase began, with no `Ready`/
 /// terminal event since) crossed [`MODEL_LOAD_THRESHOLD`] (T066)? A pure
@@ -338,10 +349,37 @@ impl AutoStop {
 /// Measured in captured audio, so a device that stops delivering (already
 /// its own fault, in capture) cannot look like a silent user.
 pub fn auto_stop_due(stats: &AudioStats, policy: AutoStop) -> bool {
-    let since_voice = stats
+    policy.silence > Duration::ZERO && silent_for(stats) >= policy.silence
+}
+
+/// How long the session has been quiet: captured audio since voice was last
+/// heard, or since the start if it never was.
+fn silent_for(stats: &AudioStats) -> Duration {
+    stats
         .captured
-        .saturating_sub(stats.last_voice.unwrap_or(Duration::ZERO));
-    policy.silence > Duration::ZERO && since_voice >= policy.silence
+        .saturating_sub(stats.last_voice.unwrap_or(Duration::ZERO))
+}
+
+/// How long before the auto-stop the user is warned (FR-018). Long enough
+/// to say something and keep the session, short enough not to nag through
+/// an ordinary pause for breath.
+const AUTO_STOP_WARNING_LEAD: Duration = Duration::from_secs(5);
+
+/// The lead actually used for `silence`. A configurable interval can be
+/// shorter than the fixed lead, and a warning that fired at zero silence
+/// would warn on every pause and give no interval to react in — so the lead
+/// is capped at a third of the interval, leaving two thirds of quiet before
+/// it and a real window after it.
+fn warning_lead(silence: Duration) -> Duration {
+    AUTO_STOP_WARNING_LEAD.min(silence / 3)
+}
+
+/// Whether the impending auto-stop should have been announced by now
+/// (FR-018). Stays true once the stop itself is due: a caller comparing
+/// successive stats snapshots must not be able to step over the window.
+pub fn auto_stop_warning_due(stats: &AudioStats, policy: AutoStop) -> bool {
+    policy.silence > Duration::ZERO
+        && silent_for(stats) >= policy.silence.saturating_sub(warning_lead(policy.silence))
 }
 
 /// A tap for a session that never opened the microphone: never polled, and
@@ -712,15 +750,22 @@ impl DesktopController {
         // (including the entire rest of a warm-model utterance, where
         // `Loading` never fires).
         let mut loading_since: Option<tokio::time::Instant> = None;
-        // Set once the threshold fires for this utterance, so the watchdog
-        // branch below is a one-shot per utterance, not a repeat every poll
-        // (an `IndicatorState` transition already latches visibly/audibly;
-        // re-firing it every loop iteration once the deadline has passed
-        // would just resend the identical notice). Read back into
-        // `self.last_notice` after the loop (see below) — the loop only
-        // reborrows `self.indicator`, not `self`, so it cannot call
-        // `self.report_failure` directly.
+        // FR-018: whether this quiet run has already been warned about, so
+        // the warning fires once rather than on every stats snapshot for
+        // however long the lead lasts. Cleared when voice returns, so a
+        // session that outlives several pauses is warned before each
+        // impending stop, not only the first.
+        let mut silence_warned = false;
+        // Set once the threshold fires for this utterance, so the terminal
+        // disposition below can record the notice in `self.last_notice` —
+        // the loop only reborrows `self.indicator`, not `self`, so it cannot
+        // call `self.report_failure` directly.
         let mut model_load_slow: Option<&'static FailurePresentation> = None;
+        // How many progress indications this `Loading` window has emitted,
+        // which is also the index of the next one due (FR-027). Reset
+        // wherever `loading_since` is cleared, so a second slow load in the
+        // same utterance starts its count afresh.
+        let mut load_pings: u32 = 0;
 
         let outcome = loop {
             // Both sides are finished: the session has its result and its
@@ -730,15 +775,12 @@ impl DesktopController {
                     break result;
                 }
             }
-            // A one-shot deadline for the FR-027 "model load is taking a
-            // while" notice: `Some` only while a `Loading` window is open
-            // and hasn't already fired. Rebuilt fresh each iteration (cheap,
-            // and the standard shape for an optional timer inside
-            // `loop { select! {..} }` — the *absolute* deadline is stable
-            // across iterations, so this doesn't restart the wait).
-            let load_deadline = loading_since
-                .filter(|_| model_load_slow.is_none())
-                .map(|since| since + MODEL_LOAD_THRESHOLD);
+            // The deadline for the next FR-027 progress indication: `Some`
+            // only while a `Loading` window is open. Rebuilt fresh each
+            // iteration (cheap, and the standard shape for an optional timer
+            // inside `loop { select! {..} }` — the *absolute* deadline is
+            // stable across iterations, so this doesn't restart the wait).
+            let load_deadline = loading_since.map(|since| since + load_ping_offset(load_pings));
 
             tokio::select! {
                 biased;
@@ -760,6 +802,7 @@ impl DesktopController {
                         stop.stop();
                         ending = ending.or(Ending::FocusLost);
                         loading_since = None;
+                        load_pings = 0;
                         enter_finalizing(state, indicator.as_mut()).await;
                         // US3/T058 (FR-010): the immediate "stopped
                         // listening, now processing" cue — distinct from the
@@ -784,6 +827,7 @@ impl DesktopController {
                         stop.stop();
                         ending = ending.or(Ending::TargetGone);
                         loading_since = None;
+                        load_pings = 0;
                         // Same trigger-parity resync as FocusOut, above.
                         trigger.resync().await;
                         trigger_open = false;
@@ -797,6 +841,7 @@ impl DesktopController {
                         myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
                         stop.stop();
                         loading_since = None;
+                        load_pings = 0;
                         enter_finalizing(state, indicator.as_mut()).await;
                         // US3/T058 (FR-010): see the FocusOut branch above —
                         // same immediate acknowledgment cue, same rationale.
@@ -811,6 +856,7 @@ impl DesktopController {
                         trigger_open = false;
                         stop.stop();
                         loading_since = None;
+                        load_pings = 0;
                         enter_finalizing(state, indicator.as_mut()).await;
                         sound.play(CueKind::StopListening);
                     }
@@ -822,13 +868,65 @@ impl DesktopController {
                 changed = stats.changed(), if stats_open && done.is_none() => {
                     if changed.is_err() {
                         stats_open = false;
-                    } else if auto_stop_due(&stats.borrow(), auto_stop.get()) {
-                        myna_core::info_log!("ctrl", "silence timeout: graceful stop, finalizing");
-                        stop.stop();
-                        enter_finalizing(state, indicator.as_mut()).await;
-                        trigger.resync().await;
-                        trigger_open = false;
-                        stats_open = false;
+                    } else {
+                        let policy = auto_stop.get();
+                        // Both predicates off one snapshot, and the borrow
+                        // dropped before any `.await` below.
+                        let (stop_due, warn_due) = {
+                            let snapshot = stats.borrow();
+                            (
+                                auto_stop_due(&snapshot, policy),
+                                auto_stop_warning_due(&snapshot, policy),
+                            )
+                        };
+                        if warn_due && !silence_warned {
+                            // FR-018: the impending end must be perceivable
+                            // *before* it happens, so the warning is emitted
+                            // ahead of the stop check below rather than as
+                            // an alternative to it. Ordinarily the two are a
+                            // full lead apart, because capture delivers
+                            // stats every audio quantum and the lead is
+                            // seconds. They collapse into one pass only if a
+                            // single snapshot jumps across both thresholds,
+                            // which needs a chunk longer than the lead; the
+                            // warning still goes out first, where checking
+                            // the stop first would end the session having
+                            // never warned at all. The stop is not deferred
+                            // to the next snapshot: a stream that has gone
+                            // quiet may not produce one, and a session that
+                            // never ends is the worse failure.
+                            //
+                            // Fires once per quiet run — the flag clears
+                            // below when voice returns — on the channels the
+                            // recording state already uses: a notice (shown
+                            // on the HUD, spoken by the announcer) and a
+                            // distinct cue, so never sound alone (FR-009).
+                            silence_warned = true;
+                            myna_core::info_log!("ctrl", "silence timeout approaching: warning");
+                            indicator
+                                .set_state(IndicatorState::recoverable(gettext(
+                                    "Still listening. Dictation will stop soon unless you speak.",
+                                )))
+                                .await;
+                            sound.play(CueKind::SilenceWarning);
+                        }
+                        if stop_due {
+                            myna_core::info_log!("ctrl", "silence timeout: graceful stop, finalizing");
+                            stop.stop();
+                            enter_finalizing(state, indicator.as_mut()).await;
+                            trigger.resync().await;
+                            trigger_open = false;
+                            stats_open = false;
+                        } else if silence_warned && !warn_due {
+                            // Voice returned before the stop: the session is
+                            // not ending after all, so take the notice back
+                            // down and re-arm the warning for the next quiet
+                            // run. Left alone the notice would auto-dismiss
+                            // to `idle`, which is the wrong resting state
+                            // for a session that is still recording.
+                            silence_warned = false;
+                            indicator.set_state(IndicatorState::Recording).await;
+                        }
                     }
                 }
                 // Before the queue, so the arms above are already shut off by
@@ -849,6 +947,7 @@ impl DesktopController {
                             | OrchestratorEvent::Done(_)
                             | OrchestratorEvent::Error { .. } => {
                                 loading_since = None;
+                                load_pings = 0;
                             }
                             _ => {}
                         }
@@ -870,18 +969,18 @@ impl DesktopController {
                     // The session dropped its sender: nothing more can arrive.
                     None => events_open = false,
                 },
-                // FR-027/T066/T070: the model load is taking longer than
-                // `MODEL_LOAD_THRESHOLD` with no `Ready` yet — surface an
-                // actionable notice so a non-visual user can tell "still
-                // loading" from "hung" (visually, `Recording` is shown
-                // throughout both phases identically — see
+                // FR-027/T066/T070/T088: the model load has been running for
+                // `MODEL_LOAD_THRESHOLD`, and then for every
+                // `MODEL_LOAD_PING_INTERVAL` after that, with no `Ready` yet
+                // — surface an actionable notice so a non-visual user can
+                // tell "still loading" from "hung" (visually, `Recording` is
+                // shown throughout both phases identically — see
                 // `event_to_indicator`'s `Loading`/`Ready` arm — so this is
                 // the only signal a non-visual user gets here). Lowest
                 // select priority: a real event/edge always wins a tie.
-                // One-shot per utterance (see `model_load_slow` above); the
-                // `if` guard also disables this branch entirely once there
-                // is no open `Loading` window, so `sleep_until` is never
-                // polled needlessly.
+                // The `if` guard disables this branch entirely once there is
+                // no open `Loading` window, so `sleep_until` is never polled
+                // needlessly.
                 () = tokio::time::sleep_until(load_deadline.unwrap_or_else(tokio::time::Instant::now)), if load_deadline.is_some() => {
                     // Defensive consistency check between the deadline this
                     // branch just woke up for and `loading_exceeds_threshold`
@@ -894,8 +993,18 @@ impl DesktopController {
                         .unwrap_or(false));
                     let presentation = failure::lookup(failure::MODEL_LOAD_SLOW)
                         .expect("MODEL_LOAD_SLOW must be registered by default_registry");
-                    myna_core::info_log!("ctrl", "model load exceeded {MODEL_LOAD_THRESHOLD:?} with no Ready yet");
-                    let state_update = IndicatorState::from_failure(presentation, None);
+                    let waited = loading_since
+                        .map(|since| since.elapsed())
+                        .unwrap_or(MODEL_LOAD_THRESHOLD);
+                    load_pings += 1;
+                    myna_core::info_log!("ctrl", "model load still running after {waited:?} with no Ready yet");
+                    // The elapsed time is the progress: it is what makes one
+                    // indication distinguishable from the last, both to the
+                    // user deciding whether to keep waiting and to the
+                    // same-state dedup downstream.
+                    let detail = gettext("still working after %s seconds")
+                        .replace("%s", &waited.as_secs().to_string());
+                    let state_update = IndicatorState::from_failure(presentation, Some(&detail));
                     if let IndicatorState::Error { message, .. } = &state_update {
                         eprintln!("myna-desktop: {message}");
                     }
@@ -1303,6 +1412,22 @@ mod tests {
     // ── T066: the loading-threshold predicate (hermetic, plain Duration
     //    values — no real or paused clock needed for the pure logic) ───────
 
+    /// FR-027: the first indication lands on the threshold, and every one
+    /// after it a fixed interval later — so a load that never finishes keeps
+    /// saying so at a steady rhythm rather than once and then never again.
+    #[test]
+    fn progress_indications_start_at_the_threshold_and_then_repeat() {
+        assert_eq!(load_ping_offset(0), MODEL_LOAD_THRESHOLD);
+        assert_eq!(
+            load_ping_offset(1),
+            MODEL_LOAD_THRESHOLD + MODEL_LOAD_PING_INTERVAL
+        );
+        assert_eq!(
+            load_ping_offset(4) - load_ping_offset(3),
+            MODEL_LOAD_PING_INTERVAL
+        );
+    }
+
     #[test]
     fn loading_exceeds_threshold_is_false_before_the_threshold() {
         assert!(!loading_exceeds_threshold(Duration::from_secs(1)));
@@ -1576,6 +1701,63 @@ mod tests {
     fn a_zero_silence_setting_never_stops_however_long_the_session() {
         let policy = AutoStop::toggle(Duration::ZERO);
         assert!(!auto_stop_due(&progress(3_600_000, None), policy));
+    }
+
+    // ── Auto-stop warning (FR-018: perceivable *before* it happens) ──────────
+
+    #[test]
+    fn a_policy_that_never_stops_never_warns() {
+        assert!(!auto_stop_warning_due(
+            &progress(3_600_000, None),
+            AutoStop::off()
+        ));
+        assert!(!auto_stop_warning_due(
+            &progress(3_600_000, None),
+            AutoStop::toggle(Duration::ZERO)
+        ));
+    }
+
+    #[test]
+    fn the_warning_comes_before_the_stop_not_with_it() {
+        let policy = AutoStop::toggle(Duration::from_secs(30));
+        // Lead is 5s for a 30s timeout: quiet at 24.9s is still silent.
+        assert!(!auto_stop_warning_due(&progress(24_900, None), policy));
+        // At 25s the warning is due and the stop is not.
+        assert!(auto_stop_warning_due(&progress(25_000, None), policy));
+        assert!(!auto_stop_due(&progress(25_000, None), policy));
+    }
+
+    #[test]
+    fn the_warning_is_still_due_once_the_stop_is() {
+        // The predicate stays true through the stop, so a caller that polls
+        // it cannot miss the window between two stats snapshots.
+        let policy = AutoStop::toggle(Duration::from_secs(30));
+        assert!(auto_stop_warning_due(&progress(30_000, None), policy));
+    }
+
+    #[test]
+    fn the_warning_counts_from_the_last_voice() {
+        let policy = AutoStop::toggle(Duration::from_secs(30));
+        assert!(!auto_stop_warning_due(
+            &progress(44_000, Some(20_000)),
+            policy
+        ));
+        assert!(auto_stop_warning_due(
+            &progress(45_000, Some(20_000)),
+            policy
+        ));
+    }
+
+    /// A short timeout must not warn from the very first sample: the lead
+    /// shrinks with the interval so there is always some silence before the
+    /// warning, and always some warning before the stop.
+    #[test]
+    fn a_short_timeout_shortens_the_lead_rather_than_warning_immediately() {
+        let policy = AutoStop::toggle(Duration::from_secs(3));
+        assert!(!auto_stop_warning_due(&progress(0, None), policy));
+        assert!(!auto_stop_warning_due(&progress(1_900, None), policy));
+        assert!(auto_stop_warning_due(&progress(2_000, None), policy));
+        assert!(!auto_stop_due(&progress(2_000, None), policy));
     }
 
     #[test]

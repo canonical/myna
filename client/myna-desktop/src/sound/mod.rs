@@ -38,9 +38,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::preferences::Preferences;
 
-/// The four sound cues FR-010 names: session start, stop listening, session
-/// end, and failure. Content-free by construction — a fixed enum, never a
-/// string that could carry transcript text (constitution V).
+/// The sound cues FR-010 names — session start, stop listening, session end
+/// and failure — plus the auto-stop warning FR-018 requires. Content-free by
+/// construction — a fixed enum, never a string that could carry transcript
+/// text (constitution V).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CueKind {
     SessionStart,
@@ -54,6 +55,11 @@ pub enum CueKind {
     StopListening,
     SessionEnd,
     Failure,
+    /// The silence auto-stop is about to end the session (FR-018). Played
+    /// once per quiet run, a lead interval before the stop, so the end is
+    /// perceivable *before* it happens rather than only after — and so a
+    /// user who wants to keep the session has time to speak.
+    SilenceWarning,
 }
 
 /// The sound-cue playback seam (mirrors `crate::indicator::Indicator` and

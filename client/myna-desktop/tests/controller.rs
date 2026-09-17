@@ -726,6 +726,72 @@ async fn a_model_load_past_the_threshold_surfaces_an_actionable_notice() {
     );
 }
 
+/// FR-027: a long operation must keep indicating that work is still
+/// progressing, not fall silent after one notice. A load that runs for four
+/// threshold-plus-interval windows must be reported more than once — and
+/// each report must differ, or the announcer's same-state dedup (and the
+/// D-Bus publisher's) would swallow every repeat.
+#[tokio::test(start_paused = true)]
+async fn a_long_model_load_keeps_indicating_that_work_is_progressing() {
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Loading).await;
+            tokio::time::sleep(Duration::from_secs(70)).await;
+            let _ = tx.send(OrchestratorEvent::Ready).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    let mut controller = build_with_trigger(
+        HeldTrigger { pressed: false },
+        MockInjector::new(),
+        indicator,
+        session,
+    );
+    let _ = tokio::time::timeout(Duration::from_secs(300), controller.run()).await;
+
+    let states = log.lock().unwrap().clone();
+    let pings: Vec<&IndicatorState> = states
+        .iter()
+        .filter(|s| {
+            matches!(
+                s,
+                IndicatorState::Error {
+                    presentation: Some(p),
+                    ..
+                } if p.id == myna_core::failure::MODEL_LOAD_SLOW
+            )
+        })
+        .collect();
+
+    assert!(
+        pings.len() > 1,
+        "a load this long must be reported repeatedly, not once: {states:?}"
+    );
+
+    let messages: std::collections::HashSet<&str> = pings
+        .iter()
+        .filter_map(|s| match s {
+            IndicatorState::Error { message, .. } => Some(message.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        messages.len(),
+        pings.len(),
+        "each progress indication must differ from the last, or the \
+         same-state dedup swallows it: {messages:?}"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_model_load_under_the_threshold_never_surfaces_a_notice() {
     let indicator = MockIndicator::new();
@@ -1914,6 +1980,60 @@ async fn a_toggle_session_ends_itself_after_the_silence_timeout() {
     // ...and with the toggle's parity resynced, since no edge was read off the
     // trigger for this end (the FocusOut lesson).
     assert!(resynced.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// FR-018: the impending automatic end must be perceivable *before* it
+/// happens. The warning rides the channels the recording state already uses
+/// — a notice on the indicator (visible on the HUD, spoken by the announcer)
+/// and its own cue — so it is never sound alone (FR-009).
+#[tokio::test]
+async fn the_silence_auto_stop_warns_before_it_ends_the_session() {
+    let trigger = ProbeTrigger::new(Then::WaitForResync);
+    let injector = MockInjector::new();
+    let indicator = MockIndicator::new();
+    let states = indicator.log();
+    let sound = myna_desktop::sound::FakeSoundCuePlayer::new();
+    let cues = sound.log();
+
+    let mut controller = DesktopController::builder()
+        .trigger(trigger)
+        .injector(injector)
+        .indicator(indicator)
+        .sound(sound)
+        .session(observed_session(silent_then_live))
+        .auto_stop(AutoStop::toggle(Duration::from_millis(500)))
+        .build();
+    tokio::time::timeout(Duration::from_secs(10), controller.run())
+        .await
+        .expect("the controller must come back to idle on its own");
+
+    let states = states.lock().unwrap();
+    let warning = states
+        .iter()
+        .position(|s| {
+            matches!(
+                s,
+                IndicatorState::Error {
+                    recoverable: true,
+                    ..
+                }
+            )
+        })
+        .expect("the impending auto-stop must be announced on the indicator");
+    let finalizing = states
+        .iter()
+        .position(|s| *s == IndicatorState::Finalizing)
+        .expect("the session must still finalize");
+    assert!(
+        warning < finalizing,
+        "the warning must precede the stop, not accompany it: {states:?}"
+    );
+
+    let cues = cues.lock().unwrap();
+    assert!(
+        cues.contains(&myna_desktop::sound::CueKind::SilenceWarning),
+        "the impending auto-stop must also be audible: {cues:?}"
+    );
 }
 
 #[tokio::test]

@@ -106,6 +106,11 @@ fn silence(duration: Duration) -> Vec<i16> {
 ///   50 ms gap) — deliberately the most different shape (double-pulse, not
 ///   single-tone) as well as the lowest pitch, so it cannot be mistaken for
 ///   either transition cue even by someone who cannot distinguish pitch well.
+/// - `SilenceWarning`: two brief mid-pitched pulses (587 Hz, ~70 ms each,
+///   with a 90 ms gap) — a double-pulse like `Failure` so it reads as a
+///   prompt rather than a state change, but well above `Failure`'s pitch
+///   and much shorter, because nothing has gone wrong: it is asking for a
+///   reply, not reporting a problem.
 pub fn synth_cue(cue: CueKind) -> Vec<i16> {
     match cue {
         CueKind::SessionStart => sine_tone(880.0, Duration::from_millis(180), 0.7),
@@ -115,6 +120,12 @@ pub fn synth_cue(cue: CueKind) -> Vec<i16> {
             let mut clip = sine_tone(220.0, Duration::from_millis(150), 0.8);
             clip.extend(silence(Duration::from_millis(50)));
             clip.extend(sine_tone(220.0, Duration::from_millis(150), 0.8));
+            clip
+        }
+        CueKind::SilenceWarning => {
+            let mut clip = sine_tone(587.3, Duration::from_millis(70), 0.6);
+            clip.extend(silence(Duration::from_millis(90)));
+            clip.extend(sine_tone(587.3, Duration::from_millis(70), 0.6));
             clip
         }
     }
@@ -323,11 +334,12 @@ mod tests {
 
     // ── T057 (hermetic, no PipeWire needed): the synthesis logic itself ────
 
-    const ALL_CUES: [CueKind; 4] = [
+    const ALL_CUES: [CueKind; 5] = [
         CueKind::SessionStart,
         CueKind::StopListening,
         CueKind::SessionEnd,
         CueKind::Failure,
+        CueKind::SilenceWarning,
     ];
 
     #[test]
