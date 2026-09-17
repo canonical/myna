@@ -1,0 +1,93 @@
+# Quickstart / Manual Acceptance Protocol
+
+Automated gates (hermetic + `MYNA_ATSPI_TESTS`/`MYNA_PIPEWIRE_TESTS`-gated) cover
+everything listed in the contracts under `contracts/`. FR-031 additionally
+requires a documented **manual** protocol for the properties that cannot be
+verified headlessly (research.md R6). Run this against a real GNOME session —
+ideally the packaged, strictly confined snap (FR-033/SC-009), with a fallback
+run against the unpackaged dev build noted where they'd diverge.
+
+## Prerequisites
+
+- A GNOME Wayland session with Orca (or another AT-SPI-consuming screen
+  reader) installed and running.
+- `myna` installed (snap) or built from `client/` with `--features ui-gtk` for
+  the `GtkIndicator` scenarios.
+- `extensions/myna-shell` installed and enabled (`gnome-extensions enable
+  myna-shell@...`).
+- A text field to dictate into (e.g. GNOME Text Editor).
+
+## Scenario 1 — Full dictation with the screen off (SC-001, US1)
+
+1. Start Orca. Turn the display off (or point away).
+2. Trigger dictation (tap-to-start).
+3. **Expect**: "listening" announced within 500 ms, no focus movement.
+4. Speak a short sentence. End the session (tap-to-stop).
+5. **Expect**: "transcribing" then a completion/insertion confirmation are
+   announced, in that order, with no stale/duplicate announcements.
+6. Query the indicator state via the AT's "where am I" command at a moment
+   between transitions.
+7. **Expect**: current state is reported accurately (FR-001).
+
+## Scenario 2 — Failure without sighted assistance (US1, US4, SC-007)
+
+1. Stop the inference backend.
+2. Trigger dictation.
+3. **Expect**: within 10 seconds of the failure, the AT announces a
+   plain-language message naming the problem and the next action — no error
+   codes or internal names.
+4. Repeat while watching the indicator, the notification, and (separately) run
+   `myna-dictate` in a terminal for the same failure.
+5. **Expect**: all three surfaces plus the announcement convey the same
+   meaning and recovery action (contracts/failure-mapping.md F2).
+
+## Scenario 3 — No pointing device (US2, SC-004)
+
+1. Disconnect/disable the pointer (or use only keyboard/switch input).
+2. Start dictation via a single bound key (no chord, no hold).
+3. Speak a multi-sentence utterance; end by falling silent (no second input).
+4. **Expect**: text is inserted; at no point was a held or chorded key
+   required.
+5. Trigger a critical error (e.g. no microphone) and dismiss/acknowledge it
+   using only non-pointer input.
+6. **Expect**: acknowledgement succeeds with no pointer/hover interaction.
+
+## Scenario 4 — Sticky keys / slow keys / autorepeat (US2)
+
+1. Enable sticky keys, then slow keys, in GNOME's accessibility settings.
+2. Activate the dictation shortcut once.
+3. **Expect**: exactly one session starts; holding the key (autorepeat) does
+   not start additional sessions.
+
+## Scenario 5 — Large text / high contrast / reduced motion / forced colours (US3, SC-005)
+
+1. Set text scale to 200%, enable the high-contrast theme, enable
+   forced-colours (if available), enable reduced-motion.
+2. Run a full dictation session, observing the HUD pill through each state.
+3. **Expect**: all text remains fully visible, unclipped; the live-capture
+   indication has a static equivalent under reduced motion; nothing flashes
+   more than 3×/second.
+
+## Scenario 6 — Sound cues do not degrade transcription (US3, SC-006)
+
+Run via the existing real-corpus WER benchmark harness
+(`dev/fetch_real_corpus.py` + the project's WER measurement tooling) twice:
+once with sound cues/announcements enabled, once with both disabled (silent
+baseline). Compare WER delta — must be ≤0.5 percentage points.
+
+## Scenario 7 — Confined package (FR-033, SC-009)
+
+Repeat Scenarios 1–3 against the installed strictly-confined `myna` snap
+(not a dev build), confirming the accessibility bus connection succeeds under
+confinement (snapd's `desktop` plug) with no additional manual `snap connect`
+beyond what's already documented for notifications/portals.
+
+## Scenario 8 — Terminal client under a screen reader (US5, SC-008)
+
+1. Run `myna-dictate` in a terminal with Orca's terminal/console support
+   active, colour disabled (`NO_COLOR=1` or non-tty redirection observed
+   separately).
+2. Dictate a session; observe that state changes are read as discrete new
+   lines, not repeated re-reads of a redrawn line.
+3. Force a failure; confirm it appears on stderr in the same plain language as
+   Scenario 2.
