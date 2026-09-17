@@ -409,6 +409,18 @@ class FasterWhisperAdapter:
 
         options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
 
+        def accounted(offset: float) -> list[tuple[float, float]]:
+            """What the last decode accounts for, in region seconds: an
+            aligned word only its onset, a segment-level time its whole span
+            (see streaming.coverage)."""
+            spans: list[tuple[float, float]] = []
+            for _segment, pairs, _origin in region:
+                if pairs and pairs[0][1] is None:
+                    spans.append((pairs[0][0].start - offset, pairs[-1][0].end - offset))
+                else:
+                    spans.extend((w.start - offset, w.start - offset) for w, _ in pairs)
+            return spans
+
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             segments, _info = model.transcribe(samples, **options)
             words: list[Word] = []
@@ -498,6 +510,18 @@ class FasterWhisperAdapter:
                 language = info.language
             return words
 
+        def accounted(offset: float) -> list[tuple[float, float]]:
+            """What the last decode accounts for, in region seconds: an
+            aligned word only its onset, a segment-level time its whole span
+            (see streaming.coverage)."""
+            spans: list[tuple[float, float]] = []
+            for _segment, pairs, _origin in region:
+                if pairs and pairs[0][1] is None:
+                    spans.append((pairs[0][0].start - offset, pairs[-1][0].end - offset))
+                else:
+                    spans.extend((w.start - offset, w.start - offset) for w, _ in pairs)
+            return spans
+
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             nonlocal decoded, processed
             first = round(offset * WHISPER_RATE)
@@ -505,7 +529,7 @@ class FasterWhisperAdapter:
                 granularity is not None or first < processed or ends_at_forced_cut(samples)
             )
             words = decode_once(samples, offset, word_timestamps, offset)
-            gap = untranscribed_gap(samples, [(w.start - offset, w.end - offset) for w in words])
+            gap = untranscribed_gap(samples, accounted(offset))
             if gap >= UNTRANSCRIBED_GAP_S:
                 # Whisper skips a sentence in a long region on some inputs, and
                 # says nothing about it: the text reads cleanly and the audio it
@@ -520,12 +544,7 @@ class FasterWhisperAdapter:
                     padded = decode_once(
                         np.concatenate([pad, samples, pad]), offset - pad_s, word_timestamps, offset
                     )
-                    rank = (
-                        untranscribed_gap(
-                            samples, [(w.start - offset, w.end - offset) for w in padded]
-                        ),
-                        -len(padded),
-                    )
+                    rank = (untranscribed_gap(samples, accounted(offset)), -len(padded))
                     if rank < best_rank:
                         best, best_rank = (padded, list(region)), rank
                     if best_rank[0] < UNTRANSCRIBED_GAP_S:

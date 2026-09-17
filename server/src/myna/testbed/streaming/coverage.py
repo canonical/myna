@@ -39,9 +39,12 @@ _LOUD_FLOOR = 0.004
 def untranscribed_gap(samples: NDArray[np.float32], spans: list[tuple[float, float]]) -> float:
     """The longest stretch of loud audio in ``samples`` that no token covers.
 
-    ``spans`` are the (start, end) seconds each token or word covers, from the
-    start of ``samples`` and in order. A decoder that times only token onsets
-    passes (t, t) and is measured onset to onset."""
+    ``spans`` are the (start, end) seconds each token or word accounts for,
+    from the start of ``samples`` and in order. A caller passes the times it
+    can trust: a token timed only at its onset accounts for (t, t), and so
+    does an aligned whisper word, whose *end* stretches across a stretch the
+    decode skipped and would hide it. A segment-level time, where one span
+    stands for the words inside it, accounts for the whole span."""
     frames = len(samples) // _FRAME
     if not frames:
         return 0.0
