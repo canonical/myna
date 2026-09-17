@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import itertools
 import json
+import logging
 import socket
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
@@ -54,8 +55,9 @@ class Scenario:
     inside ``serving`` is recorded before the server's teardown, which may be
     the very thing that hangs."""
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         self.path = tmp_path / "myna.sock"
+        self._caplog = caplog
         self.errors: list[BaseException] = []
         self._settled = threading.Event()
 
@@ -85,11 +87,13 @@ class Scenario:
             raise self.errors[0]
         thread.join(BOUND)
         assert not thread.is_alive(), "the server hung"
+        failures = [r.getMessage() for r in self._caplog.records if r.levelno >= logging.ERROR]
+        assert failures == []
 
 
 @pytest.fixture
-def scenario(tmp_path: Path) -> Scenario:
-    return Scenario(tmp_path)
+def scenario(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> Scenario:
+    return Scenario(tmp_path, caplog)
 
 
 @pytest.fixture
@@ -314,7 +318,8 @@ def test_an_undecodable_internal_control_frame_ends_the_audio_and_is_logged(scen
             await asyncio.wait_for(ws.wait_closed(), BOUND)
 
     scenario.run(main)
-    assert "ingress reader failed" in caplog.text
+    (failure,) = [r for r in caplog.records if r.getMessage() == "ingress reader failed"]
+    assert failure.exc_info is not None
 
 
 def partition(pcm: bytes, cuts: tuple[int, ...] = (1, 3200, 3, 1001, 2, 4799)) -> list[bytes]:
@@ -383,11 +388,14 @@ def test_ie115_commit_does_not_carry_a_half_sample_into_the_next_utterance(scena
 
 def test_an_internal_session_with_a_degenerate_format_still_runs(scenario):
     """Framing must not take down a session the adapter would answer: a
-    zero-channel format still reaches the adapter, which owns rejecting it."""
+    zero-channel format still reaches the adapter, which owns rejecting it,
+    and its bytes arrive unframed."""
     path = scenario.path
 
     async def main() -> None:
-        async with scenario.serving(FakeAdapter()):
+        adapter = Gated(record_then_done)
+        adapter.release.set()
+        async with scenario.serving(adapter):
             ws = await unix_connect(str(path), ping_interval=None)
             await ws.recv()
             config = session_config_to_wire(SessionConfig(audio_format=AudioFormat(channels=0)))
@@ -397,9 +405,10 @@ def test_an_internal_session_with_a_degenerate_format_still_runs(scenario):
                 "config": config,
             }
             await ws.send(json.dumps(start))
-            await ws.send(b"\x00\x00\x00")
+            await ws.send(b"\x01\x02\x03")
             await ws.send(finish_frame("internal"))
             assert (await terminal(ws))["event"] == "transcription.done"
+        assert adapter.sessions == [[b"\x01\x02\x03"]]
 
     scenario.run(main)
 
@@ -607,7 +616,7 @@ async def test_pieces_of_a_split_append_are_whole_frames():
 
 
 def test_a_capacity_must_hold_a_whole_frame():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="3 bytes hold no 4-byte frame"):
         _Ingress(AudioFormat(channels=2), capacity_bytes=3)
 
 

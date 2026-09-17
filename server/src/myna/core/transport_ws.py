@@ -50,6 +50,7 @@ import json
 import logging
 import os
 import socket
+import weakref
 from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -157,7 +158,7 @@ class _Ingress:
         self._piece_bytes = capacity_bytes - capacity_bytes % self.frame_bytes
         self._items: deque[bytes | _Boundary] = deque()
         self._bytes = 0
-        self._boundaries = 0
+        self._boundary_pending = False
         self._closed = False
         self._aborted = False
         self._putters: list[asyncio.Future[None]] = []
@@ -180,7 +181,7 @@ class _Ingress:
         item = self._items.popleft()
         self._wake(self._putters)
         if isinstance(item, _Boundary):
-            self._boundaries -= 1
+            self._boundary_pending = False
             return item
         self._bytes -= len(item)
         return PcmChunk(data=item, format=self._format)
@@ -192,14 +193,12 @@ class _Ingress:
     def abort(self) -> None:
         self._aborted = True
         self._items.clear()
-        self._bytes = 0
-        self._boundaries = 0
         self._wake(self._putters)
         self._wake(self._getters)
 
     def _has_room(self, item: bytes | _Boundary) -> bool:
         if isinstance(item, _Boundary):
-            return self._boundaries == 0
+            return not self._boundary_pending
         return self._bytes + len(item) <= self._capacity
 
     async def _put(self, item: bytes | _Boundary) -> None:
@@ -208,7 +207,7 @@ class _Ingress:
         if self._aborted:
             return
         if isinstance(item, _Boundary):
-            self._boundaries += 1
+            self._boundary_pending = True
             self._items.append(item)
         else:
             self._bytes += len(item)
@@ -299,7 +298,7 @@ async def _discard_frames(ws: ServerConnection) -> None:
 class _SessionHandler:
     def __init__(self, service: SttService) -> None:
         self._service = service
-        self._ingresses: set[_Ingress] = set()
+        self._ingresses: weakref.WeakSet[_Ingress] = weakref.WeakSet()
 
     def abort_sessions(self) -> None:
         """Server shutdown: end every session's audio now rather than after
@@ -320,7 +319,6 @@ class _SessionHandler:
         sending would otherwise hold the transport paused and the close would
         wait out its timeout."""
         ingress.abort()
-        self._ingresses.discard(ingress)
         reader.cancel()
         await asyncio.wait({reader})
         if not reader.cancelled() and (exc := reader.exception()) is not None:

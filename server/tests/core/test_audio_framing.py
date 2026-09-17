@@ -27,7 +27,9 @@ def test_flush_discards_a_partial_frame_and_says_how_much(caplog):
     with caplog.at_level(logging.WARNING, logger="myna.core.audio"):
         assert framer.feed(bytes(7)) == bytes(4)
         framer.flush()
-    assert "discarding 3 byte(s)" in caplog.text
+    assert [r.getMessage() for r in caplog.records] == [
+        "discarding 3 byte(s) of a partial PCM sample frame at the utterance boundary"
+    ]
     assert framer.feed(b"abcd") == b"abcd"
 
 
@@ -41,5 +43,5 @@ def test_flush_on_a_frame_boundary_is_silent(caplog):
 
 @pytest.mark.parametrize("frame_bytes", [0, -2])
 def test_a_frame_has_at_least_one_byte(frame_bytes):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=f"at least one byte, got {frame_bytes}"):
         PcmFramer(frame_bytes)
