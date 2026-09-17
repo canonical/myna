@@ -248,3 +248,13 @@ def test_local_agreement_empty_hypothesis():
     s = LocalAgreement()
     previous = hyp([("w0 ", 0.0, 0.4)])
     assert s.commit_rule(previous, Hypothesis(), window_end=1.0) is None
+
+
+def test_silence_cut_refuses_samples_that_skip_unscanned_audio():
+    cut = SilenceCut()
+    audio = _speech(2.0)
+    assert cut.observe(audio[:16_000], 0.0, 1.0) is None
+    assert cut.unscanned_offset(0.0) == 15_840
+    with pytest.raises(ValueError, match="unscanned_offset"):
+        cut.observe(audio[16_000:], 0.0, 2.0, offset=16_000)
+    assert cut.observe(audio[15_840:], 0.0, 2.0, offset=15_840) is None

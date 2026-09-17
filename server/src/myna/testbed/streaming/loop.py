@@ -513,7 +513,13 @@ async def _run(
             pending = pending[window.fill(pending) :]
             if isinstance(strategy, SilenceCut):
                 while True:
-                    cut = strategy.observe(window.samples(), window.start, window.end)
+                    unscanned = strategy.unscanned_offset(window.start)
+                    cut = strategy.observe(
+                        window.samples(first=window.retained_start + unscanned),
+                        window.start,
+                        window.end,
+                        offset=unscanned,
+                    )
                     if cut is None or cut - window.start < MIN_DECODE_S:
                         break
                     if to_samples(cut) <= window.processed_through:

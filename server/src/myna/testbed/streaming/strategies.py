@@ -55,6 +55,7 @@ SC_ARM_S = 15.0
 SC_SILENCE_CUT_S = 0.5
 SC_FORCE_CUT_S = 60.0
 SC_FRAME_S = 0.03  # VAD analysis frame (~murmure's 33 ms throttle tick)
+_FRAME_LEN = max(1, int(SC_FRAME_S * 16_000))
 
 # Scripts written without spaces between words (CJK ideographs, kana,
 # fullwidth forms): a decoder that cannot segment words emits one token per
@@ -216,10 +217,23 @@ class SilenceCut:
         self._silence_run = 0.0
         self._scanned = at
 
+    def unscanned_offset(self, window_start: float) -> int:
+        """Samples into the window where the next `observe` starts reading."""
+        scan_from = max(self._scanned, window_start)
+        return int((scan_from - window_start) * 16_000) // _FRAME_LEN * _FRAME_LEN
+
     def observe(
-        self, samples: NDArray[np.float32], window_start: float, window_end: float
+        self,
+        samples: NDArray[np.float32],
+        window_start: float,
+        window_end: float,
+        *,
+        offset: int = 0,
     ) -> float | None:
-        """Return an absolute cut time if the window should be committed now."""
+        """Return an absolute cut time if the window should be committed now.
+
+        ``samples`` are the window from ``offset`` samples in, which must not
+        exceed `unscanned_offset`: only audio not yet scanned is read."""
         duration = window_end - window_start
         if duration >= self._force_cut:
             self.mark_cut(window_end)
@@ -228,11 +242,13 @@ class SilenceCut:
         # Frame phase is anchored at the window origin; a frame counts once its
         # end passes the previously scanned position.
         scan_from = max(self._scanned, window_start)
-        frame_len = max(1, int(SC_FRAME_S * 16_000))
-        off = int((scan_from - window_start) * 16_000) // frame_len * frame_len
-        while off + frame_len <= len(samples):
+        frame_len = _FRAME_LEN
+        off = self.unscanned_offset(window_start)
+        if offset > off:
+            raise ValueError("observe needs the samples from unscanned_offset() onwards")
+        while off + frame_len <= offset + len(samples):
             frame_end = window_start + (off + frame_len) / 16_000
-            frame = samples[off : off + frame_len]
+            frame = samples[off - offset : off - offset + frame_len]
             rms = float(np.sqrt(np.mean(frame * frame)))
             activity = self._vad.update(rms)
             # Arm per frame (murmure arms when the buffer *reaches* SC_ARM_S):

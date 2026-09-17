@@ -963,3 +963,74 @@ async def test_a_force_cut_within_the_overlap_never_re_cuts_without_progress(for
     assert len(decoder.inputs) <= 30
     ends = [first + n for first, n in decoder.inputs]
     assert ends == sorted(set(ends)), "a region was decoded twice"
+
+
+# ---------------------------------------------------------------------------
+# The VAD scans each sample once, not the whole window per append
+# ---------------------------------------------------------------------------
+
+
+class _ObservedCut(SilenceCut):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.observed: list[int] = []
+
+    def observe(self, samples, window_start, window_end, *, offset=0):
+        self.observed.append(len(samples))
+        return super().observe(samples, window_start, window_end, offset=offset)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("overlap", [False, True])
+async def test_a_chunked_strategy_observes_only_audio_it_has_not_scanned(overlap):
+    strategy = _ObservedCut(arm_seconds=30.0, force_cut_seconds=60.0)
+    plan = [(40.0, True), (1.0, False), (80.0, True), (3.0, False), (6.0, True)]
+    await _run(
+        _speech_audio(plan, chunk_seconds=0.1),
+        _Decoder(ramp=False),
+        strategy,
+        cap=65.0,
+        silence_cut_overlap=overlap,
+    )
+
+    frame = round(0.03 * RATE)
+    assert len(strategy.observed) > 1000
+    assert max(strategy.observed) <= round(0.1 * RATE) + frame
+
+
+def _drive(strategy: SilenceCut, pcm: np.ndarray, chunk: int, suffix: bool, overlap: int):
+    """Feed ``pcm`` like the loop: grow a window, cut where told, keep the
+    overlap. Either the whole window or only the unscanned suffix is shown."""
+    start, cuts = 0, []
+    for end in range(chunk, len(pcm) + 1, chunk):
+        skip = strategy.unscanned_offset(start / RATE) if suffix else 0
+        window = pcm[start + skip : end].astype(np.float32) / 32768
+        cut = strategy.observe(window, start / RATE, end / RATE, offset=skip)
+        if cut is not None:
+            cuts.append(round(cut * RATE))
+            start = max(start, round(cut * RATE) - overlap)
+    return cuts
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_observing_the_unscanned_suffix_cuts_exactly_where_the_whole_window_does(seed):
+    rng = np.random.default_rng(seed)
+    parts = []
+    for _ in range(40):
+        seconds = float(rng.choice([0.2, 0.4, 0.6, 1.1, 3.0, 9.0]))
+        n = round(seconds * RATE)
+        if rng.random() < 0.6:
+            level = float(rng.choice([0.01, 0.05, 0.2]))
+            parts.append((rng.standard_normal(n) * level * 32767).clip(-32768, 32767))
+        else:
+            parts.append(rng.standard_normal(n) * 3)
+    pcm = np.concatenate(parts).astype(np.int16)
+    chunk = int(rng.choice([160, 1600, 4800, 7777]))
+    overlap = int(rng.choice([0, RATE]))
+
+    def strategy() -> SilenceCut:
+        return SilenceCut(arm_seconds=4.0, force_cut_seconds=20.0)
+
+    whole = _drive(strategy(), pcm, chunk, suffix=False, overlap=overlap)
+    assert len(whole) > 3
+    assert _drive(strategy(), pcm, chunk, suffix=True, overlap=overlap) == whole
