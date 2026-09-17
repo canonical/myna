@@ -202,6 +202,11 @@ apps:
       - pipewire
       - home
       - backend
+      # Not for a UI: the session bus, so module-rt can reach
+      # org.freedesktop.portal.Realtime and the testbed's capture runs the
+      # same data-thread priority the daemon's does. Without it `--mic` here
+      # would silently be the one capture path left at SCHED_OTHER.
+      - desktop
 
 # The backend session socket, shared by an inference snap's
 # inference-provider slot. Manual connect (different publishers):
@@ -318,10 +323,13 @@ parts:
       lib="usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR"
 
       # libpipewire-0.3-modules ships ~40 modules; pw_context_new loads the
-      # six named in client.conf and nothing dlopens the rest. The keep-list
-      # is spelled out here rather than read out of client.conf: that file is
-      # primed by another part, with no ordering guarantee between them.
-      modules="protocol-native client-node client-device adapter metadata session-manager"
+      # six named in client.conf plus the rt module our own drop-in adds
+      # (client.conf.d/10-myna-rt.conf), and nothing dlopens the rest. The
+      # keep-list is spelled out here rather than read out of client.conf:
+      # those files are primed by another part, with no ordering guarantee
+      # between them. module-rt needs libdbus-1.so.3, which the core24 base
+      # provides, so keeping it costs the 35 kB module and nothing else.
+      modules="rt protocol-native client-node client-device adapter metadata session-manager"
       for so in "$lib"/pipewire-0.3/libpipewire-module-*.so; do
         name=$(basename "$so" .so)
         case " $modules " in
@@ -404,8 +412,16 @@ parts:
   # a missing client.conf as fatal. Keep ONLY client.conf: not the daemon
   # binaries the package also carries, nor the daemon/JACK/AES67/AVB configs
   # sitting beside it.
+  #
+  # `pipewire/` adds a drop-in beside it, read because PIPEWIRE_CONFIG_DIR
+  # points at this directory: pipewire merges <name>.conf.d/*.conf over the
+  # config it just loaded (verified against the staged 1.0.5 libpipewire).
+  # A drop-in rather than an edited client.conf so the upstream file stays
+  # upstream's, and so a base bump that starts shipping module-rt in
+  # client.conf costs a duplicate module load rather than a stale copy.
   pipewire-config:
-    plugin: nil
+    plugin: dump
+    source: pipewire
     stage-packages:
       - pipewire-bin
     # Filter at *stage*, not prime: pipewire-bin's dependency tree overlaps
@@ -413,6 +429,7 @@ parts:
     # stage the same path from two parts. Nothing here is wanted anyway.
     stage:
       - usr/share/pipewire/client.conf
+      - usr/share/pipewire/client.conf.d/10-myna-rt.conf
 
   scripts:
     plugin: dump
