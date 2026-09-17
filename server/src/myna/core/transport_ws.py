@@ -517,6 +517,12 @@ class _SessionHandler:
                         wire = append_to_pcm(message, config.audio_format)
                         await ingress.put(resampler.feed(wire.data))
                     elif mtype == INPUT_AUDIO_COMMIT:
+                        # Acknowledged here, at receipt, as OpenAI does: from
+                        # the adapter's side of the queue the ack would wait
+                        # behind every region the utterance still has to
+                        # decode (measured 6 s on a 95 s utterance).
+                        with contextlib.suppress(ConnectionClosed):
+                            await ws.send(json.dumps(encoder.committed()))
                         await ingress.put(resampler.flush())
                         await ingress.put_boundary()
                     # other client frames (e.g. further session.update): ignored
@@ -550,11 +556,6 @@ class _SessionHandler:
                     if not isinstance(item, PcmChunk):
                         self.ended = True
                         self.closed = item is None
-                        if item is not None:
-                            # Acknowledge the commit with the utterance's item,
-                            # the id a stock client joins the transcript on.
-                            with contextlib.suppress(ConnectionClosed):
-                                await ws.send(json.dumps(encoder.committed()))
                         return
                     self.seconds += len(item.data) / adapter_format.bytes_per_second
                     yield item
@@ -585,6 +586,7 @@ class _SessionHandler:
                 # against a client waiting for `ready`). A client closing
                 # between utterances cancels it.
                 utterance = _Utterance()
+                encoder.begin_utterance()  # its events name the next committed item
                 await self._run_utterance(
                     ingress, adapter_config, utterance.audio(), utterance.emit
                 )

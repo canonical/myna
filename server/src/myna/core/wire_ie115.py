@@ -50,7 +50,9 @@ never learns the wire rate. Our own clients state their real capture rate
 from __future__ import annotations
 
 import base64
+import dataclasses
 import uuid
+from collections import deque
 from typing import Any
 
 from myna.core.audio import AudioFormat, PcmChunk
@@ -226,31 +228,68 @@ def pcm_to_append(chunk: PcmChunk) -> dict[str, Any]:
 # --- event encode (server side) -------------------------------------------------
 
 
+@dataclasses.dataclass(frozen=True)
+class _Item:
+    """One conversation item: an utterance's id and the item minted before it."""
+
+    id: str
+    previous: str | None
+
+
 class Ie115Encoder:
     """Encodes internal transcript events into IE115 server frames, holding the
     per-utterance ``item_id`` IE115 requires (dictation has no conversation
     graph, so we mint one per utterance): every ``delta`` of an utterance and
     its ``completed`` share the item; the ``completed`` retires it, so the next
-    utterance on the same connection gets a fresh one."""
+    utterance on the same connection gets a fresh one.
+
+    A commit is acknowledged at receipt, so the transport's reader can be a
+    whole utterance ahead of the adapter. Items are therefore assigned in
+    commit order and queued: ``committed`` mints the item its commit closes,
+    and the adapter's events take the queue in the same order, one item per
+    utterance. The transport's one-pending-commit rule bounds the queue."""
 
     def __init__(self) -> None:
-        self._item_id: str | None = None
-        self._previous_item_id: str | None = None
+        self._queued: deque[_Item] = deque()
+        self._current: _Item | None = None
+        self._uncommitted: _Item | None = None
+        self._last_id: str | None = None
+
+    def _mint(self) -> _Item:
+        item = _Item(f"item_{uuid.uuid4().hex[:12]}", self._last_id)
+        self._last_id = item.id
+        return item
 
     def _item(self) -> str:
-        if self._item_id is None:
-            self._item_id = f"item_{uuid.uuid4().hex[:12]}"
-        return self._item_id
+        """The item the adapter's events name: the oldest commit it has not
+        answered yet, or a fresh one when it is transcribing audio the client
+        has not committed (a streaming adapter emits before the boundary)."""
+        if self._current is None:
+            if self._queued:
+                self._current = self._queued.popleft()
+            else:
+                self._current = self._uncommitted = self._mint()
+        return self._current.id
+
+    def begin_utterance(self) -> None:
+        """The transport hands the next utterance to the adapter: whatever the
+        last one was emitting for is over, ``completed`` or not."""
+        self._current = None
 
     def committed(self) -> dict[str, Any]:
         """The ``input_audio_buffer.committed`` acknowledging the client's
         commit: it names the utterance's item, which is how a stock client
         joins the deltas and the ``completed`` that follow."""
+        item = self._uncommitted
+        if item is None:
+            item = self._mint()
+            self._queued.append(item)
+        self._uncommitted = None
         return {
             "type": INPUT_AUDIO_COMMITTED,
             "event_id": new_event_id(),
-            "item_id": self._item(),
-            "previous_item_id": self._previous_item_id,
+            "item_id": item.id,
+            "previous_item_id": item.previous,
         }
 
     def encode(self, event: TranscriptionEvent, *, audio_seconds: float = 0.0) -> dict[str, Any]:
@@ -289,8 +328,7 @@ class Ie115Encoder:
             return frame
         if isinstance(event, TranscriptionDone):
             item = self._item()
-            self._item_id = None  # completed retires the utterance's item
-            self._previous_item_id = item
+            self._current = None  # completed retires the utterance's item
             frame = {
                 "type": TRANSCRIPTION_COMPLETED,
                 "item_id": item,

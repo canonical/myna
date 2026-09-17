@@ -33,6 +33,7 @@ from myna.core import (
     SessionConfig,
     TranscriptionDone,
     TranscriptionError,
+    TranscriptionFinal,
     serve_unix,
     transport_ws,
 )
@@ -695,6 +696,129 @@ def test_an_oversized_normalized_append_is_split_to_the_budget(scenario, monkeyp
         heard = adapter.sessions[0]
         assert max(len(chunk) for chunk in heard) == capacity
         assert b"".join(heard) == expected
+
+    scenario.run(main)
+
+
+# --- IE115 commit acknowledgement --------------------------------------------------
+
+ACK_BOUND = 0.5
+
+
+async def next_frame(ws: ClientConnection, timeout: float = BOUND) -> dict[str, Any]:
+    """The next frame that is not the additive liveness event."""
+    while True:
+        frame = json.loads(await asyncio.wait_for(ws.recv(), timeout))
+        if frame["type"] != w.STATUS_EVENT:
+            return frame
+
+
+def test_an_ie115_commit_is_acknowledged_at_receipt_while_a_region_decodes(scenario):
+    """OpenAI acknowledges a commit when it arrives. The adapter is decoding
+    the first region of a long utterance, the rest of it still queued."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Decoding(hold=3 * BOUND)
+        try:
+            async with scenario.serving(adapter):
+                ws = await open_session(path, "ie115")
+                await send_all(ws, [SECOND] * 62)
+                await asyncio.wait_for(adapter.decoding.wait(), BOUND)
+                await ws.send(finish_frame("ie115"))
+                committed = await next_frame(ws, ACK_BOUND)
+                assert committed["type"] == w.INPUT_AUDIO_COMMITTED
+                # still inside the forced cut's decode, nothing transcribed yet
+                assert adapter.decodes == [(0.0, 60.0)] and not adapter.ended.is_set()
+                adapter.release.set()
+                completed = await terminal(ws)
+                assert completed["type"] == w.TRANSCRIPTION_COMPLETED
+                assert completed["item_id"] == committed["item_id"]
+                await ws.close()
+        finally:
+            adapter.release.set()
+
+    scenario.run(main)
+
+
+async def transcribe_each(adapter: Gated, audio: AsyncIterator[PcmChunk], emit: EventSink) -> None:
+    n = len(adapter.sessions) - 1
+    await emit(TranscriptionFinal(text=f"early {n}"))
+    await adapter.record(audio)
+    await emit(TranscriptionFinal(text=f"late {n}"))
+    await emit(TranscriptionDone(text=f"early {n}late {n}"))
+
+
+def test_back_to_back_ie115_commits_are_acknowledged_before_the_first_completes(scenario):
+    """The second commit's ack may precede the first utterance's completed, as
+    on OpenAI: every transcription frame names its item, and ``previous_item_id``
+    orders the items."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(transcribe_each)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND, finish_frame("ie115"), SECOND, finish_frame("ie115")])
+            first = await next_frame(ws, ACK_BOUND)
+            second = await next_frame(ws, ACK_BOUND)
+            assert [first["type"], second["type"]] == [w.INPUT_AUDIO_COMMITTED] * 2
+            assert first["previous_item_id"] is None
+            assert second["previous_item_id"] == first["item_id"] != second["item_id"]
+            adapter.release.set()
+            rest = [await next_frame(ws) for _ in range(6)]
+            await ws.close()
+        assert [(f["type"], f["item_id"]) for f in rest] == [
+            (w.TRANSCRIPTION_DELTA, first["item_id"]),
+            (w.TRANSCRIPTION_DELTA, first["item_id"]),
+            (w.TRANSCRIPTION_COMPLETED, first["item_id"]),
+            (w.TRANSCRIPTION_DELTA, second["item_id"]),
+            (w.TRANSCRIPTION_DELTA, second["item_id"]),
+            (w.TRANSCRIPTION_COMPLETED, second["item_id"]),
+        ]
+        assert adapter.sessions[:2] == [[SECOND], [SECOND]]
+
+    scenario.run(main)
+
+
+def test_a_delta_before_the_commit_names_the_item_the_commit_acknowledges(scenario):
+    """A streaming adapter transcribes before the client commits, so the item
+    exists before its commit arrives."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(transcribe_each)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            for n in range(2):
+                early = await next_frame(ws)
+                assert (early["type"], early["delta"]) == (w.TRANSCRIPTION_DELTA, f"early {n}")
+                await send_all(ws, [SECOND, finish_frame("ie115")])
+                frames = [await next_frame(ws) for _ in range(3)]
+                assert {f["item_id"] for f in [early, *frames]} == {early["item_id"]}
+                assert frames[0]["type"] == w.INPUT_AUDIO_COMMITTED
+                assert frames[-1]["type"] == w.TRANSCRIPTION_COMPLETED
+            await ws.close()
+
+    scenario.run(main)
+
+
+def test_an_aborted_ie115_commit_is_acknowledged_but_never_transcribed(scenario):
+    """The ack promises nothing about the transcript: a client leaving after
+    its commit still aborts the utterance, which the gated adapter never
+    consumed."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND, finish_frame("ie115")])
+            assert (await next_frame(ws, ACK_BOUND))["type"] == w.INPUT_AUDIO_COMMITTED
+            ws.transport.abort()  # the abort cancels the gated session
+            await asyncio.wait_for(adapter.ended.wait(), BOUND)
+        assert adapter.sessions[0] == []
 
     scenario.run(main)
 
