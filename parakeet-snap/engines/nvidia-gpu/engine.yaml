@@ -1,0 +1,38 @@
+name: nvidia-gpu
+summary: Parakeet TDT fp32 via onnxruntime on NVIDIA GPUs
+description: |
+  Runs Parakeet TDT 0.6B v3 exported from NVIDIA's checkpoint (fp32 ONNX)
+  with onnxruntime's CUDA execution provider, serving the same streaming
+  chunked-commit Myna Unix-socket session API as the cpu engine.
+  The CUDA runtime (onnxruntime-gpu, CUDA 13, cuDNN 9) ships as a component.
+  Needs an NVIDIA driver of 580 or later and a Turing or newer GPU.
+vendor: Canonical Ltd
+
+# Matched on the vendor alone. modelctl can also check vram and
+# compute-capability, but reads both through nvidia-smi, which this snap does
+# not stage - either key would make the engine never match. A GPU or driver
+# CUDA 13 cannot use fails at load instead, naming the CUDA provider.
+devices:
+  allof:
+    - type: gpu
+      vendor-id: 0x10de # NVIDIA Corporation
+  anyof:
+    - type: cpu
+      architecture: amd64
+
+runtime: onnxruntime-cuda
+
+model:
+  # fp32 transcribes exactly as NVIDIA's PyTorch model. No fp16: the naive
+  # conversion measured slower on fresh window lengths and lost accuracy on
+  # long windows (see dev/parakeet/export_parakeet_onnx.py).
+  default: parakeet-tdt-0.6b-v3-fp32
+  options:
+    - parakeet-tdt-0.6b-v3-fp32
+
+configurations:
+  stream-arm-seconds: 15
+  stream-silence-cut-seconds: 0.5
+  stream-force-cut-seconds: 60
+  stream-partial-cadence-seconds: 0.5
+  stream-partial-tail-seconds: 0

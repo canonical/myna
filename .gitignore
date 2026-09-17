@@ -62,6 +62,7 @@ release/
 # snap build artifacts (weights staged by dev/download-models.sh, wheels by dev/prepare.sh)
 parakeet-snap/components/model-*/
 parakeet-snap/wheels/
+parakeet-snap/wheelhouse-cuda/
 parakeet-snap/*.snap
 parakeet-snap/*.comp
 sherpa-snap/components/model-*/

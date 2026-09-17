@@ -1,10 +1,15 @@
-# parakeet-snap — Parakeet TDT int8 ONNX inference snap
+# parakeet-snap - Parakeet TDT ONNX inference snap
 
-Small CPU-tier speech-to-text snap: NVIDIA Parakeet TDT 0.6B v3 (25 languages,
-punctuation) as an int8 ONNX export served via onnxruntime. No torch; roughly
-690 MB installed (46 MB snap + 646 MB model component).
+NVIDIA Parakeet TDT 0.6B v3 (25 languages, punctuation) served via onnxruntime,
+no torch. Two engines, picked by hardware at install:
 
-The component carries one encoder, never both: the base int8 export, or the
+- `cpu` - an int8 export. Roughly 690 MB installed (46 MB snap + 646 MB model
+  component).
+- `nvidia-gpu` - a fp32 export of NVIDIA's checkpoint on onnxruntime's
+  CUDA provider, with the CUDA runtime as its own component. See
+  [NVIDIA GPU engine](#nvidia-gpu-engine).
+
+The int8 component carries one encoder, never both: the base int8 export, or the
 maxstack rebuild of it (13% faster encode, 148 MB smaller) with `libqsilu.so`
 beside it for the custom ops it calls. Nothing falls back at runtime. Sizes
 above are the maxstack shape; the base one installs at 812 MB.
@@ -44,6 +49,49 @@ sudo snap install --dangerous \
     ./myna-parakeet_*.snap \
     ./myna-parakeet+model-parakeet-int8.comp
 ```
+
+## NVIDIA GPU engine
+
+The GPU graphs are exported here from NVIDIA's `.nemo` checkpoint rather than
+downloaded. The build runs `dev/parakeet/export_parakeet_onnx.py` when the model
+cache lacks them; it needs NeMo and torch, which it installs into its own uv
+environment (about 2 GB, locked in `export_parakeet_onnx.py.lock`), and a 2.4 GB
+checkpoint download.
+
+Needs an NVIDIA driver of 580 or later (CUDA 13) and a Turing or newer GPU. The
+engine is matched on the NVIDIA vendor id alone, so an older card or driver is
+selected anyway and the server then refuses to start, naming the CUDA provider.
+
+```bash
+sudo snap install --dangerous \
+    ./myna-parakeet_*.snap \
+    ./myna-parakeet+model-parakeet-int8.comp \
+    ./myna-parakeet+model-parakeet-fp32.comp \
+    ./myna-parakeet+onnxruntime-cuda.comp
+sudo snap connect myna-parakeet:hardware-observe
+sudo snap connect myna-parakeet:opengl
+sudo myna-parakeet.parakeet use-engine --auto
+```
+
+A sideload does not auto-connect `hardware-observe`, so the install hook
+selects `cpu`; `use-engine --auto` re-scores once it is connected.
+
+One model, `parakeet-tdt-0.6b-v3-fp32` (default and only option). Measured
+on an RTX 4080 Laptop GPU over the 82-clip balanced corpus, against the
+int8 cpu engine on the same machine:
+
+| model | WER | vs NeMo PyTorch | real-time factor | 60 s window | peak VRAM |
+|---|---|---|---|---|---|
+| cpu int8 | 1.62% | 0.73% | 58x | 1.44 s | - |
+| fp32 | 1.62% | 0.00% | 145x | 0.21 s | 5.2 GB |
+
+The real-time factor is the first decode of each length, which is what
+streaming sees: every window is a new length, and the CUDA provider pays
+kernel setup per shape (repeat lengths reach 240x).
+
+No fp16 model ships: the naive `onnxruntime.transformers.float16` conversion
+measured slower than fp32 on fresh window lengths and lost accuracy on long
+windows. See `dev/parakeet/export_parakeet_onnx.py`.
 
 ## Streaming cadence
 

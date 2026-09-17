@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--device",
         default=None,
         choices=("cpu", "cuda"),
-        help="inference device; default per adapter (whisper: cpu, nemotron: cuda)",
+        help="inference device; default per adapter (whisper, parakeet: cpu; nemotron: cuda)",
     )
     parser.add_argument(
         "--compute-type", default="default", help="CTranslate2 compute type (whisper)"
@@ -225,6 +225,7 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
 
         return ParakeetAdapter(
             args.model,
+            device=args.device or "cpu",
             streaming=args.streaming,
             stream_arm_s=getattr(args, "stream_arm_s", None) or 15.0,
             stream_silence_cut_s=getattr(args, "stream_silence_cut_s", None) or 0.5,

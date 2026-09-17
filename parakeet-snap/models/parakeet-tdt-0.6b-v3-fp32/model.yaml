@@ -1,0 +1,13 @@
+name: parakeet-tdt-0.6b-v3-fp32
+description: Parakeet TDT 0.6B v3 (multilingual, 25 languages, punctuation) - fp32 ONNX for NVIDIA GPUs
+model-card-url: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+quantization: float32
+capabilities:
+  - realtime-transcription
+disk-size: 2.5G
+# NeMo's own export of NVIDIA's checkpoint (CC-BY-4.0), made by
+# dev/parakeet/export_parakeet_onnx.py at a pinned revision.
+components:
+  - model-parakeet-fp32
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-parakeet-fp32

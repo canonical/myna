@@ -9,6 +9,8 @@ session dispatch paths (batch I7, streaming strategy wiring).
 from __future__ import annotations
 
 import asyncio
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,6 +30,10 @@ from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
     BASE_ENCODER_FILE,
     BATCH_WINDOW_CAP_S,
+    CUDA_PROVIDER,
+    FP32_ENCODER_FILE,
+    FP32_JOINT_FILE,
+    INT8_JOINT_FILE,
     MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
     PARTIAL_CADENCE_S,
@@ -36,8 +42,11 @@ from myna.testbed.parakeet import (
     _detokenize,
     _load_vocab,
     _ParakeetOnnx,
+    _require_cuda,
     _tokens_to_words,
+    encoder_run_options,
     encoder_variant,
+    model_files,
 )
 from myna.testbed.streaming.strategies import SilenceCut, Word
 
@@ -567,3 +576,219 @@ def test_encoder_variant_env_overrides_lib_location(tmp_path, monkeypatch):
     path, lib = encoder_variant(str(tmp_path))
     assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
     assert lib == str(ext)
+
+
+# Precision and device (the nvidia-gpu engine). A model dir carries one export,
+# told apart by its decoder_joint; the GPU path refuses int8 graphs, refuses to
+# serve when ORT fell back to the CPU, and runs the joint unbound.
+
+
+def _touch(directory, *names):
+    for name in names:
+        (directory / name).write_bytes(b"")
+
+
+def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    for precision, encoder, joint in (
+        ("fp32", FP32_ENCODER_FILE, FP32_JOINT_FILE),
+        ("int8", BASE_ENCODER_FILE, INT8_JOINT_FILE),
+    ):
+        directory = tmp_path / precision
+        directory.mkdir()
+        _touch(directory, encoder, joint)
+        files = model_files(str(directory))
+        assert files.precision == precision
+        assert files.encoder == str(directory / encoder)
+        assert files.decoder_joint == str(directory / joint)
+        assert files.custom_ops is None
+
+
+def test_model_files_int8_keeps_the_maxstack_selection(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    _touch(tmp_path, MAXSTACK_ENCODER_FILE, QSILU_LIB_FILE, INT8_JOINT_FILE)
+    files = model_files(str(tmp_path))
+    assert files.encoder == str(tmp_path / MAXSTACK_ENCODER_FILE)
+    assert files.custom_ops == str(tmp_path / QSILU_LIB_FILE)
+
+
+def test_model_files_refuses_a_dir_with_two_precisions(tmp_path):
+    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+    with pytest.raises(FileNotFoundError, match="exactly one decoder_joint"):
+        model_files(str(tmp_path))
+
+
+def test_model_files_refuses_a_dir_with_no_decoder_joint(tmp_path):
+    _touch(tmp_path, FP32_ENCODER_FILE)
+    with pytest.raises(FileNotFoundError, match="none"):
+        model_files(str(tmp_path))
+
+
+def test_model_files_refuses_a_joint_without_its_encoder(tmp_path):
+    _touch(tmp_path, FP32_JOINT_FILE)
+    with pytest.raises(FileNotFoundError, match=FP32_ENCODER_FILE):
+        model_files(str(tmp_path))
+
+
+def test_cuda_refuses_an_int8_export_before_loading_anything(tmp_path, monkeypatch):
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    _touch(tmp_path, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+    with pytest.raises(ValueError, match="cuda device needs fp32"):
+        _ParakeetOnnx(str(tmp_path), device="cuda")
+
+
+class _FakeSessionOptions:
+    def __init__(self):
+        self.log_severity_level = None
+        self.graph_optimization_level = None
+        self.intra_op_num_threads = None
+        self.inter_op_num_threads = None
+
+
+class _FakeGraphOptimizationLevel:
+    ORT_ENABLE_ALL = "ORT_ENABLE_ALL"
+
+
+class _FakeRunOptions:
+    def __init__(self):
+        self.entries = {}
+
+    def add_run_config_entry(self, key, value):
+        self.entries[key] = value
+
+
+class _FakeSession:
+    """Stand-in for onnxruntime.InferenceSession: get_providers() always
+    returns provider names, never the (name, options) tuples a caller may
+    have requested - real ORT behaves the same way."""
+
+    def __init__(self, path, options, providers):
+        self.path = path
+        self.options = options
+        self.requested_providers = list(providers)
+
+    def get_providers(self):
+        return [p[0] if isinstance(p, tuple) else p for p in self.requested_providers]
+
+    def get_outputs(self):
+        return [SimpleNamespace(shape=(1, 1, 1, 8))]
+
+
+def test_cuda_init_builds_sessions_on_the_cuda_provider(tmp_path, monkeypatch):
+    """Session dispatch: device="cuda" puts the encoder and decoder_joint on
+    CUDA_PROVIDER, keeps the preprocessor on the CPU, and wires the
+    arena-shrink run options; a session ORT could not put on CUDA would trip
+    _require_cuda instead of silently serving from the CPU."""
+    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE)
+    (tmp_path / "vocab.txt").write_text("<blk> 0\n", encoding="utf-8")
+    fake_ort = SimpleNamespace(
+        InferenceSession=_FakeSession,
+        SessionOptions=_FakeSessionOptions,
+        GraphOptimizationLevel=_FakeGraphOptimizationLevel,
+        RunOptions=_FakeRunOptions,
+    )
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+
+    model = _ParakeetOnnx(str(tmp_path), device="cuda")
+
+    assert model._preprocessor.requested_providers == ["CPUExecutionProvider"]
+    assert model._encoder.requested_providers[0] == CUDA_PROVIDER
+    assert model._decoder_joint.requested_providers[0] == CUDA_PROVIDER
+    assert model._encoder_run_options.entries == {"memory.enable_memory_arena_shrinkage": "gpu:0"}
+
+
+def test_cuda_arena_keeps_power_of_two_growth():
+    """Streaming decodes a new window length on nearly every tick. An arena
+    extended by exactly what each request needs never reuses a block across
+    lengths and exhausted a 12 GB card 26 s into a session."""
+    name, options = CUDA_PROVIDER
+    assert name == "CUDAExecutionProvider"
+    assert options.get("arena_extend_strategy", "kNextPowerOfTwo") == "kNextPowerOfTwo"
+
+
+class _FakeOrt:
+    class RunOptions:
+        def __init__(self):
+            self.entries = {}
+
+        def add_run_config_entry(self, key, value):
+            self.entries[key] = value
+
+
+def test_cuda_encoder_runs_shrink_the_arena_and_cpu_runs_do_not():
+    """Every window is a new length; without shrinking, the encoder's arena
+    grew past a 12 GB card over one streaming benchmark."""
+    options = encoder_run_options(_FakeOrt, "cuda")
+    assert options.entries == {"memory.enable_memory_arena_shrinkage": "gpu:0"}
+    assert encoder_run_options(_FakeOrt, "cpu") is None
+
+
+class _Session:
+    def __init__(self, providers):
+        self._providers = providers
+
+    def get_providers(self):
+        return self._providers
+
+
+def test_require_cuda_refuses_a_silent_cpu_fallback():
+    _require_cuda(_Session(["CUDAExecutionProvider", "CPUExecutionProvider"]), "encoder")
+    with pytest.raises(RuntimeError, match="encoder: CUDAExecutionProvider is not active"):
+        _require_cuda(_Session(["CPUExecutionProvider"]), "encoder")
+    with pytest.raises(RuntimeError, match="not active"):
+        _require_cuda(_Session([]), "decoder_joint")
+
+
+class _RecordingJoint:
+    """decoder_joint stand-in: logits and states derived from the inputs, so a
+    stale input shows up in the output."""
+
+    def __init__(self, width):
+        self.width = width
+        self.feeds = []
+
+    def run(self, names, feeds):
+        self.feeds.append({k: np.array(v, copy=True) for k, v in feeds.items()})
+        token = int(feeds["targets"][0, 0])
+        frame = float(feeds["encoder_outputs"][0, 0, 0])
+        logits = np.full((1, 1, 1, self.width), frame, dtype=np.float32)
+        logits[..., token] = 100.0
+        state = feeds["input_states_1"] + 1.0
+        return [logits, state, feeds["input_states_2"] - 1.0]
+
+
+def test_cuda_decode_step_feeds_the_current_inputs_and_fills_the_buffers():
+    model = _ParakeetOnnx.__new__(_ParakeetOnnx)
+    model.device = "cuda"
+    model._joint_out_width = 8
+    model._decoder_joint = _RecordingJoint(8)
+    buffers = model._joint_buffers()
+    assert buffers.io is None, "a CUDA session must not be driven through IOBinding"
+
+    for step, (token, frame) in enumerate(((3, 0.25), (5, 0.75))):
+        logits = model._decode_step(buffers, token, np.full(1024, frame, dtype=np.float32))
+        fed = model._decoder_joint.feeds[step]
+        assert fed["targets"][0, 0] == token
+        assert fed["encoder_outputs"][0, 0, 0] == frame
+        assert logits is buffers.logits
+        assert logits[token] == 100.0 and logits[token - 1] == frame
+        # The caller decides whether to adopt the new state; the step must not.
+        assert np.all(buffers.state_in[0] == 0.0)
+        assert np.all(buffers.state_out[0] == 1.0) and np.all(buffers.state_out[1] == -1.0)
+
+
+def test_adapter_refuses_an_unknown_device():
+    with pytest.raises(ValueError, match="cpu or cuda"):
+        ParakeetAdapter(device="rocm")
+
+
+def test_cli_wires_the_device_and_the_candidate_names_it():
+    base = ["--socket", "/tmp/s.sock", "--adapter", "parakeet"]
+    cpu = build_adapter(build_parser().parse_args(base))
+    assert cpu._device == "cpu"
+    assert cpu.candidate.engine == "onnxruntime-cpu"
+
+    cuda = build_adapter(build_parser().parse_args(base + ["--device", "cuda"]))
+    assert cuda._device == "cuda"
+    assert cuda.candidate.engine == "onnxruntime-cuda"

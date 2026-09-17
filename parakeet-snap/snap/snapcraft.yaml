@@ -1,10 +1,10 @@
 # Parakeet inference snap (Myna) - feature 008 US3.
 #
-# The small CPU-tier transducer snap: Parakeet TDT 0.6B v3 int8 ONNX via
-# onnxruntime (no torch), a fraction of the full NeMo snap's size (SC-005).
-# Follows the whisper-snap pattern (modelctl v2 + engine/runtime/model
-# manifests + weights as a component), simplified to one engine (cpu) and one
-# model — that's the whole point of the small snap.
+# Parakeet TDT 0.6B v3 via onnxruntime, no torch. Two engines, the whisper-snap
+# pattern (modelctl v2 + engine/runtime/model manifests + components):
+#   - cpu: the int8 export, onnxruntime baked into the base snap.
+#   - nvidia-gpu: a fp32 export of NVIDIA's checkpoint on onnxruntime's CUDA
+#     provider, the CUDA runtime as a component.
 #
 # The server is myna-server --adapter parakeet --streaming (chunked commit,
 # SilenceCut): the streaming-class UX is this snap's reason to exist. Weights
@@ -20,9 +20,9 @@ summary: Parakeet TDT speech-to-text inference snap (Myna)
 description: |
   Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps NVIDIA's Parakeet TDT 0.6B v3 (25 languages,
-  punctuation) as an int8 ONNX export served via onnxruntime, with chunked
-  progressive commit (pause-delimited chunks decoded once and committed while
-  the user keeps speaking).
+  punctuation) as ONNX served via onnxruntime, int8 on CPUs and fp32 on
+  NVIDIA GPUs, with chunked progressive commit (pause-delimited chunks
+  decoded once and committed while the user keeps speaking).
 
   The service receives PCM audio pushed by clients; it has no access to the
   microphone or any audio hardware.
@@ -45,9 +45,7 @@ apps:
     completer: bin/snap-completer.bash
     plugs: &hook-plugs
       # modelctl's hardware detection (lscompute reading /sys) backs
-      # `show-engine`, `use-engine` and `status`. This snap ships one CPU
-      # engine and its daemon does not need scoring to boot, but the modelctl
-      # surface is meant to answer uniformly on every inference snap.
+      # `show-engine`, `use-engine --auto` and `status`.
       - hardware-observe
       - opengl
 
@@ -63,6 +61,9 @@ apps:
       # /sys/fs/cgroup/** and /proc/**.
       - hardware-observe
       - system-observe
+      # The NVIDIA device nodes and the host driver's libcuda.so.1, for the
+      # nvidia-gpu engine.
+      - opengl
       # No `process-control` here, unlike the other ORT snaps: it exists only
       # to lift seccomp's sched_setaffinity filter so ORT can pin its thread
       # pool, and ORT pins only when it sizes that pool itself. This adapter
@@ -160,7 +161,7 @@ parts:
     organize:
       "server.sh": bin/
 
-  # Model weights as a component. Populate components/ with
+  # Model weights as components. Populate components/ with
   # ./dev/download-models.sh <base|maxstack> before packing; `prime: [-*]`
   # keeps them out of the base. Whatever that stages is what ships.
   model-components:
@@ -173,6 +174,59 @@ parts:
     # is how the dropped base encoder kept reappearing in a 1.36 GB component.
     organize:
       "model-parakeet-int8/*": (component/model-parakeet-int8)/
+      "model-parakeet-fp32/*": (component/model-parakeet-fp32)/
+    prime:
+      - -*
+
+  # CUDA runtime as a component: the myna wheel's parakeet runtime with
+  # onnxruntime-gpu in place of onnxruntime, and the NVIDIA CUDA 13 and cuDNN 9
+  # pip libraries, under site-packages/. Exposed through PYTHONPATH and
+  # LD_LIBRARY_PATH (runtimes/onnxruntime-cuda/runtime.yaml) and run by the
+  # base python3.
+  onnxruntime-cuda:
+    plugin: nil
+    # Offline from the wheelhouse dev/prepare.sh resolves: the exact closure of
+    # the pins, hardlinked from a cache every checkout shares.
+    source: wheelhouse-cuda
+    build-packages:
+      - python3
+      - python3-pip
+      - binutils
+    override-build: |
+      [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ] || exit 0
+      target="$CRAFT_PART_INSTALL/site-packages"
+      mkdir -p "$target"
+      # The wheel with no extra: its parakeet extra is the CPU onnxruntime,
+      # which installs the same `onnxruntime` package over the GPU one.
+      pip3 install --target="$target" --no-index --find-links=. \
+        ./myna-0.0.1-py3-none-any.whl \
+        --requirement "$CRAFT_PROJECT_DIR/runtimes/onnxruntime-cuda/requirements.txt"
+      nvidia="$target/nvidia"
+      # TensorRT's provider needs libnvinfer, which is not shipped; nvblas is
+      # an LD_PRELOAD shim and cufftw the FFTW-compatible API. None has a caller.
+      rm -f "$target"/onnxruntime/capi/libonnxruntime_providers_tensorrt.so \
+            "$nvidia"/cu13/lib/libnvblas.so.* "$nvidia"/cu13/lib/libcufftw.so.*
+      rm -rf "$nvidia"/*/include "$target"/bin
+      # The library path runtimes/onnxruntime-cuda/runtime.yaml sets: the
+      # pybind module itself links libcudart, so the import proves it too.
+      export LD_LIBRARY_PATH="$nvidia/cu13/lib:$nvidia/cudnn/lib"
+      export PRUNE_GATE="import onnxruntime, numpy; assert 'CUDAExecutionProvider' in onnxruntime.get_available_providers()"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
+      unset LD_LIBRARY_PATH
+      # The provider is dlopened, so a missing CUDA library only shows on a
+      # user's GPU. Every library it needs must be in this component, except
+      # the driver's libcuda.so.1 and the base's system libraries.
+      provider="$target/onnxruntime/capi/libonnxruntime_providers_cuda.so"
+      for lib in $(readelf -d "$provider" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+        case "$lib" in libcuda.so.1|libc.so.*|libm.so.*|libdl.so.*|librt.so.*|libpthread.so.*|libstdc++.so.*|libgcc_s.so.*|ld-linux-*) continue ;; esac
+        [ -e "$nvidia/cu13/lib/$lib" ] || [ -e "$nvidia/cudnn/lib/$lib" ] || {
+          echo "onnxruntime-cuda: $lib needed by the CUDA provider is not shipped" >&2
+          exit 1
+        }
+      done
+      craftctl default
+    organize:
+      "*": (component/onnxruntime-cuda)
     prime:
       - -*
 
@@ -185,3 +239,15 @@ components:
       re-quantized encoder (robust across window lengths; istupakov's HF int8
       encoder collapses mid-audio on some lengths) + nemo128 preprocessor,
       TDT decoder_joint, vocab.
+  model-parakeet-fp32:
+    type: standard
+    summary: Parakeet TDT 0.6B v3 fp32 ONNX weights for NVIDIA GPUs
+    description: |
+      NVIDIA Parakeet TDT 0.6B v3 (CC-BY-4.0) exported to ONNX by NeMo's own
+      exporter from NVIDIA's checkpoint, with the nemo128 preprocessor and vocab.
+  onnxruntime-cuda:
+    type: standard
+    summary: onnxruntime CUDA runtime (onnxruntime-gpu, CUDA 13, cuDNN 9)
+    description: |
+      GPU inference stack for the nvidia-gpu engine: myna + onnxruntime-gpu
+      and the NVIDIA CUDA 13 and cuDNN 9 libraries. amd64 only.

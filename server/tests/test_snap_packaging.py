@@ -478,6 +478,60 @@ def test_models_declare_realtime_transcription(snap) -> None:
         )
 
 
+def _engines(snap_dir: str) -> dict[str, dict]:
+    return {
+        path.parent.name: yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in sorted((REPO_ROOT / snap_dir / "engines").glob("*/engine.yaml"))
+    }
+
+
+def test_every_component_an_engine_needs_is_declared_and_packed(snap) -> None:
+    """`use-engine` installs the components an engine's runtime and models name.
+
+    One the recipe does not declare cannot be installed, and one no part
+    organizes into is declared but empty: either way the engine is offered and
+    then fails on the first user who selects it.
+    """
+    snap_dir, name, recipe = snap
+    declared = set(recipe.get("components") or {})
+    organized = {
+        m.group(1)
+        for part in (recipe.get("parts") or {}).values()
+        for target in (part.get("organize") or {}).values()
+        if (m := re.match(r"\(component/([\w-]+)\)", str(target)))
+    }
+    root = REPO_ROOT / snap_dir
+    for engine_name, engine in _engines(snap_dir).items():
+        needed = []
+        runtime = root / "runtimes" / engine["runtime"] / "runtime.yaml"
+        assert runtime.is_file(), f"{name}: engine {engine_name} names a missing runtime"
+        needed += yaml.safe_load(runtime.read_text(encoding="utf-8")).get("components") or []
+        for model in engine["model"]["options"]:
+            manifest = root / "models" / model / "model.yaml"
+            assert manifest.is_file(), f"{name}: engine {engine_name} offers missing model {model}"
+            needed += yaml.safe_load(manifest.read_text(encoding="utf-8")).get("components") or []
+        for component in needed:
+            assert component in declared, f"{name}: {engine_name} needs undeclared {component}"
+            assert component in organized, f"{name}: no part packs component {component}"
+
+
+def test_gpu_engines_reach_the_gpu(snap) -> None:
+    """A strictly confined daemon sees no GPU device nodes, and no host driver
+    libraries, without the opengl plug."""
+    snap_dir, name, recipe = snap
+    gpu_engines = [
+        engine_name
+        for engine_name, engine in _engines(snap_dir).items()
+        if any(d.get("type") == "gpu" for d in (engine.get("devices") or {}).get("allof") or [])
+    ]
+    if not gpu_engines:
+        return
+    _, daemon = _daemon_app(recipe)
+    assert "opengl" in (daemon.get("plugs") or []), (
+        f"{name}: engines {gpu_engines} need a GPU but the daemon does not plug opengl"
+    )
+
+
 def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     """Model metadata describes disk weights, not a runtime compute policy."""
     model_dir = REPO_ROOT / "whisper-snap" / "models"

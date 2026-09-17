@@ -27,3 +27,12 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Keep streaming as configuration; never hardcode `--streaming` in engine launchers.
 - Validate static packaging with `server/tests/test_snap_packaging.py` and `make lint-snaps`.
 - Use the spread adapter smoke test for behavior that manifests cannot prove, including sideload connections and streaming propagation.
+
+## GPU engines
+
+- Ship the GPU stack as a runtime component with its own `site-packages`, run by the base `python3` so the base venv's CPU packages stay off the path, and plug `opengl` on the daemon for the device nodes and the host driver's `libcuda.so.1`.
+- An ONNX Runtime CUDA session that cannot load its provider runs on the CPU with only a log line. Check the created session's `get_providers()`; `onnxruntime.get_available_providers()` lists what the wheel was built with and always names CUDA.
+- `onnxruntime-gpu` needs the CUDA libraries it links against beside it. Pin the `nvidia-*` wheels explicitly: 1.27's `[cuda,cudnn]` extras name `-cu13` packages that are empty placeholders on PyPI.
+- Leave ONNX Runtime's CUDA arena at its default power-of-two growth. `kSameAsRequested` fragments on variable input lengths: streaming exhausted a 12 GB card within 30 s.
+- Match GPU engines on `vendor-id` only. modelctl reads `vram` and `compute-capability` through `nvidia-smi`, which these snaps do not stage, so either key makes the engine never match.
+- Do not drive a CUDA session through IOBinding onto host buffers that are rewritten in place between runs: the device copy is taken at bind time and the outputs come back stale.

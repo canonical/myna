@@ -66,8 +66,8 @@ desktop doesn't matter):
 - **CPU-only** machine (no supported NVIDIA GPU present, or GPU snap not
   installed).
 - **NVIDIA GPU** machine (CUDA-capable card, GPU-enabled snap variant
-  installed where available — currently whisper and nemotron ship GPU
-  engines; qwen is CPU-only regardless of hardware).
+  installed where available - currently whisper, parakeet and nemotron ship
+  GPU engines; qwen is CPU-only regardless of hardware).
 
 Record exact CPU model, RAM, and GPU model (if any) in the results table
 (§9) — this is the closest thing this project currently has to a hardware-tier

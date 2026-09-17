@@ -35,13 +35,17 @@ modelctl set --package stream-partial-cadence-seconds="0.5"
 modelctl set --package stream-partial-tail-seconds="0"
 
 #
-# Activate the single engine.
+# Select an engine.
 #
-# This snap ships exactly one engine and its daemon execs it directly, so
-# nothing here needs hardware scoring. The activation still matters: without an
-# active engine `modelctl show-engine` / `list-models` / `status` all fail, and
-# those are meant to answer on every inference snap. Selecting by name rather
-# than --auto keeps that true even where hardware-observe is
-# unavailable - there is only one possible answer.
+# nvidia-gpu where modelctl can see an NVIDIA GPU, otherwise cpu. A sideload
+# does not auto-connect hardware-observe, and `--auto` cannot score without it,
+# so fall back to cpu by name: it runs everywhere this snap installs, and a
+# snap with no active engine has a daemon that exits on every start.
 #
-modelctl use-engine cpu --assume-yes --no-restart
+if snapctl is-connected hardware-observe || lscpu -V &>/dev/null; then
+    modelctl use-engine --auto --assume-yes --no-restart --verbose ||
+        modelctl use-engine cpu --assume-yes --no-restart
+else
+    echo "hardware-observe is not connected: selecting the cpu engine"
+    modelctl use-engine cpu --assume-yes --no-restart
+fi

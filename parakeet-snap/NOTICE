@@ -24,11 +24,23 @@ The files are staged from the parakeet-tdt-0.6b-v3-int8 bundle assembled and
 released by Kieirra as murmure-model
 (https://github.com/Kieirra/murmure-model). No model was retrained.
 
+model-parakeet-fp32: the same NVIDIA Parakeet TDT 0.6B v3 checkpoint under
+the same CC-BY-4.0 license, exported to ONNX by Canonical Ltd. with NVIDIA
+NeMo's exporter (dev/parakeet/export_parakeet_onnx.py in the Myna source
+tree). nemo128.onnx and its attribution are as for model-parakeet-int8
+above. No model was retrained.
+
 Runtimes
 --------
 
 onnxruntime is Apache License, Version 2.0; each wheel's own license file is
 installed alongside it.
+
+onnxruntime-cuda: the onnxruntime-gpu wheel (Apache License, Version 2.0) and
+the NVIDIA CUDA runtime, cuBLAS, cuFFT, cuRAND, NVRTC, nvJitLink and cuDNN
+redistributable wheels, which ship under the NVIDIA Software License Agreement
+carried inside each wheel. Every wheel's own license file is installed
+alongside it.
 
 The server code in this snap is part of Myna and is licensed under the GNU
 Affero General Public License, version 3 or later; see LICENSE next to this

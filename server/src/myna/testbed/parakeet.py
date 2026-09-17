@@ -40,6 +40,15 @@ Requires the ``parakeet`` extra: ``uv sync --extra parakeet``. Weights are
 murmure's ``parakeet-tdt-0.6b-v3-int8`` bundle, staged by
 ``dev/parakeet/fetch_parakeet_onnx.py`` (pinned + sha256-verified) into the XDG cache;
 ``--model`` points at a local directory instead (snap model component).
+
+On an NVIDIA GPU (``device="cuda"``, the snap's nvidia-gpu engine) the same
+decode runs on a fp32 graph exported from NVIDIA's own checkpoint by
+``dev/parakeet/export_parakeet_onnx.py``. Measured 2026-09-16 on an RTX 4080
+Laptop GPU over the 82-clip balanced corpus: the fp32 graph transcribes exactly
+as NeMo's PyTorch model does (0.00% WER between them) at 2.6x the int8 CPU
+engine's speed, and 7x on a 60 s window. No fp16: the naive conversion
+measured slower on fresh window lengths and less accurate on long ones.
+
 The collapse this adapter was chosen to avoid is not avoided, and is not what
 it was thought to be. Murmure's re-quantized int8 encoder was picked over
 istupakov's because istupakov's collapses (blank output mid-audio)
@@ -63,6 +72,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -150,6 +160,87 @@ def encoder_variant(model_dir: str) -> tuple[str, str | None]:
         )
     env_lib = os.environ.get("MYNA_ORT_CUSTOM_OPS")
     return base, env_lib if env_lib and os.path.exists(env_lib) else None
+
+
+# Float export for the GPU engine, made from NVIDIA's .nemo checkpoint by
+# dev/parakeet/export_parakeet_onnx.py: NeMo's exporter output as is. A dir
+# carries one precision, so the decoder_joint file present decides which.
+FP32_ENCODER_FILE = "encoder-model.onnx"
+FP32_JOINT_FILE = "decoder_joint-model.onnx"
+INT8_JOINT_FILE = "decoder_joint-model.int8.onnx"
+
+Device = Literal["cpu", "cuda"]
+
+
+@dataclass(frozen=True)
+class ModelFiles:
+    precision: Literal["int8", "fp32"]
+    encoder: str
+    decoder_joint: str
+    custom_ops: str | None = None
+
+
+def model_files(model_dir: str) -> ModelFiles:
+    """The encoder and decoder_joint a model dir carries, by precision."""
+    present = [
+        joint
+        for joint in (INT8_JOINT_FILE, FP32_JOINT_FILE)
+        if os.path.exists(os.path.join(model_dir, joint))
+    ]
+    if len(present) != 1:
+        raise FileNotFoundError(
+            f"{model_dir} must carry exactly one decoder_joint, found {present or 'none'}"
+        )
+    joint = os.path.join(model_dir, present[0])
+    if present[0] == INT8_JOINT_FILE:
+        encoder, custom_ops = encoder_variant(model_dir)
+        return ModelFiles("int8", encoder, joint, custom_ops)
+    files = ModelFiles("fp32", os.path.join(model_dir, FP32_ENCODER_FILE), joint)
+    if not os.path.exists(files.encoder):
+        raise FileNotFoundError(
+            f"{model_dir} carries {present[0]} but no {os.path.basename(files.encoder)}"
+        )
+    return files
+
+
+# HEURISTIC because every decode window has a new length, and EXHAUSTIVE
+# re-benchmarks the convolutions for each one (measured no faster on repeat
+# lengths either). The arena keeps ORT's default power-of-two growth: sized
+# exactly (kSameAsRequested), each new window length took a block no other
+# length could reuse, and streaming's growing windows ran a 12 GB card out of
+# memory 26 s into a session (+9.1 GB over 69 windows; power-of-two held at
+# +294 MB over 159).
+CUDA_PROVIDER = ("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC"})
+
+
+def encoder_run_options(ort: Any, device: Device) -> Any:
+    """Run options for the encoder: on CUDA, hand the arena's free regions back
+    after every run.
+
+    Every decode window is a new length, and the arena keeps whatever the
+    largest mix of them needed: 400 windows of 1-65 s took an fp32 encoder
+    from 3.4 GB to 6.7 GB and still climbing, and a streaming benchmark ran a
+    12 GB card out of memory. Shrinking after each encoder run held 4.6 GB at
+    no measured cost. Not the joint: it runs once per frame, and freeing its
+    small, fixed-size buffers every step doubled decode time.
+    """
+    if device != "cuda":
+        return None
+    options = ort.RunOptions()
+    options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+    return options
+
+
+def _require_cuda(session: object, name: str) -> None:
+    """ORT drops to CPU with only a log line when the CUDA provider cannot load
+    (a missing libcudnn, an old driver), and the GPU engine would then serve at
+    a tenth of its speed. Refuse instead."""
+    providers = session.get_providers()  # type: ignore[attr-defined]
+    if not providers or providers[0] != "CUDAExecutionProvider":
+        raise RuntimeError(
+            f"parakeet {name}: CUDAExecutionProvider is not active (got {providers}); "
+            "check the CUDA runtime libraries and the NVIDIA driver"
+        )
 
 
 # TDT frame duration: 10 ms feature window × 8 encoder subsampling.
@@ -316,12 +407,19 @@ def _encoder_threads() -> int:
     return max(1, min(4, len(os.sched_getaffinity(0)) // 2))
 
 
+# The decoder_joint outputs the loop reads. NeMo's export also emits
+# prednet_lengths, which it never needs.
+_JOINT_OUTPUTS = ["outputs", "output_states_1", "output_states_2"]
+_ONE_TARGET = np.array([1], dtype=np.int32)
+
+
 @dataclass
 class _JointBuffers:
     """Per-utterance reusable IOBinding state for decoder_joint (T09). See
     `_ParakeetOnnx._joint_buffers`."""
 
-    io: object  # onnxruntime.IOBinding, left untyped to avoid an import here
+    # onnxruntime.IOBinding, left untyped to avoid an import here; None on CUDA
+    io: object | None
     encoder_step: NDArray[np.float32]  # (1, 1024, 1), written in place per step
     target: NDArray[np.int32]  # (1, 1) int32, written in place per step
     # (2,1,640) each: current committed state
@@ -334,10 +432,22 @@ class _JointBuffers:
 class _ParakeetOnnx:
     """The three ONNX sessions + greedy TDT decode (murmure engine.rs port)."""
 
-    def __init__(self, model_dir: str, *, encoder_threads: int | None = None) -> None:
+    def __init__(
+        self, model_dir: str, *, device: Device = "cpu", encoder_threads: int | None = None
+    ) -> None:
+        files = model_files(model_dir)
+        if device == "cuda" and files.precision == "int8":
+            # The int8 graphs are CPU kernels (dynamic quantisation, the
+            # maxstack custom ops): CUDA would run a few nodes and copy around
+            # the rest.
+            raise ValueError(f"{model_dir} is an int8 export; the cuda device needs fp32")
+
         import onnxruntime as ort
 
-        providers = ["CPUExecutionProvider"]
+        cpu = ["CPUExecutionProvider"]
+        # CPU stays in the list for the shape arithmetic ORT keeps off the GPU.
+        providers = [CUDA_PROVIDER, *cpu] if device == "cuda" else cpu
+        self.device: Device = device
 
         def opts(intra: int) -> ort.SessionOptions:
             o = ort.SessionOptions()
@@ -358,25 +468,31 @@ class _ParakeetOnnx:
         # Threads are also not free at rest here: each one takes a glibc
         # malloc arena, which is where the RSS growth over a long session came
         # from (see myna.server.lifecycle on trimming them back).
+        #
+        # The preprocessor stays on the CPU on either device: on the GPU it
+        # measured no faster, and the encoder takes its features either way.
         self._preprocessor = ort.InferenceSession(
-            os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=providers
+            os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=cpu
         )
         encoder_opts = opts(encoder_threads or _encoder_threads())
         # See encoder_variant: the maxstack encoder's myna.QSiLU* custom ops
         # (dev/parakeet/qsilu/) need their kernel library registered on the session.
-        encoder_path, custom_ops = encoder_variant(model_dir)
-        if custom_ops:
-            encoder_opts.register_custom_ops_library(custom_ops)
+        if files.custom_ops:
+            encoder_opts.register_custom_ops_library(files.custom_ops)
         _log.info(
-            "parakeet encoder variant: %s",
-            "maxstack (custom ops registered)" if custom_ops else "base",
+            "parakeet encoder: %s on %s%s",
+            files.precision,
+            device,
+            " (maxstack, custom ops registered)" if files.custom_ops else "",
         )
-        self._encoder = ort.InferenceSession(encoder_path, encoder_opts, providers=providers)
+        self._encoder = ort.InferenceSession(files.encoder, encoder_opts, providers=providers)
         self._decoder_joint = ort.InferenceSession(
-            os.path.join(model_dir, "decoder_joint-model.int8.onnx"),
-            opts(1),
-            providers=providers,
+            files.decoder_joint, opts(1), providers=providers
         )
+        if device == "cuda":
+            _require_cuda(self._encoder, "encoder")
+            _require_cuda(self._decoder_joint, "decoder_joint")
+        self._encoder_run_options = encoder_run_options(ort, device)
         self._vocab, self._blank_idx = _load_vocab(model_dir)
         # Logits are vocab + TDT duration bins; the duration slice is the tail.
         self._vocab_size = len(self._vocab)
@@ -410,8 +526,6 @@ class _ParakeetOnnx:
         setup cost is 13.6 us/utterance, 0.19 us amortized per step, so
         rebuilding it every call is free next to what it buys.
         """
-        import onnxruntime as ort
-
         encoder_step = np.zeros((1, 1024, 1), dtype=np.float32)
         target = np.zeros((1, 1), dtype=np.int32)
         target_length = np.array([1], dtype=np.int32)  # constant: one target
@@ -424,6 +538,21 @@ class _ParakeetOnnx:
             np.zeros((2, 1, 640), dtype=np.float32),
         )
         out = np.zeros((1, 1, 1, self._joint_out_width), dtype=np.float32)
+        buffers = _JointBuffers(
+            io=None,
+            encoder_step=encoder_step,
+            target=target,
+            state_in=state_in,
+            state_out=state_out,
+            logits=out.reshape(-1),
+        )
+        if self.device == "cuda":
+            # A CUDA session copies a bound host buffer to the device once, at
+            # bind time, so the in-place writes each step makes never reach it
+            # and the decode comes back empty. `_decode_step` runs it unbound.
+            return buffers
+
+        import onnxruntime as ort
 
         io = self._decoder_joint.io_binding()
         io.bind_ortvalue_input("encoder_outputs", ort.OrtValue.ortvalue_from_numpy(encoder_step))
@@ -434,14 +563,8 @@ class _ParakeetOnnx:
         io.bind_ortvalue_output("outputs", ort.OrtValue.ortvalue_from_numpy(out))
         io.bind_ortvalue_output("output_states_1", ort.OrtValue.ortvalue_from_numpy(state_out[0]))
         io.bind_ortvalue_output("output_states_2", ort.OrtValue.ortvalue_from_numpy(state_out[1]))
-        return _JointBuffers(
-            io=io,
-            encoder_step=encoder_step,
-            target=target,
-            state_in=state_in,
-            state_out=state_out,
-            logits=out.reshape(-1),
-        )
+        buffers.io = io
+        return buffers
 
     def _decode_step(
         self,
@@ -462,7 +585,22 @@ class _ParakeetOnnx:
         buffers.encoder_step[0, :, 0] = encoder_step
         buffers.target[0, 0] = prev_token
         with _zone("joint"):
-            self._decoder_joint.run_with_iobinding(buffers.io)
+            if buffers.io is not None:
+                self._decoder_joint.run_with_iobinding(buffers.io)
+                return buffers.logits
+            logits, state_1, state_2 = self._decoder_joint.run(
+                _JOINT_OUTPUTS,
+                {
+                    "encoder_outputs": buffers.encoder_step,
+                    "targets": buffers.target,
+                    "target_length": _ONE_TARGET,
+                    "input_states_1": buffers.state_in[0],
+                    "input_states_2": buffers.state_in[1],
+                },
+            )
+        buffers.logits[...] = logits.reshape(-1)
+        buffers.state_out[0][...] = state_1
+        buffers.state_out[1][...] = state_2
         return buffers.logits
 
     def _decode_sequence(
@@ -548,6 +686,7 @@ class _ParakeetOnnx:
                 encoder_out, encoder_lens = self._encoder.run(
                     ["outputs", "encoded_lengths"],
                     {"audio_signal": features, "length": features_lens},
+                    self._encoder_run_options,
                 )
             if bench is not None:
                 bench("encode", time.perf_counter() - t0)
@@ -609,12 +748,13 @@ def _default_model_dir() -> str:
 
 
 class ParakeetAdapter:
-    """Parakeet TDT int8 behind ``SttService``; chunked-commit streaming."""
+    """Parakeet TDT behind ``SttService``; chunked-commit streaming."""
 
     def __init__(
         self,
         model_dir: str | None = None,
         *,
+        device: Device = "cpu",
         streaming: bool = False,
         stream_arm_s: float = SC_ARM_S,
         stream_silence_cut_s: float = SC_SILENCE_CUT_S,
@@ -623,7 +763,10 @@ class ParakeetAdapter:
         stream_partial_tail_s: float = PARTIAL_TAIL_S,
         stream_telemetry: StreamingTelemetry | None = None,
     ) -> None:
+        if device not in ("cpu", "cuda"):
+            raise ValueError(f"device must be cpu or cuda, got {device!r}")
         self._model_dir = model_dir
+        self._device: Device = device
         self._streaming = streaming
         self._stream_arm_s = float(stream_arm_s)
         self._stream_silence_cut_s = float(stream_silence_cut_s)
@@ -660,7 +803,7 @@ class ParakeetAdapter:
         )
         return Candidate(
             model=label,
-            engine="onnxruntime-cpu",
+            engine=f"onnxruntime-{self._device}",
             streaming_strategy="chunked-commit" if self._streaming else "commit-on-finalize",
         )
 
@@ -682,7 +825,7 @@ class ParakeetAdapter:
                     if self._model_dir
                     else await asyncio.to_thread(_default_model_dir)
                 )
-                model = await asyncio.to_thread(_ParakeetOnnx, model_dir)
+                model = await asyncio.to_thread(_ParakeetOnnx, model_dir, device=self._device)
                 self._model = model
         return self._model
 

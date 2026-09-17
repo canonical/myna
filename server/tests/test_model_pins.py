@@ -52,6 +52,9 @@ PINNED = {
     "dev/fetch_audio8_model.py": r'^REVISION = "[0-9a-f]{40}"$',
     "dev/fetch_funasr_model.py": r'^REVISION = "v[0-9.]+"$',
     "dev/parakeet/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
+    # NVIDIA's checkpoint the float exports are made from: a commit, and the
+    # bytes, since the .nemo is re-exported rather than shipped.
+    "dev/parakeet/export_parakeet_onnx.py": r'^REVISION = "[0-9a-f]{40}"$',
 }
 
 
@@ -135,6 +138,25 @@ def test_parakeet_pins_agree() -> None:
         "parakeet-snap/dev/download-models.sh stamps a different murmure-model "
         "release than dev/parakeet/fetch_parakeet_onnx.py downloads - the stamp would "
         "certify weights that were never staged"
+    )
+
+
+def test_parakeet_export_pins_agree() -> None:
+    """The float components' stamp names the checkpoint and recipe the export
+    tool writes, and the tool verifies the checkpoint's bytes."""
+    tool = _text("dev/parakeet/export_parakeet_onnx.py")
+    assert re.search(r'^SHA256 = "[0-9a-f]{64}"$', tool, re.M), (
+        "dev/parakeet/export_parakeet_onnx.py downloads the checkpoint without a sha256"
+    )
+    repo = re.search(r'^REPO = "([^"]+)"$', tool, re.M)
+    revision = re.search(r'^REVISION = "([0-9a-f]{40})"$', tool, re.M)
+    recipe = re.search(r"^RECIPE = ([0-9]+)$", tool, re.M)
+    stamp = re.search(r'^export_rev="(.+)"$', _text("parakeet-snap/dev/download-models.sh"), re.M)
+    assert repo and revision and recipe and stamp
+    assert stamp.group(1) == f"{repo.group(1)}@{revision.group(1)} recipe {recipe.group(1)}", (
+        "parakeet-snap/dev/download-models.sh expects a different export than "
+        "dev/parakeet/export_parakeet_onnx.py writes - it would re-export forever, or "
+        "stage graphs made from another checkpoint"
     )
 
 

@@ -1,0 +1,23 @@
+# onnxruntime (CUDA) serving the Myna session API.
+#
+# Unlike the cpu runtime, whose venv is baked into the base snap, the GPU stack
+# is a component: the `onnxruntime-cuda` part installs myna[parakeet]'s runtime
+# with onnxruntime-gpu in place of onnxruntime, plus the NVIDIA CUDA 13 and
+# cuDNN 9 pip libraries, under site-packages/. The base snap's python3.12 runs
+# the server from there (see engines/nvidia-gpu/server), so the venv's CPU
+# onnxruntime is never on the path. libcuda.so.1 comes from the host driver
+# through the opengl interface.
+name: onnxruntime-cuda
+
+servers:
+  myna:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - PYTHONPATH=$SNAP_COMPONENTS/onnxruntime-cuda/site-packages
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/onnxruntime-cuda/site-packages/nvidia/cu13/lib
+  - LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SNAP_COMPONENTS/onnxruntime-cuda/site-packages/nvidia/cudnn/lib
+
+components:
+  - onnxruntime-cuda
