@@ -130,6 +130,9 @@ impl AudioSource for RecordingSource {
     fn format(&self) -> AudioFormat {
         self.inner.format()
     }
+    fn health(&self) -> myna_core::CaptureHealthStream {
+        self.inner.health()
+    }
     fn capture(self: Box<Self>) -> CaptureStream {
         *self.probe.lock().unwrap() += 1;
         let this = *self;

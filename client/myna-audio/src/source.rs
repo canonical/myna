@@ -13,7 +13,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use myna_core::{AudioFormat, AudioSource, CaptureStream, StopHandle};
+use myna_core::{
+    AudioFormat, AudioSource, CaptureHealth, CaptureHealthStream, CaptureStream, StopHandle,
+};
 use tokio::sync::watch;
 
 use crate::backend::{CaptureBackend, CaptureSpec, Producer};
@@ -45,6 +47,8 @@ pub struct CaptureSource {
     backend: Box<dyn CaptureBackend>,
     stop: StopHandle,
     stats: watch::Sender<AudioStats>,
+    health: watch::Sender<CaptureHealth>,
+    health_rx: watch::Receiver<CaptureHealth>,
 }
 
 impl CaptureSource {
@@ -79,6 +83,20 @@ impl AudioSource for CaptureSource {
         self.format
     }
 
+    fn health(&self) -> CaptureHealthStream {
+        let rx = self.health_rx.clone();
+        Box::pin(futures_util::stream::unfold(
+            (rx, true),
+            |(mut rx, first)| async move {
+                if !first && rx.changed().await.is_err() {
+                    return None;
+                }
+                let health = rx.borrow_and_update().clone();
+                Some((health, (rx, false)))
+            },
+        ))
+    }
+
     fn capture(self: Box<Self>) -> CaptureStream {
         let frame_bytes =
             (self.format.channels as usize * self.format.sample_width_bytes as usize).max(1);
@@ -96,6 +114,7 @@ impl AudioSource for CaptureSource {
         let producer = Producer::new(
             ring.clone(),
             self.stats.clone(),
+            self.health,
             self.format,
             chunk_bytes,
             frame_bytes,
@@ -107,11 +126,9 @@ impl AudioSource for CaptureSource {
             stop: self.stop.clone(),
         };
 
-        // Failure to OPEN the device: the stream is its one Err, then None —
-        // never an empty stream masquerading as a clean end (§3).
-        if let Err(err) = self.backend.start(spec, producer) {
-            return Box::pin(futures_util::stream::iter([Err(err)]));
-        }
+        // Opening happens behind the stream: a failure to open is its one
+        // Err, then None, never an empty stream masquerading as a clean end.
+        self.backend.start(spec, producer);
 
         // The guard rides inside the stream: dropping the stream (abort) trips
         // the stop flag for the backend and discards the ring.
@@ -186,6 +203,7 @@ impl CaptureSourceBuilder {
     /// If no backend was set — a programming error, not a runtime condition.
     pub fn build(self) -> CaptureSource {
         let (stats, _) = watch::channel(AudioStats::default());
+        let (health, health_rx) = watch::channel(CaptureHealth::Opening);
         CaptureSource {
             format: self.format,
             ring_depth: self.ring_depth,
@@ -195,6 +213,8 @@ impl CaptureSourceBuilder {
             backend: self.backend.expect("CaptureSource requires a backend (§5)"),
             stop: StopHandle::default(),
             stats,
+            health,
+            health_rx,
         }
     }
 }

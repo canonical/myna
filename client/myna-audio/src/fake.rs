@@ -45,8 +45,8 @@ impl ScriptedBackend {
         }
     }
 
-    /// A backend whose device cannot be opened: `start()` fails with
-    /// `DeviceUnavailable` and the capture stream is one `Err`, then `None`.
+    /// A backend whose device cannot be opened: capture finishes with
+    /// `DeviceUnavailable`, so the stream is one `Err`, then `None`.
     pub fn unavailable(msg: impl Into<String>) -> Self {
         Self {
             steps: Vec::new(),
@@ -63,13 +63,11 @@ impl ScriptedBackend {
 }
 
 impl CaptureBackend for ScriptedBackend {
-    fn start(
-        self: Box<Self>,
-        spec: CaptureSpec,
-        mut producer: Producer,
-    ) -> Result<(), CaptureError> {
+    fn start(self: Box<Self>, spec: CaptureSpec, mut producer: Producer) {
         if let Some(msg) = self.unavailable {
-            return Err(CaptureError::DeviceUnavailable(msg));
+            producer.finish(Some(CaptureError::DeviceUnavailable(msg)));
+            self.finished.store(true, Ordering::Release);
+            return;
         }
         let finished = self.finished;
         let steps = self.steps;
@@ -107,10 +105,10 @@ impl CaptureBackend for ScriptedBackend {
                     }
                 }
             }
-            producer.finish(fault);
+            // Flag first: the producer's release is what consumers wait on.
             finished.store(true, Ordering::Release);
+            producer.finish(fault);
         });
-        Ok(())
     }
 }
 

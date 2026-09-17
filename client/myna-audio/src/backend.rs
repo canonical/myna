@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use myna_core::{AudioFormat, CaptureError, PcmChunk, StopHandle};
+use myna_core::{AudioFormat, CaptureError, CaptureHealth, PcmChunk, StopHandle};
 use tokio::sync::watch;
 
 use crate::ring::Ring;
@@ -33,9 +33,16 @@ pub struct CaptureSpec {
 /// realtime-safe: it copies, allocates and takes the ring's mutex, so call it
 /// from a tokio task or a plain thread, never a realtime callback. Overload
 /// is the buffer's problem, never the backend's.
+///
+/// The producer also publishes [`CaptureHealth`]: `Capturing` on the first
+/// non-empty push, `Faulted` on overload or a fatal finish, `Ended` on a clean
+/// one. Dropping it without [`Producer::finish`] is a backend fault, so a lost
+/// producer never leaves the consumer waiting forever.
 pub struct Producer {
     ring: Arc<Ring>,
     stats: watch::Sender<AudioStats>,
+    health: watch::Sender<CaptureHealth>,
+    concluded: bool,
     format: AudioFormat,
     chunk_bytes: usize,
     frame_bytes: usize,
@@ -49,6 +56,7 @@ impl Producer {
     pub(crate) fn new(
         ring: Arc<Ring>,
         stats: watch::Sender<AudioStats>,
+        health: watch::Sender<CaptureHealth>,
         format: AudioFormat,
         chunk_bytes: usize,
         frame_bytes: usize,
@@ -56,6 +64,8 @@ impl Producer {
         Self {
             ring,
             stats,
+            health,
+            concluded: false,
             format,
             chunk_bytes,
             frame_bytes,
@@ -73,6 +83,9 @@ impl Producer {
         if self.ring.is_terminated() {
             return false;
         }
+        if !data.is_empty() {
+            self.publish(CaptureHealth::Capturing);
+        }
         self.pending.extend_from_slice(&data);
         while self.pending.len() >= self.chunk_bytes {
             let data = self.pending.split_to(self.chunk_bytes).freeze();
@@ -86,12 +99,36 @@ impl Producer {
     /// frames flush as a final short chunk; a trailing partial frame (a
     /// misbehaving backend) is dropped, not padded.
     pub fn finish(mut self, fault: Option<CaptureError>) {
+        self.conclude(fault);
+    }
+
+    fn conclude(&mut self, fault: Option<CaptureError>) {
+        if std::mem::replace(&mut self.concluded, true) {
+            return;
+        }
         let whole = self.pending.len() - self.pending.len() % self.frame_bytes;
         if whole > 0 {
             let data = self.pending.split_to(whole).freeze();
             self.emit(data);
         }
+        let terminal = match &fault {
+            Some(err) if !self.ring.is_closed() => CaptureHealth::Faulted(err.clone()),
+            _ => CaptureHealth::Ended,
+        };
+        self.publish(terminal);
         self.ring.finish(fault);
+    }
+
+    /// Advance health; terminal states are never left.
+    fn publish(&self, next: CaptureHealth) {
+        self.health.send_if_modified(|current| {
+            let terminal = matches!(current, CaptureHealth::Faulted(_) | CaptureHealth::Ended);
+            if terminal || *current == next {
+                return false;
+            }
+            *current = next;
+            true
+        });
     }
 
     fn emit(&mut self, data: Bytes) {
@@ -102,7 +139,9 @@ impl Producer {
         }
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
-        self.ring.push(chunk);
+        if let Some(overload) = self.ring.push(chunk) {
+            self.publish(CaptureHealth::Faulted(overload));
+        }
         let _ = self.stats.send(AudioStats {
             rms,
             peak,
@@ -116,13 +155,21 @@ impl Producer {
     }
 }
 
+impl Drop for Producer {
+    fn drop(&mut self) {
+        self.conclude(Some(CaptureError::Backend(
+            "capture backend exited without reporting an outcome".into(),
+        )));
+    }
+}
+
 /// A capture backend: opens the device and produces raw PCM in exactly
 /// `spec.format`, pushing into `producer` from wherever it runs.
 pub trait CaptureBackend: Send {
-    /// Must return quickly (spawn a task/thread for the capture loop). A
-    /// failure to *open* is the `Err` here; a failure *during* capture goes
-    /// through `producer.finish(Some(..))`.
-    fn start(self: Box<Self>, spec: CaptureSpec, producer: Producer) -> Result<(), CaptureError>;
+    /// Must return promptly without waiting for the device (spawn a task or
+    /// thread for opening and capture). Every outcome, including a failure to
+    /// open, goes through `producer.finish`.
+    fn start(self: Box<Self>, spec: CaptureSpec, producer: Producer);
 }
 
 /// Per-chunk levels, linear full-scale (§8). S16LE only — other widths report

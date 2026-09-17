@@ -19,7 +19,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -188,86 +187,61 @@ impl PipeWireBackend {
 }
 
 impl CaptureBackend for PipeWireBackend {
-    fn start(self: Box<Self>, spec: CaptureSpec, producer: Producer) -> Result<(), CaptureError> {
+    fn start(self: Box<Self>, spec: CaptureSpec, producer: Producer) {
         // Only S16LE lives in the format universe today. Reject other widths
         // up front — cheap, testable offline
         // (T008), no PipeWire connection needed.
         if spec.format.sample_width_bytes != 2 {
-            return Err(CaptureError::UnsupportedFormat(spec.format));
+            producer.finish(Some(CaptureError::UnsupportedFormat(spec.format)));
+            return;
         }
         // Validate channel-index selection up front (T026): indices must be
         // non-empty and downmix to the negotiated channel count. The actual
         // pick/downmix happens graph-side + in the process callback (T025).
-        if let Some(indices) = &spec.channels {
-            if indices.is_empty() {
-                return Err(CaptureError::Backend(
-                    "channel selection is empty; give at least one channel index".into(),
-                ));
-            }
-        }
-
-        // Hand off to the loop thread; it reports open success/failure back
-        // here synchronously so `start` returns the open error (§5).
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), CaptureError>>();
-        spawn_capture_thread(spec, producer, ready_tx, self.remote);
-        match ready_rx.recv() {
-            Ok(result) => result,
-            Err(_) => Err(CaptureError::Backend(
-                "PipeWire capture thread exited before signaling readiness".into(),
-            )),
-        }
-    }
-}
-
-/// Spawn the dedicated PipeWire main-loop thread (T005 + T013). The loop and
-/// its objects are not `Send`, so everything PipeWire lives here. Reports
-/// open success/failure through `ready_tx`; runtime faults go through
-/// `producer.finish(Some(..))`; a clean stop/EOF through `finish(None)`.
-fn spawn_capture_thread(
-    spec: CaptureSpec,
-    producer: Producer,
-    ready_tx: mpsc::Sender<Result<(), CaptureError>>,
-    remote: Option<String>,
-) {
-    std::thread::Builder::new()
-        .name("myna-pw-capture".into())
-        .spawn(move || {
-            run_capture(&spec, producer, ready_tx.clone(), remote.as_deref());
-            // Backstop: if run_capture returned before signaling (it always
-            // signals on every path), make sure `start` can never block.
-            let _ = ready_tx.send(Ok(()));
-        })
-        .expect("spawning the PipeWire capture thread");
-}
-
-/// The capture body: build loop + stream, connect, then run until stop/abort/
-/// fault. Owns the [`Producer`] and calls `finish` exactly once (only after a
-/// successful open). `ready_tx` carries the open outcome to `start`; on an
-/// open failure the error is surfaced through `start`'s return (the producer
-/// is simply dropped, exactly as `source.rs` expects on the `Err` path).
-fn run_capture(
-    spec: &CaptureSpec,
-    producer: Producer,
-    ready_tx: mpsc::Sender<Result<(), CaptureError>>,
-    remote: Option<&str>,
-) {
-    // The open outcome is signalled exactly once, by whichever path comes
-    // first: an early return below, the link-wait succeeding (state reaches
-    // Paused/Streaming), the link-wait timeout, or the loop-quit catch-all.
-    let ready_tx = Rc::new(RefCell::new(Some(ready_tx)));
-    macro_rules! fail_open {
-        ($err:expr) => {{
-            if let Some(tx) = ready_tx.borrow_mut().take() {
-                let _ = tx.send(Err($err));
-            }
+        if spec
+            .channels
+            .as_ref()
+            .is_some_and(|indices| indices.is_empty())
+        {
+            producer.finish(Some(CaptureError::Backend(
+                "channel selection is empty; give at least one channel index".into(),
+            )));
             return;
-        }};
+        }
+        // The loop and its objects are not `Send`, so everything PipeWire
+        // lives on this thread. A failed spawn drops the producer, which
+        // faults the capture rather than hanging it.
+        let remote = self.remote;
+        let _ = std::thread::Builder::new()
+            .name("myna-pw-capture".into())
+            .spawn(move || run_capture(spec, producer, remote));
     }
+}
 
+/// The capture thread body. Every PipeWire object lives inside
+/// [`capture_session`] and is released when it returns; only then does the
+/// producer deliver the one terminal outcome, so the producer's release (the
+/// end of the health stream) means PipeWire is released too.
+fn run_capture(spec: CaptureSpec, producer: Producer, remote: Option<String>) {
+    let producer = Rc::new(RefCell::new(Some(producer)));
+    let fault = capture_session(&spec, &producer, remote.as_deref());
+    let producer = producer.borrow_mut().take();
+    if let Some(p) = producer {
+        p.finish(fault);
+    }
+}
+
+/// Build loop + stream, connect, then run until stop/abort/fault. Returns the
+/// terminal fault, `None` for a clean end.
+fn capture_session(
+    spec: &CaptureSpec,
+    producer: &Rc<RefCell<Option<Producer>>>,
+    remote: Option<&str>,
+) -> Option<CaptureError> {
     let main_loop = match MainLoopRc::new(None) {
         Ok(l) => l,
         Err(e) => {
-            fail_open!(CaptureError::DeviceUnavailable(format!(
+            return Some(CaptureError::DeviceUnavailable(format!(
                 "cannot create PipeWire loop: {e}"
             )));
         }
@@ -275,7 +249,7 @@ fn run_capture(
     let context = match ContextRc::new(&main_loop, None) {
         Ok(c) => c,
         Err(e) => {
-            fail_open!(CaptureError::DeviceUnavailable(format!(
+            return Some(CaptureError::DeviceUnavailable(format!(
                 "cannot create PipeWire context: {e}"
             )));
         }
@@ -290,7 +264,7 @@ fn run_capture(
     let core = match core {
         Ok(c) => c,
         Err(e) => {
-            fail_open!(CaptureError::DeviceUnavailable(format!(
+            return Some(CaptureError::DeviceUnavailable(format!(
                 "cannot connect to PipeWire: {e}"
             )));
         }
@@ -302,16 +276,15 @@ fn run_capture(
     match graph_has_source(&main_loop, &core, spec.target.as_deref()) {
         Ok(true) => {}
         Ok(false) => {
-            fail_open!(CaptureError::DeviceUnavailable(no_source_message(
-                spec.target.as_deref()
+            return Some(CaptureError::DeviceUnavailable(no_source_message(
+                spec.target.as_deref(),
             )));
         }
-        Err(e) => fail_open!(e),
+        Err(e) => return Some(e),
     }
 
-    // Producer + terminal fault shared with the loop callbacks. Sound because
-    // every callback runs on this thread (no RT_PROCESS, asserted in process).
-    let producer = Rc::new(RefCell::new(Some(producer)));
+    // Terminal fault shared with the loop callbacks. Sound because every
+    // callback runs on this thread (no RT_PROCESS, asserted in process).
     let fault: Rc<RefCell<Option<CaptureError>>> = Rc::new(RefCell::new(None));
 
     // Stream properties: an audio capture stream, optionally targeting a
@@ -329,7 +302,7 @@ fn run_capture(
     let stream = match StreamRc::new(core, "myna-capture", props) {
         Ok(s) => s,
         Err(e) => {
-            fail_open!(CaptureError::Backend(format!(
+            return Some(CaptureError::Backend(format!(
                 "cannot create capture stream: {e}"
             )));
         }
@@ -358,13 +331,9 @@ fn run_capture(
             let fault = fault.clone();
             let target = spec.target.clone();
             let opened = opened.clone();
-            let ready_tx = ready_tx.clone();
             move |_stream, _ud, _old, new| {
-                if !opened.get() && matches!(link_wait_on_state(&new), LinkWait::Wired) {
+                if matches!(link_wait_on_state(&new), LinkWait::Wired) {
                     opened.set(true);
-                    if let Some(tx) = ready_tx.borrow_mut().take() {
-                        let _ = tx.send(Ok(()));
-                    }
                 }
                 if let StreamState::Error(msg) = &new {
                     // A stream error mid-capture (e.g. the device/daemon went
@@ -432,7 +401,7 @@ fn run_capture(
     let listener = match listener {
         Ok(l) => l,
         Err(e) => {
-            fail_open!(CaptureError::Backend(format!(
+            return Some(CaptureError::Backend(format!(
                 "cannot register stream listener: {e}"
             )));
         }
@@ -453,12 +422,10 @@ fn run_capture(
         .update_timer(Some(STOP_POLL), Some(STOP_POLL))
         .into_result();
 
-    // Dead-stream watchdog (one-shot): an opened stream that produced zero
-    // buffers within the window is dead — fault loudly (as an open failure if
-    // negotiation somehow never completed, else a terminal runtime fault).
+    // Dead-stream watchdog (one-shot): a stream that produced zero buffers
+    // within the window is dead — fault loudly.
     let watchdog = main_loop.loop_().add_timer({
         let main_loop = main_loop.clone();
-        let ready_tx = ready_tx.clone();
         let fault = fault.clone();
         let target = spec.target.clone();
         let buffers_seen = buffers_seen.clone();
@@ -467,10 +434,7 @@ fn run_capture(
                 return;
             }
             let msg = no_flow_message(target.as_deref());
-            *fault.borrow_mut() = Some(CaptureError::DeviceUnavailable(msg.clone()));
-            if let Some(tx) = ready_tx.borrow_mut().take() {
-                let _ = tx.send(Err(CaptureError::DeviceUnavailable(msg)));
-            }
+            *fault.borrow_mut() = Some(CaptureError::DeviceUnavailable(msg));
             main_loop.quit();
         }
     });
@@ -508,48 +472,29 @@ fn run_capture(
     }
 
     if let Err(e) = stream.connect(Direction::Input, None, flags, &mut params) {
-        let err = match &spec.target {
+        return Some(match &spec.target {
             Some(t) => CaptureError::DeviceUnavailable(format!("cannot connect to '{t}': {e}")),
             None => CaptureError::Backend(format!("cannot connect capture stream: {e}")),
-        };
-        fail_open!(err);
+        });
     }
 
-    // Open success is signalled from `state_changed` once the stream is
-    // wired (Paused/Streaming), or the link-wait timer faults it — the loop
-    // must run for either, so `start` stays parked until then.
     main_loop.run();
 
     // Loop quit: stop/abort/fault/link-timeout. Quiesce the stream before the
-    // producer is taken, then release every PipeWire object; only then deliver
-    // exactly one terminal outcome (queued audio drains first, then this).
+    // caller takes the producer; the PipeWire objects drop on return.
     let _ = stream.disconnect();
     drop(listener);
     drop(timer);
     drop(watchdog);
-    drop(stream);
-    drop(context);
-    drop(main_loop);
-    let was_opened = opened.get();
-    if !was_opened {
-        // Stop/abort during the link wait: close out the unsignalled open as
-        // a failure — never an empty stream masquerading as a clean end (§3).
-        if let Some(tx) = ready_tx.borrow_mut().take() {
-            let _ = tx.send(Err(CaptureError::DeviceUnavailable(
-                "capture stopped before an audio source was wired".into(),
-            )));
-        }
-    }
     let fault = fault.borrow_mut().take();
-    let producer = producer.borrow_mut().take();
-    if let Some(p) = producer {
-        // On open failure `start` already returned Err and the ring was
-        // dropped: drop the producer quietly, mirroring the other
-        // open-failure paths. Only an opened stream finishes (fault or clean).
-        if was_opened {
-            p.finish(fault);
-        }
+    if fault.is_none() && !opened.get() {
+        // Stopped during the link wait: never an empty stream masquerading
+        // as a clean end (§3).
+        return Some(CaptureError::DeviceUnavailable(
+            "capture stopped before an audio source was wired".into(),
+        ));
     }
+    fault
 }
 
 /// Pick channel indices `selected` from an interleaved S16LE frame stream that

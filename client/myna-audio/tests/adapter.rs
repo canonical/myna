@@ -7,8 +7,12 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use myna_audio::{AudioStats, CaptureSource, ScriptedBackend, Step};
-use myna_core::{AudioFormat, AudioSource, CaptureError, PcmChunk};
+use myna_audio::{
+    AudioStats, CaptureBackend, CaptureSource, CaptureSpec, Producer, ScriptedBackend, Step,
+};
+use myna_core::{
+    AudioFormat, AudioSource, CaptureError, CaptureHealth, CaptureHealthStream, PcmChunk,
+};
 use tokio::sync::watch;
 use tokio::time::timeout;
 
@@ -294,4 +298,199 @@ async fn short_final_chunk_flushes_whole_frames_only() {
     let total: usize = chunks.iter().map(|c| c.data.len()).sum();
     assert_eq!(total, 400);
     assert!(chunks.iter().all(|c| c.data.len() % 4 == 0));
+}
+
+/// Await the first health state matching `pred`, never touching the PCM
+/// stream. Panics if health ends or stalls first.
+async fn health_until(
+    health: &mut CaptureHealthStream,
+    pred: impl Fn(&CaptureHealth) -> bool,
+) -> CaptureHealth {
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let state = health.next().await.expect("health ended first");
+            if pred(&state) {
+                return state;
+            }
+        }
+    })
+    .await
+    .expect("health condition not reached in time")
+}
+
+/// The last health state before the stream ends (the backend released).
+async fn final_health(mut health: CaptureHealthStream) -> Option<CaptureHealth> {
+    timeout(Duration::from_secs(5), async {
+        let mut last = None;
+        while let Some(state) = health.next().await {
+            last = Some(state);
+        }
+        last
+    })
+    .await
+    .expect("health stream did not end")
+}
+
+#[tokio::test]
+async fn health_reports_opening_then_capturing_without_draining() {
+    let backend = ScriptedBackend::new(vec![
+        Step::Wait(secs(0.3)),
+        Step::Silence(secs(0.1)),
+        Step::Wait(secs(30.0)),
+    ]);
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
+    let mut health = source.health();
+    let _stream = Box::new(source).capture();
+
+    assert_eq!(health.next().await, Some(CaptureHealth::Opening));
+    health_until(&mut health, |h| *h == CaptureHealth::Capturing).await;
+}
+
+#[tokio::test]
+async fn fault_is_visible_on_health_before_the_stream_is_drained() {
+    let backend = ScriptedBackend::new(vec![
+        Step::Silence(secs(0.2)),
+        Step::Fault("boom".into()),
+        Step::Wait(secs(30.0)),
+    ]);
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+
+    // The PCM stream is not polled until health has reported the fault.
+    assert_eq!(
+        final_health(health).await,
+        Some(CaptureHealth::Faulted(CaptureError::Backend("boom".into())))
+    );
+    let (chunks, fault) = drain(stream).await;
+    assert_eq!(
+        chunks.len(),
+        2,
+        "audio captured before the fault still drains"
+    );
+    assert_eq!(fault, Some(CaptureError::Backend("boom".into())));
+}
+
+#[tokio::test]
+async fn overload_is_visible_on_health_before_the_stream_is_drained() {
+    let steps = (0..10u8)
+        .map(|i| Step::Bytes(vec![i; 3_200]))
+        .chain([Step::Wait(secs(30.0))])
+        .collect();
+    let backend = ScriptedBackend::new(steps);
+    let source = CaptureSource::builder(FMT)
+        .ring_depth(secs(0.2))
+        .backend(Box::new(backend))
+        .build();
+    let mut health = source.health();
+    let stream = Box::new(source).capture();
+
+    let state = health_until(&mut health, |h| matches!(h, CaptureHealth::Faulted(_))).await;
+    assert!(
+        matches!(state, CaptureHealth::Faulted(CaptureError::Overloaded(_))),
+        "got {state:?}"
+    );
+    let (chunks, fault) = drain(stream).await;
+    assert_eq!(chunks.len(), 2, "accepted audio drains before the fault");
+    assert_eq!(fault.map(CaptureHealth::Faulted), Some(state));
+}
+
+#[tokio::test]
+async fn open_failure_is_visible_on_health() {
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(ScriptedBackend::unavailable("no mic")))
+        .build();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+
+    let expected = CaptureError::DeviceUnavailable("no mic".into());
+    assert_eq!(
+        final_health(health).await,
+        Some(CaptureHealth::Faulted(expected.clone()))
+    );
+    let (chunks, fault) = drain(stream).await;
+    assert!(chunks.is_empty());
+    assert_eq!(fault, Some(expected));
+}
+
+#[tokio::test]
+async fn graceful_stop_ends_health_once_the_backend_released() {
+    let backend = ScriptedBackend::new(vec![Step::Silence(secs(0.2)), Step::Wait(secs(30.0))]);
+    let finished = backend.finished();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
+    let mut health = source.health();
+    let stop = source.stop_handle();
+    let stream = Box::new(source).capture();
+
+    health_until(&mut health, |h| *h == CaptureHealth::Capturing).await;
+    stop.stop();
+    assert_eq!(final_health(health).await, Some(CaptureHealth::Ended));
+    assert!(
+        finished.load(Ordering::Acquire),
+        "health ends after the backend"
+    );
+    let (chunks, fault) = drain(stream).await;
+    assert!(fault.is_none());
+    assert_eq!(
+        chunks.len(),
+        2,
+        "graceful stop still drains every chunk once"
+    );
+}
+
+#[tokio::test]
+async fn abort_ends_health_once_the_backend_released() {
+    let backend = ScriptedBackend::new(vec![Step::Silence(secs(0.2)), Step::Wait(secs(30.0))]);
+    let finished = backend.finished();
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(backend))
+        .build();
+    let mut health = source.health();
+    let stream = Box::new(source).capture();
+
+    health_until(&mut health, |h| *h == CaptureHealth::Capturing).await;
+    drop(stream);
+    assert_eq!(final_health(health).await, Some(CaptureHealth::Ended));
+    assert!(
+        finished.load(Ordering::Acquire),
+        "health ends after the backend"
+    );
+}
+
+/// A backend that loses its producer without an outcome (a bug or a panic on
+/// its thread).
+struct VanishingBackend;
+
+impl CaptureBackend for VanishingBackend {
+    fn start(self: Box<Self>, _spec: CaptureSpec, mut producer: Producer) {
+        producer.push(vec![0u8; 3_200].into());
+        std::thread::spawn(move || drop(producer));
+    }
+}
+
+#[tokio::test]
+async fn a_backend_that_drops_its_producer_faults_instead_of_hanging() {
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(VanishingBackend))
+        .build();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+
+    let state = final_health(health).await;
+    assert!(
+        matches!(
+            state,
+            Some(CaptureHealth::Faulted(CaptureError::Backend(_)))
+        ),
+        "got {state:?}"
+    );
+    let (chunks, fault) = drain(stream).await;
+    assert_eq!(chunks.len(), 1, "audio pushed before the loss still drains");
+    assert!(matches!(fault, Some(CaptureError::Backend(_))));
 }
