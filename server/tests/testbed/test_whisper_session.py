@@ -366,7 +366,7 @@ class _WordTokenizer:
 
     def encode(self, text, add_special_tokens=True):
         assert add_special_tokens is False
-        return SimpleNamespace(ids=[int(word[1:]) for word in text.split()])
+        return SimpleNamespace(ids=[int("".join(filter(str.isdigit, w))) for w in text.split()])
 
 
 class _PositionalModel:
@@ -394,6 +394,13 @@ class _PositionalModel:
         run = int(np.argmax(np.abs(values[k:]) != abs(int(values[k])))) or len(values) - k
         return (tenth + 1) * _TENTH - run - k
 
+    onset = 0.1
+    duration = 0.5
+
+    def _word(self, t: int, start_s: float, end_s: float) -> _Word | None:
+        onset = t + self.onset
+        return _Word(f" w{t}", onset - start_s, min(onset + self.duration, end_s) - start_s)
+
     def transcribe(self, samples, **kwargs):
         first = self._locate(samples)
         self.calls.append({"first": first, "samples": len(samples), **kwargs})
@@ -401,27 +408,53 @@ class _PositionalModel:
             return iter(()), SimpleNamespace(language=self._language)
         start_s, end_s = first / RATE, (first + len(samples)) / RATE
         words = []
-        for t in range(int(start_s), int(end_s) + 1):
-            onset = t + 0.1
+        for t in range(int(start_s) - 1, int(end_s) + 1):
+            onset = t + self.onset
             if start_s <= onset < end_s and self._pcm[round(onset * RATE)] != 0:
-                words.append(_Word(f" w{t}", onset - start_s, min(t + 0.6, end_s) - start_s))
+                word = self._word(t, start_s, end_s)
+                if word is not None:
+                    words.append((t, word))
         segments = [
             _Segment(
-                "".join(w.word for w in group),
-                start=group[0].start,
-                end=group[-1].end,
-                words=group if kwargs.get("word_timestamps") else None,
-                tokens=[int(w.word[2:]) for w in group],
+                "".join(w.word for _, w in group),
+                start=group[0][1].start,
+                end=group[-1][1].end,
+                words=[w for _, w in group] if kwargs.get("word_timestamps") else None,
+                tokens=[t for t, _ in group],
             )
             for group in (words[i : i + 4] for i in range(0, len(words), 4))
         ]
         return iter(segments), SimpleNamespace(language=self._language)
 
 
-async def _run_positional(plan, *, chunk_seconds=0.5, language="en", **config):
+class _EdgeModel(_PositionalModel):
+    """Behaves like whisper at the end of an input that stops mid-utterance:
+    a word straddling the end keeps only the heard part of its text, and a
+    word starting in the last 0.95 s is left out. The last input, which
+    reaches the end of the audio, is heard whole. Every other call is
+    capitalised with trailing commas, so a re-decode never matches exactly."""
+
+    onset = 0.5
+    duration = 0.7
+
+    def _word(self, t: int, start_s: float, end_s: float) -> _Word | None:
+        onset = t + self.onset
+        text = f" w{t}"
+        cut_short = end_s * RATE < len(self._pcm)
+        if cut_short and onset + self.duration > end_s:
+            heard = (end_s - onset) / self.duration
+            text = text[: max(2, round(len(text) * heard))]
+        elif cut_short and onset >= end_s - 0.95:
+            return None
+        if len(self.calls) % 2 == 0:
+            text = text.upper() + ","
+        return _Word(text, onset - start_s, min(onset + self.duration, end_s) - start_s)
+
+
+async def _run_positional(plan, *, chunk_seconds=0.5, language="en", model=None, **config):
     pcm = _speech_pcm(plan)
     adapter = FasterWhisperAdapter("tiny")
-    adapter._model = _PositionalModel(pcm)
+    adapter._model = (model or _PositionalModel)(pcm)
     done: list[bool] = []
     events: list[tuple[bool, object]] = []
 
@@ -433,9 +466,13 @@ async def _run_positional(plan, *, chunk_seconds=0.5, language="en", **config):
     return adapter._model, events
 
 
-def _labels(plan) -> list[str]:
+def _labels(plan, onset=0.1) -> list[str]:
     pcm = _speech_pcm(plan)
-    return [f"w{t}" for t in range(len(pcm) // RATE) if pcm[round((t + 0.1) * RATE)] != 0]
+    return [f"w{t}" for t in range(len(pcm) // RATE) if pcm[round((t + onset) * RATE)] != 0]
+
+
+def _plain(text: str) -> list[str]:
+    return [w.strip(",").lower() for w in text.split()]
 
 
 @pytest.fixture
@@ -538,6 +575,21 @@ async def test_batch_forced_cuts_keep_every_word_once_with_absolute_timestamps()
     assert [s.start for s in stamps] == sorted(s.start for s in stamps)
 
 
+@pytest.mark.parametrize("granularity", [None, "word"])
+async def test_batch_forced_cuts_keep_every_word_once_from_a_model_that_misses_the_edge(
+    granularity,
+):
+    plan = [(130.0, True)]
+    model, events = await _run_positional(plan, model=_EdgeModel, timestamp_granularity=granularity)
+
+    assert len(model.calls) == 3
+    final_events = [e for _, e in events if isinstance(e, TranscriptionFinal)]
+    assert _plain("".join(e.text for e in final_events)) == _labels(plan, onset=0.5)
+    if granularity:
+        stamps = [s for e in final_events for s in e.segments]
+        assert [s.text.strip(",").lower() for s in stamps] == _labels(plan, onset=0.5)
+
+
 async def test_batch_segment_timestamps_span_the_words_the_final_carries():
     _, events = await _run_positional([(130.0, True)], timestamp_granularity="segment")
 
@@ -549,12 +601,13 @@ async def test_batch_segment_timestamps_span_the_words_the_final_carries():
         assert segment.end == pytest.approx(int(words[-1][1:]) + 0.6)
 
 
-async def test_batch_asks_for_word_alignment_only_where_it_must_deduplicate():
-    """Timestamps were not requested, so only the region re-decoding the
-    overlap of a forced cut needs aligned words."""
-    model, _ = await _run_positional([(130.0, True)])
+async def test_batch_asks_for_word_alignment_only_around_forced_cuts():
+    """Timestamps were not requested, so only the region ending at a forced
+    cut (to hold back its last words) and the region re-decoding its overlap
+    (to deduplicate) need aligned words."""
+    model, _ = await _run_positional([(100.0, True), (1.0, False), (40.0, True)], chunk_seconds=0.1)
 
-    assert [bool(c.get("word_timestamps")) for c in model.calls] == [False, True, True]
+    assert [bool(c.get("word_timestamps")) for c in model.calls] == [True, True, False]
 
 
 async def test_batch_keeps_the_language_it_detected_first():
@@ -567,12 +620,12 @@ async def test_batch_carries_the_committed_context_across_a_cut():
     """faster-whisper conditions each 30 s window on up to 223 previous
     tokens; a cut must not reset that. Like faster-whisper, the context is
     the text emitted so far: a word the overlap decodes again is not in it
-    twice."""
+    twice, and a word held back for the next region is not in it yet."""
     model, _ = await _run_positional([(130.0, True)])
 
     assert model.calls[0]["initial_prompt"] is None
-    assert model.calls[1]["initial_prompt"] == list(range(0, 60))
-    assert model.calls[2]["initial_prompt"] == list(range(0, 119))
+    assert model.calls[1]["initial_prompt"] == list(range(0, 59))
+    assert model.calls[2]["initial_prompt"] == list(range(0, 118))
 
 
 async def test_batch_context_starts_with_the_prompt_and_is_bounded():
@@ -598,7 +651,7 @@ async def test_batch_context_starts_with_the_prompt_and_is_bounded():
     assert len(prompts) == 5
     assert prompts[0] == "Myna"
     history = [-5] * 200
-    for k, end in enumerate((60, 119, 178, 237)):
+    for k, end in enumerate((59, 118, 177, 236)):
         history += list(range(len(history) - 200, end))
         assert prompts[k + 1] == history[-223:]
 

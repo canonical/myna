@@ -440,10 +440,12 @@ class FasterWhisperAdapter:
 
         Each region continues the previous one the way faster-whisper's own
         30 s windows do: the language detected first is kept and the tokens of
-        the text committed so far are the prompt. Word alignment is bought only when the
-        client asked for timestamps or a forced cut left overlap audio whose
-        re-decoded words must be deduplicated."""
-        from myna.testbed.streaming.batch import run_deferred_batch
+        the text committed so far are the prompt. Word alignment is bought
+        only when the client asked for timestamps or a forced cut is involved:
+        the region ending at one holds back its last words by their
+        timestamps, and the region re-decoding its overlap deduplicates by
+        them."""
+        from myna.testbed.streaming.batch import ends_at_forced_cut, run_deferred_batch
 
         granularity = config.timestamp_granularity
         language = config.language
@@ -461,7 +463,9 @@ class FasterWhisperAdapter:
             options = batch_decode_options(
                 language,
                 list(context) if decoded else config.prompt,
-                word_timestamps=granularity is not None or first < processed,
+                word_timestamps=granularity is not None
+                or first < processed
+                or ends_at_forced_cut(samples),
             )
             segments, info = model.transcribe(samples, **options)
             region.clear()

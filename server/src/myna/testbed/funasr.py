@@ -283,8 +283,9 @@ class FunasrAdapter:
     async def _run_batch_session(self, audio: AsyncIterator[PcmChunk], emit: EventSink) -> str:
         """Decode bounded regions and return their joined, tag-free text.
 
-        SenseVoice gives no timestamps, so a region's words carry its end time
-        and a forced cut's overlap is deduplicated on text alone. Regions join
+        SenseVoice gives no timestamps, so a region's words carry its whole
+        span: a forced cut holds none of them back and its overlap is
+        deduplicated on text alone. Regions join
         with a space unless the text on either side of the join is written
         without spaces (Chinese, Japanese)."""
         from myna.testbed.streaming.batch import run_deferred_batch
@@ -303,7 +304,7 @@ class FunasrAdapter:
             if last_char and not _UNSPACED_RE.match(last_char) and not _UNSPACED_RE.match(text[0]):
                 tokens[0] = " " + tokens[0]
             last_char = text[-1]
-            return Hypothesis(words=[Word(token, end, end) for token in tokens])
+            return Hypothesis(words=[Word(token, offset, end) for token in tokens])
 
         async def on_commit(text: str, _words: list[Word]) -> None:
             parts.append(text)

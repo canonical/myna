@@ -762,3 +762,143 @@ async def test_deferred_batch_does_not_cut_at_a_pause_before_thirty_seconds():
     assert len(decoder.inputs) == 2, decoder.inputs
     first, n = decoder.inputs[0]
     assert first == 0 and 41 * RATE <= n <= 42 * RATE
+
+
+# ---------------------------------------------------------------------------
+# Forced cuts against a decoder that behaves like a model at an audio edge
+# ---------------------------------------------------------------------------
+
+
+class _EdgeDecoder(_Decoder):
+    """A decoder that behaves like a real model at the end of its input.
+
+    Words that start within ``omit_s`` of the input end are dropped unless the
+    input reaches ``total`` (whisper often omits the last words of an
+    utterance cut mid-sentence). A word straddling the input end keeps only
+    the heard fraction of its text, at least one character. Every other call
+    renders the words capitalised with a trailing comma, so a re-decode never
+    reproduces the text it overlaps exactly."""
+
+    def __init__(self, timeline: list[Word], total: float, *, omit_s: float = 0.6) -> None:
+        super().__init__(ramp=False)
+        self._words = timeline
+        self._total = total
+        self._omit = omit_s
+
+    def __call__(self, samples: np.ndarray, offset: float) -> Hypothesis:
+        super().__call__(samples, offset)
+        end = offset + len(samples) / RATE
+        final = end >= self._total - 1e-9
+        vary = len(self.inputs) % 2 == 0
+        words = []
+        for w in self._words:
+            if not offset <= w.start < end:
+                continue
+            text = w.text
+            if w.end > end:
+                heard = (end - w.start) / (w.end - w.start)
+                text = text[: max(2, round(len(text) * heard))]
+            elif not final and w.start >= end - self._omit:
+                continue
+            if vary:
+                text = text[:1] + text[1:].capitalize() + ","
+            words.append(Word(text, w.start, min(w.end, end)))
+        return Hypothesis(words=words)
+
+
+def _plain(transcript: str) -> list[str]:
+    return [t.strip(",").lower() for t in transcript.split()]
+
+
+def _batch_like(**kwargs):
+    return {
+        "cap": 65.0,
+        "silence_cut_overlap": False,
+        "cadence": 1_000.0,
+        **kwargs,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pause_overlap", [False, True], ids=["batch", "chunked"])
+async def test_a_word_the_region_before_a_forced_cut_omitted_is_recovered(pause_overlap):
+    timeline = [Word(" alpha", 58.0, 58.5), Word(" omega", 59.2, 59.7), Word(" beta", 65.0, 65.5)]
+    decoder = _EdgeDecoder(timeline, total=70.0, omit_s=0.9)
+    _, transcript = await _run(
+        _audio(70.0, 1.0, ramp=False),
+        decoder,
+        SilenceCut(arm_seconds=30.0, force_cut_seconds=60.0),
+        **_batch_like(silence_cut_overlap=pause_overlap),
+    )
+
+    assert decoder.inputs == [(0, 60 * RATE), (59 * RATE, 11 * RATE)]
+    assert _plain(transcript) == ["alpha", "omega", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_a_word_straddling_a_forced_cut_is_committed_once_and_whole():
+    timeline = [
+        Word(" alpha", 58.0, 58.5),
+        Word(" concentration", 59.6, 60.4),
+        Word(" beta", 65.0, 65.5),
+    ]
+    decoder = _EdgeDecoder(timeline, total=70.0)
+    events, transcript = await _run(
+        _audio(70.0, 1.0, ramp=False),
+        decoder,
+        SilenceCut(arm_seconds=30.0, force_cut_seconds=60.0),
+        **_batch_like(),
+    )
+
+    assert _plain(transcript) == ["alpha", "concentration", "beta"]
+    assert "".join(_committed(events)) == transcript
+
+
+def _short_words(seconds: float) -> list[Word]:
+    """Words no longer than the tail guard, so one straddling a cut always
+    starts inside the overlap the next region re-decodes."""
+    return _spaced(seconds, durations=(0.3, 0.45, 0.2, 0.5), gap=0.2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("make_strategy", _strategies())
+@pytest.mark.parametrize("chunk_seconds", [0.1, 3.7, 31.0])
+async def test_forced_cuts_keep_every_word_once_against_an_edge_decoder(
+    retained, make_strategy, chunk_seconds
+):
+    seconds = 31.0
+    timeline = _short_words(seconds - 0.5)
+    decoder = _EdgeDecoder(timeline, total=seconds)
+    events, transcript = await _run(
+        _audio(seconds, chunk_seconds, ramp=False),
+        decoder,
+        make_strategy(),
+        cap=5.0,
+        cadence=1_000.0,
+    )
+
+    assert _plain(transcript) == _labels(len(timeline))
+    assert "".join(_committed(events)) == transcript
+    assert decoder.largest_input <= 5 * RATE
+    assert len(decoder.inputs) > 5, "expected several forced boundaries"
+
+
+@pytest.mark.asyncio
+async def test_deferred_batch_keeps_every_word_once_across_forced_cuts_of_an_edge_decoder():
+    from myna.testbed.streaming.batch import run_deferred_batch
+
+    seconds = 250.0
+    timeline = _short_words(seconds - 0.5)
+    decoder = _EdgeDecoder(timeline, total=seconds)
+    commits: list[str] = []
+
+    async def ignore(_event: object) -> None:
+        pass
+
+    async def on_commit(text: str, _words: list[Word]) -> None:
+        commits.append(text)
+
+    await run_deferred_batch(_audio(seconds, 0.1, ramp=False), ignore, decoder, on_commit)
+
+    assert len(decoder.inputs) == 5
+    assert _plain("".join(commits)) == _labels(len(timeline))

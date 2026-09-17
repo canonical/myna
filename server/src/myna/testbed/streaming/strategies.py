@@ -124,19 +124,25 @@ class LocalAgreement:
     def boundary_commit(
         self, current: Hypothesis, cut: float, retain_from: float
     ) -> CommitDecision | None:
-        """What to commit from a final decode of the window up to a forced
-        ``cut``, where audio before ``retain_from`` is retired. Only words
-        that lie wholly in the retained overlap and end within TAIL_GUARD_S of
-        the cut are held back for the next window; every other word commits
-        now, because its audio does not survive the cut."""
-        count = 0
-        for w in current.words:
-            if w.start >= retain_from and w.end > cut - TAIL_GUARD_S:
-                break
-            count += 1
-        if not count:
-            return None
-        return CommitDecision(current.words[count - 1].end, tuple(current.words[:count]))
+        return boundary_commit(current, cut, retain_from)
+
+
+def boundary_commit(current: Hypothesis, cut: float, retain_from: float) -> CommitDecision | None:
+    """What to commit from a final decode of the window up to a forced
+    ``cut``, where audio before ``retain_from`` is retired. Only words
+    that lie wholly in the retained overlap and end within TAIL_GUARD_S of
+    the cut are held back for the next window; every other word commits
+    now, because its audio does not survive the cut. A decoder that cannot
+    time its words should stamp each with the span of its whole input, so
+    nothing is held back."""
+    count = 0
+    for w in current.words:
+        if w.start >= retain_from and w.end > cut - TAIL_GUARD_S:
+            break
+        count += 1
+    if not count:
+        return None
+    return CommitDecision(current.words[count - 1].end, tuple(current.words[:count]))
 
 
 class _AdaptiveVad:

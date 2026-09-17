@@ -64,7 +64,7 @@ from myna.core import (
 )
 from myna.testbed.harness import StreamingTelemetry
 
-from .strategies import Hypothesis, LocalAgreement, SilenceCut, Word
+from .strategies import Hypothesis, LocalAgreement, SilenceCut, Word, boundary_commit
 from .window import RATE, RollingWindow, to_samples
 
 # Tracy frame marks (dev tooling only, see myna.testbed.parakeet._TRACY):
@@ -438,12 +438,24 @@ async def _run(
         return bool(text)
 
     async def cut_region(cut: int, forced: bool) -> None:
-        """Decode [start, cut) once, commit it and retire it (chunked)."""
+        """Decode [start, cut) once, commit it and retire it (chunked).
+
+        A pause cut commits everything: the pause gave every word its right
+        context. A forced cut holds back the words the kept overlap will
+        decode again, and the text watermark stops at the last committed word,
+        so the next region can still commit a word this decode missed."""
         nonlocal committed_through, last_unstable
         hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
-        await commit(hyp.words)
-        # Covered even when the region was silence or fully deduplicated.
-        committed_through = max(committed_through, cut / RATE)
+        if forced:
+            retain_from = max(window.retained_start, cut - window.overlap)
+            decision = boundary_commit(hyp, cut / RATE, retain_from / RATE)
+            if decision is not None:
+                await commit(decision.commit_words)
+                committed_through = max(committed_through, decision.commit_end)
+        else:
+            await commit(hyp.words)
+            # Covered even when the region was silence or fully deduplicated.
+            committed_through = max(committed_through, cut / RATE)
         window.retire(cut, keep_overlap=forced or silence_cut_overlap)
         last_unstable = ""  # I4: the commit resolves the epoch
 

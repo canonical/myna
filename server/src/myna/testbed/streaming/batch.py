@@ -9,8 +9,8 @@ to the adapter, which presents everything at the end.
 
 An utterance shorter than the arm point still decodes whole, exactly as
 before. A pause cut keeps no overlap (its trailing silence means no word
-straddles it); a forced cut keeps ``BATCH_OVERLAP_S`` and the loop
-deduplicates the words re-decoded from it.
+straddles it); a forced cut keeps ``BATCH_OVERLAP_S``, holds back the words
+that overlap will decode again, and the loop deduplicates the re-decode.
 """
 
 from __future__ import annotations
@@ -24,12 +24,20 @@ from myna.core import EventSink, PcmChunk, TranscriptionProgress
 
 from .loop import run_streaming_loop
 from .strategies import SC_FORCE_CUT_S, SC_SILENCE_CUT_S, Hypothesis, SilenceCut, Word
+from .window import to_samples
 
 BATCH_ARM_S = 30.0
 BATCH_FORCE_CUT_S = SC_FORCE_CUT_S
 BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
 BATCH_OVERLAP_S = 1.0
 _PROGRESS_INTERVAL_S = 1.0
+
+
+def ends_at_forced_cut(samples: NDArray[np.float32]) -> bool:
+    """Whether a decode input of the deferred batch ends at a forced cut. Only
+    a forced cut's region reaches the force length; the loop holds back the
+    words it ends with by their timestamps, so they must be word-accurate."""
+    return len(samples) >= to_samples(BATCH_FORCE_CUT_S)
 
 
 async def run_deferred_batch(
