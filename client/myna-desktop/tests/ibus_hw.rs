@@ -11,10 +11,13 @@
 //! ```sh
 //! make test-client-gated
 //! # or scoped, from client/ inside the workshop:
-//! ../dev/gated-tests.sh cargo test -p myna-desktop --test ibus_hw -- --test-threads=1
+//! ../dev/gated-tests.sh cargo test -p myna-desktop --test ibus_hw
 //! ```
 //!
-//! Cases share one daemon and must run serially. Every field is closed with its
+//! Cases share one daemon and one global input engine, so they take
+//! `exclusive()` rather than relying on the caller passing `--test-threads=1`:
+//! cargo-mutants runs a bare `cargo test`, and under it the suite went from
+//! green to ten failures out of eleven. Every field is closed with its
 //! content type reset first: when a focused context loses focus the daemon
 //! copies its purpose and hints onto its fake context, which would otherwise
 //! carry a PASSWORD into the next case.
@@ -61,6 +64,15 @@ const HINT_HIDDEN_TEXT: u32 = 1 << 12;
 /// True when the IBus integration suite is enabled. Unset gate → skip.
 fn ibus_enabled() -> bool {
     std::env::var("MYNA_IBUS_TESTS").as_deref() == Ok("1")
+}
+
+/// One case at a time, whatever the harness does with threads. A tokio mutex,
+/// not a std one: the guard is held across the case's awaits.
+static DAEMON: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Hold the daemon for the rest of the case.
+async fn exclusive() -> tokio::sync::MutexGuard<'static, ()> {
+    DAEMON.lock().await
 }
 
 /// What the daemon delivered to a field.
@@ -337,6 +349,7 @@ async fn ordinary_field_receives_preedit_and_commit() {
         eprintln!("skipping ordinary_field_receives_preedit_and_commit: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire an ordinary field");
 
@@ -364,6 +377,7 @@ async fn focus_leaving_the_field_ends_the_session() {
         eprintln!("skipping focus_leaving_the_field_ends_the_session: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (field, mut injector) = session(0, 0).await;
     let target = injector.acquire().await.expect("acquire an ordinary field");
     let mut events = target.focus_events();
@@ -392,6 +406,7 @@ async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
         );
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let superseded = injector.acquire().await.expect("acquire the field");
     let mut live = injector
@@ -428,6 +443,7 @@ async fn release_clears_a_live_preedit_and_sends_nothing_without_one() {
         );
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire the field");
     target.set_preedit("unstable").await;
@@ -459,6 +475,7 @@ async fn text_never_follows_focus_into_another_field() {
         eprintln!("skipping text_never_follows_focus_into_another_field: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (first, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire the first field");
 
@@ -487,6 +504,7 @@ async fn focus_lost_while_acquiring_is_not_missed() {
         eprintln!("skipping focus_lost_while_acquiring_is_not_missed: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (mut first, injector) = session(0, 0).await;
     first.watch_global_engine().await;
     let acquiring = tokio::spawn(async move {
@@ -557,6 +575,7 @@ async fn password_field_is_refused_at_acquire() {
         eprintln!("skipping password_field_is_refused_at_acquire: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(PURPOSE_PASSWORD, 0).await;
     assert_acquire_refused(&mut injector).await;
 
@@ -577,6 +596,7 @@ async fn field_turning_secure_mid_session_gets_no_text() {
         eprintln!("skipping field_turning_secure_mid_session_gets_no_text: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire an ordinary field");
     target.commit("hello").await.expect("commit hello");
@@ -612,6 +632,7 @@ async fn pin_field_marked_hidden_text_is_refused() {
         eprintln!("skipping pin_field_marked_hidden_text_is_refused: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     // GNOME Shell forwards a Wayland PIN as purpose 0 with PRIVATE|HIDDEN_TEXT.
     let (field, mut injector) = session(0, HINT_PRIVATE | HINT_HIDDEN_TEXT).await;
     assert_acquire_refused(&mut injector).await;
@@ -625,6 +646,7 @@ async fn private_field_is_not_refused() {
         eprintln!("skipping private_field_is_not_refused: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, HINT_PRIVATE).await;
     let mut target = injector.acquire().await.expect("acquire a private field");
     target.commit("hello").await.expect("commit hello");
@@ -656,6 +678,7 @@ async fn ibus_preedit_visual_probe() {
         eprintln!("skipping ibus_preedit_visual_probe: MYNA_IBUS_TESTS unset");
         return;
     }
+    let _serial = exclusive().await;
     eprintln!("preedit probe: click into an editable text field — acquiring in 5 s…");
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     let mut injector = IbusInjector::connect()

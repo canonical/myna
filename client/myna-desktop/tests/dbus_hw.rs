@@ -23,6 +23,38 @@ fn dbus_enabled() -> bool {
     std::env::var("MYNA_DBUS_TESTS").as_deref() == Ok("1")
 }
 
+/// The well-known name is process-wide, so one case owns it at a time. A
+/// tokio mutex, not a std one: the guard is held across the case's awaits.
+static NAME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Hold the name for the rest of the case. Not `--test-threads=1`: that only
+/// binds the caller who remembers it, and cargo-mutants runs a bare
+/// `cargo test`, under which the singleton-lock case failed intermittently.
+async fn exclusive() -> tokio::sync::MutexGuard<'static, ()> {
+    NAME.lock().await
+}
+
+/// Wait out the previous case's release. `exclusive()` orders the cases, but
+/// dropping a `ZbusBus` only closes its connection: the bus frees the name a
+/// moment later. Serving into that window used to be a skip, and a case that
+/// skips is a case that asserts nothing.
+async fn name_is_free() {
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let bus = zbus::fdo::DBusProxy::new(&conn).await.expect("bus proxy");
+    let name = zbus::names::BusName::try_from(BUS_NAME).unwrap();
+    for _ in 0..100 {
+        if !bus
+            .name_has_owner(name.clone())
+            .await
+            .expect("NameHasOwner")
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("{BUS_NAME} was still owned after 5 s");
+}
+
 #[test]
 fn gate_skips_cleanly_when_unset() {
     if dbus_enabled() {
@@ -47,6 +79,8 @@ async fn the_name_is_a_singleton_lock() {
     if !dbus_enabled() {
         return;
     }
+    let _serial = exclusive().await;
+    name_is_free().await;
     let _owner = ZbusBus::serve().await.expect("first serve owns the name");
 
     // A second daemon is told who is already there, not quietly started.
@@ -96,21 +130,13 @@ async fn served_toggle_method_feeds_the_trigger() {
     if !dbus_enabled() {
         return;
     }
+    let _serial = exclusive().await;
 
     let (mut trigger, source) = myna_desktop::shortcut::dbus::DbusTrigger::new();
-    // The well-known name is process-wide: the sibling singleton-lock test may
-    // already own it (cargo runs test fns concurrently). If so, the wire
-    // round-trip here cannot run — skip it rather than fighting over the name;
-    // the trigger's own logic is covered hermetically in tests/dbus_trigger.rs.
-    let owner = match ZbusBus::serve_with_trigger(Some(source)).await {
-        Ok(owner) => owner,
-        Err(ServeError::AlreadyRunning { .. }) => {
-            eprintln!("skipping served_toggle: another test owns the name");
-            return;
-        }
-        Err(other) => panic!("serve_with_trigger failed: {other}"),
-    };
-    let _owner = owner;
+    name_is_free().await;
+    let _owner = ZbusBus::serve_with_trigger(Some(source))
+        .await
+        .expect("serve_with_trigger owns the name");
 
     let conn = zbus::Connection::session().await.expect("session bus");
     let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");
@@ -162,14 +188,9 @@ async fn the_published_shortcut_is_readable_on_the_bus() {
     if !dbus_enabled() {
         return;
     }
-    let mut owner = match ZbusBus::serve().await {
-        Ok(owner) => owner,
-        Err(ServeError::AlreadyRunning { .. }) => {
-            eprintln!("skipping published_shortcut: another test owns the name");
-            return;
-        }
-        Err(other) => panic!("serve failed: {other}"),
-    };
+    let _serial = exclusive().await;
+    name_is_free().await;
+    let mut owner = ZbusBus::serve().await.expect("serve owns the name");
     let conn = zbus::Connection::session().await.expect("session bus");
     let properties = zbus::fdo::PropertiesProxy::builder(&conn)
         .destination(BUS_NAME)

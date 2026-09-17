@@ -215,6 +215,9 @@ cov-patch: ## Patch-coverage gate on the lines this branch changes (COV_BASE=ori
 # or that a bug slipped past, not as a routine gate.
 #   make mutate-client MUTATE='-p myna-orchestrator -f src/session.rs'
 #   make mutate-server MUTATE='myna.core.session*'
+# mutate-client runs under the same services and gates as test-client-gated
+# and test-client-ui, so a mutant covered only by a gated suite is graded
+# rather than surviving unseen; see the `mutants` action for the cost.
 MUTATE ?=
 .PHONY: mutate-client
 mutate-client: ## cargo-mutants over the Rust workspace, scoped by MUTATE (cargo-mutants args)
