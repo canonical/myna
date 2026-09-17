@@ -1061,6 +1061,77 @@ async fn capture_loop_stall_past_the_realtime_buffer_faults() {
     assert_eq!(fault.map(CaptureHealth::Faulted).as_ref(), states.last());
 }
 
+/// Child half of `stopped_process_faults_as_lost_audio`, run in its own
+/// process so stopping it cannot disturb the other captures in this suite.
+#[tokio::test]
+async fn stopped_process_child() {
+    if std::env::var_os("MYNA_STOPPED_PROCESS_CHILD").is_none() {
+        return;
+    }
+    let source = default_capture_source();
+    let mut stats = source.stats();
+    let health = source.health();
+    let _stream = Box::new(source).capture();
+    let ready = wait_captured(
+        &mut stats,
+        Duration::from_millis(200),
+        Duration::from_secs(5),
+    )
+    .await;
+    println!("READY {ready}");
+    let (states, _) = health_to_end(health, Duration::from_secs(8)).await;
+    println!("OUTCOME {:?}", states.last());
+}
+
+/// Graph cycles missed while the capture process cannot run (the realtime
+/// callback included) are lost audio, and capture faults: a stopped process
+/// is an xrun long enough to be unambiguous.
+#[tokio::test]
+async fn stopped_process_faults_as_lost_audio() {
+    skip_unless_enabled!();
+    use std::io::{BufRead, BufReader};
+    let mut child = Command::new(std::env::current_exe().expect("test binary"))
+        .args(["--exact", "stopped_process_child", "--nocapture"])
+        .env("MYNA_STOPPED_PROCESS_CHILD", "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn the child capture");
+    let pid = child.id().to_string();
+    let stdout = child.stdout.take().expect("child stdout");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
+        }
+    });
+    let next_line = |prefix: &str| loop {
+        let line = rx
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap_or_else(|_| panic!("the child never printed {prefix}"));
+        if let Some(rest) = line.strip_prefix(prefix) {
+            return rest.to_string();
+        }
+    };
+    assert_eq!(next_line("READY "), "true", "the child never captured");
+
+    let signal = |sig: &str| {
+        let sent = Command::new("kill").args([sig, &pid]).status();
+        assert!(sent.is_ok_and(|s| s.success()), "kill {sig} failed");
+    };
+    signal("-STOP");
+    std::thread::sleep(Duration::from_millis(300));
+    signal("-CONT");
+
+    let outcome = next_line("OUTCOME ");
+    let _ = child.wait();
+    assert!(
+        outcome.contains("Faulted(Backend(") && outcome.contains("lost"),
+        "expected lost audio to fault, got {outcome}"
+    );
+}
+
 mod watermarks {
     //! T035: capture-path performance watermarks (constitution Principle III;
     //! SC-006, SC-008, SC-009). Checked-in baselines with declared per-metric
