@@ -59,7 +59,7 @@ from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.server import Server, ServerConnection, unix_serve
 from websockets.exceptions import ConnectionClosed
 
-from myna.core.audio import AudioFormat, PcmChunk
+from myna.core.audio import AudioFormat, PcmChunk, PcmFramer
 from myna.core.capabilities import (
     Capabilities,
     capabilities_from_wire,
@@ -541,13 +541,16 @@ class _SessionHandler:
         ends the audio, every other text frame is ignored; events out via
         ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
         ingress = self._open_ingress(config.audio_format)
+        # The adapter, not the framing, rejects a degenerate format.
+        framer = PcmFramer(max(1, config.audio_format.frame_bytes))
 
         async def read_frames() -> None:
             try:
                 async for frame in ws:
                     if isinstance(frame, bytes):
-                        await ingress.put(frame)
+                        await ingress.put(framer.feed(frame))
                     elif json.loads(frame).get("type") == "session.finish":
+                        framer.flush()
                         return
                 ingress.abort()
             except ConnectionClosed:

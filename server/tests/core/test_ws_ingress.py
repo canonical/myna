@@ -298,6 +298,93 @@ def test_an_undecodable_internal_control_frame_ends_the_audio_and_is_logged(scen
     assert "ingress reader failed" in caplog.text
 
 
+def partition(pcm: bytes, cuts: tuple[int, ...] = (1, 3200, 3, 1001, 2, 4799)) -> list[bytes]:
+    pieces, at, i = [], 0, 0
+    while at < len(pcm):
+        pieces.append(pcm[at : at + cuts[i % len(cuts)]])
+        at += cuts[i % len(cuts)]
+        i += 1
+    return pieces
+
+
+def ramp(rate: int, seconds: float) -> bytes:
+    return bytes(i * 7 % 256 for i in range(int(rate * seconds) * 2))
+
+
+@pytest.mark.parametrize(
+    ("dialect", "rate"), [("internal", 16_000), ("ie115", 16_000), ("ie115", 24_000)]
+)
+def test_odd_byte_appends_reach_the_adapter_in_whole_samples(dialect, rate, scenario, caplog):
+    """However the client cuts its appends, the adapter sees whole samples,
+    the same ones the unsplit input yields; a trailing half sample at the
+    finish is dropped with a warning, never padded."""
+    from myna.core.resample import Resampler
+
+    path = scenario.path
+    pcm = ramp(rate, 0.4)
+    whole = Resampler(rate, 16_000)
+    expected = whole.feed(pcm) + whole.flush()
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, dialect, rate)
+            for piece in partition(pcm + b"\x01"):
+                await ws.send(piece)
+            await ws.send(finish_frame(dialect))
+            assert (await terminal(ws)).get("type") != w.ERROR
+            await ws.close()
+        heard = adapter.sessions[0]
+        assert all(len(chunk) % 2 == 0 for chunk in heard)
+        assert b"".join(heard) == expected
+
+    scenario.run(main)
+    assert "1 byte" in caplog.text
+
+
+def test_ie115_commit_does_not_carry_a_half_sample_into_the_next_utterance(scenario):
+    path = scenario.path
+    first, second = ramp(16_000, 0.1), ramp(16_000, 0.2)[::-1]
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            for utterance in (first + b"\x01", second):
+                await ws.send(utterance)
+                await ws.send(finish_frame("ie115"))
+                assert (await terminal(ws))["type"] == w.TRANSCRIPTION_COMPLETED
+            await ws.close()
+        assert [b"".join(heard) for heard in adapter.sessions[:2]] == [first, second]
+
+    scenario.run(main)
+
+
+def test_an_internal_session_with_a_degenerate_format_still_runs(scenario):
+    """Framing must not take down a session the adapter would answer: a
+    zero-channel format still reaches the adapter, which owns rejecting it."""
+    path = scenario.path
+
+    async def main() -> None:
+        async with scenario.serving(FakeAdapter()):
+            ws = await unix_connect(str(path), ping_interval=None)
+            await ws.recv()
+            config = session_config_to_wire(SessionConfig(audio_format=AudioFormat(channels=0)))
+            start = {
+                "type": "session.start",
+                "protocol_version": PROTOCOL_VERSION,
+                "config": config,
+            }
+            await ws.send(json.dumps(start))
+            await ws.send(b"\x00\x00\x00")
+            await ws.send(finish_frame("internal"))
+            assert (await terminal(ws))["event"] == "transcription.done"
+
+    scenario.run(main)
+
+
 # --- the queue itself ------------------------------------------------------------
 
 FMT = AudioFormat()

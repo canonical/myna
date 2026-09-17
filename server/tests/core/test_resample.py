@@ -4,6 +4,9 @@ chunk, so the adapter never learns what rate the wire carried."""
 
 from __future__ import annotations
 
+import itertools
+import logging
+
 import numpy as np
 import pytest
 
@@ -136,6 +139,49 @@ def test_same_rate_is_identity():
     pcm = sine(440, 16_000, 0.1)
     r = Resampler(16_000, 16_000)
     assert r.feed(pcm) + r.flush() == pcm
+
+
+ODD_CUTS = (1, 2, 3, 1001, 1002, 3199, 3201, 4000)
+
+
+def odd_partition(pcm: bytes) -> list[bytes]:
+    """``pcm`` cut at odd and even offsets alike, many cuts mid-sample."""
+    pieces, at = [], 0
+    for i in itertools.count():
+        if at >= len(pcm):
+            return pieces
+        size = ODD_CUTS[i % len(ODD_CUTS)]
+        pieces.append(pcm[at : at + size])
+        at += size
+
+
+@pytest.mark.parametrize("src_hz", [16_000, 24_000])
+def test_any_byte_partition_converts_like_the_whole_input_in_whole_samples(src_hz):
+    """Appends are byte strings, and a boundary can split a sample at any
+    rate: nothing downstream may ever see half a sample, and the samples it
+    sees are the ones the whole input converts to."""
+    pcm = sine(300, src_hz, 0.5)
+    whole = Resampler(src_hz, 16_000)
+    expected = whole.feed(pcm) + whole.flush()
+    r = Resampler(src_hz, 16_000)
+    outputs = [r.feed(piece) for piece in odd_partition(pcm)] + [r.flush()]
+    assert all(len(out) % 2 == 0 for out in outputs)
+    assert b"".join(outputs) == expected
+
+
+@pytest.mark.parametrize("src_hz", [16_000, 24_000])
+def test_a_dangling_byte_at_the_boundary_is_dropped_loudly_not_carried(src_hz, caplog):
+    """A partial sample at the utterance boundary cannot be completed by the
+    next utterance's audio: it is discarded, with the byte count logged."""
+    first = sine(500, src_hz, 0.3)
+    second = sine(700, src_hz, 0.3)
+    r = Resampler(src_hz, 16_000)
+    with caplog.at_level(logging.WARNING, logger="myna.core.audio"):
+        tail = r.feed(first + b"\x7f") + r.flush()
+    assert "1 byte" in caplog.text
+    fresh = Resampler(src_hz, 16_000)
+    assert tail == fresh.feed(first) + fresh.flush()
+    assert r.feed(second) + r.flush() == fresh.feed(second) + fresh.flush()
 
 
 def test_full_scale_input_clips_instead_of_wrapping():

@@ -20,6 +20,8 @@ from math import gcd
 import numpy as np
 from numpy.typing import NDArray
 
+from myna.core.audio import PcmFramer
+
 # Half-width of the sinc window in zero crossings at the lower rate. 32 gives a
 # transition band of ~1.4 kHz around an 8 kHz cutoff with a Blackman window, and
 # ~150 multiply-adds per output sample: nothing, at 16 kHz.
@@ -48,28 +50,27 @@ class Resampler:
         self._h: NDArray[np.float64] = np.concatenate([h, [0.0]])
         self._taps = taps
         self._per_output = -(-taps // self._up)  # input samples per output
+        self._framer = PcmFramer(2)
         self._reset()
 
     def _reset(self) -> None:
         self._buf: NDArray[np.float64] = np.zeros(0)
         self._base = 0  # global index of _buf[0]
         self._next_out = 0  # global index of the next output sample
-        self._pending = b""  # a dangling byte when a chunk splits a sample
 
     def feed(self, pcm: bytes) -> bytes:
         """Convert what can be converted so far; the rest waits for more."""
+        whole = self._framer.feed(pcm)
         if self._identity:
-            return pcm
-        data = self._pending + pcm
-        cut = len(data) - (len(data) % 2)
-        self._pending = data[cut:]
-        samples = np.frombuffer(data[:cut], dtype="<i2").astype(np.float64)
+            return whole
+        samples = np.frombuffer(whole, dtype="<i2").astype(np.float64)
         self._buf = np.concatenate([self._buf, samples])
         return self._produce()
 
     def flush(self) -> bytes:
         """Drain the tail at the utterance boundary and start afresh: the
         output ends where the input did, to the sample."""
+        self._framer.flush()
         if self._identity:
             return b""
         total = self._base + len(self._buf)
