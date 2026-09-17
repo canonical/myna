@@ -361,6 +361,14 @@ async def _chunks(pcm: np.ndarray, chunk_seconds: float, done: list[bool]):
     done.append(True)
 
 
+class _WordTokenizer:
+    """Tokenises " wT" words as the token T, as the positional model decodes them."""
+
+    def encode(self, text, add_special_tokens=True):
+        assert add_special_tokens is False
+        return SimpleNamespace(ids=[int(word[1:]) for word in text.split()])
+
+
 class _PositionalModel:
     """A whisper stand-in that hears where its input sits in the utterance.
 
@@ -374,6 +382,7 @@ class _PositionalModel:
         self._pcm = pcm
         self._language = language
         self.calls: list[dict] = []
+        self.hf_tokenizer = _WordTokenizer()
 
     def _locate(self, samples) -> int | None:
         values = np.round(samples * 32768).astype(np.int64)
@@ -554,21 +563,24 @@ async def test_batch_keeps_the_language_it_detected_first():
     assert [c["language"] for c in model.calls] == [None, "en", "en"]
 
 
-async def test_batch_carries_the_decoded_context_across_a_cut():
+async def test_batch_carries_the_committed_context_across_a_cut():
     """faster-whisper conditions each 30 s window on up to 223 previous
-    tokens; a cut must not reset that."""
+    tokens; a cut must not reset that. Like faster-whisper, the context is
+    the text emitted so far: a word the overlap decodes again is not in it
+    twice."""
     model, _ = await _run_positional([(130.0, True)])
 
     assert model.calls[0]["initial_prompt"] is None
     assert model.calls[1]["initial_prompt"] == list(range(0, 60))
-    assert model.calls[2]["initial_prompt"] == list(range(0, 60)) + list(range(59, 119))
+    assert model.calls[2]["initial_prompt"] == list(range(0, 119))
 
 
 async def test_batch_context_starts_with_the_prompt_and_is_bounded():
-    class _Tokenizer:
+    class _Tokenizer(_WordTokenizer):
         def encode(self, text, add_special_tokens=True):
-            assert add_special_tokens is False
-            return SimpleNamespace(ids=[-len(text)] * 200)
+            if text == " Myna":
+                return SimpleNamespace(ids=[-5] * 200)
+            return super().encode(text, add_special_tokens)
 
     plan = [(250.0, True)]
     pcm = _speech_pcm(plan)
@@ -586,8 +598,8 @@ async def test_batch_context_starts_with_the_prompt_and_is_bounded():
     assert len(prompts) == 5
     assert prompts[0] == "Myna"
     history = [-5] * 200
-    for k, first in enumerate((0, 59, 118, 177)):
-        history += list(range(first, first + 60))
+    for k, end in enumerate((60, 119, 178, 237)):
+        history += list(range(len(history) - 200, end))
         assert prompts[k + 1] == history[-223:]
 
 

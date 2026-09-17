@@ -439,8 +439,8 @@ class FasterWhisperAdapter:
         segment for presentation after the audio ends.
 
         Each region continues the previous one the way faster-whisper's own
-        30 s windows do: the language detected first is kept and the last
-        decoded tokens are the prompt. Word alignment is bought only when the
+        30 s windows do: the language detected first is kept and the tokens of
+        the text committed so far are the prompt. Word alignment is bought only when the
         client asked for timestamps or a forced cut left overlap audio whose
         re-decoded words must be deduplicated."""
         from myna.testbed.streaming.batch import run_deferred_batch
@@ -479,7 +479,6 @@ class FasterWhisperAdapter:
                     ]
                 region.append((segment, pairs, offset))
                 words.extend(w for w, _ in pairs)
-                context.extend(segment.tokens)
             if language is None:
                 language = info.language
             decoded = True
@@ -492,10 +491,13 @@ class FasterWhisperAdapter:
                 kept = [(w, a) for w, a in pairs if id(w) in kept_ids]
                 if len(kept) == len(pairs):
                     text = segment.text.rstrip()
+                    tokens = segment.tokens
                 else:
                     text = "".join(w.text for w, _ in kept).rstrip()
+                    tokens = _text_tokens(model, text) if text else []
                 if not text:
                     continue
+                context.extend(tokens)
                 if not finals:
                     text = text.lstrip()
                 # Batch mode is degenerate streaming (I7): committed finals,
@@ -515,5 +517,9 @@ class FasterWhisperAdapter:
 
 def _prompt_tokens(model: Any, prompt: str) -> list[int]:
     """The prompt as faster-whisper tokenises an ``initial_prompt`` string."""
-    ids: list[int] = model.hf_tokenizer.encode(" " + prompt.strip(), add_special_tokens=False).ids
+    return _text_tokens(model, " " + prompt.strip())
+
+
+def _text_tokens(model: Any, text: str) -> list[int]:
+    ids: list[int] = model.hf_tokenizer.encode(text, add_special_tokens=False).ids
     return ids
