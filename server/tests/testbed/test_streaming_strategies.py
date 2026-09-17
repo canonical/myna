@@ -138,6 +138,33 @@ def _silence(seconds: float) -> np.ndarray:
     return np.zeros(int(seconds * RATE), dtype=np.float32)
 
 
+def _continuous_speech(seconds: float, rms: float = 0.05, seed: int = 7) -> np.ndarray:
+    """Speech-like audio with no pause in it: syllables of 0.18 s at full
+    gain and 0.06 s closures at a quarter, a 60 ms breath every two seconds
+    and a phrase loudness redrawn every 3 s. The dynamic range is what makes
+    a floor tracked from the signal alone drift up into the speech; flat
+    noise (`_speech`) does not reproduce it."""
+    rng = np.random.default_rng(seed)
+    total = int(seconds * RATE)
+    envelope = np.empty(total, dtype=np.float32)
+    at = syllable = 0
+    while at < total:
+        for duration, gain in ((0.18, 1.0), (0.06, 0.25)):
+            span = min(int(duration * RATE), total - at)
+            envelope[at : at + span] = gain
+            at += span
+        syllable += 1
+        if syllable % 8 == 0 and at < total:
+            span = min(int(0.06 * RATE), total - at)
+            envelope[at : at + span] = 0.05
+            at += span
+    phrase = int(3.0 * RATE)
+    for start in range(0, total, phrase):
+        envelope[start : start + phrase] *= 0.25 + 0.75 * rng.random()
+    signal = rng.standard_normal(total).astype(np.float32) * envelope
+    return signal * (rms / np.sqrt(np.mean(signal * signal)))
+
+
 def test_silence_cut_never_fires_before_arm():
     cut = SilenceCut()
     # 10 s of speech then 2 s of silence, all under the 15 s arm.
@@ -291,3 +318,45 @@ def test_the_first_silence_after_the_arm_point_starts_a_fresh_run():
     # Silent before the arm point, and only 0.2 s of it past it.
     audio = np.concatenate([_speech(14.0), _silence(1.2), _speech(1.0)])
     assert cut.observe(audio, 0.0, len(audio) / RATE) is None
+
+
+# ---------------------------------------------------------------------------
+# Noise-floor drift (audio review, a5-stress)
+# ---------------------------------------------------------------------------
+
+
+def _drive(cut: SilenceCut, audio: np.ndarray, *, chunk: float = 0.5) -> list[float]:
+    """Feed ``audio`` in ``chunk``-second steps as the loop does, retiring to
+    each cut with 1 s of overlap, and return the cut times."""
+    frontier = 0.0
+    taken = []
+    for end in np.arange(chunk, len(audio) / RATE + chunk, chunk):
+        end = min(float(end), len(audio) / RATE)
+        while True:
+            skip = cut.unscanned_offset(frontier)
+            window = audio[int(frontier * RATE) + skip : int(end * RATE)]
+            at = cut.observe(window, frontier, end, offset=skip)
+            if at is None:
+                break
+            taken.append(at)
+            frontier = max(0.0, at - 1.0)
+    return taken
+
+
+@pytest.mark.parametrize("seed", [7, 11])
+def test_continuous_speech_is_never_cut_as_a_pause(seed):
+    """The false-cut regression: 150 s of speech with no pause in it must
+    reach the force cut, not be sliced by a drifting noise floor."""
+    cuts = _drive(SilenceCut(), _continuous_speech(150.0, seed=seed))
+
+    # 60 s of window, then 60 s more from the 1 s overlap the force cut keeps.
+    assert cuts == [60.0, 119.0]
+
+
+def test_a_real_pause_in_speech_still_cuts():
+    audio = np.concatenate([_continuous_speech(16.0), _silence(1.0), _continuous_speech(4.0)])
+
+    cuts = _drive(SilenceCut(), audio)
+
+    assert len(cuts) == 1, cuts
+    assert 16.4 <= cuts[0] <= 17.5

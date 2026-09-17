@@ -57,6 +57,21 @@ SC_FORCE_CUT_S = 60.0
 SC_FRAME_S = 0.03  # VAD analysis frame (~murmure's 33 ms throttle tick)
 _FRAME_LEN = max(1, int(SC_FRAME_S * 16_000))
 
+# A noise floor tracked from the signal alone drifts up into continuous
+# speech. With no real silence to pull it down it converges on the quiet
+# frames *inside* speech, and the silence threshold derived from it lands
+# mid-speech: measured 2026-09-17 over the 261 s no-gaps stress clip, the
+# floor settles at 0.12x the speech level, 63% of frames read "silent" and a
+# false pause cut fires every ~30 s. Speech is the only reference the signal
+# offers, so the floor is capped at a fraction of a peak-held speech level:
+# usable dictation audio sits well above its own noise floor, and capping too
+# hard only costs pause cuts (the force cut still bounds the window, with the
+# overlap that makes it safe) while capping too little deletes words.
+# 0.05 keeps every genuine pause of the 302 s long-form clip and drops its
+# drift-driven ones; 0.03 also loses genuine pauses.
+_SPEECH_FLOOR_RATIO = 0.05
+_SPEECH_DECAY = 0.9995  # per frame, ~20 min to fall a decade: recent speech
+
 # Scripts written without spaces between words (CJK ideographs, kana,
 # fullwidth forms): a decoder that cannot segment words emits one token per
 # character, and region joins add no space beside them.
@@ -156,12 +171,19 @@ class _AdaptiveVad:
     with asymmetric EMAs, a speech threshold at floor*5 (clamped
     [0.004, 0.08]) and a silence threshold at floor*3; per-frame RMS smoothed
     with EMA alpha 0.3. `update` returns "not-started" until speech has been
-    seen once, then "active"/"silent"."""
+    seen once, then "active"/"silent".
+
+    Modified: once speech has been heard the floor is capped at
+    [`_SPEECH_FLOOR_RATIO`] of ``speech_level``, a peak-held envelope of the
+    smoothed signal, so it cannot drift up into continuous speech. Before the
+    first speech frame the signal *is* the ambient, and the murmure tracker
+    runs unmodified."""
 
     def __init__(self) -> None:
         self._floor = 0.003
         self._smoothed = 0.0
         self._started = False
+        self.speech_level = 0.0
 
     def update(self, rms: float) -> str:
         if rms < self._floor:
@@ -176,6 +198,8 @@ class _AdaptiveVad:
             self._started = True
         if not self._started:
             return "not-started"
+        self.speech_level = max(self._smoothed, self.speech_level * _SPEECH_DECAY)
+        self._floor = min(self._floor, self.speech_level * _SPEECH_FLOOR_RATIO)
         silence_threshold = min(max(self._floor * 3.0, 0.004 * 0.6), 0.08 * 0.6)
         return "silent" if self._smoothed < silence_threshold else "active"
 
