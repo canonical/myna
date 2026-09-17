@@ -409,18 +409,6 @@ class FasterWhisperAdapter:
 
         options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
 
-        def accounted(offset: float) -> list[tuple[float, float]]:
-            """What the last decode accounts for, in region seconds: an
-            aligned word only its onset, a segment-level time its whole span
-            (see streaming.coverage)."""
-            spans: list[tuple[float, float]] = []
-            for _segment, pairs, _origin in region:
-                if pairs and pairs[0][1] is None:
-                    spans.append((pairs[0][0].start - offset, pairs[-1][0].end - offset))
-                else:
-                    spans.extend((w.start - offset, w.start - offset) for w, _ in pairs)
-            return spans
-
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             segments, _info = model.transcribe(samples, **options)
             words: list[Word] = []
