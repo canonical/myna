@@ -1,9 +1,9 @@
 //! Integration test for the WS-over-UDS backend (plan T39): spawn the real
 //! Python `myna-server --adapter fake` on a Unix socket and drive a full
-//! session through [`WsUnixBackend`] — handshake, audio push, finish, and the
-//! terminal transcript. This is the orchestrator's first real end-to-end
-//! round-trip against the running inference infrastructure (the fake adapter
-//! standing in for the snap).
+//! session through [`run_session`] over [`WsUnixBackend`] - handshake, audio
+//! push, finish, and the terminal transcript. This is the orchestrator's first
+//! real end-to-end round-trip against the running inference infrastructure
+//! (the fake adapter standing in for the snap).
 //!
 //! Skips (passes with a note) if `uv`/`myna-server` can't be launched, so it is
 //! robust across environments; when the server *does* start but misbehaves, it
@@ -14,8 +14,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use myna_core::{AudioFormat, PcmChunk, SessionConfig, TranscriptionEvent};
-use myna_orchestrator::{BackendClient, WsUnixBackend};
+use myna_core::{AudioFormat, PcmChunk, SessionConfig};
+use myna_orchestrator::{
+    run_session, BackendClient, OrchestratorEvent, OrchestratorInput, SessionOutcome, WsUnixBackend,
+};
+use tokio::sync::mpsc;
 
 /// Kills the server child on drop so a failed assertion never leaks a process.
 struct ServerGuard(Child);
@@ -105,39 +108,43 @@ async fn fake_server_round_trip() {
     }
 
     let backend = WsUnixBackend::new(&socket);
-    let mut handle = backend
+    let handle = backend
         .open_session(SessionConfig::default())
         .await
         .expect("open_session against fake server");
-
     // Handshake acked the served protocol version.
     assert_eq!(handle.protocol_version(), Some("1"));
+    drop(handle);
 
     // Push a little silence, then signal end-of-audio. The fake adapter's
     // scripted `done` waits for end-of-audio, so this exercises the finish path.
     let fmt = AudioFormat::default();
     let chunk = PcmChunk::new(vec![0u8; fmt.bytes_per_second() as usize / 10], fmt); // ~100 ms
-    handle
-        .sink
-        .send_audio(chunk.clone())
+    let (audio, inputs) = mpsc::channel(4);
+    let (_control, control) = mpsc::channel(1);
+    let (outputs, mut shown) = mpsc::channel(64);
+    audio
+        .send(OrchestratorInput::Audio(chunk.clone()))
         .await
-        .expect("send audio");
-    handle.sink.send_audio(chunk).await.expect("send audio");
-    handle.sink.finish().await.expect("finish");
+        .unwrap();
+    audio.send(OrchestratorInput::Audio(chunk)).await.unwrap();
+    audio.send(OrchestratorInput::EndOfAudio).await.unwrap();
+    let outcome = run_session(&backend, SessionConfig::default(), inputs, control, outputs)
+        .await
+        .expect("session against fake server");
 
-    // Drain events to the terminal one.
     let mut finals: Vec<String> = Vec::new();
     let mut saw_progress = false;
-    let mut done_text: Option<String> = None;
-    while let Some(event) = handle.events.next().await {
-        match event.expect("event decode") {
-            TranscriptionEvent::Progress(_) => saw_progress = true,
-            TranscriptionEvent::Final(f) => finals.push(f.text),
-            TranscriptionEvent::Done(d) => {
-                done_text = Some(d.text);
-                break;
+    while let Some(event) = shown.recv().await {
+        match event {
+            OrchestratorEvent::Loading
+            | OrchestratorEvent::Ready
+            | OrchestratorEvent::Transcribing => saw_progress = true,
+            OrchestratorEvent::Final(text) => finals.push(text),
+            OrchestratorEvent::Error { code, message } => {
+                panic!("unexpected error event: {code}: {message}")
             }
-            TranscriptionEvent::Error(e) => panic!("unexpected error event: {e:?}"),
+            _ => {}
         }
     }
 
@@ -151,8 +158,10 @@ async fn fake_server_round_trip() {
         "scripted final segments from the fake adapter",
     );
     assert_eq!(
-        done_text.as_deref(),
-        Some("The quick brown fox jumps over the lazy dog."),
+        outcome,
+        SessionOutcome::Completed {
+            transcript: "The quick brown fox jumps over the lazy dog.".into()
+        },
         "done carries the full aggregated transcript",
     );
 }
