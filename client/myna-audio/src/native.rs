@@ -155,19 +155,43 @@ impl Supervisor {
     }
 }
 
-/// Lost audio tolerated before capture faults: under one default quantum
-/// (1024 frames at 48 kHz), far above the sub-frame resampler jitter.
+/// Deficit tolerated before it is even a candidate for lost audio: under one
+/// default quantum (1024 frames at 48 kHz), far above the sub-frame resampler
+/// jitter. It is also the floor under the phase credit in [`Continuity`].
 const LOSS_TOLERANCE: Duration = Duration::from_millis(20);
+
+/// Audio that must arrive after a deficit appears before the deficit counts as
+/// lost. Delivery runs in and out of phase with the stream clock by a cycle,
+/// so a deficit is routinely repaid by the very next callback; audio the graph
+/// overwrote is never repaid. Ten default quanta (21.3 ms at 48 kHz), and five
+/// times the largest repaid deficit the A1 capture load matrix recorded
+/// (37 ms): it defers a real fault by at most this much audio, never hides it.
+const LOSS_CONFIRM: Duration = Duration::from_millis(200);
 
 /// Audio the graph produced for this stream but never handed over. PipeWire
 /// overwrites the buffer of each graph cycle the data thread misses (an xrun)
 /// without reporting it, but the stream clock still advances for every cycle,
 /// so clock minus delivered frames is the loss.
+///
+/// Delivery and the stream clock run in and out of phase by a cycle: on a
+/// loaded 48 kHz graph a cycle's tick advance and its buffer reach `process`
+/// in two callbacks, one reporting two quanta of clock with one quantum of
+/// audio and the next the missing quantum with `pw_time.ticks` unmoved. So
+/// every delivery counts, whether or not the clock moved; the account may run
+/// one graph cycle ahead of the clock; and a deficit is loss only once
+/// [`LOSS_CONFIRM`] of later audio has failed to repay it.
 struct Continuity {
     rate: f64,
     last_ticks: Option<u64>,
-    /// Frames owed, never negative: a surplus must not hide a later loss.
+    /// Frames owed. Negative is the account running ahead of the clock, and is
+    /// bounded to one cycle so no surplus can pay for a real loss.
     owed: f64,
+    /// Frames in one graph cycle: the smallest tick advance seen since the
+    /// last restart, since a missed cycle only ever makes an advance larger.
+    cycle: f64,
+    /// Audio delivered while `owed` has been over [`LOSS_TOLERANCE`], `None`
+    /// while it is under.
+    unrepaid: Option<f64>,
 }
 
 impl Continuity {
@@ -176,6 +200,8 @@ impl Continuity {
             rate: rate as f64,
             last_ticks: None,
             owed: 0.0,
+            cycle: 0.0,
+            unrepaid: None,
         }
     }
 
@@ -183,23 +209,45 @@ impl Continuity {
     fn restart(&mut self) {
         self.last_ticks = None;
         self.owed = 0.0;
+        self.cycle = 0.0;
+        self.unrepaid = None;
     }
 
     /// `frames` arrived at stream clock `ticks` (in `graph_rate` units).
-    /// Returns the loss once it exceeds [`LOSS_TOLERANCE`].
+    /// Returns the loss once a deficit past [`LOSS_TOLERANCE`] has outlived
+    /// [`LOSS_CONFIRM`] of later audio.
     fn delivered(&mut self, ticks: u64, graph_rate: (u32, u32), frames: u64) -> Option<Duration> {
-        let last = self.last_ticks.replace(ticks);
+        let last = self.last_ticks.replace(ticks)?;
         let (num, denom) = graph_rate;
-        match last {
-            // A clock switch rebases ticks, so that cycle carries none.
-            Some(last) if ticks > last && denom != 0 => {
-                let expected = (ticks - last) as f64 * num as f64 * self.rate / denom as f64;
-                self.owed = (self.owed + expected - frames as f64).max(0.0);
-            }
-            _ => {}
+        // A clock that did not move (a rebase, or the second callback of a
+        // split cycle) produced nothing over this interval. Its frames still
+        // arrived, so they still count.
+        let expected = if ticks > last && denom != 0 {
+            (ticks - last) as f64 * num as f64 * self.rate / denom as f64
+        } else {
+            0.0
+        };
+        if expected > 0.0 && (self.cycle == 0.0 || expected < self.cycle) {
+            self.cycle = expected;
         }
-        let lost = Duration::from_secs_f64(self.owed / self.rate);
-        (lost > LOSS_TOLERANCE).then_some(lost)
+        let tolerance = LOSS_TOLERANCE.as_secs_f64() * self.rate;
+        self.owed = (self.owed + expected - frames as f64).max(-self.cycle.max(tolerance));
+        if self.owed <= tolerance {
+            self.unrepaid = None;
+            return None;
+        }
+        match self.unrepaid.as_mut() {
+            // The delivery that opened the deficit is no evidence against it.
+            None => {
+                self.unrepaid = Some(0.0);
+                None
+            }
+            Some(arrived) => {
+                *arrived += frames as f64;
+                (*arrived >= LOSS_CONFIRM.as_secs_f64() * self.rate)
+                    .then(|| Duration::from_secs_f64(self.owed / self.rate))
+            }
+        }
     }
 }
 
@@ -1069,6 +1117,50 @@ mod tests {
         lost
     }
 
+    /// Deliver [`LOSS_CONFIRM`] of audio that neither gains nor loses a frame,
+    /// which is what turns an outstanding deficit into a reported loss.
+    fn without_repaying(
+        c: &mut Continuity,
+        ticks: &mut u64,
+        (num, denom): (u32, u32),
+    ) -> Option<Duration> {
+        let frames = (LOSS_CONFIRM.as_secs_f64() * 16_000.0) as u64;
+        *ticks += frames * denom as u64 / (num as u64 * 16_000);
+        c.delivered(*ticks, (num, denom), frames)
+    }
+
+    /// The observed false positive (loaded 48 kHz graph, quantum 1024): a
+    /// graph cycle's tick advance and its buffer reach `process` in two
+    /// callbacks: the first reports two quanta of clock with one quantum of
+    /// audio, the next reports the missing quantum with the clock unmoved.
+    /// Nothing was lost, so nothing may fault.
+    #[test]
+    fn a_cycle_split_across_two_callbacks_is_not_lost_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 10);
+        // Two quanta of clock, one quantum of audio.
+        ticks += CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        // The rest of it, with the clock standing still.
+        assert_eq!(c.delivered(ticks, GRAPH, 342), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+    }
+
+    /// The same split the other way round: the buffer arrives before the tick
+    /// advance that accounts for it. The account may run one cycle ahead of
+    /// the stream clock.
+    #[test]
+    fn a_buffer_ahead_of_its_tick_advance_is_not_lost_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 10);
+        assert_eq!(c.delivered(ticks, GRAPH, 342), None);
+        ticks += CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+    }
+
     #[test]
     fn resampled_delivery_on_every_cycle_loses_nothing() {
         let mut c = Continuity::new(16_000);
@@ -1082,7 +1174,8 @@ mod tests {
         let mut ticks = 0;
         run(&mut c, &mut ticks, 10);
         ticks += CYCLE;
-        let lost = run(&mut c, &mut ticks, 1).expect("one 21 ms cycle lost");
+        assert_eq!(run(&mut c, &mut ticks, 1), None, "not before later audio");
+        let lost = without_repaying(&mut c, &mut ticks, GRAPH).expect("one 21 ms cycle lost");
         assert!(
             lost >= LOSS_TOLERANCE && lost < Duration::from_millis(22),
             "{lost:?}"
@@ -1099,21 +1192,58 @@ mod tests {
             c.delivered(*ticks, GRAPH, 85)
         };
         assert_eq!(c.delivered(ticks, GRAPH, 85), None);
-        for _ in 0..3 {
+        for _ in 0..4 {
             assert_eq!(miss(&mut c, &mut ticks), None);
         }
-        assert!(miss(&mut c, &mut ticks).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
     }
 
+    /// The phase credit is one graph cycle, measured off the clock rather than
+    /// assumed: at a 2048 quantum a cycle is 42.7 ms, twice the tolerance.
     #[test]
-    fn a_surplus_does_not_bank_credit_against_later_loss() {
+    fn a_long_quantum_may_still_slip_a_whole_cycle_out_of_phase() {
+        let mut c = Continuity::new(16_000);
+        let long = 2 * CYCLE;
+        let mut ticks = 0;
+        for _ in 0..10 {
+            ticks += long;
+            assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        }
+        // A whole cycle arrives before the tick advance that accounts for it.
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        ticks += 2 * long;
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+    }
+
+    /// And it is the smallest advance: an account opened across a missed cycle
+    /// must not bank two cycles of credit.
+    #[test]
+    fn a_missed_cycle_does_not_widen_the_phase_credit() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        ticks += 2 * CYCLE;
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        run(&mut c, &mut ticks, 10);
+        assert_eq!(c.delivered(ticks, GRAPH, 5_000), None);
+        ticks += 2 * CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+    }
+
+    /// One cycle of surplus is credit - delivery and the clock slip that far
+    /// out of phase - and the rest of it is gone, so it cannot pay for a loss.
+    #[test]
+    fn a_surplus_banks_at_most_one_cycle_against_a_later_loss() {
         let mut c = Continuity::new(16_000);
         let mut ticks = 0;
         run(&mut c, &mut ticks, 3);
         ticks += 1;
         assert_eq!(c.delivered(ticks, GRAPH, 5_000), None);
-        ticks += CYCLE;
-        assert!(run(&mut c, &mut ticks, 1).is_some());
+        ticks += 3 * CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
     }
 
     #[test]
@@ -1123,30 +1253,47 @@ mod tests {
         run(&mut c, &mut ticks, 3);
         assert_eq!(c.delivered(ticks, GRAPH, 341), None);
         assert_eq!(run(&mut c, &mut ticks, 30), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
     }
 
+    /// A rebase reports no tick advance, but its buffer still arrived: those
+    /// frames repay what is owed, and bank at most one cycle beyond it.
     #[test]
-    fn a_clock_rebase_does_not_repay_owed_audio() {
+    fn a_clock_rebase_credits_the_audio_it_delivered_and_no_more() {
         let mut c = Continuity::new(16_000);
         let mut ticks = 0;
         let quantum = 256;
+        let miss = |c: &mut Continuity, ticks: &mut u64| {
+            *ticks += 2 * quantum;
+            c.delivered(*ticks, GRAPH, 85)
+        };
         assert_eq!(c.delivered(ticks, GRAPH, 85), None);
         for _ in 0..3 {
-            ticks += 2 * quantum;
-            assert_eq!(c.delivered(ticks, GRAPH, 85), None);
+            assert_eq!(miss(&mut c, &mut ticks), None);
         }
         assert_eq!(c.delivered(ticks, GRAPH, 341), None);
-        ticks += 2 * quantum;
-        assert!(c.delivered(ticks, GRAPH, 85).is_some());
+        for _ in 0..6 {
+            assert_eq!(miss(&mut c, &mut ticks), None);
+        }
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
     }
 
     #[test]
     fn exactly_the_tolerance_is_not_yet_a_loss() {
-        let mut c = Continuity::new(16_000);
         let same = (2, 32_000);
+        // 320 frames owed is the tolerance exactly, and no amount of later
+        // audio turns it into a loss.
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 320;
         assert_eq!(c.delivered(0, same, 1), None);
-        assert_eq!(c.delivered(320, same, 0), None);
-        assert!(c.delivered(321, same, 0).is_some());
+        assert_eq!(c.delivered(ticks, same, 0), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, same), None);
+        // One frame more is.
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 321;
+        assert_eq!(c.delivered(0, same, 1), None);
+        assert_eq!(c.delivered(ticks, same, 0), None);
+        assert!(without_repaying(&mut c, &mut ticks, same).is_some());
     }
 
     #[test]
@@ -1154,6 +1301,20 @@ mod tests {
         let mut c = Continuity::new(16_000);
         assert_eq!(c.delivered(0, (0, 0), 341), None);
         assert_eq!(c.delivered(CYCLE, (0, 0), 341), None);
+    }
+
+    /// A rateless report says nothing about what the graph produced, so it
+    /// neither owes anything nor writes off what is already owed.
+    #[test]
+    fn a_clock_without_a_rate_does_not_wipe_the_account() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 3);
+        ticks += 4 * CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        ticks += CYCLE;
+        assert_eq!(c.delivered(ticks, (0, 0), 341), None);
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
     }
 
     #[test]
@@ -1181,7 +1342,8 @@ mod tests {
             assert_eq!(c.delivered(ticks, rate, frames as u64), None);
         }
         ticks += 2 * CYCLE;
-        assert!(c.delivered(ticks, rate, 372).is_some());
+        assert_eq!(c.delivered(ticks, rate, 372), None);
+        assert!(without_repaying(&mut c, &mut ticks, rate).is_some());
     }
 
     /// The no-source fault message is user-facing and actionable (names the
@@ -1273,6 +1435,8 @@ mod tests {
         path.account(CYCLE, GRAPH, 341);
         assert_eq!(shared.loss(), None);
         path.account(3 * CYCLE, GRAPH, 341);
+        assert_eq!(shared.loss(), None, "not before later audio leaves it owed");
+        path.account(3 * CYCLE + 9_600, GRAPH, 3_200);
         let first = shared.loss();
         match first {
             Some(Loss::Missed(lost)) => {
@@ -1296,6 +1460,7 @@ mod tests {
         path.account(resumed, GRAPH, 341);
         assert_eq!(shared.loss(), None);
         path.account(resumed + 2 * CYCLE, GRAPH, 341);
+        path.account(resumed + 2 * CYCLE + 9_600, GRAPH, 3_200);
         assert!(shared.loss().is_some());
     }
 
