@@ -281,6 +281,26 @@ async fn capture_returns_before_the_daemon_answers() {
     health_to_end(health, Duration::from_secs(2)).await;
 }
 
+/// A target no node in the graph carries faults at discovery, naming it.
+#[tokio::test]
+async fn unknown_target_faults_at_discovery() {
+    skip_unless_enabled!();
+    let source = CaptureSource::builder(AudioFormat::default())
+        .target("myna-no-such-node")
+        .backend(Box::new(PipeWireBackend::new()))
+        .build();
+    let health = source.health();
+    let _stream = Box::new(source).capture();
+
+    let (states, took) = health_to_end(health, Duration::from_secs(3)).await;
+    assert!(took < Duration::from_secs(1), "faulted after {took:?}");
+    let msg = device_unavailable(states.last());
+    assert!(
+        msg.contains("no audio source available for 'myna-no-such-node'"),
+        "got: {msg}"
+    );
+}
+
 /// A graceful stop while the daemon has not answered discovery ends capture
 /// promptly and releases the thread, as a fault: nothing was captured.
 #[tokio::test]
@@ -632,6 +652,12 @@ async fn repeated_start_stop_drop_with_callbacks_running() {
                 "cycle {cycle}: graceful stop faulted: {fault:?}"
             );
             assert!(!chunks.is_empty(), "cycle {cycle}: captured audio drains");
+            let drained: Duration = chunks.iter().map(PcmChunk::duration).sum();
+            assert_eq!(
+                drained,
+                stats.borrow().captured,
+                "cycle {cycle}: every captured chunk drains exactly once"
+            );
         } else {
             drop(stream);
         }

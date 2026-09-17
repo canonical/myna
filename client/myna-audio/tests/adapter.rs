@@ -390,9 +390,10 @@ async fn overload_is_visible_on_health_before_the_stream_is_drained() {
     let stream = Box::new(source).capture();
 
     let state = health_until(&mut health, |h| matches!(h, CaptureHealth::Faulted(_))).await;
-    assert!(
-        matches!(state, CaptureHealth::Faulted(CaptureError::Overloaded(_))),
-        "got {state:?}"
+    assert_eq!(
+        state,
+        CaptureHealth::Faulted(CaptureError::Overloaded(0.2)),
+        "the fault carries the buffered duration"
     );
     let (chunks, fault) = drain(stream).await;
     assert_eq!(chunks.len(), 2, "accepted audio drains before the fault");
@@ -493,4 +494,46 @@ async fn a_backend_that_drops_its_producer_faults_instead_of_hanging() {
     let (chunks, fault) = drain(stream).await;
     assert_eq!(chunks.len(), 1, "audio pushed before the loss still drains");
     assert!(matches!(fault, Some(CaptureError::Backend(_))));
+}
+
+/// Pushes audio until the consumer is gone, then reports a fault, as a
+/// device error racing an abort would.
+struct FaultsAfterAbort;
+
+impl CaptureBackend for FaultsAfterAbort {
+    fn start(self: Box<Self>, _spec: CaptureSpec, mut producer: Producer) {
+        tokio::spawn(async move {
+            while producer.push(vec![0u8; 320].into()) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            producer.finish(Some(CaptureError::Backend("late".into())));
+        });
+    }
+}
+
+#[tokio::test]
+async fn a_fault_after_abort_ends_health_cleanly() {
+    let source = CaptureSource::builder(FMT)
+        .backend(Box::new(FaultsAfterAbort))
+        .build();
+    let mut health = source.health();
+    let stream = Box::new(source).capture();
+
+    health_until(&mut health, |h| *h == CaptureHealth::Capturing).await;
+    drop(stream);
+    assert_eq!(final_health(health).await, Some(CaptureHealth::Ended));
+}
+
+#[tokio::test]
+async fn chunks_are_whole_frames_whatever_the_chunk_duration() {
+    // 100.03125 ms of 16 kHz mono S16 is 3201 bytes: round down to a frame.
+    let backend = ScriptedBackend::new(vec![Step::Silence(secs(0.5))]);
+    let source = CaptureSource::builder(FMT)
+        .chunk(Duration::from_nanos(100_031_250))
+        .backend(Box::new(backend))
+        .build();
+    let (chunks, fault) = drain(Box::new(source).capture()).await;
+    assert!(fault.is_none());
+    assert_eq!(chunks[0].data.len(), 3_200);
+    assert!(chunks.iter().all(|c| c.data.len() % 2 == 0));
 }
