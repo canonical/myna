@@ -27,9 +27,7 @@ from myna.core import (
 from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
-    _COLLAPSE_GAP_S,
     _COLLAPSE_RETRY_PAD_S,
-    _COLLAPSE_RETRY_PADS,
     BASE_ENCODER_FILE,
     BATCH_WINDOW_CAP_S,
     CUDA_PROVIDER,
@@ -46,10 +44,14 @@ from myna.testbed.parakeet import (
     _ParakeetOnnx,
     _require_cuda,
     _tokens_to_words,
-    _untranscribed_gap,
     encoder_run_options,
     encoder_variant,
     model_files,
+)
+from myna.testbed.streaming.coverage import (
+    RETRY_PADS,
+    UNTRANSCRIBED_GAP_S,
+    untranscribed_gap,
 )
 from myna.testbed.streaming.strategies import SilenceCut, Word
 
@@ -447,26 +449,29 @@ def _loud(seconds: float, rms: float = 0.05, seed: int = 5) -> np.ndarray:
 def test_a_pause_however_long_is_not_an_untranscribed_gap():
     region = np.concatenate([_loud(3.0), np.zeros(6 * PARAKEET_RATE, np.float32), _loud(3.0)])
 
-    assert _untranscribed_gap(region, [0.5, 1.5, 2.5, 9.5, 10.5, 11.5]) < _COLLAPSE_GAP_S
+    assert (
+        untranscribed_gap(region, [(t, t) for t in (0.5, 1.5, 2.5, 9.5, 10.5, 11.5)])
+        < UNTRANSCRIBED_GAP_S
+    )
 
 
 def test_loud_audio_with_no_token_in_it_is_a_gap():
     region = _loud(12.0)
 
-    assert _untranscribed_gap(region, [0.5, 1.5, 11.0]) == pytest.approx(9.5)
+    assert untranscribed_gap(region, [(t, t) for t in (0.5, 1.5, 11.0)]) == pytest.approx(9.5)
 
 
 def test_a_silent_region_is_not_loud_relative_to_itself():
     """Otherwise every silent region would be measured against its own noise
     and retried for words that are not there."""
-    assert _untranscribed_gap(np.zeros(12 * PARAKEET_RATE, np.float32), []) == 0.0
-    assert _untranscribed_gap(_loud(12.0, rms=0.0005), []) == 0.0
+    assert untranscribed_gap(np.zeros(12 * PARAKEET_RATE, np.float32), []) == 0.0
+    assert untranscribed_gap(_loud(12.0, rms=0.0005), []) == 0.0
 
 
 def test_a_partial_collapse_is_retried_even_though_the_region_looks_plausible():
     """The words-per-second check passes on a decode that transcribed most of
     the region and went blank over seven seconds of it - the partial collapse
-    measured on the int8 encoder (parakeet.py, _COLLAPSE_GAP_S)."""
+    measured on the int8 encoder (parakeet.py, UNTRANSCRIBED_GAP_S)."""
 
     def script(n, call):
         if call == 1:
@@ -491,7 +496,7 @@ def test_the_retry_ladder_keeps_the_nudge_that_leaves_the_least_untranscribed():
     model = _bare_model(script)
     tokens, _ = model._transcribe_guarded(_loud(13.0))
 
-    pads = [int(pad * PARAKEET_RATE) for pad in _COLLAPSE_RETRY_PADS]
+    pads = [int(pad * PARAKEET_RATE) for pad in RETRY_PADS]
     assert [n - model.calls[0] for n in model.calls[1:]] == [2 * pad for pad in pads]
     assert tokens == covered[0]
 
@@ -503,7 +508,7 @@ def test_a_collapse_the_ladder_cannot_recover_keeps_the_best_attempt():
     model = _bare_model(script)
     tokens, timestamps = model._transcribe_guarded(_loud(13.0))
 
-    assert len(model.calls) == 1 + len(_COLLAPSE_RETRY_PADS), "the ladder runs once, not forever"
+    assert len(model.calls) == 1 + len(RETRY_PADS), "the ladder runs once, not forever"
     assert (tokens, timestamps) == ([" one"], [0.2])
 
 

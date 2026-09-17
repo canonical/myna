@@ -445,7 +445,14 @@ class FasterWhisperAdapter:
         the region ending at one holds back its last words by their
         timestamps, and the region re-decoding its overlap deduplicates by
         them."""
+        import numpy as np
+
         from myna.testbed.streaming.batch import ends_at_forced_cut, run_deferred_batch
+        from myna.testbed.streaming.coverage import (
+            RETRY_PADS,
+            UNTRANSCRIBED_GAP_S,
+            untranscribed_gap,
+        )
 
         granularity = config.timestamp_granularity
         language = config.language
@@ -457,34 +464,73 @@ class FasterWhisperAdapter:
         region: list[tuple[Any, list[tuple[Word, Any]], float]] = []
         finals: list[TranscriptionFinal] = []
 
-        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
-            nonlocal language, decoded, processed
-            first = round(offset * WHISPER_RATE)
+        def decode_once(
+            samples: NDArray[np.float32], origin: float, word_timestamps: bool, floor: float
+        ) -> list[Word]:
+            """One pass, filling ``region``. ``origin`` is the audio time of
+            ``samples[0]``, which a nudged re-decode moves back over its pad;
+            ``floor`` is the region start, so a word the decoder placed inside
+            that pad still times inside the region."""
+            nonlocal language
             options = batch_decode_options(
                 language,
                 list(context) if decoded else config.prompt,
-                word_timestamps=granularity is not None
-                or first < processed
-                or ends_at_forced_cut(samples),
+                word_timestamps=word_timestamps,
             )
             segments, info = model.transcribe(samples, **options)
             region.clear()
             words: list[Word] = []
+
+            def at(text: str, start: float, end: float) -> Word:
+                return Word(text, max(start + origin, floor), max(end + origin, floor))
+
             for segment in segments:
                 if segment.words:
-                    pairs = [
-                        (Word(a.word, a.start + offset, a.end + offset), a) for a in segment.words
-                    ]
+                    pairs = [(at(a.word, a.start, a.end), a) for a in segment.words]
                 else:
-                    start, end = segment.start + offset, segment.end + offset
                     pairs = [
-                        (Word(text, start, end), None)
+                        (at(text, segment.start, segment.end), None)
                         for text in _UNALIGNED_WORD.findall(segment.text)
                     ]
-                region.append((segment, pairs, offset))
+                region.append((segment, pairs, origin))
                 words.extend(w for w, _ in pairs)
             if language is None:
                 language = info.language
+            return words
+
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+            nonlocal decoded, processed
+            first = round(offset * WHISPER_RATE)
+            word_timestamps = (
+                granularity is not None or first < processed or ends_at_forced_cut(samples)
+            )
+            words = decode_once(samples, offset, word_timestamps, offset)
+            gap = untranscribed_gap(samples, [(w.start - offset, w.end - offset) for w in words])
+            if gap >= UNTRANSCRIBED_GAP_S:
+                # Whisper skips a sentence in a long region on some inputs, and
+                # says nothing about it: the text reads cleanly and the audio it
+                # covers is what gives it away (streaming.coverage). Decoding
+                # the same audio with its edges nudged recovers the words -
+                # measured 2026-09-18, base on the no-gaps stress clip, region
+                # 152.5-208.8 s: 137 words with a 3.1 s hole, 146 and 1.8 s at
+                # 0.3 s of pad.
+                best, best_rank = (words, list(region)), (gap, -len(words))
+                for pad_s in RETRY_PADS:
+                    pad = np.zeros(round(pad_s * WHISPER_RATE), dtype=samples.dtype)
+                    padded = decode_once(
+                        np.concatenate([pad, samples, pad]), offset - pad_s, word_timestamps, offset
+                    )
+                    rank = (
+                        untranscribed_gap(
+                            samples, [(w.start - offset, w.end - offset) for w in padded]
+                        ),
+                        -len(padded),
+                    )
+                    if rank < best_rank:
+                        best, best_rank = (padded, list(region)), rank
+                    if best_rank[0] < UNTRANSCRIBED_GAP_S:
+                        break
+                words, region[:] = best[0], best[1]
             decoded = True
             processed = first + len(samples)
             return Hypothesis(words=words)

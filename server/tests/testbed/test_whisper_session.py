@@ -610,6 +610,41 @@ async def test_batch_asks_for_word_alignment_only_around_forced_cuts():
     assert [bool(c.get("word_timestamps")) for c in model.calls] == [True, True, False]
 
 
+class _SkippingModel(_PositionalModel):
+    """Whisper going quiet over part of a long region, as base does on the
+    no-gaps stress clip: the words are simply absent from the decode, and the
+    same audio nudged by a pad transcribes whole."""
+
+    skip = range(40, 50)
+
+    def transcribe(self, samples, **kwargs):
+        self.nudged = not samples[0]
+        return super().transcribe(samples, **kwargs)
+
+    def _word(self, t: int, start_s: float, end_s: float):
+        if t in self.skip and not self.nudged:
+            return None
+        return super()._word(t, start_s, end_s)
+
+
+async def test_batch_re_decodes_a_region_that_left_speech_untranscribed():
+    plan = [(70.0, True)]
+    model, events = await _run_positional(plan, model=_SkippingModel)
+
+    committed = [e for _, e in events if isinstance(e, TranscriptionFinal)]
+    assert "".join(e.text for e in committed).split() == _labels(plan)
+    # The first region (up to the forced cut) is decoded twice, the second once.
+    assert [c["samples"] for c in model.calls][:2] == [60 * RATE, 60 * RATE + 2 * round(0.2 * RATE)]
+    assert len(model.calls) == 3
+
+
+async def test_batch_does_not_re_decode_a_region_it_transcribed():
+    plan = [(70.0, True)]
+    model, _ = await _run_positional(plan)
+
+    assert len(model.calls) == 2, "a healthy region must not pay for a re-decode"
+
+
 async def test_batch_keeps_the_language_it_detected_first():
     model, _ = await _run_positional([(130.0, True)], language=None)
 

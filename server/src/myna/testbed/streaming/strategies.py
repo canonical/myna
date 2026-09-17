@@ -71,7 +71,7 @@ _FRAME_LEN = max(1, int(SC_FRAME_S * 16_000))
 # 0.05 keeps every genuine pause of the 302 s long-form clip and drops its
 # drift-driven ones; 0.03 also loses genuine pauses.
 _SPEECH_FLOOR_RATIO = 0.05
-_SPEECH_DECAY = 0.9995  # per frame, ~20 min to fall a decade: recent speech
+_SPEECH_DECAY = 0.9995  # per frame: a decade in 138 s, so 'recent' speech
 # A pause cut may retire audio without overlap, which is only safe if no word
 # straddles it. Measured on the same clips: the loudest raw frame in a genuine
 # pause reaches 0.13-0.21x the speech level, a drifted false pause 0.29-0.88x.

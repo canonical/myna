@@ -94,6 +94,11 @@ from myna.core import (
 from myna.server.lifecycle import MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming.coverage import (
+    RETRY_PADS,
+    UNTRANSCRIBED_GAP_S,
+    untranscribed_gap,
+)
 from myna.testbed.streaming.loop import MIN_DECODE_S
 from myna.testbed.streaming.strategies import (
     SC_ARM_S,
@@ -303,22 +308,15 @@ _COLLAPSE_RETRY_PAD_S = 0.2
 # The collapse is not always total: the joint can go blank over part of a
 # window and transcribe the rest, which the words-per-second check above sails
 # straight past. Measured 2026-09-17 over 153 regions (15.5/18.9 s) of the
-# long-form and no-gaps stress clips: 8.5% left a stretch of *loud* audio with
-# no token at all, up to 17 s of one 18.9 s region, and shifting the region
-# start by 20 ms was enough to trigger or clear it (109.22 s: 89 tokens, 109.24
-# s: 39). Region starts already sit on the 10 ms mel hop, so quantising them
+# long-form and no-gaps stress clips: 8.5% left a stretch of loud audio with no
+# token at all, up to 17 s of one 18.9 s region, and shifting the region start
+# by 20 ms was enough to trigger or clear it (109.22 s: 89 tokens, 109.24 s:
+# 39). Region starts already sit on the 10 ms mel hop, so quantising them
 # further buys nothing - the encoder is unstable in the window itself, and the
-# defence is to notice and re-decode. Nudging by a pad is a lottery per window
-# (0.2 s recovered 11 of 13, 0.3 s recovered the two it lost and lost one of
-# its own), so the ladder tries both and keeps whichever leaves the least
-# untranscribed speech.
-_COLLAPSE_GAP_S = 2.0  # loud audio with no token: never legitimate
-_COLLAPSE_RETRY_PADS = (0.2, 0.3)
-# Loud relative to the region's own speech, with an absolute floor so a region
-# of pure silence is not measured against itself.
-_COLLAPSE_LOUD_RATIO = 0.25
-_COLLAPSE_LOUD_FLOOR = 0.004
-_COLLAPSE_FRAME = 480
+# defence is to notice (streaming.coverage) and re-decode. Nudging by a pad is
+# a lottery per window (0.2 s recovered 11 of 13, 0.3 s recovered the two it
+# lost and lost one of its own), so the ladder tries both and keeps whichever
+# leaves the least untranscribed speech.
 
 # Batch decodes are windowed too: one pass over a whole 5 minute session peaked
 # at 3.9 GB RSS, and a toggle session has no length cap. An utterance up to the
@@ -399,32 +397,6 @@ def _tokens_to_words(tokens: list[str], timestamps: list[float]) -> list[Word]:
         else:
             words[-1] = Word(text=words[-1].text + token, start=words[-1].start, end=end)
     return words
-
-
-def _untranscribed_gap(samples: NDArray[np.float32], timestamps: list[float]) -> float:
-    """The longest stretch of loud audio in ``samples`` that no token covers.
-
-    Loud is measured against the region's own 90th-percentile frame RMS, with
-    an absolute floor so a silent region is not loud relative to itself: a
-    pause, however long, is not a gap, and an untranscribed *speaking* stretch
-    is the partial-collapse signature (see `_COLLAPSE_GAP_S`)."""
-    frames = len(samples) // _COLLAPSE_FRAME
-    if not frames:
-        return 0.0
-    block = samples[: frames * _COLLAPSE_FRAME].reshape(-1, _COLLAPSE_FRAME)
-    rms = np.sqrt(np.mean(block * block, axis=1))
-    loud = max(float(np.percentile(rms, 90)) * _COLLAPSE_LOUD_RATIO, _COLLAPSE_LOUD_FLOOR)
-    span = len(samples) / PARAKEET_RATE
-    worst = 0.0
-    marks = [0.0, *timestamps, span]
-    for start, end in zip(marks, marks[1:], strict=False):
-        if end - start <= worst:
-            continue
-        lo = min(int(start * PARAKEET_RATE) // _COLLAPSE_FRAME, frames - 1)
-        hi = max(lo + 1, min(int(end * PARAKEET_RATE) // _COLLAPSE_FRAME, frames))
-        if float(np.median(rms[lo:hi])) > loud:
-            worst = end - start
-    return worst
 
 
 def _encoder_threads() -> int:
@@ -761,21 +733,21 @@ class _ParakeetOnnx:
     def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
         """`transcribe`, retried when the result looks collapsed: either too
         few tokens for the whole region, or a long stretch of loud audio with
-        no token in it at all (a partial collapse, `_untranscribed_gap`).
+        no token in it at all (a partial collapse, `untranscribed_gap`).
 
         A genuinely silent region simply decodes to nothing twice — at RTF
         0.02 that costs less than losing the words does.
         """
         tokens, timestamps = self.transcribe(samples)
-        gap = _untranscribed_gap(samples, timestamps)
-        if gap >= _COLLAPSE_GAP_S:
+        gap = untranscribed_gap(samples, [(t, t) for t in timestamps])
+        if gap >= UNTRANSCRIBED_GAP_S:
             best, best_rank = (tokens, timestamps), (gap, -len(tokens))
-            for pad_s in _COLLAPSE_RETRY_PADS:
+            for pad_s in RETRY_PADS:
                 retry = self._padded(samples, pad_s)
-                rank = (_untranscribed_gap(samples, retry[1]), -len(retry[0]))
+                rank = (untranscribed_gap(samples, [(t, t) for t in retry[1]]), -len(retry[0]))
                 if rank < best_rank:
                     best, best_rank = retry, rank
-                if best_rank[0] < _COLLAPSE_GAP_S:
+                if best_rank[0] < UNTRANSCRIBED_GAP_S:
                     break
             return best
         seconds = len(samples) / PARAKEET_RATE
