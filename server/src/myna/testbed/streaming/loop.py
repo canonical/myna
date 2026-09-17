@@ -463,7 +463,7 @@ async def _run(
             await emit_committed(_utterance_edge(text, not committed), fresh)
         return bool(text)
 
-    async def cut_region(cut: int, forced: bool) -> None:
+    async def cut_region(cut: int, *, forced: bool, keep_overlap: bool) -> None:
         """Decode [start, cut) once, commit it and retire it (chunked).
 
         A cut that keeps overlap holds back the words the next region decodes
@@ -473,7 +473,6 @@ async def _run(
         commit a word this decode missed: the VAD can cut at a gap too short
         to be silence to the decoder. A cut without overlap commits all."""
         nonlocal committed_through, last_unstable
-        keep_overlap = forced or silence_cut_overlap
         hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
         if not keep_overlap:
             await commit(hyp.words)
@@ -495,7 +494,7 @@ async def _run(
         cut = window.received
         if isinstance(strategy, SilenceCut):
             strategy.mark_cut(cut / RATE)
-            await cut_region(cut, forced=True)
+            await cut_region(cut, forced=True, keep_overlap=True)
             return
         hyp = await timed_decode(window.samples(), window.start, "commit")
         decision = strategy.boundary_commit(hyp, cut / RATE, (cut - window.overlap) / RATE)
@@ -520,12 +519,18 @@ async def _run(
                         window.end,
                         offset=unscanned,
                     )
-                    if cut is None or cut - window.start < MIN_DECODE_S:
+                    if cut is None or cut.at - window.start < MIN_DECODE_S:
                         break
-                    if to_samples(cut) <= window.processed_through:
+                    if to_samples(cut.at) <= window.processed_through:
                         break  # a force cut no longer than the overlap
-                    forced = cut - window.start >= strategy.force_cut_seconds
-                    await cut_region(to_samples(cut), forced)
+                    # Retiring without overlap is only safe where the cut is
+                    # verified silence; anything else keeps the overlap that
+                    # lets a word straddling the cut survive it.
+                    await cut_region(
+                        to_samples(cut.at),
+                        forced=cut.forced,
+                        keep_overlap=cut.forced or silence_cut_overlap or not cut.silent,
+                    )
                     cut_taken = True
             if not pending:
                 break

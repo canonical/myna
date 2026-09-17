@@ -165,6 +165,24 @@ def _continuous_speech(seconds: float, rms: float = 0.05, seed: int = 7) -> np.n
     return signal * (rms / np.sqrt(np.mean(signal * signal)))
 
 
+def _drive(cut: SilenceCut, audio: np.ndarray, *, chunk: float = 0.5) -> list:
+    """Feed ``audio`` in ``chunk``-second steps as the loop does, retiring to
+    each cut with 1 s of overlap, and return the cuts."""
+    frontier = 0.0
+    taken = []
+    for end in np.arange(chunk, len(audio) / RATE + chunk, chunk):
+        end = min(float(end), len(audio) / RATE)
+        while True:
+            skip = cut.unscanned_offset(frontier)
+            window = audio[int(frontier * RATE) + skip : int(end * RATE)]
+            at = cut.observe(window, frontier, end, offset=skip)
+            if at is None:
+                break
+            taken.append(at)
+            frontier = max(0.0, at.at - 1.0)
+    return taken
+
+
 def test_silence_cut_never_fires_before_arm():
     cut = SilenceCut()
     # 10 s of speech then 2 s of silence, all under the 15 s arm.
@@ -185,7 +203,7 @@ def test_silence_cut_fires_on_pause_past_arm():
     assert cut_at is not None, "no cut on a 1 s+ pause past the arm"
     # The pause starts at 16 s; the cut lands at the window end once 0.5 s of
     # silence has run (murmure cuts at buffer end, trailing silence included).
-    assert 16.4 <= cut_at <= 17.5
+    assert 16.4 <= cut_at.at <= 17.5
 
 
 def test_silence_cut_ignores_short_pauses():
@@ -208,7 +226,8 @@ def test_silence_cut_force_cut_bounds_window():
         cut_at = cut.observe(window, 0.0, float(end))
         if cut_at is not None:
             break
-    assert cut_at == 60.0
+    assert cut_at is not None
+    assert (cut_at.at, cut_at.forced) == (60.0, True)
 
 
 def test_silence_cut_scans_incrementally_after_advance():
@@ -223,8 +242,8 @@ def test_silence_cut_scans_incrementally_after_advance():
         window = audio[int(frontier * RATE) : int(end * RATE)]
         cut_at = cut.observe(window, frontier, float(end))
         if cut_at is not None:
-            cuts.append(cut_at)
-            frontier = cut_at - 1.0  # RollingWindow keeps 1 s of overlap
+            cuts.append(cut_at.at)
+            frontier = cut_at.at - 1.0  # RollingWindow keeps 1 s of overlap
     assert len(cuts) == 2, f"expected a cut per pause, got {cuts}"
     # First pause starts at 16 s; the cut lands at the frame where the 0.5 s
     # silence run completes (VAD detection lag included), not at a call
@@ -246,8 +265,8 @@ def test_silence_cut_restarts_the_silence_run_after_a_cut():
         window = audio[int(frontier * RATE) : int(end * RATE)]
         cut_at = cut.observe(window, frontier, float(end))
         if cut_at is not None:
-            cuts.append(cut_at)
-            frontier = cut_at - 1.0
+            cuts.append(cut_at.at)
+            frontier = cut_at.at - 1.0
     assert len(cuts) == 2, cuts
     rearmed = cuts[0] - 1.0 + 15.0
     assert cuts[1] >= rearmed + 0.5 - 0.03
@@ -309,8 +328,7 @@ def test_a_pause_cut_lands_on_a_frame_boundary():
     audio = np.concatenate([_speech(2.0), _silence(2.0)])
     at = cut.observe(audio, 0.0, 4.0)
     assert at is not None
-    assert round(at * RATE) % 480 == 0
-    assert at * RATE == round(at * RATE)
+    assert round(at.at * RATE) % 480 == 0
 
 
 def test_the_first_silence_after_the_arm_point_starts_a_fresh_run():
@@ -321,26 +339,8 @@ def test_the_first_silence_after_the_arm_point_starts_a_fresh_run():
 
 
 # ---------------------------------------------------------------------------
-# Noise-floor drift (audio review, a5-stress)
+# Noise-floor drift, cut verification and exact framing (audio review, a5-stress)
 # ---------------------------------------------------------------------------
-
-
-def _drive(cut: SilenceCut, audio: np.ndarray, *, chunk: float = 0.5) -> list[float]:
-    """Feed ``audio`` in ``chunk``-second steps as the loop does, retiring to
-    each cut with 1 s of overlap, and return the cut times."""
-    frontier = 0.0
-    taken = []
-    for end in np.arange(chunk, len(audio) / RATE + chunk, chunk):
-        end = min(float(end), len(audio) / RATE)
-        while True:
-            skip = cut.unscanned_offset(frontier)
-            window = audio[int(frontier * RATE) + skip : int(end * RATE)]
-            at = cut.observe(window, frontier, end, offset=skip)
-            if at is None:
-                break
-            taken.append(at)
-            frontier = max(0.0, at - 1.0)
-    return taken
 
 
 @pytest.mark.parametrize("seed", [7, 11])
@@ -350,13 +350,89 @@ def test_continuous_speech_is_never_cut_as_a_pause(seed):
     cuts = _drive(SilenceCut(), _continuous_speech(150.0, seed=seed))
 
     # 60 s of window, then 60 s more from the 1 s overlap the force cut keeps.
-    assert cuts == [60.0, 119.0]
+    assert [c.at for c in cuts] == [60.0, 119.0]
+    assert all(c.forced for c in cuts)
 
 
-def test_a_real_pause_in_speech_still_cuts():
+def test_a_real_pause_in_speech_still_cuts_and_is_verified_silent():
     audio = np.concatenate([_continuous_speech(16.0), _silence(1.0), _continuous_speech(4.0)])
 
     cuts = _drive(SilenceCut(), audio)
 
     assert len(cuts) == 1, cuts
-    assert 16.4 <= cuts[0] <= 17.5
+    assert 16.4 <= cuts[0].at <= 17.5
+    assert not cuts[0].forced and cuts[0].silent
+
+
+def test_a_pause_holding_a_loud_frame_is_cut_but_not_verified_silent():
+    """A burst inside the run (a plosive, a clipped word onset) leaves the
+    smoothed signal below the silence threshold, so the run survives - but a
+    word may straddle the cut, so it may not retire without overlap."""
+    room = _speech(0.4, rms=0.004)  # a pause over a room floor, not digital silence
+    quiet = np.concatenate([room, _speech(0.03, rms=0.015), _speech(0.6, rms=0.004)])
+    loud = np.concatenate([room, _speech(0.03, rms=0.02), _speech(0.6, rms=0.004)])
+    speech = _continuous_speech(16.0)
+
+    verified = _drive(SilenceCut(), np.concatenate([speech, quiet]))
+    unverified = _drive(SilenceCut(), np.concatenate([speech, loud]))
+
+    assert [(c.forced, c.silent) for c in verified] == [(False, True)]
+    # Same pause, one frame at 0.31x the speech level in it: cut, not verified.
+    assert [(c.forced, c.silent) for c in unverified] == [(False, False)]
+
+
+def test_a_force_cut_is_never_verified_silent():
+    cuts = _drive(SilenceCut(force_cut_seconds=20.0), _continuous_speech(25.0))
+
+    assert [(c.at, c.forced, c.silent) for c in cuts] == [(20.0, True, False)]
+
+
+def test_every_frame_reaches_the_vad_exactly_once():
+    """Float frame arithmetic re-fed frames it had already scanned (434
+    updates for 299 frames, measured 2026-09-17), which moved cuts around."""
+    cut = SilenceCut(force_cut_seconds=600.0)
+    seen = []
+    inner = cut._vad.update
+    cut._vad.update = lambda rms: (seen.append(rms), inner(rms))[1]
+    audio = _continuous_speech(9.0)
+
+    _drive(cut, audio, chunk=0.1)
+
+    assert len(seen) == len(audio) // 480
+
+
+def test_frames_are_not_re_fed_across_a_cut_and_its_overlap():
+    cut = SilenceCut(arm_seconds=2.0, force_cut_seconds=600.0)
+    seen = []
+    inner = cut._vad.update
+    cut._vad.update = lambda rms: (seen.append(rms), inner(rms))[1]
+    audio = np.concatenate([_continuous_speech(4.0), _silence(1.0), _continuous_speech(4.0)])
+
+    cuts = _drive(cut, audio, chunk=0.1)
+
+    assert len(cuts) == 1, cuts
+    # The overlap the loop keeps is re-decoded, never re-scanned: scanning
+    # stops at the cut and resumes there.
+    assert len(seen) == len(audio) // 480
+
+
+def test_a_cut_lands_on_an_exact_sample():
+    cut = SilenceCut(arm_seconds=1.0)
+    audio = np.concatenate([_speech(2.0), _silence(2.0)])
+
+    at = cut.observe(audio, 0.0, 4.0)
+
+    assert at is not None
+    assert at.at * RATE == round(at.at * RATE)
+
+
+def test_the_scan_position_survives_a_window_that_starts_mid_frame():
+    """After a forced cut the window starts on an arbitrary sample; frames
+    tile forward from there rather than from a moving window origin."""
+    cut = SilenceCut(force_cut_seconds=600.0)
+    audio = _continuous_speech(4.0)
+    assert cut.observe(audio[: 2 * RATE + 37], 0.0, (2 * RATE + 37) / RATE) is None
+    cut.mark_cut((2 * RATE + 37) / RATE)
+
+    assert cut.unscanned_offset((2 * RATE + 37) / RATE) == 0
+    assert cut.unscanned_offset(1.0) == RATE + 37

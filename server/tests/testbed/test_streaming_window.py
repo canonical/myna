@@ -21,7 +21,13 @@ from myna.core import Disposition, PcmChunk, TranscriptionFinal, TranscriptionPr
 from myna.core.audio import AudioFormat
 from myna.testbed.harness import StreamingTelemetry
 from myna.testbed.streaming import loop as loop_module
-from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, SilenceCut, Word
+from myna.testbed.streaming.strategies import (
+    Cut,
+    Hypothesis,
+    LocalAgreement,
+    SilenceCut,
+    Word,
+)
 
 RATE = 16_000
 FORMAT = AudioFormat(sample_rate_hz=RATE, channels=1, sample_width_bytes=2)
@@ -657,6 +663,46 @@ async def test_a_pause_cut_without_overlap_resumes_exactly_at_the_cut():
     assert second == n
 
 
+class _ScriptedCut(SilenceCut):
+    """Cuts once at a fixed time with a scripted verification verdict."""
+
+    def __init__(self, at: float, *, silent: bool) -> None:
+        super().__init__(arm_seconds=30.0)
+        self._at, self._silent, self._done = at, silent, False
+
+    def observe(self, samples, window_start, window_end, *, offset=0):
+        if self._done or window_end < self._at:
+            return None
+        self._done = True
+        self.mark_cut(self._at)
+        return Cut(self._at, forced=False, silent=self._silent)
+
+    @property
+    def heard_since_cut(self) -> bool:
+        return True  # the scripted cut never feeds the VAD
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("silent", [True, False])
+async def test_a_pause_cut_keeps_its_overlap_unless_verified_silent(silent):
+    """Retiring without overlap is only safe in real silence: a word cannot
+    straddle a cut the audio proves quiet. Any other cut keeps the overlap
+    that lets a straddling word survive it."""
+    decoder = _Decoder(ramp=False)
+    await _run(
+        _speech_audio([(35.0, True)], chunk_seconds=0.1),
+        decoder,
+        _ScriptedCut(31.0, silent=silent),
+        cap=65.0,
+        silence_cut_overlap=False,
+    )
+
+    assert len(decoder.inputs) == 2, decoder.inputs
+    (first, n), (second, _) = decoder.inputs
+    assert first == 0 and n == 31 * RATE
+    assert second == (n if silent else n - RATE)
+
+
 @pytest.mark.asyncio
 async def test_a_forced_cut_keeps_its_overlap_when_pause_cuts_do_not():
     decoder = _Decoder()
@@ -1046,8 +1092,8 @@ def _drive(strategy: SilenceCut, pcm: np.ndarray, chunk: int, suffix: bool, over
         window = pcm[start + skip : end].astype(np.float32) / 32768
         cut = strategy.observe(window, start / RATE, end / RATE, offset=skip)
         if cut is not None:
-            cuts.append(round(cut * RATE))
-            start = max(start, round(cut * RATE) - overlap)
+            cuts.append(round(cut.at * RATE))
+            start = max(start, round(cut.at * RATE) - overlap)
     return cuts
 
 
