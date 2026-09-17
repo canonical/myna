@@ -11,9 +11,11 @@ failure path are pinned without loading weights.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-pytest.importorskip("numpy", reason="adapter extras not installed")
+np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from myna.core import (
     PHASE_READY,
@@ -45,12 +47,13 @@ class _Segment:
     """One faster-whisper segment (the attributes the adapter reads).
     ``words`` is None unless the decode asked for the alignment pass."""
 
-    def __init__(self, text, start=0.0, end=1.0, avg_logprob=-0.1, words=None):
+    def __init__(self, text, start=0.0, end=1.0, avg_logprob=-0.1, words=None, tokens=()):
         self.text = text
         self.start = start
         self.end = end
         self.avg_logprob = avg_logprob
         self.words = words
+        self.tokens = list(tokens)
 
 
 class _FakeWhisperModel:
@@ -64,7 +67,7 @@ class _FakeWhisperModel:
 
     def transcribe(self, samples, **kwargs):
         self.calls.append({"samples": len(samples), **kwargs})
-        return (seg for seg in self._segments), None
+        return (seg for seg in self._segments), SimpleNamespace(language="en")
 
 
 def adapter_with(*segments) -> FasterWhisperAdapter:
@@ -322,3 +325,298 @@ async def test_a_format_mismatch_is_refused_before_the_model_is_touched():
     assert isinstance(events[0], TranscriptionError)
     assert events[0].code == "unsupported_audio_format"
     assert adapter._model.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Batch over long input: bounded regions, deferred presentation (audio review A5)
+# ---------------------------------------------------------------------------
+
+RATE = 16_000
+_TENTH = RATE // 10
+
+
+def _speech_pcm(plan) -> np.ndarray:
+    """(seconds, speech) spans. Speech samples encode their own position:
+    magnitude 8000 + index // 1600 with alternating sign, loud enough that the
+    VAD never hears it as a pause. Pauses are digital silence. Span edges must
+    fall on tenths of a second."""
+    parts, first = [], 0
+    for seconds, speech in plan:
+        n = round(seconds * RATE)
+        assert n % _TENTH == 0
+        if speech:
+            idx = np.arange(first, first + n)
+            sign = np.where(idx % 2, -1, 1)
+            parts.append((sign * (8000 + idx // _TENTH)).astype(np.int16))
+        else:
+            parts.append(np.zeros(n, np.int16))
+        first += n
+    return np.concatenate(parts)
+
+
+async def _chunks(pcm: np.ndarray, chunk_seconds: float, done: list[bool]):
+    step = round(chunk_seconds * RATE)
+    for first in range(0, len(pcm), step):
+        yield PcmChunk(data=pcm[first : first + step].tobytes(), format=FORMAT)
+    done.append(True)
+
+
+class _PositionalModel:
+    """A whisper stand-in that hears where its input sits in the utterance.
+
+    It recovers the absolute start of every decode input from the PCM, then
+    recognises one word " wT" at [T + 0.1, T + 0.6) for every whole second T
+    whose onset lies in the input and in speech, four words to a segment.
+    Times are input-relative, like faster-whisper's; a word straddling the end
+    of the input is clipped to it."""
+
+    def __init__(self, pcm: np.ndarray, *, language="en"):
+        self._pcm = pcm
+        self._language = language
+        self.calls: list[dict] = []
+
+    def _locate(self, samples) -> int | None:
+        values = np.round(samples * 32768).astype(np.int64)
+        nonzero = np.flatnonzero(values)
+        if not len(nonzero):
+            return None
+        k = int(nonzero[0])
+        tenth = abs(int(values[k])) - 8000
+        run = int(np.argmax(np.abs(values[k:]) != abs(int(values[k])))) or len(values) - k
+        return (tenth + 1) * _TENTH - run - k
+
+    def transcribe(self, samples, **kwargs):
+        first = self._locate(samples)
+        self.calls.append({"first": first, "samples": len(samples), **kwargs})
+        if first is None:
+            return iter(()), SimpleNamespace(language=self._language)
+        start_s, end_s = first / RATE, (first + len(samples)) / RATE
+        words = []
+        for t in range(int(start_s), int(end_s) + 1):
+            onset = t + 0.1
+            if start_s <= onset < end_s and self._pcm[round(onset * RATE)] != 0:
+                words.append(_Word(f" w{t}", onset - start_s, min(t + 0.6, end_s) - start_s))
+        segments = [
+            _Segment(
+                "".join(w.word for w in group),
+                start=group[0].start,
+                end=group[-1].end,
+                words=group if kwargs.get("word_timestamps") else None,
+                tokens=[int(w.word[2:]) for w in group],
+            )
+            for group in (words[i : i + 4] for i in range(0, len(words), 4))
+        ]
+        return iter(segments), SimpleNamespace(language=self._language)
+
+
+async def _run_positional(plan, *, chunk_seconds=0.5, language="en", **config):
+    pcm = _speech_pcm(plan)
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = _PositionalModel(pcm)
+    done: list[bool] = []
+    events: list[tuple[bool, object]] = []
+
+    async def emit(event):
+        events.append((bool(done), event))
+
+    cfg = SessionConfig(audio_format=FORMAT, language=language, **config)
+    await adapter.run_session(cfg, _chunks(pcm, chunk_seconds, done), emit)
+    return adapter._model, events
+
+
+def _labels(plan) -> list[str]:
+    pcm = _speech_pcm(plan)
+    return [f"w{t}" for t in range(len(pcm) // RATE) if pcm[round((t + 0.1) * RATE)] != 0]
+
+
+@pytest.fixture
+def retained(monkeypatch) -> list[int]:
+    """High-water mark of the shared window's raw PCM, in bytes."""
+    from myna.testbed.streaming import loop as loop_module
+
+    high_water = [0]
+    base = loop_module.RollingWindow
+
+    class _Spy(base):  # type: ignore[misc, valid-type]
+        def fill(self, pcm):
+            taken = super().fill(pcm)
+            high_water[0] = max(high_water[0], len(self._buf))
+            return taken
+
+    monkeypatch.setattr(loop_module, "RollingWindow", _Spy)
+    return high_water
+
+
+@pytest.mark.parametrize("seconds", [130.0, 250.0])
+async def test_batch_decodes_a_long_utterance_in_bounded_regions(retained, seconds):
+    plan = [(seconds, True)]
+    model, events = await _run_positional(plan)
+
+    assert max(call["samples"] for call in model.calls) <= 65 * RATE
+    assert 0 < retained[0] <= 65 * RATE * 2
+    final_events = [e for _, e in events if isinstance(e, TranscriptionFinal)]
+    assert "".join(e.text for e in final_events).split() == _labels(plan)
+    assert events[-1][1] == TranscriptionDone(text="".join(e.text for e in final_events))
+
+
+async def test_batch_presents_nothing_until_the_audio_has_ended():
+    _, events = await _run_positional([(130.0, True)])
+
+    shown = [(ended, e) for ended, e in events if not isinstance(e, TranscriptionProgress)]
+    assert shown and all(ended for ended, _ in shown)
+    assert all(e.snippet is None for _, e in events if isinstance(e, TranscriptionProgress))
+    terminal = [e for _, e in events if isinstance(e, (TranscriptionDone, TranscriptionError))]
+    assert terminal == [events[-1][1]]
+
+
+async def test_batch_long_silence_stays_bounded_and_says_nothing(retained):
+    pcm = np.zeros(200 * RATE, np.int16)
+    model = _FakeWhisperModel()
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = model
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    await adapter.run_session(SessionConfig(audio_format=FORMAT), _chunks(pcm, 1.0, []), emit)
+
+    assert events[-1] == TranscriptionDone(text="")
+    assert not finals(events)
+    assert max(call["samples"] for call in model.calls) <= 65 * RATE
+    assert 0 < retained[0] <= 65 * RATE * 2
+
+
+async def test_batch_decodes_the_shortest_input():
+    adapter = adapter_with(_Segment(" hi"))
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    async def blip():
+        yield PcmChunk(data=b"\x01\x00" * 160, format=FORMAT)
+
+    await adapter.run_session(SessionConfig(audio_format=FORMAT), blip(), emit)
+
+    assert [call["samples"] for call in adapter._model.calls] == [160]
+    assert events[-1] == TranscriptionDone(text="hi")
+
+
+async def test_batch_speech_across_pause_cuts_resumes_at_each_cut():
+    plan = [(31.0, True), (1.0, False), (31.0, True), (1.0, False), (5.0, True)]
+    model, events = await _run_positional(plan, chunk_seconds=0.1)
+
+    regions = [(c["first"], c["samples"]) for c in model.calls]
+    assert len(regions) == 3, regions
+    assert all(first + n == regions[i + 1][0] for i, (first, n) in enumerate(regions[:-1]))
+    assert not any(c.get("word_timestamps") for c in model.calls)
+    text = "".join(e.text for _, e in events if isinstance(e, TranscriptionFinal))
+    assert text.split() == _labels(plan)
+    assert "  " not in text and not text.startswith(" ")
+
+
+async def test_batch_forced_cuts_keep_every_word_once_with_absolute_timestamps():
+    plan = [(130.0, True)]
+    model, events = await _run_positional(plan, timestamp_granularity="word")
+
+    assert len(model.calls) == 3
+    final_events = [e for _, e in events if isinstance(e, TranscriptionFinal)]
+    stamps = [s for e in final_events for s in e.segments]
+    assert [s.text for s in stamps] == _labels(plan)
+    for s in stamps:
+        assert s.start == pytest.approx(int(s.text[1:]) + 0.1)
+    assert [s.start for s in stamps] == sorted(s.start for s in stamps)
+
+
+async def test_batch_segment_timestamps_span_the_words_the_final_carries():
+    _, events = await _run_positional([(130.0, True)], timestamp_granularity="segment")
+
+    for e in (e for _, e in events if isinstance(e, TranscriptionFinal)):
+        (segment,) = e.segments
+        words = e.text.split()
+        assert segment.text == e.text
+        assert segment.start == pytest.approx(int(words[0][1:]) + 0.1)
+
+
+async def test_batch_asks_for_word_alignment_only_where_it_must_deduplicate():
+    """Timestamps were not requested, so only the region re-decoding the
+    overlap of a forced cut needs aligned words."""
+    model, _ = await _run_positional([(130.0, True)])
+
+    assert [bool(c.get("word_timestamps")) for c in model.calls] == [False, True, True]
+
+
+async def test_batch_keeps_the_language_it_detected_first():
+    model, _ = await _run_positional([(130.0, True)], language=None)
+
+    assert [c["language"] for c in model.calls] == [None, "en", "en"]
+
+
+async def test_batch_carries_the_decoded_context_across_a_cut():
+    """faster-whisper conditions each 30 s window on up to 223 previous
+    tokens; a cut must not reset that."""
+    model, _ = await _run_positional([(130.0, True)])
+
+    assert model.calls[0]["initial_prompt"] is None
+    assert model.calls[1]["initial_prompt"] == list(range(0, 60))
+    assert model.calls[2]["initial_prompt"] == list(range(0, 60)) + list(range(59, 119))
+
+
+async def test_batch_context_starts_with_the_prompt_and_is_bounded():
+    class _Tokenizer:
+        def encode(self, text, add_special_tokens=True):
+            assert add_special_tokens is False
+            return SimpleNamespace(ids=[-len(text)] * 200)
+
+    plan = [(250.0, True)]
+    pcm = _speech_pcm(plan)
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = _PositionalModel(pcm)
+    adapter._model.hf_tokenizer = _Tokenizer()
+
+    async def emit(_event):
+        pass
+
+    cfg = SessionConfig(audio_format=FORMAT, language="en", prompt="Myna")
+    await adapter.run_session(cfg, _chunks(pcm, 1.0, []), emit)
+
+    prompts = [c["initial_prompt"] for c in adapter._model.calls]
+    assert len(prompts) == 5
+    assert prompts[0] == "Myna"
+    history = [-5] * 200
+    for k, first in enumerate((0, 59, 118, 177)):
+        history += list(range(first, first + 60))
+        assert prompts[k + 1] == history[-223:]
+
+
+async def test_batch_unaligned_segments_are_timed_in_absolute_seconds():
+    """Alignment can come back empty; the segment span it degrades to must
+    still be offset to where its region sits in the utterance."""
+
+    class _Unaligned(_PositionalModel):
+        def transcribe(self, samples, **kwargs):
+            segments, info = super().transcribe(samples, **kwargs)
+            stripped = []
+            for segment in segments:
+                segment.words = None
+                stripped.append(segment)
+            return iter(stripped), info
+
+    plan = [(31.0, True), (1.0, False), (31.0, True)]
+    pcm = _speech_pcm(plan)
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = _Unaligned(pcm)
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    cfg = SessionConfig(audio_format=FORMAT, language="en", timestamp_granularity="word")
+    await adapter.run_session(cfg, _chunks(pcm, 0.1, []), emit)
+
+    assert len(adapter._model.calls) == 2
+    for final in finals(events):
+        (segment,) = final.segments
+        assert segment.start == pytest.approx(int(final.text.split()[0][1:]) + 0.1)
+    assert "".join(f.text for f in finals(events)).split() == _labels(plan)

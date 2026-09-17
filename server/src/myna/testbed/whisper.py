@@ -1,8 +1,9 @@
 """faster-whisper adapter — batch and true streaming modes.
 
 Wraps faster-whisper (CTranslate2 Whisper) behind ``SttService``. Batch mode
-(degenerate streaming, I7): buffer the pushed audio, decode once when the
-client finishes, emit one ``final`` per Whisper segment, then ``done``.
+(degenerate streaming, I7): decode bounded regions of the pushed audio (see
+``myna.testbed.streaming.batch``) and, once the client finishes, emit one
+``final`` per Whisper segment, then ``done``.
 
 Streaming mode (feature 008): the rolling re-decode loop in
 ``myna.testbed.streaming`` decodes the uncommitted window on a cadence while
@@ -25,6 +26,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
+from collections import deque
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +48,7 @@ from myna.core import (
 )
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming.strategies import Hypothesis, Word
 
 if TYPE_CHECKING:
     import numpy as np
@@ -125,7 +129,7 @@ _TEMPERATURE_LADDER = (0.0, 0.2)
 
 
 def batch_decode_options(
-    language: str | None, prompt: str | None, *, word_timestamps: bool = False
+    language: str | None, prompt: str | list[int] | None, *, word_timestamps: bool = False
 ) -> dict[str, object]:
     """Decode parameters for the batch path, in one place.
 
@@ -171,29 +175,38 @@ def stream_decode_options(
     }
 
 
-def _timed_segments(segment: Any, text: str, granularity: str | None) -> tuple[Segment, ...]:
+def _timed_segments(
+    segment: Any, words: list[tuple[Word, Any]], text: str, offset: float, granularity: str | None
+) -> tuple[Segment, ...]:
     """Timestamps for one decoded segment: ``"word"`` yields an entry per word,
     ``"segment"`` one entry spanning the segment, ``None`` nothing.
 
-    Both timed forms take their boundaries from the word alignment rather than
-    ``segment.start``/``end``, which whisper rounds to whole seconds. Word
-    granularity degrades to the segment span if the alignment produced nothing,
-    so a client that asked for timestamps always gets one.
+    ``words`` are the segment's words that survived deduplication, each with
+    its faster-whisper alignment (``None`` for a word split out of unaligned
+    text); times are absolute. Both timed forms take their boundaries from the
+    word alignment rather than ``segment.start``/``end``, which whisper rounds
+    to whole seconds. Word granularity degrades to the segment span if the
+    alignment produced nothing, so a client that asked for timestamps always
+    gets one.
     """
     if granularity is None:
         return ()
-    words = [w for w in (segment.words or ()) if w.word.strip()]
-    if granularity == "word" and words:
+    aligned = [(w, a) for w, a in words if a is not None and a.word.strip()]
+    if granularity == "word" and aligned:
         return tuple(
-            Segment(start=w.start, end=w.end, text=w.word.strip(), score=w.probability)
-            for w in words
+            Segment(start=w.start, end=w.end, text=a.word.strip(), score=a.probability)
+            for w, a in aligned
         )
-    start = words[0].start if words else segment.start
-    end = words[-1].end if words else segment.end
+    start = aligned[0][0].start if aligned else segment.start + offset
+    end = aligned[-1][0].end if aligned else segment.end + offset
     return (Segment(start=start, end=end, text=text, score=segment.avg_logprob),)
 
 
-_PROGRESS_INTERVAL_SECONDS = 1.0
+# faster-whisper conditions each window on at most this many previous tokens
+# (``max_length // 2 - 1``); carrying them across a batch cut keeps that.
+_CONTEXT_TOKENS = 223
+_UNALIGNED_WORD = re.compile(r"\s*\S+")
+
 # Heartbeat cadence while the model loads. A cold load is a few seconds from
 # disk but can be minutes on first use (weight download), during which there
 # is no audio to pace progress off — so tick on a timer instead. Coarser than
@@ -371,43 +384,10 @@ class FasterWhisperAdapter:
                 await self._run_streaming_session(model, config, audio, emit)
                 return
 
-            buffered = bytearray()
-            seconds_since_progress = 0.0
-            async for chunk in audio:
-                buffered.extend(chunk.data)
-                seconds_since_progress += chunk.duration_seconds
-                if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
-                    seconds_since_progress = 0.0
-                    await emit(TranscriptionProgress())
-
-            if not buffered:
-                await emit(TranscriptionDone(text=""))
-                return
-
-            segments = await asyncio.to_thread(self._transcribe, model, bytes(buffered), config)
-
-            granularity = config.timestamp_granularity
-            finals: list[str] = []
-            for segment in segments:
-                # Natural spacing: segment texts carry leading whitespace;
-                # committed finals concatenate verbatim to the transcript
-                # (I2). Only the first sheds its leading space.
-                text = segment.text.rstrip()
-                if not text:
-                    continue
-                if not finals:
-                    text = text.lstrip()
-                finals.append(text)
-                # Batch mode is degenerate streaming (I7): committed finals,
-                # no segment_index.
-                await emit(
-                    TranscriptionFinal(
-                        text=text,
-                        disposition=Disposition.COMMITTED,
-                        segments=_timed_segments(segment, text, granularity),
-                    )
-                )
-            await emit(TranscriptionDone(text="".join(finals)))
+            finals = await self._run_batch_session(model, config, audio, emit)
+            for final in finals:
+                await emit(final)
+            await emit(TranscriptionDone(text="".join(f.text for f in finals)))
         except Exception as exc:
             await emit(
                 TranscriptionError(code="inference_failed", message=f"{type(exc).__name__}: {exc}")
@@ -448,19 +428,92 @@ class FasterWhisperAdapter:
         )
         await emit(TranscriptionDone(text=transcript))
 
-    def _transcribe(self, model: Any, pcm: bytes, config: SessionConfig) -> list[Any]:
-        """Blocking decode; runs in a worker thread. Audio is already
-        ``WHISPER_FORMAT`` (validated in ``run_session``) — no conversion."""
-        import numpy as np
+    async def _run_batch_session(
+        self,
+        model: Any,
+        config: SessionConfig,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
+    ) -> list[TranscriptionFinal]:
+        """Decode bounded regions, collecting one committed final per Whisper
+        segment for presentation after the audio ends.
 
-        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        Each region continues the previous one the way faster-whisper's own
+        30 s windows do: the language detected first is kept and the last
+        decoded tokens are the prompt. Word alignment is bought only when the
+        client asked for timestamps or a forced cut left overlap audio whose
+        re-decoded words must be deduplicated."""
+        from myna.testbed.streaming.batch import run_deferred_batch
 
-        segments, _info = model.transcribe(
-            samples,
-            **batch_decode_options(
-                config.language,
-                config.prompt,
-                word_timestamps=config.timestamp_granularity is not None,
-            ),
-        )
-        return list(segments)  # drain the generator while still in the thread
+        granularity = config.timestamp_granularity
+        language = config.language
+        context: deque[int] = deque(maxlen=_CONTEXT_TOKENS)
+        if config.prompt is not None:
+            context.extend(_prompt_tokens(model, config.prompt))
+        decoded = False
+        processed = 0
+        region: list[tuple[Any, list[tuple[Word, Any]], float]] = []
+        finals: list[TranscriptionFinal] = []
+
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+            nonlocal language, decoded, processed
+            first = round(offset * WHISPER_RATE)
+            options = batch_decode_options(
+                language,
+                list(context) if decoded else config.prompt,
+                word_timestamps=granularity is not None or first < processed,
+            )
+            segments, info = model.transcribe(samples, **options)
+            region.clear()
+            words: list[Word] = []
+            for segment in segments:
+                if segment.words:
+                    pairs = [
+                        (Word(a.word, a.start + offset, a.end + offset), a) for a in segment.words
+                    ]
+                else:
+                    start, end = segment.start + offset, segment.end + offset
+                    pairs = [
+                        (Word(text, start, end), None)
+                        for text in _UNALIGNED_WORD.findall(segment.text)
+                    ]
+                region.append((segment, pairs, offset))
+                words.extend(w for w, _ in pairs)
+                context.extend(segment.tokens)
+            if language is None:
+                language = info.language
+            decoded = True
+            processed = first + len(samples)
+            return Hypothesis(words=words)
+
+        async def on_commit(_text: str, committed: list[Word]) -> None:
+            kept_ids = {id(w) for w in committed}
+            for segment, pairs, offset in region:
+                kept = [(w, a) for w, a in pairs if id(w) in kept_ids]
+                if len(kept) == len(pairs):
+                    text = segment.text.rstrip()
+                else:
+                    text = "".join(w.text for w, _ in kept).rstrip()
+                if not text:
+                    continue
+                if not finals:
+                    text = text.lstrip()
+                # Batch mode is degenerate streaming (I7): committed finals,
+                # no segment_index.
+                finals.append(
+                    TranscriptionFinal(
+                        text=text,
+                        disposition=Disposition.COMMITTED,
+                        segments=_timed_segments(segment, kept, text, offset, granularity),
+                    )
+                )
+            region.clear()
+
+        await run_deferred_batch(audio, emit, decode, on_commit)
+        return finals
+
+
+def _prompt_tokens(model: Any, prompt: str) -> list[int]:
+    """The prompt as faster-whisper tokenises an ``initial_prompt`` string."""
+    ids: list[int] = model.hf_tokenizer.encode(" " + prompt.strip(), add_special_tokens=False).ids
+    return ids
