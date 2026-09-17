@@ -161,6 +161,7 @@ mod tests {
     #[tokio::test]
     async fn off_suppresses_announce_but_not_set_state() {
         let fake = FakeAnnouncer::new();
+        let log = fake.log();
         let mut gated = VerbosityGatedAnnouncer::new(fake, FixedVerbosity(Verbosity::Off));
 
         gated
@@ -175,7 +176,7 @@ mod tests {
             .await;
 
         assert_eq!(
-            gated.inner.calls.len(),
+            log.lock().unwrap().len(),
             1,
             "only set_state should reach the inner announcer"
         );
@@ -184,6 +185,7 @@ mod tests {
     #[tokio::test]
     async fn failures_only_suppresses_transitions_but_not_failures() {
         let fake = FakeAnnouncer::new();
+        let log = fake.log();
         let mut gated =
             VerbosityGatedAnnouncer::new(fake, FixedVerbosity(Verbosity::FailuresOnly));
 
@@ -197,7 +199,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            gated.inner.calls.len(),
+            log.lock().unwrap().len(),
             1,
             "only the severity-bearing announcement should pass"
         );
@@ -206,6 +208,7 @@ mod tests {
     #[tokio::test]
     async fn all_transitions_passes_everything() {
         let fake = FakeAnnouncer::new();
+        let log = fake.log();
         let mut gated =
             VerbosityGatedAnnouncer::new(fake, FixedVerbosity(Verbosity::AllTransitions));
 
@@ -218,7 +221,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(gated.inner.calls.len(), 2);
+        assert_eq!(log.lock().unwrap().len(), 2);
     }
 
     // ── T016: coalescing drops superseded announcements within the window ───
@@ -226,9 +229,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_burst_within_the_window_delivers_only_the_last() {
         let fake = FakeAnnouncer::new();
+        let log = fake.log();
         let window = Duration::from_millis(50);
         let mut coalescing = CoalescingAnnouncer::new(fake, window);
-        let inner_handle = coalescing.inner.clone();
 
         coalescing
             .announce(AnnouncementText::new("loading"), None)
@@ -254,7 +257,7 @@ mod tests {
         tokio::time::advance(window + Duration::from_millis(1)).await;
         tokio::task::yield_now().await;
 
-        let calls = inner_handle.lock().await.calls.clone();
+        let calls = log.lock().unwrap().clone();
         assert_eq!(
             calls,
             vec![crate::accessibility::fake::Recorded::Announce {
@@ -268,9 +271,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn announcements_spaced_beyond_the_window_are_all_delivered() {
         let fake = FakeAnnouncer::new();
+        let log = fake.log();
         let window = Duration::from_millis(50);
         let mut coalescing = CoalescingAnnouncer::new(fake, window);
-        let inner_handle = coalescing.inner.clone();
 
         coalescing
             .announce(AnnouncementText::new("loading"), None)
@@ -288,7 +291,7 @@ mod tests {
         tokio::time::advance(window + Duration::from_millis(1)).await;
         tokio::task::yield_now().await;
 
-        let calls = inner_handle.lock().await.calls.clone();
+        let calls = log.lock().unwrap().clone();
         assert_eq!(calls.len(), 2, "no coalescing across separate windows");
     }
 }

@@ -1274,4 +1274,33 @@ mod tests {
         assert!(ActivationMode::Hold.describe().contains("hold"));
         assert!(!ActivationMode::Toggle.describe().contains("hold"));
     }
+
+    // T046/FR-015 non-regression: tap-to-toggle is already the shipped
+    // default, and this spec's requirement is that it STAY the default — not
+    // a new decision. Asserting it explicitly (rather than only relying on
+    // `#[derive(Default)]`'s current wiring) turns any future change to the
+    // default into a deliberate, test-visible decision instead of an
+    // accidental derive/attribute drift.
+    #[test]
+    fn toggle_is_the_default_activation_mode() {
+        assert_eq!(ActivationMode::default(), ActivationMode::Toggle);
+    }
+
+    // T047/FR-017 defensive regression: `Dedup`'s autorepeat guard is
+    // boolean-based (`key_down`/`pressed`), not a counter, so there is no
+    // theoretical bound on burst size that could change the result — the
+    // existing autorepeat tests above use small bursts (3 repeats) and
+    // already prove the dedup logic itself. This test locks the "burst size
+    // doesn't matter" property in explicitly, at a size (200) far beyond
+    // anything a real key repeat rate could produce in a single utterance,
+    // so a future refactor toward counter-based dedup (e.g. "collapse up to
+    // N repeats") can't silently reintroduce duplicate sessions under a long
+    // physical hold + OS/compositor autorepeat.
+    #[tokio::test]
+    async fn large_autorepeat_burst_still_yields_a_single_toggle_edge() {
+        let mut signals = vec![PortalSignal::Activated; 200];
+        signals.push(PortalSignal::Deactivated);
+        let edges = drain(toggle_trigger(signals)).await;
+        assert_eq!(edges, vec![TriggerEdge::Press]);
+    }
 }

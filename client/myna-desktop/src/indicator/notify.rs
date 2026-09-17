@@ -12,6 +12,21 @@
 //! toplevel overlay is not. It carries state labels only, never transcript text
 //! (privacy, N8). The richer always-on-top overlay is the myna-shell overlay
 //! (feature 004); the former GTK `ui-gtk` overlay was removed in T150.
+//!
+//! ## FR-019 (T050 audit): dismissal is the notification-center's job, not ours
+//!
+//! Every toast here uses `Timeout::Never` (see [`Self::show`]) — this
+//! indicator provides no dismiss/acknowledge action of its own at all, so
+//! there is no pointer-only affordance to fix. Dismissal (of an error toast
+//! in particular) is entirely delegated to the desktop's own
+//! notification-center UI (GNOME Shell's calendar/notification popover),
+//! which ships its own standard keyboard navigation independent of this
+//! crate. That existing, desktop-provided keyboard path is what satisfies
+//! FR-019 for this surface — this module intentionally adds nothing on top
+//! of it, since doing so would duplicate (and risk diverging from) input
+//! handling this process doesn't own and can't see (a notification's
+//! interaction surface is rendered and driven entirely by the shell, not by
+//! `notify-rust`/`myna-desktop`).
 
 use async_trait::async_trait;
 use gettextrs::gettext;

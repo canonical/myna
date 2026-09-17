@@ -33,6 +33,8 @@ serde_json = { workspace = true }
 zbus = "5"
 # AT-SPI2 announcements + on-demand accessible state query (feature
 # 011-accessible-dictation-ux). Headless: no GTK dependency required.
+# The default "connection"/"proxies" features give AccessibilityConnection
+# (atspi::connection) without a separate atspi-connection dependency.
 atspi = { workspace = true }
 # Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the
 # vendored `zbus`-direct path is the fallback if this cannot be fetched.

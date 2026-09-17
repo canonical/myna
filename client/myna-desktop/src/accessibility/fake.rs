@@ -1,6 +1,8 @@
 //! An in-memory fake `AccessibilityAnnouncer` for hermetic tests
 //! (contracts/announcer.md).
 
+use std::sync::{Arc, Mutex};
+
 use super::{AccessibilityAnnouncer, AnnounceError, AnnouncementText, Severity};
 use async_trait::async_trait;
 
@@ -19,9 +21,11 @@ pub enum Recorded {
 
 /// Records every `announce()`/`set_state()` call; never touches a real bus.
 /// Contract A1/A2/A3/A5 tests exercise this directly (contracts/announcer.md).
+/// Clone the log handle (`.log()`) before moving the fake into a controller,
+/// the same convention `MockIndicator`/`MockInjector` already use.
 #[derive(Debug, Default)]
 pub struct FakeAnnouncer {
-    pub calls: Vec<Recorded>,
+    calls: Arc<Mutex<Vec<Recorded>>>,
     /// When `Some`, the next `announce()` call returns this error instead of
     /// recording (contract A5: announcement-failure handling).
     pub fail_next: Option<AnnounceError>,
@@ -30,6 +34,11 @@ pub struct FakeAnnouncer {
 impl FakeAnnouncer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A shared handle to the recorded call sequence.
+    pub fn log(&self) -> Arc<Mutex<Vec<Recorded>>> {
+        self.calls.clone()
     }
 }
 
@@ -43,7 +52,7 @@ impl AccessibilityAnnouncer for FakeAnnouncer {
         if let Some(err) = self.fail_next.take() {
             return Err(err);
         }
-        self.calls.push(Recorded::Announce {
+        self.calls.lock().unwrap().push(Recorded::Announce {
             text: text.as_str().to_string(),
             severity,
         });
@@ -51,7 +60,7 @@ impl AccessibilityAnnouncer for FakeAnnouncer {
     }
 
     async fn set_state(&mut self, name: AnnouncementText, description: AnnouncementText) {
-        self.calls.push(Recorded::SetState {
+        self.calls.lock().unwrap().push(Recorded::SetState {
             name: name.as_str().to_string(),
             description: description.as_str().to_string(),
         });
@@ -67,6 +76,7 @@ mod tests {
     #[tokio::test]
     async fn records_announce_calls_with_text_and_severity() {
         let mut fake = FakeAnnouncer::new();
+        let log = fake.log();
         fake.announce(AnnouncementText::new("listening"), None)
             .await
             .unwrap();
@@ -75,7 +85,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            fake.calls,
+            *log.lock().unwrap(),
             vec![
                 Recorded::Announce {
                     text: "listening".to_string(),
@@ -92,6 +102,7 @@ mod tests {
     #[tokio::test]
     async fn records_set_state_calls_separately_from_announce() {
         let mut fake = FakeAnnouncer::new();
+        let log = fake.log();
         fake.set_state(
             AnnouncementText::new("Dictation: listening"),
             AnnouncementText::new("Recording your speech"),
@@ -99,7 +110,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            fake.calls,
+            *log.lock().unwrap(),
             vec![Recorded::SetState {
                 name: "Dictation: listening".to_string(),
                 description: "Recording your speech".to_string(),

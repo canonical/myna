@@ -28,6 +28,16 @@ run against the unpackaged dev build noted where they'd diverge.
 6. Query the indicator state via the AT's "where am I" command at a moment
    between transitions.
 7. **Expect**: current state is reported accurately (FR-001).
+8. **Braille check (Acceptance Scenario 3, T044)**: repeat steps 1–5 with a
+   braille display connected and Orca's braille output enabled instead of (or
+   alongside) speech. **Expect**: the same content-free state text (e.g.
+   "Listening", "Finishing") reaches the braille device — no separate braille
+   code path exists or is needed, since both `AtspiAnnouncer` (Rust) and
+   `Announcer` (GJS) emit the standard AT-SPI `Announcement` event
+   (`org.a11y.atspi.Event.Object`), which Orca routes to speech and braille
+   identically. No code change was required to satisfy this scenario; it is
+   verified here rather than assumed, per FR-002's "reaching both speech and
+   braille through the same path".
 
 ## Scenario 2 — Failure without sighted assistance (US1, US4, SC-007)
 
@@ -51,13 +61,63 @@ run against the unpackaged dev build noted where they'd diverge.
 5. Trigger a critical error (e.g. no microphone) and dismiss/acknowledge it
    using only non-pointer input.
 6. **Expect**: acknowledgement succeeds with no pointer/hover interaction.
+7. **Switch-access / dwell-click check (T052, FR-020)**: enable GNOME's
+   built-in switch access (Settings → Accessibility → Switch Access) or
+   pointer dwell-click (Settings → Accessibility → Pointing & Clicking →
+   Click Assist → Hover Click), then activate the same bound dictation key/
+   control using only that assistive input method — a switch-access scan
+   selecting the key, or a dwell-click landing on the target — instead of a
+   literal keypress or a literal pointer click.
+8. **Expect**: the session starts identically to step 2/3, with no
+   Myna-specific accommodation, prompt, or special mode required. **Finding
+   (code audit, T052)**: confirmed by reading `client/myna-desktop/src/
+   shortcut/portal.rs`'s `bind()`/`Dedup` and `client/myna-desktop/src/
+   shortcut/control.rs` — `myna-desktop` has no code path that inspects or
+   special-cases *how* an activation event was produced. The portal path
+   only ever receives the compositor's `Activated`/`Deactivated` D-Bus
+   signals for the bound shortcut (switch access driving a key scan
+   ultimately delivers the same physical/synthesized key event the
+   compositor turns into those signals); the control-socket path only ever
+   sees a Unix-socket connect from `myna-desktop --toggle` (a dwell-click on
+   a launcher/icon bound to that command is indistinguishable from a literal
+   click). Neither trigger implementation has, or needs, any notion of
+   "assistive input method" at all — this is a structural, not incidental,
+   property of the design (FR-020 requires no additional accommodation, and
+   none exists to remove).
 
 ## Scenario 4 — Sticky keys / slow keys / autorepeat (US2)
 
-1. Enable sticky keys, then slow keys, in GNOME's accessibility settings.
-2. Activate the dictation shortcut once.
-3. **Expect**: exactly one session starts; holding the key (autorepeat) does
-   not start additional sessions.
+1. Enable sticky keys in GNOME's accessibility settings (Settings →
+   Accessibility → Typing → Sticky Keys). Activate the dictation shortcut
+   once (a single key, pressed and released normally — sticky keys' own
+   sequential-modifier behavior does not apply to a single-key binding, but
+   this confirms it doesn't interfere).
+2. **Expect**: exactly one session starts; the session ends cleanly on the
+   next tap (or silence) with no dropped or duplicated edge (i.e. it doesn't
+   silently need a second tap to actually stop, and it doesn't stop on its
+   own before the user's second tap).
+3. Disable sticky keys; enable slow keys instead (Settings → Accessibility →
+   Typing → Slow Keys), which adds an acceptance delay before a keypress
+   registers.
+4. Repeat step 1's single activation under slow keys.
+5. **Expect**: exactly one session starts once the slow-keys acceptance delay
+   elapses (no extra latency-induced duplicate activation, no dropped
+   activation if held past the acceptance threshold).
+6. With sticky keys or slow keys still enabled, physically hold the bound
+   key down long enough for the OS/compositor's own key autorepeat to fire
+   (do not tap-tap — hold continuously).
+7. **Expect**: still exactly one session starts (autorepeat's rapid
+   `Activated` signals collapse to a single edge — `Dedup`'s dedup logic,
+   `client/myna-desktop/src/shortcut/portal.rs`, hermetically regression-
+   tested by `toggle_hold_does_not_stop_the_session` and
+   `large_autorepeat_burst_still_yields_a_single_toggle_edge`); releasing the
+   key does not produce a second, spurious edge.
+8. **Note**: this scenario cannot be simulated hermetically — GNOME's sticky-
+   keys/slow-keys mediation and the resulting key-event timing happen in the
+   compositor/input stack, below anything `myna-desktop` observes (it only
+   ever sees the portal's already-mediated `Activated`/`Deactivated`
+   signals) — so steps 1–7 remain a required manual verification, not a
+   candidate for a unit test.
 
 ## Scenario 5 — Large text / high contrast / reduced motion / forced colours (US3, SC-005)
 

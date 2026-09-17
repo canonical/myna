@@ -8,15 +8,19 @@
 //! this seam emits non-visual events; a single controller transition drives
 //! both without either seam knowing about the other.
 
+pub mod announcing_indicator;
 pub mod atspi;
 pub mod fake;
+pub mod format;
 pub mod gate;
 pub mod recover;
 
 use async_trait::async_trait;
 use std::fmt;
 
+pub use announcing_indicator::AnnouncingIndicator;
 pub use fake::FakeAnnouncer;
+pub use format::{format_state_announcement, StateAnnouncement};
 pub use gate::{CoalescingAnnouncer, VerbosityGatedAnnouncer};
 pub use recover::RecoveringAnnouncer;
 
