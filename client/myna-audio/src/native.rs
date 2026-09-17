@@ -144,6 +144,63 @@ impl Supervisor {
     }
 }
 
+/// Lost audio tolerated before capture faults: under one default quantum
+/// (1024 frames at 48 kHz), far above the sub-frame resampler jitter.
+const LOSS_TOLERANCE: Duration = Duration::from_millis(20);
+
+/// Audio the graph produced for this stream but never handed over. The loop
+/// thread is not realtime, and PipeWire overwrites the buffer of each graph
+/// cycle the thread sleeps through without reporting it. The stream clock
+/// still advances for every cycle, so clock minus delivered frames is the
+/// loss.
+struct Continuity {
+    rate: f64,
+    last_ticks: Option<u64>,
+    /// Frames owed, never negative: a surplus must not hide a later loss.
+    owed: f64,
+}
+
+impl Continuity {
+    fn new(rate: u32) -> Self {
+        Self {
+            rate: rate as f64,
+            last_ticks: None,
+            owed: 0.0,
+        }
+    }
+
+    /// The stream changed state; nothing is owed across a pause.
+    fn restart(&mut self) {
+        self.last_ticks = None;
+        self.owed = 0.0;
+    }
+
+    /// `frames` arrived at stream clock `ticks` (in `graph_rate` units).
+    /// Returns the loss once it exceeds [`LOSS_TOLERANCE`].
+    fn delivered(&mut self, ticks: u64, graph_rate: (u32, u32), frames: u64) -> Option<Duration> {
+        let last = self.last_ticks.replace(ticks);
+        let (num, denom) = graph_rate;
+        match last {
+            // A clock switch rebases ticks, so that cycle carries none.
+            Some(last) if ticks > last && denom != 0 => {
+                let expected = (ticks - last) as f64 * num as f64 * self.rate / denom as f64;
+                self.owed = (self.owed + expected - frames as f64).max(0.0);
+            }
+            _ => {}
+        }
+        let lost = Duration::from_secs_f64(self.owed / self.rate);
+        (lost > LOSS_TOLERANCE).then_some(lost)
+    }
+}
+
+/// The fault when captured audio was lost to a starved capture loop.
+fn lost_audio_message(lost: Duration) -> String {
+    format!(
+        "{} ms of audio was lost: the capture thread could not keep up, the system may be overloaded",
+        lost.as_millis()
+    )
+}
+
 /// The fault when the daemon never answers discovery.
 fn no_answer_message() -> String {
     format!(
@@ -426,13 +483,16 @@ fn capture_session(
         None => spec.format.channels as u32,
     };
 
+    let continuity = Rc::new(RefCell::new(Continuity::new(spec.format.sample_rate_hz)));
     let listener = stream
         .add_local_listener_with_user_data(())
         .state_changed({
             let end = end.clone();
             let target = spec.target.clone();
             let supervisor = supervisor.clone();
+            let continuity = continuity.clone();
             move |_stream, _ud, _old, new| {
+                continuity.borrow_mut().restart();
                 if matches!(new, StreamState::Paused | StreamState::Streaming) {
                     supervisor.borrow_mut().wired();
                 }
@@ -464,6 +524,7 @@ fn capture_session(
                     loop_thread,
                     "process callback must run on the capture loop thread"
                 );
+                let mut frames = 0u64;
                 while let Some(mut buffer) = stream.dequeue_buffer() {
                     let datas = buffer.datas_mut();
                     let Some(data) = datas.first_mut() else {
@@ -481,6 +542,7 @@ fn capture_session(
                         continue;
                     }
                     supervisor.borrow_mut().delivered(Instant::now());
+                    frames += (slice.len() / (in_channels * 2)) as u64;
                     let bytes = match &selection {
                         Some(idx) => select_channels_s16(slice, in_channels, idx, out_channels),
                         None => Bytes::copy_from_slice(slice),
@@ -492,6 +554,22 @@ fn capture_session(
                     if !alive {
                         // Consumer gone (abort) → end promptly (FR-011).
                         end(Ending::Clean);
+                    }
+                }
+                if frames == 0 {
+                    return;
+                }
+                if let Ok(time) = stream.time() {
+                    let rate = time.rate();
+                    let lost = continuity.borrow_mut().delivered(
+                        time.ticks(),
+                        (rate.num, rate.denom),
+                        frames,
+                    );
+                    if let Some(lost) = lost {
+                        end(Ending::Fault(CaptureError::Backend(lost_audio_message(
+                            lost,
+                        ))));
                     }
                 }
             }
@@ -725,6 +803,112 @@ mod tests {
         sup.delivered(t0 + MS);
         assert_eq!(sup.tick(t0 + MS, true), Some(Ending::Clean));
         assert_eq!(sup.tick(t0 + MS, false), None);
+    }
+
+    const CYCLE: u64 = 1024;
+    const GRAPH: (u32, u32) = (1, 48_000);
+
+    /// Feeds whole 1024-tick cycles as a 48 kHz graph resampled to 16 kHz
+    /// delivers them: 341, 341, 342 frames.
+    fn run(c: &mut Continuity, ticks: &mut u64, cycles: u64) -> Option<Duration> {
+        let mut lost = None;
+        for _ in 0..cycles {
+            *ticks += CYCLE;
+            let frames = if *ticks / CYCLE % 3 == 0 { 342 } else { 341 };
+            lost = lost.or(c.delivered(*ticks, GRAPH, frames));
+        }
+        lost
+    }
+
+    #[test]
+    fn resampled_delivery_on_every_cycle_loses_nothing() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 7;
+        assert_eq!(run(&mut c, &mut ticks, 100_000), None);
+    }
+
+    #[test]
+    fn a_missed_cycle_past_the_tolerance_is_lost_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 10);
+        ticks += CYCLE;
+        let lost = run(&mut c, &mut ticks, 1).expect("one 21 ms cycle lost");
+        assert!(
+            lost >= LOSS_TOLERANCE && lost < Duration::from_millis(22),
+            "{lost:?}"
+        );
+    }
+
+    #[test]
+    fn small_losses_accumulate_until_they_cross_the_tolerance() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        let quantum = 256;
+        let miss = |c: &mut Continuity, ticks: &mut u64| {
+            *ticks += 2 * quantum;
+            c.delivered(*ticks, GRAPH, 85)
+        };
+        assert_eq!(c.delivered(ticks, GRAPH, 85), None);
+        for _ in 0..3 {
+            assert_eq!(miss(&mut c, &mut ticks), None);
+        }
+        assert!(miss(&mut c, &mut ticks).is_some());
+    }
+
+    #[test]
+    fn a_surplus_does_not_bank_credit_against_later_loss() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 3);
+        ticks += 1;
+        assert_eq!(c.delivered(ticks, GRAPH, 5_000), None);
+        ticks += CYCLE;
+        assert!(run(&mut c, &mut ticks, 1).is_some());
+    }
+
+    #[test]
+    fn a_clock_rebase_delivers_without_ticks_and_is_not_loss() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 3);
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        assert_eq!(run(&mut c, &mut ticks, 30), None);
+    }
+
+    #[test]
+    fn a_clock_without_a_rate_reports_nothing() {
+        let mut c = Continuity::new(16_000);
+        assert_eq!(c.delivered(0, (0, 0), 341), None);
+        assert_eq!(c.delivered(CYCLE, (0, 0), 341), None);
+    }
+
+    #[test]
+    fn a_restart_forgets_the_gap_it_spans() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 3);
+        c.restart();
+        ticks += 48_000 * 10;
+        assert_eq!(run(&mut c, &mut ticks, 30), None);
+    }
+
+    #[test]
+    fn ticks_follow_the_graph_rate() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0u64;
+        let rate = (1, 44_100);
+        // 1024 ticks at 44.1 kHz are 371.52 frames at 16 kHz.
+        let mut owed = 0.0f64;
+        for _ in 0..10_000 {
+            ticks += CYCLE;
+            owed += 1024.0 * 16_000.0 / 44_100.0;
+            let frames = owed.floor();
+            owed -= frames;
+            assert_eq!(c.delivered(ticks, rate, frames as u64), None);
+        }
+        ticks += 2 * CYCLE;
+        assert!(c.delivered(ticks, rate, 372).is_some());
     }
 
     /// The no-source fault message is user-facing and actionable (names the

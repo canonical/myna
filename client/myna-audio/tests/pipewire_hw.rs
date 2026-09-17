@@ -555,6 +555,60 @@ async fn stalled_source_faults_mid_capture() {
     );
 }
 
+/// A source relinked within the no-progress window, as a session manager
+/// does when the device or its profile changes, resumes the same capture:
+/// the unlinked interval is neither a fault nor counted as lost audio.
+#[tokio::test]
+async fn relinked_source_resumes_without_a_fault() {
+    skip_unless_enabled!();
+    const RELINK_TAKES: Duration = Duration::from_secs(1);
+    let Some(vsrc) = VirtualSource::spawn("myna-test-src-relink") else {
+        eprintln!("skipped: pw-loopback unavailable");
+        return;
+    };
+    let source = CaptureSource::builder(AudioFormat::default())
+        .target(vsrc.node_name.clone())
+        .backend(Box::new(PipeWireBackend::new()))
+        .build();
+    let mut stats = source.stats();
+    let health = source.health();
+    let stop = source.stop_handle();
+    let stream = Box::new(source).capture();
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(300),
+            Duration::from_secs(6)
+        )
+        .await,
+        "the virtual source never delivered"
+    );
+
+    let pairs = unlink_all_from(&vsrc.node_name);
+    tokio::time::sleep(RELINK_TAKES).await;
+    let before = stats.borrow().captured;
+    for (output, input) in &pairs {
+        let linked = Command::new("pw-link").args([output, input]).status();
+        assert!(
+            linked.is_ok_and(|s| s.success()),
+            "could not link {output} -> {input}"
+        );
+    }
+    let resumed = wait_captured(
+        &mut stats,
+        before + Duration::from_millis(500),
+        Duration::from_secs(3),
+    )
+    .await;
+    stop.stop();
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
+    assert!(fault.is_none(), "relinking faulted: {fault:?}");
+    assert!(resumed, "capture did not resume after the relink");
+    assert!(!chunks.is_empty());
+    let (states, _) = health_to_end(health, Duration::from_secs(2)).await;
+    assert_eq!(states.last(), Some(&CaptureHealth::Ended));
+}
+
 /// T009: default-source capture yields chunks in exactly the negotiated format;
 /// the ring fills from `capture()` (press) while the consumer defers draining,
 /// then drains buffered-then-live with nothing lost (FR-009); graceful `stop()`
@@ -910,6 +964,50 @@ async fn enumerated_name_is_a_usable_target() {
         linked,
         "an enumerated device name is a usable capture target"
     );
+}
+
+/// A capture loop stalled past a few graph cycles loses the audio PipeWire
+/// produced meanwhile; that loss faults instead of reading as continuous
+/// speech. Holding the stats tap's read guard parks the loop in its next
+/// publish, the same as CPU starvation of the (non-realtime) loop thread.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stalled_capture_loop_faults_as_lost_audio() {
+    skip_unless_enabled!();
+    let mut builder = CaptureSource::builder(AudioFormat::default());
+    if let Some(t) = target() {
+        builder = builder.target(t);
+    }
+    let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+    let mut stats = source.stats();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(200),
+            Duration::from_secs(5)
+        )
+        .await,
+        "capture established"
+    );
+
+    let guard = stats.borrow();
+    std::thread::sleep(Duration::from_millis(300));
+    drop(guard);
+
+    let (states, _) = health_to_end(health, Duration::from_secs(3)).await;
+    match states.last() {
+        Some(CaptureHealth::Faulted(CaptureError::Backend(msg))) => {
+            assert!(msg.contains("lost"), "got: {msg}")
+        }
+        other => panic!("expected lost audio to fault, got {other:?}"),
+    }
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(2)).await;
+    assert!(
+        !chunks.is_empty(),
+        "audio captured before the loss still drains"
+    );
+    assert_eq!(fault.map(CaptureHealth::Faulted).as_ref(), states.last());
 }
 
 mod watermarks {
