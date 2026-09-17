@@ -154,6 +154,8 @@ pub enum Input {
     Backend(TranscriptionEvent),
     /// The backend connection closed (optionally with a wire-error reason).
     BackendClosed { error: Option<String> },
+    /// The backend made no progress within the driver's deadline.
+    Stalled,
 }
 
 /// How a completed [`Fsm`] run ended.
@@ -237,6 +239,7 @@ impl Fsm {
             Input::CaptureFailed { message } => self.on_capture_failed(message, &mut actions),
             Input::Backend(event) => self.on_backend(event, &mut actions),
             Input::BackendClosed { error } => self.on_backend_closed(error, &mut actions),
+            Input::Stalled => self.on_stalled(&mut actions),
         }
         actions
     }
@@ -352,6 +355,21 @@ impl Fsm {
             message: e.message.clone(),
         }));
         self.failure = Some((e.code, e.message));
+        self.session = SessionState::Failed;
+    }
+
+    fn on_stalled(&mut self, out: &mut Vec<Action>) {
+        if self.session.is_terminal() {
+            return;
+        }
+        let code = "backend_unresponsive".to_string();
+        let message = "the transcription service stopped responding".to_string();
+        out.push(Action::SendAbort);
+        out.push(Action::Emit(OrchestratorEvent::Error {
+            code: code.clone(),
+            message: message.clone(),
+        }));
+        self.failure = Some((code, message));
         self.session = SessionState::Failed;
     }
 
@@ -563,6 +581,28 @@ mod tests {
         fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
         assert!(emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))).is_empty());
         assert_eq!(fsm.state().residency, Residency::Loading);
+    }
+
+    #[test]
+    fn a_stalled_backend_fails_the_session_and_is_aborted() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        fsm.on_input(Input::EndOfAudio);
+        let a = fsm.on_input(Input::Stalled);
+        assert!(matches!(a.first(), Some(Action::SendAbort)));
+        let error = OrchestratorEvent::Error {
+            code: "backend_unresponsive".into(),
+            message: "the transcription service stopped responding".into(),
+        };
+        assert_eq!(emitted(&a), vec![error]);
+        assert_eq!(
+            fsm.outcome(),
+            Some(SessionOutcome::Failed {
+                code: "backend_unresponsive".into(),
+                message: "the transcription service stopped responding".into(),
+            })
+        );
+        assert!(fsm.on_input(Input::Stalled).is_empty());
     }
 
     // ---- §3B: error mid-stream ----------------------------------------------

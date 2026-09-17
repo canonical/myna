@@ -4,37 +4,44 @@
 //! the results. This is the reusable core of the demo binary and the seam T21
 //! (hotkey → this) and T22 (this → injector) plug into.
 //!
-//! The audio-adapter contract maps cleanly:
-//! a clean source end (hotkey release / WAV EOF) becomes `EndOfAudio`
-//! (finalize), and a capture fault becomes `CaptureFailed` — a visible
-//! `Failed` outcome (abandon the backend session, commit nothing, but tell the
-//! user *why*), never a silent abort.
+//! The audio-adapter contract maps cleanly: a clean source end (hotkey release
+//! / WAV EOF) becomes `EndOfAudio` (finalize), and a capture fault becomes
+//! `CaptureFailed` — a visible `Failed` outcome (abandon the backend session,
+//! commit nothing, but tell the user *why*), never a silent abort.
+//!
+//! Capture starts at the press, before the backend is ready, and its buffer
+//! holds the audio until the driver reads it. Capture health is watched
+//! independently of that, so a fault or overload surfaces at once, not after
+//! readiness and a drain.
 
-use std::sync::Arc;
-
-use tokio::sync::{mpsc, Notify};
+use futures_util::StreamExt;
+use myna_core::{CaptureHealth, SessionConfig};
+use tokio::sync::mpsc;
 
 use crate::audio::AudioSource;
 use crate::backend::{BackendClient, BackendError};
-use crate::driver::{run_session, OrchestratorInput};
-use crate::fsm::{OrchestratorEvent, SessionOutcome};
+use crate::driver::{run_session, OrchestratorControl, OrchestratorInput};
+use crate::fsm::SessionOutcome;
 use crate::sink::TextSink;
-use futures_util::StreamExt;
-use myna_core::SessionConfig;
+use crate::task::TaskGuard;
 
 /// Capacity of the audio backlog between the source and the FSM before
-/// backpressure applies — the "bounded in-memory buffer" invariant (~1.6 s at
-/// 100 ms chunks).
+/// backpressure applies (~1.6 s at 100 ms chunks); beyond it, audio waits in
+/// the capture buffer.
 const INPUT_CAPACITY: usize = 16;
+/// Control carries at most a capture end and a capture fault per utterance.
+const CONTROL_CAPACITY: usize = 4;
 const OUTPUT_CAPACITY: usize = 64;
 
 /// Run a single utterance to completion: open a backend session, stream every
-/// chunk `source` produces, signal end-of-audio (or abort on a capture fault),
+/// chunk `source` produces, signal end-of-audio (or fail on a capture fault),
 /// and forward every orchestrator event to `sink`. Returns the session outcome.
 ///
 /// `config.audio_format` is overwritten with the source's actual format, so the
 /// service validates against what is really being sent (the source never
 /// resamples).
+///
+/// Dropping the returned future cancels capture and the backend transport.
 pub async fn run_dictation<B, S, T>(
     backend: &B,
     mut config: SessionConfig,
@@ -48,84 +55,21 @@ where
 {
     config.audio_format = source.format();
 
-    let (in_tx, in_rx) = mpsc::channel::<OrchestratorInput>(INPUT_CAPACITY);
+    let (in_tx, in_rx) = mpsc::channel(INPUT_CAPACITY);
+    let (control_tx, control_rx) = mpsc::channel(CONTROL_CAPACITY);
     let (out_tx, mut out_rx) = mpsc::channel(OUTPUT_CAPACITY);
 
-    // Capture starts NOW; only the *push* into the FSM waits for the first
-    // `Ready`. This is the client half of the accept-gate plus the
-    // capture-from-press requirement: a live adapter
-    // (`myna-audio::CaptureSource`) fills its bounded ring from `capture()`,
-    // so speech during a cold load is buffered, not lost; a lazy/paced source
-    // (WavFileSource) produces nothing until polled, so nothing drains into
-    // the closed gate either way. `notify_one` stores a permit, so a `Ready`
-    // that fires before the pump parks is not lost.
-    let ready_gate = Arc::new(Notify::new());
-
-    // Pump the capture stream into the FSM's input channel. A clean end →
-    // EndOfAudio (finalize); a fault → CaptureFailed (discard + surface why).
-    let pump_gate = ready_gate.clone();
-    let audio_task = tokio::spawn(async move {
-        let mut stream = Box::new(source).capture(); // the press: ring fills from here
-        myna_core::dbg_log!("capture", "stream opened; waiting for ready gate");
-        pump_gate.notified().await; // hold the push for residency (or task abort below)
-        myna_core::dbg_log!("capture", "ready gate open; forwarding audio");
-        let mut chunks = 0u64;
-        let mut bytes = 0u64;
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(chunk) => {
-                    chunks += 1;
-                    bytes += chunk.data.len() as u64;
-                    if myna_core::debug::enabled() && chunks % 20 == 0 {
-                        myna_core::debug::log(
-                            "capture",
-                            format!("forwarded {chunks} chunks / {bytes} bytes so far"),
-                        );
-                    }
-                    if in_tx.send(OrchestratorInput::Audio(chunk)).await.is_err() {
-                        myna_core::dbg_log!(
-                            "capture",
-                            "FSM gone; stop capturing at {chunks} chunks"
-                        );
-                        return; // FSM already terminal; stop capturing
-                    }
-                }
-                Err(fault) => {
-                    // The device/daemon faulted mid-capture: report it, don't
-                    // swallow it as a bare abort (the mic-unavailable case).
-                    myna_core::dbg_log!("capture", "capture fault: {fault}");
-                    let _ = in_tx
-                        .send(OrchestratorInput::CaptureFailed {
-                            message: fault.to_string(),
-                        })
-                        .await;
-                    return;
-                }
-            }
-        }
-        myna_core::dbg_log!(
-            "capture",
-            "end of audio after {chunks} chunks / {bytes} bytes ({:.2}s @16k mono s16)",
-            bytes as f64 / 32000.0
-        );
-        let _ = in_tx.send(OrchestratorInput::EndOfAudio).await;
-    });
+    let capture = TaskGuard::spawn(pump_capture(source, in_tx, control_tx));
 
     // Drive the FSM and drain its events to the sink concurrently.
-    let driver = run_session(backend, config, in_rx, out_tx);
+    let driver = run_session(backend, config, in_rx, control_rx, out_tx);
     tokio::pin!(driver);
 
     let mut outputs_open = true;
     let outcome = loop {
         tokio::select! {
             event = out_rx.recv(), if outputs_open => match event {
-                Some(event) => {
-                    if matches!(event, OrchestratorEvent::Ready) {
-                        myna_core::dbg_log!("runner", "READY received; opening capture gate");
-                        ready_gate.notify_one(); // open the capture gate, once
-                    }
-                    sink.emit(event).await;
-                }
+                Some(event) => sink.emit(event).await,
                 None => outputs_open = false,
             },
             result = &mut driver => {
@@ -138,20 +82,91 @@ where
         }
     };
 
-    // The session is terminal. If it ended before `Ready` (e.g. a load-time
-    // error), the pump is still parked on the gate — abort rather than await so
-    // we never hang. In the happy path the pump already sent EndOfAudio and
-    // finished, so the abort is a no-op.
-    audio_task.abort();
-    let _ = audio_task.await;
+    // The session is terminal; whatever capture still holds is not wanted.
+    capture.cancel().await;
     outcome
 }
+
+/// Capture from the press: move audio into `audio` as fast as the driver takes
+/// it, and report the capture's end or fault on `control` as soon as health
+/// shows it, without waiting for the audio queued ahead of it.
+async fn pump_capture<S: AudioSource>(
+    source: S,
+    audio: mpsc::Sender<OrchestratorInput>,
+    control: mpsc::Sender<OrchestratorControl>,
+) {
+    let mut health = source.health();
+    let mut stream = Box::new(source).capture(); // the press: capture fills from here
+    myna_core::dbg_log!("capture", "stream opened");
+    let mut health_open = true;
+    let mut ended = false;
+    let mut pending: Option<OrchestratorInput> = None;
+    let mut chunks = 0u64;
+    let mut bytes = 0u64;
+    loop {
+        tokio::select! {
+            biased;
+            state = health.next(), if health_open => match state {
+                Some(CaptureHealth::Faulted(fault)) => {
+                    myna_core::dbg_log!("capture", "capture fault: {fault}");
+                    let message = fault.to_string();
+                    let _ = control.send(OrchestratorControl::CaptureFailed { message }).await;
+                    return;
+                }
+                Some(CaptureHealth::Ended) if !ended => {
+                    ended = true;
+                    let _ = control.send(OrchestratorControl::CaptureEnded).await;
+                }
+                Some(_) => {}
+                None => health_open = false,
+            },
+            permit = audio.reserve(), if pending.is_some() => {
+                let (Ok(permit), Some(item)) = (permit, pending.take()) else {
+                    return; // the driver is gone
+                };
+                let end = matches!(item, OrchestratorInput::EndOfAudio);
+                permit.send(item);
+                if end {
+                    return;
+                }
+            }
+            item = stream.next(), if pending.is_none() => match item {
+                Some(Ok(chunk)) => {
+                    chunks += 1;
+                    bytes += chunk.data.len() as u64;
+                    pending = Some(OrchestratorInput::Audio(chunk));
+                }
+                Some(Err(fault)) => {
+                    myna_core::dbg_log!("capture", "capture fault: {fault}");
+                    let message = fault.to_string();
+                    let _ = control.send(OrchestratorControl::CaptureFailed { message }).await;
+                    return;
+                }
+                None => {
+                    myna_core::dbg_log!(
+                        "capture",
+                        "end of audio after {chunks} chunks / {bytes} bytes"
+                    );
+                    if !ended {
+                        ended = true;
+                        let _ = control.send(OrchestratorControl::CaptureEnded).await;
+                    }
+                    pending = Some(OrchestratorInput::EndOfAudio);
+                }
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::audio::WavFileSource;
     use crate::backend::fake::FakeBackend;
+    use crate::fsm::OrchestratorEvent;
     use crate::sink::CollectingSink;
     use myna_core::AudioFormat;
     use std::path::PathBuf;
