@@ -153,9 +153,6 @@ mod tests {
         fn sound_cues_enabled(&self) -> bool {
             DefaultPreferences.sound_cues_enabled()
         }
-        fn silence_auto_stop_seconds(&self) -> Option<u32> {
-            DefaultPreferences.silence_auto_stop_seconds()
-        }
     }
 
     #[tokio::test]

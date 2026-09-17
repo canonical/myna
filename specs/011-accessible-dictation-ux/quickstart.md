@@ -121,19 +121,82 @@ run against the unpackaged dev build noted where they'd diverge.
 
 ## Scenario 5 — Large text / high contrast / reduced motion / forced colours (US3, SC-005)
 
-1. Set text scale to 200%, enable the high-contrast theme, enable
-   forced-colours (if available), enable reduced-motion.
-2. Run a full dictation session, observing the HUD pill through each state.
-3. **Expect**: all text remains fully visible, unclipped; the live-capture
-   indication has a static equivalent under reduced motion; nothing flashes
-   more than 3×/second.
+Reads (T059): `client/myna-desktop/src/preferences.rs`/`extensions/myna-shell/accent.js`'s
+`SystemPreferences` class watches `org.gnome.desktop.interface`'s
+`text-scaling-factor` and `org.gnome.desktop.a11y.interface`'s `high-contrast`
+(the real GNOME 47+ key — not the old `gtk-theme` "HighContrast" string hack),
+alongside feature 004's existing `enable-animations` (reduced motion) and
+`accent-color` reads. **GNOME has no separate "forced colours" toggle**
+distinct from `high-contrast` (that is a Windows/CSS-media-feature concept);
+this scenario's "forced colours" step is the same GNOME high-contrast theme,
+not an additional setting — do not look for one.
+
+1. `gsettings set org.gnome.desktop.interface text-scaling-factor 2.0` (200%).
+2. `gsettings set org.gnome.desktop.a11y.interface high-contrast true`
+   (enables the GNOME high-contrast GTK theme; this is also GNOME's "forced
+   colours" equivalent — see note above).
+3. `gsettings set org.gnome.desktop.interface enable-animations false`
+   (reduced motion).
+4. Run a full dictation session, observing the HUD pill through each state
+   (Listening → Finishing → a completion/error notice → Idle).
+5. **Expect**:
+   - At 200% text scale, every HUD/notification label remains fully visible
+     and unclipped — no truncated or overlapping text.
+   - Under the high-contrast theme, the pill/notification chrome adopts the
+     theme's contrast palette (via normal GTK/St theming — the pill draws
+     with themed colours, not hardcoded ones) and remains legible.
+   - Under reduced motion, the live-capture indication (the wave ribbon, or
+     the GTK indicator's pulsing) is replaced by its static equivalent
+     (`resolveReducedMotion`/feature 004's existing contract X26) — nothing
+     animates, and nothing flashes more than 3×/second (WCAG 2.3.1).
+6. Restore defaults: `gsettings reset org.gnome.desktop.interface
+   text-scaling-factor`, `gsettings reset org.gnome.desktop.a11y.interface
+   high-contrast`, `gsettings reset org.gnome.desktop.interface
+   enable-animations`.
 
 ## Scenario 6 — Sound cues do not degrade transcription (US3, SC-006)
 
-Run via the existing real-corpus WER benchmark harness
-(`dev/fetch_real_corpus.py` + the project's WER measurement tooling) twice:
-once with sound cues/announcements enabled, once with both disabled (silent
-baseline). Compare WER delta — must be ≤0.5 percentage points.
+**Architectural note, checked before running anything**: `sound::SoundCuePlayer`
+(T054/T057) plays cues on their own, independent PipeWire *output* stream
+(`Direction::Output`, a fresh short-lived connection per cue — see
+`client/myna-desktop/src/sound/playback.rs`'s module docs) and has no code
+path into the *capture* stream the ASR pipeline consumes — `controller.rs`'s
+`self.sound.play(..)` calls (T058) are side calls alongside the existing
+indicator/injector calls, never touching `myna_audio`'s capture buffer.
+The only physically possible way a sound cue could affect a transcript is
+acoustic: the cue audibly playing through speakers and being picked up again
+by an open microphone in the same room (an environment/hardware condition,
+not a myna code path) — which is why this is a **live acoustic check**, not
+a candidate for the existing corpus-based WER harness
+(`dev/bench.py`/`dev/fetch_real_corpus.py`): that harness feeds pre-recorded
+clip files directly into the backend over the ASR socket and never opens a
+live microphone or a live speaker, so it cannot exercise (or catch a
+regression in) this acoustic path at all — running it with cues "enabled"
+vs. "disabled" would measure nothing.
+
+1. On real hardware with a working microphone and speakers (not headphones —
+   the acoustic path only exists when playback can reach the mic), leave
+   `sound-cues-enabled` at its default (`true`).
+2. Start `myna-dictate` (or the desktop daemon) and read the same fixed
+   passage aloud for two runs: once as normal, once immediately after a
+   `SessionStart`/`SessionEnd`/`Failure` cue has audibly played (e.g.
+   trigger a deliberate failure first — an empty focused field — to hear the
+   `Failure` cue, then dictate the passage).
+3. **Expect**: the two transcripts are identical (allowing for normal
+   run-to-run speech variance) — the cue tones (fixed sine tones at
+   880/660/220 Hz, T057) do not appear as spurious words/fragments in the
+   transcript, and no run is measurably slower to start capturing than the
+   other.
+4. **Not run as an automated corpus benchmark**: per the architectural note
+   above, `dev/bench.py`'s existing WER harness bypasses both live capture
+   and live playback, so it cannot observe this acoustic path either way —
+   recording a WER delta from that harness would not be a real measurement
+   of this scenario's risk (spurious/fabricated data), so none is recorded
+   here. If a future change makes the acoustic path harder to reason about
+   (e.g. a persistent/looping cue, or genuine echo-cancellation coupling
+   with `myna-audio` capture), a live-hardware acoustic protocol like the
+   one above — not `dev/bench.py` — is the correct tool to reach for.
+
 
 ## Scenario 7 — Confined package (FR-033, SC-009)
 
@@ -145,9 +208,22 @@ beyond what's already documented for notifications/portals.
 ## Scenario 8 — Terminal client under a screen reader (US5, SC-008)
 
 1. Run `myna-dictate` in a terminal with Orca's terminal/console support
-   active, colour disabled (`NO_COLOR=1` or non-tty redirection observed
-   separately).
-2. Dictate a session; observe that state changes are read as discrete new
-   lines, not repeated re-reads of a redrawn line.
-3. Force a failure; confirm it appears on stderr in the same plain language as
-   Scenario 2.
+   active, colour disabled: `NO_COLOR=1 myna-dictate --socket /tmp/myna.sock
+   --mic`.
+2. Dictate a session; observe that every state/result line begins with an
+   explicit `[marker]` (e.g. `[loading]`, `[ready]`, `[committed]`,
+   `[done]`) — meaning survives even with the decorative emoji ignored
+   (FR-028). With `NO_COLOR=1` set, the live VU meter (otherwise redrawn
+   in-place on one line with `\r`) is suppressed entirely rather than
+   printing a fresh line per audio-stats update — the alternative
+   (line-per-update) would itself spam a screen reader with far more
+   frequent re-reads than the meter is worth (FR-029).
+3. **Expect**: state changes are read as discrete new lines, not repeated
+   re-reads of a redrawn line; without `NO_COLOR`, the sighted VU meter
+   still redraws in place as before (that path is unaffected — this
+   scenario is specifically about the `NO_COLOR`-requested mode).
+4. Force a failure (e.g. stop the inference backend, or dictate into
+   `--clip` pointing at a nonexistent file); confirm it appears on stderr
+   prefixed `[error]`, in the same plain language as Scenario 2 — the exact
+   same `FailurePresentation` text, not a separate CLI-only wording
+   (contracts/failure-mapping.md F2, contracts/terminal-output.md T3).

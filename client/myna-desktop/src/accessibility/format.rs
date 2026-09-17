@@ -4,14 +4,17 @@
 //! FR-024a "identical wording everywhere it is named"). Also produces the
 //! accessible name/description pair used for FR-001's on-demand query.
 //!
-//! Error/notice announcement text is deliberately generic ("Error"/"Notice")
-//! for now, not the underlying ad-hoc message: `IndicatorState::Error`'s
-//! `message` field is a dynamic backend `String`, not yet the fixed,
-//! `&'static str`-typed `FailurePresentation.message` US4 (T067/T068) will
-//! introduce. Wiring the *specific* plain-language failure message through
-//! to the announcer is T068's job, once `failure::lookup` exists to supply
-//! it as a `&'static str` — compatible with [`super::AnnouncementText`]'s
-//! compile-time content-free guarantee without an escape hatch.
+//! Error/notice announcement text (US4, T068): when `IndicatorState::Error`
+//! carries a `presentation` (built via `IndicatorState::from_failure` from a
+//! registered `FailurePresentation`, `crate::failure::lookup`/
+//! `lookup_by_code`), the announcement/description use that presentation's
+//! own fixed, `&'static str` wording (via `myna_core::failure::spoken`, which
+//! combines `message`+`recovery_action` into a single `'static` string —
+//! `AnnouncementText`'s compile-time content-free guarantee allows only
+//! `&'static str`, never the dynamic backend `String` in `message`).
+//! `presentation: None` (a handful of ad-hoc recoverable notices outside
+//! `contracts/failure-mapping.md`'s scope — "No speech detected"/"Focus
+//! lost") keeps the previous generic "Notice"/"Error" wording.
 
 use crate::indicator::IndicatorState;
 
@@ -52,6 +55,34 @@ pub fn format_state_announcement(state: &IndicatorState) -> StateAnnouncement {
             announcement: AnnouncementText::new("Finishing"),
             severity: None,
         },
+        IndicatorState::Error {
+            presentation: Some(p),
+            recoverable,
+            ..
+        } => {
+            // T068: the same fixed presentation everywhere it's rendered
+            // (F2/F3) — `spoken` combines message+recovery_action into a
+            // single `'static` string (see module doc comment); `spoken`
+            // always has an entry for a registered `p` (it's populated
+            // alongside every `register()` call), but fall back to just
+            // `p.message` rather than panicking if that invariant is ever
+            // violated by a future registry change.
+            let spoken = myna_core::failure::spoken(p.id).unwrap_or(p.message);
+            StateAnnouncement {
+                name: AnnouncementText::new(if *recoverable {
+                    "Dictation: notice"
+                } else {
+                    "Dictation: error"
+                }),
+                description: AnnouncementText::new(p.recovery_action),
+                announcement: AnnouncementText::new(spoken),
+                severity: Some(if *recoverable {
+                    Severity::Recoverable
+                } else {
+                    Severity::Critical
+                }),
+            }
+        }
         IndicatorState::Error {
             recoverable: true, ..
         } => StateAnnouncement {
@@ -126,5 +157,28 @@ mod tests {
             Some(Severity::Critical)
         );
         assert_eq!(format_state_announcement(&IndicatorState::Hidden).severity, None);
+    }
+
+    // ── T068: a presentation-backed Error announces the specific fixed
+    //    message + recovery action, not the generic "Error"/"Notice" ───────
+
+    #[test]
+    fn a_presentation_backed_error_announces_the_specific_message_and_recovery_action() {
+        let presentation = myna_core::failure::lookup(myna_core::failure::SECURE_FIELD).unwrap();
+        let state = IndicatorState::from_failure(presentation, None);
+        let a = format_state_announcement(&state);
+        assert!(a.announcement.as_str().contains(presentation.message));
+        assert!(a.announcement.as_str().contains(presentation.recovery_action));
+        assert_eq!(a.description.as_str(), presentation.recovery_action);
+        assert_eq!(a.severity, Some(Severity::Critical));
+    }
+
+    #[test]
+    fn a_presentation_backed_recoverable_notice_announces_with_recoverable_severity() {
+        let presentation = myna_core::failure::lookup(myna_core::failure::MODEL_LOAD_SLOW).unwrap();
+        let state = IndicatorState::from_failure(presentation, None);
+        let a = format_state_announcement(&state);
+        assert_eq!(a.severity, Some(Severity::Recoverable));
+        assert!(a.announcement.as_str().contains(presentation.message));
     }
 }

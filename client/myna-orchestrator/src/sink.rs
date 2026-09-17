@@ -15,37 +15,107 @@ pub trait TextSink: Send {
     async fn emit(&mut self, event: OrchestratorEvent);
 }
 
+/// Where a [`RenderedLine`] goes (feature 011-accessible-dictation-ux, US5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputStream {
+    Stdout,
+    Stderr,
+}
+
+/// One line of plain, line-oriented text plus which stream it belongs on
+/// (feature 011-accessible-dictation-ux, US5, FR-028/029, contracts T1-T3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedLine {
+    pub stream: OutputStream,
+    pub text: String,
+}
+
+impl RenderedLine {
+    fn stdout(text: impl Into<String>) -> Self {
+        Self {
+            stream: OutputStream::Stdout,
+            text: text.into(),
+        }
+    }
+
+    fn stderr(text: impl Into<String>) -> Self {
+        Self {
+            stream: OutputStream::Stderr,
+            text: text.into(),
+        }
+    }
+}
+
+/// Render one [`OrchestratorEvent`] as a single, line-oriented text line, or
+/// `None` when the event produces no output (`Transcribing` is an internal
+/// liveness ping only).
+///
+/// Feature 011-accessible-dictation-ux (US5, FR-028, contract T1): every
+/// line carries an explicit `[marker]` textual tag as its *primary* content
+/// — the emoji are a decorative addition, never the only signal, so meaning
+/// survives with colour/emoji stripped (there is no colour here today; the
+/// requirement is about never regressing to emoji-only). (FR-029, contract
+/// T3): a mid-stream `Error` routes through the shared `myna_core::failure`
+/// registry (`lookup_by_code`) — the identical presentation
+/// `SessionOutcome::Failed`/`BackendError` resolve to elsewhere in
+/// `myna-cli`'s `main.rs` (contract F2/F3), never a separate ad-hoc
+/// CLI-only string. This function is pure (no I/O), so it's hermetically
+/// testable without capturing real stdout — [`StdoutSink::emit`] is the thin
+/// I/O wrapper that prints what this returns.
+pub fn render_event_line(event: &OrchestratorEvent) -> Option<RenderedLine> {
+    match event {
+        OrchestratorEvent::Loading => Some(RenderedLine::stdout("[loading] ⏳ loading model…")),
+        OrchestratorEvent::Ready => Some(RenderedLine::stdout("[ready] 🎤 ready — listening")),
+        OrchestratorEvent::Transcribing => None,
+        OrchestratorEvent::Snippet(text) => {
+            Some(RenderedLine::stdout(format!("[progress] … {text}")))
+        }
+        OrchestratorEvent::Final(text) => {
+            Some(RenderedLine::stdout(format!("[committed] » {text}")))
+        }
+        OrchestratorEvent::Unstable(text) => {
+            Some(RenderedLine::stdout(format!("[partial] ~ {text}")))
+        }
+        OrchestratorEvent::Done(text) if text.trim().is_empty() => {
+            Some(RenderedLine::stdout("[done] ✓ (no speech detected)"))
+        }
+        OrchestratorEvent::Done(text) => Some(RenderedLine::stdout(format!("[done] ✓ {text}"))),
+        OrchestratorEvent::Error { code, message } => {
+            let presentation = myna_core::failure::lookup_by_code(code);
+            Some(RenderedLine::stderr(format!(
+                "[error] {}",
+                presentation.render(Some(message))
+            )))
+        }
+        OrchestratorEvent::AudioDropped(reason) => {
+            let why = match reason {
+                DropReason::NotResident => "model not ready",
+                DropReason::NotActive => "session not accepting audio",
+            };
+            Some(RenderedLine::stderr(format!(
+                "[dropped-audio] (dropped audio: {why})"
+            )))
+        }
+    }
+}
+
 /// Prints a human-readable dictation session to stdout, mirroring the feedback
 /// in `dev/dictate.py` (loading indicator, committed segments, final line,
-/// errors).
+/// errors). A thin I/O wrapper over the pure [`render_event_line`] — always
+/// prints via `println!`/`eprintln!`, which always terminate in `\n` and
+/// never emit a bare `\r`/ANSI cursor-movement sequence (FR-029, contract T2).
 #[derive(Default)]
 pub struct StdoutSink;
 
 #[async_trait]
 impl TextSink for StdoutSink {
     async fn emit(&mut self, event: OrchestratorEvent) {
-        match event {
-            OrchestratorEvent::Loading => println!("⏳ loading model…"),
-            OrchestratorEvent::Ready => println!("🎤 ready — listening"),
-            OrchestratorEvent::Transcribing => {}
-            OrchestratorEvent::Snippet(text) => println!("   … {text}"),
-            OrchestratorEvent::Final(text) => println!("   » {text}"),
-            // T034: unstable hypothesis — `~` prefix, display-only.
-            OrchestratorEvent::Unstable(text) => println!("   ~ {text}"),
-            OrchestratorEvent::Done(text) if text.trim().is_empty() => {
-                println!("✓ (no speech detected)");
-            }
-            OrchestratorEvent::Done(text) => println!("✓ {text}"),
-            OrchestratorEvent::Error { code, message } => {
-                eprintln!("✗ [{code}] {message}");
-            }
-            OrchestratorEvent::AudioDropped(reason) => {
-                let why = match reason {
-                    DropReason::NotResident => "model not ready",
-                    DropReason::NotActive => "session not accepting audio",
-                };
-                eprintln!("  (dropped audio: {why})");
-            }
+        let Some(line) = render_event_line(&event) else {
+            return;
+        };
+        match line.stream {
+            OutputStream::Stdout => println!("{}", line.text),
+            OutputStream::Stderr => eprintln!("{}", line.text),
         }
     }
 }

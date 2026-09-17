@@ -36,6 +36,7 @@ pub mod trigger;
 
 pub use audio::{AudioSource, CaptureError, CaptureStream, StopHandle, WavFileSource};
 pub use backend::{
+    backend_error_presentation,
     fake::FakeBackend,
     ws_unix::{query_capabilities, WsUnixBackend},
     ws_unix_ie115::WsUnixIe115Backend,
@@ -48,5 +49,5 @@ pub use fsm::{
 };
 pub use myna_core;
 pub use runner::run_dictation;
-pub use sink::{CollectingSink, StdoutSink, TextSink};
+pub use sink::{render_event_line, CollectingSink, OutputStream, RenderedLine, StdoutSink, TextSink};
 pub use trigger::{ScriptedTrigger, StdinTrigger, Trigger, TriggerEdge};

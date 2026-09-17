@@ -25,13 +25,12 @@ pub use gate::{CoalescingAnnouncer, VerbosityGatedAnnouncer};
 pub use recover::RecoveringAnnouncer;
 
 /// A failure/notice severity (data-model.md), shared by announcements
-/// (this module) and `FailurePresentation` (`crate::failure`) so the two
-/// never disagree on the recoverable/critical vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Severity {
-    Recoverable,
-    Critical,
-}
+/// (this module) and `FailurePresentation` (`crate::failure`, which
+/// re-exports `myna_core::failure`) so the two never disagree on the
+/// recoverable/critical vocabulary. Re-exported (not redefined) from
+/// `myna-core` since US4 moved `FailurePresentation` there (T067) so
+/// `myna-cli` can share it too.
+pub use myna_core::failure::Severity;
 
 /// An `announce()` call failed (contract A5, FR-002a). The dictation session
 /// MUST continue unaffected when this happens — see `controller.rs`'s

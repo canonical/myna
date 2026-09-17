@@ -36,6 +36,11 @@ zbus = "5"
 # The default "connection"/"proxies" features give AccessibilityConnection
 # (atspi::connection) without a separate atspi-connection dependency.
 atspi = { workspace = true }
+# Sound-cue playback (feature 011-accessible-dictation-ux, FR-010/011,
+# research.md R2): the same vendored `pipewire` crate `myna-audio` already
+# uses for capture, reused here for a short output stream. Same workspace
+# pin/features — no separate audio-output dependency added.
+pipewire = { workspace = true }
 # Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the
 # vendored `zbus`-direct path is the fallback if this cannot be fetched.
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }

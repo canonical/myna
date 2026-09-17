@@ -193,6 +193,18 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
     it.next().ok_or_else(|| format!("{flag} needs a value"))
 }
 
+/// Render a `FailurePresentation` as one stderr line (feature
+/// 011-accessible-dictation-ux, US4 T071 / US5 T074/T077): the exact same
+/// fixed message + recovery action `IndicatorState::from_failure`
+/// (`myna-desktop`) builds — both call [`FailurePresentation::render`], the
+/// single shared formatting rule (contract F2/F3), prefixed with a plain
+/// ASCII `!` marker rather than an emoji/coloured glyph so the line reads
+/// correctly with colour disabled and under a screen reader (FR-028/029;
+/// coordinates with, doesn't duplicate, US5's terminal-output work).
+fn render_failure(presentation: &myna_core::failure::FailurePresentation, detail: Option<&str>) -> String {
+    format!("[error] {}", presentation.render(detail))
+}
+
 /// Read a corpus `manifest.json` (schema-v1, as written by
 /// `myna-bench download-corpus`) and append its clips.
 ///
@@ -343,11 +355,26 @@ const METER_COLS: usize = 32;
 /// Renders a live VU meter on the current terminal line (overwrites with `\r`).
 /// Uses RMS for the fill level (smooth) and marks the per-chunk peak with `▎`.
 /// Runs until the stats sender is dropped (i.e. the `CaptureSource` is done).
+///
+/// Feature 011-accessible-dictation-ux (US5, FR-029, contract T2): an
+/// in-place `\r` redraw is exactly the "in-place redrawing... that causes
+/// repeated re-reading" FR-029 forbids, so under `myna_core::plain_output()`
+/// (the `NO_COLOR` convention, quickstart.md Scenario 8) this meter is
+/// silently suppressed rather than adapted to print a line per update —
+/// audio stats update many times a second, so a non-redrawing rendering
+/// would spam a screen reader with a new line to read every fraction of a
+/// second, which is its own violation of "stable... while a screen reader
+/// is in use". The channel is still drained so the sender never blocks.
 async fn render_meter(mut stats: watch::Receiver<AudioStats>) {
+    let plain = myna_core::plain_output();
     loop {
         if stats.changed().await.is_err() {
             break;
         }
+        if plain {
+            continue;
+        }
+
         let s = *stats.borrow_and_update();
 
         let filled = (s.rms.clamp(0.0, 1.0) * METER_COLS as f32).round() as usize;
@@ -374,8 +401,10 @@ async fn render_meter(mut stats: watch::Receiver<AudioStats>) {
         let _ = std::io::stdout().flush();
     }
     // Leave the line clean so subsequent output isn't garbled.
-    print!("\r\x1b[2K");
-    let _ = std::io::stdout().flush();
+    if !plain {
+        print!("\r\x1b[2K");
+        let _ = std::io::stdout().flush();
+    }
 }
 
 /// T036 (feature 007): drops `Unstable` hypothesis events unless the user
@@ -416,15 +445,21 @@ impl<T: TextSink> TextSink for BatchDisplay<T> {
 }
 
 /// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
-/// the meter and session events don't overprint each other.
+/// the meter and session events don't overprint each other. Under
+/// `myna_core::plain_output()` the meter itself never draws anything (see
+/// `render_meter`'s doc comment), so this clear is skipped too — otherwise it
+/// would itself emit a bare ANSI cursor-movement sequence with nothing to
+/// clear (FR-029).
 struct MicMeterSink(StdoutSink);
 
 #[async_trait]
 impl TextSink for MicMeterSink {
     async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
-        // Erase whatever the meter drew on this line.
-        print!("\r\x1b[2K");
-        let _ = std::io::stdout().flush();
+        if !myna_core::plain_output() {
+            // Erase whatever the meter drew on this line.
+            print!("\r\x1b[2K");
+            let _ = std::io::stdout().flush();
+        }
         self.0.emit(event).await;
     }
 }
@@ -486,11 +521,12 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, message }) => {
-                eprintln!("✗ session failed [{code}]: {message}");
+                eprintln!("{}", render_failure(myna_core::failure::lookup_by_code(&code), Some(&message)));
                 exit = ExitCode::FAILURE;
             }
             Err(e) => {
-                eprintln!("✗ could not open session: {e}");
+                let (presentation, detail) = myna_orchestrator::backend_error_presentation(&e);
+                eprintln!("{}", render_failure(presentation, detail.as_deref()));
                 exit = ExitCode::FAILURE;
             }
         }
@@ -558,23 +594,25 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             }
         };
 
-        // Stop the meter and ensure the line is clear before any outcome text.
+        // Stop the meter and ensure the line is clear before any outcome text
+        // (skipped under plain output — see `render_meter`'s doc comment).
         meter.abort();
         let _ = meter.await;
-        print!("\r\x1b[2K");
-        let _ = std::io::stdout().flush();
+        if !myna_core::plain_output() {
+            print!("\r\x1b[2K");
+            let _ = std::io::stdout().flush();
+        }
 
         match outcome {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
-            Ok(SessionOutcome::Failed { code, message }) if code == "capture_failed" => {
-                eprintln!("✗ audio capture failed: {message}");
-                eprintln!("  (no mic? check `wpctl status` lists an Audio Source, or pass --target <node.name>)");
-            }
             Ok(SessionOutcome::Failed { code, message }) => {
-                eprintln!("✗ session failed [{code}]: {message}");
+                eprintln!("{}", render_failure(myna_core::failure::lookup_by_code(&code), Some(&message)));
             }
-            Err(e) => eprintln!("✗ could not open session: {e}"),
+            Err(e) => {
+                let (presentation, detail) = myna_orchestrator::backend_error_presentation(&e);
+                eprintln!("{}", render_failure(presentation, detail.as_deref()));
+            }
         }
 
         // The T51 acceptance readout: how much the mic captured.
@@ -597,4 +635,43 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 
     println!("bye");
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── T071/T063 (US4, contract F2/F3): myna-cli's terminal rendering uses
+    //    the exact same presentation text `myna-desktop`'s
+    //    `IndicatorState::from_failure` builds - both call
+    //    `FailurePresentation::render`, so the two structurally cannot
+    //    diverge in wording. ───────────────────────────────────────────────
+
+    #[test]
+    fn render_failure_contains_the_presentation_message_and_recovery_action() {
+        let presentation =
+            myna_core::failure::lookup(myna_core::failure::BACKEND_CONNECT).unwrap();
+        let line = render_failure(presentation, None);
+        assert!(line.contains(presentation.message));
+        assert!(line.contains(presentation.recovery_action));
+    }
+
+    #[test]
+    fn render_failure_matches_failure_presentation_render_exactly() {
+        let presentation =
+            myna_core::failure::lookup(myna_core::failure::CODE_CAPTURE_FAILED)
+                .unwrap_or_else(|| myna_core::failure::lookup_by_code("capture_failed"));
+        let line = render_failure(presentation, Some("dynamic detail"));
+        assert!(line.ends_with(&presentation.render(Some("dynamic detail"))));
+    }
+
+    #[test]
+    fn render_failure_has_no_ansi_escape_codes_or_emoji_marker() {
+        // FR-028/029 (US5): a screen reader / colour-disabled terminal must
+        // still convey the marker as plain text.
+        let presentation = myna_core::failure::lookup_by_code("some_unknown_code");
+        let line = render_failure(presentation, None);
+        assert!(!line.contains('\x1b'), "must contain no ANSI escape codes");
+        assert!(line.starts_with("[error]"));
+    }
 }

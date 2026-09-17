@@ -23,11 +23,44 @@ use tokio::sync::{mpsc, watch};
 
 use crate::indicator::{Indicator, IndicatorState};
 use crate::inject::{FocusEvent, InjectError, Injector, Target};
+use crate::sound::{CueKind, NullSoundCuePlayer, SoundCuePlayer};
 use crate::live::Live;
 use async_trait::async_trait;
+use myna_core::failure::{self, FailurePresentation};
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
+
+// ── Long-operation progress (US4, T066/T070, FR-027) ───────────────────────────
+
+/// How long a cold model load (`Loading`, no `Ready` yet) may run before it
+/// is surfaced as an actionable notice rather than silent, indefinite
+/// "listening" (FR-027: "so a non-visual user can always distinguish work in
+/// progress from a hang"). Not user-configurable (unlike
+/// `silence_auto_stop_seconds`) — this is a fixed backstop, not a session
+/// policy.
+///
+/// **Known scope decision**: FR-027 also describes a *periodic* non-visual
+/// progress ping before this threshold — deliberately not implemented. A
+/// repeat announcement of an unchanged state (there is no new
+/// `IndicatorState` to move to while still waiting on `Ready`) would be
+/// silently swallowed by `accessibility::AnnouncingIndicator`'s intentional
+/// same-state dedup (added for US1 to fix a real double-`set_state` bug),
+/// which has no "repeat this on purpose" escape hatch today. Adding one
+/// would mean either a new `Indicator` trait method (rippling through every
+/// implementor: `dbus`/`gtk`/`notify`/`mock`) or relaxing a dedup guarantee
+/// other surfaces rely on — judged out of scope for this pass; tracked as a
+/// follow-up in `docs/project-plan.md` rather than worked around here.
+const MODEL_LOAD_THRESHOLD: Duration = Duration::from_secs(15);
+
+/// Has `elapsed` (time since a `Loading` phase began, with no `Ready`/
+/// terminal event since) crossed [`MODEL_LOAD_THRESHOLD`] (T066)? A pure
+/// predicate over a plain `Duration` so it is hermetically testable without
+/// a real or even a `tokio::time`-paused clock — the integration wiring
+/// (`run_one_utterance`) is what supplies a real elapsed duration.
+fn loading_exceeds_threshold(elapsed: Duration) -> bool {
+    elapsed >= MODEL_LOAD_THRESHOLD
+}
 
 // ── State model ───────────────────────────────────────────────────────────────
 
@@ -158,7 +191,10 @@ pub fn event_to_indicator(
             still_listening.then_some(IndicatorState::Recording)
         }
         OrchestratorEvent::Done(text) => Some(completion_indicator_state(text, delivery, quality)),
-        OrchestratorEvent::Error { message, .. } => Some(IndicatorState::critical(message.clone())),
+        OrchestratorEvent::Error { code, message } => Some(IndicatorState::from_failure(
+            failure::lookup_by_code(code),
+            Some(message),
+        )),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
         | OrchestratorEvent::Unstable(_)
@@ -440,6 +476,20 @@ pub struct DesktopController {
     /// Policy-driven session end (see [`AutoStop`]). Live for the same
     /// reason: the silence timeout is a user setting.
     auto_stop: Live<AutoStop>,
+    /// Optional sound cues (US3, T058, FR-010/011). Defaults to
+    /// [`NullSoundCuePlayer`] (silent) for every builder call site that
+    /// predates this feature or never opts in — `myna_desktop::sound`'s own
+    /// gating (`GatedSoundCuePlayer` + `Preferences::sound_cues_enabled`)
+    /// decides whether the *configured* player actually makes sound; this
+    /// field only decides whether a player is wired in at all.
+    sound: Box<dyn SoundCuePlayer>,
+    /// The most recent `FailurePresentation`-backed notice/failure (US4,
+    /// T065/T069, FR-026): a single in-memory slot so a user can still
+    /// determine what happened even after a `Recoverable` notice
+    /// auto-dismisses from the indicator. Set by [`Self::report_failure`];
+    /// read by [`Self::last_notice`]. `None` until the first registry-backed
+    /// failure of the process.
+    last_notice: Option<&'static myna_core::failure::FailurePresentation>,
 }
 
 /// This session's accept-gate drop counts, published as they happen.
@@ -471,6 +521,7 @@ pub struct DesktopControllerBuilder {
     session: Option<Box<dyn SessionFactory>>,
     preedit: Live<bool>,
     auto_stop: Live<AutoStop>,
+    sound: Option<Box<dyn SoundCuePlayer>>,
 }
 
 impl DesktopControllerBuilder {
@@ -513,6 +564,14 @@ impl DesktopControllerBuilder {
         self
     }
 
+    /// Wire in a sound-cue player (US3, T058). Optional — omitting this call
+    /// leaves cues silent ([`NullSoundCuePlayer`]), which is exactly the
+    /// pre-feature behavior every existing call site keeps unless it opts in.
+    pub fn sound(mut self, sound: impl SoundCuePlayer + 'static) -> Self {
+        self.sound = Some(Box::new(sound));
+        self
+    }
+
     /// Finish the controller. Panics if any boundary is missing (a wiring bug).
     pub fn build(self) -> DesktopController {
         DesktopController {
@@ -527,6 +586,10 @@ impl DesktopControllerBuilder {
             state: DictationState::Idle,
             preedit: self.preedit,
             auto_stop: self.auto_stop,
+            sound: self
+                .sound
+                .unwrap_or_else(|| Box::new(NullSoundCuePlayer)),
+            last_notice: None,
         }
     }
 }
@@ -539,6 +602,14 @@ impl DesktopController {
     /// The current dictation state (for tests / diagnostics).
     pub fn state(&self) -> DictationState {
         self.state
+    }
+
+    /// The most recent `FailurePresentation`-backed notice/failure (US4,
+    /// T065, FR-026): remains `Some` after a `Recoverable` notice has
+    /// auto-dismissed from the indicator (or a `Critical` one has been
+    /// acknowledged), so a caller can still determine what happened.
+    pub fn last_notice(&self) -> Option<&'static myna_core::failure::FailurePresentation> {
+        self.last_notice
     }
 
     /// The persistent push-to-talk loop: await a `Press`, run one utterance,
@@ -592,6 +663,11 @@ impl DesktopController {
 
         advance(&mut self.state, DictationState::Recording);
         self.indicator.set_state(IndicatorState::Recording).await;
+        // US3/T058 (FR-010): the session-start cue. `play()` is a plain,
+        // synchronous fn (not `async fn` — see `sound::SoundCuePlayer`'s doc
+        // comment), so this call is structurally incapable of delaying
+        // capture start via an accidental `.await` (FR-011).
+        self.sound.play(CueKind::SessionStart);
 
         // Reborrow disjoint fields as locals so the select loop can poll the
         // trigger/focus futures and route to the target/indicator without
@@ -627,6 +703,25 @@ impl DesktopController {
         // write; the trigger and stats arms shut off instead, because an edge
         // arriving during the drain belongs to the next utterance.
         let mut done: Option<Result<SessionOutcome, BackendError>> = None;
+        // FR-027/T066/T070: when the current `Loading` phase started, so the
+        // watchdog branch below knows how long we've been waiting for
+        // `Ready`. Cleared on `Ready`/`Done`/`Error`, and also the moment we
+        // stop actively recording (`Release`/`FocusOut`/`TargetGone`/the
+        // trigger ending) — once the user isn't holding the key anymore,
+        // "the model is still loading" is moot; finalizing is what's
+        // proceeding. `None` whenever we're not in a load window at all
+        // (including the entire rest of a warm-model utterance, where
+        // `Loading` never fires).
+        let mut loading_since: Option<tokio::time::Instant> = None;
+        // Set once the threshold fires for this utterance, so the watchdog
+        // branch below is a one-shot per utterance, not a repeat every poll
+        // (an `IndicatorState` transition already latches visibly/audibly;
+        // re-firing it every loop iteration once the deadline has passed
+        // would just resend the identical notice). Read back into
+        // `self.last_notice` after the loop (see below) — the loop only
+        // reborrows `self.indicator`, not `self`, so it cannot call
+        // `self.report_failure` directly.
+        let mut model_load_slow: Option<&'static FailurePresentation> = None;
 
         let outcome = loop {
             // Both sides are finished: the session has its result and its
@@ -636,6 +731,16 @@ impl DesktopController {
                     break result;
                 }
             }
+            // A one-shot deadline for the FR-027 "model load is taking a
+            // while" notice: `Some` only while a `Loading` window is open
+            // and hasn't already fired. Rebuilt fresh each iteration (cheap,
+            // and the standard shape for an optional timer inside
+            // `loop { select! {..} }` — the *absolute* deadline is stable
+            // across iterations, so this doesn't restart the wait).
+            let load_deadline = loading_since
+                .filter(|_| model_load_slow.is_none())
+                .map(|since| since + MODEL_LOAD_THRESHOLD);
+
             tokio::select! {
                 biased;
                 // `FocusOut`/`TargetGone` must be observed before the trigger's
@@ -655,6 +760,7 @@ impl DesktopController {
                         myna_core::info_log!("ctrl", "FocusOut: suppressing further commits, finalizing");
                         stop.stop();
                         ending = ending.or(Ending::FocusLost);
+                        loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
                         // A lost target ends this utterance; leave later edges
                         // for the next session. We never read a matching edge
@@ -673,6 +779,7 @@ impl DesktopController {
                         myna_core::info_log!("ctrl", "TargetGone: cancelling utterance");
                         stop.stop();
                         ending = ending.or(Ending::TargetGone);
+                        loading_since = None;
                         // Same trigger-parity resync as FocusOut, above.
                         trigger.resync().await;
                         trigger_open = false;
@@ -685,6 +792,7 @@ impl DesktopController {
                     Some(TriggerEdge::Release) => {
                         myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
                         stop.stop();
+                        loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
                         // Stop reading the trigger for this utterance: any
                         // further edges (the next push-to-talk cycle) belong to
@@ -695,6 +803,7 @@ impl DesktopController {
                     None => {
                         trigger_open = false;
                         stop.stop();
+                        loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
                     }
                 },
@@ -722,6 +831,19 @@ impl DesktopController {
                 // drain is this same arm, so a focus loss is still seen first.
                 ev = events_rx.recv(), if events_open => match ev {
                     Some(ev) => {
+                        // Peek before `route_event` consumes `ev` (T066/T070):
+                        // track the Loading→Ready window this utterance is in.
+                        match &ev {
+                            OrchestratorEvent::Loading => {
+                                loading_since.get_or_insert_with(tokio::time::Instant::now);
+                            }
+                            OrchestratorEvent::Ready
+                            | OrchestratorEvent::Done(_)
+                            | OrchestratorEvent::Error { .. } => {
+                                loading_since = None;
+                            }
+                            _ => {}
+                        }
                         ending = route_event(
                             ev,
                             target.as_mut(),
@@ -740,6 +862,38 @@ impl DesktopController {
                     // The session dropped its sender: nothing more can arrive.
                     None => events_open = false,
                 },
+                // FR-027/T066/T070: the model load is taking longer than
+                // `MODEL_LOAD_THRESHOLD` with no `Ready` yet — surface an
+                // actionable notice so a non-visual user can tell "still
+                // loading" from "hung" (visually, `Recording` is shown
+                // throughout both phases identically — see
+                // `event_to_indicator`'s `Loading`/`Ready` arm — so this is
+                // the only signal a non-visual user gets here). Lowest
+                // select priority: a real event/edge always wins a tie.
+                // One-shot per utterance (see `model_load_slow` above); the
+                // `if` guard also disables this branch entirely once there
+                // is no open `Loading` window, so `sleep_until` is never
+                // polled needlessly.
+                () = tokio::time::sleep_until(load_deadline.unwrap_or_else(tokio::time::Instant::now)), if load_deadline.is_some() => {
+                    // Defensive consistency check between the deadline this
+                    // branch just woke up for and `loading_exceeds_threshold`
+                    // (T066's hermetically-tested pure predicate) — the two
+                    // must agree, or the `sleep_until` deadline arithmetic
+                    // above has drifted from the threshold it's meant to
+                    // implement.
+                    debug_assert!(loading_since
+                        .map(|since| loading_exceeds_threshold(since.elapsed()))
+                        .unwrap_or(false));
+                    let presentation = failure::lookup(failure::MODEL_LOAD_SLOW)
+                        .expect("MODEL_LOAD_SLOW must be registered by default_registry");
+                    myna_core::info_log!("ctrl", "model load exceeded {MODEL_LOAD_THRESHOLD:?} with no Ready yet");
+                    let state_update = IndicatorState::from_failure(presentation, None);
+                    if let IndicatorState::Error { message, .. } = &state_update {
+                        eprintln!("myna-desktop: {message}");
+                    }
+                    indicator.set_state(state_update).await;
+                    model_load_slow = Some(presentation);
+                }
             }
         };
 
@@ -757,10 +911,24 @@ impl DesktopController {
         // here, exactly once, before the outcome is reported.
         target.release().await;
 
+        // T065/T069: the loop above only reborrows `self.indicator`, not
+        // `self`, so the "model load slow" branch couldn't update
+        // `self.last_notice` directly — do it now that the loop (and its
+        // reborrows) has ended. A later failure this same utterance (below)
+        // overwrites it, same as any other `report_failure` call would.
+        if let Some(presentation) = model_load_slow {
+            self.last_notice = Some(presentation);
+        }
+
         // Terminal disposition.
         if ending == Ending::TargetGone {
             myna_core::info_log!("ctrl", "utterance cancelled: dictation target closed");
-            report_critical(self.indicator.as_mut(), gettext("Dictation target closed")).await;
+            self.report_failure(
+                failure::lookup(failure::TARGET_CLOSED)
+                    .expect("TARGET_CLOSED must be registered by default_registry"),
+                None,
+            )
+            .await;
             finalize_state(&mut self.state, DictationState::Cancelled);
         } else {
             match outcome {
@@ -780,6 +948,13 @@ impl DesktopController {
                             quality_of(&stats),
                         ))
                         .await;
+                    // US3/T058 (FR-010): the session-end cue, on every
+                    // successful completion regardless of whether anything
+                    // was actually captured (an empty transcript still ends
+                    // the session the user started) — distinct from the
+                    // `Failure` cue below, which is reserved for a genuine
+                    // error.
+                    self.sound.play(CueKind::SessionEnd);
                     finalize_state(&mut self.state, DictationState::Completed);
                 }
                 Ok(SessionOutcome::Aborted) => {
@@ -791,9 +966,11 @@ impl DesktopController {
                     // the next toggle is a fresh Press, not a stray Release.
                     self.trigger.resync().await;
                 }
-                Ok(SessionOutcome::Failed { message, .. }) => {
+                Ok(SessionOutcome::Failed { code, message }) => {
                     myna_core::info_log!("ctrl", "utterance FAILED: {message}");
-                    report_critical(self.indicator.as_mut(), message).await;
+                    self.report_failure(failure::lookup_by_code(&code), Some(&message))
+                        .await;
+                    self.sound.play(CueKind::Failure);
                     finalize_state(&mut self.state, DictationState::Error);
                     // A hard failure is not a Release edge: the toggle's Press
                     // was consumed with no matching Release, so resync or the
@@ -804,7 +981,9 @@ impl DesktopController {
                 }
                 Err(err) => {
                     myna_core::info_log!("ctrl", "utterance backend ERROR: {err}");
-                    report_critical(self.indicator.as_mut(), err.to_string()).await;
+                    let (presentation, detail) = myna_orchestrator::backend_error_presentation(&err);
+                    self.report_failure(presentation, detail.as_deref()).await;
+                    self.sound.play(CueKind::Failure);
                     finalize_state(&mut self.state, DictationState::Error);
                     // Same toggle-parity fix as the Failed branch above.
                     self.trigger.resync().await;
@@ -824,16 +1003,14 @@ impl DesktopController {
     /// A pre-capture failure (secure field / no target / unreachable backend):
     /// show an error, never capture. `acquire` already rolled back.
     async fn abort_before_capture(&mut self, err: InjectError) {
-        let message = match &err {
-            InjectError::SecureField => gettext("Refusing to type into a password field"),
-            InjectError::NoTarget => gettext("No text field is focused"),
-            // The same message a focus loss gets once capture is running: the
-            // field we were handed stopped being ours before it began.
-            InjectError::FocusLost => gettext("Focus lost"),
-            other => other.to_string(),
-        };
-        myna_core::info_log!("ctrl", "acquire failed, aborting before capture: {message}");
-        report_critical(self.indicator.as_mut(), message).await;
+        let (presentation, detail) = inject_error_presentation(&err);
+        myna_core::info_log!(
+            "ctrl",
+            "acquire failed, aborting before capture: {}",
+            presentation.message
+        );
+        self.report_failure(presentation, detail.as_deref()).await;
+        self.sound.play(CueKind::Failure);
         advance(&mut self.state, DictationState::Error);
         // A pre-capture abort is not a Release edge — the toggle's Press was
         // consumed and never matched, so resync or the next toggle reads as a
@@ -841,19 +1018,46 @@ impl DesktopController {
         self.trigger.resync().await;
         advance(&mut self.state, DictationState::Idle);
     }
+
+    /// Surface a `FailurePresentation`-backed failure (US4, T068/T069,
+    /// FR-024): resolves to the exact same fixed message everywhere this
+    /// presentation is looked up (F2/F3), on the indicator AND recorded as
+    /// the "last notice" (FR-026) so it remains retrievable after a
+    /// `Recoverable` notice auto-dismisses. The stderr copy matters because
+    /// the indicator can be invisible (`--dbus` mode only updates
+    /// `org.myna.Dictation` properties, which nothing renders unless the
+    /// myna-shell extension is installed - the 2026-08-18 silent-death
+    /// debug session). `detail` is optional dynamic context (never primary
+    /// text - see `IndicatorState::from_failure`).
+    async fn report_failure(&mut self, presentation: &'static FailurePresentation, detail: Option<&str>) {
+        let state = IndicatorState::from_failure(presentation, detail);
+        if let IndicatorState::Error { message, .. } = &state {
+            eprintln!("myna-desktop: {message}");
+        }
+        self.indicator.set_state(state).await;
+        self.last_notice = Some(presentation);
+    }
 }
 
-/// Surface a user-visible failure on stderr AND the indicator. The stderr copy
-/// matters because the indicator can be invisible: in `--dbus` mode it only
-/// updates `com.canonical.Myna.Dictation` properties, which nothing renders unless the
-/// myna-shell extension is installed - a failed press then looks like "nothing
-/// happened" (the 2026-08-18 silent-death debug session). stderr always
-/// reaches the terminal/journal the daemon was started from. Recoverable
-/// notices ("No speech detected") are NOT printed - they are normal outcomes.
-async fn report_critical(indicator: &mut dyn Indicator, message: impl Into<String>) {
-    let message = message.into();
-    eprintln!("myna-desktop: {message}");
-    indicator.set_state(IndicatorState::critical(message)).await;
+/// Map an [`InjectError`] to its registered [`FailurePresentation`] plus any
+/// dynamic detail the variant carries (US4, T067/T068; contract F1: "every
+/// known failure source" explicitly includes these four variants).
+fn inject_error_presentation(err: &InjectError) -> (&'static FailurePresentation, Option<String>) {
+    let lookup = |id: &str| {
+        failure::lookup(id).unwrap_or_else(|| panic!("{id} must be registered by default_registry"))
+    };
+    match err {
+        InjectError::SecureField => (lookup(failure::SECURE_FIELD), None),
+        InjectError::NoTarget => (lookup(failure::NO_TARGET), None),
+        // The field we were handed stopped being ours before capture began.
+        // `TARGET_CLOSED` is the registered presentation for exactly this —
+        // its copy reads "closed or lost focus" and its recovery action is
+        // "click back into a text field" — so a pre-capture focus loss and a
+        // mid-utterance one tell the user the same thing.
+        InjectError::FocusLost => (lookup(failure::TARGET_CLOSED), None),
+        InjectError::Unavailable(detail) => (lookup(failure::INJECTION_UNAVAILABLE), Some(detail.clone())),
+        InjectError::Backend(detail) => (lookup(failure::INJECTION_BACKEND_ERROR), Some(detail.clone())),
+    }
 }
 
 /// Enter `Finalizing` from an active state (idempotent — a no-op if already
@@ -1077,6 +1281,21 @@ impl CommitBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── T066: the loading-threshold predicate (hermetic, plain Duration
+    //    values — no real or paused clock needed for the pure logic) ───────
+
+    #[test]
+    fn loading_exceeds_threshold_is_false_before_the_threshold() {
+        assert!(!loading_exceeds_threshold(Duration::from_secs(1)));
+        assert!(!loading_exceeds_threshold(MODEL_LOAD_THRESHOLD - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn loading_exceeds_threshold_is_true_at_and_past_the_threshold() {
+        assert!(loading_exceeds_threshold(MODEL_LOAD_THRESHOLD));
+        assert!(loading_exceeds_threshold(MODEL_LOAD_THRESHOLD + Duration::from_secs(1)));
+    }
 
     // ── T005: state-machine legality ─────────────────────────────────────────
 
@@ -1466,17 +1685,52 @@ mod tests {
 
     #[test]
     fn error_maps_to_error_with_message() {
+        // US4/T068: an unrecognized wire code falls back to
+        // UNKNOWN_BACKEND_FAILURE (contract F1's "never returns None"), with
+        // the raw wire message carried as `detail` (parenthesized) rather
+        // than as the primary text (FR-023: no jargon/codes as primary text).
+        let indicator_state = event_to_indicator(
+            &OrchestratorEvent::Error {
+                code: "x".into(),
+                message: "boom".into(),
+            },
+            DictationState::Recording,
+            Delivery::Landed,
+            InputQuality::Ok,
+        );
+        let Some(IndicatorState::Error {
+            message,
+            recoverable,
+            presentation,
+        }) = indicator_state
+        else {
+            panic!("expected an Error state, got {indicator_state:?}");
+        };
+        assert!(!recoverable);
+        assert!(message.contains("boom"));
         assert_eq!(
-            event_to_indicator(
-                &OrchestratorEvent::Error {
-                    code: "x".into(),
-                    message: "boom".into()
-                },
-                DictationState::Recording,
-                Delivery::Landed,
-                InputQuality::Ok
-            ),
-            Some(IndicatorState::critical("boom"))
+            presentation.map(|p| p.id),
+            Some(myna_core::failure::UNKNOWN_BACKEND_FAILURE)
+        );
+    }
+
+    #[test]
+    fn error_with_a_known_code_maps_to_its_registered_presentation() {
+        let indicator_state = event_to_indicator(
+            &OrchestratorEvent::Error {
+                code: myna_core::failure::CODE_INFERENCE_FAILED.into(),
+                message: "detail from the backend".into(),
+            },
+            DictationState::Recording,
+            Delivery::Landed,
+            InputQuality::Ok,
+        );
+        let Some(IndicatorState::Error { presentation, .. }) = indicator_state else {
+            panic!("expected an Error state, got {indicator_state:?}");
+        };
+        assert_eq!(
+            presentation.map(|p| p.id),
+            Some(myna_core::failure::CODE_INFERENCE_FAILED)
         );
     }
 

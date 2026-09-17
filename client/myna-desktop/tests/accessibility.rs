@@ -1,8 +1,11 @@
 //! Hermetic accessibility-wiring tests (feature 011-accessible-dictation-ux,
 //! US1, T030/T031). No D-Bus / IBus / portal / display — the real `atspi`
 //! bus round-trip is `tests/atspi_hw.rs` (env-gated, T032).
+//!
+//! Also covers US3's sound-cue controller wiring (T056/T058): the last three
+//! tests below are new for this story.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use myna_audio::{AudioFormat, CaptureSource, ScriptedBackend, Step};
 use myna_core::SessionConfig;
@@ -11,8 +14,11 @@ use myna_desktop::accessibility::{AnnouncingIndicator, FakeAnnouncer};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::inject::mock::MockInjector;
+use myna_desktop::sound::{CueKind, FakeSoundCuePlayer, NullSoundCuePlayer};
 use myna_desktop::DesktopController;
-use myna_orchestrator::{run_dictation, FakeBackend, OrchestratorEvent, ScriptedTrigger, StopHandle, TriggerEdge};
+use myna_orchestrator::{
+    run_dictation, FakeBackend, OrchestratorEvent, ScriptedTrigger, StopHandle, TriggerEdge,
+};
 use tokio::sync::mpsc;
 
 fn silent_source() -> CaptureSource {
@@ -120,10 +126,131 @@ async fn announcing_introduces_no_side_effect_on_the_injection_path() {
     let baseline_log = baseline_log.lock().unwrap();
     let wrapped_log = wrapped_log.lock().unwrap();
     assert_eq!(baseline_log.commits, wrapped_log.commits);
+    assert_eq!(baseline_log.preedits, wrapped_log.preedits);
     assert_eq!(baseline_log.acquires, wrapped_log.acquires);
-    assert_eq!(baseline_log.restores, wrapped_log.restores);
-    assert_eq!(baseline_log.cancels, wrapped_log.cancels);
-    assert_eq!(baseline_log.ends, wrapped_log.ends);
-    assert_eq!(baseline_log.activity, wrapped_log.activity);
+    assert_eq!(baseline_log.releases, wrapped_log.releases);
+    // The whole interaction sequence, not just the counts: announcing must not
+    // reorder what the target sees either.
+    assert_eq!(baseline_log.order, wrapped_log.order);
     assert_eq!(baseline.state(), wrapped.state());
+}
+
+// ── T058: a successful utterance plays SessionStart then SessionEnd ────────
+
+#[tokio::test]
+async fn a_successful_utterance_plays_session_start_then_session_end() {
+    let fake_sound = FakeSoundCuePlayer::new();
+    let sound_log = fake_sound.log();
+
+    let mut controller = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(MockInjector::new())
+        .indicator(MockIndicator::new())
+        .session(commit_drain_session())
+        .sound(fake_sound)
+        .build();
+
+    controller.run().await;
+
+    assert_eq!(
+        *sound_log.lock().unwrap(),
+        vec![CueKind::SessionStart, CueKind::SessionEnd],
+        "a successful completion plays the start cue then the end cue — never a Failure cue"
+    );
+}
+
+// ── T058: a failed utterance plays SessionStart then Failure, never
+//    SessionEnd (a genuine error is not a normal session end) ──────────────
+
+#[tokio::test]
+async fn a_failed_utterance_plays_session_start_then_failure_not_session_end() {
+    let fake_sound = FakeSoundCuePlayer::new();
+    let sound_log = fake_sound.log();
+
+    let session = move |events: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let backend = FakeBackend::mid_stream_error("backend_fault", "the backend faulted");
+        let source = CaptureSource::builder(AudioFormat::default())
+            .backend(Box::new(ScriptedBackend::new(vec![Step::Silence(
+                Duration::from_millis(100),
+            )])))
+            .build();
+        let stop = source.stop_handle();
+        let run: SessionRun = Box::pin(async move {
+            let mut sink = ChannelSink(events);
+            run_dictation(&backend, SessionConfig::default(), source, &mut sink).await
+        });
+        (run, stop)
+    };
+
+    let mut controller = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([TriggerEdge::Press]))
+        .injector(MockInjector::new())
+        .indicator(MockIndicator::new())
+        .session(session)
+        .sound(fake_sound)
+        .build();
+
+    controller.run().await;
+
+    assert_eq!(
+        *sound_log.lock().unwrap(),
+        vec![CueKind::SessionStart, CueKind::Failure],
+        "a failed utterance plays the start cue then the failure cue, never a session-end cue"
+    );
+}
+
+// ── T056: the sound-cue integration adds no measurable delay to a full
+//    utterance (FR-011). `SoundCuePlayer::play` is a plain, non-`async fn`
+//    (see `sound::SoundCuePlayer`'s doc comment) so `controller.rs` cannot
+//    `.await` it even by accident — this test is the empirical companion to
+//    that structural guarantee, timed the same way `tests/watermarks.rs`'s
+//    hermetic per-segment watermark is: a generous tolerance, run offline,
+//    that would catch a regression where a future change makes `play()` (or
+//    something called from it) block synchronously in the hot path. The
+//    *real* `PipeWireSoundCuePlayer`'s own near-instant-return guarantee is
+//    exercised separately by `tests/sound_hw.rs`'s env-gated suite (T055).
+
+#[tokio::test]
+async fn sound_cue_wiring_adds_no_measurable_delay_to_the_capture_path() {
+    const TOLERANCE: Duration = Duration::from_millis(50);
+
+    let mut without_sound = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(MockInjector::new())
+        .indicator(MockIndicator::new())
+        .session(commit_drain_session())
+        .sound(NullSoundCuePlayer)
+        .build();
+    let start = Instant::now();
+    without_sound.run().await;
+    let baseline_elapsed = start.elapsed();
+
+    let mut with_sound = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(MockInjector::new())
+        .indicator(MockIndicator::new())
+        .session(commit_drain_session())
+        .sound(FakeSoundCuePlayer::new())
+        .build();
+    let start = Instant::now();
+    with_sound.run().await;
+    let with_sound_elapsed = start.elapsed();
+
+    let delta = with_sound_elapsed
+        .checked_sub(baseline_elapsed)
+        .unwrap_or(Duration::ZERO);
+    assert!(
+        delta < TOLERANCE,
+        "wiring in a sound-cue player added {delta:?}, exceeding the {TOLERANCE:?} tolerance \
+         (baseline {baseline_elapsed:?}, with sound {with_sound_elapsed:?})"
+    );
 }

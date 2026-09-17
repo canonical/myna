@@ -22,9 +22,11 @@ pub mod capture;
 pub mod control;
 pub mod debug;
 pub mod events;
+pub mod failure;
 pub mod protocol;
 pub mod session;
 pub mod settings;
+pub mod term;
 pub mod tier;
 
 pub use audio::{AudioFormat, PcmChunk};
@@ -41,6 +43,7 @@ pub use settings::{
     effective_mode, hardware_tier, resolve_mode, tier_table, AnnouncementVerbosity, Settings,
     SettingsWatch,
 };
+pub use term::{plain_output, plain_output_requested};
 pub use tier::{
     streaming_viable, streaming_viable_here, TierAssessment, TierTable, DEFAULT_RTF_THRESHOLD,
 };

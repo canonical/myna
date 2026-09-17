@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 use gettextrs::gettext;
+use myna_core::failure::FailurePresentation;
 
 pub mod dbus;
 pub mod dynamic;
@@ -40,7 +41,22 @@ pub enum IndicatorState {
     /// (`gtk`/`notify`) currently render every `Error` identically regardless
     /// of this field (out of scope for feature 004); only `indicator::dbus`
     /// branches on it.
-    Error { message: String, recoverable: bool },
+    ///
+    /// `presentation` (US4, T068, FR-024) is `Some` when `message` was built
+    /// from a registered `FailurePresentation` (`crate::failure::lookup`/
+    /// `lookup_by_code`) — carrying the `&'static` presentation through lets
+    /// the announcer (`accessibility::format::format_state_announcement`)
+    /// recover its fixed, `'static` `message`/`recovery_action` text for the
+    /// AT-SPI announcement, which requires a compile-time-`'static` string
+    /// (`AnnouncementText`) rather than the dynamic `message: String` here.
+    /// `None` for the handful of ad-hoc recoverable notices this feature's
+    /// contract deliberately leaves untouched ("No speech detected"/"Focus
+    /// lost" — not part of `contracts/failure-mapping.md`'s scope).
+    Error {
+        message: String,
+        recoverable: bool,
+        presentation: Option<&'static FailurePresentation>,
+    },
 }
 
 impl IndicatorState {
@@ -48,10 +64,15 @@ impl IndicatorState {
     /// behavior of `Error(msg)`, kept as a convenience constructor so call
     /// sites read naturally. Persists until the user acknowledges it (D-Bus:
     /// until dismissed; other indicators: until the session/state clears).
+    ///
+    /// `presentation: None` — for ad-hoc messages outside `contracts/
+    /// failure-mapping.md`'s scope (US4). Registry-backed failures use
+    /// [`Self::from_failure`] instead.
     pub fn critical(message: impl Into<String>) -> Self {
         IndicatorState::Error {
             message: message.into(),
             recoverable: false,
+            presentation: None,
         }
     }
 
@@ -59,10 +80,29 @@ impl IndicatorState {
     /// session that completed with nothing captured. Auto-dismisses on the
     /// D-Bus/HUD path (feature 004); non-D-Bus indicators render it exactly
     /// like a critical error today (out of scope for feature 004).
+    ///
+    /// `presentation: None` — see [`Self::critical`]'s doc comment.
     pub fn recoverable(message: impl Into<String>) -> Self {
         IndicatorState::Error {
             message: message.into(),
             recoverable: true,
+            presentation: None,
+        }
+    }
+
+    /// Build an `Error` state from a registered [`FailurePresentation`] (US4,
+    /// T068, FR-024): every surface that renders this state can recover the
+    /// exact same fixed wording, so indicator/notification/terminal/
+    /// announcement structurally cannot diverge (F2/F3). `detail`, if given,
+    /// is dynamic, non-`'static` context (e.g. an `InjectError::Unavailable`
+    /// backend's own message) appended after the fixed text — never as a
+    /// replacement for it, so the primary text stays plain-language even
+    /// when the detail itself is technical.
+    pub fn from_failure(presentation: &'static FailurePresentation, detail: Option<&str>) -> Self {
+        IndicatorState::Error {
+            message: presentation.render(detail),
+            recoverable: matches!(presentation.severity, myna_core::failure::Severity::Recoverable),
+            presentation: Some(presentation),
         }
     }
 }
@@ -88,10 +128,12 @@ pub fn status_message(state: &IndicatorState, ready_seen: bool) -> String {
         IndicatorState::Error {
             message,
             recoverable: false,
+            ..
         } => gettext("Error: %s").replace("%s", message),
         IndicatorState::Error {
             message,
             recoverable: true,
+            ..
         } => message.clone(),
     }
 }

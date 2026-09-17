@@ -1314,6 +1314,7 @@ dependencies = [
  "myna-core",
  "myna-orchestrator",
  "notify-rust",
+ "pipewire",
  "serde",
  "serde_json",
  "thiserror",
