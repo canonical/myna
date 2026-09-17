@@ -659,9 +659,9 @@ async fn indicator_shows_error_state_on_failure() {
 
     let states = log.lock().unwrap().clone();
     assert!(
-        states
-            .iter()
-            .any(|s| matches!(s, IndicatorState::Error { message, .. } if message.contains("boom"))),
+        states.iter().any(
+            |s| matches!(s, IndicatorState::Error { message, .. } if message.contains("boom"))
+        ),
         "expected an Error containing \"boom\": {states:?}"
     );
 }

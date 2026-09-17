@@ -158,7 +158,11 @@ async fn a_successful_utterance_plays_session_start_then_session_end() {
 
     assert_eq!(
         *sound_log.lock().unwrap(),
-        vec![CueKind::SessionStart, CueKind::StopListening, CueKind::SessionEnd],
+        vec![
+            CueKind::SessionStart,
+            CueKind::StopListening,
+            CueKind::SessionEnd
+        ],
         "a successful completion plays the start cue, then the immediate stop-listening cue \
          on Release, then the end cue once the result is known — never a Failure cue"
     );
@@ -203,7 +207,11 @@ async fn a_failed_utterance_plays_session_start_then_failure_not_session_end() {
 
     assert_eq!(
         *sound_log.lock().unwrap(),
-        vec![CueKind::SessionStart, CueKind::StopListening, CueKind::Failure],
+        vec![
+            CueKind::SessionStart,
+            CueKind::StopListening,
+            CueKind::Failure
+        ],
         "a failed utterance plays the start cue, the stop-listening cue once capture ends, \
          then the failure cue — never a session-end cue"
     );

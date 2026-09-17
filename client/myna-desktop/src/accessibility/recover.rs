@@ -13,7 +13,8 @@ use crate::failure::FailurePresentation;
 const ANNOUNCEMENT_FAILED: FailurePresentation = FailurePresentation {
     id: "accessibility_announcement_failed",
     message: "A screen-reader announcement could not be sent.",
-    recovery_action: "Dictation continues normally; check your accessibility settings if this keeps happening.",
+    recovery_action:
+        "Dictation continues normally; check your accessibility settings if this keeps happening.",
     severity: Severity::Recoverable,
 };
 

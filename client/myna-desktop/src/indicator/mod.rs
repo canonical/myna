@@ -101,7 +101,10 @@ impl IndicatorState {
     pub fn from_failure(presentation: &'static FailurePresentation, detail: Option<&str>) -> Self {
         IndicatorState::Error {
             message: presentation.render(detail),
-            recoverable: matches!(presentation.severity, myna_core::failure::Severity::Recoverable),
+            recoverable: matches!(
+                presentation.severity,
+                myna_core::failure::Severity::Recoverable
+            ),
             presentation: Some(presentation),
         }
     }

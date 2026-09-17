@@ -76,8 +76,8 @@ pub const KEY_SOUND_CUES_ENABLED: &str = "sound-cues-enabled";
 
 /// How much dictation state reaches assistive technology (feature
 /// 011-accessible-dictation-ux, FR-004). Defaults to [`Self::AllTransitions`]
-/// - anything quieter would leave a blind user with no state feedback at all
-/// until they find this setting, which would make SC-001 impossible to
+/// because anything quieter would leave a blind user with no state feedback at
+/// all until they find this setting, which would make SC-001 impossible to
 /// satisfy out of the box.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AnnouncementVerbosity {
@@ -734,7 +734,10 @@ mod tests {
     #[test]
     fn sound_cues_enabled_persists_across_load() {
         let store = test_store();
-        store.settings.set_boolean(KEY_SOUND_CUES_ENABLED, false).unwrap();
+        store
+            .settings
+            .set_boolean(KEY_SOUND_CUES_ENABLED, false)
+            .unwrap();
         assert!(!store.sound_cues_enabled());
     }
 

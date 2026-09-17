@@ -133,4 +133,3 @@ async fn perf_gated_atspi_announcer_is_inert_with_no_listener() {
     );
     eprintln!("atspi connect+announce (no listener): {elapsed:?} (tolerance {TOLERANCE:?})");
 }
-

@@ -186,7 +186,11 @@ fn run_clip(clip: &[i16]) -> Result<(), String> {
     let core = context
         .connect_rc(None)
         .map_err(|e| format!("cannot connect to PipeWire: {e}"))?;
-    myna_core::dbg_log!("sound", "PipeWire loop/context/core ready in {:?}", setup_start.elapsed());
+    myna_core::dbg_log!(
+        "sound",
+        "PipeWire loop/context/core ready in {:?}",
+        setup_start.elapsed()
+    );
 
     let props = properties! {
         *keys::MEDIA_TYPE => "Audio",
@@ -298,12 +302,12 @@ fn run_clip(clip: &[i16]) -> Result<(), String> {
         let main_loop = main_loop.clone();
         move |_| main_loop.quit()
     });
-    let _ = timer
+    if let Err(e) = timer
         .update_timer(Some(MAX_CLIP_THREAD_LIFETIME), None)
         .into_result()
-        .inspect_err(|e| {
-            eprintln!("myna-desktop: sound cue watchdog timer failed to arm: {e}");
-        });
+    {
+        eprintln!("myna-desktop: sound cue watchdog timer failed to arm: {e}");
+    }
 
     main_loop.run();
     drop(timer);
@@ -351,7 +355,11 @@ mod tests {
         let clips: Vec<Vec<i16>> = ALL_CUES.iter().map(|&c| synth_cue(c)).collect();
         for i in 0..clips.len() {
             for j in (i + 1)..clips.len() {
-                assert_ne!(clips[i], clips[j], "{:?} and {:?} render identically", ALL_CUES[i], ALL_CUES[j]);
+                assert_ne!(
+                    clips[i], clips[j],
+                    "{:?} and {:?} render identically",
+                    ALL_CUES[i], ALL_CUES[j]
+                );
             }
         }
     }

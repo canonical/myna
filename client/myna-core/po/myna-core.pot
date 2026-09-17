@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 08:57+0100\n"
+"POT-Creation-Date: 2026-09-17 16:53+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,102 +17,102 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/failure.rs:175
+#: src/failure.rs:173
 msgid "This field is a password field, so dictation can't type into it."
 msgstr ""
 
-#: src/failure.rs:178
+#: src/failure.rs:174
 msgid "Select a text field that isn't a password field, then try again."
 msgstr ""
 
-#: src/failure.rs:184
+#: src/failure.rs:179
 msgid "No text field is selected."
 msgstr ""
 
-#: src/failure.rs:185
+#: src/failure.rs:180
 msgid "Click into a text field, then try again."
 msgstr ""
 
-#: src/failure.rs:191
+#: src/failure.rs:185
 msgid "The service that types text into other apps isn't available right now."
 msgstr ""
 
-#: src/failure.rs:194
+#: src/failure.rs:187
 msgid ""
 "Check that your desktop's input method service is running, then try again."
 msgstr ""
 
-#: src/failure.rs:200
+#: src/failure.rs:193
 msgid "Something went wrong while typing the text into the app."
 msgstr ""
 
-#: src/failure.rs:202 src/failure.rs:226 src/failure.rs:236 src/failure.rs:246
-#: src/failure.rs:256 src/failure.rs:264 src/failure.rs:272 src/failure.rs:282
-#: src/failure.rs:290
+#: src/failure.rs:194 src/failure.rs:214 src/failure.rs:220 src/failure.rs:226
+#: src/failure.rs:232 src/failure.rs:238 src/failure.rs:244 src/failure.rs:250
+#: src/failure.rs:256
 msgid "Try again. If it keeps happening, restart the dictation service."
 msgstr ""
 
-#: src/failure.rs:208
+#: src/failure.rs:199
 msgid "The window you were dictating into closed or lost focus."
 msgstr ""
 
-#: src/failure.rs:209
+#: src/failure.rs:200
 msgid "Click back into a text field, then try again."
 msgstr ""
 
-#: src/failure.rs:214
+#: src/failure.rs:205
 msgid "The speech-recognition service can't be reached."
 msgstr ""
 
-#: src/failure.rs:216
+#: src/failure.rs:206
 msgid "Check that the dictation backend is running, then try again."
 msgstr ""
 
-#: src/failure.rs:223
+#: src/failure.rs:212
 msgid ""
 "The speech-recognition service didn't respond correctly when starting a "
 "session."
 msgstr ""
 
-#: src/failure.rs:233
+#: src/failure.rs:219
 msgid ""
 "The speech-recognition service sent a message dictation didn't understand."
 msgstr ""
 
-#: src/failure.rs:243 src/failure.rs:279
+#: src/failure.rs:225 src/failure.rs:249
 msgid "The connection to the speech-recognition service closed unexpectedly."
 msgstr ""
 
-#: src/failure.rs:253
+#: src/failure.rs:231
 msgid "There was a problem communicating with the speech-recognition service."
 msgstr ""
 
-#: src/failure.rs:262
+#: src/failure.rs:237
 msgid "Something went wrong with the speech-recognition service."
 msgstr ""
 
-#: src/failure.rs:270
+#: src/failure.rs:243
 msgid "Something went wrong inside the dictation service."
 msgstr ""
 
-#: src/failure.rs:288
+#: src/failure.rs:255
 msgid "Speech recognition failed for this utterance."
 msgstr ""
 
-#: src/failure.rs:296
+#: src/failure.rs:261
 msgid "The microphone couldn't be captured."
 msgstr ""
 
-#: src/failure.rs:298
+#: src/failure.rs:263
 msgid ""
 "Check that a microphone is connected and not in use by another app, then try "
 "again."
 msgstr ""
 
-#: src/failure.rs:305
+#: src/failure.rs:269
 msgid "Loading the speech-recognition model is taking longer than usual."
 msgstr ""
 
-#: src/failure.rs:308
+#: src/failure.rs:270
 msgid "Keep waiting, or restart dictation if this continues for a while."
 msgstr ""

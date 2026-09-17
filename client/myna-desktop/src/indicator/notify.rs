@@ -333,7 +333,10 @@ mod tests {
         // `presentation` (T068) - assert the *same source of truth*, not
         // just that both happen to contain the same substrings today (F3).
         let announced = crate::accessibility::format_state_announcement(&state);
-        assert!(announced.announcement.as_str().contains(presentation.message));
+        assert!(announced
+            .announcement
+            .as_str()
+            .contains(presentation.message));
         assert!(announced
             .announcement
             .as_str()
@@ -372,6 +375,9 @@ mod tests {
         // Both surfaces still agree on the fixed primary text - the only
         // difference is the detail suffix, not the presentation's own words.
         assert!(body.contains(presentation.message));
-        assert!(announced.announcement.as_str().contains(presentation.message));
+        assert!(announced
+            .announcement
+            .as_str()
+            .contains(presentation.message));
     }
 }

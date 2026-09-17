@@ -134,7 +134,6 @@ impl AccessibilityAnnouncer for NullAnnouncer {
     async fn set_state(&mut self, _name: AnnouncementText, _description: AnnouncementText) {}
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

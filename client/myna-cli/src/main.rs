@@ -201,7 +201,10 @@ fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, Str
 /// ASCII `!` marker rather than an emoji/coloured glyph so the line reads
 /// correctly with colour disabled and under a screen reader (FR-028/029;
 /// coordinates with, doesn't duplicate, US5's terminal-output work).
-fn render_failure(presentation: &myna_core::failure::FailurePresentation, detail: Option<&str>) -> String {
+fn render_failure(
+    presentation: &myna_core::failure::FailurePresentation,
+    detail: Option<&str>,
+) -> String {
     format!("[error] {}", presentation.render(detail))
 }
 
@@ -521,7 +524,10 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, message }) => {
-                eprintln!("{}", render_failure(myna_core::failure::lookup_by_code(&code), Some(&message)));
+                eprintln!(
+                    "{}",
+                    render_failure(myna_core::failure::lookup_by_code(&code), Some(&message))
+                );
                 exit = ExitCode::FAILURE;
             }
             Err(e) => {
@@ -607,7 +613,10 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
             Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, message }) => {
-                eprintln!("{}", render_failure(myna_core::failure::lookup_by_code(&code), Some(&message)));
+                eprintln!(
+                    "{}",
+                    render_failure(myna_core::failure::lookup_by_code(&code), Some(&message))
+                );
             }
             Err(e) => {
                 let (presentation, detail) = myna_orchestrator::backend_error_presentation(&e);
@@ -649,8 +658,7 @@ mod tests {
 
     #[test]
     fn render_failure_contains_the_presentation_message_and_recovery_action() {
-        let presentation =
-            myna_core::failure::lookup(myna_core::failure::BACKEND_CONNECT).unwrap();
+        let presentation = myna_core::failure::lookup(myna_core::failure::BACKEND_CONNECT).unwrap();
         let line = render_failure(presentation, None);
         assert!(line.contains(presentation.message));
         assert!(line.contains(presentation.recovery_action));
@@ -658,9 +666,8 @@ mod tests {
 
     #[test]
     fn render_failure_matches_failure_presentation_render_exactly() {
-        let presentation =
-            myna_core::failure::lookup(myna_core::failure::CODE_CAPTURE_FAILED)
-                .unwrap_or_else(|| myna_core::failure::lookup_by_code("capture_failed"));
+        let presentation = myna_core::failure::lookup(myna_core::failure::CODE_CAPTURE_FAILED)
+            .unwrap_or_else(|| myna_core::failure::lookup_by_code("capture_failed"));
         let line = render_failure(presentation, Some("dynamic detail"));
         assert!(line.ends_with(&presentation.render(Some("dynamic detail"))));
     }

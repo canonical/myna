@@ -780,9 +780,11 @@ const ANNOUNCE_COALESCE_WINDOW: Duration = Duration::from_millis(300);
 /// along with the rest of the in-Shell renderer surface (T170); the extension
 /// now announces via `extensions/myna-shell/announcer.js`'s
 /// `DictationAnnouncer`, hosted by `host.js`.
-async fn build_announcer(
-) -> RecoveringAnnouncer<CoalescingAnnouncer<VerbosityGatedAnnouncer<Box<dyn AccessibilityAnnouncer>, GSettingsPreferences>>>
-{
+async fn build_announcer() -> RecoveringAnnouncer<
+    CoalescingAnnouncer<
+        VerbosityGatedAnnouncer<Box<dyn AccessibilityAnnouncer>, GSettingsPreferences>,
+    >,
+> {
     let inner: Box<dyn AccessibilityAnnouncer> =
         match myna_desktop::accessibility::atspi::AtspiAnnouncer::connect().await {
             Ok(atspi) => Box::new(atspi),

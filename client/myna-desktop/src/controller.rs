@@ -23,8 +23,8 @@ use tokio::sync::{mpsc, watch};
 
 use crate::indicator::{Indicator, IndicatorState};
 use crate::inject::{FocusEvent, InjectError, Injector, Target};
-use crate::sound::{CueKind, NullSoundCuePlayer, SoundCuePlayer};
 use crate::live::Live;
+use crate::sound::{CueKind, NullSoundCuePlayer, SoundCuePlayer};
 use async_trait::async_trait;
 use myna_core::failure::{self, FailurePresentation};
 use myna_orchestrator::{
@@ -586,9 +586,7 @@ impl DesktopControllerBuilder {
             state: DictationState::Idle,
             preedit: self.preedit,
             auto_stop: self.auto_stop,
-            sound: self
-                .sound
-                .unwrap_or_else(|| Box::new(NullSoundCuePlayer)),
+            sound: self.sound.unwrap_or_else(|| Box::new(NullSoundCuePlayer)),
             last_notice: None,
         }
     }
@@ -991,7 +989,8 @@ impl DesktopController {
                 }
                 Err(err) => {
                     myna_core::info_log!("ctrl", "utterance backend ERROR: {err}");
-                    let (presentation, detail) = myna_orchestrator::backend_error_presentation(&err);
+                    let (presentation, detail) =
+                        myna_orchestrator::backend_error_presentation(&err);
                     self.report_failure(presentation, detail.as_deref()).await;
                     self.sound.play(CueKind::Failure);
                     finalize_state(&mut self.state, DictationState::Error);
@@ -1039,7 +1038,11 @@ impl DesktopController {
     /// myna-shell extension is installed - the 2026-08-18 silent-death
     /// debug session). `detail` is optional dynamic context (never primary
     /// text - see `IndicatorState::from_failure`).
-    async fn report_failure(&mut self, presentation: &'static FailurePresentation, detail: Option<&str>) {
+    async fn report_failure(
+        &mut self,
+        presentation: &'static FailurePresentation,
+        detail: Option<&str>,
+    ) {
         let state = IndicatorState::from_failure(presentation, detail);
         if let IndicatorState::Error { message, .. } = &state {
             eprintln!("myna-desktop: {message}");
@@ -1065,8 +1068,13 @@ fn inject_error_presentation(err: &InjectError) -> (&'static FailurePresentation
         // "click back into a text field" — so a pre-capture focus loss and a
         // mid-utterance one tell the user the same thing.
         InjectError::FocusLost => (lookup(failure::TARGET_CLOSED), None),
-        InjectError::Unavailable(detail) => (lookup(failure::INJECTION_UNAVAILABLE), Some(detail.clone())),
-        InjectError::Backend(detail) => (lookup(failure::INJECTION_BACKEND_ERROR), Some(detail.clone())),
+        InjectError::Unavailable(detail) => {
+            (lookup(failure::INJECTION_UNAVAILABLE), Some(detail.clone()))
+        }
+        InjectError::Backend(detail) => (
+            lookup(failure::INJECTION_BACKEND_ERROR),
+            Some(detail.clone()),
+        ),
     }
 }
 
@@ -1298,13 +1306,17 @@ mod tests {
     #[test]
     fn loading_exceeds_threshold_is_false_before_the_threshold() {
         assert!(!loading_exceeds_threshold(Duration::from_secs(1)));
-        assert!(!loading_exceeds_threshold(MODEL_LOAD_THRESHOLD - Duration::from_millis(1)));
+        assert!(!loading_exceeds_threshold(
+            MODEL_LOAD_THRESHOLD - Duration::from_millis(1)
+        ));
     }
 
     #[test]
     fn loading_exceeds_threshold_is_true_at_and_past_the_threshold() {
         assert!(loading_exceeds_threshold(MODEL_LOAD_THRESHOLD));
-        assert!(loading_exceeds_threshold(MODEL_LOAD_THRESHOLD + Duration::from_secs(1)));
+        assert!(loading_exceeds_threshold(
+            MODEL_LOAD_THRESHOLD + Duration::from_secs(1)
+        ));
     }
 
     // ── T005: state-machine legality ─────────────────────────────────────────

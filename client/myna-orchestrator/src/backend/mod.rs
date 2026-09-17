@@ -117,20 +117,27 @@ impl From<WireError> for BackendError {
 /// `myna_core::failure::lookup_by_code` rather than a fixed id.
 pub fn backend_error_presentation(
     err: &BackendError,
-) -> (&'static myna_core::failure::FailurePresentation, Option<String>) {
+) -> (
+    &'static myna_core::failure::FailurePresentation,
+    Option<String>,
+) {
     use myna_core::failure;
     let lookup = |id: &str| {
         failure::lookup(id).unwrap_or_else(|| panic!("{id} must be registered by default_registry"))
     };
     match err {
         BackendError::Connect(detail) => (lookup(failure::BACKEND_CONNECT), Some(detail.clone())),
-        BackendError::Handshake(detail) => (lookup(failure::BACKEND_HANDSHAKE), Some(detail.clone())),
+        BackendError::Handshake(detail) => {
+            (lookup(failure::BACKEND_HANDSHAKE), Some(detail.clone()))
+        }
         BackendError::Rejected { code, message } => {
             (failure::lookup_by_code(code), Some(message.clone()))
         }
         BackendError::Wire(wire_err) => (lookup(failure::BACKEND_WIRE), Some(wire_err.to_string())),
         BackendError::Closed => (lookup(failure::BACKEND_CLOSED), None),
-        BackendError::Transport(detail) => (lookup(failure::BACKEND_TRANSPORT), Some(detail.clone())),
+        BackendError::Transport(detail) => {
+            (lookup(failure::BACKEND_TRANSPORT), Some(detail.clone()))
+        }
     }
 }
 

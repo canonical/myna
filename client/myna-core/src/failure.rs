@@ -99,8 +99,7 @@ impl FailureRegistry {
     /// loop, so the leak is bounded.
     pub fn register(&mut self, presentation: FailurePresentation) {
         let spoken: &'static str = Box::leak(
-            format!("{} {}", presentation.message, presentation.recovery_action)
-                .into_boxed_str(),
+            format!("{} {}", presentation.message, presentation.recovery_action).into_boxed_str(),
         );
         let leaked: &'static FailurePresentation = Box::leak(Box::new(presentation));
         self.presentations.insert(leaked.id, leaked);
@@ -135,10 +134,10 @@ impl FailureRegistry {
     /// [`Self::spoken`], keyed by an open-ended wire code (see
     /// [`Self::lookup_by_code`]'s fallback behavior).
     pub fn spoken_by_code(&self, code: &str) -> &'static str {
-        self.spoken(code)
-            .unwrap_or_else(|| self.spoken(UNKNOWN_BACKEND_FAILURE).expect(
-                "UNKNOWN_BACKEND_FAILURE must always be registered by default_registry",
-            ))
+        self.spoken(code).unwrap_or_else(|| {
+            self.spoken(UNKNOWN_BACKEND_FAILURE)
+                .expect("UNKNOWN_BACKEND_FAILURE must always be registered by default_registry")
+        })
     }
 }
 
@@ -171,12 +170,8 @@ pub fn default_registry() -> FailureRegistry {
     let mut r = FailureRegistry::new();
     r.register(FailurePresentation {
         id: SECURE_FIELD,
-        message: tr(
-            "This field is a password field, so dictation can't type into it.",
-        ),
-        recovery_action: tr(
-            "Select a text field that isn't a password field, then try again.",
-        ),
+        message: tr("This field is a password field, so dictation can't type into it."),
+        recovery_action: tr("Select a text field that isn't a password field, then try again."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
@@ -187,9 +182,7 @@ pub fn default_registry() -> FailureRegistry {
     });
     r.register(FailurePresentation {
         id: INJECTION_UNAVAILABLE,
-        message: tr(
-            "The service that types text into other apps isn't available right now.",
-        ),
+        message: tr("The service that types text into other apps isn't available right now."),
         recovery_action: tr(
             "Check that your desktop's input method service is running, then try again.",
         ),
@@ -198,9 +191,7 @@ pub fn default_registry() -> FailureRegistry {
     r.register(FailurePresentation {
         id: INJECTION_BACKEND_ERROR,
         message: tr("Something went wrong while typing the text into the app."),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
@@ -212,9 +203,7 @@ pub fn default_registry() -> FailureRegistry {
     r.register(FailurePresentation {
         id: BACKEND_CONNECT,
         message: tr("The speech-recognition service can't be reached."),
-        recovery_action: tr(
-            "Check that the dictation backend is running, then try again.",
-        ),
+        recovery_action: tr("Check that the dictation backend is running, then try again."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
@@ -222,73 +211,49 @@ pub fn default_registry() -> FailureRegistry {
         message: tr(
             "The speech-recognition service didn't respond correctly when starting a session.",
         ),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_WIRE,
-        message: tr(
-            "The speech-recognition service sent a message dictation didn't understand.",
-        ),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        message: tr("The speech-recognition service sent a message dictation didn't understand."),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_CLOSED,
-        message: tr(
-            "The connection to the speech-recognition service closed unexpectedly.",
-        ),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        message: tr("The connection to the speech-recognition service closed unexpectedly."),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_TRANSPORT,
-        message: tr(
-            "There was a problem communicating with the speech-recognition service.",
-        ),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        message: tr("There was a problem communicating with the speech-recognition service."),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: UNKNOWN_BACKEND_FAILURE,
         message: tr("Something went wrong with the speech-recognition service."),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_INTERNAL,
         message: tr("Something went wrong inside the dictation service."),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_CONNECTION_CLOSED,
-        message: tr(
-            "The connection to the speech-recognition service closed unexpectedly.",
-        ),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        message: tr("The connection to the speech-recognition service closed unexpectedly."),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_INFERENCE_FAILED,
         message: tr("Speech recognition failed for this utterance."),
-        recovery_action: tr(
-            "Try again. If it keeps happening, restart the dictation service.",
-        ),
+        recovery_action: tr("Try again. If it keeps happening, restart the dictation service."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
@@ -301,12 +266,8 @@ pub fn default_registry() -> FailureRegistry {
     });
     r.register(FailurePresentation {
         id: MODEL_LOAD_SLOW,
-        message: tr(
-            "Loading the speech-recognition model is taking longer than usual.",
-        ),
-        recovery_action: tr(
-            "Keep waiting, or restart dictation if this continues for a while.",
-        ),
+        message: tr("Loading the speech-recognition model is taking longer than usual."),
+        recovery_action: tr("Keep waiting, or restart dictation if this continues for a while."),
         severity: Severity::Recoverable,
     });
     r

@@ -26,7 +26,9 @@ fn gate_skips_cleanly_when_unset() {
     if pipewire_enabled() {
         eprintln!("MYNA_PIPEWIRE_TESTS set: the real playback-stream assertions run below");
     } else {
-        eprintln!("skipping sound_hw: set MYNA_PIPEWIRE_TESTS=1 with a real PipeWire graph reachable");
+        eprintln!(
+            "skipping sound_hw: set MYNA_PIPEWIRE_TESTS=1 with a real PipeWire graph reachable"
+        );
     }
 }
 

@@ -84,7 +84,9 @@ use async_trait::async_trait;
 use atspi::connection::AccessibilityConnection;
 use atspi::events::object::AnnouncementEvent;
 use atspi::proxy::socket::SocketProxy;
-use atspi::{Interface, InterfaceSet, ObjectRef, ObjectRefOwned, Politeness, RelationType, Role, StateSet};
+use atspi::{
+    Interface, InterfaceSet, ObjectRef, ObjectRefOwned, Politeness, RelationType, Role, StateSet,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -343,12 +345,7 @@ impl AtspiAnnouncer {
             .await
             .map_err(|e| AnnounceError(format!("could not export the accessible object: {e}")))?;
         object_server
-            .at(
-                path.clone(),
-                ApplicationObject {
-                    id: Mutex::new(-1),
-                },
-            )
+            .at(path.clone(), ApplicationObject { id: Mutex::new(-1) })
             .await
             .map_err(|e| AnnounceError(format!("could not export the application object: {e}")))?;
 
@@ -379,7 +376,11 @@ impl AtspiAnnouncer {
 
     /// The current accessible name (FR-001), as last set by `set_state`.
     pub fn name(&self) -> String {
-        self.state.lock().expect("accessible state poisoned").name.clone()
+        self.state
+            .lock()
+            .expect("accessible state poisoned")
+            .name
+            .clone()
     }
 
     /// The current accessible description (FR-001), as last set by
@@ -427,4 +428,3 @@ impl AccessibilityAnnouncer for AtspiAnnouncer {
         state.description = description.as_str().to_string();
     }
 }
-

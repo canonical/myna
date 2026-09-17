@@ -156,7 +156,10 @@ mod tests {
             format_state_announcement(&IndicatorState::critical("x")).severity,
             Some(Severity::Critical)
         );
-        assert_eq!(format_state_announcement(&IndicatorState::Hidden).severity, None);
+        assert_eq!(
+            format_state_announcement(&IndicatorState::Hidden).severity,
+            None
+        );
     }
 
     // ── T068: a presentation-backed Error announces the specific fixed
@@ -168,7 +171,10 @@ mod tests {
         let state = IndicatorState::from_failure(presentation, None);
         let a = format_state_announcement(&state);
         assert!(a.announcement.as_str().contains(presentation.message));
-        assert!(a.announcement.as_str().contains(presentation.recovery_action));
+        assert!(a
+            .announcement
+            .as_str()
+            .contains(presentation.recovery_action));
         assert_eq!(a.description.as_str(), presentation.recovery_action);
         assert_eq!(a.severity, Some(Severity::Critical));
     }

@@ -49,5 +49,7 @@ pub use fsm::{
 };
 pub use myna_core;
 pub use runner::run_dictation;
-pub use sink::{render_event_line, CollectingSink, OutputStream, RenderedLine, StdoutSink, TextSink};
+pub use sink::{
+    render_event_line, CollectingSink, OutputStream, RenderedLine, StdoutSink, TextSink,
+};
 pub use trigger::{ScriptedTrigger, StdinTrigger, Trigger, TriggerEdge};

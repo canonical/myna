@@ -183,8 +183,7 @@ mod tests {
     async fn failures_only_suppresses_transitions_but_not_failures() {
         let fake = FakeAnnouncer::new();
         let log = fake.log();
-        let mut gated =
-            VerbosityGatedAnnouncer::new(fake, FixedVerbosity(Verbosity::FailuresOnly));
+        let mut gated = VerbosityGatedAnnouncer::new(fake, FixedVerbosity(Verbosity::FailuresOnly));
 
         gated
             .announce(AnnouncementText::new("listening"), None)
@@ -292,4 +291,3 @@ mod tests {
         assert_eq!(calls.len(), 2, "no coalescing across separate windows");
     }
 }
-

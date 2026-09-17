@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 17:28+0100\n"
+"POT-Creation-Date: 2026-09-17 16:53+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -255,7 +255,7 @@ msgstr ""
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:1667
+#: src/app.rs:1718
 msgid "Could not save the setting"
 msgstr ""
 
@@ -1204,74 +1204,99 @@ msgstr ""
 msgid "before the model was ready"
 msgstr ""
 
-#: src/myna_settings.rs:68
+#: src/myna_settings.rs:76
 msgid "Automatic"
 msgstr ""
 
-#: src/myna_settings.rs:69
+#: src/myna_settings.rs:77
 msgid "As you speak"
 msgstr ""
 
-#: src/myna_settings.rs:70
+#: src/myna_settings.rs:78
 msgid "When you stop"
 msgstr ""
 
-#: src/myna_settings.rs:71
+#: src/myna_settings.rs:79
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:72
+#: src/myna_settings.rs:80
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:73
+#: src/myna_settings.rs:81
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:74
+#: src/myna_settings.rs:82
 msgid "Progress"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:33
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:40
 msgid "When to transcribe"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:34
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
 msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends; Automatic picks per "
 "machine from the measured RTF table."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:43
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Spoken language"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:44
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
 msgid ""
 "A BCP-47-ish code (en, fr, zh) for the language you dictate in. The backend "
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the backend decide."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:54
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:61
 msgid "Indicator style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:55
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:62
 msgid ""
 "All four render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter, "
 "Progress a plain progress bar."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:65
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:72
 msgid "Stop after silence (seconds)"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:66
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:73
 msgid ""
 "With tap-to-start activation, end the dictation session on its own after "
 "this many seconds without speech. 0 keeps it running until the next tap. "
-"Hold-to-talk always ends with the key."
+"Hold-to-talk always ends with the key. Myna signals that it is about to stop "
+"before it does, so an automatic end is never silent or a surprise."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
+msgid "How much dictation state reaches assistive technology"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
+msgid ""
+"All transitions: announce every state change. This is the default, because "
+"anything quieter leaves someone using a screen reader with no feedback at "
+"all until they find this setting. Failures only: announce errors and "
+"notices, nothing else. Off: announce nothing, though the current state can "
+"still be queried at any time."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:103
+msgid "Play sound cues"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:104
+msgid ""
+"Play a short sound when dictation starts, stops, or fails. Every cue also "
+"has a visual and an assistive-technology equivalent, so turning this off "
+"never leaves a change unsignalled."
 msgstr ""

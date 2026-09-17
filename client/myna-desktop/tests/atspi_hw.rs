@@ -134,13 +134,18 @@ async fn the_exported_accessible_object_answers_introspection_quickly() {
         ),
     )
     .await
-    .expect("GetRole must answer within 3s, not hang (the exact regression this test guards against)")
+    .expect(
+        "GetRole must answer within 3s, not hang (the exact regression this test guards against)",
+    )
     .expect("GetRole should succeed against the exported accessible object");
     let role: u32 = role_reply
         .body()
         .deserialize()
         .expect("GetRole's reply body should deserialize as a u32 role");
-    assert_eq!(role, 75, "the exported object's role should be Role::Application");
+    assert_eq!(
+        role, 75,
+        "the exported object's role should be Role::Application"
+    );
 
     let name_reply = tokio::time::timeout(
         timeout,
@@ -168,4 +173,3 @@ async fn the_exported_accessible_object_answers_introspection_quickly() {
         "the exported Name property should reflect the last set_state() call"
     );
 }
-

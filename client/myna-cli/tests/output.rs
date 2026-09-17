@@ -185,7 +185,10 @@ fn a_mid_stream_error_uses_the_exact_registered_failure_presentation_text() {
     // `render()` call every other surface uses.
     assert_eq!(
         line.text,
-        format!("[error] {}", presentation.render(Some("raw backend detail")))
+        format!(
+            "[error] {}",
+            presentation.render(Some("raw backend detail"))
+        )
     );
 }
 
