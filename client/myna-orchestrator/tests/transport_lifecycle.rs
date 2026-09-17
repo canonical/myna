@@ -389,6 +389,29 @@ async fn backend_error_is_seen_while_outbound_audio_is_backpressured() {
     }
 }
 
+#[tokio::test]
+async fn an_error_sent_just_before_the_server_hangs_up_outlives_the_failed_write() {
+    for dialect in DIALECTS {
+        let server = Server::bind(dialect);
+        let (mic, _) = congesting_mic();
+        let mut sink = CollectingSink::default();
+        let serve = async {
+            let mut conn = server.accept().await;
+            conn.ready().await;
+            conn.await_client_blocked().await;
+            conn.error("server_stalled").await;
+            // Hanging up with audio unread fails the client's pending write.
+            drop(conn);
+        };
+        let (outcome, ()) = bounded(
+            "the error surfacing after the hang-up",
+            futures_util::future::join(server.run(mic, &mut sink), serve),
+        )
+        .await;
+        assert_eq!(failed_with(outcome).0, "server_stalled", "{dialect:?}");
+    }
+}
+
 /// Drop the runner once `ready_to_drop` resolves, then require the capture
 /// device released and the connection closed.
 async fn dropping_the_runner_releases_everything(dialect: Dialect, backend_ready: bool) {

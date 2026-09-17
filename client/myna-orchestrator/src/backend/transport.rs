@@ -69,11 +69,12 @@ async fn pump<D: Dialect>(ws: Ws, mut dialect: D, mut outbox: Outbox, events: Ev
             }
             (writer, sent, finish) = in_flight(&mut writing), if writing.is_some() => {
                 writing = None;
-                if sent.is_err() {
-                    return;
+                // A failed write stops writing, not reading: the peer may
+                // have sent its error just before hanging up.
+                if sent.is_ok() {
+                    dialect.written(finish);
+                    idle = Some(writer);
                 }
-                dialect.written(finish);
-                idle = Some(writer);
             }
             item = outbox.queue.recv(), if outbound_open && idle.is_some() => match item {
                 Some(item) => {
