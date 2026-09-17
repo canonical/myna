@@ -1,0 +1,46 @@
+{
+  "states": [
+    {
+      "id": "idle",
+      "channels": { "visual": ["shell_hud"], "non_visual": ["programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "loading",
+      "channels": { "visual": ["shell_hud"], "non_visual": ["atspi_announcement", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "recording",
+      "channels": { "visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "transcribing",
+      "channels": { "visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "finalizing",
+      "channels": { "visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "notice",
+      "channels": { "visual": ["shell_hud", "gtk_overlay", "notification"], "non_visual": ["atspi_announcement", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    },
+    {
+      "id": "error",
+      "channels": { "visual": ["shell_hud", "gtk_overlay", "notification", "terminal_text"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"] },
+      "colour_only": false,
+      "sound_only": false
+    }
+  ]
+}

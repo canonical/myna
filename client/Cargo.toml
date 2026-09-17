@@ -38,3 +38,8 @@ pipewire = { version = "0.10", features = ["v0_3_44"] }
 # dependency everywhere the workspace is built. Kept at the gtk-rs release the
 # optional `ui-gtk` GTK4 stack already pins, so there is one glib in the tree.
 gio = "0.22"
+# Pure-Rust, zbus-based AT-SPI2 protocol implementation (feature
+# 011-accessible-dictation-ux, spec research.md R1). Built on zbus; used to
+# emit content-free AT-SPI "Announcement" events and register a queryable
+# accessible object from myna-desktop's headless (non-GTK) indicator path.
+atspi = "0.30"

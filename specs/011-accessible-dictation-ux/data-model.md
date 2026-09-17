@@ -96,18 +96,27 @@ the build the moment either goes empty/true (SC-002).
 
 ## `AccessibilityPreferenceSet`
 
-Read-only from this feature's perspective (owned/persisted by the separate
-settings feature, spec Assumptions):
+Read-only from this feature's perspective; persisted in the real
+`org.myna.dictation` GSettings schema
+(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`) that
+`feat(client): Move settings into GSettings, with a snap-config default`
+already established for `streaming-mode`/`language`/`activation`/`hotkey`,
+extended here with three additive keys — resolving what was an open
+dependency (project-plan T54) into a concrete, shared store:
 
-| Field | Type | Default (FR-004) |
-|---|---|---|
-| `verbosity` | `Off \| FailuresOnly \| AllTransitions` | `AllTransitions` |
-| `sound_cues_enabled` | `bool` (+ per-cue override) | ship enabled (spec Assumptions) |
-| `silence_auto_stop_seconds` | `Option<u32>` | existing T59 default |
+| Field | Schema key | Type | Default (FR-004) |
+|---|---|---|---|
+| `verbosity` | `announcement-verbosity` | enum `off \| failures-only \| all-transitions` (`myna_core::settings::AnnouncementVerbosity`) | `all-transitions` |
+| `sound_cues_enabled` | `sound-cues-enabled` | `bool` | `true` (spec Assumptions) |
+| `silence_auto_stop_seconds` | `silence-auto-stop-seconds` | `u32` | `15` (existing T59 default) |
 
-Every consuming process (`myna-desktop`, `myna-shell`, `myna-cli`) reads the
-same GSettings/dconf keys directly — no new IPC introduced by this feature
-(project-plan T54 dependency, named not solved).
+Every consuming process (`myna-desktop` via `myna_core::settings::Store`,
+`myna-shell`, `myna-cli`) reads the same GSettings keys directly — the
+cross-process consistency FR-004/FR-010/FR-018 depend on is therefore a
+property of the shared schema, not something this feature has to build or
+merely assume. A missing schema (an unpackaged build where
+`make install-schema` was never run) falls back to the identical FR-004
+defaults via `Settings::default()`, never to a different or absent value.
 
 ## `FailurePresentation`
 

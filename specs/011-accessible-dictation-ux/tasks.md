@@ -67,7 +67,7 @@ scaffold — all shared by every user story below.
 ### Preferences seam
 
 - [X] T007 [P] Hermetic test in `client/myna-desktop/src/preferences.rs`: a `Preferences` trait (`verbosity()`, `sound_cues_enabled()`, `silence_auto_stop()`) has a `DefaultPreferences` impl returning `AllTransitions`, `true`, and the existing T59 default, matching FR-004/spec Assumptions exactly. **Write first, observe fail (trait doesn't exist), then implement**
-- [X] T008 Implement `Preferences` trait + `DefaultPreferences` in `client/myna-desktop/src/preferences.rs`. Satisfies T007. Document in a doc-comment that a GSettings-backed implementation is the integration point for the separate settings feature (project-plan T54) and is out of scope here.
+- [X] T008 Implement `Preferences` trait + `DefaultPreferences` in `client/myna-desktop/src/preferences.rs`. Satisfies T007. *(Superseded/extended after a rebase onto `integration-220627` picked up a real `org.myna.dictation` GSettings store: added `announcement-verbosity`/`sound-cues-enabled`/`silence-auto-stop-seconds` keys to the existing schema (`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`), extended `myna_core::settings::{Settings,Store}` to read/write them, and added `GSettingsPreferences` as the real production `Preferences` impl \u2014 see research.md R7. `DefaultPreferences` is kept as the dependency-free hermetic-test seam.)*
 
 ### `AccessibilityAnnouncer` seam (contracts/announcer.md A1–A5)
 

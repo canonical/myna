@@ -148,3 +148,38 @@ via the `MYNA_ATSPI_TESTS`-gated suite.
 **Rationale**: This matches the spec's own instruction (FR-030) to record the
 gap rather than assume it closed, and mirrors feature 004's identical
 treatment of GNOME Shell's headless-testing ceiling.
+
+## R7 — Preference storage (project-plan T54) — resolved during implementation
+
+**Decision**: This feature's plan originally treated preference storage as an
+open dependency of the separate, out-of-scope settings-UI feature (spec
+Assumptions), consistent with project-plan T54 being unresolved at planning
+time. Between planning and implementation, `integration-220627` gained
+`feat(client): Move settings into GSettings, with a snap-config default`: a
+real `org.myna.dictation` GSettings schema
+(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`) and Rust
+wrapper (`myna_core::settings::Store`/`Settings`), already used for
+`streaming-mode`/`language`/`activation`/`hotkey`. This feature rebased onto
+that work and extended the same schema with `announcement-verbosity`,
+`sound-cues-enabled`, and `silence-auto-stop-seconds` rather than treating the
+store as still-hypothetical. `client/myna-desktop/src/preferences.rs`'s
+`GSettingsPreferences` reads it via `Settings::load()`; the missing-schema
+fallback (`Settings::default()`) was fixed during this work to return the
+FR-004-mandated defaults for every field (a real bug caught by test: a naive
+`#[derive(Default)]` gives `bool`/`u32` their primitive zero values, not the
+schema's actual defaults).
+
+**Rationale**: Building on the real, already-shipped store is strictly better
+than the originally-planned wait-and-assume posture: it gives FR-004/FR-010/
+FR-018's cross-process consistency requirement a concrete, already-tested
+mechanism instead of a named-but-unsolved dependency, at no cost to this
+feature's scope (the settings *UI* remains genuinely out of scope — this
+feature only adds schema keys and a reader, never a control surface).
+
+**Alternatives considered**: Keeping `preferences.rs`'s original
+`DefaultPreferences`-only design and waiting for the settings feature to
+define storage — rejected once the storage question was no longer open;
+doing so would have meant deliberately ignoring already-landed, directly
+applicable work. `DefaultPreferences` is kept (not removed) as the
+dependency-free implementor hermetic seam tests use directly, so hermetic
+tests never need a real or fake GSettings backend.

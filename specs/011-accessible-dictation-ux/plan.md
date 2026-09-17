@@ -60,12 +60,26 @@ the genuine `org.a11y` bus — the same red-green split already used for
   (reduced-motion, high-contrast, text-scale, accent-color — accent/reduced-motion
   reading already exists from feature 004's `accent.js`).
 
-**Storage**: N/A for this feature's own state. Reuses whatever store the
-out-of-scope settings feature persists announcement verbosity / sound-cue /
-silence-auto-stop preferences into (GSettings/dconf, consistent with the
-project's existing use for `--install-shortcut`); this feature only needs
-read access to those three keys from every consuming process (spec Assumptions,
-project-plan T54).
+**Storage**: The `org.myna.dictation` GSettings schema
+(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`,
+`myna_core::settings::Store`) — established by
+`feat(client): Move settings into GSettings, with a snap-config default`,
+landed on `integration-220627` after this feature's initial planning pass and
+picked up on rebase. This resolves what was an open dependency
+(project-plan T54, "no shared store today") into a concrete answer: this
+feature adds three keys to that existing schema —
+`announcement-verbosity` (enum, default `all-transitions`),
+`sound-cues-enabled` (boolean, default `true`), and
+`silence-auto-stop-seconds` (uint, default `15`) — rather than inventing a
+separate store or waiting on the still out-of-scope settings-*UI* feature
+(spec Assumptions: the UI is separate; the store it will eventually write
+through already exists). `myna-desktop`'s `preferences::GSettingsPreferences`
+reads it via `myna_core::settings::Settings::load()`, falling back to the
+identical FR-004-mandated defaults when the schema is not installed
+(`Settings::default()`) — the same fallback contract every other key in that
+store already has. The Shell extension and `myna-cli` read the same schema
+directly, giving FR-004/FR-010/FR-018's cross-process consistency requirement
+a real, shared answer rather than a named-but-unsolved dependency.
 
 **Testing**:
 - `myna-desktop`/`myna-cli` (Rust, TDD, constitution I): hermetic `cargo test`

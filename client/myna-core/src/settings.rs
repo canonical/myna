@@ -67,6 +67,26 @@ pub const KEY_SILENCE_TIMEOUT: &str = "silence-timeout";
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
 
+/// How much dictation state reaches assistive technology (feature
+/// 011-accessible-dictation-ux, FR-004).
+pub const KEY_ANNOUNCEMENT_VERBOSITY: &str = "announcement-verbosity";
+
+/// Optional short audible cues on session start/end/failure (FR-010).
+pub const KEY_SOUND_CUES_ENABLED: &str = "sound-cues-enabled";
+
+/// How much dictation state reaches assistive technology (feature
+/// 011-accessible-dictation-ux, FR-004). Defaults to [`Self::AllTransitions`]
+/// - anything quieter would leave a blind user with no state feedback at all
+/// until they find this setting, which would make SC-001 impossible to
+/// satisfy out of the box.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnnouncementVerbosity {
+    Off,
+    FailuresOnly,
+    #[default]
+    AllTransitions,
+}
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,10 +99,25 @@ pub struct Settings {
     /// unset (the schema default applies).
     pub hud_style: Option<String>,
     /// Seconds of silence after which a toggle session ends itself; `0` = never.
+    ///
+    /// Also what feature 011-accessible-dictation-ux's FR-018/FR-021
+    /// (project-plan T59) budgets for making an impending automatic end
+    /// perceivable before it happens.
     pub silence_timeout: u32,
+    /// Feature 011-accessible-dictation-ux, FR-004.
+    pub announcement_verbosity: AnnouncementVerbosity,
+    /// FR-010.
+    pub sound_cues_enabled: bool,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
+///
+/// Hand-written rather than derived because `bool`/`u32` have no per-field way
+/// to express "true"/"30" through a derive, and a missing-schema fallback that
+/// gave `sound_cues_enabled: false` would silently contradict FR-010's
+/// mandated default exactly when the schema is absent. Every field here is the
+/// same value the schema itself defaults to (asserted by the `*_defaults_to_*`
+/// tests).
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -90,6 +125,8 @@ impl Default for Settings {
             language: None,
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
+            announcement_verbosity: AnnouncementVerbosity::default(),
+            sound_cues_enabled: true,
         }
     }
 }
@@ -112,6 +149,8 @@ impl Settings {
             language: store.text(KEY_LANGUAGE),
             hud_style: store.text(KEY_HUD_STYLE),
             silence_timeout: store.seconds(KEY_SILENCE_TIMEOUT),
+            announcement_verbosity: store.announcement_verbosity(),
+            sound_cues_enabled: store.sound_cues_enabled(),
         }
     }
 }
@@ -171,6 +210,19 @@ impl Store {
     /// An unsigned-seconds key. The schema bounds it; nothing to interpret.
     pub fn seconds(&self, key: &str) -> u32 {
         self.settings.uint(key)
+    }
+
+    /// The announcement-verbosity preference (feature
+    /// 011-accessible-dictation-ux, FR-004); an unset key reads the schema
+    /// default (`all-transitions`).
+    pub fn announcement_verbosity(&self) -> AnnouncementVerbosity {
+        verbosity_from_nick(self.settings.string(KEY_ANNOUNCEMENT_VERBOSITY).as_str())
+            .unwrap_or_default()
+    }
+
+    /// Whether optional sound cues are enabled (FR-010).
+    pub fn sound_cues_enabled(&self) -> bool {
+        self.settings.boolean(KEY_SOUND_CUES_ENABLED)
     }
 }
 
@@ -321,6 +373,18 @@ fn mode_from_nick(nick: &str) -> Option<StreamingMode> {
     }
 }
 
+/// The `AnnouncementVerbosity` nicks in the schema (feature
+/// 011-accessible-dictation-ux, FR-004) - same one-contract-two-directions
+/// treatment as the streaming-mode nicks.
+fn verbosity_from_nick(nick: &str) -> Option<AnnouncementVerbosity> {
+    match nick {
+        "off" => Some(AnnouncementVerbosity::Off),
+        "failures-only" => Some(AnnouncementVerbosity::FailuresOnly),
+        "all-transitions" => Some(AnnouncementVerbosity::AllTransitions),
+        _ => None,
+    }
+}
+
 /// Resolve the user's mode preference against the tier gate (FR-002/FR-003):
 /// - `Streaming` → always streaming (user accepted potential latency)
 /// - `Batch` → always batch
@@ -421,6 +485,15 @@ mod tests {
             StreamingMode::Auto => "auto",
             StreamingMode::Streaming => "streaming",
             StreamingMode::Batch => "batch",
+        }
+    }
+
+    /// Likewise for the announcement-verbosity nicks (FR-004).
+    fn verbosity_nick(verbosity: AnnouncementVerbosity) -> &'static str {
+        match verbosity {
+            AnnouncementVerbosity::Off => "off",
+            AnnouncementVerbosity::FailuresOnly => "failures-only",
+            AnnouncementVerbosity::AllTransitions => "all-transitions",
         }
     }
 
@@ -603,6 +676,66 @@ mod tests {
             mode_from_nick("supersonic").unwrap_or_default(),
             StreamingMode::Auto
         );
+    }
+
+    // ── Feature 011-accessible-dictation-ux: accessibility preference keys ──
+
+    /// FR-004: an untouched store defaults to `all-transitions` - anything
+    /// quieter out of the box would make SC-001 impossible to satisfy on
+    /// first attempt.
+    #[test]
+    fn announcement_verbosity_defaults_to_all_transitions() {
+        assert_eq!(
+            test_store().announcement_verbosity(),
+            AnnouncementVerbosity::AllTransitions
+        );
+        assert_eq!(
+            Settings::default().announcement_verbosity,
+            AnnouncementVerbosity::AllTransitions
+        );
+    }
+
+    #[test]
+    fn every_verbosity_nick_round_trips_through_the_schema() {
+        let store = test_store();
+        for verbosity in [
+            AnnouncementVerbosity::Off,
+            AnnouncementVerbosity::FailuresOnly,
+            AnnouncementVerbosity::AllTransitions,
+        ] {
+            store
+                .settings
+                .set_string(KEY_ANNOUNCEMENT_VERBOSITY, verbosity_nick(verbosity))
+                .expect("schema accepts nick");
+            assert_eq!(store.announcement_verbosity(), verbosity);
+            assert_eq!(
+                verbosity_from_nick(verbosity_nick(verbosity)),
+                Some(verbosity)
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_verbosity_nick_falls_back_to_the_default() {
+        assert_eq!(verbosity_from_nick("shout"), None);
+        assert_eq!(
+            verbosity_from_nick("shout").unwrap_or_default(),
+            AnnouncementVerbosity::AllTransitions
+        );
+    }
+
+    /// FR-010: sound cues ship enabled by default (spec Assumptions).
+    #[test]
+    fn sound_cues_default_to_enabled() {
+        assert!(test_store().sound_cues_enabled());
+        assert!(Settings::default().sound_cues_enabled);
+    }
+
+    #[test]
+    fn sound_cues_enabled_persists_across_load() {
+        let store = test_store();
+        store.settings.set_boolean(KEY_SOUND_CUES_ENABLED, false).unwrap();
+        assert!(!store.sound_cues_enabled());
     }
 
     /// `Store::open` must answer `None` rather than aborting when the schema is

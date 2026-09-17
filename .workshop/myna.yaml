@@ -56,7 +56,9 @@ sdks:
   # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
   # env-gated integration-tests against — plus GJS and a GNOME Shell session
   # for the feature 004 (GNOME Shell indicator) extension contract tests and
-  # acceptance. See .workshop/desktop/sdk.yaml.
+  # acceptance, and an AT-SPI accessibility bus for feature
+  # 011-accessible-dictation-ux's MYNA_ATSPI_TESTS suite. See
+  # .workshop/desktop/sdk.yaml.
   - name: project-desktop
 
 # Named automation, runnable in or out of CI with `workshop run myna <action>`.
