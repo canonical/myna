@@ -200,8 +200,8 @@ async fn apply(
 ) {
     for action in actions {
         match action {
-            Action::ForwardAudio(chunk) => *outbound = Some(Outbound::Audio(chunk)),
-            Action::SendFinish => *outbound = Some(Outbound::Finish),
+            Action::ForwardAudio(chunk) => queue(outbound, Outbound::Audio(chunk)),
+            Action::SendFinish => queue(outbound, Outbound::Finish),
             Action::SendAbort => {
                 if let Some(sink) = sink {
                     sink.abort();
@@ -212,6 +212,13 @@ async fn apply(
             }
         }
     }
+}
+
+/// Transport items come only from client input, which is read only while
+/// the slot is empty, so one can never overwrite another.
+fn queue(outbound: &mut Option<Outbound>, item: Outbound) {
+    debug_assert!(outbound.is_none(), "{item:?} would overwrite {outbound:?}");
+    *outbound = Some(item);
 }
 
 #[cfg(test)]
