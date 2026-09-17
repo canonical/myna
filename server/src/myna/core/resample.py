@@ -27,6 +27,10 @@ from myna.core.audio import PcmFramer
 # ~150 multiply-adds per output sample: nothing, at 16 kHz.
 _HALF_WINDOW = 32
 
+# Input samples converted per step: the polyphase gather materialises
+# outputs x taps float64s, so a whole 1 MiB append at once is gigabytes.
+_BLOCK_SAMPLES = 2048
+
 
 class Resampler:
     """Streaming ``src_hz`` -> ``dst_hz`` converter for mono S16LE PCM bytes."""
@@ -63,9 +67,13 @@ class Resampler:
         whole = self._framer.feed(pcm)
         if self._identity:
             return whole
-        samples = np.frombuffer(whole, dtype="<i2").astype(np.float64)
-        self._buf = np.concatenate([self._buf, samples])
-        return self._produce()
+        samples = np.frombuffer(whole, dtype="<i2")
+        out = []
+        for start in range(0, len(samples), _BLOCK_SAMPLES):
+            block = samples[start : start + _BLOCK_SAMPLES].astype(np.float64)
+            self._buf = np.concatenate([self._buf, block])
+            out.append(self._produce())
+        return b"".join(out)
 
     def flush(self) -> bytes:
         """Drain the tail at the utterance boundary and start afresh: the

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import json
 import socket
 import threading
@@ -20,6 +21,7 @@ from typing import Any
 
 import pytest
 from websockets.asyncio.client import ClientConnection, unix_connect
+from websockets.asyncio.server import Server
 from websockets.exceptions import ConnectionClosed
 
 from myna.core import (
@@ -30,6 +32,7 @@ from myna.core import (
     TranscriptionDone,
     TranscriptionError,
     serve_unix,
+    transport_ws,
 )
 from myna.core import wire_ie115 as w
 from myna.core.protocol import PROTOCOL_VERSION
@@ -38,6 +41,7 @@ from myna.core.transport_ws import _BOUNDARY, _Ingress
 from myna.testbed import FakeAdapter
 
 BOUND = 5.0
+MIB = 1 << 20
 SECOND = bytes(range(256)) * 125  # one second of 16 kHz PCM
 # Many times what the server buffers plus what the kernel absorbs, so the
 # sender stalls unless the server keeps reading; see open_session.
@@ -56,10 +60,10 @@ class Scenario:
         self._settled = threading.Event()
 
     @contextlib.asynccontextmanager
-    async def serving(self, adapter: Any) -> AsyncIterator[None]:
-        async with serve_unix(adapter, self.path):
+    async def serving(self, adapter: Any) -> AsyncIterator[Server]:
+        async with serve_unix(adapter, self.path) as server:
             try:
-                yield
+                yield server
             except BaseException as exc:
                 self.errors.append(exc)
                 self._settled.set()
@@ -88,13 +92,28 @@ def scenario(tmp_path: Path) -> Scenario:
     return Scenario(tmp_path)
 
 
+@pytest.fixture
+def ingresses(monkeypatch: pytest.MonkeyPatch) -> list[_Ingress]:
+    """Every ingress queue the server opens, to inspect its occupancy."""
+    opened: list[_Ingress] = []
+
+    class Recorded(_Ingress):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+    monkeypatch.setattr(transport_ws, "_Ingress", Recorded)
+    return opened
+
+
 async def open_session(path: Path, dialect: str, rate: int = 16_000) -> ClientConnection:
     # A small send buffer keeps the kernel from absorbing megabytes of audio
     # the server has not read, so a stalled reader shows as a stalled sender.
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
     sock.connect(str(path))
-    ws = await unix_connect(sock=sock, ping_interval=None)
+    # No compression: repetitive test audio would deflate to nothing.
+    ws = await unix_connect(sock=sock, ping_interval=None, compression=None)
     assert json.loads(await ws.recv())["type"] == w.SESSION_CREATED
     config = SessionConfig(audio_format=AudioFormat(sample_rate_hz=rate))
     if dialect == "internal":
@@ -385,6 +404,88 @@ def test_an_internal_session_with_a_degenerate_format_still_runs(scenario):
     scenario.run(main)
 
 
+@pytest.mark.parametrize("dialect", DIALECTS)
+def test_a_graceful_finish_after_backpressure_delivers_every_byte_in_order(
+    dialect, scenario, ingresses
+):
+    """A slow adapter backpressures the client instead of growing the queue
+    past its byte budget, and nothing accepted is lost or reordered."""
+
+    def frames() -> Iterable[bytes]:
+        return (bytes([i % 251]) * 32_000 for i in range(FLOOD))
+
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, dialect)
+            frames_then_finish = itertools.chain(frames(), [finish_frame(dialect)])
+            feed = asyncio.create_task(send_all(ws, frames_then_finish))
+            assert await stalls(feed), "the queue never filled"
+            (ingress,) = ingresses
+            assert MIB - 32_000 < ingress._bytes <= MIB
+            adapter.release.set()
+            assert (await terminal(ws)).get("type") != w.ERROR
+            await asyncio.wait_for(feed, BOUND)
+            await ws.close()
+        assert b"".join(adapter.sessions[0]) == b"".join(frames())
+
+    scenario.run(main)
+
+
+def test_the_server_buffers_at_most_one_unread_websocket_frame(scenario):
+    """websockets' own receive buffer sits in front of the ingress budget: at
+    its default of 16 frames of up to 1 MiB each it would dwarf the queue."""
+    path = scenario.path
+
+    async def main() -> None:
+        async with scenario.serving(FakeAdapter()) as server:
+            ws = await open_session(path, "internal")
+            (connection,) = server.connections
+            assert connection.recv_messages.high == 1
+            await ws.close()
+
+    scenario.run(main)
+
+
+def test_an_oversized_normalized_append_is_split_to_the_budget(scenario, monkeypatch, ingresses):
+    """8 kHz upsampled to 16 kHz doubles an append past the budget: it is
+    split into whole-sample pieces that fit, rather than waiting forever for
+    room it can never have, and the pieces reach the adapter in order."""
+    from myna.core.resample import Resampler
+
+    capacity = 64_000
+    monkeypatch.setattr(transport_ws, "_INGRESS_CAPACITY_BYTES", capacity)
+    path = scenario.path
+    pcm = ramp(8_000, 3.0)  # 48 kB here, 96 kB at the adapter's rate
+    whole = Resampler(8_000, 16_000)
+    expected = whole.feed(pcm) + whole.flush()
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115", 8_000)
+            await ws.send(pcm)
+            (ingress,) = ingresses
+
+            async def blocked_on_the_second_piece() -> None:
+                while not ingress._putters:
+                    await asyncio.sleep(0.01)
+
+            await asyncio.wait_for(blocked_on_the_second_piece(), BOUND)
+            assert ingress._bytes == capacity
+            adapter.release.set()
+            await ws.send(finish_frame("ie115"))
+            assert (await terminal(ws))["type"] == w.TRANSCRIPTION_COMPLETED
+            await ws.close()
+        heard = adapter.sessions[0]
+        assert max(len(chunk) for chunk in heard) == capacity
+        assert b"".join(heard) == expected
+
+    scenario.run(main)
+
+
 # --- the queue itself ------------------------------------------------------------
 
 FMT = AudioFormat()
@@ -415,24 +516,20 @@ async def test_close_wakes_a_waiting_consumer():
 
 
 async def test_a_full_queue_blocks_the_producer_until_the_consumer_takes_one():
-    ingress = _Ingress(FMT, maxsize=2)
+    ingress = _Ingress(FMT, capacity_bytes=4)
     await ingress.put(b"a0")
     await ingress.put(b"a1")
     putter = asyncio.create_task(ingress.put(b"a2"))
     await settle()
     assert not putter.done()
-    assert await ingress.get() == PcmChunk(b"a0", FMT)
+    assert await ingress.get() == PcmChunk(b"a0a1", FMT)
     await asyncio.wait_for(putter, BOUND)
     ingress.close()
-    assert [await ingress.get() for _ in range(3)] == [
-        PcmChunk(b"a1", FMT),
-        PcmChunk(b"a2", FMT),
-        None,
-    ]
+    assert [await ingress.get() for _ in range(2)] == [PcmChunk(b"a2", FMT), None]
 
 
 async def test_abort_releases_a_blocked_producer_and_discards_the_backlog():
-    ingress = _Ingress(FMT, maxsize=1)
+    ingress = _Ingress(FMT, capacity_bytes=2)
     await ingress.put(b"a0")
     putter = asyncio.create_task(ingress.put(b"a1"))
     await settle()
@@ -452,7 +549,7 @@ async def test_abort_wakes_a_waiting_consumer():
 
 
 async def test_a_cancelled_producer_queues_nothing_and_loses_no_wakeup():
-    ingress = _Ingress(FMT, maxsize=1)
+    ingress = _Ingress(FMT, capacity_bytes=2)
     await ingress.put(b"a0")
     cancelled = asyncio.create_task(ingress.put(b"xx"))
     waiting = asyncio.create_task(ingress.put(b"a1"))
@@ -463,3 +560,94 @@ async def test_a_cancelled_producer_queues_nothing_and_loses_no_wakeup():
     await asyncio.wait_for(waiting, BOUND)
     ingress.close()
     assert [await ingress.get() for _ in range(2)] == [PcmChunk(b"a1", FMT), None]
+
+
+async def fill(ingress: _Ingress, pieces: Iterable[bytes]) -> int:
+    """Put pieces until a put blocks; how many went in without waiting."""
+    for count, piece in enumerate(pieces):
+        putter = asyncio.create_task(ingress.put(piece))
+        await settle()
+        if not putter.done():
+            putter.cancel()
+            return count
+    raise AssertionError("never blocked")
+
+
+async def test_normal_appends_fill_one_mebibyte_of_pcm():
+    ingress = _Ingress(FMT)
+    accepted = await fill(ingress, itertools.repeat(bytes(3200)))
+    assert accepted == MIB // 3200
+    assert ingress._bytes == accepted * 3200
+
+
+async def test_an_append_larger_than_the_budget_is_split_into_pieces_that_fit():
+    ingress = _Ingress(FMT)
+    pcm = bytes(range(256)) * (MIB * 5 // 2 // 256)
+    putter = asyncio.create_task(ingress.put(pcm))
+    await settle()
+    assert not putter.done()
+    assert ingress._bytes == MIB
+    pieces = []
+    while (chunk := await ingress.get()) is not None:
+        pieces.append(chunk.data)
+        if putter.done():
+            ingress.close()
+    assert [len(piece) for piece in pieces] == [MIB, MIB, MIB // 2]
+    assert b"".join(pieces) == pcm
+
+
+async def test_pieces_of_a_split_append_are_whole_frames():
+    ingress = _Ingress(AudioFormat(channels=2), capacity_bytes=10)
+    putter = asyncio.create_task(ingress.put(bytes(20)))
+    sizes = []
+    while len(sizes) < 3:
+        sizes.append(len((await ingress.get()).data))
+    await asyncio.wait_for(putter, BOUND)
+    assert sizes == [8, 8, 4]
+
+
+def test_a_capacity_must_hold_a_whole_frame():
+    with pytest.raises(ValueError):
+        _Ingress(AudioFormat(channels=2), capacity_bytes=3)
+
+
+async def test_one_byte_appends_are_bounded_in_bytes_and_in_items():
+    """A client sending a byte at a time must not turn the byte budget into
+    hundreds of thousands of queued objects: tiny chunks coalesce."""
+    from myna.core.audio import PcmFramer
+
+    capacity = 64_000
+    ingress = _Ingress(FMT, capacity_bytes=capacity)
+    framer = PcmFramer(2)
+    for _ in range(capacity):
+        await ingress.put(framer.feed(b"\x01"))
+    assert ingress._bytes == capacity
+    assert len(ingress._items) == capacity // 3200
+    assert await fill(ingress, itertools.repeat(b"\x01\x01")) == 0
+
+
+async def test_coalescing_keeps_order_and_never_crosses_a_boundary():
+    ingress = _Ingress(FMT)
+    for piece in (b"a0", b"a1", b"a2"):
+        await ingress.put(piece)
+    await ingress.put_boundary()
+    await ingress.put(b"b0")
+    await ingress.put(bytes(3198))
+    await ingress.put(b"c0")  # the tail is full: a new chunk
+    ingress.close()
+    got = []
+    while (item := await ingress.get()) is not None:
+        got.append(item if item is _BOUNDARY else item.data)
+    assert got == [b"a0a1a2", _BOUNDARY, b"b0" + bytes(3198), b"c0"]
+
+
+async def test_a_second_commit_waits_until_the_first_is_consumed():
+    """Commits carry no audio, so the byte budget alone would let a commit
+    flood queue without bound."""
+    ingress = _Ingress(FMT)
+    await ingress.put_boundary()
+    second = asyncio.create_task(ingress.put_boundary())
+    await settle()
+    assert not second.done()
+    assert await ingress.get() is _BOUNDARY
+    await asyncio.wait_for(second, BOUND)

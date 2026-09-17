@@ -100,13 +100,16 @@ from myna.core.wire_ie115 import (
 
 _TERMINAL = ("transcription.done", "transcription.error")
 
-# Bound on the audio backlog the server holds per connection, in chunks
-# (~26 s at the client's ~100 ms chunks). Bounded, not unbounded, per the
-# bounded-buffer invariant: when a slow adapter falls behind on long-form
+# Bound on the audio backlog the server holds per connection, in bytes of
+# the adapter's PCM (~33 s at 16 kHz S16LE mono). Bounded, not unbounded, per
+# the bounded-buffer invariant: when a slow adapter falls behind on long-form
 # dictation, `put` blocks the WS reader, and backpressure propagates to the
 # client through the socket instead of growing server memory. This queue is
 # also where a future overload/lag signal (open item, Matias) would be
 # measured — design that signal against this bound.
+#
+# websockets buffers frames the reader has not taken yet, up to `max_queue`
+# frames of up to `max_size` (1 MiB) each; one keeps that in proportion.
 #
 # That backpressure is why neither end runs the websockets keepalive
 # (`ping_interval=None` on every unix_serve/unix_connect below): a pong is an
@@ -115,7 +118,11 @@ _TERMINAL = ("transcription.done", "transcription.error")
 # connection mid-utterance (reproduced 2026-09-03 with fast-fed long-form
 # audio at a 15 s SilenceCut arm). On a Unix socket a dead peer is an
 # immediate EOF anyway; the keepalive only exists for TCP paths.
-_AUDIO_QUEUE_MAXSIZE = 256
+_INGRESS_CAPACITY_BYTES = 1 << 20
+_WS_MAX_QUEUE_FRAMES = 1
+# Queued chunks smaller than this merge, so tiny appends cannot turn the
+# byte budget into hundreds of thousands of objects.
+_COALESCE_BYTES = 3200
 
 _log = logging.getLogger(__name__)
 
@@ -128,7 +135,9 @@ _BOUNDARY = _Boundary()
 
 
 class _Ingress:
-    """The bounded queue between a connection's frame reader and its adapter.
+    """The byte-bounded queue between a connection's frame reader and its
+    adapter. A put larger than the capacity is split into whole-frame pieces
+    that fit; at most one boundary is pending at a time.
 
     Ending it never waits on capacity, so every exit path can end it:
     ``close`` is the end of the client's audio (the adapter drains what was
@@ -136,18 +145,28 @@ class _Ingress:
     audio is discarded, a blocked ``put`` returns, later ones discard).
     """
 
-    def __init__(self, audio_format: AudioFormat, maxsize: int = _AUDIO_QUEUE_MAXSIZE) -> None:
+    def __init__(
+        self, audio_format: AudioFormat, capacity_bytes: int = _INGRESS_CAPACITY_BYTES
+    ) -> None:
+        # The adapter, not the framing, rejects a degenerate format.
+        self.frame_bytes = max(1, audio_format.frame_bytes)
+        if capacity_bytes < self.frame_bytes:
+            raise ValueError(f"{capacity_bytes} bytes hold no {self.frame_bytes}-byte frame")
         self._format = audio_format
-        self._maxsize = maxsize
+        self._capacity = capacity_bytes
+        self._piece_bytes = capacity_bytes - capacity_bytes % self.frame_bytes
         self._items: deque[bytes | _Boundary] = deque()
+        self._bytes = 0
+        self._boundaries = 0
         self._closed = False
         self._aborted = False
         self._putters: list[asyncio.Future[None]] = []
         self._getters: list[asyncio.Future[None]] = []
 
     async def put(self, pcm: bytes) -> None:
-        if pcm:
-            await self._put(pcm)
+        """Queue whole frames of PCM, waiting for room piece by piece."""
+        for start in range(0, len(pcm), self._piece_bytes):
+            await self._put(pcm[start : start + self._piece_bytes])
 
     async def put_boundary(self) -> None:
         await self._put(_BOUNDARY)
@@ -160,7 +179,11 @@ class _Ingress:
             return None
         item = self._items.popleft()
         self._wake(self._putters)
-        return item if isinstance(item, _Boundary) else PcmChunk(data=item, format=self._format)
+        if isinstance(item, _Boundary):
+            self._boundaries -= 1
+            return item
+        self._bytes -= len(item)
+        return PcmChunk(data=item, format=self._format)
 
     def close(self) -> None:
         self._closed = True
@@ -169,15 +192,31 @@ class _Ingress:
     def abort(self) -> None:
         self._aborted = True
         self._items.clear()
+        self._bytes = 0
+        self._boundaries = 0
         self._wake(self._putters)
         self._wake(self._getters)
 
+    def _has_room(self, item: bytes | _Boundary) -> bool:
+        if isinstance(item, _Boundary):
+            return self._boundaries == 0
+        return self._bytes + len(item) <= self._capacity
+
     async def _put(self, item: bytes | _Boundary) -> None:
-        while not self._aborted and len(self._items) >= self._maxsize:
+        while not self._aborted and not self._has_room(item):
             await self._wait(self._putters)
         if self._aborted:
             return
-        self._items.append(item)
+        if isinstance(item, _Boundary):
+            self._boundaries += 1
+            self._items.append(item)
+        else:
+            self._bytes += len(item)
+            tail = self._items[-1] if self._items else None
+            if isinstance(tail, bytes) and len(tail) + len(item) <= _COALESCE_BYTES:
+                self._items[-1] = tail + item
+            else:
+                self._items.append(item)
         self._wake(self._getters)
 
     @staticmethod
@@ -232,16 +271,29 @@ async def serve_unix(
     session. Use as an async context manager. Either binds ``socket_path``, or
     serves on a pre-bound ``sock`` (e.g. from ``systemd_socket()``)."""
     handler = _SessionHandler(service)
-    # ping_interval=None: see the note at `_AUDIO_QUEUE_MAXSIZE`.
+    # ping_interval=None and max_queue: see the note at `_INGRESS_CAPACITY_BYTES`.
     if sock is not None:
-        cm = unix_serve(handler.handle, sock=sock, ping_interval=None)
+        cm = unix_serve(
+            handler.handle, sock=sock, ping_interval=None, max_queue=_WS_MAX_QUEUE_FRAMES
+        )
     else:
-        cm = unix_serve(handler.handle, path=str(socket_path), ping_interval=None)
+        cm = unix_serve(
+            handler.handle,
+            path=str(socket_path),
+            ping_interval=None,
+            max_queue=_WS_MAX_QUEUE_FRAMES,
+        )
     async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
         try:
             yield server
         finally:
             handler.abort_sessions()
+
+
+async def _discard_frames(ws: ServerConnection) -> None:
+    with contextlib.suppress(ConnectionClosed):
+        async for _ in ws:
+            pass
 
 
 class _SessionHandler:
@@ -256,24 +308,29 @@ class _SessionHandler:
             ingress.abort()
 
     def _open_ingress(self, audio_format: AudioFormat) -> _Ingress:
-        ingress = _Ingress(audio_format)
+        ingress = _Ingress(audio_format, _INGRESS_CAPACITY_BYTES)
         self._ingresses.add(ingress)
         return ingress
 
     async def _end_connection(
         self, ws: ServerConnection, ingress: _Ingress, reader: asyncio.Future[None]
     ) -> None:
-        """The one exit of both dialects. The reader keeps reading (and
-        discarding) through the close handshake, then is cancelled."""
+        """The one exit of both dialects. Frames are read and discarded
+        through the close handshake: with the reader gone, a client still
+        sending would otherwise hold the transport paused and the close would
+        wait out its timeout."""
         ingress.abort()
         self._ingresses.discard(ingress)
+        reader.cancel()
+        await asyncio.wait({reader})
+        if not reader.cancelled() and (exc := reader.exception()) is not None:
+            _log.warning("ingress reader failed", exc_info=exc)
+        discard = asyncio.ensure_future(_discard_frames(ws))
         try:
             await ws.close()
         finally:
-            reader.cancel()
-            await asyncio.wait({reader})
-            if not reader.cancelled() and (exc := reader.exception()) is not None:
-                _log.warning("ingress reader failed", exc_info=exc)
+            discard.cancel()
+            await asyncio.wait({discard})
 
     async def handle(self, ws: ServerConnection) -> None:
         """One connection. The server speaks first: one ``session.created``
@@ -541,8 +598,7 @@ class _SessionHandler:
         ends the audio, every other text frame is ignored; events out via
         ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
         ingress = self._open_ingress(config.audio_format)
-        # The adapter, not the framing, rejects a degenerate format.
-        framer = PcmFramer(max(1, config.audio_format.frame_bytes))
+        framer = PcmFramer(ingress.frame_bytes)
 
         async def read_frames() -> None:
             try:

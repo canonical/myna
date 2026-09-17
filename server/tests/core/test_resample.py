@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import tracemalloc
 
 import numpy as np
 import pytest
@@ -206,3 +207,23 @@ def test_full_scale_input_clips_instead_of_wrapping():
 def test_rejects_a_rate_that_is_not_positive(bad):
     with pytest.raises(ValueError):
         Resampler(*bad)
+
+
+@pytest.mark.parametrize("src_hz", [8_000, 24_000])
+@pytest.mark.parametrize("size", [1 << 18, 1 << 20])
+def test_a_large_append_converts_in_bounded_memory(src_hz, size):
+    """The polyphase gather materialises taps x outputs; over a whole 1 MiB
+    append at once that is gigabytes. Converted in blocks, the working set
+    stays a few MiB beyond the output itself, and the samples are unchanged."""
+    pcm = sine(440, src_hz, size / 2 / src_hz)
+    blocked = Resampler(src_hz, 16_000)
+    tracemalloc.start()
+    try:
+        out = blocked.feed(pcm)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak - len(out) < 16 << 20
+    small = Resampler(src_hz, 16_000)
+    pieces = [small.feed(pcm[i : i + 4800]) for i in range(0, len(pcm), 4800)]
+    assert out == b"".join(pieces)
