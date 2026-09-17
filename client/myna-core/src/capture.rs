@@ -75,7 +75,7 @@ impl AudioSource for Box<dyn AudioSource> {
 /// path. Dropping the stream instead is the abort path.
 ///
 /// Plain flag by design: backends poll it (promptness contract ~250 ms), which
-/// works from a tokio task, a thread, or a realtime callback alike.
+/// works from a tokio task, a thread, or a loop timer alike.
 #[derive(Clone, Debug, Default)]
 pub struct StopHandle(Arc<AtomicBool>);
 

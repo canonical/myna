@@ -29,9 +29,10 @@ pub struct CaptureSpec {
     pub stop: StopHandle,
 }
 
-/// Where a backend delivers PCM. `push` is synchronous and never blocks —
-/// callable from a tokio task, a plain thread, or a realtime callback.
-/// Overload is the buffer's problem, never the backend's.
+/// Where a backend delivers PCM. `push` is synchronous and bounded but not
+/// realtime-safe: it copies, allocates and takes the ring's mutex, so call it
+/// from a tokio task or a plain thread, never a realtime callback. Overload
+/// is the buffer's problem, never the backend's.
 pub struct Producer {
     ring: Arc<Ring>,
     stats: watch::Sender<AudioStats>,

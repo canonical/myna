@@ -1,8 +1,10 @@
 //! [`PipeWireBackend`] (plan T52) — native live capture via `pipewire-rs`,
 //! behind the [`CaptureBackend`] seam. No subprocess: a dedicated PipeWire
 //! main-loop thread owns a capture `Stream`, and its `process` callback pushes
-//! PCM straight into the adapter's ring via [`Producer::push`] (which never
-//! blocks — overload is the ring's problem).
+//! PCM into the adapter's ring via [`Producer::push`]. The stream is not
+//! `RT_PROCESS`: PipeWire dispatches `process` on that same loop thread, so
+//! callbacks, timers and teardown are serialized and share state through
+//! `Rc`/`RefCell` without locking on a realtime thread.
 //!
 //! Replaces the `pw-record` subprocess backend (feature
 //! 002-native-pipewire-backend, FR-016). Adds what the subprocess couldn't do
@@ -307,8 +309,8 @@ fn run_capture(
         Err(e) => fail_open!(e),
     }
 
-    // Producer + terminal fault shared with the loop callbacks (single thread,
-    // so Rc<RefCell<..>> is sound and never contended).
+    // Producer + terminal fault shared with the loop callbacks. Sound because
+    // every callback runs on this thread (no RT_PROCESS, asserted in process).
     let producer = Rc::new(RefCell::new(Some(producer)));
     let fault: Rc<RefCell<Option<CaptureError>>> = Rc::new(RefCell::new(None));
 
@@ -349,7 +351,7 @@ fn run_capture(
     let buffers_seen = Rc::new(Cell::new(0u64));
 
     let stop = spec.stop.clone();
-    let _listener = stream
+    let listener = stream
         .add_local_listener_with_user_data(())
         .state_changed({
             let main_loop = main_loop.clone();
@@ -386,7 +388,13 @@ fn run_capture(
             let selection = selection.clone();
             let in_channels = stream_channels as usize;
             let out_channels = spec.format.channels as usize;
+            let loop_thread = std::thread::current().id();
             move |stream, _ud| {
+                debug_assert_eq!(
+                    std::thread::current().id(),
+                    loop_thread,
+                    "process callback must run on the capture loop thread"
+                );
                 while let Some(mut buffer) = stream.dequeue_buffer() {
                     buffers_seen.set(buffers_seen.get() + 1);
                     let datas = buffer.datas_mut();
@@ -421,7 +429,7 @@ fn run_capture(
             }
         })
         .register();
-    let _listener = match _listener {
+    let listener = match listener {
         Ok(l) => l,
         Err(e) => {
             fail_open!(CaptureError::Backend(format!(
@@ -494,7 +502,7 @@ fn run_capture(
     // otherwise does: an unresolvable `node.name` must fault (FR-004, C4), not
     // silently capture the default device. DONT_RECONNECT drives the stream to
     // the error state, which `state_changed` turns into a terminal fault.
-    let mut flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS;
+    let mut flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS;
     if spec.target.is_some() {
         flags |= StreamFlags::DONT_RECONNECT;
     }
@@ -512,10 +520,16 @@ fn run_capture(
     // must run for either, so `start` stays parked until then.
     main_loop.run();
 
-    // Loop quit: stop/abort/fault/link-timeout. Deliver exactly one terminal
-    // outcome to the consumer stream (queued audio drains first, then this).
+    // Loop quit: stop/abort/fault/link-timeout. Quiesce the stream before the
+    // producer is taken, then release every PipeWire object; only then deliver
+    // exactly one terminal outcome (queued audio drains first, then this).
+    let _ = stream.disconnect();
+    drop(listener);
     drop(timer);
     drop(watchdog);
+    drop(stream);
+    drop(context);
+    drop(main_loop);
     let was_opened = opened.get();
     if !was_opened {
         // Stop/abort during the link wait: close out the unsignalled open as

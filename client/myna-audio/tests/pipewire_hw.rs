@@ -302,6 +302,79 @@ async fn abort_discards_cleanly() {
     // Reaching here without a panic/hang is the assertion (clean teardown).
 }
 
+/// Await `captured >= at_least` on the stats tap; false if the tap closed or
+/// the budget ran out first.
+async fn wait_captured(
+    stats: &mut tokio::sync::watch::Receiver<myna_audio::AudioStats>,
+    at_least: Duration,
+    budget: Duration,
+) -> bool {
+    tokio::time::timeout(budget, async {
+        loop {
+            if stats.borrow_and_update().captured >= at_least {
+                return true;
+            }
+            if stats.changed().await.is_err() {
+                return false;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// The stats sender lives only in the backend's producer, which the capture
+/// thread releases last: the tap closing means the thread has torn down.
+async fn released(stats: &mut tokio::sync::watch::Receiver<myna_audio::AudioStats>) -> bool {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while stats.changed().await.is_ok() {}
+    })
+    .await
+    .is_ok()
+}
+
+/// Repeated start/stop/drop while the process callback is delivering audio:
+/// every cycle must end cleanly (graceful stop drains, abort discards) and
+/// release the capture thread promptly, never crash or leak.
+#[tokio::test]
+async fn repeated_start_stop_drop_with_callbacks_running() {
+    skip_unless_enabled!();
+    for cycle in 0..12 {
+        let mut builder = CaptureSource::builder(AudioFormat::default());
+        if let Some(t) = target() {
+            builder = builder.target(t);
+        }
+        let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+        let mut stats = source.stats();
+        let stop = source.stop_handle();
+        let stream = Box::new(source).capture();
+        assert!(
+            wait_captured(
+                &mut stats,
+                Duration::from_millis(150),
+                Duration::from_secs(5)
+            )
+            .await,
+            "cycle {cycle}: no audio flowed"
+        );
+        if cycle % 2 == 0 {
+            stop.stop();
+            let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
+            assert!(
+                fault.is_none(),
+                "cycle {cycle}: graceful stop faulted: {fault:?}"
+            );
+            assert!(!chunks.is_empty(), "cycle {cycle}: captured audio drains");
+        } else {
+            drop(stream);
+        }
+        assert!(
+            released(&mut stats).await,
+            "cycle {cycle}: capture thread did not release"
+        );
+    }
+}
+
 /// T023: channel pick/downmix on a multi-channel source (C6; SC-004, US3-1).
 /// Create a 4-channel virtual source, select two channels, and assert capture
 /// links and delivers the negotiated (downmixed) mono format. (Exact per-
@@ -517,6 +590,46 @@ mod watermarks {
         assert!(
             latency < STOP_LATENCY_CEILING,
             "stop-latency watermark exceeded: {latency:?} >= {STOP_LATENCY_CEILING:?}"
+        );
+    }
+
+    /// Captured audio keeps pace with the wall clock once flowing: the
+    /// callback thread never starves the stream into dropped cycles.
+    #[tokio::test]
+    async fn perf_capture_keeps_pace_with_wall_clock() {
+        skip_unless_enabled!();
+        // Stats move in 100 ms chunks: baseline deficit ~100 ms, ceiling 3 chunks.
+        const WINDOW: Duration = Duration::from_secs(3);
+        const MAX_DEFICIT: Duration = Duration::from_millis(300);
+        let mut builder = CaptureSource::builder(AudioFormat::default());
+        if let Some(t) = target() {
+            builder = builder.target(t);
+        }
+        let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+        let mut stats = source.stats();
+        let stop = source.stop_handle();
+        let stream = Box::new(source).capture();
+        assert!(
+            wait_captured(
+                &mut stats,
+                Duration::from_millis(200),
+                Duration::from_secs(5)
+            )
+            .await,
+            "capture established"
+        );
+        let start = stats.borrow().captured;
+        let t0 = std::time::Instant::now();
+        tokio::time::sleep(WINDOW).await;
+        let captured = stats.borrow().captured - start;
+        let elapsed = t0.elapsed();
+        stop.stop();
+        let _ = drain_with_timeout(stream, Duration::from_secs(2)).await;
+        let deficit = elapsed.saturating_sub(captured);
+        eprintln!("capture pace: {captured:?} captured over {elapsed:?}");
+        assert!(
+            deficit <= MAX_DEFICIT,
+            "capture fell behind the wall clock by {deficit:?} (ceiling {MAX_DEFICIT:?})"
         );
     }
 }
