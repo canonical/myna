@@ -240,8 +240,8 @@ class Ie115Encoder:
     """Encodes internal transcript events into IE115 server frames, holding the
     per-utterance ``item_id`` IE115 requires (dictation has no conversation
     graph, so we mint one per utterance): every ``delta`` of an utterance and
-    its ``completed`` share the item; the ``completed`` retires it, so the next
-    utterance on the same connection gets a fresh one.
+    its ``completed`` share the item, and ``begin_utterance`` retires it, so
+    the next utterance on the same connection gets a fresh one.
 
     A commit is acknowledged at receipt, so the transport's reader can be a
     whole utterance ahead of the adapter. Items are therefore assigned in
@@ -272,8 +272,12 @@ class Ie115Encoder:
         return self._current.id
 
     def begin_utterance(self) -> None:
-        """The transport hands the next utterance to the adapter: whatever the
-        last one was emitting for is over, ``completed`` or not."""
+        """The transport hands the next utterance to the adapter, retiring the
+        last one's item: the one it named, or - when it ended without naming
+        one, on a terminal error say - the one its own commit acknowledged,
+        which would otherwise land on this utterance."""
+        if self._current is None and self._queued:
+            self._queued.popleft()
         self._current = None
 
     def committed(self) -> dict[str, Any]:
@@ -328,7 +332,6 @@ class Ie115Encoder:
             return frame
         if isinstance(event, TranscriptionDone):
             item = self._item()
-            self._current = None  # completed retires the utterance's item
             frame = {
                 "type": TRANSCRIPTION_COMPLETED,
                 "item_id": item,

@@ -137,7 +137,7 @@ def test_encoder_finals_become_deltas_sharing_the_utterance_item():
     assert d1["item_id"] and d1["item_id"] == d2["item_id"]  # one item per utterance
 
 
-def test_encoder_done_becomes_completed_and_retires_the_item():
+def test_encoder_done_becomes_completed_and_the_next_utterance_is_a_new_item():
     enc = w.Ie115Encoder()
     delta = enc.encode(TranscriptionFinal(text="one"))
     done = enc.encode(TranscriptionDone(text="one two"))
@@ -146,6 +146,7 @@ def test_encoder_done_becomes_completed_and_retires_the_item():
     assert done["item_id"] == delta["item_id"]  # completed closes the same item
     assert done["content_index"] == 0  # one content part per item, always the first
     # the next utterance on the same (persistent) connection is a new item
+    enc.begin_utterance()
     next_done = enc.encode(TranscriptionDone(text="three"))
     assert next_done["item_id"] and next_done["item_id"] != done["item_id"]
 
@@ -174,6 +175,7 @@ def test_encoder_committed_names_the_item_and_chains_to_the_previous_one():
     assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
     done = enc.encode(TranscriptionDone(text="one"))
     assert done["item_id"] == first["item_id"]
+    enc.begin_utterance()
     delta = enc.encode(TranscriptionFinal(text="two"))  # streaming: delta before commit
     second = enc.committed()
     assert second["item_id"] == delta["item_id"] != first["item_id"]
@@ -190,17 +192,19 @@ def test_encoder_queues_the_items_of_commits_that_outrun_the_adapter():
     assert second["previous_item_id"] == first["item_id"]
     assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
     assert enc.encode(TranscriptionDone(text="one"))["item_id"] == first["item_id"]
-    assert enc.encode(TranscriptionFinal(text="two"))["item_id"] == second["item_id"]
-
-
-def test_encoder_begins_the_next_utterance_on_an_item_no_completed_retired():
-    """An utterance the adapter ended without a ``completed`` (a terminal
-    error, say) must not leak its item onto the next one."""
-    enc = w.Ie115Encoder()
-    first, second = enc.committed(), enc.committed()
-    assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
     enc.begin_utterance()
     assert enc.encode(TranscriptionFinal(text="two"))["item_id"] == second["item_id"]
+
+
+def test_encoder_retires_the_item_of_an_utterance_that_named_none():
+    """An utterance the adapter ended without naming its item (a terminal
+    error before any delta) must not leave that item to the next one, whose
+    own commit was acknowledged with a later one."""
+    enc = w.Ie115Encoder()
+    first, second = enc.committed(), enc.committed()
+    enc.begin_utterance()  # the first utterance emitted nothing that names it
+    assert enc.encode(TranscriptionFinal(text="two"))["item_id"] == second["item_id"]
+    assert first["item_id"] != second["item_id"]
 
 
 def test_encoder_done_reports_the_audio_it_was_told_about_as_usage():

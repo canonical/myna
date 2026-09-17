@@ -804,6 +804,46 @@ def test_a_delta_before_the_commit_names_the_item_the_commit_acknowledges(scenar
     scenario.run(main)
 
 
+async def fail_then_transcribe(
+    adapter: Gated, audio: AsyncIterator[PcmChunk], emit: EventSink
+) -> None:
+    if len(adapter.sessions) == 1:
+        await emit(TranscriptionError(code="inference_failed", message="out of memory"))
+        return
+    await adapter.record(audio)
+    await emit(TranscriptionFinal(text="two"))
+    await emit(TranscriptionDone(text="two"))
+
+
+def test_an_utterance_that_named_no_item_leaves_the_next_one_its_own(scenario):
+    """The first utterance failed before any frame named its item; the second
+    must still carry the item its own commit was acknowledged with."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(fail_then_transcribe)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND, finish_frame("ie115")])
+            # the eager session fails before the commit is even read
+            opening = {f["type"]: f for f in [await next_frame(ws, ACK_BOUND) for _ in range(2)]}
+            first, error = opening[w.INPUT_AUDIO_COMMITTED], opening[w.ERROR]
+            await send_all(ws, [SECOND, finish_frame("ie115")])
+            second = await next_frame(ws, ACK_BOUND)
+            rest = [await next_frame(ws) for _ in range(2)]
+            await ws.close()
+        assert error["error"]["code"] == "server_error"
+        assert second["type"] == w.INPUT_AUDIO_COMMITTED
+        assert second["previous_item_id"] == first["item_id"] != second["item_id"]
+        assert [(f["type"], f["item_id"]) for f in rest] == [
+            (w.TRANSCRIPTION_DELTA, second["item_id"]),
+            (w.TRANSCRIPTION_COMPLETED, second["item_id"]),
+        ]
+
+    scenario.run(main)
+
+
 def test_an_aborted_ie115_commit_is_acknowledged_but_never_transcribed(scenario):
     """The ack promises nothing about the transcript: a client leaving after
     its commit still aborts the utterance, which the gated adapter never
