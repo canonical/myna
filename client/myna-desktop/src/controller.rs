@@ -442,23 +442,13 @@ pub struct DesktopController {
     auto_stop: Live<AutoStop>,
 }
 
-/// This session's accept-gate drop counts, published as they happen.
+/// This session's accept-gate drop count, published as it changes.
 ///
 /// Cumulative per session, so a reader that samples late still sees the whole
 /// utterance's total rather than whatever happened since it last looked.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AudioDrops {
-    pub not_resident: u64,
     pub not_active: u64,
-}
-
-impl AudioDrops {
-    fn record(&mut self, reason: myna_orchestrator::DropReason) {
-        match reason {
-            myna_orchestrator::DropReason::NotResident => self.not_resident += 1,
-            myna_orchestrator::DropReason::NotActive => self.not_active += 1,
-        }
-    }
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
@@ -613,8 +603,8 @@ impl DesktopController {
         // Why this utterance stopped writing, once something has (see
         // [`Ending`]).
         let mut ending = Ending::None;
-        // Per session: a cold-start burst of pre-ready drops is normal, and a
-        // count carried over from the last utterance would read as this one's.
+        // Per session: a count carried over from the last utterance would read
+        // as this one's.
         let mut drops = AudioDrops::default();
         // Committed text not yet inserted. Consecutive `Final`s (a
         // commit-on-finalize adapter emits them in one burst) are coalesced
@@ -942,11 +932,10 @@ async fn route_event(
     {
         indicator.set_state(indicator_state).await;
     }
-    if let OrchestratorEvent::AudioDropped(reason) = &event {
-        drops.record(*reason);
-        indicator
-            .set_audio_drops(drops.not_resident, drops.not_active)
-            .await;
+    if let OrchestratorEvent::AudioDropped(_) = &event {
+        drops.not_active += 1;
+        // Audio is never dropped for readiness: it waits in capture instead.
+        indicator.set_audio_drops(0, drops.not_active).await;
     }
     if let OrchestratorEvent::Final(text) = &event {
         // Commit-only: stable committed text is buffered; unstable `Snippet`
@@ -1449,22 +1438,6 @@ mod tests {
     }
 
     #[test]
-    fn drops_are_counted_per_reason() {
-        use myna_orchestrator::DropReason;
-        let mut drops = AudioDrops::default();
-        drops.record(DropReason::NotResident);
-        drops.record(DropReason::NotResident);
-        drops.record(DropReason::NotActive);
-        assert_eq!(
-            drops,
-            AudioDrops {
-                not_resident: 2,
-                not_active: 1
-            }
-        );
-    }
-
-    #[test]
     fn error_maps_to_error_with_message() {
         assert_eq!(
             event_to_indicator(
@@ -1504,7 +1477,7 @@ mod tests {
         );
         assert_eq!(
             event_to_indicator(
-                &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotResident),
+                &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotActive),
                 DictationState::Recording,
                 Delivery::Landed,
                 InputQuality::Ok

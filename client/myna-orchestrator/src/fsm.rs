@@ -17,14 +17,15 @@
 //!   over until the backend emits its terminal event (§3C).
 //! - **Residency** ([`Residency`]): `Unloaded → Loading → Resident`, driven
 //!   independently by the backend's liveness (`STATUS` / `transcription.progress`
-//!   phase) — the model may still be loading when the session is already
-//!   negotiated, and may lapse back to `Loading` if it idle-unloads mid-session.
+//!   phase). The model may still be loading when the session is already
+//!   negotiated. Residency is monotonic within an utterance: a `preparing`
+//!   after `Resident` changes nothing, so audio already flowing keeps flowing.
 //!
 //! ## Accept-gate
 //!
-//! An audio chunk is forwarded to the backend **iff** `session == Active` **and**
-//! `residency == Resident`. Otherwise it is dropped (§3A pre-ready drop) — the
-//! client must gate on `STATUS{ready}`, not merely on a negotiated session.
+//! Audio is accepted **iff** `session == Active` **and** `residency ==
+//! Resident` ([`Fsm::accepts_audio`]). The driver does not read audio while the
+//! gate is closed, so audio waits in capture rather than being dropped.
 
 use myna_core::{
     ErrorData, PcmChunk, Progress, TranscriptionEvent, PHASE_PREPARING, PHASE_READY,
@@ -56,7 +57,8 @@ impl SessionState {
     }
 }
 
-/// The orthogonal model-residency track. Only `Resident` opens the accept-gate.
+/// The orthogonal model-residency track. Only `Resident` opens the accept-gate,
+/// and nothing leaves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Residency {
     /// No load triggered yet (pre-liveness).
@@ -84,9 +86,8 @@ pub struct FsmState {
 /// Why an audio chunk was dropped by the accept-gate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DropReason {
-    /// Model not resident yet (§3A pre-ready) or it lapsed back to loading.
-    NotResident,
-    /// Audio arrived after end-of-audio / on a terminal session (client bug).
+    /// Audio the session was not accepting: after end-of-audio, on a terminal
+    /// session, or before readiness (a caller bug; the driver never reads it).
     NotActive,
 }
 
@@ -203,6 +204,11 @@ impl Fsm {
         }
     }
 
+    /// The accept-gate: whether audio may be forwarded now.
+    pub fn accepts_audio(&self) -> bool {
+        self.session == SessionState::Active && self.residency.gate_open()
+    }
+
     /// The outcome, once [`SessionState::is_terminal`] holds.
     pub fn outcome(&self) -> Option<SessionOutcome> {
         match self.session {
@@ -236,16 +242,9 @@ impl Fsm {
     }
 
     fn on_audio(&mut self, chunk: PcmChunk, out: &mut Vec<Action>) {
-        if self.session == SessionState::Active && self.residency.gate_open() {
+        if self.accepts_audio() {
             out.push(Action::ForwardAudio(chunk));
-        } else if self.session == SessionState::Active {
-            // §3A: gate closed because the model is not resident. Drop, don't
-            // buffer — the client should have waited for `Ready`.
-            out.push(Action::Emit(OrchestratorEvent::AudioDropped(
-                DropReason::NotResident,
-            )));
         } else {
-            // Finalizing or terminal: audio after end-of-audio is a client bug.
             out.push(Action::Emit(OrchestratorEvent::AudioDropped(
                 DropReason::NotActive,
             )));
@@ -312,11 +311,10 @@ impl Fsm {
 
     fn on_progress(&mut self, p: Progress, out: &mut Vec<Action>) {
         match p.phase.as_str() {
+            // Once resident, a backend that reloads must still take the audio
+            // it is sent, or fail explicitly: the gate never closes again.
             PHASE_PREPARING => {
-                // Model (re-)loading — the residency region can lapse back here
-                // mid-session if it idle-unloaded (lifecycle open item #4),
-                // closing the gate again.
-                if self.residency != Residency::Loading {
+                if self.residency == Residency::Unloaded {
                     self.residency = Residency::Loading;
                     out.push(Action::Emit(OrchestratorEvent::Loading));
                 }
@@ -513,57 +511,58 @@ mod tests {
         );
     }
 
-    // ---- §3A: audio before the model is ready is dropped ---------------------
+    // ---- §3A: audio waits for the model to be ready -----------------------
 
     #[test]
-    fn edge_3a_pre_ready_audio_is_dropped_then_forwarded_when_resident() {
+    fn edge_3a_the_gate_opens_only_once_resident() {
         let mut fsm = Fsm::new();
+        assert!(!fsm.accepts_audio(), "unloaded");
 
-        // Unloaded: gate closed.
+        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
+        assert!(!fsm.accepts_audio(), "loading");
+
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        assert!(fsm.accepts_audio(), "resident");
+        let a = fsm.on_input(Input::Audio(chunk()));
+        assert!(a.iter().any(is_forward));
+        assert!(emitted(&a).is_empty());
+
+        fsm.on_input(Input::EndOfAudio);
+        assert!(!fsm.accepts_audio(), "finalizing");
+    }
+
+    #[test]
+    fn audio_fed_before_readiness_is_refused_not_forwarded() {
+        let mut fsm = Fsm::new();
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(!a.iter().any(is_forward));
         assert_eq!(
             emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
+            vec![OrchestratorEvent::AudioDropped(DropReason::NotActive)]
         );
+    }
 
-        // Loading: still closed.
-        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
-        let a = fsm.on_input(Input::Audio(chunk()));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
-        );
-
-        // Resident: gate opens, audio is forwarded and nothing is emitted.
+    #[test]
+    fn readiness_is_monotonic_within_an_utterance() {
+        // A backend that reloads mid-utterance keeps getting audio: the gate
+        // never closes again, and the UI is not told the model is loading.
+        let mut fsm = Fsm::new();
         fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
+
+        assert!(emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))).is_empty());
+        assert_eq!(fsm.state().residency, Residency::Resident);
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(a.iter().any(is_forward));
         assert!(emitted(&a).is_empty());
     }
 
     #[test]
-    fn residency_can_lapse_back_to_loading_mid_session() {
-        // Lifecycle open item #4: an idle-unload between utterances re-closes
-        // the gate until the model reloads.
+    fn a_repeated_preparing_reports_loading_once() {
         let mut fsm = Fsm::new();
-        fsm.on_input(Input::Backend(progress(PHASE_READY)));
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
-
-        // Model idle-unloads → re-loading; gate closes again.
-        assert_eq!(
-            emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))),
-            vec![OrchestratorEvent::Loading]
-        );
-        let a = fsm.on_input(Input::Audio(chunk()));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
-        );
-
-        // Reloads → gate reopens.
-        fsm.on_input(Input::Backend(progress(PHASE_READY)));
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
+        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
+        assert!(emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))).is_empty());
+        assert_eq!(fsm.state().residency, Residency::Loading);
     }
 
     // ---- §3B: error mid-stream ----------------------------------------------

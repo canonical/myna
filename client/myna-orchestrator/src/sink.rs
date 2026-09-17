@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 
-use crate::fsm::{DropReason, OrchestratorEvent};
+use crate::fsm::OrchestratorEvent;
 
 /// Where committed text and lifecycle events go. Commit-only for the MVP — only
 /// `Final`/`Done` text is ever inserted; `Snippet` is unstable UI and is never
@@ -39,12 +39,8 @@ impl TextSink for StdoutSink {
             OrchestratorEvent::Error { code, message } => {
                 eprintln!("✗ [{code}] {message}");
             }
-            OrchestratorEvent::AudioDropped(reason) => {
-                let why = match reason {
-                    DropReason::NotResident => "model not ready",
-                    DropReason::NotActive => "session not accepting audio",
-                };
-                eprintln!("  (dropped audio: {why})");
+            OrchestratorEvent::AudioDropped(_) => {
+                eprintln!("  (dropped audio: session not accepting audio)");
             }
         }
     }
