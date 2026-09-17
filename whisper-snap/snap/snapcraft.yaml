@@ -62,6 +62,8 @@ hooks:
       - opengl
   post-refresh:
     plugs: *hook-plugs
+  connect-plug-hardware-observe:
+    plugs: *hook-plugs
 
 # The inference-provider content share. Consumers (the myna snap's `backend`
 # plug) find this snap by the provider.env that `myna-server --share-provider`

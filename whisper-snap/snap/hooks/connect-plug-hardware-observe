@@ -1,0 +1,24 @@
+#!/bin/bash -eu
+
+# shellcheck disable=SC2034  # used via process substitution below
+tag="snap.$SNAP_INSTANCE_NAME.hook.connect-plug-hardware-observe"
+
+# Redirect stdout to stdout+syslog
+exec 1> >(tee >(logger --tag="$tag"))
+# Redirect stderr to stderr+syslog
+exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# The install hook cannot score hardware without this plug, so a snap installed
+# before it was connected (a sideload, or a store grant that arrived by refresh)
+# settled on cpu. Re-select now that `--auto` can see the machine.
+#
+# At install, snapd auto-connects before the install hook, which selects.
+engine="$(modelctl status --format=json | jq -r '.engine // empty')"
+if [ -z "$engine" ]; then
+    echo "no active engine yet: leaving selection to the install hook"
+    exit 0
+fi
+
+# A failing connect hook makes snapd undo the connection.
+modelctl use-engine --auto --assume-yes --verbose ||
+    echo "re-selecting the engine failed: keeping $engine" >&2

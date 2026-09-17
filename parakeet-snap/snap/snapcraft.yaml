@@ -78,6 +78,8 @@ hooks:
     plugs: *hook-plugs
   post-refresh:
     plugs: *hook-plugs
+  connect-plug-hardware-observe:
+    plugs: *hook-plugs
 
 # The inference-provider content share: myna-server writes provider.env beside
 # the socket. Writable so connect() works; see whisper-snap's snapcraft.yaml.

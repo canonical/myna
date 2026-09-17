@@ -233,6 +233,99 @@ def test_single_cpu_engine_snaps_activate_it_by_name(snap) -> None:
     )
 
 
+def _engines(snap_dir: str) -> list[str]:
+    return sorted(p.name for p in (REPO_ROOT / snap_dir / "engines").iterdir() if p.is_dir())
+
+
+MULTI_ENGINE_SNAPS = sorted(d for d in INFERENCE_SNAPS if len(_engines(d)) > 1)
+RESELECT_HOOK = "connect-plug-hardware-observe"
+
+
+@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+def test_install_without_hardware_observe_falls_back_to_cpu(snap_dir: str) -> None:
+    """The reselect hook skips a snap with no active engine, taking it for one
+    whose install hook has not run yet; an install hook that selected nothing
+    would leave a daemon that exits on every start, forever."""
+    hook = (REPO_ROOT / snap_dir / "snap" / "hooks" / "install").read_text(encoding="utf-8")
+    assert any("use-engine cpu" in c for c in _commands(hook)), (
+        f"{INFERENCE_SNAPS[snap_dir]}: the install hook has no cpu fallback, so a "
+        "sideload without hardware-observe has no active engine"
+    )
+
+
+@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+def test_multi_engine_snaps_declare_the_reselect_hook(snap_dir: str) -> None:
+    """Without hardware-observe the install hook cannot score, so the snap starts
+    on cpu (or nothing); connecting the plug later must re-select, or a GPU
+    machine stays on cpu until someone runs `use-engine --auto` by hand."""
+    name = INFERENCE_SNAPS[snap_dir]
+    hook = (_recipe(snap_dir).get("hooks") or {}).get(RESELECT_HOOK)
+    assert isinstance(hook, dict), f"{name}: no {RESELECT_HOOK} hook declared in snapcraft.yaml"
+    assert "hardware-observe" in set(hook.get("plugs") or []), (
+        f"{name}: {RESELECT_HOOK} does not plug hardware-observe, so it cannot score"
+    )
+
+
+def _run_reselect_hook(snap_dir: str, tmp_path: Path, *, status: str, use_engine_rc: int = 0):
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    fakes = {
+        "modelctl": f"""#!/bin/sh
+echo "$*" >> {calls}
+case "$1" in
+    status) printf '%s' '{status}'; [ -n '{status}' ] ;;
+    use-engine) exit {use_engine_rc} ;;
+esac
+""",
+        "logger": """#!/bin/sh
+case " $* " in *" --stderr "*) cat >&2 ;; *) cat >/dev/null ;; esac
+""",
+    }
+    for tool, body in fakes.items():
+        (bin_dir / tool).write_text(body, encoding="utf-8")
+        (bin_dir / tool).chmod(0o755)
+    hook = REPO_ROOT / snap_dir / "snap" / "hooks" / RESELECT_HOOK
+    result = subprocess.run(
+        [str(hook)],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "SNAP_INSTANCE_NAME": INFERENCE_SNAPS[snap_dir]},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    ran = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+    return result, ran
+
+
+@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+def test_connecting_hardware_observe_reselects_the_engine(snap_dir: str, tmp_path: Path) -> None:
+    result, ran = _run_reselect_hook(snap_dir, tmp_path, status='{"engine": "cpu"}')
+    assert result.returncode == 0, result.stderr
+    assert any(c.startswith("use-engine --auto --assume-yes") for c in ran), ran
+
+
+@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+def test_connect_before_the_install_hook_leaves_selection_to_it(
+    snap_dir: str, tmp_path: Path
+) -> None:
+    """At install snapd auto-connects before the install hook, which selects."""
+    result, ran = _run_reselect_hook(snap_dir, tmp_path, status="")
+    assert result.returncode == 0, result.stderr
+    assert not any(c.startswith("use-engine") for c in ran), ran
+
+
+@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+def test_a_failed_reselection_keeps_the_connection(snap_dir: str, tmp_path: Path) -> None:
+    """A connect hook exiting non-zero makes snapd undo the connection."""
+    result, ran = _run_reselect_hook(
+        snap_dir, tmp_path, status='{"engine": "cpu"}', use_engine_rc=1
+    )
+    assert any(c.startswith("use-engine") for c in ran), ran
+    assert result.returncode == 0, result.stderr
+
+
 def test_declares_every_engine_it_ships(snap) -> None:
     """Every engines/<name>/ dir needs its server script, and vice versa."""
     snap_dir, name, _ = snap

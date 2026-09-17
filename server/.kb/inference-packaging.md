@@ -21,6 +21,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Grant `network-bind` for Unix-socket `listen()`, but do not add the `network` plug for runtime downloads.
 - Grant `hardware-observe` only to apps and hooks that perform hardware discovery.
 - Ensure installation selects a usable engine where a deterministic choice exists.
+- Snaps with more than one engine re-select in a `connect-plug-hardware-observe` hook: the install hook cannot score without the plug, so a sideload or a store grant arriving by refresh would otherwise stay on cpu. The hook skips while no engine is active (auto-connect precedes the install hook) and never exits non-zero, which would undo the connection.
 - Set `ws.unix-socket` to `$SNAP_COMMON/share/provider/myna.sock` in the install hook and unconditionally in post-refresh, since older revisions carry another path in package scope; do not revive the retired `socket.path` key.
 - Keep `snap/hooks/` limited to actual snap hooks.
 - Every engine directory needs its server entry point and `engine.yaml`.

@@ -27,14 +27,17 @@ modelctl set --package sleep-idle-seconds="300"
 modelctl set --package streaming="false"
 
 #
-# Auto select an engine
+# Select an engine.
 #
-
-if snapctl is-connected hardware-observe; then
-    modelctl use-engine --auto --assume-yes --verbose
-elif lscpu -V &> /dev/null; then
-    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
-    modelctl use-engine --auto --assume-yes --verbose
+# nvidia-gpu where modelctl can see an NVIDIA GPU, otherwise cpu. A sideload
+# does not auto-connect hardware-observe, and `--auto` cannot score without it,
+# so fall back to cpu by name: a snap with no active engine has a daemon that
+# exits on every start, and connect-plug-hardware-observe re-selects later.
+#
+if snapctl is-connected hardware-observe || lscpu -V &>/dev/null; then
+    modelctl use-engine --auto --assume-yes --no-restart --verbose ||
+        modelctl use-engine cpu --assume-yes --no-restart
 else
-    echo "hardware-observe interface not auto connected. Skip auto engine selection."
+    echo "hardware-observe is not connected: selecting the cpu engine"
+    modelctl use-engine cpu --assume-yes --no-restart
 fi
