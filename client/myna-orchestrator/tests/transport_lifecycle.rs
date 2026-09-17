@@ -215,38 +215,44 @@ impl Conn {
         received
     }
 
-    /// Wait until the client's audio has filled the socket and stopped
-    /// arriving: the client is now blocked writing.
+    /// Wait until the client is stuck mid-write: part of an audio frame
+    /// larger than its socket can ever queue has arrived unread, so the rest
+    /// cannot follow until this end reads.
     async fn await_client_blocked(&self) {
         let fd = self.ws.get_ref().as_raw_fd();
-        let (mut last, mut stable) = (0, 0);
-        loop {
-            let queued = queued_bytes(fd);
-            if queued >= 64_000 && queued == last {
-                stable += 1;
-                if stable == 5 {
-                    return;
-                }
-            } else {
-                stable = 0;
-            }
-            last = queued;
+        while queued_bytes(fd) == 0 {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
 }
 
-/// Bytes waiting in a socket's receive queue (`FIONREAD`).
+/// Bytes waiting in a socket's receive queue.
 fn queued_bytes(fd: RawFd) -> usize {
-    extern "C" {
-        fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
-    }
-    const FIONREAD: std::ffi::c_ulong = 0x541B;
-    let mut queued: i32 = 0;
+    let mut queued: libc::c_int = 0;
     // SAFETY: FIONREAD writes one int through the pointer on a valid fd.
-    let rc = unsafe { ioctl(fd, FIONREAD, &mut queued as *mut i32) };
+    let rc = unsafe { libc::ioctl(fd, libc::FIONREAD, &mut queued) };
     assert_eq!(rc, 0, "FIONREAD failed");
     queued as usize
+}
+
+/// The send buffer a fresh Unix stream socket gets. A writer blocks once its
+/// unread bytes reach about this much, so no larger frame fits in one go.
+fn socket_send_buffer() -> usize {
+    let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let mut size: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: SO_SNDBUF writes one int of `len` bytes on a valid fd.
+    let rc = unsafe {
+        libc::getsockopt(
+            socket.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_SNDBUF,
+            (&mut size as *mut libc::c_int).cast(),
+            &mut len,
+        )
+    };
+    assert_eq!(rc, 0, "SO_SNDBUF failed");
+    size as usize
 }
 
 fn source(backend: ScriptedBackend) -> CaptureSource {
@@ -255,10 +261,29 @@ fn source(backend: ScriptedBackend) -> CaptureSource {
         .build()
 }
 
-/// A microphone that delivers `seconds` of audio at once, then stays open.
-fn loaded_mic(seconds: u64) -> (CaptureSource, Arc<AtomicBool>) {
+/// A microphone that delivers two chunks at once, then stays open. Each chunk
+/// is several socket buffers long, so a server that stops reading leaves the
+/// client blocked inside its first audio write.
+fn congesting_mic() -> (CaptureSource, Arc<AtomicBool>) {
+    let format = AudioFormat::default();
+    let bytes = (4 * socket_send_buffer()) as f64;
+    let chunk = Duration::from_secs_f64(bytes / format.bytes_per_second() as f64);
     let backend = ScriptedBackend::new(vec![
-        Step::Silence(Duration::from_secs(seconds)),
+        Step::Silence(chunk * 2),
+        Step::Wait(Duration::from_secs(600)),
+    ]);
+    let finished = backend.finished();
+    let mic = CaptureSource::builder(format)
+        .chunk(chunk)
+        .backend(Box::new(backend))
+        .build();
+    (mic, finished)
+}
+
+/// A microphone that delivers one second of audio, then stays open.
+fn open_mic() -> (CaptureSource, Arc<AtomicBool>) {
+    let backend = ScriptedBackend::new(vec![
+        Step::Silence(Duration::from_secs(1)),
         Step::Wait(Duration::from_secs(600)),
     ]);
     let finished = backend.finished();
@@ -346,8 +371,7 @@ async fn capture_overload_before_ready_fails_without_sending_audio() {
 async fn backend_error_is_seen_while_outbound_audio_is_backpressured() {
     for dialect in DIALECTS {
         let server = Server::bind(dialect);
-        // A minute of audio is far more than the socket and channels hold.
-        let (mic, _) = loaded_mic(60);
+        let (mic, _) = congesting_mic();
         let mut sink = CollectingSink::default();
         let serve = async {
             let mut conn = server.accept().await;
@@ -369,7 +393,11 @@ async fn backend_error_is_seen_while_outbound_audio_is_backpressured() {
 /// device released and the connection closed.
 async fn dropping_the_runner_releases_everything(dialect: Dialect, backend_ready: bool) {
     let server = Server::bind(dialect);
-    let (mic, finished) = loaded_mic(if backend_ready { 60 } else { 1 });
+    let (mic, finished) = if backend_ready {
+        congesting_mic()
+    } else {
+        open_mic()
+    };
     let mut health = mic.health();
     let mut sink = CollectingSink::default();
     let mut run = Box::pin(server.run(mic, &mut sink));

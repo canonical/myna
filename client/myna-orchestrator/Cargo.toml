@@ -32,3 +32,5 @@ myna-audio = { path = "../myna-audio" }
 # `start_paused`: lifecycle deadlines are minutes long, so tests advance
 # tokio's clock instead of the wall clock.
 tokio = { workspace = true, features = ["test-util"] }
+# Socket queue introspection (FIONREAD, SO_SNDBUF) in the transport tests.
+libc = "0.2"
