@@ -64,10 +64,26 @@ impl VirtualSource {
             .stderr(std::process::Stdio::null())
             .spawn()
             .ok()?;
-        Some(Self {
+        let source = Self {
             child,
             node_name: node_name.to_string(),
-        })
+        };
+        source.await_registered();
+        Some(source)
+    }
+
+    /// Block until the graph lists the node, so capture can discover it.
+    fn await_registered(&self) {
+        let listed = format!("node.name = \"{}\"", self.node_name);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            let out = Command::new("pw-cli").args(["ls", "Node"]).output();
+            if out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(&listed)) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("{} never appeared in the graph", self.node_name);
     }
 }
 
@@ -143,6 +159,21 @@ impl SilentDaemon {
 
     fn remote(&self) -> String {
         self.dir.join("pipewire-0").display().to_string()
+    }
+
+    /// Resolves once capture has connected and is waiting on discovery. The
+    /// returned connection must outlive the wait.
+    async fn connected(&self) -> std::os::unix::net::UnixStream {
+        let listener = self._listener.try_clone().expect("clone listener");
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::task::spawn_blocking(move || listener.accept()),
+        )
+        .await
+        .expect("capture never connected")
+        .expect("accept task")
+        .expect("accept")
+        .0
     }
 }
 
@@ -313,7 +344,7 @@ async fn stop_during_discovery_releases_promptly() {
     let health = source.health();
     let stop = source.stop_handle();
     let stream = Box::new(source).capture();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let _conn = daemon.connected().await;
     stop.stop();
 
     let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
@@ -335,7 +366,7 @@ async fn abort_during_discovery_releases_promptly() {
         .build();
     let health = source.health();
     let stream = Box::new(source).capture();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let _conn = daemon.connected().await;
     drop(stream);
 
     let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
@@ -441,25 +472,49 @@ async fn unlinked_stream_faults_at_the_link_deadline() {
     assert!(msg.contains("no audio is flowing"), "got: {msg}");
 }
 
-/// Ids of the links leaving `node`'s output ports, from `pw-link -lI`.
-fn links_from(node: &str) -> Vec<String> {
+/// The links leaving `node`'s output ports, from `pw-link -lI`: link id,
+/// output port id and input port id. Ids, because every capture stream in
+/// this suite shares one `node.name`.
+fn links_from(node: &str) -> Vec<(String, String, String)> {
     let Ok(out) = Command::new("pw-link").arg("-lI").output() else {
         return Vec::new();
     };
-    let mut ids = Vec::new();
-    let mut from_node = false;
+    let mut links = Vec::new();
+    let mut from_port = None;
     for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let mut fields = line.split_whitespace();
-        let id = fields.next().unwrap_or_default().to_string();
-        match fields.next() {
-            Some("|->") if from_node => ids.push(id),
-            Some(port) if !port.starts_with('|') => {
-                from_node = port.starts_with(&format!("{node}:"));
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        match fields.as_slice() {
+            [id, "|->", input, _] => {
+                if let Some(output) = &from_port {
+                    links.push((id.to_string(), String::clone(output), input.to_string()));
+                }
             }
-            _ => {}
+            [id, port] if !port.starts_with('|') => {
+                from_port = port
+                    .starts_with(&format!("{node}:"))
+                    .then(|| id.to_string());
+            }
+            _ => from_port = None,
         }
     }
-    ids
+    links
+}
+
+/// Remove every link leaving `node`, returning the port id pairs they joined.
+fn unlink_all_from(node: &str) -> Vec<(String, String)> {
+    let links = links_from(node);
+    assert!(!links.is_empty(), "no links from {node}");
+    links
+        .into_iter()
+        .map(|(id, output, input)| {
+            let unlinked = Command::new("pw-link").args(["-d", &id]).status();
+            assert!(
+                unlinked.is_ok_and(|s| s.success()),
+                "could not remove link {id}"
+            );
+            (output, input)
+        })
+        .collect()
 }
 
 /// A capture whose source stops delivering mid-capture (its links removed,
@@ -472,7 +527,6 @@ async fn stalled_source_faults_mid_capture() {
         eprintln!("skipped: pw-loopback unavailable");
         return;
     };
-    tokio::time::sleep(Duration::from_millis(800)).await;
     let source = CaptureSource::builder(AudioFormat::default())
         .target(vsrc.node_name.clone())
         .backend(Box::new(PipeWireBackend::new()))
@@ -490,15 +544,7 @@ async fn stalled_source_faults_mid_capture() {
         "the virtual source never delivered"
     );
 
-    let links = links_from(&vsrc.node_name);
-    assert!(!links.is_empty(), "no links from {}", vsrc.node_name);
-    for id in &links {
-        let unlinked = Command::new("pw-link").args(["-d", id]).status();
-        assert!(
-            unlinked.is_ok_and(|s| s.success()),
-            "could not remove link {id}"
-        );
-    }
+    unlink_all_from(&vsrc.node_name);
 
     let (states, took) = health_to_end(health, Duration::from_secs(8)).await;
     let msg = device_unavailable(states.last());
@@ -569,17 +615,20 @@ async fn graph_side_conversion_delivers_negotiated_format() {
         builder = builder.target(t);
     }
     let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+    let mut stats = source.stats();
     let stop = source.stop_handle();
     let stream = Box::new(source).capture();
-
-    let (chunks, fault) = {
-        let s = stop.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1200)).await;
-            s.stop();
-        });
-        drain_with_timeout(stream, Duration::from_secs(8)).await
-    };
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(300),
+            Duration::from_secs(5)
+        )
+        .await,
+        "capture established"
+    );
+    stop.stop();
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(8)).await;
     assert!(fault.is_none(), "clean end: {fault:?}");
     assert!(!chunks.is_empty(), "captured some converted audio");
     for c in &chunks {
@@ -611,13 +660,23 @@ async fn abort_discards_cleanly() {
     let source = CaptureSource::builder(fmt)
         .backend(Box::new(PipeWireBackend::new()))
         .build();
+    let mut stats = source.stats();
+    let health = source.health();
     let stream = Box::new(source).capture();
-    // Let capture start, then abort by dropping the stream: ConsumerGuard trips
-    // stop + closes the ring; the loop thread must observe it and tear down.
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    // Abort while audio flows: ConsumerGuard trips stop and closes the ring;
+    // the loop thread must observe it and tear down.
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(100),
+            Duration::from_secs(5)
+        )
+        .await,
+        "capture established"
+    );
     drop(stream);
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    // Reaching here without a panic/hang is the assertion (clean teardown).
+    let (states, _) = health_to_end(health, Duration::from_secs(2)).await;
+    assert_eq!(states.last(), Some(&CaptureHealth::Ended));
 }
 
 /// Await `captured >= at_least` on the stats tap; false if the tap closed or
@@ -700,7 +759,6 @@ async fn multichannel_channel_selection_captures() {
         eprintln!("skipped: pw-loopback unavailable");
         return;
     };
-    tokio::time::sleep(Duration::from_millis(800)).await;
     let fmt = AudioFormat::default(); // mono out
     let source = CaptureSource::builder(fmt)
         .ring_depth(Duration::from_secs(30))
@@ -823,7 +881,6 @@ async fn enumerated_name_is_a_usable_target() {
     skip_unless_enabled!();
     let devices = InputDevices::new().expect("registry connect");
     let _vsrc = VirtualSource::spawn("myna-test-src-029");
-    tokio::time::sleep(Duration::from_millis(800)).await;
     let Some(dev) = devices.list().into_iter().next() else {
         eprintln!("skipped: no input devices to target");
         return;
@@ -959,8 +1016,6 @@ async fn resolvable_target_selects_that_node() {
         eprintln!("skipped: pw-loopback unavailable");
         return;
     };
-    // Give the session manager a moment to register the new node.
-    tokio::time::sleep(Duration::from_millis(800)).await;
 
     let fmt = AudioFormat::default();
     let source = CaptureSource::builder(fmt)
