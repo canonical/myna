@@ -13,12 +13,28 @@
 //! An optional `MYNA_PIPEWIRE_TARGET=<node.name>` selects a specific capture
 //! node for the selection tests; without it the default source is used.
 
+use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
 use std::process::{Child, Command};
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use myna_audio::{CaptureSource, InputDevices, PipeWireBackend};
-use myna_core::{AudioFormat, AudioSource, CaptureError, CaptureStream, PcmChunk};
+use myna_core::{
+    AudioFormat, AudioSource, CaptureError, CaptureHealth, CaptureHealthStream, CaptureStream,
+    PcmChunk,
+};
+
+/// A fresh scratch directory per call: tests in this binary run in parallel.
+fn scratch_dir(tag: &str) -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("myna-{tag}-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    dir
+}
 
 /// A `pw-loopback`-created virtual capture source with a known `node.name`, so
 /// selection tests don't depend on whatever hardware happens to be present.
@@ -74,9 +90,7 @@ struct NoSmDaemon {
 
 impl NoSmDaemon {
     fn spawn() -> Option<Self> {
-        let runtime_dir = std::env::temp_dir().join(format!("myna-nosm-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&runtime_dir);
-        std::fs::create_dir_all(&runtime_dir).ok()?;
+        let runtime_dir = scratch_dir("nosm");
         let child = Command::new("pipewire")
             .env("PIPEWIRE_RUNTIME_DIR", &runtime_dir)
             .stdin(std::process::Stdio::null())
@@ -107,6 +121,60 @@ impl Drop for NoSmDaemon {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self.runtime_dir);
+    }
+}
+
+/// A socket that accepts connections and never speaks: a hung daemon, so
+/// capture sits in discovery until stopped or its deadline passes.
+struct SilentDaemon {
+    _listener: UnixListener,
+    dir: PathBuf,
+}
+
+impl SilentDaemon {
+    fn bind() -> Self {
+        let dir = scratch_dir("silent");
+        let listener = UnixListener::bind(dir.join("pipewire-0")).expect("bind silent socket");
+        Self {
+            _listener: listener,
+            dir,
+        }
+    }
+
+    fn remote(&self) -> String {
+        self.dir.join("pipewire-0").display().to_string()
+    }
+}
+
+impl Drop for SilentDaemon {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// Every health state until the stream ends (the capture thread released),
+/// and how long that took. Panics past `budget`.
+async fn health_to_end(
+    mut health: CaptureHealthStream,
+    budget: Duration,
+) -> (Vec<CaptureHealth>, Duration) {
+    let t0 = Instant::now();
+    let states = tokio::time::timeout(budget, async {
+        let mut states = Vec::new();
+        while let Some(state) = health.next().await {
+            states.push(state);
+        }
+        states
+    })
+    .await
+    .unwrap_or_else(|_| panic!("capture was not released within {budget:?}"));
+    (states, t0.elapsed())
+}
+
+fn device_unavailable(state: Option<&CaptureHealth>) -> String {
+    match state {
+        Some(CaptureHealth::Faulted(CaptureError::DeviceUnavailable(msg))) => msg.clone(),
+        other => panic!("expected a DeviceUnavailable fault, got {other:?}"),
     }
 }
 
@@ -189,6 +257,146 @@ async fn no_session_manager_faults_loudly() {
         started.elapsed() < Duration::from_secs(10),
         "the fault must surface promptly, not hang the press"
     );
+}
+
+/// `capture()` is the press and must not wait on the daemon: opening happens
+/// behind the stream, visible as `Opening` on health.
+#[tokio::test]
+async fn capture_returns_before_the_daemon_answers() {
+    skip_unless_enabled!();
+    let daemon = SilentDaemon::bind();
+    let source = CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build();
+    let mut health = source.health();
+    let t0 = Instant::now();
+    let stream = Box::new(source).capture();
+    assert!(
+        t0.elapsed() < Duration::from_millis(200),
+        "capture() blocked for {:?}",
+        t0.elapsed()
+    );
+    assert_eq!(health.next().await, Some(CaptureHealth::Opening));
+    drop(stream);
+    health_to_end(health, Duration::from_secs(2)).await;
+}
+
+/// A graceful stop while the daemon has not answered discovery ends capture
+/// promptly and releases the thread, as a fault: nothing was captured.
+#[tokio::test]
+async fn stop_during_discovery_releases_promptly() {
+    skip_unless_enabled!();
+    let daemon = SilentDaemon::bind();
+    let source = CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build();
+    let health = source.health();
+    let stop = source.stop_handle();
+    let stream = Box::new(source).capture();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    stop.stop();
+
+    let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
+    assert!(took < Duration::from_secs(1), "released after {took:?}");
+    let msg = device_unavailable(states.last());
+    assert!(msg.contains("stopped before"), "got: {msg}");
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(1)).await;
+    assert!(chunks.is_empty());
+    assert_eq!(fault.map(CaptureHealth::Faulted).as_ref(), states.last());
+}
+
+/// Dropping the stream while discovery is pending releases the thread.
+#[tokio::test]
+async fn abort_during_discovery_releases_promptly() {
+    skip_unless_enabled!();
+    let daemon = SilentDaemon::bind();
+    let source = CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    drop(stream);
+
+    let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
+    assert!(took < Duration::from_secs(1), "released after {took:?}");
+    assert_eq!(states.last(), Some(&CaptureHealth::Ended));
+}
+
+/// A daemon that never answers faults at the discovery deadline (3 s).
+#[tokio::test]
+async fn silent_daemon_faults_at_the_discovery_deadline() {
+    skip_unless_enabled!();
+    let daemon = SilentDaemon::bind();
+    let source = CaptureSource::builder(AudioFormat::default())
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build();
+    let health = source.health();
+    let stream = Box::new(source).capture();
+
+    let (states, took) = health_to_end(health, Duration::from_secs(8)).await;
+    assert!(
+        took >= Duration::from_millis(2_500) && took < Duration::from_secs(5),
+        "faulted after {took:?}"
+    );
+    device_unavailable(states.last());
+    assert!(!states.contains(&CaptureHealth::Capturing));
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(1)).await;
+    assert!(chunks.is_empty());
+    assert_eq!(fault.map(CaptureHealth::Faulted).as_ref(), states.last());
+}
+
+/// Without a session manager nothing links a stream to its target, so it
+/// never delivers audio. The bare daemon's own driver node passes discovery
+/// by name, leaving capture waiting on the link.
+fn unlinkable_source(daemon: &NoSmDaemon) -> CaptureSource {
+    CaptureSource::builder(AudioFormat::default())
+        .target("Dummy-Driver")
+        .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
+        .build()
+}
+
+/// A graceful stop while waiting for the link releases the thread promptly.
+#[tokio::test]
+async fn stop_during_link_wait_releases_promptly() {
+    skip_unless_enabled!();
+    let Some(daemon) = NoSmDaemon::spawn() else {
+        eprintln!("skipped: could not spawn a private pipewire daemon");
+        return;
+    };
+    let source = unlinkable_source(&daemon);
+    let health = source.health();
+    let stop = source.stop_handle();
+    let _stream = Box::new(source).capture();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    stop.stop();
+
+    let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
+    assert!(took < Duration::from_secs(1), "released after {took:?}");
+    assert!(!states.contains(&CaptureHealth::Capturing));
+    let msg = device_unavailable(states.last());
+    assert!(msg.contains("stopped before"), "got: {msg}");
+}
+
+/// A stream that never links faults at the link deadline (3 s after connect).
+#[tokio::test]
+async fn unlinked_stream_faults_at_the_link_deadline() {
+    skip_unless_enabled!();
+    let Some(daemon) = NoSmDaemon::spawn() else {
+        eprintln!("skipped: could not spawn a private pipewire daemon");
+        return;
+    };
+    let source = unlinkable_source(&daemon);
+    let health = source.health();
+    let _stream = Box::new(source).capture();
+
+    let (states, took) = health_to_end(health, Duration::from_secs(8)).await;
+    assert!(
+        took >= Duration::from_millis(2_500) && took < Duration::from_secs(5),
+        "faulted after {took:?}"
+    );
+    let msg = device_unavailable(states.last());
+    assert!(msg.contains("no audio is flowing"), "got: {msg}");
 }
 
 /// T009: default-source capture yields chunks in exactly the negotiated format;
@@ -323,16 +531,6 @@ async fn wait_captured(
     .unwrap_or(false)
 }
 
-/// The stats sender lives only in the backend's producer, which the capture
-/// thread releases last: the tap closing means the thread has torn down.
-async fn released(stats: &mut tokio::sync::watch::Receiver<myna_audio::AudioStats>) -> bool {
-    tokio::time::timeout(Duration::from_secs(2), async {
-        while stats.changed().await.is_ok() {}
-    })
-    .await
-    .is_ok()
-}
-
 /// Repeated start/stop/drop while the process callback is delivering audio:
 /// every cycle must end cleanly (graceful stop drains, abort discards) and
 /// release the capture thread promptly, never crash or leak.
@@ -346,6 +544,7 @@ async fn repeated_start_stop_drop_with_callbacks_running() {
         }
         let source = builder.backend(Box::new(PipeWireBackend::new())).build();
         let mut stats = source.stats();
+        let health = source.health();
         let stop = source.stop_handle();
         let stream = Box::new(source).capture();
         assert!(
@@ -368,10 +567,8 @@ async fn repeated_start_stop_drop_with_callbacks_running() {
         } else {
             drop(stream);
         }
-        assert!(
-            released(&mut stats).await,
-            "cycle {cycle}: capture thread did not release"
-        );
+        let (states, _) = health_to_end(health, Duration::from_secs(2)).await;
+        assert_eq!(states.last(), Some(&CaptureHealth::Ended), "cycle {cycle}");
     }
 }
 
