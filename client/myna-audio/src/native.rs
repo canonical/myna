@@ -1,10 +1,11 @@
 //! [`PipeWireBackend`] (plan T52) — native live capture via `pipewire-rs`,
-//! behind the [`CaptureBackend`] seam. No subprocess: a dedicated PipeWire
-//! main-loop thread owns a capture `Stream`, and its `process` callback pushes
-//! PCM into the adapter's ring via [`Producer::push`]. The stream is not
-//! `RT_PROCESS`: PipeWire dispatches `process` on that same loop thread, so
-//! callbacks, timers and teardown are serialized and share state through
-//! `Rc`/`RefCell` without locking on a realtime thread.
+//! behind the [`CaptureBackend`] seam. No subprocess: a dedicated capture loop
+//! thread owns the PipeWire loop and a capture `Stream` connected with
+//! `RT_PROCESS`, so `process` runs on PipeWire's realtime data thread. There
+//! it only copies or downmixes samples into a preallocated lock-free ring and
+//! latches losses in atomics ([`DataPath`]). The loop thread drains that ring
+//! into [`Producer::push`] and owns everything else: chunking, stats, health,
+//! the phase deadlines and teardown.
 //!
 //! Replaces the `pw-record` subprocess backend (feature
 //! 002-native-pipewire-backend, FR-016). Adds what the subprocess couldn't do
@@ -19,9 +20,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bytes::Bytes;
+use bytes::BytesMut;
 use myna_core::CaptureError;
 use pipewire::{
     context::ContextRc,
@@ -36,15 +39,23 @@ use pipewire::{
         pod::{serialize::PodSerializer, Object, Pod, Value},
         utils::{Direction, SpaTypes},
     },
-    stream::{StreamFlags, StreamRc, StreamState},
+    stream::{Stream, StreamFlags, StreamRc, StreamState},
 };
 
 use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 
-/// How often the loop wakes to check the [`StopHandle`] and the phase
-/// deadline, so a graceful stop / abort is honored within the ~250 ms
-/// promptness contract (FR-012) in every phase, even when no audio flows.
-const STOP_POLL: Duration = Duration::from_millis(100);
+/// How often the loop thread drains the realtime ring and checks the
+/// [`StopHandle`] and the phase deadline: at most this much latency on each
+/// chunk, and well inside the ~250 ms stop/abort promptness contract (FR-012).
+const POLL: Duration = Duration::from_millis(20);
+
+/// Audio the realtime ring holds while the loop thread is not draining it.
+/// The loop thread is an ordinary thread waking every [`POLL`], and even with
+/// every core oversubscribed several times over the scheduler runs it within
+/// tens of milliseconds: two orders of magnitude of headroom, for 64 KB at
+/// 16 kHz mono (384 KB at 48 kHz stereo). Starving it longer overflows the
+/// ring, which faults.
+const REALTIME_BUFFER: Duration = Duration::from_secs(2);
 
 /// Deadline for each phase: the daemon answering discovery, the first audio
 /// after connecting, and the next audio while capturing. A daemon without a
@@ -148,11 +159,10 @@ impl Supervisor {
 /// (1024 frames at 48 kHz), far above the sub-frame resampler jitter.
 const LOSS_TOLERANCE: Duration = Duration::from_millis(20);
 
-/// Audio the graph produced for this stream but never handed over. The loop
-/// thread is not realtime, and PipeWire overwrites the buffer of each graph
-/// cycle the thread sleeps through without reporting it. The stream clock
-/// still advances for every cycle, so clock minus delivered frames is the
-/// loss.
+/// Audio the graph produced for this stream but never handed over. PipeWire
+/// overwrites the buffer of each graph cycle the data thread misses (an xrun)
+/// without reporting it, but the stream clock still advances for every cycle,
+/// so clock minus delivered frames is the loss.
 struct Continuity {
     rate: f64,
     last_ticks: Option<u64>,
@@ -193,12 +203,272 @@ impl Continuity {
     }
 }
 
-/// The fault when captured audio was lost to a starved capture loop.
+/// The fault when graph cycles went by without reaching the capture thread.
 fn lost_audio_message(lost: Duration) -> String {
     format!(
         "{} ms of audio was lost: the capture thread could not keep up, the system may be overloaded",
         lost.as_millis()
     )
+}
+
+/// The fault when the loop thread fell too far behind the data thread.
+fn overflow_message() -> String {
+    format!(
+        "the capture buffer overflowed: audio waited more than {} s to be read, the system may be overloaded",
+        REALTIME_BUFFER.as_secs()
+    )
+}
+
+/// Audio the data thread could not hand over.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Loss {
+    /// Graph cycles went by without their buffers reaching `process`.
+    Missed(Duration),
+    /// The realtime ring was full.
+    Overflow,
+}
+
+impl Loss {
+    fn into_error(self) -> CaptureError {
+        CaptureError::Backend(match self {
+            Loss::Missed(lost) => lost_audio_message(lost),
+            Loss::Overflow => overflow_message(),
+        })
+    }
+}
+
+/// The only state `process` shares with the loop thread.
+#[derive(Default)]
+struct Shared {
+    /// Bumped by the loop thread on every stream state change.
+    epoch: AtomicU32,
+    /// The data thread's one [`Loss`]: `0` none, `u64::MAX` an overflow,
+    /// otherwise the microseconds missed.
+    loss: AtomicU64,
+}
+
+impl Shared {
+    const OVERFLOW: u64 = u64::MAX;
+
+    fn latch(&self, loss: Loss) {
+        let code = match loss {
+            Loss::Overflow => Self::OVERFLOW,
+            Loss::Missed(lost) => u64::try_from(lost.as_micros())
+                .unwrap_or(u64::MAX)
+                .clamp(1, Self::OVERFLOW - 1),
+        };
+        self.loss.store(code, Ordering::Release);
+    }
+
+    fn loss(&self) -> Option<Loss> {
+        match self.loss.load(Ordering::Acquire) {
+            0 => None,
+            Self::OVERFLOW => Some(Loss::Overflow),
+            micros => Some(Loss::Missed(Duration::from_micros(micros))),
+        }
+    }
+}
+
+/// How the data thread turns a stream buffer into the negotiated format.
+enum Mix {
+    /// The stream already carries the negotiated channels.
+    Passthrough { frame_bytes: usize },
+    /// Pick channel indices from an `in_channels`-wide stream; each bucket of
+    /// indices averages into one output channel (§9, T025).
+    Select {
+        in_channels: usize,
+        buckets: Vec<Vec<usize>>,
+    },
+}
+
+impl Mix {
+    fn new(selection: Option<&[u8]>, in_channels: usize, out_channels: usize) -> Self {
+        match selection {
+            Some(selected) if !selected.is_empty() && out_channels > 0 => Mix::Select {
+                in_channels: in_channels.max(1),
+                buckets: channel_buckets(selected, out_channels),
+            },
+            _ => Mix::Passthrough {
+                frame_bytes: in_channels.max(1) * 2,
+            },
+        }
+    }
+
+    /// Whole stream frames in `samples`.
+    fn frames(&self, samples: &[u8]) -> u64 {
+        let frame_bytes = match self {
+            Mix::Passthrough { frame_bytes } => *frame_bytes,
+            Mix::Select { in_channels, .. } => in_channels * 2,
+        };
+        (samples.len() / frame_bytes) as u64
+    }
+}
+
+/// Everything `process` touches, owned by the realtime data thread. It reaches
+/// the loop thread only through the ring and [`Shared`]; none of it allocates,
+/// locks or blocks.
+struct DataPath {
+    ring: rtrb::Producer<u8>,
+    shared: Arc<Shared>,
+    mix: Mix,
+    continuity: Continuity,
+    epoch: u32,
+    /// A loss ends capture: nothing after it is handed over.
+    lost: bool,
+}
+
+impl DataPath {
+    fn new(ring: rtrb::Producer<u8>, shared: Arc<Shared>, mix: Mix, rate: u32) -> Self {
+        Self {
+            ring,
+            shared,
+            mix,
+            continuity: Continuity::new(rate),
+            epoch: 0,
+            lost: false,
+        }
+    }
+
+    /// Hand one non-empty buffer to the loop thread, whole or not at all.
+    /// Returns its frames.
+    fn deliver(&mut self, samples: &[u8]) -> u64 {
+        let frames = self.mix.frames(samples);
+        if self.lost {
+            return frames;
+        }
+        let written = match &self.mix {
+            Mix::Passthrough { .. } => self.ring.push_entire_slice(samples).is_ok(),
+            Mix::Select {
+                in_channels,
+                buckets,
+            } => match self
+                .ring
+                .write_chunk_uninit(frames as usize * buckets.len() * 2)
+            {
+                Ok(chunk) => {
+                    chunk.fill_from_iter(downmix_s16(samples, *in_channels, buckets));
+                    true
+                }
+                Err(_) => false,
+            },
+        };
+        if !written {
+            self.lose(Loss::Overflow);
+        }
+        frames
+    }
+
+    /// `frames` arrived with the stream clock at `ticks`.
+    fn account(&mut self, ticks: u64, graph_rate: (u32, u32), frames: u64) {
+        let epoch = self.shared.epoch.load(Ordering::Acquire);
+        if epoch != self.epoch {
+            self.epoch = epoch;
+            self.continuity.restart();
+        }
+        if let Some(lost) = self.continuity.delivered(ticks, graph_rate, frames) {
+            self.lose(Loss::Missed(lost));
+        }
+    }
+
+    fn lose(&mut self, loss: Loss) {
+        if !std::mem::replace(&mut self.lost, true) {
+            self.shared.latch(loss);
+        }
+    }
+}
+
+thread_local! {
+    /// Set on the capture loop thread, which `process` must never run on.
+    static ON_CAPTURE_LOOP: Cell<bool> = const { Cell::new(false) };
+}
+
+/// The `process` callback. The `Send` bound proves at compile time that it
+/// shares nothing unsynchronized with the loop thread.
+fn realtime_process(mut path: DataPath) -> impl FnMut(&Stream, &mut ()) + Send + 'static {
+    move |stream, _| {
+        debug_assert!(
+            !ON_CAPTURE_LOOP.with(Cell::get),
+            "process must run on the realtime data thread"
+        );
+        let mut frames = 0u64;
+        while let Some(mut buffer) = stream.dequeue_buffer() {
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                continue;
+            };
+            let size = data.chunk().size() as usize;
+            let offset = data.chunk().offset() as usize;
+            let Some(samples) = data.data() else {
+                continue;
+            };
+            let end_at = (offset + size).min(samples.len());
+            let slice = &samples[offset.min(samples.len())..end_at];
+            // Empty buffers are not delivery; silent PCM is.
+            if !slice.is_empty() {
+                frames += path.deliver(slice);
+            }
+        }
+        if frames == 0 {
+            return;
+        }
+        if let Ok(time) = stream.time() {
+            let rate = time.rate();
+            path.account(time.ticks(), (rate.num, rate.denom), frames);
+        }
+    }
+}
+
+/// The loop thread's end of the data path.
+struct Drain {
+    ring: rtrb::Consumer<u8>,
+    shared: Arc<Shared>,
+}
+
+/// What one [`Drain::run`] found.
+#[derive(Debug, PartialEq)]
+struct Drained {
+    delivered: bool,
+    /// The consumer has gone (abort).
+    abandoned: bool,
+    /// The data thread lost audio; everything it buffered before has moved.
+    loss: Option<Loss>,
+}
+
+impl Drain {
+    fn run(&mut self, producer: &mut Producer) -> Drained {
+        // Read first: whatever was written before the latch is already visible.
+        let loss = self.shared.loss();
+        let available = self.ring.slots();
+        let mut abandoned = false;
+        if available > 0 {
+            if let Ok(chunk) = self.ring.read_chunk(available) {
+                let (head, tail) = chunk.as_slices();
+                let mut bytes = BytesMut::with_capacity(available);
+                bytes.extend_from_slice(head);
+                bytes.extend_from_slice(tail);
+                chunk.commit_all();
+                abandoned = !producer.push(bytes.freeze());
+            }
+        }
+        Drained {
+            delivered: available > 0,
+            abandoned,
+            loss,
+        }
+    }
+}
+
+/// The realtime ring for `format`, every page touched here so the data thread
+/// never takes a page fault on first write.
+fn realtime_ring(format: myna_core::AudioFormat) -> (rtrb::Producer<u8>, rtrb::Consumer<u8>) {
+    let capacity = (format.bytes_per_second() as f64 * REALTIME_BUFFER.as_secs_f64()) as usize;
+    let (mut tx, mut rx) = rtrb::RingBuffer::new(capacity.max(1));
+    if let Ok(chunk) = tx.write_chunk_uninit(tx.slots()) {
+        chunk.fill_from_iter(std::iter::repeat(0));
+    }
+    if let Ok(chunk) = rx.read_chunk(rx.slots()) {
+        chunk.commit_all();
+    }
+    (tx, rx)
 }
 
 /// The fault when the daemon never answers discovery.
@@ -356,6 +626,7 @@ impl CaptureBackend for PipeWireBackend {
 /// producer deliver the one terminal outcome, so the producer's release (the
 /// end of the health stream) means PipeWire is released too.
 fn run_capture(spec: CaptureSpec, producer: Producer, remote: Option<String>) {
+    ON_CAPTURE_LOOP.with(|on| on.set(true));
     let producer = Rc::new(RefCell::new(Some(producer)));
     let fault = capture_session(&spec, &producer, remote.as_deref());
     let producer = producer.borrow_mut().take();
@@ -396,21 +667,42 @@ fn capture_session(
         }
     };
 
-    // Poll timer: stop, abort and phase deadlines are observed in every
-    // phase, from discovery on, within STOP_POLL (FR-012, SC-009).
+    let (ring, consumer) = realtime_ring(spec.format);
+    let shared = Arc::new(Shared::default());
+    let drain = Rc::new(RefCell::new(Drain {
+        ring: consumer,
+        shared: shared.clone(),
+    }));
+
+    // Poll timer: drains the realtime ring, and observes stop, abort and the
+    // phase deadlines in every phase, from discovery on (FR-012, SC-009).
     let timer = main_loop.loop_().add_timer({
         let supervisor = supervisor.clone();
         let stop = spec.stop.clone();
         let end = end.clone();
+        let producer = producer.clone();
+        let drain = drain.clone();
         move |_| {
-            if let Some(why) = supervisor.borrow().tick(Instant::now(), stop.is_stopped()) {
+            let now = Instant::now();
+            if let Some(producer) = producer.borrow_mut().as_mut() {
+                let drained = drain.borrow_mut().run(producer);
+                if drained.delivered {
+                    supervisor.borrow_mut().delivered(now);
+                }
+                if drained.abandoned {
+                    // Consumer gone (abort) → end promptly (FR-011).
+                    end(Ending::Clean);
+                }
+                if let Some(loss) = drained.loss {
+                    end(Ending::Fault(loss.into_error()));
+                }
+            }
+            if let Some(why) = supervisor.borrow().tick(now, stop.is_stopped()) {
                 end(why);
             }
         }
     });
-    let _ = timer
-        .update_timer(Some(STOP_POLL), Some(STOP_POLL))
-        .into_result();
+    let _ = timer.update_timer(Some(POLL), Some(POLL)).into_result();
 
     let context = match ContextRc::new(&main_loop, None) {
         Ok(c) => c,
@@ -473,26 +765,18 @@ fn capture_session(
         }
     };
 
-    // Channel selection (§9): when specific indices are requested, ask the
-    // graph for enough channels to contain them (max index + 1), then the
-    // process callback picks those indices and downmixes to the negotiated
-    // channel count (T025). Otherwise request the negotiated channels directly.
     let selection = spec.channels.clone();
-    let stream_channels = match &selection {
-        Some(idx) => idx.iter().copied().max().map(|m| m as u32 + 1).unwrap_or(1),
-        None => spec.format.channels as u32,
-    };
+    let stream_channels = stream_channels(selection.as_deref(), spec.format.channels);
 
-    let continuity = Rc::new(RefCell::new(Continuity::new(spec.format.sample_rate_hz)));
     let listener = stream
         .add_local_listener_with_user_data(())
         .state_changed({
             let end = end.clone();
             let target = spec.target.clone();
             let supervisor = supervisor.clone();
-            let continuity = continuity.clone();
+            let shared = shared.clone();
             move |_stream, _ud, _old, new| {
-                continuity.borrow_mut().restart();
+                shared.epoch.fetch_add(1, Ordering::AcqRel);
                 if matches!(new, StreamState::Paused | StreamState::Streaming) {
                     supervisor.borrow_mut().wired();
                 }
@@ -507,77 +791,26 @@ fn capture_session(
                 }
             }
         })
-        .process({
-            let end = end.clone();
-            let producer = producer.clone();
-            let supervisor = supervisor.clone();
-            // Channel pick/downmix config (§9): pick these input-channel indices
-            // from the `stream_channels`-wide stream and average them down to
-            // `out_channels`. `None` = pass through unchanged.
-            let selection = selection.clone();
-            let in_channels = stream_channels as usize;
-            let out_channels = spec.format.channels as usize;
-            let loop_thread = std::thread::current().id();
-            move |stream, _ud| {
-                debug_assert_eq!(
-                    std::thread::current().id(),
-                    loop_thread,
-                    "process callback must run on the capture loop thread"
-                );
-                let mut frames = 0u64;
-                while let Some(mut buffer) = stream.dequeue_buffer() {
-                    let datas = buffer.datas_mut();
-                    let Some(data) = datas.first_mut() else {
-                        continue;
-                    };
-                    let size = data.chunk().size() as usize;
-                    let offset = data.chunk().offset() as usize;
-                    let Some(samples) = data.data() else {
-                        continue;
-                    };
-                    let end_at = (offset + size).min(samples.len());
-                    let slice = &samples[offset.min(samples.len())..end_at];
-                    // Empty buffers are not delivery; silent PCM is.
-                    if slice.is_empty() {
-                        continue;
-                    }
-                    supervisor.borrow_mut().delivered(Instant::now());
-                    frames += (slice.len() / (in_channels * 2)) as u64;
-                    let bytes = match &selection {
-                        Some(idx) => select_channels_s16(slice, in_channels, idx, out_channels),
-                        None => Bytes::copy_from_slice(slice),
-                    };
-                    let alive = producer
-                        .borrow_mut()
-                        .as_mut()
-                        .is_some_and(|p| p.push(bytes));
-                    if !alive {
-                        // Consumer gone (abort) → end promptly (FR-011).
-                        end(Ending::Clean);
-                    }
-                }
-                if frames == 0 {
-                    return;
-                }
-                if let Ok(time) = stream.time() {
-                    let rate = time.rate();
-                    let lost = continuity.borrow_mut().delivered(
-                        time.ticks(),
-                        (rate.num, rate.denom),
-                        frames,
-                    );
-                    if let Some(lost) = lost {
-                        end(Ending::Fault(CaptureError::Backend(lost_audio_message(
-                            lost,
-                        ))));
-                    }
-                }
-            }
-        })
         .register();
-    let listener = match listener {
-        Ok(l) => l,
-        Err(e) => {
+    // A listener of its own: pipewire-rs lends each callback its whole
+    // listener mutably, and this one runs on the data thread.
+    let path = DataPath::new(
+        ring,
+        shared,
+        Mix::new(
+            selection.as_deref(),
+            stream_channels as usize,
+            spec.format.channels as usize,
+        ),
+        spec.format.sample_rate_hz,
+    );
+    let rt_listener = stream
+        .add_local_listener_with_user_data(())
+        .process(realtime_process(path))
+        .register();
+    let (listener, rt_listener) = match (listener, rt_listener) {
+        (Ok(l), Ok(rt)) => (l, rt),
+        (Err(e), _) | (_, Err(e)) => {
             return Some(CaptureError::Backend(format!(
                 "cannot register stream listener: {e}"
             )));
@@ -608,7 +841,7 @@ fn capture_session(
     // otherwise does: an unresolvable `node.name` must fault (FR-004, C4), not
     // silently capture the default device. DONT_RECONNECT drives the stream to
     // the error state, which `state_changed` turns into a terminal fault.
-    let mut flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS;
+    let mut flags = StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS;
     if spec.target.is_some() {
         flags |= StreamFlags::DONT_RECONNECT;
     }
@@ -623,58 +856,74 @@ fn capture_session(
 
     main_loop.run();
 
-    // Quiesce the stream before the caller takes the producer; the PipeWire
-    // objects drop on return.
+    // Disconnecting removes the node from the data loop under its lock, so
+    // `process` has returned for good before the ring's last audio drains,
+    // exactly once, ahead of the terminal outcome. The PipeWire objects drop
+    // on return.
     let _ = stream.disconnect();
+    drop(rt_listener);
     drop(listener);
     drop(timer);
+    let loss = producer
+        .borrow_mut()
+        .as_mut()
+        .and_then(|producer| drain.borrow_mut().run(producer).loss);
     let why = ending.borrow_mut().take();
-    why.and_then(Ending::into_fault)
+    final_ending(why, loss).and_then(Ending::into_fault)
 }
 
-/// Pick channel indices `selected` from an interleaved S16LE frame stream that
-/// has `in_channels` channels, and downmix them to `out_channels` by averaging
-/// Frame-aligned; a trailing partial frame is dropped.
-///
-/// For `out_channels == 1`, all selected channels average into the single out
-/// channel. For `out_channels == selected.len()`, each selected channel maps
-/// 1:1 in order. Other cases distribute selected channels round-robin across
-/// the out channels (best-effort; the common cases are mono-out and identity).
-fn select_channels_s16(
-    data: &[u8],
-    in_channels: usize,
-    selected: &[u8],
-    out_channels: usize,
-) -> Bytes {
-    if in_channels == 0 || out_channels == 0 || selected.is_empty() {
-        return Bytes::copy_from_slice(data);
+/// How capture ended, given the audio the data thread lost before it was
+/// quiesced: a loss outranks a clean end, never an earlier fault.
+fn final_ending(why: Option<Ending>, loss: Option<Loss>) -> Option<Ending> {
+    match (why, loss) {
+        (Some(Ending::Fault(err)), _) => Some(Ending::Fault(err)),
+        (_, Some(loss)) => Some(Ending::Fault(loss.into_error())),
+        (why, None) => why,
     }
-    let in_stride = in_channels * 2; // S16 = 2 bytes
-    let frames = data.len() / in_stride;
-    let mut out = Vec::with_capacity(frames * out_channels * 2);
-    // Which selected indices feed each output channel.
-    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); out_channels];
+}
+
+/// Channels to ask the graph for (§9): with a selection, enough to contain
+/// every selected index, which the process callback then picks and downmixes
+/// to the negotiated count (T025); otherwise the negotiated count itself.
+fn stream_channels(selection: Option<&[u8]>, negotiated: u8) -> u32 {
+    match selection {
+        Some(indices) => indices.iter().max().map_or(1, |&max| max as u32 + 1),
+        None => negotiated as u32,
+    }
+}
+
+/// Which selected channel indices feed each output channel: all of them for
+/// mono out, 1:1 when the counts match, otherwise round-robin (best-effort).
+fn channel_buckets(selected: &[u8], out_channels: usize) -> Vec<Vec<usize>> {
+    let mut buckets = vec![Vec::new(); out_channels];
     for (n, &ch) in selected.iter().enumerate() {
         buckets[n % out_channels].push(ch as usize);
     }
-    for f in 0..frames {
-        let base = f * in_stride;
-        for bucket in &buckets {
-            let mut acc: i32 = 0;
-            let mut count: i32 = 0;
-            for &ch in bucket {
-                if ch < in_channels {
-                    let p = base + ch * 2;
-                    let s = i16::from_le_bytes([data[p], data[p + 1]]) as i32;
-                    acc += s;
-                    count += 1;
-                }
-            }
-            let v = if count > 0 { (acc / count) as i16 } else { 0 };
-            out.extend_from_slice(&v.to_le_bytes());
-        }
-    }
-    Bytes::from(out)
+    buckets
+}
+
+/// Interleaved S16LE frames `in_channels` wide, each bucket of channel indices
+/// averaged into one output sample. A trailing partial frame is dropped; an
+/// index past the stream contributes nothing, and a bucket without a valid
+/// index is silence. Lazy, so the data thread writes it straight into the ring.
+fn downmix_s16<'a>(
+    data: &'a [u8],
+    in_channels: usize,
+    buckets: &'a [Vec<usize>],
+) -> impl Iterator<Item = u8> + 'a {
+    data.chunks_exact(in_channels * 2).flat_map(move |frame| {
+        buckets.iter().flat_map(move |bucket| {
+            let (sum, count) = bucket.iter().filter(|&&ch| ch < in_channels).fold(
+                (0i32, 0i32),
+                |(sum, count), &ch| {
+                    let sample = i16::from_le_bytes([frame[2 * ch], frame[2 * ch + 1]]);
+                    (sum + sample as i32, count + 1)
+                },
+            );
+            let mixed = if count > 0 { (sum / count) as i16 } else { 0 };
+            mixed.to_le_bytes()
+        })
+    })
 }
 
 #[cfg(test)]
@@ -973,6 +1222,236 @@ mod tests {
         assert!(matches!(fault, Some(CaptureError::Backend(_))));
     }
 
+    fn select_channels_s16(
+        data: &[u8],
+        in_channels: usize,
+        selected: &[u8],
+        out_channels: usize,
+    ) -> Vec<u8> {
+        downmix_s16(data, in_channels, &channel_buckets(selected, out_channels)).collect()
+    }
+
+    fn s16(samples: &[i16]) -> Vec<u8> {
+        samples.iter().flat_map(|s| s.to_le_bytes()).collect()
+    }
+
+    fn data_path(capacity: usize, mix: Mix) -> (DataPath, rtrb::Consumer<u8>, Arc<Shared>) {
+        let (tx, rx) = rtrb::RingBuffer::new(capacity);
+        let shared = Arc::new(Shared::default());
+        (DataPath::new(tx, shared.clone(), mix, 16_000), rx, shared)
+    }
+
+    fn mono() -> Mix {
+        Mix::new(None, 1, 1)
+    }
+
+    fn producer() -> (Producer, Arc<crate::ring::Ring>) {
+        let fmt = CoreFormat::default();
+        let ring = crate::ring::Ring::new(1 << 20, fmt);
+        let (stats, _) = tokio::sync::watch::channel(crate::AudioStats::default());
+        let (health, _) = tokio::sync::watch::channel(myna_core::CaptureHealth::Opening);
+        (Producer::new(ring.clone(), stats, health, fmt, 2, 2), ring)
+    }
+
+    #[test]
+    fn a_buffer_the_realtime_ring_cannot_hold_overflows_instead_of_splitting() {
+        let (mut path, mut rx, shared) = data_path(8, mono());
+        assert_eq!(path.deliver(&[1; 6]), 3);
+        assert_eq!(shared.loss(), None);
+        assert_eq!(path.deliver(&[2; 4]), 2);
+        assert_eq!(shared.loss(), Some(Loss::Overflow));
+        // Nothing after a loss is handed over, even what would fit.
+        assert_eq!(path.deliver(&[3; 2]), 1);
+        let held: Vec<u8> = rx.read_chunk(rx.slots()).unwrap().into_iter().collect();
+        assert_eq!(held, [1; 6]);
+    }
+
+    #[test]
+    fn missed_cycles_latch_a_loss_and_the_first_loss_wins() {
+        let (mut path, _rx, shared) = data_path(8, mono());
+        path.account(0, GRAPH, 341);
+        path.account(CYCLE, GRAPH, 341);
+        assert_eq!(shared.loss(), None);
+        path.account(3 * CYCLE, GRAPH, 341);
+        let first = shared.loss();
+        match first {
+            Some(Loss::Missed(lost)) => {
+                assert!(
+                    lost > LOSS_TOLERANCE && lost < Duration::from_millis(22),
+                    "{lost:?}"
+                )
+            }
+            other => panic!("expected missed audio, got {other:?}"),
+        }
+        path.deliver(&[0; 16]);
+        assert_eq!(shared.loss(), first);
+    }
+
+    #[test]
+    fn a_state_change_restarts_the_loss_account() {
+        let (mut path, _rx, shared) = data_path(8, mono());
+        path.account(0, GRAPH, 341);
+        shared.epoch.fetch_add(1, Ordering::AcqRel);
+        let resumed = 48_000 * 10;
+        path.account(resumed, GRAPH, 341);
+        assert_eq!(shared.loss(), None);
+        path.account(resumed + 2 * CYCLE, GRAPH, 341);
+        assert!(shared.loss().is_some());
+    }
+
+    #[test]
+    fn selected_channels_are_downmixed_into_the_realtime_ring() {
+        let (mut path, mut rx, _) = data_path(64, Mix::new(Some(&[2, 3]), 4, 1));
+        let frames = s16(&[100, 200, 300, 400, -100, -200, -300, -400]);
+        assert_eq!(path.deliver(&frames), 2);
+        let out: Vec<u8> = rx.read_chunk(rx.slots()).unwrap().into_iter().collect();
+        assert_eq!(out, s16(&[350, -350]));
+    }
+
+    #[test]
+    fn a_downmix_the_realtime_ring_cannot_hold_overflows() {
+        let (mut path, rx, shared) = data_path(2, Mix::new(Some(&[0, 1]), 2, 1));
+        assert_eq!(path.deliver(&s16(&[1, 3, 5, 7])), 2);
+        assert_eq!(shared.loss(), Some(Loss::Overflow));
+        assert_eq!(rx.slots(), 0);
+    }
+
+    #[test]
+    fn a_mix_without_a_usable_selection_passes_the_stream_through() {
+        for mix in [
+            Mix::new(Some(&[]), 2, 2),
+            Mix::new(Some(&[1]), 2, 0),
+            Mix::new(None, 2, 2),
+        ] {
+            assert!(matches!(mix, Mix::Passthrough { frame_bytes: 4 }));
+        }
+        assert_eq!(Mix::new(None, 2, 2).frames(&[0; 9]), 2);
+        assert_eq!(Mix::new(Some(&[0]), 3, 1).frames(&[0; 13]), 2);
+        assert_eq!(Mix::new(Some(&[0]), 4, 1).frames(&[0; 24]), 3);
+    }
+
+    #[test]
+    fn the_stream_is_wide_enough_for_every_selected_channel() {
+        assert_eq!(stream_channels(Some(&[2, 3]), 1), 4);
+        assert_eq!(stream_channels(Some(&[5, 0]), 2), 6);
+        assert_eq!(stream_channels(Some(&[]), 2), 1);
+        assert_eq!(stream_channels(None, 2), 2);
+    }
+
+    #[test]
+    fn selected_channels_downmix_to_each_output_channel() {
+        let (mut path, mut rx, _) = data_path(64, Mix::new(Some(&[1, 0]), 2, 2));
+        assert_eq!(path.deliver(&s16(&[1, 2, 3, 4, 5, 6])), 3);
+        let out: Vec<u8> = rx.read_chunk(rx.slots()).unwrap().into_iter().collect();
+        assert_eq!(out, s16(&[2, 1, 4, 3, 6, 5]));
+    }
+
+    #[test]
+    fn a_loss_outranks_a_clean_end_but_not_an_earlier_fault() {
+        let lost = Loss::Missed(Duration::from_millis(40));
+        assert_eq!(final_ending(Some(Ending::Clean), None), Some(Ending::Clean));
+        assert_eq!(final_ending(None, None), None);
+        assert_eq!(
+            final_ending(Some(Ending::Clean), Some(lost)),
+            Some(Ending::Fault(lost.into_error()))
+        );
+        assert_eq!(
+            final_ending(None, Some(Loss::Overflow)),
+            Some(Ending::Fault(Loss::Overflow.into_error()))
+        );
+        let earlier = Ending::Fault(CaptureError::DeviceUnavailable("gone".into()));
+        assert_eq!(
+            final_ending(
+                Some(Ending::Fault(CaptureError::DeviceUnavailable(
+                    "gone".into()
+                ))),
+                Some(lost)
+            ),
+            Some(earlier)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_drain_moves_the_audio_buffered_before_a_loss_then_reports_it() {
+        let (mut path, rx, shared) = data_path(8, mono());
+        let mut drain = Drain { ring: rx, shared };
+        let (mut producer, ring) = producer();
+        path.deliver(&[1; 6]);
+        assert_eq!(
+            drain.run(&mut producer),
+            Drained {
+                delivered: true,
+                abandoned: false,
+                loss: None
+            }
+        );
+        // Wraps the ring's end.
+        path.deliver(&[2; 6]);
+        path.deliver(&[3; 4]);
+        assert_eq!(
+            drain.run(&mut producer),
+            Drained {
+                delivered: true,
+                abandoned: false,
+                loss: Some(Loss::Overflow)
+            }
+        );
+        assert!(!drain.run(&mut producer).delivered);
+        producer.finish(None);
+        let mut got = Vec::new();
+        while let Some(Ok(chunk)) = ring.next().await {
+            got.extend_from_slice(&chunk.data);
+        }
+        assert_eq!(got, [[1; 6], [2; 6]].concat());
+    }
+
+    #[test]
+    fn a_drain_reports_a_consumer_that_has_gone() {
+        let (mut path, rx, shared) = data_path(8, mono());
+        let mut drain = Drain { ring: rx, shared };
+        let (mut producer, ring) = producer();
+        ring.close();
+        assert!(!drain.run(&mut producer).abandoned);
+        path.deliver(&[0; 2]);
+        assert!(drain.run(&mut producer).abandoned);
+    }
+
+    #[test]
+    fn the_realtime_ring_holds_its_buffer_of_the_negotiated_format() {
+        let stereo = CoreFormat {
+            sample_rate_hz: 48_000,
+            channels: 2,
+            sample_width_bytes: 2,
+        };
+        let (tx, rx) = realtime_ring(stereo);
+        assert_eq!(tx.slots(), 384_000);
+        assert_eq!(rx.slots(), 0);
+    }
+
+    #[test]
+    fn losses_are_backend_faults_naming_the_cause() {
+        let shared = Shared::default();
+        shared.latch(Loss::Missed(Duration::ZERO));
+        assert_eq!(shared.loss(), Some(Loss::Missed(Duration::from_micros(1))));
+        shared.latch(Loss::Missed(Duration::MAX));
+        assert_eq!(
+            shared.loss(),
+            Some(Loss::Missed(Duration::from_micros(u64::MAX - 1)))
+        );
+        match Loss::Missed(Duration::from_millis(250)).into_error() {
+            CaptureError::Backend(msg) => {
+                assert!(msg.starts_with("250 ms of audio was lost"), "{msg}")
+            }
+            other => panic!("{other:?}"),
+        }
+        match Loss::Overflow.into_error() {
+            CaptureError::Backend(msg) => {
+                assert!(msg.contains("overflowed") && msg.contains("2 s"), "{msg}")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
     /// T025 (pure unit): pick + downmix interleaved S16 frames by channel index.
     #[test]
     fn select_channels_downmix_to_mono() {
@@ -1014,5 +1493,6 @@ mod tests {
         let frame: Vec<u8> = [100i16, 200].iter().flat_map(|s| s.to_le_bytes()).collect();
         let out = select_channels_s16(&frame, 2, &[5], 1);
         assert_eq!(i16::from_le_bytes([out[0], out[1]]), 0);
+        assert_eq!(select_channels_s16(&frame, 2, &[2], 1), s16(&[0]));
     }
 }

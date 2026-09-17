@@ -67,7 +67,9 @@ impl CaptureSource {
     }
 
     /// The stats tap (§8): latest capture health, conflating by design (a
-    /// level meter wants the latest value, not history).
+    /// level meter wants the latest value, not history). Holding a `borrow()`
+    /// stalls the thread that publishes it; past the native backend's 2 s
+    /// realtime buffer that faults capture, so never hold one across a wait.
     pub fn stats(&self) -> watch::Receiver<AudioStats> {
         self.stats.subscribe()
     }

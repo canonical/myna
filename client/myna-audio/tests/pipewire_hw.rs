@@ -966,18 +966,70 @@ async fn enumerated_name_is_a_usable_target() {
     );
 }
 
-/// A capture loop stalled past a few graph cycles loses the audio PipeWire
-/// produced meanwhile; that loss faults instead of reading as continuous
-/// speech. Holding the stats tap's read guard parks the loop in its next
-/// publish, the same as CPU starvation of the (non-realtime) loop thread.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stalled_capture_loop_faults_as_lost_audio() {
-    skip_unless_enabled!();
+/// Hold the stats tap's read guard for `stall`: the loop thread parks in its
+/// next publish, as if starved of CPU, while PipeWire keeps delivering.
+fn stall_capture_loop(
+    stats: &tokio::sync::watch::Receiver<myna_audio::AudioStats>,
+    stall: Duration,
+) {
+    let guard = stats.borrow();
+    std::thread::sleep(stall);
+    drop(guard);
+}
+
+fn default_capture_source() -> CaptureSource {
     let mut builder = CaptureSource::builder(AudioFormat::default());
     if let Some(t) = target() {
         builder = builder.target(t);
     }
-    let source = builder.backend(Box::new(PipeWireBackend::new())).build();
+    builder.backend(Box::new(PipeWireBackend::new())).build()
+}
+
+/// A starved capture loop thread is not lost audio: the realtime callback
+/// keeps buffering, and the loop catches up once it runs again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn capture_loop_stall_within_the_realtime_buffer_loses_nothing() {
+    skip_unless_enabled!();
+    const STALL: Duration = Duration::from_millis(500);
+    let source = default_capture_source();
+    let mut stats = source.stats();
+    let stop = source.stop_handle();
+    let stream = Box::new(source).capture();
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(200),
+            Duration::from_secs(5)
+        )
+        .await,
+        "capture established"
+    );
+
+    let before = stats.borrow().captured;
+    let t0 = Instant::now();
+    stall_capture_loop(&stats, STALL);
+    let caught_up = wait_captured(&mut stats, before + STALL, Duration::from_secs(1)).await;
+    let behind = t0
+        .elapsed()
+        .saturating_sub(stats.borrow().captured - before);
+    stop.stop();
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
+    assert!(fault.is_none(), "a loop stall faulted: {fault:?}");
+    assert!(caught_up, "capture did not catch up after the stall");
+    assert!(
+        behind <= Duration::from_millis(300),
+        "capture fell {behind:?} behind"
+    );
+    let drained: Duration = chunks.iter().map(PcmChunk::duration).sum();
+    assert_eq!(drained, stats.borrow().captured);
+}
+
+/// A loop thread starved for longer than the realtime buffer holds overflows
+/// it, which faults instead of silently skipping audio.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn capture_loop_stall_past_the_realtime_buffer_faults() {
+    skip_unless_enabled!();
+    let source = default_capture_source();
     let mut stats = source.stats();
     let health = source.health();
     let stream = Box::new(source).capture();
@@ -991,21 +1043,20 @@ async fn stalled_capture_loop_faults_as_lost_audio() {
         "capture established"
     );
 
-    let guard = stats.borrow();
-    std::thread::sleep(Duration::from_millis(300));
-    drop(guard);
+    stall_capture_loop(&stats, Duration::from_millis(2_500));
 
     let (states, _) = health_to_end(health, Duration::from_secs(3)).await;
     match states.last() {
         Some(CaptureHealth::Faulted(CaptureError::Backend(msg))) => {
-            assert!(msg.contains("lost"), "got: {msg}")
+            assert!(msg.contains("overflowed"), "got: {msg}")
         }
-        other => panic!("expected lost audio to fault, got {other:?}"),
+        other => panic!("expected an overflow fault, got {other:?}"),
     }
-    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(2)).await;
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
+    let drained: Duration = chunks.iter().map(PcmChunk::duration).sum();
     assert!(
-        !chunks.is_empty(),
-        "audio captured before the loss still drains"
+        drained >= Duration::from_secs(2),
+        "the audio buffered before the overflow drains, got {drained:?}"
     );
     assert_eq!(fault.map(CaptureHealth::Faulted).as_ref(), states.last());
 }
