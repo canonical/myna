@@ -196,6 +196,10 @@ class SilenceCut:
         self._silence_run = 0.0
         self._scanned = 0.0  # absolute seconds; audio before this was VAD-fed
 
+    @property
+    def force_cut_seconds(self) -> float:
+        return self._force_cut
+
     def mark_cut(self, at: float) -> None:
         """The window was cut at ``at``: restart the silence run there."""
         self._silence_run = 0.0

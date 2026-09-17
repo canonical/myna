@@ -625,3 +625,123 @@ async def test_a_chunked_strategy_takes_every_pause_inside_one_append():
 
     assert len(decoder.inputs) == 3, f"expected two pause cuts and a tail: {decoder.inputs}"
     assert decoder.largest_input <= 19 * RATE
+
+
+# ---------------------------------------------------------------------------
+# Batch: overlap only at forced cuts, deferred commits, bounded retention
+# ---------------------------------------------------------------------------
+
+
+def _pause_cut_plan():
+    # Speech past the 30 s arm, a pause that cuts, then more speech.
+    return [(30.4, True), (1.2, False), (4.0, True)]
+
+
+@pytest.mark.asyncio
+async def test_a_pause_cut_without_overlap_resumes_exactly_at_the_cut():
+    decoder = _Decoder(ramp=False)
+    await _run(
+        _speech_audio(_pause_cut_plan(), chunk_seconds=0.1),
+        decoder,
+        SilenceCut(arm_seconds=30.0),
+        cap=65.0,
+        silence_cut_overlap=False,
+    )
+
+    assert len(decoder.inputs) == 2, decoder.inputs
+    (first, n), (second, _) = decoder.inputs
+    assert first == 0
+    assert second == n
+
+
+@pytest.mark.asyncio
+async def test_a_forced_cut_keeps_its_overlap_when_pause_cuts_do_not():
+    decoder = _Decoder()
+    await _run(
+        _audio(70.0, 1.0),
+        decoder,
+        SilenceCut(arm_seconds=30.0, force_cut_seconds=60.0),
+        cap=65.0,
+        silence_cut_overlap=False,
+    )
+
+    assert decoder.inputs == [(0, 60 * RATE), (59 * RATE, 11 * RATE)]
+
+
+@pytest.mark.asyncio
+async def test_a_word_repeated_across_a_pause_cut_without_overlap_is_kept():
+    """No overlap audio means nothing to deduplicate: the same word after the
+    pause is new speech."""
+    timeline = [Word(" no", 29.5, 29.9), Word(" no", 31.8, 32.2)]
+    decoder = _Decoder(lambda _call: timeline, ramp=False)
+    _, transcript = await _run(
+        _speech_audio(_pause_cut_plan(), chunk_seconds=0.1),
+        decoder,
+        SilenceCut(arm_seconds=30.0),
+        cap=65.0,
+        silence_cut_overlap=False,
+    )
+
+    assert len(decoder.inputs) == 2, decoder.inputs
+    assert transcript.split() == ["no", "no"]
+
+
+@pytest.mark.asyncio
+async def test_on_commit_takes_the_committed_words_instead_of_the_wire():
+    timeline = _spaced(69.0)
+    decoder = _Decoder(lambda _call: timeline)
+    commits: list[tuple[str, list[Word]]] = []
+
+    async def on_commit(text: str, words: list[Word]) -> None:
+        commits.append((text, words))
+
+    events, transcript = await _run(
+        _audio(70.0, 1.0),
+        decoder,
+        SilenceCut(arm_seconds=30.0, force_cut_seconds=60.0),
+        cap=65.0,
+        silence_cut_overlap=False,
+        on_commit=on_commit,
+    )
+
+    assert not any(isinstance(e, TranscriptionFinal) for e in events)
+    assert len(commits) == 2
+    assert "".join(text for text, _ in commits) == transcript
+    assert transcript.split() == _labels(len(timeline))
+    for text, words in commits:
+        assert "".join(w.text for w in words).strip() == text.strip()
+
+
+@pytest.mark.asyncio
+async def test_a_zero_utterance_floor_decodes_the_shortest_input():
+    decoder = _Decoder()
+    await _run(_audio(0.1, 0.1), decoder, SilenceCut(), cap=65.0, min_utterance_seconds=0.0)
+
+    assert decoder.inputs == [(0, round(0.1 * RATE))]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds", [70.0, 250.0])
+async def test_deferred_batch_bounds_retention_and_emits_only_progress(retained, seconds):
+    from myna.testbed.streaming.batch import run_deferred_batch
+
+    timeline = _spaced(seconds - 0.5)
+    decoder = _Decoder(lambda _call: timeline)
+    events: list[object] = []
+    commits: list[str] = []
+
+    async def emit(event: object) -> None:
+        events.append(event)
+
+    async def on_commit(text: str, _words: list[Word]) -> None:
+        commits.append(text)
+
+    await run_deferred_batch(_audio(seconds, 0.1), emit, decoder, on_commit)
+
+    assert all(isinstance(e, TranscriptionProgress) for e in events)
+    assert "".join(commits).split() == _labels(len(timeline))
+    assert decoder.largest_input <= 65 * RATE
+    assert retained[0] <= 65 * RATE * 2
+    # Pause-free audio: every cut is forced at 60 s and re-decodes 1 s.
+    starts = [first for first, _ in decoder.inputs]
+    assert starts == [k * 59 * RATE for k in range(len(starts))]

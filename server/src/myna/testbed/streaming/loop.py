@@ -318,7 +318,16 @@ async def run_streaming_loop(
     partial_cadence_seconds: float | None = None,
     partial_tail_seconds: float | None = None,
     telemetry: StreamingTelemetry | None = None,
+    *,
+    on_commit: Callable[[str, list[Word]], Awaitable[None]] | None = None,
+    silence_cut_overlap: bool = True,
+    min_utterance_seconds: float = MIN_DECODE_S,
 ) -> str:
+    """``on_commit`` receives each committed text with its words instead of
+    the wire (deferred presentation). ``silence_cut_overlap=False`` retires a
+    pause cut without overlap, as murmure does: its trailing silence means no
+    word straddles it, so only forced cuts keep audio to deduplicate.
+    ``min_utterance_seconds`` is the shortest utterance worth a decode."""
     # Every decode in a session runs on this one thread. `asyncio.to_thread`
     # would use the event loop's default pool, which grows to min(32, cpu + 4)
     # workers even under a strictly sequential caller — a submit that lands
@@ -345,6 +354,9 @@ async def run_streaming_loop(
             partial_cadence_seconds,
             partial_tail_seconds,
             telemetry=telemetry,
+            on_commit=on_commit,
+            silence_cut_overlap=silence_cut_overlap,
+            min_utterance_seconds=min_utterance_seconds,
         )
     finally:
         executor.shutdown(wait=False)
@@ -361,6 +373,9 @@ async def _run(
     partial_cadence_seconds: float | None,
     partial_tail_seconds: float | None,
     telemetry: StreamingTelemetry | None = None,
+    on_commit: Callable[[str, list[Word]], Awaitable[None]] | None = None,
+    silence_cut_overlap: bool = True,
+    min_utterance_seconds: float = MIN_DECODE_S,
 ) -> str:
     # perf T03: additive, outside the commit/alignment logic below -- with
     # telemetry=None (every production call today) this is one branch per
@@ -387,13 +402,16 @@ async def _run(
 
     async def emit_committed(text: str, words: list[Word]) -> None:
         nonlocal segment_index
-        await emit(
-            TranscriptionFinal(
-                text=text,
-                disposition=Disposition.COMMITTED,
-                segment_index=segment_index,
+        if on_commit is not None:
+            await on_commit(text, words)
+        else:
+            await emit(
+                TranscriptionFinal(
+                    text=text,
+                    disposition=Disposition.COMMITTED,
+                    segment_index=segment_index,
+                )
             )
-        )
         committed.append(text)
         committed_word_texts.extend(_norm(w.text) for w in words)
         del committed_word_texts[:-_OVERLAP_LOOKBACK]
@@ -406,7 +424,10 @@ async def _run(
             last_unstable = text
 
     def fresh_words(words: list[Word]) -> list[Word]:
-        """Overlap dedupe (I2) — see module-level [`_drop_committed`]."""
+        """Overlap dedupe (I2) — see module-level [`_drop_committed`]. A window
+        holding no already-processed audio has nothing to deduplicate."""
+        if window.retained_start >= window.processed_through:
+            return words
         return _drop_committed(words, committed_word_texts, committed_through)
 
     async def commit(words: tuple[Word, ...] | list[Word]) -> bool:
@@ -416,14 +437,14 @@ async def _run(
             await emit_committed(_utterance_edge(text, not committed), fresh)
         return bool(text)
 
-    async def cut_region(cut: int) -> None:
+    async def cut_region(cut: int, forced: bool) -> None:
         """Decode [start, cut) once, commit it and retire it (chunked)."""
         nonlocal committed_through, last_unstable
         hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
         await commit(hyp.words)
         # Covered even when the region was silence or fully deduplicated.
         committed_through = max(committed_through, cut / RATE)
-        window.retire(cut)
+        window.retire(cut, keep_overlap=forced or silence_cut_overlap)
         last_unstable = ""  # I4: the commit resolves the epoch
 
     async def force_boundary() -> None:
@@ -433,7 +454,7 @@ async def _run(
         cut = window.received
         if isinstance(strategy, SilenceCut):
             strategy.mark_cut(cut / RATE)
-            await cut_region(cut)
+            await cut_region(cut, forced=True)
             return
         hyp = await timed_decode(window.samples(), window.start, "commit")
         decision = strategy.boundary_commit(hyp, cut / RATE, (cut - window.overlap) / RATE)
@@ -454,7 +475,8 @@ async def _run(
                     cut = strategy.observe(window.samples(), window.start, window.end)
                     if cut is None or cut - window.start < MIN_DECODE_S:
                         break
-                    await cut_region(to_samples(cut))
+                    forced = cut - window.start >= strategy.force_cut_seconds
+                    await cut_region(to_samples(cut), forced)
                     cut_taken = True
             if not pending:
                 break
@@ -511,7 +533,7 @@ async def _run(
     # I5: resolve the tail. MIN_DECODE_S skips an utterance too short to be
     # worth a decode, never the remainder a cut left behind.
     if window.received > window.processed_through and (
-        window.processed_through or window.window_seconds >= MIN_DECODE_S
+        window.processed_through or window.window_seconds >= min_utterance_seconds
     ):
         hyp = await timed_decode(window.samples(), window.start, "commit")
         await commit(hyp.words)

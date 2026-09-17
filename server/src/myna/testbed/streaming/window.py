@@ -86,10 +86,12 @@ class RollingWindow:
         span = self._buf[lo * _SAMPLE_BYTES : max(lo, hi) * _SAMPLE_BYTES]
         return np.frombuffer(span, dtype=np.int16).astype(np.float32) / 32768.0
 
-    def retire(self, through: int) -> None:
+    def retire(self, through: int, *, keep_overlap: bool = True) -> None:
         """Mark audio before ``through`` processed and drop it, keeping the
-        overlap. Monotonic, and never past the audio received."""
+        overlap unless told not to. Monotonic, and never past the audio
+        received."""
         self.processed_through = max(self.processed_through, min(through, self.received))
-        keep_from = max(self.retained_start, self.processed_through - self.overlap)
+        overlap = self.overlap if keep_overlap else 0
+        keep_from = max(self.retained_start, self.processed_through - overlap)
         del self._buf[: (keep_from - self.retained_start) * _SAMPLE_BYTES]
         self.retained_start = keep_from
