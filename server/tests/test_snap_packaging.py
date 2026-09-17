@@ -269,6 +269,22 @@ def test_no_app_plugs_network(snap) -> None:
         )
 
 
+@pytest.mark.parametrize("snap_dir", sorted(INFERENCE_SNAPS))
+def test_launchers_do_not_score_hardware(snap_dir: str) -> None:
+    """The daemon finds its engine without reading hardware.
+
+    `modelctl engine` (and its `show-engine` alias) re-scores the machine,
+    which fails without hardware-observe. A sideload starts without it, so a
+    launcher asking that question crash-loops the daemon whichever engine is
+    active; `status` reads the selection modelctl already made.
+    """
+    for launcher in _launchers(snap_dir):
+        for command in _commands(launcher.read_text(encoding="utf-8")):
+            assert command.startswith("#") or not re.search(
+                r"modelctl (show-)?engine\b", command
+            ), f"{launcher.relative_to(REPO_ROOT)}: {command!r} scores hardware to find the engine"
+
+
 def test_hooks_dir_holds_only_hooks(snap) -> None:
     """snap/hooks/ is a namespace snapd owns, not a scratch directory.
 
