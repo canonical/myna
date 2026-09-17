@@ -38,7 +38,7 @@ from myna.core import (
 from myna.core import wire_ie115 as w
 from myna.core.protocol import PROTOCOL_VERSION
 from myna.core.session import session_config_to_wire
-from myna.core.transport_ws import _BOUNDARY, _Ingress
+from myna.core.transport_ws import _BOUNDARY, _Boundary, _Ingress
 from myna.testbed import FakeAdapter
 
 BOUND = 5.0
@@ -72,9 +72,15 @@ class Scenario:
                 raise
 
     def run(self, main: Callable[[], Awaitable[Any]], timeout: float = 3 * BOUND) -> None:
+        async def leak_checked() -> None:
+            await main()
+            # asyncio.run would cancel these silently.
+            leaked = asyncio.all_tasks() - {asyncio.current_task()}
+            assert not leaked, f"tasks left running: {leaked}"
+
         def target() -> None:
             try:
-                asyncio.run(main())
+                asyncio.run(leak_checked())
             except BaseException as exc:
                 self.errors.append(exc)
             finally:
@@ -96,15 +102,33 @@ def scenario(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> Scenario:
     return Scenario(tmp_path, caplog)
 
 
-@pytest.fixture
-def ingresses(monkeypatch: pytest.MonkeyPatch) -> list[_Ingress]:
+class Ingresses(list[_Ingress]):
     """Every ingress queue the server opens, to inspect its occupancy."""
-    opened: list[_Ingress] = []
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.filled = asyncio.Event()
+
+    async def full(self) -> None:
+        """Once a put has found a queue full: its reader is blocked, and the
+        client's sends back up behind it."""
+        await asyncio.wait_for(self.filled.wait(), BOUND)
+
+
+@pytest.fixture
+def ingresses(monkeypatch: pytest.MonkeyPatch) -> Ingresses:
+    opened = Ingresses()
 
     class Recorded(_Ingress):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             opened.append(self)
+
+        def _has_room(self, item: bytes | _Boundary) -> bool:
+            room = super()._has_room(item)
+            if not room:
+                opened.filled.set()
+            return room
 
     monkeypatch.setattr(transport_ws, "_Ingress", Recorded)
     return opened
@@ -143,13 +167,6 @@ async def send_all(ws: ClientConnection, frames: Iterable[bytes | str]) -> None:
     with contextlib.suppress(ConnectionClosed):
         for frame in frames:
             await ws.send(frame)
-
-
-async def stalls(task: asyncio.Task[Any], settle: float = 0.5) -> bool:
-    """True if ``task`` is still blocked after ``settle`` seconds: megabytes of
-    audio take milliseconds to send unless the server stops reading."""
-    done, _ = await asyncio.wait({task}, timeout=settle)
-    return not done
 
 
 async def terminal(ws: ClientConnection) -> dict[str, Any]:
@@ -208,7 +225,7 @@ async def cancel_own_task(adapter: Gated, audio: AsyncIterator[PcmChunk], emit: 
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
-def test_an_adapter_failing_with_a_full_queue_releases_the_reader(dialect, scenario):
+def test_an_adapter_failing_with_a_full_queue_releases_the_reader(dialect, scenario, ingresses):
     """The adapter stops consuming and fails while the client is still feeding:
     the reader, blocked on the full queue, must be released so the client's
     sends complete and the connection can end."""
@@ -219,7 +236,7 @@ def test_an_adapter_failing_with_a_full_queue_releases_the_reader(dialect, scena
         async with scenario.serving(adapter):
             ws = await open_session(path, dialect)
             feed = asyncio.create_task(send_all(ws, [*[SECOND] * FLOOD, finish_frame(dialect)]))
-            assert await stalls(feed), "the queue never filled"
+            await ingresses.full()
             adapter.release.set()
             assert (await terminal(ws)).get("event", "error") in ("transcription.error", "error")
             await asyncio.wait_for(feed, BOUND)
@@ -229,7 +246,7 @@ def test_an_adapter_failing_with_a_full_queue_releases_the_reader(dialect, scena
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
-def test_a_session_cancelled_with_a_full_queue_still_closes(dialect, scenario):
+def test_a_session_cancelled_with_a_full_queue_still_closes(dialect, scenario, ingresses):
     """Regression: the IE115 reader, cancelled with the queue full, parked in
     ``finally: put(None)`` on a queue nobody would drain again, so the handler
     never closed the connection and the server never shut down."""
@@ -240,7 +257,7 @@ def test_a_session_cancelled_with_a_full_queue_still_closes(dialect, scenario):
         async with scenario.serving(adapter):
             ws = await open_session(path, dialect)
             feed = asyncio.create_task(send_all(ws, [SECOND] * FLOOD))
-            assert await stalls(feed), "the queue never filled"
+            await ingresses.full()
             adapter.release.set()
             await asyncio.wait_for(ws.wait_closed(), BOUND)
             await asyncio.wait_for(feed, BOUND)
@@ -249,7 +266,7 @@ def test_a_session_cancelled_with_a_full_queue_still_closes(dialect, scenario):
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
-def test_shutdown_aborts_a_full_queue_instead_of_draining_it(dialect, scenario):
+def test_shutdown_aborts_a_full_queue_instead_of_draining_it(dialect, scenario, ingresses):
     """Server shutdown is an abort: queued audio is discarded, the adapter's
     audio ends at once, and the server does not wait for a slow adapter to
     work through a backlog nobody will hear."""
@@ -261,7 +278,7 @@ def test_shutdown_aborts_a_full_queue_instead_of_draining_it(dialect, scenario):
         await server.__aenter__()
         ws = await open_session(path, dialect)
         feed = asyncio.create_task(send_all(ws, [SECOND] * FLOOD))
-        assert await stalls(feed), "the queue never filled"
+        await ingresses.full()
         shutdown = asyncio.create_task(server.__aexit__(None, None, None))
         await asyncio.sleep(0)  # the shutdown's first step runs before the release
         adapter.release.set()
@@ -273,7 +290,7 @@ def test_shutdown_aborts_a_full_queue_instead_of_draining_it(dialect, scenario):
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
-def test_a_client_vanishing_with_a_full_queue_ends_the_adapter(dialect, scenario):
+def test_a_client_vanishing_with_a_full_queue_ends_the_adapter(dialect, scenario, ingresses):
     path = scenario.path
 
     async def main() -> None:
@@ -281,7 +298,7 @@ def test_a_client_vanishing_with_a_full_queue_ends_the_adapter(dialect, scenario
         async with scenario.serving(adapter):
             ws = await open_session(path, dialect)
             feed = asyncio.create_task(send_all(ws, [SECOND] * FLOOD))
-            assert await stalls(feed), "the queue never filled"
+            await ingresses.full()
             ws.transport.abort()  # no close handshake: the process died
             adapter.release.set()
             await asyncio.wait_for(adapter.ended.wait(), BOUND)
@@ -431,7 +448,7 @@ def test_a_graceful_finish_after_backpressure_delivers_every_byte_in_order(
             ws = await open_session(path, dialect)
             frames_then_finish = itertools.chain(frames(), [finish_frame(dialect)])
             feed = asyncio.create_task(send_all(ws, frames_then_finish))
-            assert await stalls(feed), "the queue never filled"
+            await ingresses.full()
             (ingress,) = ingresses
             assert MIB - 32_000 < ingress._bytes <= MIB
             adapter.release.set()
