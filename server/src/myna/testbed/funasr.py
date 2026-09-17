@@ -41,6 +41,7 @@ from myna.core import (
     TranscriptionProgress,
 )
 from myna.testbed.adapter import Candidate
+from myna.testbed.streaming.strategies import UNSPACED_CHARS
 
 FUNASR_RATE = 16_000
 FUNASR_FORMAT = AudioFormat(sample_rate_hz=FUNASR_RATE, channels=1, sample_width_bytes=2)
@@ -63,11 +64,8 @@ _TAG_RE = re.compile(r"<\|.*?\|>")
 
 _BPE_FILE = "chn_jpn_yue_eng_ko_spectok.bpe.model"
 
-# Scripts written without spaces between words, so each character is a token
-# for overlap deduplication and region joins add no space next to them.
-_UNSPACED = "\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef"
-_UNSPACED_RE = re.compile(f"[{_UNSPACED}]")
-_TOKEN_RE = re.compile(f"\\s*(?:[{_UNSPACED}]|[^\\s{_UNSPACED}]+)")
+_UNSPACED_RE = re.compile(f"[{UNSPACED_CHARS}]")
+_TOKEN_RE = re.compile(f"\\s*(?:[{UNSPACED_CHARS}]|[^\\s{UNSPACED_CHARS}]+)")
 
 
 def _default_model_dir() -> str:

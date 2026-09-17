@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -64,7 +65,14 @@ from myna.core import (
 )
 from myna.testbed.harness import StreamingTelemetry
 
-from .strategies import Hypothesis, LocalAgreement, SilenceCut, Word, boundary_commit
+from .strategies import (
+    UNSPACED_CHARS,
+    Hypothesis,
+    LocalAgreement,
+    SilenceCut,
+    Word,
+    boundary_commit,
+)
 from .window import RATE, RollingWindow, to_samples
 
 # Tracy frame marks (dev tooling only, see myna.testbed.parakeet._TRACY):
@@ -104,7 +112,16 @@ _MIN_OVERLAP_CHARS = 2
 # overlap never re-surfaced the OLD "no answer", so the only match was the
 # genuinely-new final one and the whole 9-word tail dropped). If
 # `overlap_seconds` ever grows past ~2 s this bound should grow with it.
+# A single character of an unspaced script is about a syllable, so two of
+# them weigh one word against the bound.
 _MAX_OVERLAP_WORDS = 5
+_UNSPACED_CHAR = re.compile(f"[{UNSPACED_CHARS}]")
+
+
+def _overlap_weight(part: str) -> float:
+    if not part:
+        return 0.0
+    return 0.5 if len(part) == 1 and _UNSPACED_CHAR.match(part) else 1.0
 
 
 def _squash(text: str) -> str:
@@ -128,14 +145,16 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
       words into one token ("es"+"Carlos." → " escarlos.") or splits them
       (observed live 2026-07-28: "escarlos." re-committed).
     Only *fully covered* words drop — a partial cover means the match ended
-    mid-word (e.g. inside a genuinely new word), which stays. Greedy global
+    mid-word (e.g. inside a genuinely new word), which stays. A word with no
+    alphanumerics (punctuation such as "。") drops only inside the region. Greedy global
     matchers (difflib) are avoided deliberately: they can partition away the
     frontier run when genuinely-new words after it match older committed
     words.
 
     The claimed duplicate region is bounded at [`_MAX_OVERLAP_WORDS`]
-    words: old content re-transcribes only the window's 1 s overlap audio,
-    so it is always a short prefix of the hypothesis. A match implying a
+    words, two unspaced-script characters to a word: old content
+    re-transcribes only the window's 1 s overlap audio, so it is always a
+    short prefix of the hypothesis. A match implying a
     longer drop is new text coincidentally repeating committed text — the
     alignment ABSTAINS (returns 0) rather than dropping new words, and does
     not fall through to shorter suffixes: those would match the same
@@ -163,13 +182,14 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
         return 0
     drop = 0
     covered = 0
+    weight = 0.0
     for part in parts:
-        if part and covered + len(part) <= end:
-            covered += len(part)
-            drop += 1
-        else:
+        if covered == end or covered + len(part) > end:
             break
-    if drop > _MAX_OVERLAP_WORDS:
+        covered += len(part)
+        weight += _overlap_weight(part)
+        drop += 1
+    if weight > _MAX_OVERLAP_WORDS:
         # The match claims more words than the overlap audio can hold — it
         # is new text repeating committed text (see _MAX_OVERLAP_WORDS).
         # Abstain entirely: no shorter-suffix retry (same spurious region,

@@ -545,6 +545,17 @@ async def test_regions_of_unspaced_script_join_without_a_space():
     assert events[-1].text == "".join(say(t) for t in range(130))
 
 
+async def test_a_forced_cut_through_dense_unspaced_speech_commits_each_character_once():
+    def say(t: int) -> str:
+        chars = [chr(0x4E00 + 8 * t + k) for k in range(7)]
+        return "".join(chars[:3]) + "。" + "".join(chars[3:])
+
+    model, events = await _positional_session(130.0, say=say)
+
+    assert len(model.inputs) == 3
+    assert events[-1].text == "".join(say(t) for t in range(130))
+
+
 async def test_long_silence_stays_bounded_and_commits_nothing():
     model = _StubModel(output="<|nospeech|><|withitn|>")
     adapter = FunasrAdapter()

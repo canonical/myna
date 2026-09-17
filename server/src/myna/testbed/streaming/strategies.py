@@ -56,6 +56,11 @@ SC_SILENCE_CUT_S = 0.5
 SC_FORCE_CUT_S = 60.0
 SC_FRAME_S = 0.03  # VAD analysis frame (~murmure's 33 ms throttle tick)
 
+# Scripts written without spaces between words (CJK ideographs, kana,
+# fullwidth forms): a decoder that cannot segment words emits one token per
+# character, and region joins add no space beside them.
+UNSPACED_CHARS = "\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef"
+
 
 @dataclass(frozen=True)
 class Word:

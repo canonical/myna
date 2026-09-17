@@ -451,6 +451,29 @@ def test_alignment_drop_abstains_instead_of_falling_through_to_short_suffix():
     assert _alignment_drop(tail, new_short) == 3
 
 
+def test_alignment_drop_steps_over_punctuation_inside_the_overlap():
+    # SenseVoice tokens are single characters and "。" squashes to nothing:
+    # the drop must not stop at it and re-commit the "去" after it.
+    tail = ["我", "们", "今", "天", "。", "去"]
+    assert _alignment_drop(tail, ["今", "天", "。", "去", "公", "园"]) == 4
+    assert _alignment_drop(["no", "answer"], ["no", "-", "answer", "yes"]) == 3
+
+
+def test_alignment_drop_keeps_punctuation_after_the_overlap():
+    assert _alignment_drop(["我", "们", "去"], ["们", "去", "。", "公", "园"]) == 2
+
+
+def test_alignment_drop_bounds_unspaced_script_by_characters():
+    # One second of overlap holds several CJK characters, each its own token;
+    # two of them weigh one word against the overlap bound.
+    tail = list("我们明天早上去公园")
+    assert _alignment_drop(tail, list("明天早上去公园散步")) == 7
+    assert _alignment_drop(list("一二三四五六七八九十"), list("一二三四五六七八九十好")) == 10
+    assert _alignment_drop(list("一二三四五六七八九十上"), list("一二三四五六七八九十上好")) == 0
+    assert _alignment_drop(list("abcd我们"), list("abcd我们")) == 6
+    assert _alignment_drop(list("abcde我"), list("abcde我x")) == 0
+
+
 def test_drop_committed_keeps_new_tail_ending_in_frontier_repeat():
     # Full `_drop_committed` path for the watermark regression: nothing may
     # be dropped even though the new tail ends with the committed frontier
