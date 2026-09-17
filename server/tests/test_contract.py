@@ -6,7 +6,9 @@ the client/service wiring swapped — the loopback run is the reference
 semantics, the others prove the wire protocol preserves them.
 """
 
+import asyncio
 import contextlib
+import threading
 from collections.abc import AsyncIterator
 
 import pytest
@@ -154,6 +156,52 @@ async def test_terminal_error_mid_stream_does_not_mask_the_error(transport, tmp_
     assert [te.event.type for te in record.events] == ["transcription.error"]
     assert record.events[0].event.code == "inference_failed"
     assert record.events[0].event.message == "model load failed"
+
+
+class _StalledThenErrorAdapter:
+    """Stops reading audio and fails later - a decode that dies mid-session
+    (the GPU running out of memory, say) while the client is still feeding."""
+
+    candidate = FakeAdapter().candidate
+
+    def capabilities(self):
+        return FakeAdapter().capabilities()
+
+    async def run_session(
+        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+    ) -> None:
+        await asyncio.sleep(0.5)  # long enough for a fast feed to fill every buffer
+        await emit(TranscriptionError(code="inference_failed", message="out of memory"))
+
+
+def test_error_while_the_audio_queue_is_full_still_ends_the_session(transport, tmp_path):
+    """Regression: the frame reader, cancelled when the adapter returned, parked
+    in `finally: put(None)` on the queue the adapter had stopped draining, so the
+    connection was never closed and the client waited forever. The bound is well
+    under websockets' 10 s close timeout, so an end that only arrives by timing
+    out the close handshake fails too.
+
+    Its own loop on a daemon thread: a hung server also hangs `serve_unix`'s
+    teardown, which no timeout inside the loop can bound.
+    """
+    adapter = _StalledThenErrorAdapter()
+    result: dict[str, object] = {}
+
+    async def session():
+        async with transport(adapter, tmp_path) as client:
+            result["record"] = await Harness().run(
+                client=client,
+                candidate=adapter.candidate,
+                source=SilenceSource(duration_seconds=300.0),
+            )
+
+    thread = threading.Thread(target=lambda: asyncio.run(session()), daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive(), "the session did not end after the adapter failed"
+    record = result["record"]
+    assert [te.event.type for te in record.events] == ["transcription.error"]
+    assert record.events[0].event.code == "inference_failed"
 
 
 async def test_custom_script_immediate_done(run_fake):

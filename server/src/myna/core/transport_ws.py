@@ -439,10 +439,16 @@ class _SessionHandler:
         ends the audio, every other text frame is ignored; events out via
         ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
         audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
+        # Set when the adapter has returned. The reader then keeps reading and
+        # drops what it gets: a client still feeding audio can only see the
+        # server's close once its sends drain.
+        utterance_over = False
 
         async def read_frames() -> None:
             try:
                 async for frame in ws:
+                    if utterance_over:
+                        continue
                     if isinstance(frame, bytes):
                         await audio.put(PcmChunk(data=frame, format=config.audio_format))
                         continue
@@ -461,10 +467,15 @@ class _SessionHandler:
         try:
             await self._run_utterance(config, audio_iter(), emit)
         finally:
+            # An adapter that failed mid-stream stopped draining the queue, and
+            # a reader parked on it would hold the close off forever.
+            utterance_over = True
+            while not audio.empty():
+                audio.get_nowait()
+            await ws.close()
             reader.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await reader
-            await ws.close()
 
     async def _run_utterance(
         self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
