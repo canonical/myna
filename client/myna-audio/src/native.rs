@@ -877,6 +877,30 @@ mod tests {
     }
 
     #[test]
+    fn a_clock_rebase_does_not_repay_owed_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        let quantum = 256;
+        assert_eq!(c.delivered(ticks, GRAPH, 85), None);
+        for _ in 0..3 {
+            ticks += 2 * quantum;
+            assert_eq!(c.delivered(ticks, GRAPH, 85), None);
+        }
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        ticks += 2 * quantum;
+        assert!(c.delivered(ticks, GRAPH, 85).is_some());
+    }
+
+    #[test]
+    fn exactly_the_tolerance_is_not_yet_a_loss() {
+        let mut c = Continuity::new(16_000);
+        let same = (2, 32_000);
+        assert_eq!(c.delivered(0, same, 1), None);
+        assert_eq!(c.delivered(320, same, 0), None);
+        assert!(c.delivered(321, same, 0).is_some());
+    }
+
+    #[test]
     fn a_clock_without_a_rate_reports_nothing() {
         let mut c = Continuity::new(16_000);
         assert_eq!(c.delivered(0, (0, 0), 341), None);
