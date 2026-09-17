@@ -179,6 +179,20 @@ def test_a_submission_against_another_corpus_is_refused(tmp_path):
     assert len(read_jsonl(board)) == 1  # left untouched
 
 
+def test_a_submission_scored_under_another_normalizer_is_refused(tmp_path):
+    """A WER blended across normalizer versions describes neither scoring
+    rule; refuse rather than write a leaderboard that mixes them."""
+    board = tmp_path / "leaderboard.jsonl"
+    write_jsonl(board, submission("framework"))
+    incoming = tmp_path / "results.jsonl"
+    write_jsonl(incoming, submission("thinkpad", normalizer_version=2))
+
+    with pytest.raises(SystemExit, match="normalizer versions"):
+        cmd_merge(MergeArgs(board, incoming))
+
+    assert len(read_jsonl(board)) == 1  # left untouched
+
+
 def test_mixed_corpora_can_be_forced_for_a_deliberate_split(tmp_path):
     board = tmp_path / "leaderboard.jsonl"
     write_jsonl(board, submission("framework"))

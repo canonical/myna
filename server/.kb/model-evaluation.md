@@ -85,13 +85,19 @@ Accuracy, 2026-09-17:
 | English, 82 clips | - | NeMo 2.77% (offline 2.67), ONNX fp32 2.57%, int8 2.93% |
 | FLEURS de | 5.2 | 10.6 |
 | FLEURS es | 3.1 | 5.3 |
-| FLEURS fr | 8.1 | 13.7 |
+| FLEURS fr | 5.7 | 11.4 |
 | FLEURS ar | not covered | 13.7 (CER 3.9) |
 | FLEURS ja | not covered | CER 15.8 |
 | FLEURS zh | not covered | CER 25.9 |
 
-WER unless marked CER. Our FLEURS de/es/fr numbers run 25-50% above NVIDIA's
-published figures (8.31/4.11/9.03); not root-caused.
+WER unless marked CER, 40-clip subset, scored with the current normalizer
+(typographic apostrophes folded, see `server/.kb/benchmarking.md`). Before
+that fold, fr read 8.1/13.7: FLEURS French references use U+2019 for
+elisions, so an ASCII hypothesis like "L'accident" split into two words
+against them. Nemotron's de/es/fr still run 26-28% above NVIDIA's published
+figures (8.31/4.11/9.03); not root-caused. Parakeet's full-FLEURS numbers
+(862/908/676 clips) land within bootstrap CI of NVIDIA's published figures -
+see `server/.kb/benchmarking.md`.
 
 - CPU int8 real-time headroom: 14.9x on 4 threads (fp32 CPU 8.4x), fixed
   1.12 s chunk shapes so no CUDA-style per-shape cost applies.

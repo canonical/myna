@@ -9,13 +9,25 @@ Normalization (applied to both sides before scoring) is deliberately simple
 and documented so results are reproducible:
 
   - Unicode NFKC, then casefold (lowercase).
+  - Fold typographic apostrophes (U+2019, U+2018, U+02BC) to ASCII "'" before
+    punctuation handling, so a reference written with a curly quote (FLEURS
+    French elisions use U+2019) scores against an ASCII hypothesis as the
+    same word.
   - Drop punctuation — anything that is not a word character or whitespace.
     Apostrophes inside words are kept so "don't" stays one token.
   - Collapse all whitespace runs to single spaces; strip ends.
 
 This is the standard "clean" WER convention (no number expansion, no spelling
-normalization). Anything fancier (spoken-number expansion, British/American
-spelling folding) is a deliberate later decision, not baked in here.
+normalization) - NVIDIA's own FLEURS cards use the same punctuation-and-case
+convention, so this deliberately does not reach for Whisper's heavier
+``EnglishTextNormalizer``/``BasicTextNormalizer``. Anything fancier
+(spoken-number expansion, British/American spelling folding) is a deliberate
+later decision, not baked in here.
+
+``NORMALIZER_VERSION`` is stamped into every benchmark row (see
+``myna.benchmarker._bench.to_line``) precisely because this function is
+allowed to change: bump it whenever a change here can move a score, so rows
+scored under different versions are never silently averaged together.
 """
 
 from __future__ import annotations
@@ -25,15 +37,26 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+# Bump whenever `normalize` changes in a way that can move a WER/CER score.
+NORMALIZER_VERSION = 1
+
 # Keep word chars, whitespace, and intra-word apostrophes; drop the rest.
 _PUNCT = re.compile(r"[^\w\s']", flags=re.UNICODE)
 _APOSTROPHE_EDGES = re.compile(r"(?<!\w)'|'(?!\w)")
 _WS = re.compile(r"\s+")
 
+# RIGHT/LEFT SINGLE QUOTATION MARK and MODIFIER LETTER APOSTROPHE: the three
+# characters a reference or hypothesis realistically uses for an elision or
+# possessive apostrophe. Folded to ASCII "'" so they get the same intra-word
+# handling below, regardless of which side (or transcript vendor) wrote which
+# one. Left as-is by NFKC.
+_TYPOGRAPHIC_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'"})
+
 
 def normalize(text: str) -> str:
     """Apply the documented normalization and return clean text."""
     text = unicodedata.normalize("NFKC", text).casefold()
+    text = text.translate(_TYPOGRAPHIC_APOSTROPHES)
     text = _PUNCT.sub(" ", text)
     text = _APOSTROPHE_EDGES.sub(" ", text)  # leading/trailing quotes, not don't
     return _WS.sub(" ", text).strip()

@@ -24,6 +24,7 @@ from myna.benchmarker._summarize import (
     _summarize,
     cmd_summarize,
     one_corpus,
+    one_normalizer_version,
     ranked_labels,
 )
 
@@ -426,6 +427,29 @@ def test_records_with_no_corpus_id_are_refused():
     del stale["corpus_id"]
     with pytest.raises(SystemExit, match="no corpus_id"):
         one_corpus([stale], None)
+
+
+# ─── one_normalizer_version ─────────────────────────────────────────────────
+
+
+def test_one_normalizer_version_passes_a_single_version_through():
+    records = [record(clip="c1"), record(clip="c2")]
+    one_normalizer_version(records)  # no raise
+
+
+def test_mixed_normalizer_versions_are_refused():
+    """A WER averaged across normalizer versions blends two scoring rules."""
+    records = [record(clip="c1"), record(clip="c2", normalizer_version=2)]
+    with pytest.raises(SystemExit, match="normalizer versions"):
+        one_normalizer_version(records)
+
+
+def test_missing_and_stamped_normalizer_versions_are_refused():
+    stale = record(clip="c1")
+    del stale["normalizer_version"]
+    records = [stale, record(clip="c2")]
+    with pytest.raises(SystemExit, match="normalizer versions"):
+        one_normalizer_version(records)
 
 
 # ─── ranking and status ──────────────────────────────────────────────────────

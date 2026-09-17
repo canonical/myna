@@ -141,6 +141,19 @@ def one_corpus(records: list[Record], wanted: str | None) -> tuple[list[Record],
     return [r for r in records if r["corpus_id"] == wanted], wanted
 
 
+def one_normalizer_version(records: list[Record]) -> None:
+    """Refuse a file whose rows were scored under different ``normalize()``
+    behavior. A WER micro-averaged across normalizer versions blends two
+    different scoring rules into one number that describes neither."""
+    versions = {r.get("normalizer_version") for r in records}
+    if len(versions) > 1:
+        detail = ", ".join(str(v) for v in sorted(versions, key=lambda v: (v is None, v)))
+        raise SystemExit(
+            f"records span normalizer versions ({detail}) - rescore everything with the "
+            "current myna.testbed.metrics normalizer before comparing, or split the file"
+        )
+
+
 def _pct(values: list[float], q: float) -> float | None:
     if not values:
         return None
@@ -375,6 +388,7 @@ def cmd_summarize(args: argparse.Namespace) -> None:
     records, statuses = _load_latest(infile)
     records, corpus = one_corpus(records, getattr(args, "corpus", None))
     one_machine_per_name(records)
+    one_normalizer_version(records)
     summary = _summarize(records)
     for key, peaks in _load_resources(resources_path_for(infile)).items():
         if key in summary:
@@ -418,10 +432,11 @@ def cmd_merge(args: argparse.Namespace) -> None:
     same machine replaces that machine's rows rather than doubling them, and no
     other machine's rows are touched.
 
-    Two guards, because both failures are silent otherwise. A submission
-    measured against a different corpus cannot be compared with what is already
-    there, and two hosts sharing a hostname would merge into one row and lose a
-    submission.
+    Three guards, because each failure is silent otherwise. A submission
+    measured against a different corpus cannot be compared with what is
+    already there; two hosts sharing a hostname would merge into one row and
+    lose a submission; and rows scored under different normalizer versions
+    would blend two scoring rules into one number.
     """
     out = Path(args.leaderboard)
     existing = _rows_of(out) if out.exists() else []
@@ -450,6 +465,7 @@ def cmd_merge(args: argparse.Namespace) -> None:
         )
 
     one_machine_per_name([r for r in incoming + existing if "clip" in r])
+    one_normalizer_version([r for r in incoming + existing if "clip" in r])
 
     submitting = {machine_of(r) for r in incoming}
     kept = [r for r in existing if machine_of(r) not in submitting]

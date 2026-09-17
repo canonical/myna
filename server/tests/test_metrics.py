@@ -16,6 +16,20 @@ def test_normalize_folds_unicode_width_and_quotes():
     assert normalize("‘Ｈello’") == "hello"
 
 
+def test_normalize_folds_typographic_apostrophes_inside_words():
+    # FLEURS fr references use U+2019 for elisions; ASCII hypotheses must not
+    # split "l'accident" into two words against them.
+    assert normalize("L’accident") == normalize("L'accident") == "l'accident"
+    assert normalize("L‘accident") == "l'accident"  # common curly-quote typo
+    assert normalize("Lʼaccident") == "l'accident"  # modifier letter apostrophe
+
+
+def test_wer_zero_between_typographic_and_ascii_apostrophe():
+    er = word_error_rate("L’accident", "L'accident")
+    assert er.rate == 0.0
+    assert (er.substitutions, er.deletions, er.insertions) == (0, 0, 0)
+
+
 def test_wer_is_zero_for_identical_after_normalization():
     er = word_error_rate("Turn the volume up.", "turn the volume up")
     assert er.rate == 0.0

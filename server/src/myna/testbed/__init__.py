@@ -30,6 +30,7 @@ from myna.testbed.harness import (
     TimedEvent,
 )
 from myna.testbed.metrics import (
+    NORMALIZER_VERSION,
     ErrorRate,
     character_error_rate,
     normalize,
@@ -46,6 +47,7 @@ __all__ = [
     "FakeAdapter",
     "Harness",
     "Metrics",
+    "NORMALIZER_VERSION",
     "ResultRecord",
     "ScriptStep",
     "SilenceSource",

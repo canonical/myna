@@ -16,6 +16,24 @@ Read the top-level `.kb/agents.md` file before continuing below.
 - Compare rows only when their `corpus_id` values match.
 - Treat `USABILITY_FAIL` as a product result, not a transient test failure.
 - Explicit engine requests must fail rather than silently fall back.
+- `myna.testbed.metrics.normalize` casefolds and strips punctuation
+  (NFKC + casefold, drop non-word/non-apostrophe chars, keep intra-word
+  apostrophes) - matching NVIDIA's FLEURS-card convention of
+  punctuation-and-case removal only, not Whisper's `EnglishTextNormalizer`/
+  `BasicTextNormalizer` (decided 2026-09-17: fold apostrophes only, no style
+  switch). Typographic apostrophes (U+2019, U+2018, U+02BC) fold to ASCII `'`
+  before that, because FLEURS French references use U+2019 for elisions and
+  an ASCII hypothesis otherwise splits "l'accident" into two words against
+  them. `normalizer_version` is stamped on every row; `one_normalizer_version`
+  refuses a file whose rows were scored under different versions, same as
+  `one_corpus` does for `corpus_id`.
+- Full FLEURS test set, Parakeet v3 fp32 CUDA, 2026-09-17 (de 862 / es 908 /
+  fr 676 clips): the apostrophe fold moved fr 7.78 -> 5.46 WER (published
+  5.15), de 5.16 -> 5.14 (published 5.04), es unchanged at 3.62 (published
+  3.45) - all within bootstrap CI of NVIDIA's published numbers. The bundled
+  40-clip FLEURS subset's bootstrap CI half-width is ~2-4 WER points, so a
+  point estimate on it is not comparable to a published number; use the full
+  test set for that comparison.
 
 # Architecture
 

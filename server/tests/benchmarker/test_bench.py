@@ -23,7 +23,7 @@ from myna.benchmarker._bench import (
 )
 from myna.benchmarker._summarize import _summarize
 from myna.core import TranscriptionError, TranscriptionFinal, serve_unix
-from myna.testbed import FakeAdapter, ScriptStep
+from myna.testbed import NORMALIZER_VERSION, FakeAdapter, ScriptStep
 from myna.testbed.corpus import Clip, sha256_file
 
 RATE = 16_000
@@ -150,6 +150,7 @@ async def test_a_record_row_is_json_serialisable_and_carries_provenance(tmp_path
     assert line["category"] == "quiet"
     assert line["reference"] == "hello world"
     assert line["cold"] is True
+    assert line["normalizer_version"] == NORMALIZER_VERSION
 
 
 async def test_provenance_is_omitted_entirely_when_not_supplied(tmp_path, socket):

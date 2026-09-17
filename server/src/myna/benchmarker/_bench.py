@@ -22,6 +22,7 @@ from typing import Protocol
 from myna.benchmarker._summarize import Record
 from myna.core import SessionConfig, WsUnixClient
 from myna.testbed import (
+    NORMALIZER_VERSION,
     ErrorRate,
     Harness,
     ResultRecord,
@@ -113,6 +114,9 @@ def to_line(
         "transcript": record.transcript,
         "wer": round(wer.rate, 4),
         "cer": round(cer.rate, 4),
+        # Scoring provenance: rows stamped under different normalize()
+        # behavior must never be micro-averaged together.
+        "normalizer_version": NORMALIZER_VERSION,
         "edits": {
             "sub": wer.substitutions,
             "del": wer.deletions,

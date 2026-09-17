@@ -18,6 +18,7 @@ BASE = {
     "transcript": "hello world",
     "wer": 0.0,
     "cer": 0.0,
+    "normalizer_version": 1,
     "edits": {"sub": 0, "del": 0, "ins": 0},
     "wer_edits": 0,
     "ref_words": 2,
