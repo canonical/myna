@@ -135,7 +135,8 @@ async fn announcing_introduces_no_side_effect_on_the_injection_path() {
     assert_eq!(baseline.state(), wrapped.state());
 }
 
-// ── T058: a successful utterance plays SessionStart then SessionEnd ────────
+// ── T058: a successful utterance plays SessionStart, StopListening, then
+//    SessionEnd ────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn a_successful_utterance_plays_session_start_then_session_end() {
@@ -157,13 +158,18 @@ async fn a_successful_utterance_plays_session_start_then_session_end() {
 
     assert_eq!(
         *sound_log.lock().unwrap(),
-        vec![CueKind::SessionStart, CueKind::SessionEnd],
-        "a successful completion plays the start cue then the end cue — never a Failure cue"
+        vec![CueKind::SessionStart, CueKind::StopListening, CueKind::SessionEnd],
+        "a successful completion plays the start cue, then the immediate stop-listening cue \
+         on Release, then the end cue once the result is known — never a Failure cue"
     );
 }
 
-// ── T058: a failed utterance plays SessionStart then Failure, never
-//    SessionEnd (a genuine error is not a normal session end) ──────────────
+// ── T058: a failed utterance plays SessionStart, StopListening, then
+//    Failure, never SessionEnd (a genuine error is not a normal session
+//    end) — the scripted trigger here has only a `Press` edge, so it "ends"
+//    (returns `None` on the next poll) before the backend's own mid-stream
+//    error resolves, which legitimately plays StopListening too (capture
+//    genuinely stops there, same as a real trigger ending) ────────────────
 
 #[tokio::test]
 async fn a_failed_utterance_plays_session_start_then_failure_not_session_end() {
@@ -197,8 +203,9 @@ async fn a_failed_utterance_plays_session_start_then_failure_not_session_end() {
 
     assert_eq!(
         *sound_log.lock().unwrap(),
-        vec![CueKind::SessionStart, CueKind::Failure],
-        "a failed utterance plays the start cue then the failure cue, never a session-end cue"
+        vec![CueKind::SessionStart, CueKind::StopListening, CueKind::Failure],
+        "a failed utterance plays the start cue, the stop-listening cue once capture ends, \
+         then the failure cue — never a session-end cue"
     );
 }
 

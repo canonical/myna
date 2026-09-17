@@ -1,6 +1,6 @@
 # Feature Specification: Accessible Dictation UX
-
-**Feature Branch**: `011-accessible-dictation-ux`
+        
+**Featur            e Branch**: `011-accessible-dictation-ux`
 
 **Created**: 2026-08-26
 
@@ -153,7 +153,7 @@ A user who drives the terminal with a screen reader or braille display runs the 
 
 - **FR-008**: Every user-visible state and severity distinction MUST be conveyed through at least one visual and one non-visual channel; no state may be distinguishable only by sight and none only by sound.
 - **FR-009**: No information may be carried by colour alone; every colour distinction MUST be accompanied by text or shape.
-- **FR-010**: The system MUST offer optional sound cues for session start, session end, and failure. Cues MUST be short, mutually distinct, individually disableable, and always accompanied by equivalent visual and assistive-technology signals.
+- **FR-010**: The system MUST offer optional sound cues for session start, stop listening (the moment capture ends and processing begins, before the outcome is known), session end, and failure. Cues MUST be short, mutually distinct, individually disableable, and always accompanied by equivalent visual and assistive-technology signals.
 - **FR-011**: Audible feedback emitted while capture is live MUST NOT measurably degrade transcription accuracy relative to a silent baseline.
 - **FR-012**: The system MUST honour the desktop's reduced-motion, high-contrast, forced-colour, text-scale, and accent-colour preferences; with reduced motion set, live capture MUST still be indicated by a static equivalent.
 - **FR-013**: Indicator text and non-text elements MUST meet recognised contrast thresholds (at minimum 4.5:1 for text and 3:1 for meaningful non-text elements) in every shipped theme variant, and MUST remain complete and unclipped at up to 200% text scale.

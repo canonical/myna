@@ -179,12 +179,12 @@ vs. "disabled" would measure nothing.
    `sound-cues-enabled` at its default (`true`).
 2. Start `myna-dictate` (or the desktop daemon) and read the same fixed
    passage aloud for two runs: once as normal, once immediately after a
-   `SessionStart`/`SessionEnd`/`Failure` cue has audibly played (e.g.
-   trigger a deliberate failure first — an empty focused field — to hear the
-   `Failure` cue, then dictate the passage).
+   `SessionStart`/`StopListening`/`SessionEnd`/`Failure` cue has audibly
+   played (e.g. trigger a deliberate failure first — an empty focused field
+   — to hear the `Failure` cue, then dictate the passage).
 3. **Expect**: the two transcripts are identical (allowing for normal
    run-to-run speech variance) — the cue tones (fixed sine tones at
-   880/660/220 Hz, T057) do not appear as spurious words/fragments in the
+   880/1046/660/220 Hz, T057) do not appear as spurious words/fragments in the
    transcript, and no run is measurably slower to start capturing than the
    other.
 4. **Not run as an automated corpus benchmark**: per the architectural note

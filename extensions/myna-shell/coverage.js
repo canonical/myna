@@ -5,7 +5,6 @@
 // unit-testable against an in-memory object.
 
 import GLib from 'gi://GLib';
-import {DictationState} from './states.js';
 
 /**
  * @param {string} path
@@ -40,13 +39,25 @@ export function checkInvariants(matrix) {
     return violations;
 }
 
-// ACTIVE is states.js's fallback descriptor for unknown/additive states, not
-// itself a wire state — excluded from the exhaustiveness check.
-const KNOWN_STATE_IDS = Object.values(DictationState).filter(
-    id => id !== DictationState.ACTIVE);
+// The known wire state ids (feature 004's DictationState/states.js was
+// removed in T170 when the in-Shell renderer was replaced by the standalone
+// myna-hud application — see client/myna-hud/src/states.rs's `wire` module,
+// the ported/canonical source of truth for these strings now). `active` is
+// the fallback descriptor for an unknown/additive state, not itself a wire
+// state — excluded from the exhaustiveness check, matching the old
+// states.js's ACTIVE exclusion.
+const KNOWN_STATE_IDS = [
+    'loading',
+    'recording',
+    'transcribing',
+    'finalizing',
+    'notice',
+    'error',
+];
 
 /**
- * C5: every known states.js DictationState id has a matching matrix entry.
+ * C5: every known wire state id (see `KNOWN_STATE_IDS` above) has a matching
+ * matrix entry.
  *
  * @param {object} matrix
  * @returns {string[]} missing state ids, empty if none

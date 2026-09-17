@@ -78,3 +78,94 @@ async fn name_and_description_are_queryable_between_transitions() {
     assert_eq!(announcer.name(), "Dictation: listening");
     assert_eq!(announcer.description(), "Recording your speech");
 }
+
+// ── Regression (found 2026-08-31, first real manual verification against a
+//    live Orca session): the object every `Announcement`'s `item` names
+//    MUST answer AT-SPI introspection quickly, not hang. A real AT-SPI
+//    client (Orca included) makes exactly this kind of synchronous
+//    `GetRole`/property-`Get` call back to the event's source as part of
+//    ordinary event handling — an earlier revision of `AtspiAnnouncer`
+//    pointed `item` at a connection that answered nothing, and every one of
+//    these calls hung until the calling client's own watchdog killed it.
+//    This test is a second, independent client connecting to the bus and
+//    making that exact kind of call directly, bounded by a short timeout so
+//    a regression fails the test instead of hanging the test runner. ──────
+
+#[tokio::test]
+async fn the_exported_accessible_object_answers_introspection_quickly() {
+    if !atspi_enabled() {
+        return;
+    }
+    let mut announcer = AtspiAnnouncer::connect()
+        .await
+        .expect("org.a11y.Bus should be reachable when MYNA_ATSPI_TESTS=1 is set");
+    announcer
+        .set_state(
+            AnnouncementText::new("Dictation: listening"),
+            AnnouncementText::new("Recording your speech"),
+        )
+        .await;
+
+    let item = announcer.item().clone();
+    let bus_name = item
+        .name_as_str()
+        .expect("a real AtspiAnnouncer's item always has a bus name")
+        .to_string();
+    let path = item.path_as_str().to_string();
+
+    // A second, independent client connection — simulating an AT-SPI client
+    // (Orca) that received our Announcement and is now introspecting its
+    // source, exactly as real clients do.
+    let client = atspi::connection::AccessibilityConnection::new()
+        .await
+        .expect("a second connection to org.a11y.Bus should also succeed");
+    let conn = client.connection();
+
+    let timeout = std::time::Duration::from_secs(3);
+
+    let role_reply = tokio::time::timeout(
+        timeout,
+        conn.call_method(
+            Some(bus_name.as_str()),
+            path.as_str(),
+            Some("org.a11y.atspi.Accessible"),
+            "GetRole",
+            &(),
+        ),
+    )
+    .await
+    .expect("GetRole must answer within 3s, not hang (the exact regression this test guards against)")
+    .expect("GetRole should succeed against the exported accessible object");
+    let role: u32 = role_reply
+        .body()
+        .deserialize()
+        .expect("GetRole's reply body should deserialize as a u32 role");
+    assert_eq!(role, 75, "the exported object's role should be Role::Application");
+
+    let name_reply = tokio::time::timeout(
+        timeout,
+        conn.call_method(
+            Some(bus_name.as_str()),
+            path.as_str(),
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.a11y.atspi.Accessible", "Name"),
+        ),
+    )
+    .await
+    .expect("the Name property Get must answer within 3s, not hang")
+    .expect("the Name property Get should succeed");
+    let name: zbus::zvariant::OwnedValue = name_reply
+        .body()
+        .deserialize()
+        .expect("the Name property reply should deserialize as a variant");
+    let name: String = name
+        .downcast_ref::<String>()
+        .expect("the Name property should be a string")
+        .clone();
+    assert_eq!(
+        name, "Dictation: listening",
+        "the exported Name property should reflect the last set_state() call"
+    );
+}
+

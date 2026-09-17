@@ -38,12 +38,20 @@ use std::sync::{Arc, Mutex};
 
 use crate::preferences::Preferences;
 
-/// The three sound cues FR-010 names: session start, session end, and
-/// failure. Content-free by construction — a fixed enum, never a string that
-/// could carry transcript text (constitution V).
+/// The four sound cues FR-010 names: session start, stop listening, session
+/// end, and failure. Content-free by construction — a fixed enum, never a
+/// string that could carry transcript text (constitution V).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CueKind {
     SessionStart,
+    /// Played the moment listening stops (Release/FocusOut/trigger-ended),
+    /// before the eventual outcome (`SessionEnd`/`Failure`) is known —
+    /// distinct from both, so a non-visual user gets an immediate
+    /// "I heard you, now processing" signal rather than waiting in silence
+    /// for however long transcription takes (manual test report,
+    /// 2026-09-01: "I think there should probably be a beep when it stops
+    /// listening").
+    StopListening,
     SessionEnd,
     Failure,
 }

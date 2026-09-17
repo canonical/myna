@@ -93,23 +93,28 @@ fn silence(duration: Duration) -> Vec<i16> {
 /// pitch/duration/shape pair (FR-010 "mutually distinct"), chosen
 /// conservatively and flagged for reviewer double-check per the task's
 /// judgement-call guidance:
-/// - `SessionStart`: a single short, higher-pitched tone (880 Hz, ~120 ms) —
+/// - `SessionStart`: a single short, higher-pitched tone (880 Hz, ~180 ms) —
 ///   an upward, "beginning" feel.
-/// - `SessionEnd`: a single short, lower-pitched tone (660 Hz, ~120 ms) —
+/// - `StopListening`: a single brief, high-pitched chirp (1046 Hz, ~90 ms) —
+///   the shortest and highest-pitched cue by design, so it reads as a quick
+///   acknowledgment ("heard you, now working") rather than a state with its
+///   own duration like the other three.
+/// - `SessionEnd`: a single short, lower-pitched tone (660 Hz, ~180 ms) —
 ///   same shape as `SessionStart`, distinct only by pitch, so the two read as
 ///   a matched "opened/closed" pair rather than unrelated sounds.
-/// - `Failure`: two short low-pitched pulses (220 Hz, ~100 ms each, with a
+/// - `Failure`: two short low-pitched pulses (220 Hz, ~150 ms each, with a
 ///   50 ms gap) — deliberately the most different shape (double-pulse, not
 ///   single-tone) as well as the lowest pitch, so it cannot be mistaken for
 ///   either transition cue even by someone who cannot distinguish pitch well.
 pub fn synth_cue(cue: CueKind) -> Vec<i16> {
     match cue {
-        CueKind::SessionStart => sine_tone(880.0, Duration::from_millis(120), 0.4),
-        CueKind::SessionEnd => sine_tone(660.0, Duration::from_millis(120), 0.4),
+        CueKind::SessionStart => sine_tone(880.0, Duration::from_millis(180), 0.7),
+        CueKind::StopListening => sine_tone(1046.5, Duration::from_millis(90), 0.6),
+        CueKind::SessionEnd => sine_tone(660.0, Duration::from_millis(180), 0.7),
         CueKind::Failure => {
-            let mut clip = sine_tone(220.0, Duration::from_millis(100), 0.5);
+            let mut clip = sine_tone(220.0, Duration::from_millis(150), 0.8);
             clip.extend(silence(Duration::from_millis(50)));
-            clip.extend(sine_tone(220.0, Duration::from_millis(100), 0.5));
+            clip.extend(sine_tone(220.0, Duration::from_millis(150), 0.8));
             clip
         }
     }
@@ -147,10 +152,19 @@ impl SoundCuePlayer for PipeWireSoundCuePlayer {
         // or a playback failure both degrade to "no sound", never to a
         // session-affecting error — a missed cue is not privacy- or
         // capture-affecting, so it is logged, not propagated.
+        myna_core::dbg_log!("sound", "play({cue:?}) requested, spawning cue thread");
         let build = std::thread::Builder::new()
             .name("myna-pw-cue".into())
             .spawn(move || {
-                if let Err(e) = Self::play_blocking(cue) {
+                let start = std::time::Instant::now();
+                let result = Self::play_blocking(cue);
+                myna_core::dbg_log!(
+                    "sound",
+                    "play({cue:?}) finished in {:?} (ok={})",
+                    start.elapsed(),
+                    result.is_ok()
+                );
+                if let Err(e) = result {
                     eprintln!("myna-desktop: sound cue playback failed: {e}");
                 }
             });
@@ -164,6 +178,7 @@ impl SoundCuePlayer for PipeWireSoundCuePlayer {
 /// exhausted, then quit. Runs to completion on the calling thread (the
 /// dedicated `myna-pw-cue` thread, in production).
 fn run_clip(clip: &[i16]) -> Result<(), String> {
+    let setup_start = std::time::Instant::now();
     let main_loop =
         MainLoopRc::new(None).map_err(|e| format!("cannot create PipeWire loop: {e}"))?;
     let context = ContextRc::new(&main_loop, None)
@@ -171,6 +186,7 @@ fn run_clip(clip: &[i16]) -> Result<(), String> {
     let core = context
         .connect_rc(None)
         .map_err(|e| format!("cannot connect to PipeWire: {e}"))?;
+    myna_core::dbg_log!("sound", "PipeWire loop/context/core ready in {:?}", setup_start.elapsed());
 
     let props = properties! {
         *keys::MEDIA_TYPE => "Audio",
@@ -246,6 +262,14 @@ fn run_clip(clip: &[i16]) -> Result<(), String> {
     audio_info.set_format(AudioFormat::S16LE);
     audio_info.set_rate(SAMPLE_RATE);
     audio_info.set_channels(1);
+    // Explicit MONO position, not left-unpositioned (the `AudioInfoRaw::new()`
+    // default): an unpositioned single channel has no guaranteed placement in
+    // the graph's downstream mix to stereo output, and in practice lands
+    // audibly left-biased on this session's default sink. `MONO` tells the
+    // channel-mixer to spread the one channel evenly across both speakers.
+    let mut position = [0u32; pipewire::spa::sys::SPA_AUDIO_MAX_CHANNELS as usize];
+    position[0] = pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO;
+    audio_info.set_position(position);
     let obj = Object {
         type_: SpaTypes::ObjectParamFormat.as_raw(),
         id: ParamType::EnumFormat.as_raw(),
@@ -295,9 +319,16 @@ mod tests {
 
     // ── T057 (hermetic, no PipeWire needed): the synthesis logic itself ────
 
+    const ALL_CUES: [CueKind; 4] = [
+        CueKind::SessionStart,
+        CueKind::StopListening,
+        CueKind::SessionEnd,
+        CueKind::Failure,
+    ];
+
     #[test]
     fn each_cue_produces_a_non_empty_clip() {
-        for cue in [CueKind::SessionStart, CueKind::SessionEnd, CueKind::Failure] {
+        for cue in ALL_CUES {
             assert!(!synth_cue(cue).is_empty());
         }
     }
@@ -307,22 +338,22 @@ mod tests {
         // `i16` arithmetic can't overflow its own range, but this guards the
         // envelope/volume math never accidentally saturates or degenerates
         // to silence.
-        for cue in [CueKind::SessionStart, CueKind::SessionEnd, CueKind::Failure] {
+        for cue in ALL_CUES {
             let clip = synth_cue(cue);
             assert!(clip.iter().any(|&s| s != 0), "{cue:?} clip is all silence");
         }
     }
 
     #[test]
-    fn the_three_cues_are_mutually_distinct() {
+    fn the_four_cues_are_mutually_distinct() {
         // FR-010 "mutually distinct": no two cues render to the identical
         // sample sequence (they differ in pitch, duration, or shape).
-        let start = synth_cue(CueKind::SessionStart);
-        let end = synth_cue(CueKind::SessionEnd);
-        let failure = synth_cue(CueKind::Failure);
-        assert_ne!(start, end);
-        assert_ne!(start, failure);
-        assert_ne!(end, failure);
+        let clips: Vec<Vec<i16>> = ALL_CUES.iter().map(|&c| synth_cue(c)).collect();
+        for i in 0..clips.len() {
+            for j in (i + 1)..clips.len() {
+                assert_ne!(clips[i], clips[j], "{:?} and {:?} render identically", ALL_CUES[i], ALL_CUES[j]);
+            }
+        }
     }
 
     #[test]
@@ -332,5 +363,15 @@ mod tests {
         let start = synth_cue(CueKind::SessionStart);
         let failure = synth_cue(CueKind::Failure);
         assert!(failure.len() > start.len());
+    }
+
+    #[test]
+    fn stop_listening_is_the_shortest_cue() {
+        // The quickest, highest-pitched cue by design — see `synth_cue`'s
+        // doc comment ("reads as a quick acknowledgment").
+        let stop = synth_cue(CueKind::StopListening);
+        for cue in [CueKind::SessionStart, CueKind::SessionEnd, CueKind::Failure] {
+            assert!(stop.len() < synth_cue(cue).len());
+        }
     }
 }

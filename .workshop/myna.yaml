@@ -79,14 +79,26 @@ actions:
     # glib and the crates above it, and every edit compiles once per copy.
     cd /project/client && cargo test "$@"
   # The env-gated hardware suites, with their services stood up (features
-  # 002/003). `test` above stays hermetic; this is the same suites with the
-  # gates on, and it is what `cov` folds in. `--workspace` for the reason
+  # 002/003/011). `test` above stays hermetic; this is the same suites with
+  # the gates on, and it is what `cov` folds in. `--workspace` for the reason
   # given under `test`.
+  #
+  # NOTE (2026-08-28, feature 011-accessible-dictation-ux): `sound_hw`
+  # (`MYNA_PIPEWIRE_TESTS=1`) reuses the identical virtual PipeWire graph
+  # `pipewire_hw` already needs, so it's added here alongside it at no extra
+  # setup cost. `atspi_hw` (`MYNA_ATSPI_TESTS=1`) is deliberately NOT added:
+  # `dev/gated-tests.sh` stands up a scratch D-Bus session bus, IBus daemon,
+  # and PipeWire graph, but no `org.a11y.Bus` — extending the script to
+  # register one (and confirming it actually works, which the AppArmor
+  # restrictions in some dev sandboxes have prevented verifying — see
+  # `docs/project-plan.md` T56) is unstarted follow-up work, not assumed done
+  # by this addition.
   test-gated: |
     export PATH=/usr/local/cargo-bin:$PATH
     export RUST_BACKTRACE=1
     cd /project/client
-    /project/dev/gated-tests.sh cargo test --workspace --test pipewire_hw
+    /project/dev/gated-tests.sh cargo test --workspace \
+      --test pipewire_hw --test sound_hw
     /project/dev/gated-tests.sh cargo test --workspace \
       --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
 

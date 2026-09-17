@@ -53,6 +53,10 @@ use futures_util::future::{BoxFuture, FutureExt};
 
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
+use myna_desktop::accessibility::{
+    AccessibilityAnnouncer, AnnouncingIndicator, CoalescingAnnouncer, NullAnnouncer,
+    RecoveringAnnouncer, VerbosityGatedAnnouncer,
+};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
@@ -60,10 +64,13 @@ use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::preferences::GSettingsPreferences;
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
+use myna_desktop::sound::playback::PipeWireSoundCuePlayer;
+use myna_desktop::sound::GatedSoundCuePlayer;
 use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
 use myna_orchestrator::backend::share::{BackendSocket, ResolveError};
 use myna_orchestrator::{
@@ -743,6 +750,55 @@ fn bind_control(path: &std::path::Path) -> Result<Box<dyn Trigger>, BindFailure>
         })
 }
 
+/// The screen-reader/braille announcement coalescing window (FR-005),
+/// matching `extensions/myna-shell/a11y.js`'s `coalesceMs` default exactly —
+/// same constant, same contract A4/G2 guarantee, on both the Rust and GJS
+/// sides of this feature.
+const ANNOUNCE_COALESCE_WINDOW: Duration = Duration::from_millis(300);
+
+/// Build the real production announcer stack (feature 011-accessible-
+/// dictation-ux, US1): connect to `org.a11y.Bus`, falling back to a silent
+/// [`NullAnnouncer`] if that fails (P15's "never hard-fail on an optional
+/// boundary" philosophy this module's own doc comment argues for elsewhere —
+/// a screen-reader announcement missing is a degraded experience, not a
+/// reason to refuse to dictate). Layered `Recovering(Coalescing(Verbosity-
+/// Gated(...)))`, matching `AnnouncingIndicator`'s own doc comment on which
+/// layer it expects underneath it.
+///
+/// **History (2026-08-31):** an earlier revision of `AtspiAnnouncer` emitted
+/// its `Announcement` event with `item` pointing at a synthetic object
+/// nothing answered, which hung and crashed a real Orca session on every
+/// single announcement (systemd watchdog `SIGABRT`) — this function briefly
+/// forced `NullAnnouncer` unconditionally as an emergency safety measure
+/// while that was fixed. `AtspiAnnouncer::connect()` now exports a genuinely
+/// responsive `org.a11y.atspi.Accessible`/`Application` pair at the emitted
+/// path (see `accessibility::atspi`'s module doc comment for the full
+/// root-cause writeup and fix) and has been re-verified against a real
+/// Orca session without a repeat of the hang.
+///
+/// The GJS-side `a11y.js` `Announcer` that once accompanied this was deleted
+/// along with the rest of the in-Shell renderer surface (T170); the extension
+/// now announces via `extensions/myna-shell/announcer.js`'s
+/// `DictationAnnouncer`, hosted by `host.js`.
+async fn build_announcer(
+) -> RecoveringAnnouncer<CoalescingAnnouncer<VerbosityGatedAnnouncer<Box<dyn AccessibilityAnnouncer>, GSettingsPreferences>>>
+{
+    let inner: Box<dyn AccessibilityAnnouncer> =
+        match myna_desktop::accessibility::atspi::AtspiAnnouncer::connect().await {
+            Ok(atspi) => Box::new(atspi),
+            Err(e) => {
+                eprintln!(
+                    "accessibility: could not connect to org.a11y.Bus ({e}); \
+                     screen-reader announcements disabled for this session"
+                );
+                Box::new(NullAnnouncer)
+            }
+        };
+    let gated = VerbosityGatedAnnouncer::new(inner, GSettingsPreferences);
+    let coalesced = CoalescingAnnouncer::new(gated, ANNOUNCE_COALESCE_WINDOW);
+    RecoveringAnnouncer::new(coalesced)
+}
+
 /// Build and run the controller with the given indicator (tokio side).
 ///
 /// Nothing here is allowed to end the process. Every boundary this composes -
@@ -772,12 +828,24 @@ async fn run_controller(
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
 
+    // US1: every indicator drives an accessibility announcement alongside its
+    // visual state — see `AnnouncingIndicator`'s doc comment ("a single
+    // controller transition can drive both without either seam knowing about
+    // the other"). US3: sound cues on session start/end/failure, gated on
+    // the user's real GSettings preferences (default: on).
+    let announcer = build_announcer().await;
+    let indicator = AnnouncingIndicator::new(indicator, announcer);
+
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
         .session(make_session(&args, &live, readiness, pump_bus.clone()))
         .preedit(live.preedit.clone())
-        .auto_stop(live.auto_stop.clone());
+        .auto_stop(live.auto_stop.clone())
+        .sound(GatedSoundCuePlayer::new(
+            PipeWireSoundCuePlayer::new(),
+            GSettingsPreferences,
+        ));
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:

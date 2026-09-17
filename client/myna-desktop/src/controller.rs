@@ -676,6 +676,7 @@ impl DesktopController {
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
+        let sound = &mut self.sound;
         // Cloned handle, not a value: read at each event below so a settings
         // change mid-utterance is honored by the next hypothesis rather than
         // at the next press.
@@ -762,6 +763,11 @@ impl DesktopController {
                         ending = ending.or(Ending::FocusLost);
                         loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
+                        // US3/T058 (FR-010): the immediate "stopped
+                        // listening, now processing" cue — distinct from the
+                        // eventual SessionEnd/Failure outcome cue, which
+                        // fires later once the result is known.
+                        sound.play(CueKind::StopListening);
                         // A lost target ends this utterance; leave later edges
                         // for the next session. We never read a matching edge
                         // off `trigger` for this utterance's end (unlike a
@@ -794,6 +800,9 @@ impl DesktopController {
                         stop.stop();
                         loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
+                        // US3/T058 (FR-010): see the FocusOut branch above —
+                        // same immediate acknowledgment cue, same rationale.
+                        sound.play(CueKind::StopListening);
                         // Stop reading the trigger for this utterance: any
                         // further edges (the next push-to-talk cycle) belong to
                         // the next session, not this finalizing one.
@@ -805,6 +814,7 @@ impl DesktopController {
                         stop.stop();
                         loading_since = None;
                         enter_finalizing(state, indicator.as_mut()).await;
+                        sound.play(CueKind::StopListening);
                     }
                 },
                 // A fresh stats snapshot: the policy's chance to end a toggle

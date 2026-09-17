@@ -37,7 +37,12 @@ fn real_pipewire_plays_every_cue_without_error() {
     if !pipewire_enabled() {
         return;
     }
-    for cue in [CueKind::SessionStart, CueKind::SessionEnd, CueKind::Failure] {
+    for cue in [
+        CueKind::SessionStart,
+        CueKind::StopListening,
+        CueKind::SessionEnd,
+        CueKind::Failure,
+    ] {
         PipeWireSoundCuePlayer::play_blocking(cue)
             .expect("a real PipeWire graph should accept a short playback stream");
     }
