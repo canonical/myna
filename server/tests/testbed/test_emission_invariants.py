@@ -505,8 +505,8 @@ def test_window_is_not_full_below_the_cap():
 
 
 def test_window_refuses_half_samples():
-    w = RollingWindow()
-    with pytest.raises(ValueError, match="whole 16-bit samples"):
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    with pytest.raises(ValueError, match="^PCM must hold whole 16-bit samples$"):
         w.fill(b"\x00\x00\x00")
     assert w.received == 0
 
@@ -544,16 +544,32 @@ def test_window_samples_clamp_to_what_is_retained():
     w.fill(_indexed_pcm(0, 5 * RATE))
     w.retire(3 * RATE)
     assert _first_index(w, first=0) == 2 * RATE
+    assert len(w.samples(first=0)) == 3 * RATE
     assert _first_index(w, first=4 * RATE) == 4 * RATE
     assert len(w.samples(end=4 * RATE)) == 2 * RATE
     assert len(w.samples(end=9 * RATE)) == 3 * RATE
     assert len(w.samples(first=4 * RATE, end=3 * RATE)) == 0
 
 
-@pytest.mark.parametrize(("cap", "overlap"), [(4.9, 0.0), (5.0, -0.1), (5.0, 5.0)])
-def test_window_rejects_unbounded_configurations(cap, overlap):
-    with pytest.raises(ValueError):
+@pytest.mark.parametrize(
+    ("cap", "overlap", "message"),
+    [
+        (4.9, 0.0, "^window_cap_seconds must be >= 5$"),
+        (5.0, -0.1, r"^overlap_seconds must be in \[0, window_cap_seconds\)$"),
+        (5.0, 5.0, r"^overlap_seconds must be in \[0, window_cap_seconds\)$"),
+    ],
+)
+def test_window_rejects_unbounded_configurations(cap, overlap, message):
+    with pytest.raises(ValueError, match=message):
         RollingWindow(window_cap_seconds=cap, overlap_seconds=overlap)
+
+
+def test_window_samples_are_normalised_float32():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    w.fill(np.array([-32768, 16384], dtype=np.int16).tobytes())
+    out = w.samples()
+    assert out.dtype == np.float32
+    assert out.tolist() == [-1.0, 0.5]
 
 
 def test_window_accepts_the_smallest_configuration():

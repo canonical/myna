@@ -53,6 +53,29 @@ def test_local_agreement_rejects_drifted_words():
     assert s.commit_rule(h1, h2, window_end=6.5) is None  # drift 0.5 s > AGREE_DRIFT_S
 
 
+def test_local_agreement_edges_are_inclusive():
+    s = LocalAgreement()
+    # Drift of exactly AGREE_DRIFT_S still agrees; a word ending exactly at
+    # the tail guard still has enough right context.
+    last = hyp([("a ", 0.0, 0.4), ("b ", 1.0, 5.5)])
+    current = hyp([("a ", 0.3, 0.7), ("b ", 1.0, 5.5)])
+    d = s.commit_rule(last, current, window_end=6.0)
+    assert d is not None
+    assert [w.text for w in d.commit_words] == ["a ", "b "]
+    assert d.commit_end == 5.5
+
+
+def test_local_agreement_commits_the_prefix_before_a_drifted_word():
+    s = LocalAgreement()
+    words = [(f"w{i} ", float(i), i + 0.9) for i in range(6)]
+    drifted = [
+        (t, st + 0.5, e + 0.5) if i == 3 else (t, st, e) for i, (t, st, e) in enumerate(words)
+    ]
+    d = s.commit_rule(hyp(words), hyp(drifted), window_end=6.0)
+    assert d is not None
+    assert [w.text for w in d.commit_words] == ["w0 ", "w1 ", "w2 "]
+
+
 def test_local_agreement_needs_a_previous_pass():
     s = LocalAgreement()
     words = hyp([(f"w{i} ", float(i), i + 0.9) for i in range(6)])
@@ -182,6 +205,33 @@ def test_silence_cut_scans_incrementally_after_advance():
     assert 16.4 <= cuts[0] <= 17.5
     assert cuts[1] >= cuts[0] - 1.0 + 15.0
     assert 33.5 <= cuts[1] <= 35.0
+
+
+def test_silence_cut_restarts_the_silence_run_after_a_cut():
+    # Unbroken silence after the first cut: no active frame resets the run,
+    # so only the cut itself can make the next pause wait a full
+    # SC_SILENCE_CUT_S past the re-armed point.
+    cut = SilenceCut()
+    audio = np.concatenate([_speech(16.0), _silence(20.0)])
+    frontier = 0.0
+    cuts = []
+    for end in np.arange(0.5, 36.5, 0.5):
+        window = audio[int(frontier * RATE) : int(end * RATE)]
+        cut_at = cut.observe(window, frontier, float(end))
+        if cut_at is not None:
+            cuts.append(cut_at)
+            frontier = cut_at - 1.0
+    assert len(cuts) == 2, cuts
+    rearmed = cuts[0] - 1.0 + 15.0
+    assert cuts[1] >= rearmed + 0.5 - 0.03
+
+
+def test_mark_cut_moves_the_scan_position():
+    cut = SilenceCut(arm_seconds=0.0)
+    audio = np.concatenate([_speech(1.0), _silence(1.0)])
+    cut.mark_cut(2.0)
+    # Everything up to 2.0 s counts as already scanned, so the pause is not seen.
+    assert cut.observe(audio, 0.0, 2.0) is None
 
 
 def test_silence_cut_adapts_to_quiet_speech():

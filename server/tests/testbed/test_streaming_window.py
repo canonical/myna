@@ -16,8 +16,9 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
-from myna.core import Disposition, PcmChunk, TranscriptionFinal
+from myna.core import Disposition, PcmChunk, TranscriptionFinal, TranscriptionProgress
 from myna.core.audio import AudioFormat
+from myna.testbed.harness import StreamingTelemetry
 from myna.testbed.streaming import loop as loop_module
 from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, SilenceCut, Word
 
@@ -112,7 +113,9 @@ def retained(monkeypatch) -> list[int]:
     return high_water
 
 
-async def _run(audio, decoder, strategy, *, cap: float, overlap: float = 1.0, cadence: float = 1.0):
+async def _run(
+    audio, decoder, strategy, *, cap: float, overlap: float = 1.0, cadence: float = 1.0, **kwargs
+):
     events: list[object] = []
 
     async def emit(event: object) -> None:
@@ -126,6 +129,7 @@ async def _run(audio, decoder, strategy, *, cap: float, overlap: float = 1.0, ca
         cadence_seconds=cadence,
         window_cap_seconds=cap,
         overlap_seconds=overlap,
+        **kwargs,
     )
     return events, transcript
 
@@ -152,6 +156,34 @@ def _spaced(seconds: float, durations=(0.3, 0.45, 0.9, 0.2), gap: float = 0.25) 
 
 def _labels(n: int) -> list[str]:
     return [f"w{k}" for k in range(n)]
+
+
+def _progress(events) -> int:
+    return sum(isinstance(e, TranscriptionProgress) for e in events)
+
+
+async def _speech_audio(plan, chunk_seconds: float | None = 1.0):
+    """(seconds, speech) segments: noise the VAD arms on, or digital silence.
+    ``chunk_seconds=None`` appends each segment whole."""
+    rng = np.random.default_rng(3)
+    parts = []
+    for seconds, speech in plan:
+        n = round(seconds * RATE)
+        if speech:
+            noise = rng.standard_normal(n)
+            parts.append(
+                (noise * (0.05 / np.sqrt(np.mean(noise * noise))) * 32767).astype(np.int16)
+            )
+        else:
+            parts.append(np.zeros(n, np.int16))
+    if chunk_seconds is None:
+        for part in parts:
+            yield PcmChunk(data=part.tobytes(), format=FORMAT)
+        return
+    pcm = np.concatenate(parts)
+    step = round(chunk_seconds * RATE)
+    for first in range(0, len(pcm), step):
+        yield PcmChunk(data=pcm[first : first + step].tobytes(), format=FORMAT)
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +377,217 @@ async def test_an_utterance_shorter_than_the_decode_floor_is_still_skipped():
 
     assert decoder.inputs == []
     assert transcript == ""
+
+
+@pytest.mark.asyncio
+async def test_an_utterance_exactly_at_the_decode_floor_is_decoded():
+    decoder = _Decoder()
+    await _run(_audio(0.3, 0.1), decoder, LocalAgreement(), cap=5.0)
+
+    assert decoder.inputs == [(0, round(0.3 * RATE))]
+
+
+@pytest.mark.asyncio
+async def test_a_chunked_cut_shorter_than_the_decode_floor_waits():
+    """A cut less than MIN_DECODE_S past the window start is not taken; the
+    next one that reaches the floor is."""
+    decoder = _Decoder()
+    await _run(
+        _audio(1.0, 0.1),
+        decoder,
+        SilenceCut(force_cut_seconds=0.2),
+        cap=5.0,
+        overlap=0.0,
+        cadence=1_000.0,
+    )
+
+    assert decoder.inputs == [(0, 4800), (4800, 4800), (9600, 4800), (14400, 1600)]
+
+
+@pytest.mark.asyncio
+async def test_a_forced_boundary_holds_back_only_what_the_next_window_redecodes():
+    timeline = [Word(" a", 1.0, 1.4), Word(" b", 4.2, 4.8)]
+    decoder = _Decoder(lambda _call: timeline)
+    events, _ = await _run(_audio(6.0, 1.0), decoder, LocalAgreement(), cap=5.0, cadence=1_000.0)
+
+    assert _committed(events) == ["a", " b"]
+
+
+@pytest.mark.asyncio
+async def test_a_chunked_strategy_still_hears_pauses_after_a_forced_boundary():
+    """The pause arrives in the same append that forced the boundary, so the
+    VAD must resume scanning exactly at the cut."""
+    decoder = _Decoder(ramp=False)
+    await _run(
+        _speech_audio([(5.0, True), (1.0, False), (2.0, True)], chunk_seconds=None),
+        decoder,
+        SilenceCut(arm_seconds=0.5, force_cut_seconds=600.0),
+        cap=5.0,
+    )
+
+    assert len(decoder.inputs) == 3, decoder.inputs
+    assert decoder.inputs[0] == (0, 5 * RATE)
+    first, n = decoder.inputs[1]
+    assert first == 4 * RATE
+    assert 5.5 * RATE <= first + n <= 6.0 * RATE
+
+
+@pytest.mark.asyncio
+async def test_a_quiet_re_decode_tick_reports_progress():
+    events, _ = await _run(_audio(3.0, 1.0), _Decoder(), LocalAgreement(), cap=5.0)
+
+    assert events == [TranscriptionProgress()] * 3
+
+
+@pytest.mark.asyncio
+async def test_an_empty_hypothesis_does_not_blank_the_display():
+    decoder = _Decoder(lambda call: [Word(" a", 0.1, 0.3)] if call == 1 else [])
+    events, _ = await _run(_audio(2.0, 1.0), decoder, LocalAgreement(), cap=5.0)
+
+    assert events == [
+        TranscriptionFinal(text="a", disposition=Disposition.UNSTABLE),
+        TranscriptionProgress(),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_unchanged_unstable_text_is_emitted_once():
+    class _TrailingWord(_Decoder):
+        def __call__(self, samples, offset):
+            super().__call__(samples, offset)
+            end = offset + len(samples) / RATE
+            return Hypothesis(words=[Word(" a", end - 0.3, end - 0.1)])
+
+    events, _ = await _run(_audio(3.0, 1.0), _TrailingWord(), LocalAgreement(), cap=5.0)
+
+    assert events == [
+        TranscriptionFinal(text="a", disposition=Disposition.UNSTABLE),
+        TranscriptionProgress(),
+        TranscriptionProgress(),
+        TranscriptionFinal(text="a", disposition=Disposition.COMMITTED, segment_index=0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chunked_partials_start_at_the_decode_floor_without_a_leading_space():
+    telemetry = StreamingTelemetry()
+    decoder = _Decoder(lambda _call: [Word(" a", 0.05, 0.15)])
+    events, _ = await _run(
+        _audio(0.9, 0.3),
+        decoder,
+        SilenceCut(force_cut_seconds=600.0),
+        cap=5.0,
+        partial_cadence_seconds=0.3,
+        telemetry=telemetry,
+    )
+
+    assert [d.window_seconds for d in telemetry.samples if d.kind == "partial"] == [0.3, 0.6, 0.9]
+    assert _committed(events) == ["a"]
+    assert [e.text for e in events if isinstance(e, TranscriptionFinal)][0] == "a"
+
+
+@pytest.mark.asyncio
+async def test_an_empty_chunked_partial_reports_progress():
+    events, _ = await _run(
+        _audio(3.0, 1.0),
+        _Decoder(),
+        SilenceCut(force_cut_seconds=600.0),
+        cap=5.0,
+        partial_cadence_seconds=1.0,
+    )
+
+    assert events == [TranscriptionProgress()] * 3
+
+
+# ---------------------------------------------------------------------------
+# Liveness and telemetry around cuts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_chunk_that_takes_a_forced_boundary_skips_its_tick():
+    decoder = _Decoder(ramp=False)
+    events, _ = await _run(
+        _audio(12.0, 1.0, ramp=False), decoder, SilenceCut(force_cut_seconds=600.0), cap=5.0
+    )
+
+    # Boundaries land on the 6th and 10th chunks; every other chunk ticks.
+    assert len(decoder.inputs) == 3
+    assert _progress(events) == 10
+
+
+@pytest.mark.asyncio
+async def test_a_chunked_strategy_ticks_on_its_cadence_not_on_every_chunk():
+    decoder = _Decoder(ramp=False)
+    events, _ = await _run(
+        _audio(12.0, 0.5, ramp=False), decoder, SilenceCut(force_cut_seconds=600.0), cap=5.0
+    )
+
+    assert _progress(events) == 12
+
+
+@pytest.mark.asyncio
+async def test_a_chunk_that_takes_a_pause_cut_skips_its_tick():
+    decoder = _Decoder(ramp=False)
+    events, _ = await _run(
+        _speech_audio([(16.0, True), (1.0, False), (4.0, True)]), decoder, SilenceCut(), cap=65.0
+    )
+
+    assert len(decoder.inputs) == 2
+    assert _progress(events) == 20
+
+
+@pytest.mark.asyncio
+async def test_a_tick_that_commits_is_not_reported_as_quiet():
+    decoder = _Decoder(lambda _call: [Word(" a", 0.0, 0.4)])
+    events, _ = await _run(_audio(2.0, 1.0), decoder, LocalAgreement(), cap=5.0)
+
+    assert [(type(e).__name__, getattr(e, "text", None)) for e in events] == [
+        ("TranscriptionFinal", "a"),
+        ("TranscriptionFinal", "a"),
+    ]
+    assert [e.disposition for e in events] == [Disposition.UNSTABLE, Disposition.COMMITTED]
+
+
+@pytest.mark.asyncio
+async def test_telemetry_records_every_decode_including_forced_boundaries():
+    telemetry = StreamingTelemetry()
+    await _run(_audio(6.0, 1.0), _Decoder(), LocalAgreement(), cap=5.0, telemetry=telemetry)
+
+    assert [(d.kind, d.window_seconds) for d in telemetry.samples] == [
+        ("tick", 1.0),
+        ("tick", 2.0),
+        ("tick", 3.0),
+        ("tick", 4.0),
+        ("tick", 5.0),
+        ("commit", 5.0),
+        ("tick", 2.0),
+        ("commit", 2.0),
+    ]
+    assert all(0.0 <= d.wall_seconds < 60.0 for d in telemetry.samples)
+    assert telemetry.audio_seconds_ingested == 6.0
+    assert 0.0 <= telemetry.session_seconds < 60.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tail", "partials"),
+    [(None, [1.0, 2.0, 3.0, 4.0, 5.0, 3.0]), (2.0, [1.0, 2.0, 2.0, 2.0, 2.0, 2.0])],
+)
+async def test_telemetry_records_chunked_partials(tail, partials):
+    telemetry = StreamingTelemetry()
+    await _run(
+        _audio(7.0, 1.0),
+        _Decoder(),
+        SilenceCut(force_cut_seconds=600.0),
+        cap=5.0,
+        partial_cadence_seconds=1.0,
+        partial_tail_seconds=tail,
+        telemetry=telemetry,
+    )
+
+    assert [d.window_seconds for d in telemetry.samples if d.kind == "partial"] == partials
+    assert [d.window_seconds for d in telemetry.samples if d.kind == "commit"] == [5.0, 3.0]
 
 
 @pytest.mark.asyncio

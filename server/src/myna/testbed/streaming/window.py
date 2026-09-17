@@ -35,7 +35,7 @@ def to_samples(seconds: float) -> int:
 class RollingWindow:
     """S16LE mono PCM in, float32 regions out."""
 
-    def __init__(self, window_cap_seconds: float = 30.0, overlap_seconds: float = 1.0):
+    def __init__(self, window_cap_seconds: float, overlap_seconds: float):
         if window_cap_seconds < 5.0:
             raise ValueError("window_cap_seconds must be >= 5")
         if not 0.0 <= overlap_seconds < window_cap_seconds:
