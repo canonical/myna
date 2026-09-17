@@ -27,4 +27,4 @@ The server project exposes model adapters through one session contract and also 
 - `.kb/inference-packaging.md` - Shared inference snap structure and packaging invariants.
 - `.kb/inference-snap-architecture.md` - Common inference snap control and serving paths.
 - `.kb/benchmarking.md` - Safe benchmark workflow and result interpretation.
-- `.kb/model-evaluation.md` - Parakeet GPU and Nemotron 3.5 ASR evaluation findings.
+- `.kb/model-evaluation.md` - Parakeet GPU evaluation findings, plus a parked streaming-ASR candidate evaluation.

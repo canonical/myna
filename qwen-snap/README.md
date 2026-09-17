@@ -80,7 +80,7 @@ residency toggles); no such override is wired yet.
 
 ## Layout
 
-Mirrors `whisper-snap` / `nemotron-snap`: `engines/<name>/{engine.yaml,server}`,
+Mirrors `whisper-snap` / `parakeet-snap`: `engines/<name>/{engine.yaml,server}`,
 `runtimes/<name>/runtime.yaml`, `models/<id>/model.yaml`, `scripts/server.sh`,
 install/post-refresh hooks, weights as components (gitignored, fetched by
 `dev/download-models.sh`).

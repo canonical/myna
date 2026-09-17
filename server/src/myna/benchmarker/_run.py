@@ -22,8 +22,8 @@ the shape of the trade-off:
   in turn - the device is not a setting, it is which engine is active.
 - **config point** (``configs:``): any other shipped knob worth a row -
   whisper's ``compute-type`` (the quantization axis), parakeet's
-  ``stream-arm-seconds``, nemotron's ``att-context-size``. Each entry names the
-  modes and the engines it applies to, so a batch-only knob is sweepable, a
+  ``stream-arm-seconds``. Each entry names the modes and the engines it
+  applies to, so a batch-only knob is sweepable, a
   latency dial does not multiply the batch rows, and a precision that exists
   only on CUDA is not requested on CPU. Values must be explicit: ``auto`` defers
   the choice, so the row could not say what it measured.
@@ -137,7 +137,6 @@ PURGEABLE = frozenset(
         "myna-parakeet",
         "myna-sherpa",
         "myna-qwen",
-        "myna-nemotron",
         "myna-funasr",
         "myna-fake-backend",
         "myna-audio8",

@@ -28,7 +28,6 @@ SNAP_DIRS=(
     sherpa-snap
     funasr-snap
     qwen-snap
-    nemotron-snap
     audio8-snap
 )
 

@@ -1680,7 +1680,7 @@ mod tests {
     #[test]
     fn snap_name_validation_matches_grammar() {
         assert!(is_valid_snap_name("myna-parakeet"));
-        assert!(is_valid_snap_name("nemotron"));
+        assert!(is_valid_snap_name("sherpa"));
         assert!(is_valid_snap_name("a"));
         assert!(!is_valid_snap_name(""));
         assert!(!is_valid_snap_name("-leading"));

@@ -45,7 +45,6 @@ INFERENCE_SNAPS = {
     "sherpa-snap": "myna-sherpa",
     "funasr-snap": "myna-funasr",
     "qwen-snap": "myna-qwen",
-    "nemotron-snap": "myna-nemotron",
     "audio8-snap": "myna-audio8",
 }
 
@@ -217,7 +216,7 @@ def test_single_cpu_engine_snaps_activate_it_by_name(snap) -> None:
 
     Selecting by name also survives a sideload, where hardware-observe is not
     auto-connected and `--auto` would leave the snap with no active engine.
-    nemotron is not covered: its single engine is nvidia-gpu, where refusing to
+    A snap whose only engine is nvidia-gpu is not covered: refusing to
     activate on a machine that cannot run it is the honest outcome.
     """
     snap_dir, name, _ = snap
@@ -253,9 +252,9 @@ def test_no_app_plugs_network(snap) -> None:
     """The offline invariant, asserted rather than only asserted in prose.
 
     Every one of these snaps states in its own header that weights ship as
-    components and there is no runtime download. qwen and nemotron nonetheless
-    plugged ``network`` on their CLI app, contradicting that text and their
-    siblings, with no comment saying why. ``network-bind`` on the daemon is a
+    components and there is no runtime download. qwen nonetheless plugged
+    ``network`` on its CLI app, contradicting that text and its siblings,
+    with no comment saying why. ``network-bind`` on the daemon is a
     different thing: snapd's seccomp gates listen() behind it even for a Unix
     socket, so it is required and is allowed here.
     """
@@ -553,8 +552,8 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
 # adapter here measured faster with a small explicit pool than with ORT's own
 # sizing, pinning included (parakeet ~2x, sherpa 4.9x, funasr 12%, audio8
 # 16%), so none of them pins and none of them may plug process-control.
-# whisper/nemotron/qwen are not ORT at all (CTranslate2, PyTorch, and a ctypes
-# libqwen_asr.so) and never pinned either.
+# whisper/qwen are not ORT at all (CTranslate2 and a ctypes libqwen_asr.so)
+# and never pinned either.
 ORT_PINNING_SNAPS: set[str] = set()
 
 # Adapters that cap ORT's intra-op pool, and so give up pinning. Kept as an

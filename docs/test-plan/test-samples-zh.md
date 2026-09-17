@@ -12,8 +12,8 @@ Mandarin Chinese (`zh`) translation of the reading sample corpus used by
 > Chinese should be preferred for any particular tester.
 
 **Product-specific terms convention**: product names, package names, and
-technical identifiers (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in **English**
+technical identifiers (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in **English**
 throughout, matching how a real bilingual user would actually speak them —
 these are not translated.
 
@@ -51,7 +51,7 @@ these are not translated.
 
 ## 3. Domain / technical vocabulary passage
 
-> "我安装了 myna-desktop snap，同时也装了 whisper-snap 和 nemotron-snap，
+> "我安装了 myna-desktop snap，同时也装了 whisper-snap 和 parakeet-snap，
 > 然后确认 PipeWire 正确地路由了我的麦克风。快捷键会触发 IBus 注入，我还
 > 启用了 preedit 选项，可以在文本提交之前预览不稳定的文本。升级到 version
 > one point three point zero 之后，我检查了 tilde slash dot config slash

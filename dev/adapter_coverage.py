@@ -13,7 +13,7 @@ After all adapters have run, the script:
   2. Prints a per-file report showing test-only vs merged coverage so
      use-case-only and never-executed lines stand out.
 
-Adapters skipped by default (no model available locally): nemotron, qwen-c.
+Adapters skipped by default (no model available locally): qwen-c.
 """
 
 from __future__ import annotations

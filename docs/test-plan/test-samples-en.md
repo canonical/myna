@@ -71,7 +71,7 @@ Loaded with terms this project's actual users will say — proper nouns,
 acronyms, package names, version strings, file paths.
 
 > "I installed the myna dash desktop snap alongside whisper dash snap and
-> nemotron dash snap, then confirmed PipeWire was routing my microphone
+> parakeet dash snap, then confirmed PipeWire was routing my microphone
 > correctly. The hotkey triggers IBus injection, and I enabled the preedit
 > flag to preview unstable text before it commits. After upgrading to version
 > one point three point zero, I checked the config at tilde slash dot config
@@ -79,7 +79,7 @@ acronyms, package names, version strings, file paths.
 > set to auto. The GNOME Shell extension shows the activity indicator without
 > stealing focus from my terminal."
 
-*(Read naturally — spell out "PipeWire", "myna-desktop", "IBus", "Nemotron"
+*(Read naturally — spell out "PipeWire", "myna-desktop", "IBus", "Parakeet"
 as words, not letter-by-letter, unless that's how you'd normally say them.)*
 
 ## 4. Numbers, dates, and punctuation-heavy passage
@@ -126,27 +126,14 @@ pauses. Use this specifically for the streaming-mode checks (see
 > imaging instruments, is expected to be completed within the coming month,
 > after which the satellite will begin routine operational service."
 
-## 7. Unsupported-language probes
+## 7. Unsupported-language probe
 
-Two short failure-mode probe sentences — not full accuracy passages, and not
-translations of the §5 pangram (a literal translation of an English pangram
-usually isn't itself a pangram in the target language). Each targets a
+One short failure-mode probe sentence — not a full accuracy passage, and not
+a translation of the §5 pangram (a literal translation of an English pangram
+usually isn't itself a pangram in the target language). Targets a
 specific documented model limitation from `test-plan-system.md` §3.
 
-**7.1 — French sentence, for TC-07 (Nemotron given non-English speech)**
-
-Nemotron is English-only with no other-language support at all, so any
-natural, clearly-spoken non-English sentence is sufficient to exercise this
-probe — the specific language doesn't matter for TC-07, French was chosen
-for tester availability.
-
-> "Portez ce vieux whisky au juge blond qui fume."
-
-*(A standard, well-known French pangram — used here simply as a natural,
-phonetically clean French sentence, not because pangram density itself is
-relevant to this probe.)*
-
-**7.2 — Estonian sentence, for TC-08 (language outside Qwen's 30-language
+**7.1 — Estonian sentence, for TC-07 (language outside Qwen's 30-language
 list), Qwen only**
 
 Estonian is confirmed **not** present in Qwen3-ASR's supported list (zh, en,

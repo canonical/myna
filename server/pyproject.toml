@@ -26,10 +26,6 @@ dependencies = [
 whisper = [
     "faster-whisper>=1.2.1",
 ]
-# Heavy (torch + CUDA); for the Nemotron / FastConformer adapter (T09).
-nemotron = [
-    "nemo_toolkit[asr]>=2.0",
-]
 # Small transducer snaps (feature 008): Parakeet TDT int8 ONNX via ONNX
 # Runtime (no torch), and the sherpa-onnx turnkey streaming runtime.
 parakeet = [
@@ -91,9 +87,8 @@ dev = [
     "vulture>=2.14",
     "pip-audit>=2.7",
     # dev/requantize_encoder.py (perf T06): onnxruntime.quantization needs the
-    # onnx package to load/rewrite the graph. Already a locked transitive dep
-    # of the nemotron extra; pinned here directly so a parakeet-only sync
-    # still has it. Dev-only -- never imported at runtime.
+    # onnx package to load/rewrite the graph. Pinned here directly so a
+    # parakeet-only sync has it. Dev-only -- never imported at runtime.
     "onnx>=1.19",
     "mutmut>=3.8.0",
     # The OpenAI Realtime API conformance oracle (tests/test_openai_realtime_
@@ -178,11 +173,9 @@ module = [
     "faster_whisper.*",
     "funasr_onnx.*",
     "huggingface_hub.*",
-    "nemo.*",
     "onnxruntime.*",
     "sherpa_onnx.*",
     "soundfile.*",
-    "torch.*",
     "tracy_client.*",
 ]
 ignore_missing_imports = true

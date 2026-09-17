@@ -4,7 +4,8 @@
 
 Real English human speech with exact reference transcripts, so WER is
 trustworthy - the synthetic espeak tier is out-of-distribution and its WER is
-misleading across architectures (Nemotron ~0% on real voice vs ~45% on espeak).
+misleading across architectures (streaming transducers can swing from ~0% on
+real voice to ~45% on espeak).
 
 Source: LibriSpeech (Panayotov et al., ICASSP 2015), CC-BY-4.0, real read
 English at 16 kHz. ``--subset`` picks the split: the ``-clean`` ones are

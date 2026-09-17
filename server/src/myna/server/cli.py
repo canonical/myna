@@ -35,26 +35,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "nemotron", "qwen-c", "parakeet", "sherpa", "funasr", "audio8", "fake"),
+        choices=("whisper", "qwen-c", "parakeet", "sherpa", "funasr", "audio8", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
         "--model",
         default=None,
-        help="model id/path; default per adapter (whisper: tiny, nemotron: streaming "
-        "FastConformer; sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
+        help="model id/path; default per adapter (whisper: tiny; "
+        "sherpa/funasr: ONNX model dir — default: staged cache snapshot)",
     )
     parser.add_argument(
         "--device",
         default=None,
         choices=("cpu", "cuda"),
-        help="inference device; default per adapter (whisper, parakeet: cpu; nemotron: cuda)",
+        help="inference device; default per adapter (whisper, parakeet: cpu)",
     )
     parser.add_argument(
         "--compute-type", default="default", help="CTranslate2 compute type (whisper)"
-    )
-    parser.add_argument(
-        "--att-context-size", default=None, help="Nemotron latency dial, e.g. '70,0'"
     )
     parser.add_argument(
         "--socket-mode",
@@ -72,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="enable streaming mode (progressive committed segments; whisper/nemotron/parakeet)",
+        help="enable streaming mode (progressive committed segments; whisper/parakeet)",
     )
     parser.add_argument(
         "--stream-cadence-s",
@@ -286,18 +283,7 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
             raise SystemExit("--adapter qwen-c requires --model <model dir>")
         return QwenCAdapter(args.model)
 
-    from myna.testbed.nemotron import (
-        DEFAULT_MODEL,
-        NemotronAdapter,
-        _parse_att_context_size,
-    )
-
-    return NemotronAdapter(
-        args.model or DEFAULT_MODEL,
-        device=args.device or "cuda",
-        att_context_size=_parse_att_context_size(args.att_context_size),
-        streaming=args.streaming,
-    )
+    raise ValueError(f"unknown adapter: {args.adapter!r}")
 
 
 async def serve(args: argparse.Namespace) -> None:

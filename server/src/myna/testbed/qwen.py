@@ -17,7 +17,7 @@ so the adapter feeds raw float32 mono 16 kHz samples straight in and gets the
 transcript back — no file path, no resampling (audio-push: the client owns
 capture + conversion).
 
-**Scope (honest):** commit-on-finalize, like the first whisper/nemotron cuts —
+**Scope (honest):** commit-on-finalize, like the first whisper cuts —
 buffer the pushed audio, decode once on finish via ``qwen_transcribe_audio``,
 emit one ``final`` then ``done``. The C runtime *has* a streaming mode
 (``qwen_transcribe_stream`` with a monotonic commit frontier that matches our

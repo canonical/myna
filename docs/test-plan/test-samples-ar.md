@@ -12,8 +12,8 @@ Arabic (`ar`) translation of the reading sample corpus used by
 > variant should be preferred for actual testing.
 
 **Product-specific terms convention**: product names, package names, and
-technical identifiers (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in **English**
+technical identifiers (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in **English**
 throughout, matching how a real bilingual user would actually speak them —
 these are not translated. Since Arabic is right-to-left, expect these
 inline English/Latin-script tokens to be a distinct test signal for
@@ -59,7 +59,7 @@ tokens specifically.
 
 ## 3. Domain / technical vocabulary passage
 
-> "ثبّتُ حزمة myna-desktop snap إلى جانب whisper-snap و nemotron-snap، ثم
+> "ثبّتُ حزمة myna-desktop snap إلى جانب whisper-snap و parakeet-snap، ثم
 > تأكدت من أن PipeWire يوجّه الميكروفون الخاص بي بشكل صحيح. يؤدي اختصار
 > لوحة المفاتيح إلى تفعيل حقن IBus، وقمت بتفعيل خيار preedit لمعاينة
 > النص غير المستقر قبل تثبيته. وبعد الترقية إلى الإصدار one point three

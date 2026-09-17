@@ -359,7 +359,7 @@ class Audio8Adapter:
                 text = await asyncio.to_thread(self._decode, bytes(buffered))
 
             # Empty final is not harmless (harness counts it as a committed
-            # segment) — same guard as whisper/qwen/nemotron/funasr adapters.
+            # segment) — same guard as whisper/qwen/funasr adapters.
             if text:
                 await emit(TranscriptionFinal(text=text, disposition=Disposition.COMMITTED))
             await emit(TranscriptionDone(text=text))

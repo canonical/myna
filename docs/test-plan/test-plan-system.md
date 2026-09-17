@@ -10,7 +10,7 @@ elsewhere and are out of scope here (see §11).
 testers in a later wave. Crowd-testing submission tooling is intentionally
 **not** specified in this document (deferred).
 
-**Baseline under test**: Whisper, Nemotron, and Qwen3-ASR in batch and supported
+**Baseline under test**: Whisper and Qwen3-ASR in batch and supported
 streaming configurations. Confirm available models and engines from the
 installed snaps before each run; this procedure is not a release-status tracker.
 
@@ -66,7 +66,7 @@ desktop doesn't matter):
 - **CPU-only** machine (no supported NVIDIA GPU present, or GPU snap not
   installed).
 - **NVIDIA GPU** machine (CUDA-capable card, GPU-enabled snap variant
-  installed where available - currently whisper, parakeet and nemotron ship
+  installed where available - currently whisper and parakeet ship
   GPU engines; qwen is CPU-only regardless of hardware).
 
 Record exact CPU model, RAM, and GPU model (if any) in the results table
@@ -80,12 +80,10 @@ report (T12 is still open on the engineering side).
 | Model | License | Language coverage | Mode support (shipped) | Snap | Notes for testers |
 |---|---|---|---|---|---|
 | **Whisper** (faster-whisper) | MIT | Multilingual (`*`) on non-`.en` checkpoints; English-only on `.en` checkpoints | Batch + streaming (local-agreement) | `whisper-snap` | CPU and NVIDIA GPU engines both shipped |
-| **Nemotron** (FastConformer) | — | **English only** | Batch (native streaming loop still in development) | `nemotron-snap` | NVIDIA GPU only — no CPU engine exists |
 | **Qwen3-ASR** (`qwen-c`) | Apache-2.0 | 30 languages: zh, en, yue, ar, de, fr, es, pt, id, it, ko, ru, th, vi, ja, tr, hi, ms, nl, sv, da, fi, pl, cs, fil, fa, el, ro, hu, mk | Batch (streaming exists but is sub-realtime on weaker CPUs — expect it to lag) | `qwen-snap` | CPU only in this shipped build |
 
 **Expected failure modes** (not bugs — record as "expected" if observed):
 
-- Nemotron given non-English speech: expect garbled or empty output.
 - Any model given a language outside its supported set (e.g. a language
   outside Qwen's 30 list) via a language not English: expect garbled,
   empty, or misrecognized-as-a-different-language output.
@@ -96,8 +94,8 @@ report (T12 is still open on the engineering side).
 
 ## 4. Reading sample corpus (English, plus a 9-language diversity set)
 
-The full English reading sample corpus (six passage categories, plus two
-short non-English probe sentences for TC-07/TC-08) lives in a standalone
+The full English reading sample corpus (six passage categories, plus one
+short non-English probe sentence for TC-07) lives in a standalone
 file: **[`test-samples-en.md`](test-samples-en.md)**.
 
 The same six-section corpus (§1–§6) has also been translated into 9
@@ -106,8 +104,8 @@ diversity and give Qwen3-ASR and Whisper real accuracy signal beyond
 English. **All translations are draft, machine-assisted, and require
 native/fluent-speaker review before use** (per §2's fluent-speaker
 requirement) — do not run a test session against an unreviewed file.
-Product-specific terms (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in English in
+Product-specific terms (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in English in
 every translated file, matching how a real bilingual user would actually
 speak them.
 
@@ -115,7 +113,7 @@ speak them.
 |---|---|---|
 | English | [`test-samples-en.md`](test-samples-en.md) | Reviewed/canonical; also holds the §7 unsupported-language probes |
 | Spanish (es) | [`test-samples-es.md`](test-samples-es.md) | Needs native review |
-| French (fr) | [`test-samples-fr.md`](test-samples-fr.md) | Needs native review; shares its §5 pangram with the TC-07 probe sentence |
+| French (fr) | [`test-samples-fr.md`](test-samples-fr.md) | Needs native review |
 | Italian (it) | [`test-samples-it.md`](test-samples-it.md) | Needs native review |
 | Portuguese (pt) | [`test-samples-pt.md`](test-samples-pt.md) | Needs native review; confirm European vs. Brazilian variant preference |
 | German (de) | [`test-samples-de.md`](test-samples-de.md) | Needs native review |
@@ -127,33 +125,31 @@ speak them.
 Each language file mirrors `test-samples-en.md`'s structure — quick index
 (section numbers are consistent across all files):
 
-- §1 — Natural long-form prose (2 passages: A, B) — used by TC-01, TC-10, TC-11
+- §1 — Natural long-form prose (2 passages: A, B) — used by TC-01, TC-09, TC-10
 - §2 — Command / short-utterance set (10 lines) — used by TC-03
 - §3 — Domain / technical vocabulary passage — used by TC-04
 - §4 — Numbers, dates, and punctuation-heavy passage — used by TC-05
 - §5 — Pangram / phonetic smoke-test — used by TC-06
 - §6 — Long continuous passage for streaming tests (30s+) — used by TC-02, §9
-- §7 (English file only) — Unsupported-language probes: French sentence
-  (TC-07, Nemotron) and Estonian sentence (TC-08, Qwen only) — the Estonian
-  sentence still needs native/fluent-speaker review before use
+- §7 (English file only) — Unsupported-language probe: Estonian sentence
+  (TC-07, Qwen only) — still needs native/fluent-speaker review before use
 
 **Model applicability per language**: all 9 non-English languages above are
 within Qwen3-ASR's 30-language list, so each can be tested on both
-Qwen3-ASR and Whisper (Nemotron remains English-only per §3 and is
-excluded from all non-English runs except the TC-07 failure probe).
+Qwen3-ASR and Whisper.
 
 ---
 
 ## 5. Test matrix
 
 Cross the following dimensions. Not every cell applies to every model — use
-§3's mode/language support to skip inapplicable combinations (e.g. Nemotron
-has no CPU engine; Qwen has no GPU engine in this build).
+§3's mode/language support to skip inapplicable combinations (e.g. Qwen has
+no GPU engine in this build).
 
 | Dimension | Values |
 |---|---|
-| Model | Whisper, Nemotron, Qwen3-ASR |
-| Language | English (all passages, `test-samples-en.md` §1–§6); Spanish, French, Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin (full §1–§6 corpus per language, pending native review — see §4 table); French and Estonian (two short probe sentences only, `test-samples-en.md` §7, TC-07/TC-08) |
+| Model | Whisper, Qwen3-ASR |
+| Language | English (all passages, `test-samples-en.md` §1–§6); Spanish, French, Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin (full §1–§6 corpus per language, pending native review — see §4 table); Estonian (one short probe sentence only, `test-samples-en.md` §7, TC-07) |
 | Mode | `batch`, `streaming`, `auto` (real-world default) |
 | Hardware | CPU-only, NVIDIA GPU |
 | Injection target app | one plain text field (e.g. GNOME Text Editor / gedit), one "real" app (e.g. browser address bar, LibreOffice Writer) |
@@ -197,7 +193,7 @@ Each test case below follows: **Description**, **Preconditions**, **Steps**,
 concrete, repeatable procedures. Testers should log the outcome of each case
 they run in the §9 results table, using the Test Case ID for traceability.
 
-**Language repetition**: TC-01 through TC-06, TC-10, and TC-11 are written
+**Language repetition**: TC-01 through TC-06, TC-09, and TC-10 are written
 against `test-samples-en.md` for readability, but should be repeated once
 per language a tester is fluent in and has an approved (reviewed)
 translation file for — see the §4 table for the full list of language
@@ -312,7 +308,7 @@ review (see §4).
    naturally (not spelled out letter-by-letter).
 2. Stop recording and wait for the transcript.
 3. Compare specifically the technical terms (PipeWire, myna-desktop, IBus,
-   Nemotron, "one point three point zero", the file path — kept in English
+   Parakeet, "one point three point zero", the file path — kept in English
    in every language file per §4's convention) against the reference text —
    treat these terms as the primary signal, not overall prose fluency.
 
@@ -371,39 +367,18 @@ review (see §4).
 4. Compare the injected text against the reference sentence.
 
 **Expected Result**: Exact or near-exact match. This sentence previously
-caught a Nemotron empty-output bug on synthetic audio — any empty, garbled,
-or wildly incorrect output here is a strong signal to stop and investigate
-before continuing with longer passages, rather than a minor issue to note
-and move past.
+caught an empty-output bug on synthetic audio in a streaming adapter — any
+empty, garbled, or wildly incorrect output here is a strong signal to stop
+and investigate before continuing with longer passages, rather than a minor
+issue to note and move past.
 
 ---
 
-### TC-07 — Unsupported-language probe: Nemotron given non-English speech
-
-**Description**: Confirms Nemotron's documented English-only limitation
-fails gracefully (garbled or empty output) rather than silently producing
-plausible-looking wrong text, using the French sentence in
-`test-samples-en.md` §7.1.
-
-**Preconditions**: Nemotron installed; plain-text app focused and empty.
-
-**Steps**:
-1. Press the hotkey to start recording.
-2. Read the French sentence in `test-samples-en.md` §7.1 aloud, at a
-   natural pace.
-3. Stop recording and observe the injected result.
-
-**Expected Result**: Garbled or empty output, not a plausible-but-wrong
-English transcript — the failure should be obvious to the tester, not
-silently misleading. Log the exact observed output verbatim.
-
----
-
-### TC-08 — Unsupported-language probe: language outside Qwen's 30-language list
+### TC-07 — Unsupported-language probe: language outside Qwen's 30-language list
 
 **Description**: Confirms behavior when Qwen3-ASR is given a language it
 was never trained to support, using the Estonian sentence in
-`test-samples-en.md` §7.2. **Scoped to Qwen3-ASR only** — Whisper's
+`test-samples-en.md` §7.1. **Scoped to Qwen3-ASR only** — Whisper's
 multilingual checkpoints support Estonian, so running this probe against
 Whisper would not demonstrate an out-of-vocabulary failure.
 
@@ -412,7 +387,7 @@ focused and empty.
 
 **Steps**:
 1. Press the hotkey to start recording.
-2. Read the Estonian sentence in `test-samples-en.md` §7.2 aloud, at a
+2. Read the Estonian sentence in `test-samples-en.md` §7.1 aloud, at a
    natural pace.
 3. Stop recording and observe the injected result.
 
@@ -422,7 +397,7 @@ error-taxonomy work (T31).
 
 ---
 
-### TC-09 — Secure-field injection behavior (GNOME/Wayland)
+### TC-08 — Secure-field injection behavior (GNOME/Wayland)
 
 **Description**: Verifies that myna refuses to type into password and PIN
 fields on GNOME/Wayland, while still typing into ordinary fields, including
@@ -458,7 +433,7 @@ password field is not detected, and myna types into it.
 
 ---
 
-### TC-10 — Cross-app injection consistency
+### TC-09 — Cross-app injection consistency
 
 **Description**: Verifies dictation and injection work consistently across
 more than one real application, not just a single reference text editor.
@@ -484,7 +459,7 @@ direction/IME handling bugs are a distinct risk from model accuracy.
 
 ---
 
-### TC-11 — Hardware tier comparison (CPU vs. GPU)
+### TC-10 — Hardware tier comparison (CPU vs. GPU)
 
 **Description**: Directional comparison of accuracy and perceived latency
 for the same model/passage across a CPU-only machine and an NVIDIA GPU
@@ -544,7 +519,7 @@ refuses at the start of dictation: it shows the notice "Refusing to type
 into a password field" and does not start recording. Ordinary fields,
 including those in a browser private window, are not refused.
 
-**Test case** (pass/fail; execute as TC-09):
+**Test case** (pass/fail; execute as TC-08):
 
 1. Focus a password field in a GNOME/Wayland-native app (e.g. a login form,
    GNOME Settings password change dialog).
@@ -614,8 +589,8 @@ This test plan explicitly does **not** cover:
   unverified — out of scope until that changes).
 - Crowd-testing submission tooling/process (deferred to a later document).
 - Languages beyond the 9-language diversity set in §4 (Spanish, French,
-  Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin) plus the two
-  §7 probe sentences (TC-07 French, TC-08 Estonian) — further language
+  Italian, Portuguese, German, Czech, Arabic, Hindi, Mandarin) plus the
+  §7 probe sentence (TC-07 Estonian) — further language
   expansion (e.g. covering the rest of Qwen's 30-language list) is
   deferred to a later round.
 - Running any translated-corpus test session before its file has passed

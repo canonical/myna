@@ -119,7 +119,7 @@ mod tests {
     fn unmeasured_tier_defaults_to_batch() {
         assert!(!streaming_viable(
             &table(),
-            "nemotron",
+            "unmeasured-model",
             "gpu-rtx",
             DEFAULT_RTF_THRESHOLD
         ));

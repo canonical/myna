@@ -690,8 +690,8 @@ mod tests {
         BackendIdentity::new("myna-whisper", "provider")
     }
 
-    fn nemotron() -> BackendIdentity {
-        BackendIdentity::new("myna-nemotron", "provider")
+    fn funasr() -> BackendIdentity {
+        BackendIdentity::new("myna-funasr", "provider")
     }
 
     fn discovery_connected_parakeet() -> ConnectionSnapshot {
@@ -728,8 +728,8 @@ mod tests {
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend myna-parakeet:provider manual\n\
              content - myna-whisper:provider -\n\
-             content - myna-nemotron:provider -\n",
-            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n  - myna-whisper:provider:\n      content: inference-provider\n  - myna-nemotron:provider:\n      content: inference-provider\n",
+             content - myna-funasr:provider -\n",
+            "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n  - myna-whisper:provider:\n      content: inference-provider\n  - myna-funasr:provider:\n      content: inference-provider\n",
         )
         .expect("connections parse")
     }
@@ -1020,7 +1020,7 @@ mod tests {
         assert_eq!(pages.len(), 3);
         assert!(pages.iter().any(|page| page.identity() == &parakeet()));
         assert!(pages.iter().any(|page| page.identity() == &whisper()));
-        assert!(pages.iter().any(|page| page.identity() == &nemotron()));
+        assert!(pages.iter().any(|page| page.identity() == &funasr()));
     }
 
     #[test]

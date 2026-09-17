@@ -18,8 +18,6 @@ corpus/
 .pip-cache/
 whisper-snap/wheels/
 whisper-snap/.hf-cache/
-nemotron-snap/wheels/
-nemotron-snap/.hf-cache/
 qwen-snap/wheels/
 qwen-snap/.hf-cache/
 qwen-snap/build.log

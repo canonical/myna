@@ -10,8 +10,8 @@ Czech (`cs`) translation of the reading sample corpus used by
 > made only by a fluent/native speaker of the language being tested.
 
 **Product-specific terms convention**: product names, package names, and
-technical identifiers (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in **English**
+technical identifiers (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in **English**
 throughout, matching how a real bilingual user would actually speak them —
 these are not translated.
 
@@ -57,7 +57,7 @@ these are not translated.
 ## 3. Domain / technical vocabulary passage
 
 > "Nainstaloval jsem snap myna-desktop spolu s whisper-snap a
-> nemotron-snap, a pak jsem potvrdil, že PipeWire správně směruje můj
+> parakeet-snap, a pak jsem potvrdil, že PipeWire správně směruje můj
 > mikrofon. Klávesová zkratka spouští injekci IBus, a povolil jsem
 > možnost preedit pro náhled nestabilního textu před jeho potvrzením. Po
 > aktualizaci na verzi one point three point zero jsem zkontroloval

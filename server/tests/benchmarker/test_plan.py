@@ -609,12 +609,13 @@ def test_named_engines_are_all_counted_where_auto_selection_counts_only_the_wide
 
 
 def test_a_gpu_only_target_is_skipped_on_a_machine_with_no_gpu(tmp_path, snaps, capsys):
-    """This is what let nemotron sit commented out: uncommented, it used to be
-    installed - several GB of components - and only then report broken."""
-    snaps(snap="myna-nemotron", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    """A GPU-only target used to need commenting out on a GPU-less machine:
+    uncommented, it got installed - several GB of components - and only then
+    reported broken."""
+    snaps(snap="myna-audio8", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-nemotron", "files": ["myna-nemotron_*.snap"]}],
+        targets=[{"snap": "myna-audio8", "files": ["myna-audio8_*.snap"]}],
     )
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
@@ -627,14 +628,14 @@ def test_the_same_target_is_planned_in_full_on_a_machine_with_a_gpu(
 ):
     """Same config, no edit - which is the point of not commenting it out."""
     machine.gpu()
-    snaps(snap="myna-nemotron", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    snaps(snap="myna-audio8", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-nemotron", "files": ["myna-nemotron_*.snap"]}],
+        targets=[{"snap": "myna-audio8", "files": ["myna-audio8_*.snap"]}],
     )
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
-    assert "myna-nemotron/nvidia-gpu/streaming-multi/batch" in out
+    assert "myna-audio8/nvidia-gpu/streaming-multi/batch" in out
     assert "at most 1 will run here." in out
 
 

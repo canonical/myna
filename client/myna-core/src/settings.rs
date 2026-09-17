@@ -455,7 +455,7 @@ mod tests {
     fn forced_batch_overrides_a_passing_gate() {
         let t = TierTable {
             assessments: vec![TierAssessment {
-                model: "nemotron".into(),
+                model: "parakeet-tdt".into(),
                 hardware: "gpu".into(),
                 rtf: 0.2,
                 strategy: "streaming".into(),
@@ -463,7 +463,7 @@ mod tests {
             }],
         };
         assert_eq!(
-            resolve_mode(StreamingMode::Batch, &t, "nemotron", "gpu"),
+            resolve_mode(StreamingMode::Batch, &t, "parakeet-tdt", "gpu"),
             StreamingMode::Batch
         );
     }

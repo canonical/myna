@@ -41,7 +41,6 @@ REVISION_MAPS = (
 
 PINNED = {
     # Single-model scripts.
-    "nemotron-snap/dev/download-models.sh": r"^rev=[0-9a-f]{40}$",
     "sherpa-snap/dev/download-models.sh": r"^rev=[0-9a-f]{40}$",
     "parakeet-snap/dev/download-models.sh": r'^rev="murmure-model [0-9.]+"$',
     # Python fetchers.
@@ -84,7 +83,7 @@ def test_fetcher_pins_a_revision(rel: str) -> None:
     )
 
 
-HF_DOWNLOADERS = (*REVISION_MAPS, "nemotron-snap/dev/download-models.sh")
+HF_DOWNLOADERS = REVISION_MAPS
 
 
 @pytest.mark.parametrize("rel", HF_DOWNLOADERS, ids=HF_DOWNLOADERS)

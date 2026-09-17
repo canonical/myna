@@ -10,8 +10,8 @@ Hindi (`hi`) translation of the reading sample corpus used by
 > made only by a fluent/native speaker of the language being tested.
 
 **Product-specific terms convention**: product names, package names, and
-technical identifiers (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in **English**
+technical identifiers (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in **English**
 throughout, matching how a real bilingual user would actually speak them —
 these are not translated. Expect frequent code-switching between
 Devanagari and Latin script for these tokens — this is itself a relevant
@@ -58,7 +58,7 @@ test signal for script-mixing handling, not an error to normalize away.
 
 ## 3. Domain / technical vocabulary passage
 
-> "मैंने myna-desktop snap को whisper-snap और nemotron-snap के साथ
+> "मैंने myna-desktop snap को whisper-snap और parakeet-snap के साथ
 > इंस्टॉल किया, फिर पुष्टि की कि PipeWire मेरे माइक्रोफ़ोन को सही तरीके से
 > रूट कर रहा था। हॉटकी IBus इंजेक्शन को ट्रिगर करती है, और मैंने कमिट होने
 > से पहले अस्थिर टेक्स्ट को प्रीव्यू करने के लिए preedit फ्लैग सक्षम किया।

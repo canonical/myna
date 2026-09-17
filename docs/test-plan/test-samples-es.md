@@ -10,8 +10,8 @@ Spanish (`es`) translation of the reading sample corpus used by
 > made only by a fluent/native speaker of the language being tested.
 
 **Product-specific terms convention**: product names, package names, and
-technical identifiers (myna, whisper-snap, nemotron-snap, PipeWire, IBus,
-Nemotron, GNOME Shell, version strings, file paths) are kept in **English**
+technical identifiers (myna, whisper-snap, parakeet-snap, PipeWire, IBus,
+Parakeet, GNOME Shell, version strings, file paths) are kept in **English**
 throughout, matching how a real bilingual user would actually speak them —
 these are not translated.
 
@@ -59,7 +59,7 @@ these are not translated.
 
 ## 3. Domain / technical vocabulary passage
 
-> "Instalé el snap de myna-desktop junto con whisper-snap y nemotron-snap,
+> "Instalé el snap de myna-desktop junto con whisper-snap y parakeet-snap,
 > y luego confirmé que PipeWire estaba enrutando correctamente mi
 > micrófono. La combinación de teclas activa la inyección de IBus, y
 > habilité la opción de preedit para previsualizar el texto inestable antes
