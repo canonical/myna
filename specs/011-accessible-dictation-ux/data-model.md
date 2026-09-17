@@ -108,7 +108,16 @@ dependency (project-plan T54) into a concrete, shared store:
 |---|---|---|---|
 | `verbosity` | `announcement-verbosity` | enum `off \| failures-only \| all-transitions` (`myna_core::settings::AnnouncementVerbosity`) | `all-transitions` |
 | `sound_cues_enabled` | `sound-cues-enabled` | `bool` | `true` (spec Assumptions) |
-| `silence_auto_stop_seconds` | `silence-auto-stop-seconds` | `u32` | `15` (existing T59 default) |
+
+A third key, `silence-auto-stop-seconds` (uint, default `15`), was planned here
+and implemented, then **dropped on the rebase onto `integration-220627`**:
+upstream had independently shipped the same capability as `silence-timeout`
+(uint, default `30`, range 0-600), consumed end to end by
+`myna_desktop::AutoStop`. Two keys for one setting would have been two sources
+of truth, so this feature adopted theirs. Our `Preferences` read seam for it
+was removed too — it had no production consumer, since `AutoStop` owns
+measuring silence, warning about a noisy input, and finalizing the session.
+FR-018/FR-021 are satisfied by `silence-timeout`.
 
 Every consuming process (`myna-desktop` via `myna_core::settings::Store`,
 `myna-shell`, `myna-cli`) reads the same GSettings keys directly — the

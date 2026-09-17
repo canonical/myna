@@ -23,6 +23,7 @@ pub mod control;
 pub mod debug;
 pub mod events;
 pub mod failure;
+pub mod i18n;
 pub mod protocol;
 pub mod session;
 pub mod settings;

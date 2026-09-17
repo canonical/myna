@@ -67,10 +67,9 @@ the genuine `org.a11y` bus — the same red-green split already used for
 landed on `integration-220627` after this feature's initial planning pass and
 picked up on rebase. This resolves what was an open dependency
 (project-plan T54, "no shared store today") into a concrete answer: this
-feature adds three keys to that existing schema —
-`announcement-verbosity` (enum, default `all-transitions`),
-`sound-cues-enabled` (boolean, default `true`), and
-`silence-auto-stop-seconds` (uint, default `15`) — rather than inventing a
+feature adds two keys to that existing schema —
+`announcement-verbosity` (enum, default `all-transitions`) and
+`sound-cues-enabled` (boolean, default `true`) — rather than inventing a
 separate store or waiting on the still out-of-scope settings-*UI* feature
 (spec Assumptions: the UI is separate; the store it will eventually write
 through already exists). `myna-desktop`'s `preferences::GSettingsPreferences`

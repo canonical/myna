@@ -1305,26 +1305,33 @@ fn source(flag: bool, user: bool) -> &'static str {
     }
 }
 
-/// Initialize both gettext domains this package owns.
+/// Initialize the three gettext domains this binary renders strings from.
 ///
 /// `MYNA_DESKTOP_LOCALEDIR` (when set) is the only override; every other
 /// catalog is found by gettext itself through the default data dirs
 /// (`XDG_DATA_DIRS`, else `/usr/local/share` and `/usr/share`) — which is
 /// where the snap stages its `.mo` files, so no path logic belongs here.
 ///
-/// Order matters: the orchestrator domain inits first and the desktop's last,
-/// so `textdomain()` ends on the desktop domain — what the plain `gettext()`
-/// calls in this crate expect. Each `init()` also sets the process locale
-/// from the environment.
+/// Order matters: the desktop domain inits last, so `textdomain()` ends on it
+/// — what the plain `gettext()` calls in this crate expect. The other two
+/// resolve through `dgettext` against their own domain, so they are
+/// order-independent; they init first only to leave the default where this
+/// crate wants it. Each `init()` also sets the process locale from the
+/// environment, which must happen before `myna_core::failure`'s registry is
+/// first built (it translates once, at build time) — hence the call at the top
+/// of `main`.
 fn init_i18n() {
+    let mut core = gettextrs::TextDomain::new(myna_core::i18n::GETTEXT_DOMAIN);
     let mut orchestrator = gettextrs::TextDomain::new(myna_orchestrator::i18n::GETTEXT_DOMAIN);
     let mut desktop = gettextrs::TextDomain::new("myna-desktop");
     if let Ok(dir) = std::env::var("MYNA_DESKTOP_LOCALEDIR") {
         if !dir.is_empty() {
+            core = core.push(dir.clone());
             orchestrator = orchestrator.push(dir.clone());
             desktop = desktop.push(dir);
         }
     }
+    let _ = core.init();
     let _ = orchestrator.init();
     let _ = desktop.init();
 }
@@ -1600,11 +1607,11 @@ mod tests {
     /// bindings, textdomain) and the test env, so run these serially.
     static I18N_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// The regression: the snap sets no MYNA_DESKTOP_LOCALEDIR, so both
-    /// catalogs must be found by real gettext through the default data dirs
+    /// The regression: the snap sets no MYNA_DESKTOP_LOCALEDIR, so every
+    /// catalog must be found by real gettext through the default data dirs
     /// (`XDG_DATA_DIRS`) — the same way the desktop catalog already works.
     #[test]
-    fn both_domains_load_through_default_data_dirs() {
+    fn every_domain_loads_through_default_data_dirs() {
         let _guard = I18N_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let base = tmpdir("xdg");
         let msgfmt = std::env::var("MSGGFMT").unwrap_or_else(|_| "msgfmt".into());
@@ -1626,6 +1633,15 @@ mod tests {
             &base.join("po"),
             myna_orchestrator::i18n::GETTEXT_DOMAIN,
             &[("cannot reach backend: %s", "IT-REACH: %s")],
+        ) {
+            eprintln!("skipping: msgfmt could not compile the catalogs");
+            return;
+        }
+        if !compile_po(
+            &msgfmt,
+            &base.join("po"),
+            myna_core::i18n::GETTEXT_DOMAIN,
+            &[("No text field is selected.", "IT-NO-TARGET")],
         ) {
             eprintln!("skipping: msgfmt could not compile the catalogs");
             return;
@@ -1669,6 +1685,24 @@ mod tests {
             myna_orchestrator::i18n::tr("cannot reach backend: %s"),
             "IT-REACH: %s",
             "the orchestrator catalog is reached through the same data dirs"
+        );
+        assert_eq!(
+            myna_core::i18n::tr("No text field is selected."),
+            "IT-NO-TARGET",
+            "the core catalog is reached through the same data dirs"
+        );
+        // ...and the failure registry actually renders that translation,
+        // rather than the marker merely being extractable. `default_registry`
+        // rather than the `OnceLock`-backed `lookup`, because another test in
+        // this binary may already have built the shared one under the C
+        // locale - the registry translates once, when it is built.
+        assert_eq!(
+            myna_core::failure::default_registry()
+                .lookup(myna_core::failure::NO_TARGET)
+                .expect("NO_TARGET is always registered")
+                .message,
+            "IT-NO-TARGET",
+            "plain-language failure text is translated, not just marked"
         );
 
         restore_env(&saved);

@@ -118,6 +118,7 @@ impl ClientSettings for GioClientSettings {
                     message: "value is outside the schema range".into(),
                 }
             })?,
+            (SettingRange::Unrestricted, ClientSettingValue::Boolean(value)) => value.to_variant(),
             _ => {
                 return Err(ClientSettingsError::InvalidValue {
                     key: key.to_owned(),
@@ -220,6 +221,9 @@ fn value_from_variant(
 ) -> Result<ClientSettingValue, ClientSettingsError> {
     if let Some(integer) = integer_from_variant(value) {
         return Ok(ClientSettingValue::Integer(integer));
+    }
+    if let Some(boolean) = value.get::<bool>() {
+        return Ok(ClientSettingValue::Boolean(boolean));
     }
     let value = value
         .get::<String>()

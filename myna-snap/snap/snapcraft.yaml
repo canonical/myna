@@ -291,11 +291,12 @@ parts:
       install -Dm644 data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml \
           "$CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml"
       # Compile and install gettext translations so they are available under
-      # $SNAP/usr/share/locale at runtime. Two domains ship from this part —
-      # the desktop's (myna-desktop) and the orchestrator's
-      # (myna-orchestrator) — each compiled to its own <domain>.mo. Build-time
+      # $SNAP/usr/share/locale at runtime. Three domains ship from this part —
+      # the desktop's (myna-desktop), the orchestrator's (myna-orchestrator)
+      # and the core's (myna-core, the plain-language failure text every
+      # surface renders) — each compiled to its own <domain>.mo. Build-time
       # msgfmt (gettext) is provided by the build-packages list above.
-      for po in myna-desktop/po/*.po myna-orchestrator/po/*.po; do
+      for po in myna-desktop/po/*.po myna-orchestrator/po/*.po myna-core/po/*.po; do
         lang=$(basename "$po" .po)
         domain=$(basename "$(dirname "$(dirname "$po")")")
         mkdir -p "$CRAFT_PART_INSTALL/usr/share/locale/$lang/LC_MESSAGES"

@@ -29,6 +29,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::i18n::tr;
+
 /// A failure/notice severity (data-model.md), distinguishable without colour
 /// (FR-025): `Critical` persists until acknowledged, `Recoverable`
 /// auto-dismisses but remains retrievable afterward (FR-026).
@@ -169,99 +171,142 @@ pub fn default_registry() -> FailureRegistry {
     let mut r = FailureRegistry::new();
     r.register(FailurePresentation {
         id: SECURE_FIELD,
-        message: "This field is a password field, so dictation can't type into it.",
-        recovery_action: "Select a text field that isn't a password field, then try again.",
+        message: tr(
+            "This field is a password field, so dictation can't type into it.",
+        ),
+        recovery_action: tr(
+            "Select a text field that isn't a password field, then try again.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: NO_TARGET,
-        message: "No text field is selected.",
-        recovery_action: "Click into a text field, then try again.",
+        message: tr("No text field is selected."),
+        recovery_action: tr("Click into a text field, then try again."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: INJECTION_UNAVAILABLE,
-        message: "The service that types text into other apps isn't available right now.",
-        recovery_action:
+        message: tr(
+            "The service that types text into other apps isn't available right now.",
+        ),
+        recovery_action: tr(
             "Check that your desktop's input method service is running, then try again.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: INJECTION_BACKEND_ERROR,
-        message: "Something went wrong while typing the text into the app.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr("Something went wrong while typing the text into the app."),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: TARGET_CLOSED,
-        message: "The window you were dictating into closed or lost focus.",
-        recovery_action: "Click back into a text field, then try again.",
+        message: tr("The window you were dictating into closed or lost focus."),
+        recovery_action: tr("Click back into a text field, then try again."),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_CONNECT,
-        message: "The speech-recognition service can't be reached.",
-        recovery_action: "Check that the dictation backend is running, then try again.",
+        message: tr("The speech-recognition service can't be reached."),
+        recovery_action: tr(
+            "Check that the dictation backend is running, then try again.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_HANDSHAKE,
-        message: "The speech-recognition service didn't respond correctly when starting a session.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr(
+            "The speech-recognition service didn't respond correctly when starting a session.",
+        ),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_WIRE,
-        message: "The speech-recognition service sent a message dictation didn't understand.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr(
+            "The speech-recognition service sent a message dictation didn't understand.",
+        ),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_CLOSED,
-        message: "The connection to the speech-recognition service closed unexpectedly.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr(
+            "The connection to the speech-recognition service closed unexpectedly.",
+        ),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: BACKEND_TRANSPORT,
-        message: "There was a problem communicating with the speech-recognition service.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr(
+            "There was a problem communicating with the speech-recognition service.",
+        ),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: UNKNOWN_BACKEND_FAILURE,
-        message: "Something went wrong with the speech-recognition service.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr("Something went wrong with the speech-recognition service."),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_INTERNAL,
-        message: "Something went wrong inside the dictation service.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr("Something went wrong inside the dictation service."),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_CONNECTION_CLOSED,
-        message: "The connection to the speech-recognition service closed unexpectedly.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr(
+            "The connection to the speech-recognition service closed unexpectedly.",
+        ),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_INFERENCE_FAILED,
-        message: "Speech recognition failed for this utterance.",
-        recovery_action: "Try again. If it keeps happening, restart the dictation service.",
+        message: tr("Speech recognition failed for this utterance."),
+        recovery_action: tr(
+            "Try again. If it keeps happening, restart the dictation service.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: CODE_CAPTURE_FAILED,
-        message: "The microphone couldn't be captured.",
-        recovery_action: "Check that a microphone is connected and not in use by another app, then try again.",
+        message: tr("The microphone couldn't be captured."),
+        recovery_action: tr(
+            "Check that a microphone is connected and not in use by another app, then try again.",
+        ),
         severity: Severity::Critical,
     });
     r.register(FailurePresentation {
         id: MODEL_LOAD_SLOW,
-        message: "Loading the speech-recognition model is taking longer than usual.",
-        recovery_action: "Keep waiting, or restart dictation if this continues for a while.",
+        message: tr(
+            "Loading the speech-recognition model is taking longer than usual.",
+        ),
+        recovery_action: tr(
+            "Keep waiting, or restart dictation if this continues for a while.",
+        ),
         severity: Severity::Recoverable,
     });
     r

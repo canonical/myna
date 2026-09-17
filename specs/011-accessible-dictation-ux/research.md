@@ -160,9 +160,12 @@ real `org.myna.dictation` GSettings schema
 (`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`) and Rust
 wrapper (`myna_core::settings::Store`/`Settings`), already used for
 `streaming-mode`/`language`/`activation`/`hotkey`. This feature rebased onto
-that work and extended the same schema with `announcement-verbosity`,
-`sound-cues-enabled`, and `silence-auto-stop-seconds` rather than treating the
-store as still-hypothetical. `client/myna-desktop/src/preferences.rs`'s
+that work and extended the same schema with `announcement-verbosity` and
+`sound-cues-enabled` rather than treating the
+store as still-hypothetical. A third planned key, `silence-auto-stop-seconds`,
+was dropped on a later rebase in favour of upstream's equivalent
+`silence-timeout` (default `30`), which `myna_desktop::AutoStop` already
+consumes end to end. `client/myna-desktop/src/preferences.rs`'s
 `GSettingsPreferences` reads it via `Settings::load()`; the missing-schema
 fallback (`Settings::default()`) was fixed during this work to return the
 FR-004-mandated defaults for every field (a real bug caught by test: a naive

@@ -1295,6 +1295,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures-util",
+ "gettext-rs",
  "gio",
  "serde",
  "serde_json",
