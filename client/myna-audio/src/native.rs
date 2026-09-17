@@ -46,11 +46,13 @@ use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 /// promptness contract (FR-012) in every phase, even when no audio flows.
 const STOP_POLL: Duration = Duration::from_millis(100);
 
-/// Deadline for each startup phase: the daemon answering discovery, and the
-/// first audio after connecting. A daemon without a session manager accepts
-/// `stream.connect` and even negotiates the stream to `Paused` while nothing
-/// links it (2026-07-21 hardware finding), so only delivered audio proves the
-/// capture works. Healthy graphs deliver within milliseconds; 3 s is headroom.
+/// Deadline for each phase: the daemon answering discovery, the first audio
+/// after connecting, and the next audio while capturing. A daemon without a
+/// session manager accepts `stream.connect` and even negotiates the stream to
+/// `Paused` while nothing links it (2026-07-21 hardware finding), so only
+/// delivered audio proves the capture works. Silent PCM is delivery; this is
+/// never a voice-activity timeout. Healthy graphs deliver every quantum
+/// (tens of milliseconds); 3 s is headroom.
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Where capture is in its lifecycle.
@@ -104,9 +106,9 @@ impl Supervisor {
     }
 
     /// A non-empty buffer arrived.
-    fn delivered(&mut self, _now: Instant) {
+    fn delivered(&mut self, now: Instant) {
         self.phase = Phase::Capturing;
-        self.deadline = None;
+        self.deadline = Some(now + SILENCE_TIMEOUT);
     }
 
     fn tick(&self, now: Instant, stopped: bool) -> Option<Ending> {
@@ -672,6 +674,19 @@ mod tests {
         assert!(stopped_before_wired(sup.tick(t0, true)));
         // Stop wins over an expired deadline: the user asked to end.
         assert!(stopped_before_wired(sup.tick(t0 + SILENCE_TIMEOUT, true)));
+    }
+
+    #[test]
+    fn capture_faults_when_delivery_stalls() {
+        let t0 = Instant::now();
+        let mut sup = Supervisor::new(t0, None);
+        sup.linking(t0);
+        sup.delivered(t0 + MS);
+        let last = t0 + 5 * SILENCE_TIMEOUT;
+        sup.delivered(last);
+        assert_eq!(sup.tick(last + SILENCE_TIMEOUT - MS, false), None);
+        let msg = fault_message(sup.tick(last + SILENCE_TIMEOUT, false));
+        assert_eq!(msg, no_flow_message(None));
     }
 
     #[test]

@@ -399,6 +399,74 @@ async fn unlinked_stream_faults_at_the_link_deadline() {
     assert!(msg.contains("no audio is flowing"), "got: {msg}");
 }
 
+/// Ids of the links leaving `node`'s output ports, from `pw-link -lI`.
+fn links_from(node: &str) -> Vec<String> {
+    let Ok(out) = Command::new("pw-link").arg("-lI").output() else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    let mut from_node = false;
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let mut fields = line.split_whitespace();
+        let id = fields.next().unwrap_or_default().to_string();
+        match fields.next() {
+            Some("|->") if from_node => ids.push(id),
+            Some(port) if !port.starts_with('|') => {
+                from_node = port.starts_with(&format!("{node}:"));
+            }
+            _ => {}
+        }
+    }
+    ids
+}
+
+/// A capture whose source stops delivering mid-capture (its links removed,
+/// and the session manager does not relink a targeted stream) faults within
+/// the no-progress window instead of reading as a silent user.
+#[tokio::test]
+async fn stalled_source_faults_mid_capture() {
+    skip_unless_enabled!();
+    let Some(vsrc) = VirtualSource::spawn("myna-test-src-stall") else {
+        eprintln!("skipped: pw-loopback unavailable");
+        return;
+    };
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let source = CaptureSource::builder(AudioFormat::default())
+        .target(vsrc.node_name.clone())
+        .backend(Box::new(PipeWireBackend::new()))
+        .build();
+    let mut stats = source.stats();
+    let health = source.health();
+    let _stream = Box::new(source).capture();
+    assert!(
+        wait_captured(
+            &mut stats,
+            Duration::from_millis(300),
+            Duration::from_secs(6)
+        )
+        .await,
+        "the virtual source never delivered"
+    );
+
+    let links = links_from(&vsrc.node_name);
+    assert!(!links.is_empty(), "no links from {}", vsrc.node_name);
+    for id in &links {
+        let unlinked = Command::new("pw-link").args(["-d", id]).status();
+        assert!(
+            unlinked.is_ok_and(|s| s.success()),
+            "could not remove link {id}"
+        );
+    }
+
+    let (states, took) = health_to_end(health, Duration::from_secs(8)).await;
+    let msg = device_unavailable(states.last());
+    assert!(msg.contains("no audio is flowing"), "got: {msg}");
+    assert!(
+        took >= Duration::from_millis(2_500) && took < Duration::from_secs(5),
+        "stall detected after {took:?}"
+    );
+}
+
 /// T009: default-source capture yields chunks in exactly the negotiated format;
 /// the ring fills from `capture()` (press) while the consumer defers draining,
 /// then drains buffered-then-live with nothing lost (FR-009); graceful `stop()`
