@@ -297,3 +297,29 @@ async fn loading_after_ready_keeps_forwarding_audio() {
         run.events
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn capture_is_stopped_by_the_time_the_runner_returns() {
+    let (tx, mut ends) = mpsc::unbounded_channel();
+    let backend = Probe(tx);
+    let source = mic(vec![silence(1), Step::Wait(Duration::from_secs(600))]);
+    let stop = source.stop_handle();
+    let mut sink = CollectingSink::default();
+    let serve = async {
+        let end = ends.recv().await.expect("a session opens");
+        end.ready().await;
+        end.emit(TranscriptionEvent::Error(myna_core::ErrorData {
+            code: "inference_failed".into(),
+            message: "boom".into(),
+        }))
+        .await;
+        end
+    };
+    let (outcome, _end) = futures_util::future::join(
+        run_dictation(&backend, SessionConfig::default(), source, &mut sink),
+        serve,
+    )
+    .await;
+    assert_eq!(failure(&outcome).0, "inference_failed");
+    assert!(stop.is_stopped(), "capture outlived the runner");
+}

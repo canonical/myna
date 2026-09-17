@@ -384,6 +384,54 @@ mod tests {
         assert!(e[0].is_terminal());
     }
 
+    fn completed(transcript: &str) -> String {
+        json!({
+            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
+            "transcript": transcript
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn only_a_written_commit_turns_an_empty_completed_into_the_terminal() {
+        let mut dialect = Ie115 {
+            base64_audio: false,
+            after_commit: false,
+        };
+        dialect.written(false);
+        assert!(dialect.decode(&completed("")).unwrap().is_empty());
+        dialect.written(true);
+        dialect.written(false);
+        let done = dialect.decode(&completed("")).unwrap();
+        assert!(matches!(&done[..], [TranscriptionEvent::Done(t)] if t.text.is_empty()));
+    }
+
+    #[test]
+    fn audio_is_framed_as_binary_or_base64_appends() {
+        let chunk = || PcmChunk::new(vec![1u8, 2, 3, 4], myna_core::AudioFormat::default());
+        let mut raw = Ie115 {
+            base64_audio: false,
+            after_commit: false,
+        };
+        assert_eq!(
+            raw.encode(Outbound::Audio(chunk())),
+            Message::binary(vec![1u8, 2, 3, 4])
+        );
+        let mut base64 = Ie115 {
+            base64_audio: true,
+            after_commit: false,
+        };
+        assert_eq!(
+            base64.encode(Outbound::Audio(chunk())),
+            Message::text(append_frame(&chunk()))
+        );
+        let commit: Value = match base64.encode(Outbound::Finish) {
+            Message::Text(text) => serde_json::from_str(&text).unwrap(),
+            other => panic!("commit is a text frame, got {other:?}"),
+        };
+        assert_eq!(commit["type"], INPUT_AUDIO_COMMIT);
+    }
+
     #[test]
     fn decoder_ignores_control_frames() {
         assert!(decode_frame(&json!({"type": "session.created", "session": {}}), false).is_empty());

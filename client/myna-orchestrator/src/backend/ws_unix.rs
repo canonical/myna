@@ -73,8 +73,7 @@ impl BackendClient for WsUnixBackend {
         // `transcription.error` (rejection, e.g. bad protocol version).
         let protocol_version = read_handshake_ack(&mut ws).await?;
 
-        let (sink, events) =
-            transport::spawn(ws, Internal::default(), OUTBOUND_CAPACITY, EVENT_CAPACITY);
+        let (sink, events) = transport::spawn(ws, Internal, OUTBOUND_CAPACITY, EVENT_CAPACITY);
         Ok(BackendHandle::new(sink, events, protocol_version))
     }
 }
@@ -175,27 +174,14 @@ async fn read_handshake_ack(ws: &mut Ws) -> Result<Option<String>, BackendError>
 
 /// The internal `myna.core` framing: PCM as binary frames, `session.finish`,
 /// and `{"event": …}` transcript frames down.
-#[derive(Default)]
-struct Internal {
-    audio_frames: u64,
-    audio_bytes: u64,
-}
+struct Internal;
 
 impl Dialect for Internal {
     fn encode(&mut self, item: Outbound) -> Message {
         match item {
-            Outbound::Audio(chunk) => {
-                self.audio_frames += 1;
-                self.audio_bytes += chunk.data.len() as u64;
-                Message::binary(chunk.data)
-            }
+            Outbound::Audio(chunk) => Message::binary(chunk.data),
             Outbound::Finish => {
-                myna_core::dbg_log!(
-                    "ws",
-                    "-> session.finish (sent {} audio frames / {} bytes)",
-                    self.audio_frames,
-                    self.audio_bytes
-                );
+                myna_core::dbg_log!("ws", "-> session.finish");
                 Message::text(
                     serde_json::to_string(&ClientControl::SessionFinish).expect("serializable"),
                 )
