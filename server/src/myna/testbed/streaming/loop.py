@@ -580,9 +580,19 @@ async def _run(
             await emit(TranscriptionProgress())  # liveness on quiet ticks
 
     # I5: resolve the tail. MIN_DECODE_S skips an utterance too short to be
-    # worth a decode, never the remainder a cut left behind.
-    if window.received > window.processed_through and (
-        window.processed_through or window.window_seconds >= min_utterance_seconds
+    # worth a decode, never the remainder a cut left behind - unless that
+    # remainder carries no overlap and the VAD heard nothing in it: whisper
+    # and SenseVoice hallucinate on a region of pure silence.
+    silent_remainder = (
+        isinstance(strategy, SilenceCut)
+        and window.processed_through > 0
+        and window.retained_start >= window.processed_through
+        and not strategy.heard_since_cut
+    )
+    if (
+        window.received > window.processed_through
+        and not silent_remainder
+        and (window.processed_through or window.window_seconds >= min_utterance_seconds)
     ):
         hyp = await timed_decode(window.samples(), window.start, "commit")
         await commit(hyp.words)

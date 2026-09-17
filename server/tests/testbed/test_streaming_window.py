@@ -165,15 +165,17 @@ def _progress(events) -> int:
 
 async def _speech_audio(plan, chunk_seconds: float | None = 1.0):
     """(seconds, speech) segments: noise the VAD arms on, or digital silence.
+    ``speech`` may be an RMS level instead of True (0.05).
     ``chunk_seconds=None`` appends each segment whole."""
     rng = np.random.default_rng(3)
     parts = []
     for seconds, speech in plan:
         n = round(seconds * RATE)
         if speech:
+            level = 0.05 if speech is True else speech
             noise = rng.standard_normal(n)
             parts.append(
-                (noise * (0.05 / np.sqrt(np.mean(noise * noise))) * 32767).astype(np.int16)
+                (noise * (level / np.sqrt(np.mean(noise * noise))) * 32767).astype(np.int16)
             )
         else:
             parts.append(np.zeros(n, np.int16))
@@ -1034,3 +1036,50 @@ def test_observing_the_unscanned_suffix_cuts_exactly_where_the_whole_window_does
     whole = _drive(strategy(), pcm, chunk, suffix=False, overlap=overlap)
     assert len(whole) > 3
     assert _drive(strategy(), pcm, chunk, suffix=True, overlap=overlap) == whole
+
+
+# ---------------------------------------------------------------------------
+# Deferred batch: silence after the last pause is not decoded on its own
+# ---------------------------------------------------------------------------
+
+
+async def _batch_inputs(plan) -> list[tuple[int, int]]:
+    from myna.testbed.streaming.batch import run_deferred_batch
+
+    decoder = _Decoder(ramp=False)
+
+    async def ignore(*_args) -> None:
+        pass
+
+    await run_deferred_batch(_speech_audio(plan, chunk_seconds=0.1), ignore, decoder, ignore)
+    return decoder.inputs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tail", [0.4, 1.0, 3.0])
+async def test_deferred_batch_does_not_decode_silence_left_after_a_pause_cut(tail):
+    """Whisper and SenseVoice hallucinate on a region of pure silence ("Thank
+    you.", "Yeah.", a repeat of the prompt)."""
+    inputs = await _batch_inputs([(31.0, True), (0.6 + tail, False)])
+
+    assert len(inputs) == 1, inputs
+    assert inputs[0][0] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", [0.05, 0.01, 0.006])
+async def test_deferred_batch_still_decodes_quiet_speech_after_a_pause_cut(level):
+    inputs = await _batch_inputs([(31.0, True), (1.0, False), (0.5, level), (0.3, False)])
+
+    assert len(inputs) == 2, inputs
+    first, n = inputs[1]
+    assert first == inputs[0][0] + inputs[0][1]
+    assert first + n == round(32.8 * RATE)
+
+
+@pytest.mark.asyncio
+async def test_a_silent_tail_after_a_forced_cut_is_still_decoded_for_its_overlap():
+    """The overlap may hold words the forced cut held back."""
+    inputs = await _batch_inputs([(60.0, True), (2.0, False)])
+
+    assert [first for first, _ in inputs] == [0, 59 * RATE]

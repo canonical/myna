@@ -206,15 +206,22 @@ class SilenceCut:
         self._force_cut = force_cut_seconds
         self._vad = _AdaptiveVad()
         self._silence_run = 0.0
+        self._heard_since_cut = False
         self._scanned = 0.0  # absolute seconds; audio before this was VAD-fed
 
     @property
     def force_cut_seconds(self) -> float:
         return self._force_cut
 
+    @property
+    def heard_since_cut(self) -> bool:
+        """Whether the VAD judged any frame since the last cut active."""
+        return self._heard_since_cut
+
     def mark_cut(self, at: float) -> None:
         """The window was cut at ``at``: restart the silence run there."""
         self._silence_run = 0.0
+        self._heard_since_cut = False
         self._scanned = at
 
     def unscanned_offset(self, window_start: float) -> int:
@@ -251,6 +258,8 @@ class SilenceCut:
             frame = samples[off - offset : off - offset + frame_len]
             rms = float(np.sqrt(np.mean(frame * frame)))
             activity = self._vad.update(rms)
+            if activity == "active" and frame_end > scan_from:
+                self._heard_since_cut = True
             # Arm per frame (murmure arms when the buffer *reaches* SC_ARM_S):
             # only frames ending past the arm point accumulate silence.
             if frame_end > scan_from and frame_end - window_start >= self._arm:
