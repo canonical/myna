@@ -804,6 +804,29 @@ def test_a_delta_before_the_commit_names_the_item_the_commit_acknowledges(scenar
     scenario.run(main)
 
 
+def test_an_ie115_frame_that_is_neither_audio_nor_a_commit_is_ignored(scenario):
+    """A further ``session.update`` mid-utterance is no audio and no boundary:
+    the utterance runs on, and its commit is still acknowledged."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            update = json.dumps({"type": w.SESSION_UPDATE, "session": {}})
+            await send_all(ws, [SECOND, update, SECOND, finish_frame("ie115")])
+            committed = await next_frame(ws, ACK_BOUND)
+            assert committed["type"] == w.INPUT_AUDIO_COMMITTED
+            completed = await terminal(ws)
+            assert completed["type"] == w.TRANSCRIPTION_COMPLETED
+            assert completed["item_id"] == committed["item_id"]
+            await ws.close()
+        assert b"".join(adapter.sessions[0]) == SECOND * 2
+
+    scenario.run(main)
+
+
 async def fail_then_transcribe(
     adapter: Gated, audio: AsyncIterator[PcmChunk], emit: EventSink
 ) -> None:
