@@ -144,9 +144,10 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
     - word-boundary churn after a pause — the re-decode merges committed
       words into one token ("es"+"Carlos." → " escarlos.") or splits them
       (observed live 2026-07-28: "escarlos." re-committed).
-    Only *fully covered* words drop — a partial cover means the match ended
-    mid-word (e.g. inside a genuinely new word), which stays. A word with no
-    alphanumerics (punctuation such as "。") drops only inside the region. Greedy global
+    A match must end where a word of the new stream ends; one ending
+    mid-word is a coincidence inside genuinely new text and the alignment
+    abstains. A word with no alphanumerics (punctuation such as "。") drops
+    only inside the region. Greedy global
     matchers (difflib) are avoided deliberately: they can partition away the
     frontier run when genuinely-new words after it match older committed
     words.
@@ -189,6 +190,10 @@ def _alignment_drop(tail: list[str], new: list[str]) -> int:
         covered += len(part)
         weight += _overlap_weight(part)
         drop += 1
+    if covered != end:
+        # The match ends inside a word: re-transcribed words end where words
+        # end, so this is a coincidence within new text ("es" in "less").
+        return 0
     if weight > _MAX_OVERLAP_WORDS:
         # The match claims more words than the overlap audio can hold — it
         # is new text repeating committed text (see _MAX_OVERLAP_WORDS).

@@ -451,6 +451,15 @@ def test_alignment_drop_abstains_instead_of_falling_through_to_short_suffix():
     assert _alignment_drop(tail, new_short) == 3
 
 
+def test_alignment_drop_abstains_when_the_match_ends_inside_a_word():
+    # Parakeet long-form, 2026-09-17: "and" was held back at a cut, so the
+    # re-decode began with new words only. The frontier suffix "es" of
+    # "proteges" matched inside "less" and dropped "and more or".
+    tail = ["one", "of", "his", "proteges"]
+    assert _alignment_drop(tail, ["and", "more", "or", "less", "of", "a", "favorite"]) == 0
+    assert _alignment_drop(["wrinkles", "gather"], ["wrinkles", "gathered", "between"]) == 0
+
+
 def test_alignment_drop_steps_over_punctuation_inside_the_overlap():
     # SenseVoice tokens are single characters and "。" squashes to nothing:
     # the drop must not stop at it and re-commit the "去" after it.
