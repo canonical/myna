@@ -172,6 +172,14 @@ async def send_all(ws: ClientConnection, frames: Iterable[bytes | str]) -> None:
             await ws.send(frame)
 
 
+async def drain(ws: ClientConnection) -> None:
+    """Read until the connection has closed."""
+    with contextlib.suppress(ConnectionClosed):
+        async for _ in ws:
+            pass
+    await ws.wait_closed()
+
+
 async def terminal(ws: ClientConnection) -> dict[str, Any]:
     """The next terminal frame of either dialect."""
     while True:
@@ -481,6 +489,36 @@ def test_an_undecodable_internal_control_frame_ends_the_audio_and_is_logged(scen
     scenario.run(main)
     (failure,) = [r for r in caplog.records if r.getMessage() == "ingress reader failed"]
     assert failure.exc_info is not None
+
+
+REJECTED_OPENINGS = {
+    "not-a-session": {"type": "hello"},
+    "unsupported-version": {"type": "session.start", "protocol_version": "0", "config": {}},
+    "unserved-model": {
+        "type": w.SESSION_UPDATE,
+        "session": {"audio": {"input": {"transcription": {"model": "not-served"}}}},
+    },
+    "capabilities": {"type": "capabilities.query"},
+}
+
+
+@pytest.mark.parametrize("opening", REJECTED_OPENINGS)
+def test_a_connection_ended_at_its_opening_frame_closes_promptly(opening, scenario):
+    """A client that sends audio right behind its opening frame fills the
+    one-frame receive buffer; unless the server reads through the close
+    handshake, the close waits out its 10 s timeout."""
+    path = scenario.path
+
+    async def main() -> None:
+        async with scenario.serving(FakeAdapter()):
+            ws = await unix_connect(str(path), ping_interval=None, compression=None)
+            await ws.send(json.dumps(REJECTED_OPENINGS[opening]))
+            await send_all(ws, [SECOND] * 3)
+            await asyncio.wait_for(drain(ws), BOUND / 2)
+            if opening == "not-a-session":
+                assert ws.close_code == 1002
+
+    scenario.run(main)
 
 
 def partition(pcm: bytes, cuts: tuple[int, ...] = (1, 3200, 3, 1001, 2, 4799)) -> list[bytes]:

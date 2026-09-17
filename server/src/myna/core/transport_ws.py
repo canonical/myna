@@ -312,6 +312,18 @@ async def _discard_frames(ws: ServerConnection) -> None:
             pass
 
 
+async def _close(ws: ServerConnection, code: int = 1000, reason: str = "") -> None:
+    """Close, reading and discarding frames through the handshake: with
+    nothing reading, a client still sending holds the transport paused and
+    the close waits out its timeout."""
+    discard = asyncio.ensure_future(_discard_frames(ws))
+    try:
+        await ws.close(code, reason)
+    finally:
+        discard.cancel()
+        await asyncio.wait({discard})
+
+
 class _SessionHandler:
     def __init__(self, service: SttService) -> None:
         self._service = service
@@ -331,21 +343,13 @@ class _SessionHandler:
     async def _end_connection(
         self, ws: ServerConnection, ingress: _Ingress, reader: asyncio.Future[None]
     ) -> None:
-        """The one exit of both dialects. Frames are read and discarded
-        through the close handshake: with the reader gone, a client still
-        sending would otherwise hold the transport paused and the close would
-        wait out its timeout."""
+        """The one exit of both dialects once a session has started."""
         ingress.abort()
         reader.cancel()
         await asyncio.wait({reader})
         if not reader.cancelled() and (exc := reader.exception()) is not None:
             _log.warning("ingress reader failed", exc_info=exc)
-        discard = asyncio.ensure_future(_discard_frames(ws))
-        try:
-            await ws.close()
-        finally:
-            discard.cancel()
-            await asyncio.wait({discard})
+        await _close(ws)
 
     async def handle(self, ws: ServerConnection) -> None:
         """One connection. The server speaks first: one ``session.created``
@@ -385,7 +389,7 @@ class _SessionHandler:
             wire = capabilities_to_wire(caps)
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps({"type": "capabilities", "data": wire}))
-                await ws.close()
+                await _close(ws)
             return
 
         update = self._parse_session_update(opening)
@@ -395,10 +399,7 @@ class _SessionHandler:
 
         start = self._parse_start(opening)
         if start is None:
-            await ws.close(
-                code=1002,
-                reason="expected session.start, session.update, or capabilities.query",
-            )
+            await _close(ws, 1002, "expected session.start, session.update, or capabilities.query")
             return
         await self._handle_internal(ws, *start)
 
@@ -420,7 +421,7 @@ class _SessionHandler:
                         )
                     )
                 )
-                await ws.close()
+                await _close(ws)
             return
 
         async def emit(event: TranscriptionEvent) -> None:
@@ -481,7 +482,7 @@ class _SessionHandler:
                         )
                     )
                 )
-                await ws.close()
+                await _close(ws)
             return
         model = requested_model or (caps.models[0] if caps.models else None)
 
