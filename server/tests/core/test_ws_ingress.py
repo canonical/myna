@@ -516,7 +516,12 @@ def test_a_connection_ended_at_its_opening_frame_closes_promptly(opening, scenar
             await send_all(ws, [SECOND] * 3)
             await asyncio.wait_for(drain(ws), BOUND / 2)
             if opening == "not-a-session":
-                assert ws.close_code == 1002
+                assert (ws.close_code, ws.close_reason) == (
+                    1002,
+                    "expected session.start, session.update, or capabilities.query",
+                )
+            else:
+                assert (ws.close_code, ws.close_reason) == (1000, "")
 
     scenario.run(main)
 
