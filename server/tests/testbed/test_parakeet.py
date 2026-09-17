@@ -48,11 +48,7 @@ from myna.testbed.parakeet import (
     encoder_variant,
     model_files,
 )
-from myna.testbed.streaming.coverage import (
-    RETRY_PADS,
-    UNTRANSCRIBED_GAP_S,
-    untranscribed_gap,
-)
+from myna.testbed.streaming.coverage import RETRY_PADS
 from myna.testbed.streaming.strategies import SilenceCut, Word
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
@@ -446,32 +442,10 @@ def _loud(seconds: float, rms: float = 0.05, seed: int = 5) -> np.ndarray:
     return samples * (rms / np.sqrt(np.mean(samples * samples)))
 
 
-def test_a_pause_however_long_is_not_an_untranscribed_gap():
-    region = np.concatenate([_loud(3.0), np.zeros(6 * PARAKEET_RATE, np.float32), _loud(3.0)])
-
-    assert (
-        untranscribed_gap(region, [(t, t) for t in (0.5, 1.5, 2.5, 9.5, 10.5, 11.5)])
-        < UNTRANSCRIBED_GAP_S
-    )
-
-
-def test_loud_audio_with_no_token_in_it_is_a_gap():
-    region = _loud(12.0)
-
-    assert untranscribed_gap(region, [(t, t) for t in (0.5, 1.5, 11.0)]) == pytest.approx(9.5)
-
-
-def test_a_silent_region_is_not_loud_relative_to_itself():
-    """Otherwise every silent region would be measured against its own noise
-    and retried for words that are not there."""
-    assert untranscribed_gap(np.zeros(12 * PARAKEET_RATE, np.float32), []) == 0.0
-    assert untranscribed_gap(_loud(12.0, rms=0.0005), []) == 0.0
-
-
 def test_a_partial_collapse_is_retried_even_though_the_region_looks_plausible():
     """The words-per-second check passes on a decode that transcribed most of
     the region and went blank over seven seconds of it - the partial collapse
-    measured on the int8 encoder (parakeet.py, UNTRANSCRIBED_GAP_S)."""
+    measured on the int8 encoder (parakeet.py and streaming.coverage)."""
 
     def script(n, call):
         if call == 1:
