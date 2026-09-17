@@ -14,15 +14,18 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use myna_audio::{CaptureSource, ScriptedBackend, Step};
 use myna_core::{
-    AudioFormat, AudioSource, CaptureHealth, ErrorData, Progress, SessionConfig,
+    AudioFormat, AudioSource, CaptureHealth, ErrorData, PcmChunk, Progress, SessionConfig,
     TranscriptionEvent, TranscriptionFinal, PHASE_PREPARING, PHASE_READY,
 };
 use myna_orchestrator::{
-    run_dictation, BackendClient, BackendError, BackendHandle, CollectingSink, SessionOutcome,
-    WsUnixBackend, WsUnixIe115Backend,
+    run_dictation, run_session, BackendClient, BackendError, BackendHandle, CollectingSink,
+    OrchestratorControl, OrchestratorEvent, OrchestratorInput, SessionOutcome, WsUnixBackend,
+    WsUnixIe115Backend, BACKEND_PROGRESS_TIMEOUT,
 };
 use serde_json::{json, Value};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
@@ -101,6 +104,25 @@ impl Server {
             }
         }
         .expect("the session opens")
+    }
+
+    async fn session(
+        &self,
+        inputs: mpsc::Receiver<OrchestratorInput>,
+        control: mpsc::Receiver<OrchestratorControl>,
+        outputs: mpsc::Sender<OrchestratorEvent>,
+    ) -> Result<SessionOutcome, BackendError> {
+        let config = SessionConfig::default();
+        match self.dialect {
+            Dialect::Internal => {
+                let backend = WsUnixBackend::new(&self.path);
+                run_session(&backend, config, inputs, control, outputs).await
+            }
+            Dialect::Ie115 => {
+                let backend = WsUnixIe115Backend::new(&self.path);
+                run_session(&backend, config, inputs, control, outputs).await
+            }
+        }
     }
 
     async fn run(
@@ -409,6 +431,66 @@ async fn an_error_sent_just_before_the_server_hangs_up_outlives_the_failed_write
         )
         .await;
         assert_eq!(failed_with(outcome).0, "server_stalled", "{dialect:?}");
+    }
+}
+
+/// Finalize an utterance against a server that sends `frame` once a fifth of
+/// the progress deadline for ten fifths, then its transcript. Needs a paused
+/// clock: returns the outcome and how long the session took.
+async fn finalize_while_the_server_sends(
+    dialect: Dialect,
+    frame: Message,
+) -> (Result<SessionOutcome, BackendError>, Duration) {
+    let server = Server::bind(dialect);
+    let (audio, inputs) = mpsc::channel(4);
+    let (_control, control) = mpsc::channel(4);
+    let (outputs, mut shown) = mpsc::channel(64);
+    tokio::spawn(async move { while shown.recv().await.is_some() {} });
+    let chunk = PcmChunk::new(vec![0; 3200], AudioFormat::default());
+    audio.send(OrchestratorInput::Audio(chunk)).await.unwrap();
+    audio.send(OrchestratorInput::EndOfAudio).await.unwrap();
+    let started = Instant::now();
+    // The paused clock jumps to the next timer whenever the runtime waits,
+    // even on socket I/O, so the server keeps a sleep armed ahead of the
+    // deadline at every point the client waits on it.
+    let serve = async {
+        let mut conn = server.accept().await;
+        conn.ready().await;
+        for _ in 0..10 {
+            tokio::time::sleep(BACKEND_PROGRESS_TIMEOUT / 5).await;
+            let _ = conn.ws.send(frame.clone()).await;
+        }
+        conn.done("ok").await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    let (outcome, ()) =
+        futures_util::future::join(server.session(inputs, control, outputs), serve).await;
+    (outcome, started.elapsed())
+}
+
+#[tokio::test(start_paused = true)]
+async fn frames_that_decode_to_no_event_keep_a_long_finalize_alive() {
+    for dialect in DIALECTS {
+        let frame = Message::text(json!({"type": "session.updated", "session": {}}).to_string());
+        let (outcome, took) = finalize_while_the_server_sends(dialect, frame).await;
+        assert!(
+            matches!(outcome, Ok(SessionOutcome::Completed { .. })),
+            "{dialect:?}: {outcome:?}"
+        );
+        assert!(took >= 2 * BACKEND_PROGRESS_TIMEOUT, "{dialect:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn keepalive_pings_do_not_hold_off_the_progress_deadline() {
+    for dialect in DIALECTS {
+        let frame = Message::Ping(Vec::new().into());
+        let (outcome, _) = finalize_while_the_server_sends(dialect, frame).await;
+        assert_eq!(
+            failed_with(outcome).0,
+            "backend_unresponsive",
+            "{dialect:?}"
+        );
     }
 }
 

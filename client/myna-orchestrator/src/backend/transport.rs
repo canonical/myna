@@ -10,6 +10,7 @@ use futures_util::stream::SplitSink;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use myna_core::TranscriptionEvent;
 use tokio::net::UnixStream;
+use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::WebSocketStream;
 
@@ -37,8 +38,9 @@ pub(crate) fn spawn<D: Dialect>(
     event_capacity: usize,
 ) -> (BackendSink, BackendEvents) {
     let (sink, outbox, events, ev_tx) = channels(outbound_capacity, event_capacity);
-    let task = TaskGuard::spawn(pump(ws, dialect, outbox, ev_tx));
-    (sink, events.owning(task))
+    let (activity, watched) = watch::channel(());
+    let task = TaskGuard::spawn(pump(ws, dialect, outbox, ev_tx, activity));
+    (sink, events.owning(task).watching(watched))
 }
 
 type Writer = SplitSink<Ws, Message>;
@@ -51,7 +53,13 @@ async fn in_flight(write: &mut Option<Write>) -> (Writer, Result<(), WsError>, b
     }
 }
 
-async fn pump<D: Dialect>(ws: Ws, mut dialect: D, mut outbox: Outbox, events: EventSender) {
+async fn pump<D: Dialect>(
+    ws: Ws,
+    mut dialect: D,
+    mut outbox: Outbox,
+    events: EventSender,
+    activity: watch::Sender<()>,
+) {
     let (writer, mut read) = ws.split();
     let mut idle = Some(writer);
     let mut writing: Option<Write> = None;
@@ -89,30 +97,37 @@ async fn pump<D: Dialect>(ws: Ws, mut dialect: D, mut outbox: Outbox, events: Ev
                 // Every sink is gone: stop sending, keep reading (commit-drain).
                 None => outbound_open = false,
             },
-            incoming = read.next() => match incoming {
-                Some(Ok(Message::Text(text))) => match dialect.decode(&text) {
-                    Ok(decoded) => {
-                        for event in decoded {
-                            let terminal = event.is_terminal();
-                            if events.send(Ok(event)).await.is_err() || terminal {
-                                return;
+            incoming = read.next() => {
+                // Any data frame shows the backend alive, even one no event
+                // comes of; a keepalive ping only shows the socket is.
+                if let Some(Ok(Message::Text(_) | Message::Binary(_))) = &incoming {
+                    activity.send_replace(());
+                }
+                match incoming {
+                    Some(Ok(Message::Text(text))) => match dialect.decode(&text) {
+                        Ok(decoded) => {
+                            for event in decoded {
+                                let terminal = event.is_terminal();
+                                if events.send(Ok(event)).await.is_err() || terminal {
+                                    return;
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        let _ = events.send(Err(e)).await;
+                        Err(e) => {
+                            let _ = events.send(Err(e)).await;
+                            return;
+                        }
+                    },
+                    // A close before the terminal ends the event stream without
+                    // one: the FSM reads that as a failure, never a `done`.
+                    Some(Ok(Message::Close(_))) | None => return,
+                    Some(Ok(_)) => {} // binary, ping, pong
+                    Some(Err(e)) => {
+                        let _ = events.send(Err(BackendError::Transport(e.to_string()))).await;
                         return;
                     }
-                },
-                // A close before the terminal ends the event stream without
-                // one: the FSM reads that as a failure, never a `done`.
-                Some(Ok(Message::Close(_))) | None => return,
-                Some(Ok(_)) => {} // binary, ping, pong
-                Some(Err(e)) => {
-                    let _ = events.send(Err(BackendError::Transport(e.to_string()))).await;
-                    return;
                 }
-            },
+            }
         }
     }
 }

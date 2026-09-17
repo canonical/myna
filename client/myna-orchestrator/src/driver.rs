@@ -21,11 +21,11 @@ use crate::backend::{BackendClient, BackendError, BackendSink, Outbound};
 use crate::fsm::{Action, Fsm, Input, OrchestratorEvent, SessionOutcome};
 use myna_core::{PcmChunk, SessionConfig};
 
-/// How long the client waits for any sign of backend progress (a server
-/// message, or outbound audio the transport takes) once capture has ended or
-/// end-of-audio is queued; each sign restarts it. Nothing arms it while capture
-/// is live, where the capture buffer's overload bound ends a stalled session
-/// instead. It never limits how long an utterance may be.
+/// How long the client waits for any sign of backend progress (a server data
+/// frame, event or not, or outbound audio the transport takes) once capture
+/// has ended or end-of-audio is queued; each sign restarts it. Nothing arms it
+/// while capture is live, where the capture buffer's overload bound ends a
+/// stalled session instead. It never limits how long an utterance may be.
 pub const BACKEND_PROGRESS_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Ordered client input: audio, then end-of-audio. Read only while the FSM
@@ -116,6 +116,7 @@ pub async fn run_session<B: BackendClient>(
         }
     };
     let (sink, mut events, _protocol_version) = handle.split();
+    let mut activity = events.activity();
     let mut inputs_open = true;
 
     while !fsm.state().session.is_terminal() {
@@ -129,6 +130,10 @@ pub async fn run_session<B: BackendClient>(
                     Some(Err(err)) => Input::BackendClosed { error: Some(err.to_string()) },
                     None => Input::BackendClosed { error: None },
                 })
+            }
+            () = activity.seen() => {
+                deadline.progress();
+                None
             }
             permit = sink.reserve(), if outbound.is_some() => {
                 // A refused permit means the transport is gone; its closed

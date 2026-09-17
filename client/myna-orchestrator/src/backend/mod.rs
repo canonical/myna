@@ -154,6 +154,7 @@ impl BackendSink {
 /// closes (then `None`). Dropping it cancels the transport task feeding it.
 pub struct BackendEvents {
     rx: mpsc::Receiver<Result<TranscriptionEvent, BackendError>>,
+    activity: Option<watch::Receiver<()>>,
     _transport: Option<TaskGuard>,
 }
 
@@ -164,10 +165,38 @@ impl BackendEvents {
         self.rx.recv().await
     }
 
+    /// Take the signal of backend activity; later calls get one that never
+    /// fires.
+    pub(crate) fn activity(&mut self) -> Activity {
+        Activity(self.activity.take())
+    }
+
+    /// Report activity from `activity`, which the transport marks per data frame.
+    pub(crate) fn watching(mut self, activity: watch::Receiver<()>) -> Self {
+        self.activity = Some(activity);
+        self
+    }
+
     /// Tie `transport`'s lifetime to these events.
     pub(crate) fn owning(mut self, transport: TaskGuard) -> Self {
         self._transport = Some(transport);
         self
+    }
+}
+
+/// Every data frame the backend sends, whether or not it decodes to an event.
+pub(crate) struct Activity(Option<watch::Receiver<()>>);
+
+impl Activity {
+    /// Resolves once the backend has sent something since the last call;
+    /// never, for a backend that reports no activity or has gone.
+    pub(crate) async fn seen(&mut self) {
+        let Some(frames) = &mut self.0 else {
+            return std::future::pending().await;
+        };
+        if frames.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
     }
 }
 
@@ -213,6 +242,7 @@ pub(crate) fn channels(
         },
         BackendEvents {
             rx: ev_rx,
+            activity: None,
             _transport: None,
         },
         ev_tx,
