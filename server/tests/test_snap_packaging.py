@@ -45,7 +45,6 @@ INFERENCE_SNAPS = {
     "sherpa-snap": "myna-sherpa",
     "funasr-snap": "myna-funasr",
     "qwen-snap": "myna-qwen",
-    "audio8-snap": "myna-audio8",
 }
 
 # The inference-snaps-cli (modelctl) release every snap must pin. One version
@@ -550,18 +549,17 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
 # Snaps whose adapter leaves ORT to size its own pool, so ORT also pins it
 # (T65). Empty, and that is the finding rather than an oversight: every ORT
 # adapter here measured faster with a small explicit pool than with ORT's own
-# sizing, pinning included (parakeet ~2x, sherpa 4.9x, funasr 12%, audio8
-# 16%), so none of them pins and none of them may plug process-control.
-# whisper/qwen are not ORT at all (CTranslate2 and a ctypes libqwen_asr.so)
-# and never pinned either.
+# sizing, pinning included (parakeet ~2x, sherpa 4.9x, funasr 12%), so none of
+# them pins and none of them may plug process-control. whisper/qwen are not
+# ORT at all (CTranslate2 and a ctypes libqwen_asr.so) and never pinned either.
 ORT_PINNING_SNAPS: set[str] = set()
 
 # Adapters that cap ORT's intra-op pool, and so give up pinning. Kept as an
 # explicit list because the cap is the load-bearing decision: each value was
-# measured (T65), and a cap that appears here without one is how funasr and
-# audio8 shipped 4 threads on every machine in the first place. Anything
-# leaving this set needs process-control adding to its snap.
-THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py", "audio8.py"}
+# measured (T65), and a cap that appears here without one is how funasr
+# shipped 4 threads on every machine in the first place. Anything leaving
+# this set needs process-control adding to its snap.
+THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py"}
 
 
 def test_pinning_daemons_plug_process_control(snap) -> None:
@@ -599,7 +597,7 @@ def test_thread_capped_adapters_are_exactly_the_declared_ones() -> None:
     on onnxruntime 1.27.0, where intra_op_num_threads 0 issued 24
     sched_setaffinity calls and both 1 and 4 issued none. So a hardcoded count
     costs pinning *and* caps the snap below the machine it was installed on
-    (funasr and audio8 shipped at 4 threads regardless of core count, T65).
+    (funasr shipped at 4 threads regardless of core count, T65).
 
     Asserted as an equality, not an emptiness: parakeet's perf pass added a cap
     and nothing noticed its process-control plug had gone inert. Adding or

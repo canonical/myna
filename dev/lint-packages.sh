@@ -28,7 +28,6 @@ SNAP_DIRS=(
     sherpa-snap
     funasr-snap
     qwen-snap
-    audio8-snap
 )
 
 failed=0

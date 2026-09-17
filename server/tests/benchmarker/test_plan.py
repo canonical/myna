@@ -612,10 +612,10 @@ def test_a_gpu_only_target_is_skipped_on_a_machine_with_no_gpu(tmp_path, snaps, 
     """A GPU-only target used to need commenting out on a GPU-less machine:
     uncommented, it got installed - several GB of components - and only then
     reported broken."""
-    snaps(snap="myna-audio8", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    snaps(snap="myna-funasr", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-audio8", "files": ["myna-audio8_*.snap"]}],
+        targets=[{"snap": "myna-funasr", "files": ["myna-funasr_*.snap"]}],
     )
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
@@ -628,14 +628,14 @@ def test_the_same_target_is_planned_in_full_on_a_machine_with_a_gpu(
 ):
     """Same config, no edit - which is the point of not commenting it out."""
     machine.gpu()
-    snaps(snap="myna-audio8", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
+    snaps(snap="myna-funasr", components=(), engines=(("nvidia-gpu", ["streaming-multi"], {}),))
     config = write_config(
         tmp_path / "bench.yaml",
-        targets=[{"snap": "myna-audio8", "files": ["myna-audio8_*.snap"]}],
+        targets=[{"snap": "myna-funasr", "files": ["myna-funasr_*.snap"]}],
     )
     cmd_plan(PlanArgs(config))
     out = capsys.readouterr().out
-    assert "myna-audio8/nvidia-gpu/streaming-multi/batch" in out
+    assert "myna-funasr/nvidia-gpu/streaming-multi/batch" in out
     assert "at most 1 will run here." in out
 
 

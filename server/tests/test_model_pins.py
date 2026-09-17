@@ -48,7 +48,6 @@ PINNED = {
     # Not on the Hub - a GitHub release asset hanging off a mutable tag, so
     # the bytes are the identity. Same shape as the qsilu header tarball.
     "dev/fetch_sherpa_punct_model.py": r'^SHA256 = "[0-9a-f]{64}"$',
-    "dev/fetch_audio8_model.py": r'^REVISION = "[0-9a-f]{40}"$',
     "dev/fetch_funasr_model.py": r'^REVISION = "v[0-9.]+"$',
     "dev/parakeet/fetch_parakeet_onnx.py": r'^RELEASE = "[0-9.]+"$',
     # NVIDIA's checkpoint the float exports are made from: a commit, and the

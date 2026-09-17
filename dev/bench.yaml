@@ -138,10 +138,3 @@ targets:
     files:
       - qwen-snap/myna-qwen_*.snap
       - qwen-snap/myna-qwen+*.comp
-
-  # Audio8-ASR-0.1B ONNX (feature 010). Ships both cpu and nvidia-gpu engines
-  # (like whisper); auto-selection picks cpu on a GPU-less machine.
-  - snap: myna-audio8
-    files:
-      - audio8-snap/myna-audio8_*.snap
-      - audio8-snap/myna-audio8+*.comp

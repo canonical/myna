@@ -24,13 +24,13 @@ from _records import record
 from myna.benchmarker import _bench, _run
 
 _ARTEFACTS = Path(tempfile.mkdtemp(prefix="myna-bench-tests-"))
-for _name in ("myna-whisper.snap", "myna-parakeet.snap", "myna-audio8.snap"):
+for _name in ("myna-whisper.snap", "myna-parakeet.snap", "myna-funasr.snap"):
     (_ARTEFACTS / _name).write_bytes(b"")
 # Not a real squashfs, so the snap answers nothing about its axes - which is
 # what these tests want: they are about the runner, not the artefact.
 WHISPER_SNAP = str(_ARTEFACTS / "myna-whisper.snap")
 PARAKEET_SNAP = str(_ARTEFACTS / "myna-parakeet.snap")
-AUDIO8_SNAP = str(_ARTEFACTS / "myna-audio8.snap")
+FUNASR_SNAP = str(_ARTEFACTS / "myna-funasr.snap")
 
 from myna.benchmarker._run import (
     BATCH,
@@ -1459,7 +1459,7 @@ def test_a_gpu_only_target_is_skipped_before_it_is_installed(
                     "devices": {"allof": [{"type": "gpu", "vendor-id": "0x10de"}]},
                 }
             }
-            if self.snap == "myna-audio8"
+            if self.snap == "myna-funasr"
             else {"cpu": {"models": ["tiny"], "configurations": {}, "devices": {}}}
         ),
     )
@@ -1469,7 +1469,7 @@ def test_a_gpu_only_target_is_skipped_before_it_is_installed(
         manifest=str(corpus),
         out=str(out),
         targets=[
-            {"snap": "myna-audio8", "files": [AUDIO8_SNAP]},
+            {"snap": "myna-funasr", "files": [FUNASR_SNAP]},
             {"snap": "myna-whisper", "files": [WHISPER_SNAP]},
         ],
     )
@@ -1483,7 +1483,7 @@ def test_a_gpu_only_target_is_skipped_before_it_is_installed(
         for rec in (json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines())
         if "status" in rec
     }
-    assert statuses["myna-audio8"] == "skipped"
+    assert statuses["myna-funasr"] == "skipped"
     printed = capsys.readouterr().out
     assert "no engine it ships can run here" in printed
     assert "failed" not in printed  # a skip is not a failure to chase
@@ -1498,7 +1498,7 @@ def test_a_target_whose_engine_cannot_be_selected_costs_only_itself(
     monkeypatch.setattr(_run.os, "geteuid", lambda: 0)
 
     def refuse_gpu(self, name=None):
-        if self.snap == "myna-audio8":
+        if self.snap == "myna-funasr":
             raise SystemExit(f"[{self.snap}] no engine could be selected")
         self.engine, self.model = "cpu", "tiny"
 
@@ -1509,7 +1509,7 @@ def test_a_target_whose_engine_cannot_be_selected_costs_only_itself(
         manifest=str(corpus),
         out=str(out),
         targets=[
-            {"snap": "myna-audio8", "files": [AUDIO8_SNAP]},
+            {"snap": "myna-funasr", "files": [FUNASR_SNAP]},
             {"snap": "myna-whisper", "files": [WHISPER_SNAP]},
         ],
     )
@@ -1522,7 +1522,7 @@ def test_a_target_whose_engine_cannot_be_selected_costs_only_itself(
         for rec in (json.loads(ln) for ln in out.read_text(encoding="utf-8").splitlines())
         if "status" in rec
     }
-    assert statuses["myna-audio8/unknown-engine/batch"] == "broken"
+    assert statuses["myna-funasr/unknown-engine/batch"] == "broken"
     # Installed first, then found unusable - which is the cost of not knowing
     # before the sweep starts.
     assert stub_target.started == 2

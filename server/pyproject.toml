@@ -51,18 +51,6 @@ funasr = [
     # interpreter newer than 3.12 to run on anyway; the funasr snap is core24.
     "funasr-onnx>=0.4.2; python_version < '3.13'",
 ]
-# Audio8-ASR batch adapter (feature 010): the publisher's self-contained ONNX
-# cache engine (staged at fetch time, research.md Decision 2), no torch, no
-# trust_remote_code. onnxruntime uses the project 1.27.x pin (VERS-node
-# hazard shared with sherpa/parakeet; upstream's 1.22 pin is soft).
-# transformers is needed only for WhisperFeatureExtractor (numpy-based).
-audio8 = [
-    "onnxruntime>=1.27,<1.28",
-    "tokenizers>=0.22",
-    "transformers>=4.57",
-    "numpy>=1.26",
-    "psutil>=5",
-]
 benchmarker = [
     "psutil>=5",
     "pyyaml>=6",
@@ -140,11 +128,11 @@ branch = true
 [tool.vulture]
 # The dead-code report is only useful if it is actionable (feature 006, US2
 # acceptance 3), so known-good false positives are named here rather than left
-# to be re-triaged every run. These three are parameters on test fakes that
-# mirror a real signature: _FakeEngine stands in for the publisher's
-# OnnxCacheAsrEngine, so a drift in the real constructor has to break the fake
-# loudly. A parameter the fake deliberately ignores is not dead code.
-ignore_names = ["intra_op_num_threads", "audio_token_count", "audio_bytes"]
+# to be re-triaged every run. intra_op_num_threads is a parameter on
+# _FakeSessionOptions (test_parakeet.py), which mirrors ORT's real
+# SessionOptions signature so a drift in the real one breaks the fake loudly.
+# A parameter the fake deliberately ignores is not dead code.
+ignore_names = ["intra_op_num_threads"]
 
 [tool.ruff]
 src = ["src", "../dev"]

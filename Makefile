@@ -17,7 +17,7 @@ SHELL := /bin/bash
 # dev/lint-packages.sh (SNAP_DIRS) and tests/spread/*/task.yaml each name the
 # backends they cover; a new one has to be added there by hand, and nothing
 # fails when it is forgotten. Derive them from here, or check them against it.
-BACKENDS := whisper parakeet qwen sherpa funasr audio8 fake
+BACKENDS := whisper parakeet qwen sherpa funasr fake
 SNAPS := $(BACKENDS) myna
 
 # Conventions, with the exceptions stated once each:
@@ -33,10 +33,9 @@ $(foreach s,$(SNAPS),$(eval SNAPNAME_$(s) ?= myna-$(s)))
 # Model fetch is the snap's own dev/download-models.sh when it has one, and
 # nothing when it carries no weights (myna, fake). Exceptions: parakeet's
 # takes the encoder to stage; the two ONNX backends are fetched by repo-level
-# scripts, and audio8's weights are CC-BY-NC-4.0 (non-commercial).
+# scripts.
 FETCH_parakeet  = cd parakeet-snap && ./dev/download-models.sh $(PARAKEET_ENCODER)
 FETCH_funasr   := uv run ./dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
-FETCH_audio8   := uv run ./dev/fetch_audio8_model.py --profile snap --target ./audio8-snap/components/model-audio8-onnx --accept-license "CC-BY-NC-4.0"
 $(foreach s,$(SNAPS),$(eval FETCH_$(s) ?= $(if $(wildcard $(s)-snap/dev/download-models.sh),cd $(s)-snap && ./dev/download-models.sh)))
 
 # Which encoder snap-parakeet stages; snap-parakeet-maxstack overrides it.

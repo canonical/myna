@@ -74,7 +74,6 @@ exclude:
     - qwen-snap
     - sherpa-snap
     - parakeet-snap
-    - audio8-snap
     - funasr-snap
     - fake-snap/stage
     - fake-snap/prime

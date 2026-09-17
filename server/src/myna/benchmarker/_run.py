@@ -16,7 +16,7 @@ the shape of the trade-off:
 - **emission mode** (batch / streaming): a shipped configuration toggle
   (``modelctl set streaming=``), so both settings are real user-facing
   configurations. Snaps whose adapter is commit-on-finalize only (funasr,
-  audio8, qwen-c) expose no such key and are swept batch-only.
+  qwen-c) expose no such key and are swept batch-only.
 - **engine** (``engines:``): cpu, nvidia-gpu. Omitted, the machine decides and
   the target is swept once. Named, each engine is selected, configured and swept
   in turn - the device is not a setting, it is which engine is active.
@@ -139,7 +139,6 @@ PURGEABLE = frozenset(
         "myna-qwen",
         "myna-funasr",
         "myna-fake-backend",
-        "myna-audio8",
     }
 )
 
@@ -899,7 +898,7 @@ class SnapTarget:
         """Whether the snap exposes an emission-mode toggle.
 
         The config key *is* the capability declaration: snaps whose adapter has
-        no progressive path (funasr, audio8, qwen-c: commit-on-finalize only)
+        no progressive path (funasr, qwen-c: commit-on-finalize only)
         never set it, so a missing key means "batch is the only mode", not
         "unconfigured".
         """

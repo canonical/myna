@@ -142,11 +142,11 @@ fn connections_ignore_a_stale_connection_labelled_with_the_plug_content_id() {
     // the refresh that changed the plug, so only the slot's attribute counts.
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
-         content[inference-provider] myna:backend myna-audio8:ubustt-socket manual\n\
+         content[inference-provider] myna:backend myna-funasr:ubustt-socket manual\n\
          content[inference-provider] myna:backend myna-parakeet:provider manual\n",
         "name: content\n\
          slots:\n  \
-         - myna-audio8:ubustt-socket:\n      \
+         - myna-funasr:ubustt-socket:\n      \
          content: ubustt-socket\n      \
          source:\n        \
          write:\n          \
