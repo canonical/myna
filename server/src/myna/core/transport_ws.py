@@ -47,8 +47,10 @@ import asyncio
 import contextlib
 import dataclasses
 import json
+import logging
 import os
 import socket
+from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
@@ -115,6 +117,84 @@ _TERMINAL = ("transcription.done", "transcription.error")
 # immediate EOF anyway; the keepalive only exists for TCP paths.
 _AUDIO_QUEUE_MAXSIZE = 256
 
+_log = logging.getLogger(__name__)
+
+
+class _Boundary:
+    """An utterance boundary inside the ingress stream (an IE115 commit)."""
+
+
+_BOUNDARY = _Boundary()
+
+
+class _Ingress:
+    """The bounded queue between a connection's frame reader and its adapter.
+
+    Ending it never waits on capacity, so every exit path can end it:
+    ``close`` is the end of the client's audio (the adapter drains what was
+    accepted, then sees the end); ``abort`` gives up on the stream (queued
+    audio is discarded, a blocked ``put`` returns, later ones discard).
+    """
+
+    def __init__(self, audio_format: AudioFormat, maxsize: int = _AUDIO_QUEUE_MAXSIZE) -> None:
+        self._format = audio_format
+        self._maxsize = maxsize
+        self._items: deque[bytes | _Boundary] = deque()
+        self._closed = False
+        self._aborted = False
+        self._putters: list[asyncio.Future[None]] = []
+        self._getters: list[asyncio.Future[None]] = []
+
+    async def put(self, pcm: bytes) -> None:
+        if pcm:
+            await self._put(pcm)
+
+    async def put_boundary(self) -> None:
+        await self._put(_BOUNDARY)
+
+    async def get(self) -> PcmChunk | _Boundary | None:
+        """The next chunk or boundary; ``None`` once the stream has ended."""
+        while not self._items and not (self._closed or self._aborted):
+            await self._wait(self._getters)
+        if not self._items:
+            return None
+        item = self._items.popleft()
+        self._wake(self._putters)
+        return item if isinstance(item, _Boundary) else PcmChunk(data=item, format=self._format)
+
+    def close(self) -> None:
+        self._closed = True
+        self._wake(self._getters)
+
+    def abort(self) -> None:
+        self._aborted = True
+        self._items.clear()
+        self._wake(self._putters)
+        self._wake(self._getters)
+
+    async def _put(self, item: bytes | _Boundary) -> None:
+        while not self._aborted and len(self._items) >= self._maxsize:
+            await self._wait(self._putters)
+        if self._aborted:
+            return
+        self._items.append(item)
+        self._wake(self._getters)
+
+    @staticmethod
+    async def _wait(waiters: list[asyncio.Future[None]]) -> None:
+        waiter = asyncio.get_running_loop().create_future()
+        waiters.append(waiter)
+        try:
+            await waiter
+        finally:
+            waiters.remove(waiter)
+
+    @staticmethod
+    def _wake(waiters: list[asyncio.Future[None]]) -> None:
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.set_result(None)
+
 
 _SD_LISTEN_FDS_START = 3  # systemd passes listening sockets from fd 3 up
 
@@ -155,17 +235,45 @@ async def serve_unix(
     # ping_interval=None: see the note at `_AUDIO_QUEUE_MAXSIZE`.
     if sock is not None:
         cm = unix_serve(handler.handle, sock=sock, ping_interval=None)
-        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
-            yield server
     else:
         cm = unix_serve(handler.handle, path=str(socket_path), ping_interval=None)
-        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
+    async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
+        try:
             yield server
+        finally:
+            handler.abort_sessions()
 
 
 class _SessionHandler:
     def __init__(self, service: SttService) -> None:
         self._service = service
+        self._ingresses: set[_Ingress] = set()
+
+    def abort_sessions(self) -> None:
+        """Server shutdown: end every session's audio now rather than after
+        a backlog nobody will hear."""
+        for ingress in self._ingresses:
+            ingress.abort()
+
+    def _open_ingress(self, audio_format: AudioFormat) -> _Ingress:
+        ingress = _Ingress(audio_format)
+        self._ingresses.add(ingress)
+        return ingress
+
+    async def _end_connection(
+        self, ws: ServerConnection, ingress: _Ingress, reader: asyncio.Future[None]
+    ) -> None:
+        """The one exit of both dialects. The reader keeps reading (and
+        discarding) through the close handshake, then is cancelled."""
+        ingress.abort()
+        self._ingresses.discard(ingress)
+        try:
+            await ws.close()
+        finally:
+            reader.cancel()
+            await asyncio.wait({reader})
+            if not reader.cancelled() and (exc := reader.exception()) is not None:
+                _log.warning("ingress reader failed", exc_info=exc)
 
     async def handle(self, ws: ServerConnection) -> None:
         """One connection. The server speaks first: one ``session.created``
@@ -316,37 +424,32 @@ class _SessionHandler:
                 )
             )
 
-        # One reader for the whole connection; _COMMIT marks utterance
-        # boundaries in-band, None marks the client closing the connection.
-        _COMMIT = object()
-        frames: asyncio.Queue[PcmChunk | object | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
-
-        async def put_pcm(pcm: bytes) -> None:
-            if pcm:
-                await frames.put(PcmChunk(data=pcm, format=adapter_format))
+        # One reader for the whole connection; boundaries mark commits in-band.
+        ingress = self._open_ingress(adapter_format)
 
         async def read_frames() -> None:
             """Wire frames -> adapter PCM. A frame this cannot decode (audio
             that is not base64, say) fails the connection with an ``error``
             and ends the audio: the adapter finishes on what it has and the
-            client sees a terminal, never a hang waiting on ``completed``."""
+            client sees a terminal, never a hang waiting on ``completed``.
+            The client leaving aborts: nobody is left to hear the rest."""
             try:
                 async for frame in ws:
                     if isinstance(frame, bytes):
-                        await put_pcm(resampler.feed(frame))
+                        await ingress.put(resampler.feed(frame))
                         continue
                     message = json.loads(frame)
                     mtype = message.get("type")
                     if mtype == INPUT_AUDIO_APPEND:
                         wire = append_to_pcm(message, config.audio_format)
-                        await put_pcm(resampler.feed(wire.data))
+                        await ingress.put(resampler.feed(wire.data))
                     elif mtype == INPUT_AUDIO_COMMIT:
-                        await put_pcm(resampler.flush())
-                        await frames.put(_COMMIT)
+                        await ingress.put(resampler.flush())
+                        await ingress.put_boundary()
                     # other client frames (e.g. further session.update): ignored
-                await put_pcm(resampler.flush())  # the client closed cleanly
+                ingress.abort()
             except ConnectionClosed:
-                pass  # the tail is lost with the peer
+                ingress.abort()
             except Exception as exc:
                 error = TranscriptionError(
                     code="invalid_parameter", message=f"bad client frame: {exc}"
@@ -354,13 +457,13 @@ class _SessionHandler:
                 with contextlib.suppress(ConnectionClosed):
                     await ws.send(json.dumps(encoder.encode(error)))
             finally:
-                await frames.put(None)
+                ingress.close()
 
         class _Utterance:
             """Audio of one commit cycle, tracking whether its boundary
-            (commit or close) has been consumed off the queue yet, and how
-            many seconds of PCM it handed the adapter (the ``completed``
-            frame's ``usage``)."""
+            (commit or end of stream) has been consumed yet, and how many
+            seconds of PCM it handed the adapter (the ``completed`` frame's
+            ``usage``)."""
 
             def __init__(self) -> None:
                 self.ended = False
@@ -370,19 +473,18 @@ class _SessionHandler:
 
             async def audio(self) -> AsyncIterator[PcmChunk]:
                 while True:
-                    item = await frames.get()
-                    if item is _COMMIT or item is None:
+                    item = await ingress.get()
+                    if not isinstance(item, PcmChunk):
                         self.ended = True
                         self.closed = item is None
-                        if item is _COMMIT:
+                        if item is not None:
                             # Acknowledge the commit with the utterance's item,
                             # the id a stock client joins the transcript on.
                             with contextlib.suppress(ConnectionClosed):
                                 await ws.send(json.dumps(encoder.committed()))
                         return
-                    if isinstance(item, PcmChunk):
-                        self.seconds += len(item.data) / adapter_format.bytes_per_second
-                        yield item
+                    self.seconds += len(item.data) / adapter_format.bytes_per_second
+                    yield item
 
             async def drain(self) -> None:
                 """Consume to the boundary if the adapter stopped pulling early
@@ -413,7 +515,7 @@ class _SessionHandler:
                 await self._run_utterance(adapter_config, utterance.audio(), utterance.emit)
                 await utterance.drain()
                 if utterance.closed:
-                    break  # client closed the connection: normal end
+                    break  # the audio stream ended: normal end
                 if not utterance.terminal_seen:
                     # Adapter broke the exactly-one-terminal contract; a compat
                     # client is now waiting on `completed` — fail the utterance
@@ -425,10 +527,7 @@ class _SessionHandler:
                         )
                     )
         finally:
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-            await ws.close()
+            await self._end_connection(ws, ingress, reader)
 
     async def _pump_session(
         self,
@@ -441,44 +540,30 @@ class _SessionHandler:
         closes after the terminal event): binary frames -> PCM, ``session.finish``
         ends the audio, every other text frame is ignored; events out via
         ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
-        audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
-        # Set when the adapter has returned. The reader then keeps reading and
-        # drops what it gets: a client still feeding audio can only see the
-        # server's close once its sends drain.
-        utterance_over = False
+        ingress = self._open_ingress(config.audio_format)
 
         async def read_frames() -> None:
             try:
                 async for frame in ws:
-                    if utterance_over:
-                        continue
                     if isinstance(frame, bytes):
-                        await audio.put(PcmChunk(data=frame, format=config.audio_format))
-                        continue
-                    if json.loads(frame).get("type") == "session.finish":
-                        break
+                        await ingress.put(frame)
+                    elif json.loads(frame).get("type") == "session.finish":
+                        return
+                ingress.abort()
             except ConnectionClosed:
-                pass  # client abort: just end the audio stream
+                ingress.abort()  # client abort
             finally:
-                await audio.put(None)
+                ingress.close()
 
         async def audio_iter() -> AsyncIterator[PcmChunk]:
-            while (chunk := await audio.get()) is not None:
+            while isinstance(chunk := await ingress.get(), PcmChunk):
                 yield chunk
 
         reader = asyncio.ensure_future(read_frames())
         try:
             await self._run_utterance(config, audio_iter(), emit)
         finally:
-            # An adapter that failed mid-stream stopped draining the queue, and
-            # a reader parked on it would hold the close off forever.
-            utterance_over = True
-            while not audio.empty():
-                audio.get_nowait()
-            await ws.close()
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
+            await self._end_connection(ws, ingress, reader)
 
     async def _run_utterance(
         self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
