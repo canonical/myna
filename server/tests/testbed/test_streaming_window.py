@@ -10,6 +10,7 @@ loop's internal bookkeeping.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 
 import pytest
@@ -902,3 +903,29 @@ async def test_deferred_batch_keeps_every_word_once_across_forced_cuts_of_an_edg
 
     assert len(decoder.inputs) == 5
     assert _plain("".join(commits)) == _labels(len(timeline))
+
+
+# ---------------------------------------------------------------------------
+# A force cut no longer than the overlap still makes progress
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("force", [0.8, 1.0])
+async def test_a_force_cut_within_the_overlap_never_re_cuts_without_progress(force):
+    decoder = _Decoder()
+    _, transcript = await asyncio.wait_for(
+        _run(
+            _audio(3.0, 0.1),
+            decoder,
+            SilenceCut(force_cut_seconds=force),
+            cap=5.0,
+            cadence=1_000.0,
+        ),
+        timeout=10.0,
+    )
+
+    assert transcript == ""
+    assert len(decoder.inputs) <= 30
+    ends = [first + n for first, n in decoder.inputs]
+    assert ends == sorted(set(ends)), "a region was decoded twice"

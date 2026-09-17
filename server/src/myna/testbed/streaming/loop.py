@@ -487,6 +487,8 @@ async def _run(
                     cut = strategy.observe(window.samples(), window.start, window.end)
                     if cut is None or cut - window.start < MIN_DECODE_S:
                         break
+                    if to_samples(cut) <= window.processed_through:
+                        break  # a force cut no longer than the overlap
                     forced = cut - window.start >= strategy.force_cut_seconds
                     await cut_region(to_samples(cut), forced)
                     cut_taken = True

@@ -214,6 +214,29 @@ def test_streaming_cut_constants_must_be_positive():
         ParakeetAdapter(stream_force_cut_s=0)
 
 
+@pytest.mark.parametrize("force", [0.8, 1.0, 1.3])
+def test_a_force_cut_must_leave_a_decode_past_the_overlap(force):
+    with pytest.raises(ValueError, match="stream_force_cut_s must be > 1.3"):
+        ParakeetAdapter(stream_force_cut_s=force)
+
+
+def test_the_shortest_force_cut_past_the_overlap_is_accepted():
+    assert ParakeetAdapter(stream_force_cut_s=1.31)._stream_force_cut_s == 1.31
+
+
+@pytest.mark.asyncio
+async def test_cli_refuses_a_force_cut_within_the_overlap_before_serving(tmp_path):
+    from myna.server.cli import serve
+
+    args = build_parser().parse_args(
+        ["--socket", str(tmp_path / "s.sock"), "--adapter", "parakeet", "--streaming"]
+        + ["--stream-force-cut-s", "1.0"]
+    )
+    with pytest.raises(SystemExit, match="stream_force_cut_s must be > 1.3"):
+        await asyncio.wait_for(serve(args), timeout=10.0)
+    assert not (tmp_path / "s.sock").exists()
+
+
 def test_cli_wires_streaming_cut_constants():
     args = build_parser().parse_args(
         [

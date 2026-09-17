@@ -94,6 +94,7 @@ from myna.core import (
 from myna.server.lifecycle import MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming.loop import MIN_DECODE_S
 from myna.testbed.streaming.strategies import (
     SC_ARM_S,
     SC_FORCE_CUT_S,
@@ -304,6 +305,7 @@ _COLLAPSE_RETRY_PAD_S = 0.2
 # arm point still decodes whole; past it the first pause cuts, and the force cut
 # bounds a pause-free stretch.
 BATCH_ARM_S = 30.0
+STREAM_OVERLAP_S = 1.0  # murmure CHUNK_FORCED_OVERLAP_SECS
 BATCH_FORCE_CUT_S = SC_FORCE_CUT_S
 BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
 
@@ -781,8 +783,12 @@ class ParakeetAdapter:
             raise ValueError("stream_arm_s must be > 0")
         if self._stream_silence_cut_s <= 0:
             raise ValueError("stream_silence_cut_s must be > 0")
-        if self._stream_force_cut_s <= 0:
-            raise ValueError("stream_force_cut_s must be > 0")
+        if self._stream_force_cut_s <= STREAM_OVERLAP_S + MIN_DECODE_S:
+            raise ValueError(
+                f"stream_force_cut_s must be > {STREAM_OVERLAP_S + MIN_DECODE_S:g}: "
+                f"each forced cut keeps {STREAM_OVERLAP_S:g} s of overlap and must "
+                f"leave at least {MIN_DECODE_S:g} s of new audio to decode"
+            )
         if self._stream_partial_cadence_s < 0:
             raise ValueError("stream_partial_cadence_s must be >= 0 (0 disables partials)")
         if self._stream_partial_tail_s < 0:
@@ -937,7 +943,7 @@ class ParakeetAdapter:
             ),
             cadence_seconds=_PROGRESS_INTERVAL_SECONDS,
             window_cap_seconds=BATCH_WINDOW_CAP_S,
-            overlap_seconds=1.0,
+            overlap_seconds=STREAM_OVERLAP_S,
         )
         for warning in warnings:
             await emit(warning)
@@ -990,7 +996,7 @@ class ParakeetAdapter:
             cadence_seconds=_PROGRESS_INTERVAL_SECONDS,  # liveness tick only
             # The force cut is the memory bound (I6) in chunked mode.
             window_cap_seconds=self._stream_force_cut_s + 5.0,
-            overlap_seconds=1.0,  # murmure CHUNK_FORCED_OVERLAP_SECS
+            overlap_seconds=STREAM_OVERLAP_S,
             partial_cadence_seconds=self._stream_partial_cadence_s or None,
             partial_tail_seconds=self._stream_partial_tail_s or None,
             telemetry=self._stream_telemetry,

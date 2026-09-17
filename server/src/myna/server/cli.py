@@ -237,6 +237,8 @@ async def serve(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"missing dependency ({exc.name}) — install myna with the '{args.adapter}' extra"
         ) from exc
+    except ValueError as exc:
+        raise SystemExit(f"invalid --adapter {args.adapter} configuration: {exc}") from exc
 
     from myna.core import serve_unix, systemd_socket
     from myna.server.lifecycle import LifecycleService, idle_monitor
