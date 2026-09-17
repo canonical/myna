@@ -97,7 +97,6 @@ class LocalAgreement:
         last: Hypothesis | None,
         current: Hypothesis,
         window_end: float,
-        force: bool,
     ) -> CommitDecision | None:
         if not current.words:
             return None
@@ -118,14 +117,26 @@ class LocalAgreement:
                         break
                     agreed_count = j1 + k + 1
                     agreed_end = curr_w.end
-        if force and agreed_end < window_end - TAIL_GUARD_S:
-            forced = [w for w in current.words if w.end <= window_end - TAIL_GUARD_S]
-            if forced and (not agreed_count or forced[-1].end > agreed_end):
-                agreed_count = len(forced)
-                agreed_end = forced[-1].end
         if not agreed_count:
             return None
         return CommitDecision(agreed_end, tuple(current.words[:agreed_count]))
+
+    def boundary_commit(
+        self, current: Hypothesis, cut: float, retain_from: float
+    ) -> CommitDecision | None:
+        """What to commit from a final decode of the window up to a forced
+        ``cut``, where audio before ``retain_from`` is retired. Only words
+        that lie wholly in the retained overlap and end within TAIL_GUARD_S of
+        the cut are held back for the next window; every other word commits
+        now, because its audio does not survive the cut."""
+        count = 0
+        for w in current.words:
+            if w.start >= retain_from and w.end > cut - TAIL_GUARD_S:
+                break
+            count += 1
+        if not count:
+            return None
+        return CommitDecision(current.words[count - 1].end, tuple(current.words[:count]))
 
 
 class _AdaptiveVad:
@@ -185,14 +196,18 @@ class SilenceCut:
         self._silence_run = 0.0
         self._scanned = 0.0  # absolute seconds; audio before this was VAD-fed
 
+    def mark_cut(self, at: float) -> None:
+        """The window was cut at ``at``: restart the silence run there."""
+        self._silence_run = 0.0
+        self._scanned = at
+
     def observe(
         self, samples: NDArray[np.float32], window_start: float, window_end: float
     ) -> float | None:
         """Return an absolute cut time if the window should be committed now."""
         duration = window_end - window_start
         if duration >= self._force_cut:
-            self._silence_run = 0.0
-            self._scanned = window_end
+            self.mark_cut(window_end)
             return window_end  # loop decodes [frontier, cut) once
         # Feed only the new audio (in SC_FRAME_S frames, murmur-tick parity).
         # Frame phase is anchored at the window origin; a frame counts once its
@@ -218,8 +233,7 @@ class SilenceCut:
                         # stream-2277-02, 2026-07-29). The cut covers audio up
                         # to this frame — the trailing silence rides in, so no
                         # word straddles.
-                        self._silence_run = 0.0
-                        self._scanned = frame_end
+                        self.mark_cut(frame_end)
                         return frame_end
                 elif activity == "active":
                     self._silence_run = 0.0

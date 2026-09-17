@@ -27,7 +27,9 @@ Invariants enforced here (contracts/emission-semantics.md):
   a previous commit already emitted.
 - I4/I5: end-of-audio resolves the outstanding unstable tail — the remainder
   is committed (or dropped if empty) before return.
-- I6: RollingWindow bounds the uncommitted buffer (over-cap forces commits).
+- I6: RollingWindow never holds more than its cap, and no decode input exceeds
+  it. When a full window meets more audio the loop processes the whole window
+  and retires it keeping only the overlap, whether or not it produced text.
 
 The ``decode`` callable is injectable so the loop is testable without a model
 and reusable across adapters (whisper re-decode, parakeet chunk-commit).
@@ -63,7 +65,7 @@ from myna.core import (
 from myna.testbed.harness import StreamingTelemetry
 
 from .strategies import Hypothesis, LocalAgreement, SilenceCut, Word
-from .window import RATE, RollingWindow
+from .window import RATE, RollingWindow, to_samples
 
 # Tracy frame marks (dev tooling only, see myna.testbed.parakeet._TRACY):
 # one frame per decode call, named by kind, so Tracy's frame-time view shows
@@ -297,10 +299,10 @@ async def _chunked_partial(
     while the full-window decode of the same audio read cleanly.
     """
     if tail_seconds and window.window_seconds > tail_seconds:
-        offset = window.end - tail_seconds
-        samples = window.samples()[-int(tail_seconds * RATE) :]
+        first = window.received - to_samples(tail_seconds)
+        offset, samples = first / RATE, window.samples(first=first)
     else:
-        offset, samples = window.frontier, window.samples()
+        offset, samples = window.start, window.samples()
     hyp = await run_decode(samples, offset)
     return fresh_words(hyp.words) or None
 
@@ -376,8 +378,8 @@ async def _run(
 
     window = RollingWindow(window_cap_seconds, overlap_seconds)
     committed: list[str] = []
-    committed_through = 0.0  # absolute seconds covered by committed text
-    committed_word_texts: list[str] = []  # normalized, for text-alignment dedupe
+    committed_through = 0.0  # text-commit watermark, word-timestamp seconds
+    committed_word_texts: list[str] = []  # dedupe history, bounded to _OVERLAP_LOOKBACK
     segment_index = 0
     last_hyp: Hypothesis | None = None
     last_unstable = ""
@@ -394,6 +396,7 @@ async def _run(
         )
         committed.append(text)
         committed_word_texts.extend(_norm(w.text) for w in words)
+        del committed_word_texts[:-_OVERLAP_LOOKBACK]
         segment_index += 1
 
     async def emit_unstable(text: str) -> None:
@@ -406,25 +409,62 @@ async def _run(
         """Overlap dedupe (I2) — see module-level [`_drop_committed`]."""
         return _drop_committed(words, committed_word_texts, committed_through)
 
+    async def commit(words: tuple[Word, ...] | list[Word]) -> bool:
+        fresh = fresh_words(list(words))
+        text = _join_natural(fresh)
+        if text:
+            await emit_committed(_utterance_edge(text, not committed), fresh)
+        return bool(text)
+
+    async def cut_region(cut: int) -> None:
+        """Decode [start, cut) once, commit it and retire it (chunked)."""
+        nonlocal committed_through, last_unstable
+        hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
+        await commit(hyp.words)
+        # Covered even when the region was silence or fully deduplicated.
+        committed_through = max(committed_through, cut / RATE)
+        window.retire(cut)
+        last_unstable = ""  # I4: the commit resolves the epoch
+
+    async def force_boundary() -> None:
+        """The window is full and audio is still waiting: final-process the
+        whole window, then retire it keeping only the overlap."""
+        nonlocal committed_through, last_hyp, last_unstable
+        cut = window.received
+        if isinstance(strategy, SilenceCut):
+            strategy.mark_cut(cut / RATE)
+            await cut_region(cut)
+            return
+        hyp = await timed_decode(window.samples(), window.start, "commit")
+        decision = strategy.boundary_commit(hyp, cut / RATE, (cut - window.overlap) / RATE)
+        if decision is not None:
+            if await commit(decision.commit_words):
+                last_unstable = ""
+            committed_through = max(committed_through, decision.commit_end)
+        last_hyp = None
+        window.retire(cut)
+
     async for chunk in audio:
-        window.append(chunk.data, chunk.duration_seconds)
+        pending = memoryview(chunk.data)
+        cut_taken = False
+        while True:
+            pending = pending[window.fill(pending) :]
+            if isinstance(strategy, SilenceCut):
+                while True:
+                    cut = strategy.observe(window.samples(), window.start, window.end)
+                    if cut is None or cut - window.start < MIN_DECODE_S:
+                        break
+                    await cut_region(to_samples(cut))
+                    cut_taken = True
+            if not pending:
+                break
+            await force_boundary()
+            cut_taken = True
 
         if isinstance(strategy, SilenceCut):
-            cut = strategy.observe(window.samples(), window.frontier, window.end)
-            if cut is not None and cut - window.frontier >= MIN_DECODE_S:
-                samples = window.region_before(cut)
-                hyp = await timed_decode(samples, window.frontier, "commit")
-                fresh = fresh_words(hyp.words)
-                text = _join_natural(fresh)
-                if text:
-                    await emit_committed(_utterance_edge(text, not committed), fresh)
-                # The audio up to the cut is covered (committed, possibly
-                # empty for a silence chunk) — the frontier and the dedupe
-                # watermark both advance.
-                committed_through = max(committed_through, cut)
-                window.advance(cut)
-                last_unstable = ""  # I4: the commit resolves the epoch
-            elif window.end - last_decode_end >= (partial_cadence_seconds or cadence_seconds):
+            if cut_taken:
+                continue
+            if window.end - last_decode_end >= (partial_cadence_seconds or cadence_seconds):
                 last_decode_end = window.end
                 if partial_cadence_seconds and window.window_seconds >= MIN_DECODE_S:
                     words = await _chunked_partial(
@@ -446,19 +486,17 @@ async def _run(
         if window.end - last_decode_end < cadence_seconds:
             continue
         last_decode_end = window.end
-        hyp = await timed_decode(window.samples(), window.frontier, "tick")
-        decision = strategy.commit_rule(last_hyp, hyp, window.end, window.over_cap)
+        hyp = await timed_decode(window.samples(), window.start, "tick")
+        decision = strategy.commit_rule(last_hyp, hyp, window.end)
         last_hyp = hyp
         produced = False
         if decision is not None and decision.commit_end > committed_through:
-            fresh = fresh_words(list(decision.commit_words))
-            text = _join_natural(fresh) if fresh else ""
-            if text:
-                await emit_committed(_utterance_edge(text, not committed), fresh)
-                committed_through = decision.commit_end
-                window.advance(decision.commit_end)
+            if await commit(decision.commit_words):
                 last_unstable = ""  # I4: commit clears unstable
                 produced = True
+            # Retire the agreed audio even when every word was a duplicate.
+            committed_through = decision.commit_end
+            window.retire(to_samples(decision.commit_end))
         before = last_unstable
         # Unstable display text = the *uncommitted remainder* of the current
         # hypothesis (same overlap dedupe as commits) — never restates text a
@@ -470,13 +508,13 @@ async def _run(
         if not produced:
             await emit(TranscriptionProgress())  # liveness on quiet ticks
 
-    # I5: resolve the tail — decode whatever is left and commit it.
-    if window.window_seconds >= MIN_DECODE_S:
-        hyp = await timed_decode(window.samples(), window.frontier, "commit")
-        fresh = fresh_words(hyp.words)
-        tail = _join_natural(fresh)
-        if tail:
-            await emit_committed(_utterance_edge(tail, not committed), fresh)
+    # I5: resolve the tail. MIN_DECODE_S skips an utterance too short to be
+    # worth a decode, never the remainder a cut left behind.
+    if window.received > window.processed_through and (
+        window.processed_through or window.window_seconds >= MIN_DECODE_S
+    ):
+        hyp = await timed_decode(window.samples(), window.start, "commit")
+        await commit(hyp.words)
     if telemetry is not None:
         telemetry.audio_seconds_ingested = window.end
         telemetry.session_seconds = time.perf_counter() - session_t0

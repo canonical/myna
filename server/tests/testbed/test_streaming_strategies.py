@@ -1,7 +1,7 @@
 """LocalAgreement commit-rule unit tests (feature 008, T009).
 
 Synthetic hypothesis sequences — no model loads. Covers: agreement prefix,
-revision/drift rejection, force-commit over cap. (The 2026-07-28 strategy
+revision/drift rejection, the forced-boundary commit rule. (The 2026-07-28 strategy
 triage removed tail-mutation and fixed-head — see strategies.py.)
 """
 
@@ -27,8 +27,8 @@ def hyp(words_spec) -> Hypothesis:
 def test_local_agreement_commits_agreed_prefix():
     s = LocalAgreement()
     words = [(f"w{i} ", float(i), i + 0.9) for i in range(6)]
-    assert s.commit_rule(None, hyp(words), window_end=6.0, force=False) is None
-    second = s.commit_rule(hyp(words), hyp(words), window_end=6.0, force=False)
+    assert s.commit_rule(None, hyp(words), window_end=6.0) is None
+    second = s.commit_rule(hyp(words), hyp(words), window_end=6.0)
     assert second is not None
     # tail guard: words ending within 0.5 s of the tail (w5 ends 5.9 > 5.5) held back
     texts = [w.text for w in second.commit_words]
@@ -40,7 +40,7 @@ def test_local_agreement_no_commit_on_revision():
     s = LocalAgreement()
     h1 = hyp([(f"w{i} ", float(i), i + 0.9) for i in range(6)])
     h2 = hyp([("x0 ", 0.0, 0.9)] + [(f"w{i} ", float(i), i + 0.9) for i in range(1, 6)])
-    assert s.commit_rule(h1, h2, window_end=6.0, force=False) is None
+    assert s.commit_rule(h1, h2, window_end=6.0) is None
 
 
 def test_local_agreement_rejects_drifted_words():
@@ -50,17 +50,51 @@ def test_local_agreement_rejects_drifted_words():
         (t, st + 0.5, e + 0.5) for t, st, e in [(f"w{i} ", float(i), i + 0.9) for i in range(6)]
     ]
     h2 = hyp(shifted)
-    assert s.commit_rule(h1, h2, window_end=6.5, force=False) is None  # drift 0.5 s > AGREE_DRIFT_S
+    assert s.commit_rule(h1, h2, window_end=6.5) is None  # drift 0.5 s > AGREE_DRIFT_S
 
 
-def test_local_agreement_force_over_cap():
+def test_local_agreement_needs_a_previous_pass():
+    s = LocalAgreement()
+    words = hyp([(f"w{i} ", float(i), i + 0.9) for i in range(6)])
+    assert s.commit_rule(None, words, window_end=6.0) is None
+    assert s.commit_rule(Hypothesis(), words, window_end=6.0) is None
+
+
+def test_boundary_commit_holds_back_only_words_the_overlap_will_redecode():
     s = LocalAgreement()
     h = hyp([(f"w{i} ", float(i), i + 0.9) for i in range(10)])
-    d = s.commit_rule(None, h, window_end=10.0, force=True)
+    d = s.boundary_commit(h, cut=10.0, retain_from=9.0)
     assert d is not None
-    texts = [w.text for w in d.commit_words]
-    assert "w8 " in texts and "w9 " not in texts
+    assert [w.text for w in d.commit_words] == [f"w{i} " for i in range(9)]
     assert d.commit_end == 8.9
+
+
+def test_boundary_commit_keeps_a_word_whose_start_is_being_retired():
+    # Its audio does not survive the cut, so holding it back would lose it.
+    s = LocalAgreement()
+    d = s.boundary_commit(hyp([("long ", 7.0, 9.8)]), cut=10.0, retain_from=9.0)
+    assert d is not None
+    assert [w.text for w in d.commit_words] == ["long "]
+    assert d.commit_end == 9.8
+
+
+def test_boundary_commit_edges_are_exact():
+    s = LocalAgreement()
+    # Ends exactly at the tail guard: enough right context, commits.
+    d = s.boundary_commit(hyp([("a ", 9.1, 9.5)]), cut=10.0, retain_from=9.0)
+    assert d is not None and d.commit_end == 9.5
+    # Starts exactly at the retained start: re-decoded next window, held.
+    assert s.boundary_commit(hyp([("b ", 9.0, 9.6)]), cut=10.0, retain_from=9.0) is None
+
+
+def test_boundary_commit_is_a_prefix():
+    s = LocalAgreement()
+    h = hyp([("held ", 9.2, 9.8), ("stray ", 8.0, 9.0)])
+    assert s.boundary_commit(h, cut=10.0, retain_from=9.0) is None
+
+
+def test_boundary_commit_on_an_empty_hypothesis():
+    assert LocalAgreement().boundary_commit(Hypothesis(), cut=10.0, retain_from=9.0) is None
 
 
 # ---------------------------------------------------------------------------
@@ -162,4 +196,5 @@ def test_silence_cut_adapts_to_quiet_speech():
 
 def test_local_agreement_empty_hypothesis():
     s = LocalAgreement()
-    assert s.commit_rule(None, Hypothesis(), window_end=1.0, force=True) is None
+    previous = hyp([("w0 ", 0.0, 0.4)])
+    assert s.commit_rule(previous, Hypothesis(), window_end=1.0) is None

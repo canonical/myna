@@ -477,33 +477,88 @@ def test_drop_committed_keeps_new_tail_ending_in_frontier_repeat():
 # ---------------------------------------------------------------------------
 
 
-def test_window_bounds_memory_under_cap():
+RATE = 16_000
+
+
+def _indexed_pcm(first: int, n: int) -> bytes:
+    """PCM whose sample value is its absolute index / 4 (int16 holds 5 s)."""
+    return (np.arange(first, first + n) // 4).astype(np.int16).tobytes()
+
+
+def _first_index(window: RollingWindow, **bounds) -> int:
+    return round(float(window.samples(**bounds)[0]) * 32768) * 4
+
+
+def test_window_fill_stops_at_the_cap():
     w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
-    chunk = b"\x00\x00" * 16_000  # 1 s
-    for _ in range(12):
-        w.append(chunk, 1.0)
-    assert w.over_cap
-    w.advance(10.0)
-    assert w.window_seconds == pytest.approx(2.0)
-    assert len(w.samples()) == 2 * 16_000
+    taken = w.fill(_indexed_pcm(0, 6 * RATE))
+    assert taken == 5 * RATE * 2
+    assert w.full and w.retained == 5 * RATE
+    assert w.fill(b"\x00\x00") == 0
+    assert w.end == 5.0 and w.window_seconds == 5.0
 
 
-def test_window_advance_keeps_overlap():
+def test_window_is_not_full_below_the_cap():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    w.fill(_indexed_pcm(0, 5 * RATE - 1))
+    assert not w.full
+
+
+def test_window_refuses_half_samples():
+    w = RollingWindow()
+    with pytest.raises(ValueError, match="whole 16-bit samples"):
+        w.fill(b"\x00\x00\x00")
+    assert w.received == 0
+
+
+def test_window_retire_keeps_the_overlap():
     w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
-    for _ in range(10):
-        w.append(b"\x00\x00" * 16_000, 1.0)
-    w.advance(8.0)
-    assert w.frontier == pytest.approx(7.0)  # 8.0 cut − 1.0 overlap
-    assert w.window_seconds == pytest.approx(3.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(4 * RATE)
+    assert w.processed_through == 4 * RATE
+    assert w.retained_start == 3 * RATE and w.start == 3.0
+    assert w.window_seconds == 2.0
+    assert len(w.samples()) == 2 * RATE
+    assert _first_index(w) == 3 * RATE
 
 
-def test_window_never_moves_frontier_backwards():
-    w = RollingWindow(window_cap_seconds=30.0, overlap_seconds=0.0)
-    for _ in range(10):
-        w.append(b"\x00\x00" * 16_000, 1.0)
-    w.advance(6.0)
-    w.advance(4.0)  # regression attempt — ignored
-    assert w.frontier == pytest.approx(6.0)
+def test_window_retire_is_monotonic_and_bounded_by_received():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(4 * RATE)
+    w.retire(2 * RATE)
+    assert w.processed_through == 4 * RATE and w.retained_start == 3 * RATE
+    w.retire(9 * RATE)
+    assert w.processed_through == 5 * RATE and w.retained_start == 4 * RATE
+
+
+def test_window_retire_within_the_overlap_drops_nothing():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 2 * RATE))
+    w.retire(RATE // 2)
+    assert w.retained_start == 0 and w.retained == 2 * RATE
+
+
+def test_window_samples_clamp_to_what_is_retained():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(3 * RATE)
+    assert _first_index(w, first=0) == 2 * RATE
+    assert _first_index(w, first=4 * RATE) == 4 * RATE
+    assert len(w.samples(end=4 * RATE)) == 2 * RATE
+    assert len(w.samples(end=9 * RATE)) == 3 * RATE
+    assert len(w.samples(first=4 * RATE, end=3 * RATE)) == 0
+
+
+@pytest.mark.parametrize(("cap", "overlap"), [(4.9, 0.0), (5.0, -0.1), (5.0, 5.0)])
+def test_window_rejects_unbounded_configurations(cap, overlap):
+    with pytest.raises(ValueError):
+        RollingWindow(window_cap_seconds=cap, overlap_seconds=overlap)
+
+
+def test_window_accepts_the_smallest_configuration():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    assert w.cap == 5 * RATE and w.overlap == 0
 
 
 # ---------------------------------------------------------------------------
