@@ -66,6 +66,7 @@ from myna.core import (
 from myna.testbed.harness import StreamingTelemetry
 
 from .strategies import (
+    TAIL_GUARD_S,
     UNSPACED_CHARS,
     Hypothesis,
     LocalAgreement,
@@ -465,23 +466,26 @@ async def _run(
     async def cut_region(cut: int, forced: bool) -> None:
         """Decode [start, cut) once, commit it and retire it (chunked).
 
-        A pause cut commits everything: the pause gave every word its right
-        context. A forced cut holds back the words the kept overlap will
-        decode again, and the text watermark stops at the last committed word,
-        so the next region can still commit a word this decode missed."""
+        A cut that keeps overlap holds back the words the next region decodes
+        again - at a pause cut only those starting in its last TAIL_GUARD_S,
+        which the next region hears with context - and stops the text
+        watermark at the last word it committed, so the next region can still
+        commit a word this decode missed: the VAD can cut at a gap too short
+        to be silence to the decoder. A cut without overlap commits all."""
         nonlocal committed_through, last_unstable
+        keep_overlap = forced or silence_cut_overlap
         hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
-        if forced:
-            retain_from = max(window.retained_start, cut - window.overlap)
+        if not keep_overlap:
+            await commit(hyp.words)
+            committed_through = max(committed_through, cut / RATE)
+        else:
+            held = window.overlap if forced else to_samples(TAIL_GUARD_S)
+            retain_from = max(window.retained_start, cut - held)
             decision = boundary_commit(hyp, cut / RATE, retain_from / RATE)
             if decision is not None:
                 await commit(decision.commit_words)
                 committed_through = max(committed_through, decision.commit_end)
-        else:
-            await commit(hyp.words)
-            # Covered even when the region was silence or fully deduplicated.
-            committed_through = max(committed_through, cut / RATE)
-        window.retire(cut, keep_overlap=forced or silence_cut_overlap)
+        window.retire(cut, keep_overlap=keep_overlap)
         last_unstable = ""  # I4: the commit resolves the epoch
 
     async def force_boundary() -> None:

@@ -837,6 +837,40 @@ async def test_a_word_the_region_before_a_forced_cut_omitted_is_recovered(pause_
 
 
 @pytest.mark.asyncio
+async def test_a_word_the_region_before_a_pause_cut_with_overlap_omitted_is_recovered():
+    """A pause cut is not always in silence: the VAD can cut at a short gap
+    the decode of the region before it misses a word in."""
+    timeline = [Word(" alpha", 14.0, 14.5), Word(" omega", 15.9, 16.05), Word(" beta", 18.0, 18.5)]
+    decoder = _EdgeDecoder(timeline, total=21.0, omit_s=0.9)
+    _, transcript = await _run(
+        _speech_audio([(16.0, True), (1.0, False), (4.0, True)], chunk_seconds=0.1),
+        decoder,
+        SilenceCut(),
+        cap=65.0,
+        cadence=1_000.0,
+    )
+
+    assert len(decoder.inputs) == 2
+    assert _plain(transcript) == ["alpha", "omega", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_a_word_straddling_a_pause_cut_with_overlap_is_committed_once_and_whole():
+    timeline = [Word(" alpha", 14.0, 14.5), Word(" concentration", 16.4, 17.1)]
+    decoder = _EdgeDecoder(timeline, total=21.0)
+    _, transcript = await _run(
+        _speech_audio([(16.0, True), (1.0, False), (4.0, True)], chunk_seconds=0.1),
+        decoder,
+        SilenceCut(),
+        cap=65.0,
+        cadence=1_000.0,
+    )
+
+    assert len(decoder.inputs) == 2
+    assert _plain(transcript) == ["alpha", "concentration"]
+
+
+@pytest.mark.asyncio
 async def test_a_word_straddling_a_forced_cut_is_committed_once_and_whole():
     timeline = [
         Word(" alpha", 58.0, 58.5),
