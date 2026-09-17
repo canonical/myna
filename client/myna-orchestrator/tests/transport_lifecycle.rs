@@ -18,7 +18,8 @@ use myna_core::{
     TranscriptionEvent, TranscriptionFinal, PHASE_PREPARING, PHASE_READY,
 };
 use myna_orchestrator::{
-    run_dictation, BackendError, CollectingSink, SessionOutcome, WsUnixBackend, WsUnixIe115Backend,
+    run_dictation, BackendClient, BackendError, BackendHandle, CollectingSink, SessionOutcome,
+    WsUnixBackend, WsUnixIe115Backend,
 };
 use serde_json::{json, Value};
 use tokio::net::{UnixListener, UnixStream};
@@ -87,6 +88,19 @@ impl Server {
                 .await;
         }
         Some(conn)
+    }
+
+    async fn open(&self) -> BackendHandle {
+        let config = SessionConfig::default();
+        match self.dialect {
+            Dialect::Internal => WsUnixBackend::new(&self.path).open_session(config).await,
+            Dialect::Ie115 => {
+                WsUnixIe115Backend::new(&self.path)
+                    .open_session(config)
+                    .await
+            }
+        }
+        .expect("the session opens")
     }
 
     async fn run(
@@ -427,5 +441,32 @@ async fn release_before_ready_sends_the_whole_prefix_then_finishes() {
         );
         assert_eq!(received.audio_bytes, 64_000, "{dialect:?}");
         assert!(received.finished, "{dialect:?}");
+    }
+}
+
+#[tokio::test]
+async fn abort_closes_the_connection_while_events_are_still_held() {
+    for dialect in DIALECTS {
+        let server = Server::bind(dialect);
+        let (mut handle, mut conn) =
+            futures_util::future::join(server.open(), server.accept()).await;
+        handle.sink.abort();
+        bounded("the connection closing", conn.read(false)).await;
+        let next = bounded("the event stream ending", handle.events.next()).await;
+        assert!(next.is_none(), "{dialect:?}: {next:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_malformed_frame_is_an_error_that_ends_the_events() {
+    for dialect in DIALECTS {
+        let server = Server::bind(dialect);
+        let (mut handle, mut conn) =
+            futures_util::future::join(server.open(), server.accept()).await;
+        conn.ws.send(Message::text("not json")).await.unwrap();
+        let first = bounded("the error", handle.events.next()).await;
+        assert!(matches!(first, Some(Err(_))), "{dialect:?}: {first:?}");
+        let next = bounded("the event stream ending", handle.events.next()).await;
+        assert!(next.is_none(), "{dialect:?}: {next:?}");
     }
 }
