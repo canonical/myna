@@ -33,6 +33,11 @@ model:
 configurations:
   stream-arm-seconds: 15
   stream-silence-cut-seconds: 0.5
+  # modelctl does not validate these values at set time (no schema for
+  # numeric bounds); an out-of-range one is rejected by myna-server at start
+  # instead, which crash-loops the daemon - check `snap logs myna-parakeet`
+  # or `journalctl -u snap.myna-parakeet.server`. stream-force-cut-seconds
+  # must exceed the 1 s overlap plus a 0.3 s minimum decode, i.e. > 1.3.
   stream-force-cut-seconds: 60
   stream-partial-cadence-seconds: 0.5
   stream-partial-tail-seconds: 0
