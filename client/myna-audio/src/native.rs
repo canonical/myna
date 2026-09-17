@@ -87,6 +87,9 @@ impl Ending {
 /// whether to quit.
 struct Supervisor {
     phase: Phase,
+    /// The graph accepted the stream (`Paused`/`Streaming`); a device may
+    /// still be resuming, so this is not proof of flow.
+    wired: bool,
     deadline: Option<Instant>,
     target: Option<String>,
 }
@@ -95,6 +98,7 @@ impl Supervisor {
     fn new(now: Instant, target: Option<String>) -> Self {
         Self {
             phase: Phase::Discovering,
+            wired: false,
             deadline: Some(now + SILENCE_TIMEOUT),
             target,
         }
@@ -103,6 +107,10 @@ impl Supervisor {
     fn linking(&mut self, now: Instant) {
         self.phase = Phase::Linking;
         self.deadline = Some(now + SILENCE_TIMEOUT);
+    }
+
+    fn wired(&mut self) {
+        self.wired = true;
     }
 
     /// A non-empty buffer arrived.
@@ -114,12 +122,14 @@ impl Supervisor {
     fn tick(&self, now: Instant, stopped: bool) -> Option<Ending> {
         let target = self.target.as_deref();
         if stopped {
-            return Some(match self.phase {
-                Phase::Capturing => Ending::Clean,
-                // Never an empty stream masquerading as a clean end (§3).
-                _ => Ending::Fault(CaptureError::DeviceUnavailable(
+            // A stop before the graph accepted the stream is a failed
+            // open, never an empty stream masquerading as a clean end (§3).
+            return Some(if self.wired || self.phase == Phase::Capturing {
+                Ending::Clean
+            } else {
+                Ending::Fault(CaptureError::DeviceUnavailable(
                     "capture stopped before an audio source was wired".into(),
-                )),
+                ))
             });
         }
         match self.deadline {
@@ -421,7 +431,11 @@ fn capture_session(
         .state_changed({
             let end = end.clone();
             let target = spec.target.clone();
+            let supervisor = supervisor.clone();
             move |_stream, _ud, _old, new| {
+                if matches!(new, StreamState::Paused | StreamState::Streaming) {
+                    supervisor.borrow_mut().wired();
+                }
                 if let StreamState::Error(msg) = &new {
                     // A stream error mid-capture (e.g. the device/daemon went
                     // away) → one terminal fault, then quit (FR-010, C10).
@@ -666,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_before_audio_is_a_fault_in_every_startup_phase() {
+    fn stop_before_the_stream_is_wired_is_a_fault() {
         let t0 = Instant::now();
         let mut sup = Supervisor::new(t0, None);
         assert!(stopped_before_wired(sup.tick(t0, true)));
@@ -674,6 +688,20 @@ mod tests {
         assert!(stopped_before_wired(sup.tick(t0, true)));
         // Stop wins over an expired deadline: the user asked to end.
         assert!(stopped_before_wired(sup.tick(t0 + SILENCE_TIMEOUT, true)));
+    }
+
+    /// A tap released while the device resumes: wired, no audio yet.
+    #[test]
+    fn stop_after_wiring_before_audio_is_a_clean_empty_end() {
+        let t0 = Instant::now();
+        let mut sup = Supervisor::new(t0, None);
+        sup.linking(t0);
+        sup.wired();
+        assert_eq!(sup.tick(t0 + MS, true), Some(Ending::Clean));
+        // Wiring proves nothing about flow: the link deadline still holds.
+        assert_eq!(sup.tick(t0 + SILENCE_TIMEOUT - MS, false), None);
+        let msg = fault_message(sup.tick(t0 + SILENCE_TIMEOUT, false));
+        assert_eq!(msg, no_flow_message(None));
     }
 
     #[test]

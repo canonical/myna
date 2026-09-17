@@ -376,9 +376,30 @@ fn unlinkable_source(daemon: &NoSmDaemon) -> CaptureSource {
         .build()
 }
 
-/// A graceful stop while waiting for the link releases the thread promptly.
+/// Resolves once the daemon has registered our stream node, which is when the
+/// stream turns `Paused` (wired).
+async fn stream_node_registered(remote: &str) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let listed = tokio::process::Command::new("pw-cli")
+                .args(["-r", remote, "ls", "Node"])
+                .output()
+                .await
+                .expect("pw-cli");
+            if String::from_utf8_lossy(&listed.stdout).contains("\"myna-dictate\"") {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the stream node never appeared in the graph");
+}
+
+/// A quick tap: stopped once the stream is wired but before the device
+/// delivered anything is an empty capture, not a fault, and releases promptly.
 #[tokio::test]
-async fn stop_during_link_wait_releases_promptly() {
+async fn stop_after_wiring_before_audio_ends_cleanly() {
     skip_unless_enabled!();
     let Some(daemon) = NoSmDaemon::spawn() else {
         eprintln!("skipped: could not spawn a private pipewire daemon");
@@ -387,15 +408,16 @@ async fn stop_during_link_wait_releases_promptly() {
     let source = unlinkable_source(&daemon);
     let health = source.health();
     let stop = source.stop_handle();
-    let _stream = Box::new(source).capture();
-    tokio::time::sleep(Duration::from_millis(800)).await;
+    let stream = Box::new(source).capture();
+    stream_node_registered(&daemon.remote()).await;
     stop.stop();
 
     let (states, took) = health_to_end(health, Duration::from_secs(2)).await;
     assert!(took < Duration::from_secs(1), "released after {took:?}");
-    assert!(!states.contains(&CaptureHealth::Capturing));
-    let msg = device_unavailable(states.last());
-    assert!(msg.contains("stopped before"), "got: {msg}");
+    assert_eq!(states.last(), Some(&CaptureHealth::Ended), "{states:?}");
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(1)).await;
+    assert!(chunks.is_empty());
+    assert!(fault.is_none(), "{fault:?}");
 }
 
 /// A stream that never links faults at the link deadline (3 s after connect).
