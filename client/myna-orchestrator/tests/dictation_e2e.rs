@@ -4,9 +4,13 @@
 //! mediating the ws+unix backend, and a [`CollectingSink`] capturing the result.
 //! This is the Rust `dev/dictate.py`, minus the live mic.
 //!
-//! Skips (passes with a note) if the venv `myna-server` isn't built, so it is
-//! robust across environments; when the server starts but misbehaves, it fails
-//! loudly. Mirrors `tests/ws_unix_backend.rs` (T39).
+//! Every action that runs this suite (`test`, `cov`, `mutants` in
+//! `.workshop/myna.yaml`) runs `uv sync` in `server/` first, so the venv
+//! binary is always present when this test runs as a gate; a missing binary
+//! means the environment is broken and the test fails loudly rather than
+//! skipping. The server interaction is wrapped in a bounded timeout so a
+//! hung server fails the test instead of hanging the suite. Mirrors
+//! `tests/ws_unix_backend.rs` (T39).
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -28,7 +32,7 @@ impl Drop for ServerGuard {
 /// The checkout (`<repo>/client/myna-orchestrator` is two levels down).
 /// `MYNA_REPO_ROOT` names it when `client/` runs as a copy of its own, which
 /// is how cargo-mutants builds; without it the venv server is never found and
-/// the test skips.
+/// `spawn_fake_server` panics.
 fn repo_root() -> PathBuf {
     std::env::var_os("MYNA_REPO_ROOT")
         .map(PathBuf::from)
@@ -78,29 +82,28 @@ fn write_silence_wav(seconds: usize) -> PathBuf {
     path
 }
 
-fn spawn_fake_server(socket: &Path) -> Option<ServerGuard> {
+/// Panics (does not skip) if the venv binary is missing: every action that
+/// runs this suite syncs the venv first (see the module doc), so a missing
+/// binary here means `uv sync` was not run - a broken environment, not an
+/// environment this test should quietly decline to cover.
+fn spawn_fake_server(socket: &Path) -> ServerGuard {
     let server_bin = repo_root().join("server/.venv/bin/myna-server");
-    if !server_bin.exists() {
-        eprintln!(
-            "SKIP: {} not found; run `uv sync` first",
-            server_bin.display()
-        );
-        return None;
-    }
-    match Command::new(&server_bin)
+    assert!(
+        server_bin.exists(),
+        "{} not found; run `cd server && uv sync` first (every workshop \
+         action that runs this suite does this automatically - see \
+         .workshop/myna.yaml)",
+        server_bin.display()
+    );
+    let child = Command::new(&server_bin)
         .args(["--adapter", "fake", "--socket"])
         .arg(socket)
         .current_dir(repo_root())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-    {
-        Ok(c) => Some(ServerGuard(c)),
-        Err(e) => {
-            eprintln!("SKIP: cannot launch {} ({e})", server_bin.display());
-            None
-        }
-    }
+        .unwrap_or_else(|e| panic!("failed to launch {}: {e}", server_bin.display()));
+    ServerGuard(child)
 }
 
 async fn wait_for_socket(path: &Path) -> bool {
@@ -113,12 +116,14 @@ async fn wait_for_socket(path: &Path) -> bool {
     false
 }
 
+/// Bounds the await on `run_dictation` so a hung server fails this test
+/// instead of hanging the suite.
+const HANG_GUARD: Duration = Duration::from_secs(30);
+
 #[tokio::test]
 async fn wav_dictation_round_trip_against_real_server() {
     let socket = unique_path("sock");
-    let Some(_server) = spawn_fake_server(&socket) else {
-        return; // skip: no venv server
-    };
+    let _server = spawn_fake_server(&socket);
     if !wait_for_socket(&socket).await {
         panic!("server did not bind {} within timeout", socket.display());
     }
@@ -128,9 +133,13 @@ async fn wav_dictation_round_trip_against_real_server() {
     let backend = myna_orchestrator::WsUnixBackend::new(&socket);
     let mut sink = CollectingSink::default();
 
-    let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
-        .await
-        .expect("session opens against the fake server");
+    let outcome = tokio::time::timeout(
+        HANG_GUARD,
+        run_dictation(&backend, SessionConfig::default(), source, &mut sink),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("run_dictation did not complete within {HANG_GUARD:?}"))
+    .expect("session opens against the fake server");
 
     assert_eq!(
         outcome,
@@ -153,9 +162,7 @@ async fn wav_dictation_round_trip_against_real_server() {
 #[tokio::test]
 async fn wav_dictation_round_trip_over_ie115_dialect() {
     let socket = unique_path("sock");
-    let Some(_server) = spawn_fake_server(&socket) else {
-        return; // skip: no venv server
-    };
+    let _server = spawn_fake_server(&socket);
     if !wait_for_socket(&socket).await {
         panic!("server did not bind {} within timeout", socket.display());
     }
@@ -165,9 +172,13 @@ async fn wav_dictation_round_trip_over_ie115_dialect() {
     let backend = myna_orchestrator::WsUnixIe115Backend::new(&socket);
     let mut sink = CollectingSink::default();
 
-    let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink)
-        .await
-        .expect("session opens against the fake server");
+    let outcome = tokio::time::timeout(
+        HANG_GUARD,
+        run_dictation(&backend, SessionConfig::default(), source, &mut sink),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("run_dictation did not complete within {HANG_GUARD:?}"))
+    .expect("session opens against the fake server");
 
     assert_eq!(
         outcome,
