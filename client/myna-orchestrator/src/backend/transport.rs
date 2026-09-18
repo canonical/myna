@@ -5,6 +5,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
@@ -46,9 +47,28 @@ pub(crate) fn spawn<D: Dialect>(
 type Writer = SplitSink<Ws, Message>;
 type Write = Pin<Box<dyn Future<Output = (Writer, Result<(), WsError>, bool)> + Send>>;
 
+/// How long a session whose write failed keeps reading. A peer that hung up
+/// mid-write usually sent its error frame first, and that is already on its
+/// way; nothing else can arrive that this session could still act on.
+const WRITE_GRACE: Duration = Duration::from_secs(2);
+
 async fn in_flight(write: &mut Option<Write>) -> (Writer, Result<(), WsError>, bool) {
     match write {
         Some(write) => write.await,
+        None => std::future::pending().await,
+    }
+}
+
+/// A write that failed: the session can deliver no more audio, so it reports
+/// this unless the peer says something terminal first.
+struct Failed {
+    error: String,
+    grace: Pin<Box<tokio::time::Sleep>>,
+}
+
+async fn out_of_grace(failed: &mut Option<Failed>) {
+    match failed {
+        Some(failed) => (&mut failed.grace).await,
         None => std::future::pending().await,
     }
 }
@@ -64,6 +84,7 @@ async fn pump<D: Dialect>(
     let mut idle = Some(writer);
     let mut writing: Option<Write> = None;
     let mut outbound_open = true;
+    let mut failed: Option<Failed> = None;
     loop {
         tokio::select! {
             biased;
@@ -76,11 +97,28 @@ async fn pump<D: Dialect>(
             (writer, sent, finish) = in_flight(&mut writing), if writing.is_some() => {
                 writing = None;
                 // A failed write stops writing, not reading: the peer may
-                // have sent its error just before hanging up.
-                if sent.is_ok() {
-                    dialect.written(finish);
-                    idle = Some(writer);
+                // have sent its error just before hanging up. It gets
+                // WRITE_GRACE to arrive, then the write error is the answer -
+                // a peer that never closes cannot leave the session waiting
+                // on a queue nothing will ever take from again.
+                match sent {
+                    Ok(()) => {
+                        dialect.written(finish);
+                        idle = Some(writer);
+                    }
+                    Err(e) => {
+                        myna_core::dbg_log!("ws", "-> write failed: {e}");
+                        failed = Some(Failed {
+                            error: e.to_string(),
+                            grace: Box::pin(tokio::time::sleep(WRITE_GRACE)),
+                        });
+                    }
                 }
+            }
+            () = out_of_grace(&mut failed), if failed.is_some() => {
+                let error = failed.take().expect("a failed write is the arm's precondition").error;
+                let _ = events.send(Err(BackendError::Transport(error))).await;
+                return;
             }
             item = outbox.queue.recv(), if outbound_open && idle.is_some() => match item {
                 Some(item) => {
@@ -127,5 +165,60 @@ async fn pump<D: Dialect>(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use myna_core::{AudioFormat, PcmChunk};
+    use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
+
+    /// The frames themselves do not matter here, only that they are written.
+    struct Frames;
+
+    impl Dialect for Frames {
+        fn encode(&mut self, item: Outbound) -> Message {
+            match item {
+                Outbound::Audio(chunk) => Message::binary(chunk.data),
+                Outbound::Finish => Message::text("finish"),
+            }
+        }
+
+        fn decode(&mut self, _text: &str) -> Result<Vec<TranscriptionEvent>, BackendError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// A write can fail without the connection ending: here the write buffer
+    /// cannot hold the frame, as it cannot when a peer stops reading. The
+    /// session can never deliver audio again, so it ends on the write error
+    /// instead of leaving the driver gated on a queue nothing will empty.
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_write_ends_a_session_its_peer_never_answers() {
+        let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
+        let config = WebSocketConfig::default()
+            .write_buffer_size(0)
+            .max_write_buffer_size(1024);
+        let ws = WebSocketStream::from_raw_socket(ours, Role::Client, Some(config)).await;
+        let (sink, mut events) = spawn(ws, Frames, 4, 4);
+
+        let chunk = PcmChunk::new(vec![0u8; 3200], AudioFormat::default());
+        sink.reserve()
+            .await
+            .expect("the session is open")
+            .send(Outbound::Audio(chunk));
+
+        // The peer is alive and silent throughout: only the write error can
+        // end this, and a session that never ends is the bug, so it is bounded
+        // (on a paused clock, WRITE_GRACE comes first or nothing does).
+        let ended = tokio::time::timeout(WRITE_GRACE * 30, events.next())
+            .await
+            .expect("the failed write ends the session");
+        match ended {
+            Some(Err(BackendError::Transport(_))) => {}
+            other => panic!("expected the write error, got {other:?}"),
+        }
+        assert!(events.next().await.is_none(), "the session is over");
     }
 }
