@@ -163,9 +163,10 @@ const LOSS_TOLERANCE: Duration = Duration::from_millis(20);
 /// Audio that must arrive after a deficit appears before the deficit counts as
 /// lost. Delivery runs in and out of phase with the stream clock by a cycle,
 /// so a deficit is routinely repaid by the very next callback; audio the graph
-/// overwrote is never repaid. Ten default quanta (21.3 ms at 48 kHz), and five
-/// times the largest repaid deficit the A1 capture load matrix recorded
-/// (37 ms): it defers a real fault by at most this much audio, never hides it.
+/// overwrote is never repaid. Nine default quanta (21.3 ms each at 48 kHz),
+/// and five times the largest repaid deficit the A1 capture load matrix
+/// recorded (37 ms): it defers a real fault by at most this much audio,
+/// never hides it.
 const LOSS_CONFIRM: Duration = Duration::from_millis(200);
 
 /// How far a delivery has to move before it is the graph changing its cycle
