@@ -14,6 +14,11 @@ left >= 2 s of loud audio with no token in it, against 1.5 s worst case on the
 healthy ones. A pause never registers, however long, because loud is measured
 against the region's own speech.
 
+That only says anything about a region that *has* speech, so `has_speech`
+guards it: a region of nothing but room tone is loud relative to itself at any
+level, and would otherwise spend the whole ladder looking for words nobody
+said - the shipped hold-to-talk window before the user starts speaking.
+
 The nudge is a lottery per window, so callers try `RETRY_PADS` in order and
 keep whichever decode leaves the least speech untranscribed.
 """
@@ -30,10 +35,41 @@ RETRY_PADS = (0.2, 0.3)
 
 _RATE = 16_000
 _FRAME = 480  # 30 ms, the VAD's frame
-# Loud relative to the region's own speech, with an absolute floor so a region
-# of pure silence is not measured against itself.
+# Loud relative to the region's own speech.
 _LOUD_RATIO = 0.25
-_LOUD_FLOOR = 0.004
+# Speech is modulated and room tone is not, so a region counts as speech only
+# when its loud tenth stands clear of its own quiet tenth. Measured p90/p10:
+# 1.09 for noise at any level, 4.9 for the worst clip of the balanced corpus
+# and 5.6 for the worst region of the deliberately gapless stress clip. The
+# absolute minimum is _AdaptiveVad's own speech threshold (strategies.py).
+_SPEECH_OVER_FLOOR = 3.0
+_SPEECH_FLOOR = 0.004
+
+
+def _frame_rms(samples: NDArray[np.float32]) -> NDArray[np.float32] | None:
+    frames = len(samples) // _FRAME
+    if not frames:
+        return None
+    block = samples[: frames * _FRAME].reshape(-1, _FRAME)
+    return np.sqrt(np.mean(block * block, axis=1))
+
+
+def _speech_level(rms: NDArray[np.float32]) -> float:
+    """The level the region's speech sits at, or 0.0 when it holds none."""
+    peak = float(np.percentile(rms, 90))
+    floor = float(np.percentile(rms, 10))
+    if peak < max(floor * _SPEECH_OVER_FLOOR, _SPEECH_FLOOR):
+        return 0.0
+    return peak
+
+
+def has_speech(samples: NDArray[np.float32]) -> bool:
+    """Is there anything in ``samples`` a decode could have transcribed?
+
+    Callers use this to decide whether a decode that produced little or
+    nothing is worth retrying at all. Room tone is not, however loud."""
+    rms = _frame_rms(samples)
+    return rms is not None and _speech_level(rms) > 0.0
 
 
 def untranscribed_gap(samples: NDArray[np.float32], spans: list[tuple[float, float]]) -> float:
@@ -44,13 +80,17 @@ def untranscribed_gap(samples: NDArray[np.float32], spans: list[tuple[float, flo
     can trust: a token timed only at its onset accounts for (t, t), and so
     does an aligned whisper word, whose *end* stretches across a stretch the
     decode skipped and would hide it. A segment-level time, where one span
-    stands for the words inside it, accounts for the whole span."""
-    frames = len(samples) // _FRAME
-    if not frames:
+    stands for the words inside it, accounts for the whole span.
+
+    A region with no speech in it has no gap, whatever its level."""
+    rms = _frame_rms(samples)
+    if rms is None:
         return 0.0
-    block = samples[: frames * _FRAME].reshape(-1, _FRAME)
-    rms = np.sqrt(np.mean(block * block, axis=1))
-    loud = max(float(np.percentile(rms, 90)) * _LOUD_RATIO, _LOUD_FLOOR)
+    frames = len(rms)
+    speech = _speech_level(rms)
+    if not speech:
+        return 0.0
+    loud = speech * _LOUD_RATIO
     total = len(samples) / _RATE
     worst = 0.0
     covered = 0.0

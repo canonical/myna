@@ -97,6 +97,7 @@ from myna.testbed.harness import StreamingTelemetry
 from myna.testbed.streaming.coverage import (
     RETRY_PADS,
     UNTRANSCRIBED_GAP_S,
+    has_speech,
     untranscribed_gap,
 )
 from myna.testbed.streaming.loop import MIN_DECODE_S
@@ -745,10 +746,14 @@ class _ParakeetOnnx:
         few tokens for the whole region, or a long stretch of loud audio with
         no token in it at all (a partial collapse, `untranscribed_gap`).
 
-        A genuinely silent region simply decodes to nothing twice — at RTF
-        0.02 that costs less than losing the words does.
+        A region holding no speech at all is decoded once: nothing a retry
+        could find is in it, and the shipped streaming config re-decodes the
+        whole uncommitted window twice a second while the user holds the key
+        without speaking.
         """
         tokens, timestamps = self.transcribe(samples)
+        if not has_speech(samples):
+            return tokens, timestamps
         gap = untranscribed_gap(samples, [(t, t) for t in timestamps])
         if gap >= UNTRANSCRIBED_GAP_S:
             best, best_rank = (tokens, timestamps), (gap, -len(tokens))

@@ -339,7 +339,12 @@ def _speech_pcm(plan) -> np.ndarray:
     """(seconds, speech) spans. Speech samples encode their own position:
     magnitude 8000 + index // 1600 with alternating sign, loud enough that the
     VAD never hears it as a pause. Pauses are digital silence. Span edges must
-    fall on tenths of a second."""
+    fall on tenths of a second.
+
+    The last two tenths of every second are the inter-word gap, so a speech
+    span is modulated the way speech is and streaming.coverage can tell it
+    apart from room tone; 0.2 s is well under the 0.5 s silence cut, and every
+    word onset the positional model reads sits in the loud part."""
     parts, first = [], 0
     for seconds, speech in plan:
         n = round(seconds * RATE)
@@ -347,7 +352,8 @@ def _speech_pcm(plan) -> np.ndarray:
         if speech:
             idx = np.arange(first, first + n)
             sign = np.where(idx % 2, -1, 1)
-            parts.append((sign * (8000 + idx // _TENTH)).astype(np.int16))
+            between_words = (idx // _TENTH) % 10 >= 8
+            parts.append((sign * (8000 + idx // _TENTH) * ~between_words).astype(np.int16))
         else:
             parts.append(np.zeros(n, np.int16))
         first += n
@@ -636,6 +642,31 @@ async def test_batch_re_decodes_a_region_that_left_speech_untranscribed():
     # The first region (up to the forced cut) is decoded twice, the second once.
     assert [c["samples"] for c in model.calls][:2] == [60 * RATE, 60 * RATE + 2 * round(0.2 * RATE)]
     assert len(model.calls) == 3
+
+
+async def test_batch_does_not_re_decode_a_region_holding_no_speech():
+    """Room tone: the decode is right to find nothing in it, and the nudge
+    ladder would only spend the region again looking for words nobody said."""
+
+    class _Deaf(_PositionalModel):
+        def transcribe(self, samples, **kwargs):
+            self.calls.append({"samples": len(samples), **kwargs})
+            return iter(()), SimpleNamespace(language="en")
+
+    rng = np.random.default_rng(5)
+    tone = rng.standard_normal(70 * RATE)
+    pcm = (tone * (0.02 * 32768 / np.sqrt(np.mean(tone * tone)))).astype(np.int16)
+    adapter = FasterWhisperAdapter("tiny")
+    adapter._model = _Deaf(pcm)
+
+    async def emit(_event):
+        pass
+
+    await adapter.run_session(
+        SessionConfig(audio_format=FORMAT, language="en"), _chunks(pcm, 0.5, []), emit
+    )
+
+    assert [c["samples"] for c in adapter._model.calls] == [60 * RATE, 11 * RATE]
 
 
 async def test_batch_does_not_re_decode_a_region_it_transcribed():

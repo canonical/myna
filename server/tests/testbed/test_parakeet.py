@@ -378,6 +378,24 @@ async def test_batch_session_off_format_rejected():
 # _ParakeetOnnx without __init__ so no ONNX session is created.
 
 
+def _tone(seconds: float, rms: float = 0.05, seed: int = 5) -> np.ndarray:
+    """Stationary room tone: loud, and no more modulated than a fan."""
+    rng = np.random.default_rng(seed)
+    samples = rng.standard_normal(int(seconds * PARAKEET_RATE)).astype(np.float32)
+    return samples * (rms / np.sqrt(np.mean(samples * samples)))
+
+
+def _speech(seconds: float, rms: float = 0.05, floor: float = 0.006) -> np.ndarray:
+    """Speech-shaped: 0.4 s bursts over a 0.15 s inter-word floor."""
+    rng = np.random.default_rng(3)
+    out: list[np.ndarray] = []
+    while sum(len(c) for c in out) < seconds * PARAKEET_RATE:
+        for span, level in ((0.4, rms), (0.15, floor)):
+            block = rng.standard_normal(int(span * PARAKEET_RATE)).astype(np.float32)
+            out.append(block * (level / np.sqrt(np.mean(block * block))))
+    return np.concatenate(out)[: int(seconds * PARAKEET_RATE)]
+
+
 def _bare_model(script):
     """A _ParakeetOnnx whose `transcribe` is `script(samples) -> (tokens, ts)`,
     recording the sample counts it was called with."""
@@ -397,14 +415,16 @@ def test_plausible_decode_is_not_retried():
     collapse, not a tax on every commit."""
     model = _bare_model(lambda n, call: ([" one", " two", " three"], [0.0, 0.5, 1.0]))
 
-    tokens, _ = model._transcribe_guarded(np.zeros(16_000 * 2, dtype=np.float32))
+    tokens, _ = model._transcribe_guarded(_speech(2.0))
 
     assert tokens == [" one", " two", " three"]
     assert len(model.calls) == 1, "healthy decode must not pay for a retry"
 
 
 def test_collapsed_decode_is_retried_with_padding_on_both_ends():
-    """Zero words out of ten seconds of audio is the collapse signature."""
+    """Zero words out of a second and a half of speech is the collapse
+    signature; a region long enough to hold an UNTRANSCRIBED_GAP_S hole goes
+    round the pad ladder instead."""
 
     def script(n, call):
         if call == 1:
@@ -412,7 +432,7 @@ def test_collapsed_decode_is_retried_with_padding_on_both_ends():
         return ([" recovered", " text"], [0.3, 0.8])
 
     model = _bare_model(script)
-    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+    tokens, timestamps = model._transcribe_guarded(_speech(1.5))
 
     assert len(model.calls) == 2, "a collapsed decode must be retried once"
     pad_samples = int(_COLLAPSE_RETRY_PAD_S * PARAKEET_RATE)
@@ -427,19 +447,13 @@ def test_retry_that_does_not_help_keeps_the_original_decode():
     the guard must not make things worse or loop."""
 
     def script(n, call):
-        return ([" solitary"], [0.4]) if call == 1 else ([], [])
+        return ([" solitary"], [1.2]) if call == 1 else ([], [])
 
     model = _bare_model(script)
-    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+    tokens, timestamps = model._transcribe_guarded(_speech(2.3))
 
     assert len(model.calls) == 2, "exactly one retry, never a loop"
-    assert tokens == [" solitary"] and timestamps == [0.4]
-
-
-def _loud(seconds: float, rms: float = 0.05, seed: int = 5) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    samples = rng.standard_normal(int(seconds * PARAKEET_RATE)).astype(np.float32)
-    return samples * (rms / np.sqrt(np.mean(samples * samples)))
+    assert tokens == [" solitary"] and timestamps == [1.2]
 
 
 def test_a_partial_collapse_is_retried_even_though_the_region_looks_plausible():
@@ -453,7 +467,7 @@ def test_a_partial_collapse_is_retried_even_though_the_region_looks_plausible():
         return ([f" w{i}" for i in range(40)], [0.3 * i for i in range(40)])
 
     model = _bare_model(script)
-    tokens, _ = model._transcribe_guarded(_loud(13.0))
+    tokens, _ = model._transcribe_guarded(_speech(13.0))
 
     assert len(model.calls) == 2, "a partial collapse must be re-decoded"
     assert len(tokens) == 40
@@ -468,7 +482,7 @@ def test_the_retry_ladder_keeps_the_nudge_that_leaves_the_least_untranscribed():
         return ([], []) if call <= 2 else covered
 
     model = _bare_model(script)
-    tokens, _ = model._transcribe_guarded(_loud(13.0))
+    tokens, _ = model._transcribe_guarded(_speech(13.0))
 
     pads = [int(pad * PARAKEET_RATE) for pad in RETRY_PADS]
     assert [n - model.calls[0] for n in model.calls[1:]] == [2 * pad for pad in pads]
@@ -480,18 +494,18 @@ def test_a_collapse_the_ladder_cannot_recover_keeps_the_best_attempt():
         return ([" one"], [0.2]) if call == 1 else ([], [])
 
     model = _bare_model(script)
-    tokens, timestamps = model._transcribe_guarded(_loud(13.0))
+    tokens, timestamps = model._transcribe_guarded(_speech(13.0))
 
     assert len(model.calls) == 1 + len(RETRY_PADS), "the ladder runs once, not forever"
     assert (tokens, timestamps) == ([" one"], [0.2])
 
 
-def test_a_healthy_decode_of_loud_audio_is_not_retried():
+def test_a_healthy_decode_of_speech_is_not_retried():
     model = _bare_model(
         lambda n, call: ([f" w{i}" for i in range(26)], [0.5 * i for i in range(26)])
     )
 
-    model._transcribe_guarded(_loud(13.0))
+    model._transcribe_guarded(_speech(13.0))
 
     assert len(model.calls) == 1
 
@@ -501,9 +515,32 @@ def test_short_region_is_judged_on_its_own_length():
     is plausible and must not be retried."""
     model = _bare_model(lambda n, call: ([" hi"], [0.0]))
 
-    model._transcribe_guarded(np.zeros(8_000, dtype=np.float32))
+    model._transcribe_guarded(_speech(0.5))
 
     assert len(model.calls) == 1
+
+
+# ─── Room tone costs one decode (2026-09-18) ─────────────────────────────────
+
+
+@pytest.mark.parametrize("rms", [0.005, 0.008, 0.02])
+def test_token_free_room_tone_is_decoded_once(rms):
+    """The shipped streaming config re-decodes the whole uncommitted window
+    twice a second, so a hold-to-talk window nobody has spoken into yet must
+    not pay for a retry ladder looking for words that are not there."""
+    model = _bare_model(lambda n, call: ([], []))
+
+    model._transcribe_guarded(_tone(60.0, rms))
+
+    assert len(model.calls) == 1
+
+
+def test_the_retried_decode_count_is_bounded():
+    model = _bare_model(lambda n, call: ([], []))
+
+    model._transcribe_guarded(_speech(60.0))
+
+    assert len(model.calls) == 1 + len(RETRY_PADS)
 
 
 # ─── Partial (unstable) emission wiring ──────────────────────────────────────
