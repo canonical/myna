@@ -463,10 +463,6 @@ class _SessionHandler:
 
         resampler = Resampler(config.audio_format.sample_rate_hz, adapter_format.sample_rate_hz)
 
-        # One model per process: a request for a model this server does not
-        # serve is REJECTED, never silently answered by a different model (a
-        # compat client asking for X must not get Y). Selecting *which* server
-        # to dial is the discovery layer's job (plan T48), not this session's.
         async def send_all(frames: list[dict[str, Any]]) -> None:
             """One event's frames, in order: an item announcement rides ahead
             of the frame that names the item."""
@@ -474,6 +470,10 @@ class _SessionHandler:
                 for frame in frames:
                     await ws.send(json.dumps(frame))
 
+        # One model per process: a request for a model this server does not
+        # serve is REJECTED, never silently answered by a different model (a
+        # compat client asking for X must not get Y). Selecting *which* server
+        # to dial is the discovery layer's job (plan T48), not this session's.
         if requested_model is not None and requested_model not in caps.models:
             await send_all(
                 encoder.frames(
