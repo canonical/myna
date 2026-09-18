@@ -168,6 +168,11 @@ const LOSS_TOLERANCE: Duration = Duration::from_millis(20);
 /// (37 ms): it defers a real fault by at most this much audio, never hides it.
 const LOSS_CONFIRM: Duration = Duration::from_millis(200);
 
+/// How far a delivery has to move before it is the graph changing its cycle
+/// rather than the resampler rounding one up and the next down (a frame either
+/// way). Quanta move by factors of two.
+const CYCLE_CHANGE: f64 = 1.25;
+
 /// Audio the graph produced for this stream but never handed over. PipeWire
 /// overwrites the buffer of each graph cycle the data thread misses (an xrun)
 /// without reporting it, but the stream clock still advances for every cycle,
@@ -180,8 +185,16 @@ const LOSS_CONFIRM: Duration = Duration::from_millis(200);
 /// every delivery counts, whether or not the clock moved; the account may run
 /// one graph cycle ahead of the clock; and a deficit is loss only once
 /// [`LOSS_CONFIRM`] of later audio has failed to repay it.
+///
+/// The account holds only within one clock domain and one graph cycle. Both
+/// can change without the stream leaving `Streaming` (a rate switch, a quantum
+/// change), and the phase either leaves behind belongs to a geometry that no
+/// longer exists, so either restarts the account rather than being charged as
+/// loss.
 struct Continuity {
     rate: f64,
+    /// The clock domain `last_ticks` was read in.
+    domain: Option<(u32, u32)>,
     last_ticks: Option<u64>,
     /// Frames owed. Negative is the account running ahead of the clock, and is
     /// bounded to one cycle so no surplus can pay for a real loss.
@@ -192,20 +205,28 @@ struct Continuity {
     /// Audio delivered while `owed` has been over [`LOSS_TOLERANCE`], `None`
     /// while it is under.
     unrepaid: Option<f64>,
+    /// Frames in one callback's delivery, the graph's cycle as handed over,
+    /// and how many deliveries running have disagreed with it.
+    delivery: f64,
+    disagreed: u32,
 }
 
 impl Continuity {
     fn new(rate: u32) -> Self {
         Self {
             rate: rate as f64,
+            domain: None,
             last_ticks: None,
             owed: 0.0,
             cycle: 0.0,
             unrepaid: None,
+            delivery: 0.0,
+            disagreed: 0,
         }
     }
 
-    /// The stream changed state; nothing is owed across a pause.
+    /// The stream changed state; nothing is owed across a pause. The cycle
+    /// measurement is the graph's, not the account's, and outlives this.
     fn restart(&mut self) {
         self.last_ticks = None;
         self.owed = 0.0;
@@ -213,10 +234,45 @@ impl Continuity {
         self.unrepaid = None;
     }
 
+    /// Fold one delivery into the cycle measurement, reporting a graph cycle
+    /// that changed. The graph hands one cycle over per callback, so the size
+    /// of a delivery is the cycle it ran at; a burst of buffers or a short
+    /// last one moves a single delivery, a quantum change moves every one
+    /// after it, so it takes two in a row to count. An empty delivery is no
+    /// cycle at all.
+    fn measure(&mut self, frames: u64) -> bool {
+        let frames = frames as f64;
+        if frames == 0.0 {
+            return false;
+        }
+        if self.delivery == 0.0 {
+            self.delivery = frames;
+            return false;
+        }
+        if frames <= self.delivery * CYCLE_CHANGE && frames * CYCLE_CHANGE >= self.delivery {
+            self.disagreed = 0;
+            return false;
+        }
+        self.disagreed += 1;
+        if self.disagreed < 2 {
+            return false;
+        }
+        self.disagreed = 0;
+        self.delivery = frames;
+        true
+    }
+
     /// `frames` arrived at stream clock `ticks` (in `graph_rate` units).
     /// Returns the loss once a deficit past [`LOSS_TOLERANCE`] has outlived
     /// [`LOSS_CONFIRM`] of later audio.
     fn delivered(&mut self, ticks: u64, graph_rate: (u32, u32), frames: u64) -> Option<Duration> {
+        // A rateless report (`denom` 0) says nothing about the domain, and is
+        // written off below rather than restarting the account.
+        let domain = (graph_rate.1 != 0).then_some(graph_rate);
+        if self.measure(frames) || (domain.is_some() && domain != self.domain) {
+            self.restart();
+            self.domain = domain;
+        }
         let last = self.last_ticks.replace(ticks)?;
         let (num, denom) = graph_rate;
         // A clock that did not move (a rebase, or the second callback of a
@@ -1118,15 +1174,22 @@ mod tests {
     }
 
     /// Deliver [`LOSS_CONFIRM`] of audio that neither gains nor loses a frame,
-    /// which is what turns an outstanding deficit into a reported loss.
+    /// which is what turns an outstanding deficit into a reported loss. One
+    /// graph cycle of `frames` per callback, as the data thread sees it.
     fn without_repaying(
         c: &mut Continuity,
         ticks: &mut u64,
         (num, denom): (u32, u32),
+        frames: u64,
     ) -> Option<Duration> {
-        let frames = (LOSS_CONFIRM.as_secs_f64() * 16_000.0) as u64;
-        *ticks += frames * denom as u64 / (num as u64 * 16_000);
-        c.delivered(*ticks, (num, denom), frames)
+        let mut lost = None;
+        let mut sent = 0;
+        while sent < (LOSS_CONFIRM.as_secs_f64() * 16_000.0) as u64 {
+            *ticks += frames * denom as u64 / (num as u64 * 16_000);
+            lost = lost.or(c.delivered(*ticks, (num, denom), frames));
+            sent += frames;
+        }
+        lost
     }
 
     /// The observed false positive (loaded 48 kHz graph, quantum 1024): a
@@ -1144,7 +1207,7 @@ mod tests {
         assert_eq!(run(&mut c, &mut ticks, 1), None);
         // The rest of it, with the clock standing still.
         assert_eq!(c.delivered(ticks, GRAPH, 342), None);
-        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 341), None);
     }
 
     /// The same split the other way round: the buffer arrives before the tick
@@ -1158,7 +1221,7 @@ mod tests {
         assert_eq!(c.delivered(ticks, GRAPH, 342), None);
         ticks += CYCLE;
         assert_eq!(run(&mut c, &mut ticks, 1), None);
-        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 341), None);
     }
 
     #[test]
@@ -1175,7 +1238,7 @@ mod tests {
         run(&mut c, &mut ticks, 10);
         ticks += CYCLE;
         assert_eq!(run(&mut c, &mut ticks, 1), None, "not before later audio");
-        let lost = without_repaying(&mut c, &mut ticks, GRAPH).expect("one 21 ms cycle lost");
+        let lost = without_repaying(&mut c, &mut ticks, GRAPH, 341).expect("one 21 ms cycle lost");
         assert!(
             lost >= LOSS_TOLERANCE && lost < Duration::from_millis(22),
             "{lost:?}"
@@ -1195,7 +1258,7 @@ mod tests {
         for _ in 0..4 {
             assert_eq!(miss(&mut c, &mut ticks), None);
         }
-        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 85).is_some());
     }
 
     /// The phase credit is one graph cycle, measured off the clock rather than
@@ -1213,7 +1276,7 @@ mod tests {
         assert_eq!(c.delivered(ticks, GRAPH, 683), None);
         ticks += 2 * long;
         assert_eq!(c.delivered(ticks, GRAPH, 683), None);
-        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 683), None);
     }
 
     /// And it is the smallest advance: an account opened across a missed cycle
@@ -1229,7 +1292,7 @@ mod tests {
         assert_eq!(c.delivered(ticks, GRAPH, 5_000), None);
         ticks += 2 * CYCLE;
         assert_eq!(run(&mut c, &mut ticks, 1), None);
-        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 341).is_some());
     }
 
     /// One cycle of surplus is credit - delivery and the clock slip that far
@@ -1243,7 +1306,7 @@ mod tests {
         assert_eq!(c.delivered(ticks, GRAPH, 5_000), None);
         ticks += 3 * CYCLE;
         assert_eq!(run(&mut c, &mut ticks, 1), None);
-        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 341).is_some());
     }
 
     #[test]
@@ -1253,7 +1316,7 @@ mod tests {
         run(&mut c, &mut ticks, 3);
         assert_eq!(c.delivered(ticks, GRAPH, 341), None);
         assert_eq!(run(&mut c, &mut ticks, 30), None);
-        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 341), None);
     }
 
     /// A rebase reports no tick advance, but its buffer still arrived: those
@@ -1275,7 +1338,7 @@ mod tests {
         for _ in 0..6 {
             assert_eq!(miss(&mut c, &mut ticks), None);
         }
-        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 85).is_some());
     }
 
     #[test]
@@ -1287,13 +1350,13 @@ mod tests {
         let mut ticks = 320;
         assert_eq!(c.delivered(0, same, 1), None);
         assert_eq!(c.delivered(ticks, same, 0), None);
-        assert_eq!(without_repaying(&mut c, &mut ticks, same), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, same, 1), None);
         // One frame more is.
         let mut c = Continuity::new(16_000);
         let mut ticks = 321;
         assert_eq!(c.delivered(0, same, 1), None);
         assert_eq!(c.delivered(ticks, same, 0), None);
-        assert!(without_repaying(&mut c, &mut ticks, same).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, same, 1).is_some());
     }
 
     #[test]
@@ -1314,7 +1377,69 @@ mod tests {
         assert_eq!(run(&mut c, &mut ticks, 1), None);
         ticks += CYCLE;
         assert_eq!(c.delivered(ticks, (0, 0), 341), None);
-        assert!(without_repaying(&mut c, &mut ticks, GRAPH).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 341).is_some());
+    }
+
+    /// The graph clock can change rate under a running stream, which is no
+    /// stream state change and so no restart. Ticks in the new domain count
+    /// something else entirely: the old ones cannot be subtracted from them.
+    #[test]
+    fn a_graph_clock_rate_change_starts_a_new_account() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        // The same stream, now counted by a 44.1 kHz clock from its own base.
+        let rate = (1, 44_100);
+        let mut ticks = 44_100;
+        assert_eq!(c.delivered(ticks, rate, 372), None);
+        for _ in 0..40 {
+            ticks += CYCLE;
+            assert_eq!(c.delivered(ticks, rate, 372), None, "a rate change is loss");
+        }
+        assert_eq!(without_repaying(&mut c, &mut ticks, rate, 372), None);
+    }
+
+    /// A single outsized delivery is a burst of buffers, not a graph running
+    /// a longer cycle, and must not forgive what is owed.
+    #[test]
+    fn one_outsized_delivery_does_not_forget_the_account() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        ticks += CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None, "a missed cycle");
+        // Two cycles of clock and two cycles of audio in one callback: it
+        // repays nothing, and says nothing about the graph's cycle.
+        ticks += 2 * CYCLE;
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        assert!(
+            without_repaying(&mut c, &mut ticks, GRAPH, 341).is_some(),
+            "a burst forgave a real deficit"
+        );
+    }
+
+    /// The graph can change its quantum under a running stream, which is no
+    /// stream state change either. The clock advances by the new cycle while
+    /// the callback still carries the old one, once; that slip is geometry,
+    /// not audio the graph overwrote.
+    #[test]
+    fn a_grown_graph_quantum_is_not_lost_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        // Twice the quantum: one cycle of clock without its audio, then
+        // cycles twice as long.
+        let long = 2 * CYCLE;
+        ticks += long;
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        for _ in 0..40 {
+            ticks += long;
+            assert_eq!(
+                c.delivered(ticks, GRAPH, 683),
+                None,
+                "a quantum change is lost audio"
+            );
+        }
     }
 
     #[test]
@@ -1343,7 +1468,7 @@ mod tests {
         }
         ticks += 2 * CYCLE;
         assert_eq!(c.delivered(ticks, rate, 372), None);
-        assert!(without_repaying(&mut c, &mut ticks, rate).is_some());
+        assert!(without_repaying(&mut c, &mut ticks, rate, 372).is_some());
     }
 
     /// The no-source fault message is user-facing and actionable (names the
