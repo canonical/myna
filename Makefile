@@ -127,7 +127,7 @@ lint-workflows: ## actionlint the GitHub workflows
 	$(WS) workflow-lint
 
 .PHONY: i18n
-i18n: ## Regenerate the translation templates (po/*.pot for myna-desktop, myna-orchestrator, myna-config)
+i18n: ## Regenerate the translation templates (po/*.pot for myna-core, myna-desktop, myna-orchestrator, myna-config)
 	$(WS) i18n
 
 .PHONY: i18n-check

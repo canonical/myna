@@ -31,6 +31,7 @@
 pub mod accent;
 pub mod bar;
 pub mod bus;
+pub mod contrast;
 pub mod dbus_consumer;
 pub mod gl;
 pub mod hud_logic;

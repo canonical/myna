@@ -92,3 +92,48 @@ whether a portable IM/text-injection interface ever standardises; until then
 - Write portal triggers in shortcuts-spec syntax (`LOGO+j`, never `SUPER+j`): xdg-desktop-portal-gnome copies unknown modifier names into the accelerator.
 - A `BindShortcuts` call resolves on any `Response`; read the response, because a dismissed sheet arrives as a successful call.
 - Treat source and tests in `myna-desktop` as authoritative for IBus serialization details.
+
+
+# Known accessibility limitations
+
+Two accepted gaps from feature 011-accessible-dictation-ux. Both are decisions
+deferred rather than bugs to fix blindly, so read the trade-off before changing
+the code they describe.
+
+## A repeated identical critical error is not perceivably re-acknowledged
+
+`controller.rs`'s `abort_before_capture` handles pre-capture failures (secure
+field, no target, unreachable backend). Unlike mid-session errors it never
+transitions the indicator through `Recording` first: it goes straight to
+`Error` and back to `Idle` without ever publishing `Hidden`/`idle` in between.
+
+When the same failure recurs with byte-identical message text (still no text
+field focused, say), `DbusIndicator::publish`'s per-wire-state dedup treats the
+repeat as a no-op. No `PropertiesChanged` is emitted, so neither the Shell
+HUD's accessible name nor the AT-SPI announcement changes. The user's next
+hotkey tap does clear and reset the internal state, but that is not
+*perceivable* when the message is unchanged, so it does not read as an
+acknowledgment.
+
+Either force a perceivable refresh when a critical notice is replaced by an
+identical one without breaking the "one state update per transition" guarantee
+for the general case, or route pre-capture failures through the same
+`Recording`-then-`Error` shape mid-session errors already use, so the wire
+genuinely changes state twice.
+
+## A slow model load has no periodic non-visual progress ping
+
+FR-027 asks for two things during a cold model load: a periodic non-visual
+progress indication, and an actionable message past a fixed threshold. Only the
+second shipped, as `controller.rs`'s one-shot `sleep_until` watchdog over
+`MODEL_LOAD_THRESHOLD` plus the `MODEL_LOAD_SLOW` presentation.
+
+The periodic half is structurally blocked by `accessibility::AnnouncingIndicator`'s
+same-state dedup, which exists to fix a real double-`set_state` bug.
+Re-publishing `IndicatorState::Recording` every few seconds while still waiting
+on `Ready` is silently swallowed: there is no new state to move to, and no
+"repeat this on purpose" escape hatch.
+
+Either add a narrow `Indicator`/announcer method distinct from `set_state` for
+an intentional repeat (rippling through `dbus`/`gtk`/`notify`/`mock`), or decide
+the past-threshold notice alone satisfies FR-027 and amend the requirement.

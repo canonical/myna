@@ -26,6 +26,12 @@
 #                     gettext toolchain (the test skips only when unavailable).
 #   - locales       : localedef, to build an it_IT.UTF-8 locale for the test
 #                     without touching the host's locale archive.
+#
+#   Feature 011 (accessible dictation UX):
+#   - at-spi2-core  : provides at-spi-bus-launcher / org.a11y.Bus, the
+#                     accessibility bus the MYNA_ATSPI_TESTS suite (real
+#                     Announcement round-trip via the `atspi` crate) needs.
+#                     Pure-Rust `atspi` itself needs no -dev headers.
 # The extension's *test* dependencies are no longer here. This SDK sits on the
 # main workshop's ubuntu@24.04 base, which is the snap's core24 and cannot have
 # the Shell 50/51 the extension targets, so its suites moved to the `myna-shell`
@@ -51,4 +57,5 @@ apt-get install --yes --no-install-recommends \
   gnome-session \
   xvfb \
   gettext \
-  locales
+  locales \
+  at-spi2-core

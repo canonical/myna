@@ -13,3 +13,14 @@ bytes.workspace = true
 thiserror.workspace = true
 futures-util.workspace = true
 gio.workspace = true
+
+# The `failure` registry's plain-language text is user-visible on every
+# surface, so it is translatable in this crate's own gettext domain; system
+# gettext keeps the minimal build working.
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+
+# cargo-machete cannot see gettext-rs: it is only referenced through the
+# re-exported `gettextrs::` namespace (i18n.rs), which the unused-dep scan
+# treats as no usage.
+[package.metadata.cargo-machete]
+ignored = ["gettext-rs"]

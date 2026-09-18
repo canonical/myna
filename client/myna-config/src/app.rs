@@ -1330,6 +1330,11 @@ enum RowBinding {
         writable: bool,
         updating: Rc<Cell<bool>>,
     },
+    Toggle {
+        row: adw::SwitchRow,
+        writable: bool,
+        updating: Rc<Cell<bool>>,
+    },
     Text {
         row: adw::EntryRow,
         key: String,
@@ -1394,6 +1399,18 @@ impl RowBinding {
                 updating.set(true);
                 if let Some(value) = value.as_integer() {
                     row.set_value(value as f64);
+                }
+                row.set_sensitive(*writable);
+                updating.set(false);
+            }
+            Self::Toggle {
+                row,
+                writable,
+                updating,
+            } => {
+                updating.set(true);
+                if let Some(value) = value.as_boolean() {
+                    row.set_active(value);
                 }
                 row.set_sensitive(*writable);
                 updating.set(false);
@@ -1537,6 +1554,40 @@ fn ready_page(
                 bindings.borrow_mut().insert(
                     plan.key.clone(),
                     RowBinding::Number {
+                        row: row.clone(),
+                        writable: plan.writable,
+                        updating,
+                    },
+                );
+                group.add(&row);
+            }
+            WidgetKind::Toggle => {
+                let row = adw::SwitchRow::builder()
+                    .title(&plan.title)
+                    .active(setting.value().as_boolean().unwrap_or(false))
+                    .sensitive(plan.writable)
+                    .build();
+                describe(&row, &plan.description);
+                let updating = Rc::new(Cell::new(false));
+                row.connect_active_notify({
+                    let controller = controller.clone();
+                    let key = plan.key.clone();
+                    let updating = updating.clone();
+                    let writer = writer.clone();
+                    move |row| {
+                        if updating.get() {
+                            return;
+                        }
+                        if let Ok(request) =
+                            controller.set(&key, ClientSettingValue::Boolean(row.is_active()))
+                        {
+                            persist_request(writer.clone(), controller.clone(), request, None);
+                        }
+                    }
+                });
+                bindings.borrow_mut().insert(
+                    plan.key.clone(),
+                    RowBinding::Toggle {
                         row: row.clone(),
                         writable: plan.writable,
                         updating,

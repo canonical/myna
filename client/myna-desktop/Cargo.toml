@@ -28,8 +28,19 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 # D-Bus: the IBus engine object + a portal-client fallback (pure Rust).
 zbus = "5"
+# AT-SPI2 announcements + on-demand accessible state query (feature
+# 011-accessible-dictation-ux). Headless: no GTK dependency required.
+# The default "connection"/"proxies" features give AccessibilityConnection
+# (atspi::connection) without a separate atspi-connection dependency.
+atspi = { workspace = true }
+# Sound-cue playback (feature 011-accessible-dictation-ux, FR-010/011,
+# research.md R2): the same vendored `pipewire` crate `myna-audio` already
+# uses for capture, reused here for a short output stream. Same workspace
+# pin/features — no separate audio-output dependency added.
+pipewire = { workspace = true }
 # Ergonomic XDG-portal client for GlobalShortcuts. Network build dep; the
 # vendored `zbus`-direct path is the fallback if this cannot be fetched.
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
@@ -47,4 +58,6 @@ ignored = ["gettext-rs"]
 [dev-dependencies]
 # `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens
 # of seconds, so the tests advance tokio's clock instead of the wall clock.
+# Also used for the deterministic coalescing-window tests (feature
+# 011-accessible-dictation-ux, contract A4).
 tokio = { workspace = true, features = ["test-util"] }

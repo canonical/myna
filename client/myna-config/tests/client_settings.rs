@@ -110,7 +110,13 @@ fn every_real_schema_key_round_trips_in_the_private_keyfile() {
                     .unwrap_or(&choices[0])
                     .clone(),
             ),
-            SettingRange::Unrestricted => ClientSettingValue::Text("round trip".into()),
+            SettingRange::Unrestricted => match metadata.default_value() {
+                // Booleans are `Unrestricted` too, so the range alone cannot
+                // tell them from text. Flipping the default is also a
+                // stricter round trip than writing a constant would be.
+                ClientSettingValue::Boolean(default) => ClientSettingValue::Boolean(!default),
+                _ => ClientSettingValue::Text("round trip".into()),
+            },
             SettingRange::Range { minimum, .. } => {
                 let floor = minimum.as_integer().expect("integer range");
                 let default = metadata
@@ -367,9 +373,15 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans = smoke_build(std::rc::Rc::new(adapter)).unwrap();
 
-    assert_eq!(plans.len(), 4);
+    assert_eq!(plans.len(), 6);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
+    let toggle = plans
+        .iter()
+        .find(|plan| plan.kind == WidgetKind::Toggle)
+        .expect("sound-cues-enabled is a boolean");
+    assert_eq!(toggle.key, "sound-cues-enabled");
+    assert_eq!(toggle.bounds, None);
     let number = plans
         .iter()
         .find(|plan| plan.kind == WidgetKind::Number)

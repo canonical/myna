@@ -27,6 +27,13 @@
     <value nick="progress" value="3"/>
   </enum>
 
+  <!-- Feature 011-accessible-dictation-ux, FR-004. -->
+  <enum id="com.canonical.Myna.Dictation.AnnouncementVerbosity">
+    <value nick="off" value="0"/>
+    <value nick="failures-only" value="1"/>
+    <value nick="all-transitions" value="2"/>
+  </enum>
+
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
     <key name="streaming-mode" enum="com.canonical.Myna.Dictation.StreamingMode">
       <default>'auto'</default>
@@ -67,6 +74,37 @@
         With tap-to-start activation, end the dictation session on its own
         after this many seconds without speech. 0 keeps it running until the
         next tap. Hold-to-talk always ends with the key.
+
+        Myna signals that it is about to stop before it does, so an automatic
+        end is never silent or a surprise.
+      </description>
+    </key>
+
+    <!-- FR-018/FR-021 (project-plan T59) budget the warning interval against
+         this key; FR-004 and FR-010 specify the two below. Rationale stays in
+         comments: <summary>/<description> are user-visible in Myna Settings
+         and are read aloud as the row's accessible description, so internal
+         identifiers do not belong in them. -->
+
+    <key name="announcement-verbosity" enum="com.canonical.Myna.Dictation.AnnouncementVerbosity">
+      <default>'all-transitions'</default>
+      <summary>How much dictation state reaches assistive technology</summary>
+      <description>
+        All transitions: announce every state change. This is the default,
+        because anything quieter leaves someone using a screen reader with no
+        feedback at all until they find this setting. Failures only: announce
+        errors and notices, nothing else. Off: announce nothing, though the
+        current state can still be queried at any time.
+      </description>
+    </key>
+
+    <key name="sound-cues-enabled" type="b">
+      <default>true</default>
+      <summary>Play sound cues</summary>
+      <description>
+        Play a short sound when dictation starts, stops, or fails. Every cue
+        also has a visual and an assistive-technology equivalent, so turning
+        this off never leaves a change unsignalled.
       </description>
     </key>
   </schema>

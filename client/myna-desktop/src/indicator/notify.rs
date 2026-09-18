@@ -12,6 +12,21 @@
 //! toplevel overlay is not. It carries state labels only, never transcript text
 //! (privacy, N8). The richer always-on-top overlay is the myna-shell overlay
 //! (feature 004); the former GTK `ui-gtk` overlay was removed in T150.
+//!
+//! ## FR-019 (T050 audit): dismissal is the notification-center's job, not ours
+//!
+//! Every toast here uses `Timeout::Never` (see [`Self::show`]) — this
+//! indicator provides no dismiss/acknowledge action of its own at all, so
+//! there is no pointer-only affordance to fix. Dismissal (of an error toast
+//! in particular) is entirely delegated to the desktop's own
+//! notification-center UI (GNOME Shell's calendar/notification popover),
+//! which ships its own standard keyboard navigation independent of this
+//! crate. That existing, desktop-provided keyboard path is what satisfies
+//! FR-019 for this surface — this module intentionally adds nothing on top
+//! of it, since doing so would duplicate (and risk diverging from) input
+//! handling this process doesn't own and can't see (a notification's
+//! interaction surface is rendered and driven entirely by the shell, not by
+//! `notify-rust`/`myna-desktop`).
 
 use async_trait::async_trait;
 use gettextrs::gettext;
@@ -297,5 +312,72 @@ mod tests {
             assert!(summary.starts_with(char::is_alphabetic) || summary.contains("Dictation"));
             assert!(!body.is_empty());
         }
+    }
+
+    // ── T063 (US4, contract F2): the toast body carries the exact same
+    //    fixed message + recovery action the announcer speaks (both derive
+    //    from the same `IndicatorState::Error.message`, itself built once by
+    //    `IndicatorState::from_failure` from a shared `FailurePresentation`)
+    //    - the two surfaces structurally cannot diverge in wording. ────────
+
+    #[test]
+    fn a_presentation_backed_error_toast_carries_the_same_wording_the_announcer_speaks() {
+        let presentation = myna_core::failure::lookup(myna_core::failure::SECURE_FIELD).unwrap();
+        let state = IndicatorState::from_failure(presentation, None);
+
+        let (_summary, body) = toast_text(&state).unwrap();
+        assert!(body.contains(presentation.message));
+        assert!(body.contains(presentation.recovery_action));
+
+        // The announcer's `format_state_announcement` derives from the same
+        // `presentation` (T068) - assert the *same source of truth*, not
+        // just that both happen to contain the same substrings today (F3).
+        let announced = crate::accessibility::format_state_announcement(&state);
+        assert!(announced
+            .announcement
+            .as_str()
+            .contains(presentation.message));
+        assert!(announced
+            .announcement
+            .as_str()
+            .contains(presentation.recovery_action));
+    }
+
+    // ── T063 follow-up (code review, 2026-08-28): with dynamic `detail`
+    //    present (e.g. an `InjectError::Unavailable`/`BackendError` message),
+    //    the toast body and the announcement intentionally diverge in one
+    //    specific, documented way - the toast includes the parenthesized
+    //    `detail`, the announcement never can (AnnouncementText accepts only
+    //    a `&'static str`, and `detail` is a runtime `String` - see
+    //    `IndicatorState::from_failure`'s doc comment). Both still agree on
+    //    the primary `message`/`recovery_action` text (F2's actual
+    //    guarantee); this test locks in that the divergence is exactly and
+    //    only the `detail` suffix, not a wording drift.
+
+    #[test]
+    fn detail_reaches_the_toast_but_never_the_announcement() {
+        let presentation =
+            myna_core::failure::lookup(myna_core::failure::INJECTION_UNAVAILABLE).unwrap();
+        let state = IndicatorState::from_failure(presentation, Some("dbus timeout"));
+
+        let (_summary, body) = toast_text(&state).unwrap();
+        assert!(
+            body.contains("dbus timeout"),
+            "the toast surface carries the dynamic detail: {body}"
+        );
+
+        let announced = crate::accessibility::format_state_announcement(&state);
+        assert!(
+            !announced.announcement.as_str().contains("dbus timeout"),
+            "the announcement can never carry non-'static dynamic detail: {}",
+            announced.announcement.as_str()
+        );
+        // Both surfaces still agree on the fixed primary text - the only
+        // difference is the detail suffix, not the presentation's own words.
+        assert!(body.contains(presentation.message));
+        assert!(announced
+            .announcement
+            .as_str()
+            .contains(presentation.message));
     }
 }

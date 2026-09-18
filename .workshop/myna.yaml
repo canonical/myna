@@ -56,7 +56,9 @@ sdks:
   # last-mile (client/myna-desktop, feature 003-desktop-injection) builds and
   # env-gated integration-tests against — plus GJS and a GNOME Shell session
   # for the feature 004 (GNOME Shell indicator) extension contract tests and
-  # acceptance. See .workshop/desktop/sdk.yaml.
+  # acceptance, and an AT-SPI accessibility bus for feature
+  # 011-accessible-dictation-ux's MYNA_ATSPI_TESTS suite. See
+  # .workshop/desktop/sdk.yaml.
   - name: project-desktop
 
 # Named automation, runnable in or out of CI with `workshop run myna <action>`.
@@ -77,16 +79,28 @@ actions:
     # glib and the crates above it, and every edit compiles once per copy.
     cd /project/client && cargo test "$@"
   # The env-gated hardware suites, with their services stood up (features
-  # 002/003). `test` above stays hermetic; this is the same suites with the
-  # gates on, and it is what `cov` folds in. `--workspace` for the reason
+  # 002/003/011). `test` above stays hermetic; this is the same suites with
+  # the gates on, and it is what `cov` folds in. `--workspace` for the reason
   # given under `test`.
+  #
+  # NOTE (2026-08-28, feature 011-accessible-dictation-ux): `sound_hw`
+  # (`MYNA_PIPEWIRE_TESTS=1`) reuses the identical virtual PipeWire graph
+  # `pipewire_hw` already needs, so it's added here alongside it at no extra
+  # setup cost. `atspi_hw` (`MYNA_ATSPI_TESTS=1`) runs here too: the
+  # accessibility bus it needs is one `at-spi-bus-launcher` inside the
+  # scratch session bus `dev/gated-tests.sh` already creates, and the SDK
+  # already installs `at-spi2-core` for it. It shares that bus's run, so it
+  # goes alongside the other session-bus suites rather than in the PipeWire
+  # one.
   test-gated: |
     export PATH=/usr/local/cargo-bin:$PATH
     export RUST_BACKTRACE=1
     cd /project/client
-    /project/dev/gated-tests.sh cargo test --workspace --test pipewire_hw
     /project/dev/gated-tests.sh cargo test --workspace \
-      --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+      --test pipewire_hw --test sound_hw
+    /project/dev/gated-tests.sh cargo test --workspace \
+      --test ibus_hw --test dbus_hw --test portal_leak \
+      --test atspi_hw --test watermarks -- --test-threads=1
 
   # Rust lints as errors.
   lint: |

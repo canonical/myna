@@ -105,6 +105,42 @@ impl From<WireError> for BackendError {
     }
 }
 
+/// Map a [`BackendError`] to its registered `FailurePresentation` plus any
+/// dynamic detail the variant carries (feature 011-accessible-dictation-ux,
+/// US4, FR-023/024). Lives here (next to `BackendError` itself) rather than
+/// being duplicated in both `myna-desktop`'s `controller.rs` and
+/// `myna-cli`'s `main.rs` - both call sites for the *same* error variant
+/// must resolve to the *same* presentation (contract F3), so there is
+/// exactly one place this mapping is authored. `Rejected` carries its own
+/// open-ended wire `code` (the same vocabulary as `OrchestratorEvent::Error`/
+/// `SessionOutcome::Failed`), so it goes through
+/// `myna_core::failure::lookup_by_code` rather than a fixed id.
+pub fn backend_error_presentation(
+    err: &BackendError,
+) -> (
+    &'static myna_core::failure::FailurePresentation,
+    Option<String>,
+) {
+    use myna_core::failure;
+    let lookup = |id: &str| {
+        failure::lookup(id).unwrap_or_else(|| panic!("{id} must be registered by default_registry"))
+    };
+    match err {
+        BackendError::Connect(detail) => (lookup(failure::BACKEND_CONNECT), Some(detail.clone())),
+        BackendError::Handshake(detail) => {
+            (lookup(failure::BACKEND_HANDSHAKE), Some(detail.clone()))
+        }
+        BackendError::Rejected { code, message } => {
+            (failure::lookup_by_code(code), Some(message.clone()))
+        }
+        BackendError::Wire(wire_err) => (lookup(failure::BACKEND_WIRE), Some(wire_err.to_string())),
+        BackendError::Closed => (lookup(failure::BACKEND_CLOSED), None),
+        BackendError::Transport(detail) => {
+            (lookup(failure::BACKEND_TRANSPORT), Some(detail.clone()))
+        }
+    }
+}
+
 /// The audio/control side of an open session. Cheap to clone (it is a channel
 /// sender), so the FSM can hand a clone to an audio-pump task while it consumes
 /// events elsewhere.

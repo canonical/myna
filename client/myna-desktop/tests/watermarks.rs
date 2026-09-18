@@ -95,3 +95,41 @@ async fn perf_hermetic_per_segment_overhead_within_tolerance() {
         "hermetic per-segment overhead: {per_segment:?} (tolerance {TOLERANCE_PER_SEGMENT:?})"
     );
 }
+
+// ── T033 (feature 011-accessible-dictation-ux, contract A7, FR-007): the
+//    accessibility path is inert — no measurable cost — when unobserved.
+//    Env-gated (real org.a11y.Bus needed): same MYNA_ATSPI_TESTS convention
+//    as tests/atspi_hw.rs, and the same hardware-SLO treatment this file's
+//    doc comment already describes for gated watermarks. ─────────────────
+
+/// Baseline (reference environment; MYNA_ATSPI_TESTS-gated):
+///   - registering the `atspi`-backed announcer + one `announce()` call with
+///     no AT listening: < 50 ms (generous headroom — the actual bus
+///     round-trip is a handful of D-Bus method calls plus one signal emit).
+#[tokio::test]
+async fn perf_gated_atspi_announcer_is_inert_with_no_listener() {
+    if std::env::var("MYNA_ATSPI_TESTS").as_deref() != Ok("1") {
+        eprintln!("skipping perf_gated_atspi_announcer_is_inert_with_no_listener: set MYNA_ATSPI_TESTS=1 with a real org.a11y.Bus reachable");
+        return;
+    }
+    use myna_desktop::accessibility::atspi::AtspiAnnouncer;
+    use myna_desktop::accessibility::{AccessibilityAnnouncer, AnnouncementText};
+
+    const TOLERANCE: Duration = Duration::from_millis(50);
+
+    let start = Instant::now();
+    let mut announcer = AtspiAnnouncer::connect()
+        .await
+        .expect("org.a11y.Bus should be reachable when MYNA_ATSPI_TESTS=1 is set");
+    announcer
+        .announce(AnnouncementText::new("Listening"), None)
+        .await
+        .expect("announce() should succeed against a real bus");
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < TOLERANCE,
+        "connect+announce took {elapsed:?}, exceeding the {TOLERANCE:?} tolerance"
+    );
+    eprintln!("atspi connect+announce (no listener): {elapsed:?} (tolerance {TOLERANCE:?})");
+}

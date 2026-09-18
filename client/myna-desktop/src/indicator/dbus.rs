@@ -238,11 +238,18 @@ impl DbusIndicator {
     /// `StatusMessage` + `State` property sets, each pushed to subscribers
     /// via `PropertiesChanged` (C2). The message goes first so a client
     /// reacting to the `State` flip already reads the consistent label.
-    async fn publish(&mut self, state: &str, status_message: &str) {
+    ///
+    /// `always` overrides the dedup for a state that is an event rather than
+    /// a condition — a critical failure, which repeats only when the user
+    /// retried and hit the same wall (FR-024/FR-025). C2's idempotency is
+    /// there to absorb `controller.rs`'s deliberate double-call on the
+    /// completed-session state, and that state is always recoverable, so
+    /// nothing else is affected.
+    async fn publish_inner(&mut self, state: &str, status_message: &str, always: bool) {
         let current = (state.to_string(), status_message.to_string());
         {
             let guard = self.last.lock().await;
-            if guard.as_ref() == Some(&current) {
+            if !always && guard.as_ref() == Some(&current) {
                 return; // idempotent per wire state (Indicator seam contract)
             }
         }
@@ -260,6 +267,10 @@ impl DbusIndicator {
         bus.set_property("State", PropertyValue::Str(state.to_string()))
             .await;
     }
+
+    async fn publish(&mut self, state: &str, status_message: &str) {
+        self.publish_inner(state, status_message, false).await;
+    }
 }
 
 #[async_trait]
@@ -268,10 +279,17 @@ impl Indicator for DbusIndicator {
         let wire = map_state(&state, self.readiness.ready_seen());
         let status_message = status_message(&state, self.readiness.ready_seen());
         let is_transient = wire == wire_state::NOTICE || wire == wire_state::ERROR;
+        let is_critical = matches!(
+            state,
+            IndicatorState::Error {
+                recoverable: false,
+                ..
+            }
+        );
         // Cancel any pending hide on any state change; a new transient state
         // will re-arm with its own reason.
         self.cancel_auto_hide();
-        self.publish(wire, &status_message).await;
+        self.publish_inner(wire, &status_message, is_critical).await;
         if is_transient {
             self.schedule_auto_hide(status_message);
         }
@@ -344,6 +362,39 @@ mod tests {
     fn recording_splits_on_readiness() {
         assert_eq!(map_state(&IndicatorState::Recording, false), "loading");
         assert_eq!(map_state(&IndicatorState::Recording, true), "recording");
+    }
+
+    // ── FR-024/FR-025: a repeated critical failure is repeated news ───────
+
+    /// C2's dedup exists so the deliberate double-call on the
+    /// completed-session state is a no-op, and that state is always
+    /// recoverable. A critical failure published twice means the user
+    /// retried and hit the same wall — republished, so the HUD re-shows it
+    /// and its hold restarts rather than the retry looking like nothing.
+    #[tokio::test]
+    async fn a_repeated_critical_failure_is_published_again() {
+        let fake = FakeBus::new();
+        let service = crate::dbus::DictationService::new(fake.clone());
+        let mut indicator = DbusIndicator::new(service.bus(), Readiness::default());
+
+        let failure = IndicatorState::critical("No microphone available");
+        indicator.set_state(failure.clone()).await;
+        indicator.set_state(failure).await;
+
+        assert_eq!(fake.state_history(), vec!["error", "error"]);
+    }
+
+    #[tokio::test]
+    async fn a_repeated_recoverable_notice_is_still_published_once() {
+        let fake = FakeBus::new();
+        let service = crate::dbus::DictationService::new(fake.clone());
+        let mut indicator = DbusIndicator::new(service.bus(), Readiness::default());
+
+        let notice = IndicatorState::recoverable("No speech detected");
+        indicator.set_state(notice.clone()).await;
+        indicator.set_state(notice).await;
+
+        assert_eq!(fake.state_history(), vec!["notice"]);
     }
 
     #[test]

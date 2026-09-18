@@ -88,6 +88,44 @@ fn build(
         .build()
 }
 
+/// [`build`], but with an arbitrary `trigger` (e.g. [`HeldTrigger`]) instead
+/// of a fixed edge script.
+fn build_with_trigger(
+    trigger: impl myna_orchestrator::Trigger + 'static,
+    injector: MockInjector,
+    indicator: MockIndicator,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> DesktopController {
+    DesktopController::builder()
+        .trigger(trigger)
+        .injector(injector)
+        .indicator(indicator)
+        .session(session)
+        .build()
+}
+
+/// A trigger that yields one `Press` and then holds forever — unlike
+/// `ScriptedTrigger` with no further edges queued (whose exhaustion reads as
+/// "the trigger ended", finalizing immediately), this models a
+/// still-physically-held key, for tests where an utterance must complete on
+/// its own timeline (e.g. a slow model load, T066/T070) without a `Release`
+/// racing it.
+struct HeldTrigger {
+    pressed: bool,
+}
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for HeldTrigger {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        if !self.pressed {
+            self.pressed = true;
+            Some(TriggerEdge::Press)
+        } else {
+            std::future::pending().await
+        }
+    }
+}
+
 // ── T011: commit twice, in order, each once, never re-committed ──────────────
 
 #[tokio::test]
@@ -388,7 +426,14 @@ async fn secure_field_is_refused_before_capture() {
     }
     assert_eq!(
         indicate_log.lock().unwrap().clone(),
-        vec![IndicatorState::critical("Refusing to type into a password field"); 2],
+        vec![
+            IndicatorState::from_failure(
+                myna_desktop::failure::lookup(myna_desktop::failure::SECURE_FIELD).unwrap(),
+                None
+            );
+            2
+        ],
+        "the refusal is presented in plain language with a next step, not as a raw error"
     );
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -614,11 +659,248 @@ async fn indicator_shows_error_state_on_failure() {
 
     let states = log.lock().unwrap().clone();
     assert!(
-        states
-            .iter()
-            .any(|s| matches!(s, IndicatorState::Error { message, .. } if message == "boom")),
-        "expected Error(\"boom\"): {states:?}"
+        states.iter().any(
+            |s| matches!(s, IndicatorState::Error { message, .. } if message.contains("boom"))
+        ),
+        "expected an Error containing \"boom\": {states:?}"
     );
+}
+
+// ── US4 (T066/T070, FR-027): a long model load past the threshold ──────────
+
+#[tokio::test(start_paused = true)]
+async fn a_model_load_past_the_threshold_surfaces_an_actionable_notice() {
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+
+    // A session that emits `Loading`, then holds (simulating a slow cold
+    // load) well past `MODEL_LOAD_THRESHOLD` before finally becoming `Ready`
+    // and completing — under a paused clock, `sleep` only "elapses" when the
+    // test explicitly advances virtual time (`tokio::time::pause()` is
+    // implicit via `start_paused = true`, matching this crate's other timer
+    // tests, e.g. `accessibility::gate`'s coalescing tests).
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Loading).await;
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            let _ = tx.send(OrchestratorEvent::Ready).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    // No `Release` queued: the key is held for the whole (simulated) slow
+    // load, exactly the scenario FR-027 describes. `HeldTrigger` (not a
+    // `[Press]`-only `ScriptedTrigger`) models this: an exhausted
+    // `ScriptedTrigger` reads its next poll as "the trigger ended" and
+    // finalizes immediately, which would race the model-load timer.
+    let mut controller = build_with_trigger(
+        HeldTrigger { pressed: false },
+        MockInjector::new(),
+        indicator,
+        session,
+    );
+
+    // `controller.run()` is the *persistent* loop (press, utterance, repeat)
+    // and would hang forever after this single utterance waiting for a
+    // second `Press` `HeldTrigger` never yields; bound it so the test itself
+    // completes once this utterance is over (paused-clock auto-advance
+    // still lets `MODEL_LOAD_THRESHOLD`/the session's own sleep elapse
+    // "instantly" in wall-clock terms).
+    let _ = tokio::time::timeout(Duration::from_secs(120), controller.run()).await;
+
+    let states = log.lock().unwrap().clone();
+    assert!(
+        states.iter().any(|s| matches!(
+            s,
+            IndicatorState::Error {
+                presentation: Some(p),
+                ..
+            } if p.id == myna_core::failure::MODEL_LOAD_SLOW
+        )),
+        "expected a MODEL_LOAD_SLOW notice once the threshold elapsed: {states:?}"
+    );
+}
+
+/// FR-027: a long operation must keep indicating that work is still
+/// progressing, not fall silent after one notice. A load that runs for four
+/// threshold-plus-interval windows must be reported more than once — and
+/// each report must differ, or the announcer's same-state dedup (and the
+/// D-Bus publisher's) would swallow every repeat.
+#[tokio::test(start_paused = true)]
+async fn a_long_model_load_keeps_indicating_that_work_is_progressing() {
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Loading).await;
+            tokio::time::sleep(Duration::from_secs(70)).await;
+            let _ = tx.send(OrchestratorEvent::Ready).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    let mut controller = build_with_trigger(
+        HeldTrigger { pressed: false },
+        MockInjector::new(),
+        indicator,
+        session,
+    );
+    let _ = tokio::time::timeout(Duration::from_secs(300), controller.run()).await;
+
+    let states = log.lock().unwrap().clone();
+    let pings: Vec<&IndicatorState> = states
+        .iter()
+        .filter(|s| {
+            matches!(
+                s,
+                IndicatorState::Error {
+                    presentation: Some(p),
+                    ..
+                } if p.id == myna_core::failure::MODEL_LOAD_SLOW
+            )
+        })
+        .collect();
+
+    assert!(
+        pings.len() > 1,
+        "a load this long must be reported repeatedly, not once: {states:?}"
+    );
+
+    let messages: std::collections::HashSet<&str> = pings
+        .iter()
+        .filter_map(|s| match s {
+            IndicatorState::Error { message, .. } => Some(message.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        messages.len(),
+        pings.len(),
+        "each progress indication must differ from the last, or the \
+         same-state dedup swallows it: {messages:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_model_load_under_the_threshold_never_surfaces_a_notice() {
+    let indicator = MockIndicator::new();
+    let log = indicator.log();
+
+    // A normal, fast model load: well under the threshold.
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Loading).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let _ = tx.send(OrchestratorEvent::Ready).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    let mut controller = build_with_trigger(
+        HeldTrigger { pressed: false },
+        MockInjector::new(),
+        indicator,
+        session,
+    );
+
+    let _ = tokio::time::timeout(Duration::from_secs(120), controller.run()).await;
+
+    let states = log.lock().unwrap().clone();
+    assert!(
+        !states.iter().any(|s| matches!(
+            s,
+            IndicatorState::Error {
+                presentation: Some(p),
+                ..
+            } if p.id == myna_core::failure::MODEL_LOAD_SLOW
+        )),
+        "a fast load must never surface MODEL_LOAD_SLOW: {states:?}"
+    );
+}
+
+// ── T065/T069 (US4, FR-025/026): the "last notice" accessor ─────────────────
+
+#[tokio::test]
+async fn last_notice_is_none_before_any_failure() {
+    let controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        MockInjector::new(),
+        MockIndicator::new(),
+        backend_session(FakeBackend::commit_drain),
+    );
+    assert_eq!(controller.last_notice(), None);
+}
+
+#[tokio::test]
+async fn last_notice_records_a_critical_failure_and_it_stays_queryable() {
+    let mut controller = build(
+        [TriggerEdge::Press],
+        MockInjector::new(),
+        MockIndicator::new(),
+        backend_session(|| FakeBackend::mid_stream_error("decode_failed", "boom")),
+    );
+    controller.run().await;
+
+    let notice = controller
+        .last_notice()
+        .expect("a failed utterance must record a last notice");
+    assert_eq!(notice.id, myna_core::failure::UNKNOWN_BACKEND_FAILURE);
+    // Still queryable after the state has returned to Idle (FR-026: not the
+    // only record of what happened, even though the indicator itself may
+    // have already moved on).
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn last_notice_records_a_recoverable_model_load_slow_notice_after_auto_dismiss() {
+    let indicator = MockIndicator::new();
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| -> (SessionRun, StopHandle) {
+        let stop = StopHandle::default();
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Loading).await;
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            let _ = tx.send(OrchestratorEvent::Ready).await;
+            let _ = tx.send(OrchestratorEvent::Done("hello".into())).await;
+            Ok(SessionOutcome::Completed {
+                transcript: "hello".into(),
+            })
+        });
+        (run, stop)
+    };
+    let mut controller = build_with_trigger(
+        HeldTrigger { pressed: false },
+        MockInjector::new(),
+        indicator,
+        session,
+    );
+
+    tokio::time::pause();
+    let _ = tokio::time::timeout(Duration::from_secs(120), controller.run()).await;
+
+    // The session completed successfully (Hidden, not Error) — the
+    // Recoverable MODEL_LOAD_SLOW notice auto-dismissed from the indicator
+    // (FR-025's "auto-dismiss" half) — but `last_notice` still remembers it
+    // (FR-026's "not the only record" half).
+    let notice = controller
+        .last_notice()
+        .expect("a slow load must leave a retrievable last notice even after completing");
+    assert_eq!(notice.id, myna_core::failure::MODEL_LOAD_SLOW);
 }
 
 // ── US4 safety (T032/T033): focus-loss policy ──────────────────────────────
@@ -899,7 +1181,10 @@ async fn focus_out_while_acquiring_commits_nothing() {
     }
     assert_eq!(
         indicate_log.lock().unwrap().last(),
-        Some(&IndicatorState::critical("Focus lost")),
+        Some(&IndicatorState::from_failure(
+            myna_desktop::failure::lookup(myna_desktop::failure::TARGET_CLOSED).unwrap(),
+            None
+        )),
         "the user is told the field stopped being theirs, not some raw error"
     );
     assert_eq!(controller.state(), DictationState::Idle);
@@ -1695,6 +1980,60 @@ async fn a_toggle_session_ends_itself_after_the_silence_timeout() {
     // ...and with the toggle's parity resynced, since no edge was read off the
     // trigger for this end (the FocusOut lesson).
     assert!(resynced.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// FR-018: the impending automatic end must be perceivable *before* it
+/// happens. The warning rides the channels the recording state already uses
+/// — a notice on the indicator (visible on the HUD, spoken by the announcer)
+/// and its own cue — so it is never sound alone (FR-009).
+#[tokio::test]
+async fn the_silence_auto_stop_warns_before_it_ends_the_session() {
+    let trigger = ProbeTrigger::new(Then::WaitForResync);
+    let injector = MockInjector::new();
+    let indicator = MockIndicator::new();
+    let states = indicator.log();
+    let sound = myna_desktop::sound::FakeSoundCuePlayer::new();
+    let cues = sound.log();
+
+    let mut controller = DesktopController::builder()
+        .trigger(trigger)
+        .injector(injector)
+        .indicator(indicator)
+        .sound(sound)
+        .session(observed_session(silent_then_live))
+        .auto_stop(AutoStop::toggle(Duration::from_millis(500)))
+        .build();
+    tokio::time::timeout(Duration::from_secs(10), controller.run())
+        .await
+        .expect("the controller must come back to idle on its own");
+
+    let states = states.lock().unwrap();
+    let warning = states
+        .iter()
+        .position(|s| {
+            matches!(
+                s,
+                IndicatorState::Error {
+                    recoverable: true,
+                    ..
+                }
+            )
+        })
+        .expect("the impending auto-stop must be announced on the indicator");
+    let finalizing = states
+        .iter()
+        .position(|s| *s == IndicatorState::Finalizing)
+        .expect("the session must still finalize");
+    assert!(
+        warning < finalizing,
+        "the warning must precede the stop, not accompany it: {states:?}"
+    );
+
+    let cues = cues.lock().unwrap();
+    assert!(
+        cues.contains(&myna_desktop::sound::CueKind::SilenceWarning),
+        "the impending auto-stop must also be audible: {cues:?}"
+    );
 }
 
 #[tokio::test]

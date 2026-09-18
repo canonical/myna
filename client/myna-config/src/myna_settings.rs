@@ -15,6 +15,10 @@ pub enum WidgetKind {
     Text,
     /// A bounded integer: a spin row over the schema range.
     Number,
+    /// A boolean: a switch row. Booleans carry no range, so this is selected
+    /// from the schema's *type* (via the default value) rather than from
+    /// [`SettingRange`] like the other kinds.
+    Toggle,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +41,10 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
     let kind = match metadata.range() {
         SettingRange::Choices(_) => WidgetKind::Choice,
         _ if bounds.is_some() => WidgetKind::Number,
+        // Booleans are `Unrestricted` and unbounded, so they are
+        // indistinguishable from text by range alone — ask the schema default,
+        // which every key has, rather than the current value.
+        _ if metadata.default_value().as_boolean().is_some() => WidgetKind::Toggle,
         _ => WidgetKind::Text,
     };
     WidgetPlan {

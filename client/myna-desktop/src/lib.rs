@@ -24,12 +24,17 @@
 //! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS`); the hermetic
 //! suite drives the controller through the mocks.
 
+pub mod accessibility;
 pub mod controller;
+pub mod coverage;
 pub mod dbus;
+pub mod failure;
 pub mod indicator;
 pub mod inject;
 pub mod live;
+pub mod preferences;
 pub mod shortcut;
+pub mod sound;
 
 pub use controller::{
     auto_stop_due, event_to_indicator, input_quality, AutoStop, ChannelSink, Delivery,

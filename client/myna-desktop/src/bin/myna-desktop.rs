@@ -53,6 +53,10 @@ use futures_util::future::{BoxFuture, FutureExt};
 
 use myna_audio::{CaptureSource, PipeWireBackend};
 use myna_core::{AudioFormat, SessionConfig};
+use myna_desktop::accessibility::{
+    AccessibilityAnnouncer, AnnouncingIndicator, CoalescingAnnouncer, NullAnnouncer,
+    RecoveringAnnouncer, VerbosityGatedAnnouncer,
+};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
@@ -60,10 +64,13 @@ use myna_desktop::indicator::dbus::{DbusIndicator, Readiness, ReadinessTee};
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::preferences::GSettingsPreferences;
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
+use myna_desktop::sound::playback::PipeWireSoundCuePlayer;
+use myna_desktop::sound::GatedSoundCuePlayer;
 use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
 use myna_orchestrator::backend::share::{BackendSocket, ResolveError};
 use myna_orchestrator::{
@@ -743,6 +750,60 @@ fn bind_control(path: &std::path::Path) -> Result<Box<dyn Trigger>, BindFailure>
         })
 }
 
+/// The screen-reader/braille announcement coalescing window (FR-005),
+/// matching `extensions/myna-shell/a11y.js`'s `coalesceMs` default exactly —
+/// same constant, same contract A4/G2 guarantee, on both the Rust and GJS
+/// sides of this feature.
+const ANNOUNCE_COALESCE_WINDOW: Duration = Duration::from_millis(300);
+
+/// Build the real production announcer stack (feature 011-accessible-
+/// dictation-ux, US1): connect to `org.a11y.Bus`, falling back to a silent
+/// [`NullAnnouncer`] if that fails (P15's "never hard-fail on an optional
+/// boundary" philosophy this module's own doc comment argues for elsewhere —
+/// a screen-reader announcement missing is a degraded experience, not a
+/// reason to refuse to dictate). Layered `Recovering(Coalescing(Verbosity-
+/// Gated(...)))`, matching `AnnouncingIndicator`'s own doc comment on which
+/// layer it expects underneath it.
+///
+/// **History (2026-08-31):** an earlier revision of `AtspiAnnouncer` emitted
+/// its `Announcement` event with `item` pointing at a synthetic object
+/// nothing answered, which hung and crashed a real Orca session on every
+/// single announcement (systemd watchdog `SIGABRT`) — this function briefly
+/// forced `NullAnnouncer` unconditionally as an emergency safety measure
+/// while that was fixed. `AtspiAnnouncer::connect()` now exports a genuinely
+/// responsive `org.a11y.atspi.Accessible`/`Application` pair at the emitted
+/// path (see `accessibility::atspi`'s module doc comment for the full
+/// root-cause writeup and fix) and has been re-verified against a real
+/// Orca session without a repeat of the hang.
+///
+/// This is the only announcement path. The GJS side announced in parallel for
+/// a while, via a hidden `St.Label` live region anchored to shell chrome —
+/// the approach research.md R1 had already rejected as not reliably
+/// decoupled from focus. It predated this module emitting on `org.a11y.Bus`
+/// directly, which needs no focus and no chrome to anchor to, and it read no
+/// settings, so it kept speaking after `announcement-verbosity` was turned
+/// off. Announcing from the Shell again would reintroduce both faults.
+async fn build_announcer() -> RecoveringAnnouncer<
+    CoalescingAnnouncer<
+        VerbosityGatedAnnouncer<Box<dyn AccessibilityAnnouncer>, GSettingsPreferences>,
+    >,
+> {
+    let inner: Box<dyn AccessibilityAnnouncer> =
+        match myna_desktop::accessibility::atspi::AtspiAnnouncer::connect().await {
+            Ok(atspi) => Box::new(atspi),
+            Err(e) => {
+                eprintln!(
+                    "accessibility: could not connect to org.a11y.Bus ({e}); \
+                     screen-reader announcements disabled for this session"
+                );
+                Box::new(NullAnnouncer)
+            }
+        };
+    let gated = VerbosityGatedAnnouncer::new(inner, GSettingsPreferences);
+    let coalesced = CoalescingAnnouncer::new(gated, ANNOUNCE_COALESCE_WINDOW);
+    RecoveringAnnouncer::new(coalesced)
+}
+
 /// Build and run the controller with the given indicator (tokio side).
 ///
 /// Nothing here is allowed to end the process. Every boundary this composes -
@@ -772,12 +833,24 @@ async fn run_controller(
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
 
+    // US1: every indicator drives an accessibility announcement alongside its
+    // visual state — see `AnnouncingIndicator`'s doc comment ("a single
+    // controller transition can drive both without either seam knowing about
+    // the other"). US3: sound cues on session start/end/failure, gated on
+    // the user's real GSettings preferences (default: on).
+    let announcer = build_announcer().await;
+    let indicator = AnnouncingIndicator::new(indicator, announcer);
+
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
         .indicator(indicator)
         .session(make_session(&args, &live, readiness, pump_bus.clone()))
         .preedit(live.preedit.clone())
-        .auto_stop(live.auto_stop.clone());
+        .auto_stop(live.auto_stop.clone())
+        .sound(GatedSoundCuePlayer::new(
+            PipeWireSoundCuePlayer::new(),
+            GSettingsPreferences,
+        ));
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -1237,26 +1310,33 @@ fn source(flag: bool, user: bool) -> &'static str {
     }
 }
 
-/// Initialize both gettext domains this package owns.
+/// Initialize the three gettext domains this binary renders strings from.
 ///
 /// `MYNA_DESKTOP_LOCALEDIR` (when set) is the only override; every other
 /// catalog is found by gettext itself through the default data dirs
 /// (`XDG_DATA_DIRS`, else `/usr/local/share` and `/usr/share`) — which is
 /// where the snap stages its `.mo` files, so no path logic belongs here.
 ///
-/// Order matters: the orchestrator domain inits first and the desktop's last,
-/// so `textdomain()` ends on the desktop domain — what the plain `gettext()`
-/// calls in this crate expect. Each `init()` also sets the process locale
-/// from the environment.
+/// Order matters: the desktop domain inits last, so `textdomain()` ends on it
+/// — what the plain `gettext()` calls in this crate expect. The other two
+/// resolve through `dgettext` against their own domain, so they are
+/// order-independent; they init first only to leave the default where this
+/// crate wants it. Each `init()` also sets the process locale from the
+/// environment, which must happen before `myna_core::failure`'s registry is
+/// first built (it translates once, at build time) — hence the call at the top
+/// of `main`.
 fn init_i18n() {
+    let mut core = gettextrs::TextDomain::new(myna_core::i18n::GETTEXT_DOMAIN);
     let mut orchestrator = gettextrs::TextDomain::new(myna_orchestrator::i18n::GETTEXT_DOMAIN);
     let mut desktop = gettextrs::TextDomain::new("myna-desktop");
     if let Ok(dir) = std::env::var("MYNA_DESKTOP_LOCALEDIR") {
         if !dir.is_empty() {
+            core = core.push(dir.clone());
             orchestrator = orchestrator.push(dir.clone());
             desktop = desktop.push(dir);
         }
     }
+    let _ = core.init();
     let _ = orchestrator.init();
     let _ = desktop.init();
 }
@@ -1532,11 +1612,11 @@ mod tests {
     /// bindings, textdomain) and the test env, so run these serially.
     static I18N_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// The regression: the snap sets no MYNA_DESKTOP_LOCALEDIR, so both
-    /// catalogs must be found by real gettext through the default data dirs
+    /// The regression: the snap sets no MYNA_DESKTOP_LOCALEDIR, so every
+    /// catalog must be found by real gettext through the default data dirs
     /// (`XDG_DATA_DIRS`) — the same way the desktop catalog already works.
     #[test]
-    fn both_domains_load_through_default_data_dirs() {
+    fn every_domain_loads_through_default_data_dirs() {
         let _guard = I18N_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let base = tmpdir("xdg");
         let msgfmt = std::env::var("MSGGFMT").unwrap_or_else(|_| "msgfmt".into());
@@ -1558,6 +1638,15 @@ mod tests {
             &base.join("po"),
             myna_orchestrator::i18n::GETTEXT_DOMAIN,
             &[("cannot reach backend: %s", "IT-REACH: %s")],
+        ) {
+            eprintln!("skipping: msgfmt could not compile the catalogs");
+            return;
+        }
+        if !compile_po(
+            &msgfmt,
+            &base.join("po"),
+            myna_core::i18n::GETTEXT_DOMAIN,
+            &[("No text field is selected.", "IT-NO-TARGET")],
         ) {
             eprintln!("skipping: msgfmt could not compile the catalogs");
             return;
@@ -1601,6 +1690,24 @@ mod tests {
             myna_orchestrator::i18n::tr("cannot reach backend: %s"),
             "IT-REACH: %s",
             "the orchestrator catalog is reached through the same data dirs"
+        );
+        assert_eq!(
+            myna_core::i18n::tr("No text field is selected."),
+            "IT-NO-TARGET",
+            "the core catalog is reached through the same data dirs"
+        );
+        // ...and the failure registry actually renders that translation,
+        // rather than the marker merely being extractable. `default_registry`
+        // rather than the `OnceLock`-backed `lookup`, because another test in
+        // this binary may already have built the shared one under the C
+        // locale - the registry translates once, when it is built.
+        assert_eq!(
+            myna_core::failure::default_registry()
+                .lookup(myna_core::failure::NO_TARGET)
+                .expect("NO_TARGET is always registered")
+                .message,
+            "IT-NO-TARGET",
+            "plain-language failure text is translated, not just marked"
         );
 
         restore_env(&saved);

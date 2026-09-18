@@ -14,6 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # crate directory : extra --keyword flags (gettext is always a keyword)
 CRATES=(
+    "client/myna-core:--keyword=tr"
     "client/myna-desktop:"
     "client/myna-orchestrator:--keyword=tr"
     "client/myna-config:--keyword=_"

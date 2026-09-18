@@ -16,7 +16,12 @@
 # base cannot supply, and live in the `myna-shell` workshop instead (see
 # .workshop/myna-shell.yaml).
 #
+# Feature 011-accessible-dictation-ux adds at-spi2-core (at-spi-bus-launcher /
+# org.a11y.Bus) for the MYNA_ATSPI_TESTS-gated AT-SPI Announcement round-trip
+# suite — same env-gate convention as MYNA_IBUS_TESTS/MYNA_PORTAL_TESTS/
+# MYNA_DBUS_TESTS above.
+#
 # System packages are installed by the setup-base hook (hooks/setup-base, runs
 # as root at install). Referenced from .workshop/myna.yaml as `project-desktop`.
 name: desktop
-summary: GTK4/libadwaita headers, Blueprint compiler, IBus daemon, xdg-desktop-portal, and D-Bus session bus for desktop Rust clients.
+summary: GTK4/libadwaita headers, Blueprint compiler, IBus daemon, xdg-desktop-portal, D-Bus session bus, and AT-SPI bus for desktop Rust clients.
