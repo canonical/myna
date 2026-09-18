@@ -52,7 +52,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 Env-gated integration suites run identically on the desktop VM and on hardware,
 and skip cleanly otherwise: `MYNA_PIPEWIRE_TESTS=1` (capture), `MYNA_IBUS_TESTS=1`
-(injection), `MYNA_PORTAL_TESTS=1` (hotkey), display-present (GTK indicator).
+(injection), `MYNA_DBUS_TESTS=1` (the published state, and the hotkey against a
+fake portal), display-present (GTK indicator). `dev/gated-tests.sh` stands the
+services up and sets the gates; `make test-client-gated` is that script.
 
 ## Run
 
