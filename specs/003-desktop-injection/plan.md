@@ -46,9 +46,11 @@ us; no app-owned settings store in scope (no Settings panel — spec Out of Scop
 **Testing**: `cargo test` hermetic suite driven by **mocks** at each boundary
 (scripted `Trigger`, in-memory `Injector`, headless `Indicator`) — no D-Bus,
 IBus, portal, or GTK required; plus an **env-gated integration suite**
-(`MYNA_IBUS_TESTS=1`, `MYNA_PORTAL_TESTS=1`) exercised against a real IBus daemon
-and a portal backend on the virtual-audio/desktop VM **and** on hardware without
-code change (constitution II).
+(`MYNA_IBUS_TESTS=1`) exercised against a real IBus daemon on the
+virtual-audio/desktop VM **and** on hardware without code change
+(constitution II). The portal surface is covered against a scripted fake portal
+(`MYNA_DBUS_TESTS=1`); the real portal is exercised by hand (quickstart.md
+step 3).
 
 **Target Platform**: Ubuntu Desktop (current LTS+), Wayland session, **GNOME**
 primary validated DE; IBus present (verified `ibus-1.0` 1.5.34, daemon running);
@@ -150,7 +152,8 @@ client/
 │   └── tests/
 │       ├── controller.rs      #   hermetic: lifecycle, dedup, focus-end, commit-only
 │       ├── ibus_hw.rs         #   env-gated (MYNA_IBUS_TESTS): real IBus commit/focus/secure
-│       └── portal_hw.rs       #   env-gated (MYNA_PORTAL_TESTS): real bind/activate/deactivate
+│       └── portal_leak.rs     #   env-gated (MYNA_DBUS_TESTS): scripted portal, no
+│                              #   request or session left behind by an unanswered bind
 └── Cargo.toml                 # + myna-desktop member
 
 server/src/myna/desktop/       # REMOVED (FR-025): controller.py, textout.py, __init__.py
