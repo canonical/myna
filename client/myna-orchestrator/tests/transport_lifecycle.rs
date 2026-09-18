@@ -440,7 +440,8 @@ async fn an_error_sent_just_before_the_server_hangs_up_outlives_the_failed_write
 
 /// Finalize an utterance against a server that sends `frame` once a fifth of
 /// the progress deadline for ten fifths, then its transcript. Needs a paused
-/// clock: returns the outcome and how long the session took.
+/// clock: returns the outcome and how long the *client's* session lasted,
+/// which is the only clock that says anything about its deadline.
 async fn finalize_while_the_server_sends(
     dialect: Dialect,
     frame: Message,
@@ -453,7 +454,11 @@ async fn finalize_while_the_server_sends(
     let chunk = PcmChunk::new(vec![0; 3200], AudioFormat::default());
     audio.send(OrchestratorInput::Audio(chunk)).await.unwrap();
     audio.send(OrchestratorInput::EndOfAudio).await.unwrap();
-    let started = Instant::now();
+    let client = async {
+        let started = Instant::now();
+        let outcome = server.session(inputs, control, outputs).await;
+        (outcome, started.elapsed())
+    };
     // The paused clock jumps to the next timer whenever the runtime waits,
     // even on socket I/O, so the server keeps a sleep armed ahead of the
     // deadline at every point the client waits on it.
@@ -467,9 +472,8 @@ async fn finalize_while_the_server_sends(
         conn.done("ok").await;
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
-    let (outcome, ()) =
-        futures_util::future::join(server.session(inputs, control, outputs), serve).await;
-    (outcome, started.elapsed())
+    let ((outcome, took), ()) = futures_util::future::join(client, serve).await;
+    (outcome, took)
 }
 
 #[tokio::test(start_paused = true)]
@@ -481,7 +485,10 @@ async fn frames_that_decode_to_no_event_keep_a_long_finalize_alive() {
             matches!(outcome, Ok(SessionOutcome::Completed { .. })),
             "{dialect:?}: {outcome:?}"
         );
-        assert!(took >= 2 * BACKEND_PROGRESS_TIMEOUT, "{dialect:?}");
+        assert!(
+            took >= 2 * BACKEND_PROGRESS_TIMEOUT,
+            "{dialect:?}: the session ended after {took:?}, inside its own deadline"
+        );
     }
 }
 
