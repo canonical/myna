@@ -545,13 +545,15 @@ def test_the_retried_decode_count_is_bounded():
 
 
 def test_a_gap_the_ladder_cannot_close_is_logged(caplog):
-    """A persistent partial collapse is accepted, so it has to be visible."""
+    """A persistent partial collapse is accepted, so it has to be visible -
+    and the seconds it names are what an operator acts on."""
     model = _bare_model(lambda n, call: ([" one"], [0.2]))
 
     with caplog.at_level(logging.WARNING, logger="myna.testbed.parakeet"):
         model._transcribe_guarded(_speech(13.0))
 
-    assert [r for r in caplog.records if "untranscribed" in r.getMessage()]
+    (record,) = [r for r in caplog.records if "untranscribed" in r.getMessage()]
+    assert "12.8 s of 13.0 s" in record.getMessage()
 
 
 def test_a_gap_the_ladder_closes_is_not_logged(caplog):

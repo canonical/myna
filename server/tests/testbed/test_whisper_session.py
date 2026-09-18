@@ -662,7 +662,10 @@ async def test_batch_logs_a_gap_the_ladder_cannot_close(caplog):
         model, _ = await _run_positional([(70.0, True)], model=_AlwaysSkippingModel)
 
     assert len(model.calls) == 1 + len(RETRY_PADS) + 1, "the ladder runs once, not forever"
-    assert [r for r in caplog.records if "untranscribed" in r.getMessage()]
+    (record,) = [r for r in caplog.records if "untranscribed" in r.getMessage()]
+    # Words 40-49 are missing, so the hole runs from the word before to the
+    # word after, inside the 60 s region that starts the clip.
+    assert "11.0 s of the 60.0 s region at 0.0 s" in record.getMessage()
 
 
 async def test_batch_does_not_log_a_gap_the_ladder_closes(caplog):
