@@ -142,12 +142,12 @@ async fn fake_server_round_trip() {
     .expect("session against fake server");
 
     let mut finals: Vec<String> = Vec::new();
-    let mut saw_progress = false;
+    let mut loading = false;
+    let mut transcribing = false;
     while let Some(event) = shown.recv().await {
         match event {
-            OrchestratorEvent::Loading
-            | OrchestratorEvent::Ready
-            | OrchestratorEvent::Transcribing => saw_progress = true,
+            OrchestratorEvent::Loading => loading = true,
+            OrchestratorEvent::Transcribing => transcribing = true,
             OrchestratorEvent::Final(text) => finals.push(text),
             OrchestratorEvent::Error { code, message } => {
                 panic!("unexpected error event: {code}: {message}")
@@ -156,7 +156,13 @@ async fn fake_server_round_trip() {
         }
     }
 
-    assert!(saw_progress, "expected at least one progress event");
+    // `Ready` is also emitted for the first committed text, so it says nothing
+    // about progress; these two come only from the server's progress frames.
+    assert!(loading, "no `preparing` progress reached the client");
+    assert!(
+        transcribing,
+        "no `transcribing` progress reached the client"
+    );
     assert_eq!(
         finals,
         vec![
