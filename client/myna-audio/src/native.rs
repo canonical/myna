@@ -506,9 +506,9 @@ impl DataPath {
         match self.continuity.delivered(ticks, graph_rate, frames) {
             Some(lost) => self.lose(Loss::Missed(lost)),
             // A deficit no confirmation window has run out on yet, for the
-            // loop thread to read if capture ends before one can.
-            None if !self.lost => self.shared.hold(self.continuity.outstanding()),
-            None => {}
+            // loop thread to read if capture ends before one can. A latched
+            // loss outranks it there, so it needs no guard here.
+            None => self.shared.hold(self.continuity.outstanding()),
         }
     }
 
@@ -1443,6 +1443,83 @@ mod tests {
             assert_eq!(c.delivered(ticks, rate, 372), None, "a rate change is loss");
         }
         assert_eq!(without_repaying(&mut c, &mut ticks, rate, 372), None);
+    }
+
+    /// A cycle that wanders by a fraction is the graph's resampler rounding,
+    /// not the graph changing its quantum: the account rides it out, either
+    /// way, and still reports what it is owed.
+    #[test]
+    fn a_cycle_that_only_wanders_is_not_a_graph_change() {
+        for frames in [410, 300] {
+            let mut c = Continuity::new(16_000);
+            let mut ticks = 0;
+            run(&mut c, &mut ticks, 40);
+            ticks += CYCLE;
+            assert_eq!(run(&mut c, &mut ticks, 1), None, "a missed cycle");
+            assert!(
+                without_repaying(&mut c, &mut ticks, GRAPH, frames).is_some(),
+                "{frames}-frame cycles forgave a real deficit"
+            );
+        }
+    }
+
+    /// Two deliveries in a row are all a new cycle takes: the account starts
+    /// over before the audio of the new geometry can confirm the deficit the
+    /// old one ended on.
+    #[test]
+    fn two_deliveries_at_a_new_cycle_are_the_graph_changing_it() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        ticks += CYCLE;
+        assert_eq!(run(&mut c, &mut ticks, 1), None, "a missed cycle");
+        // 100 ms cycles: two of them carry enough audio to confirm what the
+        // 21 ms ones left owed, so the second must be where it is forgotten.
+        for _ in 0..2 {
+            ticks += 4_800;
+            assert_eq!(c.delivered(ticks, GRAPH, 1_600), None);
+        }
+    }
+
+    /// A rebase reports a cycle of no length at all, which is no measure of
+    /// the graph's: the phase credit is still a whole cycle afterwards.
+    #[test]
+    fn a_rebase_does_not_collapse_the_phase_credit() {
+        let mut c = Continuity::new(16_000);
+        let long = 2 * CYCLE;
+        let mut ticks = 0;
+        for _ in 0..10 {
+            ticks += long;
+            assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        }
+        // The clock stands still, then a whole cycle arrives ahead of the
+        // tick advance that accounts for it.
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        ticks += 2 * long;
+        assert_eq!(c.delivered(ticks, GRAPH, 683), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 683), None);
+    }
+
+    /// Exactly one cycle of phase and the tolerance is what a capture may end
+    /// on; a frame more is audio that never arrived.
+    #[test]
+    fn the_tail_reports_what_phase_and_tolerance_cannot_explain() {
+        // One tick is one frame at 16 kHz, so the deficit is exact.
+        let same = (2, 32_000);
+        let mut c = Continuity::new(16_000);
+        assert_eq!(c.delivered(0, same, 1_000), None);
+        assert_eq!(c.delivered(1_000, same, 1_000), None, "a 1000-frame cycle");
+        let tolerance = (LOSS_TOLERANCE.as_secs_f64() * 16_000.0) as u64;
+        let mut ticks = 1_000 + 1_000 + 1_000 + tolerance;
+        assert_eq!(c.delivered(ticks, same, 1_000), None);
+        assert_eq!(c.outstanding(), None, "one cycle of phase and no more");
+        ticks += 1;
+        assert_eq!(c.delivered(ticks, same, 0), None);
+        assert!(
+            c.outstanding().is_some(),
+            "a frame past what phase explains"
+        );
     }
 
     /// [`LOSS_CONFIRM`] cannot run out at the end of a capture, so a deficit
