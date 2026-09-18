@@ -4,13 +4,20 @@
 
 **Input**: Feature specification from `/specs/011-accessible-dictation-ux/spec.md`
 
+> **Dangling references**: this plan and its siblings cite `docs/project-plan.md`
+> (as "project-plan T54/T56/T61/T66/T150") and `docs/desktop-injection.md`.
+> Neither file is in the tree any more — `docs/` was restructured upstream into
+> the `.kb/` knowledge base, which does not carry the old T-numbers. The
+> citations are kept because they record *why* a decision was taken, but they
+> cannot be followed; treat them as historical provenance, not as live links.
+
 ## Summary
 
 Make every dictation-state signal (idle → loading → listening → transcribing →
 finishing → notice/failure) perceivable through more than sight: proactive
-AT-SPI announcements reaching speech and braille from both shipped indicator
-surfaces (the `myna-shell` GNOME Shell HUD and `myna-desktop`'s indicators —
-`DbusIndicator`/`NotifyIndicator` and the opt-in `GtkIndicator`), a
+AT-SPI announcements reaching speech and braille from `myna-desktop`'s
+indicators (`DbusIndicator`/`NotifyIndicator`) — planned as three announcing
+surfaces, delivered as one; see research.md R1 — a
 programmatically-queryable accessible name/description at any moment (not just
 at transitions), optional short sound cues with a non-regression WER bound,
 honouring of the desktop's reduced-motion/high-contrast/text-scale/forced-colour
@@ -182,7 +189,7 @@ client/
 ├── myna-audio/                     # UNCHANGED capture side; playback stream added for sound cues
 ├── myna-orchestrator/               # UNCHANGED seams reused (Indicator, Trigger)
 ├── myna-desktop/
-│   ├── Cargo.toml                   # + atspi dependency; ui-gtk gtk4 feature bump for gtk_accessible_announce
+│   ├── Cargo.toml                   # + atspi dependency
 │   ├── src/
 │   │   ├── accessibility/           # NEW: the announcer seam (shipped Rust)
 │   │   │   ├── mod.rs               #   AccessibilityAnnouncer trait, Announcement{text,severity}, verbosity gate
@@ -193,10 +200,10 @@ client/
 │   │   │   └── mod.rs               #   PipeWire playback stream (reuses myna-audio's client), per-cue toggle
 │   │   ├── failure.rs                # NEW: plain-language failure-taxonomy mapping (FR-023/024/024a)
 │   │   ├── coverage.rs               # NEW: loads/validates the checked-in state→channel coverage matrix
+│   │   ├── preferences.rs            # NEW: Preferences seam + GSettings-backed impl (FR-004/FR-010)
 │   │   ├── indicator/
 │   │   │   ├── mod.rs               #   EXTENDED: wire the announcer + coverage lookups alongside Indicator
 │   │   │   ├── dbus.rs              #   EXTENDED: on state push, also emit through AccessibilityAnnouncer
-│   │   │   ├── gtk.rs               #   EXTENDED (ui-gtk): gtk_accessible_announce() calls
 │   │   │   └── notify.rs            #   EXTENDED: recoverable/critical persistence per FR-025/026
 │   │   ├── controller.rs             # EXTENDED: verbosity-gated announce-on-transition, coalescing (FR-005)
 │   │   └── shortcut/                 # EXTENDED: sticky/slow-keys + autorepeat de-dup verification (US2)
@@ -204,19 +211,21 @@ client/
 │       ├── accessibility.rs          # hermetic: verbosity gating, coalescing, content-free assertion
 │       ├── atspi_hw.rs               # NEW, env-gated (MYNA_ATSPI_TESTS): real org.a11y bus round-trip
 │       ├── sound_hw.rs               # NEW, env-gated: real PipeWire playback smoke test
-│       └── coverage.rs               # hermetic: matrix completeness (every state has ≥1 visual + ≥1 non-visual)
+│       └── atspi_confined.rs         # NEW: the bootstrap, against a policy mirroring the snap's denials
 ├── myna-cli/
 │   └── src/main.rs                   # EXTENDED: colour/emoji-free textual state markers (US5, FR-028/029)
 └── Cargo.toml                        # + atspi member dependency
 
 extensions/myna-shell/
-│   (a11y.js / hud.js / states.js announcement wiring: PLANNED, then withdrawn —
-│    the extension has no shipping vehicle, so it announces nothing; see research.md R1)
-├── states.js                         # EXTENDED: adds the content-free announcement text per state
-├── coverage-matrix.json               # SHARED (checked-in) data file, also read by the Rust coverage.rs test
+├── coverage.js                        # NEW: pure coverage-matrix loader/validator (GJS side)
+├── coverage-matrix.json               # SHARED (checked-in) data file, also read by the Rust src/coverage.rs
 └── test/
-    ├── a11y.test.js                   # NEW: coalescing/formatting contract tests (pure module)
     └── coverage.test.js               # NEW: matrix completeness, read from the shared JSON
+
+(Planned here and withdrawn: `a11y.js`, its `hud.js`/`states.js` wiring, and
+`test/a11y.test.js`. The extension has no shipping vehicle, so it announces
+nothing — research.md R1. `hud.js`/`states.js` are themselves gone: the HUD is
+now the standalone `myna-hud` renderer the extension merely hosts.)
 
 docs/
 ├── project-plan.md                   # UPDATED: close/annotate T56; note T31/T54/T58/T59/T61/T62 overlap resolution

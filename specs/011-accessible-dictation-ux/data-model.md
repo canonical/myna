@@ -27,7 +27,6 @@ this feature).
 | Value | Visual? | Notes |
 |---|---|---|
 | `shell_hud` | yes | `myna-shell` bottom-center pill |
-| `gtk_overlay` | yes | opt-in `GtkIndicator` |
 | `notification` | yes | `notify-rust` toast |
 | `sound_cue` | no (audible, not visual) | optional, per-cue disableable |
 | `atspi_announcement` | no | speech + braille via the same AT-SPI path (R1) |
@@ -57,31 +56,31 @@ verbosity floor only silences *proactive* announcements, never the query).
     },
     {
       "id": "recording",
-      "channels": {"visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"]},
+      "channels": {"visual": ["shell_hud"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"]},
       "colour_only": false,
       "sound_only": false
     },
     {
       "id": "transcribing",
-      "channels": {"visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "programmatic_query"]},
+      "channels": {"visual": ["shell_hud"], "non_visual": ["atspi_announcement", "programmatic_query"]},
       "colour_only": false,
       "sound_only": false
     },
     {
       "id": "finalizing",
-      "channels": {"visual": ["shell_hud", "gtk_overlay"], "non_visual": ["atspi_announcement", "programmatic_query"]},
+      "channels": {"visual": ["shell_hud"], "non_visual": ["atspi_announcement", "programmatic_query"]},
       "colour_only": false,
       "sound_only": false
     },
     {
       "id": "notice",
-      "channels": {"visual": ["shell_hud", "gtk_overlay", "notification"], "non_visual": ["atspi_announcement", "programmatic_query"]},
+      "channels": {"visual": ["shell_hud", "notification"], "non_visual": ["atspi_announcement", "programmatic_query"]},
       "colour_only": false,
       "sound_only": false
     },
     {
       "id": "error",
-      "channels": {"visual": ["shell_hud", "gtk_overlay", "notification", "terminal_text"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"]},
+      "channels": {"visual": ["shell_hud", "notification", "terminal_text"], "non_visual": ["atspi_announcement", "sound_cue", "programmatic_query"]},
       "colour_only": false,
       "sound_only": false
     }

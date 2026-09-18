@@ -11,8 +11,9 @@ run against the unpackaged dev build noted where they'd diverge.
 
 - A GNOME Wayland session with Orca (or another AT-SPI-consuming screen
   reader) installed and running.
-- `myna` installed (snap) or built from `client/` with `--features ui-gtk` for
-  the `GtkIndicator` scenarios.
+- `myna` installed (snap) or built from `client/`. (Earlier drafts asked for
+  `--features ui-gtk` for `GtkIndicator` scenarios; that overlay was removed,
+  so there is no such feature and no such scenario.)
 - `extensions/myna-shell` installed and enabled (`gnome-extensions enable
   myna-shell@...`).
 - A text field to dictate into (e.g. GNOME Text Editor).
