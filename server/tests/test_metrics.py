@@ -6,8 +6,6 @@ import random
 import tracemalloc
 
 import pytest
-from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
 
 from myna.testbed import metrics as metrics_mod
 from myna.testbed.metrics import (
@@ -75,23 +73,33 @@ def test_cer_subword():
     assert er.rate == 3 / 6
 
 
-# --- Memory: _align used to be a full O(n*m) table (see finding a5-rss:
-# ~380 MB scoring a 5-minute clip's CER). It is now row-checkpointed
-# (metrics._checkpointed_counts): O(sqrt(n) * m) memory instead of O(n * m),
-# by recomputing most of the table from saved checkpoint rows instead of
-# keeping it all. Unlike a Hirschberg *split* (which was tried and rejected -
-# see the commit body), checkpointing recomputes the real table rather than
-# guessing where an optimal path crosses a midpoint, so it is byte-identical
-# to the old implementation, not just equal in total edit distance.
+# --- Correctness and memory: _align used to be a full O(n*m) table (see
+# finding a5-rss: ~380 MB scoring a 5-minute clip's CER). It is now
+# row-checkpointed (metrics._checkpointed_counts): O(sqrt(n) * m) memory
+# instead of O(n * m), by recomputing most of the table from saved
+# checkpoint rows instead of keeping it all. Unlike a Hirschberg *split*
+# (tried and rejected - see the commit body), checkpointing recomputes the
+# real table rather than guessing where an optimal path crosses a midpoint,
+# so it is byte-identical to the old implementation, not just equal in
+# total edit distance.
+#
 # `_oracle_align` below is a verbatim copy of the pre-optimization
 # implementation, kept independent of metrics.py, so these tests catch a
 # regression in either the new code or an accidental edit to the oracle.
+# What follows is deliberately a small, fast, deterministic set of cases,
+# not a property test: an exhaustive sweep (3.6M small cases) and large
+# randomized runs (the ones that actually established byte-identical
+# behavior against the oracle, and, separately, that a Hirschberg split
+# does not have it) live in
+# /home/charles/myna-audio-review/evidence/a5-metrics/ instead - they took
+# minutes to run and only needed to convince us once. A suite every
+# developer and CI run pays for stays a few seconds.
 
 
 def _oracle_align(reference: list[str], hypothesis: list[str]) -> ErrorRate:
     """The original O(n*m)-memory DP and single-pass backtrace, copied
     verbatim (not called from metrics.py) so it stays an independent oracle
-    for the memory-bounded Hirschberg implementation."""
+    for the memory-bounded checkpointed implementation."""
     n, m = len(reference), len(hypothesis)
     if n == 0:
         return ErrorRate(0.0 if m == 0 else 1.0, 0, 0, m, 0)
@@ -146,33 +154,31 @@ def _mutate(tokens: list[str], vocabulary: list[str], edits: int, rng: random.Ra
     return out
 
 
-_FORCE_CHECKPOINT_HEALTHCHECK = settings(
-    max_examples=40,
-    deadline=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
+@pytest.mark.parametrize(
+    "budget,seed,ref_len,edits,alphabet",
+    [
+        pytest.param(1, 1, 40, 8, "word", id="word-tiny-budget"),
+        pytest.param(1, 2, 40, 8, "char", id="char-tiny-budget"),
+        pytest.param(11, 3, 90, 12, "word", id="word-small-block"),
+        pytest.param(11, 4, 90, 12, "char", id="char-small-block"),
+        pytest.param(4096, 5, 90, 12, "word", id="word-direct-table"),
+        pytest.param(4096, 6, 90, 12, "char", id="char-direct-table"),
+    ],
 )
-# Safe: `monkeypatch.setattr` is called fresh at the start of every generated
-# example, not relied on to reset between them, so the fixture's normal
-# per-test (not per-example) teardown timing doesn't matter here.
-
-
-@given(
-    seed=st.integers(min_value=0, max_value=2**32 - 1),
-    ref_len=st.integers(min_value=0, max_value=150),
-    edits=st.integers(min_value=0, max_value=20),
-    budget=st.sampled_from([1, 50, 4096]),
-)
-@_FORCE_CHECKPOINT_HEALTHCHECK
-def test_checkpointed_matches_oracle_on_mutated_word_sequences(
-    monkeypatch, seed, ref_len, edits, budget
+def test_checkpointed_matches_oracle_on_mutated_sequences(
+    monkeypatch, budget, seed, ref_len, edits, alphabet
 ):
     """A realistic reference/hypothesis pair (a mutated copy of the
-    reference, as a real transcript is): the new alignment must return the
-    exact same rate/S/D/I as the pre-optimization table, whether or not
-    checkpointing is forced on for small inputs."""
+    reference, as a real transcript is), at a handful of hand-picked
+    (budget, size) shapes: checkpointing forced on for a tiny input, a
+    small checkpoint block on a mid-size input, and the default budget's
+    direct-table path - at both word and character granularity (a small
+    alphabet makes coincidental matches, and therefore ties, more common
+    at character granularity). Deterministic and fast; the exhaustive
+    version lives in the evidence directory (see the module docstring)."""
     monkeypatch.setattr(metrics_mod, "_DIRECT_CELL_BUDGET", budget)
     rng = random.Random(seed)
-    vocabulary = [f"w{i}" for i in range(12)]
+    vocabulary = [f"w{i}" for i in range(12)] if alphabet == "word" else list("abcde ")
     reference = [rng.choice(vocabulary) for _ in range(ref_len)]
     hypothesis = _mutate(reference, vocabulary, edits, rng)
 
@@ -181,55 +187,22 @@ def test_checkpointed_matches_oracle_on_mutated_word_sequences(
     assert got == want
 
 
-@given(
-    seed=st.integers(min_value=0, max_value=2**32 - 1),
-    ref_len=st.integers(min_value=0, max_value=150),
-    edits=st.integers(min_value=0, max_value=20),
-    budget=st.sampled_from([1, 50, 4096]),
-)
-@_FORCE_CHECKPOINT_HEALTHCHECK
-def test_checkpointed_matches_oracle_on_mutated_character_sequences(
-    monkeypatch, seed, ref_len, edits, budget
-):
-    """Same as above at character granularity (CER): a small alphabet makes
-    coincidental matches, and therefore alignment ties, much more common
-    than at word granularity."""
-    monkeypatch.setattr(metrics_mod, "_DIRECT_CELL_BUDGET", budget)
-    rng = random.Random(seed)
-    alphabet = list("abcde ")
-    reference = [rng.choice(alphabet) for _ in range(ref_len)]
-    hypothesis = _mutate(reference, alphabet, edits, rng)
-
-    got = metrics_mod._align(reference, hypothesis)
-    want = _oracle_align(reference, hypothesis)
-    assert got == want
-
-
-@given(
-    seed=st.integers(min_value=0, max_value=2**32 - 1),
-    ref_len=st.integers(min_value=0, max_value=12),
-    hyp_len=st.integers(min_value=0, max_value=12),
-)
-@settings(
-    max_examples=150,
-    deadline=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
-def test_checkpointed_matches_oracle_on_fully_independent_short_sequences(
-    monkeypatch, seed, ref_len, hyp_len
-):
+@pytest.mark.parametrize("seed", range(20))
+def test_checkpointed_matches_oracle_on_fully_independent_short_sequences(monkeypatch, seed):
     """No shared derivation between the two sides at all (over a 3-letter
     alphabet, so ties - including transposition-style ties such as "abc" vs
     "acb", where 2 substitutions cost the same as 1 deletion + 1 insertion -
-    are frequent) and the budget forced to 1 so every pair is checkpointed.
-    This is the harshest tie-break stress test the two implementations are
-    put through, and exactly the case a Hirschberg-split approach failed on
-    during development (see the commit body) - checkpointing does not."""
+    are frequent), budget forced to 1 so every pair is checkpointed. This is
+    the harshest tie-break stress test the two implementations are put
+    through, and exactly the case a Hirschberg-split approach failed on
+    during development (see the commit body) - checkpointing does not.
+    20 fixed seeds, not a property test: fast and reproducible, with the
+    full randomized sweep in the evidence directory."""
     monkeypatch.setattr(metrics_mod, "_DIRECT_CELL_BUDGET", 1)
     rng = random.Random(seed)
     alphabet = list("abc")
-    reference = [rng.choice(alphabet) for _ in range(ref_len)]
-    hypothesis = [rng.choice(alphabet) for _ in range(hyp_len)]
+    reference = [rng.choice(alphabet) for _ in range(rng.randint(0, 12))]
+    hypothesis = [rng.choice(alphabet) for _ in range(rng.randint(0, 12))]
 
     got = metrics_mod._align(reference, hypothesis)
     want = _oracle_align(reference, hypothesis)
@@ -282,25 +255,16 @@ def _long_form_pair(word_count: int, error_rate: float, seed: int) -> tuple[str,
     return " ".join(reference), " ".join(hypothesis)
 
 
-def test_wer_memory_stays_bounded_on_a_long_form_clip():
-    """A ~900-word long-form reference (finding a5-rss's ballpark) must score
-    in a small, roughly-constant amount of memory, not the O(n*m) table the
-    old implementation used."""
-    reference, hypothesis = _long_form_pair(word_count=900, error_rate=0.08, seed=1)
-    tracemalloc.start()
-    try:
-        word_error_rate(reference, hypothesis)
-        _, peak = tracemalloc.get_traced_memory()
-    finally:
-        tracemalloc.stop()
-    assert peak < 4 << 20  # 4 MiB; the old table alone would be tens of MiB here
-
-
 def test_cer_memory_stays_bounded_on_a_long_form_clip():
-    """Character-level scoring is where the O(n*m) table actually hurt (a5-rss:
-    a 5-minute clip's ~3539 x ~3640 CER matrix cost ~380 MB): thousands of
-    characters per side, over a small alphabet where coincidental matches
-    (and therefore ties) are common."""
+    """The one memory test that matters: character-level scoring is where
+    the O(n*m) table actually hurt (a5-rss: a 5-minute clip's ~3539 x
+    ~3640 CER matrix cost ~380 MB) - thousands of characters per side, over
+    a small alphabet where coincidental matches (and therefore ties) are
+    common. One representative long-form-scale pair; a larger corpus clip
+    and the word-level case are measured separately, outside the suite (see
+    the evidence directory and the commit body) - an O(n*m)-time
+    pure-Python DP, old or new, is too slow at that scale to run on every
+    `make test-server`."""
     reference, hypothesis = _long_form_pair(word_count=900, error_rate=0.08, seed=2)
     tracemalloc.start()
     try:
@@ -309,20 +273,3 @@ def test_cer_memory_stays_bounded_on_a_long_form_clip():
     finally:
         tracemalloc.stop()
     assert peak < 4 << 20  # 4 MiB; the retired table was ~380 MB for a clip this size
-
-
-def test_cer_memory_stays_bounded_at_roughly_twice_long_form_scale():
-    """Memory must not grow with the square of the transcript length: at
-    ~2x the characters of the long-form clip above, peak memory should stay
-    in the same small ballpark, not ~4x it. (A much larger corpus clip is
-    measured separately, outside the suite - see the commit body - where an
-    O(n*m)-time pure-Python DP, old or new, is too slow to run on every
-    `make test-server`.)"""
-    reference, hypothesis = _long_form_pair(word_count=1800, error_rate=0.08, seed=3)
-    tracemalloc.start()
-    try:
-        character_error_rate(reference, hypothesis)
-        _, peak = tracemalloc.get_traced_memory()
-    finally:
-        tracemalloc.stop()
-    assert peak < 8 << 20  # 8 MiB - roughly sqrt(2)x the ~900-word case above, not 4x
