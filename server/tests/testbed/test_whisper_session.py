@@ -11,6 +11,7 @@ failure path are pinned without loading weights.
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -28,6 +29,7 @@ from myna.core import (
     TranscriptionFinal,
     TranscriptionProgress,
 )
+from myna.testbed.streaming.coverage import RETRY_PADS
 from myna.testbed.whisper import FasterWhisperAdapter
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
@@ -642,6 +644,32 @@ async def test_batch_re_decodes_a_region_that_left_speech_untranscribed():
     # The first region (up to the forced cut) is decoded twice, the second once.
     assert [c["samples"] for c in model.calls][:2] == [60 * RATE, 60 * RATE + 2 * round(0.2 * RATE)]
     assert len(model.calls) == 3
+
+
+class _AlwaysSkippingModel(_SkippingModel):
+    """A collapse no nudge recovers: the words stay missing at every pad."""
+
+    def _word(self, t: int, start_s: float, end_s: float):
+        if t in self.skip:
+            return None
+        return _PositionalModel._word(self, t, start_s, end_s)
+
+
+async def test_batch_logs_a_gap_the_ladder_cannot_close(caplog):
+    """A persistent partial collapse is accepted rather than failed, so it
+    has to leave a trace."""
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.whisper"):
+        model, _ = await _run_positional([(70.0, True)], model=_AlwaysSkippingModel)
+
+    assert len(model.calls) == 1 + len(RETRY_PADS) + 1, "the ladder runs once, not forever"
+    assert [r for r in caplog.records if "untranscribed" in r.getMessage()]
+
+
+async def test_batch_does_not_log_a_gap_the_ladder_closes(caplog):
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.whisper"):
+        _, _ = await _run_positional([(70.0, True)], model=_SkippingModel)
+
+    assert not [r for r in caplog.records if "untranscribed" in r.getMessage()]
 
 
 async def test_batch_does_not_re_decode_a_region_holding_no_speech():

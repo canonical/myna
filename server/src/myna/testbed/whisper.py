@@ -550,6 +550,15 @@ class FasterWhisperAdapter:
                         best, best_rank = (padded, list(region)), rank
                     if best_rank[0] < UNTRANSCRIBED_GAP_S:
                         break
+                if best_rank[0] >= UNTRANSCRIBED_GAP_S:
+                    _log.warning(
+                        "whisper left %.1f s of the %.1f s region at %.1f s untranscribed "
+                        "after %d nudged re-decodes",
+                        best_rank[0],
+                        len(samples) / WHISPER_RATE,
+                        offset,
+                        len(RETRY_PADS),
+                    )
                 words, region[:] = best[0], best[1]
             decoded = True
             processed = first + len(samples)

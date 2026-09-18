@@ -9,6 +9,7 @@ session dispatch paths (batch I7, streaming strategy wiring).
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from types import SimpleNamespace
 
@@ -541,6 +542,29 @@ def test_the_retried_decode_count_is_bounded():
     model._transcribe_guarded(_speech(60.0))
 
     assert len(model.calls) == 1 + len(RETRY_PADS)
+
+
+def test_a_gap_the_ladder_cannot_close_is_logged(caplog):
+    """A persistent partial collapse is accepted, so it has to be visible."""
+    model = _bare_model(lambda n, call: ([" one"], [0.2]))
+
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.parakeet"):
+        model._transcribe_guarded(_speech(13.0))
+
+    assert [r for r in caplog.records if "untranscribed" in r.getMessage()]
+
+
+def test_a_gap_the_ladder_closes_is_not_logged(caplog):
+    covered = ([f" w{i}" for i in range(40)], [0.3 * i for i in range(40)])
+
+    def script(n, call):
+        return ([" one"], [0.2]) if call == 1 else covered
+
+    model = _bare_model(script)
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.parakeet"):
+        model._transcribe_guarded(_speech(13.0))
+
+    assert not [r for r in caplog.records if "untranscribed" in r.getMessage()]
 
 
 def test_a_pad_retry_times_its_tokens_inside_the_region():
