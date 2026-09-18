@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use myna_audio::{CaptureSource, ScriptedBackend, Step};
 use myna_core::{
-    AudioFormat, Progress, SessionConfig, TranscriptionEvent, TranscriptionFinal, PHASE_PREPARING,
-    PHASE_READY, PROTOCOL_VERSION,
+    AudioFormat, Disposition, ErrorData, Progress, SessionConfig, TranscriptionEvent,
+    TranscriptionFinal, PHASE_PREPARING, PHASE_READY, PROTOCOL_VERSION,
 };
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -42,6 +42,24 @@ impl End {
     async fn ready(&self) {
         self.emit(TranscriptionEvent::Progress(Progress::phase(PHASE_READY)))
             .await;
+    }
+
+    /// A committed segment: the text an injector would insert.
+    async fn committed(&self, text: &str) {
+        self.emit(TranscriptionEvent::Final(TranscriptionFinal {
+            text: text.into(),
+            disposition: Disposition::Committed,
+            ..Default::default()
+        }))
+        .await;
+    }
+
+    async fn failed(&self, code: &str, message: &str) {
+        self.emit(TranscriptionEvent::Error(ErrorData {
+            code: code.into(),
+            message: message.into(),
+        }))
+        .await;
     }
 
     async fn done(&self, text: &str) {
@@ -109,13 +127,21 @@ where
     S: FnOnce(End) -> F,
     F: Future<Output = (End, T)>,
 {
+    dictate_from(mic(steps), serve).await
+}
+
+/// [`dictate`] over a source the test built itself (a narrower ring, say).
+async fn dictate_from<S, F, T>(source: CaptureSource, serve: S) -> (Run, End, T)
+where
+    S: FnOnce(End) -> F,
+    F: Future<Output = (End, T)>,
+{
     let (tx, mut ends) = mpsc::unbounded_channel();
     let backend = Probe(tx);
     let mut sink = CollectingSink::default();
     let start = Instant::now();
     let run = async {
-        let outcome =
-            run_dictation(&backend, SessionConfig::default(), mic(steps), &mut sink).await;
+        let outcome = run_dictation(&backend, SessionConfig::default(), source, &mut sink).await;
         (outcome, start.elapsed())
     };
     let serve = async { serve(ends.recv().await.expect("a session opens")).await };
@@ -142,6 +168,23 @@ fn failure(outcome: &Result<SessionOutcome, BackendError>) -> (&str, &str) {
 
 fn silence(seconds: u64) -> Step {
     Step::Silence(Duration::from_secs(seconds))
+}
+
+/// Where `what` landed in the event stream, so a test can assert the order the
+/// user experiences (text, then the fault).
+fn at(events: &[OrchestratorEvent], what: impl Fn(&OrchestratorEvent) -> bool) -> usize {
+    events
+        .iter()
+        .position(what)
+        .unwrap_or_else(|| panic!("the event never arrived: {events:?}"))
+}
+
+fn is_done(event: &OrchestratorEvent) -> bool {
+    matches!(event, OrchestratorEvent::Done(_))
+}
+
+fn is_error(event: &OrchestratorEvent) -> bool {
+    matches!(event, OrchestratorEvent::Error { .. })
 }
 
 #[tokio::test(start_paused = true)]
@@ -238,7 +281,140 @@ async fn a_backend_that_stops_reading_audio_fails_after_the_deadline() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_capture_fault_is_seen_while_the_backend_is_not_reading() {
+async fn a_capture_fault_transcribes_the_audio_already_captured_before_reporting_it() {
+    // The microphone dies mid-utterance: what was already captured is still
+    // sent, in order, finished and transcribed, and the device failure is the
+    // last thing the user hears about.
+    let steps = vec![
+        Step::Bytes(vec![1; 3200]),
+        Step::Bytes(vec![2; 3200]),
+        Step::Bytes(vec![3; 3200]),
+        Step::Fault("the microphone was unplugged".into()),
+    ];
+    let (run, _end, received) = dictate(steps, |mut end| async {
+        end.ready().await;
+        let received = end.read_to_finish().await;
+        end.committed("what I had already said").await;
+        end.done("what I had already said").await;
+        (end, received)
+    })
+    .await;
+
+    let expected: Vec<u8> = (1..=3u8).flat_map(|n| vec![n; 3200]).collect();
+    assert!(
+        received == expected,
+        "the audio captured before the fault never reached the backend in order"
+    );
+    let (code, message) = failure(&run.outcome);
+    assert_eq!(code, "capture_failed");
+    assert!(
+        message.contains("the microphone was unplugged"),
+        "{message}"
+    );
+    assert!(message.contains("audio was lost"), "{message}");
+
+    let lost = at(&run.events, |e| {
+        matches!(e, OrchestratorEvent::CaptureLost { .. })
+    });
+    let text = at(
+        &run.events,
+        |e| matches!(e, OrchestratorEvent::Final(t) if t == "what I had already said"),
+    );
+    let done = at(&run.events, is_done);
+    let error = at(&run.events, is_error);
+    assert!(
+        lost < done && text < done && done < error,
+        "the fault must come after the transcript: {:?}",
+        run.events
+    );
+    assert!(run.elapsed < Duration::from_secs(1), "{:?}", run.elapsed);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_capture_fault_before_any_audio_fails_at_once_with_no_transcript() {
+    let (run, mut end, ()) = dictate(vec![Step::Fault("no microphone".into())], |end| async {
+        end.ready().await;
+        (end, ())
+    })
+    .await;
+    let (code, message) = failure(&run.outcome);
+    assert_eq!(code, "capture_failed");
+    assert!(message.contains("no microphone"), "{message}");
+    assert!(
+        !message.contains("audio was lost"),
+        "there was no audio to lose: {message}"
+    );
+    assert!(run.elapsed < Duration::from_secs(1), "{:?}", run.elapsed);
+    assert!(
+        end.out.queue.try_recv().is_err(),
+        "nothing to salvage, so nothing is sent"
+    );
+    assert!(
+        !run.events.iter().any(is_done),
+        "{:?} claims a transcript",
+        run.events
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_overloaded_buffer_still_transcribes_the_audio_that_survived() {
+    // A one-second buffer with three seconds pushed into it in one go: the
+    // first second is retained and the rest is genuinely lost. The words that
+    // survived are still transcribed, and the error says audio was lost.
+    let source = CaptureSource::builder(AudioFormat::default())
+        .ring_depth(Duration::from_secs(1))
+        .backend(Box::new(ScriptedBackend::new(vec![silence(3)])))
+        .build();
+    let (run, _end, received) = dictate_from(source, |mut end| async {
+        end.ready().await;
+        let received = end.read_to_finish().await;
+        end.committed("what survived").await;
+        end.done("what survived").await;
+        (end, received)
+    })
+    .await;
+
+    assert_eq!(
+        received.len(),
+        32_000,
+        "the second of audio the buffer held was not sent"
+    );
+    let (code, message) = failure(&run.outcome);
+    assert_eq!(code, "capture_failed");
+    assert!(message.contains("audio was lost"), "{message}");
+    assert!(
+        at(&run.events, is_done) < at(&run.events, is_error),
+        "{:?}",
+        run.events
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_backend_that_fails_while_finishing_reports_both_failures() {
+    let steps = vec![
+        Step::Bytes(vec![7; 3200]),
+        Step::Fault("device vanished".into()),
+    ];
+    let (run, _end, ()) = dictate(steps, |mut end| async {
+        end.ready().await;
+        end.read_to_finish().await;
+        end.failed("inference_failed", "decode blew up").await;
+        (end, ())
+    })
+    .await;
+    let (code, message) = failure(&run.outcome);
+    assert_eq!(code, "inference_failed");
+    assert!(message.contains("decode blew up"), "{message}");
+    assert!(
+        message.contains("device vanished"),
+        "the device fault was swallowed: {message}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_capture_fault_the_backend_never_finishes_ends_at_the_progress_deadline() {
+    // The backend takes the salvaged audio but never answers: the deadline
+    // armed by the fault ends the wait, and still reports the device.
     let steps = vec![silence(60), Step::Fault("device vanished".into())];
     let (run, _end, ()) = dictate(steps, |end| async {
         end.ready().await;
@@ -246,9 +422,13 @@ async fn a_capture_fault_is_seen_while_the_backend_is_not_reading() {
     })
     .await;
     let (code, message) = failure(&run.outcome);
-    assert_eq!(code, "capture_failed");
+    assert_eq!(code, "backend_unresponsive");
     assert!(message.contains("device vanished"), "{message}");
-    assert!(run.elapsed < Duration::from_secs(1), "{:?}", run.elapsed);
+    assert_eq!(
+        run.elapsed.as_secs(),
+        300,
+        "the deadline arms when capture faults, not when it drains"
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -359,7 +359,11 @@ async fn microphone_open_failure_is_reported_while_the_backend_is_loading() {
 }
 
 #[tokio::test]
-async fn capture_overload_before_ready_fails_without_sending_audio() {
+async fn capture_overload_before_ready_is_salvaged_once_the_backend_is_ready() {
+    // The buffer overflows while the model is still loading. The overload is
+    // visible before a byte has drained (the server waits for it on health
+    // alone), the second of audio it did hold is still sent and finished once
+    // the backend is ready, and the lost audio is the session's failure.
     for dialect in DIALECTS {
         let server = Server::bind(dialect);
         let mic = CaptureSource::builder(AudioFormat::default())
@@ -369,26 +373,44 @@ async fn capture_overload_before_ready_fails_without_sending_audio() {
                 Step::Wait(Duration::from_secs(600)),
             ])))
             .build();
+        let mut health = mic.health();
         let mut sink = CollectingSink::default();
-        // The client may give up before the session is even open.
         let serve = async {
-            let Some(mut conn) = server.try_accept().await else {
-                return Received::default();
-            };
+            let mut conn = server.accept().await;
             conn.loading().await;
-            conn.read(false).await
+            loop {
+                match health.next().await {
+                    Some(CaptureHealth::Faulted(_)) => break,
+                    Some(_) => {}
+                    None => panic!("{dialect:?}: capture ended without the overload"),
+                }
+            }
+            conn.ready().await;
+            let received = conn.read(true).await;
+            conn.done("what survived").await;
+            received
         };
         let (outcome, received) = bounded(
-            "the overload surfacing",
+            "the overload being salvaged",
             futures_util::future::join(server.run(mic, &mut sink), serve),
         )
         .await;
         let (code, message) = failed_with(outcome);
         assert_eq!(code, "capture_failed", "{dialect:?}");
         assert!(message.contains("overflow"), "{dialect:?}: {message}");
+        assert!(message.contains("audio was lost"), "{dialect:?}: {message}");
         assert_eq!(
-            received.audio_bytes, 0,
-            "{dialect:?}: audio sent before ready"
+            received.audio_bytes, 32_000,
+            "{dialect:?}: the audio the buffer held must still be transcribed"
+        );
+        assert!(
+            received.finished,
+            "{dialect:?}: the utterance never finished"
+        );
+        assert_eq!(
+            sink.done().as_deref(),
+            Some("what survived"),
+            "{dialect:?}: the salvaged transcript never reached the sink"
         );
     }
 }

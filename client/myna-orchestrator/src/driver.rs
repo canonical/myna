@@ -43,9 +43,16 @@ pub enum OrchestratorInput {
 pub enum OrchestratorControl {
     /// Abandon the utterance.
     Abort,
-    /// Local audio capture faulted (device gone, overload, …). Surfaces as a
-    /// `Failed` outcome rather than a silent abort.
+    /// Local audio capture faulted before any audio was accepted (the device
+    /// never opened, or it died with an empty buffer). There is nothing to
+    /// transcribe, so this ends the utterance at once, as a `Failed` outcome
+    /// rather than a silent abort.
     CaptureFailed { message: String },
+    /// Local audio capture faulted with audio already accepted, which is
+    /// queued ahead of this. Capture is over - so the progress deadline arms -
+    /// but the utterance finishes with the audio it has, and the fault becomes
+    /// the outcome once the transcript is in.
+    CaptureLost { message: String },
     /// Capture has ended, though its audio may still be queued. From here the
     /// client is only waiting on the backend, so the progress deadline arms.
     CaptureEnded,
@@ -178,6 +185,12 @@ fn control_input(
         Some(OrchestratorControl::Abort) => Some(Input::Abort),
         Some(OrchestratorControl::CaptureFailed { message }) => {
             Some(Input::CaptureFailed { message })
+        }
+        Some(OrchestratorControl::CaptureLost { message }) => {
+            // Capture has ended, however badly: from here the client is only
+            // waiting on the backend, exactly as after a release.
+            deadline.arm();
+            Some(Input::CaptureLost { message })
         }
         Some(OrchestratorControl::CaptureEnded) => {
             deadline.arm();
@@ -545,6 +558,30 @@ mod tests {
             matches!(outcome, SessionOutcome::Failed { ref code, .. } if code == "capture_failed")
         );
         end.out.abort.aborted().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_salvaged_capture_fault_arms_the_progress_deadline() {
+        // Capture is over, so the client is only waiting on the backend: a
+        // backend that never answers must not leave the salvage hanging.
+        let (session, _end) = congested().await;
+        let started = Instant::now();
+        session
+            .control
+            .send(OrchestratorControl::CaptureLost {
+                message: "some audio was lost: device vanished".into(),
+            })
+            .await
+            .unwrap();
+        let outcome = session.run.await.unwrap().unwrap();
+        match outcome {
+            SessionOutcome::Failed { code, message } => {
+                assert_eq!(code, "backend_unresponsive");
+                assert!(message.contains("device vanished"), "{message}");
+            }
+            other => panic!("expected a failed session, got {other:?}"),
+        }
+        assert_eq!(started.elapsed().as_secs(), 300);
     }
 
     #[tokio::test(start_paused = true)]

@@ -15,7 +15,7 @@
 //! readiness and a drain.
 
 use futures_util::StreamExt;
-use myna_core::{CaptureHealth, SessionConfig};
+use myna_core::{CaptureError, CaptureHealth, SessionConfig};
 use tokio::sync::mpsc;
 
 use crate::audio::AudioSource;
@@ -87,9 +87,27 @@ where
     outcome
 }
 
+/// What the user is told about a fault the utterance was salvaged from. A
+/// salvage always lost the audio from the fault onwards - the rest of what the
+/// user was saying into a dead device, or the speech an overloaded buffer
+/// refused - so the message says so instead of reading like a clean end.
+fn lost_message(fault: &CaptureError) -> String {
+    format!("some audio was lost: {fault}")
+}
+
 /// Capture from the press: move audio into `audio` as fast as the driver takes
 /// it, and report the capture's end or fault on `control` as soon as health
 /// shows it, without waiting for the audio queued ahead of it.
+///
+/// A fault with audio already accepted does not end the utterance here: the
+/// accepted audio is drained into `audio` in order, `CaptureLost` tells the
+/// driver capture is over (arming the progress deadline) without closing the
+/// accept-gate, and the end-of-audio behind the last chunk finishes the
+/// utterance as a release would. Only a fault with nothing accepted - the
+/// device that never opened - fails immediately, since there is nothing to
+/// transcribe. The fault is latched from whichever side reports it first,
+/// health or the stream's `Err`, and neither is waited for once the other has
+/// spoken: both are terminal, and the stream is not polled again after it ends.
 async fn pump_capture<S: AudioSource>(
     source: S,
     audio: mpsc::Sender<OrchestratorInput>,
@@ -99,7 +117,12 @@ async fn pump_capture<S: AudioSource>(
     let mut stream = Box::new(source).capture(); // the press: capture fills from here
     myna_core::dbg_log!("capture", "stream opened");
     let mut health_open = true;
+    let mut stream_open = true;
     let mut ended = false;
+    // Audio read out of capture: what a fault has to be salvaged for.
+    let mut accepted = false;
+    let mut fault: Option<CaptureError> = None;
+    let mut reported = false;
     let mut pending: Option<OrchestratorInput> = None;
     let mut chunks = 0u64;
     let mut bytes = 0u64;
@@ -107,11 +130,11 @@ async fn pump_capture<S: AudioSource>(
         tokio::select! {
             biased;
             state = health.next(), if health_open => match state {
-                Some(CaptureHealth::Faulted(fault)) => {
-                    myna_core::dbg_log!("capture", "capture fault: {fault}");
-                    let message = fault.to_string();
-                    let _ = control.send(OrchestratorControl::CaptureFailed { message }).await;
-                    return;
+                Some(CaptureHealth::Faulted(err)) => {
+                    myna_core::dbg_log!("capture", "capture fault: {err}");
+                    // Terminal: nothing follows it on health.
+                    health_open = false;
+                    fault.get_or_insert(err);
                 }
                 Some(CaptureHealth::Ended) if !ended => {
                     ended = true;
@@ -130,30 +153,65 @@ async fn pump_capture<S: AudioSource>(
                     return;
                 }
             }
-            item = stream.next(), if pending.is_none() => match item {
+            item = stream.next(), if stream_open && pending.is_none() => match item {
                 Some(Ok(chunk)) => {
                     chunks += 1;
                     bytes += chunk.data.len() as u64;
+                    accepted = true;
                     pending = Some(OrchestratorInput::Audio(chunk));
                 }
-                Some(Err(fault)) => {
-                    myna_core::dbg_log!("capture", "capture fault: {fault}");
-                    let message = fault.to_string();
-                    let _ = control.send(OrchestratorControl::CaptureFailed { message }).await;
-                    return;
+                Some(Err(err)) => {
+                    // The stream's one fault: capture is over here, and the
+                    // `None` the contract puts after it carries nothing.
+                    myna_core::dbg_log!("capture", "capture fault: {err}");
+                    stream_open = false;
+                    fault.get_or_insert(err);
                 }
                 None => {
                     myna_core::dbg_log!(
                         "capture",
                         "end of audio after {chunks} chunks / {bytes} bytes"
                     );
+                    stream_open = false;
+                }
+            },
+        }
+
+        // A fault with audio behind it is a salvage, announced once, as soon
+        // as there is something to salvage: out of band, so it does not wait
+        // for the audio queued ahead of it, and the deadline arms here rather
+        // than whenever a congested backend lets the last chunk through.
+        if accepted && !reported {
+            if let Some(err) = &fault {
+                reported = true;
+                ended = true;
+                let message = lost_message(err);
+                let _ = control
+                    .send(OrchestratorControl::CaptureLost { message })
+                    .await;
+            }
+        }
+
+        // Capture is over. With audio accepted, the end of audio goes behind
+        // it and the backend still has an utterance to finish; with none, the
+        // fault is the whole story and ends the session at once.
+        if !stream_open && pending.is_none() {
+            match fault.take() {
+                Some(err) if !accepted => {
+                    let message = err.to_string();
+                    let _ = control
+                        .send(OrchestratorControl::CaptureFailed { message })
+                        .await;
+                    return;
+                }
+                _ => {
                     if !ended {
                         ended = true;
                         let _ = control.send(OrchestratorControl::CaptureEnded).await;
                     }
                     pending = Some(OrchestratorInput::EndOfAudio);
                 }
-            },
+            }
         }
     }
 }
