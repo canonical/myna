@@ -199,3 +199,29 @@ def test_share_provider_without_snap_identity_exits_before_binding(tmp_path, mon
         main(["--socket", str(socket), "--adapter", "fake", "--share-provider"])
 
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_serve_restores_the_default_signal_disposition(tmp_path):
+    """asyncio's wakeup fd outlives the loop it belongs to: loop.close() closes
+    the self-pipe before it restores the handlers, so a SIGTERM arriving in that
+    window writes to a closed fd ("Bad file descriptor" at teardown). serve()
+    must hand the signals back itself while the pipe is still open."""
+    import asyncio
+    import os
+    import signal
+
+    from myna.server.cli import serve
+
+    args = build_parser().parse_args(["--socket", str(tmp_path / "myna.sock"), "--adapter", "fake"])
+    task = asyncio.ensure_future(serve(args))
+    for _ in range(200):
+        if args.socket.exists() or task.done():
+            break
+        await asyncio.sleep(0.01)
+    assert args.socket.exists(), "server did not bind"
+
+    os.kill(os.getpid(), signal.SIGTERM)  # what `snap stop` sends
+    await asyncio.wait_for(task, timeout=5)
+
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+    assert signal.set_wakeup_fd(-1) == -1, "wakeup fd still points at the closed self-pipe"
