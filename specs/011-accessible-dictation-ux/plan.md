@@ -217,9 +217,9 @@ client/
 └── Cargo.toml                        # + atspi member dependency
 
 extensions/myna-shell/
-├── coverage.js                        # NEW: pure coverage-matrix loader/validator (GJS side)
 ├── coverage-matrix.json               # SHARED (checked-in) data file, also read by the Rust src/coverage.rs
 └── test/
+    ├── coverage.js                    # NEW: pure coverage-matrix loader/validator (GJS side)
     └── coverage.test.js               # NEW: matrix completeness, read from the shared JSON
 
 (Planned here and withdrawn: `a11y.js`, its `hud.js`/`states.js` wiring, and

@@ -9,7 +9,7 @@
 import GLib from 'gi://GLib';
 import System from 'system';
 
-import {checkExhaustive, checkInvariants, loadMatrixFromPath} from '../coverage.js';
+import {checkExhaustive, checkInvariants, loadMatrixFromPath} from './coverage.js';
 
 let failures = 0;
 

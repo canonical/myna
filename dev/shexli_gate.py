@@ -27,12 +27,16 @@ def accepted(finding: dict[str, object], root: Path) -> str | None:
     rule = finding.get("rule_id")
     paths = relative_paths(finding, root)
 
+    # Everything under test/ is run by test/run-suite.sh, never imported by the
+    # extension at runtime: the suites themselves (*.test.js) and the helpers
+    # they share. Unreachable-from-extension.js is the point, not a defect - a
+    # helper that the shipped bundle imported would be shipping test code.
     if (
         rule == "EGO-P-007"
         and paths
-        and all(path.startswith("test/") and path.endswith(".test.js") for path in paths)
+        and all(path.startswith("test/") for path in paths)
     ):
-        return "standalone GJS contract tests run by test/run-suite.sh"
+        return "test-only sources under test/, run by test/run-suite.sh"
     if rule == "EGO-M-004" and paths == {"metadata.json"}:
         return "intentional GNOME Shell 46-51 support range"
     return None
