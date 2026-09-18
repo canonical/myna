@@ -111,22 +111,28 @@ Committing:
 
 Showing:
 
-- `stream-partial-cadence-seconds=0.5` — how often the uncommitted window is
+- `stream-partial-cadence-seconds=2` — how often the uncommitted window is
   re-decoded for display; `0` shows nothing until the first commit
 - `stream-partial-tail-seconds=0` — `0` decodes the whole uncommitted window;
   a cap decodes only the last N seconds, which costs less and shows less
 
-At the defaults the first words appear about 0.6 s in, while the first
-committed segment still waits for the arm. Partials cannot change committed
-text — measured identical with them on and off — so the dials are independent:
+At the defaults the first words appear about 2 s in, while the first committed
+segment still waits for the arm. Partials cannot change committed text —
+measured identical with them on and off — so the dials are independent:
 
 ```bash
-sudo myna-parakeet.parakeet set stream-partial-cadence-seconds=1
+sudo myna-parakeet.parakeet set stream-partial-cadence-seconds=0.5
 sudo snap restart myna-parakeet.server
 ```
 
-Partials are the expensive setting. On a Ryzen AI 7 350 the decode is busy
-roughly 80% of the time you are speaking at the 0.5 s default and 43% at 1 s;
-without them it is 3%. Lower `stream-arm-seconds` commits sooner but decodes
-more often with less right context, and each extra chunk is another chance at
-the framing collapse described in `server/src/myna/testbed/parakeet.py`.
+Partials are the expensive setting, and what one costs grows with how long you
+have been speaking without a pause: the whole uncommitted window is re-decoded
+each time, and that window runs to `stream-force-cut-seconds`. On a Ryzen
+AI 7 350 the decode is busy roughly 20-30% of the time you are speaking at the
+2 s default and 50% at 0.5 s; without partials it is 3%. The server will not
+let the display outrun the audio whatever you set - it spaces ticks out when
+one turns out expensive, so a low cadence buys a faster first word and more
+CPU, never a session that falls behind. Lower `stream-arm-seconds` commits
+sooner but decodes more often with less right context, and each extra chunk is
+another chance at the framing collapse described in
+`server/src/myna/testbed/parakeet.py`.
