@@ -12,7 +12,7 @@ via `IndicatorState::recoverable`). Each state carries:
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | enum tag (`idle`, `loading`, `recording`, `transcribing`, `finalizing`, `notice`, `error`) | Stable wire/JSON identifier shared with `coverage-matrix.json` and `states.js` — matches the existing `org.myna.Dictation` wire vocabulary (`states.js`'s `DictationState`), not a new naming scheme |
+| `id` | enum tag (`idle`, `loading`, `recording`, `transcribing`, `finalizing`, `notice`, `error`) | Stable wire/JSON identifier shared with `coverage-matrix.json` and `states.js` — matches the existing `com.canonical.Myna.Dictation` wire vocabulary (`states.js`'s `DictationState`), not a new naming scheme |
 | `accessible_name` | `String` | Short label, e.g. "Dictation: listening" — content-free (constitution V, FR-003) |
 | `accessible_description` | `String` | One sentence, content-free, e.g. "Recording your speech" |
 | `severity` | `Option<Severity>` (`Recoverable`, `Critical`) | Only set for `notice`/`error`; drives FR-025 persistence |
@@ -97,11 +97,12 @@ the build the moment either goes empty/true (SC-002).
 ## `AccessibilityPreferenceSet`
 
 Read-only from this feature's perspective; persisted in the real
-`org.myna.dictation` GSettings schema
-(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`) that
+`com.canonical.Myna.Dictation` GSettings schema
+(`client/data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml`) that
 `feat(client): Move settings into GSettings, with a snap-config default`
 already established for `streaming-mode`/`language`/`activation`/`hotkey`,
-extended here with three additive keys — resolving what was an open
+extended here with two additive keys (a third was planned, then superseded —
+see below) — resolving what was an open
 dependency (project-plan T54) into a concrete, shared store:
 
 | Field | Schema key | Type | Default (FR-004) |

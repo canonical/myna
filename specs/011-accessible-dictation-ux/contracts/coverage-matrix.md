@@ -20,11 +20,16 @@ duplicated copy.
 
 ## Contrast regression gate (FR-013, FR-032)
 
-A small hermetic Rust utility (`client/myna-desktop/tests/coverage.rs` or a
-sibling module) computes the WCAG relative-luminance contrast ratio for every
-foreground/background colour pair declared in
-`extensions/myna-shell/stylesheet.css` (parsed as literal hex/rgb values, not
-rendered) and asserts:
+A small hermetic Rust utility computes the WCAG relative-luminance contrast
+ratio for every foreground/background colour pair declared in the shipped
+stylesheet (parsed as literal hex/rgb values, not rendered) and asserts:
+
+*As implemented this is `myna_hud::contrast`, reading
+`client/myna-hud/src/style.css` through `include_str!` so the check cannot
+drift from the file it describes. It was originally specified against
+`extensions/myna-shell/stylesheet.css`; that stylesheet was removed when the
+HUD became the standalone `myna-hud` renderer, and the gate was re-pointed
+(tasks.md T084) rather than left guarding a file nothing renders.*
 
 | ID | Guarantee |
 |---|---|

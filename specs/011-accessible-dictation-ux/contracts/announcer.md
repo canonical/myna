@@ -33,22 +33,28 @@ pub trait AccessibilityAnnouncer: Send {
 | A5 | If the underlying bus call fails, `announce()` returns `Err` but the caller's session flow continues unaffected, and the error is surfaced as a `Recoverable` failure through `FailurePresentation` (FR-002a). | hermetic (fake announcer forced to fail) |
 | A6 | The real `atspi`-backed implementation emits the AT-SPI `Announcement` event (`org.a11y.atspi.Event.Object`) on the accessibility bus and registers an accessible object whose name/description are queryable at any time, not only at the instant of a transition (FR-001, FR-002). | integration, `MYNA_ATSPI_TESTS=1` |
 | A7 | Registering the accessible object and connecting to `org.a11y.Bus` costs nothing measurable when no AT is listening (FR-007). | watermark (Rust, hermetic) |
-| A8 | `GtkIndicator`'s `gtk_accessible_announce()` calls carry the same text the `atspi`-backed announcer would have sent for the same state (FR-006 "identically"). | hermetic (shared fixture comparing both call sites' formatted text) |
 
-## GJS side (`extensions/myna-shell/a11y.js`)
+`A8` guaranteed that `GtkIndicator`'s `gtk_accessible_announce()` calls carried
+the same text the `atspi`-backed announcer would send for the same state. It is
+withdrawn: the opt-in `ui-gtk` overlay `GtkIndicator` belonged to was removed
+(project-plan T150), so there is no second Rust call site to hold in step.
 
-```js
-// Pure, testable: given a state id + coverage-matrix entry, produce the
-// announcement text/politeness. Never touches Gio/D-Bus itself.
-export function formatAnnouncement(stateId, severity) { /* ... */ }
+## GJS side — withdrawn
 
-// Impure: opens org.a11y.Bus (Gio.DBusConnection) once, emits Announcement.
-export class Announcer { /* enable()/disable()/announce(text, politeness) */ }
-```
+This contract previously specified `extensions/myna-shell/a11y.js`: a pure
+`formatAnnouncement(stateId, severity)` plus an impure `Announcer` class that
+opened `org.a11y.Bus` over `Gio.DBusConnection`, with guarantees G1–G4 (text
+parity with the Rust side, matching coalescing, connection lifecycle across
+Shell restart, and live delivery to Orca/braille).
 
-| ID | Guarantee | Test tier |
-|---|---|---|
-| G1 | `formatAnnouncement` returns identical text to the Rust side for the same state id (cross-checked against a shared fixture derived from `coverage-matrix.json`). | hermetic (GJS contract test) |
-| G2 | `Announcer.announce()` coalesces bursts the same way as the Rust side (A4) — same coalescing window constant, defined once and referenced by both (`contracts/coverage-matrix.md`). | hermetic (GJS contract test, fake clock) |
-| G3 | `Announcer` releases its `org.a11y.Bus` connection on `disable()` and re-inits cleanly across Shell restart (mirrors feature 004's `dbus.js` lifecycle contract). | manual acceptance (quickstart.md) — no nested-compositor headless path (research.md R6) |
-| G4 | The real bus emission reaches Orca/braille in a live GNOME session. | manual acceptance only (R6) |
+That file no longer exists and the guarantees are withdrawn rather than unmet.
+The GNOME Shell extension has no shipping vehicle, so an announcement emitted
+only when a separately-installed extension happens to be present cannot carry a
+MUST; and two emitters meant the verbosity preference had two places to reach,
+which is a defect surface with no user-visible benefit. Announcements now leave
+from exactly one place — the Rust `atspi`-backed announcer specified above —
+so G1's text-parity and G2's coalescing-parity obligations are discharged by
+construction rather than by cross-language fixture.
+
+The Shell extension keeps its visual role (hosting the `myna-hud` renderer);
+it carries no accessibility guarantee.

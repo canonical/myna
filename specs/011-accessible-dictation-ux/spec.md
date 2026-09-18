@@ -146,7 +146,7 @@ A user who drives the terminal with a screen reader or braille display runs the 
 - **FR-003**: Announcements MUST be content-free: state, severity, and recovery action only, never transcript text — including never unstable hypotheses (constitution Principle V).
 - **FR-004**: Announcement verbosity MUST be user-configurable with at least three levels — off, failures only, and all transitions — MUST default to all transitions before any preference is set, and the chosen level MUST NOT affect the programmatic queryability required by FR-001.
 - **FR-005**: Announcements MUST be coalesced or superseded so that a burst of state changes produces at most one current announcement, and a stale announcement is never spoken after the state it describes has passed.
-- **FR-006**: Both shipped indicator implementations (the Shell indicator and the overlay presented by the desktop client) MUST satisfy FR-001 through FR-005 identically, so a user's experience does not depend on which indicator is active.
+- **FR-006**: Every shipped indicator implementation MUST satisfy FR-001 through FR-005 identically, so a user's experience does not depend on which indicator is active. *(As implemented this is satisfied by there being one announcing path rather than several holding each other in step: the `ui-gtk` overlay was removed (project-plan T150), and the Shell extension — which has no shipping vehicle — hosts the visual renderer but carries no accessibility guarantee. See research.md R1 and contracts/announcer.md.)*
 - **FR-007**: The accessibility path MUST function in the strictly confined shipped package, and MUST be inert — imposing no measurable cost — when no assistive technology is listening.
 
 #### Multi-modal redundancy

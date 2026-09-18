@@ -54,17 +54,18 @@ the genuine `org.a11y` bus — the same red-green split already used for
   `pipewire` (already vendored in `myna-audio`) reused for sound-cue playback
   rather than adding a new audio-output dependency (e.g. `libcanberra`) — see
   research.md R2.
-- Extension side: stock `Gio`/`GLib` (already imported for the `org.myna.Dictation`
+- Extension side: stock `Gio`/`GLib` (already imported for the `com.canonical.Myna.Dictation`
   D-Bus proxy) for the raw `org.a11y.Bus` announcement call and for reading
   `org.gnome.desktop.a11y`/`org.gnome.desktop.interface` GSettings
   (reduced-motion, high-contrast, text-scale, accent-color — accent/reduced-motion
   reading already exists from feature 004's `accent.js`).
 
-**Storage**: The `org.myna.dictation` GSettings schema
-(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`,
+**Storage**: The `com.canonical.Myna.Dictation` GSettings schema
+(`client/data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml`,
 `myna_core::settings::Store`) — established by
 `feat(client): Move settings into GSettings, with a snap-config default`,
-landed on `integration-220627` after this feature's initial planning pass and
+landed on `integration-220627` (since merged and deleted; the work is now in
+`main`) after this feature's initial planning pass and
 picked up on rebase. This resolves what was an open dependency
 (project-plan T54, "no shared store today") into a concrete answer: this
 feature adds two keys to that existing schema —
@@ -123,10 +124,8 @@ FR-025); confined-snap compatible (FR-033).
 **Scale/Scope**: one new Rust module (`myna-desktop/src/accessibility/`: the
 `AccessibilityAnnouncer` trait + `atspi`-backed implementation + fake, wired
 into `controller.rs` alongside the existing `Indicator` seam) shared by
-`DbusIndicator`/`NotifyIndicator`; one small extension to `indicator::gtk` for
-`gtk_accessible_announce`; a small new sound-cue player behind the existing
-`Indicator`/controller boundary; one new GJS module pair in
-`extensions/myna-shell` (`a11y.js` announcer + updates to `hud.js`/`states.js`);
+`DbusIndicator`/`NotifyIndicator`; a small new sound-cue player behind the
+existing `Indicator`/controller boundary;
 CLI output changes in `myna-cli`; one checked-in coverage-matrix data file
 consumed by both languages; a documented manual acceptance protocol
 (`quickstart.md`).
@@ -211,8 +210,8 @@ client/
 └── Cargo.toml                        # + atspi member dependency
 
 extensions/myna-shell/
-├── a11y.js                           # NEW: raw org.a11y.Bus Announcement emission + pure formatting/coalescing
-├── hud.js                            # EXTENDED: calls a11y.js on every state/severity transition
+│   (a11y.js / hud.js / states.js announcement wiring: PLANNED, then withdrawn —
+│    the extension has no shipping vehicle, so it announces nothing; see research.md R1)
 ├── states.js                         # EXTENDED: adds the content-free announcement text per state
 ├── coverage-matrix.json               # SHARED (checked-in) data file, also read by the Rust coverage.rs test
 └── test/
@@ -231,7 +230,8 @@ non-visual events — so a single `controller.rs` transition can drive both
 without either seam knowing about the other (FR-006's "identically" requirement
 is satisfied by both `DbusIndicator` and `GtkIndicator` calling the same
 announcer, not by teaching `Indicator` about AT-SPI). The Shell extension gets
-its own `a11y.js` because GJS cannot share Rust code, but both language sides
+its own announcer because GJS cannot share Rust code — *withdrawn; announcements
+now leave from the Rust side alone* — but both language sides
 emit the *same* AT-SPI `Announcement` protocol member, and both read the *same*
 checked-in coverage-matrix data file, so FR-024a's "identical wording"
 requirement is enforced by a shared artifact rather than by convention. Sound
@@ -309,7 +309,11 @@ Re-evaluated after Phase 1 (research.md, data-model.md, contracts/, quickstart.m
 - **IV. Workshop** — the AT-SPI bus `MYNA_ATSPI_TESTS` needs is installed by the
   desktop SDK (`at-spi2-core`) and stood up per-run by `dev/gated-tests.sh`, so
   the suite runs in CI rather than only on a developer's desktop. No new
-  *runtime* snap plug expected (existing `desktop` plug), confirmed rather than
+  *runtime* snap plug expected (existing `desktop` plug) — since measured, and
+  true only in part: the bus is reachable, but `desktop-legacy` does not
+  allowlist the `Announcement` signal member, so the announcement is denied
+  under strict confinement (tasks.md, "Confinement: what the packaged build
+  proved"). Originally to be confirmed rather than
   assumed by quickstart.md Scenario 7. PASS (tooling); GATED (confined
   confirmation, Scenario 7).
 - **V. Privacy** — every new artifact (announcements, coverage matrix, sound

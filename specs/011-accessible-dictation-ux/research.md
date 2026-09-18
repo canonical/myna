@@ -24,6 +24,19 @@ per-toolkit convenience API alone:
   `org.a11y.Bus` (obtained via `org.a11y.Bus.GetAddress()`, the standard
   bootstrap), mirroring what GTK does in C.
 
+*Two of those three surfaces were withdrawn during implementation, leaving
+`myna-desktop` as the only announcing path.* `GtkIndicator` went with the
+`ui-gtk` overlay, removed wholesale (project-plan T150), so no shipped build
+has a GTK widget to announce from. The `extensions/myna-shell` announcer was
+written and then deleted: the extension has no shipping vehicle, so an
+announcement that fires only when a separately-installed extension is present
+cannot carry a MUST, and two emitters gave the verbosity preference two places
+to reach. The wire-level decision is unchanged and FR-002 still holds
+literally — one `Announcement` event drives both speech and braille. What
+changed is that "from every surface" is now satisfied by there being a single
+surface, which also discharges FR-006 and FR-024a by construction rather than
+by keeping two implementations in step.
+
 **Rationale**: Using the same wire-level primitive from both languages is what
 actually satisfies FR-006 ("identically") and FR-024a ("identical wording") at
 the protocol level rather than by convention alone, and it satisfies FR-002's
@@ -81,9 +94,12 @@ root) and a hermetic GJS test (`coverage.test.js`), each asserting the
 invariant: every state has ≥1 visual and ≥1 non-visual channel, and no
 state/severity is marked colour-only or sound-only. Contrast thresholds
 (4.5:1 text, 3:1 non-text — FR-013) are checked against the shipped stylesheet
-colour values (`extensions/myna-shell/stylesheet.css`) with a small hermetic
-contrast-ratio calculator (WCAG relative-luminance formula), not a live
-rendering/screenshot pipeline.
+colour values with a small hermetic contrast-ratio calculator (WCAG
+relative-luminance formula), not a live rendering/screenshot pipeline. *Planned
+against `extensions/myna-shell/stylesheet.css`; as implemented the shipped
+stylesheet is `client/myna-hud/src/style.css` and the check lives in
+`myna_hud::contrast`, which `include_str!`s it so the gate cannot drift from
+the file it describes (tasks.md T084).*
 
 **Rationale**: A single shared data file makes divergence between the two
 languages structurally impossible rather than merely reviewed-for; the
@@ -156,10 +172,10 @@ open dependency of the separate, out-of-scope settings-UI feature (spec
 Assumptions), consistent with project-plan T54 being unresolved at planning
 time. Between planning and implementation, `integration-220627` gained
 `feat(client): Move settings into GSettings, with a snap-config default`: a
-real `org.myna.dictation` GSettings schema
-(`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`) and Rust
+real `com.canonical.Myna.Dictation` GSettings schema
+(`client/data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml`) and Rust
 wrapper (`myna_core::settings::Store`/`Settings`), already used for
-`streaming-mode`/`language`/`activation`/`hotkey`. This feature rebased onto
+`streaming-mode`/`language`/`hud-style`/`silence-timeout`. This feature rebased onto
 that work and extended the same schema with `announcement-verbosity` and
 `sound-cues-enabled` rather than treating the
 store as still-hypothetical. A third planned key, `silence-auto-stop-seconds`,

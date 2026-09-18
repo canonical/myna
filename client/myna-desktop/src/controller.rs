@@ -1143,8 +1143,8 @@ impl DesktopController {
     /// the "last notice" (FR-026) so it remains retrievable after a
     /// `Recoverable` notice auto-dismisses. The stderr copy matters because
     /// the indicator can be invisible (`--dbus` mode only updates
-    /// `org.myna.Dictation` properties, which nothing renders unless the
-    /// myna-shell extension is installed - the 2026-08-18 silent-death
+    /// `com.canonical.Myna.Dictation` properties, which nothing renders unless
+    /// the myna-shell extension is installed - the 2026-08-18 silent-death
     /// debug session). `detail` is optional dynamic context (never primary
     /// text - see `IndicatorState::from_failure`).
     async fn report_failure(

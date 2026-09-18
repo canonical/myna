@@ -67,7 +67,7 @@ scaffold — all shared by every user story below.
 ### Preferences seam
 
 - [X] T007 [P] Hermetic test in `client/myna-desktop/src/preferences.rs`: a `Preferences` trait (`verbosity()`, `sound_cues_enabled()`, `silence_auto_stop()`) has a `DefaultPreferences` impl returning `AllTransitions`, `true`, and the existing T59 default, matching FR-004/spec Assumptions exactly. **Write first, observe fail (trait doesn't exist), then implement**
-- [X] T008 Implement `Preferences` trait + `DefaultPreferences` in `client/myna-desktop/src/preferences.rs`. Satisfies T007. *(Superseded/extended after a rebase onto `integration-220627` picked up a real `org.myna.dictation` GSettings store: added `announcement-verbosity`/`sound-cues-enabled` keys to the existing schema (`client/data/glib-2.0/schemas/org.myna.dictation.gschema.xml`), extended `myna_core::settings::{Settings,Store}` to read/write them, and added `GSettingsPreferences` as the real production `Preferences` impl \u2014 see research.md R7. `DefaultPreferences` is kept as the dependency-free hermetic-test seam. A later rebase dropped the planned `silence-auto-stop-seconds` key and its `Preferences` accessor: upstream shipped the same capability as `silence-timeout`, consumed by `myna_desktop::AutoStop`, and a second read seam would have been a second source of truth.)*
+- [X] T008 Implement `Preferences` trait + `DefaultPreferences` in `client/myna-desktop/src/preferences.rs`. Satisfies T007. *(Superseded/extended after a rebase onto `integration-220627` picked up a real `com.canonical.Myna.Dictation` GSettings store: added `announcement-verbosity`/`sound-cues-enabled` keys to the existing schema (`client/data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml`), extended `myna_core::settings::{Settings,Store}` to read/write them, and added `GSettingsPreferences` as the real production `Preferences` impl \u2014 see research.md R7. `DefaultPreferences` is kept as the dependency-free hermetic-test seam. A later rebase dropped the planned `silence-auto-stop-seconds` key and its `Preferences` accessor: upstream shipped the same capability as `silence-timeout`, consumed by `myna_desktop::AutoStop`, and a second read seam would have been a second source of truth.)*
 
 ### `AccessibilityAnnouncer` seam (contracts/announcer.md A1–A5)
 
@@ -350,11 +350,16 @@ now merely hosts: FR-006's "both indicators identically" is satisfied by there
 being one renderer, but a gate and a comment were left pointing at files that
 no longer exist.
 
+*`integration-220627` is named throughout this file because it was this
+branch's base while the work was done. It has since been merged and deleted;
+everything attributed to it below is now simply in `main`, and this branch was
+rebased onto `main` directly.*
+
 - [X] T083 Measure the sound-cue/announcement WER delta against a silent baseline on real hardware and check the result in as a baseline with its declared tolerance — or, if the acoustic path genuinely cannot be measured, re-ratify SC-006's watermark as explicitly unmeasurable so the gap is a recorded decision rather than an unmet MUST, per Constitution III and SC-006 (missing) — CRITICAL
 - [X] T084 Re-point the contrast regression gate at the shipped stylesheet: `client/myna-desktop/src/coverage.rs`'s `stylesheet_colours` pins its pairs to the deleted `extensions/myna-shell/stylesheet.css`, while the HUD now ships `client/myna-hud/src/style.css` with different values, so the gate no longer guards any rendered colour, per FR-013/FR-032/SC-005 (contradicts)
 - [X] T085 Make the impending silence auto-stop perceivable before it fires — `client/myna-desktop/src/controller.rs`'s `auto_stop_due` branch logs and stops with no prior signal on any channel, per FR-018 and US2/AC4 (missing)
 - [ ] T086 Run `quickstart.md` Scenarios 1–8 against a real GNOME session and record the results and any gaps in `quickstart.md`, per FR-031 and SC-001/SC-005/SC-007 (missing) — completes T078
-- [ ] T087 Run the packaged subset of `quickstart.md` against the strictly confined `myna` snap (now buildable via `make snap-myna`) and record any confinement-specific finding, notably whether the `desktop` plug alone reaches `org.a11y.Bus`, per FR-033 and SC-009 (missing) — completes T079
+- [ ] T087 Run the packaged subset of `quickstart.md` against the strictly confined `myna` snap (now buildable via `make snap-myna`) and record any confinement-specific finding, per FR-033 and SC-009 (missing) — completes T079. *(Its headline open question — whether the `desktop` plug alone reaches `org.a11y.Bus` — is now answered; see "Confinement: what the packaged build proved" below. What remains is the human half: exercising the scenarios on a real confined install.)*
 - [X] T088 Emit the periodic "work is still progressing" indication during long operations, which needs a deliberate-repeat path through `accessibility::AnnouncingIndicator`'s same-state dedup; the past-threshold actionable message (T070) already lands, per FR-027 (partial)
 - [X] T089 Re-announce a repeated identical critical failure that `DbusIndicator::publish`'s per-wire-state dedup currently swallows, so a non-visual user perceives the second occurrence, per FR-024/FR-025 and `docs/project-plan.md` T79 (partial)
 - [X] T090 Stand up an `org.a11y.Bus` in `dev/gated-tests.sh` and enrol the `MYNA_ATSPI_TESTS`-gated `atspi_hw` suite in `test-gated`, which now reaches CI through `make test-client`, per FR-030 and Constitution IV (partial) — completes T081
@@ -376,9 +381,10 @@ are not "nearly done" — they need hardware this branch cannot reach:
 - **T087** needs the strictly confined `myna` snap installed on that same
   desktop. `make snap-myna` builds it, but installing and exercising a
   confined snap is a privileged operation on a real machine. Its open question
-  is specific and worth stating: whether snapd's `desktop` plug alone reaches
-  `org.a11y.Bus`, or whether an extra interface connection is needed. plan.md
-  records this as expected-but-unconfirmed, and it stays unconfirmed.
+  — whether snapd's `desktop` plug alone reaches `org.a11y.Bus`, or whether an
+  extra interface connection is needed — has since been answered against a real
+  confined install; see "Confinement: what the packaged build proved" below.
+  The scenario runs themselves remain outstanding.
 
 Both are left unticked deliberately. Ticking them on the strength of the
 automated coverage would misrepresent what has been verified — SC-001, SC-005,
@@ -397,3 +403,61 @@ Resolutions worth carrying forward:
 - **T089** exempts only critical failures from the dedup, at both the announcer
   and the D-Bus publisher. Safe because `completion_indicator_state` — the
   deliberate double-call the dedup exists for — never yields one.
+
+### Confinement: what the packaged build proved
+
+T087's headline question was whether the `desktop` plug alone reaches
+`org.a11y.Bus`. Probed from inside the installed, strictly confined snap
+(`snap run --shell myna.myna`), the answer is two-part, and only the first part
+was fixable here.
+
+**Reaching the bus: yes, once the bootstrap stops reading properties.** The
+plug does allow the connection, but the `atspi` crate's
+`AccessibilityConnection::new()` builds a `RegistryProxy` and a
+`zbus::fdo::DBusProxy`, and zbus reads `Properties.GetAll` when a proxy is
+constructed. Under confinement that read is permitted only on
+`/org/a11y/atspi/accessible/[0-9]*`, so all three bootstrap paths are refused:
+
+| path | interface | result |
+|---|---|---|
+| `/org/freedesktop/DBus` | `org.freedesktop.DBus` | `AccessDenied` |
+| `/org/a11y/atspi/registry` | `org.a11y.atspi.Registry` | `AccessDenied` |
+| `/org/a11y/atspi/accessible/root` | `org.a11y.atspi.Accessible` | `AccessDenied` |
+
+Resolving the bus address and connecting to it directly stays inside what the
+profile permits. That is the shipped code path now, and
+`client/myna-desktop/tests/atspi_confined.rs` pins it against a bus whose
+policy mirrors these denials, so the old bootstrap cannot come back unnoticed.
+
+**Delivering the announcement: no, and not by anything this repository can
+change.** snapd's `desktop-legacy` interface allowlists AT-SPI signal members
+by name — `ChildrenChanged`, `PropertyChange`, `StateChanged`,
+`TextCaretMoved`. `Announcement` is not among them, so the signal is dropped:
+
+```
+apparmor="DENIED" operation="dbus_signal" bus="accessibility"
+  path="/org/a11y/atspi/accessible/root" interface="org.a11y.atspi.Event.Object"
+  member="Announcement" mask="send" label="snap.myna.myna" peer_label="unconfined"
+```
+
+An A/B against an unconfined subscriber confirms the allowlist is the whole
+story: `ChildrenChanged` is delivered, `Announcement` is denied, same process,
+same bus, same instant. No combination of currently-available plugs helps,
+because the member is not allowlisted anywhere; adding it to `desktop-legacy`
+is a snapd-side change.
+
+**Consequence for the requirements.** FR-007's "MUST function in the strictly
+confined shipped package" and FR-033 are therefore met for everything except
+the announcement itself, which is the feature's centre. Unconfined builds —
+including every development run and the whole `atspi_hw`/`atspi_confined`
+suite — are unaffected. This is a categorical limitation of strict confinement
+today rather than anything specific to Myna: no strictly confined application
+can announce.
+
+Two measurement traps are worth recording, because each produces a confident
+wrong answer. `dbus-monitor` is not a policy oracle — a `BecomeMonitor` client
+receives traffic the policy would have dropped, so a denied signal still
+appears. And the subscriber must be genuinely unconfined: the profile rules end
+`peer=(label=unconfined)`, so a process started from an editor's terminal may
+carry a non-`unconfined` label and see *every* member denied, which reads as
+the entire allowlist being dead.
