@@ -9,8 +9,10 @@ pinned in ``pyproject.toml`` is therefore the spec revision we claim.
 
 The subset: stock ``session.update`` / ``input_audio_buffer.append`` /
 ``input_audio_buffer.commit`` in; ``session.created`` / ``session.updated`` /
-``input_audio_buffer.committed`` / ``conversation.item.input_audio_transcription.
-delta`` / ``...completed`` / ``error`` out, each a valid instance of its event.
+``input_audio_buffer.committed`` / ``conversation.item.created`` /
+``conversation.item.input_audio_transcription.delta`` / ``...completed`` /
+``error`` out, each a valid instance of its event. No delta or ``completed``
+names an item the client was not told about first.
 
 The additions (the ``status`` event; the ``disposition``, ``segment_index``,
 ``segments``, ``protocol_version`` and ``streaming`` fields) ride on top: an
@@ -152,6 +154,24 @@ def _kinds(frames: list[dict[str, Any]]) -> list[str]:
     return [f["type"] for f in frames]
 
 
+def assert_items_are_announced(frames: list[dict[str, Any]]) -> None:
+    """A stock client builds its conversation from the frames that announce an
+    item - ``conversation.item.created``, and the ``committed`` that
+    acknowledges a commit - and attaches transcripts to it by ``item_id``.
+    Every delta and every ``completed`` must therefore name an item an earlier
+    frame announced, or that client silently drops the transcript."""
+    known: set[str] = set()
+    for frame in frames:
+        kind = frame["type"]
+        if kind == w.CONVERSATION_ITEM_CREATED:
+            known.add(as_openai_server_event(frame).item.id)
+        elif kind == w.INPUT_AUDIO_COMMITTED:
+            known.add(frame["item_id"])
+        elif kind in (w.TRANSCRIPTION_DELTA, w.TRANSCRIPTION_COMPLETED):
+            assert frame["item_id"] in known, f"{kind} names an unannounced item"
+    assert known, "the session announced no item at all"
+
+
 # --- server -> client ------------------------------------------------------------
 
 
@@ -185,6 +205,14 @@ async def test_the_commit_is_acknowledged_with_the_utterance_item(stock_frames):
     [completed] = by_kind[w.TRANSCRIPTION_COMPLETED]
     assert committed["item_id"] == completed["item_id"]
     assert all(d["item_id"] == committed["item_id"] for d in by_kind[w.TRANSCRIPTION_DELTA])
+    # and the item is created, once, the way OpenAI creates it: after the ack
+    [created] = by_kind[w.CONVERSATION_ITEM_CREATED]
+    assert created["item"]["id"] == committed["item_id"]
+    assert stock_frames.index(committed) < stock_frames.index(created)
+
+
+async def test_no_frame_names_an_item_the_client_was_not_told_about(stock_frames):
+    assert_items_are_announced(stock_frames)
 
 
 async def test_completed_reports_the_audio_duration_as_usage(stock_frames):
@@ -232,6 +260,7 @@ async def test_a_malformed_append_is_an_openai_error_not_a_hang(tmp_path):
     gets a valid ``error`` and the connection ends; it must never sit waiting
     on a ``completed`` that cannot come."""
     socket_path = tmp_path / "myna.sock"
+    frames: list[dict[str, Any]] = []
     async with serve_unix(FakeAdapter(), socket_path):
         async with unix_connect(str(socket_path), ping_interval=None) as ws:
             await ws.recv()
@@ -239,15 +268,15 @@ async def test_a_malformed_append_is_an_openai_error_not_a_hang(tmp_path):
             await ws.recv()
             await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": 12345}))
             await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-            while True:
-                frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
-                if frame["type"] == w.ERROR:
-                    break
-            error = as_openai_server_event(frame)
-            assert error.error.type == "invalid_request_error"
             with pytest.raises(ConnectionClosed):
-                while True:  # anything else must lead to the close
-                    await asyncio.wait_for(ws.recv(), timeout=5)
+                while True:  # everything the client sees, ending in the close
+                    frames.append(json.loads(await asyncio.wait_for(ws.recv(), timeout=5)))
+    [error] = [f for f in frames if f["type"] == w.ERROR]
+    assert as_openai_server_event(error).error.type == "invalid_request_error"
+    # the commit was never read, so nothing acknowledged the item the adapter
+    # finished on: it is announced with its terminal or not at all
+    assert not [f for f in frames if f["type"] == w.INPUT_AUDIO_COMMITTED]
+    assert_items_are_announced(frames)
 
 
 async def test_a_client_that_vanishes_mid_utterance_does_not_hang_the_adapter(tmp_path):
@@ -295,7 +324,7 @@ def test_additions_on_a_delta_do_not_break_the_event():
     """Our extra fields (``disposition``, ``segment_index``, ``segments``) must
     leave the delta a valid OpenAI delta: additive means additive."""
     encoder = w.Ie115Encoder()
-    frame = encoder.encode(
+    *_, frame = encoder.frames(
         TranscriptionFinal(
             text="hi there",
             segment_index=0,

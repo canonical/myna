@@ -9,7 +9,7 @@ from myna.core.wire_ie115 import Ie115Decoder, Ie115Encoder
 
 
 def encode_delta(event: TranscriptionFinal) -> dict:
-    return Ie115Encoder().encode(event)
+    return Ie115Encoder().frames(event)[-1]
 
 
 def decode_delta(frame: dict) -> TranscriptionFinal:

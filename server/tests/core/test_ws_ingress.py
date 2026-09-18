@@ -704,13 +704,50 @@ def test_an_oversized_normalized_append_is_split_to_the_budget(scenario, monkeyp
 
 ACK_BOUND = 0.5
 
+# Frames that carry no transcript and no boundary: the additive liveness event
+# and the item announcements, whose own ordering is pinned by the announcement
+# tests below rather than repeated in every sequence assertion here.
+ASIDE = (w.STATUS_EVENT, w.CONVERSATION_ITEM_CREATED)
+
 
 async def next_frame(ws: ClientConnection, timeout: float = BOUND) -> dict[str, Any]:
-    """The next frame that is not the additive liveness event."""
+    """The next frame that is neither the additive liveness event nor an item
+    announcement."""
     while True:
         frame = json.loads(await asyncio.wait_for(ws.recv(), timeout))
-        if frame["type"] != w.STATUS_EVENT:
+        if frame["type"] not in ASIDE:
             return frame
+
+
+async def frames_through(
+    ws: ClientConnection, kind: str, times: int = 1, timeout: float = BOUND
+) -> list[dict[str, Any]]:
+    """Every frame, aside included, up to and including the ``times``-th of
+    ``kind`` - the raw order a third-party client sees."""
+    seen: list[dict[str, Any]] = []
+    while sum(frame["type"] == kind for frame in seen) < times:
+        seen.append(json.loads(await asyncio.wait_for(ws.recv(), timeout)))
+    return seen
+
+
+def assert_items_are_announced(frames: Iterable[dict[str, Any]]) -> None:
+    """No frame may name a conversation item that no earlier frame announced.
+    A client that builds the item on the frame announcing it - OpenAI's
+    ``conversation.item.created``, or the ``committed`` that acknowledges the
+    commit - would otherwise drop every delta that arrived before it."""
+    known: set[str] = set()
+    created: list[str] = []
+    for frame in frames:
+        kind = frame["type"]
+        if kind == w.CONVERSATION_ITEM_CREATED:
+            item = frame["item"]["id"]
+            assert item not in created, f"{item} announced twice"
+            created.append(item)
+            known.add(item)
+        elif kind == w.INPUT_AUDIO_COMMITTED:
+            known.add(frame["item_id"])
+        elif kind in (w.TRANSCRIPTION_DELTA, w.TRANSCRIPTION_COMPLETED):
+            assert frame["item_id"] in known, f"{kind} names an unannounced item"
 
 
 def test_an_ie115_commit_is_acknowledged_at_receipt_while_a_region_decodes(scenario):
@@ -800,6 +837,105 @@ def test_a_delta_before_the_commit_names_the_item_the_commit_acknowledges(scenar
                 assert frames[0]["type"] == w.INPUT_AUDIO_COMMITTED
                 assert frames[-1]["type"] == w.TRANSCRIPTION_COMPLETED
             await ws.close()
+
+    scenario.run(main)
+
+
+def test_a_streaming_item_is_announced_before_the_delta_that_names_it(scenario):
+    """A streaming adapter's first delta arrives before the client commits, so
+    the item it names cannot be announced by the commit's acknowledgement. It
+    is announced by ``conversation.item.created`` at the moment it is minted;
+    a client keying deltas on the item would otherwise drop every one of them
+    that preceded the commit."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(transcribe_each)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            seen = await frames_through(ws, w.TRANSCRIPTION_DELTA)
+            await send_all(ws, [SECOND, finish_frame("ie115")])
+            seen += await frames_through(ws, w.TRANSCRIPTION_COMPLETED)
+            await ws.close()
+        assert_items_are_announced(seen)
+        [created] = [f for f in seen if f["type"] == w.CONVERSATION_ITEM_CREATED]
+        [delta] = [
+            f for f in seen if f["type"] == w.TRANSCRIPTION_DELTA and f["delta"] == "early 0"
+        ]
+        assert seen.index(created) < seen.index(delta)
+        # and the commit still acknowledges that same item, once
+        [committed] = [f for f in seen if f["type"] == w.INPUT_AUDIO_COMMITTED]
+        assert committed["item_id"] == created["item"]["id"] == delta["item_id"]
+
+    scenario.run(main)
+
+
+def test_back_to_back_ie115_commits_announce_their_items_in_order(scenario):
+    """Two commits acknowledged before the adapter answers the first: each ack
+    announces its own item, in commit order, and nothing announces one twice."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(transcribe_each)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND, finish_frame("ie115"), SECOND, finish_frame("ie115")])
+            seen = await frames_through(ws, w.INPUT_AUDIO_COMMITTED, times=2, timeout=ACK_BOUND)
+            adapter.release.set()
+            seen += await frames_through(ws, w.TRANSCRIPTION_COMPLETED, times=2)
+            await ws.close()
+        assert_items_are_announced(seen)
+        acks = [f for f in seen if f["type"] == w.INPUT_AUDIO_COMMITTED]
+        created = [f["item"]["id"] for f in seen if f["type"] == w.CONVERSATION_ITEM_CREATED]
+        assert created == [f["item_id"] for f in acks]  # commit order, one each
+        assert acks[1]["previous_item_id"] == acks[0]["item_id"] != acks[1]["item_id"]
+
+    scenario.run(main)
+
+
+def test_an_ie115_client_aborting_after_its_commit_saw_the_item_announced(scenario):
+    """The ack promises nothing about the transcript, but the item it names is
+    announced with it: a client that leaves right after committing has already
+    been told about the item, and the abort still cancels the utterance."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await send_all(ws, [SECOND, finish_frame("ie115")])
+            seen = await frames_through(ws, w.CONVERSATION_ITEM_CREATED, timeout=ACK_BOUND)
+            ws.transport.abort()  # the abort cancels the gated session
+            await asyncio.wait_for(adapter.ended.wait(), BOUND)
+        assert_items_are_announced(seen)
+        [ack] = [f for f in seen if f["type"] == w.INPUT_AUDIO_COMMITTED]
+        [created] = [f for f in seen if f["type"] == w.CONVERSATION_ITEM_CREATED]
+        assert created["item"]["id"] == ack["item_id"]
+        assert seen.index(ack) < seen.index(created)  # OpenAI's order for a commit
+        assert adapter.sessions[0] == []  # nothing transcribed for a peer that left
+
+    scenario.run(main)
+
+
+def test_a_terminal_after_a_malformed_frame_names_an_announced_item(scenario):
+    """A frame the reader cannot decode ends the audio without a commit: the
+    adapter finishes on what it has and its terminal names an item no commit
+    ever acknowledged. That item must still be announced, or a third-party
+    client is handed a transcript for an item it never heard of."""
+    path = scenario.path
+
+    async def main() -> None:
+        adapter = Gated(record_then_done)
+        adapter.release.set()
+        async with scenario.serving(adapter):
+            ws = await open_session(path, "ie115")
+            await ws.send(json.dumps({"type": w.INPUT_AUDIO_APPEND, "audio": 12345}))
+            seen = await frames_through(ws, w.TRANSCRIPTION_COMPLETED)
+            await drain(ws)
+        assert_items_are_announced(seen)
+        assert [f["type"] for f in seen if f["type"] == w.ERROR] == [w.ERROR]
+        assert not [f for f in seen if f["type"] == w.INPUT_AUDIO_COMMITTED]
 
     scenario.run(main)
 

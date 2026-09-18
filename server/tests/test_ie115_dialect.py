@@ -40,6 +40,17 @@ def _sans_id(frame):
     return {k: v for k, v in frame.items() if k != "event_id"}
 
 
+def _frame(frames):
+    """The event's own frame. The announcement of an item the event minted
+    rides ahead of it, and is pinned by the announcement tests below."""
+    return frames[-1]
+
+
+def _ack(frames):
+    """The ``committed`` acknowledgement, which leads its commit's frames."""
+    return frames[0]
+
+
 # --- codec unit tests -----------------------------------------------------------
 
 
@@ -93,9 +104,9 @@ def test_append_round_trips_base64():
 
 def test_encoder_progress_phases_map_to_status_states():
     enc = w.Ie115Encoder()
-    assert enc.encode(TranscriptionProgress(phase="preparing"))["state"] == "loading"
-    assert enc.encode(TranscriptionProgress(phase="ready"))["state"] == "ready"
-    transcribing = enc.encode(TranscriptionProgress(phase="transcribing", snippet="hi"))
+    assert _frame(enc.frames(TranscriptionProgress(phase="preparing")))["state"] == "loading"
+    assert _frame(enc.frames(TranscriptionProgress(phase="ready")))["state"] == "ready"
+    transcribing = _frame(enc.frames(TranscriptionProgress(phase="transcribing", snippet="hi")))
     assert _sans_id(transcribing) == {
         "type": w.STATUS_EVENT,
         "state": "transcribing",
@@ -103,7 +114,7 @@ def test_encoder_progress_phases_map_to_status_states():
     }
     assert transcribing["event_id"]
     # a phase this table has never heard of still leaves as a live, named state
-    assert enc.encode(TranscriptionProgress(phase="warming"))["state"] == "transcribing"
+    assert _frame(enc.frames(TranscriptionProgress(phase="warming")))["state"] == "transcribing"
 
 
 def test_decoder_status_round_trips_snippet_and_falls_back_to_transcribing():
@@ -117,7 +128,7 @@ def test_decoder_status_round_trips_snippet_and_falls_back_to_transcribing():
 def test_encoder_progress_warning_is_additive_and_round_trips():
     # T10: memory-pressure notice rides the same additive STATUS frame.
     enc = w.Ie115Encoder()
-    frame = enc.encode(TranscriptionProgress(phase="transcribing", warning="low on memory"))
+    frame = _frame(enc.frames(TranscriptionProgress(phase="transcribing", warning="low on memory")))
     assert _sans_id(frame) == {
         "type": w.STATUS_EVENT,
         "state": "transcribing",
@@ -130,8 +141,8 @@ def test_encoder_progress_warning_is_additive_and_round_trips():
 
 def test_encoder_finals_become_deltas_sharing_the_utterance_item():
     enc = w.Ie115Encoder()
-    d1 = enc.encode(TranscriptionFinal(text="one"))
-    d2 = enc.encode(TranscriptionFinal(text="two"))
+    d1 = _frame(enc.frames(TranscriptionFinal(text="one")))
+    d2 = _frame(enc.frames(TranscriptionFinal(text="two")))
     assert d1["type"] == w.TRANSCRIPTION_DELTA
     assert d1["delta"] == "one" and d1["content_index"] == 0
     assert d1["item_id"] and d1["item_id"] == d2["item_id"]  # one item per utterance
@@ -139,28 +150,28 @@ def test_encoder_finals_become_deltas_sharing_the_utterance_item():
 
 def test_encoder_done_becomes_completed_and_the_next_utterance_is_a_new_item():
     enc = w.Ie115Encoder()
-    delta = enc.encode(TranscriptionFinal(text="one"))
-    done = enc.encode(TranscriptionDone(text="one two"))
+    delta = _frame(enc.frames(TranscriptionFinal(text="one")))
+    done = _frame(enc.frames(TranscriptionDone(text="one two")))
     assert done["type"] == w.TRANSCRIPTION_COMPLETED
     assert done["transcript"] == "one two"
     assert done["item_id"] == delta["item_id"]  # completed closes the same item
     assert done["content_index"] == 0  # one content part per item, always the first
     # the next utterance on the same (persistent) connection is a new item
     enc.begin_utterance()
-    next_done = enc.encode(TranscriptionDone(text="three"))
+    next_done = _frame(enc.frames(TranscriptionDone(text="three")))
     assert next_done["item_id"] and next_done["item_id"] != done["item_id"]
 
 
 def test_encoder_stamps_every_frame_with_a_fresh_event_id():
     enc = w.Ie115Encoder()
-    frames = [
-        enc.encode(TranscriptionProgress(phase="ready")),
-        enc.encode(TranscriptionFinal(text="one")),
-        enc.committed(),
-        enc.encode(TranscriptionDone(text="one")),
-        enc.encode(TranscriptionError(code="internal", message="boom")),
+    batches = [
+        enc.frames(TranscriptionProgress(phase="ready")),
+        enc.frames(TranscriptionFinal(text="one")),
+        enc.commit_frames(),
+        enc.frames(TranscriptionDone(text="one")),
+        enc.frames(TranscriptionError(code="internal", message="boom")),
     ]
-    ids = [f["event_id"] for f in frames]
+    ids = [f["event_id"] for batch in batches for f in batch]
     assert all(ids) and len(set(ids)) == len(ids)
 
 
@@ -169,15 +180,15 @@ def test_encoder_committed_names_the_item_and_chains_to_the_previous_one():
     first delta (batch) or after some (streaming); ``previous_item_id`` links
     the utterances of one persistent connection, and is null on the first."""
     enc = w.Ie115Encoder()
-    first = enc.committed()
+    first = _ack(enc.commit_frames())
     assert first["type"] == w.INPUT_AUDIO_COMMITTED
     assert first["previous_item_id"] is None
-    assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
-    done = enc.encode(TranscriptionDone(text="one"))
+    assert _frame(enc.frames(TranscriptionFinal(text="one")))["item_id"] == first["item_id"]
+    done = _frame(enc.frames(TranscriptionDone(text="one")))
     assert done["item_id"] == first["item_id"]
     enc.begin_utterance()
-    delta = enc.encode(TranscriptionFinal(text="two"))  # streaming: delta before commit
-    second = enc.committed()
+    delta = _frame(enc.frames(TranscriptionFinal(text="two")))  # streaming: delta before commit
+    second = _ack(enc.commit_frames())
     assert second["item_id"] == delta["item_id"] != first["item_id"]
     assert second["previous_item_id"] == first["item_id"]
 
@@ -187,13 +198,13 @@ def test_encoder_queues_the_items_of_commits_that_outrun_the_adapter():
     ahead of the adapter: items are assigned in commit order and the adapter's
     events take them in that order."""
     enc = w.Ie115Encoder()
-    first, second = enc.committed(), enc.committed()
+    first, second = _ack(enc.commit_frames()), _ack(enc.commit_frames())
     assert second["item_id"] != first["item_id"]
     assert second["previous_item_id"] == first["item_id"]
-    assert enc.encode(TranscriptionFinal(text="one"))["item_id"] == first["item_id"]
-    assert enc.encode(TranscriptionDone(text="one"))["item_id"] == first["item_id"]
+    assert _frame(enc.frames(TranscriptionFinal(text="one")))["item_id"] == first["item_id"]
+    assert _frame(enc.frames(TranscriptionDone(text="one")))["item_id"] == first["item_id"]
     enc.begin_utterance()
-    assert enc.encode(TranscriptionFinal(text="two"))["item_id"] == second["item_id"]
+    assert _frame(enc.frames(TranscriptionFinal(text="two")))["item_id"] == second["item_id"]
 
 
 def test_encoder_retires_the_item_of_an_utterance_that_named_none():
@@ -201,17 +212,90 @@ def test_encoder_retires_the_item_of_an_utterance_that_named_none():
     error before any delta) must not leave that item to the next one, whose
     own commit was acknowledged with a later one."""
     enc = w.Ie115Encoder()
-    first, second = enc.committed(), enc.committed()
+    first, second = _ack(enc.commit_frames()), _ack(enc.commit_frames())
     enc.begin_utterance()  # the first utterance emitted nothing that names it
-    assert enc.encode(TranscriptionFinal(text="two"))["item_id"] == second["item_id"]
+    assert _frame(enc.frames(TranscriptionFinal(text="two")))["item_id"] == second["item_id"]
     assert first["item_id"] != second["item_id"]
+
+
+def test_encoder_announces_a_commit_minted_item_after_its_acknowledgement():
+    """OpenAI's order for a commit: ``input_audio_buffer.committed``, then the
+    ``conversation.item.created`` announcing the item it made."""
+    enc = w.Ie115Encoder()
+    ack, created = enc.commit_frames()
+    assert ack["type"] == w.INPUT_AUDIO_COMMITTED
+    assert _sans_id(created) == {
+        "type": w.CONVERSATION_ITEM_CREATED,
+        "previous_item_id": None,
+        "item": {
+            "id": ack["item_id"],
+            "object": "realtime.item",
+            "type": "message",
+            "status": "in_progress",
+            "role": "user",
+            "content": [{"type": "input_audio"}],
+        },
+    }
+    second_ack, second_created = enc.commit_frames()
+    assert second_created["previous_item_id"] == ack["item_id"]
+    assert second_created["item"]["id"] == second_ack["item_id"] != ack["item_id"]
+
+
+def test_encoder_announces_a_streaming_item_before_the_delta_that_names_it():
+    """A streaming adapter transcribes before the client commits, so the item
+    is minted without a commit to announce it. Its ``created`` leads the very
+    frames that name it - a client keying deltas on the item would otherwise
+    drop every pre-commit one."""
+    enc = w.Ie115Encoder()
+    created, delta = enc.frames(TranscriptionFinal(text="one"))
+    assert created["type"] == w.CONVERSATION_ITEM_CREATED
+    assert delta["type"] == w.TRANSCRIPTION_DELTA
+    assert created["item"]["id"] == delta["item_id"]
+    # and nothing announces it a second time: later frames of the same
+    # utterance, and the commit that closes it, only name it
+    assert [f["type"] for f in enc.frames(TranscriptionFinal(text="two"))] == [
+        w.TRANSCRIPTION_DELTA
+    ]
+    assert [f["type"] for f in enc.commit_frames()] == [w.INPUT_AUDIO_COMMITTED]
+    assert [f["type"] for f in enc.frames(TranscriptionDone(text="one two"))] == [
+        w.TRANSCRIPTION_COMPLETED
+    ]
+
+
+def test_encoder_announces_the_item_of_a_terminal_no_commit_ever_closed():
+    """A malformed client frame ends the audio without a commit: the adapter
+    still finishes and its terminal names an item nothing acknowledged. That
+    item is announced with the terminal, never left unheard of."""
+    enc = w.Ie115Encoder()
+    created, completed = enc.frames(TranscriptionDone(text="one"))
+    assert created["type"] == w.CONVERSATION_ITEM_CREATED
+    assert completed["type"] == w.TRANSCRIPTION_COMPLETED
+    assert created["item"]["id"] == completed["item_id"]
+    assert created["previous_item_id"] is None
+
+
+def test_encoder_announces_each_item_of_a_persistent_connection_once():
+    """Over several utterances on one connection, every item is announced
+    exactly once and the announcements chain in the same order as the items."""
+    enc = w.Ie115Encoder()
+    seen = []
+    for _ in range(3):
+        enc.begin_utterance()
+        seen += enc.commit_frames()
+        seen += enc.frames(TranscriptionFinal(text="x"))
+        seen += enc.frames(TranscriptionDone(text="x"))
+    created = [f for f in seen if f["type"] == w.CONVERSATION_ITEM_CREATED]
+    items = [f["item"]["id"] for f in created]
+    assert len(set(items)) == 3
+    assert [f["previous_item_id"] for f in created] == [None, *items[:-1]]
+    assert [f["item_id"] for f in seen if f["type"] == w.INPUT_AUDIO_COMMITTED] == items
 
 
 def test_encoder_done_reports_the_audio_it_was_told_about_as_usage():
     enc = w.Ie115Encoder()
-    done = enc.encode(TranscriptionDone(text="one"), audio_seconds=1.25)
+    done = _frame(enc.frames(TranscriptionDone(text="one"), audio_seconds=1.25))
     assert done["usage"] == {"type": "duration", "seconds": 1.25}
-    assert enc.encode(TranscriptionDone(text="two"))["usage"]["seconds"] == 0.0
+    assert _frame(enc.frames(TranscriptionDone(text="two")))["usage"]["seconds"] == 0.0
 
 
 def test_encoder_gates_segment_index_on_a_committed_delta_that_has_one():
@@ -219,26 +303,28 @@ def test_encoder_gates_segment_index_on_a_committed_delta_that_has_one():
     on an unstable delta even if the adapter numbered it, and absent rather
     than null when a committed delta carries none."""
     enc = w.Ie115Encoder()
-    unstable = enc.encode(
-        TranscriptionFinal(text="hyp", disposition=Disposition.UNSTABLE, segment_index=3)
+    unstable = _frame(
+        enc.frames(
+            TranscriptionFinal(text="hyp", disposition=Disposition.UNSTABLE, segment_index=3)
+        )
     )
     assert unstable["disposition"] == "unstable" and "segment_index" not in unstable
-    unnumbered = enc.encode(TranscriptionFinal(text="one"))
+    unnumbered = _frame(enc.frames(TranscriptionFinal(text="one")))
     assert "segment_index" not in unnumbered
-    numbered = enc.encode(TranscriptionFinal(text="two", segment_index=1))
+    numbered = _frame(enc.frames(TranscriptionFinal(text="two", segment_index=1)))
     assert numbered["segment_index"] == 1
 
 
 def test_encoder_maps_an_unlisted_code_to_a_server_error():
     """Adapters mint codes; one this table has never heard of still leaves as
     a well-formed IE115 error rather than a KeyError mid-session."""
-    frame = w.Ie115Encoder().encode(TranscriptionError(code="brand_new_code", message="m"))
+    frame = _frame(w.Ie115Encoder().frames(TranscriptionError(code="brand_new_code", message="m")))
     assert frame["error"] == {"type": "server_error", "code": "server_error", "message": "m"}
 
 
 def test_encoder_error_maps_lossily_and_decoder_recovers_ie115_code():
     enc = w.Ie115Encoder()
-    frame = enc.encode(TranscriptionError(code="adapter_crash", message="boom"))
+    frame = _frame(enc.frames(TranscriptionError(code="adapter_crash", message="boom")))
     assert _sans_id(frame) == {
         "type": w.ERROR,
         "error": {"type": "server_error", "code": "server_error", "message": "boom"},
@@ -289,20 +375,22 @@ def test_encoder_attaches_timed_segments_only_when_the_adapter_supplied_them():
     enc = w.Ie115Encoder()
     segments = (Segment(start=0.42, end=1.13, text="hi there", score=-0.3),)
 
-    delta = enc.encode(TranscriptionFinal(text="hi there", segments=segments))
+    delta = _frame(enc.frames(TranscriptionFinal(text="hi there", segments=segments)))
     assert delta["segments"] == [{"start": 0.42, "end": 1.13, "text": "hi there", "score": -0.3}]
 
-    done = enc.encode(TranscriptionDone(text="hi there", segments=segments))
+    done = _frame(enc.frames(TranscriptionDone(text="hi there", segments=segments)))
     assert done["segments"] == delta["segments"]
 
     # a dictation final carries no timing, and the frame stays exactly as it was
-    assert "segments" not in w.Ie115Encoder().encode(TranscriptionFinal(text="hi there"))
+    assert "segments" not in _frame(w.Ie115Encoder().frames(TranscriptionFinal(text="hi there")))
 
 
 def test_encoder_omits_a_score_the_adapter_did_not_supply():
     enc = w.Ie115Encoder()
-    frame = enc.encode(
-        TranscriptionFinal(text="hi", segments=(Segment(start=0.0, end=1.0, text="hi"),))
+    frame = _frame(
+        enc.frames(
+            TranscriptionFinal(text="hi", segments=(Segment(start=0.0, end=1.0, text="hi"),))
+        )
     )
     assert frame["segments"] == [{"start": 0.0, "end": 1.0, "text": "hi"}]  # no null score
 
@@ -373,7 +461,7 @@ def test_decoder_treats_committed_as_a_control_frame():
     """The commit acknowledgement carries no transcript; the terminal is
     still the ``completed`` it points at."""
     dec = w.Ie115Decoder()
-    assert dec.decode(w.Ie115Encoder().committed()) == []
+    assert dec.decode(_ack(w.Ie115Encoder().commit_frames())) == []
     assert dec.on_close() != []  # nothing terminal has arrived yet
 
 
@@ -381,6 +469,16 @@ def test_decoder_ignores_control_frames():
     dec = w.Ie115Decoder()
     assert dec.decode({"type": w.SESSION_CREATED, "session": {}}) == []
     assert dec.decode({"type": w.SESSION_UPDATED, "session": {}}) == []
+
+
+def test_decoder_treats_an_item_announcement_as_a_control_frame():
+    """This decoder follows one utterance and keeps no conversation graph, so
+    an item announcement carries nothing it can use - and must not be mistaken
+    for a terminal."""
+    dec = w.Ie115Decoder()
+    _, created = w.Ie115Encoder().commit_frames()
+    assert dec.decode(created) == []
+    assert dec.on_close() != []  # nothing terminal has arrived yet
 
 
 # --- end-to-end parity over the wire --------------------------------------------

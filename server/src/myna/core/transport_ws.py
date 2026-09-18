@@ -54,7 +54,7 @@ import weakref
 from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.server import Server, ServerConnection, unix_serve
@@ -467,21 +467,25 @@ class _SessionHandler:
         # serve is REJECTED, never silently answered by a different model (a
         # compat client asking for X must not get Y). Selecting *which* server
         # to dial is the discovery layer's job (plan T48), not this session's.
-        if requested_model is not None and requested_model not in caps.models:
+        async def send_all(frames: list[dict[str, Any]]) -> None:
+            """One event's frames, in order: an item announcement rides ahead
+            of the frame that names the item."""
             with contextlib.suppress(ConnectionClosed):
-                await ws.send(
-                    json.dumps(
-                        encoder.encode(
-                            TranscriptionError(
-                                code="model_not_available",
-                                message=(
-                                    f"this server serves {list(caps.models)!r}, "
-                                    f"not {requested_model!r}"
-                                ),
-                            )
-                        )
+                for frame in frames:
+                    await ws.send(json.dumps(frame))
+
+        if requested_model is not None and requested_model not in caps.models:
+            await send_all(
+                encoder.frames(
+                    TranscriptionError(
+                        code="model_not_available",
+                        message=(
+                            f"this server serves {list(caps.models)!r}, not {requested_model!r}"
+                        ),
                     )
                 )
+            )
+            with contextlib.suppress(ConnectionClosed):
                 await _close(ws)
             return
         model = requested_model or (caps.models[0] if caps.models else None)
@@ -521,8 +525,7 @@ class _SessionHandler:
                         # the adapter's side of the queue the ack would wait
                         # behind every region the utterance still has to
                         # decode (measured 6 s on a 95 s utterance).
-                        with contextlib.suppress(ConnectionClosed):
-                            await ws.send(json.dumps(encoder.committed()))
+                        await send_all(encoder.commit_frames())
                         await ingress.put(resampler.flush())
                         await ingress.put_boundary()
                     # other client frames (e.g. further session.update): ignored
@@ -533,8 +536,7 @@ class _SessionHandler:
                 error = TranscriptionError(
                     code="invalid_parameter", message=f"bad client frame: {exc}"
                 )
-                with contextlib.suppress(ConnectionClosed):
-                    await ws.send(json.dumps(encoder.encode(error)))
+                await send_all(encoder.frames(error))
             finally:
                 ingress.close()
 
@@ -572,9 +574,7 @@ class _SessionHandler:
             async def emit(self, event: TranscriptionEvent) -> None:
                 if event.type in _TERMINAL:
                     self.terminal_seen = True
-                with contextlib.suppress(ConnectionClosed):
-                    frame = encoder.encode(event, audio_seconds=self.seconds)
-                    await ws.send(json.dumps(frame))
+                await send_all(encoder.frames(event, audio_seconds=self.seconds))
 
         reader = asyncio.ensure_future(read_frames())
         try:
