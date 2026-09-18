@@ -162,7 +162,7 @@ pub fn event_to_indicator(
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
         | OrchestratorEvent::Unstable(_)
-        | OrchestratorEvent::AudioDropped(_) => None,
+        | OrchestratorEvent::AudioDropped => None,
     }
 }
 
@@ -932,10 +932,9 @@ async fn route_event(
     {
         indicator.set_state(indicator_state).await;
     }
-    if let OrchestratorEvent::AudioDropped(_) = &event {
+    if matches!(event, OrchestratorEvent::AudioDropped) {
         drops.not_active += 1;
-        // Audio is never dropped for readiness: it waits in capture instead.
-        indicator.set_audio_drops(0, drops.not_active).await;
+        indicator.set_audio_drops(drops.not_active).await;
     }
     if let OrchestratorEvent::Final(text) = &event {
         // Commit-only: stable committed text is buffered; unstable `Snippet`
@@ -1477,7 +1476,7 @@ mod tests {
         );
         assert_eq!(
             event_to_indicator(
-                &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotActive),
+                &OrchestratorEvent::AudioDropped,
                 DictationState::Recording,
                 Delivery::Landed,
                 InputQuality::Ok

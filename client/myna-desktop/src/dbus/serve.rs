@@ -61,7 +61,6 @@ struct ServedState {
     /// The portal's trigger description for the dictation shortcut, empty
     /// while nothing is bound.
     shortcut: String,
-    audio_dropped_not_resident: u64,
     audio_dropped_not_active: u64,
 }
 
@@ -263,17 +262,6 @@ impl DictationObject {
             .lock()
             .expect("served state poisoned")
             .audio_peak
-    }
-
-    /// Chunks the accept-gate refused this session because the model was not
-    /// resident yet. Non-zero is normal on a cold start; a large or growing
-    /// count is the model failing to load.
-    #[zbus(property)]
-    async fn audio_dropped_not_resident(&self) -> u64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .audio_dropped_not_resident
     }
 
     /// Chunks refused because the session was already over. Only ever a bug.
@@ -577,9 +565,6 @@ impl Bus for ZbusBus {
                     ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
                     ("HudStyle", PropertyValue::Str(s)) => served.hud_style = s.clone(),
                     ("Shortcut", PropertyValue::Str(s)) => served.shortcut = s.clone(),
-                    ("AudioDroppedNotResident", PropertyValue::U64(v)) => {
-                        served.audio_dropped_not_resident = *v
-                    }
                     ("AudioDroppedNotActive", PropertyValue::U64(v)) => {
                         served.audio_dropped_not_active = *v
                     }
@@ -603,9 +588,6 @@ impl Bus for ZbusBus {
                 "AudioPeak" => iface.audio_peak_changed(emitter).await,
                 "HudStyle" => iface.hud_style_changed(emitter).await,
                 "Shortcut" => iface.shortcut_changed(emitter).await,
-                "AudioDroppedNotResident" => {
-                    iface.audio_dropped_not_resident_changed(emitter).await
-                }
                 "AudioDroppedNotActive" => iface.audio_dropped_not_active_changed(emitter).await,
                 _ => Ok(()),
             }

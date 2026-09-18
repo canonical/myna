@@ -292,7 +292,7 @@ async fn loading_after_ready_keeps_forwarding_audio() {
     assert!(
         !run.events
             .iter()
-            .any(|e| matches!(e, OrchestratorEvent::AudioDropped(_))),
+            .any(|e| matches!(e, OrchestratorEvent::AudioDropped)),
         "{:?}",
         run.events
     );

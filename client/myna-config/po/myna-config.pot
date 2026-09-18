@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-15 17:28+0100\n"
+"POT-Creation-Date: 2026-09-18 10:31+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1196,12 +1196,8 @@ msgstr ""
 msgid "battery"
 msgstr ""
 
-#: src/diagnostics.rs:721
+#: src/diagnostics.rs:720
 msgid "chunks dropped this session"
-msgstr ""
-
-#: src/diagnostics.rs:723
-msgid "before the model was ready"
 msgstr ""
 
 #: src/myna_settings.rs:68

@@ -39,7 +39,7 @@ impl TextSink for StdoutSink {
             OrchestratorEvent::Error { code, message } => {
                 eprintln!("✗ [{code}] {message}");
             }
-            OrchestratorEvent::AudioDropped(_) => {
+            OrchestratorEvent::AudioDropped => {
                 eprintln!("  (dropped audio: session not accepting audio)");
             }
         }

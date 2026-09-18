@@ -44,8 +44,7 @@ pub use backend::{
 };
 pub use driver::{run_session, OrchestratorControl, OrchestratorInput, BACKEND_PROGRESS_TIMEOUT};
 pub use fsm::{
-    Action, DropReason, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome,
-    SessionState,
+    Action, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome, SessionState,
 };
 pub use myna_core;
 pub use runner::run_dictation;

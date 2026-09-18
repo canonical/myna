@@ -52,7 +52,8 @@ pub enum PropertyValue {
 #[async_trait]
 pub trait Bus: Send {
     /// Set a property (`State` / `StatusMessage` / `AudioRms` / `AudioPeak` /
-    /// `HudStyle` / `Shortcut` / `AudioDropped*`), emitting `PropertiesChanged`
+    /// `HudStyle` / `Shortcut` / `AudioDroppedNotActive`), emitting
+    /// `PropertiesChanged`
     /// on the real bus.
     async fn set_property(&mut self, name: &str, value: PropertyValue);
 }

@@ -714,13 +714,10 @@ fn field(out: &mut String, label: &str, value: &str) {
 /// Always printed when the daemon is up: a confirmed zero is the fact worth
 /// having during a bug hunt.
 fn drops_summary(drops: AudioDrops) -> String {
-    let total = drops.not_resident + drops.not_active;
     format!(
-        "{} {} ({} {})",
-        total,
-        gettextrs::gettext("chunks dropped this session"),
-        drops.not_resident,
-        gettextrs::gettext("before the model was ready")
+        "{} {}",
+        drops.not_active,
+        gettextrs::gettext("chunks dropped this session")
     )
 }
 
@@ -915,10 +912,7 @@ mod tests {
                 resident: 16 * 1024 * 1024,
                 peak: 18 * 1024 * 1024,
             }),
-            drops: Some(AudioDrops {
-                not_resident: 3,
-                not_active: 0,
-            }),
+            drops: Some(AudioDrops { not_active: 3 }),
             performance: None,
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
@@ -947,10 +941,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("parakeet-tdt-0.6b-v3"), "{text}");
-        assert!(
-            text.contains("3 chunks dropped this session (3 before the model was ready)"),
-            "{text}"
-        );
+        assert!(text.contains("3 chunks dropped this session"), "{text}");
         assert!(text.contains("Problems:\n  (none)"), "{text}");
         // Nothing in the report came from outside this crate.
         assert!(!text.contains('/'), "{text}");

@@ -83,14 +83,6 @@ pub struct FsmState {
     pub residency: Residency,
 }
 
-/// Why an audio chunk was dropped by the accept-gate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DropReason {
-    /// Audio the session was not accepting: after end-of-audio, on a terminal
-    /// session, or before readiness (a caller bug; the driver never reads it).
-    NotActive,
-}
-
 /// What the FSM surfaces *outward* (to the text injector, the UI, and tests).
 /// The residency variants map onto the IE115 `STATUS` liveness `state`.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,8 +109,10 @@ pub enum OrchestratorEvent {
     /// an `error.recoverable` field — and the §3B retry branch returns here.
     /// Do not reintroduce it as client-side string-matching on codes.)
     Error { code: String, message: String },
-    /// A chunk was dropped by the accept-gate.
-    AudioDropped(DropReason),
+    /// A chunk was dropped by the accept-gate, because the session was not
+    /// accepting audio: after end-of-audio, or on a terminal session. There is
+    /// no second reason - audio before readiness waits in capture instead.
+    AudioDropped,
 }
 
 /// A side effect the driver must perform after a transition. Keeping effects as
@@ -248,9 +242,7 @@ impl Fsm {
         if self.accepts_audio() {
             out.push(Action::ForwardAudio(chunk));
         } else {
-            out.push(Action::Emit(OrchestratorEvent::AudioDropped(
-                DropReason::NotActive,
-            )));
+            out.push(Action::Emit(OrchestratorEvent::AudioDropped));
         }
     }
 
@@ -554,10 +546,7 @@ mod tests {
         let mut fsm = Fsm::new();
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(!a.iter().any(is_forward));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotActive)]
-        );
+        assert_eq!(emitted(&a), vec![OrchestratorEvent::AudioDropped]);
     }
 
     #[test]
@@ -671,10 +660,7 @@ mod tests {
         fsm.on_input(Input::EndOfAudio);
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(!a.iter().any(is_forward));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotActive)]
-        );
+        assert_eq!(emitted(&a), vec![OrchestratorEvent::AudioDropped]);
     }
 
     #[test]
@@ -786,10 +772,10 @@ mod tests {
         assert!(fsm
             .on_input(Input::Backend(final_seg("ignored")))
             .is_empty());
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(|a| matches!(
-            a,
-            Action::Emit(OrchestratorEvent::AudioDropped(DropReason::NotActive))
-        )));
+        assert!(fsm
+            .on_input(Input::Audio(chunk()))
+            .iter()
+            .any(|a| matches!(a, Action::Emit(OrchestratorEvent::AudioDropped))));
     }
 
     // ---- T028-T030: streaming mode (feature 007) -----------------------------
