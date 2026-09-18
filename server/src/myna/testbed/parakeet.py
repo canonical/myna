@@ -322,6 +322,16 @@ _COLLAPSE_RETRY_PAD_S = 0.2
 # at 3.9 GB RSS, and a toggle session has no length cap. An utterance up to the
 # arm point still decodes whole; past it the first pause cuts, and the force cut
 # bounds a pause-free stretch.
+#
+# The force cut is therefore also the peak-RSS bound, and it is the *only* dial
+# that moves it. Measured 2026-09-18 on the int8 CPU export (VmHWM over the
+# single largest encoder input, model load ~1.31 GB on top): 15 s +64 MB,
+# 30 s +147, 40 s +196, 45 s +362, 50 s +394, 60 s +463, 65 s +499. Neither the
+# number of distinct window lengths nor the retry ladder is worth measuring
+# against that: 30 extra distinct lengths below the peak cost 2.7 MB in total,
+# and a full ladder on the largest region costs 15 MB. Both arms pay the same
+# ~463 MB once a region reaches 60 s, whichever cut got them there.
+# (evidence/a5-rss/results.md in the audio review.)
 BATCH_ARM_S = 30.0
 STREAM_OVERLAP_S = 1.0  # murmure CHUNK_FORCED_OVERLAP_SECS
 BATCH_FORCE_CUT_S = SC_FORCE_CUT_S
