@@ -306,6 +306,17 @@ impl Continuity {
             }
         }
     }
+
+    /// The deficit standing right now, for a capture that is ending: no later
+    /// audio can repay it any more, so [`LOSS_CONFIRM`] would never run out.
+    /// Reported only past what the phase of one graph cycle and the tolerance
+    /// together explain, which no split cycle can reach; a smaller deficit
+    /// stays unreportable at the tail, as it is mid-capture.
+    fn outstanding(&self) -> Option<Duration> {
+        let tolerance = LOSS_TOLERANCE.as_secs_f64() * self.rate;
+        (self.owed > self.cycle.max(tolerance) + tolerance)
+            .then(|| Duration::from_secs_f64(self.owed / self.rate))
+    }
 }
 
 /// The fault when graph cycles went by without reaching the capture thread.
@@ -350,6 +361,10 @@ struct Shared {
     /// The data thread's one [`Loss`]: `0` none, `u64::MAX` an overflow,
     /// otherwise the microseconds missed.
     loss: AtomicU64,
+    /// The deficit standing at the last delivery, in the same code, which
+    /// only a capture that has ended reads: mid-capture it is a candidate for
+    /// loss, not loss.
+    unconfirmed: AtomicU64,
 }
 
 impl Shared {
@@ -358,9 +373,7 @@ impl Shared {
     fn latch(&self, loss: Loss) {
         let code = match loss {
             Loss::Overflow => Self::OVERFLOW,
-            Loss::Missed(lost) => u64::try_from(lost.as_micros())
-                .unwrap_or(u64::MAX)
-                .clamp(1, Self::OVERFLOW - 1),
+            Loss::Missed(lost) => micros(lost),
         };
         self.loss.store(code, Ordering::Release);
     }
@@ -372,6 +385,26 @@ impl Shared {
             micros => Some(Loss::Missed(Duration::from_micros(micros))),
         }
     }
+
+    fn hold(&self, deficit: Option<Duration>) {
+        self.unconfirmed
+            .store(deficit.map_or(0, micros), Ordering::Release);
+    }
+
+    fn unconfirmed(&self) -> Option<Loss> {
+        match self.unconfirmed.load(Ordering::Acquire) {
+            0 => None,
+            micros => Some(Loss::Missed(Duration::from_micros(micros))),
+        }
+    }
+}
+
+/// A duration as the microsecond code the [`Shared`] atomics carry: never `0`
+/// (nothing) nor [`Shared::OVERFLOW`].
+fn micros(lost: Duration) -> u64 {
+    u64::try_from(lost.as_micros())
+        .unwrap_or(u64::MAX)
+        .clamp(1, Shared::OVERFLOW - 1)
 }
 
 /// How the data thread turns a stream buffer into the negotiated format.
@@ -470,8 +503,12 @@ impl DataPath {
             self.epoch = epoch;
             self.continuity.restart();
         }
-        if let Some(lost) = self.continuity.delivered(ticks, graph_rate, frames) {
-            self.lose(Loss::Missed(lost));
+        match self.continuity.delivered(ticks, graph_rate, frames) {
+            Some(lost) => self.lose(Loss::Missed(lost)),
+            // A deficit no confirmation window has run out on yet, for the
+            // loop thread to read if capture ends before one can.
+            None if !self.lost => self.shared.hold(self.continuity.outstanding()),
+            None => {}
         }
     }
 
@@ -559,6 +596,12 @@ impl Drain {
             abandoned,
             loss,
         }
+    }
+
+    /// The deficit the data thread ended on, once it is quiesced and no later
+    /// audio can repay it. Only a capture that is over may read this.
+    fn unconfirmed(&self) -> Option<Loss> {
+        self.shared.unconfirmed()
     }
 }
 
@@ -969,10 +1012,12 @@ fn capture_session(
     drop(rt_listener);
     drop(listener);
     drop(timer);
-    let loss = producer
-        .borrow_mut()
-        .as_mut()
-        .and_then(|producer| drain.borrow_mut().run(producer).loss);
+    let loss = producer.borrow_mut().as_mut().and_then(|producer| {
+        let mut drain = drain.borrow_mut();
+        // No audio can repay a deficit now, so the confirmation window that
+        // defers one mid-capture would never run out: read it here or never.
+        drain.run(producer).loss.or_else(|| drain.unconfirmed())
+    });
     let why = ending.borrow_mut().take();
     final_ending(why, loss).and_then(Ending::into_fault)
 }
@@ -1400,6 +1445,44 @@ mod tests {
         assert_eq!(without_repaying(&mut c, &mut ticks, rate, 372), None);
     }
 
+    /// [`LOSS_CONFIRM`] cannot run out at the end of a capture, so a deficit
+    /// bigger than the phase of one cycle and the tolerance together can
+    /// explain is reported as the tail of it.
+    #[test]
+    fn a_deficit_no_audio_can_repay_is_reported_at_the_end_of_a_capture() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        assert_eq!(c.outstanding(), None);
+        // Half a second of cycles the data thread never saw.
+        ticks += 24_000;
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None, "not confirmed yet");
+        let lost = c.outstanding().expect("the tail of the capture");
+        assert!(
+            lost > Duration::from_millis(470) && lost < Duration::from_millis(500),
+            "{lost:?}"
+        );
+    }
+
+    /// The phase the account ends on is not a loss: one cycle either way is
+    /// how delivery and the stream clock run, at any quantum.
+    #[test]
+    fn the_phase_a_capture_ends_on_is_not_reported_as_loss() {
+        for (quantum, frames) in [(CYCLE, 341), (4 * CYCLE, 1_365)] {
+            let mut c = Continuity::new(16_000);
+            let mut ticks = 0;
+            for _ in 0..40 {
+                ticks += quantum;
+                assert_eq!(c.delivered(ticks, GRAPH, frames), None);
+            }
+            // A whole cycle of clock arrives without its buffer, and capture
+            // ends before the next callback could repay it.
+            ticks += 2 * quantum;
+            assert_eq!(c.delivered(ticks, GRAPH, frames), None);
+            assert_eq!(c.outstanding(), None, "quantum {quantum}");
+        }
+    }
+
     /// A single outsized delivery is a burst of buffers, not a graph running
     /// a longer cycle, and must not forgive what is owed.
     #[test]
@@ -1575,6 +1658,31 @@ mod tests {
         }
         path.deliver(&[0; 16]);
         assert_eq!(shared.loss(), first);
+    }
+
+    /// Nothing is latched while a deficit is still a candidate, but the loop
+    /// thread can read it when the capture ends before the confirmation does.
+    #[test]
+    fn an_unconfirmed_deficit_reaches_the_loop_thread() {
+        let (mut path, rx, shared) = data_path(8, mono());
+        let drain = Drain {
+            ring: rx,
+            shared: shared.clone(),
+        };
+        path.account(0, GRAPH, 341);
+        path.account(CYCLE, GRAPH, 341);
+        assert_eq!(drain.unconfirmed(), None);
+        // Half a second of graph cycles the data thread never saw.
+        let missed = CYCLE + 24_000;
+        path.account(missed, GRAPH, 341);
+        assert_eq!(shared.loss(), None, "not confirmed, so not latched");
+        match drain.unconfirmed() {
+            Some(Loss::Missed(lost)) => assert!(lost > Duration::from_millis(470), "{lost:?}"),
+            other => panic!("expected the tail deficit, got {other:?}"),
+        }
+        // Repaid after all: the clock was ahead, not the audio gone.
+        path.account(missed + CYCLE, GRAPH, 8_341);
+        assert_eq!(drain.unconfirmed(), None);
     }
 
     #[test]
