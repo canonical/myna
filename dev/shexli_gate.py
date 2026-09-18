@@ -31,11 +31,7 @@ def accepted(finding: dict[str, object], root: Path) -> str | None:
     # extension at runtime: the suites themselves (*.test.js) and the helpers
     # they share. Unreachable-from-extension.js is the point, not a defect - a
     # helper that the shipped bundle imported would be shipping test code.
-    if (
-        rule == "EGO-P-007"
-        and paths
-        and all(path.startswith("test/") for path in paths)
-    ):
+    if rule == "EGO-P-007" and paths and all(path.startswith("test/") for path in paths):
         return "test-only sources under test/, run by test/run-suite.sh"
     if rule == "EGO-M-004" and paths == {"metadata.json"}:
         return "intentional GNOME Shell 46-51 support range"
