@@ -10,9 +10,10 @@ chunk. Between cuts, ``partial_cadence_seconds`` re-decodes the tail of the
 uncommitted window for *display* (see [`_chunked_partial`]): committed text is
 untouched by it, and without it a chunked strategy shows nothing until its
 first cut, which at the shipped 15 s arm is most of a minute in the worst
-case. Emits 007-contract events (committed finals with
-monotonic ``segment_index``; unstable finals that supersede the previous
-unstable) and returns the accumulated committed transcript — the caller
+case. A tick costs what the growing window costs, so its spacing is bounded
+by [`PARTIAL_BUDGET`] as well as by the cadence. Emits 007-contract events
+(committed finals with monotonic ``segment_index``; unstable finals that
+supersede the previous unstable) and returns the accumulated committed transcript — the caller
 emits ``TranscriptionDone``.
 
 Invariants enforced here (contracts/emission-semantics.md):
@@ -94,6 +95,26 @@ def _frame(name: str) -> AbstractContextManager[None]:
 
 MIN_DECODE_S = 0.3  # don't bother decoding sub-300ms tails
 _OVERLAP_LOOKBACK = 12  # words of committed history text-alignment dedupe uses
+
+# The share of audio time partial ticks may spend decoding.
+#
+# A tick costs what the uncommitted window costs, and that window grows until
+# something cuts it - on the parakeet int8 CPU engine one tick measures 211 ms
+# at 10 s, 1088 ms at 40 s and 2416 ms at 60 s (the force cut). A *fixed*
+# cadence therefore has no bound at all in the only unit that matters: at 0.5 s
+# it asks for 4.8 s of decode per second of audio once the window is full, and
+# the session stops keeping up with real time. What falls behind is not only
+# the display - the loop is sequential, so the backlog delays the cut decodes
+# that produce *committed* text too, and the ingress queue absorbs the rest.
+#
+# So the spacing between ticks is the last tick's own wall time divided by this
+# fraction, whenever that exceeds the configured cadence: partial work per
+# second of audio is then bounded by the fraction on any machine and at any
+# window length, and the display refreshes more slowly exactly when a refresh
+# got expensive. It is the display's own budget - the cut decodes that commit
+# text are never skipped or delayed by it. The rest of the second is left for
+# them, for the resampler and for everything else sharing the CPU.
+PARTIAL_BUDGET = 0.5
 
 
 # Minimum character overlap for the alignment to act: 1-char matches are too
@@ -348,12 +369,14 @@ async def run_streaming_loop(
     on_commit: Callable[[str, list[Word]], Awaitable[None]] | None = None,
     silence_cut_overlap: bool = True,
     min_utterance_seconds: float = MIN_DECODE_S,
+    partial_budget: float | None = None,
 ) -> str:
     """``on_commit`` receives each committed text with its words instead of
     the wire (deferred presentation). ``silence_cut_overlap=False`` retires a
     pause cut without overlap, as murmure does: its trailing silence means no
     word straddles it, so only forced cuts keep audio to deduplicate.
-    ``min_utterance_seconds`` is the shortest utterance worth a decode."""
+    ``min_utterance_seconds`` is the shortest utterance worth a decode.
+    ``partial_budget`` overrides [`PARTIAL_BUDGET`]."""
     # Every decode in a session runs on this one thread. `asyncio.to_thread`
     # would use the event loop's default pool, which grows to min(32, cpu + 4)
     # workers even under a strictly sequential caller — a submit that lands
@@ -383,6 +406,7 @@ async def run_streaming_loop(
             on_commit=on_commit,
             silence_cut_overlap=silence_cut_overlap,
             min_utterance_seconds=min_utterance_seconds,
+            partial_budget=partial_budget,
         )
     finally:
         executor.shutdown(wait=False)
@@ -402,6 +426,7 @@ async def _run(
     on_commit: Callable[[str, list[Word]], Awaitable[None]] | None = None,
     silence_cut_overlap: bool = True,
     min_utterance_seconds: float = MIN_DECODE_S,
+    partial_budget: float | None = None,
 ) -> str:
     # perf T03: additive, outside the commit/alignment logic below -- with
     # telemetry=None (every production call today) this is one branch per
@@ -417,6 +442,7 @@ async def _run(
             telemetry.record(kind, len(samples) / RATE, time.perf_counter() - t0)
             return hyp
 
+    budget = PARTIAL_BUDGET if partial_budget is None else partial_budget
     window = RollingWindow(window_cap_seconds, overlap_seconds)
     committed: list[str] = []
     committed_through = 0.0  # text-commit watermark, word-timestamp seconds
@@ -425,6 +451,7 @@ async def _run(
     last_hyp: Hypothesis | None = None
     last_unstable = ""
     last_decode_end = 0.0
+    last_partial_wall = 0.0  # what the next tick is expected to cost
 
     async def emit_committed(text: str, words: list[Word]) -> None:
         nonlocal segment_index
@@ -472,7 +499,7 @@ async def _run(
         watermark at the last word it committed, so the next region can still
         commit a word this decode missed: the VAD can cut at a gap too short
         to be silence to the decoder. A cut without overlap commits all."""
-        nonlocal committed_through, last_unstable
+        nonlocal committed_through, last_unstable, last_partial_wall
         hyp = await timed_decode(window.samples(end=cut), window.start, "commit")
         if not keep_overlap:
             await commit(hyp.words)
@@ -486,6 +513,7 @@ async def _run(
                 committed_through = max(committed_through, decision.commit_end)
         window.retire(cut, keep_overlap=keep_overlap)
         last_unstable = ""  # I4: the commit resolves the epoch
+        last_partial_wall = 0.0  # the window shrank; its cost estimate is stale
 
     async def force_boundary() -> None:
         """The window is full and audio is still waiting: final-process the
@@ -540,15 +568,20 @@ async def _run(
         if isinstance(strategy, SilenceCut):
             if cut_taken:
                 continue
-            if window.end - last_decode_end >= (partial_cadence_seconds or cadence_seconds):
+            spacing = partial_cadence_seconds or cadence_seconds
+            if partial_cadence_seconds and budget > 0:
+                spacing = max(spacing, last_partial_wall / budget)  # see PARTIAL_BUDGET
+            if window.end - last_decode_end >= spacing:
                 last_decode_end = window.end
                 if partial_cadence_seconds and window.window_seconds >= MIN_DECODE_S:
+                    tick_t0 = time.perf_counter()
                     words = await _chunked_partial(
                         window,
                         functools.partial(timed_decode, kind="partial"),
                         fresh_words,
                         partial_tail_seconds,
                     )
+                    last_partial_wall = time.perf_counter() - tick_t0
                     text = _utterance_edge(_join_natural(words), not committed) if words else ""
                     if text:
                         await emit_unstable(text)

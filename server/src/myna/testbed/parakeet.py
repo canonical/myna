@@ -357,6 +357,12 @@ BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
 # reduction only by making 29-94% of unstable updates structurally drop the
 # display's head (not just revise it — see [`_chunked_partial`], which
 # carries the evidence for why the obvious middle ground does not work).
+#
+# Neither dial is what keeps the session in real time: a cadence low enough
+# for one machine is too low for a slower one, and both are user-settable.
+# `streaming.loop.PARTIAL_BUDGET` is the actual bound - it spaces ticks by
+# what the last one measured, so the cadence sets how *fast* the display can
+# refresh and the budget sets how *much* refreshing may cost.
 PARTIAL_CADENCE_S = 2.0
 PARTIAL_TAIL_S = 0.0
 

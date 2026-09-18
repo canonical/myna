@@ -21,7 +21,9 @@ from myna.core import (
     TranscriptionFinal,
 )
 from myna.core.audio import AudioFormat
-from myna.testbed.streaming.loop import run_streaming_loop
+from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming import loop as loop_module
+from myna.testbed.streaming.loop import PARTIAL_BUDGET, run_streaming_loop
 from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, SilenceCut, Word
 from myna.testbed.streaming.window import RollingWindow
 
@@ -758,3 +760,116 @@ async def test_chunked_partial_that_decodes_to_nothing_keeps_the_last_text():
             continue
         epoch.append(len(e.text.split()))
         assert epoch == sorted(epoch), f"display shrank on a collapsed tick: {epoch}"
+
+
+# ---------------------------------------------------------------------------
+# The partial budget (PARTIAL_BUDGET): a tick costs what the window costs, so
+# a fixed cadence has no bound on decode work per second of audio.
+# ---------------------------------------------------------------------------
+
+_COST_PER_WINDOW_SECOND = 0.04  # 2.4 s at the 60 s force cut, as parakeet int8 measures
+
+
+async def _growing_window_session(monkeypatch, *, partial_budget, seconds=90.0):
+    """Speech with no pause, so nothing but the force cut bounds the window.
+
+    Decode cost is charged to a fake ``perf_counter`` proportional to the
+    window handed over, which is what makes the budget observable without
+    sleeping: the loop's own telemetry then reports the decode seconds each
+    kind spent per second of audio.
+    """
+    clock = {"t": 0.0}
+    monkeypatch.setattr(loop_module.time, "perf_counter", lambda: clock["t"])
+    inner = scripted_decode()
+
+    def decode(samples, offset):
+        clock["t"] += len(samples) / 16_000 * _COST_PER_WINDOW_SECOND
+        return inner(samples, offset)
+
+    rng = np.random.default_rng(7)
+    pcm = _speech_pcm(rng)
+
+    async def audio():
+        for _ in range(int(seconds / 0.5)):
+            yield PcmChunk(data=pcm(0.5, True), format=FORMAT)
+
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    telemetry = StreamingTelemetry()
+    transcript = await run_streaming_loop(
+        audio(),
+        emit,
+        decode,
+        SilenceCut(),
+        cadence_seconds=1.0,
+        window_cap_seconds=65.0,
+        partial_cadence_seconds=0.5,
+        telemetry=telemetry,
+        partial_budget=partial_budget,
+    )
+    events.append(TranscriptionDone(text=transcript))
+    return events, transcript, telemetry
+
+
+def _partial_seconds_per_audio_second(telemetry):
+    partial = sum(s.wall_seconds for s in telemetry.samples if s.kind == "partial")
+    return partial / telemetry.audio_seconds_ingested
+
+
+@pytest.mark.asyncio
+async def test_a_fixed_partial_cadence_cannot_keep_up_with_its_own_audio(monkeypatch):
+    """The defect, with the budget switched off: the window grows to the force
+    cut, every tick re-decodes all of it, and the loop asks for more decode
+    seconds than the speaker gives it seconds of speech. Nothing downstream
+    can absorb that - the ingress queue fills and committed text lands late."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=0)
+
+    assert _partial_seconds_per_audio_second(telemetry) > 1.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget", [None, 0.25])
+async def test_the_partial_budget_bounds_decode_per_second_of_audio(monkeypatch, budget):
+    """However long the utterance runs and however slow the machine is. The
+    overshoot is one tick's growth: the spacing is set from the last tick's
+    cost, and the window it decodes is a little longer every time."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=budget)
+
+    asked = PARTIAL_BUDGET if budget is None else budget
+    spent = _partial_seconds_per_audio_second(telemetry)
+    assert spent <= asked * 1.2, f"{spent:.2f} s of decode per second of audio"
+
+
+def test_the_shipped_budget_leaves_the_rest_of_the_second_to_commit():
+    assert 0 < PARTIAL_BUDGET <= 0.6
+
+
+@pytest.mark.asyncio
+async def test_the_partial_budget_leaves_committed_text_untouched(monkeypatch):
+    """Backing the display off is display-only: the cut decodes that commit
+    text are neither skipped nor delayed by it."""
+    bounded, transcript_on, _ = await _growing_window_session(monkeypatch, partial_budget=None)
+    unbounded, transcript_off, _ = await _growing_window_session(monkeypatch, partial_budget=0)
+
+    assert transcript_on == transcript_off
+    assert [e.text for e in _committed(bounded)] == [e.text for e in _committed(unbounded)]
+    assert_append_only_and_complete(bounded)
+
+
+@pytest.mark.asyncio
+async def test_a_cut_restores_the_configured_cadence(monkeypatch):
+    """The window the cut retired is what made the ticks expensive, so the
+    estimate the backoff runs on goes with it - otherwise the display would
+    stay slow for seconds after the speaker's pause made it cheap again."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=None)
+
+    kinds = [s.kind for s in telemetry.samples]
+    assert "commit" in kinds, "expected the force cut"
+    after = telemetry.samples[kinds.index("commit") + 1 :]
+    first = next(s for s in after if s.kind == "partial")
+    assert first.window_seconds <= 1.5, (
+        f"the first tick after a cut waited for {first.window_seconds:.1f} s of audio"
+    )
