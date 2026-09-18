@@ -214,10 +214,12 @@ async fn apply(
     }
 }
 
-/// Transport items come only from client input, which is read only while
-/// the slot is empty, so one can never overwrite another.
+/// Transport items come only from client input, which is read only while the
+/// slot is empty, so one can never overwrite another. Asserted rather than
+/// debug-asserted: an overwrite here drops a PCM chunk or an end of audio,
+/// which a release build must not do silently.
 fn queue(outbound: &mut Option<Outbound>, item: Outbound) {
-    debug_assert!(outbound.is_none(), "{item:?} would overwrite {outbound:?}");
+    assert!(outbound.is_none(), "{item:?} would overwrite {outbound:?}");
     *outbound = Some(item);
 }
 
@@ -240,6 +242,15 @@ mod tests {
             events.push(e);
         }
         events
+    }
+
+    /// The slot holds exactly one item: overwriting it would drop audio or an
+    /// end of audio, so it is a panic in every build, not just a debug one.
+    #[test]
+    #[should_panic(expected = "would overwrite")]
+    fn queueing_over_a_full_outbound_slot_panics() {
+        let mut outbound = Some(Outbound::Finish);
+        queue(&mut outbound, Outbound::Audio(chunk()));
     }
 
     #[tokio::test]
