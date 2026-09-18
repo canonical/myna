@@ -5,8 +5,11 @@
 //! (constitution Principle II).
 //!
 //! Gate: set `MYNA_PIPEWIRE_TESTS=1` to run. Unset (the default, and CI without
-//! an audio server) → every test returns early as a no-op, so the suite is
-//! always compilable and green offline without touching PipeWire.
+//! an audio server) → every test returns early as a no-op and says so, so the
+//! suite is always compilable and green offline without touching PipeWire.
+//! Set, with no graph answering → every test FAILS. The gate is a claim that
+//! the service is there; honouring it with a skip is how a PipeWire regression
+//! ships green.
 //!
 //! Run: `MYNA_PIPEWIRE_TESTS=1 cargo test -p myna-audio --test pipewire_hw`
 //!
@@ -39,20 +42,24 @@ fn scratch_dir(tag: &str) -> PathBuf {
 
 /// A `pw-loopback`-created virtual capture source with a known `node.name`, so
 /// selection tests don't depend on whatever hardware happens to be present.
-/// Killed on drop. Returns `None` if `pw-loopback` isn't available.
+/// Killed on drop.
+///
+/// Panics when `pw-loopback` cannot be spawned: it ships with PipeWire, so its
+/// absence means the gate was set against a graph that is not really there,
+/// and the cases below would otherwise pass having selected nothing.
 struct VirtualSource {
     child: Child,
     node_name: String,
 }
 
 impl VirtualSource {
-    fn spawn(node_name: &str) -> Option<Self> {
+    fn spawn(node_name: &str) -> Self {
         Self::spawn_channels(node_name, None)
     }
 
     /// Spawn a virtual source, optionally multi-channel via an explicit
     /// `audio.position` (e.g. `FL,FR,RL,RR` for 4ch).
-    fn spawn_channels(node_name: &str, position: Option<&str>) -> Option<Self> {
+    fn spawn_channels(node_name: &str, position: Option<&str>) -> Self {
         let mut cap =
             format!("media.class=Audio/Source node.name={node_name} node.description=myna-test");
         if let Some(pos) = position {
@@ -64,13 +71,13 @@ impl VirtualSource {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .ok()?;
+            .unwrap_or_else(|e| panic!("spawn pw-loopback for {node_name} ({e}). {HOW_TO_RUN}"));
         let source = Self {
             child,
             node_name: node_name.to_string(),
         };
         source.await_registered();
-        Some(source)
+        source
     }
 
     /// Block until the graph lists the node, so capture can discover it.
@@ -99,31 +106,39 @@ impl Drop for VirtualSource {
 /// `context.exec` starts none): the graph exists but has zero source nodes —
 /// the masked-wireplumber failure mode found on hardware (2026-07-21), where
 /// capture silently streamed nothing. Own runtime dir; killed + removed on
-/// drop. Returns `None` if the `pipewire` binary isn't available.
+/// drop.
+///
+/// Panics rather than returning `None`: the cases that use it assert that a
+/// source-less graph faults, and a case that never got a graph to point at
+/// would report that same green without having looked.
 struct NoSmDaemon {
     child: Child,
     runtime_dir: std::path::PathBuf,
 }
 
 impl NoSmDaemon {
-    fn spawn() -> Option<Self> {
+    fn spawn() -> Self {
         let runtime_dir = scratch_dir("nosm");
-        let child = Command::new("pipewire")
+        let mut child = Command::new("pipewire")
             .env("PIPEWIRE_RUNTIME_DIR", &runtime_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .ok()?;
+            .unwrap_or_else(|e| panic!("spawn a private pipewire daemon ({e}). {HOW_TO_RUN}"));
         // Wait for the daemon socket to appear.
         for _ in 0..50 {
             if runtime_dir.join("pipewire-0").exists() {
-                return Some(Self { child, runtime_dir });
+                return Self { child, runtime_dir };
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        let _ = child;
-        None
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!(
+            "the private pipewire daemon never bound {}. {HOW_TO_RUN}",
+            runtime_dir.join("pipewire-0").display()
+        );
     }
 
     /// The remote clients connect to (libpipewire accepts an absolute socket
@@ -220,12 +235,33 @@ fn target() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// How the suite's graph is stood up, quoted in every "it is not there"
+/// failure so the reader knows what to start.
+const HOW_TO_RUN: &str = "dev/gated-tests.sh stands a private graph up (pipewire + wireplumber \
+     under a scratch XDG_RUNTIME_DIR) and only then sets the gate; run `make test-client-gated`";
+
+/// The graph the gate promises. `MYNA_PIPEWIRE_TESTS=1` is a claim that a
+/// PipeWire graph is reachable, so an unreachable one is a failure of this
+/// suite, not a reason to skip it: a case that runs against no graph asserts
+/// nothing and reports green, which is how a PipeWire regression ships.
+///
+/// Checked once per process; every case goes through it.
+fn require_graph() {
+    static GRAPH: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+    if let Err(why) =
+        GRAPH.get_or_init(|| InputDevices::new().map(|_| ()).map_err(|e| e.to_string()))
+    {
+        panic!("MYNA_PIPEWIRE_TESTS=1 but no PipeWire graph answers ({why}). {HOW_TO_RUN}");
+    }
+}
+
 macro_rules! skip_unless_enabled {
     () => {
         if !enabled() {
             eprintln!("skipped: set MYNA_PIPEWIRE_TESTS=1 (needs a running PipeWire graph)");
             return;
         }
+        require_graph();
     };
 }
 
@@ -250,10 +286,31 @@ async fn drain_with_timeout(
     (chunks, fault)
 }
 
-/// Harness self-check: the gate compiles and skips cleanly with no PipeWire.
-#[test]
-fn gate_skips_cleanly_when_disabled() {
+/// Harness self-check, both ways round: with the gate unset the suite skips
+/// and says so; with it set the graph it promises has to be there.
+#[tokio::test]
+async fn the_graph_the_gate_promises_is_reachable() {
     skip_unless_enabled!();
+    let devices = InputDevices::new().expect("registry connect");
+    // `list()` fills from the registry, so wait for the first source the way
+    // the enumeration cases do rather than reading an empty snapshot.
+    let mut watch = devices.watch();
+    let listed = tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            if !devices.list().is_empty() {
+                break true;
+            }
+            if watch.changed().await.is_err() {
+                break false;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    assert!(
+        listed,
+        "MYNA_PIPEWIRE_TESTS=1 but the graph lists no capture sources. {HOW_TO_RUN}"
+    );
 }
 
 /// No session manager → no sources in the graph: capture must FAULT LOUDLY
@@ -263,10 +320,7 @@ fn gate_skips_cleanly_when_disabled() {
 #[tokio::test]
 async fn no_session_manager_faults_loudly() {
     skip_unless_enabled!();
-    let Some(daemon) = NoSmDaemon::spawn() else {
-        eprintln!("skipped: could not spawn a private pipewire daemon");
-        return;
-    };
+    let daemon = NoSmDaemon::spawn();
 
     let source = CaptureSource::builder(AudioFormat::default())
         .backend(Box::new(PipeWireBackend::with_remote(daemon.remote())))
@@ -433,10 +487,7 @@ async fn stream_node_registered(remote: &str) {
 #[tokio::test]
 async fn stop_after_wiring_before_audio_ends_cleanly() {
     skip_unless_enabled!();
-    let Some(daemon) = NoSmDaemon::spawn() else {
-        eprintln!("skipped: could not spawn a private pipewire daemon");
-        return;
-    };
+    let daemon = NoSmDaemon::spawn();
     let source = unlinkable_source(&daemon);
     let health = source.health();
     let stop = source.stop_handle();
@@ -456,10 +507,7 @@ async fn stop_after_wiring_before_audio_ends_cleanly() {
 #[tokio::test]
 async fn unlinked_stream_faults_at_the_link_deadline() {
     skip_unless_enabled!();
-    let Some(daemon) = NoSmDaemon::spawn() else {
-        eprintln!("skipped: could not spawn a private pipewire daemon");
-        return;
-    };
+    let daemon = NoSmDaemon::spawn();
     let source = unlinkable_source(&daemon);
     let health = source.health();
     let _stream = Box::new(source).capture();
@@ -477,9 +525,12 @@ async fn unlinked_stream_faults_at_the_link_deadline() {
 /// output port id and input port id. Ids, because every capture stream in
 /// this suite shares one `node.name`.
 fn links_from(node: &str) -> Vec<(String, String, String)> {
-    let Ok(out) = Command::new("pw-link").arg("-lI").output() else {
-        return Vec::new();
-    };
+    // No silent empty list: the callers assert on links appearing and moving,
+    // and "pw-link is not installed" would read as "the graph has no links".
+    let out = Command::new("pw-link")
+        .arg("-lI")
+        .output()
+        .unwrap_or_else(|e| panic!("run pw-link to read the graph's links ({e}). {HOW_TO_RUN}"));
     let mut links = Vec::new();
     let mut from_port = None;
     for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -524,10 +575,7 @@ fn unlink_all_from(node: &str) -> Vec<(String, String)> {
 #[tokio::test]
 async fn stalled_source_faults_mid_capture() {
     skip_unless_enabled!();
-    let Some(vsrc) = VirtualSource::spawn("myna-test-src-stall") else {
-        eprintln!("skipped: pw-loopback unavailable");
-        return;
-    };
+    let vsrc = VirtualSource::spawn("myna-test-src-stall");
     let source = CaptureSource::builder(AudioFormat::default())
         .target(vsrc.node_name.clone())
         .backend(Box::new(PipeWireBackend::new()))
@@ -563,10 +611,7 @@ async fn stalled_source_faults_mid_capture() {
 async fn relinked_source_resumes_without_a_fault() {
     skip_unless_enabled!();
     const RELINK_TAKES: Duration = Duration::from_secs(1);
-    let Some(vsrc) = VirtualSource::spawn("myna-test-src-relink") else {
-        eprintln!("skipped: pw-loopback unavailable");
-        return;
-    };
+    let vsrc = VirtualSource::spawn("myna-test-src-relink");
     let source = CaptureSource::builder(AudioFormat::default())
         .target(vsrc.node_name.clone())
         .backend(Box::new(PipeWireBackend::new()))
@@ -810,10 +855,7 @@ async fn repeated_start_stop_drop_with_callbacks_running() {
 #[tokio::test]
 async fn multichannel_channel_selection_captures() {
     skip_unless_enabled!();
-    let Some(vsrc) = VirtualSource::spawn_channels("myna-test-4ch-023", Some("FL,FR,RL,RR")) else {
-        eprintln!("skipped: pw-loopback unavailable");
-        return;
-    };
+    let vsrc = VirtualSource::spawn_channels("myna-test-4ch-023", Some("FL,FR,RL,RR"));
     let fmt = AudioFormat::default(); // mono out
     let source = CaptureSource::builder(fmt)
         .ring_depth(Duration::from_secs(30))
@@ -857,10 +899,7 @@ async fn enumerate_lists_input_devices() {
     skip_unless_enabled!();
     let devices = InputDevices::new().expect("registry connect");
     // A created source must appear in the live list.
-    let Some(vsrc) = VirtualSource::spawn("myna-test-src-027") else {
-        eprintln!("skipped: pw-loopback unavailable");
-        return;
-    };
+    let vsrc = VirtualSource::spawn("myna-test-src-027");
     let mut watch = devices.watch();
     let found = tokio::time::timeout(Duration::from_secs(6), async {
         loop {
@@ -890,13 +929,7 @@ async fn enumerate_observes_add_and_remove() {
     let mut watch = devices.watch();
     let name = "myna-test-src-028";
 
-    let vsrc = match VirtualSource::spawn(name) {
-        Some(v) => v,
-        None => {
-            eprintln!("skipped: pw-loopback unavailable");
-            return;
-        }
-    };
+    let vsrc = VirtualSource::spawn(name);
     let appeared = tokio::time::timeout(Duration::from_secs(6), async {
         loop {
             if devices.list().iter().any(|d| d.node_name == name) {
@@ -936,10 +969,9 @@ async fn enumerated_name_is_a_usable_target() {
     skip_unless_enabled!();
     let devices = InputDevices::new().expect("registry connect");
     let _vsrc = VirtualSource::spawn("myna-test-src-029");
-    let Some(dev) = devices.list().into_iter().next() else {
-        eprintln!("skipped: no input devices to target");
-        return;
-    };
+    let dev = devices.list().into_iter().next().unwrap_or_else(|| {
+        panic!("the gate promised a graph, and it lists no sources. {HOW_TO_RUN}")
+    });
     let source = CaptureSource::builder(AudioFormat::default())
         .target(dev.node_name.clone())
         .backend(Box::new(PipeWireBackend::new()))
@@ -1253,10 +1285,7 @@ mod watermarks {
 #[tokio::test]
 async fn resolvable_target_selects_that_node() {
     skip_unless_enabled!();
-    let Some(vsrc) = VirtualSource::spawn("myna-test-src-018") else {
-        eprintln!("skipped: pw-loopback unavailable");
-        return;
-    };
+    let vsrc = VirtualSource::spawn("myna-test-src-018");
 
     let fmt = AudioFormat::default();
     let source = CaptureSource::builder(fmt)

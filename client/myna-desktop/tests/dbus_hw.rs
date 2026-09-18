@@ -23,6 +23,34 @@ fn dbus_enabled() -> bool {
     std::env::var("MYNA_DBUS_TESTS").as_deref() == Ok("1")
 }
 
+/// How the bus this suite talks to is stood up, quoted in every "it is not
+/// there" failure so the reader knows what to start.
+const HOW_TO_RUN: &str = "dev/gated-tests.sh runs the suite under dbus-run-session and only then \
+     sets the gate; run `make test-client-gated`";
+
+/// The bus the gate promises. `MYNA_DBUS_TESTS=1` is a claim that a session
+/// bus is reachable, so an unreachable one fails the case instead of skipping
+/// it: the suite is about owning a name on a real bus, and there is nothing
+/// left of it without one.
+async fn require_session_bus() -> zbus::Connection {
+    zbus::Connection::session().await.unwrap_or_else(|e| {
+        panic!("MYNA_DBUS_TESTS=1 but no session bus answers ({e}). {HOW_TO_RUN}")
+    })
+}
+
+/// Skip when the gate is unset, saying so; fail when it is set and the bus it
+/// promises is not there.
+macro_rules! skip_unless_dbus {
+    () => {
+        if !dbus_enabled() {
+            // cargo attributes this to the case it came from.
+            eprintln!("skipped: set MYNA_DBUS_TESTS=1 (needs a session bus)");
+            return;
+        }
+        let _bus = require_session_bus().await;
+    };
+}
+
 /// The well-known name is process-wide, so one case owns it at a time. A
 /// tokio mutex, not a std one: the guard is held across the case's awaits.
 static NAME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -55,13 +83,18 @@ async fn name_is_free() {
     panic!("{BUS_NAME} was still owned after 5 s");
 }
 
-#[test]
-fn gate_skips_cleanly_when_unset() {
-    if dbus_enabled() {
-        eprintln!("MYNA_DBUS_TESTS set: the session-bus round-trip assertions land in T033");
-    } else {
-        eprintln!("skipping dbus_hw: set MYNA_DBUS_TESTS=1 under dbus-run-session");
-    }
+/// The gate read both ways: unset, the suite skips and says so; set, the bus
+/// it promises answers.
+#[tokio::test]
+async fn the_bus_the_gate_promises_answers() {
+    skip_unless_dbus!();
+    let conn = require_session_bus().await;
+    zbus::fdo::DBusProxy::new(&conn)
+        .await
+        .expect("bus proxy")
+        .get_id()
+        .await
+        .unwrap_or_else(|e| panic!("the session bus does not answer GetId ({e}). {HOW_TO_RUN}"));
 }
 
 /// The name is the daemon's singleton lock, in both directions.
@@ -76,9 +109,7 @@ fn gate_skips_cleanly_when_unset() {
 /// session bus, and `cargo test` runs test fns concurrently in one process.
 #[tokio::test]
 async fn the_name_is_a_singleton_lock() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let _serial = exclusive().await;
     name_is_free().await;
     let _owner = ZbusBus::serve().await.expect("first serve owns the name");
@@ -127,9 +158,7 @@ trait DictationMethods {
 /// (P10).
 #[tokio::test]
 async fn served_toggle_method_feeds_the_trigger() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let _serial = exclusive().await;
 
     let (mut trigger, source) = myna_desktop::shortcut::dbus::DbusTrigger::new();
@@ -185,9 +214,7 @@ async fn served_toggle_method_feeds_the_trigger() {
 async fn the_published_shortcut_is_readable_on_the_bus() {
     use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
 
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let _serial = exclusive().await;
     name_is_free().await;
     let mut owner = ZbusBus::serve().await.expect("serve owns the name");

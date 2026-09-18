@@ -5,8 +5,11 @@
 //! daemon).
 //!
 //! Needs a bus of its own to kill, so it spawns a private `dbus-daemon`
-//! rather than joining the `MYNA_DBUS_TESTS` suite on a shared session; skips
-//! cleanly where there is no `dbus-daemon` to spawn.
+//! rather than joining the `MYNA_DBUS_TESTS` suite on a shared session. No
+//! gate and no skip: `dbus-daemon` ships with the same package as the
+//! `dbus-run-session` every other desktop suite runs under, and a case that
+//! returned early because it could not find one would assert nothing and
+//! report green.
 
 use std::io::BufRead;
 use std::time::Duration;
@@ -21,23 +24,23 @@ use myna_desktop::dbus::serve::ZbusBus;
 struct PrivateBus(std::process::Child);
 
 impl PrivateBus {
-    fn spawn() -> Option<Self> {
+    fn spawn() -> Self {
         let mut child = std::process::Command::new("dbus-daemon")
             .args(["--session", "--nofork", "--print-address"])
             .stdout(std::process::Stdio::piped())
             .spawn()
-            .ok()?;
+            .expect("spawn a private dbus-daemon (install dbus-daemon, or run in the workshop)");
         let mut address = String::new();
-        std::io::BufReader::new(child.stdout.take()?)
+        std::io::BufReader::new(child.stdout.take().expect("dbus-daemon stdout"))
             .read_line(&mut address)
-            .ok()?;
+            .expect("read the private bus address");
         let address = address.trim();
-        if address.is_empty() {
-            let _ = child.kill();
-            return None;
-        }
+        assert!(
+            !address.is_empty(),
+            "dbus-daemon printed no address for the private bus"
+        );
         std::env::set_var("DBUS_SESSION_BUS_ADDRESS", address);
-        Some(Self(child))
+        Self(child)
     }
 
     fn kill(&mut self) {
@@ -54,10 +57,7 @@ impl Drop for PrivateBus {
 
 #[tokio::test]
 async fn a_dead_bus_is_reported_lost() {
-    let Some(mut bus) = PrivateBus::spawn() else {
-        eprintln!("     (skip) no dbus-daemon to stand a private session bus on");
-        return;
-    };
+    let mut bus = PrivateBus::spawn();
     let served = ZbusBus::serve().await.expect("serve on the private bus");
     let lost = served.lost();
 

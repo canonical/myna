@@ -43,11 +43,45 @@ fn dbus_enabled() -> bool {
     std::env::var("MYNA_DBUS_TESTS").as_deref() == Ok("1")
 }
 
-#[test]
-fn gate_skips_cleanly_when_unset() {
-    if !dbus_enabled() {
-        eprintln!("skipping portal_leak: set MYNA_DBUS_TESTS=1 under dbus-run-session");
-    }
+/// How the bus this suite talks to is stood up, quoted in every "it is not
+/// there" failure so the reader knows what to start.
+const HOW_TO_RUN: &str = "dev/gated-tests.sh runs the suite under dbus-run-session and only then \
+     sets the gate; run `make test-client-gated`";
+
+/// The bus the gate promises. Set gate, no bus → fail: the fake portal has
+/// nowhere to own its name, and a case that never raised a sheet would report
+/// the same green as one that raised none.
+async fn require_session_bus() -> zbus::Connection {
+    zbus::Connection::session().await.unwrap_or_else(|e| {
+        panic!("MYNA_DBUS_TESTS=1 but no session bus answers ({e}). {HOW_TO_RUN}")
+    })
+}
+
+/// Skip when the gate is unset, saying so; fail when it is set and the bus it
+/// promises is not there.
+macro_rules! skip_unless_dbus {
+    () => {
+        if !dbus_enabled() {
+            // cargo attributes this to the case it came from.
+            eprintln!("skipped: set MYNA_DBUS_TESTS=1 (needs a session bus)");
+            return;
+        }
+        let _bus = require_session_bus().await;
+    };
+}
+
+/// The gate read both ways: unset, the suite skips and says so; set, the bus
+/// it promises answers.
+#[tokio::test]
+async fn the_bus_the_gate_promises_answers() {
+    skip_unless_dbus!();
+    let conn = require_session_bus().await;
+    zbus::fdo::DBusProxy::new(&conn)
+        .await
+        .expect("bus proxy")
+        .get_id()
+        .await
+        .unwrap_or_else(|e| panic!("the session bus does not answer GetId ({e}). {HOW_TO_RUN}"));
 }
 
 /// What the fake portal has handed out and not been asked to take back.
@@ -394,9 +428,7 @@ async fn fake_portal_with(stored: &[&str], answer: Answer) -> (Portal, Shared) {
 /// live no matter how many times the daemon tries.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_abandoned_bind_does_not_leave_its_sheet_on_screen() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal().await;
 
     for _ in 0..3 {
@@ -482,9 +514,7 @@ impl Drop for Consent {
 /// else; with nothing bound that is a clean refusal, not a dialog.
 #[tokio::test(flavor = "multi_thread")]
 async fn attaching_with_nothing_bound_asks_for_nothing() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_holding(&[]).await;
     let _consent = Consent::none();
     let client = zbus::Connection::session().await.expect("client bus");
@@ -513,9 +543,7 @@ async fn attaching_with_nothing_bound_asks_for_nothing() {
 /// And with a binding in place it attaches to it - still without prompting.
 #[tokio::test(flavor = "multi_thread")]
 async fn attaching_to_an_existing_binding_still_asks_for_nothing() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_holding(&["dictate"]).await;
     let client = zbus::Connection::session().await.expect("client bus");
 
@@ -537,9 +565,7 @@ async fn attaching_to_an_existing_binding_still_asks_for_nothing() {
 /// A binding for someone else is not ours to take.
 #[tokio::test(flavor = "multi_thread")]
 async fn attaching_ignores_a_binding_for_another_shortcut() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_holding(&["something-else"]).await;
     let _consent = Consent::none();
     let client = zbus::Connection::session().await.expect("client bus");
@@ -564,9 +590,7 @@ async fn attaching_ignores_a_binding_for_another_shortcut() {
 /// and it is silent because the portal answers from its store.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_shortcut_the_user_asked_for_is_re_bound_at_startup() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
     let _consent = Consent::given();
     let client = zbus::Connection::session().await.expect("client bus");
@@ -590,9 +614,7 @@ async fn a_shortcut_the_user_asked_for_is_re_bound_at_startup() {
 /// install - dismissing it spends the consent that put it there.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dismissed_sheet_is_not_raised_again_next_login() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     // `Answer::Never` - the sheet goes up and nobody answers it.
     let (portal, ledger) = fake_portal_with(&[], Answer::Never).await;
     let consent = Consent::given();
@@ -631,9 +653,7 @@ async fn a_dismissed_sheet_is_not_raised_again_next_login() {
 /// dismissed sheet is a refusal, and it spends the consent that raised it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dismissed_re_bind_is_a_refusal_not_a_binding() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, _ledger) = fake_portal_with(&[], Answer::Dismiss).await;
     let consent = Consent::given();
     let client = zbus::Connection::session().await.expect("client bus");
@@ -657,9 +677,7 @@ async fn a_dismissed_re_bind_is_a_refusal_not_a_binding() {
 /// The granted key is what `Shortcut` publishes, from either path to a binding.
 #[tokio::test(flavor = "multi_thread")]
 async fn attaching_reports_the_granted_trigger() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, _ledger) = fake_portal_holding(&["dictate"]).await;
     let client = zbus::Connection::session().await.expect("client bus");
     let listed =
@@ -685,9 +703,7 @@ async fn attaching_reports_the_granted_trigger() {
 /// has to reach `Shortcut` without a restart.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rebind_in_settings_reaches_the_published_shortcut() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_holding(&["dictate"]).await;
     let client = zbus::Connection::session().await.expect("client bus");
     let bus = FakeBus::new();
@@ -754,9 +770,7 @@ async fn a_rebind_in_settings_reaches_the_published_shortcut() {
 /// A bind that the portal grants reports the key it granted.
 #[tokio::test(flavor = "multi_thread")]
 async fn binding_reports_the_granted_trigger() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
     let client = zbus::Connection::session().await.expect("client bus");
 
@@ -780,9 +794,7 @@ async fn binding_reports_the_granted_trigger() {
 /// wakes the retry loop parked on the unbound recheck.
 #[tokio::test(flavor = "multi_thread")]
 async fn binding_through_the_daemon_offers_the_default_and_publishes_the_grant() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
     let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
     let consent = Consent::none();
     let bound = Arc::new(tokio::sync::Notify::new());
