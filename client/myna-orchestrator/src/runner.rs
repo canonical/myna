@@ -229,7 +229,7 @@ mod tests {
     use myna_core::AudioFormat;
     use std::path::PathBuf;
 
-    fn wav_file(seconds_of_silence: usize) -> PathBuf {
+    pub(super) fn wav_file(seconds_of_silence: usize) -> PathBuf {
         let fmt = AudioFormat::default();
         let data = vec![0u8; fmt.bytes_per_second() as usize * seconds_of_silence];
         let byte_rate = fmt.bytes_per_second();

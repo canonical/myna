@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::run_dictation;
+use crate::audio::{AudioSource, WavFileSource};
 use crate::backend::{
     channels, BackendClient, BackendError, BackendHandle, EventSender, Outbound, Outbox,
 };
@@ -130,9 +131,10 @@ where
     dictate_from(mic(steps), serve).await
 }
 
-/// [`dictate`] over a source the test built itself (a narrower ring, say).
-async fn dictate_from<S, F, T>(source: CaptureSource, serve: S) -> (Run, End, T)
+/// [`dictate`] over a source the test built itself (a narrower ring, a clip).
+async fn dictate_from<A, S, F, T>(source: A, serve: S) -> (Run, End, T)
 where
+    A: AudioSource + 'static,
     S: FnOnce(End) -> F,
     F: Future<Output = (End, T)>,
 {
@@ -354,6 +356,30 @@ async fn a_capture_fault_before_any_audio_fails_at_once_with_no_transcript() {
         "{:?} claims a transcript",
         run.events
     );
+    assert!(
+        !run.events
+            .iter()
+            .any(|e| matches!(e, OrchestratorEvent::CaptureLost { .. })),
+        "nothing was captured, so nothing is being finished: {:?}",
+        run.events
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_clip_whose_health_never_ends_still_arms_the_progress_deadline() {
+    // `WavFileSource` reports `Capturing` and nothing else, so the end of the
+    // clip is the only sign capture is over: the end-of-audio path has to
+    // arm the deadline for it, or a backend that never loads waits forever.
+    let path = super::tests::wav_file(1);
+    let source = WavFileSource::new(&path).unwrap().with_chunk_seconds(0.1);
+    let (run, _end, ()) = dictate_from(source, |end| async {
+        end.loading().await;
+        (end, ())
+    })
+    .await;
+    assert_eq!(failure(&run.outcome).0, "backend_unresponsive");
+    assert_eq!(run.elapsed.as_secs(), 300);
+    std::fs::remove_file(&path).ok();
 }
 
 #[tokio::test(start_paused = true)]
@@ -502,4 +528,77 @@ async fn capture_is_stopped_by_the_time_the_runner_returns() {
     .await;
     assert_eq!(failure(&outcome).0, "inference_failed");
     assert!(stop.is_stopped(), "capture outlived the runner");
+}
+
+/// A source that reports its fault on one side only. A real device reports it
+/// on both - health, and the stream's `Err` after the audio it had queued -
+/// but the salvage must not need it twice, nor wait for the side that stays
+/// quiet.
+struct OneSided {
+    health_fault: Option<myna_core::CaptureError>,
+    stream_fault: Option<myna_core::CaptureError>,
+}
+
+impl AudioSource for OneSided {
+    fn format(&self) -> AudioFormat {
+        AudioFormat::default()
+    }
+
+    fn health(&self) -> myna_core::CaptureHealthStream {
+        let mut states = vec![myna_core::CaptureHealth::Capturing];
+        // A faulted source never reports `Ended`; one that speaks only
+        // through its stream simply stops reporting.
+        if let Some(err) = self.health_fault.clone() {
+            states.push(myna_core::CaptureHealth::Faulted(err));
+        }
+        Box::pin(futures_util::stream::iter(states))
+    }
+
+    fn capture(self: Box<Self>) -> crate::audio::CaptureStream {
+        let chunk = myna_core::PcmChunk::new(vec![9u8; 3200], AudioFormat::default());
+        let mut items = vec![Ok(chunk)];
+        if let Some(err) = self.stream_fault {
+            items.push(Err(err));
+        }
+        Box::pin(futures_util::stream::iter(items))
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fault_reported_on_one_side_only_is_still_salvaged() {
+    for (which, source) in [
+        (
+            "health only",
+            OneSided {
+                health_fault: Some(myna_core::CaptureError::DeviceUnavailable("gone".into())),
+                stream_fault: None,
+            },
+        ),
+        (
+            "stream only",
+            OneSided {
+                health_fault: None,
+                stream_fault: Some(myna_core::CaptureError::DeviceUnavailable("gone".into())),
+            },
+        ),
+    ] {
+        let (run, _end, received) = dictate_from(source, |mut end| async {
+            end.ready().await;
+            let received = end.read_to_finish().await;
+            end.done("what I had already said").await;
+            (end, received)
+        })
+        .await;
+        assert_eq!(received.len(), 3200, "{which}: the chunk never arrived");
+        let (code, message) = failure(&run.outcome);
+        assert_eq!(code, "capture_failed", "{which}");
+        assert!(message.contains("gone"), "{which}: {message}");
+        assert!(message.contains("audio was lost"), "{which}: {message}");
+        assert!(
+            at(&run.events, is_done) < at(&run.events, is_error),
+            "{which}: {:?}",
+            run.events
+        );
+        assert!(run.elapsed < Duration::from_secs(1), "{which}: hung");
+    }
 }
