@@ -465,12 +465,17 @@ class FasterWhisperAdapter:
         finals: list[TranscriptionFinal] = []
 
         def decode_once(
-            samples: NDArray[np.float32], origin: float, word_timestamps: bool, floor: float
+            samples: NDArray[np.float32],
+            origin: float,
+            word_timestamps: bool,
+            floor: float,
+            ceiling: float,
         ) -> list[Word]:
             """One pass, filling ``region``. ``origin`` is the audio time of
             ``samples[0]``, which a nudged re-decode moves back over its pad;
-            ``floor`` is the region start, so a word the decoder placed inside
-            that pad still times inside the region."""
+            ``floor`` and ``ceiling`` are the region's own bounds, so a word
+            the decoder placed inside a pad, or timed past the end of what it
+            was given, still times inside the region."""
             nonlocal language
             options = batch_decode_options(
                 language,
@@ -482,7 +487,10 @@ class FasterWhisperAdapter:
             words: list[Word] = []
 
             def at(text: str, start: float, end: float) -> Word:
-                return Word(text, max(start + origin, floor), max(end + origin, floor))
+                def clamp(t: float) -> float:
+                    return min(max(t + origin, floor), ceiling)
+
+                return Word(text, clamp(start), clamp(end))
 
             for segment in segments:
                 if segment.words:
@@ -516,7 +524,8 @@ class FasterWhisperAdapter:
             word_timestamps = (
                 granularity is not None or first < processed or ends_at_forced_cut(samples)
             )
-            words = decode_once(samples, offset, word_timestamps, offset)
+            end = offset + len(samples) / WHISPER_RATE
+            words = decode_once(samples, offset, word_timestamps, offset, end)
             gap = untranscribed_gap(samples, accounted(offset))
             if gap >= UNTRANSCRIBED_GAP_S:
                 # Whisper skips a sentence in a long region on some inputs, and
@@ -530,7 +539,11 @@ class FasterWhisperAdapter:
                 for pad_s in RETRY_PADS:
                     pad = np.zeros(round(pad_s * WHISPER_RATE), dtype=samples.dtype)
                     padded = decode_once(
-                        np.concatenate([pad, samples, pad]), offset - pad_s, word_timestamps, offset
+                        np.concatenate([pad, samples, pad]),
+                        offset - pad_s,
+                        word_timestamps,
+                        offset,
+                        end,
                     )
                     rank = (untranscribed_gap(samples, accounted(offset)), -len(padded))
                     if rank < best_rank:

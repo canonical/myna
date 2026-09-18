@@ -739,7 +739,11 @@ class _ParakeetOnnx:
         tail alone 32%)."""
         pad = np.zeros(int(pad_s * PARAKEET_RATE), dtype=samples.dtype)
         tokens, timestamps = self.transcribe(np.concatenate([pad, samples, pad]))
-        return tokens, [max(0.0, t - pad_s) for t in timestamps]
+        # Clamped at both ends: a token the decoder placed in a pad still
+        # belongs to the region, and one timed past its end would read as
+        # coverage the region never had and outlive a cut in the loop.
+        end = len(samples) / PARAKEET_RATE
+        return tokens, [min(max(0.0, t - pad_s), end) for t in timestamps]
 
     def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
         """`transcribe`, retried when the result looks collapsed: either too

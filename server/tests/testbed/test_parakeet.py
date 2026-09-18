@@ -543,6 +543,17 @@ def test_the_retried_decode_count_is_bounded():
     assert len(model.calls) == 1 + len(RETRY_PADS)
 
 
+def test_a_pad_retry_times_its_tokens_inside_the_region():
+    """A token the decoder placed in the tail pad is timed past the region
+    end unless it is clamped, and coverage.py then reads it as coverage the
+    region never had - and the streaming loop can hold the word past a cut."""
+    model = _bare_model(lambda n, call: ([" early", " late"], [0.0, 10.45]))
+
+    _tokens, timestamps = model._padded(_speech(10.0), 0.3)
+
+    assert timestamps == [0.0, pytest.approx(10.0)]
+
+
 # ─── Partial (unstable) emission wiring ──────────────────────────────────────
 
 

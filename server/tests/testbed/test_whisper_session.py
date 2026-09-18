@@ -195,7 +195,7 @@ async def test_segment_timestamps_follow_the_word_alignment():
         )
     )
 
-    events = await run_session(adapter, timestamp_granularity="segment")
+    events = await run_session(adapter, audio_seconds=2.0, timestamp_granularity="segment")
 
     (segment,) = finals(events)[0].segments
     assert (segment.start, segment.end) == (0.42, 1.13)
@@ -210,7 +210,7 @@ async def test_word_granularity_yields_one_entry_per_word():
         )
     )
 
-    events = await run_session(adapter, timestamp_granularity="word")
+    events = await run_session(adapter, audio_seconds=2.0, timestamp_granularity="word")
 
     segments = finals(events)[0].segments
     assert [(s.text, s.start, s.end) for s in segments] == [
@@ -667,6 +667,24 @@ async def test_batch_does_not_re_decode_a_region_holding_no_speech():
     )
 
     assert [c["samples"] for c in adapter._model.calls] == [60 * RATE, 11 * RATE]
+
+
+async def test_batch_times_a_word_the_decoder_overran_inside_its_region():
+    """faster-whisper can time a word past the end of the input it was given,
+    and a nudged re-decode can place one in the tail pad. Either way the word
+    belongs to the region: an end past it reads as coverage the region never
+    had, and the streaming loop can hold the word past a cut."""
+
+    class _Overrun(_PositionalModel):
+        def _word(self, t: int, start_s: float, end_s: float):
+            word = super()._word(t, start_s, end_s)
+            return _Word(word.word, word.start, word.end + 5.0) if word else word
+
+    plan = [(70.0, True)]
+    _, events = await _run_positional(plan, model=_Overrun, timestamp_granularity="word")
+
+    ends = [c.end for _, e in events if isinstance(e, TranscriptionFinal) for c in e.segments]
+    assert ends and max(ends) <= 70.0
 
 
 async def test_batch_does_not_re_decode_a_region_it_transcribed():
