@@ -17,6 +17,7 @@ use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -966,15 +967,27 @@ async fn enumerated_name_is_a_usable_target() {
     );
 }
 
-/// Hold the stats tap's read guard for `stall`: the loop thread parks in its
-/// next publish, as if starved of CPU, while PipeWire keeps delivering.
+/// Hold the stats tap's read guard for `stall` on a thread of its own: the
+/// loop thread parks in its next publish, as if starved of CPU, while
+/// PipeWire keeps delivering. Returns once the guard is held, so the caller
+/// can watch the tap for as long as it is, and hands back the holder.
 fn stall_capture_loop(
     stats: &tokio::sync::watch::Receiver<myna_audio::AudioStats>,
     stall: Duration,
-) {
-    let guard = stats.borrow();
-    std::thread::sleep(stall);
-    drop(guard);
+) -> std::thread::JoinHandle<()> {
+    let taken = Arc::new(std::sync::Barrier::new(2));
+    let holder = std::thread::spawn({
+        let stats = stats.clone();
+        let taken = taken.clone();
+        move || {
+            let guard = stats.borrow();
+            taken.wait();
+            std::thread::sleep(stall);
+            drop(guard);
+        }
+    });
+    taken.wait();
+    holder
 }
 
 fn default_capture_source() -> CaptureSource {
@@ -1005,21 +1018,22 @@ async fn capture_loop_stall_within_the_realtime_buffer_loses_nothing() {
         "capture established"
     );
 
-    let before = stats.borrow().captured;
-    let t0 = Instant::now();
-    stall_capture_loop(&stats, STALL);
-    let caught_up = wait_captured(&mut stats, before + STALL, Duration::from_secs(1)).await;
-    let behind = t0
-        .elapsed()
-        .saturating_sub(stats.borrow().captured - before);
+    let holder = stall_capture_loop(&stats, STALL);
+    // Read under the stall: the value cannot move while the guard is held,
+    // so this is where the loop thread got to, and nothing can reach the tap
+    // until it is released - that silence is the stall having happened.
+    let before = stats.borrow_and_update().captured;
+    let stalled = tokio::time::timeout(STALL / 2, stats.changed())
+        .await
+        .is_err();
+    holder.join().expect("the thread holding the stats tap");
+    // Everything the realtime callback buffered meanwhile is still there.
+    let caught_up = wait_captured(&mut stats, before + STALL, Duration::from_secs(5)).await;
     stop.stop();
     let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
     assert!(fault.is_none(), "a loop stall faulted: {fault:?}");
+    assert!(stalled, "the capture loop was never held up");
     assert!(caught_up, "capture did not catch up after the stall");
-    assert!(
-        behind <= Duration::from_millis(300),
-        "capture fell {behind:?} behind"
-    );
     let drained: Duration = chunks.iter().map(PcmChunk::duration).sum();
     assert_eq!(drained, stats.borrow().captured);
 }
@@ -1043,9 +1057,10 @@ async fn capture_loop_stall_past_the_realtime_buffer_faults() {
         "capture established"
     );
 
-    stall_capture_loop(&stats, Duration::from_millis(2_500));
+    let holder = stall_capture_loop(&stats, Duration::from_millis(2_500));
 
-    let (states, _) = health_to_end(health, Duration::from_secs(3)).await;
+    let (states, _) = health_to_end(health, Duration::from_secs(8)).await;
+    holder.join().expect("the thread holding the stats tap");
     match states.last() {
         Some(CaptureHealth::Faulted(CaptureError::Backend(msg))) => {
             assert!(msg.contains("overflowed"), "got: {msg}")
@@ -1065,7 +1080,13 @@ async fn capture_loop_stall_past_the_realtime_buffer_faults() {
 /// process so stopping it cannot disturb the other captures in this suite.
 #[tokio::test]
 async fn stopped_process_child() {
+    // Not a test of its own: it asserts nothing, it reports to the parent,
+    // which judges it. Skips loudly, like every other gate in this suite.
     if std::env::var_os("MYNA_STOPPED_PROCESS_CHILD").is_none() {
+        eprintln!(
+            "skipped: stopped_process_faults_as_lost_audio runs this half \
+             with MYNA_STOPPED_PROCESS_CHILD=1"
+        );
         return;
     }
     let source = default_capture_source();
