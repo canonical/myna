@@ -31,6 +31,7 @@ from myna.core import (
 )
 from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
+from myna.testbed.keyword_bias import KeywordBias, keyword_bias
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
     BATCH_WINDOW_CAP_S,
@@ -66,6 +67,7 @@ class _FakeParakeetModel:
     def __init__(self, text: str = "hello world"):
         self._text = text
         self.calls: list[int] = []  # lengths of sample arrays passed in
+        self.biases: list[object] = []
         # T10: run_session drives the real MemoryPressureMonitor lifecycle
         # (begin_session/observe_decode) against whatever model it holds; the
         # fake needs a real one so that path is exercised, not stubbed out.
@@ -73,8 +75,9 @@ class _FakeParakeetModel:
         self.gpu_unavailable = False
         self.device = "cpu"
 
-    def transcribe_words(self, samples) -> list[Word]:
+    def transcribe_words(self, samples, bias=None) -> list[Word]:
         self.calls.append(len(samples))
+        self.biases.append(bias)
         return [Word(f" {w}", i, i + 1) for i, w in enumerate(self._text.split())]
 
 
@@ -402,7 +405,7 @@ def _bare_model(script):
     model = _ParakeetOnnx.__new__(_ParakeetOnnx)
     model.calls = []
 
-    def transcribe(samples):
+    def transcribe(samples, *, bias=None):
         model.calls.append(len(samples))
         return script(len(samples), len(model.calls))
 
@@ -902,7 +905,7 @@ def _small_gpu_model(tmp_path, monkeypatch, session=_SmallGpuSession, device="cu
     model = _ParakeetOnnx(str(tmp_path), device=device, encoder_threads=3)
     decoded = []
     monkeypatch.setattr(
-        model, "_decode_sequence", lambda enc, n: decoded.append(n) or (["x"], [0.0])
+        model, "_decode_sequence", lambda enc, n, bias=None: decoded.append(n) or (["x"], [0.0])
     )
     return model, decoded
 
@@ -1097,3 +1100,229 @@ def test_cli_wires_the_device_and_the_candidate_names_it():
     cuda = build_adapter(build_parser().parse_args(base + ["--device", "cuda"]))
     assert cuda._device == "cuda"
     assert cuda.candidate.engine == "onnxruntime-cuda"
+
+
+# ─── Keyword biasing in the decode loop ──────────────────────────────────────
+# A scripted decoder_joint: the logits at frame t are a fixed table, the
+# duration head always says "advance one frame", so a test reads as the
+# token race at each frame.
+
+_KW_VOCAB = [" the", " cat", " Si", "ob", "han", "a", "x", "<blk>"]
+_KW_BLANK = len(_KW_VOCAB) - 1
+_KW = {token: i for i, token in enumerate(_KW_VOCAB)}
+
+
+class _ScriptedJoint:
+    def __init__(self, frames):
+        self.frames = frames
+        self.width = len(_KW_VOCAB) + 2
+
+    def run(self, names, feeds):
+        frame = int(feeds["encoder_outputs"][0, 0, 0])
+        logits = np.full((1, 1, 1, self.width), -50.0, dtype=np.float32)
+        logits[..., _KW_BLANK] = 0.0
+        for token, score in self.frames[frame].items():
+            logits[..., _KW[token]] = score
+        logits[..., len(_KW_VOCAB) + 1] = 1.0  # duration bin 1
+        state = feeds["input_states_1"]
+        return [logits, state, feeds["input_states_2"]]
+
+
+def _scripted_model(*frames):
+    model = _ParakeetOnnx.__new__(_ParakeetOnnx)
+    model.device = "cuda"  # unbound joint runs, so the fake needs no IOBinding
+    model._vocab, model._blank_idx = list(_KW_VOCAB), _KW_BLANK
+    model._vocab_size = len(_KW_VOCAB)
+    model._decoder_joint = _ScriptedJoint(list(frames))
+    model._joint_out_width = model._decoder_joint.width
+    encodings = np.zeros((len(frames), 1024), dtype=np.float32)
+    encodings[:, 0] = np.arange(len(frames))
+    return model, encodings
+
+
+def _decode(frames, keywords=()):
+    model, encodings = _scripted_model(*frames)
+    bias = keyword_bias(keywords, model._vocab, model._blank_idx) if keywords else None
+    return model._decode_sequence(encodings, len(encodings), bias=bias)
+
+
+def test_a_boosted_keyword_that_completes_is_kept():
+    frames = [{" the": 5.0, " Si": 0.0}, {"a": 5.0, "ob": 0.0}, {"x": 5.0, "han": 0.0}]
+    assert _decode(frames) == ([" the", "a", "x"], [0.0, 0.08, 0.16])
+    tokens, timestamps = _decode(frames, ["Siobhan"])
+    assert tokens == [" Si", "ob", "han"]
+    assert timestamps == pytest.approx([0.0, 0.08, 0.16])
+
+
+def test_blank_is_never_overridden():
+    frames = [{" Si": -1.0}, {"ob": -1.0}, {"han": -1.0}]
+    assert _decode(frames, ["Siobhan"]) == ([], [])
+
+
+def test_a_boosted_match_that_breaks_is_rolled_back():
+    frames = [{" the": 5.0, " Si": 0.0}, {" cat": 40.0, "ob": 0.0}]
+    assert _decode(frames, ["Siobhan"]) == _decode(frames)
+
+
+def test_a_boosted_match_the_audio_ends_inside_is_rolled_back():
+    frames = [{" the": 5.0, " Si": 0.0}, {"ob": 5.0}]
+    tokens, timestamps = _decode(frames, ["Siobhan"])
+    assert tokens == [" the", "ob"]
+    assert timestamps == pytest.approx([0.0, 0.08])
+
+
+def test_the_rollback_returns_to_the_first_boosted_token():
+    frames = [
+        {" cat": 5.0},
+        {" the": 5.0, " Si": 0.0},
+        {"a": 5.0, "ob": 0.0},
+        {" cat": 40.0, "han": 0.0},
+    ]
+    assert _decode(frames, ["Siobhan"]) == _decode(frames)
+
+
+def test_a_match_the_model_chose_itself_is_not_rolled_back():
+    frames = [{" Si": 5.0}, {" cat": 40.0, "ob": 0.0}]
+    assert _decode(frames, ["Siobhan"]) == ([" Si", " cat"], pytest.approx([0.0, 0.08]))
+
+
+def test_a_rolled_back_frame_may_start_a_fresh_boost_later():
+    frames = [
+        {" the": 5.0, " Si": 0.0},
+        {" cat": 40.0},
+        {" the": 5.0, " Si": 0.0},
+        {"a": 5.0, "ob": 0.0},
+        {"x": 5.0, "han": 0.0},
+    ]
+    tokens, _ = _decode(frames, ["Siobhan"])
+    assert tokens == [" the", " cat", " Si", "ob", "han"]
+
+
+def test_keywords_the_audio_never_approaches_leave_the_decode_alone():
+    frames = [{" the": 5.0}, {" cat": 5.0}, {}, {"a": 3.0, "x": 2.0}]
+    assert _decode(frames, ["Siobhan"]) == _decode(frames)
+
+
+def test_a_boosted_token_may_start_a_keyword_afresh_mid_match():
+    frames = [
+        {" Si": 5.0},
+        {" the": 5.0, " Si": 0.0},
+        {"a": 5.0, "ob": 0.0},
+        {"x": 5.0, "han": 0.0},
+    ]
+    tokens, _ = _decode(frames, ["Siobhan"])
+    assert tokens == [" Si", " Si", "ob", "han"]
+
+
+class _RandomJoint:
+    """decoder_joint stand-in whose logits are a pseudo-random function of
+    the frame, the previous token and the decoder state, which counts the
+    tokens adopted (+1 and +2 per token), so a decode that feeds the wrong
+    state goes somewhere else. "han" never wins: Siobhan cannot complete."""
+
+    def __init__(self, seed, durations, hot_frames=()):
+        self.seed, self.durations, self.hot_frames = seed, durations, hot_frames
+        self.width = len(_KW_VOCAB) + durations
+
+    def run(self, names, feeds):
+        frame = int(feeds["encoder_outputs"][0, 0, 0])
+        key = (
+            self.seed,
+            frame,
+            int(feeds["targets"][0, 0]),
+            int(feeds["input_states_1"][0, 0, 0]),
+            int(feeds["input_states_2"][0, 0, 0]),
+        )
+        rng = np.random.default_rng(abs(hash(key)))
+        logits = rng.normal(0.0, 2.0, self.width).astype(np.float32)
+        logits[_KW["han"]] = -50.0
+        if self.durations:
+            logits[len(_KW_VOCAB)] += 1.5  # duration 0 often: several tokens a frame
+        if frame in self.hot_frames:
+            logits[_KW_BLANK] = -50.0
+            logits[len(_KW_VOCAB) :] = [0.0] + [-50.0] * (self.durations - 1)
+        return [
+            logits.reshape(1, 1, 1, -1),
+            feeds["input_states_1"] + 1.0,
+            feeds["input_states_2"] + 2.0,
+        ]
+
+
+def _random_decode(joint, frames, keywords):
+    model = _ParakeetOnnx.__new__(_ParakeetOnnx)
+    model.device = "cuda"
+    model._vocab, model._blank_idx = list(_KW_VOCAB), _KW_BLANK
+    model._vocab_size = len(_KW_VOCAB)
+    model._decoder_joint = joint
+    model._joint_out_width = joint.width
+    encodings = np.zeros((frames, 1024), dtype=np.float32)
+    encodings[:, 0] = np.arange(frames)
+    bias = keyword_bias(keywords, model._vocab, model._blank_idx) if keywords else None
+    return model._decode_sequence(encodings, frames, bias=bias)
+
+
+@pytest.mark.parametrize("durations", [0, 3])
+@pytest.mark.parametrize("seed", range(12))
+def test_a_keyword_that_never_completes_never_changes_the_transcript(seed, durations):
+    joint = _RandomJoint(seed, durations, hot_frames=(0,) if seed % 2 else ())
+    unbiased = _random_decode(joint, 24, ())
+    assert unbiased[0], "sanity: the script emits tokens"
+    assert _random_decode(joint, 24, ["Siobhan"]) == unbiased
+
+
+def test_the_random_script_does_try_the_keyword():
+    """Guards the property above against passing vacuously."""
+    seen = []
+    real_rerank = KeywordBias.rerank
+
+    def rerank(self, state, logits, token):
+        chosen = real_rerank(self, state, logits, token)
+        seen.append(chosen != token)
+        return chosen
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(KeywordBias, "rerank", rerank)
+        for seed in range(12):
+            _random_decode(_RandomJoint(seed, 3), 24, ["Siobhan"])
+    assert sum(seen) >= 12
+
+
+def test_guarded_retries_decode_with_the_same_bias():
+    seen = []
+
+    def transcribe(samples, *, bias=None):
+        seen.append(bias)
+        return [], []
+
+    model = _ParakeetOnnx.__new__(_ParakeetOnnx)
+    model.transcribe = transcribe
+    bias = object()
+    model.transcribe_words(_speech(1.5), bias=bias)
+    assert len(seen) == 2 and all(b is bias for b in seen)
+
+
+async def _session_biases(adapter, keywords):
+    model = _FakeParakeetModel("hello")
+    model._vocab, model._blank_idx = list(_KW_VOCAB), _KW_BLANK
+    adapter._model = model
+    cfg = SessionConfig(audio_format=FORMAT, language="en", keywords=keywords)
+
+    async def emit(_event):
+        pass
+
+    await adapter.run_session(cfg, pcm_audio(100.0), emit)
+    return model.biases
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_a_session_without_keywords_decodes_unbiased(streaming):
+    biases = await _session_biases(ParakeetAdapter(streaming=streaming), ())
+    assert biases and all(b is None for b in biases)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_a_session_builds_its_keyword_bias_once(streaming):
+    biases = await _session_biases(ParakeetAdapter(streaming=streaming), ("Siobhan",))
+    assert len(biases) > 1, "the session should span several decodes"
+    assert isinstance(biases[0], KeywordBias)
+    assert all(b is biases[0] for b in biases)

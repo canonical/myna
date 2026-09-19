@@ -15,8 +15,9 @@ full NeMo snap's size (SC-005), decode cheap enough that chunked commit is
 essentially free. The greedy TDT decode loop is a numpy/onnxruntime port of
 murmure's ``engine.rs`` (itself a port of NVIDIA's reference decoder):
 preprocess (nemo128 mel) → encode → per-frame ``decode_step`` with the
-duration-head skip. Biasing/boost is deliberately not ported (out of scope —
-spec 008).
+duration-head skip. A session's keywords bias that loop (``keyword_bias``,
+``_ParakeetOnnx._decode_biased``); a session without them decodes exactly as
+before.
 
 Emission is **chunked commit** (murmure ``audio/chunking.rs`` semantics, ported
 as ``streaming.strategies.SilenceCut``): speech accumulates until a pause cuts
@@ -95,6 +96,7 @@ from myna.core import (
 )
 from myna.server.lifecycle import GPU_UNAVAILABLE_MESSAGE, MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate, runtime_versions
+from myna.testbed.keyword_bias import ROOT, KeywordBias, keyword_bias
 from myna.testbed.streaming.coverage import (
     RETRY_PADS,
     UNTRANSCRIBED_GAP_S,
@@ -430,6 +432,19 @@ class _JointBuffers:
     logits: NDArray[np.float32]  # (vocab+durations,), a view into the reused output buffer
 
 
+@dataclass
+class _Rewind:
+    """Where `_decode_biased` resumes when a boosted match comes to nothing:
+    the loop state just before its first boosted token."""
+
+    t: int
+    emitted_at_frame: int
+    prev_token: int
+    state: int
+    n_tokens: int
+    decoder_state: tuple[NDArray[np.float32], NDArray[np.float32]]
+
+
 class _ParakeetOnnx:
     """The three ONNX sessions + greedy TDT decode (murmure engine.rs port)."""
 
@@ -614,12 +629,20 @@ class _ParakeetOnnx:
         return buffers.logits
 
     def _decode_sequence(
-        self, encodings: NDArray[np.float32], encodings_len: int
+        self,
+        encodings: NDArray[np.float32],
+        encodings_len: int,
+        *,
+        bias: KeywordBias | None = None,
     ) -> tuple[list[str], list[float]]:
         """Greedy TDT decode (murmure decode_sequence_greedy): argmax vocab
         token; on non-blank update the decoder state; the duration head skips
         t forward; a blank (or MAX_TOKENS_PER_STEP at one frame) advances 1.
+
+        ``bias`` hands the decode to `_decode_biased`.
         """
+        if bias is not None:
+            return self._decode_biased(encodings, encodings_len, bias)
         buffers = self._joint_buffers()
         tokens: list[str] = []
         timestamps: list[float] = []
@@ -648,7 +671,83 @@ class _ParakeetOnnx:
                     emitted_at_frame = 0
         return tokens, timestamps
 
-    def transcribe(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
+    def _decode_biased(
+        self, encodings: NDArray[np.float32], encodings_len: int, bias: KeywordBias
+    ) -> tuple[list[str], list[float]]:
+        """`_decode_sequence` with ``bias`` re-ranking every non-blank choice.
+
+        Greedy decoding cannot take a token back, so a boosted match stays
+        provisional until its keyword completes. If it breaks first, or the
+        audio ends inside it, the decode rewinds to the first boosted token
+        and takes the model's own choice there: a wrong guess costs the joint
+        calls since, not the transcript. The duration head is read as it
+        comes: it is a separate head, not conditioned on the token chosen.
+        """
+        buffers = self._joint_buffers()
+        tokens: list[str] = []
+        timestamps: list[float] = []
+        t = 0
+        emitted_at_frame = 0
+        prev_token = self._blank_idx
+        state = ROOT
+        rewind: _Rewind | None = None
+        unbiased = False
+        while t < encodings_len or rewind is not None:
+            broken = t >= encodings_len
+            if not broken:
+                logits = self._decode_step(buffers, prev_token, encodings[t])
+                vocab_logits = logits[: self._vocab_size]
+                dur_logits = logits[self._vocab_size :]
+                token = int(np.argmax(vocab_logits))
+                fresh = False
+                if token != self._blank_idx and not unbiased:
+                    chosen = bias.rerank(state, vocab_logits, token)
+                    if chosen != token and rewind is None:
+                        rewind = _Rewind(
+                            t,
+                            emitted_at_frame,
+                            prev_token,
+                            state,
+                            len(tokens),
+                            (buffers.state_in[0].copy(), buffers.state_in[1].copy()),
+                        )
+                        fresh = True
+                    token = chosen
+                unbiased = False
+                if token != self._blank_idx:
+                    after, extended = bias.advance(state, token)
+                    broken = rewind is not None and not (extended or fresh)
+                    if not broken:
+                        state = after
+                        if bias.complete(state):
+                            rewind = None
+                        buffers.state_in[0][...] = buffers.state_out[0]
+                        buffers.state_in[1][...] = buffers.state_out[1]
+                        prev_token = token
+                        tokens.append(self._vocab[token])
+                        timestamps.append(t * FRAME_S)
+                        emitted_at_frame += 1
+                if not broken:
+                    duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
+                    if duration > 0:
+                        t += duration
+                        emitted_at_frame = 0
+                    elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
+                        t += 1
+                        emitted_at_frame = 0
+            if broken:
+                assert rewind is not None  # only a provisional match breaks
+                t, emitted_at_frame = rewind.t, rewind.emitted_at_frame
+                prev_token, state = rewind.prev_token, rewind.state
+                del tokens[rewind.n_tokens :], timestamps[rewind.n_tokens :]
+                buffers.state_in[0][...] = rewind.decoder_state[0]
+                buffers.state_in[1][...] = rewind.decoder_state[1]
+                rewind, unbiased = None, True
+        return tokens, timestamps
+
+    def transcribe(
+        self, samples: NDArray[np.float32], *, bias: KeywordBias | None = None
+    ) -> tuple[list[str], list[float]]:
         """float32 mono 16 kHz → (tokens, token timestamps in region seconds).
 
         A GPU that started can still fail a run: a 4 GB card loads the fp32
@@ -658,13 +757,13 @@ class _ParakeetOnnx:
         """
         on = self.device
         try:
-            return self._transcribe(samples)
+            return self._transcribe(samples, bias)
         except Exception:
             if on != "cuda":
                 raise
             _log.exception("parakeet: a run failed on the GPU; serving on the CPU")
             self._serve_on_cpu()
-            return self._transcribe(samples)
+            return self._transcribe(samples, bias)
 
     def _serve_on_cpu(self) -> None:
         """Rebuild the encoder and joint on the CPU, once, however many
@@ -685,7 +784,9 @@ class _ParakeetOnnx:
             self.gpu_unavailable = True
             self.device = "cpu"
 
-    def _transcribe(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
+    def _transcribe(
+        self, samples: NDArray[np.float32], bias: KeywordBias | None
+    ) -> tuple[list[str], list[float]]:
         with _zone("transcribe"):
             waveforms = samples.reshape(1, -1).astype(np.float32)
             waveforms_lens = np.array([samples.shape[0]], dtype=np.int64)
@@ -707,21 +808,25 @@ class _ParakeetOnnx:
             # contiguous memcpy instead.
             with _zone("transpose"):
                 encoder_out = np.ascontiguousarray(np.transpose(encoder_out, (0, 2, 1)))
-            return self._decode_sequence(encoder_out[0], int(encoder_lens[0]))
+            return self._decode_sequence(encoder_out[0], int(encoder_lens[0]), bias=bias)
 
-    def _padded(self, samples: NDArray[np.float32], pad_s: float) -> tuple[list[str], list[float]]:
+    def _padded(
+        self, samples: NDArray[np.float32], pad_s: float, bias: KeywordBias | None = None
+    ) -> tuple[list[str], list[float]]:
         """Decode ``samples`` nudged by silence on both ends, in region
         seconds (head+tail recovers 77% of total collapses; head alone 52%,
         tail alone 32%)."""
         pad = np.zeros(int(pad_s * PARAKEET_RATE), dtype=samples.dtype)
-        tokens, timestamps = self.transcribe(np.concatenate([pad, samples, pad]))
+        tokens, timestamps = self.transcribe(np.concatenate([pad, samples, pad]), bias=bias)
         # Clamped at both ends: a token the decoder placed in a pad still
         # belongs to the region, and one timed past its end would read as
         # coverage the region never had and outlive a cut in the loop.
         end = len(samples) / PARAKEET_RATE
         return tokens, [min(max(0.0, t - pad_s), end) for t in timestamps]
 
-    def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
+    def _transcribe_guarded(
+        self, samples: NDArray[np.float32], bias: KeywordBias | None = None
+    ) -> tuple[list[str], list[float]]:
         """`transcribe`, retried when the result looks collapsed: either too
         few tokens for the whole region, or a long stretch of loud audio with
         no token in it at all (a partial collapse, `untranscribed_gap`).
@@ -731,14 +836,14 @@ class _ParakeetOnnx:
         whole uncommitted window twice a second while the user holds the key
         without speaking.
         """
-        tokens, timestamps = self.transcribe(samples)
+        tokens, timestamps = self.transcribe(samples, bias=bias)
         if not has_speech(samples):
             return tokens, timestamps
         gap = untranscribed_gap(samples, [(t, t) for t in timestamps])
         if gap >= UNTRANSCRIBED_GAP_S:
             best, best_rank = (tokens, timestamps), (gap, -len(tokens))
             for pad_s in RETRY_PADS:
-                retry = self._padded(samples, pad_s)
+                retry = self._padded(samples, pad_s, bias)
                 rank = (untranscribed_gap(samples, [(t, t) for t in retry[1]]), -len(retry[0]))
                 if rank < best_rank:
                     best, best_rank = retry, rank
@@ -755,13 +860,15 @@ class _ParakeetOnnx:
         seconds = len(samples) / PARAKEET_RATE
         if len(tokens) >= _COLLAPSE_WORDS_PER_SECOND * seconds:
             return tokens, timestamps
-        retry_tokens, retry_timestamps = self._padded(samples, _COLLAPSE_RETRY_PAD_S)
+        retry_tokens, retry_timestamps = self._padded(samples, _COLLAPSE_RETRY_PAD_S, bias)
         if len(retry_tokens) <= len(tokens):
             return tokens, timestamps
         return retry_tokens, retry_timestamps
 
-    def transcribe_words(self, samples: NDArray[np.float32]) -> list[Word]:
-        tokens, timestamps = self._transcribe_guarded(samples)
+    def transcribe_words(
+        self, samples: NDArray[np.float32], bias: KeywordBias | None = None
+    ) -> list[Word]:
+        tokens, timestamps = self._transcribe_guarded(samples, bias)
         return _tokens_to_words(tokens, timestamps)
 
 
@@ -921,6 +1028,11 @@ class ParakeetAdapter:
             # way LifecycleService itself re-arms idle-release on a fresh
             # session rather than staying silent forever after the first.
             model.pressure_monitor.begin_session()
+            bias = (
+                keyword_bias(config.keywords, model._vocab, model._blank_idx)
+                if config.keywords
+                else None
+            )
             # Ready BEFORE pulling audio — the client gates on it.
             if model.gpu_unavailable:
                 await emit(
@@ -934,10 +1046,10 @@ class ParakeetAdapter:
                 await emit(TranscriptionProgress(phase=PHASE_READY))
 
             if self._streaming:
-                await self._run_streaming_session(model, audio, emit)
+                await self._run_streaming_session(model, audio, emit, bias=bias)
                 return
 
-            text = await self._run_batch_session(model, audio, emit)
+            text = await self._run_batch_session(model, audio, emit, bias=bias)
             if text is None:
                 await emit(TranscriptionDone(text=""))
                 return
@@ -954,6 +1066,8 @@ class ParakeetAdapter:
         model: _ParakeetOnnx,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
+        *,
+        bias: KeywordBias | None = None,
     ) -> str | None:
         """The chunked loop with nothing shown between cuts: its commits are
         collected rather than emitted, so the session still ends in one final.
@@ -977,7 +1091,7 @@ class ParakeetAdapter:
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             majflt_before = sample_majflt()
-            words = model.transcribe_words(samples)
+            words = model.transcribe_words(samples, bias)
             warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
             if warning is not None:
                 warnings.append(
@@ -1008,6 +1122,8 @@ class ParakeetAdapter:
         model: _ParakeetOnnx,
         audio: AsyncIterator[PcmChunk],
         emit: EventSink,
+        *,
+        bias: KeywordBias | None = None,
     ) -> None:
         """Chunked commit (008 US3): SilenceCut watches for pause/force cuts;
         each finalized chunk is decoded once and committed wholesale. Between
@@ -1030,7 +1146,7 @@ class ParakeetAdapter:
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             majflt_before = sample_majflt()
-            words = model.transcribe_words(samples)
+            words = model.transcribe_words(samples, bias)
             warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
             if warning is not None:
                 progress = TranscriptionProgress(
