@@ -45,6 +45,7 @@ struct Args {
     mic: bool,
     target: Option<String>,
     language: Option<String>,
+    vocabulary: Vec<String>,
     realtime: bool,
     dialect: Dialect,
     base64_audio: bool,
@@ -87,6 +88,8 @@ OPTIONS:
     --list-devices     list input devices (stable node.name + label) and exit;
                        stays live — plug/unplug updates the list until Ctrl-C
     --language <lang>  language hint sent in the session config (e.g. en)
+    --vocabulary <word> name or phrase the backend should bias recognition
+                       toward (repeatable; e.g. --vocabulary Siobhan)
     --dialect <name>   wire dialect: `internal` (default) or `ie115`
     --base64-audio     (ie115) send audio as base64 input_audio_buffer.append
                        frames instead of raw binary (OpenAI parity)
@@ -109,6 +112,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut mic = false;
     let mut target = None;
     let mut language = None;
+    let mut vocabulary = Vec::new();
     let mut realtime = false;
     let mut dialect = Dialect::Internal;
     let mut base64_audio = false;
@@ -132,6 +136,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--mic" => mic = true,
             "--target" => target = Some(next(&mut it, "--target")?),
             "--language" => language = Some(next(&mut it, "--language")?),
+            "--vocabulary" => vocabulary.push(next(&mut it, "--vocabulary")?),
             "--dialect" => {
                 dialect = match next(&mut it, "--dialect")?.as_str() {
                     "internal" => Dialect::Internal,
@@ -180,6 +185,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         mic,
         target,
         language,
+        vocabulary,
         realtime,
         dialect,
         base64_audio,
@@ -526,6 +532,7 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         };
         let config = SessionConfig {
             language: args.language.clone(),
+            keywords: myna_core::normalize_keywords(&args.vocabulary),
             ..Default::default()
         };
         let outcome = match mode {
@@ -585,6 +592,7 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         let stop = source.stop_handle();
         let config = SessionConfig {
             language: args.language.clone(),
+            keywords: myna_core::normalize_keywords(&args.vocabulary),
             ..Default::default()
         };
 

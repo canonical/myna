@@ -135,7 +135,8 @@ start_server internal "$SOCK"
 # Clips play straight through without reading stdin, and finish in well under
 # a second: a feeder writing Enter later dies of SIGPIPE and fails the run.
 (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
-  --socket "$SOCK" --clip "$CLIP") </dev/null | tee "$WORK/internal.out"
+  --socket "$SOCK" --clip "$CLIP" --vocabulary kernel --vocabulary Siobhan) </dev/null \
+  | tee "$WORK/internal.out"
 stop_server
 grep -qF "$EXPECTED" "$WORK/internal.out" \
   || die "internal-dialect session missed expected transcript (see $WORK/internal.out)"
@@ -230,7 +231,7 @@ if [ -n "$MIC_WHAT" ]; then
   start_server live "$SOCK"
   ( sleep 1; printf '\n'; sleep 5; printf '\n'; sleep 2 ) | \
   (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
-    --socket "$SOCK" --mic "${MIC_TARGET[@]}") \
+    --socket "$SOCK" --mic "${MIC_TARGET[@]}" --vocabulary kernel) \
     | tee "$WORK/live.out" || die "live-capture scenario failed (see $WORK/live.out)"
   stop_server
 else
