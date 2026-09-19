@@ -78,6 +78,34 @@ make bench-run-whisper
 make bench-aggregate
 ```
 
+Keyword biasing (`SessionConfig.keywords`) has its own loop, against an
+in-tree server rather than an installed snap, in about two minutes on CPU:
+
+```shell
+CG=/sys/fs/cgroup$(awk -F: '{print $3}' /proc/self/cgroup); echo max > $CG/memory.high
+make bench-keywords KEYWORD_LABEL=<change> [KEYWORD_SERVER_ARGS=--streaming]
+```
+
+`dev/keyword-eval.sh` serves `--adapter parakeet` from the checkout (shipped
+int8 weights from `~/.cache/myna`, isolated uv env), sweeps the frozen keyword
+tier with keywords scored but not sent (`<label>/off`) and then sent
+(`<label>/on`), and tabulates `results/keywords.jsonl`. Stage it on the host;
+the workshop cannot see the weights.
+
+- The tier is `keywords-dev-clean.json` in the benchmarker package: 284
+  dev-clean clips, 196 names and rare words the shipped model misses (327
+  reference occurrences), plus three distractors per clip (852 in all). Its
+  derivation is in `corpus_english.collect_keyword_set`; the set is frozen,
+  never re-mined per run.
+- `KW rec%` is keyword occurrences recovered, `KW Aa%` the same with the case
+  as written, `KW FH%` distractors the transcript produced. Every clip row
+  carries `kw_missed` and `kw_false` for inspection. `bench --keyword-list`
+  swaps in one list for every clip.
+- Baseline, Parakeet v3 int8 CPU batch (2026-09-19): WER 6.36%, KW rec 12.84%
+  (42/327, as written the same), KW FH 0.00% (0/852), identical sent or not.
+  The WER is high by construction: the clips were picked for their misses.
+  A biasing change must raise recall without moving FH or WER the wrong way.
+
 For another machine, build `myna-bench.pyz` with `make build-bench`, copy it with the selected `.snap` and `.comp` artifacts and a configuration based on `dev/bench.yaml.example`, then run:
 
 ```shell

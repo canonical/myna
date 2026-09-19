@@ -455,6 +455,14 @@ bench-long-%: build-bench ## Run the long-form clip against an already-running <
 		--manifest corpus/english/manifest-long.json \
 		--out results/bench.jsonl --label $(SNAPNAME_$*)/long-form
 
+# On the host, not the workshop: the weights live in ~/.cache/myna. Lift the
+# shell's cgroup memory cap first (server/.kb/benchmarking.md).
+KEYWORD_LABEL ?= parakeet
+KEYWORD_SERVER_ARGS ?=
+.PHONY: bench-keywords
+bench-keywords: ## Keyword recall and false hits, sent vs not, against an in-tree parakeet server
+	./dev/keyword-eval.sh $(KEYWORD_LABEL) -- $(KEYWORD_SERVER_ARGS)
+
 ##@ Desktop e2e and lab hardware (CI `e2e` and `testflinger` workflows)
 
 # Myna Settings driven through AT-SPI on a fresh GNOME or Xubuntu desktop LXD VM. The
