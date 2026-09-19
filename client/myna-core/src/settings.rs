@@ -23,7 +23,7 @@
 use std::path::PathBuf;
 
 use gio::glib;
-use gio::prelude::SettingsExt;
+use gio::prelude::{SettingsExt, SettingsExtManual};
 
 use crate::StreamingMode;
 
@@ -116,6 +116,13 @@ impl SoundSet {
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
 
+/// The user's local dictionary: names and jargon a backend biases
+/// recognition toward (GitHub issue #1). Raw as stored; a caller building a
+/// `SessionConfig` runs it through [`crate::session::normalize_keywords`]
+/// first, so a setting that has drifted past the server's limits never fails
+/// a session.
+pub const KEY_VOCABULARY: &str = "vocabulary";
+
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -136,6 +143,8 @@ pub struct Settings {
     pub sounds: bool,
     /// Which cues are heard.
     pub sound_set: SoundSet,
+    /// The user's local dictionary, raw (unnormalized) as stored.
+    pub vocabulary: Vec<String>,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -148,6 +157,7 @@ impl Default for Settings {
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
             sound_set: SoundSet::default(),
+            vocabulary: Vec::new(),
         }
     }
 }
@@ -181,6 +191,7 @@ impl Settings {
                 .as_deref()
                 .and_then(SoundSet::from_nick)
                 .unwrap_or(default.sound_set),
+            vocabulary: store.strings(KEY_VOCABULARY).unwrap_or(default.vocabulary),
         }
     }
 }
@@ -248,6 +259,19 @@ impl Store {
 
     pub fn flag(&self, key: &str) -> Option<bool> {
         self.has(key).map(|()| self.settings.boolean(key))
+    }
+
+    /// A string-array-valued key (`as`), as a plain `Vec<String>`; an unset
+    /// key reads the schema default (`[]`).
+    pub fn strings(&self, key: &str) -> Option<Vec<String>> {
+        self.has(key)?;
+        Some(
+            self.settings
+                .strv(key)
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        )
     }
 
     fn has(&self, key: &str) -> Option<()> {
@@ -599,6 +623,26 @@ mod tests {
             SoundSet::default()
         );
         std::fs::remove_file(&path).ok();
+    }
+
+    /// An unset vocabulary reads empty, and a written list round-trips
+    /// through `from_store` like every other key.
+    #[test]
+    fn vocabulary_reads_empty_and_round_trips() {
+        let store = test_store();
+        assert_eq!(store.strings(KEY_VOCABULARY), Some(Vec::new()));
+        assert_eq!(
+            Settings::from_store(&store).vocabulary,
+            Vec::<String>::new()
+        );
+        assert!(store
+            .settings
+            .set_strv(KEY_VOCABULARY, ["kernel", "Siobhan"])
+            .is_ok());
+        assert_eq!(
+            Settings::from_store(&store).vocabulary,
+            vec!["kernel".to_string(), "Siobhan".to_string()]
+        );
     }
 
     /// The schema's nicks and this module's parser are one contract; a value

@@ -95,5 +95,14 @@
         next tap. Hold-to-talk always ends with the key.
       </description>
     </key>
+
+    <key name="vocabulary" type="as">
+      <default>[]</default>
+      <summary>Vocabulary</summary>
+      <description>
+        Names and terms the model should prefer when it is unsure, such as
+        "Siobhan" or "PipeWire". Up to 100 words or short phrases.
+      </description>
+    </key>
   </schema>
 </schemalist>
