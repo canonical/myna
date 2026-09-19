@@ -9,20 +9,23 @@ the round trip and then feed the output straight into `_summarize`.
 
 from __future__ import annotations
 
+import argparse
 import json
 
 import pytest
-from _clips import Collector, make_clip
+from _clips import RATE, Collector, make_clip
 
 from myna.benchmarker._bench import (
     AllClipsFailed,
     bench_clip,
+    cmd_bench,
+    read_keyword_list,
     run_clips,
     session_error,
     to_line,
 )
 from myna.benchmarker._summarize import SCHEMA_VERSION, _summarize
-from myna.core import TranscriptionError, TranscriptionFinal, serve_unix
+from myna.core import SessionConfig, TranscriptionError, TranscriptionFinal, serve_unix
 from myna.testbed import NORMALIZER_VERSION, FakeAdapter, ScriptStep
 from myna.testbed.metrics import SECONDARY_NORMALIZER_VERSION
 
@@ -30,6 +33,18 @@ from myna.testbed.metrics import SECONDARY_NORMALIZER_VERSION
 def transcribing(text):
     """A fake adapter that finalises `text` and nothing else."""
     return FakeAdapter(script=[ScriptStep(0.0, TranscriptionFinal(text=text))])
+
+
+class Recording(FakeAdapter):
+    """Transcribes 'hello world' and keeps every session config it was given."""
+
+    def __init__(self):
+        super().__init__(script=[ScriptStep(0.0, TranscriptionFinal(text="hello world"))])
+        self.configs: list[SessionConfig] = []
+
+    async def run_session(self, config, audio, emit):
+        self.configs.append(config)
+        await super().run_session(config, audio, emit)
 
 
 def failing(code="adapter_failed"):
@@ -811,3 +826,145 @@ async def test_starved_rows_are_counted_on_screen(tmp_path, socket, monkeypatch,
         realtime=True,
     )
     assert "STARVED" in capsys.readouterr().out
+# ─── keywords ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+async def recording(tmp_path):
+    adapter = Recording()
+    path = tmp_path / "recording.sock"
+    async with serve_unix(adapter, path):
+        yield path, adapter
+
+
+async def sweep(socket, clips, **kwargs):
+    out = Collector()
+    await run_clips(
+        socket=socket,
+        clips=clips,
+        label="fake/batch",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        out_fp=out,
+        **kwargs,
+    )
+    return out.records
+
+
+async def test_bench_clip_sends_the_keywords_it_is_given(tmp_path, recording):
+    path, adapter = recording
+    await bench_clip(
+        path, make_clip(tmp_path), "fake/batch", streaming=False, keywords=("Siobhan",)
+    )
+    assert adapter.configs[-1].keywords == ("Siobhan",)
+
+
+async def test_clip_keywords_are_scored_but_not_sent_by_default(tmp_path, recording):
+    path, adapter = recording
+    clip = make_clip(tmp_path, keywords=("world", "kernel"))
+    (row,) = await sweep(path, [clip])
+    assert adapter.configs[-1].keywords == ()
+    assert row["keywords"] == ["world", "kernel"]
+    assert row["keywords_sent"] is False
+    assert (row["kw_in_reference"], row["kw_recalled"], row["kw_recalled_cased"]) == (1, 1, 1)
+    assert (row["kw_absent"], row["kw_false_hits"]) == (1, 0)
+    assert (row["kw_missed"], row["kw_false"]) == ([], [])
+
+
+async def test_send_keywords_puts_the_clip_list_in_the_session(tmp_path, recording):
+    path, adapter = recording
+    (row,) = await sweep(path, [make_clip(tmp_path, keywords=("world",))], send_keywords=True)
+    assert adapter.configs[-1].keywords == ("world",)
+    assert row["keywords_sent"] is True
+
+
+async def test_a_run_keyword_list_replaces_every_clip_list(tmp_path, recording):
+    path, adapter = recording
+    clip = make_clip(tmp_path, keywords=("world",))
+    (row,) = await sweep(path, [clip], keywords=("hello", "Nagle"), send_keywords=True)
+    assert adapter.configs[-1].keywords == ("hello", "Nagle")
+    assert row["keywords"] == ["hello", "Nagle"]
+    assert (row["kw_in_reference"], row["kw_absent"]) == (1, 1)
+
+
+async def test_a_false_hit_and_a_miss_are_named_in_the_row(tmp_path, recording):
+    path, _ = recording
+    clip = make_clip(tmp_path, text="hello kernel", keywords=("kernel", "world"))
+    (row,) = await sweep(path, [clip])
+    assert (row["kw_missed"], row["kw_false"]) == (["kernel"], ["world"])
+
+
+async def test_the_sweep_footer_reports_keyword_recall_and_false_hits(tmp_path, recording, capsys):
+    path, _ = recording
+    clips = [
+        make_clip(tmp_path, "a", text="hello kernel", keywords=("kernel", "hello", "world")),
+        make_clip(tmp_path, "b", keywords=("Nagle", "world")),
+    ]
+    await sweep(path, clips)
+    printed = capsys.readouterr().out
+    assert "keyword recall     : 66.67%  (2/3, as written 2/3)" in printed
+    assert "keyword false hits : 50.00%  (1/2)" in printed
+
+
+async def test_a_sweep_without_keywords_prints_no_keyword_lines(tmp_path, recording, capsys):
+    path, _ = recording
+    await sweep(path, [make_clip(tmp_path)])
+    assert "keyword recall" not in capsys.readouterr().out
+
+
+def test_a_keyword_list_file_is_one_entry_per_line_without_blanks_or_comments(tmp_path):
+    path = tmp_path / "words.txt"
+    path.write_text("# people\nSiobhan\n\n  red hat  \nkernel\n")
+    assert read_keyword_list(path) == ("Siobhan", "red hat", "kernel")
+
+
+def test_cmd_bench_hands_the_run_keyword_list_and_send_switch_to_the_sweep(tmp_path, monkeypatch):
+    clip = make_clip(tmp_path, keywords=("world",))
+    manifest = tmp_path / "manifest.json"
+    entry = {
+        "id": clip.id,
+        "path": clip.path.name,
+        "text": clip.text,
+        "language": "en",
+        "category": "quiet",
+        "duration_seconds": clip.duration_seconds,
+        "sample_rate_hz": RATE,
+        "channels": 1,
+        "source": "test",
+        "license": "CC0-1.0",
+        "sha256": clip.sha256,
+        "keywords": ["world"],
+    }
+    manifest.write_text(json.dumps({"schema_version": 1, "clips": [entry]}))
+    (tmp_path / "words.txt").write_text("Nagle\n")
+    seen = {}
+
+    async def fake_run_clips(**kwargs):
+        seen.update(kwargs)
+        return False, 1
+
+    monkeypatch.setattr("myna.benchmarker._bench.run_clips", fake_run_clips)
+    args = argparse.Namespace(
+        manifest=str(manifest),
+        clip=[],
+        category=None,
+        out=str(tmp_path / "out.jsonl"),
+        socket=str(tmp_path / "s.sock"),
+        label="x",
+        cold=False,
+        streaming=False,
+        provenance=None,
+        budget_seconds=None,
+        realtime=False,
+        send_keywords=True,
+        keyword_list=str(tmp_path / "words.txt"),
+    )
+    cmd_bench(args)
+    assert (seen["keywords"], seen["send_keywords"]) == (("Nagle",), True)
+    assert seen["clips"][0].keywords == ("world",)
+
+    args.keyword_list = None
+    cmd_bench(args)
+    assert seen["keywords"] is None

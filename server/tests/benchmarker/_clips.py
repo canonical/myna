@@ -19,7 +19,9 @@ class Collector:
         self.records.append(record)
 
 
-def make_clip(tmp_path, clip_id="clip-a", text="hello world", seconds=0.4, category="quiet"):
+def make_clip(
+    tmp_path, clip_id="clip-a", text="hello world", seconds=0.4, category="quiet", keywords=()
+):
     path = tmp_path / f"{clip_id}.wav"
     with wave.open(str(path), "w") as wf:
         wf.setnchannels(1)
@@ -38,4 +40,5 @@ def make_clip(tmp_path, clip_id="clip-a", text="hello world", seconds=0.4, categ
         source="test",
         license="CC0-1.0",
         sha256=sha256_file(path),
+        keywords=tuple(keywords),
     )

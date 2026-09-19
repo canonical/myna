@@ -162,6 +162,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="feed audio at real-time pace instead of as fast as the socket accepts",
     )
+    p_bench.add_argument(
+        "--send-keywords",
+        action="store_true",
+        help="send each clip's keywords in the session (they are scored either way)",
+    )
+    p_bench.add_argument(
+        "--keyword-list",
+        help="file of keywords, one per line, scored (and sent) for every clip"
+        " instead of each clip's own list",
+    )
     p_bench.add_argument("--provenance", help="JSON object merged into every record")
     p_bench.add_argument(
         "--budget-seconds",

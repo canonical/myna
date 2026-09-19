@@ -351,6 +351,19 @@ def test_bench_defaults_to_a_warm_batch_fed_sweep(monkeypatch, dispatched):
     assert args.realtime is False
     assert args.clip == []
     assert args.out == "results.jsonl"
+    assert args.send_keywords is False
+    assert args.keyword_list is None
+
+
+def test_bench_takes_a_run_keyword_list_and_the_send_switch(monkeypatch, dispatched):
+    run_cli(
+        monkeypatch,
+        *("bench", "--socket", "/tmp/s", "--manifest", "m.json", "--label", "x"),
+        *("--send-keywords", "--keyword-list", "words.txt"),
+    )
+    args = dispatched["args"]
+    assert args.send_keywords is True
+    assert args.keyword_list == "words.txt"
 
 
 # ─── check ───────────────────────────────────────────────────────────────────

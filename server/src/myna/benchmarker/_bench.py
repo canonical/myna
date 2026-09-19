@@ -30,6 +30,7 @@ from myna.testbed import (
     Harness,
     ResultRecord,
     character_error_rate,
+    keyword_score,
     word_error_rate,
 )
 from myna.testbed.adapter import Candidate
@@ -63,7 +64,13 @@ def session_error(record: ResultRecord) -> dict[str, str | None] | None:
 
 
 async def bench_clip(
-    socket: Path, clip: Clip, label: str, *, streaming: bool, realtime: bool = False
+    socket: Path,
+    clip: Clip,
+    label: str,
+    *,
+    streaming: bool,
+    realtime: bool = False,
+    keywords: tuple[str, ...] = (),
 ) -> tuple[ResultRecord, ErrorRate, ErrorRate]:
     """Run one clip against the socket; return (record, wer, cer).
 
@@ -80,7 +87,7 @@ async def bench_clip(
             streaming_strategy="streaming" if streaming else "batch",
         ),
         source=source,
-        config=SessionConfig(audio_format=source.format, language=clip.language),
+        config=SessionConfig(audio_format=source.format, language=clip.language, keywords=keywords),
     )
     wer = word_error_rate(clip.text, record.transcript)
     cer = character_error_rate(clip.text, record.transcript)
@@ -124,11 +131,14 @@ def to_line(
     corpus: dict[str, str] | None = None,
     served_runtime: dict[str, str] | None = None,
     pace: str = MAX,
+    keywords: tuple[str, ...] = (),
+    keywords_sent: bool = False,
 ) -> Record:
     """Serialise a single-clip result to the JSONL record schema."""
     m = record.metrics
     error = session_error(record)
     lag = feed_lag(record.feed) if pace == REALTIME else None
+    kw = keyword_score(clip.text, record.transcript, keywords)
     line: Record = {
         "schema_version": SCHEMA_VERSION,
         "error": error,
@@ -159,6 +169,17 @@ def to_line(
         "cer_edits": cer.substitutions + cer.deletions + cer.insertions,
         "ref_chars": cer.reference_length,
         **_whisper_scores(clip, record.transcript),
+        # Scored whether or not they were sent, so a run without keywords is
+        # the baseline for the same clips with them.
+        "keywords": list(keywords),
+        "keywords_sent": keywords_sent,
+        "kw_in_reference": kw.in_reference,
+        "kw_recalled": kw.recalled,
+        "kw_recalled_cased": kw.recalled_cased,
+        "kw_absent": kw.absent,
+        "kw_false_hits": kw.false_hits,
+        "kw_missed": list(kw.missed),
+        "kw_false": list(kw.false),
         "audio_seconds": round(record.audio_duration_seconds, 3),
         "time_to_first_event": m.time_to_first_event,
         "time_to_ready": m.time_to_ready,
@@ -211,6 +232,8 @@ async def run_clips(
     realtime: bool = False,
     events_fp: RecordSink | None = None,
     schedule: Schedule | None = None,
+    keywords: tuple[str, ...] | None = None,
+    send_keywords: bool = False,
 ) -> tuple[bool, int]:
     """Sweep ``clips`` and append JSONL records to ``out_fp``.
 
@@ -222,6 +245,8 @@ async def run_clips(
 
     ``events_fp``, when given, receives each clip's timed event stream as it
     lands, keyed by (label, clip, repeat, phase) like its row.
+    Each clip is scored against ``keywords`` when given, else its own list;
+    ``send_keywords`` also puts that list in the session.
 
     Returns ``(overran, scored)`` - overran is True when the budget was
     exceeded before all measured clips completed; scored counts measured rows
@@ -248,6 +273,7 @@ async def run_clips(
     lines: list[Record] = []
     failed: list[Record] = []
     tot_edits = tot_words = 0
+    kw_ref = kw_hit = kw_hit_cased = kw_absent = kw_false = 0
     tot_audio = 0.0
     finals: list[float] = []
     readys: list[float] = []
@@ -283,8 +309,14 @@ async def run_clips(
             )
             break
 
+        scored_keywords = clip.keywords if keywords is None else keywords
         record, wer, cer = await bench_clip(
-            socket, clip, label, streaming=streaming, realtime=realtime
+            socket,
+            clip,
+            label,
+            streaming=streaming,
+            realtime=realtime,
+            keywords=scored_keywords if send_keywords else (),
         )
         line = to_line(
             clip,
@@ -304,6 +336,8 @@ async def run_clips(
             corpus=corpus,
             served_runtime=served_runtime,
             pace=REALTIME if realtime else MAX,
+            keywords=scored_keywords,
+            keywords_sent=send_keywords,
         )
         lines.append(line)
         if events_fp is not None:
@@ -336,6 +370,11 @@ async def run_clips(
         tot_edits += wer.substitutions + wer.deletions + wer.insertions
         tot_words += wer.reference_length
         tot_audio += line["audio_seconds"]
+        kw_ref += line["kw_in_reference"]
+        kw_hit += line["kw_recalled"]
+        kw_hit_cased += line["kw_recalled_cased"]
+        kw_absent += line["kw_absent"]
+        kw_false += line["kw_false_hits"]
         if line["finalize_latency"] is not None:
             finals.append(line["finalize_latency"])
         if line["time_to_ready"] is not None:
@@ -377,6 +416,13 @@ async def run_clips(
     else:
         # Printing "0.00%" here would be the friendliest possible lie.
         print("micro-averaged WER : n/a  (no clip produced a transcript)")
+    if kw_ref:
+        print(
+            f"keyword recall     : {kw_hit / kw_ref * 100:.2f}%"
+            f"  ({kw_hit}/{kw_ref}, as written {kw_hit_cased}/{kw_ref})"
+        )
+    if kw_absent:
+        print(f"keyword false hits : {kw_false / kw_absent * 100:.2f}%  ({kw_false}/{kw_absent})")
     if readys:
         # The first clip carries the cold-load cost; report it distinctly.
         print(
@@ -422,6 +468,12 @@ class _JsonlFile:
 
     def close(self) -> None:
         self._fp.close()
+
+
+def read_keyword_list(path: Path) -> tuple[str, ...]:
+    """One keyword or phrase per line; blank lines and ``#`` comments skipped."""
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return tuple(line for line in lines if line and not line.startswith("#"))
 
 
 def cmd_bench(args: argparse.Namespace) -> None:
@@ -472,6 +524,8 @@ def cmd_bench(args: argparse.Namespace) -> None:
                 corpus=corpus,
                 realtime=args.realtime,
                 events_fp=events,
+                keywords=read_keyword_list(Path(args.keyword_list)) if args.keyword_list else None,
+                send_keywords=args.send_keywords,
             )
         )
     except AllClipsFailed as exc:

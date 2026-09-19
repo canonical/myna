@@ -202,6 +202,8 @@ async def test_the_bench_command_writes_the_sidecar_beside_its_results(tmp_path,
         provenance=None,
         budget_seconds=None,
         realtime=False,
+        keyword_list=None,
+        send_keywords=False,
     )
 
     # cmd_bench drives its own event loop, so it runs off this test's loop.
