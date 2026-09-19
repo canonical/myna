@@ -1,0 +1,3168 @@
+{
+ "subset": "dev-clean",
+ "derivation": "myna.benchmarker.corpus_english.collect_keyword_set",
+ "clips": {
+  "1272-128104-0004": {
+   "text": "LINNELL'S PICTURES ARE A SORT OF UP GUARDS AND AT EM PAINTINGS AND MASON'S EXQUISITE IDYLLS ARE AS NATIONAL AS A JINGO POEM MISTER BIRKET FOSTER'S LANDSCAPES SMILE AT ONE MUCH IN THE SAME WAY THAT MISTER CARKER USED TO FLASH HIS TEETH AND MISTER JOHN COLLIER GIVES HIS SITTER A CHEERFUL SLAP ON THE BACK BEFORE HE SAYS LIKE A SHAMPOOER IN A TURKISH BATH NEXT MAN",
+   "keywords": [
+    "Birket",
+    "idylls"
+   ],
+   "distractors": [
+    "Clarke",
+    "Sutter",
+    "capitol"
+   ]
+  },
+  "1272-128104-0010": {
+   "text": "NEAR THE FIRE AND THE ORNAMENTS FRED BROUGHT HOME FROM INDIA ON THE MANTEL BOARD",
+   "keywords": [
+    "mantel"
+   ],
+   "distractors": [
+    "boughs",
+    "Frere",
+    "Morrel"
+   ]
+  },
+  "1272-128104-0011": {
+   "text": "IN FACT HE IS QUITE SEVERE ON MISTER RUSKIN FOR NOT RECOGNISING THAT A PICTURE SHOULD DENOTE THE FRAILTY OF MAN AND REMARKS WITH PLEASING COURTESY AND FELICITOUS GRACE THAT MANY PHASES OF FEELING",
+   "keywords": [
+    "felicitous"
+   ],
+   "distractors": [
+    "Dene",
+    "Gryce",
+    "Cynthy"
+   ]
+  },
+  "1272-135031-0005": {
+   "text": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+   "keywords": [
+    "Ruggedo"
+   ],
+   "distractors": [
+    "Bergez",
+    "Congal",
+    "Noirtier"
+   ]
+  },
+  "1272-135031-0011": {
+   "text": "NOT EXACTLY RETURNED KALIKO",
+   "keywords": [
+    "Kaliko"
+   ],
+   "distractors": [
+    "Frere",
+    "petronels",
+    "ewes"
+   ]
+  },
+  "1272-135031-0015": {
+   "text": "THE METAL FOREST IS IN THE GREAT DOMED CAVERN THE LARGEST IN ALL OUR DOMINIONS REPLIED KALIKO",
+   "keywords": [
+    "Kaliko"
+   ],
+   "distractors": [
+    "Grethel",
+    "forcemeat",
+    "stolidly"
+   ]
+  },
+  "1272-135031-0016": {
+   "text": "KALIKO HESITATED",
+   "keywords": [
+    "Kaliko"
+   ],
+   "distractors": [
+    "Deucalion",
+    "Hepsey",
+    "convolvulus"
+   ]
+  },
+  "1272-135031-0023": {
+   "text": "KALIKO WENT TO THE BIG GONG AND POUNDED ON IT JUST AS RUGGEDO USED TO DO BUT NO ONE ANSWERED THE SUMMONS",
+   "keywords": [
+    "Kaliko",
+    "Ruggedo"
+   ],
+   "distractors": [
+    "Simmonds",
+    "Towne",
+    "Gingle"
+   ]
+  },
+  "1272-135031-0024": {
+   "text": "HAVING RETURNED TO THE ROYAL CAVERN KALIKO FIRST POUNDED THE GONG AND THEN SAT IN THE THRONE WEARING RUGGEDO'S DISCARDED RUBY CROWN AND HOLDING IN HIS HAND THE SCEPTRE WHICH RUGGEDO HAD SO OFTEN THROWN AT HIS HEAD",
+   "keywords": [
+    "Kaliko",
+    "Ruggedo"
+   ],
+   "distractors": [
+    "Towne",
+    "fakirs",
+    "harangued"
+   ]
+  },
+  "1272-141231-0006": {
+   "text": "THE BUZZER'S WHIRR TRIGGERED HIS MUSCLES INTO COMPLETE RELAXATION",
+   "keywords": [
+    "whirr"
+   ],
+   "distractors": [
+    "clews",
+    "vinos",
+    "Soyer"
+   ]
+  },
+  "1272-141231-0015": {
+   "text": "THERE WAS SILENCE THEN AND STILL WONDERING BRION WAS ONCE MORE ASLEEP",
+   "keywords": [
+    "Brion"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "Assiniboine"
+   ]
+  },
+  "1272-141231-0017": {
+   "text": "HE ASKED THE HANDLER WHO WAS KNEADING HIS ACHING MUSCLES",
+   "keywords": [
+    "kneading"
+   ],
+   "distractors": [
+    "Hamer",
+    "chanticleer",
+    "Moluccas"
+   ]
+  },
+  "1272-141231-0026": {
+   "text": "BREATHING DEEPLY BRION SOFTLY SPOKE THE AUTO HYPNOTIC PHRASES THAT TRIGGERED THE PROCESS",
+   "keywords": [
+    "Brion"
+   ],
+   "distractors": [
+    "Tait",
+    "Parrishes",
+    "Rosecrans"
+   ]
+  },
+  "1272-141231-0028": {
+   "text": "IROLG LOOKED AMAZED AT THE SUDDEN FURY OF THE ATTACK THEN SMILED",
+   "keywords": [
+    "Irolg"
+   ],
+   "distractors": [
+    "Rhein",
+    "smilax",
+    "heuchera"
+   ]
+  },
+  "1272-141231-0030": {
+   "text": "BRION SAW SOMETHING CLOSE TO PANIC ON HIS OPPONENT'S FACE WHEN THE MAN FINALLY RECOGNIZED HIS ERROR",
+   "keywords": [
+    "Brion"
+   ],
+   "distractors": [
+    "Mainhall",
+    "Rhein",
+    "Shimerda"
+   ]
+  },
+  "1272-141231-0031": {
+   "text": "A WAVE OF DESPAIR ROLLED OUT FROM IROLG BRION SENSED IT AND KNEW THE FIFTH POINT WAS HIS",
+   "keywords": [
+    "Brion",
+    "Irolg"
+   ],
+   "distractors": [
+    "Drouet",
+    "Pitt",
+    "sippet"
+   ]
+  },
+  "1462-170138-0005": {
+   "text": "DO YOU KNOW ALEXANDER MAINHALL LOOKED WITH PERPLEXITY UP INTO THE TOP OF THE HANSOM AND RUBBED HIS PINK CHEEK WITH HIS GLOVED FINGER DO YOU KNOW I SOMETIMES THINK OF TAKING TO CRITICISM SERIOUSLY MYSELF",
+   "keywords": [
+    "Mainhall"
+   ],
+   "distractors": [
+    "Hanson",
+    "Yokul",
+    "Sydney"
+   ]
+  },
+  "1462-170138-0013": {
+   "text": "THE PLAYWRIGHT GAVE MAINHALL A CURIOUS LOOK OUT OF HIS DEEP SET FADED EYES AND MADE A WRY FACE",
+   "keywords": [
+    "Mainhall"
+   ],
+   "distractors": [
+    "Dene",
+    "ewes",
+    "Blemmyes"
+   ]
+  },
+  "1462-170138-0017": {
+   "text": "SIR HARRY TOWNE BOWED AND SAID THAT HE HAD MET MISTER ALEXANDER AND HIS WIFE IN TOKYO",
+   "keywords": [
+    "Towne"
+   ],
+   "distractors": [
+    "Tait",
+    "Sutter",
+    "Waverley"
+   ]
+  },
+  "1462-170138-0021": {
+   "text": "HE BOWED AS THE WARNING BELL RANG AND MAINHALL WHISPERED YOU KNOW LORD WESTMERE OF COURSE THE STOOPED MAN WITH THE LONG GRAY MUSTACHE TALKING TO LADY DOWLE",
+   "keywords": [
+    "Dowle",
+    "Mainhall"
+   ],
+   "distractors": [
+    "Belli",
+    "Pell",
+    "proselyte"
+   ]
+  },
+  "1462-170138-0024": {
+   "text": "HE LEANED FORWARD AND BEAMED FELICITATIONS AS WARMLY AS MAINHALL HIMSELF WHEN AT THE END OF THE PLAY SHE CAME AGAIN AND AGAIN BEFORE THE CURTAIN PANTING A LITTLE AND FLUSHED HER EYES DANCING AND HER EAGER NERVOUS LITTLE MOUTH TREMULOUS WITH EXCITEMENT",
+   "keywords": [
+    "Mainhall"
+   ],
+   "distractors": [
+    "Nager",
+    "felicitous",
+    "Claudia"
+   ]
+  },
+  "1673-143396-0000": {
+   "text": "A LAUDABLE REGARD FOR THE HONOR OF THE FIRST PROSELYTE HAS COUNTENANCED THE BELIEF THE HOPE THE WISH THAT THE EBIONITES OR AT LEAST THE NAZARENES WERE DISTINGUISHED ONLY BY THEIR OBSTINATE PERSEVERANCE IN THE PRACTICE OF THE MOSAIC RITES",
+   "keywords": [
+    "proselyte"
+   ],
+   "distractors": [
+    "Tait",
+    "Belli",
+    "Finnacta"
+   ]
+  },
+  "1673-143396-0010": {
+   "text": "BUT THE RASHNESS OF THESE CONCESSIONS HAS ENCOURAGED A MILDER SENTIMENT OF THOSE OF THE DOCETES WHO TAUGHT NOT THAT CHRIST WAS A PHANTOM BUT THAT HE WAS CLOTHED WITH AN IMPASSIBLE AND INCORRUPTIBLE BODY",
+   "keywords": [
+    "impassible"
+   ],
+   "distractors": [
+    "Tait",
+    "Hepsey",
+    "Clarke"
+   ]
+  },
+  "1673-143396-0013": {
+   "text": "WHEN THE MESSIAH WAS DELIVERED INTO THE HANDS OF THE JEWS THE CHRIST AN IMMORTAL AND IMPASSIBLE BEING FORSOOK HIS EARTHLY TABERNACLE FLEW BACK TO THE PLEROMA OR WORLD OF SPIRITS AND LEFT THE SOLITARY JESUS TO SUFFER TO COMPLAIN AND TO EXPIRE",
+   "keywords": [
+    "impassible",
+    "pleroma"
+   ],
+   "distractors": [
+    "ewes",
+    "Hanson",
+    "Icelandic"
+   ]
+  },
+  "1673-143396-0015": {
+   "text": "THEIR MURMURS WERE VARIOUSLY SILENCED BY THE SECTARIES WHO ESPOUSED AND MODIFIED THE DOUBLE SYSTEM OF CERINTHUS",
+   "keywords": [
+    "Cerinthus"
+   ],
+   "distractors": [
+    "Dowle",
+    "Carrie",
+    "plaits"
+   ]
+  },
+  "1673-143396-0020": {
+   "text": "UNDER THE TUITION OF THE ABBOT SERAPION HE APPLIED HIMSELF TO ECCLESIASTICAL STUDIES WITH SUCH INDEFATIGABLE ARDOR THAT IN THE COURSE OF ONE SLEEPLESS NIGHT HE HAS PERUSED THE FOUR GOSPELS THE CATHOLIC EPISTLES AND THE EPISTLE TO THE ROMANS",
+   "keywords": [
+    "Serapion"
+   ],
+   "distractors": [
+    "pestle",
+    "Tait",
+    "ewes"
+   ]
+  },
+  "1673-143397-0000": {
+   "text": "ARDENT IN THE PROSECUTION OF HERESY CYRIL AUSPICIOUSLY OPENED HIS REIGN BY OPPRESSING THE NOVATIANS THE MOST INNOCENT AND HARMLESS OF THE SECTARIES",
+   "keywords": [
+    "Cyril"
+   ],
+   "distractors": [
+    "Rhein",
+    "Carrie",
+    "Pell"
+   ]
+  },
+  "1673-143397-0003": {
+   "text": "THE ZEAL OF CYRIL EXPOSED HIM TO THE PENALTIES OF THE JULIAN LAW BUT IN A FEEBLE GOVERNMENT AND A SUPERSTITIOUS AGE HE WAS SECURE OF IMPUNITY AND EVEN OF PRAISE",
+   "keywords": [
+    "Cyril"
+   ],
+   "distractors": [
+    "Nager",
+    "serge",
+    "abbess"
+   ]
+  },
+  "1673-143397-0004": {
+   "text": "ORESTES COMPLAINED BUT HIS JUST COMPLAINTS WERE TOO QUICKLY FORGOTTEN BY THE MINISTERS OF THEODOSIUS AND TOO DEEPLY REMEMBERED BY A PRIEST WHO AFFECTED TO PARDON AND CONTINUED TO HATE THE PRAEFECT OF EGYPT",
+   "keywords": [
+    "praefect"
+   ],
+   "distractors": [
+    "plaits",
+    "effete",
+    "Rhein"
+   ]
+  },
+  "1673-143397-0005": {
+   "text": "A RUMOR WAS SPREAD AMONG THE CHRISTIANS THAT THE DAUGHTER OF THEON WAS THE ONLY OBSTACLE TO THE RECONCILIATION OF THE PRAEFECT AND THE ARCHBISHOP AND THAT OBSTACLE WAS SPEEDILY REMOVED",
+   "keywords": [
+    "praefect"
+   ],
+   "distractors": [
+    "Tait",
+    "almoner",
+    "Saknussemm"
+   ]
+  },
+  "1673-143397-0010": {
+   "text": "THE VANITY OF CELESTINE WAS FLATTERED BY THE APPEAL AND THE PARTIAL VERSION OF A MONK DECIDED THE FAITH OF THE POPE WHO WITH HIS LATIN CLERGY WAS IGNORANT OF THE LANGUAGE THE ARTS AND THE THEOLOGY OF THE GREEKS",
+   "keywords": [
+    "Celestine"
+   ],
+   "distractors": [
+    "Lattimer",
+    "Brion",
+    "Claudia"
+   ]
+  },
+  "1673-143397-0011": {
+   "text": "NESTORIUS WHO DEPENDED ON THE NEAR APPROACH OF HIS EASTERN FRIENDS PERSISTED LIKE HIS PREDECESSOR CHRYSOSTOM TO DISCLAIM THE JURISDICTION AND TO DISOBEY THE SUMMONS OF HIS ENEMIES THEY HASTENED HIS TRIAL AND HIS ACCUSER PRESIDED IN THE SEAT OF JUDGMENT",
+   "keywords": [
+    "Nestorius"
+   ],
+   "distractors": [
+    "Simmonds",
+    "Lige",
+    "Adamnan"
+   ]
+  },
+  "1673-143397-0019": {
+   "text": "THE PAST HE REGRETTED HE WAS DISCONTENTED WITH THE PRESENT AND THE FUTURE HE HAD REASON TO DREAD THE ORIENTAL BISHOPS SUCCESSIVELY DISENGAGED THEIR CAUSE FROM HIS UNPOPULAR NAME AND EACH DAY DECREASED THE NUMBER OF THE SCHISMATICS WHO REVERED NESTORIUS AS THE CONFESSOR OF THE FAITH",
+   "keywords": [
+    "Nestorius"
+   ],
+   "distractors": [
+    "Claus",
+    "reals",
+    "smilax"
+   ]
+  },
+  "1673-143397-0020": {
+   "text": "A WANDERING TRIBE OF THE BLEMMYES OR NUBIANS INVADED HIS SOLITARY PRISON IN THEIR RETREAT THEY DISMISSED A CROWD OF USELESS CAPTIVES BUT NO SOONER HAD NESTORIUS REACHED THE BANKS OF THE NILE THAN HE WOULD GLADLY HAVE ESCAPED FROM A ROMAN AND ORTHODOX CITY TO THE MILDER SERVITUDE OF THE SAVAGES",
+   "keywords": [
+    "Nestorius",
+    "Blemmyes"
+   ],
+   "distractors": [
+    "Brion",
+    "Soyer",
+    "Serapion"
+   ]
+  },
+  "174-50561-0000": {
+   "text": "FORGOTTEN TOO THE NAME OF GILLIAN THE LOVELY CAPTIVE",
+   "keywords": [
+    "Gillian"
+   ],
+   "distractors": [
+    "Hamer",
+    "Nager",
+    "Bambeday"
+   ]
+  },
+  "174-50561-0005": {
+   "text": "LADY LADY MY ROSE WHITE LADY BUT WILL YOU NOT HEAR A ROUNDEL LADY",
+   "keywords": [
+    "roundel"
+   ],
+   "distractors": [
+    "Yokul",
+    "Mulrady",
+    "serge"
+   ]
+  },
+  "174-50561-0006": {
+   "text": "O IF YOU PLAY US A ROUNDEL SINGER HOW CAN THAT HARM THE EMPEROR'S DAUGHTER",
+   "keywords": [
+    "roundel"
+   ],
+   "distractors": [
+    "Tait",
+    "Yokul",
+    "Gryce"
+   ]
+  },
+  "174-50561-0008": {
+   "text": "BUT IF I PLAY YOU A ROUNDEL LADY GET ME A GIFT FROM THE EMPEROR'S DAUGHTER HER FINGER RING FOR MY FINGER BRING THOUGH SHE'S PLEDGED A THOUSAND LEAGUES OVER THE WATER LADY LADY MY FAIR LADY O MY ROSE WHITE LADY",
+   "keywords": [
+    "roundel"
+   ],
+   "distractors": [
+    "Brion",
+    "fakirs",
+    "Cerinthus"
+   ]
+  },
+  "1919-142785-0002": {
+   "text": "ORIGINALLY THE MOST VALUABLE OF THESE WERE FOUND IN THE SPICE ISLANDS OR MOLUCCAS OF THE INDIAN OCEAN AND WERE HIGHLY PRIZED BY THE NATIONS OF ANTIQUITY",
+   "keywords": [
+    "Moluccas"
+   ],
+   "distractors": [
+    "Hepsey",
+    "Frere",
+    "Mulrady"
+   ]
+  },
+  "1919-142785-0025": {
+   "text": "THE GINGER PLANT KNOWN TO NATURALISTS AS ZINGIBER OFFICINALE IS A NATIVE OF THE EAST AND WEST INDIES",
+   "keywords": [
+    "officinale"
+   ],
+   "distractors": [
+    "Gingle",
+    "ewes",
+    "Morrel"
+   ]
+  },
+  "1919-142785-0037": {
+   "text": "FORCEMEAT FOR COLD SAVOURY PIES",
+   "keywords": [
+    "forcemeat"
+   ],
+   "distractors": [
+    "Parrishes",
+    "Congal",
+    "Morrel"
+   ]
+  },
+  "1919-142785-0043": {
+   "text": "NOW BEAT AND STRAIN THE EGGS WORK THESE UP WITH THE OTHER INGREDIENTS AND THE FORCEMEAT WILL BE READY FOR USE",
+   "keywords": [
+    "forcemeat"
+   ],
+   "distractors": [
+    "Hepsey",
+    "Serapion",
+    "Minnetaki"
+   ]
+  },
+  "1919-142785-0048": {
+   "text": "FRENCH FORCEMEAT",
+   "keywords": [
+    "forcemeat"
+   ],
+   "distractors": [
+    "Frere",
+    "forecourt",
+    "Carrie"
+   ]
+  },
+  "1919-142785-0049": {
+   "text": "IT WILL BE WELL TO STATE IN THE BEGINNING OF THIS RECIPE THAT FRENCH FORCEMEAT OR QUENELLES CONSIST OF THE BLENDING OF THREE SEPARATE PROCESSES NAMELY PANADA UDDER AND WHATEVER MEAT YOU INTEND USING PANADA",
+   "keywords": [
+    "forcemeat",
+    "quenelles"
+   ],
+   "distractors": [
+    "usurping",
+    "Pell",
+    "Erewhon"
+   ]
+  },
+  "1919-142785-0051": {
+   "text": "PUT THE UDDER INTO A STEWPAN WITH SUFFICIENT WATER TO COVER IT LET IT STEW GENTLY TILL QUITE DONE WHEN TAKE IT OUT TO COOL",
+   "keywords": [
+    "stewpan"
+   ],
+   "distractors": [
+    "Dene",
+    "Dowle",
+    "Lige"
+   ]
+  },
+  "1919-142785-0052": {
+   "text": "ILLUSTRATION PESTLE AND MORTAR",
+   "keywords": [
+    "pestle"
+   ],
+   "distractors": [
+    "Moira",
+    "Morrel",
+    "Woodley"
+   ]
+  },
+  "1919-142785-0053": {
+   "text": "WHEN THE THREE INGREDIENTS ARE PROPERLY PREPARED POUND THEM ALTOGETHER IN A MORTAR FOR SOME TIME FOR THE MORE QUENELLES ARE POUNDED THE MORE DELICATE THEY ARE",
+   "keywords": [
+    "quenelles"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "roundel"
+   ]
+  },
+  "1919-142785-0054": {
+   "text": "IF THE QUENELLES ARE NOT FIRM ENOUGH ADD THE YOLK OF ANOTHER EGG BUT OMIT THE WHITE WHICH ONLY MAKES THEM HOLLOW AND PUFFY INSIDE",
+   "keywords": [
+    "quenelles"
+   ],
+   "distractors": [
+    "Carrie",
+    "Clarke",
+    "Kaliko"
+   ]
+  },
+  "1919-142785-0059": {
+   "text": "WHEN QUITE CRISP DIP ONE SIDE OF THE SIPPET INTO THE BEATEN WHITE OF AN EGG MIXED WITH A LITTLE FLOUR AND PLACE IT ON THE EDGE OF THE DISH",
+   "keywords": [
+    "sippet"
+   ],
+   "distractors": [
+    "vittles",
+    "Towne",
+    "harangued"
+   ]
+  },
+  "1919-142785-0061": {
+   "text": "MODE CUT UP THE ONION AND CARROT INTO SMALL RINGS AND PUT THEM INTO A STEWPAN WITH THE HERBS MUSHROOMS BAY LEAF CLOVES AND MACE ADD THE BUTTER AND SIMMER THE WHOLE VERY GENTLY OVER A SLOW FIRE UNTIL THE ONION IS QUITE TENDER",
+   "keywords": [
+    "stewpan"
+   ],
+   "distractors": [
+    "Sutter",
+    "clews",
+    "Olbinett"
+   ]
+  },
+  "1988-147956-0006": {
+   "text": "YOU'LL GET FIXED UP COMFORTABLE AFTER WHILE MISSUS SHIMERDA MAKE GOOD HOUSE",
+   "keywords": [
+    "Shimerda"
+   ],
+   "distractors": [
+    "Yokul",
+    "Coralie",
+    "Dowle"
+   ]
+  },
+  "1988-147956-0008": {
+   "text": "SHE MADE MISSUS SHIMERDA UNDERSTAND THE FRIENDLY INTENTION OF OUR VISIT AND THE BOHEMIAN WOMAN HANDLED THE LOAVES OF BREAD AND EVEN SMELLED THEM AND EXAMINED THE PIES WITH LIVELY CURIOSITY EXCLAIMING MUCH GOOD MUCH THANK",
+   "keywords": [
+    "Shimerda"
+   ],
+   "distractors": [
+    "Brau",
+    "Scheiler",
+    "vinos"
+   ]
+  },
+  "1988-147956-0014": {
+   "text": "AMBROSCH HE MAKE GOOD FARMER",
+   "keywords": [
+    "Ambrosch"
+   ],
+   "distractors": [
+    "Frere",
+    "Hamer",
+    "Cyril"
+   ]
+  },
+  "1988-147956-0015": {
+   "text": "HE STRUCK AMBROSCH ON THE BACK AND THE BOY SMILED KNOWINGLY",
+   "keywords": [
+    "Ambrosch"
+   ],
+   "distractors": [
+    "smilax",
+    "Grethel",
+    "stolidly"
+   ]
+  },
+  "1993-147149-0027": {
+   "text": "THERE WAS SOMETHING OF KEEN PRACTICAL SHREWDNESS ABOUT HER WHICH CONTRASTED VERY BEWITCHINGLY WITH THE SIMPLE FOOLISH UNWORLDLY IDEAS SHE HAD PICKED UP FROM THE ROMANCES WHICH MISS SIMMONDS YOUNG LADIES WERE IN THE HABIT OF RECOMMENDING TO EACH OTHER YES",
+   "keywords": [
+    "Simmonds"
+   ],
+   "distractors": [
+    "Hamer",
+    "Frere",
+    "heuchera"
+   ]
+  },
+  "1993-147149-0029": {
+   "text": "IT WAS A COMFORT TO HER WHEN SCOLDED BY MISS SIMMONDS TO THINK OF THE DAY WHEN SHE WOULD DRIVE UP TO THE DOOR IN HER OWN CARRIAGE TO ORDER HER GOWNS FROM THE HASTY TEMPERED YET KIND DRESSMAKER",
+   "keywords": [
+    "Simmonds"
+   ],
+   "distractors": [
+    "Carrie",
+    "Hamer",
+    "portmanteau"
+   ]
+  },
+  "1993-147964-0002": {
+   "text": "I HAD WANTED TO GET SOME PICTURE BOOKS FOR YULKA AND ANTONIA EVEN YULKA WAS ABLE TO READ A LITTLE NOW",
+   "keywords": [
+    "Yulka"
+   ],
+   "distractors": [
+    "vittles",
+    "Newsome",
+    "boughs"
+   ]
+  },
+  "1993-147965-0005": {
+   "text": "AT ABOUT FOUR O'CLOCK A VISITOR APPEARED MISTER SHIMERDA WEARING HIS RABBIT SKIN CAP AND COLLAR AND NEW MITTENS HIS WIFE HAD KNITTED",
+   "keywords": [
+    "Shimerda"
+   ],
+   "distractors": [
+    "mien",
+    "vittles",
+    "Hennerberg"
+   ]
+  },
+  "1993-147966-0003": {
+   "text": "FOR AMBROSCH MY MAMA COME HERE",
+   "keywords": [
+    "Ambrosch"
+   ],
+   "distractors": [
+    "Frere",
+    "Hamer",
+    "Tishimingo"
+   ]
+  },
+  "2035-152373-0001": {
+   "text": "THE ANCESTORS OF THE PRESENT PRETENDER CONGAL SURNAMED THE SQUINT EYED HAD TWICE RECEIVED AND CHERISHED THE LICENTIOUS BARDS WHEN UNDER THE BAN OF TARA AND HIS POPULARITY WITH THAT STILL POWERFUL ORDER WAS ONE PROP OF HIS AMBITION",
+   "keywords": [
+    "Congal"
+   ],
+   "distractors": [
+    "Nestorius",
+    "Tait",
+    "pinyon"
+   ]
+  },
+  "2035-152373-0002": {
+   "text": "IT IS PRETTY CLEAR ALSO THAT THE LAST RALLY OF DRUIDISM AGAINST CHRISTIANITY TOOK PLACE BEHIND HIS BANNER ON THE PLAIN OF MOIRA",
+   "keywords": [
+    "Moira"
+   ],
+   "distractors": [
+    "Tait",
+    "Clarke",
+    "rheumatic"
+   ]
+  },
+  "2035-152373-0007": {
+   "text": "THE ONLY CONFLICTS THAT OCCURRED ON IRISH SOIL WITH A PICTISH OR AN ANGLO SAXON FORCE IF WE EXCEPT THOSE WHO FORMED A CONTINGENT OF CONGAL'S ARMY AT MOIRA OCCURRED IN THE TIME OF THE HOSPITABLE FINNACTA",
+   "keywords": [
+    "Moira",
+    "Finnacta"
+   ],
+   "distractors": [
+    "Congal",
+    "Tait",
+    "praefect"
+   ]
+  },
+  "2035-152373-0017": {
+   "text": "SAINT MOLING SURVIVED HIM THREE YEARS AND SAINT ADAMNAN SO INTIMATELY CONNECTED WITH HIS REIGN TEN YEARS",
+   "keywords": [
+    "Adamnan"
+   ],
+   "distractors": [
+    "Rhein",
+    "Tait",
+    "Verloc"
+   ]
+  },
+  "2078-142845-0000": {
+   "text": "KIRKLEATHAM YEAST",
+   "keywords": [
+    "Kirkleatham"
+   ],
+   "distractors": [
+    "reals",
+    "tryst",
+    "sauterne"
+   ]
+  },
+  "2078-142845-0010": {
+   "text": "ITALIAN MILLET OR GREAT INDIAN MILLET IS CULTIVATED IN EGYPT AND NUBIA WHERE IT IS CALLED DHOURRA AND IS USED AS HUMAN FOOD AS WELL AS FOR THE FERMENTATION OF BEER",
+   "keywords": [
+    "dhourra"
+   ],
+   "distractors": [
+    "Pell",
+    "Gillian",
+    "abbess"
+   ]
+  },
+  "2078-142845-0032": {
+   "text": "SOYER RECOMMENDS THAT EACH SLICE SHOULD BE CUT INTO PIECES AS SOON AS IT IS BUTTERED AND WHEN ALL ARE READY THAT THEY SHOULD BE PILED LIGHTLY ON THE DISH THEY ARE INTENDED TO BE SERVED ON",
+   "keywords": [
+    "Soyer"
+   ],
+   "distractors": [
+    "Tait",
+    "interdicted",
+    "Minnetaki"
+   ]
+  },
+  "2086-149220-0001": {
+   "text": "THE WHITE DOUBLE ROSEBUSH HAD EVIDENTLY BEEN PROPPED UP ANEW AGAINST THE HOUSE SINCE THE COMMENCEMENT OF THE SEASON AND A PEAR TREE AND THREE DAMSON TREES WHICH EXCEPT A ROW OF CURRANT BUSHES CONSTITUTED THE ONLY VARIETIES OF FRUIT BORE MARKS OF THE RECENT AMPUTATION OF SEVERAL SUPERFLUOUS OR DEFECTIVE LIMBS",
+   "keywords": [
+    "currant"
+   ],
+   "distractors": [
+    "Beenie",
+    "Dowle",
+    "pigstye"
+   ]
+  },
+  "2086-149220-0007": {
+   "text": "IT NOW CONTAINED ONLY CHANTICLEER HIS TWO WIVES AND A SOLITARY CHICKEN",
+   "keywords": [
+    "chanticleer"
+   ],
+   "distractors": [
+    "Pitt",
+    "Tait",
+    "Glenarvan"
+   ]
+  },
+  "2086-149220-0012": {
+   "text": "THE CHICKEN CREPT THROUGH THE PALES OF THE COOP AND RAN WITH SOME SHOW OF LIVELINESS TO HER FEET WHILE CHANTICLEER AND THE LADIES OF HIS HOUSEHOLD REGARDED HER WITH QUEER SIDELONG GLANCES AND THEN CROAKED ONE TO ANOTHER AS IF COMMUNICATING THEIR SAGE OPINIONS OF HER CHARACTER",
+   "keywords": [
+    "chanticleer"
+   ],
+   "distractors": [
+    "Hamer",
+    "Towne",
+    "Jimmie"
+   ]
+  },
+  "2086-149220-0016": {
+   "text": "MISS HEPZIBAH I SUPPOSE WILL INTERWEAVE THE FACT WITH HER OTHER TRADITIONS AND SET IT DOWN THAT THE FOWLS KNOW YOU TO BE A PYNCHEON",
+   "keywords": [
+    "Pyncheon",
+    "Hepzibah"
+   ],
+   "distractors": [
+    "Hamer",
+    "Tait",
+    "Lizy"
+   ]
+  },
+  "2086-149220-0018": {
+   "text": "I PREFER TO THINK AND SO WOULD MISS HEPZIBAH THAT THEY RECOGNIZE THE FAMILY TONE FOR YOU ARE A PYNCHEON",
+   "keywords": [
+    "Pyncheon",
+    "Hepzibah"
+   ],
+   "distractors": [
+    "Towne",
+    "Tait",
+    "felicitous"
+   ]
+  },
+  "2086-149220-0019": {
+   "text": "MY NAME IS PHOEBE PYNCHEON SAID THE GIRL WITH A MANNER OF SOME RESERVE FOR SHE WAS AWARE THAT HER NEW ACQUAINTANCE COULD BE NO OTHER THAN THE DAGUERREOTYPIST OF WHOSE LAWLESS PROPENSITIES THE OLD MAID HAD GIVEN HER A DISAGREEABLE IDEA",
+   "keywords": [
+    "Pyncheon",
+    "daguerreotypist"
+   ],
+   "distractors": [
+    "Hamer",
+    "Tait",
+    "pigstye"
+   ]
+  },
+  "2086-149220-0040": {
+   "text": "OH REJOINED THE DAGUERREOTYPIST BECAUSE LIKE AN OLD LADY'S CUP OF TEA IT IS WATER BEWITCHED",
+   "keywords": [
+    "daguerreotypist"
+   ],
+   "distractors": [
+    "Lige",
+    "Terra",
+    "poniard"
+   ]
+  },
+  "2277-149874-0001": {
+   "text": "TO CARRIE THE SOUND OF THE LITTLE BELLS UPON THE HORSE CARS AS THEY TINKLED IN AND OUT OF HEARING WAS AS PLEASING AS IT WAS NOVEL",
+   "keywords": [
+    "Carrie"
+   ],
+   "distractors": [
+    "Belli",
+    "vittles",
+    "Glenarvan"
+   ]
+  },
+  "2277-149874-0008": {
+   "text": "THEN SHE WALKED AND SANG TO IT UNTIL HANSON DISTURBED IN HIS READING CAME AND TOOK IT",
+   "keywords": [
+    "Hanson"
+   ],
+   "distractors": [
+    "kneading",
+    "Johnston",
+    "Soyer"
+   ]
+  },
+  "2277-149874-0014": {
+   "text": "SHE ASKED MINNIE FOR INK AND PAPER WHICH WERE UPON THE MANTEL IN THE DINING ROOM AND WHEN THE LATTER HAD GONE TO BED AT TEN GOT OUT DROUET'S CARD AND WROTE HIM",
+   "keywords": [
+    "mantel"
+   ],
+   "distractors": [
+    "Drouet",
+    "Lattimer",
+    "Tishimingo"
+   ]
+  },
+  "2277-149896-0010": {
+   "text": "SO LITTLE DID HE CONSIDER DROUET THAT IT NEVER ONCE OCCURRED TO HIM TO WORRY ABOUT HIS FINDING OUT",
+   "keywords": [
+    "Drouet"
+   ],
+   "distractors": [
+    "vittles",
+    "Tait",
+    "interdicted"
+   ]
+  },
+  "2277-149896-0015": {
+   "text": "HE WENT IN AND EXAMINED HIS LETTERS BUT THERE WAS NOTHING FROM CARRIE",
+   "keywords": [
+    "Carrie"
+   ],
+   "distractors": [
+    "Clarke",
+    "Lattimer",
+    "Nager"
+   ]
+  },
+  "2277-149897-0029": {
+   "text": "HE DID MANAGE TO BRING HIMSELF INTO THE MOOD TO GO OUT TO CARRIE BUT WHEN HE GOT IN OGDEN PLACE HE THOUGHT HE SAW A MAN WATCHING HIM AND WENT AWAY",
+   "keywords": [
+    "Carrie"
+   ],
+   "distractors": [
+    "Brion",
+    "Odeon",
+    "Hardwigg"
+   ]
+  },
+  "2412-153947-0008": {
+   "text": "IT WAS WRITTEN IN THE UPPER RANGITATA DISTRICT OF THE CANTERBURY PROVINCE AS IT THEN WAS OF NEW ZEALAND AND APPEARED AT CHRISTCHURCH IN THE PRESS NEWSPAPER JUNE THIRTEENTH EIGHTEEN SIXTY THREE",
+   "keywords": [
+    "Rangitata"
+   ],
+   "distractors": [
+    "Pitt",
+    "Rhein",
+    "Fibi"
+   ]
+  },
+  "2412-153947-0013": {
+   "text": "THE FIRST EDITION OF EREWHON SOLD IN ABOUT THREE WEEKS I HAD NOT TAKEN MOULDS AND AS THE DEMAND WAS STRONG IT WAS SET UP AGAIN IMMEDIATELY",
+   "keywords": [
+    "Erewhon"
+   ],
+   "distractors": [
+    "fakirs",
+    "Modocs",
+    "smilax"
+   ]
+  },
+  "2412-153947-0015": {
+   "text": "I AM STILL FAIRLY WELL SATISFIED WITH THOSE PARTS OF EREWHON THAT WERE REPEATEDLY REWRITTEN BUT FROM THOSE THAT HAD ONLY A SINGLE WRITING I WOULD GLADLY CUT OUT SOME FORTY OR FIFTY PAGES IF I COULD",
+   "keywords": [
+    "Erewhon"
+   ],
+   "distractors": [
+    "Gingle",
+    "Pell",
+    "Moira"
+   ]
+  },
+  "2412-153948-0006": {
+   "text": "I WAS TO SEE THE SHEEP NOT NECESSARILY CLOSE AT HAND NOR TO GET THEM IN A SINGLE MOB BUT TO SEE ENOUGH OF THEM HERE AND THERE TO FEEL EASY THAT NOTHING HAD GONE WRONG THIS WAS NO DIFFICULT MATTER FOR THERE WERE NOT ABOVE EIGHT HUNDRED OF THEM AND BEING ALL BREEDING EWES THEY WERE PRETTY QUIET",
+   "keywords": [
+    "ewes"
+   ],
+   "distractors": [
+    "Gingle",
+    "Tait",
+    "Saknussemm"
+   ]
+  },
+  "2412-153948-0007": {
+   "text": "THERE WERE A GOOD MANY SHEEP WHICH I KNEW AS TWO OR THREE BLACK EWES AND A BLACK LAMB OR TWO AND SEVERAL OTHERS WHICH HAD SOME DISTINGUISHING MARK WHEREBY I COULD TELL THEM",
+   "keywords": [
+    "ewes"
+   ],
+   "distractors": [
+    "Pell",
+    "Newsome",
+    "Towne"
+   ]
+  },
+  "2428-83699-0018": {
+   "text": "NO ONE HAD COME TO MEET ME THE VILLAGE WAS ABOUT HALF A MILE AND HANGAR DENE THE HOUSE FOR WHICH MY STEPS WERE BENT ABOUT FOUR MILES BY THE ROAD HOW FAR IT WAS ACROSS PLOUGHED FIELDS MY INFORMANT DID NOT MENTION",
+   "keywords": [
+    "Dene"
+   ],
+   "distractors": [
+    "Bennet",
+    "Towne",
+    "Birket"
+   ]
+  },
+  "2428-83699-0019": {
+   "text": "THERE WAS A TRAP AT THE BOY AND BLUNDERBUSS BUT THAT REQUIRED FETCHING",
+   "keywords": [
+    "blunderbuss"
+   ],
+   "distractors": [
+    "Tait",
+    "Terra",
+    "Fibi"
+   ]
+  },
+  "2428-83705-0014": {
+   "text": "THERE SHE OWNS A COTTAGE OR IT MAY BE A PIGSTYE FOR ALL I KNOW",
+   "keywords": [
+    "pigstye"
+   ],
+   "distractors": [
+    "Pitt",
+    "Tait",
+    "Glenarvan"
+   ]
+  },
+  "2428-83705-0015": {
+   "text": "WHEN SHE HEARD OF MY ENGAGEMENT WITH MARY ANN SHE WROTE AND SUGGESTED THAT WE SHOULD SPEND OUR HONEYMOON IN HER COTTAGE OR PIGSTYE AND THAT I SHOULD PAY HER RENT FOR IT",
+   "keywords": [
+    "pigstye"
+   ],
+   "distractors": [
+    "Ganny",
+    "Hamer",
+    "Kirkleatham"
+   ]
+  },
+  "2428-83705-0034": {
+   "text": "THAT WAS WHAT MISSUS MACPHERSON SAID TO ME ONLY THE OTHER DAY",
+   "keywords": [
+    "Macpherson"
+   ],
+   "distractors": [
+    "Tait",
+    "mien",
+    "Gillian"
+   ]
+  },
+  "2428-83705-0035": {
+   "text": "AND WHAT INQUIRED MISSUS MACPHERSON HAS MARY ANN GIVEN YOU HER LOVE",
+   "keywords": [
+    "Macpherson"
+   ],
+   "distractors": [
+    "Ganny",
+    "Hamer",
+    "Yokul"
+   ]
+  },
+  "251-118436-0009": {
+   "text": "THE SLANT OF THE MOON PRESAGED EVIL FOR THE KING OF VENDHYA THE STARS ARE IN TURMOIL THE SERPENT IN THE HOUSE OF THE ELEPHANT",
+   "keywords": [
+    "Vendhya"
+   ],
+   "distractors": [
+    "Carrie",
+    "Clarke",
+    "effete"
+   ]
+  },
+  "251-118436-0012": {
+   "text": "BUT AT THE URGENT ENTREATY OF THE PRINCESS OF KHOSALA WHO LOVED BHUNDA CHAND VAINLY HE GAVE HER A LOCK OF HIS LONG BLACK HAIR AS A TOKEN OF REMEMBRANCE",
+   "keywords": [
+    "Khosala"
+   ],
+   "distractors": [
+    "Hamer",
+    "whirr",
+    "impassible"
+   ]
+  },
+  "251-118436-0023": {
+   "text": "SEND MY SOUL CLEAN TO ASURA",
+   "keywords": [
+    "Asura"
+   ],
+   "distractors": [
+    "Macklewain",
+    "Yokul",
+    "Grethel"
+   ]
+  },
+  "251-136532-0001": {
+   "text": "BILL CHANDLER THE ZOOLOGIST HAD BEEN GOING DEEPER AND DEEPER INTO THE OLD SEA BOTTOM OF SYRTIS",
+   "keywords": [
+    "Syrtis"
+   ],
+   "distractors": [
+    "Beenie",
+    "chanticleer",
+    "Macklewain"
+   ]
+  },
+  "251-136532-0003": {
+   "text": "THE CIVILIAN SPECIALISTS IN OTHER FIELDS AND THE SPACE FORCE PEOPLE WHO HAD BEEN HOLDING TAPE LINES AND MAKING SKETCHES AND SNAPPING CAMERAS WERE ALL FLYING TO LOWER SYRTIS TO FIND OUT HOW MUCH OXYGEN THERE WAS AND WHAT KIND OF LIFE IT SUPPORTED",
+   "keywords": [
+    "Syrtis"
+   ],
+   "distractors": [
+    "Beenie",
+    "Lige",
+    "fakirs"
+   ]
+  },
+  "251-136532-0005": {
+   "text": "THE DAILY NEWSCASTS FROM TERRA SHOWED A CORRESPONDING SHIFT IN INTEREST AT HOME",
+   "keywords": [
+    "Terra"
+   ],
+   "distractors": [
+    "Hamer",
+    "mien",
+    "Tarrinzeau"
+   ]
+  },
+  "251-136532-0012": {
+   "text": "A FLOODLIGHT WAS ON IN THE ROOM INSIDE AND LATTIMER WAS GOING AROUND LOOKING AT THINGS WHILE A SPACE FORCE OFFICER STOOD BY THE DOOR",
+   "keywords": [
+    "Lattimer"
+   ],
+   "distractors": [
+    "roundel",
+    "Gingle",
+    "chanticleer"
+   ]
+  },
+  "251-136532-0017": {
+   "text": "TONY LATTIMER THE DISCOVERER WAS BEGINNING TO CASH IN ON HIS ATTENTIONS TO GLORIA AND HIS INGRATIATION WITH SID HE WAS ALWAYS EITHER MAKING VOICE AND IMAGE TALKS FOR TELECAST OR LISTENING TO THE NEWS FROM THE HOME PLANET",
+   "keywords": [
+    "Lattimer"
+   ],
+   "distractors": [
+    "Delectasti",
+    "ewes",
+    "Dowle"
+   ]
+  },
+  "251-136532-0019": {
+   "text": "NOT THAT I'M INTERESTED IN ALL THIS FOR MYSELF HE DISCLAIMED AFTER LISTENING TO THE TELECAST FROM TERRA TWO DAYS AFTER HIS DISCOVERY",
+   "keywords": [
+    "Terra"
+   ],
+   "distractors": [
+    "Delectasti",
+    "interdicted",
+    "Saknussemm"
+   ]
+  },
+  "251-136532-0023": {
+   "text": "THE ORGANIZATION OF A SOCIETY OF MARTIAN ARCHAEOLOGY WITH ANTHONY LATTIMER PH D THE LOGICAL CANDIDATE FOR THE CHAIR",
+   "keywords": [
+    "Lattimer"
+   ],
+   "distractors": [
+    "Ganny",
+    "confidant",
+    "Scheiler"
+   ]
+  },
+  "2803-154320-0011": {
+   "text": "THINK OF LADY GLENARVAN THINK OF MARY GRANT",
+   "keywords": [
+    "Glenarvan"
+   ],
+   "distractors": [
+    "Mulrady",
+    "currant",
+    "Macklewain"
+   ]
+  },
+  "2803-154328-0015": {
+   "text": "WILSON AND OLBINETT JOINED THEIR COMPANIONS AND ALL UNITED TO DIG THROUGH THE WALL JOHN WITH HIS DAGGER THE OTHERS WITH STONES TAKEN FROM THE GROUND OR WITH THEIR NAILS WHILE MULRADY STRETCHED ALONG THE GROUND WATCHED THE NATIVE GUARD THROUGH A CREVICE OF THE MATTING",
+   "keywords": [
+    "Mulrady",
+    "Olbinett"
+   ],
+   "distractors": [
+    "roundel",
+    "Gardar",
+    "Dowle"
+   ]
+  },
+  "2803-154328-0019": {
+   "text": "JOHN MANGLES INSERTING THE BLADE OF HIS PONIARD AVOIDED THE KNIFE WHICH NOW PROTRUDED ABOVE THE SOIL BUT SEIZED THE HAND THAT WIELDED IT",
+   "keywords": [
+    "poniard"
+   ],
+   "distractors": [
+    "Tait",
+    "Johnston",
+    "sauterne"
+   ]
+  },
+  "2803-154328-0020": {
+   "text": "BUT SOFTLY AS THE NAME WAS BREATHED MARY GRANT ALREADY AWAKENED BY THE SOUNDS IN THE HUT SLIPPED OVER TOWARD GLENARVAN AND SEIZING THE HAND ALL STAINED WITH EARTH SHE COVERED IT WITH KISSES",
+   "keywords": [
+    "Glenarvan"
+   ],
+   "distractors": [
+    "sippet",
+    "Mulrady",
+    "Coralie"
+   ]
+  },
+  "2902-9006-0013": {
+   "text": "THE HUNS SINGLY THEIR INFERIORS PRESSED THEM FROM BEHIND WITH THE IRRESISTIBLE WEIGHT OF NUMBERS ITALY WITH HER RICH CITIES AND FERTILE LOWLANDS BECKONED THEM ON TO PLUNDER AS AUXILIARIES THEY HAD LEARNED THEIR OWN STRENGTH AND ROMAN WEAKNESS A CASUS BELLI WAS SOON FOUND",
+   "keywords": [
+    "Belli"
+   ],
+   "distractors": [
+    "Claus",
+    "Hamer",
+    "Gwynplaine"
+   ]
+  },
+  "2902-9006-0015": {
+   "text": "THE COUNTLESS TREASURES WHICH FIVE CENTURIES OF RAPINE HAD ACCUMULATED ROUND THE CAPITOL HAD BECOME THE PREY OF MEN CLOTHED IN SHEEPSKINS AND HORSE HIDE AND THE SISTER OF AN EMPEROR HAD FOUND HER BEAUTY VIRTUE AND PRIDE OF RACE WORTHILY MATCHED BY THOSE OF THE HARD HANDED NORTHERN HERO WHO LED HER AWAY FROM ITALY AS HIS CAPTIVE AND HIS BRIDE TO FOUND NEW KINGDOMS IN SOUTH FRANCE AND SPAIN AND TO DRIVE THE NEWLY ARRIVED VANDALS ACROSS THE STRAITS OF GIBRALTAR INTO THE THEN BLOOMING COAST LAND OF NORTHERN AFRICA",
+   "keywords": [
+    "capitol"
+   ],
+   "distractors": [
+    "mien",
+    "roundel",
+    "Pyncheon"
+   ]
+  },
+  "2902-9006-0018": {
+   "text": "THAT WONDERFUL METAPHYSIC SUBTLETY WHICH IN PHRASES AND DEFINITIONS TOO OFTEN UNMEANING TO OUR GROSSER INTELLECT SAW THE SYMBOLS OF THE MOST IMPORTANT SPIRITUAL REALITIES AND FELT THAT ON THE DISTINCTION BETWEEN HOMOOUSIOS AND HOMOIOUSIOS MIGHT HANG THE SOLUTION OF THE WHOLE PROBLEM OF HUMANITY WAS SET TO BATTLE IN ALEXANDRIA THE ANCIENT STRONGHOLD OF GREEK PHILOSOPHY WITH THE EFFETE REMAINS OF THE VERY SCIENTIFIC THOUGHT TO WHICH IT OWED ITS EXTRAORDINARY CULTURE",
+   "keywords": [
+    "Homoiousios",
+    "Homoousios",
+    "effete"
+   ],
+   "distractors": [
+    "Tait",
+    "reals",
+    "Balvastro"
+   ]
+  },
+  "2902-9008-0000": {
+   "text": "THE PLACE SEEMED FRAGRANT WITH ALL THE RICHES OF GREEK THOUGHT AND SONG SINCE THE DAYS WHEN PTOLEMY PHILADELPHUS WALKED THERE WITH EUCLID AND THEOCRITUS CALLIMACHUS AND LYCOPHRON",
+   "keywords": [
+    "Callimachus"
+   ],
+   "distractors": [
+    "Deucalion",
+    "Grethel",
+    "effete"
+   ]
+  },
+  "3000-15664-0031": {
+   "text": "TWO OR THREE MILES FARTHER ON IS THE MAIN STRONGHOLD OF THE MODOCS HELD BY THEM SO LONG AND DEFIANTLY AGAINST ALL THE SOLDIERS THAT COULD BE BROUGHT TO THE ATTACK",
+   "keywords": [
+    "Modocs"
+   ],
+   "distractors": [
+    "boughs",
+    "Tait",
+    "Soyer"
+   ]
+  },
+  "3000-15664-0035": {
+   "text": "SHOULD THE VOLUME OF THE STREAM WHERE YOU STRIKE IT SEEM SMALL THEN YOU WILL KNOW THAT YOU ARE ABOVE THE SPRING IF LARGE NEARLY EQUAL TO ITS VOLUME AT ITS CONFLUENCE WITH THE PITT RIVER THEN YOU ARE BELOW IT AND IN EITHER CASE HAVE ONLY TO FOLLOW THE RIVER UP OR DOWN UNTIL YOU COME TO IT",
+   "keywords": [
+    "Pitt"
+   ],
+   "distractors": [
+    "Tait",
+    "Yokul",
+    "Ganny"
+   ]
+  },
+  "3000-15664-0038": {
+   "text": "ASPLENIUM EPILOBIUM HEUCHERA HAZEL DOGWOOD AND ALDER MAKE A LUXURIOUS FRINGE AND SETTING AND THE FORESTS OF DOUGLAS SPRUCE ALONG THE BANKS ARE THE FINEST I HAVE EVER SEEN IN THE SIERRA",
+   "keywords": [
+    "epilobium",
+    "heuchera"
+   ],
+   "distractors": [
+    "Terra",
+    "Shimerda",
+    "petronels"
+   ]
+  },
+  "3000-15664-0041": {
+   "text": "TRACING THE MC CLOUD TO ITS HIGHEST SPRINGS AND OVER THE DIVIDE TO THE FOUNTAINS OF FALL RIVER NEAR FORT CROOK THENCE DOWN THAT RIVER TO ITS CONFLUENCE WITH THE PITT ON FROM THERE TO THE VOLCANIC REGION ABOUT LASSEN'S BUTTE THROUGH THE BIG MEADOWS AMONG THE SOURCES OF THE FEATHER RIVER AND DOWN THROUGH FORESTS OF SUGAR PINE TO THE FERTILE PLAINS OF CHICO THIS IS A GLORIOUS SAUNTER AND IMPOSES NO HARDSHIP",
+   "keywords": [
+    "Pitt"
+   ],
+   "distractors": [
+    "plaits",
+    "sauterne",
+    "Lige"
+   ]
+  },
+  "3081-166546-0007": {
+   "text": "DO THEY STILL INSIST THAT MISS CHALLONER WAS THE ONLY PERSON IN THE ROOM WITH THEM AT THIS TIME",
+   "keywords": [
+    "Challoner"
+   ],
+   "distractors": [
+    "Macpherson",
+    "Tait",
+    "Hepzibah"
+   ]
+  },
+  "3081-166546-0022": {
+   "text": "HE APPEARED TO KNOW FOR HE TOLD ME AT ONCE THAT HE WAS DETECTIVE GRYCE A MAN WHO HAD GROWN OLD IN SOLVING JUST SUCH BAFFLING PROBLEMS AS THESE",
+   "keywords": [
+    "Gryce"
+   ],
+   "distractors": [
+    "Tait",
+    "Hepsey",
+    "Macklewain"
+   ]
+  },
+  "3081-166546-0033": {
+   "text": "BUT CLEWS THERE ARE ABSOLUTELY NONE",
+   "keywords": [
+    "clews"
+   ],
+   "distractors": [
+    "Carrie",
+    "Clarke",
+    "smilax"
+   ]
+  },
+  "3081-166546-0036": {
+   "text": "IT'S A CASE IN A THOUSAND GRYCE",
+   "keywords": [
+    "Gryce"
+   ],
+   "distractors": [
+    "Claus",
+    "mien",
+    "Curley"
+   ]
+  },
+  "3081-166546-0041": {
+   "text": "WHAT DO YOU MAKE OF IT GRYCE",
+   "keywords": [
+    "Gryce"
+   ],
+   "distractors": [
+    "Yokul",
+    "Pitt",
+    "Morrel"
+   ]
+  },
+  "3081-166546-0054": {
+   "text": "MARK SOWERBY AND CLAUS HENNERBERG",
+   "keywords": [
+    "Claus",
+    "Hennerberg",
+    "Sowerby"
+   ],
+   "distractors": [
+    "Newberg",
+    "Claudia",
+    "ewes"
+   ]
+  },
+  "3081-166546-0058": {
+   "text": "YES MISS CLARKE THE MIDDLE AGED LADY WITH THE PARRISHES",
+   "keywords": [
+    "Clarke",
+    "Parrishes"
+   ],
+   "distractors": [
+    "Mulrady",
+    "Carrie",
+    "Lattimer"
+   ]
+  },
+  "3081-166546-0070": {
+   "text": "I'LL WAIT HERE TILL YOU'RE READY EXPLAIN YOURSELF TO THE LADY TELL HER I'M AN OLD AND RHEUMATIC INVALID WHO HAS BEEN USED TO ASKING HIS OWN QUESTIONS",
+   "keywords": [
+    "rheumatic"
+   ],
+   "distractors": [
+    "Beenie",
+    "Hamer",
+    "Bergez"
+   ]
+  },
+  "3081-166546-0077": {
+   "text": "MISS CLARKE STARTED AND HER SWEET FACE SHOWED A MOMENT'S PERPLEXITY DID I SHE QUERIED MUSINGLY",
+   "keywords": [
+    "Clarke"
+   ],
+   "distractors": [
+    "Hamer",
+    "Carrie",
+    "Rangitata"
+   ]
+  },
+  "3081-166546-0081": {
+   "text": "THERE WAS NO PONIARD IN THE WOUND",
+   "keywords": [
+    "poniard"
+   ],
+   "distractors": [
+    "mien",
+    "roundel",
+    "Bergez"
+   ]
+  },
+  "3081-166546-0082": {
+   "text": "THE TIME IS NARROWED DOWN TO ONE AND IN THAT ONE MISS CLARKE WAS THE ONLY PERSON TO TOUCH HER",
+   "keywords": [
+    "Clarke"
+   ],
+   "distractors": [
+    "Hamer",
+    "Macpherson",
+    "reals"
+   ]
+  },
+  "3081-166546-0085": {
+   "text": "BUT VIGOUR RETURNED TO HIM BEFORE HE HAD WELL REACHED THE DOOR AND HE SHOWED SOME OF HIS OLD SPIRIT AS HE THANKED MISS CLARKE AND TURNED TO TAKE THE ELEVATOR",
+   "keywords": [
+    "Clarke"
+   ],
+   "distractors": [
+    "Pell",
+    "Newsome",
+    "Pyrrha"
+   ]
+  },
+  "3170-137482-0022": {
+   "text": "I JUMPED OUT OF THE GONDOLA AND FOUND MYSELF ON THE VERY SPOT WHERE THREE YEARS BEFORE I HAD TAUGHT RAZETTA SUCH A FORCIBLE LESSON I ENQUIRED FOR A SURGEON AT THE FIRST COFFEE HOUSE AND RAN TO THE HOUSE THAT WAS POINTED OUT TO ME",
+   "keywords": [
+    "Razetta"
+   ],
+   "distractors": [
+    "Tait",
+    "fakirs",
+    "plaits"
+   ]
+  },
+  "3536-23268-0000": {
+   "text": "SIR EDWARD NOT WHOLLY DISCOURAGED BY THE DENIAL WITH WHICH DORRIFORTH HAD WITH DELICACY ACQUAINTED HIM STILL HOPED FOR A KIND RECEPTION AND WAS SO OFTEN AT THE HOUSE OF MISSUS HORTON THAT LORD FREDERICK'S JEALOUSY WAS EXCITED AND THE TORTURES HE SUFFERED IN CONSEQUENCE CONVINCED HIM BEYOND A DOUBT OF THE SINCERITY OF HIS AFFECTION",
+   "keywords": [
+    "Dorriforth"
+   ],
+   "distractors": [
+    "Tait",
+    "Drouet",
+    "impassible"
+   ]
+  },
+  "3536-23268-0001": {
+   "text": "EVERY TIME HE BEHELD THE OBJECT OF HIS PASSION FOR HE STILL CONTINUED HIS VISITS THOUGH NOT SO FREQUENTLY AS HERETOFORE HE PLEADED HIS CAUSE WITH SUCH ARDOUR THAT MISS WOODLEY WHO WAS SOMETIMES PRESENT AND EVER COMPASSIONATE COULD NOT RESIST WISHING HIM SUCCESS",
+   "keywords": [
+    "Woodley"
+   ],
+   "distractors": [
+    "Claus",
+    "Tait",
+    "Balaklava"
+   ]
+  },
+  "3536-23268-0002": {
+   "text": "YET DID THE WATCHFUL MISS WOODLEY OFTENTIMES HEAR A SIGH ESCAPE FROM HER UNKNOWN TO HERSELF TILL SHE WAS REMINDED OF IT AND THEN A SUDDEN BLUSH WOULD INSTANTLY OVERSPREAD HER FACE",
+   "keywords": [
+    "Woodley"
+   ],
+   "distractors": [
+    "Hamer",
+    "Pitt",
+    "kneading"
+   ]
+  },
+  "3536-23268-0016": {
+   "text": "MISS WOODLEY OBEDIENTLY SAT DOWN AND THOUGH HER THOUGHTS AND HEART WERE IN THE CHAMBER OF HER FRIEND SHE NEVER MARKED BY ONE IMPERTINENT WORD OR BY ONE LINE OF HER FACE THE RESTRAINT SHE SUFFERED",
+   "keywords": [
+    "Woodley"
+   ],
+   "distractors": [
+    "Hamer",
+    "Lige",
+    "reals"
+   ]
+  },
+  "3536-23268-0017": {
+   "text": "AT THE USUAL HOUR MISTER DORRIFORTH AND HIS WARD WERE SUMMONED TO TEA HE ENTERED WITH A COUNTENANCE WHICH EVINCED THE REMAINS OF ANGER HIS EYE GAVE TESTIMONY OF HIS ABSENT THOUGHTS AND THOUGH HE TOOK UP A PAMPHLET AFFECTING TO READ IT WAS PLAIN TO DISCERN THAT HE SCARCELY KNEW HE HELD IT IN HIS HAND",
+   "keywords": [
+    "Dorriforth"
+   ],
+   "distractors": [
+    "Nager",
+    "Simmonds",
+    "Finnacta"
+   ]
+  },
+  "3536-23268-0018": {
+   "text": "MISS WOODLEY THOUGHT IT HER DUTY TO BE MUTE AND NOW THE GINGLE OF A TEA SPOON WAS LIKE A DEEP TONED BELL ALL WAS SO QUIET",
+   "keywords": [
+    "Woodley",
+    "Gingle"
+   ],
+   "distractors": [
+    "Belli",
+    "Towne",
+    "Frere"
+   ]
+  },
+  "3536-23268-0022": {
+   "text": "DORRIFORTH READ ON AND SEEMED AFRAID OF LOOKING UP LEST HE SHOULD SEE WHAT HE COULD NOT HAVE PARDONED",
+   "keywords": [
+    "Dorriforth"
+   ],
+   "distractors": [
+    "serge",
+    "Hamer",
+    "Manichaeans"
+   ]
+  },
+  "3576-138058-0002": {
+   "text": "AT ONE MOMENT IT SEEMED TO HIM THAT HE WAS IN THE CAVE OF MONTESINOS AND SAW DULCINEA TRANSFORMED INTO A COUNTRY WENCH SKIPPING AND MOUNTING UPON HER SHE ASS AGAIN THAT THE WORDS OF THE SAGE MERLIN WERE SOUNDING IN HIS EARS SETTING FORTH THE CONDITIONS TO BE OBSERVED AND THE EXERTIONS TO BE MADE FOR THE DISENCHANTMENT OF DULCINEA",
+   "keywords": [
+    "Montesinos"
+   ],
+   "distractors": [
+    "Hamer",
+    "Tait",
+    "vinos"
+   ]
+  },
+  "3576-138058-0015": {
+   "text": "HE WAS MOUNTED UPON A POWERFUL HORSE AND HAD ON A COAT OF MAIL WITH FOUR OF THE PISTOLS THEY CALL PETRONELS IN THAT COUNTRY AT HIS WAIST",
+   "keywords": [
+    "petronels"
+   ],
+   "distractors": [
+    "Tait",
+    "capitol",
+    "Macklewain"
+   ]
+  },
+  "3576-138058-0022": {
+   "text": "THE WOUNDED GENTLEMAN OPENED HIS ALL BUT CLOSED EYES AND RECOGNISING CLAUDIA SAID I SEE CLEARLY FAIR AND MISTAKEN LADY THAT IT IS THOU THAT HAST SLAIN ME A PUNISHMENT NOT MERITED OR DESERVED BY MY FEELINGS TOWARDS THEE FOR NEVER DID I MEAN TO NOR COULD I WRONG THEE IN THOUGHT OR DEED",
+   "keywords": [
+    "Claudia"
+   ],
+   "distractors": [
+    "fakirs",
+    "Dene",
+    "epilobium"
+   ]
+  },
+  "3576-138058-0023": {
+   "text": "IT IS NOT TRUE THEN SAID CLAUDIA THAT THOU WERT GOING THIS MORNING TO MARRY LEONORA THE DAUGHTER OF THE RICH BALVASTRO",
+   "keywords": [
+    "Claudia",
+    "Balvastro"
+   ],
+   "distractors": [
+    "Tait",
+    "Gingle",
+    "sibyl"
+   ]
+  },
+  "3576-138058-0027": {
+   "text": "THE SERVANTS WEPT CLAUDIA SWOONED AWAY AGAIN AND AGAIN AND THE WHOLE PLACE SEEMED A FIELD OF SORROW AND AN ABODE OF MISFORTUNE",
+   "keywords": [
+    "Claudia"
+   ],
+   "distractors": [
+    "Rosecrans",
+    "Claus",
+    "Soyer"
+   ]
+  },
+  "3576-138058-0028": {
+   "text": "CLAUDIA TOLD HIM SHE MEANT TO GO TO A MONASTERY OF WHICH AN AUNT OF HERS WAS ABBESS WHERE SHE INTENDED TO PASS HER LIFE WITH A BETTER AND EVERLASTING SPOUSE",
+   "keywords": [
+    "Claudia",
+    "abbess"
+   ],
+   "distractors": [
+    "Hamer",
+    "Lige",
+    "Pitt"
+   ]
+  },
+  "3576-138058-0032": {
+   "text": "SAID ONE OF THE BYSTANDERS I HAVE GOT THEM AND THEY ARE NOT WORTH THREE REALS",
+   "keywords": [
+    "reals"
+   ],
+   "distractors": [
+    "Towne",
+    "Carrie",
+    "Yokul"
+   ]
+  },
+  "3752-4944-0000": {
+   "text": "CAPTAIN FRERE SAYS THAT THE SCENERY IS DELIGHTFUL",
+   "keywords": [
+    "Frere"
+   ],
+   "distractors": [
+    "Tait",
+    "Scheiler",
+    "Khosala"
+   ]
+  },
+  "3752-4944-0003": {
+   "text": "YOU HAVE NOT BEEN LONG IN THE COLONY MISTER MEEKIN",
+   "keywords": [
+    "Meekin"
+   ],
+   "distractors": [
+    "Beenie",
+    "Yokul",
+    "Erewhon"
+   ]
+  },
+  "3752-4944-0020": {
+   "text": "THE REVEREND MEEKIN EYED HIS CLERICAL BROTHER WITH HORROR THE REVEREND MEEKIN WAS NOT ACCUSTOMED TO CLERGYMEN WHO WORE BLACK NECKTIES SMOKED CLAY PIPES CHEWED TOBACCO AND DRANK NEAT BRANDY OUT OF TUMBLERS",
+   "keywords": [
+    "Meekin"
+   ],
+   "distractors": [
+    "Claus",
+    "Drouet",
+    "Pitt"
+   ]
+  },
+  "3752-4944-0022": {
+   "text": "BY AND BY A SHORT FIGURE SMOKING A CHEROOT CAME UP OUT OF THE DARK AND PROVED TO BE DOCTOR MACKLEWAIN WHO HAD BEEN PREVENTED FROM ATTENDING THE DINNER BY REASON OF AN ACCIDENT TO A CONSTABLE AT NORFOLK BAY WHICH HAD CLAIMED HIS PROFESSIONAL ATTENTION",
+   "keywords": [
+    "Macklewain",
+    "cheroot"
+   ],
+   "distractors": [
+    "Beenie",
+    "reals",
+    "interdicted"
+   ]
+  },
+  "3752-4944-0023": {
+   "text": "DEAD SAID DOCTOR MACKLEWAIN",
+   "keywords": [
+    "Macklewain"
+   ],
+   "distractors": [
+    "kneading",
+    "clews",
+    "asparagus"
+   ]
+  },
+  "3752-4944-0024": {
+   "text": "DELIGHTED TO SEE YOU MISTER MEEKIN",
+   "keywords": [
+    "Meekin"
+   ],
+   "distractors": [
+    "Yokul",
+    "serge",
+    "Scheiler"
+   ]
+  },
+  "3752-4944-0025": {
+   "text": "BUT MACKLEWAIN WAS TIRED AND WANTED TO GET HOME",
+   "keywords": [
+    "Macklewain"
+   ],
+   "distractors": [
+    "Hamer",
+    "mantel",
+    "Gwynplaine"
+   ]
+  },
+  "3752-4944-0034": {
+   "text": "I SHALL FIND MY PORTMANTEAU IN MY ROOM YOU SAID YES YES",
+   "keywords": [
+    "portmanteau"
+   ],
+   "distractors": [
+    "Yokul",
+    "mien",
+    "Challoner"
+   ]
+  },
+  "3853-163249-0012": {
+   "text": "THEN THEY WENT BACK TO THEIR WORK LITTLE DREAMING AS THEY TIED ROSES AND TWINED SMILAX WREATHS HOW NEAR THAT OTHER CHANCE WAS HOW SOON THEY WERE TO BE CALLED UPON TO KEEP THEIR PROMISE AND HOW WELL EACH WAS TO PERFORM THE PART GIVEN THEM IN LIFE AND DEATH",
+   "keywords": [
+    "smilax"
+   ],
+   "distractors": [
+    "vittles",
+    "Lige",
+    "Blemmyes"
+   ]
+  },
+  "3853-163249-0019": {
+   "text": "BENNET WILL TAKE THE GARDEN AND GREEN HOUSE OFF MY HANDS THIS AUTUMN FOR A YEAR OR LONGER IF I LIKE",
+   "keywords": [
+    "Bennet"
+   ],
+   "distractors": [
+    "almoner",
+    "Lige",
+    "Jimmie"
+   ]
+  },
+  "3853-163249-0029": {
+   "text": "WE CAN'T AFFORD NO NICE VITTLES NOW WHEN OUR MEN ARE SUFFERIN SO",
+   "keywords": [
+    "vittles"
+   ],
+   "distractors": [
+    "mien",
+    "Carrie",
+    "effete"
+   ]
+  },
+  "3853-163249-0032": {
+   "text": "CAN YOU REMEMBER WHAT HEPSEY TOLD US AND CALL THEM POOR LONG SUFFERIN CREETERS NAMES",
+   "keywords": [
+    "Hepsey"
+   ],
+   "distractors": [
+    "Yokul",
+    "stolidly",
+    "Rosecrans"
+   ]
+  },
+  "3853-163249-0033": {
+   "text": "NO HE AIN'T IT'S A TRAINER ADDED ANN LIZY",
+   "keywords": [
+    "Lizy"
+   ],
+   "distractors": [
+    "Ganny",
+    "tourmaline",
+    "reals"
+   ]
+  },
+  "3853-163249-0034": {
+   "text": "NOW CYNTHY BE YOU SATISFIED",
+   "keywords": [
+    "Cynthy"
+   ],
+   "distractors": [
+    "Yokul",
+    "Belli",
+    "drachm"
+   ]
+  },
+  "5338-24615-0000": {
+   "text": "IT WAS ABOUT NOON WHEN CAPTAIN WAVERLEY ENTERED THE STRAGGLING VILLAGE OR RATHER HAMLET OF TULLY VEOLAN CLOSE TO WHICH WAS SITUATED THE MANSION OF THE PROPRIETOR",
+   "keywords": [
+    "Waverley"
+   ],
+   "distractors": [
+    "Hanson",
+    "Hamer",
+    "Drouet"
+   ]
+  },
+  "5338-24615-0002": {
+   "text": "OCCASIONALLY INDEED WHEN SUCH A CONSUMMATION SEEMED INEVITABLE A WATCHFUL OLD GRANDAM WITH HER CLOSE CAP DISTAFF AND SPINDLE RUSHED LIKE A SIBYL IN FRENZY OUT OF ONE OF THESE MISERABLE CELLS DASHED INTO THE MIDDLE OF THE PATH AND SNATCHING UP HER OWN CHARGE FROM AMONG THE SUNBURNT LOITERERS SALUTED HIM WITH A SOUND CUFF AND TRANSPORTED HIM BACK TO HIS DUNGEON THE LITTLE WHITE HEADED VARLET SCREAMING ALL THE WHILE FROM THE VERY TOP OF HIS LUNGS A SHRILLY TREBLE TO THE GROWLING REMONSTRANCES OF THE ENRAGED MATRON",
+   "keywords": [
+    "sibyl"
+   ],
+   "distractors": [
+    "vittles",
+    "Hamer",
+    "Rhein"
+   ]
+  },
+  "5338-24615-0005": {
+   "text": "THIS AVENUE WAS STRAIGHT AND OF MODERATE LENGTH RUNNING BETWEEN A DOUBLE ROW OF VERY ANCIENT HORSE CHESTNUTS PLANTED ALTERNATELY WITH SYCAMORES WHICH ROSE TO SUCH HUGE HEIGHT AND NOURISHED SO LUXURIANTLY THAT THEIR BOUGHS COMPLETELY OVER ARCHED THE BROAD ROAD BENEATH",
+   "keywords": [
+    "boughs"
+   ],
+   "distractors": [
+    "Bennet",
+    "Tait",
+    "praefect"
+   ]
+  },
+  "5338-24615-0006": {
+   "text": "IT WAS ONE OF THOSE EFFECTS WHICH A PAINTER LOVES TO REPRESENT AND MINGLED WELL WITH THE STRUGGLING LIGHT WHICH FOUND ITS WAY BETWEEN THE BOUGHS OF THE SHADY ARCH THAT VAULTED THE BROAD GREEN ALLEY",
+   "keywords": [
+    "boughs"
+   ],
+   "distractors": [
+    "Gingle",
+    "effete",
+    "Johnston"
+   ]
+  },
+  "5338-24615-0014": {
+   "text": "EVERYTHING AROUND APPEARED SOLITARY AND WOULD HAVE BEEN SILENT BUT FOR THE CONTINUED PLASHING OF THE FOUNTAIN AND THE WHOLE SCENE STILL MAINTAINED THE MONASTIC ILLUSION WHICH THE FANCY OF WAVERLEY HAD CONJURED UP",
+   "keywords": [
+    "Waverley"
+   ],
+   "distractors": [
+    "Beenie",
+    "roundel",
+    "Finnacta"
+   ]
+  },
+  "5338-24640-0000": {
+   "text": "CHAPTER THIRTY THREE A CONFIDANT",
+   "keywords": [
+    "confidant"
+   ],
+   "distractors": [
+    "Hamer",
+    "chanticleer",
+    "Fibi"
+   ]
+  },
+  "5338-24640-0004": {
+   "text": "WHEN I WAS A YOUNG MAN LIKE YOU MISTER WAVERLEY ANY SUCH HAIR BRAINED EXPEDITION I BEG YOUR PARDON FOR THE EXPRESSION WOULD HAVE HAD INEXPRESSIBLE CHARMS FOR ME",
+   "keywords": [
+    "Waverley"
+   ],
+   "distractors": [
+    "Ganny",
+    "Lige",
+    "Finnacta"
+   ]
+  },
+  "5338-284437-0001": {
+   "text": "HERE SAID ONE OF THEIR GUIDES AS THE PROCESSION HALTED BEFORE THE LITTLE STONE BUILDING IS THE PALACE OF TOURMALINE WHO IS OUR QUEEN",
+   "keywords": [
+    "tourmaline"
+   ],
+   "distractors": [
+    "Towne",
+    "vittles",
+    "Rhein"
+   ]
+  },
+  "5338-284437-0011": {
+   "text": "WHAT IS IT CORALIE SHE ASKED THE WOMAN",
+   "keywords": [
+    "Coralie"
+   ],
+   "distractors": [
+    "tourmaline",
+    "Pitt",
+    "mien"
+   ]
+  },
+  "5338-284437-0017": {
+   "text": "CORALIE DO YOU CONSIDER MAJESTY A PROPER WORD TO USE WHEN ADDRESSING A QUEEN",
+   "keywords": [
+    "Coralie"
+   ],
+   "distractors": [
+    "Yokul",
+    "tourmaline",
+    "Scheiler"
+   ]
+  },
+  "5338-284437-0018": {
+   "text": "EVEN IN AMERICA EVER'BODY BOWS LOW TO OUR PRESIDENT AN THE BLUESKINS ARE SO FRAID O THEIR BOOLOOROO THAT THEY TREMBLE WHENEVER THEY GO NEAR HIM",
+   "keywords": [
+    "Boolooroo"
+   ],
+   "distractors": [
+    "Tait",
+    "Carrie",
+    "mien"
+   ]
+  },
+  "5338-284437-0019": {
+   "text": "BUT SURELY THAT IS ALL WRONG SAID TOURMALINE GRAVELY",
+   "keywords": [
+    "tourmaline"
+   ],
+   "distractors": [
+    "Tait",
+    "Woonga",
+    "Pyncheon"
+   ]
+  },
+  "5536-43358-0005": {
+   "text": "THAT SOLITARY COMMUNION WITH THE UNSEEN WHICH WAS THE HIGHEST EXPRESSION OF OUR RELIGIOUS LIFE IS PARTLY DESCRIBED IN THE WORD BAMBEDAY LITERALLY MYSTERIOUS FEELING WHICH HAS BEEN VARIOUSLY TRANSLATED FASTING AND DREAMING",
+   "keywords": [
+    "Bambeday"
+   ],
+   "distractors": [
+    "Beenie",
+    "Lige",
+    "clews"
+   ]
+  },
+  "5536-43358-0006": {
+   "text": "THE FIRST BAMBEDAY OR RELIGIOUS RETREAT MARKED AN EPOCH IN THE LIFE OF THE YOUTH WHICH MAY BE COMPARED TO THAT OF CONFIRMATION OR CONVERSION IN CHRISTIAN EXPERIENCE",
+   "keywords": [
+    "Bambeday"
+   ],
+   "distractors": [
+    "Lige",
+    "Tait",
+    "Woodley"
+   ]
+  },
+  "5536-43363-0010": {
+   "text": "NO DOUBT MANY PREDICTIONS HAVE BEEN COLORED TO SUIT THE NEW AGE AND UNQUESTIONABLY FALSE PROPHETS FAKIRS AND CONJURERS HAVE BECOME THE PEST OF THE TRIBES DURING THE TRANSITION PERIOD",
+   "keywords": [
+    "fakirs"
+   ],
+   "distractors": [
+    "Beenie",
+    "pestle",
+    "whirr"
+   ]
+  },
+  "5536-43363-0017": {
+   "text": "AT ANOTHER TIME WHEN I WAS FOURTEEN YEARS OLD WE HAD JUST LEFT FORT ELLIS ON THE ASSINIBOINE RIVER AND MY YOUNGEST UNCLE HAD SELECTED A FINE SPOT FOR OUR NIGHT CAMP",
+   "keywords": [
+    "Assiniboine"
+   ],
+   "distractors": [
+    "Belli",
+    "Lattimer",
+    "Claudia"
+   ]
+  },
+  "5694-64038-0002": {
+   "text": "WE PASSED AROUND ATLANTA CROSSED THE CHATTAHOOCHEE AND TRAVELED BACK OVER THE SAME ROUTE ON WHICH WE HAD MADE THE ARDUOUS CAMPAIGN UNDER JOE JOHNSTON",
+   "keywords": [
+    "Johnston"
+   ],
+   "distractors": [
+    "roundel",
+    "Drouet",
+    "Boolooroo"
+   ]
+  },
+  "5694-64038-0006": {
+   "text": "A YANKEE ALWAYS SAYS NAGER",
+   "keywords": [
+    "Nager"
+   ],
+   "distractors": [
+    "Stacy",
+    "Hamer",
+    "smilax"
+   ]
+  },
+  "5694-64038-0020": {
+   "text": "BUT AFTER AWHILE JIM SAYS GENTLEMEN AY GANNY THE LAW",
+   "keywords": [
+    "Ganny"
+   ],
+   "distractors": [
+    "Jimmie",
+    "Stacy",
+    "forecourt"
+   ]
+  },
+  "5895-34615-0002": {
+   "text": "HAD GWYNPLAINE WHEN A CHILD BEEN SO WORTHY OF ATTENTION THAT HIS FACE HAD BEEN SUBJECTED TO TRANSMUTATION WHY NOT",
+   "keywords": [
+    "Gwynplaine"
+   ],
+   "distractors": [
+    "Beenie",
+    "Tait",
+    "Grethel"
+   ]
+  },
+  "5895-34615-0005": {
+   "text": "GWYNPLAINE WAS A MOUNTEBANK",
+   "keywords": [
+    "Gwynplaine"
+   ],
+   "distractors": [
+    "Montesinos",
+    "ewes",
+    "quenelles"
+   ]
+  },
+  "5895-34615-0009": {
+   "text": "NO ONE COULD ESCAPE FROM THIS RICTUS",
+   "keywords": [
+    "rictus"
+   ],
+   "distractors": [
+    "Towne",
+    "Cerinthus",
+    "serge"
+   ]
+  },
+  "5895-34615-0012": {
+   "text": "THE MANICHAEANS BELIEVED THE ABSOLUTE OCCASIONALLY GIVES WAY AND THAT GOD HIMSELF SOMETIMES ABDICATES FOR A TIME SO ALSO OF THE WILL",
+   "keywords": [
+    "Manichaeans"
+   ],
+   "distractors": [
+    "Tait",
+    "Michaelis",
+    "Ossipon"
+   ]
+  },
+  "5895-34622-0001": {
+   "text": "IN GWYNPLAINE EVIL THOUGHTS NEVER RIPENED AND HE HAD THEREFORE NO REMORSE",
+   "keywords": [
+    "Gwynplaine"
+   ],
+   "distractors": [
+    "boughs",
+    "Frere",
+    "Balvastro"
+   ]
+  },
+  "5895-34622-0014": {
+   "text": "FOR THESE READ FIBI AND VINOS THAT WE MAY CONFORM TO ENGLISH PRONUNCIATION",
+   "keywords": [
+    "Fibi",
+    "vinos"
+   ],
+   "distractors": [
+    "Tait",
+    "Hepsey",
+    "Razetta"
+   ]
+  },
+  "5895-34629-0000": {
+   "text": "IT WAS ESTABLISHED AT SOUTHWARK",
+   "keywords": [
+    "Southwark"
+   ],
+   "distractors": [
+    "Pitt",
+    "Tait",
+    "Lattimer"
+   ]
+  },
+  "5895-34629-0008": {
+   "text": "BY THE SIDE OF THE DOOR WAS CONSTRUCTED OFF HAND BY MEANS OF AN EMPTY BARREL A BOX FOR THE MONEY TAKER WHO WAS SOMETIMES FIBI AND SOMETIMES VINOS",
+   "keywords": [
+    "Fibi",
+    "vinos"
+   ],
+   "distractors": [
+    "Carrie",
+    "Morrel",
+    "Birket"
+   ]
+  },
+  "5895-34629-0012": {
+   "text": "ALL SOUTHWARK RAN IN CROWDS TO ADMIRE THE LAUGHING MAN",
+   "keywords": [
+    "Southwark"
+   ],
+   "distractors": [
+    "mantel",
+    "mien",
+    "Beenie"
+   ]
+  },
+  "5895-34629-0013": {
+   "text": "THE MERRY ANDREWS AND MOUNTEBANKS OF TARRINZEAU FIELD WERE AGHAST AT GWYNPLAINE",
+   "keywords": [
+    "Gwynplaine",
+    "Tarrinzeau"
+   ],
+   "distractors": [
+    "Frere",
+    "Waverley",
+    "Beenie"
+   ]
+  },
+  "5895-34629-0021": {
+   "text": "BESIDES THIS HE HARANGUED LIKE CICERO AS WE HAVE JUST SEEN SOLD HIS DRUGS ATTENDED SICKNESS AND EVEN HEALED THE SICK",
+   "keywords": [
+    "harangued"
+   ],
+   "distractors": [
+    "Lige",
+    "Hamer",
+    "Olbinett"
+   ]
+  },
+  "5895-34629-0022": {
+   "text": "URSUS WAS SATISFIED WITH THE APPLAUSE OF SOUTHWARK BUT BY NO MEANS ASTONISHED",
+   "keywords": [
+    "Southwark"
+   ],
+   "distractors": [
+    "mien",
+    "Manichaeans",
+    "sauterne"
+   ]
+  },
+  "6241-61943-0006": {
+   "text": "NO MISTER HARDWIGG SAID THE CAPTAIN NO FEAR OF THAT",
+   "keywords": [
+    "Hardwigg"
+   ],
+   "distractors": [
+    "Tait",
+    "Sutter",
+    "Rhein"
+   ]
+  },
+  "6241-61943-0008": {
+   "text": "ON THE ELEVENTH DAY WE SIGHTED CAPE PORTLAND OVER WHICH TOWERED MOUNT MYRDALS YOKUL WHICH THE WEATHER BEING CLEAR WE MADE OUT VERY READILY",
+   "keywords": [
+    "Yokul"
+   ],
+   "distractors": [
+    "Clarke",
+    "Drouet",
+    "Dorriforth"
+   ]
+  },
+  "6241-61943-0016": {
+   "text": "THIS MODEST SCHOLAR SPOKE NO LANGUAGES SAVE ICELANDIC AND LATIN",
+   "keywords": [
+    "Icelandic"
+   ],
+   "distractors": [
+    "Modocs",
+    "Scheiler",
+    "Towne"
+   ]
+  },
+  "6241-61943-0020": {
+   "text": "VERY LIKELY I MAY FIND THERE SOME MANUSCRIPTS FROM THE HAND OF SAKNUSSEMM",
+   "keywords": [
+    "Saknussemm"
+   ],
+   "distractors": [
+    "Newsome",
+    "Soyer",
+    "asparagus"
+   ]
+  },
+  "6241-61943-0027": {
+   "text": "THE MEN APPEARED ROBUST BUT HEAVY FAIR HAIRED LIKE GERMANS BUT OF PENSIVE MIEN EXILES OF A HIGHER SCALE IN THE LADDER OF HUMANITY THAN THE ESKIMOS BUT I THOUGHT MUCH MORE UNHAPPY SINCE WITH SUPERIOR PERCEPTIONS THEY ARE COMPELLED TO LIVE WITHIN THE LIMITS OF THE POLAR CIRCLE",
+   "keywords": [
+    "mien"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "forecourt"
+   ]
+  },
+  "6241-61946-0003": {
+   "text": "GEOGRAPHERS HAVE DIVIDED IT INTO FOUR PARTS AND WE HAD TO CROSS THE SOUTHWEST QUARTER WHICH IN THE VERNACULAR IS CALLED SUDVESTR FJORDUNGR",
+   "keywords": [
+    "Fjordungr"
+   ],
+   "distractors": [
+    "plaits",
+    "Challoner",
+    "Rhein"
+   ]
+  },
+  "6241-61946-0011": {
+   "text": "HERE AND THERE COULD BE SEEN AN ISOLATED FARM SOME SOLITARY BUR OR ICELANDIC HOUSE BUILT OF WOOD EARTH FRAGMENTS OF LAVA LOOKING LIKE BEGGARS ON THE HIGHWAY OF LIFE",
+   "keywords": [
+    "Icelandic"
+   ],
+   "distractors": [
+    "Lige",
+    "Newsome",
+    "Brion"
+   ]
+  },
+  "6241-61946-0015": {
+   "text": "I TOOK OCCASION TO CONSULT THE MAP TO SEE WHERE GARDAR WAS TO BE FOUND",
+   "keywords": [
+    "Gardar"
+   ],
+   "distractors": [
+    "serge",
+    "Ossipon",
+    "Morrel"
+   ]
+  },
+  "6241-66616-0003": {
+   "text": "A COUNTER ATTACK WAS MADE UPON WOONGA AND HE WAS DRIVEN DEEP INTO THE WILDERNESS WITH GREAT LOSS",
+   "keywords": [
+    "Woonga"
+   ],
+   "distractors": [
+    "Dene",
+    "Congal",
+    "Soyer"
+   ]
+  },
+  "6241-66616-0004": {
+   "text": "THREE DAYS LATER MINNETAKI BECAME NEWSOME'S WIFE AT THE HUDSON BAY POST",
+   "keywords": [
+    "Minnetaki"
+   ],
+   "distractors": [
+    "Newsome",
+    "Lattimer",
+    "daguerreotypist"
+   ]
+  },
+  "6241-66616-0006": {
+   "text": "MEANWHILE TWO CHILDREN CAME TO BLESS THE HAPPY UNION OF NEWSOME AND HIS LOVELY INDIAN WIFE",
+   "keywords": [
+    "Newsome"
+   ],
+   "distractors": [
+    "abbess",
+    "Hamer",
+    "Jimmie"
+   ]
+  },
+  "6241-66616-0007": {
+   "text": "THE OTHER WAS A GIRL THREE YEARS YOUNGER AND NEWSOME INSISTED THAT SHE BE CALLED MINNETAKI",
+   "keywords": [
+    "Minnetaki",
+    "Newsome"
+   ],
+   "distractors": [
+    "Tait",
+    "Challoner",
+    "Weiser"
+   ]
+  },
+  "6241-66616-0008": {
+   "text": "CURIOUSLY ENOUGH THE BLOOD OF WABI RAN ALMOST PURE TO HIS INDIAN FOREFATHERS WHILE MINNETAKI AS SHE BECAME OLDER DEVELOPED LESS OF THE WILD BEAUTY OF HER MOTHER AND MORE OF THE SOFTER LOVELINESS OF THE WHITE RACE HER WEALTH OF SOFT JET BLACK HAIR AND HER GREAT DARK EYES CONTRASTING WITH THE LIGHTER SKIN OF HER FATHER'S BLOOD",
+   "keywords": [
+    "Minnetaki"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "Icelandic"
+   ]
+  },
+  "6295-64301-0026": {
+   "text": "THAT ENCHANTMENT HAD POSSESSED HIM USURPING AS IT WERE THE THRONE OF HIS LIFE AND DISPLACING IT WHEN IT CEASED HE WAS NOT HIS OWN MASTER",
+   "keywords": [
+    "usurping"
+   ],
+   "distractors": [
+    "Lige",
+    "Tait",
+    "roundel"
+   ]
+  },
+  "6313-66125-0018": {
+   "text": "LIGE QUICKLY MADE FAST THE LINE TO A TREE",
+   "keywords": [
+    "Lige"
+   ],
+   "distractors": [
+    "Frere",
+    "Olbinett",
+    "Glenarvan"
+   ]
+  },
+  "6313-66125-0021": {
+   "text": "LODGED IN THE BRANCHES OF A PINYON TREE I THINK IT IS BUT HE DOESN'T ANSWER ME",
+   "keywords": [
+    "pinyon"
+   ],
+   "distractors": [
+    "Frere",
+    "Pitt",
+    "watercress"
+   ]
+  },
+  "6313-66125-0022": {
+   "text": "LIGE LEANING OVER THE BRINK WAS ABLE TO FOLLOW THE BOY'S MOVEMENTS BY THE AID OF THE THIN ARC OF LIGHT MADE BY THE TORCH IN TAD'S HAND",
+   "keywords": [
+    "Lige"
+   ],
+   "distractors": [
+    "Brion",
+    "Morven",
+    "Hanson"
+   ]
+  },
+  "6313-66125-0025": {
+   "text": "SHALL WE HAUL UP ASKED LIGE MAKING A MEGAPHONE OF HIS HANDS YES HAUL AWAY",
+   "keywords": [
+    "Lige"
+   ],
+   "distractors": [
+    "Hanson",
+    "Meekin",
+    "Simmonds"
+   ]
+  },
+  "6313-66129-0001": {
+   "text": "WITH A SHOUT THE BOYS DASHED PELL MELL TO MEET THE PACK TRAIN AND FALLING IN BEHIND THE SLOW MOVING BURROS URGED THEM ON WITH DERISIVE SHOUTS AND SUNDRY RESOUNDING SLAPS ON THE ANIMALS FLANKS",
+   "keywords": [
+    "Pell",
+    "burros"
+   ],
+   "distractors": [
+    "Belli",
+    "Morven",
+    "Shimerda"
+   ]
+  },
+  "6313-66129-0004": {
+   "text": "AND WE'VE GOT A SURPRISE FOR YOU ANNOUNCED STACY SWELLING WITH PRIDE",
+   "keywords": [
+    "Stacy"
+   ],
+   "distractors": [
+    "Yokul",
+    "sluicing",
+    "Brion"
+   ]
+  },
+  "6313-66129-0014": {
+   "text": "SUPPER HAVING BEEN FINISHED THE PARTY GATHERED ABOUT THE CAMP FIRE FOR THEIR EVENING CHAT AFTER WHICH ADMONISHING STACY TO KEEP WITHIN HIS TENT AND NOT TO GO BORROWING TROUBLE THE BOYS TURNED IN FOR A SOUND SLEEP",
+   "keywords": [
+    "Stacy"
+   ],
+   "distractors": [
+    "Beenie",
+    "Frere",
+    "cheroot"
+   ]
+  },
+  "6313-66129-0017": {
+   "text": "THE LITTLE ANIMALS WERE BECOMING MORE SURE FOOTED EVERY DAY AND NED SAID THAT BEFORE THE TRIP WAS FINISHED JIMMIE WOULD BE ABLE TO WALK A SLACK ROPE",
+   "keywords": [
+    "Jimmie"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "Macklewain"
+   ]
+  },
+  "6313-76958-0008": {
+   "text": "HUMPH GRUNTED CURLEY ADAMS",
+   "keywords": [
+    "Curley"
+   ],
+   "distractors": [
+    "Adamnan",
+    "Coralie",
+    "vittles"
+   ]
+  },
+  "6313-76958-0019": {
+   "text": "STACY BROWN'S LEFT LEG SWUNG OVER THE SADDLE",
+   "keywords": [
+    "Stacy"
+   ],
+   "distractors": [
+    "Brion",
+    "Soyer",
+    "Razetta"
+   ]
+  },
+  "6313-76958-0021": {
+   "text": "KEEP A GOING AND IF YOU'RE LUCKY YOU'LL RUN PLUMB INTO THEM WAS THE JEERING ANSWER AS THE SLEEPY COWMEN SPURRED THEIR PONIES ON TOWARD CAMP MUTTERING THEIR DISAPPROVAL OF TAKING ALONG A BUNCH OF BOYS ON A CATTLE DRIVE",
+   "keywords": [
+    "plumb"
+   ],
+   "distractors": [
+    "Gingle",
+    "Yokul",
+    "sauterne"
+   ]
+  },
+  "6313-76958-0025": {
+   "text": "A WRANGLER'S A WRANGLER ANSWERED BIG FOOT STOLIDLY",
+   "keywords": [
+    "stolidly"
+   ],
+   "distractors": [
+    "Nager",
+    "forecourt",
+    "Cyril"
+   ]
+  },
+  "6319-275224-0002": {
+   "text": "YOUR COUSIN THE WILD CONVOLVULUS WHOM I LEFT IN THE FIELDS THIS MORNING DOES NO SUCH THING I ASSURE YOU",
+   "keywords": [
+    "convolvulus"
+   ],
+   "distractors": [
+    "Yokul",
+    "Asura",
+    "Hamer"
+   ]
+  },
+  "6319-275224-0011": {
+   "text": "MAKING A SORT OF EDDYING CIRCUIT ROUND THE GARDEN HE KNOCKED OVER THE CONVOLVULUS POLE TORE THE STRIPS FROM THE STICK THAT HELD UP THE WHITE LILY LOOSED ALL THE CARNATION FLOWERS FROM THEIR FASTENINGS BROKE THE ROSE TREE DOWN AND LEVELLED THE SWEET PEAS TO THE GROUND",
+   "keywords": [
+    "convolvulus"
+   ],
+   "distractors": [
+    "roundel",
+    "Lizy",
+    "Olbinett"
+   ]
+  },
+  "6319-57405-0000": {
+   "text": "IN THOSE VERY EARLY TIMES THERE WAS A MAN NAMED DEUCALION AND HE WAS THE SON OF PROMETHEUS",
+   "keywords": [
+    "Deucalion"
+   ],
+   "distractors": [
+    "Kearny",
+    "Hanson",
+    "Gardar"
+   ]
+  },
+  "6319-57405-0006": {
+   "text": "BUT DEUCALION AND PYRRHA WERE VERY SAD FOR THEY KNEW THAT THEY WERE THE ONLY PERSONS WHO WERE LEFT ALIVE IN ALL THE LAND",
+   "keywords": [
+    "Deucalion",
+    "Pyrrha"
+   ],
+   "distractors": [
+    "Tait",
+    "petronels",
+    "Glenarvan"
+   ]
+  },
+  "6319-57405-0008": {
+   "text": "WE SHOULD LIKE ABOVE ALL THINGS SAID DEUCALION TO SEE THIS LAND FULL OF PEOPLE ONCE MORE FOR WITHOUT NEIGHBORS AND FRIENDS THE WORLD IS A VERY LONELY PLACE INDEED",
+   "keywords": [
+    "Deucalion"
+   ],
+   "distractors": [
+    "Morrel",
+    "Morven",
+    "Macklewain"
+   ]
+  },
+  "6319-57405-0010": {
+   "text": "WHAT DID HE MEAN ASKED PYRRHA",
+   "keywords": [
+    "Pyrrha"
+   ],
+   "distractors": [
+    "mien",
+    "Kearny",
+    "Cerinthus"
+   ]
+  },
+  "6319-57405-0011": {
+   "text": "SURELY I DO NOT KNOW SAID DEUCALION",
+   "keywords": [
+    "Deucalion"
+   ],
+   "distractors": [
+    "Curley",
+    "Serapion",
+    "Birket"
+   ]
+  },
+  "6319-64726-0010": {
+   "text": "HE ENTERED A LARGE FORECOURT AND STOOD STILL WITH AMAZEMENT AND AWE",
+   "keywords": [
+    "forecourt"
+   ],
+   "distractors": [
+    "Clarke",
+    "Lige",
+    "sluicing"
+   ]
+  },
+  "6319-64726-0019": {
+   "text": "THE VIOLINS AND HAUT BOYS PLAYED OLD BUT EXCELLENT PIECES OF MUSIC AND AFTER SUPPER TO LOSE NO TIME THE GRAND ALMONER MARRIED THE ROYAL LOVERS IN THE CHAPEL OF THE CASTLE",
+   "keywords": [
+    "almoner"
+   ],
+   "distractors": [
+    "Carrie",
+    "Challoner",
+    "pennons"
+   ]
+  },
+  "6345-64257-0000": {
+   "text": "WHEN SHE SAID GOOD NIGHT TO BEENIE AND WENT TO HER CHAMBER OVER THAT WHERE THE LOVED PARENT AND FRIEND WOULD FALL ASLEEP NO MORE SHE FELT AS IF SHE WENT WALKING ALONG TO HER TOMB",
+   "keywords": [
+    "Beenie"
+   ],
+   "distractors": [
+    "Hamer",
+    "Morrel",
+    "Coralie"
+   ]
+  },
+  "6345-64257-0002": {
+   "text": "WHEN SHE OPENED THE DOOR OF IT THE BRIGHT FIRE WHICH BEENIE UNDESIRED HAD KINDLED THERE STARTLED HER THE ROOM LOOKED UNNATURAL UNCANNY BECAUSE IT WAS CHEERFUL",
+   "keywords": [
+    "Beenie"
+   ],
+   "distractors": [
+    "Hamer",
+    "Bennet",
+    "Waverley"
+   ]
+  },
+  "6345-93302-0000": {
+   "text": "SHE HERSELF SHOULD HAVE BEEN A POEM A LYRIC IN A WHITE GOWN AND GREEN SCARF COMING TO HIM THROUGH THE LONG GRASS UNDER THE BLOSSOMED BOUGHS",
+   "keywords": [
+    "boughs"
+   ],
+   "distractors": [
+    "Beenie",
+    "Congal",
+    "Nager"
+   ]
+  },
+  "6345-93302-0002": {
+   "text": "YOU SEE THAT SHE KNEW EXACTLY HOW A TRYST IS CONDUCTED IN THE PAGES OF THE STANDARD POETS AND OF THE CHEAPER WEEKLY JOURNALS",
+   "keywords": [
+    "tryst"
+   ],
+   "distractors": [
+    "Tait",
+    "Yokul",
+    "Nager"
+   ]
+  },
+  "652-129742-0000": {
+   "text": "ASPARAGUS SALAD COOK THE ASPARAGUS IN SALTED WATER DRAIN AND CHILL",
+   "keywords": [
+    "asparagus"
+   ],
+   "distractors": [
+    "Khosala",
+    "mien",
+    "pennons"
+   ]
+  },
+  "652-129742-0016": {
+   "text": "TOMATO BASKETS TOMATO BASKETS ARE CHARMING ACCESSORIES FOR HOLDING VEGETABLE SALAD CHICKEN SHRIMPS COLD BEANS ASPARAGUS TIPS SHREDDED CELERY CUCUMBERS CUT IN CUBES AND MINCED PEPPERS",
+   "keywords": [
+    "asparagus"
+   ],
+   "distractors": [
+    "Scheiler",
+    "Carrie",
+    "Newberg"
+   ]
+  },
+  "652-129742-0017": {
+   "text": "HANDLES OF WATERCRESS MAY BE ATTACHED TO THESE BASKETS",
+   "keywords": [
+    "watercress"
+   ],
+   "distractors": [
+    "Hepsey",
+    "Birket",
+    "vittles"
+   ]
+  },
+  "652-130726-0006": {
+   "text": "JOHN TAIT IS THE PRESIDING SPIRIT HERE HE HAVING MADE REPUTATION AS CLUB MANAGER AND THEN AS MANAGER OF THE CLIFF HOUSE",
+   "keywords": [
+    "Tait"
+   ],
+   "distractors": [
+    "Nager",
+    "Claus",
+    "Vendhya"
+   ]
+  },
+  "652-130726-0011": {
+   "text": "THE RESTAURANTS OF THE PRESENT DAY THAT APPROACH NEAREST THE OLD BOHEMIAN RESTAURANTS OF PRE FIRE DAYS OF THE FRENCH CLASS ARE JACK'S IN SACRAMENTO STREET BETWEEN MONTGOMERY AND KEARNY FELIX IN MONTGOMERY STREET BETWEEN CLAY AND WASHINGTON AND THE POODLE DOG BERGEZ FRANKS IN BUSH STREET BETWEEN KEARNY AND GRANT AVENUE",
+   "keywords": [
+    "Kearny",
+    "Bergez"
+   ],
+   "distractors": [
+    "Claus",
+    "Woodley",
+    "Michaelis"
+   ]
+  },
+  "652-130726-0013": {
+   "text": "IN THIS SAME DISTRICT IS THE MINT IN COMMERCIAL STREET BETWEEN MONTGOMERY AND KEARNY STREETS",
+   "keywords": [
+    "Kearny"
+   ],
+   "distractors": [
+    "mien",
+    "Hamer",
+    "reals"
+   ]
+  },
+  "652-130726-0016": {
+   "text": "THE FLY TRAP AND CHARLIE'S FASHION THE FIRST IN SUTTER STREET NEAR KEARNY AND THE OTHER IN MARKET NEAR SUTTER SERVE WELL COOKED FOODS ESPECIALLY SOUP SALADS AND FISH",
+   "keywords": [
+    "Kearny",
+    "Sutter"
+   ],
+   "distractors": [
+    "serge",
+    "Pell",
+    "Serapion"
+   ]
+  },
+  "652-130726-0020": {
+   "text": "AT THE CORNER OF MARKET AND EDDY STREETS IS THE ODEON DOWN IN A BASEMENT WITH DECORATIONS OF MOST GARISH ORDER",
+   "keywords": [
+    "Odeon"
+   ],
+   "distractors": [
+    "Deucalion",
+    "Birket",
+    "Razetta"
+   ]
+  },
+  "652-130726-0021": {
+   "text": "ONE CAN ALMOST IMAGINE HIMSELF IN ONE OF THE FAMOUS RATHSKELLERS OF OLD HEIDELBERG NOT AT THE SCHLOSS OF COURSE FOR HERE YOU CANNOT LOOK DOWN ON THE WEISER AS IT FLOWS BENEATH THE WINDOWS OF THE GREAT WINE STUBE ON THE HILL",
+   "keywords": [
+    "Weiser"
+   ],
+   "distractors": [
+    "Bennet",
+    "Towne",
+    "vinos"
+   ]
+  },
+  "652-130726-0023": {
+   "text": "WE FINALLY GOT HIM TO SELECT THE ONE PRIZED ABOVE ALL OTHERS AND THIS IS WHAT CHEF SCHEILER GAVE US",
+   "keywords": [
+    "Scheiler"
+   ],
+   "distractors": [
+    "Towne",
+    "Mainhall",
+    "Jimmie"
+   ]
+  },
+  "652-130726-0031": {
+   "text": "THE HOF BRAU HOWEVER IS LESS DISTINCTIVELY GERMAN AS THE GREATER NUMBER OF ITS PATRONS ARE AMERICANS",
+   "keywords": [
+    "Brau"
+   ],
+   "distractors": [
+    "petronels",
+    "Grethel",
+    "Sydney"
+   ]
+  },
+  "652-130726-0032": {
+   "text": "THE SPECIALTY OF THE HOF BRAU IS ABALONE'S AND THEY HAVE AS A FEATURE THIS SHELL FISH COOKED IN SEVERAL WAYS",
+   "keywords": [
+    "Brau"
+   ],
+   "distractors": [
+    "Hamer",
+    "Pell",
+    "Ganny"
+   ]
+  },
+  "652-130726-0034": {
+   "text": "UNDER ORDINARY CIRCUMSTANCES THE ABALONE IS TOUGH AND UNPALATABLE BUT AFTER THE DEFT MANIPULATION OF HERBERT THEY ARE TENDER AND MAKE A FINE DISH EITHER FRIED AS CHOWDER OR A LA NEWBERG",
+   "keywords": [
+    "Newberg"
+   ],
+   "distractors": [
+    "boughs",
+    "almoner",
+    "Gillian"
+   ]
+  },
+  "652-130726-0035": {
+   "text": "IN ADDITION TO ABALONE'S THE HOF BRAU MAKES A SPECIALTY OF LITTLE OREGON CRAWFISH",
+   "keywords": [
+    "Brau"
+   ],
+   "distractors": [
+    "vittles",
+    "Odeon",
+    "forcemeat"
+   ]
+  },
+  "652-130737-0001": {
+   "text": "WITH SOUP AND FISH SERVE WHITE WINES SUCH AS RHEIN WINE SAUTERNE OR WHITE BURGUNDY",
+   "keywords": [
+    "sauterne",
+    "Rhein"
+   ],
+   "distractors": [
+    "serge",
+    "Sutter",
+    "asparagus"
+   ]
+  },
+  "652-130737-0006": {
+   "text": "GERMAN WINES ARE OF LIGHTER CHARACTER AND ARE GENERALLY TERMED RHEIN WINES",
+   "keywords": [
+    "Rhein"
+   ],
+   "distractors": [
+    "Lige",
+    "Carrie",
+    "Yulka"
+   ]
+  },
+  "652-130737-0010": {
+   "text": "SAUTERNE IS A WHITE BORDEAUX A STRONG LUSCIOUS WINE THE BEST KNOWN VARIETIES BEING",
+   "keywords": [
+    "sauterne"
+   ],
+   "distractors": [
+    "Sutter",
+    "Brau",
+    "Carrie"
+   ]
+  },
+  "652-130737-0012": {
+   "text": "RHEIN AND MOSELLE EIGHTEEN NINETY THREE",
+   "keywords": [
+    "Rhein"
+   ],
+   "distractors": [
+    "Bennet",
+    "proselyte",
+    "dhourra"
+   ]
+  },
+  "777-126732-0003": {
+   "text": "MICHAELIS THE TICKET OF LEAVE APOSTLE WAS SPEAKING IN AN EVEN VOICE A VOICE THAT WHEEZED AS IF DEADENED AND OPPRESSED BY THE LAYER OF FAT ON HIS CHEST",
+   "keywords": [
+    "Michaelis"
+   ],
+   "distractors": [
+    "pestle",
+    "Tait",
+    "Balvastro"
+   ]
+  },
+  "777-126732-0015": {
+   "text": "A HARSH LAUGH FROM COMRADE OSSIPON CUT THE TIRADE DEAD SHORT IN A SUDDEN FALTERING OF THE TONGUE AND A BEWILDERED UNSTEADINESS OF THE APOSTLE'S MILDLY EXALTED EYES",
+   "keywords": [
+    "Ossipon"
+   ],
+   "distractors": [
+    "ewes",
+    "Towne",
+    "Callimachus"
+   ]
+  },
+  "777-126732-0016": {
+   "text": "ALEXANDER OSSIPON GOT UP TALL IN HIS THREADBARE BLUE SERGE SUIT UNDER THE LOW CEILING SHOOK OFF THE STIFFNESS OF LONG IMMOBILITY AND STROLLED AWAY INTO THE KITCHEN DOWN TWO STEPS TO LOOK OVER STEVIE'S SHOULDER",
+   "keywords": [
+    "Ossipon",
+    "serge"
+   ],
+   "distractors": [
+    "Bergez",
+    "Dowle",
+    "proselyte"
+   ]
+  },
+  "777-126732-0018": {
+   "text": "YOU WOULD CALL THAT LAD A DEGENERATE WOULD YOU MUMBLED MISTER VERLOC",
+   "keywords": [
+    "Verloc"
+   ],
+   "distractors": [
+    "Tait",
+    "Yokul",
+    "Sutter"
+   ]
+  },
+  "777-126732-0019": {
+   "text": "IT WAS KARL YUNDT WHO WAS HEARD IMPLACABLE TO HIS LAST BREATH",
+   "keywords": [
+    "Yundt"
+   ],
+   "distractors": [
+    "impassible",
+    "Birket",
+    "capitol"
+   ]
+  },
+  "777-126732-0025": {
+   "text": "MICHAELIS THE TICKET OF LEAVE APOSTLE SMILED VAGUELY WITH HIS GLUED LIPS HIS PASTY MOON FACE DROOPED UNDER THE WEIGHT OF MELANCHOLY ASSENT",
+   "keywords": [
+    "Michaelis"
+   ],
+   "distractors": [
+    "pestle",
+    "Manichaeans",
+    "Morrel"
+   ]
+  },
+  "777-126732-0034": {
+   "text": "I DON'T SAY THAT PROTESTED MICHAELIS GENTLY",
+   "keywords": [
+    "Michaelis"
+   ],
+   "distractors": [
+    "Stacy",
+    "Tait",
+    "Cerinthus"
+   ]
+  },
+  "777-126732-0052": {
+   "text": "MISTER VERLOC PERCEIVED WITH SOME SURPRISE THAT HE DID NOT KNOW REALLY WHAT TO SAY TO STEVIE",
+   "keywords": [
+    "Verloc"
+   ],
+   "distractors": [
+    "Stacy",
+    "Tait",
+    "pinyon"
+   ]
+  },
+  "777-126732-0056": {
+   "text": "THE LIGHT THROWN DOWN BY THE SHADE FELL DAZZLINGLY ON THE WHITE PILLOW SUNK BY THE WEIGHT OF HER HEAD REPOSING WITH CLOSED EYES AND DARK HAIR DONE UP IN SEVERAL PLAITS FOR THE NIGHT",
+   "keywords": [
+    "plaits"
+   ],
+   "distractors": [
+    "Dene",
+    "Hamer",
+    "Woodley"
+   ]
+  },
+  "777-126732-0060": {
+   "text": "THE COMPARISON OCCURRED TO MISTER VERLOC BECAUSE HE HAD SAT ASTRIDE VARIOUS ARMY HORSES IN HIS TIME AND HAD NOW THE SENSATION OF AN INCIPIENT FALL",
+   "keywords": [
+    "Verloc"
+   ],
+   "distractors": [
+    "Serapion",
+    "Claus",
+    "burros"
+   ]
+  },
+  "777-126732-0072": {
+   "text": "ASK KARL YUNDT HE GROWLED SAVAGELY",
+   "keywords": [
+    "Yundt"
+   ],
+   "distractors": [
+    "Dowle",
+    "Waverley",
+    "Belli"
+   ]
+  },
+  "7850-111771-0000": {
+   "text": "THROUGH THE INFLUENCE OF HON THOMAS L HAMER HE WAS ADMITTED AT WEST POINT IN EIGHTEEN THIRTY NINE",
+   "keywords": [
+    "Hamer"
+   ],
+   "distractors": [
+    "ewes",
+    "Hanson",
+    "Meekin"
+   ]
+  },
+  "7850-73752-0003": {
+   "text": "THIS VIOLENT AND TRIUMPHANT REVOLUTION IN HIS PROSPECTS AND HIS FORTUNES WAS HARDLY YET COMPLETELY COMPREHENDED BY OUR FRIEND FERDINAND ARMINE AND WHEN HE HAD LEFT A NOTE FOR THE GENEROUS MIRABEL WHOSE SLUMBERS HE WOULD NOT DISTURB AT THIS EARLY HOUR EVEN WITH GOOD NEWS HE STROLLED ALONG UP CHARLES STREET AND TO THE PARK IN ONE OF THOSE WILD AND JOYOUS REVERIES IN WHICH WE BROOD OVER COMING BLISS AND CREATE A THOUSAND GLORIOUS CONSEQUENCES",
+   "keywords": [
+    "Mirabel"
+   ],
+   "distractors": [
+    "Towne",
+    "ewes",
+    "Curley"
+   ]
+  },
+  "7976-105575-0004": {
+   "text": "NOT BALAKLAVA NOR THE ALMA SAW SUCH FIGHTING IT WAS A DUEL TO THE DEATH",
+   "keywords": [
+    "Balaklava"
+   ],
+   "distractors": [
+    "Pitt",
+    "Tait",
+    "sluicing"
+   ]
+  },
+  "7976-105575-0016": {
+   "text": "ONCE IN THE NIGHT I SLIPPED AWAY FROM THE BIVOUAC AND HURRIED TO THE OLD TISHIMINGO HOTEL TO SEE A LIEUTENANT OF MY COMPANY WHO HAD BEEN SHOT THROUGH THE BREAST",
+   "keywords": [
+    "Tishimingo"
+   ],
+   "distractors": [
+    "Beenie",
+    "sippet",
+    "Hennerberg"
+   ]
+  },
+  "7976-105575-0026": {
+   "text": "ROSECRANS PROTESTED IT WAS IN VAIN",
+   "keywords": [
+    "Rosecrans"
+   ],
+   "distractors": [
+    "Pitt",
+    "Tait",
+    "Kaliko"
+   ]
+  },
+  "7976-110523-0010": {
+   "text": "HANSEL THOUGHT THE ROOF TASTED VERY NICE AND SO HE TORE OFF A GREAT PIECE WHILE GRETHEL BROKE A LARGE ROUND PANE OUT OF THE WINDOW AND SAT DOWN QUITE CONTENTEDLY",
+   "keywords": [
+    "Grethel"
+   ],
+   "distractors": [
+    "roundel",
+    "Birket",
+    "Macklewain"
+   ]
+  },
+  "7976-110523-0014": {
+   "text": "GRETHEL BEGAN TO CRY BUT IT WAS ALL USELESS FOR THE OLD WITCH MADE HER DO AS SHE WANTED",
+   "keywords": [
+    "Grethel"
+   ],
+   "distractors": [
+    "Hamer",
+    "Curley",
+    "Dene"
+   ]
+  },
+  "7976-110523-0015": {
+   "text": "GRETHEL SHE CRIED IN A PASSION GET SOME WATER QUICKLY BE HANSEL FAT OR LEAN THIS MORNING I WILL KILL AND COOK HIM",
+   "keywords": [
+    "Grethel"
+   ],
+   "distractors": [
+    "Carrie",
+    "Newsome",
+    "Serapion"
+   ]
+  },
+  "8297-275154-0000": {
+   "text": "NOT HAVING HEARD FROM CAPTAIN BENNYDECK FOR SOME LITTLE TIME RANDAL THOUGHT IT DESIRABLE IN SYDNEY'S INTERESTS TO MAKE INQUIRIES AT HIS CLUB",
+   "keywords": [
+    "Bennydeck"
+   ],
+   "distractors": [
+    "Sydney",
+    "vittles",
+    "blunderbuss"
+   ]
+  },
+  "8297-275154-0003": {
+   "text": "RANDAL WAITED A WHILE IN LONDON ON THE CHANCE THAT BENNYDECK MIGHT PAY HIM A VISIT",
+   "keywords": [
+    "Bennydeck"
+   ],
+   "distractors": [
+    "Tait",
+    "chanticleer",
+    "Rangitata"
+   ]
+  },
+  "8297-275154-0004": {
+   "text": "HE IS STAYING AT THIS HOTEL TO TRY THE AIR OF SYDENHAM AND HE FINDS THAT IT AGREES WITH HIM",
+   "keywords": [
+    "Sydenham"
+   ],
+   "distractors": [
+    "Tait",
+    "tryst",
+    "Kaliko"
+   ]
+  },
+  "8297-275154-0012": {
+   "text": "RANDAL HE SAID YOU KNOW WHERE SYDNEY IS",
+   "keywords": [
+    "Sydney"
+   ],
+   "distractors": [
+    "Yokul",
+    "Waverley",
+    "Lattimer"
+   ]
+  },
+  "8297-275154-0027": {
+   "text": "HE MENTIONED THE NAME OF ONE OF THE OLD SERVANTS AT MOUNT MORVEN WHO HAD ATTACHED HIMSELF TO RANDAL AFTER THE BREAKUP OF THE FAMILY",
+   "keywords": [
+    "Morven"
+   ],
+   "distractors": [
+    "Towne",
+    "Brau",
+    "tourmaline"
+   ]
+  },
+  "8297-275155-0000": {
+   "text": "ON THE NEXT DAY BUT ONE RANDAL ARRANGED HIS DEPARTURE FOR SYDENHAM SO AS TO ARRIVE AT THE HOTEL AN HOUR BEFORE THE TIME APPOINTED FOR THE DINNER",
+   "keywords": [
+    "Sydenham"
+   ],
+   "distractors": [
+    "Carrie",
+    "harangued",
+    "sibyl"
+   ]
+  },
+  "8297-275155-0009": {
+   "text": "BUT YOU OUGHT TO HAVE KNOWN THAT WE ARE ONLY HALF AN HOUR BEHIND YOU AT SYDENHAM IN THE MATTER OF NEWS",
+   "keywords": [
+    "Sydenham"
+   ],
+   "distractors": [
+    "Tait",
+    "Yokul",
+    "Khosala"
+   ]
+  },
+  "8297-275155-0029": {
+   "text": "IT WAS A RELIEF TO RANDAL IN THE PRESENT STATE OF CATHERINE'S RELATIONS TOWARD BENNYDECK TO RETURN TO LONDON WITHOUT HAVING SEEN HIS FRIEND",
+   "keywords": [
+    "Bennydeck"
+   ],
+   "distractors": [
+    "Sutter",
+    "Bennet",
+    "effete"
+   ]
+  },
+  "8297-275155-0032": {
+   "text": "WHILE HE WAS WALKING UP AND DOWN THE PLATFORM WITH A MIND DOUBLY DISTRESSED BY ANXIETY ABOUT HIS BROTHER AND ANXIETY ABOUT SYDNEY THE TRAIN FROM LONDON CAME IN",
+   "keywords": [
+    "Sydney"
+   ],
+   "distractors": [
+    "mien",
+    "Dowle",
+    "Glenarvan"
+   ]
+  },
+  "8297-275156-0006": {
+   "text": "HE HAD PROMISED TO DO HIS BEST TOWARD PERSUADING CATHERINE TO GRANT SYDNEY AN INTERVIEW",
+   "keywords": [
+    "Sydney"
+   ],
+   "distractors": [
+    "sauterne",
+    "interdicted",
+    "Southwark"
+   ]
+  },
+  "84-121123-0004": {
+   "text": "D'AVRIGNY RUSHED TOWARDS THE OLD MAN AND MADE HIM INHALE A POWERFUL RESTORATIVE",
+   "keywords": [
+    "D'Avrigny"
+   ],
+   "distractors": [
+    "Mainhall",
+    "Gingle",
+    "Meekin"
+   ]
+  },
+  "84-121123-0005": {
+   "text": "D'AVRIGNY UNABLE TO BEAR THE SIGHT OF THIS TOUCHING EMOTION TURNED AWAY AND VILLEFORT WITHOUT SEEKING ANY FURTHER EXPLANATION AND ATTRACTED TOWARDS HIM BY THE IRRESISTIBLE MAGNETISM WHICH DRAWS US TOWARDS THOSE WHO HAVE LOVED THE PEOPLE FOR WHOM WE MOURN EXTENDED HIS HAND TOWARDS THE YOUNG MAN",
+   "keywords": [
+    "D'Avrigny",
+    "Villefort"
+   ],
+   "distractors": [
+    "Meekin",
+    "Ganny",
+    "Lizy"
+   ]
+  },
+  "84-121123-0008": {
+   "text": "OH YOU RAVE SIR EXCLAIMED VILLEFORT IN VAIN ENDEAVORING TO ESCAPE THE NET IN WHICH HE WAS TAKEN I RAVE",
+   "keywords": [
+    "Villefort"
+   ],
+   "distractors": [
+    "Yokul",
+    "Bennet",
+    "Delectasti"
+   ]
+  },
+  "84-121123-0009": {
+   "text": "DO YOU KNOW THE ASSASSIN ASKED MORREL",
+   "keywords": [
+    "Morrel"
+   ],
+   "distractors": [
+    "Yokul",
+    "Morven",
+    "Manichaeans"
+   ]
+  },
+  "84-121123-0010": {
+   "text": "NOIRTIER LOOKED UPON MORREL WITH ONE OF THOSE MELANCHOLY SMILES WHICH HAD SO OFTEN MADE VALENTINE HAPPY AND THUS FIXED HIS ATTENTION",
+   "keywords": [
+    "Morrel",
+    "Noirtier"
+   ],
+   "distractors": [
+    "Towne",
+    "Celestine",
+    "convolvulus"
+   ]
+  },
+  "84-121123-0011": {
+   "text": "SAID MORREL SADLY YES REPLIED NOIRTIER",
+   "keywords": [
+    "Morrel",
+    "Noirtier"
+   ],
+   "distractors": [
+    "Morven",
+    "Mirabel",
+    "Delectasti"
+   ]
+  },
+  "84-121123-0020": {
+   "text": "IT WAS SOMETHING TERRIBLE TO WITNESS THE SILENT AGONY THE MUTE DESPAIR OF NOIRTIER WHOSE TEARS SILENTLY ROLLED DOWN HIS CHEEKS",
+   "keywords": [
+    "Noirtier"
+   ],
+   "distractors": [
+    "Dowle",
+    "Pitt",
+    "pennons"
+   ]
+  },
+  "84-121123-0026": {
+   "text": "D'AVRIGNY SAID VILLEFORT BE SO KIND I BESEECH YOU AS TO ACCOMPANY THIS GENTLEMAN HERE IS THE KEY OF THE DOOR SO THAT YOU CAN GO IN AND OUT AS YOU PLEASE YOU WILL BRING THE PRIEST WITH YOU AND WILL OBLIGE ME BY INTRODUCING HIM INTO MY CHILD'S ROOM DO YOU WISH TO SEE HIM",
+   "keywords": [
+    "D'Avrigny",
+    "Villefort"
+   ],
+   "distractors": [
+    "Brion",
+    "Lige",
+    "impassible"
+   ]
+  },
+  "84-121550-0002": {
+   "text": "THOU MAKEST ME REMEMBER WHERE AND WHAT PROSERPINA THAT MOMENT WAS WHEN LOST HER MOTHER HER AND SHE HERSELF THE SPRING",
+   "keywords": [
+    "Proserpina"
+   ],
+   "distractors": [
+    "Hamer",
+    "Tait",
+    "usurping"
+   ]
+  },
+  "84-121550-0005": {
+   "text": "SOME APPREHENSION KEEPS YOU MARVELLING BUT THE PSALM DELECTASTI GIVETH LIGHT WHICH HAS THE POWER TO UNCLOUD YOUR INTELLECT",
+   "keywords": [
+    "Delectasti"
+   ],
+   "distractors": [
+    "Yokul",
+    "Newsome",
+    "ewes"
+   ]
+  },
+  "84-121550-0013": {
+   "text": "AND I BEHELD THE FLAMELETS ONWARD GO LEAVING BEHIND THEMSELVES THE AIR DEPICTED AND THEY OF TRAILING PENNONS HAD THE SEMBLANCE SO THAT IT OVERHEAD REMAINED DISTINCT WITH SEVENFOLD LISTS ALL OF THEM OF THE COLOURS WHENCE THE SUN'S BOW IS MADE AND DELIA'S GIRDLE",
+   "keywords": [
+    "pennons"
+   ],
+   "distractors": [
+    "poniard",
+    "Tait",
+    "Morven"
+   ]
+  },
+  "84-121550-0020": {
+   "text": "AND WHEN THE CAR WAS OPPOSITE TO ME THUNDER WAS HEARD AND ALL THAT FOLK AUGUST SEEMED TO HAVE FURTHER PROGRESS INTERDICTED",
+   "keywords": [
+    "interdicted"
+   ],
+   "distractors": [
+    "Tait",
+    "Carrie",
+    "Gryce"
+   ]
+  },
+  "84-121550-0024": {
+   "text": "TO SAY UNTO VIRGILIUS NOT A DRACHM OF BLOOD REMAINS IN ME THAT DOES NOT TREMBLE I KNOW THE TRACES OF THE ANCIENT FLAME",
+   "keywords": [
+    "drachm"
+   ],
+   "distractors": [
+    "Stacy",
+    "Tait",
+    "Cynthy"
+   ]
+  },
+  "8842-304647-0010": {
+   "text": "WELL TOO IF HE LIKE LOVE WOULD FILCH OUR HOARD WITH PLEASURE TO OURSELVES SLUICING OUR VEIN AND VIGOUR TO PERPETUATE THE STRAIN OF LIFE BY SPILTH OF LIFE WITHIN US STORED",
+   "keywords": [
+    "spilth",
+    "sluicing"
+   ],
+   "distractors": [
+    "Lige",
+    "Pell",
+    "Saknussemm"
+   ]
+  }
+ }
+}

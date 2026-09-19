@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import array
 import io
+import json
 import subprocess
 import tarfile
 
@@ -21,6 +22,7 @@ import pytest
 from myna.benchmarker import corpus_english
 from myna.benchmarker._audio import NOISE_SNR_DB, RATE
 from myna.benchmarker.corpus_english import (
+    KEYWORD_SET,
     N_NOISE,
     _round_robin,
     _speaker,
@@ -31,7 +33,9 @@ from myna.benchmarker.corpus_english import (
     is_complete,
     open_split,
 )
+from myna.core.session import KEYWORDS_MAX_ENTRIES
 from myna.testbed.corpus import load_manifest
+from myna.testbed.metrics import keyword_score
 
 
 def tone(seconds: float = 0.25, rate: int = RATE) -> array.array:
@@ -451,3 +455,72 @@ def test_a_truncation_found_mid_iteration_is_caught_too(tmp_path, tarball):
 def test_a_good_archive_reads_through_open_split(tarball):
     with open_split(tarball) as tar:
         assert any(m.name.endswith(".flac") for m in tar)
+
+
+# ─── keyword tier ────────────────────────────────────────────────────────────
+
+
+def keyword_set(path, subset="dev-clean", **clips):
+    body = {
+        uid.replace("_", "-"): {"text": text, "keywords": kws, "distractors": ds}
+        for uid, (text, kws, ds) in clips.items()
+    }
+    path.write_text(json.dumps({"subset": subset, "clips": body}))
+    return path
+
+
+@pytest.mark.usefixtures("stub_decode")
+def test_keyword_selection_takes_the_set_clips_with_keywords_and_distractors(tmp_path, tarball):
+    frozen = keyword_set(
+        tmp_path / "set.json",
+        **{
+            "84_121123_0001": ("SECOND UTTERANCE", ["Utterance"], ["World"]),
+            "251_136532_0000": ("THIRD SPEAKER", ["speaker"], []),
+        },
+    )
+    manifest_path = build(
+        tmp_path / "corpus", tarball, 0, subset="dev-clean", select="keywords", keyword_set=frozen
+    )
+    clips = {c.id: c for c in load_manifest(manifest_path)}
+    assert clips.keys() == {"librispeech-84-121123-0001", "librispeech-251-136532-0000"}
+    assert clips["librispeech-84-121123-0001"].keywords == ("Utterance", "World")
+    generated = json.loads(manifest_path.read_text())["generated"]
+    assert (generated["select"], generated["n"]) == ("keywords", 2)
+
+
+@pytest.mark.usefixtures("stub_decode")
+def test_a_keyword_set_for_another_split_is_refused(tmp_path, tarball):
+    frozen = keyword_set(
+        tmp_path / "set.json", subset="test-other", **{"84_121123_0001": ("X", ["x"], [])}
+    )
+    with pytest.raises(SystemExit, match="test-other"):
+        build(tmp_path / "c", tarball, 0, subset="dev-clean", select="keywords", keyword_set=frozen)
+
+
+@pytest.mark.usefixtures("stub_decode")
+def test_a_keyword_set_naming_a_clip_the_split_lacks_is_refused(tmp_path, tarball):
+    frozen = keyword_set(tmp_path / "set.json", **{"9_9_9": ("X", ["x"], [])})
+    with pytest.raises(SystemExit, match="9-9-9"):
+        build(tmp_path / "c", tarball, 0, subset="dev-clean", select="keywords", keyword_set=frozen)
+
+
+@pytest.mark.usefixtures("stub_decode")
+def test_a_keyword_set_whose_reference_drifted_is_refused(tmp_path, tarball):
+    frozen = keyword_set(tmp_path / "set.json", **{"84_121123_0001": ("OTHER TEXT", ["x"], [])})
+    with pytest.raises(SystemExit, match="84-121123-0001"):
+        build(tmp_path / "c", tarball, 0, subset="dev-clean", select="keywords", keyword_set=frozen)
+
+
+def test_the_frozen_keyword_set_holds_what_it_claims():
+    """Keywords are in their clip's reference, distractors are not, and every
+    list fits the session limit."""
+    frozen = json.loads(KEYWORD_SET.read_text(encoding="utf-8"))
+    assert frozen["subset"] == "dev-clean"
+    assert len(frozen["clips"]) >= 100
+    for uid, clip in frozen["clips"].items():
+        both = clip["keywords"] + clip["distractors"]
+        assert clip["keywords"], uid
+        assert len(both) <= KEYWORDS_MAX_ENTRIES, uid
+        score = keyword_score(clip["text"], "", clip["keywords"])
+        assert score.absent == 0, uid
+        assert keyword_score(clip["text"], "", clip["distractors"]).in_reference == 0, uid

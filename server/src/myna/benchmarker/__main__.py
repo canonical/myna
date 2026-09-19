@@ -223,12 +223,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_dl.add_argument("-n", type=int, default=None, help="number of clean clips (default 12)")
     p_dl.add_argument(
         "--select",
-        choices=("archive", "balanced"),
+        choices=("archive", "balanced", "keywords"),
         default=None,
         help=(
             "clip selection: 'archive' = first N in archive order (one speaker);"
             " 'balanced' = round-robin over every speaker in the split - use this"
-            " for accuracy benchmarks"
+            " for accuracy benchmarks; 'keywords' = the frozen keyword-biasing set"
+            " (dev-clean, -n ignored)"
         ),
     )
     p_dl.add_argument(

@@ -249,13 +249,8 @@ def _round_robin(by_speaker: dict[str, list[str]], n: int) -> list[str]:
     return picked
 
 
-def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array[int], str]]:
-    """``n`` utterances spread round-robin over every speaker in the split.
-
-    Two passes over the tarball: the first indexes utterance ids and
-    transcripts (cheap — no FLAC decode), the second decodes only the
-    selected members. A gzip stream can't be seeked, hence the reopen.
-    """
+def _index(tar_path: Path, prefix: str) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Transcripts and per-speaker utterance ids, without decoding any audio."""
     text: dict[str, str] = {}
     by_speaker: dict[str, list[str]] = {}
     with open_split(tar_path) as tar:
@@ -270,11 +265,14 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
             elif name.endswith(".flac"):
                 utt_id = Path(name).stem
                 by_speaker.setdefault(_speaker(utt_id), []).append(utt_id)
+    return text, by_speaker
 
-    by_speaker = {spk: sorted(utts) for spk, utts in sorted(by_speaker.items(), key=_by_id)}
-    wanted = [uid for uid in _round_robin(by_speaker, n) if uid in text]
-    print(f"selected {len(wanted)} clips across {len({_speaker(u) for u in wanted})} speakers")
 
+def _decode_selected(
+    tar_path: Path, wanted: list[str], text: dict[str, str]
+) -> list[tuple[str, array[int], str]]:
+    """Decode only ``wanted``, in that order. A gzip stream can't be seeked,
+    so this is a second pass over the tarball."""
     remaining = set(wanted)
     pcm: dict[str, array[int]] = {}
     with open_split(tar_path) as tar:
@@ -288,6 +286,66 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
                 if not remaining:
                     break
     return [(uid, pcm[uid], text[uid]) for uid in wanted if uid in pcm]
+
+
+def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, array[int], str]]:
+    """``n`` utterances spread round-robin over every speaker in the split."""
+    text, by_speaker = _index(tar_path, prefix)
+    by_speaker = {spk: sorted(utts) for spk, utts in sorted(by_speaker.items(), key=_by_id)}
+    wanted = [uid for uid in _round_robin(by_speaker, n) if uid in text]
+    print(f"selected {len(wanted)} clips across {len({_speaker(u) for u in wanted})} speakers")
+    return _decode_selected(tar_path, wanted, text)
+
+
+KEYWORD_SET = Path(__file__).with_name("keywords-dev-clean.json")
+
+
+def collect_keyword_set(
+    tar_path: Path, prefix: str, subset: str, keyword_set: Path
+) -> tuple[list[tuple[str, array[int], str]], dict[str, list[str]]]:
+    """The utterances a frozen keyword set names, and each one's keyword list
+    (its keywords, then its distractors).
+
+    The set is checked in rather than re-derived, so every run scores the same
+    lists. It was mined once from dev-clean itself, no new data:
+
+    1. Shipped Parakeet v3 int8, batch mode, over all 2703 utterances
+       (2.29% WER). Every reference word the aligned hypothesis got wrong was a
+       candidate if it had four or more letters and appeared at most 12 times
+       across dev-clean and test-other transcripts (at most 3 when it is a
+       lowercase /usr/share/dict word): 479 candidates.
+    2. Hand-pruned to 196 names and rare words - "Siobhan" and "kernel/kennel"
+       cases such as Shimerda, Verloc, mantel, currant, tryst. Dropped:
+       British/American and archaic spellings (colour, look'd), compounds the
+       model split (bird-like), inflection-only errors (captains), alignment
+       artefacts, and common words a user would never list. Names are cased as
+       written; the references are upper case, so as-written recall is judged
+       on the hypothesis alone.
+    3. Per keyword, up to three clips whose reference contains it, baseline
+       misses first. A clip's keywords are every vocabulary entry in its
+       reference; its distractors are three that are not: the two spelled
+       closest to one of its reference words, and one at random (seeded).
+
+    Refuses a set whose split, clips or references do not match the tarball,
+    because a keyword scored against the wrong text measures nothing.
+    """
+    frozen = json.loads(keyword_set.read_text(encoding="utf-8"))
+    if frozen["subset"] != subset:
+        raise SystemExit(f"{keyword_set} is a {frozen['subset']} keyword set, not {subset}")
+    text, _ = _index(tar_path, prefix)
+    drifted = [uid for uid, clip in frozen["clips"].items() if text.get(uid) != clip["text"]]
+    if drifted:
+        raise SystemExit(
+            f"{keyword_set}: {len(drifted)} clip(s) missing from {subset} or with a different "
+            "reference: " + ", ".join(drifted[:10])
+        )
+    wanted = sorted(frozen["clips"])
+    keywords = {
+        uid: frozen["clips"][uid]["keywords"] + frozen["clips"][uid]["distractors"]
+        for uid in wanted
+    }
+    print(f"selected {len(wanted)} keyword clips")
+    return _decode_selected(tar_path, wanted, text), keywords
 
 
 # Gap of digital silence spliced between concatenated utterances: long enough
@@ -408,6 +466,7 @@ def build(
     select: str = "archive",
     manifest_name: str = "manifest.json",
     long_form_minutes: float | None = None,
+    keyword_set: Path = KEYWORD_SET,
 ) -> Path:
     prefix = f"LibriSpeech/{subset}/"
     # UD129 category: the "-other" splits are LibriSpeech's harder half —
@@ -416,20 +475,31 @@ def build(
     category = "accent" if subset.endswith("-other") else "quiet"
     audio_dir = out_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    clips = (
-        collect_balanced(tar_path, n, prefix)
-        if select == "balanced"
-        else collect(tar_path, n, prefix)
-    )
+    keywords: dict[str, list[str]] = {}
+    if select == "keywords":
+        clips, keywords = collect_keyword_set(tar_path, prefix, subset, keyword_set)
+        n = len(clips)
+    elif select == "balanced":
+        clips = collect_balanced(tar_path, n, prefix)
+    else:
+        clips = collect(tar_path, n, prefix)
     if not clips and not long_form_minutes:
         raise SystemExit(f"no clips selected — is this the LibriSpeech {subset} tarball?")
 
     entries: list[dict[str, object]] = []
 
-    def add(clip_id: str, samples: array[int], txt: str, category: str, source: str) -> None:
+    def add(
+        clip_id: str,
+        samples: array[int],
+        txt: str,
+        category: str,
+        source: str,
+        clip_keywords: list[str] | None = None,
+    ) -> None:
         duration = write_wav(audio_dir / f"{clip_id}.wav", samples, RATE)
         entries.append(
             {
+                **({"keywords": clip_keywords} if clip_keywords else {}),
                 "id": clip_id,
                 "path": f"audio/{clip_id}.wav",
                 "text": txt,
@@ -451,8 +521,10 @@ def build(
             txt,
             category,
             f"librispeech:{subset}:{utt_id}",
+            keywords.get(utt_id),
         )
-    for utt_id, samples, txt in clips[:N_NOISE]:
+    # The keyword tier measures vocabulary, not noise robustness.
+    for utt_id, samples, txt in [] if keywords else clips[:N_NOISE]:
         add(
             f"librispeech-{utt_id}-noise-snr{int(NOISE_SNR_DB)}",
             mix_noise(samples, NOISE_SNR_DB, NOISE_SEED),
