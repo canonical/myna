@@ -105,6 +105,8 @@ the workshop cannot see the weights.
   (42/327, as written the same), KW FH 0.00% (0/852), identical sent or not.
   The WER is high by construction: the clips were picked for their misses.
   A biasing change must raise recall without moving FH or WER the wrong way.
+  The shipped biasing's numbers, and how it was tuned without fitting the
+  whole set, are in `model-evaluation.md`.
 
 For another machine, build `myna-bench.pyz` with `make build-bench`, copy it with the selected `.snap` and `.comp` artifacts and a configuration based on `dev/bench.yaml.example`, then run:
 

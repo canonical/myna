@@ -3,15 +3,16 @@
 Read this document before evaluating a model or a change to one (new
 backend, quantisation, export, runtime or execution provider), treating
 Parakeet's window-collapse rate as a port bug, tuning ONNX Runtime CUDA
-execution, re-attempting an fp16 Parakeet export, or reviving the Nemotron
-3.5 ASR evaluation.
+execution, re-attempting an fp16 Parakeet export, changing Parakeet's keyword
+biasing, or reviving the Nemotron 3.5 ASR evaluation.
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
 # Overview
 
 Findings from the 2026-09-17 Parakeet GPU workstream (fp32 CUDA export, NeMo
-parity, fp16 attempt) and the parked Nemotron 3.5 ASR evaluation. Numbers are
+parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning, and the parked
+Nemotron 3.5 ASR evaluation. Numbers are
 from zephyrus (RTX 4080 Laptop 12 GB, driver 595) on the 82-clip
 `corpus/english/manifest-balanced.json` (+ 5-minute long-form clip) or FLEURS
 (40 clips/language), unless noted.
@@ -111,6 +112,58 @@ run once per backend and diff the collapsed-window sets.
 - ORT's conformer fusion mis-fuses NeMo's relative-position attention.
 - A real mixed-precision export (attention scores, Softmax, LayerNorm kept
   fp32) or the TensorRT EP could recover fp16; neither attempted.
+
+## Keyword biasing (int8 CPU, 2026-09-19)
+
+`myna/testbed/keyword_bias.py` plus `_ParakeetOnnx._decode_biased`: each
+keyword, as written and capitalised, is spelt in every segmentation the
+vocabulary allows; a token extending a match gets `BOOST_PER_CHAR` (3.0) per
+keyword character it spells, and only when the unboosted argmax is non-blank.
+A boosted match is provisional: if it breaks, or the audio ends inside it,
+the decode rewinds to its first boosted token and takes the model's choice.
+
+- The rewind is what makes a long list safe. Without it, 100 keywords on the
+  ordinary slice's 82 short clips took WER 1.62% -> 6.28%: one-letter
+  word-start pieces (" W", " N") win at every word and never complete
+  ("wealth" -> "Wealth", "Inter Inter Inter"). With it, 1.41%.
+- Per character beats per token: with the rewind, a flat per-token boost
+  needs 10 to reach 3.0-per-character's tune recall (74.8%), at WER 4.13%
+  against 2.88% and 7 false hits against 0.
+- A second constant capping the total logit deficit a match may borrow cut
+  false hits but lost WER at every setting tried; not shipped.
+- Tuned on half the frozen set, split by keyword (clips sharing a keyword
+  are one component; the component's smallest lowercase keyword's sha256
+  parity picks tune or holdout; 142/142 clips). Tune, batch: boost 1 ->
+  recall 44.2%, WER 4.32%; 2 -> 62.6%, 3.42%; 3 -> 74.8%, 2.88%, FH 0;
+  4 -> 77.9%, 2.74%, FH 2/426; 5 -> 77.3%, 3.22%, FH 8. Holdout keeps
+  climbing to 4 (74.4%), but at 4 the 100-keyword list costs the ordinary
+  slice WER (2.20%, 7 false hits), so 3.0.
+- The stress list is the first 100 of the set's 196 keywords by sha256 hex
+  of the keyword, sent to every clip with `bench --keyword-list`; the
+  ordinary slice is `manifest-balanced.json` (83 clips, 7 keyword
+  occurrences in its references).
+
+| run (bench, rows `final`/`stress*`) | WER off -> on | KW recall off -> on | false hits on |
+|---|---|---|---|
+| tune, batch | 5.60 -> 2.88 | 16.0 -> 74.8% | 0/426 |
+| holdout, batch | 7.13 -> 4.58 | 9.8 -> 59.8% | 1/426 |
+| full, batch | 6.36 -> 3.73 | 12.8 -> 67.3% (as written 63.6%) | 1/852 |
+| holdout, streaming | 7.16 -> 4.70 | 9.8 -> 58.5% | 1/426 |
+| full, streaming | 6.37 -> 3.78 | 12.8 -> 66.7% | 1/852 |
+| 100-list on every clip, batch | 6.36 -> 5.41 | 16.7 -> 63.2% | 13/28229 |
+| 100-list on every clip, streaming | 6.37 -> 5.35 | 16.7 -> 63.8% | 12/28229 |
+| ordinary slice + 100-list, batch | 1.57 -> 1.42 | 2/7 -> 6/7 | 1/8294 |
+| ordinary slice + 100-list, streaming | 1.46 -> 1.30 | 2/7 -> 6/7 | 1/8294 |
+
+- Ordinary-slice clips with no listed keyword in the reference (77): WER
+  1.25% -> 1.21% batch, 1.13% -> 1.09% streaming.
+- Cost: +1.6 to +2.7 ms mean decode per clip over ~150 ms (about 1%), median
+  finalize +2 ms; building the automaton for 100 keywords takes ~3 ms.
+- Weak spot: keywords with a long common word start. "interdicted" is 8 of
+  the 14 stress false hits: " inter" alone spells five characters, so
+  "entered" turns into it. As-written recall trails recall because the
+  capitalised spelling can surface a lowercase keyword capitalised
+  mid-sentence.
 
 ## Nemotron 3.5 ASR (parked, not built)
 
