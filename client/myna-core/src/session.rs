@@ -38,6 +38,40 @@ impl SessionConfig {
     }
 }
 
+/// Local-dictionary limits (GitHub issue #1), mirroring the server's
+/// `KEYWORDS_MAX_ENTRIES` / `KEYWORDS_MAX_ENTRY_CHARS`
+/// (`server/src/myna/core/session.py`). The server rejects a list past these
+/// with `invalid_request_error`; [`normalize_keywords`] keeps a client from
+/// ever sending one.
+pub const KEYWORDS_MAX_ENTRIES: usize = 100;
+pub const KEYWORDS_MAX_ENTRY_CHARS: usize = 64;
+
+/// Trim, drop empties, dedupe and cap a raw vocabulary list so it can never
+/// trip the server's own limits at `session.update`.
+///
+/// Unlike the server's `normalize_keywords`, this never rejects: a setting
+/// that has drifted past the limits (a hand-edited keyfile, a future settings
+/// UI bug) is silently clamped rather than failing every dictation. Entries
+/// are counted and cut in `char`s, matching Python's `len(str)`.
+pub fn normalize_keywords(entries: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for entry in entries {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let capped: String = trimmed.chars().take(KEYWORDS_MAX_ENTRY_CHARS).collect();
+        if seen.insert(capped.clone()) {
+            out.push(capped);
+            if out.len() == KEYWORDS_MAX_ENTRIES {
+                break;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +135,43 @@ mod tests {
         };
         let decoded: SessionConfig = serde_json::from_value(cfg.to_wire()).unwrap();
         assert_eq!(decoded, cfg);
+    }
+
+    fn strings(words: &[&str]) -> Vec<String> {
+        words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn normalize_keywords_trims_drops_empties_and_dedupes() {
+        let input = strings(&[" kernel ", "", "   ", "kernel", "Siobhan"]);
+        assert_eq!(normalize_keywords(&input), strings(&["kernel", "Siobhan"]));
+    }
+
+    #[test]
+    fn normalize_keywords_caps_entry_count() {
+        let input: Vec<String> = (0..KEYWORDS_MAX_ENTRIES + 50)
+            .map(|i| format!("word{i}"))
+            .collect();
+        let out = normalize_keywords(&input);
+        assert_eq!(out.len(), KEYWORDS_MAX_ENTRIES);
+        assert_eq!(out[0], "word0");
+        assert_eq!(
+            out[KEYWORDS_MAX_ENTRIES - 1],
+            format!("word{}", KEYWORDS_MAX_ENTRIES - 1)
+        );
+    }
+
+    #[test]
+    fn normalize_keywords_caps_entry_length_in_chars_not_bytes() {
+        // "é" is one char, two UTF-8 bytes: the cap must count chars, like Python's len(str).
+        let long: String = "é".repeat(KEYWORDS_MAX_ENTRY_CHARS + 10);
+        let out = normalize_keywords(&[long]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].chars().count(), KEYWORDS_MAX_ENTRY_CHARS);
+    }
+
+    #[test]
+    fn normalize_keywords_of_an_empty_list_is_empty() {
+        assert!(normalize_keywords(&[]).is_empty());
     }
 }
