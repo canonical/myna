@@ -32,7 +32,9 @@ from myna.testbed.harness import (
 from myna.testbed.metrics import (
     NORMALIZER_VERSION,
     ErrorRate,
+    KeywordScore,
     character_error_rate,
+    keyword_score,
     normalize,
     word_error_rate,
 )
@@ -47,6 +49,7 @@ __all__ = [
     "FakeAdapter",
     "FedChunk",
     "Harness",
+    "KeywordScore",
     "Metrics",
     "NORMALIZER_VERSION",
     "ResultRecord",
@@ -57,6 +60,7 @@ __all__ = [
     "by_category",
     "character_error_rate",
     "corpus_id",
+    "keyword_score",
     "load_manifest",
     "normalize",
     "stamp_corpus",

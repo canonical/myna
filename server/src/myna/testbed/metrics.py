@@ -67,13 +67,19 @@ _WS = re.compile(r"\s+")
 _TYPOGRAPHIC_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'"})
 
 
-def normalize(text: str) -> str:
-    """Apply the documented normalization and return clean text."""
-    text = unicodedata.normalize("NFKC", text).casefold()
+def _clean(text: str, *, fold_case: bool) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    if fold_case:
+        text = text.casefold()
     text = text.translate(_TYPOGRAPHIC_APOSTROPHES)
     text = _PUNCT.sub(" ", text)
     text = _APOSTROPHE_EDGES.sub(" ", text)  # leading/trailing quotes, not don't
     return _WS.sub(" ", text).strip()
+
+
+def normalize(text: str) -> str:
+    """Apply the documented normalization and return clean text."""
+    return _clean(text, fold_case=True)
 
 
 @cache
@@ -292,3 +298,62 @@ def character_error_rate(
 ) -> ErrorRate:
     """CER between two strings after normalization (over characters)."""
     return _align(list(normalizer(reference).strip()), list(normalizer(hypothesis).strip()))
+
+
+@dataclass(frozen=True)
+class KeywordScore:
+    """How a transcript treated a keyword list, against its reference.
+
+    Keywords match as whole-token runs after ``normalize``. ``recalled`` counts
+    reference occurrences the hypothesis also has (per keyword, the smaller of
+    the two counts); ``recalled_cased`` is the same with the keyword's case as
+    written, since "Siobhan" and "siobhan" are different dictations.
+    ``false_hits`` counts keywords absent from the reference that the
+    hypothesis produced anyway, out of ``absent`` such keywords.
+    """
+
+    in_reference: int
+    recalled: int
+    recalled_cased: int
+    absent: int
+    false_hits: int
+    missed: tuple[str, ...]
+    false: tuple[str, ...]
+
+
+def _occurrences(tokens: list[str], phrase: list[str]) -> int:
+    width = len(phrase)
+    return sum(1 for i in range(len(tokens) - width + 1) if tokens[i : i + width] == phrase)
+
+
+def keyword_score(reference: str, hypothesis: str, keywords: Sequence[str]) -> KeywordScore:
+    ref = normalize(reference).split()
+    hyp = normalize(hypothesis).split()
+    hyp_cased = _clean(hypothesis, fold_case=False).split()
+    seen: set[str] = set()
+    in_reference = recalled = recalled_cased = absent = false_hits = 0
+    missed: list[str] = []
+    false: list[str] = []
+    for keyword in keywords:
+        phrase = normalize(keyword).split()
+        if not phrase or " ".join(phrase) in seen:
+            continue
+        seen.add(" ".join(phrase))
+        wanted = _occurrences(ref, phrase)
+        found = _occurrences(hyp, phrase)
+        if wanted:
+            in_reference += wanted
+            recalled += min(wanted, found)
+            recalled_cased += min(
+                wanted, _occurrences(hyp_cased, _clean(keyword, fold_case=False).split())
+            )
+            if found < wanted:
+                missed.append(keyword.strip())
+        else:
+            absent += 1
+            if found:
+                false_hits += 1
+                false.append(keyword.strip())
+    return KeywordScore(
+        in_reference, recalled, recalled_cased, absent, false_hits, tuple(missed), tuple(false)
+    )

@@ -10,7 +10,9 @@ import pytest
 from myna.testbed import metrics as metrics_mod
 from myna.testbed.metrics import (
     ErrorRate,
+    KeywordScore,
     character_error_rate,
+    keyword_score,
     normalize,
     word_error_rate,
 )
@@ -313,3 +315,43 @@ def test_whispers_edge_spaces_are_not_scored_as_characters():
     whisper = metrics_mod.whisper_normalizer("fr")
     assert character_error_rate("« Bonjour ! »", "bonjour", normalizer=whisper).rate == 0.0
     assert character_error_rate("bonjour", "« Bonjour ! »", normalizer=whisper).rate == 0.0
+
+
+def test_keyword_recall_counts_reference_occurrences_found_in_the_hypothesis():
+    score = keyword_score(
+        "the kernel panicked and the kernel rebooted",
+        "The kennel panicked and the Kernel rebooted.",
+        ["kernel"],
+    )
+    assert (score.in_reference, score.recalled) == (2, 1)
+    assert score.missed == ("kernel",)
+
+
+def test_keyword_cased_recall_needs_the_spelling_as_written():
+    score = keyword_score("siobhan met o'brien", "Siobhan met O'brien", ["Siobhan", "O'Brien"])
+    assert (score.in_reference, score.recalled, score.recalled_cased) == (2, 2, 1)
+
+
+def test_keyword_false_hit_is_an_absent_keyword_appearing_in_the_hypothesis():
+    score = keyword_score(
+        "feed the dog", "Feed the kernel, Siobhan.", ["kernel", "Siobhan", "Nagle"]
+    )
+    assert (score.absent, score.false_hits) == (3, 2)
+    assert score.false == ("kernel", "Siobhan")
+    assert score.in_reference == 0
+
+
+def test_keyword_phrases_match_as_whole_token_runs():
+    score = keyword_score(
+        "use the red hat kernel", "use the red hat kernel", ["red hat", "hat kern", "at"]
+    )
+    assert (score.in_reference, score.recalled, score.absent, score.false_hits) == (1, 1, 2, 0)
+
+
+def test_keyword_duplicates_and_blank_entries_count_once():
+    score = keyword_score("kernel", "kernel", ["kernel", "Kernel ", "", "  "])
+    assert (score.in_reference, score.recalled, score.absent) == (1, 1, 0)
+
+
+def test_keyword_score_without_keywords_is_empty():
+    assert keyword_score("a b", "a b", []) == KeywordScore(0, 0, 0, 0, 0, (), ())
