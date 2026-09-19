@@ -1198,3 +1198,40 @@ def test_cmd_summarize_exits_1_on_a_gate_breach(tmp_path, capsys):
         cmd_summarize(args)
     assert exc.value.code == 1
     assert "WER 30.0% > 25%" in capsys.readouterr().out
+
+
+def test_keyword_recall_and_false_hits_are_micro_averaged():
+    summary = _summarize(
+        [
+            record(clip="c1", kw_in_reference=2, kw_recalled=1, kw_recalled_cased=0),
+            record(clip="c2", kw_in_reference=2, kw_recalled=2, kw_recalled_cased=2),
+            record(clip="c3", kw_absent=3, kw_false_hits=1),
+            record(clip="c4", kw_absent=1, kw_false_hits=0),
+        ]
+    )
+    stats = summary[UNKNOWN]
+    assert stats["kw_recall"] == pytest.approx(3 / 4)
+    assert stats["kw_recall_cased"] == pytest.approx(2 / 4)
+    assert stats["kw_false_rate"] == pytest.approx(1 / 4)
+
+
+def test_rows_without_keywords_leave_the_keyword_rates_unscored():
+    stats = _summarize([record()])[UNKNOWN]
+    assert (stats["kw_recall"], stats["kw_recall_cased"], stats["kw_false_rate"]) == (
+        None,
+        None,
+        None,
+    )
+
+
+def test_overall_table_shows_keyword_columns_only_when_scored(capsys):
+    print_overall(_summarize([record()]))
+    assert "KW rec%" not in capsys.readouterr().out
+
+    print_overall(
+        _summarize([record(kw_in_reference=4, kw_recalled=3, kw_recalled_cased=2, kw_absent=5)])
+    )
+    out = capsys.readouterr().out
+    assert "KW rec%" in out and "KW Aa%" in out and "KW FH%" in out
+    row = next(ln for ln in out.splitlines() if record()["label"] in ln)
+    assert row.split()[-3:] == ["75.00", "50.00", "0.00"]

@@ -76,6 +76,9 @@ class SummaryRow(TypedDict):
     j_per_audio_s: float | None
     throttled: dict[str, bool | None] | None
     starved: int
+    kw_recall: float | None
+    kw_recall_cased: float | None
+    kw_false_rate: float | None
 
 
 def machine_of(record: Record) -> str:
@@ -312,6 +315,8 @@ def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
         ref_words = sum(r["ref_words"] for r in warm)
         cer_edits = sum(r["cer_edits"] for r in warm)
         ref_chars = sum(r["ref_chars"] for r in warm)
+        kw_ref = sum(r.get("kw_in_reference", 0) for r in warm)
+        kw_absent = sum(r.get("kw_absent", 0) for r in warm)
         summary[key] = {
             "clips": len(warm),
             "label": label,
@@ -341,6 +346,13 @@ def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
             "j_per_audio_s": None,
             "throttled": None,
             "starved": len(starved),
+            "kw_recall": sum(r.get("kw_recalled", 0) for r in warm) / kw_ref if kw_ref else None,
+            "kw_recall_cased": (
+                sum(r.get("kw_recalled_cased", 0) for r in warm) / kw_ref if kw_ref else None
+            ),
+            "kw_false_rate": (
+                sum(r.get("kw_false_hits", 0) for r in warm) / kw_absent if kw_absent else None
+            ),
         }
     return summary
 
@@ -467,6 +479,9 @@ def _print_overall(
     machines = {key[0] for key in summary}
     show_machine = len(machines) > 1 or any(m != "unknown" for m in machines)
     show_res = any(s.get("peak_rss_mb") for s in summary.values())
+    show_kw = any(
+        s["kw_recall"] is not None or s["kw_false_rate"] is not None for s in summary.values()
+    )
     # Sized to the data, not to a guess: labels grew from "cpu/small" to
     # "whisper/cpu/base/streaming" when the runner started reporting the engine,
     # model and mode it actually measured, and a fixed 20 sheared every column
@@ -477,11 +492,12 @@ def _print_overall(
     show_energy = any(s.get("throttled") is not None for s in summary.values())
     rh = f"{'RSS MB':>9} {'VRAM MB':>9}" if show_res else ""
     rh += f" {'J/aud s':>8} {'throttle':>8}" if show_energy else ""
+    kh = f" {'KW rec%':>7} {'KW Aa%':>7} {'KW FH%':>7}" if show_kw else ""
     header = (
         f"{'#':>3} {'label':{lw}} {'status':>13} {mh}{'clips':>5} "
         f"{'WER%':>7} {'CER%':>7} {'WERw%':>7} {'CERw%':>7} {'speed':>6} {'RTFx':>7} "
         f"{'med final':>11} {'p95 final':>11} {'p99 final':>11} {'rep CV%':>7} "
-        f"{'cold load':>10} {rh}"
+        f"{'cold load':>10} {rh}{kh}"
     )
     print(header)
     print("-" * len(header.rstrip()))
@@ -499,6 +515,12 @@ def _print_overall(
         )
         if show_energy:
             rc += f" {_f(s.get('j_per_audio_s'), '8.3f')} {_throttle(s.get('throttled')):>8}"
+        kc = (
+            f" {_f(_scaled(s['kw_recall']), '7.2f')} {_f(_scaled(s['kw_recall_cased']), '7.2f')}"
+            f" {_f(_scaled(s['kw_false_rate']), '7.2f')}"
+            if show_kw
+            else ""
+        )
         print(
             f"{rank:>3} {key[1]:{lw}} {status_col:>13} {mc}{s['clips']:>5} "
             f"{_f(_scaled(s['wer']), '7.2f')} {_f(_scaled(s['cer']), '7.2f')} "
@@ -508,7 +530,7 @@ def _print_overall(
             f"{_tail(s['p95_final'], s['timed_clips'], 0.95, 11)} "
             f"{_tail(s['p99_final'], s['timed_clips'], 0.99, 11)} "
             f"{_f(_scaled(s['repeat_cv']), '7.1f')} "
-            f"{_f(s['cold_ready'], '10.3f')} {rc}"
+            f"{_f(s['cold_ready'], '10.3f')} {rc}{kc}"
         )
     print(
         "\nmed/p95/p99 final are seconds (end-of-audio -> committed text); a p95 needs"
@@ -544,6 +566,11 @@ def _print_overall(
         print(
             f"{starved} starved realtime clip(s): the feed fell over a chunk behind real time,"
             " so their finalize latency is left out of med/p95 final."
+        )
+    if show_kw:
+        print(
+            "KW rec% = reference keywords the transcript has (Aa% = with the case as"
+            " written); KW FH% = keywords absent from the reference that it produced."
         )
 
 
