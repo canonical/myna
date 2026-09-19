@@ -85,6 +85,31 @@ def test_session_config_wire_roundtrip():
         language="en",
         prompt="dictation",
         timestamp_granularity="segment",
+        keywords=("kernel", "Siobhan"),
     )
     assert session_config_from_wire(session_config_to_wire(config)) == config
     assert session_config_from_wire({}) == SessionConfig()
+
+
+def test_normalize_keywords_trims_and_drops_empties():
+    from myna.core.session import normalize_keywords
+
+    assert normalize_keywords((" kernel ", "", "  ", "Siobhan")) == ("kernel", "Siobhan")
+
+
+def test_normalize_keywords_enforces_entry_count():
+    from myna.core.session import KEYWORDS_MAX_ENTRIES, normalize_keywords
+
+    ok = tuple(f"word{i}" for i in range(KEYWORDS_MAX_ENTRIES))
+    assert normalize_keywords(ok) == ok
+    with pytest.raises(ValueError):
+        normalize_keywords(ok + ("one_too_many",))
+
+
+def test_normalize_keywords_enforces_entry_length():
+    from myna.core.session import KEYWORDS_MAX_ENTRY_CHARS, normalize_keywords
+
+    ok = "a" * KEYWORDS_MAX_ENTRY_CHARS
+    assert normalize_keywords((ok,)) == (ok,)
+    with pytest.raises(ValueError):
+        normalize_keywords((ok + "a",))

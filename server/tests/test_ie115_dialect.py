@@ -59,7 +59,10 @@ def _ack(frames):
 
 def test_session_config_round_trips_through_ie115():
     config = SessionConfig(
-        audio_format=AudioFormat(sample_rate_hz=16_000), language="en", prompt="proper nouns"
+        audio_format=AudioFormat(sample_rate_hz=16_000),
+        language="en",
+        prompt="proper nouns",
+        keywords=("kernel", "Siobhan"),
     )
     session = w.session_config_to_ie115(config, model="whisper-base")
     # nested OpenAI shape
@@ -70,12 +73,22 @@ def test_session_config_round_trips_through_ie115():
         "model": "whisper-base",
         "language": "en",
         "prompt": "proper nouns",
+        "keywords": ["kernel", "Siobhan"],
     }
     # and back
     back = w.session_config_from_ie115(session)
     assert back.audio_format.sample_rate_hz == 16_000
     assert back.language == "en"
     assert back.prompt == "proper nouns"
+    assert back.keywords == ("kernel", "Siobhan")
+
+
+def test_session_config_to_ie115_omits_keywords_when_empty():
+    """Absent/empty means no biasing - never an empty list on the wire."""
+    assert (
+        "keywords"
+        not in w.session_config_to_ie115(SessionConfig())["audio"]["input"]["transcription"]
+    )
 
 
 def test_session_config_to_ie115_advertises_streaming_only_when_told():
@@ -93,6 +106,7 @@ def test_session_config_from_ie115_defaults_when_sparse():
     back = w.session_config_from_ie115({"type": "transcription"})
     assert back.audio_format == AudioFormat(sample_rate_hz=24_000)
     assert back.language is None
+    assert back.keywords == ()
 
 
 def test_append_round_trips_base64():

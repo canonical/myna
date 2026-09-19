@@ -19,6 +19,7 @@ def test_round_trip_preserves_all_fields():
         punctuation=True,
         translation=False,
         streaming=True,
+        keywords=True,
     )
     assert capabilities_from_wire(capabilities_to_wire(caps)) == caps
 
@@ -39,6 +40,7 @@ def test_defaults_are_conservative():
     assert caps.punctuation is False
     assert caps.translation is False
     assert caps.streaming is None
+    assert caps.keywords is False
 
 
 def test_a_server_predating_streaming_decodes_as_unknown():

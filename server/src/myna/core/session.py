@@ -22,6 +22,11 @@ from typing import Any
 
 from myna.core.audio import AudioFormat
 
+#: Local dictionary limits (GitHub issue #1): entries a backend can be asked
+#: to bias recognition toward, not a whole dictionary.
+KEYWORDS_MAX_ENTRIES = 100
+KEYWORDS_MAX_ENTRY_CHARS = 64
+
 
 @dataclass(frozen=True)
 class SessionConfig:
@@ -31,6 +36,9 @@ class SessionConfig:
     prompt: str | None = None
     # "word" | "segment" | None — request timestamped segments on final/done.
     timestamp_granularity: str | None = None
+    # Words/phrases (names, jargon) a backend biases recognition toward.
+    # Structured, unlike the free-text `prompt`. Empty means no biasing.
+    keywords: tuple[str, ...] = ()
 
 
 def session_config_to_wire(config: SessionConfig) -> dict[str, Any]:
@@ -40,4 +48,20 @@ def session_config_to_wire(config: SessionConfig) -> dict[str, Any]:
 def session_config_from_wire(wire: dict[str, Any]) -> SessionConfig:
     data = dict(wire)
     data["audio_format"] = AudioFormat(**data.get("audio_format") or {})
+    if "keywords" in data:
+        data["keywords"] = tuple(data["keywords"] or ())
     return SessionConfig(**data)
+
+
+def normalize_keywords(entries: tuple[str, ...]) -> tuple[str, ...]:
+    """Trim whitespace and drop empty entries; enforce the entry-count and
+    per-entry length limits. Raises ``ValueError`` - the caller reports it
+    through the dialect's own invalid-parameter error, since what "invalid"
+    means is wire-specific."""
+    trimmed = tuple(e.strip() for e in entries if e and e.strip())
+    if len(trimmed) > KEYWORDS_MAX_ENTRIES:
+        raise ValueError(f"{len(trimmed)} keywords, at most {KEYWORDS_MAX_ENTRIES} allowed")
+    for entry in trimmed:
+        if len(entry) > KEYWORDS_MAX_ENTRY_CHARS:
+            raise ValueError(f"keyword {entry!r} exceeds {KEYWORDS_MAX_ENTRY_CHARS} characters")
+    return trimmed

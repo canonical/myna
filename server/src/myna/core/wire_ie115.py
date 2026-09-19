@@ -154,6 +154,8 @@ def session_config_to_ie115(
         transcription["prompt"] = config.prompt  # note §7.3: kept here, not top-level
     if config.timestamp_granularity is not None:
         transcription["timestamp_granularity"] = config.timestamp_granularity
+    if config.keywords:
+        transcription["keywords"] = list(config.keywords)
     session: dict[str, Any] = {
         "type": "transcription",
         "audio": {
@@ -191,6 +193,7 @@ def session_config_from_ie115(session: dict[str, Any]) -> SessionConfig:
         language=transcription.get("language"),
         prompt=transcription.get("prompt") or session.get("prompt"),
         timestamp_granularity=transcription.get("timestamp_granularity"),
+        keywords=tuple(transcription.get("keywords") or ()),
     )
 
 

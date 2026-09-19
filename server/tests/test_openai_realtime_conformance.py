@@ -236,6 +236,27 @@ async def test_a_rejected_model_is_an_openai_error_event(tmp_path):
     assert "gpt-4o-transcribe" in error.error.message
 
 
+async def test_keywords_round_trips_as_a_stock_openai_field(tmp_path):
+    """``keywords`` is OpenAI's own field for this (``AudioTranscription.
+    keywords``), not an addition of ours: a stock client sending it, and
+    receiving it back on ``session.updated``, parses every frame as a valid
+    OpenAI event with no schema violation."""
+    socket_path = tmp_path / "myna.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path), ping_interval=None) as ws:
+            as_openai_server_event(json.loads(await ws.recv()))  # greeting
+            await ws.send(
+                json.dumps(
+                    stock_session_update("fake", language="en", keywords=["kernel", "Siobhan"])
+                )
+            )
+            updated = json.loads(await ws.recv())
+    event = as_openai_server_event(updated)  # raises on a schema violation
+    assert event.type == w.SESSION_UPDATED
+    transcription = updated["session"]["audio"]["input"]["transcription"]
+    assert transcription["keywords"] == ["kernel", "Siobhan"]
+
+
 async def test_an_adapter_that_ends_without_a_terminal_yields_an_openai_error(tmp_path):
     """The one-terminal contract is the server's to keep on this wire too: a
     stock client blocked on ``completed`` gets a valid ``error``, not a hang."""

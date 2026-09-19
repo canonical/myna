@@ -51,6 +51,9 @@ class Capabilities:
     - ``runtime``: the inference stack the adapter runs on, as name -> value:
       library versions and the device or execution provider, for benchmark
       provenance. Informational; ``None`` from a server that predates it.
+    - ``keywords``: the backend biases recognition toward
+      ``SessionConfig.keywords`` entries rather than merely accepting and
+      ignoring them.
     """
 
     models: tuple[str, ...] = ()
@@ -60,6 +63,7 @@ class Capabilities:
     translation: bool = False
     streaming: bool | None = None
     runtime: dict[str, str] | None = None
+    keywords: bool = False
 
 
 def capabilities_to_wire(caps: Capabilities) -> dict[str, Any]:
