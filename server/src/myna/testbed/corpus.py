@@ -42,6 +42,7 @@ class Clip:
     license: str  # SPDX identifier
     sha256: str  # audio digest, as recorded in the manifest
     voice: str | None = None  # synthesis voice, when synthetic
+    keywords: tuple[str, ...] = ()  # scored for recall/false hits; see keyword_score
 
     def open_source(self, *, chunk_seconds: float = 0.1, realtime: bool = False) -> WavFileSource:
         return WavFileSource(self.path, chunk_seconds=chunk_seconds, realtime=realtime)
@@ -64,6 +65,7 @@ def load_manifest(manifest_path: Path | str) -> tuple[Clip, ...]:
                 "regenerate the corpus"
             )
         entry["path"] = (manifest_path.parent / entry["path"]).resolve()
+        entry["keywords"] = tuple(entry.get("keywords", ()))
         clips.append(Clip(**entry))
     return tuple(clips)
 
@@ -101,6 +103,8 @@ def _corpus_id(manifest: dict[str, Any], where: Path) -> str:
                     entry["text"],
                     entry["language"],
                     entry["category"],
+                    # Only when present, so ids minted before the field stay put.
+                    *(["\x1f".join(entry["keywords"])] if entry.get("keywords") else []),
                 )
             ).encode("utf-8")
         )

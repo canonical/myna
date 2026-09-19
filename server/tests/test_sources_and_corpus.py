@@ -87,6 +87,22 @@ def test_manifest_roundtrip_and_categories(tmp_path):
     assert by_category(clips)["quiet"] == clips
 
 
+def test_manifest_keywords_load_as_a_tuple_and_default_to_none(tmp_path):
+    (bare,) = load_manifest(make_manifest(tmp_path))
+    assert bare.keywords == ()
+    other = tmp_path / "other"
+    other.mkdir()
+    (clip,) = load_manifest(make_manifest(other, entry={"keywords": ["kernel", "Siobhan"]}))
+    assert clip.keywords == ("kernel", "Siobhan")
+
+
+def test_corpus_id_of_a_manifest_without_keywords_is_unchanged_by_the_field(tmp_path):
+    baseline = corpus_id(make_manifest(tmp_path))
+    other = tmp_path / "other"
+    other.mkdir()
+    assert corpus_id(make_manifest(other, entry={"keywords": []})) == baseline
+
+
 def test_manifest_schema_version_checked(tmp_path):
     path = make_manifest(tmp_path, schema_version=999)
     with pytest.raises(ValueError, match="schema_version"):
@@ -173,6 +189,7 @@ def test_corpus_id_ignores_clip_order(tmp_path):
         pytest.param({"category": "noise"}, id="category"),
         pytest.param({"language": "de"}, id="language"),
         pytest.param({"sha256": "0" * 64}, id="audio-digest"),
+        pytest.param({"keywords": ["kernel"]}, id="keywords"),
     ],
 )
 def test_corpus_id_tracks_what_wer_is_scored_against(tmp_path, change):
