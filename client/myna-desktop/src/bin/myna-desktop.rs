@@ -129,6 +129,10 @@ enum Activation {
 struct Resolved {
     activation: Activation,
     language: Option<String>,
+    /// The user's local dictionary (GitHub issue #1), raw as read from
+    /// settings - no argv override exists for this one. Normalized only at
+    /// the point a `SessionConfig` is built.
+    vocabulary: Vec<String>,
     preedit: bool,
     mode: ModeInputs,
     auto_stop: AutoStop,
@@ -148,6 +152,7 @@ impl Resolved {
         Self {
             activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
+            vocabulary: settings.vocabulary.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
@@ -204,6 +209,9 @@ struct LiveSettings {
     preedit: Live<bool>,
     mode: Arc<std::sync::Mutex<ModeInputs>>,
     language: Live<Option<String>>,
+    /// Raw as settings hand it over; read per press like `language`, and
+    /// normalized there (not here) before it reaches a `SessionConfig`.
+    vocabulary: Live<Vec<String>>,
     /// Read at every stats tick of a running session, so a changed timeout
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
@@ -219,6 +227,7 @@ impl LiveSettings {
             preedit: Live::new(resolved.preedit),
             mode: Arc::new(std::sync::Mutex::new(resolved.mode)),
             language: Live::new(resolved.language.clone()),
+            vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             sounds: Live::new(resolved.sounds),
             sound_set,
@@ -328,6 +337,14 @@ impl LiveSettings {
                 resolved.language.as_deref().unwrap_or("(backend default)")
             );
             self.language.set(resolved.language.clone());
+        }
+        if self.vocabulary.get() != resolved.vocabulary {
+            myna_core::info_log!(
+                "settings",
+                "vocabulary -> {} word(s) (live, from the next press)",
+                resolved.vocabulary.len()
+            );
+            self.vocabulary.set(resolved.vocabulary.clone());
         }
         if self.auto_stop.get() != resolved.auto_stop {
             myna_core::info_log!(
@@ -516,6 +533,7 @@ fn make_session(
 ) -> impl FnMut(mpsc::Sender<OrchestratorEvent>) -> Session + Send + 'static {
     let backend_socket = args.backend.clone().expect("daemon requires a backend");
     let language = live.language.clone();
+    let vocabulary = live.vocabulary.clone();
     let target = args.target.clone();
     let forced_preedit = args.preedit;
     let live = live.clone();
@@ -563,6 +581,7 @@ fn make_session(
             // backend socket is: a value changed after login applies at the
             // next press, without a restart.
             language: language.get(),
+            keywords: myna_core::normalize_keywords(&vocabulary.get()),
             ..Default::default()
         };
         // --dbus: pump the capture level meter onto com.canonical.Myna.Dictation for the
@@ -1494,6 +1513,35 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(resolved(&forced, &unset()).activation, Activation::Stdin);
+    }
+
+    /// Unlike `language`, vocabulary has no argv override - it flows straight
+    /// from settings into `Resolved` and then into the live cell.
+    #[test]
+    fn vocabulary_flows_from_settings_into_resolved_and_live() {
+        let settings = myna_core::Settings {
+            vocabulary: vec!["kernel".into(), "Siobhan".into()],
+            ..Default::default()
+        };
+        let r = resolved(&Args::default(), &settings);
+        assert_eq!(
+            r.vocabulary,
+            vec!["kernel".to_string(), "Siobhan".to_string()]
+        );
+        let live = LiveSettings::new(&r, Live::default());
+        assert_eq!(live.vocabulary.get(), r.vocabulary);
+    }
+
+    #[test]
+    fn a_vocabulary_change_reaches_the_live_cell() {
+        let live = LiveSettings::new(&resolved(&Args::default(), &unset()), Live::default());
+        assert!(live.vocabulary.get().is_empty());
+        let changed = myna_core::Settings {
+            vocabulary: vec!["Siobhan".into()],
+            ..Default::default()
+        };
+        live.apply(&resolved(&Args::default(), &changed), "test");
+        assert_eq!(live.vocabulary.get(), vec!["Siobhan".to_string()]);
     }
 
     #[test]
