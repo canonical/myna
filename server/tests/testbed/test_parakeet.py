@@ -1301,6 +1301,10 @@ def test_guarded_retries_decode_with_the_same_bias():
     assert len(seen) == 2 and all(b is bias for b in seen)
 
 
+def test_the_parakeet_adapter_advertises_keywords():
+    assert ParakeetAdapter().capabilities().keywords is True
+
+
 async def _session_biases(adapter, keywords):
     model = _FakeParakeetModel("hello")
     model._vocab, model._blank_idx = list(_KW_VOCAB), _KW_BLANK

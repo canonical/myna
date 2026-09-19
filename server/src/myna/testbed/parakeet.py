@@ -967,6 +967,7 @@ class ParakeetAdapter:
                     else "CPUExecutionProvider"
                 ),
             },
+            keywords=True,
         )
 
     def _serving_device(self) -> Device:
