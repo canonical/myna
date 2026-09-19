@@ -523,6 +523,102 @@ async def test_ie115_rejects_a_model_this_server_does_not_serve(tmp_path):
             assert "whisper-large" in reply["error"]["message"]
 
 
+async def test_ie115_rejects_keywords_with_too_many_entries(tmp_path):
+    """The same invalid-parameter path as a rejected model: closes the
+    connection rather than silently truncating the list."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "myna.sock"
+    entries = [f"word{i}" for i in range(101)]
+    async with serve_unix(FakeAdapter(), socket_path):  # serves only "fake"
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {
+                                "input": {"transcription": {"model": "fake", "keywords": entries}}
+                            },
+                        },
+                    }
+                )
+            )
+            reply = json.loads(await ws.recv())
+            assert reply["type"] == w.ERROR
+            assert reply["error"]["type"] == "invalid_request_error"
+            assert reply["error"]["code"] == "invalid_parameter"
+            assert "101" in reply["error"]["message"]
+
+
+async def test_ie115_rejects_a_keyword_that_is_too_long(tmp_path):
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "myna.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {
+                                "input": {
+                                    "transcription": {"model": "fake", "keywords": ["a" * 65]}
+                                }
+                            },
+                        },
+                    }
+                )
+            )
+            reply = json.loads(await ws.recv())
+            assert reply["type"] == w.ERROR
+            assert reply["error"]["code"] == "invalid_parameter"
+
+
+async def test_ie115_normalizes_keywords_before_echoing_them(tmp_path):
+    """Trimmed and emptied of blanks before ``session.updated`` echoes it
+    back - normalization, not an error."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    socket_path = tmp_path / "myna.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {
+                                "input": {
+                                    "transcription": {
+                                        "model": "fake",
+                                        "keywords": [" kernel ", "", "Siobhan"],
+                                    }
+                                }
+                            },
+                        },
+                    }
+                )
+            )
+            updated = json.loads(await ws.recv())
+            assert updated["type"] == w.SESSION_UPDATED
+            keywords = updated["session"]["audio"]["input"]["transcription"]["keywords"]
+            assert keywords == ["kernel", "Siobhan"]
+
+
 async def test_ie115_serves_a_correctly_named_model(tmp_path):
     """Naming the model the server actually serves is acknowledged, and the
     ``session.updated`` echo carries it back."""

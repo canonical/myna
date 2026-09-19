@@ -257,6 +257,21 @@ async def test_keywords_round_trips_as_a_stock_openai_field(tmp_path):
     assert transcription["keywords"] == ["kernel", "Siobhan"]
 
 
+async def test_a_rejected_keywords_is_an_openai_error_event(tmp_path):
+    """The entry-count limit closes the connection the same way a rejected
+    model does: a valid OpenAI ``error``, not a hang or a silent truncation."""
+    socket_path = tmp_path / "myna.sock"
+    async with serve_unix(FakeAdapter(), socket_path):
+        async with unix_connect(str(socket_path), ping_interval=None) as ws:
+            as_openai_server_event(json.loads(await ws.recv()))
+            await ws.send(
+                json.dumps(stock_session_update("fake", keywords=[f"word{i}" for i in range(101)]))
+            )
+            error = as_openai_server_event(json.loads(await ws.recv()))
+    assert error.type == "error"
+    assert error.error.type == "invalid_request_error"
+
+
 async def test_an_adapter_that_ends_without_a_terminal_yields_an_openai_error(tmp_path):
     """The one-terminal contract is the server's to keep on this wire too: a
     stock client blocked on ``completed`` gets a valid ``error``, not a hang."""

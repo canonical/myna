@@ -79,6 +79,7 @@ from myna.core.protocol import (
 )
 from myna.core.session import (
     SessionConfig,
+    normalize_keywords,
     session_config_from_wire,
     session_config_to_wire,
 )
@@ -487,6 +488,16 @@ class _SessionHandler:
                 await _close(ws)
             return
         model = requested_model or (caps.models[0] if caps.models else None)
+
+        try:
+            config = dataclasses.replace(config, keywords=normalize_keywords(config.keywords))
+        except ValueError as exc:
+            await send_all(
+                encoder.frames(TranscriptionError(code="invalid_parameter", message=str(exc)))
+            )
+            with contextlib.suppress(ConnectionClosed):
+                await _close(ws)
+            return
 
         with contextlib.suppress(ConnectionClosed):
             await ws.send(
