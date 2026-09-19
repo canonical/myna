@@ -25,6 +25,10 @@ pub struct SessionConfig {
     /// `"word" | "segment" | None` — request timestamped segments.
     #[serde(default)]
     pub timestamp_granularity: Option<String>,
+    /// Words/phrases (names, jargon) a backend biases recognition toward.
+    /// Empty means no biasing.
+    #[serde(default)]
+    pub keywords: Vec<String>,
 }
 
 impl SessionConfig {
@@ -50,7 +54,7 @@ mod tests {
             golden(
                 r#"{"audio_format": {"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2},
                     "language": null, "output_language": null, "prompt": null,
-                    "timestamp_granularity": null}"#
+                    "timestamp_granularity": null, "keywords": []}"#
             )
         );
     }
@@ -67,7 +71,23 @@ mod tests {
             golden(
                 r#"{"audio_format": {"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2},
                     "language": "en", "output_language": null, "prompt": "hello",
-                    "timestamp_granularity": null}"#
+                    "timestamp_granularity": null, "keywords": []}"#
+            )
+        );
+    }
+
+    #[test]
+    fn config_with_keywords() {
+        let cfg = SessionConfig {
+            keywords: vec!["kernel".into(), "Siobhan".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.to_wire(),
+            golden(
+                r#"{"audio_format": {"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2},
+                    "language": null, "output_language": null, "prompt": null,
+                    "timestamp_granularity": null, "keywords": ["kernel", "Siobhan"]}"#
             )
         );
     }
@@ -76,6 +96,7 @@ mod tests {
     fn round_trip() {
         let cfg = SessionConfig {
             language: Some("fr".into()),
+            keywords: vec!["kernel".into()],
             ..Default::default()
         };
         let decoded: SessionConfig = serde_json::from_value(cfg.to_wire()).unwrap();

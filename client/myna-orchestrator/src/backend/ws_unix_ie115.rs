@@ -92,6 +92,9 @@ fn session_update_frame(config: &SessionConfig) -> Value {
     if let Some(prompt) = &config.prompt {
         transcription.insert("prompt".into(), json!(prompt));
     }
+    if !config.keywords.is_empty() {
+        transcription.insert("keywords".into(), json!(config.keywords));
+    }
 
     let mut input = serde_json::Map::new();
     input.insert(
@@ -135,7 +138,8 @@ impl BackendClient for WsUnixIe115Backend {
         // trigger, skip it when the update would be empty — their adapters may
         // unconditionally reload the backend on any session.update (observed in
         // canonical/whisper-snap, which kills the connection and loses audio).
-        let has_config = config.language.is_some() || config.prompt.is_some();
+        let has_config =
+            config.language.is_some() || config.prompt.is_some() || !config.keywords.is_empty();
         let needs_shape_sniff = self.ws_path == DEFAULT_WS_PATH;
         if has_config || needs_shape_sniff {
             let frame = session_update_frame(&config);
@@ -316,6 +320,24 @@ mod tests {
         assert_eq!(input["format"]["type"], "audio/pcm");
         assert_eq!(input["transcription"]["language"], "en");
         assert_eq!(input["transcription"]["prompt"], "nouns");
+    }
+
+    #[test]
+    fn session_update_carries_keywords_only_when_non_empty() {
+        let empty = session_update_frame(&SessionConfig::default());
+        assert!(empty["session"]["audio"]["input"]
+            .get("transcription")
+            .is_none());
+
+        let cfg = SessionConfig {
+            keywords: vec!["kernel".into(), "Siobhan".into()],
+            ..Default::default()
+        };
+        let frame = session_update_frame(&cfg);
+        assert_eq!(
+            frame["session"]["audio"]["input"]["transcription"]["keywords"],
+            json!(["kernel", "Siobhan"])
+        );
     }
 
     #[test]

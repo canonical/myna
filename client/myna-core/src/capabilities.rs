@@ -38,6 +38,10 @@ pub struct Capabilities {
     /// that predates the field.
     #[serde(default)]
     pub runtime: Option<BTreeMap<String, String>>,
+    /// The backend biases recognition toward `SessionConfig::keywords`
+    /// entries rather than merely accepting and ignoring them.
+    #[serde(default)]
+    pub keywords: bool,
 }
 
 fn default_languages() -> Vec<String> {
@@ -58,6 +62,7 @@ impl Default for Capabilities {
             translation: false,
             streaming: None,
             runtime: None,
+            keywords: false,
         }
     }
 }
@@ -83,6 +88,7 @@ mod tests {
         assert!(!caps.punctuation);
         assert!(!caps.translation);
         assert_eq!(caps.streaming, None);
+        assert!(!caps.keywords);
     }
 
     #[test]
@@ -112,6 +118,7 @@ mod tests {
             translation: false,
             streaming: Some(true),
             runtime: None,
+            keywords: true,
         };
         assert_eq!(
             wire(&caps),
@@ -119,7 +126,7 @@ mod tests {
                 r#"{"models": ["whisper-small"], "languages": ["*"],
                     "input_formats": [{"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2}],
                     "punctuation": true, "translation": false, "streaming": true,
-                    "runtime": null}"#
+                    "runtime": null, "keywords": true}"#
             )
         );
     }

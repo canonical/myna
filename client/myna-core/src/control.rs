@@ -70,7 +70,7 @@ mod tests {
                 r#"{"type": "session.start", "protocol_version": "1",
                     "config": {"audio_format": {"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2},
                                "language": null, "output_language": null, "prompt": null,
-                               "timestamp_granularity": null}}"#
+                               "timestamp_granularity": null, "keywords": []}}"#
             )
         );
     }
@@ -117,7 +117,7 @@ mod tests {
                     "models": ["parakeet-tdt-0.6b-v2"], "languages": ["*"],
                     "input_formats": [{"sample_rate_hz": 16000, "channels": 1, "sample_width_bytes": 2}],
                     "punctuation": false, "translation": false, "streaming": null,
-                    "runtime": null}}"#
+                    "runtime": null, "keywords": false}}"#
             )
         );
     }
