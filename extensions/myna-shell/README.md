@@ -115,7 +115,8 @@ Before changing the host, review the feature's
 [`extension-best-practices.md`](../../specs/004-gnome-shell-indicator/extension-best-practices.md).
 It is a vendored snapshot of the maintained
 [GJS Guide best-practices Markdown](https://gitlab.gnome.org/World/javascript/gjs-guide/-/raw/main/docs/extensions/review-guidelines/best-practices.md).
-The documented Mutter 14–16 / 17+ transition in `mutterCompat.js` is the
+The documented Mutter API transitions in `mutterCompat.js` (the Shell 49
+trusted-client move and the Shell 48 cursor-tracker accessor move) are the
 intentional exception to its default prohibition on optional API checks.
 
 Also run [`shexli`](https://pypi.org/project/shexli/) from the extension root:

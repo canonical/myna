@@ -21,13 +21,12 @@ import Meta from 'gi://Meta';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import {getPointerWatcher} from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 
 import {computePlacement, placementChanged, pointerOverFrame, shrinkWorkAreaForDock} from './place.js';
 import {initialState, planRestart} from './respawn.js';
 import {resolveHudLaunch} from './resolve.js';
 import {DictationAnnouncer} from './announcer.js';
-import {configureTrustedWindow, launchTrustedClient} from './mutterCompat.js';
+import {configureTrustedWindow, getCursorTracker, launchTrustedClient} from './mutterCompat.js';
 
 // Await the subprocess with a Cancellable instead of a bare callback, so
 // disable() can cancel the wait rather than relying on a flag to ignore a
@@ -40,11 +39,6 @@ const HOVER_OPACITY = 51;
 
 /** How long the fade in/out takes (ms). */
 const HOVER_FADE_MS = 150;
-
-/** Pointer poll interval (ms). The overlay is click-through, so there are no
- * enter/leave events to react to — the host samples the pointer instead, at
- * the rate the Shell's own pointer-driven UI uses. */
-const HOVER_POLL_MS = 100;
 
 /** A GLib-style env predicate: the file exists and is executable, OR it is a
  * bare command name found on PATH (for `snap`). */
@@ -116,10 +110,11 @@ export class OverlayHost {
         this._launchedAtMs = 0;
         this._announcer = null;
 
-        // The pointer poll behind the hover fade, and whether the pointer is
-        // currently over the overlay. Both last exactly as long as an
-        // adopted window.
-        this._pointerWatch = null;
+        // The pointer tracking behind the hover fade, and whether the pointer
+        // is currently over the overlay. All of it lasts exactly as long as
+        // an adopted window.
+        this._cursorTracker = null;
+        this._pointerPositionLaterId = 0;
         this._hovered = false;
 
         // Cancels the current subprocess wait. A fresh Cancellable is made
@@ -560,19 +555,51 @@ export class OverlayHost {
     /** Fade the overlay down while the pointer is over it, so it never masks
      * the window being dictated into. The renderer cannot do this itself: its
      * surface declares an empty input region (R22), so it receives no
-     * enter/leave events at all. */
+     * enter/leave events at all.
+     *
+     * Track `Meta.CursorTracker`'s `position-invalidated` signal rather than
+     * polling: GNOME Shell 51 removed `ui/pointerWatcher.js`, and this is the
+     * strategy its own magnifier moved to. Updates are queued for
+     * `Meta.LaterType.BEFORE_REDRAW` so several pointer changes within one
+     * frame coalesce into a single hit-test. */
     _startHoverWatch() {
         this._stopHoverWatch();
-        this._pointerWatch = getPointerWatcher().addWatch(
-            HOVER_POLL_MS, (x, y) => this._onPointerMoved(x, y));
-        const [x, y] = global.get_pointer();
-        this._onPointerMoved(x, y);
+        this._cursorTracker = getCursorTracker({
+            backend: global.backend,
+            display: global.display,
+            CursorTracker: Meta.CursorTracker,
+        });
+        this._cursorTracker.connectObject(
+            'position-invalidated',
+            () => this._queuePointerPositionUpdate(),
+            this);
+        this._updatePointerPosition();
     }
 
     _stopHoverWatch() {
-        this._pointerWatch?.remove();
-        this._pointerWatch = null;
+        this._cursorTracker?.disconnectObject(this);
+        if (this._pointerPositionLaterId) {
+            global.compositor.get_laters().remove(this._pointerPositionLaterId);
+            this._pointerPositionLaterId = 0;
+        }
+        this._cursorTracker = null;
         this._hovered = false;
+    }
+
+    _queuePointerPositionUpdate() {
+        if (this._pointerPositionLaterId)
+            return;
+        this._pointerPositionLaterId = global.compositor.get_laters().add(
+            Meta.LaterType.BEFORE_REDRAW, () => {
+                this._pointerPositionLaterId = 0;
+                this._updatePointerPosition();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _updatePointerPosition() {
+        const [coords] = this._cursorTracker.get_pointer();
+        this._onPointerMoved(coords.x, coords.y);
     }
 
     _onPointerMoved(x, y) {

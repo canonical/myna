@@ -5,7 +5,7 @@
 
 import System from 'system';
 
-import {configureTrustedWindow, launchTrustedClient} from '../mutterCompat.js';
+import {configureTrustedWindow, getCursorTracker, launchTrustedClient} from '../mutterCompat.js';
 
 let failures = 0;
 
@@ -107,6 +107,46 @@ function eq(name, actual, expected) {
     eq('Mutter 17: window sets its dock type', JSON.stringify(calls[0]),
         JSON.stringify(['set_type', 'dock']));
     eq('Mutter 17: window hides itself from the list', calls[1][0], 'hide_from_window_list');
+}
+
+// Mutter 14–15 (GNOME Shell 46–47): the cursor tracker is a per-display
+// singleton; the backend has no accessor.
+{
+    const calls = [];
+    const tracker = {name: 'old-tracker'};
+    const backend = {};
+    const CursorTracker = {
+        get_for_display(display) {
+            calls.push(['get_for_display', display]);
+            return tracker;
+        },
+    };
+    const result = getCursorTracker({backend, display: 'display', CursorTracker});
+    eq('Mutter 14–15: returns the per-display tracker', result, tracker);
+    eq('Mutter 14–15: asks the display for it', JSON.stringify(calls),
+        JSON.stringify([['get_for_display', 'display']]));
+}
+
+// Mutter 16+ (GNOME Shell 48+): the backend accessor replaces the removed
+// per-display one.
+{
+    const calls = [];
+    const tracker = {name: 'new-tracker'};
+    const backend = {
+        get_cursor_tracker() {
+            calls.push(['get_cursor_tracker']);
+            return tracker;
+        },
+    };
+    const CursorTracker = {
+        get_for_display() {
+            throw new Error('removed display accessor must not run');
+        },
+    };
+    const result = getCursorTracker({backend, display: 'display', CursorTracker});
+    eq('Mutter 16+: returns the backend tracker', result, tracker);
+    eq('Mutter 16+: uses the backend accessor', JSON.stringify(calls),
+        JSON.stringify([['get_cursor_tracker']]));
 }
 
 print(failures === 0
