@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-19 20:17+0000\n"
+"PO-Revision-Date: 2026-09-20 23:05+0000\n"
 "Last-Translator: Peter Vančo <petervanco347@gmail.com>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/sk/>\n"
@@ -25,15 +25,15 @@ msgstr "Načítava sa model…"
 
 #: src/indicator/mod.rs:85
 msgid "Listening"
-msgstr "Počúva sa"
+msgstr "Počúvam"
 
 #: src/indicator/mod.rs:86
 msgid "Transcribing"
-msgstr "Prepisuje sa"
+msgstr "Prepisujem"
 
 #: src/indicator/mod.rs:87
 msgid "Finishing"
-msgstr "Dokončuje sa"
+msgstr "Dokončujem"
 
 #: src/indicator/mod.rs:91
 #, c-format
@@ -42,27 +42,27 @@ msgstr "Chyba: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr "🎤 Diktovanie: počúva sa"
+msgstr "🎤 Diktovanie: počúvam"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
-msgstr "Môžete hovoriť — opätovným stlačením klávesovej skratky zastavíte."
+msgstr "Hovorte teraz — na zastavenie znova stlačte skratku."
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr "💬 Diktovanie: prepisuje sa"
+msgstr "💬 Diktovanie: prepisujem"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr "Prebieha prevod reči na text…"
+msgstr "Prevádzam reč na text…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr "⏳ Diktovanie: dokončuje sa"
+msgstr "⏳ Diktovanie: dokončujem"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr "Vkladá sa výsledný text…"
+msgstr "Vkladám výsledný text…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
@@ -70,47 +70,47 @@ msgstr "⚠️ Chyba diktovania"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr "Zameranie textového poľa sa stratilo"
+msgstr "Stratené zameranie"
 
 #: src/controller.rs:211
 msgid "No speech detected"
-msgstr "Nebola rozpoznaná žiadna reč"
+msgstr "Nezistená žiadna reč"
 
 #: src/controller.rs:213
 msgid "Background noise is high"
-msgstr "Úroveň okolitého hluku je príliš vysoká"
+msgstr "Vysoká hladina hluku"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
-msgstr "Cieľ diktovania sa zatvoril"
+msgstr "Cieľ diktovania zatvorený"
 
 #: src/controller.rs:828
 msgid "Refusing to type into a password field"
-msgstr "Do poľa pre heslo nie je možné písať"
+msgstr "Odmietam písať do poľa hesla"
 
 #: src/controller.rs:829
 msgid "No text field is focused"
-msgstr "Nie je zamerané žiadne textové pole"
+msgstr "Žiadne textové pole nie je zamerané"
 
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr "Klávesová skratka na diktovanie je nedostupná: %s"
+msgstr "klávesová skratka diktovania nedostupná: %s"
 
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
-msgstr "Zamerané pole je zabezpečené (heslo); text sa nevloží"
+msgstr "zamerané pole je zabezpečené (heslo); odmietam vloženie"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
-msgstr "Nie je zamerané žiadne upraviteľné pole"
+msgstr "nie je zameraný žiadny upraviteľný cieľ"
 
 #: src/inject/mod.rs:65
 #, c-format
 msgid "injection backend unavailable: %s"
-msgstr "Systém na vkladanie textu nie je dostupný: %s"
+msgstr "backend vkladania nedostupný: %s"
 
 #: src/inject/mod.rs:70
 #, c-format
 msgid "injection backend error: %s"
-msgstr "Chyba systému na vkladanie textu: %s"
+msgstr "chyba backendu vkladania: %s"
