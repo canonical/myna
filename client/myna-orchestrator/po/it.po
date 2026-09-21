@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-01 16:38+0000\n"
+"POT-Creation-Date: 2026-09-16 21:37+0100\n"
 "PO-Revision-Date: 2026-09-01 11:51+0000\n"
 "Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
 "Language-Team: Italian\n"
@@ -17,31 +17,31 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/backend/mod.rs:72
+#: src/backend/mod.rs:75
 #, c-format
 msgid "cannot reach backend: %s"
 msgstr "impossibile raggiungere il backend: %s"
 
-#: src/backend/mod.rs:75
+#: src/backend/mod.rs:78
 #, c-format
 msgid "handshake failed: %s"
 msgstr "handshake non riuscito: %s"
 
-#: src/backend/mod.rs:80
+#: src/backend/mod.rs:83
 #, c-format
 msgid "session rejected: %1$s: %2$s"
 msgstr "sessione rifiutata: %1$s: %2$s"
 
-#: src/backend/mod.rs:87
+#: src/backend/mod.rs:90
 #, c-format
 msgid "malformed event from backend: %s"
 msgstr "evento malformato dal backend: %s"
 
-#: src/backend/mod.rs:89
+#: src/backend/mod.rs:92
 msgid "backend connection closed unexpectedly"
 msgstr "connessione al backend chiusa inaspettatamente"
 
-#: src/backend/mod.rs:91
+#: src/backend/mod.rs:94
 #, c-format
 msgid "transport error: %s"
 msgstr "errore di trasporto: %s"
@@ -53,3 +53,25 @@ msgid ""
 msgstr ""
 "nessun backend è collegato - installane uno e collegalo, es. `sudo snap "
 "connect myna:backend myna-whisper`"
+
+#: src/backend/share.rs:80
+#, c-format
+msgid "%s is connected but offers no Unix socket"
+msgstr ""
+
+#: src/backend/share.rs:85
+#, c-format
+msgid "%s is connected but its server is not running"
+msgstr ""
+
+#: src/backend/share.rs:91
+#, c-format
+msgid "connected shares with an unreadable provider.env: %s"
+msgstr ""
+
+#: src/backend/share.rs:101
+#, c-format
+msgid ""
+"%1$s backends are connected (%2$s); disconnect all but one (`snap "
+"connections myna`)"
+msgstr ""
