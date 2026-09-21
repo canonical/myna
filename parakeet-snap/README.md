@@ -57,22 +57,7 @@ sudo myna-parakeet.parakeet use-engine --auto --assume-yes
 A sideload does not auto-connect `hardware-observe`, so the install hook
 selects `cpu`; `use-engine --auto` re-scores once it is connected.
 
-One model, `parakeet-tdt-0.6b-v3-fp32` (default and only option). Its
-transcripts are identical to NeMo PyTorch's (0.00% WER between them; the int8
-cpu model differs by 0.73%). Measured with `myna-bench` against the installed
-snap on an RTX 4080 Laptop GPU, 82-clip balanced corpus plus 5 min long-form,
-2026-09-17:
-
-| engine | mode | WER | speed | final latency median / p95 | peak VRAM |
-|---|---|---|---|---|---|
-| cpu int8 | batch | 1.46% | 60x | 0.143 / 0.350 s | - |
-| cpu int8 | streaming | 1.54% | 6.0x | 1.38 / 7.09 s | - |
-| nvidia-gpu fp32 | batch | 1.42% | 122x | 0.065 / 0.099 s | 3.8 GB |
-| nvidia-gpu fp32 | streaming | 1.42% | 9.6x | 0.84 / 2.74 s | 4.6 GB |
-
-The CUDA provider pays kernel setup for every new input length, and streaming
-windows are nearly always new lengths, so GPU streaming gains less over cpu
-than batch does.
+One model, `parakeet-tdt-0.6b-v3-fp32` (default and only option).
 
 No fp16 model ships: the naive `onnxruntime.transformers.float16` conversion
 measured slower than fp32 on fresh window lengths and lost accuracy on long
