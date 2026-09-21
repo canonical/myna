@@ -77,25 +77,18 @@ VIRTUAL_SPEAKER=myna-virtual-speaker
 # with `session.suspend-timeout-seconds=0` is what keeps it running, and
 # without those two lines every capture here returns a bare WAV header.
 #
-# The source is what the default-capture tests record from. The sink is what
-# drives the named `pw-loopback` sources pipewire_hw spawns for its own
-# device-selection tests: a loopback carries no clock of its own, so its
-# playback side has to land on a driving sink.
+# The sink is what drives the graph: the named `pw-loopback` sources
+# pipewire_hw spawns for its own device-selection tests carry no clock of
+# their own, so their playback side has to land on a driving sink.
+#
+# The mic is a loopback off that sink's monitor, not a second null sink: a
+# null sink published as a source has to be `Audio/Source/Virtual`, which
+# `map_input_device` discards. A loopback's playback side can be a plain
+# `Audio/Source`, the class a real microphone has.
 write_virtual_audio_config() {
     mkdir -p "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d"
     cat > "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d/10-myna-virtual-audio.conf" <<CONF
 context.objects = [
-  { factory = adapter
-    args = {
-      factory.name                    = support.null-audio-sink
-      node.name                       = "$VIRTUAL_MIC"
-      node.description                = "$VIRTUAL_MIC"
-      media.class                     = Audio/Source/Virtual
-      audio.position                  = [ FL FR ]
-      node.pause-on-idle              = false
-      session.suspend-timeout-seconds = 0
-    }
-  }
   { factory = adapter
     args = {
       factory.name                    = support.null-audio-sink
@@ -105,6 +98,27 @@ context.objects = [
       audio.position                  = [ FL FR ]
       node.pause-on-idle              = false
       session.suspend-timeout-seconds = 0
+    }
+  }
+]
+
+context.modules = [
+  { name = libpipewire-module-loopback
+    args = {
+      capture.props = {
+        node.name                       = "$VIRTUAL_MIC.input"
+        node.passive                    = true
+        target.object                   = "$VIRTUAL_SPEAKER"
+        stream.capture.sink             = true
+      }
+      playback.props = {
+        node.name                       = "$VIRTUAL_MIC"
+        node.description                = "$VIRTUAL_MIC"
+        media.class                     = Audio/Source
+        audio.position                  = [ FL FR ]
+        node.pause-on-idle              = false
+        session.suspend-timeout-seconds = 0
+      }
     }
   }
 ]

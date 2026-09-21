@@ -121,6 +121,9 @@ impl NoSmDaemon {
         let runtime_dir = scratch_dir("nosm");
         let mut child = Command::new("pipewire")
             .env("PIPEWIRE_RUNTIME_DIR", &runtime_dir)
+            // Bare means no user drop-ins either: the harness declares its
+            // virtual mic in $XDG_CONFIG_HOME, and these cases need no source.
+            .env("XDG_CONFIG_HOME", &runtime_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
