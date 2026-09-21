@@ -1,18 +1,16 @@
-//! The desktop session controller (plan T21) — owns the multi-session
-//! push-to-talk lifecycle, composing the three boundary seams
-//! ([`Trigger`], [`Injector`], [`Indicator`]) over the *unchanged*
-//! `myna-orchestrator` `run_dictation` session (capture-at-press,
-//! push-gated-on-`ready`).
+//! The desktop session controller — owns the multi-session push-to-talk
+//! lifecycle, composing the three boundary seams ([`Trigger`], [`Injector`],
+//! [`Indicator`])
 //!
-//! It is the production analogue of `runner::run_dictation`, specialized for the
-//! desktop: a persistent loop that, per hotkey Press, acquires the focused
+//! It is the production analogue of `runner::run_dictation`, specialized for
+//! the desktop: a persistent loop that, per hotkey Press, acquires the focused
 //! target, runs one utterance, routes committed transcripts to the injector and
 //! liveness to the indicator, and returns to Idle on Release / focus-loss /
 //! terminal event — never capturing audio outside an active session
-//! (push-to-talk, FR-004).
+//! (FR-004).
 //!
-//! Everything here is hermetic: the boundaries are trait objects, so tests drive
-//! the whole lifecycle with mocks (no D-Bus / IBus / portal / display).
+//! Everything here is hermetic: the boundaries are trait objects, so tests
+//! drive the whole lifecycle with mocks (no D-Bus / IBus / portal / display).
 
 use std::time::Duration;
 
@@ -29,11 +27,6 @@ use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
 
-// ── State model ───────────────────────────────────────────────────────────────
-
-/// The controller's dictation state (data-model.md), carried into Rust from the
-/// retired Python `DictationState` and extended with UD129's explicit
-/// `Cancelled`/`Completed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictationState {
     /// No capture; waiting for a `Press`.

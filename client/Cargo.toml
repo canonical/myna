@@ -2,13 +2,6 @@
 resolver = "2"
 members = ["myna-core", "myna-audio", "myna-orchestrator", "myna-cli", "myna-desktop", "myna-hud", "myna-config"]
 
-# The Rust client subsystem (plan Workstreams D + G). `myna-core` mirrors the
-# Python `myna.core` wire contract (events / session / protocol / audio) plus
-# the capture-side consumer contract; `myna-audio` is the audio-capture adapter
-# (`client/.kb/audio-capture.md`); `myna-orchestrator` holds the session
-# + model-residency FSM (T40); `myna-cli` is the demo binary (T41). Every
-# external boundary is a trait with a mock — see the plan.
-
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -30,8 +23,7 @@ futures-util = { version = "0.3", features = ["sink"] }
 async-trait = "0.1"
 # Native PipeWire bindings (feature 002-native-pipewire-backend). Binds system
 # libpipewire-0.3; the -sys crate needs libclang for bindgen at build time.
-# v0_3_44 enables PW_KEY_TARGET_OBJECT for node selection by name (T021); the
-# host runs libpipewire 1.6.x, so the API is present.
+# v0_3_44 enables PW_KEY_TARGET_OBJECT for node selection by name.
 pipewire = { version = "0.10", features = ["v0_3_44"] }
 # GSettings, for the client settings store (`myna_core::Settings`). Binds the
 # system glib/gio via pkg-config, which is why libglib2.0-dev is a build

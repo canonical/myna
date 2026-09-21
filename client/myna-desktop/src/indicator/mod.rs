@@ -1,4 +1,4 @@
-//! The activity-indicator boundary (plan T22, UD129 Activity Indicator).
+//! The activity-indicator boundary (UD129 Activity Indicator).
 //!
 //! A persistent, screen-reader-perceivable surface showing recording /
 //! transcribing / finalizing / error — so the user always knows dictation is
@@ -17,7 +17,7 @@ pub mod mock;
 pub mod notify;
 
 /// The distinct, screen-reader-perceivable indicator states (FR-017/019). Never
-/// carries transcript text (commit-only, privacy — N8).
+/// carries transcript text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndicatorState {
     /// No dictation in progress — the indicator is cleared.
@@ -35,7 +35,7 @@ pub enum IndicatorState {
     /// (e.g. a session that completed with no speech captured) from a
     /// critical failure that persists until acknowledged (e.g. no microphone
     /// available). This is an interim, client-inferred classification ahead
-    /// of a true wire-level error disposition (T31/T62) — see
+    /// of a true wire-level error disposition — see
     /// `controller::completion_indicator_state`. Non-D-Bus indicators
     /// (`gtk`/`notify`) currently render every `Error` identically regardless
     /// of this field (out of scope for feature 004); only `indicator::dbus`

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Desktop session controller + text injection — the dictation last-mile (plan T21/T22, feature 003-desktop-injection)."
+description = "Desktop session controller + text injection"
 
 [lib]
 name = "myna_desktop"
@@ -15,8 +15,6 @@ name = "myna-desktop"
 path = "src/bin/myna-desktop.rs"
 
 [features]
-# The indicator is the myna-shell overlay (feature 004) or the headless
-# NotifyIndicator; the GTK4 ui-gtk overlay was removed (T150).
 default = []
 
 [dependencies]
