@@ -131,7 +131,7 @@ def test_run_accepts_every_sweep_override(monkeypatch, dispatched):
         "--only",
         "myna-parakeet",
         "--label-suffix",
-        "maxstack",
+        "rebuild",
         "--skip-env-check",
     )
     args = dispatched["args"]
@@ -141,7 +141,7 @@ def test_run_accepts_every_sweep_override(monkeypatch, dispatched):
     assert args.no_resources is True
     assert args.budget == 45.0
     assert args.only == ["myna-whisper", "myna-parakeet"]
-    assert args.label_suffix == "maxstack"
+    assert args.label_suffix == "rebuild"
     assert args.skip_env_check is True
 
 

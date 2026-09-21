@@ -3,16 +3,11 @@
 NVIDIA Parakeet TDT 0.6B v3 (25 languages, punctuation) served via onnxruntime,
 no torch. Two engines, picked by hardware at install:
 
-- `cpu` - an int8 export. Roughly 690 MB installed (46 MB snap + 646 MB model
+- `cpu` - an int8 export. Roughly 812 MB installed (46 MB snap + 766 MB model
   component).
 - `nvidia-gpu` - a fp32 export of NVIDIA's checkpoint on onnxruntime's
   CUDA provider, with the CUDA runtime as its own component. See
   [NVIDIA GPU engine](#nvidia-gpu-engine).
-
-The int8 component carries one encoder, never both: the base int8 export, or the
-maxstack rebuild of it (13% faster encode, 148 MB smaller) with `libqsilu.so`
-beside it for the custom ops it calls. Nothing falls back at runtime. Sizes
-above are the maxstack shape; the base one installs at 812 MB.
 
 Streaming is enabled by default: SilenceCut emits committed chunks at pauses.
 It does not emit unstable partials.
@@ -20,27 +15,13 @@ It does not emit unstable partials.
 ## Build
 
 ```bash
-make snap-parakeet            # base encoder
-make snap-parakeet-maxstack   # optimized encoder - ~13x faster encode
+make snap-parakeet
 ```
 
-Either stages `components/` from the pinned upstream export in the model
-cache. Switching encoders changes the component's file list, so run `snapcraft
-clean model-components` first: craft keeps staged files that no longer exist in
+That stages `components/` from the pinned upstream export in the model cache.
+If a pack ever drops a file from the component, run `snapcraft clean
+model-components` first: craft keeps staged files that no longer exist in
 `components/` and packs them anyway.
-
-The maxstack encoder is derived from that export rather than downloaded, so it
-has to be built once per machine before it can be staged:
-
-```bash
-make parakeet-maxstack-encoder
-```
-
-That fetches the pinned onnxruntime headers, builds the custom-op kernels,
-downloads the LibriSpeech calibration tier (~330 MB) and runs the
-requantization pass, which peaks at several GB of RSS - see
-`dev/parakeet/build_maxstack_encoder.py` about running it under a memory cap
-the first time.
 
 ## Install
 

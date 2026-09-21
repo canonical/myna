@@ -119,26 +119,21 @@ def test_parakeet_export_pins_agree() -> None:
     )
 
 
-def test_qsilu_headers_match_the_onnxruntime_runtime() -> None:
-    """The custom-op ABI is version-pinned: libqsilu.so built against headers a
-    release out registers an op the runtime loading it refuses, and that
-    surfaces at model load in the field, not at build time."""
-    build_sh = _text("dev/parakeet/qsilu/build.sh")
-    version = re.search(r"^ort_version=([0-9.]+)$", build_sh, re.M)
-    assert version, "dev/parakeet/qsilu/build.sh names no onnxruntime version"
-    assert re.search(r"^ort_sha256=[0-9a-f]{64}$", build_sh, re.M), (
-        "dev/parakeet/qsilu/build.sh downloads the header tarball without a "
-        "sha256 - a release asset fetched unverified is not a pin"
+def test_parakeet_int8_component_stages_exactly_what_the_fetcher_writes() -> None:
+    """The staging script names the files it copies instead of globbing the
+    model cache, so the two lists have to agree: a file the fetcher adds would
+    never reach the component, and one it drops would fail the copy."""
+    staged = re.search(
+        r'^model_files="([^"]+)"$', _text("parakeet-snap/dev/download-models.sh"), re.M
     )
-    locked = re.search(
-        r'^\[\[package\]\]\nname = "onnxruntime"\nversion = "([0-9.]+)"$',
-        _text("server/uv.lock"),
+    assert staged, "parakeet-snap/dev/download-models.sh names no model_files"
+    fetched = re.search(
+        r"^MODEL_FILES = \(\n((?:\s+\"[^\"]+\",\n)+)\)$",
+        _text("dev/parakeet/fetch_parakeet_onnx.py"),
         re.M,
     )
-    assert locked, "server/uv.lock resolves no onnxruntime"
-    assert version.group(1) == locked.group(1), (
-        f"dev/parakeet/qsilu/build.sh builds libqsilu.so against onnxruntime "
-        f"{version.group(1)} headers, but the server resolves onnxruntime "
-        f"{locked.group(1)} - the custom op would be registered against an ABI "
-        "the runtime loading it does not implement"
+    assert fetched, "dev/parakeet/fetch_parakeet_onnx.py names no MODEL_FILES"
+    assert sorted(staged.group(1).split()) == sorted(re.findall(r'"([^"]+)"', fetched.group(1))), (
+        "parakeet-snap/dev/download-models.sh stages a different file set than "
+        "dev/parakeet/fetch_parakeet_onnx.py fetches"
     )

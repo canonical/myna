@@ -29,16 +29,14 @@ from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
-    BASE_ENCODER_FILE,
     BATCH_WINDOW_CAP_S,
     CUDA_PROVIDER,
     FP32_ENCODER_FILE,
     FP32_JOINT_FILE,
+    INT8_ENCODER_FILE,
     INT8_JOINT_FILE,
-    MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
     PARTIAL_CADENCE_S,
-    QSILU_LIB_FILE,
     ParakeetAdapter,
     _detokenize,
     _load_vocab,
@@ -46,7 +44,6 @@ from myna.testbed.parakeet import (
     _require_cuda,
     _tokens_to_words,
     encoder_run_options,
-    encoder_variant,
     model_files,
 )
 from myna.testbed.streaming.coverage import RETRY_PADS
@@ -674,68 +671,6 @@ def test_cli_wires_partial_dials_including_an_explicit_zero():
     assert off._stream_partial_cadence_s == 0.0, "an explicit 0 must survive the default"
 
 
-# Encoder variant selection (perf T11/T13): a model dir carrying the maxstack
-# encoder AND its custom-op kernel library gets the fast path; a dir carrying
-# the unprocessed upstream bundle falls back to the base encoder byte-for-byte;
-# a dir with neither usable pairing says so instead of handing ORT a path that
-# is not there. The shipped component is maxstack-only, so that last case is
-# the failure mode a broken component now presents as. Pin it model-free.
-
-
-def test_encoder_variant_base_when_dir_is_plain(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path.endswith("encoder-model.int8.onnx")
-    assert lib is None
-
-
-def test_encoder_variant_maxstack_needs_both_files(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    # encoder present but no kernel lib: must fall back, never half-load
-    path, lib = encoder_variant(str(tmp_path))
-    assert path.endswith("encoder-model.int8.onnx") and lib is None
-
-    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(tmp_path / QSILU_LIB_FILE)
-
-
-def test_encoder_variant_maxstack_only_is_the_shipped_component_shape(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(tmp_path / QSILU_LIB_FILE)
-
-
-def test_encoder_variant_refuses_a_dir_with_no_loadable_encoder(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    # Maxstack without its kernel library, and no base to retreat to: the shape
-    # a component that lost libqsilu.so has.
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    with pytest.raises(FileNotFoundError, match=QSILU_LIB_FILE):
-        encoder_variant(str(tmp_path))
-
-    (tmp_path / BASE_ENCODER_FILE).write_bytes(b"")
-    assert encoder_variant(str(tmp_path))[0].endswith(BASE_ENCODER_FILE)
-
-
-def test_encoder_variant_env_overrides_lib_location(tmp_path, monkeypatch):
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    ext = tmp_path / "elsewhere.so"
-    ext.write_bytes(b"")
-    monkeypatch.setenv("MYNA_ORT_CUSTOM_OPS", str(ext))
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(ext)
-
-
 # Precision and device (the nvidia-gpu engine). A model dir carries one export,
 # told apart by its decoder_joint; the GPU path refuses int8 graphs, refuses to
 # serve when ORT fell back to the CPU, and runs the joint unbound.
@@ -746,11 +681,10 @@ def _touch(directory, *names):
         (directory / name).write_bytes(b"")
 
 
-def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path):
     for precision, encoder, joint in (
         ("fp32", FP32_ENCODER_FILE, FP32_JOINT_FILE),
-        ("int8", BASE_ENCODER_FILE, INT8_JOINT_FILE),
+        ("int8", INT8_ENCODER_FILE, INT8_JOINT_FILE),
     ):
         directory = tmp_path / precision
         directory.mkdir()
@@ -759,19 +693,10 @@ def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path, monkeyp
         assert files.precision == precision
         assert files.encoder == str(directory / encoder)
         assert files.decoder_joint == str(directory / joint)
-        assert files.custom_ops is None
-
-
-def test_model_files_int8_keeps_the_maxstack_selection(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    _touch(tmp_path, MAXSTACK_ENCODER_FILE, QSILU_LIB_FILE, INT8_JOINT_FILE)
-    files = model_files(str(tmp_path))
-    assert files.encoder == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert files.custom_ops == str(tmp_path / QSILU_LIB_FILE)
 
 
 def test_model_files_refuses_a_dir_with_two_precisions(tmp_path):
-    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE, INT8_ENCODER_FILE, INT8_JOINT_FILE)
     with pytest.raises(FileNotFoundError, match="exactly one decoder_joint"):
         model_files(str(tmp_path))
 
@@ -782,15 +707,18 @@ def test_model_files_refuses_a_dir_with_no_decoder_joint(tmp_path):
         model_files(str(tmp_path))
 
 
-def test_model_files_refuses_a_joint_without_its_encoder(tmp_path):
-    _touch(tmp_path, FP32_JOINT_FILE)
-    with pytest.raises(FileNotFoundError, match=FP32_ENCODER_FILE):
+@pytest.mark.parametrize(
+    ("joint", "encoder"),
+    ((FP32_JOINT_FILE, FP32_ENCODER_FILE), (INT8_JOINT_FILE, INT8_ENCODER_FILE)),
+)
+def test_model_files_refuses_a_joint_without_its_encoder(tmp_path, joint, encoder):
+    _touch(tmp_path, joint)
+    with pytest.raises(FileNotFoundError, match=encoder):
         model_files(str(tmp_path))
 
 
-def test_cuda_refuses_an_int8_export_before_loading_anything(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    _touch(tmp_path, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+def test_cuda_refuses_an_int8_export_before_loading_anything(tmp_path):
+    _touch(tmp_path, INT8_ENCODER_FILE, INT8_JOINT_FILE)
     with pytest.raises(ValueError, match="cuda device needs fp32"):
         _ParakeetOnnx(str(tmp_path), device="cuda")
 
@@ -837,7 +765,6 @@ def test_cuda_init_builds_sessions_on_the_cuda_provider(tmp_path, monkeypatch):
     CUDA_PROVIDER, keeps the preprocessor on the CPU, and wires the
     arena-shrink run options; a session ORT could not put on CUDA would trip
     _require_cuda instead of silently serving from the CPU."""
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
     _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE)
     (tmp_path / "vocab.txt").write_text("<blk> 0\n", encoding="utf-8")
     fake_ort = SimpleNamespace(

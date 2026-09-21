@@ -132,42 +132,8 @@ _log = logging.getLogger(__name__)
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
 
-# Optimized encoder variant (ratified 2026-08-31): the "maxstack" encoder
-# (10-of-11 FFN requant + fused SiLU custom ops + export cleanups; built by
-# dev/parakeet/build_maxstack_encoder.py) plus the custom-op kernel library it
-# needs. Measured encode -13.3% on the same audio path, and since 2026-09-01 it
-# is the only encoder the snap component ships
-# (parakeet-snap/dev/download-models.sh) - the base export it derives from
-# stays a build input.
-#
-# The base encoder is still selected for a dir that carries it and not the
-# pair, which is what an unprocessed upstream bundle looks like: the model
-# cache the maxstack build reads, and any other staging of the murmure
-# release. MYNA_ORT_CUSTOM_OPS overrides the library location (dev tooling).
-BASE_ENCODER_FILE = "encoder-model.int8.onnx"
-MAXSTACK_ENCODER_FILE = "encoder-model.int8.maxstack.onnx"
-QSILU_LIB_FILE = "libqsilu.so"
-
-
-def encoder_variant(model_dir: str) -> tuple[str, str | None]:
-    """(encoder path, custom-ops library path or None) for a model dir."""
-    lib = os.environ.get("MYNA_ORT_CUSTOM_OPS") or os.path.join(model_dir, QSILU_LIB_FILE)
-    maxstack = os.path.join(model_dir, MAXSTACK_ENCODER_FILE)
-    if os.path.exists(maxstack) and os.path.exists(lib):
-        return maxstack, lib
-    base = os.path.join(model_dir, BASE_ENCODER_FILE)
-    if not os.path.exists(base):
-        # A shipped component has no base encoder to fall back to, so a lost
-        # kernel library surfaces here rather than in ORT with a path it cannot
-        # explain. Name the pair: the answer is to restore or rebuild it.
-        raise FileNotFoundError(
-            f"{model_dir} carries no loadable encoder: {MAXSTACK_ENCODER_FILE} needs "
-            f"{QSILU_LIB_FILE} beside it (or MYNA_ORT_CUSTOM_OPS pointing at it), and "
-            f"there is no {BASE_ENCODER_FILE} to fall back to"
-        )
-    env_lib = os.environ.get("MYNA_ORT_CUSTOM_OPS")
-    return base, env_lib if env_lib and os.path.exists(env_lib) else None
-
+# The int8 encoder: murmure's staging of Olicorne's SmoothQuant export.
+INT8_ENCODER_FILE = "encoder-model.int8.onnx"
 
 # Float export for the GPU engine, made from NVIDIA's .nemo checkpoint by
 # dev/parakeet/export_parakeet_onnx.py: NeMo's exporter output as is. A dir
@@ -184,7 +150,6 @@ class ModelFiles:
     precision: Literal["int8", "fp32"]
     encoder: str
     decoder_joint: str
-    custom_ops: str | None = None
 
 
 def model_files(model_dir: str) -> ModelFiles:
@@ -200,9 +165,9 @@ def model_files(model_dir: str) -> ModelFiles:
         )
     joint = os.path.join(model_dir, present[0])
     if present[0] == INT8_JOINT_FILE:
-        encoder, custom_ops = encoder_variant(model_dir)
-        return ModelFiles("int8", encoder, joint, custom_ops)
-    files = ModelFiles("fp32", os.path.join(model_dir, FP32_ENCODER_FILE), joint)
+        files = ModelFiles("int8", os.path.join(model_dir, INT8_ENCODER_FILE), joint)
+    else:
+        files = ModelFiles("fp32", os.path.join(model_dir, FP32_ENCODER_FILE), joint)
     if not os.path.exists(files.encoder):
         raise FileNotFoundError(
             f"{model_dir} carries {present[0]} but no {os.path.basename(files.encoder)}"
@@ -474,9 +439,8 @@ class _ParakeetOnnx:
     ) -> None:
         files = model_files(model_dir)
         if device == "cuda" and files.precision == "int8":
-            # The int8 graphs are CPU kernels (dynamic quantisation, the
-            # maxstack custom ops): CUDA would run a few nodes and copy around
-            # the rest.
+            # The int8 graphs are CPU kernels (dynamic quantisation): CUDA
+            # would run a few nodes and copy around the rest.
             raise ValueError(f"{model_dir} is an int8 export; the cuda device needs fp32")
 
         import onnxruntime as ort
@@ -512,16 +476,7 @@ class _ParakeetOnnx:
             os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=cpu
         )
         encoder_opts = opts(encoder_threads or _encoder_threads())
-        # See encoder_variant: the maxstack encoder's myna.QSiLU* custom ops
-        # (dev/parakeet/qsilu/) need their kernel library registered on the session.
-        if files.custom_ops:
-            encoder_opts.register_custom_ops_library(files.custom_ops)
-        _log.info(
-            "parakeet encoder: %s on %s%s",
-            files.precision,
-            device,
-            " (maxstack, custom ops registered)" if files.custom_ops else "",
-        )
+        _log.info("parakeet encoder: %s on %s", files.precision, device)
         self._encoder = ort.InferenceSession(files.encoder, encoder_opts, providers=providers)
         self._decoder_joint = ort.InferenceSession(
             files.decoder_joint, opts(1), providers=providers
