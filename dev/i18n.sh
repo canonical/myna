@@ -7,7 +7,8 @@
 # against the committed one, ignoring the creation-date header xgettext stamps
 # on every run, so the static battery (`make check`) fails when a translatable
 # string changed and nobody re-extracted. Nothing here runs msgmerge: the .po
-# catalogs are updated by translators, not by this script.
+# catalogs are updated by translators, not by this script. Both modes then run
+# msgfmt over every committed catalog.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -73,8 +74,25 @@ for entry in "${CRATES[@]}"; do
     rm -f "$scratch"
 done
 
+# The catalogs themselves arrive from translators (Weblate opens the pull
+# request), so nothing here rewrites them - but a catalog that msgfmt rejects
+# only fails at snap pack time, half an hour in, and the format checks catch a
+# translation that dropped or reordered a %s before it reaches a user. Not
+# --check: that adds --check-header, which warns about the placeholder
+# Project-Id-Version msginit writes and Weblate keeps, on every catalog we have.
+broken=0
+for po in "$REPO_ROOT"/client/*/po/*.po; do
+    [ -e "$po" ] || continue
+    if ! msgfmt --check-format --check-domain -o /dev/null "$po"; then
+        echo "i18n-check: ${po#"$REPO_ROOT"/} is not a usable catalog" >&2
+        broken=1
+    fi
+done
+
 if [ "$stale" -ne 0 ]; then
     echo "i18n-check: template(s) stale; run \`make i18n\` and commit the result" >&2
+fi
+if [ "$stale" -ne 0 ] || [ "$broken" -ne 0 ]; then
     exit 1
 fi
-[ "$check" -eq 0 ] || echo "i18n-check: templates fresh"
+[ "$check" -eq 0 ] || echo "i18n-check: templates fresh, catalogs valid"
