@@ -1,6 +1,6 @@
-// mutterCompat.js — the two trusted-client API transitions the overlay host
-// needs across GNOME Shell 46–51. No `gi://` imports: host.js supplies the
-// live APIs, while test/mutterCompat.test.js supplies plain stubs.
+// mutterCompat.js — the Mutter API transitions the overlay host needs across
+// GNOME Shell 46–51. No `gi://` imports: host.js supplies the live APIs,
+// while test/mutterCompat.test.js supplies plain stubs.
 //
 // Mutter 14–16 (Shell 46–48):
 //   Meta.WaylandClient.new(context, launcher) → client.spawnv(display, argv)
@@ -9,6 +9,11 @@
 // Mutter 17+ (Shell 49+):
 //   Meta.WaylandClient.new_subprocess(context, launcher, argv)
 //   client.get_subprocess(), window.set_type(DOCK), window.hide_from_window_list()
+//
+// Cursor tracker — Mutter 14–15 (Shell 46–47):
+//   Meta.CursorTracker.get_for_display(display)
+// Mutter 16+ (Shell 48+):
+//   Meta.Backend.get_cursor_tracker() (the per-display accessor was removed)
 
 /** Create the trusted Wayland client and launch its subprocess.
  *
@@ -37,4 +42,14 @@ export function configureTrustedWindow({client, window, dockType}) {
         client.make_dock(window);
         client.hide_from_window_list(window);
     }
+}
+
+/** The display's Meta.CursorTracker, whose `position-invalidated` signal the
+ * hover fade watches.
+ *
+ * Mutter 16+ (Shell 48+) reaches it through the backend; Mutter 14–15 (Shell
+ * 46–47) only offers the per-display accessor. Both name the same object.
+ */
+export function getCursorTracker({backend, display, CursorTracker}) {
+    return backend.get_cursor_tracker?.() ?? CursorTracker.get_for_display(display);
 }

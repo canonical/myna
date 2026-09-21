@@ -33,7 +33,7 @@ Expected: session-lifecycle transitions, autorepeat dedup, focus-change→end,
 secure-field refusal, commit-only routing, and the `OrchestratorEvent →
 IndicatorState` mapping all pass; no network, no D-Bus, no display.
 
-## 2. Integration suites against real IBus + portal (VM/hardware)
+## 2. Integration suites against real IBus and a scripted portal (VM/hardware)
 
 Env-gated; identical code on the desktop VM and on hardware (Principle II).
 
@@ -41,15 +41,15 @@ Env-gated; identical code on the desktop VM and on hardware (Principle II).
 # real IBus commit / focus-out / secure-field (needs a running IBus daemon):
 MYNA_IBUS_TESTS=1 cargo test -p myna-desktop --test ibus_hw
 
-# real GlobalShortcuts bind / Activated+Deactivated (needs the portal):
-MYNA_PORTAL_TESTS=1 cargo test -p myna-desktop --test portal_hw
+# GlobalShortcuts bind against a scripted fake portal (needs a session bus):
+MYNA_DBUS_TESTS=1 dbus-run-session -- cargo test -p myna-desktop --test portal_leak
 ```
 
 Expected outcomes (map to contract rows):
 - IBus: commit lands in a focused test entry (I1); password field refused (I5);
   focus-out and target-gone emit events (I8, I9); global-engine restored (I11).
-- Portal: a bound test shortcut yields `Press` on activate and `Release` on
-  deactivate (T1, T2); autorepeat collapses to one `Press` (T3).
+- Portal: a bind the backend never answers leaves no request or session behind.
+  Real-portal `Press`/`Release` (T1, T2) is the manual run in step 3.
 
 ## 3. Live push-to-talk dictation into the focused app (the headline)
 

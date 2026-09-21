@@ -31,15 +31,10 @@ SNAPNAME_myna := myna
 $(foreach s,$(SNAPS),$(eval SNAPNAME_$(s) ?= myna-$(s)))
 
 # Model fetch is the snap's own dev/download-models.sh when it has one, and
-# nothing when it carries no weights (myna, fake). Exceptions: parakeet's
-# takes the encoder to stage; the two ONNX backends are fetched by repo-level
-# scripts.
-FETCH_parakeet  = cd parakeet-snap && ./dev/download-models.sh $(PARAKEET_ENCODER)
+# nothing when it carries no weights (myna, fake). Exception: funasr is
+# fetched by a repo-level script.
 FETCH_funasr   := uv run ./dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
 $(foreach s,$(SNAPS),$(eval FETCH_$(s) ?= $(if $(wildcard $(s)-snap/dev/download-models.sh),cd $(s)-snap && ./dev/download-models.sh)))
-
-# Which encoder snap-parakeet stages; snap-parakeet-maxstack overrides it.
-PARAKEET_ENCODER ?= base
 
 BRANCH := $(shell git branch --show-current)
 
@@ -215,6 +210,9 @@ cov-patch: ## Patch-coverage gate on the lines this branch changes (COV_BASE=ori
 # or that a bug slipped past, not as a routine gate.
 #   make mutate-client MUTATE='-p myna-orchestrator -f src/session.rs'
 #   make mutate-server MUTATE='myna.core.session*'
+# mutate-client runs under the same services and gates as test-client-gated
+# and test-client-ui, so a mutant covered only by a gated suite is graded
+# rather than surviving unseen; see the `mutants` action for the cost.
 MUTATE ?=
 .PHONY: mutate-client
 mutate-client: ## cargo-mutants over the Rust workspace, scoped by MUTATE (cargo-mutants args)
@@ -335,23 +333,13 @@ snap-$(1):
 endef
 $(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
 
-# Same snap, optimized encoder. The encoder is built once into the model cache
-# (parakeet-maxstack-encoder) and staged from there.
-.PHONY: snap-parakeet-maxstack
-snap-parakeet-maxstack: ## Build the parakeet snap with the maxstack encoder
-	$(MAKE) snap-parakeet PARAKEET_ENCODER=maxstack
-
-.PHONY: parakeet-maxstack-encoder
-parakeet-maxstack-encoder: ## Build the maxstack encoder into the model cache (input to snap-parakeet-maxstack)
-	./dev/parakeet/build-maxstack.sh
-
 ##@ Benchmark
 
 .PHONY: build-bench
 build-bench: ## Build the standalone myna-bench.pyz zipapp (what testers download; every bench-* runs it)
 	./dev/build-bench.sh
 
-# BENCH_LABEL_SUFFIX=maxstack tags every label <snap>+maxstack so two builds of
+# BENCH_LABEL_SUFFIX=<name> tags every label <snap>+<name> so two builds of
 # one snap can share results/bench.jsonl (the summary dedups by label).
 BENCH_LABEL_SUFFIX ?=
 BENCH_LABEL_ARGS = $(if $(BENCH_LABEL_SUFFIX),--label-suffix $(BENCH_LABEL_SUFFIX))

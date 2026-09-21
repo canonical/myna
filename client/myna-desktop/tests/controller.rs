@@ -130,6 +130,9 @@ impl AudioSource for RecordingSource {
     fn format(&self) -> AudioFormat {
         self.inner.format()
     }
+    fn health(&self) -> myna_core::CaptureHealthStream {
+        self.inner.health()
+    }
     fn capture(self: Box<Self>) -> CaptureStream {
         *self.probe.lock().unwrap() += 1;
         let this = *self;
@@ -1764,4 +1767,117 @@ async fn a_quiet_input_completes_without_a_notice() {
     .await;
 
     assert_eq!(states.lock().unwrap().last(), Some(&IndicatorState::Hidden));
+}
+
+// ── A capture fault mid-utterance: the text, then the device ─────────────────
+// (audio review C2/A4, 2026-09-18: the audio already captured is transcribed
+// and inserted, and only then is the device failure raised. The HUD must never
+// claim a clean completion on the way.)
+
+/// The indicator timeline with consecutive repeats collapsed: a state
+/// published twice in a row is one transition to the user.
+fn transitions(states: &[IndicatorState]) -> Vec<IndicatorState> {
+    let mut out: Vec<IndicatorState> = Vec::new();
+    for state in states {
+        if out.last() != Some(state) {
+            out.push(state.clone());
+        }
+    }
+    out
+}
+
+/// One utterance whose capture faults after audio was accepted: the
+/// orchestrator finishes it with what it had, then fails with the device.
+async fn salvaged_utterance(
+    transcript: &str,
+) -> (
+    Arc<Mutex<myna_desktop::inject::mock::InjectorLog>>,
+    Vec<IndicatorState>,
+    DictationState,
+) {
+    let message = "some audio was lost: audio device unavailable: mic unplugged";
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let indicator = MockIndicator::new();
+    let states = indicator.log();
+    let mut events = vec![
+        OrchestratorEvent::Ready,
+        OrchestratorEvent::CaptureLost {
+            message: message.into(),
+        },
+    ];
+    if !transcript.is_empty() {
+        events.push(OrchestratorEvent::Final(transcript.into()));
+    }
+    events.push(OrchestratorEvent::Done(transcript.into()));
+    events.push(OrchestratorEvent::Error {
+        code: "capture_failed".into(),
+        message: message.into(),
+    });
+    let mut controller = DesktopController::builder()
+        .trigger(ProbeTrigger::new(Then::WaitForResync))
+        .injector(injector)
+        .indicator(indicator)
+        .session(events_session(
+            events,
+            SessionOutcome::Failed {
+                code: "capture_failed".into(),
+                message: message.into(),
+            },
+        ))
+        .build();
+    tokio::time::timeout(Duration::from_secs(10), controller.run())
+        .await
+        .expect("the controller must come back to idle on its own");
+    let seen = transitions(&states.lock().unwrap());
+    (inject_log, seen, controller.state())
+}
+
+#[tokio::test]
+async fn a_salvaged_capture_fault_inserts_the_text_then_reports_the_device() {
+    let (inject_log, states, state) = salvaged_utterance("what I had already said").await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["what I had already said"],
+        "the audio captured before the fault was transcribed and must be inserted",
+    );
+    // Listening, then finishing (the fault ends capture, not the utterance),
+    // then the failure. Never Hidden: a completed look, however brief, claims
+    // a clean dictation this one did not have.
+    assert_eq!(
+        states,
+        vec![
+            IndicatorState::Recording,
+            IndicatorState::Finalizing,
+            IndicatorState::critical(
+                "some audio was lost: audio device unavailable: mic unplugged"
+            ),
+        ],
+    );
+    assert_eq!(state, DictationState::Idle);
+}
+
+#[tokio::test]
+async fn a_salvage_that_transcribed_nothing_still_reports_the_device() {
+    // "No speech detected" would blame the user for a microphone that died.
+    let (inject_log, states, _state) = salvaged_utterance("").await;
+
+    assert!(inject_log.lock().unwrap().commits.is_empty());
+    assert_eq!(
+        states.last(),
+        Some(&IndicatorState::critical(
+            "some audio was lost: audio device unavailable: mic unplugged"
+        )),
+    );
+    assert!(
+        !states.iter().any(|s| matches!(
+            s,
+            IndicatorState::Error {
+                recoverable: true,
+                ..
+            }
+        )),
+        "{states:?}",
+    );
 }

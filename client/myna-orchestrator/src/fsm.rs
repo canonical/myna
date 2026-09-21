@@ -17,14 +17,15 @@
 //!   over until the backend emits its terminal event (§3C).
 //! - **Residency** ([`Residency`]): `Unloaded → Loading → Resident`, driven
 //!   independently by the backend's liveness (`STATUS` / `transcription.progress`
-//!   phase) — the model may still be loading when the session is already
-//!   negotiated, and may lapse back to `Loading` if it idle-unloads mid-session.
+//!   phase). The model may still be loading when the session is already
+//!   negotiated. Residency is monotonic within an utterance: a `preparing`
+//!   after `Resident` changes nothing, so audio already flowing keeps flowing.
 //!
 //! ## Accept-gate
 //!
-//! An audio chunk is forwarded to the backend **iff** `session == Active` **and**
-//! `residency == Resident`. Otherwise it is dropped (§3A pre-ready drop) — the
-//! client must gate on `STATUS{ready}`, not merely on a negotiated session.
+//! Audio is accepted **iff** `session == Active` **and** `residency ==
+//! Resident` ([`Fsm::accepts_audio`]). The driver does not read audio while the
+//! gate is closed, so audio waits in capture rather than being dropped.
 
 use myna_core::{
     ErrorData, PcmChunk, Progress, TranscriptionEvent, PHASE_PREPARING, PHASE_READY,
@@ -56,7 +57,8 @@ impl SessionState {
     }
 }
 
-/// The orthogonal model-residency track. Only `Resident` opens the accept-gate.
+/// The orthogonal model-residency track. Only `Resident` opens the accept-gate,
+/// and nothing leaves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Residency {
     /// No load triggered yet (pre-liveness).
@@ -79,15 +81,6 @@ impl Residency {
 pub struct FsmState {
     pub session: SessionState,
     pub residency: Residency,
-}
-
-/// Why an audio chunk was dropped by the accept-gate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DropReason {
-    /// Model not resident yet (§3A pre-ready) or it lapsed back to loading.
-    NotResident,
-    /// Audio arrived after end-of-audio / on a terminal session (client bug).
-    NotActive,
 }
 
 /// What the FSM surfaces *outward* (to the text injector, the UI, and tests).
@@ -116,8 +109,16 @@ pub enum OrchestratorEvent {
     /// an `error.recoverable` field — and the §3B retry branch returns here.
     /// Do not reintroduce it as client-side string-matching on codes.)
     Error { code: String, message: String },
-    /// A chunk was dropped by the accept-gate.
-    AudioDropped(DropReason),
+    /// A chunk was dropped by the accept-gate, because the session was not
+    /// accepting audio: after end-of-audio, or on a terminal session. There is
+    /// no second reason - audio before readiness waits in capture instead.
+    AudioDropped,
+    /// Capture faulted with audio already accepted. Not terminal: the utterance
+    /// is being finished with the audio captured before the fault, and the
+    /// failure lands with the terminal [`OrchestratorEvent::Error`] once that
+    /// transcript is in. A UI shows the finishing phase from here, never a
+    /// completion.
+    CaptureLost { message: String },
 }
 
 /// A side effect the driver must perform after a transition. Keeping effects as
@@ -149,10 +150,18 @@ pub enum Input {
     /// diagnostic and surfaces as a `Failed` outcome so the fault is visible,
     /// while still closing the backend session with nothing committed.
     CaptureFailed { message: String },
+    /// Local audio capture faulted with audio already accepted, which is queued
+    /// ahead of this. Not terminal, and not a gate change: the accepted audio
+    /// keeps flowing and the end-of-audio behind it still finishes the
+    /// utterance, so the user gets the words they had already said. The fault
+    /// is held until the terminal, where it becomes the session's failure.
+    CaptureLost { message: String },
     /// A transcript event arrived from the backend.
     Backend(TranscriptionEvent),
     /// The backend connection closed (optionally with a wire-error reason).
     BackendClosed { error: Option<String> },
+    /// The backend made no progress within the driver's deadline.
+    Stalled,
 }
 
 /// How a completed [`Fsm`] run ended.
@@ -174,6 +183,11 @@ pub struct Fsm {
     residency: Residency,
     transcript: String,
     failure: Option<(String, String)>,
+    /// A capture fault the utterance is being salvaged from (see
+    /// [`Input::CaptureLost`]): held here until the terminal, where it fails
+    /// the session on its own or is folded into whatever failed first, so the
+    /// device is never the failure nobody hears about.
+    capture_fault: Option<String>,
 }
 
 impl Default for Fsm {
@@ -193,6 +207,7 @@ impl Fsm {
             residency: Residency::Unloaded,
             transcript: String::new(),
             failure: None,
+            capture_fault: None,
         }
     }
 
@@ -201,6 +216,11 @@ impl Fsm {
             session: self.session,
             residency: self.residency,
         }
+    }
+
+    /// The accept-gate: whether audio may be forwarded now.
+    pub fn accepts_audio(&self) -> bool {
+        self.session == SessionState::Active && self.residency.gate_open()
     }
 
     /// The outcome, once [`SessionState::is_terminal`] holds.
@@ -229,26 +249,19 @@ impl Fsm {
             Input::EndOfAudio => self.on_end_of_audio(&mut actions),
             Input::Abort => self.on_abort(&mut actions),
             Input::CaptureFailed { message } => self.on_capture_failed(message, &mut actions),
+            Input::CaptureLost { message } => self.on_capture_lost(message, &mut actions),
             Input::Backend(event) => self.on_backend(event, &mut actions),
             Input::BackendClosed { error } => self.on_backend_closed(error, &mut actions),
+            Input::Stalled => self.on_stalled(&mut actions),
         }
         actions
     }
 
     fn on_audio(&mut self, chunk: PcmChunk, out: &mut Vec<Action>) {
-        if self.session == SessionState::Active && self.residency.gate_open() {
+        if self.accepts_audio() {
             out.push(Action::ForwardAudio(chunk));
-        } else if self.session == SessionState::Active {
-            // §3A: gate closed because the model is not resident. Drop, don't
-            // buffer — the client should have waited for `Ready`.
-            out.push(Action::Emit(OrchestratorEvent::AudioDropped(
-                DropReason::NotResident,
-            )));
         } else {
-            // Finalizing or terminal: audio after end-of-audio is a client bug.
-            out.push(Action::Emit(OrchestratorEvent::AudioDropped(
-                DropReason::NotActive,
-            )));
+            out.push(Action::Emit(OrchestratorEvent::AudioDropped));
         }
     }
 
@@ -279,6 +292,18 @@ impl Fsm {
         }
     }
 
+    fn on_capture_lost(&mut self, message: String, out: &mut Vec<Action>) {
+        // Not a terminal, and not a gate change: the audio accepted before the
+        // fault is queued behind this and still has to be sent, finished and
+        // transcribed. Only the first fault is kept - the one that ended
+        // capture explains it.
+        if self.session.is_terminal() || self.capture_fault.is_some() {
+            return;
+        }
+        self.capture_fault = Some(message.clone());
+        out.push(Action::Emit(OrchestratorEvent::CaptureLost { message }));
+    }
+
     fn on_backend(&mut self, event: TranscriptionEvent, out: &mut Vec<Action>) {
         // Late events after a terminal state are ignored (e.g. a stray frame
         // racing a close).
@@ -303,8 +328,14 @@ impl Fsm {
             }
             TranscriptionEvent::Done(d) => {
                 self.transcript = d.text.clone();
-                self.session = SessionState::Done;
                 out.push(Action::Emit(OrchestratorEvent::Done(d.text)));
+                // The transcript the salvage was for is out; now the device
+                // failure it was salvaged from, which the user has not been
+                // told about yet.
+                match self.capture_fault.take() {
+                    Some(message) => self.terminate("capture_failed", message, out),
+                    None => self.session = SessionState::Done,
+                }
             }
             TranscriptionEvent::Error(e) => self.on_error(e, out),
         }
@@ -312,11 +343,10 @@ impl Fsm {
 
     fn on_progress(&mut self, p: Progress, out: &mut Vec<Action>) {
         match p.phase.as_str() {
+            // Once resident, a backend that reloads must still take the audio
+            // it is sent, or fail explicitly: the gate never closes again.
             PHASE_PREPARING => {
-                // Model (re-)loading — the residency region can lapse back here
-                // mid-session if it idle-unloaded (lifecycle open item #4),
-                // closing the gate again.
-                if self.residency != Residency::Loading {
+                if self.residency == Residency::Unloaded {
                     self.residency = Residency::Loading;
                     out.push(Action::Emit(OrchestratorEvent::Loading));
                 }
@@ -349,12 +379,19 @@ impl Fsm {
         // actual contract (both dialects treat `transcription.error`/`error`
         // as utterance-terminal). See the `OrchestratorEvent::Error` note for
         // where a T31 recoverable disposition would slot back in.
-        out.push(Action::Emit(OrchestratorEvent::Error {
-            code: e.code.clone(),
-            message: e.message.clone(),
-        }));
-        self.failure = Some((e.code, e.message));
-        self.session = SessionState::Failed;
+        self.fail(&e.code, e.message, out);
+    }
+
+    fn on_stalled(&mut self, out: &mut Vec<Action>) {
+        if self.session.is_terminal() {
+            return;
+        }
+        out.push(Action::SendAbort);
+        self.fail(
+            "backend_unresponsive",
+            "the transcription service stopped responding".to_string(),
+            out,
+        );
     }
 
     fn on_backend_closed(&mut self, error: Option<String>, out: &mut Vec<Action>) {
@@ -362,14 +399,30 @@ impl Fsm {
             // Expected: the backend closes right after its terminal event.
             return;
         }
-        let code = "connection_closed".to_string();
         let message = error
             .unwrap_or_else(|| "backend connection closed before the session completed".into());
+        self.fail("connection_closed", message, out);
+    }
+
+    /// Fail the session, keeping a capture fault the utterance was being
+    /// salvaged from: whatever went wrong while finishing is the failure, but
+    /// the device that started it is not dropped from the story.
+    fn fail(&mut self, code: &str, message: String, out: &mut Vec<Action>) {
+        let message = match self.capture_fault.take() {
+            Some(fault) => format!("{message} ({fault})"),
+            None => message,
+        };
+        self.terminate(code, message, out);
+    }
+
+    /// Surface a failure and end the session with it. The one place a `Failed`
+    /// outcome is built from an error the user is shown.
+    fn terminate(&mut self, code: &str, message: String, out: &mut Vec<Action>) {
         out.push(Action::Emit(OrchestratorEvent::Error {
-            code: code.clone(),
+            code: code.to_string(),
             message: message.clone(),
         }));
-        self.failure = Some((code, message));
+        self.failure = Some((code.to_string(), message));
         self.session = SessionState::Failed;
     }
 }
@@ -513,57 +566,77 @@ mod tests {
         );
     }
 
-    // ---- §3A: audio before the model is ready is dropped ---------------------
+    // ---- §3A: audio waits for the model to be ready -----------------------
 
     #[test]
-    fn edge_3a_pre_ready_audio_is_dropped_then_forwarded_when_resident() {
+    fn edge_3a_the_gate_opens_only_once_resident() {
         let mut fsm = Fsm::new();
+        assert!(!fsm.accepts_audio(), "unloaded");
 
-        // Unloaded: gate closed.
+        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
+        assert!(!fsm.accepts_audio(), "loading");
+
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        assert!(fsm.accepts_audio(), "resident");
+        let a = fsm.on_input(Input::Audio(chunk()));
+        assert!(a.iter().any(is_forward));
+        assert!(emitted(&a).is_empty());
+
+        fsm.on_input(Input::EndOfAudio);
+        assert!(!fsm.accepts_audio(), "finalizing");
+    }
+
+    #[test]
+    fn audio_fed_before_readiness_is_refused_not_forwarded() {
+        let mut fsm = Fsm::new();
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(!a.iter().any(is_forward));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
-        );
+        assert_eq!(emitted(&a), vec![OrchestratorEvent::AudioDropped]);
+    }
 
-        // Loading: still closed.
-        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
-        let a = fsm.on_input(Input::Audio(chunk()));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
-        );
-
-        // Resident: gate opens, audio is forwarded and nothing is emitted.
+    #[test]
+    fn readiness_is_monotonic_within_an_utterance() {
+        // A backend that reloads mid-utterance keeps getting audio: the gate
+        // never closes again, and the UI is not told the model is loading.
+        let mut fsm = Fsm::new();
         fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
+
+        assert!(emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))).is_empty());
+        assert_eq!(fsm.state().residency, Residency::Resident);
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(a.iter().any(is_forward));
         assert!(emitted(&a).is_empty());
     }
 
     #[test]
-    fn residency_can_lapse_back_to_loading_mid_session() {
-        // Lifecycle open item #4: an idle-unload between utterances re-closes
-        // the gate until the model reloads.
+    fn a_repeated_preparing_reports_loading_once() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_PREPARING)));
+        assert!(emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))).is_empty());
+        assert_eq!(fsm.state().residency, Residency::Loading);
+    }
+
+    #[test]
+    fn a_stalled_backend_fails_the_session_and_is_aborted() {
         let mut fsm = Fsm::new();
         fsm.on_input(Input::Backend(progress(PHASE_READY)));
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
-
-        // Model idle-unloads → re-loading; gate closes again.
+        fsm.on_input(Input::EndOfAudio);
+        let a = fsm.on_input(Input::Stalled);
+        assert!(matches!(a.first(), Some(Action::SendAbort)));
+        let error = OrchestratorEvent::Error {
+            code: "backend_unresponsive".into(),
+            message: "the transcription service stopped responding".into(),
+        };
+        assert_eq!(emitted(&a), vec![error]);
         assert_eq!(
-            emitted(&fsm.on_input(Input::Backend(progress(PHASE_PREPARING)))),
-            vec![OrchestratorEvent::Loading]
+            fsm.outcome(),
+            Some(SessionOutcome::Failed {
+                code: "backend_unresponsive".into(),
+                message: "the transcription service stopped responding".into(),
+            })
         );
-        let a = fsm.on_input(Input::Audio(chunk()));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotResident)]
-        );
-
-        // Reloads → gate reopens.
-        fsm.on_input(Input::Backend(progress(PHASE_READY)));
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
+        assert!(fsm.on_input(Input::Stalled).is_empty());
     }
 
     // ---- §3B: error mid-stream ----------------------------------------------
@@ -632,10 +705,7 @@ mod tests {
         fsm.on_input(Input::EndOfAudio);
         let a = fsm.on_input(Input::Audio(chunk()));
         assert!(!a.iter().any(is_forward));
-        assert_eq!(
-            emitted(&a),
-            vec![OrchestratorEvent::AudioDropped(DropReason::NotActive)]
-        );
+        assert_eq!(emitted(&a), vec![OrchestratorEvent::AudioDropped]);
     }
 
     #[test]
@@ -687,6 +757,150 @@ mod tests {
                 message: "again".into()
             })
             .is_empty());
+    }
+
+    // ---- a capture fault with audio behind it: salvage, then report --------
+
+    /// Feed a fault mid-utterance and finish the way capture does: the audio
+    /// already accepted, then end-of-audio.
+    fn salvaging(fsm: &mut Fsm) -> Vec<Action> {
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        fsm.on_input(Input::Audio(chunk()));
+        fsm.on_input(Input::CaptureLost {
+            message: "some audio was lost: device vanished".into(),
+        })
+    }
+
+    #[test]
+    fn a_capture_fault_with_audio_behind_it_keeps_the_gate_open() {
+        let mut fsm = Fsm::new();
+        let a = salvaging(&mut fsm);
+        assert_eq!(
+            emitted(&a),
+            vec![OrchestratorEvent::CaptureLost {
+                message: "some audio was lost: device vanished".into()
+            }]
+        );
+        // Not terminal, not a gate change: the audio queued behind the fault
+        // still has to go.
+        assert_eq!(fsm.state().session, SessionState::Active);
+        assert!(fsm.accepts_audio());
+        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(is_forward));
+        assert_eq!(fsm.outcome(), None);
+        // ...and the end of audio behind it finishes the utterance as a
+        // release would.
+        assert!(matches!(
+            fsm.on_input(Input::EndOfAudio).as_slice(),
+            [Action::SendFinish]
+        ));
+    }
+
+    #[test]
+    fn a_salvaged_transcript_is_committed_before_the_fault_is_reported() {
+        let mut fsm = Fsm::new();
+        salvaging(&mut fsm);
+        fsm.on_input(Input::EndOfAudio);
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(final_seg("what I said")))),
+            vec![OrchestratorEvent::Final("what I said".into())]
+        );
+        assert_eq!(
+            emitted(&fsm.on_input(Input::Backend(done("what I said")))),
+            vec![
+                OrchestratorEvent::Done("what I said".into()),
+                OrchestratorEvent::Error {
+                    code: "capture_failed".into(),
+                    message: "some audio was lost: device vanished".into(),
+                },
+            ],
+            "the transcript comes first, then the device that failed",
+        );
+        assert_eq!(
+            fsm.outcome(),
+            Some(SessionOutcome::Failed {
+                code: "capture_failed".into(),
+                message: "some audio was lost: device vanished".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_failure_while_salvaging_keeps_the_device_fault_too() {
+        for (input, code) in [
+            (
+                Input::Backend(error("inference_failed")),
+                "inference_failed",
+            ),
+            (
+                Input::BackendClosed {
+                    error: Some("reset".into()),
+                },
+                "connection_closed",
+            ),
+            (Input::Stalled, "backend_unresponsive"),
+        ] {
+            let mut fsm = Fsm::new();
+            salvaging(&mut fsm);
+            fsm.on_input(Input::EndOfAudio);
+            fsm.on_input(input);
+            match fsm.outcome() {
+                Some(SessionOutcome::Failed { code: got, message }) => {
+                    assert_eq!(got, code, "the failure that ended it names itself");
+                    assert!(
+                        message.contains("device vanished"),
+                        "the device fault was swallowed by {code}: {message}"
+                    );
+                }
+                other => panic!("expected {code}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn only_the_fault_that_ended_capture_is_reported() {
+        let mut fsm = Fsm::new();
+        salvaging(&mut fsm);
+        assert!(fsm
+            .on_input(Input::CaptureLost {
+                message: "a later fault".into()
+            })
+            .is_empty());
+        fsm.on_input(Input::EndOfAudio);
+        fsm.on_input(Input::Backend(done("hi")));
+        let Some(SessionOutcome::Failed { message, .. }) = fsm.outcome() else {
+            panic!("expected a failed session");
+        };
+        assert_eq!(message, "some audio was lost: device vanished");
+    }
+
+    #[test]
+    fn an_abort_while_salvaging_is_still_an_abort() {
+        // A user cancel discards the utterance whatever the device did.
+        let mut fsm = Fsm::new();
+        salvaging(&mut fsm);
+        assert!(matches!(
+            fsm.on_input(Input::Abort).as_slice(),
+            [Action::SendAbort]
+        ));
+        assert_eq!(fsm.outcome(), Some(SessionOutcome::Aborted));
+    }
+
+    #[test]
+    fn a_capture_fault_after_the_session_ended_changes_nothing() {
+        let mut fsm = Fsm::new();
+        fsm.on_input(Input::Backend(progress(PHASE_READY)));
+        fsm.on_input(Input::Backend(done("hi")));
+        assert!(fsm
+            .on_input(Input::CaptureLost {
+                message: "too late".into()
+            })
+            .is_empty());
+        assert_eq!(
+            fsm.outcome(),
+            Some(SessionOutcome::Completed {
+                transcript: "hi".into()
+            })
+        );
     }
 
     #[test]
@@ -747,10 +961,10 @@ mod tests {
         assert!(fsm
             .on_input(Input::Backend(final_seg("ignored")))
             .is_empty());
-        assert!(fsm.on_input(Input::Audio(chunk())).iter().any(|a| matches!(
-            a,
-            Action::Emit(OrchestratorEvent::AudioDropped(DropReason::NotActive))
-        )));
+        assert!(fsm
+            .on_input(Input::Audio(chunk()))
+            .iter()
+            .any(|a| matches!(a, Action::Emit(OrchestratorEvent::AudioDropped))));
     }
 
     // ---- T028-T030: streaming mode (feature 007) -----------------------------

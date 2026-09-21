@@ -39,12 +39,11 @@ this interface.
 | `AudioPeak` | `d` | `[0.0, 1.0]` | peak level; `0.0` when idle (E2) |
 | `StatusMessage` | `s` | content-free publisher-owned label; `""` while `State==idle` | user-facing status label (E3): every visible state has one, including `loading`, `recording`, `transcribing`, and `finalizing`. |
 | `HudStyle` | `s` | a `hud-style` settings nick (`bar`\|`ribbon`\|`vumeter`\|`progress`, additive); `""` from a publisher predating the property | **(2026-09-09)** which audio-level presentation the renderer should draw. The publisher is the only settings reader; the renderer is told, and resolves an unknown or empty nick to its default (C8). |
-| `AudioDroppedNotResident` | `t` | count, cumulative per session | chunks the accept-gate refused because the model was not resident yet. Non-zero is normal on a cold start. |
 | `AudioDroppedNotActive` | `t` | count, cumulative per session | chunks refused because the session was already over. Only ever a bug. |
 
-The two drop counters are counts, never samples or content, and exist because
-the daemon is the only process that sees a chunk refused - the Settings app
-reads them for its diagnostics page.
+The drop counter is a count, never samples or content, and exists because the
+daemon is the only process that sees a chunk refused - the Settings app reads
+it for its diagnostics page.
 
 ### Signals
 

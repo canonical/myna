@@ -47,17 +47,20 @@ import asyncio
 import contextlib
 import dataclasses
 import json
+import logging
 import os
 import socket
+import weakref
+from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.server import Server, ServerConnection, unix_serve
 from websockets.exceptions import ConnectionClosed
 
-from myna.core.audio import AudioFormat, PcmChunk
+from myna.core.audio import AudioFormat, PcmChunk, PcmFramer
 from myna.core.capabilities import (
     Capabilities,
     capabilities_from_wire,
@@ -79,7 +82,7 @@ from myna.core.session import (
     session_config_from_wire,
     session_config_to_wire,
 )
-from myna.core.transport import EventSink, SttService
+from myna.core.transport import AudioAborted, EventSink, SttService
 from myna.core.wire_ie115 import (
     INPUT_AUDIO_APPEND,
     INPUT_AUDIO_COMMIT,
@@ -98,13 +101,16 @@ from myna.core.wire_ie115 import (
 
 _TERMINAL = ("transcription.done", "transcription.error")
 
-# Bound on the audio backlog the server holds per connection, in chunks
-# (~26 s at the client's ~100 ms chunks). Bounded, not unbounded, per the
-# bounded-buffer invariant: when a slow adapter falls behind on long-form
+# Bound on the audio backlog the server holds per connection, in bytes of
+# the adapter's PCM (~33 s at 16 kHz S16LE mono). Bounded, not unbounded, per
+# the bounded-buffer invariant: when a slow adapter falls behind on long-form
 # dictation, `put` blocks the WS reader, and backpressure propagates to the
 # client through the socket instead of growing server memory. This queue is
 # also where a future overload/lag signal (open item, Matias) would be
 # measured — design that signal against this bound.
+#
+# websockets buffers frames the reader has not taken yet, up to `max_queue`
+# frames of up to `max_size` (1 MiB) each; one keeps that in proportion.
 #
 # That backpressure is why neither end runs the websockets keepalive
 # (`ping_interval=None` on every unix_serve/unix_connect below): a pong is an
@@ -113,7 +119,136 @@ _TERMINAL = ("transcription.done", "transcription.error")
 # connection mid-utterance (reproduced 2026-09-03 with fast-fed long-form
 # audio at a 15 s SilenceCut arm). On a Unix socket a dead peer is an
 # immediate EOF anyway; the keepalive only exists for TCP paths.
-_AUDIO_QUEUE_MAXSIZE = 256
+_INGRESS_CAPACITY_BYTES = 1 << 20
+_WS_MAX_QUEUE_FRAMES = 1
+# Queued chunks smaller than this merge, so tiny appends cannot turn the
+# byte budget into hundreds of thousands of objects.
+_COALESCE_BYTES = 3200
+
+_log = logging.getLogger(__name__)
+
+
+class _Boundary:
+    """An utterance boundary inside the ingress stream (an IE115 commit)."""
+
+
+_BOUNDARY = _Boundary()
+
+
+class _Ingress:
+    """The byte-bounded queue between a connection's frame reader and its
+    adapter. A put larger than the capacity is split into whole-frame pieces
+    that fit; at most one boundary is pending at a time.
+
+    Ending it never waits on capacity, so every exit path can end it:
+    ``close`` is the end of the client's audio (the adapter drains what was
+    accepted, then sees the end); ``abort`` gives up on the stream (queued
+    audio is discarded, a blocked ``put`` returns, later ones discard, the
+    adapter session is cancelled and ``get`` raises ``AudioAborted``).
+    """
+
+    def __init__(
+        self, audio_format: AudioFormat, capacity_bytes: int = _INGRESS_CAPACITY_BYTES
+    ) -> None:
+        # The adapter, not the framing, rejects a degenerate format.
+        self.frame_bytes = max(1, audio_format.frame_bytes)
+        if capacity_bytes < self.frame_bytes:
+            raise ValueError(f"{capacity_bytes} bytes hold no {self.frame_bytes}-byte frame")
+        self._format = audio_format
+        self._capacity = capacity_bytes
+        self._piece_bytes = capacity_bytes - capacity_bytes % self.frame_bytes
+        self._items: deque[bytes | _Boundary] = deque()
+        self._bytes = 0
+        self._boundary_pending = False
+        self._closed = False
+        self._aborted = False
+        self._session: asyncio.Future[None] | None = None
+        self._putters: list[asyncio.Future[None]] = []
+        self._getters: list[asyncio.Future[None]] = []
+
+    async def put(self, pcm: bytes) -> None:
+        """Queue whole frames of PCM, waiting for room piece by piece."""
+        for start in range(0, len(pcm), self._piece_bytes):
+            await self._put(pcm[start : start + self._piece_bytes])
+
+    async def put_boundary(self) -> None:
+        await self._put(_BOUNDARY)
+
+    @property
+    def aborted(self) -> bool:
+        return self._aborted
+
+    def serve(self, session: asyncio.Future[None]) -> None:
+        """``session`` is the adapter consuming the stream now: an abort
+        cancels it."""
+        self._session = session
+        if self._aborted:
+            session.cancel()
+
+    async def get(self) -> PcmChunk | _Boundary | None:
+        """The next chunk or boundary; ``None`` once the stream has ended."""
+        while not self._items and not (self._closed or self._aborted):
+            await self._wait(self._getters)
+        if self._aborted:
+            raise AudioAborted
+        if not self._items:
+            return None
+        item = self._items.popleft()
+        self._wake(self._putters)
+        if isinstance(item, _Boundary):
+            self._boundary_pending = False
+            return item
+        self._bytes -= len(item)
+        return PcmChunk(data=item, format=self._format)
+
+    def close(self) -> None:
+        self._closed = True
+        self._wake(self._getters)
+
+    def abort(self) -> None:
+        self._aborted = True
+        self._items.clear()
+        if self._session is not None:
+            self._session.cancel()
+        self._wake(self._putters)
+        self._wake(self._getters)
+
+    def _has_room(self, item: bytes | _Boundary) -> bool:
+        if isinstance(item, _Boundary):
+            return not self._boundary_pending
+        return self._bytes + len(item) <= self._capacity
+
+    async def _put(self, item: bytes | _Boundary) -> None:
+        while not self._aborted and not self._has_room(item):
+            await self._wait(self._putters)
+        if self._aborted:
+            return
+        if isinstance(item, _Boundary):
+            self._boundary_pending = True
+            self._items.append(item)
+        else:
+            self._bytes += len(item)
+            tail = self._items[-1] if self._items else None
+            if isinstance(tail, bytes) and len(tail) + len(item) <= _COALESCE_BYTES:
+                self._items[-1] = tail + item
+            else:
+                self._items.append(item)
+        self._wake(self._getters)
+
+    @staticmethod
+    async def _wait(waiters: list[asyncio.Future[None]]) -> None:
+        waiter = asyncio.get_running_loop().create_future()
+        waiters.append(waiter)
+        try:
+            await waiter
+        finally:
+            waiters.remove(waiter)
+
+    @staticmethod
+    def _wake(waiters: list[asyncio.Future[None]]) -> None:
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.set_result(None)
 
 
 _SD_LISTEN_FDS_START = 3  # systemd passes listening sockets from fd 3 up
@@ -152,20 +287,69 @@ async def serve_unix(
     session. Use as an async context manager. Either binds ``socket_path``, or
     serves on a pre-bound ``sock`` (e.g. from ``systemd_socket()``)."""
     handler = _SessionHandler(service)
-    # ping_interval=None: see the note at `_AUDIO_QUEUE_MAXSIZE`.
+    # ping_interval=None and max_queue: see the note at `_INGRESS_CAPACITY_BYTES`.
     if sock is not None:
-        cm = unix_serve(handler.handle, sock=sock, ping_interval=None)
-        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
-            yield server
+        cm = unix_serve(
+            handler.handle, sock=sock, ping_interval=None, max_queue=_WS_MAX_QUEUE_FRAMES
+        )
     else:
-        cm = unix_serve(handler.handle, path=str(socket_path), ping_interval=None)
-        async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
+        cm = unix_serve(
+            handler.handle,
+            path=str(socket_path),
+            ping_interval=None,
+            max_queue=_WS_MAX_QUEUE_FRAMES,
+        )
+    async with cast(contextlib.AbstractAsyncContextManager[Server], cm) as server:
+        try:
             yield server
+        finally:
+            handler.abort_sessions()
+
+
+async def _discard_frames(ws: ServerConnection) -> None:
+    with contextlib.suppress(ConnectionClosed):
+        async for _ in ws:
+            pass
+
+
+async def _close(ws: ServerConnection, code: int = 1000, reason: str = "") -> None:
+    """Close, reading and discarding frames through the handshake: with
+    nothing reading, a client still sending holds the transport paused and
+    the close waits out its timeout."""
+    discard = asyncio.ensure_future(_discard_frames(ws))
+    try:
+        await ws.close(code, reason)
+    finally:
+        discard.cancel()
+        await asyncio.wait({discard})
 
 
 class _SessionHandler:
     def __init__(self, service: SttService) -> None:
         self._service = service
+        self._ingresses: weakref.WeakSet[_Ingress] = weakref.WeakSet()
+
+    def abort_sessions(self) -> None:
+        """Server shutdown: end every session's audio now rather than after
+        a backlog nobody will hear."""
+        for ingress in self._ingresses:
+            ingress.abort()
+
+    def _open_ingress(self, audio_format: AudioFormat) -> _Ingress:
+        ingress = _Ingress(audio_format, _INGRESS_CAPACITY_BYTES)
+        self._ingresses.add(ingress)
+        return ingress
+
+    async def _end_connection(
+        self, ws: ServerConnection, ingress: _Ingress, reader: asyncio.Future[None]
+    ) -> None:
+        """The one exit of both dialects once a session has started."""
+        ingress.abort()
+        reader.cancel()
+        await asyncio.wait({reader})
+        if not reader.cancelled() and (exc := reader.exception()) is not None:
+            _log.warning("ingress reader failed", exc_info=exc)
+        await _close(ws)
 
     async def handle(self, ws: ServerConnection) -> None:
         """One connection. The server speaks first: one ``session.created``
@@ -205,7 +389,7 @@ class _SessionHandler:
             wire = capabilities_to_wire(caps)
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps({"type": "capabilities", "data": wire}))
-                await ws.close()
+                await _close(ws)
             return
 
         update = self._parse_session_update(opening)
@@ -215,10 +399,7 @@ class _SessionHandler:
 
         start = self._parse_start(opening)
         if start is None:
-            await ws.close(
-                code=1002,
-                reason="expected session.start, session.update, or capabilities.query",
-            )
+            await _close(ws, 1002, "expected session.start, session.update, or capabilities.query")
             return
         await self._handle_internal(ws, *start)
 
@@ -240,7 +421,7 @@ class _SessionHandler:
                         )
                     )
                 )
-                await ws.close()
+                await _close(ws)
             return
 
         async def emit(event: TranscriptionEvent) -> None:
@@ -282,26 +463,30 @@ class _SessionHandler:
 
         resampler = Resampler(config.audio_format.sample_rate_hz, adapter_format.sample_rate_hz)
 
+        async def send_all(frames: list[dict[str, Any]]) -> None:
+            """One event's frames, in order: an item announcement rides ahead
+            of the frame that names the item."""
+            with contextlib.suppress(ConnectionClosed):
+                for frame in frames:
+                    await ws.send(json.dumps(frame))
+
         # One model per process: a request for a model this server does not
         # serve is REJECTED, never silently answered by a different model (a
         # compat client asking for X must not get Y). Selecting *which* server
         # to dial is the discovery layer's job (plan T48), not this session's.
         if requested_model is not None and requested_model not in caps.models:
-            with contextlib.suppress(ConnectionClosed):
-                await ws.send(
-                    json.dumps(
-                        encoder.encode(
-                            TranscriptionError(
-                                code="model_not_available",
-                                message=(
-                                    f"this server serves {list(caps.models)!r}, "
-                                    f"not {requested_model!r}"
-                                ),
-                            )
-                        )
+            await send_all(
+                encoder.frames(
+                    TranscriptionError(
+                        code="model_not_available",
+                        message=(
+                            f"this server serves {list(caps.models)!r}, not {requested_model!r}"
+                        ),
                     )
                 )
-                await ws.close()
+            )
+            with contextlib.suppress(ConnectionClosed):
+                await _close(ws)
             return
         model = requested_model or (caps.models[0] if caps.models else None)
 
@@ -316,51 +501,50 @@ class _SessionHandler:
                 )
             )
 
-        # One reader for the whole connection; _COMMIT marks utterance
-        # boundaries in-band, None marks the client closing the connection.
-        _COMMIT = object()
-        frames: asyncio.Queue[PcmChunk | object | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
-
-        async def put_pcm(pcm: bytes) -> None:
-            if pcm:
-                await frames.put(PcmChunk(data=pcm, format=adapter_format))
+        # One reader for the whole connection; boundaries mark commits in-band.
+        ingress = self._open_ingress(adapter_format)
 
         async def read_frames() -> None:
             """Wire frames -> adapter PCM. A frame this cannot decode (audio
             that is not base64, say) fails the connection with an ``error``
             and ends the audio: the adapter finishes on what it has and the
-            client sees a terminal, never a hang waiting on ``completed``."""
+            client sees a terminal, never a hang waiting on ``completed``.
+            The client leaving aborts: nobody is left to hear the rest."""
             try:
                 async for frame in ws:
                     if isinstance(frame, bytes):
-                        await put_pcm(resampler.feed(frame))
+                        await ingress.put(resampler.feed(frame))
                         continue
                     message = json.loads(frame)
                     mtype = message.get("type")
                     if mtype == INPUT_AUDIO_APPEND:
                         wire = append_to_pcm(message, config.audio_format)
-                        await put_pcm(resampler.feed(wire.data))
+                        await ingress.put(resampler.feed(wire.data))
                     elif mtype == INPUT_AUDIO_COMMIT:
-                        await put_pcm(resampler.flush())
-                        await frames.put(_COMMIT)
+                        # Acknowledged here, at receipt, as OpenAI does: from
+                        # the adapter's side of the queue the ack would wait
+                        # behind every region the utterance still has to
+                        # decode (measured 6 s on a 95 s utterance).
+                        await send_all(encoder.commit_frames())
+                        await ingress.put(resampler.flush())
+                        await ingress.put_boundary()
                     # other client frames (e.g. further session.update): ignored
-                await put_pcm(resampler.flush())  # the client closed cleanly
+                ingress.abort()
             except ConnectionClosed:
-                pass  # the tail is lost with the peer
+                ingress.abort()
             except Exception as exc:
                 error = TranscriptionError(
                     code="invalid_parameter", message=f"bad client frame: {exc}"
                 )
-                with contextlib.suppress(ConnectionClosed):
-                    await ws.send(json.dumps(encoder.encode(error)))
+                await send_all(encoder.frames(error))
             finally:
-                await frames.put(None)
+                ingress.close()
 
         class _Utterance:
             """Audio of one commit cycle, tracking whether its boundary
-            (commit or close) has been consumed off the queue yet, and how
-            many seconds of PCM it handed the adapter (the ``completed``
-            frame's ``usage``)."""
+            (commit or end of stream) has been consumed yet, and how many
+            seconds of PCM it handed the adapter (the ``completed`` frame's
+            ``usage``)."""
 
             def __init__(self) -> None:
                 self.ended = False
@@ -370,34 +554,27 @@ class _SessionHandler:
 
             async def audio(self) -> AsyncIterator[PcmChunk]:
                 while True:
-                    item = await frames.get()
-                    if item is _COMMIT or item is None:
+                    item = await ingress.get()
+                    if not isinstance(item, PcmChunk):
                         self.ended = True
                         self.closed = item is None
-                        if item is _COMMIT:
-                            # Acknowledge the commit with the utterance's item,
-                            # the id a stock client joins the transcript on.
-                            with contextlib.suppress(ConnectionClosed):
-                                await ws.send(json.dumps(encoder.committed()))
                         return
-                    if isinstance(item, PcmChunk):
-                        self.seconds += len(item.data) / adapter_format.bytes_per_second
-                        yield item
+                    self.seconds += len(item.data) / adapter_format.bytes_per_second
+                    yield item
 
             async def drain(self) -> None:
                 """Consume to the boundary if the adapter stopped pulling early
                 (e.g. rejected the format) so leftover audio of this utterance
                 is discarded, not misread as the next one."""
                 if not self.ended:
-                    async for _ in self.audio():
-                        pass
+                    with contextlib.suppress(AudioAborted):
+                        async for _ in self.audio():
+                            pass
 
             async def emit(self, event: TranscriptionEvent) -> None:
                 if event.type in _TERMINAL:
                     self.terminal_seen = True
-                with contextlib.suppress(ConnectionClosed):
-                    frame = encoder.encode(event, audio_seconds=self.seconds)
-                    await ws.send(json.dumps(frame))
+                await send_all(encoder.frames(event, audio_seconds=self.seconds))
 
         reader = asyncio.ensure_future(read_frames())
         try:
@@ -406,14 +583,16 @@ class _SessionHandler:
                 # the adapter's load-heartbeat and `ready` must flow first,
                 # because a well-behaved client gates its audio on `ready`
                 # (lifecycle §3A / T42 — waiting for audio here would deadlock
-                # against a client waiting for `ready`). The cost is one empty
-                # adapter run when the client closes between utterances; its
-                # sends are suppressed and an empty utterance is cheap.
+                # against a client waiting for `ready`). A client closing
+                # between utterances cancels it.
                 utterance = _Utterance()
-                await self._run_utterance(adapter_config, utterance.audio(), utterance.emit)
+                encoder.begin_utterance()  # its events name the next committed item
+                await self._run_utterance(
+                    ingress, adapter_config, utterance.audio(), utterance.emit
+                )
                 await utterance.drain()
-                if utterance.closed:
-                    break  # client closed the connection: normal end
+                if utterance.closed or ingress.aborted:
+                    break  # the audio stream ended or was given up on
                 if not utterance.terminal_seen:
                     # Adapter broke the exactly-one-terminal contract; a compat
                     # client is now waiting on `completed` — fail the utterance
@@ -425,10 +604,7 @@ class _SessionHandler:
                         )
                     )
         finally:
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-            await ws.close()
+            await self._end_connection(ws, ingress, reader)
 
     async def _pump_session(
         self,
@@ -441,53 +617,53 @@ class _SessionHandler:
         closes after the terminal event): binary frames -> PCM, ``session.finish``
         ends the audio, every other text frame is ignored; events out via
         ``emit``. The reader runs concurrently with the adapter (commit-drain)."""
-        audio: asyncio.Queue[PcmChunk | None] = asyncio.Queue(_AUDIO_QUEUE_MAXSIZE)
-        # Set when the adapter has returned. The reader then keeps reading and
-        # drops what it gets: a client still feeding audio can only see the
-        # server's close once its sends drain.
-        utterance_over = False
+        ingress = self._open_ingress(config.audio_format)
+        framer = PcmFramer(ingress.frame_bytes)
 
         async def read_frames() -> None:
             try:
                 async for frame in ws:
-                    if utterance_over:
-                        continue
                     if isinstance(frame, bytes):
-                        await audio.put(PcmChunk(data=frame, format=config.audio_format))
-                        continue
-                    if json.loads(frame).get("type") == "session.finish":
+                        await ingress.put(framer.feed(frame))
+                    elif json.loads(frame).get("type") == "session.finish":
+                        framer.flush()
+                        ingress.close()
+                        await _discard_frames(ws)  # leaving before the terminal aborts
                         break
+                ingress.abort()
             except ConnectionClosed:
-                pass  # client abort: just end the audio stream
+                ingress.abort()  # client abort
             finally:
-                await audio.put(None)
+                ingress.close()
 
         async def audio_iter() -> AsyncIterator[PcmChunk]:
-            while (chunk := await audio.get()) is not None:
+            while isinstance(chunk := await ingress.get(), PcmChunk):
                 yield chunk
 
         reader = asyncio.ensure_future(read_frames())
         try:
-            await self._run_utterance(config, audio_iter(), emit)
+            await self._run_utterance(ingress, config, audio_iter(), emit)
         finally:
-            # An adapter that failed mid-stream stopped draining the queue, and
-            # a reader parked on it would hold the close off forever.
-            utterance_over = True
-            while not audio.empty():
-                audio.get_nowait()
-            await ws.close()
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
+            await self._end_connection(ws, ingress, reader)
 
     async def _run_utterance(
-        self, config: SessionConfig, audio: AsyncIterator[PcmChunk], emit: EventSink
+        self,
+        ingress: _Ingress,
+        config: SessionConfig,
+        audio: AsyncIterator[PcmChunk],
+        emit: EventSink,
     ) -> None:
         """Run one adapter session, surfacing adapter bugs as a terminal error
-        event (shared by both dialects)."""
-        try:
-            await self._service.run_session(config, audio, emit)
-        except Exception as exc:
+        event (shared by both dialects). It runs as its own task so that an
+        abort can cancel it wherever it is, a decode included."""
+        session = asyncio.ensure_future(self._service.run_session(config, audio, emit))
+        ingress.serve(session)
+        await asyncio.wait({session})  # the handler's exit aborts, cancelling it too
+        if session.cancelled():
+            ingress.abort()  # the adapter gave up on the stream
+            return
+        # After an abort this reports to a connection already closing.
+        if (exc := session.exception()) is not None:
             await emit(
                 TranscriptionError(code="adapter_crash", message=f"{type(exc).__name__}: {exc}")
             )

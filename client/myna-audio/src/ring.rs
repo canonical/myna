@@ -78,30 +78,31 @@ impl Ring {
     /// after `finish`, or after overload is a no-op. **Never drops** — but past
     /// `max_bytes` it latches `overloaded` and stops accepting audio, so the
     /// stream ends with an `Overloaded` fault instead of growing without bound.
-    pub(crate) fn push(&self, chunk: PcmChunk) {
+    /// Returns the `Overloaded` fault when this push latched it.
+    pub(crate) fn push(&self, chunk: PcmChunk) -> Option<CaptureError> {
         {
             let mut inner = self.lock();
             if inner.closed || inner.done {
-                return;
+                return None;
             }
             if inner.queued_bytes + chunk.data.len() > inner.max_bytes {
                 // The service can't keep up: stop here and surface it. The
                 // already-queued audio still drains before the fault, which is
                 // delivered once via the normal `fault` path in `next`.
                 inner.done = true;
-                if !inner.closed {
-                    let secs =
-                        inner.peak_bytes as f64 / (inner.format.bytes_per_second().max(1) as f64);
-                    inner.fault = Some(CaptureError::Overloaded(secs));
-                }
+                let secs =
+                    inner.peak_bytes as f64 / (inner.format.bytes_per_second().max(1) as f64);
+                let fault = CaptureError::Overloaded(secs);
+                inner.fault = Some(fault.clone());
                 self.notify.notify_one();
-                return;
+                return Some(fault);
             }
             inner.queued_bytes += chunk.data.len();
             inner.peak_bytes = inner.peak_bytes.max(inner.queued_bytes);
             inner.queue.push_back(chunk);
         }
         self.notify.notify_one();
+        None
     }
 
     /// Producer side: capture is over — cleanly (`None`) or fatally (`Some`).
@@ -123,6 +124,11 @@ impl Ring {
     pub(crate) fn is_terminated(&self) -> bool {
         let inner = self.lock();
         inner.closed || inner.done
+    }
+
+    /// True once the consumer has gone (abort).
+    pub(crate) fn is_closed(&self) -> bool {
+        self.lock().closed
     }
 
     /// Consumer side: the next stream item per the §3 contract — queued chunks

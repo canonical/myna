@@ -9,8 +9,10 @@ preceded by a failing test. Hermetic tests drive the controller and boundary
 logic through mocks (`MockInjector`/`MockIndicator`, the orchestrator's
 `ScriptedTrigger`) and pure mapping functions — no D-Bus, IBus, portal, or
 display. Real IBus/portal/GTK behavior is proven by env-gated integration suites
-(`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS` / display gate) that run identically on
-the desktop VM and on hardware (Principle II).
+(`MYNA_IBUS_TESTS` / display gate) that run identically on the desktop VM and on
+hardware (Principle II). Portal behavior is proven against a scripted fake
+portal (`MYNA_DBUS_TESTS`); the real portal is exercised by hand (quickstart
+step 3).
 
 **Organization**: Tasks grouped by user story (US1–US4) for independent
 implementation and testing. Priority order: US1 (P1 🎯 MVP) → US2 (P2) → US3 (P2)
@@ -27,8 +29,8 @@ implementation and testing. Priority order: US1 (P1 🎯 MVP) → US2 (P2) → U
 - New crate: `client/myna-desktop/` (`src/`, `src/bin/`, `tests/`)
 - Reused seams: `client/myna-orchestrator/src/{trigger,sink,fsm,runner}.rs` (unchanged)
 - Reused capture: `client/myna-audio/` (feature 002, unchanged)
-- Env-gated suites: `client/myna-desktop/tests/{ibus_hw.rs,portal_hw.rs,indicator_hw.rs}`
-  (gates: `MYNA_IBUS_TESTS=1`, `MYNA_PORTAL_TESTS=1`, display-present)
+- Env-gated suites: `client/myna-desktop/tests/{ibus_hw.rs,dbus_hw.rs,bus_lost.rs,portal_leak.rs}`
+  (gates: `MYNA_IBUS_TESTS=1`, `MYNA_DBUS_TESTS=1`)
 - Legacy removal: `server/src/myna/desktop/`
 
 ---

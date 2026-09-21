@@ -13,6 +13,8 @@
 //!   stream aborts and discards.
 //! - A fatal fault is exactly one `Err`, then `None` — never an empty stream
 //!   masquerading as a clean end.
+//! - [`AudioSource::health`] reports opening, capturing, a fault or the end
+//!   as they happen, independent of whether the stream is being drained.
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,7 +28,7 @@ use crate::audio::{AudioFormat, PcmChunk};
 /// A capture-side fault. Surfaced as an `Err` stream
 /// item so the dictation service turns it into a terminal session error rather
 /// than a silent stall.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum CaptureError {
     #[error("audio device unavailable: {0}")]
     DeviceUnavailable(String),
@@ -46,6 +48,28 @@ pub enum CaptureError {
 /// (`None`) or a fatal fault (one `Err`, then `None`).
 pub type CaptureStream = Pin<Box<dyn Stream<Item = Result<PcmChunk, CaptureError>> + Send>>;
 
+/// Capture lifecycle as seen without draining PCM. `Faulted` and `Ended` are
+/// terminal; a source never leaves them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CaptureHealth {
+    /// Not yet capturing: the device is being opened, or `capture()` has not
+    /// been called.
+    Opening,
+    /// Audio has arrived from the device.
+    Capturing,
+    /// Capture failed: open error, device fault, stall or overload. The same
+    /// error is the stream's `Err` item once the audio queued before it drains.
+    Faulted(CaptureError),
+    /// Capture ended cleanly (graceful stop, end of input or abort). Queued
+    /// audio may still be draining.
+    Ended,
+}
+
+/// Health transitions of one source: the current state first, then each
+/// change, conflated (only the latest state is kept while nobody polls).
+/// The stream ends once the source has released its device.
+pub type CaptureHealthStream = Pin<Box<dyn Stream<Item = CaptureHealth> + Send>>;
+
 /// A source of push-side PCM. The dictation service
 /// sets the exact [`AudioFormat`] from the STT service's advertised
 /// capabilities; the source produces exactly that and nothing else.
@@ -53,7 +77,12 @@ pub trait AudioSource: Send {
     /// The exact format this source emits.
     fn format(&self) -> AudioFormat;
 
-    /// Begin capture, consuming the source.
+    /// Observe capture health. Call before [`AudioSource::capture`]; each call
+    /// is an independent subscriber and never consumes audio.
+    fn health(&self) -> CaptureHealthStream;
+
+    /// Begin capture, consuming the source. Returns promptly: opening the
+    /// device happens behind the stream, and its outcome shows on `health`.
     fn capture(self: Box<Self>) -> CaptureStream;
 }
 
@@ -62,6 +91,10 @@ pub trait AudioSource: Send {
 impl AudioSource for Box<dyn AudioSource> {
     fn format(&self) -> AudioFormat {
         (**self).format()
+    }
+
+    fn health(&self) -> CaptureHealthStream {
+        (**self).health()
     }
 
     fn capture(self: Box<Self>) -> CaptureStream {
@@ -75,7 +108,7 @@ impl AudioSource for Box<dyn AudioSource> {
 /// path. Dropping the stream instead is the abort path.
 ///
 /// Plain flag by design: backends poll it (promptness contract ~250 ms), which
-/// works from a tokio task, a thread, or a realtime callback alike.
+/// works from a tokio task, a thread, or a loop timer alike.
 #[derive(Clone, Debug, Default)]
 pub struct StopHandle(Arc<AtomicBool>);
 

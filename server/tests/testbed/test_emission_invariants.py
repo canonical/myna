@@ -21,7 +21,9 @@ from myna.core import (
     TranscriptionFinal,
 )
 from myna.core.audio import AudioFormat
-from myna.testbed.streaming.loop import run_streaming_loop
+from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming import loop as loop_module
+from myna.testbed.streaming.loop import PARTIAL_BUDGET, run_streaming_loop
 from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, SilenceCut, Word
 from myna.testbed.streaming.window import RollingWindow
 
@@ -451,6 +453,42 @@ def test_alignment_drop_abstains_instead_of_falling_through_to_short_suffix():
     assert _alignment_drop(tail, new_short) == 3
 
 
+def test_alignment_drop_abstains_when_the_match_ends_inside_a_word():
+    # Parakeet long-form, 2026-09-17: "and" was held back at a cut, so the
+    # re-decode began with new words only. The frontier suffix "es" of
+    # "proteges" matched inside "less" and dropped "and more or".
+    tail = ["one", "of", "his", "proteges"]
+    assert _alignment_drop(tail, ["and", "more", "or", "less", "of", "a", "favorite"]) == 0
+    assert _alignment_drop(["wrinkles", "gather"], ["wrinkles", "gathered", "between"]) == 0
+
+
+def test_alignment_drop_steps_over_punctuation_inside_the_overlap():
+    # SenseVoice tokens are single characters and "。" squashes to nothing:
+    # the drop must not stop at it and re-commit the "去" after it.
+    tail = ["我", "们", "今", "天", "。", "去"]
+    assert _alignment_drop(tail, ["今", "天", "。", "去", "公", "园"]) == 4
+    assert _alignment_drop(["no", "answer"], ["no", "-", "answer", "yes"]) == 3
+
+
+def test_punctuation_does_not_count_toward_the_overlap_bound():
+    assert _alignment_drop(list("abcde"), ["a", "-", "b", "c", "d", "e", "x"]) == 6
+
+
+def test_alignment_drop_keeps_punctuation_after_the_overlap():
+    assert _alignment_drop(["我", "们", "去"], ["们", "去", "。", "公", "园"]) == 2
+
+
+def test_alignment_drop_bounds_unspaced_script_by_characters():
+    # One second of overlap holds several CJK characters, each its own token;
+    # two of them weigh one word against the overlap bound.
+    tail = list("我们明天早上去公园")
+    assert _alignment_drop(tail, list("明天早上去公园散步")) == 7
+    assert _alignment_drop(list("一二三四五六七八九十"), list("一二三四五六七八九十好")) == 10
+    assert _alignment_drop(list("一二三四五六七八九十上"), list("一二三四五六七八九十上好")) == 0
+    assert _alignment_drop(list("abcd我们"), list("abcd我们")) == 6
+    assert _alignment_drop(list("abcde我"), list("abcde我x")) == 0
+
+
 def test_drop_committed_keeps_new_tail_ending_in_frontier_repeat():
     # Full `_drop_committed` path for the watermark regression: nothing may
     # be dropped even though the new tail ends with the committed frontier
@@ -477,33 +515,104 @@ def test_drop_committed_keeps_new_tail_ending_in_frontier_repeat():
 # ---------------------------------------------------------------------------
 
 
-def test_window_bounds_memory_under_cap():
+RATE = 16_000
+
+
+def _indexed_pcm(first: int, n: int) -> bytes:
+    """PCM whose sample value is its absolute index / 4 (int16 holds 5 s)."""
+    return (np.arange(first, first + n) // 4).astype(np.int16).tobytes()
+
+
+def _first_index(window: RollingWindow, **bounds) -> int:
+    return round(float(window.samples(**bounds)[0]) * 32768) * 4
+
+
+def test_window_fill_stops_at_the_cap():
     w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
-    chunk = b"\x00\x00" * 16_000  # 1 s
-    for _ in range(12):
-        w.append(chunk, 1.0)
-    assert w.over_cap
-    w.advance(10.0)
-    assert w.window_seconds == pytest.approx(2.0)
-    assert len(w.samples()) == 2 * 16_000
+    taken = w.fill(_indexed_pcm(0, 6 * RATE))
+    assert taken == 5 * RATE * 2
+    assert w.full and w.retained == 5 * RATE
+    assert w.fill(b"\x00\x00") == 0
+    assert w.end == 5.0 and w.window_seconds == 5.0
 
 
-def test_window_advance_keeps_overlap():
+def test_window_is_not_full_below_the_cap():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    w.fill(_indexed_pcm(0, 5 * RATE - 1))
+    assert not w.full
+
+
+def test_window_refuses_half_samples():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    with pytest.raises(ValueError, match="^PCM must hold whole 16-bit samples$"):
+        w.fill(b"\x00\x00\x00")
+    assert w.received == 0
+
+
+def test_window_retire_keeps_the_overlap():
     w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
-    for _ in range(10):
-        w.append(b"\x00\x00" * 16_000, 1.0)
-    w.advance(8.0)
-    assert w.frontier == pytest.approx(7.0)  # 8.0 cut − 1.0 overlap
-    assert w.window_seconds == pytest.approx(3.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(4 * RATE)
+    assert w.processed_through == 4 * RATE
+    assert w.retained_start == 3 * RATE and w.start == 3.0
+    assert w.window_seconds == 2.0
+    assert len(w.samples()) == 2 * RATE
+    assert _first_index(w) == 3 * RATE
 
 
-def test_window_never_moves_frontier_backwards():
-    w = RollingWindow(window_cap_seconds=30.0, overlap_seconds=0.0)
-    for _ in range(10):
-        w.append(b"\x00\x00" * 16_000, 1.0)
-    w.advance(6.0)
-    w.advance(4.0)  # regression attempt — ignored
-    assert w.frontier == pytest.approx(6.0)
+def test_window_retire_is_monotonic_and_bounded_by_received():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(4 * RATE)
+    w.retire(2 * RATE)
+    assert w.processed_through == 4 * RATE and w.retained_start == 3 * RATE
+    w.retire(9 * RATE)
+    assert w.processed_through == 5 * RATE and w.retained_start == 4 * RATE
+
+
+def test_window_retire_within_the_overlap_drops_nothing():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 2 * RATE))
+    w.retire(RATE // 2)
+    assert w.retained_start == 0 and w.retained == 2 * RATE
+
+
+def test_window_samples_clamp_to_what_is_retained():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=1.0)
+    w.fill(_indexed_pcm(0, 5 * RATE))
+    w.retire(3 * RATE)
+    assert _first_index(w, first=0) == 2 * RATE
+    assert len(w.samples(first=0)) == 3 * RATE
+    assert _first_index(w, first=4 * RATE) == 4 * RATE
+    assert len(w.samples(end=4 * RATE)) == 2 * RATE
+    assert len(w.samples(end=9 * RATE)) == 3 * RATE
+    assert len(w.samples(first=4 * RATE, end=3 * RATE)) == 0
+
+
+@pytest.mark.parametrize(
+    ("cap", "overlap", "message"),
+    [
+        (4.9, 0.0, "^window_cap_seconds must be >= 5$"),
+        (5.0, -0.1, r"^overlap_seconds must be in \[0, window_cap_seconds\)$"),
+        (5.0, 5.0, r"^overlap_seconds must be in \[0, window_cap_seconds\)$"),
+    ],
+)
+def test_window_rejects_unbounded_configurations(cap, overlap, message):
+    with pytest.raises(ValueError, match=message):
+        RollingWindow(window_cap_seconds=cap, overlap_seconds=overlap)
+
+
+def test_window_samples_are_normalised_float32():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    w.fill(np.array([-32768, 16384], dtype=np.int16).tobytes())
+    out = w.samples()
+    assert out.dtype == np.float32
+    assert out.tolist() == [-1.0, 0.5]
+
+
+def test_window_accepts_the_smallest_configuration():
+    w = RollingWindow(window_cap_seconds=5.0, overlap_seconds=0.0)
+    assert w.cap == 5 * RATE and w.overlap == 0
 
 
 # ---------------------------------------------------------------------------
@@ -651,3 +760,116 @@ async def test_chunked_partial_that_decodes_to_nothing_keeps_the_last_text():
             continue
         epoch.append(len(e.text.split()))
         assert epoch == sorted(epoch), f"display shrank on a collapsed tick: {epoch}"
+
+
+# ---------------------------------------------------------------------------
+# The partial budget (PARTIAL_BUDGET): a tick costs what the window costs, so
+# a fixed cadence has no bound on decode work per second of audio.
+# ---------------------------------------------------------------------------
+
+_COST_PER_WINDOW_SECOND = 0.04  # 2.4 s at the 60 s force cut, as parakeet int8 measures
+
+
+async def _growing_window_session(monkeypatch, *, partial_budget, seconds=90.0):
+    """Speech with no pause, so nothing but the force cut bounds the window.
+
+    Decode cost is charged to a fake ``perf_counter`` proportional to the
+    window handed over, which is what makes the budget observable without
+    sleeping: the loop's own telemetry then reports the decode seconds each
+    kind spent per second of audio.
+    """
+    clock = {"t": 0.0}
+    monkeypatch.setattr(loop_module.time, "perf_counter", lambda: clock["t"])
+    inner = scripted_decode()
+
+    def decode(samples, offset):
+        clock["t"] += len(samples) / 16_000 * _COST_PER_WINDOW_SECOND
+        return inner(samples, offset)
+
+    rng = np.random.default_rng(7)
+    pcm = _speech_pcm(rng)
+
+    async def audio():
+        for _ in range(int(seconds / 0.5)):
+            yield PcmChunk(data=pcm(0.5, True), format=FORMAT)
+
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    telemetry = StreamingTelemetry()
+    transcript = await run_streaming_loop(
+        audio(),
+        emit,
+        decode,
+        SilenceCut(),
+        cadence_seconds=1.0,
+        window_cap_seconds=65.0,
+        partial_cadence_seconds=0.5,
+        telemetry=telemetry,
+        partial_budget=partial_budget,
+    )
+    events.append(TranscriptionDone(text=transcript))
+    return events, transcript, telemetry
+
+
+def _partial_seconds_per_audio_second(telemetry):
+    partial = sum(s.wall_seconds for s in telemetry.samples if s.kind == "partial")
+    return partial / telemetry.audio_seconds_ingested
+
+
+@pytest.mark.asyncio
+async def test_a_fixed_partial_cadence_cannot_keep_up_with_its_own_audio(monkeypatch):
+    """The defect, with the budget switched off: the window grows to the force
+    cut, every tick re-decodes all of it, and the loop asks for more decode
+    seconds than the speaker gives it seconds of speech. Nothing downstream
+    can absorb that - the ingress queue fills and committed text lands late."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=0)
+
+    assert _partial_seconds_per_audio_second(telemetry) > 1.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget", [None, 0.25])
+async def test_the_partial_budget_bounds_decode_per_second_of_audio(monkeypatch, budget):
+    """However long the utterance runs and however slow the machine is. The
+    overshoot is one tick's growth: the spacing is set from the last tick's
+    cost, and the window it decodes is a little longer every time."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=budget)
+
+    asked = PARTIAL_BUDGET if budget is None else budget
+    spent = _partial_seconds_per_audio_second(telemetry)
+    assert spent <= asked * 1.2, f"{spent:.2f} s of decode per second of audio"
+
+
+def test_the_shipped_budget_leaves_the_rest_of_the_second_to_commit():
+    assert 0 < PARTIAL_BUDGET <= 0.6
+
+
+@pytest.mark.asyncio
+async def test_the_partial_budget_leaves_committed_text_untouched(monkeypatch):
+    """Backing the display off is display-only: the cut decodes that commit
+    text are neither skipped nor delayed by it."""
+    bounded, transcript_on, _ = await _growing_window_session(monkeypatch, partial_budget=None)
+    unbounded, transcript_off, _ = await _growing_window_session(monkeypatch, partial_budget=0)
+
+    assert transcript_on == transcript_off
+    assert [e.text for e in _committed(bounded)] == [e.text for e in _committed(unbounded)]
+    assert_append_only_and_complete(bounded)
+
+
+@pytest.mark.asyncio
+async def test_a_cut_restores_the_configured_cadence(monkeypatch):
+    """The window the cut retired is what made the ticks expensive, so the
+    estimate the backoff runs on goes with it - otherwise the display would
+    stay slow for seconds after the speaker's pause made it cheap again."""
+    _, _, telemetry = await _growing_window_session(monkeypatch, partial_budget=None)
+
+    kinds = [s.kind for s in telemetry.samples]
+    assert "commit" in kinds, "expected the force cut"
+    after = telemetry.samples[kinds.index("commit") + 1 :]
+    first = next(s for s in after if s.kind == "partial")
+    assert first.window_seconds <= 1.5, (
+        f"the first tick after a cut waited for {first.window_seconds:.1f} s of audio"
+    )

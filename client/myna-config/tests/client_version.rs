@@ -13,7 +13,14 @@ use std::process::Command;
 
 use version::resolve;
 
-const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/snap-version.sh");
+/// The checkout. `MYNA_REPO_ROOT` names it when `client/` runs as a copy of
+/// its own, which is how cargo-mutants builds.
+fn script() -> PathBuf {
+    std::env::var_os("MYNA_REPO_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .join("dev/snap-version.sh")
+}
 
 fn scratch(name: &str) -> PathBuf {
     let dir =
@@ -43,7 +50,7 @@ fn git(repo: &Path, args: &[&str]) -> String {
 fn checkout(name: &str) -> (PathBuf, String) {
     let repo = scratch(name);
     fs::create_dir_all(repo.join("dev")).unwrap();
-    fs::copy(SCRIPT, repo.join("dev/snap-version.sh")).unwrap();
+    fs::copy(script(), repo.join("dev/snap-version.sh")).unwrap();
     fs::write(repo.join("client/Cargo.toml"), "").unwrap();
     git(&repo, &["init", "-q"]);
     git(&repo, &["add", "-A"]);

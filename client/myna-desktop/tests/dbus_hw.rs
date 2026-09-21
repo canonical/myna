@@ -23,13 +23,78 @@ fn dbus_enabled() -> bool {
     std::env::var("MYNA_DBUS_TESTS").as_deref() == Ok("1")
 }
 
-#[test]
-fn gate_skips_cleanly_when_unset() {
-    if dbus_enabled() {
-        eprintln!("MYNA_DBUS_TESTS set: the session-bus round-trip assertions land in T033");
-    } else {
-        eprintln!("skipping dbus_hw: set MYNA_DBUS_TESTS=1 under dbus-run-session");
+/// How the bus this suite talks to is stood up, quoted in every "it is not
+/// there" failure so the reader knows what to start.
+const HOW_TO_RUN: &str = "dev/gated-tests.sh runs the suite under dbus-run-session and only then \
+     sets the gate; run `make test-client-gated`";
+
+/// The bus the gate promises. `MYNA_DBUS_TESTS=1` is a claim that a session
+/// bus is reachable, so an unreachable one fails the case instead of skipping
+/// it: the suite is about owning a name on a real bus, and there is nothing
+/// left of it without one.
+async fn require_session_bus() -> zbus::Connection {
+    zbus::Connection::session().await.unwrap_or_else(|e| {
+        panic!("MYNA_DBUS_TESTS=1 but no session bus answers ({e}). {HOW_TO_RUN}")
+    })
+}
+
+/// Skip when the gate is unset, saying so; fail when it is set and the bus it
+/// promises is not there.
+macro_rules! skip_unless_dbus {
+    () => {
+        if !dbus_enabled() {
+            // cargo attributes this to the case it came from.
+            eprintln!("skipped: set MYNA_DBUS_TESTS=1 (needs a session bus)");
+            return;
+        }
+        let _bus = require_session_bus().await;
+    };
+}
+
+/// The well-known name is process-wide, so one case owns it at a time. A
+/// tokio mutex, not a std one: the guard is held across the case's awaits.
+static NAME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Hold the name for the rest of the case. Not `--test-threads=1`: that only
+/// binds the caller who remembers it, and cargo-mutants runs a bare
+/// `cargo test`, under which the singleton-lock case failed intermittently.
+async fn exclusive() -> tokio::sync::MutexGuard<'static, ()> {
+    NAME.lock().await
+}
+
+/// Wait out the previous case's release. `exclusive()` orders the cases, but
+/// dropping a `ZbusBus` only closes its connection: the bus frees the name a
+/// moment later. Serving into that window used to be a skip, and a case that
+/// skips is a case that asserts nothing.
+async fn name_is_free() {
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let bus = zbus::fdo::DBusProxy::new(&conn).await.expect("bus proxy");
+    let name = zbus::names::BusName::try_from(BUS_NAME).unwrap();
+    for _ in 0..100 {
+        if !bus
+            .name_has_owner(name.clone())
+            .await
+            .expect("NameHasOwner")
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+    panic!("{BUS_NAME} was still owned after 5 s");
+}
+
+/// The gate read both ways: unset, the suite skips and says so; set, the bus
+/// it promises answers.
+#[tokio::test]
+async fn the_bus_the_gate_promises_answers() {
+    skip_unless_dbus!();
+    let conn = require_session_bus().await;
+    zbus::fdo::DBusProxy::new(&conn)
+        .await
+        .expect("bus proxy")
+        .get_id()
+        .await
+        .unwrap_or_else(|e| panic!("the session bus does not answer GetId ({e}). {HOW_TO_RUN}"));
 }
 
 /// The name is the daemon's singleton lock, in both directions.
@@ -44,9 +109,9 @@ fn gate_skips_cleanly_when_unset() {
 /// session bus, and `cargo test` runs test fns concurrently in one process.
 #[tokio::test]
 async fn the_name_is_a_singleton_lock() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    name_is_free().await;
     let _owner = ZbusBus::serve().await.expect("first serve owns the name");
 
     // A second daemon is told who is already there, not quietly started.
@@ -93,24 +158,14 @@ trait DictationMethods {
 /// (P10).
 #[tokio::test]
 async fn served_toggle_method_feeds_the_trigger() {
-    if !dbus_enabled() {
-        return;
-    }
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
 
     let (mut trigger, source) = myna_desktop::shortcut::dbus::DbusTrigger::new();
-    // The well-known name is process-wide: the sibling singleton-lock test may
-    // already own it (cargo runs test fns concurrently). If so, the wire
-    // round-trip here cannot run — skip it rather than fighting over the name;
-    // the trigger's own logic is covered hermetically in tests/dbus_trigger.rs.
-    let owner = match ZbusBus::serve_with_trigger(Some(source)).await {
-        Ok(owner) => owner,
-        Err(ServeError::AlreadyRunning { .. }) => {
-            eprintln!("skipping served_toggle: another test owns the name");
-            return;
-        }
-        Err(other) => panic!("serve_with_trigger failed: {other}"),
-    };
-    let _owner = owner;
+    name_is_free().await;
+    let _owner = ZbusBus::serve_with_trigger(Some(source))
+        .await
+        .expect("serve_with_trigger owns the name");
 
     let conn = zbus::Connection::session().await.expect("session bus");
     let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");
@@ -159,17 +214,10 @@ async fn served_toggle_method_feeds_the_trigger() {
 async fn the_published_shortcut_is_readable_on_the_bus() {
     use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
 
-    if !dbus_enabled() {
-        return;
-    }
-    let mut owner = match ZbusBus::serve().await {
-        Ok(owner) => owner,
-        Err(ServeError::AlreadyRunning { .. }) => {
-            eprintln!("skipping published_shortcut: another test owns the name");
-            return;
-        }
-        Err(other) => panic!("serve failed: {other}"),
-    };
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    name_is_free().await;
+    let mut owner = ZbusBus::serve().await.expect("serve owns the name");
     let conn = zbus::Connection::session().await.expect("session bus");
     let properties = zbus::fdo::PropertiesProxy::builder(&conn)
         .destination(BUS_NAME)

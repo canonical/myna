@@ -47,10 +47,10 @@ Either way the runner reads the result back with ``show-engine`` and stamps
 ``<snap>/<engine>/<model>`` onto every record, and a named engine that will not
 activate fails rather than falling back - a CPU number under a GPU label is
 wrong in the one way nobody checks. The other input is ``--label-suffix``,
-stamped as ``<snap>+<suffix>``: two builds of the same snap (e.g. base vs
-maxstack encoder) are indistinguishable from inside, and the summary dedups by
-label, so without it a rebuild silently shadows the run it was meant to be
-compared against.
+stamped as ``<snap>+<suffix>``: two builds of the same snap (e.g. a local
+rebuild vs the released revision) are indistinguishable from inside, and the
+summary dedups by label, so without it a rebuild silently shadows the run it
+was meant to be compared against.
 
 **A label is a name; the settings are the measurement.** Every record carries
 ``provenance.settings``, the complete assignment its cell served under. Without

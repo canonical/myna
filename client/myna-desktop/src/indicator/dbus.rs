@@ -277,10 +277,8 @@ impl Indicator for DbusIndicator {
         }
     }
 
-    async fn set_audio_drops(&mut self, not_resident: u64, not_active: u64) {
+    async fn set_audio_drops(&mut self, not_active: u64) {
         let mut bus = self.bus.lock().await;
-        bus.set_property("AudioDroppedNotResident", PropertyValue::U64(not_resident))
-            .await;
         bus.set_property("AudioDroppedNotActive", PropertyValue::U64(not_active))
             .await;
     }
@@ -309,15 +307,11 @@ mod tests {
         let service = crate::dbus::DictationService::new(fake.clone());
         let mut indicator = DbusIndicator::new(service.bus(), Readiness::default());
 
-        indicator.set_audio_drops(3, 0).await;
+        indicator.set_audio_drops(3).await;
 
         assert_eq!(
-            fake.property("AudioDroppedNotResident"),
-            Some(PropertyValue::U64(3))
-        );
-        assert_eq!(
             fake.property("AudioDroppedNotActive"),
-            Some(PropertyValue::U64(0))
+            Some(PropertyValue::U64(3))
         );
         assert!(fake.property("State").is_none());
     }

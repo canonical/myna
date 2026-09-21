@@ -34,6 +34,7 @@ survive frontier advancement (the window origin moves as commits land).
 from __future__ import annotations
 
 import difflib
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -55,6 +56,31 @@ SC_ARM_S = 15.0
 SC_SILENCE_CUT_S = 0.5
 SC_FORCE_CUT_S = 60.0
 SC_FRAME_S = 0.03  # VAD analysis frame (~murmure's 33 ms throttle tick)
+_FRAME_LEN = max(1, int(SC_FRAME_S * 16_000))
+
+# A noise floor tracked from the signal alone drifts up into continuous
+# speech. With no real silence to pull it down it converges on the quiet
+# frames *inside* speech, and the silence threshold derived from it lands
+# mid-speech: measured 2026-09-17 over the 261 s no-gaps stress clip, the
+# floor settles at 0.12x the speech level, 63% of frames read "silent" and a
+# false pause cut fires every ~30 s. Speech is the only reference the signal
+# offers, so the floor is capped at a fraction of a peak-held speech level:
+# usable dictation audio sits well above its own noise floor, and capping too
+# hard only costs pause cuts (the force cut still bounds the window, with the
+# overlap that makes it safe) while capping too little deletes words.
+# 0.05 keeps every genuine pause of the 302 s long-form clip and drops its
+# drift-driven ones; 0.03 also loses genuine pauses.
+_SPEECH_FLOOR_RATIO = 0.05
+_SPEECH_DECAY = 0.9995  # per frame: a decade in 138 s, so 'recent' speech
+# A pause cut may retire audio without overlap, which is only safe if no word
+# straddles it. Measured on the same clips: the loudest raw frame in a genuine
+# pause reaches 0.13-0.21x the speech level, a drifted false pause 0.29-0.88x.
+_CUT_QUIET_RATIO = 0.25
+
+# Scripts written without spaces between words (CJK ideographs, kana,
+# fullwidth forms): a decoder that cannot segment words emits one token per
+# character, and region joins add no space beside them.
+UNSPACED_CHARS = "\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef"
 
 
 @dataclass(frozen=True)
@@ -97,7 +123,6 @@ class LocalAgreement:
         last: Hypothesis | None,
         current: Hypothesis,
         window_end: float,
-        force: bool,
     ) -> CommitDecision | None:
         if not current.words:
             return None
@@ -118,14 +143,32 @@ class LocalAgreement:
                         break
                     agreed_count = j1 + k + 1
                     agreed_end = curr_w.end
-        if force and agreed_end < window_end - TAIL_GUARD_S:
-            forced = [w for w in current.words if w.end <= window_end - TAIL_GUARD_S]
-            if forced and (not agreed_count or forced[-1].end > agreed_end):
-                agreed_count = len(forced)
-                agreed_end = forced[-1].end
         if not agreed_count:
             return None
         return CommitDecision(agreed_end, tuple(current.words[:agreed_count]))
+
+    def boundary_commit(
+        self, current: Hypothesis, cut: float, retain_from: float
+    ) -> CommitDecision | None:
+        return boundary_commit(current, cut, retain_from)
+
+
+def boundary_commit(current: Hypothesis, cut: float, retain_from: float) -> CommitDecision | None:
+    """What to commit from a final decode of the window up to a forced
+    ``cut``, where audio before ``retain_from`` is retired. Only words
+    that lie wholly in the retained overlap and end within TAIL_GUARD_S of
+    the cut are held back for the next window; every other word commits
+    now, because its audio does not survive the cut. A decoder that cannot
+    time its words should stamp each with the span of its whole input, so
+    nothing is held back."""
+    count = 0
+    for w in current.words:
+        if w.start >= retain_from and w.end > cut - TAIL_GUARD_S:
+            break
+        count += 1
+    if not count:
+        return None
+    return CommitDecision(current.words[count - 1].end, tuple(current.words[:count]))
 
 
 class _AdaptiveVad:
@@ -133,12 +176,19 @@ class _AdaptiveVad:
     with asymmetric EMAs, a speech threshold at floor*5 (clamped
     [0.004, 0.08]) and a silence threshold at floor*3; per-frame RMS smoothed
     with EMA alpha 0.3. `update` returns "not-started" until speech has been
-    seen once, then "active"/"silent"."""
+    seen once, then "active"/"silent".
+
+    Modified: once speech has been heard the floor is capped at
+    [`_SPEECH_FLOOR_RATIO`] of ``speech_level``, a peak-held envelope of the
+    smoothed signal, so it cannot drift up into continuous speech. Before the
+    first speech frame the signal *is* the ambient, and the murmure tracker
+    runs unmodified."""
 
     def __init__(self) -> None:
         self._floor = 0.003
         self._smoothed = 0.0
         self._started = False
+        self.speech_level = 0.0
 
     def update(self, rms: float) -> str:
         if rms < self._floor:
@@ -153,8 +203,25 @@ class _AdaptiveVad:
             self._started = True
         if not self._started:
             return "not-started"
+        self.speech_level = max(self._smoothed, self.speech_level * _SPEECH_DECAY)
+        self._floor = min(self._floor, self.speech_level * _SPEECH_FLOOR_RATIO)
         silence_threshold = min(max(self._floor * 3.0, 0.004 * 0.6), 0.08 * 0.6)
         return "silent" if self._smoothed < silence_threshold else "active"
+
+
+@dataclass(frozen=True)
+class Cut:
+    """A cut the chunking policy decided on.
+
+    ``at`` is absolute audio seconds and always an exact sample position.
+    ``forced`` says the window reached its force length rather than pausing.
+    ``silent`` says the audio at the cut was verified quiet against the
+    tracked speech level - only then can the region retire without overlap,
+    because only then can no word straddle the cut."""
+
+    at: float
+    forced: bool
+    silent: bool
 
 
 class SilenceCut:
@@ -183,46 +250,85 @@ class SilenceCut:
         self._force_cut = force_cut_seconds
         self._vad = _AdaptiveVad()
         self._silence_run = 0.0
-        self._scanned = 0.0  # absolute seconds; audio before this was VAD-fed
+        self._run_peak = 0.0  # loudest raw frame of the current silence run
+        self._heard_since_cut = False
+        self._scanned = 0  # absolute samples; audio before this was VAD-fed
+
+    @property
+    def force_cut_seconds(self) -> float:
+        return self._force_cut
+
+    @property
+    def heard_since_cut(self) -> bool:
+        """Whether the VAD judged any frame since the last cut active."""
+        return self._heard_since_cut
+
+    def mark_cut(self, at: float) -> None:
+        """The window was cut at ``at``: restart the silence run there."""
+        self._silence_run = 0.0
+        self._run_peak = 0.0
+        self._heard_since_cut = False
+        self._scanned = round(at * 16_000)
+
+    def unscanned_offset(self, window_start: float) -> int:
+        """Samples into the window where the next `observe` starts reading.
+
+        Frames tile forward from the scan position in exact samples, so each
+        sample is fed to the VAD exactly once. Float seconds in, integer
+        samples out: a window position is a whole sample by construction."""
+        start = round(window_start * 16_000)
+        return max(self._scanned, start) - start
 
     def observe(
-        self, samples: NDArray[np.float32], window_start: float, window_end: float
-    ) -> float | None:
-        """Return an absolute cut time if the window should be committed now."""
-        duration = window_end - window_start
-        if duration >= self._force_cut:
-            self._silence_run = 0.0
-            self._scanned = window_end
-            return window_end  # loop decodes [frontier, cut) once
-        # Feed only the new audio (in SC_FRAME_S frames, murmur-tick parity).
-        # Frame phase is anchored at the window origin; a frame counts once its
-        # end passes the previously scanned position.
-        scan_from = max(self._scanned, window_start)
-        frame_len = max(1, int(SC_FRAME_S * 16_000))
-        off = int((scan_from - window_start) * 16_000) // frame_len * frame_len
-        while off + frame_len <= len(samples):
-            frame_end = window_start + (off + frame_len) / 16_000
-            frame = samples[off : off + frame_len]
-            rms = float(np.sqrt(np.mean(frame * frame)))
+        self,
+        samples: NDArray[np.float32],
+        window_start: float,
+        window_end: float,
+        *,
+        offset: int = 0,
+    ) -> Cut | None:
+        """Return a `Cut` if the window should be committed now.
+
+        ``samples`` are the window from ``offset`` samples in, which must not
+        exceed `unscanned_offset`: only audio not yet scanned is read."""
+        start = round(window_start * 16_000)
+        end = round(window_end * 16_000)
+        if end - start >= round(self._force_cut * 16_000):
+            self.mark_cut(window_end)
+            return Cut(window_end, forced=True, silent=False)  # decode [frontier, cut) once
+        # Feed only the new audio (in SC_FRAME_S frames, murmure-tick parity).
+        off = self.unscanned_offset(window_start)
+        if offset > off:
+            raise ValueError("observe needs the samples from unscanned_offset() onwards")
+        frame_len = _FRAME_LEN
+        while off + frame_len <= offset + len(samples):
+            frame = samples[off - offset : off - offset + frame_len]
+            rms = math.sqrt(float(np.mean(frame * frame)))
             activity = self._vad.update(rms)
+            off += frame_len
+            self._scanned = start + off
+            if activity == "active":
+                self._heard_since_cut = True
             # Arm per frame (murmure arms when the buffer *reaches* SC_ARM_S):
             # only frames ending past the arm point accumulate silence.
-            if frame_end > scan_from and frame_end - window_start >= self._arm:
-                if activity == "silent":
-                    self._silence_run += SC_FRAME_S
-                    if self._silence_run >= self._silence_cut:
-                        # murmure cuts the tick the run crosses — at this
-                        # frame, not the next call boundary: a pause that ends
-                        # mid-call would otherwise go active and reset the run
-                        # before the check ever saw it (missed 1.1 s pause on
-                        # stream-2277-02, 2026-07-29). The cut covers audio up
-                        # to this frame — the trailing silence rides in, so no
-                        # word straddles.
-                        self._silence_run = 0.0
-                        self._scanned = frame_end
-                        return frame_end
-                elif activity == "active":
-                    self._silence_run = 0.0
-            off += frame_len
-        self._scanned = window_end
+            if off < round(self._arm * 16_000):  # off is the frame end in the window
+                continue
+            if activity == "silent":
+                self._silence_run += SC_FRAME_S
+                self._run_peak = max(self._run_peak, rms)
+                if self._silence_run >= self._silence_cut:
+                    # murmure cuts the tick the run crosses — at this
+                    # frame, not the next call boundary: a pause that ends
+                    # mid-call would otherwise go active and reset the run
+                    # before the check ever saw it (missed 1.1 s pause on
+                    # stream-2277-02, 2026-07-29). The cut covers audio up
+                    # to this frame — the trailing silence rides in, so no
+                    # word straddles.
+                    quiet = self._run_peak <= self._vad.speech_level * _CUT_QUIET_RATIO
+                    at = (start + off) / 16_000
+                    self.mark_cut(at)
+                    return Cut(at, forced=False, silent=quiet)
+            elif activity == "active":
+                self._silence_run = 0.0
+                self._run_peak = 0.0
         return None

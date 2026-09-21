@@ -51,6 +51,7 @@ prepare: |
     useradd --create-home --shell /bin/bash "$USER_NAME"
     # The frontend alone: without xdg-desktop-portal-gnome nothing implements
     # GlobalShortcuts, so the portal does not export it - Noble's situation.
+    apt-get update
     apt-get install -y --no-install-recommends xdg-desktop-portal
 
 execute: |

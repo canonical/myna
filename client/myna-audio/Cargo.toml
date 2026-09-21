@@ -12,6 +12,8 @@ bytes.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
 pipewire.workspace = true
+# Lock-free SPSC ring between the realtime process callback and the loop thread.
+rtrb = "0.4"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -17,7 +17,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
 use tokio::sync::Notify;
 
 use myna_core::{
@@ -25,7 +24,8 @@ use myna_core::{
     PHASE_READY, PHASE_TRANSCRIBING, PROTOCOL_VERSION,
 };
 
-use super::{BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink, Outbound};
+use super::{channels, BackendClient, BackendError, BackendHandle, EventSender, Outbound, Outbox};
+use crate::task::TaskGuard;
 
 const EVENT_CAPACITY: usize = 64;
 const OUTBOUND_CAPACITY: usize = 16;
@@ -96,48 +96,44 @@ impl FakeBackend {
 #[async_trait::async_trait]
 impl BackendClient for FakeBackend {
     async fn open_session(&self, _config: SessionConfig) -> Result<BackendHandle, BackendError> {
-        let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-        let (ev_tx, ev_rx) =
-            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
-        tokio::spawn(pump(self.script.clone(), out_rx, ev_tx));
-        Ok(BackendHandle {
-            sink: BackendSink { tx: out_tx },
-            events: BackendEvents { rx: ev_rx },
-            protocol_version: Some(PROTOCOL_VERSION.to_string()),
-        })
+        let (sink, outbox, events, ev_tx) = channels(OUTBOUND_CAPACITY, EVENT_CAPACITY);
+        let task = TaskGuard::spawn(pump(self.script.clone(), outbox, ev_tx));
+        Ok(BackendHandle::new(
+            sink,
+            events.owning(task),
+            Some(PROTOCOL_VERSION.to_string()),
+        ))
     }
 }
 
 /// Drives one fake session: a background drain reads outbound audio/control
 /// (signalling on `session.finish`/abort), while the foreground plays the
 /// script into the event channel.
-async fn pump(
-    script: Vec<FakeStep>,
-    mut out_rx: mpsc::Receiver<Outbound>,
-    ev_tx: mpsc::Sender<Result<TranscriptionEvent, BackendError>>,
-) {
+async fn pump(script: Vec<FakeStep>, mut outbox: Outbox, ev_tx: EventSender) {
     let finished = Arc::new(Notify::new());
     let aborted = Arc::new(AtomicBool::new(false));
 
     let drain_finished = finished.clone();
     let drain_aborted = aborted.clone();
-    let drain = tokio::spawn(async move {
-        while let Some(outbound) = out_rx.recv().await {
-            match outbound {
-                Outbound::Audio(_) => {} // fixture ignores audio content
-                Outbound::Finish => {
-                    // `notify_one` stores a permit, so a `notified()` that runs
-                    // *later* still wakes — no lost-wakeup race with WaitForFinish.
-                    drain_finished.notify_one();
-                }
-                Outbound::Abort => {
+    let drain = TaskGuard::spawn(async move {
+        loop {
+            tokio::select! {
+                biased;
+                () = outbox.abort.aborted() => {
                     drain_aborted.store(true, Ordering::SeqCst);
-                    drain_finished.notify_one();
                     break;
                 }
+                outbound = outbox.queue.recv() => match outbound {
+                    Some(Outbound::Audio(_)) => {} // fixture ignores audio content
+                    // `notify_one` stores a permit, so a `notified()` that runs
+                    // *later* still wakes — no lost-wakeup race with WaitForFinish.
+                    Some(Outbound::Finish) => drain_finished.notify_one(),
+                    None => break,
+                },
             }
         }
-        // Sink dropped (FSM done) — release any pending WaitForFinish.
+        // Aborted, or the sink dropped (FSM done) — release any pending
+        // WaitForFinish.
         drain_finished.notify_one();
     });
 
@@ -163,7 +159,7 @@ async fn pump(
     // Dropping `ev_tx` closes the event stream; if the script didn't end in a
     // terminal event, the driver observes the close and fails the session.
     drop(ev_tx);
-    let _ = drain.await;
+    drain.cancel().await;
 }
 
 // --- event constructors (kept here so the scripts read declaratively) --------
@@ -263,21 +259,20 @@ mod tests {
             &self,
             _config: SessionConfig,
         ) -> Result<BackendHandle, BackendError> {
-            let (out_tx, mut out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-            let (ev_tx, ev_rx) = mpsc::channel(EVENT_CAPACITY);
+            let (sink, mut outbox, events, ev_tx) = channels(OUTBOUND_CAPACITY, EVENT_CAPACITY);
             let flag = self.audio_before_ready.clone();
             tokio::spawn(async move {
                 let ready_emitted = Arc::new(AtomicBool::new(false));
                 let drain_ready = ready_emitted.clone();
                 let drain = tokio::spawn(async move {
-                    while let Some(o) = out_rx.recv().await {
+                    while let Some(o) = outbox.queue.recv().await {
                         match o {
                             Outbound::Audio(_) => {
                                 if !drain_ready.load(Ordering::SeqCst) {
                                     flag.store(true, Ordering::SeqCst);
                                 }
                             }
-                            Outbound::Finish | Outbound::Abort => break,
+                            Outbound::Finish => break,
                         }
                     }
                 });
@@ -290,11 +285,11 @@ mod tests {
                 let _ = ev_tx.send(Ok(final_seg("ok"))).await;
                 let _ = ev_tx.send(Ok(done("ok"))).await;
             });
-            Ok(BackendHandle {
-                sink: BackendSink { tx: out_tx },
-                events: BackendEvents { rx: ev_rx },
-                protocol_version: Some(PROTOCOL_VERSION.to_string()),
-            })
+            Ok(BackendHandle::new(
+                sink,
+                events,
+                Some(PROTOCOL_VERSION.to_string()),
+            ))
         }
     }
 
@@ -342,30 +337,29 @@ mod tests {
             _config: SessionConfig,
         ) -> Result<BackendHandle, BackendError> {
             use std::sync::atomic::Ordering;
-            let (out_tx, mut out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-            let (ev_tx, ev_rx) = mpsc::channel(EVENT_CAPACITY);
+            let (sink, mut outbox, events, ev_tx) = channels(OUTBOUND_CAPACITY, EVENT_CAPACITY);
             let received = self.received.clone();
             tokio::spawn(async move {
                 let _ = ev_tx.send(Ok(loading())).await;
                 // The model "loads" for a beat while the client keeps capturing.
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 let _ = ev_tx.send(Ok(ready())).await;
-                while let Some(o) = out_rx.recv().await {
+                while let Some(o) = outbox.queue.recv().await {
                     match o {
                         Outbound::Audio(chunk) => {
                             received.fetch_add(chunk.data.len(), Ordering::SeqCst);
                         }
-                        Outbound::Finish | Outbound::Abort => break,
+                        Outbound::Finish => break,
                     }
                 }
                 let _ = ev_tx.send(Ok(final_seg("ok"))).await;
                 let _ = ev_tx.send(Ok(done("ok"))).await;
             });
-            Ok(BackendHandle {
-                sink: BackendSink { tx: out_tx },
-                events: BackendEvents { rx: ev_rx },
-                protocol_version: Some(PROTOCOL_VERSION.to_string()),
-            })
+            Ok(BackendHandle::new(
+                sink,
+                events,
+                Some(PROTOCOL_VERSION.to_string()),
+            ))
         }
     }
 

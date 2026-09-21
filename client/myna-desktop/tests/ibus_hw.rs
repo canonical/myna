@@ -11,16 +11,21 @@
 //! ```sh
 //! make test-client-gated
 //! # or scoped, from client/ inside the workshop:
-//! ../dev/gated-tests.sh cargo test -p myna-desktop --test ibus_hw -- --test-threads=1
+//! ../dev/gated-tests.sh cargo test -p myna-desktop --test ibus_hw
 //! ```
 //!
-//! Cases share one daemon and must run serially. Every field is closed with its
+//! Cases share one daemon and one global input engine, so they take
+//! `exclusive()` rather than relying on the caller passing `--test-threads=1`:
+//! cargo-mutants runs a bare `cargo test`, and under it the suite went from
+//! green to ten failures out of eleven. Every field is closed with its
 //! content type reset first: when a focused context loses focus the daemon
 //! copies its purpose and hints onto its fake context, which would otherwise
 //! carry a PASSWORD into the next case.
 //!
 //! It skips cleanly when the gate is unset, so the suite compiles and runs as a
-//! no-op offline.
+//! no-op offline. With the gate set and no daemon answering it FAILS: the gate
+//! is a claim that the service is there, and a case that runs against no
+//! daemon asserts nothing while reporting green.
 
 use std::time::Duration;
 
@@ -61,6 +66,64 @@ const HINT_HIDDEN_TEXT: u32 = 1 << 12;
 /// True when the IBus integration suite is enabled. Unset gate → skip.
 fn ibus_enabled() -> bool {
     std::env::var("MYNA_IBUS_TESTS").as_deref() == Ok("1")
+}
+
+/// How the daemon this suite talks to is stood up, quoted in every "it is not
+/// there" failure so the reader knows what to start.
+const HOW_TO_RUN: &str = "dev/gated-tests.sh starts a private ibus-daemon on its own IBUS_ADDRESS \
+     and only then sets the gate; run `make test-client-gated`";
+
+/// The daemon the gate promises. `MYNA_IBUS_TESTS=1` is a claim that an IBus
+/// daemon is serving on `IBUS_ADDRESS`; if none is, the cases below must fail
+/// rather than skip — several of them are written to tolerate a field that
+/// stays quiet, so an absent daemon would report green having asserted
+/// nothing. One round trip, and it is the one a client really makes.
+async fn require_ibus() {
+    let address = std::env::var("IBUS_ADDRESS")
+        .unwrap_or_else(|_| panic!("MYNA_IBUS_TESTS=1 but IBUS_ADDRESS is unset. {HOW_TO_RUN}"));
+    let conn = zbus::conn::Builder::address(address.as_str())
+        .unwrap_or_else(|e| panic!("IBUS_ADDRESS is not an address: {address} ({e})"))
+        .build()
+        .await
+        .unwrap_or_else(|e| {
+            panic!("MYNA_IBUS_TESTS=1 but no IBus daemon answers on {address} ({e}). {HOW_TO_RUN}")
+        });
+    // The call every client starts with, and the one `Field` makes. Not a
+    // property read: a serving daemon answers `GlobalEngine` with an error
+    // until something sets one. The context dies with this connection.
+    conn.call_method(
+        Some(IBUS_SERVICE),
+        IBUS_PATH,
+        Some(IBUS_SERVICE),
+        "CreateInputContext",
+        &("myna-ibus-hw-probe",),
+    )
+    .await
+    .unwrap_or_else(|e| {
+        panic!("the IBus daemon on {address} is connected but not serving ({e}). {HOW_TO_RUN}")
+    });
+}
+
+/// Skip when the gate is unset, saying so; fail when it is set and the daemon
+/// it promises is not there.
+macro_rules! skip_unless_ibus {
+    () => {
+        if !ibus_enabled() {
+            // cargo attributes this to the case it came from.
+            eprintln!("skipped: set MYNA_IBUS_TESTS=1 (needs a running IBus daemon)");
+            return;
+        }
+        require_ibus().await;
+    };
+}
+
+/// One case at a time, whatever the harness does with threads. A tokio mutex,
+/// not a std one: the guard is held across the case's awaits.
+static DAEMON: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Hold the daemon for the rest of the case.
+async fn exclusive() -> tokio::sync::MutexGuard<'static, ()> {
+    DAEMON.lock().await
 }
 
 /// What the daemon delivered to a field.
@@ -320,23 +383,21 @@ async fn commit_until(
     false
 }
 
-#[test]
-fn gate_skips_cleanly_when_unset() {
-    if ibus_enabled() {
-        eprintln!(
-            "MYNA_IBUS_TESTS set: see ordinary_field_receives_preedit_and_commit for the real assertions"
-        );
-    } else {
-        eprintln!("skipping ibus_hw: set MYNA_IBUS_TESTS=1 with a running IBus daemon");
-    }
+/// The gate read both ways: unset, the suite skips and says so; set, the
+/// daemon it promises answers the connection every other case makes.
+#[tokio::test]
+async fn the_daemon_the_gate_promises_is_serving() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    IbusInjector::connect().await.unwrap_or_else(|e| {
+        panic!("MYNA_IBUS_TESTS=1 but IbusInjector cannot connect ({e}). {HOW_TO_RUN}")
+    });
 }
 
 #[tokio::test]
 async fn ordinary_field_receives_preedit_and_commit() {
-    if !ibus_enabled() {
-        eprintln!("skipping ordinary_field_receives_preedit_and_commit: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire an ordinary field");
 
@@ -360,10 +421,8 @@ async fn ordinary_field_receives_preedit_and_commit() {
 
 #[tokio::test]
 async fn focus_leaving_the_field_ends_the_session() {
-    if !ibus_enabled() {
-        eprintln!("skipping focus_leaving_the_field_ends_the_session: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (field, mut injector) = session(0, 0).await;
     let target = injector.acquire().await.expect("acquire an ordinary field");
     let mut events = target.focus_events();
@@ -386,12 +445,8 @@ async fn focus_leaving_the_field_ends_the_session() {
 /// up handing it back.
 #[tokio::test]
 async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
-    if !ibus_enabled() {
-        eprintln!(
-            "skipping releasing_a_superseded_target_leaves_the_live_engine_alone: MYNA_IBUS_TESTS unset"
-        );
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let superseded = injector.acquire().await.expect("acquire the field");
     let mut live = injector
@@ -422,12 +477,8 @@ async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
 /// nothing ahead of the next utterance's text.
 #[tokio::test]
 async fn release_clears_a_live_preedit_and_sends_nothing_without_one() {
-    if !ibus_enabled() {
-        eprintln!(
-            "skipping release_clears_a_live_preedit_and_sends_nothing_without_one: MYNA_IBUS_TESTS unset"
-        );
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire the field");
     target.set_preedit("unstable").await;
@@ -455,10 +506,8 @@ async fn release_clears_a_live_preedit_and_sends_nothing_without_one() {
 
 #[tokio::test]
 async fn text_never_follows_focus_into_another_field() {
-    if !ibus_enabled() {
-        eprintln!("skipping text_never_follows_focus_into_another_field: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (first, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire the first field");
 
@@ -483,10 +532,8 @@ async fn text_never_follows_focus_into_another_field() {
 
 #[tokio::test]
 async fn focus_lost_while_acquiring_is_not_missed() {
-    if !ibus_enabled() {
-        eprintln!("skipping focus_lost_while_acquiring_is_not_missed: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut first, injector) = session(0, 0).await;
     first.watch_global_engine().await;
     let acquiring = tokio::spawn(async move {
@@ -553,10 +600,8 @@ async fn sentinel_via_fresh_acquire(
 
 #[tokio::test]
 async fn password_field_is_refused_at_acquire() {
-    if !ibus_enabled() {
-        eprintln!("skipping password_field_is_refused_at_acquire: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(PURPOSE_PASSWORD, 0).await;
     assert_acquire_refused(&mut injector).await;
 
@@ -573,10 +618,8 @@ async fn password_field_is_refused_at_acquire() {
 
 #[tokio::test]
 async fn field_turning_secure_mid_session_gets_no_text() {
-    if !ibus_enabled() {
-        eprintln!("skipping field_turning_secure_mid_session_gets_no_text: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire an ordinary field");
     target.commit("hello").await.expect("commit hello");
@@ -608,10 +651,8 @@ async fn field_turning_secure_mid_session_gets_no_text() {
 
 #[tokio::test]
 async fn pin_field_marked_hidden_text_is_refused() {
-    if !ibus_enabled() {
-        eprintln!("skipping pin_field_marked_hidden_text_is_refused: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     // GNOME Shell forwards a Wayland PIN as purpose 0 with PRIVATE|HIDDEN_TEXT.
     let (field, mut injector) = session(0, HINT_PRIVATE | HINT_HIDDEN_TEXT).await;
     assert_acquire_refused(&mut injector).await;
@@ -621,10 +662,8 @@ async fn pin_field_marked_hidden_text_is_refused() {
 
 #[tokio::test]
 async fn private_field_is_not_refused() {
-    if !ibus_enabled() {
-        eprintln!("skipping private_field_is_not_refused: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, HINT_PRIVATE).await;
     let mut target = injector.acquire().await.expect("acquire a private field");
     target.commit("hello").await.expect("commit hello");
@@ -652,10 +691,8 @@ async fn private_field_is_not_refused() {
 #[tokio::test]
 #[ignore = "manual: needs a person watching a focused field"]
 async fn ibus_preedit_visual_probe() {
-    if !ibus_enabled() {
-        eprintln!("skipping ibus_preedit_visual_probe: MYNA_IBUS_TESTS unset");
-        return;
-    }
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
     eprintln!("preedit probe: click into an editable text field — acquiring in 5 s…");
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     let mut injector = IbusInjector::connect()

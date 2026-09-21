@@ -23,9 +23,20 @@ configurations:
   # earlier chunks; the 15/0.5/60 defaults are murmure's proven constants.
   stream-arm-seconds: 15
   stream-silence-cut-seconds: 0.5
+  # modelctl does not validate these values at set time (no schema for
+  # numeric bounds); an out-of-range one is rejected by myna-server at start
+  # instead, which crash-loops the daemon - check `snap logs myna-parakeet`
+  # or `journalctl -u snap.myna-parakeet.server`. stream-force-cut-seconds
+  # must exceed the 1 s overlap plus a 0.3 s minimum decode, i.e. > 1.3.
   stream-force-cut-seconds: 60
   # Unstable partials between commits — display only, committed text is
   # unaffected. Cadence 0 shows nothing until the first cut; tail 0 decodes the
   # whole uncommitted window, and capping it shows only that many seconds.
-  stream-partial-cadence-seconds: 0.5
+  # A tick costs what the uncommitted window costs, so the cadence is what the
+  # display costs: 2.0 measured 19-31% encoder duty where 0.5 measured 56-83%
+  # and could not hold real time on pause-free speech (efcfd14f, perf T04).
+  # The server bounds the damage a low cadence can do either way - it spaces
+  # ticks out when one gets expensive (streaming/loop.py PARTIAL_BUDGET) - so
+  # 0.5 is a supported setting for a fast machine, at roughly twice the CPU.
+  stream-partial-cadence-seconds: 2.0
   stream-partial-tail-seconds: 0

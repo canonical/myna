@@ -65,10 +65,6 @@ dev = [
     "mypy>=1.13",
     "vulture>=2.14",
     "pip-audit>=2.7",
-    # dev/requantize_encoder.py (perf T06): onnxruntime.quantization needs the
-    # onnx package to load/rewrite the graph. Pinned here directly so a
-    # parakeet-only sync has it. Dev-only -- never imported at runtime.
-    "onnx>=1.19",
     "mutmut>=3.8.0",
     # The OpenAI Realtime API conformance oracle (tests/test_openai_realtime_
     # conformance.py): the SDK's pydantic models are generated from OpenAI's
@@ -97,12 +93,16 @@ pytest_add_cli_args_test_selection = ["tests"]
 # the repository root) find nothing. None of them tests src/ logic. The
 # populations test imports its dev/ script at module level, so a marker is
 # too late for it (deselection happens after collection): ignore the file.
-# The GJS coverage test imports dev/gjs_coverage.py the same way.
+# The GJS coverage test imports dev/gjs_coverage.py the same way. The snap
+# packaging test scans the *-snap directories to build its parametrize lists
+# (MULTI_ENGINE_SNAPS, ALL_SNAPS) at module level, which fails the same way:
+# ignore it too.
 pytest_add_cli_args = [
     "-m",
     "not repo_tree",
     "--ignore=tests/test_coverage_populations.py",
     "--ignore=tests/test_gjs_coverage.py",
+    "--ignore=tests/test_snap_packaging.py",
 ]
 
 [tool.pytest.ini_options]

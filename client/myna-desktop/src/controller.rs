@@ -139,11 +139,20 @@ fn advance(state: &mut DictationState, to: DictationState) {
 ///
 /// `delivery` is what became of this utterance's text (see [`Delivery`]): it
 /// chooses the message [`completion_indicator_state`] shows.
+///
+/// `capture_fault` is the device failure this utterance was salvaged from, if
+/// any (an [`OrchestratorEvent::CaptureLost`] arrived): its `Done` carries the
+/// transcript of the audio captured before the fault, but the utterance still
+/// ended with a dead microphone, so the completion notice is that failure
+/// rather than the clean end `completion_indicator_state` would report. The
+/// terminal `Error` and the `Failed` outcome publish the same message after it,
+/// which the D-Bus indicator dedups (C2).
 pub fn event_to_indicator(
     event: &OrchestratorEvent,
     state: DictationState,
     delivery: Delivery,
     quality: InputQuality,
+    capture_fault: Option<&str>,
 ) -> Option<IndicatorState> {
     let still_listening = matches!(
         state,
@@ -157,12 +166,16 @@ pub fn event_to_indicator(
             // Finalizing (or any later state) with Recording.
             still_listening.then_some(IndicatorState::Recording)
         }
-        OrchestratorEvent::Done(text) => Some(completion_indicator_state(text, delivery, quality)),
+        OrchestratorEvent::Done(text) => Some(match capture_fault {
+            Some(message) => IndicatorState::critical(message.to_string()),
+            None => completion_indicator_state(text, delivery, quality),
+        }),
         OrchestratorEvent::Error { message, .. } => Some(IndicatorState::critical(message.clone())),
         OrchestratorEvent::Snippet(_)
         | OrchestratorEvent::Final(_)
         | OrchestratorEvent::Unstable(_)
-        | OrchestratorEvent::AudioDropped(_) => None,
+        | OrchestratorEvent::CaptureLost { .. }
+        | OrchestratorEvent::AudioDropped => None,
     }
 }
 
@@ -442,23 +455,13 @@ pub struct DesktopController {
     auto_stop: Live<AutoStop>,
 }
 
-/// This session's accept-gate drop counts, published as they happen.
+/// This session's accept-gate drop count, published as it changes.
 ///
 /// Cumulative per session, so a reader that samples late still sees the whole
 /// utterance's total rather than whatever happened since it last looked.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AudioDrops {
-    pub not_resident: u64,
     pub not_active: u64,
-}
-
-impl AudioDrops {
-    fn record(&mut self, reason: myna_orchestrator::DropReason) {
-        match reason {
-            myna_orchestrator::DropReason::NotResident => self.not_resident += 1,
-            myna_orchestrator::DropReason::NotActive => self.not_active += 1,
-        }
-    }
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
@@ -613,15 +616,9 @@ impl DesktopController {
         // Why this utterance stopped writing, once something has (see
         // [`Ending`]).
         let mut ending = Ending::None;
-        // Per session: a cold-start burst of pre-ready drops is normal, and a
-        // count carried over from the last utterance would read as this one's.
-        let mut drops = AudioDrops::default();
-        // Committed text not yet inserted. Consecutive `Final`s (a
-        // commit-on-finalize adapter emits them in one burst) are coalesced
-        // here and inserted as ONE `CommitText`: rapid successive IBus commits
-        // race and only the last lands, so we join the burst. Spaced streaming
-        // finals still flush individually (see `route_event`).
-        let mut buffer = CommitBuffer::default();
+        // Per utterance: text, drops and a capture fault carried over from the
+        // last one would read as this one's (see [`Utterance`]).
+        let mut utterance = Utterance::default();
         // The session's result, once it has one. Its queued events are drained
         // by this same loop afterwards, so the focus arm still guards every
         // write; the trigger and stats arms shut off instead, because an edge
@@ -732,8 +729,7 @@ impl DesktopController {
                                 preedit: preedit.get() && supports_preedit,
                                 quality: quality_of(&stats),
                             },
-                            &mut buffer,
-                            &mut drops,
+                            &mut utterance,
                         )
                         .await;
                     }
@@ -751,7 +747,10 @@ impl DesktopController {
         // the only signal that the text never landed. A flush the ending
         // disallows inserts nothing and records the drop.
         if matches!(outcome, Ok(SessionOutcome::Completed { .. })) {
-            ending = ending.or(buffer.flush(target.as_mut(), ending.writes_allowed()).await);
+            ending = ending.or(utterance
+                .buffer
+                .flush(target.as_mut(), ending.writes_allowed())
+                .await);
         }
         // One owner, one release: every terminal path gives the target up
         // here, exactly once, before the outcome is reported.
@@ -776,7 +775,7 @@ impl DesktopController {
                     self.indicator
                         .set_state(completion_indicator_state(
                             &transcript,
-                            ending.delivery(buffer.dropped()),
+                            ending.delivery(utterance.buffer.dropped()),
                             quality_of(&stats),
                         ))
                         .await;
@@ -918,9 +917,13 @@ async fn route_event(
     indicator: &mut dyn Indicator,
     state: &mut DictationState,
     flags: RouteFlags,
-    buffer: &mut CommitBuffer,
-    drops: &mut AudioDrops,
+    utterance: &mut Utterance,
 ) -> Ending {
+    let Utterance {
+        buffer,
+        drops,
+        fault,
+    } = utterance;
     let RouteFlags {
         mut ending,
         preedit,
@@ -937,16 +940,32 @@ async fn route_event(
             advance(state, DictationState::Transcribing);
         }
     }
-    if let Some(indicator_state) =
-        event_to_indicator(&event, *state, ending.delivery(buffer.dropped()), quality)
-    {
+    if let OrchestratorEvent::CaptureLost { message } = &event {
+        // Capture is over, however badly. The utterance is not: it is being
+        // finished with the audio captured before the fault, so the indicator
+        // shows finishing rather than listening, and the failure is held for
+        // the terminal, which reports it once that transcript is in.
+        myna_core::info_log!(
+            "ctrl",
+            "capture lost, finishing with what it has: {message}"
+        );
+        if fault.is_none() {
+            *fault = Some(message.clone());
+        }
+        enter_finalizing(state, indicator).await;
+    }
+    if let Some(indicator_state) = event_to_indicator(
+        &event,
+        *state,
+        ending.delivery(buffer.dropped()),
+        quality,
+        fault.as_deref(),
+    ) {
         indicator.set_state(indicator_state).await;
     }
-    if let OrchestratorEvent::AudioDropped(reason) = &event {
-        drops.record(*reason);
-        indicator
-            .set_audio_drops(drops.not_resident, drops.not_active)
-            .await;
+    if matches!(event, OrchestratorEvent::AudioDropped) {
+        drops.not_active += 1;
+        indicator.set_audio_drops(drops.not_active).await;
     }
     if let OrchestratorEvent::Final(text) = &event {
         // Commit-only: stable committed text is buffered; unstable `Snippet`
@@ -987,6 +1006,22 @@ struct RouteFlags {
     preedit: bool,
     /// The capture's verdict on the input so far, for the `Done` notice.
     quality: InputQuality,
+}
+
+/// What one utterance accumulates as its events arrive, and what the terminal
+/// disposition is then drawn from. Per utterance by construction: anything
+/// carried over from the last one would read as this one's.
+#[derive(Default)]
+struct Utterance {
+    /// Committed text not yet inserted (see [`CommitBuffer`]).
+    buffer: CommitBuffer,
+    /// Chunks the accept-gate dropped.
+    drops: AudioDrops,
+    /// The device failure this utterance is being salvaged from, once one has
+    /// been reported (see [`OrchestratorEvent::CaptureLost`]): capture ended
+    /// badly, the transcript that follows covers only the audio taken before
+    /// it, and the terminal reports the failure once that text is in.
+    fault: Option<String>,
 }
 
 /// Committed text buffered for coalesced insertion, for one utterance.
@@ -1162,7 +1197,8 @@ mod tests {
                 &OrchestratorEvent::Loading,
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Recording)
         );
@@ -1171,7 +1207,8 @@ mod tests {
                 &OrchestratorEvent::Ready,
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Recording)
         );
@@ -1190,7 +1227,8 @@ mod tests {
                 &OrchestratorEvent::Transcribing,
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Recording)
         );
@@ -1199,7 +1237,8 @@ mod tests {
                 &OrchestratorEvent::Transcribing,
                 DictationState::Transcribing,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Recording),
             "still listening once state has itself advanced to Transcribing"
@@ -1226,7 +1265,8 @@ mod tests {
                     &event,
                     DictationState::Finalizing,
                     Delivery::Landed,
-                    InputQuality::Ok
+                    InputQuality::Ok,
+                    None
                 ),
                 None,
                 "{event:?} arriving once Finalizing must not touch the indicator"
@@ -1241,7 +1281,8 @@ mod tests {
                 &OrchestratorEvent::Done("all done".into()),
                 DictationState::Finalizing,
                 Delivery::Landed,
-                InputQuality::Noisy
+                InputQuality::Noisy,
+                None
             ),
             Some(IndicatorState::recoverable("Background noise is high"))
         );
@@ -1344,7 +1385,8 @@ mod tests {
                 &OrchestratorEvent::Done("all done".into()),
                 DictationState::Finalizing,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Hidden)
         );
@@ -1361,7 +1403,8 @@ mod tests {
                 &OrchestratorEvent::Done("".into()),
                 DictationState::Finalizing,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::recoverable("No speech detected"))
         );
@@ -1370,7 +1413,8 @@ mod tests {
                 &OrchestratorEvent::Done("   ".into()),
                 DictationState::Finalizing,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::recoverable("No speech detected")),
             "whitespace-only transcript counts as empty"
@@ -1388,7 +1432,8 @@ mod tests {
                 &OrchestratorEvent::Done("".into()),
                 DictationState::Finalizing,
                 Delivery::FocusLost,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::recoverable("Focus lost"))
         );
@@ -1404,7 +1449,8 @@ mod tests {
                 &OrchestratorEvent::Done("hello".into()),
                 DictationState::Finalizing,
                 Delivery::FocusLost,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::Hidden)
         );
@@ -1449,22 +1495,6 @@ mod tests {
     }
 
     #[test]
-    fn drops_are_counted_per_reason() {
-        use myna_orchestrator::DropReason;
-        let mut drops = AudioDrops::default();
-        drops.record(DropReason::NotResident);
-        drops.record(DropReason::NotResident);
-        drops.record(DropReason::NotActive);
-        assert_eq!(
-            drops,
-            AudioDrops {
-                not_resident: 2,
-                not_active: 1
-            }
-        );
-    }
-
-    #[test]
     fn error_maps_to_error_with_message() {
         assert_eq!(
             event_to_indicator(
@@ -1474,7 +1504,8 @@ mod tests {
                 },
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::critical("boom"))
         );
@@ -1489,7 +1520,8 @@ mod tests {
                 &OrchestratorEvent::Snippet("hi".into()),
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             None
         );
@@ -1498,16 +1530,18 @@ mod tests {
                 &OrchestratorEvent::Final("hello".into()),
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             None
         );
         assert_eq!(
             event_to_indicator(
-                &OrchestratorEvent::AudioDropped(myna_orchestrator::DropReason::NotResident),
+                &OrchestratorEvent::AudioDropped,
                 DictationState::Recording,
                 Delivery::Landed,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             None
         );
@@ -1564,7 +1598,8 @@ mod tests {
                 &OrchestratorEvent::Done("hello".into()),
                 DictationState::Finalizing,
                 Delivery::Dropped,
-                InputQuality::Ok
+                InputQuality::Ok,
+                None
             ),
             Some(IndicatorState::recoverable("Focus lost")),
             "the live Done arm agrees with the finalize block (C11)"

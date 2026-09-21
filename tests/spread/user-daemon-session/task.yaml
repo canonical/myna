@@ -29,6 +29,7 @@ prepare: |
     # Property 3 needs the portal to be *startable*, or "it did not start"
     # proves nothing. Nothing here ever starts it: there is no compositor, and
     # the unit is D-Bus activation only.
+    apt-get update
     apt-get install -y xdg-desktop-portal
 
 execute: |

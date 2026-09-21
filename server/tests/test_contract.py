@@ -124,6 +124,7 @@ async def test_adapter_crash_surfaces_as_error_event(run_fake):
     kinds = [te.event.type for te in record.events]
     assert kinds == ["transcription.error"]
     assert record.events[0].event.code == "adapter_crash"
+    assert record.events[0].event.message == "RuntimeError: boom"
 
 
 class _ImmediateErrorAdapter:

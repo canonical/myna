@@ -14,10 +14,11 @@
 //! The activation/autorepeat logic is a pure state machine ([`Dedup`]) fed by a
 //! stream of [`PortalSignal`]s, so the full `Trigger` behavior is unit-tested
 //! hermetically ([`GlobalShortcutTrigger::from_signals`], T022) with no D-Bus or
-//! portal. The real portal binding ([`GlobalShortcutTrigger::bind`]) only exists
-//! against a live `xdg-desktop-portal` and is proven by the env-gated suite
-//! (`MYNA_PORTAL_TESTS=1`, `tests/portal_hw.rs`, T023). See
-//! `specs/003-desktop-injection/contracts/trigger.md`.
+//! portal. The bind and attach paths ([`GlobalShortcutTrigger::bind`],
+//! [`GlobalShortcutTrigger::attach`]) are proven against a scripted portal that
+//! grants, dismisses or never answers, in `tests/portal_leak.rs`
+//! (`MYNA_DBUS_TESTS=1`: a session bus and nothing else). Only the physical key
+//! press stays manual - see `specs/003-desktop-injection/contracts/trigger.md`.
 
 use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};

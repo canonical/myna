@@ -81,6 +81,13 @@ impl AudioSource for WavFileSource {
         self.format
     }
 
+    /// The file was read at construction, so capture cannot fail afterwards.
+    fn health(&self) -> myna_core::CaptureHealthStream {
+        Box::pin(futures_util::stream::iter([
+            myna_core::CaptureHealth::Capturing,
+        ]))
+    }
+
     fn capture(self: Box<Self>) -> CaptureStream {
         let frame_bytes = (self.format.channels as usize)
             .saturating_mul(self.format.sample_width_bytes as usize)

@@ -16,7 +16,9 @@ What the mapping does:
 - ``transcription.final`` <-> ``conversation.item.input_audio_transcription.delta``
   — committed, append-only segment text. One ``item_id`` per utterance (we mint
   it; dictation has no conversation graph); every delta of the utterance and its
-  ``completed`` share it. Timed ``segments`` ride along as an additive field
+  ``completed`` share it, and ``conversation.item.created`` announces it before
+  any of them does, so a client that keys deltas on the item has one to key
+  them on. Timed ``segments`` ride along as an additive field
   when the session asked for them, so a caption or subtitle client can place
   the text in time; dictation never asks and never sees it.
 - ``transcription.done`` <-> ``conversation.item.input_audio_transcription.completed``
@@ -50,7 +52,9 @@ never learns the wire rate. Our own clients state their real capture rate
 from __future__ import annotations
 
 import base64
+import dataclasses
 import uuid
+from collections import deque
 from typing import Any
 
 from myna.core.audio import AudioFormat, PcmChunk
@@ -83,6 +87,7 @@ SESSION_UPDATED = "session.updated"
 INPUT_AUDIO_APPEND = "input_audio_buffer.append"
 INPUT_AUDIO_COMMIT = "input_audio_buffer.commit"
 INPUT_AUDIO_COMMITTED = "input_audio_buffer.committed"
+CONVERSATION_ITEM_CREATED = "conversation.item.created"
 TRANSCRIPTION_DELTA = "conversation.item.input_audio_transcription.delta"
 TRANSCRIPTION_COMPLETED = "conversation.item.input_audio_transcription.completed"
 ERROR = "error"
@@ -226,41 +231,127 @@ def pcm_to_append(chunk: PcmChunk) -> dict[str, Any]:
 # --- event encode (server side) -------------------------------------------------
 
 
+@dataclasses.dataclass(frozen=True)
+class _Item:
+    """One conversation item: an utterance's id and the item minted before it."""
+
+    id: str
+    previous: str | None
+
+
+def _item_created(item: _Item) -> dict[str, Any]:
+    """OpenAI's ``conversation.item.created``, announcing ``item`` to the
+    client. The item holds the utterance's input audio and is ``in_progress``
+    until its ``completed`` carries the transcript."""
+    return {
+        "type": CONVERSATION_ITEM_CREATED,
+        "event_id": new_event_id(),
+        "previous_item_id": item.previous,
+        "item": {
+            "id": item.id,
+            "object": "realtime.item",
+            "type": "message",
+            "status": "in_progress",
+            "role": "user",
+            "content": [{"type": "input_audio"}],
+        },
+    }
+
+
 class Ie115Encoder:
     """Encodes internal transcript events into IE115 server frames, holding the
     per-utterance ``item_id`` IE115 requires (dictation has no conversation
     graph, so we mint one per utterance): every ``delta`` of an utterance and
-    its ``completed`` share the item; the ``completed`` retires it, so the next
-    utterance on the same connection gets a fresh one."""
+    its ``completed`` share the item, and ``begin_utterance`` retires it, so
+    the next utterance on the same connection gets a fresh one.
+
+    A commit is acknowledged at receipt, so the transport's reader can be a
+    whole utterance ahead of the adapter. Items are therefore assigned in
+    commit order and queued: ``commit_frames`` mints the item its commit
+    closes, and the adapter's events take the queue in the same order, one item
+    per utterance. The transport's one-pending-commit rule bounds the queue.
+
+    **An item is announced when it is minted, never later than the first frame
+    that names it.** Both entry points therefore return a *list* of frames to
+    send in order, because minting an item emits a second frame:
+    ``conversation.item.created``. On the commit path that is OpenAI's own
+    order (``committed`` then ``created``). A streaming adapter transcribing
+    before the client commits mints the item early, so its announcement goes
+    out ahead of the delta instead - the one ordering we cannot match without
+    either holding the delta (latency) or naming an item the client has never
+    been told about (a third-party client keying deltas on the item drops
+    every pre-commit one). An item is announced exactly once: the commit that
+    closes an already-announced utterance only acknowledges it."""
 
     def __init__(self) -> None:
-        self._item_id: str | None = None
-        self._previous_item_id: str | None = None
+        self._queued: deque[_Item] = deque()
+        self._current: _Item | None = None
+        self._uncommitted: _Item | None = None
+        self._last_id: str | None = None
+        self._announcements: list[dict[str, Any]] = []
+
+    def _mint(self) -> _Item:
+        item = _Item(f"item_{uuid.uuid4().hex[:12]}", self._last_id)
+        self._last_id = item.id
+        self._announcements.append(_item_created(item))
+        return item
+
+    def _announced(self) -> list[dict[str, Any]]:
+        """The announcements minting has queued since the last call."""
+        pending, self._announcements = self._announcements, []
+        return pending
 
     def _item(self) -> str:
-        if self._item_id is None:
-            self._item_id = f"item_{uuid.uuid4().hex[:12]}"
-        return self._item_id
+        """The item the adapter's events name: the oldest commit it has not
+        answered yet, or a fresh one when it is transcribing audio the client
+        has not committed (a streaming adapter emits before the boundary)."""
+        if self._current is None:
+            if self._queued:
+                self._current = self._queued.popleft()
+            else:
+                self._current = self._uncommitted = self._mint()
+        return self._current.id
 
-    def committed(self) -> dict[str, Any]:
+    def begin_utterance(self) -> None:
+        """The transport hands the next utterance to the adapter, retiring the
+        last one's item: the one it named, or - when it ended without naming
+        one, on a terminal error say - the one its own commit acknowledged,
+        which would otherwise land on this utterance."""
+        if self._current is None and self._queued:
+            self._queued.popleft()
+        self._current = None
+
+    def commit_frames(self) -> list[dict[str, Any]]:
         """The ``input_audio_buffer.committed`` acknowledging the client's
-        commit: it names the utterance's item, which is how a stock client
-        joins the deltas and the ``completed`` that follow."""
-        return {
+        commit, followed by the announcement of the item it minted: it names
+        the utterance's item, which is how a stock client joins the deltas and
+        the ``completed`` that follow. A commit closing an utterance the
+        adapter already spoke for adds no announcement - that item was
+        announced when it was minted."""
+        item = self._uncommitted
+        if item is None:
+            item = self._mint()
+            self._queued.append(item)
+        self._uncommitted = None
+        ack = {
             "type": INPUT_AUDIO_COMMITTED,
             "event_id": new_event_id(),
-            "item_id": self._item(),
-            "previous_item_id": self._previous_item_id,
+            "item_id": item.id,
+            "previous_item_id": item.previous,
         }
+        return [ack, *self._announced()]
 
-    def encode(self, event: TranscriptionEvent, *, audio_seconds: float = 0.0) -> dict[str, Any]:
-        """Return the IE115 frame for ``event``. Every event has a frame:
-        ``done`` is the utterance's ``completed`` (the connection stays open),
-        reporting ``audio_seconds`` - the PCM the utterance consumed, which
-        only the transport knows - as its ``usage``."""
+    def frames(
+        self, event: TranscriptionEvent, *, audio_seconds: float = 0.0
+    ) -> list[dict[str, Any]]:
+        """The IE115 frames for ``event``, in send order: the announcement of
+        any item the event minted, then the event's own frame. Every event has
+        a frame: ``done`` is the utterance's ``completed`` (the connection
+        stays open), reporting ``audio_seconds`` - the PCM the utterance
+        consumed, which only the transport knows - as its ``usage``."""
         frame = self._encode(event, audio_seconds)
         frame["event_id"] = new_event_id()
-        return frame
+        return [*self._announced(), frame]
 
     def _encode(self, event: TranscriptionEvent, audio_seconds: float) -> dict[str, Any]:
         if isinstance(event, TranscriptionProgress):
@@ -289,8 +380,6 @@ class Ie115Encoder:
             return frame
         if isinstance(event, TranscriptionDone):
             item = self._item()
-            self._item_id = None  # completed retires the utterance's item
-            self._previous_item_id = item
             frame = {
                 "type": TRANSCRIPTION_COMPLETED,
                 "item_id": item,
@@ -324,10 +413,16 @@ class Ie115Decoder:
 
     def decode(self, frame: dict[str, Any]) -> list[TranscriptionEvent]:
         """Zero or more internal events for one IE115 frame. Control frames
-        (``session.created``/``session.updated``/``input_audio_buffer.committed``)
-        yield nothing."""
+        (``session.created``/``session.updated``/``input_audio_buffer.committed``/
+        ``conversation.item.created``) yield nothing: this decoder follows one
+        utterance and has no conversation graph to place an item in."""
         ftype = frame.get("type")
-        if ftype in (SESSION_CREATED, SESSION_UPDATED, INPUT_AUDIO_COMMITTED):
+        if ftype in (
+            SESSION_CREATED,
+            SESSION_UPDATED,
+            INPUT_AUDIO_COMMITTED,
+            CONVERSATION_ITEM_CREATED,
+        ):
             return []
         if ftype == STATUS_EVENT:
             phase = _STATE_TO_PHASE.get(str(frame.get("state") or ""), PHASE_TRANSCRIBING)

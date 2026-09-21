@@ -3,8 +3,8 @@
 //! This crate holds the two-region async FSM: the per-connection session track
 //! (CREATED → ACTIVE → FINALIZING → DONE) running orthogonally to model
 //! residency (UNLOADED → LOADING → RESIDENT), with the accept-gate
-//! (`ACTIVE ∧ RESIDENT`), commit-drain (COMMIT ≠ done), and pre-ready-audio
-//! drop. Every backend error is terminal (the wire carries no disposition; a
+//! (`ACTIVE ∧ RESIDENT`) holding audio in capture until the model is ready,
+//! and commit-drain (COMMIT ≠ done). Every backend error is terminal (the wire carries no disposition; a
 //! T31 recoverable axis must arrive on the wire before a retry path returns).
 //!
 //! Every external boundary is a trait with a mock, so the FSM is buildable and
@@ -32,6 +32,7 @@ pub mod fsm;
 pub mod i18n;
 pub mod runner;
 pub mod sink;
+mod task;
 pub mod trigger;
 
 pub use audio::{AudioSource, CaptureError, CaptureStream, StopHandle, WavFileSource};
@@ -41,10 +42,9 @@ pub use backend::{
     ws_unix_ie115::WsUnixIe115Backend,
     BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink, Outbound,
 };
-pub use driver::{run_session, OrchestratorInput};
+pub use driver::{run_session, OrchestratorControl, OrchestratorInput, BACKEND_PROGRESS_TIMEOUT};
 pub use fsm::{
-    Action, DropReason, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome,
-    SessionState,
+    Action, Fsm, FsmState, Input, OrchestratorEvent, Residency, SessionOutcome, SessionState,
 };
 pub use myna_core;
 pub use runner::run_dictation;

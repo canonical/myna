@@ -13,12 +13,9 @@ also published under CC-BY-4.0:
 
 - decoder_joint-model.int8.onnx, nemo128.onnx, vocab.txt: the ONNX export by
   istupakov, https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx.
-- encoder-model.int8.onnx (base build): the SmoothQuant int8 encoder by
-  Olicorne (thiswillbeyourgithub),
+- encoder-model.int8.onnx: the SmoothQuant int8 encoder by Olicorne
+  (thiswillbeyourgithub),
   https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx.
-- encoder-model.int8.maxstack.onnx and libqsilu.so (maxstack build): a
-  further requantisation of that encoder by Canonical Ltd. (dev/parakeet/ in
-  the Myna source tree).
 
 The files are staged from the parakeet-tdt-0.6b-v3-int8 bundle assembled and
 released by Kieirra as murmure-model

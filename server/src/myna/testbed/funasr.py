@@ -41,6 +41,7 @@ from myna.core import (
     TranscriptionProgress,
 )
 from myna.testbed.adapter import Candidate
+from myna.testbed.streaming.strategies import UNSPACED_CHARS
 
 FUNASR_RATE = 16_000
 FUNASR_FORMAT = AudioFormat(sample_rate_hz=FUNASR_RATE, channels=1, sample_width_bytes=2)
@@ -56,13 +57,15 @@ _WARMUP_AMPLITUDE = 50.0
 _WARMUP_SEED = 0
 
 _LOAD_HEARTBEAT_SECONDS = 2.0
-_PROGRESS_INTERVAL_SECONDS = 1.0
 
 # Tag stripping regex matches the reference app's rich_transcription_postprocess
 # (research.md Decision 6): removes <|zh|>, <|HAPPY|>, <|nospeech|>, etc.
 _TAG_RE = re.compile(r"<\|.*?\|>")
 
 _BPE_FILE = "chn_jpn_yue_eng_ko_spectok.bpe.model"
+
+_UNSPACED_RE = re.compile(f"[{UNSPACED_CHARS}]")
+_TOKEN_RE = re.compile(f"\\s*(?:[{UNSPACED_CHARS}]|[^\\s{UNSPACED_CHARS}]+)")
 
 
 def _default_model_dir() -> str:
@@ -257,33 +260,16 @@ class FunasrAdapter:
             await self._load_model_with_heartbeat(emit)
             # Ready AFTER warm-up — the client gates on it.
 
-            # Batch mode (FR-004): accumulate all audio, decode once.
-            buffered = bytearray()
-            seconds_since_progress = 0.0
-            async for chunk in audio:
-                buffered.extend(chunk.data)
-                seconds_since_progress += chunk.duration_seconds
-                if seconds_since_progress >= _PROGRESS_INTERVAL_SECONDS:
-                    seconds_since_progress = 0.0
-                    await emit(TranscriptionProgress())
-
-            text = ""
-            if buffered:
-                # Convert s16le → float32 ndarray, same path as whisper.
-                samples = (
-                    np.frombuffer(bytes(buffered), dtype=np.int16).astype(np.float32) / 32768.0
-                )
-                text = await asyncio.to_thread(self._decode, samples)
-
-            # Tag stripping (FR-005, SC-006): regex before any wire event.
-            stripped = _strip_tags(text)
+            # Batch mode (FR-004): nothing is shown until the audio ends, but
+            # the decode runs over bounded regions (streaming.batch).
+            text = await self._run_batch_session(audio, emit)
             # Silence decodes to control tags alone, leaving nothing to commit.
             # An empty final is not harmless: the harness counts it as a
             # committed segment and dates time_to_first_final from it. Same
             # guard as the whisper adapter.
-            if stripped:
-                await emit(TranscriptionFinal(text=stripped, disposition=Disposition.COMMITTED))
-            await emit(TranscriptionDone(text=stripped))
+            if text:
+                await emit(TranscriptionFinal(text=text, disposition=Disposition.COMMITTED))
+            await emit(TranscriptionDone(text=text))
         except Exception as exc:
             await emit(
                 TranscriptionError(
@@ -291,6 +277,38 @@ class FunasrAdapter:
                     message=f"{type(exc).__name__}: {exc}",
                 )
             )
+
+    async def _run_batch_session(self, audio: AsyncIterator[PcmChunk], emit: EventSink) -> str:
+        """Decode bounded regions and return their joined, tag-free text.
+
+        SenseVoice gives no timestamps, so a region's words carry its whole
+        span: a forced cut holds none of them back and its overlap is
+        deduplicated on text alone. Regions join
+        with a space unless the text on either side of the join is written
+        without spaces (Chinese, Japanese)."""
+        from myna.testbed.streaming.batch import run_deferred_batch
+        from myna.testbed.streaming.strategies import Hypothesis, Word
+
+        last_char = ""
+        parts: list[str] = []
+
+        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+            nonlocal last_char
+            text = _strip_tags(self._decode(samples))
+            if not text:
+                return Hypothesis()
+            end = offset + len(samples) / FUNASR_RATE
+            tokens = _TOKEN_RE.findall(text)
+            if last_char and not _UNSPACED_RE.match(last_char) and not _UNSPACED_RE.match(text[0]):
+                tokens[0] = " " + tokens[0]
+            last_char = text[-1]
+            return Hypothesis(words=[Word(token, offset, end) for token in tokens])
+
+        async def on_commit(text: str, _words: list[Word]) -> None:
+            parts.append(text)
+
+        await run_deferred_batch(audio, emit, decode, on_commit)
+        return "".join(parts)
 
     # ------------------------------------------------------------------
     # Decode

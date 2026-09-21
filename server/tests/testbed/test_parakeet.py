@@ -9,6 +9,7 @@ session dispatch paths (batch I7, streaming strategy wiring).
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from types import SimpleNamespace
 
@@ -28,16 +29,14 @@ from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
-    BASE_ENCODER_FILE,
     BATCH_WINDOW_CAP_S,
     CUDA_PROVIDER,
     FP32_ENCODER_FILE,
     FP32_JOINT_FILE,
+    INT8_ENCODER_FILE,
     INT8_JOINT_FILE,
-    MAXSTACK_ENCODER_FILE,
     PARAKEET_RATE,
     PARTIAL_CADENCE_S,
-    QSILU_LIB_FILE,
     ParakeetAdapter,
     _detokenize,
     _load_vocab,
@@ -45,9 +44,9 @@ from myna.testbed.parakeet import (
     _require_cuda,
     _tokens_to_words,
     encoder_run_options,
-    encoder_variant,
     model_files,
 )
+from myna.testbed.streaming.coverage import RETRY_PADS
 from myna.testbed.streaming.strategies import SilenceCut, Word
 
 FORMAT = AudioFormat(sample_rate_hz=16_000, channels=1, sample_width_bytes=2)
@@ -214,6 +213,29 @@ def test_streaming_cut_constants_must_be_positive():
         ParakeetAdapter(stream_force_cut_s=0)
 
 
+@pytest.mark.parametrize("force", [0.8, 1.0, 1.3])
+def test_a_force_cut_must_leave_a_decode_past_the_overlap(force):
+    with pytest.raises(ValueError, match="stream_force_cut_s must be > 1.3"):
+        ParakeetAdapter(stream_force_cut_s=force)
+
+
+def test_the_shortest_force_cut_past_the_overlap_is_accepted():
+    assert ParakeetAdapter(stream_force_cut_s=1.31)._stream_force_cut_s == 1.31
+
+
+@pytest.mark.asyncio
+async def test_cli_refuses_a_force_cut_within_the_overlap_before_serving(tmp_path):
+    from myna.server.cli import serve
+
+    args = build_parser().parse_args(
+        ["--socket", str(tmp_path / "s.sock"), "--adapter", "parakeet", "--streaming"]
+        + ["--stream-force-cut-s", "1.0"]
+    )
+    with pytest.raises(SystemExit, match="stream_force_cut_s must be > 1.3"):
+        await asyncio.wait_for(serve(args), timeout=10.0)
+    assert not (tmp_path / "s.sock").exists()
+
+
 def test_cli_wires_streaming_cut_constants():
     args = build_parser().parse_args(
         [
@@ -354,6 +376,24 @@ async def test_batch_session_off_format_rejected():
 # _ParakeetOnnx without __init__ so no ONNX session is created.
 
 
+def _tone(seconds: float, rms: float = 0.05, seed: int = 5) -> np.ndarray:
+    """Stationary room tone: loud, and no more modulated than a fan."""
+    rng = np.random.default_rng(seed)
+    samples = rng.standard_normal(int(seconds * PARAKEET_RATE)).astype(np.float32)
+    return samples * (rms / np.sqrt(np.mean(samples * samples)))
+
+
+def _speech(seconds: float, rms: float = 0.05, floor: float = 0.006) -> np.ndarray:
+    """Speech-shaped: 0.4 s bursts over a 0.15 s inter-word floor."""
+    rng = np.random.default_rng(3)
+    out: list[np.ndarray] = []
+    while sum(len(c) for c in out) < seconds * PARAKEET_RATE:
+        for span, level in ((0.4, rms), (0.15, floor)):
+            block = rng.standard_normal(int(span * PARAKEET_RATE)).astype(np.float32)
+            out.append(block * (level / np.sqrt(np.mean(block * block))))
+    return np.concatenate(out)[: int(seconds * PARAKEET_RATE)]
+
+
 def _bare_model(script):
     """A _ParakeetOnnx whose `transcribe` is `script(samples) -> (tokens, ts)`,
     recording the sample counts it was called with."""
@@ -373,14 +413,16 @@ def test_plausible_decode_is_not_retried():
     collapse, not a tax on every commit."""
     model = _bare_model(lambda n, call: ([" one", " two", " three"], [0.0, 0.5, 1.0]))
 
-    tokens, _ = model._transcribe_guarded(np.zeros(16_000 * 2, dtype=np.float32))
+    tokens, _ = model._transcribe_guarded(_speech(2.0))
 
     assert tokens == [" one", " two", " three"]
     assert len(model.calls) == 1, "healthy decode must not pay for a retry"
 
 
 def test_collapsed_decode_is_retried_with_padding_on_both_ends():
-    """Zero words out of ten seconds of audio is the collapse signature."""
+    """Zero words out of a second and a half of speech is the collapse
+    signature; a region long enough to hold an UNTRANSCRIBED_GAP_S hole goes
+    round the pad ladder instead."""
 
     def script(n, call):
         if call == 1:
@@ -388,7 +430,7 @@ def test_collapsed_decode_is_retried_with_padding_on_both_ends():
         return ([" recovered", " text"], [0.3, 0.8])
 
     model = _bare_model(script)
-    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+    tokens, timestamps = model._transcribe_guarded(_speech(1.5))
 
     assert len(model.calls) == 2, "a collapsed decode must be retried once"
     pad_samples = int(_COLLAPSE_RETRY_PAD_S * PARAKEET_RATE)
@@ -403,13 +445,67 @@ def test_retry_that_does_not_help_keeps_the_original_decode():
     the guard must not make things worse or loop."""
 
     def script(n, call):
-        return ([" solitary"], [0.4]) if call == 1 else ([], [])
+        return ([" solitary"], [1.2]) if call == 1 else ([], [])
 
     model = _bare_model(script)
-    tokens, timestamps = model._transcribe_guarded(np.zeros(16_000 * 10, dtype=np.float32))
+    tokens, timestamps = model._transcribe_guarded(_speech(2.3))
 
     assert len(model.calls) == 2, "exactly one retry, never a loop"
-    assert tokens == [" solitary"] and timestamps == [0.4]
+    assert tokens == [" solitary"] and timestamps == [1.2]
+
+
+def test_a_partial_collapse_is_retried_even_though_the_region_looks_plausible():
+    """The words-per-second check passes on a decode that transcribed most of
+    the region and went blank over seven seconds of it - the partial collapse
+    measured on the int8 encoder (parakeet.py and streaming.coverage)."""
+
+    def script(n, call):
+        if call == 1:
+            return ([f" w{i}" for i in range(20)], [0.1 * i for i in range(20)])
+        return ([f" w{i}" for i in range(40)], [0.3 * i for i in range(40)])
+
+    model = _bare_model(script)
+    tokens, _ = model._transcribe_guarded(_speech(13.0))
+
+    assert len(model.calls) == 2, "a partial collapse must be re-decoded"
+    assert len(tokens) == 40
+
+
+def test_the_retry_ladder_keeps_the_nudge_that_leaves_the_least_untranscribed():
+    """Nudging is a lottery per window: 0.2 s recovered 11 of 13 measured
+    collapses and 0.3 s the two it lost, so the ladder tries both."""
+    covered = ([f" w{i}" for i in range(40)], [0.3 * i for i in range(40)])
+
+    def script(n, call):
+        return ([], []) if call <= 2 else covered
+
+    model = _bare_model(script)
+    tokens, _ = model._transcribe_guarded(_speech(13.0))
+
+    pads = [int(pad * PARAKEET_RATE) for pad in RETRY_PADS]
+    assert [n - model.calls[0] for n in model.calls[1:]] == [2 * pad for pad in pads]
+    assert tokens == covered[0]
+
+
+def test_a_collapse_the_ladder_cannot_recover_keeps_the_best_attempt():
+    def script(n, call):
+        return ([" one"], [0.2]) if call == 1 else ([], [])
+
+    model = _bare_model(script)
+    tokens, timestamps = model._transcribe_guarded(_speech(13.0))
+
+    assert len(model.calls) == 1 + len(RETRY_PADS), "the ladder runs once, not forever"
+    assert (tokens, timestamps) == ([" one"], [0.2])
+
+
+def test_a_healthy_decode_of_speech_is_not_retried():
+    model = _bare_model(
+        lambda n, call: ([f" w{i}" for i in range(26)], [0.5 * i for i in range(26)])
+    )
+
+    model._transcribe_guarded(_speech(13.0))
+
+    assert len(model.calls) == 1
 
 
 def test_short_region_is_judged_on_its_own_length():
@@ -417,9 +513,68 @@ def test_short_region_is_judged_on_its_own_length():
     is plausible and must not be retried."""
     model = _bare_model(lambda n, call: ([" hi"], [0.0]))
 
-    model._transcribe_guarded(np.zeros(8_000, dtype=np.float32))
+    model._transcribe_guarded(_speech(0.5))
 
     assert len(model.calls) == 1
+
+
+# ─── Room tone costs one decode (2026-09-18) ─────────────────────────────────
+
+
+@pytest.mark.parametrize("rms", [0.005, 0.008, 0.02])
+def test_token_free_room_tone_is_decoded_once(rms):
+    """The shipped streaming config re-decodes the whole uncommitted window
+    twice a second, so a hold-to-talk window nobody has spoken into yet must
+    not pay for a retry ladder looking for words that are not there."""
+    model = _bare_model(lambda n, call: ([], []))
+
+    model._transcribe_guarded(_tone(60.0, rms))
+
+    assert len(model.calls) == 1
+
+
+def test_the_retried_decode_count_is_bounded():
+    model = _bare_model(lambda n, call: ([], []))
+
+    model._transcribe_guarded(_speech(60.0))
+
+    assert len(model.calls) == 1 + len(RETRY_PADS)
+
+
+def test_a_gap_the_ladder_cannot_close_is_logged(caplog):
+    """A persistent partial collapse is accepted, so it has to be visible -
+    and the seconds it names are what an operator acts on."""
+    model = _bare_model(lambda n, call: ([" one"], [0.2]))
+
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.parakeet"):
+        model._transcribe_guarded(_speech(13.0))
+
+    (record,) = [r for r in caplog.records if "untranscribed" in r.getMessage()]
+    assert "12.8 s of 13.0 s" in record.getMessage()
+
+
+def test_a_gap_the_ladder_closes_is_not_logged(caplog):
+    covered = ([f" w{i}" for i in range(40)], [0.3 * i for i in range(40)])
+
+    def script(n, call):
+        return ([" one"], [0.2]) if call == 1 else covered
+
+    model = _bare_model(script)
+    with caplog.at_level(logging.WARNING, logger="myna.testbed.parakeet"):
+        model._transcribe_guarded(_speech(13.0))
+
+    assert not [r for r in caplog.records if "untranscribed" in r.getMessage()]
+
+
+def test_a_pad_retry_times_its_tokens_inside_the_region():
+    """A token the decoder placed in the tail pad is timed past the region
+    end unless it is clamped, and coverage.py then reads it as coverage the
+    region never had - and the streaming loop can hold the word past a cut."""
+    model = _bare_model(lambda n, call: ([" early", " late"], [0.0, 10.45]))
+
+    _tokens, timestamps = model._padded(_speech(10.0), 0.3)
+
+    assert timestamps == [0.0, pytest.approx(10.0)]
 
 
 # ─── Partial (unstable) emission wiring ──────────────────────────────────────
@@ -516,68 +671,6 @@ def test_cli_wires_partial_dials_including_an_explicit_zero():
     assert off._stream_partial_cadence_s == 0.0, "an explicit 0 must survive the default"
 
 
-# Encoder variant selection (perf T11/T13): a model dir carrying the maxstack
-# encoder AND its custom-op kernel library gets the fast path; a dir carrying
-# the unprocessed upstream bundle falls back to the base encoder byte-for-byte;
-# a dir with neither usable pairing says so instead of handing ORT a path that
-# is not there. The shipped component is maxstack-only, so that last case is
-# the failure mode a broken component now presents as. Pin it model-free.
-
-
-def test_encoder_variant_base_when_dir_is_plain(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path.endswith("encoder-model.int8.onnx")
-    assert lib is None
-
-
-def test_encoder_variant_maxstack_needs_both_files(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    # encoder present but no kernel lib: must fall back, never half-load
-    path, lib = encoder_variant(str(tmp_path))
-    assert path.endswith("encoder-model.int8.onnx") and lib is None
-
-    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(tmp_path / QSILU_LIB_FILE)
-
-
-def test_encoder_variant_maxstack_only_is_the_shipped_component_shape(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    (tmp_path / QSILU_LIB_FILE).write_bytes(b"")
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(tmp_path / QSILU_LIB_FILE)
-
-
-def test_encoder_variant_refuses_a_dir_with_no_loadable_encoder(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    # Maxstack without its kernel library, and no base to retreat to: the shape
-    # a component that lost libqsilu.so has.
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    with pytest.raises(FileNotFoundError, match=QSILU_LIB_FILE):
-        encoder_variant(str(tmp_path))
-
-    (tmp_path / BASE_ENCODER_FILE).write_bytes(b"")
-    assert encoder_variant(str(tmp_path))[0].endswith(BASE_ENCODER_FILE)
-
-
-def test_encoder_variant_env_overrides_lib_location(tmp_path, monkeypatch):
-    (tmp_path / "encoder-model.int8.onnx").write_bytes(b"")
-    (tmp_path / MAXSTACK_ENCODER_FILE).write_bytes(b"")
-    ext = tmp_path / "elsewhere.so"
-    ext.write_bytes(b"")
-    monkeypatch.setenv("MYNA_ORT_CUSTOM_OPS", str(ext))
-    path, lib = encoder_variant(str(tmp_path))
-    assert path == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert lib == str(ext)
-
-
 # Precision and device (the nvidia-gpu engine). A model dir carries one export,
 # told apart by its decoder_joint; the GPU path refuses int8 graphs, refuses to
 # serve when ORT fell back to the CPU, and runs the joint unbound.
@@ -588,11 +681,10 @@ def _touch(directory, *names):
         (directory / name).write_bytes(b"")
 
 
-def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
+def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path):
     for precision, encoder, joint in (
         ("fp32", FP32_ENCODER_FILE, FP32_JOINT_FILE),
-        ("int8", BASE_ENCODER_FILE, INT8_JOINT_FILE),
+        ("int8", INT8_ENCODER_FILE, INT8_JOINT_FILE),
     ):
         directory = tmp_path / precision
         directory.mkdir()
@@ -601,19 +693,10 @@ def test_model_files_reads_the_precision_off_the_decoder_joint(tmp_path, monkeyp
         assert files.precision == precision
         assert files.encoder == str(directory / encoder)
         assert files.decoder_joint == str(directory / joint)
-        assert files.custom_ops is None
-
-
-def test_model_files_int8_keeps_the_maxstack_selection(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    _touch(tmp_path, MAXSTACK_ENCODER_FILE, QSILU_LIB_FILE, INT8_JOINT_FILE)
-    files = model_files(str(tmp_path))
-    assert files.encoder == str(tmp_path / MAXSTACK_ENCODER_FILE)
-    assert files.custom_ops == str(tmp_path / QSILU_LIB_FILE)
 
 
 def test_model_files_refuses_a_dir_with_two_precisions(tmp_path):
-    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE, INT8_ENCODER_FILE, INT8_JOINT_FILE)
     with pytest.raises(FileNotFoundError, match="exactly one decoder_joint"):
         model_files(str(tmp_path))
 
@@ -624,15 +707,18 @@ def test_model_files_refuses_a_dir_with_no_decoder_joint(tmp_path):
         model_files(str(tmp_path))
 
 
-def test_model_files_refuses_a_joint_without_its_encoder(tmp_path):
-    _touch(tmp_path, FP32_JOINT_FILE)
-    with pytest.raises(FileNotFoundError, match=FP32_ENCODER_FILE):
+@pytest.mark.parametrize(
+    ("joint", "encoder"),
+    ((FP32_JOINT_FILE, FP32_ENCODER_FILE), (INT8_JOINT_FILE, INT8_ENCODER_FILE)),
+)
+def test_model_files_refuses_a_joint_without_its_encoder(tmp_path, joint, encoder):
+    _touch(tmp_path, joint)
+    with pytest.raises(FileNotFoundError, match=encoder):
         model_files(str(tmp_path))
 
 
-def test_cuda_refuses_an_int8_export_before_loading_anything(tmp_path, monkeypatch):
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
-    _touch(tmp_path, BASE_ENCODER_FILE, INT8_JOINT_FILE)
+def test_cuda_refuses_an_int8_export_before_loading_anything(tmp_path):
+    _touch(tmp_path, INT8_ENCODER_FILE, INT8_JOINT_FILE)
     with pytest.raises(ValueError, match="cuda device needs fp32"):
         _ParakeetOnnx(str(tmp_path), device="cuda")
 
@@ -679,7 +765,6 @@ def test_cuda_init_builds_sessions_on_the_cuda_provider(tmp_path, monkeypatch):
     CUDA_PROVIDER, keeps the preprocessor on the CPU, and wires the
     arena-shrink run options; a session ORT could not put on CUDA would trip
     _require_cuda instead of silently serving from the CPU."""
-    monkeypatch.delenv("MYNA_ORT_CUSTOM_OPS", raising=False)
     _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE)
     (tmp_path / "vocab.txt").write_text("<blk> 0\n", encoding="utf-8")
     fake_ort = SimpleNamespace(

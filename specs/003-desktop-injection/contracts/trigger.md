@@ -45,11 +45,13 @@ timestamp: t, options: a{sv})`.
   dedup/mapping logic with a scripted portal-signal source (`ScriptedTrigger` and
   a fake signal stream). No D-Bus/portal. The dedup state machine (first-Activated-
   wins-until-Deactivated) is a pure unit test.
-- **Integration (env-gated `MYNA_PORTAL_TESTS=1`, real portal)**: T1, T2, T5, T6
-  against a live `xdg-desktop-portal` with a GlobalShortcuts backend (or the
-  portal test template under `~/probe/ubuntu/xdg-desktop-portal-gu/tests`), binding
-  a test shortcut and asserting `Activated`/`Deactivated` become `Press`/`Release`.
-  `tests/portal_hw.rs`.
+- **Integration (env-gated `MYNA_DBUS_TESTS=1`, scripted portal)**: `bind()`
+  against a fake `org.freedesktop.portal.Desktop` that answers `CreateSession`
+  and then sits on `BindShortcuts` forever, asserting the daemon leaves no
+  request or session behind when it abandons the attempt. `tests/portal_leak.rs`.
+- **Manual (real portal)**: T1, T2, T5 and T6 against a live
+  `xdg-desktop-portal` with a GlobalShortcuts backend - the push-to-talk run in
+  quickstart.md step 3.
 
 ## Non-goals
 

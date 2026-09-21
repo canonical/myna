@@ -22,17 +22,17 @@
 //! successful, possibly truncated, utterance).
 
 use base64::Engine as _;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use myna_core::{
     ErrorData, PcmChunk, Progress, SessionConfig, TranscriptionEvent, TranscriptionFinal,
     PHASE_PREPARING, PHASE_READY, PHASE_TRANSCRIBING,
 };
 use serde_json::{json, Value};
 use tokio::net::UnixStream;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::{BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink, Outbound};
+use super::transport::{self, Dialect};
+use super::{BackendClient, BackendError, BackendHandle, Outbound};
 
 const OUTBOUND_CAPACITY: usize = 16;
 const EVENT_CAPACITY: usize = 64;
@@ -125,10 +125,9 @@ impl BackendClient for WsUnixIe115Backend {
         })?;
         myna_core::info_log!("backend", "connected to {}", self.socket_path.display());
         let ws_url = format!("ws://localhost{}", self.ws_path);
-        let (ws, _resp) = tokio_tungstenite::client_async(&ws_url, stream)
+        let (mut ws, _resp) = tokio_tungstenite::client_async(&ws_url, stream)
             .await
             .map_err(|e| BackendError::Handshake(e.to_string()))?;
-        let (mut write, read) = ws.split();
 
         // Send `session.update` if we have meaningful config to communicate.
         // For external servers (ws_path != "/") that don't need the shape-sniff
@@ -139,31 +138,20 @@ impl BackendClient for WsUnixIe115Backend {
         let needs_shape_sniff = self.ws_path == DEFAULT_WS_PATH;
         if has_config || needs_shape_sniff {
             let frame = session_update_frame(&config);
-            write
-                .send(Message::text(frame.to_string()))
+            ws.send(Message::text(frame.to_string()))
                 .await
                 .map_err(|e| BackendError::Transport(e.to_string()))?;
         }
 
-        let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-        let (ev_tx, ev_rx) =
-            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
-        tokio::spawn(pump(write, read, out_rx, ev_tx, self.base64_audio));
-
-        Ok(BackendHandle {
-            sink: BackendSink { tx: out_tx },
-            events: BackendEvents { rx: ev_rx },
-            protocol_version: None, // IE115 carries no protocol_version
-        })
+        let dialect = Ie115 {
+            base64_audio: self.base64_audio,
+            after_commit: false,
+        };
+        let (sink, events) = transport::spawn(ws, dialect, OUTBOUND_CAPACITY, EVENT_CAPACITY);
+        // IE115 carries no protocol_version.
+        Ok(BackendHandle::new(sink, events, None))
     }
 }
-
-type WsRead =
-    futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>>;
-type WsWrite = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>,
-    Message,
->;
 
 /// Decode one IE115 server frame into zero or more internal events (the
 /// utterance terminal is a real frame, `completed` → `done`). Control frames
@@ -285,74 +273,30 @@ fn append_frame(chunk: &PcmChunk) -> String {
     json!({ "type": INPUT_AUDIO_APPEND, "audio": audio }).to_string()
 }
 
-async fn pump(
-    mut write: WsWrite,
-    mut read: WsRead,
-    mut out_rx: mpsc::Receiver<Outbound>,
-    ev_tx: mpsc::Sender<Result<TranscriptionEvent, BackendError>>,
+/// The IE115 framing. `after_commit` flips once our commit has been written,
+/// which is what tells an answered commit from a mid-stream reset.
+struct Ie115 {
     base64_audio: bool,
-) {
-    let mut outbound_open = true;
-    let mut after_commit = false;
-    loop {
-        tokio::select! {
-            outbound = out_rx.recv(), if outbound_open => match outbound {
-                Some(Outbound::Audio(chunk)) => {
-                    let msg = if base64_audio {
-                        Message::text(append_frame(&chunk))
-                    } else {
-                        Message::binary(chunk.data)
-                    };
-                    if write.send(msg).await.is_err() {
-                        break;
-                    }
-                }
-                Some(Outbound::Finish) => {
-                    let frame = json!({ "type": INPUT_AUDIO_COMMIT }).to_string();
-                    if write.send(Message::text(frame)).await.is_err() {
-                        break;
-                    }
-                    after_commit = true;
-                }
-                Some(Outbound::Abort) => {
-                    let _ = write.close().await;
-                    return;
-                }
-                None => outbound_open = false, // sink dropped; keep reading (commit-drain)
-            },
-            incoming = read.next() => match incoming {
-                Some(Ok(Message::Text(text))) => {
-                    let value: Value = match serde_json::from_str(&text) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let _ = ev_tx.send(Err(BackendError::Transport(format!("bad JSON: {e}")))).await;
-                            break;
-                        }
-                    };
-                    for event in decode_frame(&value, after_commit) {
-                        let terminal = event.is_terminal();
-                        if ev_tx.send(Ok(event)).await.is_err() {
-                            return; // FSM dropped the receiver
-                        }
-                        if terminal {
-                            // Our commit is answered; close our side of the
-                            // persistent connection (one utterance per connection).
-                            return;
-                        }
-                    }
-                }
-                Some(Ok(Message::Binary(_))) => {} // server never sends binary
-                // Close before the terminal: fall out and drop `ev_tx` — the
-                // ended event stream reaches the FSM as BackendClosed (a
-                // `connection_closed` failure), never a synthesised `done`.
-                Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {} // ping/pong
-                Some(Err(e)) => {
-                    let _ = ev_tx.send(Err(BackendError::Transport(e.to_string()))).await;
-                    return;
-                }
-            },
+    after_commit: bool,
+}
+
+impl Dialect for Ie115 {
+    fn encode(&mut self, item: Outbound) -> Message {
+        match item {
+            Outbound::Audio(chunk) if self.base64_audio => Message::text(append_frame(&chunk)),
+            Outbound::Audio(chunk) => Message::binary(chunk.data),
+            Outbound::Finish => Message::text(json!({ "type": INPUT_AUDIO_COMMIT }).to_string()),
         }
+    }
+
+    fn written(&mut self, finish: bool) {
+        self.after_commit |= finish;
+    }
+
+    fn decode(&mut self, text: &str) -> Result<Vec<TranscriptionEvent>, BackendError> {
+        let value: Value = serde_json::from_str(text)
+            .map_err(|e| BackendError::Transport(format!("bad JSON: {e}")))?;
+        Ok(decode_frame(&value, self.after_commit))
     }
 }
 
@@ -438,6 +382,54 @@ mod tests {
         );
         assert!(matches!(&e[0], TranscriptionEvent::Error(err) if err.code == "server_error"));
         assert!(e[0].is_terminal());
+    }
+
+    fn completed(transcript: &str) -> String {
+        json!({
+            "type": TRANSCRIPTION_COMPLETED, "item_id": "i1", "content_index": 0,
+            "transcript": transcript
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn only_a_written_commit_turns_an_empty_completed_into_the_terminal() {
+        let mut dialect = Ie115 {
+            base64_audio: false,
+            after_commit: false,
+        };
+        dialect.written(false);
+        assert!(dialect.decode(&completed("")).unwrap().is_empty());
+        dialect.written(true);
+        dialect.written(false);
+        let done = dialect.decode(&completed("")).unwrap();
+        assert!(matches!(&done[..], [TranscriptionEvent::Done(t)] if t.text.is_empty()));
+    }
+
+    #[test]
+    fn audio_is_framed_as_binary_or_base64_appends() {
+        let chunk = || PcmChunk::new(vec![1u8, 2, 3, 4], myna_core::AudioFormat::default());
+        let mut raw = Ie115 {
+            base64_audio: false,
+            after_commit: false,
+        };
+        assert_eq!(
+            raw.encode(Outbound::Audio(chunk())),
+            Message::binary(vec![1u8, 2, 3, 4])
+        );
+        let mut base64 = Ie115 {
+            base64_audio: true,
+            after_commit: false,
+        };
+        assert_eq!(
+            base64.encode(Outbound::Audio(chunk())),
+            Message::text(append_frame(&chunk()))
+        );
+        let commit: Value = match base64.encode(Outbound::Finish) {
+            Message::Text(text) => serde_json::from_str(&text).unwrap(),
+            other => panic!("commit is a text frame, got {other:?}"),
+        };
+        assert_eq!(commit["type"], INPUT_AUDIO_COMMIT);
     }
 
     #[test]

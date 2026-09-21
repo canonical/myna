@@ -37,6 +37,12 @@ from myna.core.session import SessionConfig
 EventSink = Callable[[TranscriptionEvent], Awaitable[None]]
 
 
+class AudioAborted(Exception):
+    """Raised by a session's ``audio`` iterator once the session is aborted
+    (the client left, the server is shutting down). Nobody is left to hear a
+    transcript, so the adapter must not produce one."""
+
+
 @runtime_checkable
 class SttSession(Protocol):
     """Client-side handle on one transcription session."""
@@ -74,8 +80,10 @@ class SttService(Protocol):
     interface every testbed adapter implements.
 
     Implementations must consume ``audio`` (which ends when the client
-    finishes or aborts) and emit events via ``emit``, ending with exactly one
-    terminal event. Model-specific messiness stays inside the implementation.
+    finishes) and emit events via ``emit``, ending with exactly one terminal
+    event. An abort cancels ``run_session``; ``audio`` raises ``AudioAborted``
+    to anything still reading it. Model-specific messiness stays inside the
+    implementation.
     """
 
     def capabilities(self) -> Capabilities:

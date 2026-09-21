@@ -94,6 +94,13 @@ from myna.core import (
 from myna.server.lifecycle import MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate
 from myna.testbed.harness import StreamingTelemetry
+from myna.testbed.streaming.coverage import (
+    RETRY_PADS,
+    UNTRANSCRIBED_GAP_S,
+    has_speech,
+    untranscribed_gap,
+)
+from myna.testbed.streaming.loop import MIN_DECODE_S
 from myna.testbed.streaming.strategies import (
     SC_ARM_S,
     SC_FORCE_CUT_S,
@@ -125,42 +132,8 @@ _log = logging.getLogger(__name__)
 PARAKEET_RATE = 16_000
 PARAKEET_FORMAT = AudioFormat(sample_rate_hz=PARAKEET_RATE, channels=1, sample_width_bytes=2)
 
-# Optimized encoder variant (ratified 2026-08-31): the "maxstack" encoder
-# (10-of-11 FFN requant + fused SiLU custom ops + export cleanups; built by
-# dev/parakeet/build_maxstack_encoder.py) plus the custom-op kernel library it
-# needs. Measured encode -13.3% on the same audio path, and since 2026-09-01 it
-# is the only encoder the snap component ships
-# (parakeet-snap/dev/download-models.sh) - the base export it derives from
-# stays a build input.
-#
-# The base encoder is still selected for a dir that carries it and not the
-# pair, which is what an unprocessed upstream bundle looks like: the model
-# cache the maxstack build reads, and any other staging of the murmure
-# release. MYNA_ORT_CUSTOM_OPS overrides the library location (dev tooling).
-BASE_ENCODER_FILE = "encoder-model.int8.onnx"
-MAXSTACK_ENCODER_FILE = "encoder-model.int8.maxstack.onnx"
-QSILU_LIB_FILE = "libqsilu.so"
-
-
-def encoder_variant(model_dir: str) -> tuple[str, str | None]:
-    """(encoder path, custom-ops library path or None) for a model dir."""
-    lib = os.environ.get("MYNA_ORT_CUSTOM_OPS") or os.path.join(model_dir, QSILU_LIB_FILE)
-    maxstack = os.path.join(model_dir, MAXSTACK_ENCODER_FILE)
-    if os.path.exists(maxstack) and os.path.exists(lib):
-        return maxstack, lib
-    base = os.path.join(model_dir, BASE_ENCODER_FILE)
-    if not os.path.exists(base):
-        # A shipped component has no base encoder to fall back to, so a lost
-        # kernel library surfaces here rather than in ORT with a path it cannot
-        # explain. Name the pair: the answer is to restore or rebuild it.
-        raise FileNotFoundError(
-            f"{model_dir} carries no loadable encoder: {MAXSTACK_ENCODER_FILE} needs "
-            f"{QSILU_LIB_FILE} beside it (or MYNA_ORT_CUSTOM_OPS pointing at it), and "
-            f"there is no {BASE_ENCODER_FILE} to fall back to"
-        )
-    env_lib = os.environ.get("MYNA_ORT_CUSTOM_OPS")
-    return base, env_lib if env_lib and os.path.exists(env_lib) else None
-
+# The int8 encoder: murmure's staging of Olicorne's SmoothQuant export.
+INT8_ENCODER_FILE = "encoder-model.int8.onnx"
 
 # Float export for the GPU engine, made from NVIDIA's .nemo checkpoint by
 # dev/parakeet/export_parakeet_onnx.py: NeMo's exporter output as is. A dir
@@ -177,7 +150,6 @@ class ModelFiles:
     precision: Literal["int8", "fp32"]
     encoder: str
     decoder_joint: str
-    custom_ops: str | None = None
 
 
 def model_files(model_dir: str) -> ModelFiles:
@@ -193,9 +165,9 @@ def model_files(model_dir: str) -> ModelFiles:
         )
     joint = os.path.join(model_dir, present[0])
     if present[0] == INT8_JOINT_FILE:
-        encoder, custom_ops = encoder_variant(model_dir)
-        return ModelFiles("int8", encoder, joint, custom_ops)
-    files = ModelFiles("fp32", os.path.join(model_dir, FP32_ENCODER_FILE), joint)
+        files = ModelFiles("int8", os.path.join(model_dir, INT8_ENCODER_FILE), joint)
+    else:
+        files = ModelFiles("fp32", os.path.join(model_dir, FP32_ENCODER_FILE), joint)
     if not os.path.exists(files.encoder):
         raise FileNotFoundError(
             f"{model_dir} carries {present[0]} but no {os.path.basename(files.encoder)}"
@@ -299,11 +271,35 @@ _PROGRESS_INTERVAL_SECONDS = 1.0
 _COLLAPSE_WORDS_PER_SECOND = 0.5  # 5x below conversational speech (~2.5 w/s)
 _COLLAPSE_RETRY_PAD_S = 0.2
 
+# The collapse is not always total: the joint can go blank over part of a
+# window and transcribe the rest, which the words-per-second check above sails
+# straight past. Measured 2026-09-17 over 153 regions (15.5/18.9 s) of the
+# long-form and no-gaps stress clips: 8.5% left a stretch of loud audio with no
+# token at all, up to 17 s of one 18.9 s region, and shifting the region start
+# by 20 ms was enough to trigger or clear it (109.22 s: 89 tokens, 109.24 s:
+# 39). Region starts already sit on the 10 ms mel hop, so quantising them
+# further buys nothing - the encoder is unstable in the window itself, and the
+# defence is to notice (streaming.coverage) and re-decode. Nudging by a pad is
+# a lottery per window (0.2 s recovered 11 of 13, 0.3 s recovered the two it
+# lost and lost one of its own), so the ladder tries both and keeps whichever
+# leaves the least untranscribed speech.
+
 # Batch decodes are windowed too: one pass over a whole 5 minute session peaked
 # at 3.9 GB RSS, and a toggle session has no length cap. An utterance up to the
 # arm point still decodes whole; past it the first pause cuts, and the force cut
 # bounds a pause-free stretch.
+#
+# The force cut is therefore also the peak-RSS bound, and it is the *only* dial
+# that moves it. Measured 2026-09-18 on the int8 CPU export (VmHWM over the
+# single largest encoder input, model load ~1.31 GB on top): 15 s +64 MB,
+# 30 s +147, 40 s +196, 45 s +362, 50 s +394, 60 s +463, 65 s +499. Neither the
+# number of distinct window lengths nor the retry ladder is worth measuring
+# against that: 30 extra distinct lengths below the peak cost 2.7 MB in total,
+# and a full ladder on the largest region costs 15 MB. Both arms pay the same
+# ~463 MB once a region reaches 60 s, whichever cut got them there.
+# (evidence/a5-rss/results.md in the audio review.)
 BATCH_ARM_S = 30.0
+STREAM_OVERLAP_S = 1.0  # murmure CHUNK_FORCED_OVERLAP_SECS
 BATCH_FORCE_CUT_S = SC_FORCE_CUT_S
 BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
 
@@ -326,6 +322,12 @@ BATCH_WINDOW_CAP_S = BATCH_FORCE_CUT_S + 5.0
 # reduction only by making 29-94% of unstable updates structurally drop the
 # display's head (not just revise it — see [`_chunked_partial`], which
 # carries the evidence for why the obvious middle ground does not work).
+#
+# Neither dial is what keeps the session in real time: a cadence low enough
+# for one machine is too low for a slower one, and both are user-settable.
+# `streaming.loop.PARTIAL_BUDGET` is the actual bound - it spaces ticks by
+# what the last one measured, so the cadence sets how *fast* the display can
+# refresh and the budget sets how *much* refreshing may cost.
 PARTIAL_CADENCE_S = 2.0
 PARTIAL_TAIL_S = 0.0
 
@@ -437,9 +439,8 @@ class _ParakeetOnnx:
     ) -> None:
         files = model_files(model_dir)
         if device == "cuda" and files.precision == "int8":
-            # The int8 graphs are CPU kernels (dynamic quantisation, the
-            # maxstack custom ops): CUDA would run a few nodes and copy around
-            # the rest.
+            # The int8 graphs are CPU kernels (dynamic quantisation): CUDA
+            # would run a few nodes and copy around the rest.
             raise ValueError(f"{model_dir} is an int8 export; the cuda device needs fp32")
 
         import onnxruntime as ort
@@ -475,16 +476,7 @@ class _ParakeetOnnx:
             os.path.join(model_dir, "nemo128.onnx"), opts(1), providers=cpu
         )
         encoder_opts = opts(encoder_threads or _encoder_threads())
-        # See encoder_variant: the maxstack encoder's myna.QSiLU* custom ops
-        # (dev/parakeet/qsilu/) need their kernel library registered on the session.
-        if files.custom_ops:
-            encoder_opts.register_custom_ops_library(files.custom_ops)
-        _log.info(
-            "parakeet encoder: %s on %s%s",
-            files.precision,
-            device,
-            " (maxstack, custom ops registered)" if files.custom_ops else "",
-        )
+        _log.info("parakeet encoder: %s on %s", files.precision, device)
         self._encoder = ort.InferenceSession(files.encoder, encoder_opts, providers=providers)
         self._decoder_joint = ort.InferenceSession(
             files.decoder_joint, opts(1), providers=providers
@@ -702,25 +694,56 @@ class _ParakeetOnnx:
                 bench("transpose", time.perf_counter() - t0)
             return self._decode_sequence(encoder_out[0], int(encoder_lens[0]), bench=bench)
 
-    def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
-        """`transcribe`, with one retry when the result looks collapsed.
+    def _padded(self, samples: NDArray[np.float32], pad_s: float) -> tuple[list[str], list[float]]:
+        """Decode ``samples`` nudged by silence on both ends, in region
+        seconds (head+tail recovers 77% of total collapses; head alone 52%,
+        tail alone 32%)."""
+        pad = np.zeros(int(pad_s * PARAKEET_RATE), dtype=samples.dtype)
+        tokens, timestamps = self.transcribe(np.concatenate([pad, samples, pad]))
+        # Clamped at both ends: a token the decoder placed in a pad still
+        # belongs to the region, and one timed past its end would read as
+        # coverage the region never had and outlive a cut in the loop.
+        end = len(samples) / PARAKEET_RATE
+        return tokens, [min(max(0.0, t - pad_s), end) for t in timestamps]
 
-        The retry pads silence onto both ends, which is enough of a nudge to
-        move the window off whatever the encoder trips over (head+tail
-        recovers 77% of collapses; head alone 52%, tail alone 32%). Retry
-        timestamps are shifted back over the head pad so they stay in region
-        seconds. A genuinely silent region simply decodes to nothing twice —
-        at RTF 0.02 that costs less than losing the words does.
+    def _transcribe_guarded(self, samples: NDArray[np.float32]) -> tuple[list[str], list[float]]:
+        """`transcribe`, retried when the result looks collapsed: either too
+        few tokens for the whole region, or a long stretch of loud audio with
+        no token in it at all (a partial collapse, `untranscribed_gap`).
+
+        A region holding no speech at all is decoded once: nothing a retry
+        could find is in it, and the shipped streaming config re-decodes the
+        whole uncommitted window twice a second while the user holds the key
+        without speaking.
         """
         tokens, timestamps = self.transcribe(samples)
+        if not has_speech(samples):
+            return tokens, timestamps
+        gap = untranscribed_gap(samples, [(t, t) for t in timestamps])
+        if gap >= UNTRANSCRIBED_GAP_S:
+            best, best_rank = (tokens, timestamps), (gap, -len(tokens))
+            for pad_s in RETRY_PADS:
+                retry = self._padded(samples, pad_s)
+                rank = (untranscribed_gap(samples, [(t, t) for t in retry[1]]), -len(retry[0]))
+                if rank < best_rank:
+                    best, best_rank = retry, rank
+                if best_rank[0] < UNTRANSCRIBED_GAP_S:
+                    break
+            if best_rank[0] >= UNTRANSCRIBED_GAP_S:
+                _log.warning(
+                    "parakeet left %.1f s of %.1f s untranscribed after %d nudged re-decodes",
+                    best_rank[0],
+                    len(samples) / PARAKEET_RATE,
+                    len(RETRY_PADS),
+                )
+            return best
         seconds = len(samples) / PARAKEET_RATE
         if len(tokens) >= _COLLAPSE_WORDS_PER_SECOND * seconds:
             return tokens, timestamps
-        pad = np.zeros(int(_COLLAPSE_RETRY_PAD_S * PARAKEET_RATE), dtype=samples.dtype)
-        retry_tokens, retry_timestamps = self.transcribe(np.concatenate([pad, samples, pad]))
+        retry_tokens, retry_timestamps = self._padded(samples, _COLLAPSE_RETRY_PAD_S)
         if len(retry_tokens) <= len(tokens):
             return tokens, timestamps
-        return retry_tokens, [max(0.0, t - _COLLAPSE_RETRY_PAD_S) for t in retry_timestamps]
+        return retry_tokens, retry_timestamps
 
     def transcribe_text(self, samples: NDArray[np.float32]) -> str:
         tokens, _ = self._transcribe_guarded(samples)
@@ -781,8 +804,12 @@ class ParakeetAdapter:
             raise ValueError("stream_arm_s must be > 0")
         if self._stream_silence_cut_s <= 0:
             raise ValueError("stream_silence_cut_s must be > 0")
-        if self._stream_force_cut_s <= 0:
-            raise ValueError("stream_force_cut_s must be > 0")
+        if self._stream_force_cut_s <= STREAM_OVERLAP_S + MIN_DECODE_S:
+            raise ValueError(
+                f"stream_force_cut_s must be > {STREAM_OVERLAP_S + MIN_DECODE_S:g}: "
+                f"each forced cut keeps {STREAM_OVERLAP_S:g} s of overlap and must "
+                f"leave at least {MIN_DECODE_S:g} s of new audio to decode"
+            )
         if self._stream_partial_cadence_s < 0:
             raise ValueError("stream_partial_cadence_s must be >= 0 (0 disables partials)")
         if self._stream_partial_tail_s < 0:
@@ -937,7 +964,7 @@ class ParakeetAdapter:
             ),
             cadence_seconds=_PROGRESS_INTERVAL_SECONDS,
             window_cap_seconds=BATCH_WINDOW_CAP_S,
-            overlap_seconds=1.0,
+            overlap_seconds=STREAM_OVERLAP_S,
         )
         for warning in warnings:
             await emit(warning)
@@ -990,7 +1017,7 @@ class ParakeetAdapter:
             cadence_seconds=_PROGRESS_INTERVAL_SECONDS,  # liveness tick only
             # The force cut is the memory bound (I6) in chunked mode.
             window_cap_seconds=self._stream_force_cut_s + 5.0,
-            overlap_seconds=1.0,  # murmure CHUNK_FORCED_OVERLAP_SECS
+            overlap_seconds=STREAM_OVERLAP_S,
             partial_cadence_seconds=self._stream_partial_cadence_s or None,
             partial_tail_seconds=self._stream_partial_tail_s or None,
             telemetry=self._stream_telemetry,

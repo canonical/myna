@@ -184,7 +184,7 @@ pub fn bytes(value: u64) -> String {
     }
 }
 
-/// This session's accept-gate drop counts, read from the running daemon.
+/// This session's accept-gate drop count, read from the running daemon.
 ///
 /// The one capture-health fact with no host-side source: only the daemon sees
 /// a chunk refused. Read through `gio`'s D-Bus rather than a zbus client -
@@ -192,7 +192,6 @@ pub fn bytes(value: u64) -> String {
 /// refreshes on demand rather than subscribing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AudioDrops {
-    pub not_resident: u64,
     pub not_active: u64,
 }
 
@@ -219,12 +218,11 @@ pub fn audio_drops() -> Option<AudioDrops> {
         )
         .ok()?;
     let properties = gio::glib::VariantDict::new(Some(&reply.child_value(0)));
-    // Absent, not zero, on a daemon older than these properties - the report
+    // Absent, not zero, on a daemon older than this property - the report
     // omits the line rather than claiming a clean session it cannot see.
-    // VariantDict lookup unboxes the values from GetAll's a{sv} reply.
+    // VariantDict lookup unboxes the value from GetAll's a{sv} reply.
     let read = |name: &str| properties.lookup::<u64>(name).ok().flatten();
     Some(AudioDrops {
-        not_resident: read("AudioDroppedNotResident")?,
         not_active: read("AudioDroppedNotActive")?,
     })
 }

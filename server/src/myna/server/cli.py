@@ -237,6 +237,8 @@ async def serve(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"missing dependency ({exc.name}) — install myna with the '{args.adapter}' extra"
         ) from exc
+    except ValueError as exc:
+        raise SystemExit(f"invalid --adapter {args.adapter} configuration: {exc}") from exc
 
     from myna.core import serve_unix, systemd_socket
     from myna.server.lifecycle import LifecycleService, idle_monitor
@@ -255,43 +257,52 @@ async def serve(args: argparse.Namespace) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
 
-    monitor = None
-    if args.sleep_idle_seconds > 0:
-        monitor = asyncio.ensure_future(
-            idle_monitor(lifecycle, args.sleep_idle_seconds, args.idle_action, stop, log=log)
-        )
+    try:
+        monitor = None
+        if args.sleep_idle_seconds > 0:
+            monitor = asyncio.ensure_future(
+                idle_monitor(lifecycle, args.sleep_idle_seconds, args.idle_action, stop, log=log)
+            )
 
-    # Under socket activation systemd owns the socket and hands it to us; we
-    # don't bind/chmod/unlink the path (it manages those).
-    inherited = systemd_socket()
-    if inherited is None:
-        args.socket.parent.mkdir(parents=True, exist_ok=True)
-        with contextlib.suppress(FileNotFoundError):  # stale socket → bind() fails
-            args.socket.unlink()
-
-    async with serve_unix(lifecycle, args.socket, sock=inherited):
+        # Under socket activation systemd owns the socket and hands it to us; we
+        # don't bind/chmod/unlink the path (it manages those).
+        inherited = systemd_socket()
         if inherited is None:
-            os.chmod(args.socket, int(args.socket_mode, 8))
-        log.info(
-            "serving adapter=%s candidate=%s on %s (pid %d; idle=%s/%s; activation=%s)",
-            args.adapter,
-            lifecycle.candidate.id,
-            "systemd-socket" if inherited is not None else args.socket,
-            os.getpid(),
-            args.sleep_idle_seconds or "off",
-            args.idle_action,
-            "yes" if inherited is not None else "no",
-        )
-        await stop.wait()
+            args.socket.parent.mkdir(parents=True, exist_ok=True)
+            with contextlib.suppress(FileNotFoundError):  # stale socket → bind() fails
+                args.socket.unlink()
 
-    log.info("shutting down")
-    if monitor is not None:
-        monitor.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await monitor
-    if inherited is None:
-        with contextlib.suppress(FileNotFoundError):
-            args.socket.unlink()
+        async with serve_unix(lifecycle, args.socket, sock=inherited):
+            if inherited is None:
+                os.chmod(args.socket, int(args.socket_mode, 8))
+            log.info(
+                "serving adapter=%s candidate=%s on %s (pid %d; idle=%s/%s; activation=%s)",
+                args.adapter,
+                lifecycle.candidate.id,
+                "systemd-socket" if inherited is not None else args.socket,
+                os.getpid(),
+                args.sleep_idle_seconds or "off",
+                args.idle_action,
+                "yes" if inherited is not None else "no",
+            )
+            await stop.wait()
+
+        log.info("shutting down")
+        if monitor is not None:
+            monitor.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await monitor
+        if inherited is None:
+            with contextlib.suppress(FileNotFoundError):
+                args.socket.unlink()
+    finally:
+        # The wakeup fd asyncio installs outlives the pipe it writes to:
+        # loop.close() closes the self-pipe first and only then restores the
+        # handlers, so a second signal in that window writes to a closed fd and
+        # CPython prints an ignored EBADF. Hand the signals back here, while the
+        # pipe is still open and a late SIGTERM can just end the process.
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
 
 
 def _validate_streaming_args(args: argparse.Namespace) -> None:

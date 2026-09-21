@@ -20,9 +20,9 @@
 //!   myna-shell overlay for GNOME; [`indicator::mock::MockIndicator`] for
 //!   tests). The former GTK overlay was removed in T150.
 //!
-//! Real IBus/portal/GTK behavior lives behind env-gated integration suites
-//! (`MYNA_IBUS_TESTS` / `MYNA_PORTAL_TESTS`); the hermetic
-//! suite drives the controller through the mocks.
+//! Real IBus/GTK behavior lives behind env-gated integration suites
+//! (`MYNA_IBUS_TESTS` / `MYNA_DBUS_TESTS`, the latter also covering the portal
+//! against a fake); the hermetic suite drives the controller through the mocks.
 
 pub mod controller;
 pub mod dbus;

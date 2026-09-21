@@ -29,7 +29,9 @@ pub mod tier;
 
 pub use audio::{AudioFormat, PcmChunk};
 pub use capabilities::Capabilities;
-pub use capture::{AudioSource, CaptureError, CaptureStream, StopHandle};
+pub use capture::{
+    AudioSource, CaptureError, CaptureHealth, CaptureHealthStream, CaptureStream, StopHandle,
+};
 pub use control::{ClientControl, ServerControl};
 pub use events::{
     Disposition, ErrorData, Progress, Segment, StreamingMode, TranscriptionEvent,

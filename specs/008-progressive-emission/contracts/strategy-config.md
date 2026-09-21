@@ -12,15 +12,17 @@ myna-server --adapter whisper --streaming \
     [--stream-cadence-s 1.0] [--stream-window-cap-s 30] [--stream-beam-size 1]
 
 myna-server --adapter parakeet --streaming \
-    [--stream-arm-s 15] [--stream-silence-cut-s 0.5] [--stream-force-cut-s 60]
-
-myna-server --adapter nemotron --streaming   # native loop
-myna-server --adapter sherpa   --streaming   # native recognizer endpointing
+    [--stream-arm-s 15] [--stream-silence-cut-s 0.5] [--stream-force-cut-s 60] \
+    [--stream-partial-cadence-s 2.0] [--stream-partial-tail-s 0]
 ```
 
 - Whisper uses local-agreement.
-- Parakeet uses SilenceCut chunked commit: no unstable partials; a pause after
-  the armed window commits a chunk.
+- Parakeet uses SilenceCut chunked commit: a pause after the armed window
+  commits a chunk, and between cuts the uncommitted window is re-decoded every
+  `--stream-partial-cadence-s` seconds and emitted as unstable display text
+  (`0` shows nothing until the next cut; `--stream-partial-tail-s` caps a tick
+  at the last N seconds of the window, `0` being the whole window).
+- FunASR advertises no streaming and commits on finalize.
 - `--streaming` off is batch mode on every adapter; streaming flags are ignored.
 - Values are fixed at process start.
 
@@ -37,8 +39,7 @@ sudo myna-parakeet.parakeet set \
 sudo snap restart myna-parakeet.server
 ```
 
-The packaged defaults are 15 / 0.5 / 60 seconds. Sherpa's endpointing is
-runtime-native and has no equivalent cadence knob.
+The packaged defaults are 15 / 0.5 / 60 seconds.
 
 ## Capabilities advertisement
 

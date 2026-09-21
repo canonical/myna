@@ -13,10 +13,10 @@ use myna_core::{
 };
 use serde_json::Value;
 use tokio::net::UnixStream;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::{BackendClient, BackendError, BackendEvents, BackendHandle, BackendSink, Outbound};
+use super::transport::{self, Dialect, Ws};
+use super::{BackendClient, BackendError, BackendHandle, Outbound};
 
 /// Bounds the audio backlog held in memory before backpressure kicks in
 /// (~1.6 s at 100 ms chunks) — the "bounded buffer" invariant.
@@ -54,37 +54,27 @@ impl BackendClient for WsUnixBackend {
             BackendError::Connect(format!("{}: {e}", self.socket_path.display()))
         })?;
         myna_core::info_log!("backend", "connected to {}", self.socket_path.display());
-        let (ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
+        let (mut ws, _resp) = tokio_tungstenite::client_async(WS_URL, stream)
             .await
             .map_err(|e| BackendError::Handshake(e.to_string()))?;
-        let (mut write, mut read) = ws.split();
 
         // Declare protocol + config.
         let start = ClientControl::SessionStart {
             protocol_version: PROTOCOL_VERSION.to_string(),
             config,
         };
-        write
-            .send(Message::text(
-                serde_json::to_string(&start).expect("serializable"),
-            ))
-            .await
-            .map_err(|e| BackendError::Transport(e.to_string()))?;
+        ws.send(Message::text(
+            serde_json::to_string(&start).expect("serializable"),
+        ))
+        .await
+        .map_err(|e| BackendError::Transport(e.to_string()))?;
 
         // Await the handshake reply: `session.created` (success) or a terminal
         // `transcription.error` (rejection, e.g. bad protocol version).
-        let protocol_version = read_handshake_ack(&mut read).await?;
+        let protocol_version = read_handshake_ack(&mut ws).await?;
 
-        let (out_tx, out_rx) = mpsc::channel::<Outbound>(OUTBOUND_CAPACITY);
-        let (ev_tx, ev_rx) =
-            mpsc::channel::<Result<TranscriptionEvent, BackendError>>(EVENT_CAPACITY);
-        tokio::spawn(pump(write, read, out_rx, ev_tx));
-
-        Ok(BackendHandle {
-            sink: BackendSink { tx: out_tx },
-            events: BackendEvents { rx: ev_rx },
-            protocol_version,
-        })
+        let (sink, events) = transport::spawn(ws, Internal, OUTBOUND_CAPACITY, EVENT_CAPACITY);
+        Ok(BackendHandle::new(sink, events, protocol_version))
     }
 }
 
@@ -144,18 +134,11 @@ pub async fn query_capabilities(
     }
 }
 
-type WsRead =
-    futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>>;
-type WsWrite = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>,
-    Message,
->;
-
 /// Read frames until the `session.created` ack; return the acknowledged
 /// protocol version. A `transcription.error` before it is a rejection.
-async fn read_handshake_ack(read: &mut WsRead) -> Result<Option<String>, BackendError> {
+async fn read_handshake_ack(ws: &mut Ws) -> Result<Option<String>, BackendError> {
     loop {
-        match read.next().await {
+        match ws.next().await {
             Some(Ok(Message::Text(text))) => {
                 let value: Value = serde_json::from_str(&text)
                     .map_err(|e| BackendError::Handshake(format!("bad JSON: {e}")))?;
@@ -189,78 +172,29 @@ async fn read_handshake_ack(read: &mut WsRead) -> Result<Option<String>, Backend
     }
 }
 
-/// Owns the split WS stream for the session's lifetime: pumps outbound audio /
-/// control up and transcript events down, until a terminal event, an abort, or
-/// the connection closes.
-async fn pump(
-    mut write: WsWrite,
-    mut read: WsRead,
-    mut out_rx: mpsc::Receiver<Outbound>,
-    ev_tx: mpsc::Sender<Result<TranscriptionEvent, BackendError>>,
-) {
-    // Once the FSM drops the sink (without an explicit Abort), we stop sending
-    // but keep draining events until the backend finishes (commit-drain).
-    let mut outbound_open = true;
-    let mut audio_frames = 0u64;
-    let mut audio_bytes = 0u64;
-    loop {
-        tokio::select! {
-            outbound = out_rx.recv(), if outbound_open => match outbound {
-                Some(Outbound::Audio(chunk)) => {
-                    audio_frames += 1;
-                    audio_bytes += chunk.data.len() as u64;
-                    if write.send(Message::binary(chunk.data)).await.is_err() {
-                        myna_core::dbg_log!("ws", "audio send failed after {audio_frames} frames");
-                        break;
-                    }
-                }
-                Some(Outbound::Finish) => {
-                    myna_core::dbg_log!(
-                        "ws",
-                        "-> session.finish (sent {audio_frames} audio frames / {audio_bytes} bytes)"
-                    );
-                    let frame = serde_json::to_string(&ClientControl::SessionFinish)
-                        .expect("serializable");
-                    if write.send(Message::text(frame)).await.is_err() {
-                        break;
-                    }
-                }
-                Some(Outbound::Abort) => {
-                    myna_core::dbg_log!("ws", "-> abort (after {audio_frames} audio frames)");
-                    let _ = write.close().await;
-                    return; // abort: stop reading events too
-                }
-                None => outbound_open = false, // sink dropped; keep reading
-            },
-            incoming = read.next() => match incoming {
-                Some(Ok(Message::Text(text))) => {
-                    match decode_event(&text) {
-                        Ok(Some(event)) => {
-                            let terminal = event.is_terminal();
-                            myna_core::dbg_log!("ws", "<- {}", event_summary(&event));
-                            if ev_tx.send(Ok(event)).await.is_err() {
-                                break; // FSM dropped the receiver
-                            }
-                            if terminal {
-                                break;
-                            }
-                        }
-                        Ok(None) => {} // stray control frame: ignore
-                        Err(e) => {
-                            let _ = ev_tx.send(Err(e)).await;
-                            break;
-                        }
-                    }
-                }
-                Some(Ok(Message::Binary(_))) => {} // server never sends binary
-                Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {} // ping/pong/frame handled by the library
-                Some(Err(e)) => {
-                    let _ = ev_tx.send(Err(BackendError::Transport(e.to_string()))).await;
-                    break;
-                }
-            },
+/// The internal `myna.core` framing: PCM as binary frames, `session.finish`,
+/// and `{"event": …}` transcript frames down.
+struct Internal;
+
+impl Dialect for Internal {
+    fn encode(&mut self, item: Outbound) -> Message {
+        match item {
+            Outbound::Audio(chunk) => Message::binary(chunk.data),
+            Outbound::Finish => {
+                myna_core::dbg_log!("ws", "-> session.finish");
+                Message::text(
+                    serde_json::to_string(&ClientControl::SessionFinish).expect("serializable"),
+                )
+            }
         }
+    }
+
+    fn decode(&mut self, text: &str) -> Result<Vec<TranscriptionEvent>, BackendError> {
+        let event = decode_event(text)?;
+        if let Some(event) = &event {
+            myna_core::dbg_log!("ws", "<- {}", event_summary(event));
+        }
+        Ok(event.into_iter().collect())
     }
 }
 

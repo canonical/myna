@@ -158,9 +158,9 @@ actions:
     # run. Their services are already in the SDKs, so leaving the gates unset
     # only meant native.rs / devices.rs / ibus.rs never showed the coverage
     # their own tests produce. gated-tests.sh stands each service up in a
-    # private instance and leaves a gate unset when its service did not come
-    # up, so a runner without one skips exactly as it does offline. ibus_hw
-    # drives the session-global input engine and must run serially.
+    # private instance and fails the run if one does not come up or dies, so a
+    # gate is never set over an absent service. ibus_hw drives the
+    # session-global input engine and must run serially.
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       --workspace --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
@@ -316,7 +316,21 @@ actions:
     # cargo-mutants copies client/ alone; tests that reach the rest of the
     # checkout (snap packaging, the server venv) find it through this.
     export MYNA_REPO_ROOT=/project
-    cd /project/client && cargo mutants "$@"
+    # cargo-mutants runs a bare `cargo test`, so a mutant whose only cover is
+    # an env-gated suite survives with nothing to show for it: about twenty in
+    # the PipeWire half of myna-audio/src/native.rs read as unreachable while
+    # pipewire_hw was skipping itself. Stand the same services up `test-gated`
+    # does and export the UI gates `ui-check` sets, once around the whole run
+    # rather than per mutant: the graph, the private bus and the IBus daemon
+    # cost ~6 s in total, and each mutant then pays only the suite's own time
+    # (pipewire_hw is ~3.5 s). A service that does not come up fails the run
+    # before cargo-mutants starts, and cargo-mutants fails the baseline loudly
+    # if the suite it enables is red.
+    export GIO_USE_VFS=local
+    export MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1
+    cd /project/client
+    exec /project/dev/gated-tests.sh \
+      xvfb-run -a -s "-screen 0 1024x768x24" cargo mutants "$@"
   # mutmut (server dev group; config in server/pyproject.toml [tool.mutmut]).
   # Scope with mutant-name globs, e.g. `myna.core.session*`. Copies the tree
   # into server/mutants/ (gitignored) and runs pytest there.
