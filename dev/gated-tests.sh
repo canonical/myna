@@ -141,9 +141,17 @@ wireplumber.profiles = {
 CONF
 }
 
-# True once wireplumber has published the virtual mic in the graph.
+# True once wireplumber has published the virtual mic under the class myna's
+# own enumeration accepts. The name alone is not enough: a mic of the wrong
+# class is still a mic myna will never select.
 virtual_mic_in_graph() {
-    pw-cli ls Node 2>/dev/null | grep -q "$VIRTUAL_MIC"
+    pw-cli ls Node 2>/dev/null | awk -v mic="\"$VIRTUAL_MIC\"" '
+        /^\tid /            { name = ""; class = "" }
+        $1 == "node.name"   { name = $3 }
+        $1 == "media.class" { class = $3 }
+        name == mic && class == "\"Audio/Source\"" { found = 1 }
+        END { exit !found }
+    '
 }
 
 # Does capture actually deliver? A present node proves nothing: a suspended

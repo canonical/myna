@@ -291,16 +291,25 @@ async fn drain_with_timeout(
 
 /// Harness self-check, both ways round: with the gate unset the suite skips
 /// and says so; with it set the graph it promises has to be there.
+///
+/// The harness's *own* mic, not merely some source: the device-selection
+/// cases spawn `pw-loopback` sources and run in parallel with this one, so
+/// "any source will do" is satisfied by a sibling's node.
 #[tokio::test]
 async fn the_graph_the_gate_promises_is_reachable() {
     skip_unless_enabled!();
     let devices = InputDevices::new().expect("registry connect");
-    // `list()` fills from the registry, so wait for the first source the way
-    // the enumeration cases do rather than reading an empty snapshot.
+    let wanted = target();
+    let listed_the_mic = |list: &[myna_audio::InputDevice]| match &wanted {
+        Some(name) => list.iter().any(|d| &d.node_name == name),
+        None => !list.is_empty(),
+    };
+    // `list()` fills from the registry, so wait for the source the way the
+    // enumeration cases do rather than reading an empty snapshot.
     let mut watch = devices.watch();
     let listed = tokio::time::timeout(Duration::from_secs(6), async {
         loop {
-            if !devices.list().is_empty() {
+            if listed_the_mic(&devices.list()) {
                 break true;
             }
             if watch.changed().await.is_err() {
@@ -312,7 +321,11 @@ async fn the_graph_the_gate_promises_is_reachable() {
     .unwrap_or(false);
     assert!(
         listed,
-        "MYNA_PIPEWIRE_TESTS=1 but the graph lists no capture sources. {HOW_TO_RUN}"
+        "MYNA_PIPEWIRE_TESTS=1 but the graph lists no capture source \
+         myna would select{}. {HOW_TO_RUN}",
+        wanted
+            .map(|n| format!(" (wanted '{n}')"))
+            .unwrap_or_default()
     );
 }
 
