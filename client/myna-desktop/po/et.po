@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-22 06:09+0000\n"
+"PO-Revision-Date: 2026-09-22 06:26+0000\n"
 "Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/et/>\n"
@@ -42,43 +42,43 @@ msgstr "Viga: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr ""
+msgstr "🎤 Ettelugemine: kuulan"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
-msgstr ""
+msgstr "Nüüd saad rääkida - lõpetamiseks klõpsa lingi uuesti."
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr ""
+msgstr "🎤 Ettelugemine: üleskirjutan"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr ""
+msgstr "Teisendan kõnet tekstiks…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr ""
+msgstr "🎤 Ettelugemine: vormistan"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr ""
+msgstr "Sisestan lõplikku teksti…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
-msgstr ""
+msgstr "⚠️ Viga ettelugemisel"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr ""
+msgstr "Fookus on kadunud"
 
 #: src/controller.rs:211
 msgid "No speech detected"
-msgstr ""
+msgstr "Kõne tuvastamine ei õnnestunud"
 
 #: src/controller.rs:213
 msgid "Background noise is high"
-msgstr ""
+msgstr "Taustamüra on liiga vali"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
@@ -90,20 +90,21 @@ msgstr ""
 
 #: src/controller.rs:829
 msgid "No text field is focused"
-msgstr ""
+msgstr "Mitte ükski tekstiväli pole fookuses"
 
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr ""
+msgstr "ettelugemise kiirklahv pole saadaval: %s"
 
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
 msgstr ""
+"fookuses olev väli on turvaline (saalsõnaväli); keeldun selle kasutamisest"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
-msgstr ""
+msgstr "ühtegi muudetavat objekti pole fookuses"
 
 #: src/inject/mod.rs:65
 #, c-format
