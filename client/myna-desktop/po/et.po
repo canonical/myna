@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-22 06:26+0000\n"
+"PO-Revision-Date: 2026-09-23 06:51+0000\n"
 "Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/et/>\n"
@@ -82,11 +82,11 @@ msgstr "Taustamüra on liiga vali"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
-msgstr ""
+msgstr "Ettelugemise sihtobjekt on suletud"
 
 #: src/controller.rs:828
 msgid "Refusing to type into a password field"
-msgstr ""
+msgstr "Salasõnavälja pole võimalik sisestada"
 
 #: src/controller.rs:829
 msgid "No text field is focused"
@@ -100,7 +100,7 @@ msgstr "ettelugemise kiirklahv pole saadaval: %s"
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
 msgstr ""
-"fookuses olev väli on turvaline (saalsõnaväli); keeldun selle kasutamisest"
+"fookuses olev väli on turvaline (salasõnaväli); keeldun selle kasutamisest"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
@@ -109,9 +109,9 @@ msgstr "ühtegi muudetavat objekti pole fookuses"
 #: src/inject/mod.rs:65
 #, c-format
 msgid "injection backend unavailable: %s"
-msgstr ""
+msgstr "sisestuse taustateenus pole saadaval: %s"
 
 #: src/inject/mod.rs:70
 #, c-format
 msgid "injection backend error: %s"
-msgstr ""
+msgstr "sisestuse taustateenuse viga: %s"
