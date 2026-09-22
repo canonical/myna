@@ -4,7 +4,8 @@
 # plan naming anything but `snap` before executing anything. Then the schema
 # it shares with the daemon, compiled into the system schema source.
 set -eu
-myna-config --version | grep -q '^myna-config '
+upstream=$(dpkg-query -W -f '${Version}' myna-config | sed 's/-[^-]*$//')
+myna-config --version | grep -qxF "myna-config $upstream"
 myna-config --help >/dev/null
 refused() {
     if out=$(myna-config --apply-plan "$1" 2>&1); then

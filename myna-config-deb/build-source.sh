@@ -50,11 +50,13 @@ stage="$out/myna-config-$upstream"
 
 rm -rf "$out"
 mkdir -p "$stage"
-git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/data client/myna-core client/myna-config \
+git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-config \
     | tar -x -C "$stage" --strip-components=1
+# The binaries report the version build-support/version.rs finds staged here.
+echo "$upstream" > "$stage/.snap-version"
 
-# Tests that read the repository (snapcraft.yaml, docs) have nothing to read here.
-rm "$stage/myna-config/tests/snap_packaging.rs"
+# Tests that read the repository (snapcraft.yaml, docs, dev/) have nothing to read here.
+rm "$stage/myna-config/tests/snap_packaging.rs" "$stage/myna-config/tests/client_version.rs"
 
 members='members = ["myna-core", "myna-config"]'
 if [ "$(grep -c '^members = ' "$stage/Cargo.toml")" != 1 ]; then
