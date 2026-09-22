@@ -41,8 +41,15 @@ fn scratch_dir(tag: &str) -> PathBuf {
 }
 
 /// A `pw-loopback`-created virtual capture source with a known `node.name`, so
-/// selection tests don't depend on whatever hardware happens to be present.
-/// Killed on drop.
+/// tests don't depend on whatever hardware happens to be present. Killed on
+/// drop.
+///
+/// `pw-loopback` always has two ends. Naming the far one as a sink costs
+/// nothing over letting it auto-connect to the session's default sink (which
+/// is what an unnamed end does), and in exchange any source here can be fed
+/// known audio with [`Self::play`]. Without that, every source delivers
+/// silence and a test can assert which format arrived but never which
+/// channels did - which is how a downmix bug lived here undetected.
 ///
 /// Panics when `pw-loopback` cannot be spawned: it ships with PipeWire, so its
 /// absence means the gate was set against a graph that is not really there,
@@ -50,7 +57,13 @@ fn scratch_dir(tag: &str) -> PathBuf {
 struct VirtualSource {
     child: Child,
     node_name: String,
+    /// The named far end, which [`Self::play`] feeds.
+    feed_name: String,
 }
+
+/// Rate of [`VirtualSource::play`]'s raw probe signal; the graph resamples to
+/// whatever capture negotiates.
+const PROBE_RATE: u32 = 44_100;
 
 impl VirtualSource {
     fn spawn(node_name: &str) -> Self {
@@ -58,15 +71,21 @@ impl VirtualSource {
     }
 
     /// Spawn a virtual source, optionally multi-channel via an explicit
-    /// `audio.position` (e.g. `FL,FR,RL,RR` for 4ch).
+    /// `audio.position` (e.g. `FL,FR,RL,RR` for 4ch). Both ends take the same
+    /// layout, so what is played in arrives unmixed.
     fn spawn_channels(node_name: &str, position: Option<&str>) -> Self {
-        let mut cap =
-            format!("media.class=Audio/Source node.name={node_name} node.description=myna-test");
-        if let Some(pos) = position {
-            cap.push_str(&format!(" audio.position=[{pos}]"));
-        }
+        let layout = position.map_or(String::new(), |pos| format!(" audio.position=[{pos}]"));
+        let feed_name = format!("{node_name}-feed");
         let child = Command::new("pw-loopback")
-            .args(["--capture-props", &cap])
+            .args([
+                "--capture-props",
+                &format!("media.class=Audio/Sink node.name={feed_name}{layout}"),
+                "--playback-props",
+                &format!(
+                    "media.class=Audio/Source node.name={node_name} \
+                     node.description=myna-test{layout}"
+                ),
+            ])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -75,6 +94,7 @@ impl VirtualSource {
         let source = Self {
             child,
             node_name: node_name.to_string(),
+            feed_name,
         };
         source.await_registered();
         source
@@ -93,12 +113,49 @@ impl VirtualSource {
         }
         panic!("{} never appeared in the graph", self.node_name);
     }
+
+    /// Start playing raw interleaved stereo S16LE at [`PROBE_RATE`] into the
+    /// far end, so it comes back out of this source. The caller owns the
+    /// child; [`Killed`] ends it with the test.
+    fn play(&self, pcm: &std::path::Path) -> Child {
+        let feed = &self.feed_name;
+        Command::new("pw-cat")
+            .args([
+                "--playback",
+                "--raw",
+                "--format",
+                "s16",
+                "--channels",
+                "2",
+                "--rate",
+                &PROBE_RATE.to_string(),
+                "--target",
+                feed,
+            ])
+            .arg(pcm)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn pw-cat into {feed} ({e}). {HOW_TO_RUN}"))
+    }
 }
 
 impl Drop for VirtualSource {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// Kills a spawned child on drop, so a failing assertion cannot leave a
+/// player running past the test.
+struct Killed(Child);
+
+impl Drop for Killed {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
 
@@ -1381,5 +1438,88 @@ async fn stop_is_prompt() {
     assert!(
         elapsed < Duration::from_secs(1),
         "stop drained promptly: {elapsed:?}"
+    );
+}
+
+/// Raw interleaved stereo S16LE with independent content per channel, so what
+/// survives the graph's downmix says which channels reached the consumer. A
+/// frequency of 0 Hz is a silent channel.
+fn write_stereo_probe(path: &std::path::Path, left_hz: f64, right_hz: f64, seconds: f64) {
+    let frames = (PROBE_RATE as f64 * seconds) as usize;
+    let mut pcm = Vec::with_capacity(frames * 4);
+    for n in 0..frames {
+        let t = n as f64 / PROBE_RATE as f64;
+        for hz in [left_hz, right_hz] {
+            let sample = ((std::f64::consts::TAU * hz * t).sin() * 0.5 * i16::MAX as f64) as i16;
+            pcm.extend_from_slice(&sample.to_le_bytes());
+        }
+    }
+    std::fs::write(path, pcm).expect("write probe pcm");
+}
+
+/// Mono capture of a *stereo* source must mix both channels, not copy the
+/// left one. A 1-channel stream that declares no channel position leaves the
+/// graph's mixing matrix with nothing to match, so it falls back to copying
+/// channel 0, and the right half of every stereo microphone is thrown away
+/// silently.
+///
+/// The probe puts a tone in the right channel only and leaves the left
+/// silent, so the assertion is just "the capture is not silent": with the
+/// positions named the tone is mixed in and heard, without them the consumer
+/// gets channel 0 and hears nothing. A harness that fed no audio at all fails
+/// the same way, so this cannot pass by accident.
+#[tokio::test]
+async fn mono_capture_of_a_stereo_source_mixes_in_the_right_channel() {
+    skip_unless_enabled!();
+    let vsrc = VirtualSource::spawn("myna-test-stereo-downmix");
+    let probe = scratch_dir("stereo-downmix").join("probe.raw");
+    // 0 Hz is a flat zero: silence in the left channel, a tone in the right.
+    write_stereo_probe(&probe, 0.0, 1_000.0, 8.0);
+    let _player = Killed(vsrc.play(&probe));
+
+    let fmt = AudioFormat::default(); // mono out, no channel selection
+    let source = CaptureSource::builder(fmt)
+        .ring_depth(Duration::from_secs(30))
+        .target(vsrc.node_name.clone())
+        .backend(Box::new(PipeWireBackend::new()))
+        .build();
+    let mut stats = source.stats();
+    let stop = source.stop_handle();
+    let stream = Box::new(source).capture();
+    let captured = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            if stats.borrow_and_update().captured >= Duration::from_millis(1_500) {
+                break true;
+            }
+            if stats.changed().await.is_err() {
+                break false;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    stop.stop();
+    let (chunks, fault) = drain_with_timeout(stream, Duration::from_secs(3)).await;
+    assert!(fault.is_none(), "clean end: {fault:?}");
+    assert!(captured, "captured 1.5s from the cable");
+
+    // Drop the first half second: the graph is still linking, and pw-play may
+    // not have reached the sink yet.
+    let samples: Vec<i16> = chunks
+        .iter()
+        .flat_map(|c| c.data.chunks_exact(2))
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .skip(fmt.sample_rate_hz as usize / 2)
+        .collect();
+    assert!(
+        samples.len() > fmt.sample_rate_hz as usize / 2,
+        "enough audio to analyse, got {} samples",
+        samples.len()
+    );
+    let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+    assert!(
+        peak > i16::MAX as u16 / 10,
+        "the right channel reached the consumer (peak {peak} of {})",
+        i16::MAX
     );
 }

@@ -44,6 +44,10 @@ use pipewire::{
 
 use crate::backend::{CaptureBackend, CaptureSpec, Producer};
 
+/// Width of `spa_audio_info_raw`'s channel-position array, which
+/// [`AudioInfoRaw::set_position`] takes whole regardless of the channel count.
+const MAX_CHANNELS: usize = pipewire::spa::sys::SPA_AUDIO_MAX_CHANNELS as usize;
+
 /// How often the loop thread drains the realtime ring and checks the
 /// [`StopHandle`] and the phase deadline: at most this much latency on each
 /// chunk, and well inside the ~250 ms stop/abort promptness contract (FR-012).
@@ -973,6 +977,9 @@ fn capture_session(
     audio_info.set_format(AudioFormat::S16LE);
     audio_info.set_rate(spec.format.sample_rate_hz);
     audio_info.set_channels(stream_channels);
+    if let Some(position) = channel_positions(selection.as_deref(), stream_channels) {
+        audio_info.set_position(position);
+    }
     let obj = Object {
         type_: SpaTypes::ObjectParamFormat.as_raw(),
         id: ParamType::EnumFormat.as_raw(),
@@ -1040,6 +1047,41 @@ fn stream_channels(selection: Option<&[u8]>, negotiated: u8) -> u32 {
         Some(indices) => indices.iter().max().map_or(1, |&max| max as u32 + 1),
         None => negotiated as u32,
     }
+}
+
+/// What each requested channel means, or `None` to leave the request
+/// unpositioned.
+///
+/// A format that declares a channel count but no positions keeps
+/// `AudioInfoRaw`'s `UNPOSITIONED` flag, which drops `SPA_FORMAT_AUDIO_position`
+/// from the pod entirely. channelmix builds its matrix by matching source
+/// positions against sink positions, so with none to match it falls back to
+/// copying channel n to channel n: asking a stereo microphone for one channel
+/// then yields its front-left channel alone, not a downmix, and the right
+/// half of every stereo device is discarded in silence (measured: the other
+/// channel arrives 100 dB down, `tests/pipewire_hw.rs`).
+///
+/// A channel *selection* is the one case that wants that raw mapping, because
+/// it addresses the device's channels by index and mixes them itself
+/// ([`channel_buckets`]) - naming positions there would have the graph mix
+/// first and renumber what the indices refer to. Past stereo there is no
+/// single right answer (4 channels may be quad or 3.1), so those stay
+/// unpositioned too rather than guess a layout.
+fn channel_positions(selection: Option<&[u8]>, channels: u32) -> Option<[u32; MAX_CHANNELS]> {
+    if selection.is_some() {
+        return None;
+    }
+    let named: &[u32] = match channels {
+        1 => &[pipewire::spa::sys::SPA_AUDIO_CHANNEL_MONO],
+        2 => &[
+            pipewire::spa::sys::SPA_AUDIO_CHANNEL_FL,
+            pipewire::spa::sys::SPA_AUDIO_CHANNEL_FR,
+        ],
+        _ => return None,
+    };
+    let mut position = [pipewire::spa::sys::SPA_AUDIO_CHANNEL_UNKNOWN; MAX_CHANNELS];
+    position[..named.len()].copy_from_slice(named);
+    Some(position)
 }
 
 /// Which selected channel indices feed each output channel: all of them for
@@ -1812,6 +1854,39 @@ mod tests {
         assert_eq!(stream_channels(Some(&[5, 0]), 2), 6);
         assert_eq!(stream_channels(Some(&[]), 2), 1);
         assert_eq!(stream_channels(None, 2), 2);
+    }
+
+    #[test]
+    fn a_plain_request_names_its_channels_so_the_graph_can_mix_to_them() {
+        use pipewire::spa::sys::{
+            SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR, SPA_AUDIO_CHANNEL_MONO,
+            SPA_AUDIO_CHANNEL_UNKNOWN,
+        };
+
+        let mono = channel_positions(None, 1).expect("mono is positioned");
+        assert_eq!(mono[0], SPA_AUDIO_CHANNEL_MONO);
+        assert_eq!(
+            mono[1], SPA_AUDIO_CHANNEL_UNKNOWN,
+            "only channel 0 is named"
+        );
+
+        let stereo = channel_positions(None, 2).expect("stereo is positioned");
+        assert_eq!(
+            [stereo[0], stereo[1]],
+            [SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR]
+        );
+        assert_eq!(stereo[2], SPA_AUDIO_CHANNEL_UNKNOWN, "only two are named");
+    }
+
+    #[test]
+    fn a_selection_and_an_unguessable_layout_stay_unpositioned() {
+        // A selection addresses the device's channels by index and mixes them
+        // itself, so the graph must not mix (and renumber) first.
+        assert!(channel_positions(Some(&[2, 3]), 4).is_none());
+        assert!(channel_positions(Some(&[0]), 1).is_none());
+        // 4 channels may be quad or 3.1; there is nothing to guess from.
+        assert!(channel_positions(None, 4).is_none());
+        assert!(channel_positions(None, 0).is_none());
     }
 
     #[test]
