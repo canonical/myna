@@ -10,7 +10,8 @@
 //! written); a fatal capture fault is an `Err` item on the stream, not a silent
 //! stall.
 
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::Path;
 
 use bytes::Bytes;
 use myna_core::{AudioFormat, PcmChunk};
@@ -32,13 +33,12 @@ pub struct WavFileSource {
 
 impl WavFileSource {
     /// Open and parse a WAV file, reading its PCM into memory (clips are seconds
-    /// long). Fails if the file is missing or not uncompressed PCM.
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, CaptureError> {
-        let path: PathBuf = path.as_ref().to_path_buf();
-        let bytes = std::fs::read(&path)
-            .map_err(|e| CaptureError::DeviceUnavailable(format!("{}: {e}", path.display())))?;
-        let (format, data) = parse_wav(&bytes)
-            .map_err(|e| CaptureError::Backend(format!("{}: {e}", path.display())))?;
+    /// long). Fails if the file is unreadable or not uncompressed PCM
+    /// (`InvalidData`).
+    pub fn new(path: impl AsRef<Path>) -> io::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        let (format, data) =
+            parse_wav(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(Self {
             format,
             data,
@@ -126,8 +126,7 @@ impl AudioSource for WavFileSource {
 
 /// Minimal RIFF/WAVE parser: returns the PCM [`AudioFormat`] and the `data`
 /// bytes. Accepts only uncompressed PCM (format tag 1) — the client owns any
-/// conversion, so a compressed file is a `Backend` error, never silently
-/// decoded.
+/// conversion, so a compressed file is an error, never silently decoded.
 fn parse_wav(bytes: &[u8]) -> Result<(AudioFormat, Bytes), String> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err("not a RIFF/WAVE file".into());
@@ -176,6 +175,7 @@ fn parse_wav(bytes: &[u8]) -> Result<(AudioFormat, Bytes), String> {
 mod tests {
     use super::*;
     use futures_util::StreamExt;
+    use std::path::PathBuf;
 
     /// Build a minimal canonical PCM WAV (44-byte header + data) for tests.
     fn wav(format: AudioFormat, data: &[u8]) -> Vec<u8> {
@@ -215,6 +215,15 @@ mod tests {
         let (parsed, data) = parse_wav(&bytes).unwrap();
         assert_eq!(parsed, fmt);
         assert_eq!(data.len(), 3200);
+    }
+
+    #[test]
+    fn a_missing_file_reports_the_os_error() {
+        let err = WavFileSource::new("/nonexistent/clip.wav").err().unwrap();
+        assert_eq!(
+            err.to_string(),
+            std::io::Error::from_raw_os_error(2).to_string()
+        );
     }
 
     #[test]
