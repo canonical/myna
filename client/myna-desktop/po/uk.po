@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-21 19:24+0000\n"
-"Last-Translator: Anonymous <noreply@weblate.org>\n"
+"PO-Revision-Date: 2026-09-23 06:51+0000\n"
+"Last-Translator: Ihor Hordiichuk <igor_ck@outlook.com>\n"
 "Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/uk/>\n"
 "Language: uk\n"
@@ -22,89 +22,89 @@ msgstr ""
 
 #: src/indicator/mod.rs:84
 msgid "Loading model…"
-msgstr ""
+msgstr "Завантаження моделі…"
 
 #: src/indicator/mod.rs:85
 msgid "Listening"
-msgstr ""
+msgstr "Прослуховування"
 
 #: src/indicator/mod.rs:86
 msgid "Transcribing"
-msgstr ""
+msgstr "Транскрибування"
 
 #: src/indicator/mod.rs:87
 msgid "Finishing"
-msgstr ""
+msgstr "Завершення"
 
 #: src/indicator/mod.rs:91
 #, c-format
 msgid "Error: %s"
-msgstr ""
+msgstr "Помилка: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr ""
+msgstr "🎤 Диктування: прослуховування"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
-msgstr ""
+msgstr "Можете говорити — натисніть на ярлик ще раз, щоб припинити."
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr ""
+msgstr "💬 Диктування: транскрибування"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr ""
+msgstr "Перетворення мови на текст…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr ""
+msgstr "⏳ Диктування: завершення"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr ""
+msgstr "Вставлення остаточного тексту…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
-msgstr ""
+msgstr "⚠️ Помилка диктування"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr ""
+msgstr "Фокус втрачено"
 
 #: src/controller.rs:211
 msgid "No speech detected"
-msgstr ""
+msgstr "Мовлення не виявлено"
 
 #: src/controller.rs:213
 msgid "Background noise is high"
-msgstr ""
+msgstr "Високий рівень фонового шуму"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
-msgstr ""
+msgstr "Завдання з диктування завершено"
 
 #: src/controller.rs:828
 msgid "Refusing to type into a password field"
-msgstr ""
+msgstr "Відмова від введення даних у поле для пароля"
 
 #: src/controller.rs:829
 msgid "No text field is focused"
-msgstr ""
+msgstr "Жодне текстове поле не у фокусі"
 
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr ""
+msgstr "Клавіша швидкого доступу для диктування недоступна: %s"
 
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
-msgstr ""
+msgstr "фокус на захищеному полі (пароль); відмова від введення даних"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
-msgstr ""
+msgstr "не виділено жодного цільового поля, яке можна редагувати"
 
 #: src/inject/mod.rs:65
 #, c-format
