@@ -47,6 +47,15 @@ execute: |
     cat transcript.out
     grep -qF "The quick brown fox jumps over the lazy dog." transcript.out
 
+    # A caller-named socket replaces the share search rather than clashing
+    # with it.
+    ( printf '\n'; sleep 15 ) | \
+        myna.testbed --socket /var/snap/myna/current/backend/provider/myna.sock \
+            --clip /var/snap/myna/current/fixture.wav \
+            > socket.out 2>&1 || true
+    cat socket.out
+    grep -qF "The quick brown fox jumps over the lazy dog." socket.out
+
 restore: |
     snap remove --purge myna || true
     snap remove --purge myna-fake-backend || true

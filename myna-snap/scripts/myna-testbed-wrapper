@@ -1,8 +1,13 @@
 #!/bin/sh
 # myna-testbed launcher: PipeWire compat symlinks, then exec against the
 # backend shared over the `backend` content interface, found the way the
-# daemon finds it (see myna-daemon).
+# daemon finds it (see myna-daemon), unless the caller named a backend.
 set -eu
 # shellcheck source=/dev/null  # generated inside the snap at runtime
 . "$SNAP/bin/myna-runtime-links"
+for arg in "$@"; do
+    case "$arg" in
+        --socket | --backend-dir) exec "$SNAP/bin/myna-testbed" "$@" ;;
+    esac
+done
 exec "$SNAP/bin/myna-testbed" --backend-dir "$SNAP_DATA/backend" "$@"
