@@ -22,6 +22,8 @@
 //! `myna-audio` (native PipeWire backend): capture starts at press and buffers in
 //! the pre-ready ring while the model loads, so nothing said is lost.
 
+mod convert;
+
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -76,7 +78,8 @@ OPTIONS:
     --backend-dir <d>  directory to find the backend socket under
                        (<d>/*/provider.env - how the snap wires the `backend`
                        content share). One of these two is required.
-    --clip <wav>       a single PCM WAV clip to dictate (repeatable)
+    --clip <wav>       a single PCM WAV clip to dictate (repeatable); any rate,
+                       channel count or integer width, converted to 16 kHz mono
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
     --mic              capture the live microphone (myna-audio / native PipeWire)
     --target <node>    PipeWire node.name to capture from (with --mic)
@@ -195,6 +198,18 @@ fn resolve_socket(backend: &BackendSocket) -> Result<PathBuf, String> {
         BackendSocket::Fixed(_) => e.to_string(),
     })?;
     Ok(provider.socket)
+}
+
+/// A clip as a source in the format the backend takes, whatever it was
+/// recorded in.
+fn open_clip(path: &std::path::Path) -> Result<WavFileSource, String> {
+    use myna_orchestrator::AudioSource as _;
+    let wav =
+        WavFileSource::new(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let target = AudioFormat::default();
+    let pcm = convert::convert(wav.format(), wav.pcm(), target)
+        .map_err(|e| format!("cannot convert {}: {e}", path.display()))?;
+    Ok(WavFileSource::from_pcm(target, pcm.into()))
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -472,10 +487,10 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         } else {
             println!("── clip {}", clip.path.display());
         }
-        let source = match WavFileSource::new(&clip.path) {
+        let source = match open_clip(&clip.path) {
             Ok(s) => s.realtime(args.realtime),
             Err(e) => {
-                eprintln!("✗ cannot open {}: {e}", clip.path.display());
+                eprintln!("✗ {e}");
                 exit = ExitCode::FAILURE;
                 continue;
             }
@@ -610,6 +625,46 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use myna_orchestrator::AudioSource as _;
+
+    #[test]
+    fn a_clip_is_converted_to_the_backend_format() {
+        let (rate, channels, frames) = (48_000u32, 2u16, 4_800u32);
+        let data_len = frames * u32::from(channels) * 2;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&channels.to_le_bytes());
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * u32::from(channels) * 2).to_le_bytes());
+        wav.extend_from_slice(&(channels * 2).to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        wav.resize(wav.len() + data_len as usize, 0);
+        let path = std::env::temp_dir().join(format!("myna-clip-{}.wav", std::process::id()));
+        std::fs::write(&path, wav).unwrap();
+
+        let source = open_clip(&path);
+        std::fs::remove_file(&path).ok();
+        let source = source.unwrap();
+        assert_eq!(source.format(), AudioFormat::default());
+        assert_eq!(source.pcm().len(), 1_600 * 2, "0.1 s at 16 kHz mono S16");
+    }
+
+    #[test]
+    fn a_missing_clip_is_named() {
+        let err = open_clip(std::path::Path::new("/nonexistent/clip.wav"))
+            .err()
+            .unwrap();
+        assert!(
+            err.starts_with("cannot open /nonexistent/clip.wav: "),
+            "{err}"
+        );
+    }
 
     #[test]
     fn a_failed_search_names_the_directory() {

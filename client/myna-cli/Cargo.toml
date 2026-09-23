@@ -17,4 +17,6 @@ myna-orchestrator = { path = "../myna-orchestrator" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+rubato.workspace = true
+audioadapter-buffers.workspace = true
 async-trait.workspace = true
