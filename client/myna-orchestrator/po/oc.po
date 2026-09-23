@@ -1,75 +1,75 @@
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the PACKAGE package.
-# Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-21 19:24+0000\n"
-"Last-Translator: Anonymous <noreply@weblate.org>\n"
-"Language-Team: Spanish <https://hosted.weblate.org/projects/ubuntu-desktop-"
-"translations/myna-orchestrator/es/>\n"
-"Language: es\n"
+"PO-Revision-Date: 2026-09-23 06:51+0000\n"
+"Last-Translator: Quentin PAGÈS <quentinantonin@free.fr>\n"
+"Language-Team: Occitan <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-orchestrator/oc/>\n"
+"Language: oc\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"Plural-Forms: nplurals=2; plural=n > 1;\n"
 "X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/backend/mod.rs:75
 #, c-format
 msgid "cannot reach backend: %s"
-msgstr "no se puede acceder al backend: %s"
+msgstr "impossible d'atenger lo backend : %s"
 
 #: src/backend/mod.rs:78
 #, c-format
 msgid "handshake failed: %s"
-msgstr "handshake fallido: %s"
+msgstr "francàs de la negociacion : %s"
 
 #: src/backend/mod.rs:83
 #, c-format
 msgid "session rejected: %1$s: %2$s"
-msgstr "sesión rechazada: %1$s: %2$s"
+msgstr "session refusada : %1$s : %2$s"
 
 #: src/backend/mod.rs:90
 #, c-format
 msgid "malformed event from backend: %s"
-msgstr "evento malformado del backend: %s"
+msgstr "eveniment mal format del backend : %s"
 
 #: src/backend/mod.rs:92
 msgid "backend connection closed unexpectedly"
-msgstr "conexión al backend cerrada inesperadamente"
+msgstr "connexion al backend tampada d’un biais imprevist"
 
 #: src/backend/mod.rs:94
 #, c-format
 msgid "transport error: %s"
-msgstr "error de transporte: %s"
+msgstr "error de transpòrt : %s"
 
 #: src/backend/share.rs:73
 msgid ""
 "no backend is connected - install one and connect it, e.g. `sudo snap "
 "connect myna:backend myna-whisper`"
 msgstr ""
-"no hay ningún backend conectado - instala uno y conéctalo, p. ej. `sudo snap "
-"connect myna:backend myna-whisper`"
+"cap de backend es pas connectat – installatz-ne un e connectatz-lo, per ex. "
+"`sudo snap connect myna:backend myna-whisper`"
 
 #: src/backend/share.rs:80
 #, c-format
 msgid "%s is connected but offers no Unix socket"
-msgstr ""
+msgstr "%s es connectat mas prepausa pas cap de socket Unix"
 
 #: src/backend/share.rs:85
 #, c-format
 msgid "%s is connected but its server is not running"
-msgstr ""
+msgstr "%s es connectat mas son servidor es pas en cors d'execucion"
 
 #: src/backend/share.rs:91
 #, c-format
 msgid "connected shares with an unreadable provider.env: %s"
-msgstr ""
+msgstr "partiments connectats amb un provider.env illegible: %s"
 
 #: src/backend/share.rs:101
 #, c-format
@@ -77,3 +77,5 @@ msgid ""
 "%1$s backends are connected (%2$s); disconnect all but one (`snap "
 "connections myna`)"
 msgstr ""
+"%1$s backends son connectats (%2$s) ; desconnectatz-los totes levat un "
+"(`snap connections myna`)"

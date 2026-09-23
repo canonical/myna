@@ -3,19 +3,21 @@
 # This file is distributed under the same license as the PACKAGE package.
 # Marco Trevisan (Treviño) <mail@3v1n0.net>, 2026.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-01 13:43+0200\n"
-"PO-Revision-Date: 2026-09-01 11:51+0000\n"
-"Last-Translator: Marco Trevisan (Treviño) <mail@3v1n0.net>\n"
-"Language-Team: French\n"
+"PO-Revision-Date: 2026-09-21 19:24+0000\n"
+"Last-Translator: Anonymous <noreply@weblate.org>\n"
+"Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-desktop/fr/>\n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n > 1;\n"
+"X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/indicator/mod.rs:94
 msgid "Loading model…"
@@ -95,8 +97,8 @@ msgstr "raccourci de dictée indisponible: %s"
 msgid ""
 "%s backends are connected; disconnect all but one (`snap connections myna`)"
 msgstr ""
-"%s backends sont connectés ; déconnectez-en tous sauf un (`snap "
-"connections myna`)"
+"%s backends sont connectés ; déconnectez-en tous sauf un (`snap connections "
+"myna`)"
 
 #: src/inject/mod.rs:80
 msgid "focused field is secure (password); refusing to inject"
