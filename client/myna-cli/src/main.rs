@@ -172,7 +172,7 @@ fn parse_args() -> Result<Args, String> {
     // T049/T050: the --mode flag overrides the persisted setting; the persisted
     // setting (Auto default) is resolved against the tier gate below.
     let mode = mode.unwrap_or_else(|| myna_core::Settings::load().streaming_mode);
-    let socket = backend.resolve().map_err(|e| e.to_string())?.socket;
+    let socket = resolve_socket(&backend)?;
 
     Ok(Args {
         socket,
@@ -187,6 +187,14 @@ fn parse_args() -> Result<Args, String> {
         show_unstable,
         mode,
     })
+}
+
+fn resolve_socket(backend: &BackendSocket) -> Result<PathBuf, String> {
+    let provider = backend.resolve().map_err(|e| match backend {
+        BackendSocket::Search(dir) => format!("{}: {e}", dir.display()),
+        BackendSocket::Fixed(_) => e.to_string(),
+    })?;
+    Ok(provider.socket)
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -597,4 +605,19 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 
     println!("bye");
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_search_names_the_directory() {
+        let dir = PathBuf::from("/nonexistent/share");
+        let err = resolve_socket(&BackendSocket::Search(dir)).unwrap_err();
+        assert!(
+            err.starts_with("/nonexistent/share: no backend is connected"),
+            "{err}"
+        );
+    }
 }
