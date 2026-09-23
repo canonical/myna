@@ -99,7 +99,7 @@ OPTIONS:
     -h, --help         show this help
 ";
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut socket = None;
     let mut backend_dir = None;
     let mut clips = Vec::new();
@@ -112,7 +112,7 @@ fn parse_args() -> Result<Args, String> {
     let mut ws_path: Option<String> = None;
     let mut show_unstable = false;
     let mut mode = None;
-    let mut it = std::env::args().skip(1);
+    let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -302,7 +302,7 @@ async fn main() -> ExitCode {
         return list_devices().await;
     }
 
-    let args = match parse_args() {
+    let args = match parse_args(std::env::args().skip(1)) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("{e}");
