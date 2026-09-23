@@ -8,108 +8,110 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-09-23 14:53+0000\n"
+"Last-Translator: Alex <aleha@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Russian <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-desktop/ru/>\n"
 "Language: ru\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/indicator/mod.rs:84
 msgid "Loading model…"
-msgstr ""
+msgstr "Загружается модель…"
 
 #: src/indicator/mod.rs:85
 msgid "Listening"
-msgstr ""
+msgstr "Говорите"
 
 #: src/indicator/mod.rs:86
 msgid "Transcribing"
-msgstr ""
+msgstr "Расшифровываем"
 
 #: src/indicator/mod.rs:87
 msgid "Finishing"
-msgstr ""
+msgstr "Последние штрихи"
 
 #: src/indicator/mod.rs:91
 #, c-format
 msgid "Error: %s"
-msgstr ""
+msgstr "Ошибка: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr ""
+msgstr "🎤 Диктовка: говорите"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
-msgstr ""
+msgstr "Повторное нажатие сочетания клавиш завершит Диктовку."
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr ""
+msgstr "💬 Диктовка: расшифровываем"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr ""
+msgstr "Преобразование речи в текст…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr ""
+msgstr "⏳ Диктовка: последние штрихи"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr ""
+msgstr "Вставка окончательного текста…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
-msgstr ""
+msgstr "⚠️ Сбой Диктовки"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr ""
+msgstr "Потерян фокус"
 
 #: src/controller.rs:211
 msgid "No speech detected"
-msgstr ""
+msgstr "Речь не обнаружена"
 
 #: src/controller.rs:213
 msgid "Background noise is high"
-msgstr ""
+msgstr "Вокруг Вас слишком шумно"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
-msgstr ""
+msgstr "Цель диктовки закрыта"
 
 #: src/controller.rs:828
 msgid "Refusing to type into a password field"
-msgstr ""
+msgstr "Нельзя вводить данные в поле для пароля"
 
 #: src/controller.rs:829
 msgid "No text field is focused"
-msgstr ""
+msgstr "Вы не выбрали текстовое поле"
 
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr ""
+msgstr "горячая клавиша диктовки недоступна: %s"
 
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
-msgstr ""
+msgstr "защищенное поле (пароль); не получится вставить текст"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
-msgstr ""
+msgstr "не выбрали редактируемую цель"
 
 #: src/inject/mod.rs:65
 #, c-format
 msgid "injection backend unavailable: %s"
-msgstr ""
+msgstr "бэкенд ввода недоступен: %s"
 
 #: src/inject/mod.rs:70
 #, c-format
 msgid "injection backend error: %s"
-msgstr ""
+msgstr "ошибка бэкэнда ввода: %s"
