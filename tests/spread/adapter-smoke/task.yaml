@@ -115,7 +115,7 @@ execute: |
         # one Enter and hold the pipe open while the clip plays out.
         ( printf '\n'; sleep 60 ) | \
             myna.testbed --clip /var/snap/myna/current/fixture.wav \
-                --language en --mode "$mode" --no-realtime \
+                --language en --mode "$mode" \
                 > "$mode.out" 2>&1 || true
         cat "$mode.out"
 

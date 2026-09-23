@@ -95,7 +95,8 @@ OPTIONS:
                        (streaming mode; off by default — FR-007)
     --mode <mode>      transcription mode: `auto` (default; tier-gated),
                        `streaming`, or `batch` — overrides the persisted setting
-    --no-realtime      stream the clip as fast as possible (default: real-time)
+    --realtime         pace clips at real time, like a microphone (default: as
+                       fast as the backend takes them)
     -h, --help         show this help
 ";
 
@@ -106,7 +107,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut mic = false;
     let mut target = None;
     let mut language = None;
-    let mut realtime = true;
+    let mut realtime = false;
     let mut dialect = Dialect::Internal;
     let mut base64_audio = false;
     let mut ws_path: Option<String> = None;
@@ -149,7 +150,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                     }
                 })
             }
-            "--no-realtime" => realtime = false,
+            "--realtime" => realtime = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
@@ -664,6 +665,17 @@ mod tests {
             err.starts_with("cannot open /nonexistent/clip.wav: "),
             "{err}"
         );
+    }
+
+    fn parse(flags: &[&str]) -> Result<Args, String> {
+        let fixed = ["--socket", "/s", "--clip", "c.wav", "--mode", "batch"];
+        parse_args(fixed.iter().chain(flags).map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn clips_are_sent_flat_out_unless_realtime_is_asked_for() {
+        assert!(!parse(&[]).unwrap().realtime);
+        assert!(parse(&["--realtime"]).unwrap().realtime);
     }
 
     #[test]
