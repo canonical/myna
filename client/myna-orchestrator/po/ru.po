@@ -8,65 +8,69 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-09-24 12:44+0000\n"
+"Last-Translator: Alex <aleha@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Russian <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-orchestrator/ru/>\n"
 "Language: ru\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/backend/mod.rs:75
 #, c-format
 msgid "cannot reach backend: %s"
-msgstr ""
+msgstr "бэкенд недоступен: %s"
 
 #: src/backend/mod.rs:78
 #, c-format
 msgid "handshake failed: %s"
-msgstr ""
+msgstr "ошибка при рукопожатии: %s"
 
 #: src/backend/mod.rs:83
 #, c-format
 msgid "session rejected: %1$s: %2$s"
-msgstr ""
+msgstr "сессия отклонена: %1$s: %2$s"
 
 #: src/backend/mod.rs:90
 #, c-format
 msgid "malformed event from backend: %s"
-msgstr ""
+msgstr "получено некорректное событие от бэкенда: %s"
 
 #: src/backend/mod.rs:92
 msgid "backend connection closed unexpectedly"
-msgstr ""
+msgstr "соединение с бэкендом неожиданно прервано"
 
 #: src/backend/mod.rs:94
 #, c-format
 msgid "transport error: %s"
-msgstr ""
+msgstr "ошибка передачи данных: %s"
 
 #: src/backend/share.rs:73
 msgid ""
 "no backend is connected - install one and connect it, e.g. `sudo snap "
 "connect myna:backend myna-whisper`"
 msgstr ""
+"бэкенд не подключён — установите его и подключите, например: `sudo snap "
+"connect myna:backend myna-whisper`"
 
 #: src/backend/share.rs:80
 #, c-format
 msgid "%s is connected but offers no Unix socket"
-msgstr ""
+msgstr "%s подключен, но не предоставляет сокет Unix"
 
 #: src/backend/share.rs:85
 #, c-format
 msgid "%s is connected but its server is not running"
-msgstr ""
+msgstr "%s подключён, но его сервер не работает"
 
 #: src/backend/share.rs:91
 #, c-format
 msgid "connected shares with an unreadable provider.env: %s"
-msgstr ""
+msgstr "подключены общие ресурсы с нечитаемым provider.env: %s"
 
 #: src/backend/share.rs:101
 #, c-format
@@ -74,3 +78,5 @@ msgid ""
 "%1$s backends are connected (%2$s); disconnect all but one (`snap "
 "connections myna`)"
 msgstr ""
+"подключено бэкендов: %1$s (%2$s); отключите все, кроме одного (`snap "
+"connections myna`)"
