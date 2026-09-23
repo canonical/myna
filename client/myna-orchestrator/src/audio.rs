@@ -39,13 +39,23 @@ impl WavFileSource {
         let bytes = std::fs::read(path)?;
         let (format, data) =
             parse_wav(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self {
+        Ok(Self::from_pcm(format, data))
+    }
+
+    /// Stream PCM already in memory, declared as `format`.
+    pub fn from_pcm(format: AudioFormat, data: Bytes) -> Self {
+        Self {
             format,
             data,
             chunk_seconds: 0.1,
             realtime: false,
             stop: StopHandle::default(),
-        })
+        }
+    }
+
+    /// The PCM this source streams, in [`AudioSource::format`].
+    pub fn pcm(&self) -> &Bytes {
+        &self.data
     }
 
     /// Set the chunk size in seconds (default 0.1 s ≈ the prototype's ~100 ms).
@@ -224,6 +234,19 @@ mod tests {
             err.to_string(),
             std::io::Error::from_raw_os_error(2).to_string()
         );
+    }
+
+    #[tokio::test]
+    async fn from_pcm_streams_the_given_bytes() {
+        let fmt = AudioFormat::default();
+        let pcm = Bytes::from(vec![3u8; 640]);
+        let source = WavFileSource::from_pcm(fmt, pcm.clone());
+        assert_eq!(source.pcm(), &pcm);
+
+        let mut stream = Box::new(source).capture();
+        let chunk = stream.next().await.unwrap().unwrap();
+        assert_eq!((chunk.format, chunk.data), (fmt, pcm));
+        assert!(stream.next().await.is_none());
     }
 
     #[test]
