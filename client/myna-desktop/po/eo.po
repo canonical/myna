@@ -9,127 +9,108 @@ msgstr ""
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
 "PO-Revision-Date: 2026-09-25 21:51+0000\n"
-"Last-Translator: Peter Vančo <petervanco347@gmail.com>\n"
-"Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
-"translations/myna-desktop/sk/>\n"
-"Language: sk\n"
+"Last-Translator: phlostically <phlostically@mailinator.com>\n"
+"Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-desktop/eo/>\n"
+"Language: eo\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=((n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2);\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
 "X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/indicator/mod.rs:84
-#, fuzzy
 msgid "Loading model…"
-msgstr "Načítava sa model…"
+msgstr "Ŝarĝante modelon…"
 
 #: src/indicator/mod.rs:85
-#, fuzzy
 msgid "Listening"
-msgstr "Počúvam"
+msgstr "Aŭskultante"
 
 #: src/indicator/mod.rs:86
-#, fuzzy
 msgid "Transcribing"
-msgstr "Prepisujem"
+msgstr "Transskribante"
 
 #: src/indicator/mod.rs:87
-#, fuzzy
 msgid "Finishing"
-msgstr "Dokončujem"
+msgstr "Kompletigante"
 
 #: src/indicator/mod.rs:91
-#, c-format, fuzzy
+#, c-format
 msgid "Error: %s"
-msgstr "Chyba: %s"
+msgstr "Eraro: %s"
 
 #: src/indicator/notify.rs:60
-#, fuzzy
 msgid "🎤 Dictation: listening"
-msgstr "🎤 Diktovanie: počúvam"
+msgstr "🎤 Diktado: aŭskultante"
 
 #: src/indicator/notify.rs:61
-#, fuzzy
 msgid "Speak now — tap your shortcut again to stop."
-msgstr "Hovorte teraz — na zastavenie znova stlačte skratku."
+msgstr "Ekparolu — frapetu la fulmoklavon por ĉesigi."
 
 #: src/indicator/notify.rs:64
-#, fuzzy
 msgid "💬 Dictation: transcribing"
-msgstr "💬 Diktovanie: prepisujem"
+msgstr "💬 Diktado: transskribante"
 
 #: src/indicator/notify.rs:65
-#, fuzzy
 msgid "Converting speech to text…"
-msgstr "Prevádzam reč na text…"
+msgstr "Tekstigante parolon…"
 
 #: src/indicator/notify.rs:68
-#, fuzzy
 msgid "⏳ Dictation: finishing"
-msgstr "⏳ Diktovanie: dokončujem"
+msgstr "⏳ Diktado: kompletigante"
 
 #: src/indicator/notify.rs:69
-#, fuzzy
 msgid "Inserting the final text…"
-msgstr "Vkladám výsledný text…"
+msgstr "Enmetante la kompletan tekston…"
 
 #: src/indicator/notify.rs:72
-#, fuzzy
 msgid "⚠️ Dictation error"
-msgstr "⚠️ Chyba diktovania"
+msgstr "⚠️ Eraro pri diktado"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
-#, fuzzy
 msgid "Focus lost"
-msgstr "Stratené zameranie"
+msgstr "Fokuso perdiĝis"
 
 #: src/controller.rs:211
-#, fuzzy
 msgid "No speech detected"
-msgstr "Nezistená žiadna reč"
+msgstr "Ne trovis parolon"
 
 #: src/controller.rs:213
-#, fuzzy
 msgid "Background noise is high"
-msgstr "Vysoká hladina hluku"
+msgstr "Fona bruo estas laŭta"
 
 #: src/controller.rs:763
-#, fuzzy
 msgid "Dictation target closed"
-msgstr "Cieľ diktovania zatvorený"
+msgstr "Celo de dikto fermiĝis"
 
 #: src/controller.rs:828
-#, fuzzy
 msgid "Refusing to type into a password field"
-msgstr "Odmietam písať do poľa hesla"
+msgstr "Rifuzante tajpi en pasvortan kampon"
 
 #: src/controller.rs:829
-#, fuzzy
 msgid "No text field is focused"
-msgstr "Žiadne textové pole nie je zamerané"
+msgstr "Neniu teksta kampo estas en fokuso"
 
 #: src/shortcut/retry.rs:282
-#, c-format, fuzzy
+#, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr "klávesová skratka diktovania nedostupná: %s"
+msgstr "dikta fulmoklavo ne estas atingebla: %s"
 
 #: src/inject/mod.rs:55
-#, fuzzy
 msgid "focused field is secure (password); refusing to inject"
-msgstr "zamerané pole je zabezpečené (heslo); odmietam vloženie"
+msgstr "kampo en fokuso estas sekura (pasvorta); tial rifuzante enmeti"
 
 #: src/inject/mod.rs:59
-#, fuzzy
 msgid "no editable target is focused"
-msgstr "nie je zameraný žiadny upraviteľný cieľ"
+msgstr "neniu modifebla celo estas en fokuso"
 
 #: src/inject/mod.rs:65
-#, c-format, fuzzy
+#, c-format
 msgid "injection backend unavailable: %s"
-msgstr "backend vkladania nedostupný: %s"
+msgstr "interna modulo por enmeto ne atingebla: %s"
 
 #: src/inject/mod.rs:70
-#, c-format, fuzzy
+#, c-format
 msgid "injection backend error: %s"
-msgstr "chyba backendu vkladania: %s"
+msgstr "eraro pri interna modulo por enmeto: %s"
