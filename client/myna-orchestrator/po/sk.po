@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-21 19:25+0000\n"
+"PO-Revision-Date: 2026-09-25 21:51+0000\n"
 "Last-Translator: Peter Vančo <petervanco347@gmail.com>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-orchestrator/sk/>\n"
@@ -20,35 +20,37 @@ msgstr ""
 "X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/backend/mod.rs:75
-#, c-format
+#, c-format, fuzzy
 msgid "cannot reach backend: %s"
 msgstr "nedá sa dosiahnuť backend: %s"
 
 #: src/backend/mod.rs:78
-#, c-format
+#, c-format, fuzzy
 msgid "handshake failed: %s"
 msgstr "handshake zlyhal: %s"
 
 #: src/backend/mod.rs:83
-#, c-format
+#, c-format, fuzzy
 msgid "session rejected: %1$s: %2$s"
 msgstr "relácia odmietnutá: %1$s: %2$s"
 
 #: src/backend/mod.rs:90
-#, c-format
+#, c-format, fuzzy
 msgid "malformed event from backend: %s"
 msgstr "chybná udalosť z backendu: %s"
 
 #: src/backend/mod.rs:92
+#, fuzzy
 msgid "backend connection closed unexpectedly"
 msgstr "spojenie s backendom neočakávane ukončené"
 
 #: src/backend/mod.rs:94
-#, c-format
+#, c-format, fuzzy
 msgid "transport error: %s"
 msgstr "chyba prenosu: %s"
 
 #: src/backend/share.rs:73
+#, fuzzy
 msgid ""
 "no backend is connected - install one and connect it, e.g. `sudo snap "
 "connect myna:backend myna-whisper`"
@@ -57,22 +59,22 @@ msgstr ""
 "snap connect myna:backend myna-whisper`"
 
 #: src/backend/share.rs:80
-#, c-format
+#, c-format, fuzzy
 msgid "%s is connected but offers no Unix socket"
 msgstr "%s je pripojený, ale neposkytuje Unix socket"
 
 #: src/backend/share.rs:85
-#, c-format
+#, c-format, fuzzy
 msgid "%s is connected but its server is not running"
 msgstr "%s je pripojený, ale jeho server nebeží"
 
 #: src/backend/share.rs:91
-#, c-format
+#, c-format, fuzzy
 msgid "connected shares with an unreadable provider.env: %s"
 msgstr "pripojené zdieľania s nečitateľným provider.env: %s"
 
 #: src/backend/share.rs:101
-#, c-format
+#, c-format, fuzzy
 msgid ""
 "%1$s backends are connected (%2$s); disconnect all but one (`snap "
 "connections myna`)"
