@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-21 19:24+0000\n"
+"PO-Revision-Date: 2026-09-25 21:51+0000\n"
 "Last-Translator: Peter Vančo <petervanco347@gmail.com>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/sk/>\n"
@@ -20,97 +20,116 @@ msgstr ""
 "X-Generator: Weblate 2026.10.dev0\n"
 
 #: src/indicator/mod.rs:84
+#, fuzzy
 msgid "Loading model…"
 msgstr "Načítava sa model…"
 
 #: src/indicator/mod.rs:85
+#, fuzzy
 msgid "Listening"
 msgstr "Počúvam"
 
 #: src/indicator/mod.rs:86
+#, fuzzy
 msgid "Transcribing"
 msgstr "Prepisujem"
 
 #: src/indicator/mod.rs:87
+#, fuzzy
 msgid "Finishing"
 msgstr "Dokončujem"
 
 #: src/indicator/mod.rs:91
-#, c-format
+#, c-format, fuzzy
 msgid "Error: %s"
 msgstr "Chyba: %s"
 
 #: src/indicator/notify.rs:60
+#, fuzzy
 msgid "🎤 Dictation: listening"
 msgstr "🎤 Diktovanie: počúvam"
 
 #: src/indicator/notify.rs:61
+#, fuzzy
 msgid "Speak now — tap your shortcut again to stop."
 msgstr "Hovorte teraz — na zastavenie znova stlačte skratku."
 
 #: src/indicator/notify.rs:64
+#, fuzzy
 msgid "💬 Dictation: transcribing"
 msgstr "💬 Diktovanie: prepisujem"
 
 #: src/indicator/notify.rs:65
+#, fuzzy
 msgid "Converting speech to text…"
 msgstr "Prevádzam reč na text…"
 
 #: src/indicator/notify.rs:68
+#, fuzzy
 msgid "⏳ Dictation: finishing"
 msgstr "⏳ Diktovanie: dokončujem"
 
 #: src/indicator/notify.rs:69
+#, fuzzy
 msgid "Inserting the final text…"
 msgstr "Vkladám výsledný text…"
 
 #: src/indicator/notify.rs:72
+#, fuzzy
 msgid "⚠️ Dictation error"
 msgstr "⚠️ Chyba diktovania"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
+#, fuzzy
 msgid "Focus lost"
 msgstr "Stratené zameranie"
 
 #: src/controller.rs:211
+#, fuzzy
 msgid "No speech detected"
 msgstr "Nezistená žiadna reč"
 
 #: src/controller.rs:213
+#, fuzzy
 msgid "Background noise is high"
 msgstr "Vysoká hladina hluku"
 
 #: src/controller.rs:763
+#, fuzzy
 msgid "Dictation target closed"
 msgstr "Cieľ diktovania zatvorený"
 
 #: src/controller.rs:828
+#, fuzzy
 msgid "Refusing to type into a password field"
 msgstr "Odmietam písať do poľa hesla"
 
 #: src/controller.rs:829
+#, fuzzy
 msgid "No text field is focused"
 msgstr "Žiadne textové pole nie je zamerané"
 
 #: src/shortcut/retry.rs:282
-#, c-format
+#, c-format, fuzzy
 msgid "dictation hotkey unavailable: %s"
 msgstr "klávesová skratka diktovania nedostupná: %s"
 
 #: src/inject/mod.rs:55
+#, fuzzy
 msgid "focused field is secure (password); refusing to inject"
 msgstr "zamerané pole je zabezpečené (heslo); odmietam vloženie"
 
 #: src/inject/mod.rs:59
+#, fuzzy
 msgid "no editable target is focused"
 msgstr "nie je zameraný žiadny upraviteľný cieľ"
 
 #: src/inject/mod.rs:65
-#, c-format
+#, c-format, fuzzy
 msgid "injection backend unavailable: %s"
 msgstr "backend vkladania nedostupný: %s"
 
 #: src/inject/mod.rs:70
-#, c-format
+#, c-format, fuzzy
 msgid "injection backend error: %s"
 msgstr "chyba backendu vkladania: %s"
