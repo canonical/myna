@@ -460,26 +460,16 @@ fn onboarding_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-gate: held");
-    if !one_line_each(
-        &window,
-        &[
-            "Install components",
-            "You need to install some components for Dictation to work.",
-        ],
-    ) {
-        eprintln!("the component step wraps a line that fits the window");
+    if !one_line_each(&window, &["Install components"]) {
+        eprintln!("the component step wraps its title");
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-wrap: components on one line each");
-    if installed_status(&window).is_some() {
-        eprintln!("the footer claims everything is installed on a bare machine");
-        return glib::ExitCode::FAILURE;
-    }
-    if !components_headed(&window, false) {
+    println!("onboarding-wrap: components title on one line");
+    if !components_headed(&window) {
         eprintln!("the component step is not headed as the design");
         return glib::ExitCode::FAILURE;
     }
-    // Nothing to paste: every component installs from its own row.
+    // Nothing to paste: the button installs everything.
     let pasted = find_descendant(window.upcast_ref(), &|widget| {
         widget.is_mapped()
             && (widget.has_css_class("monospace")
@@ -496,50 +486,25 @@ fn onboarding_probe() -> glib::ExitCode {
         eprintln!("the component step shows no component page");
         return glib::ExitCode::FAILURE;
     };
-    let flag = page.flag_switch();
-    if !flag.is_mapped()
-        || flag.is_active()
-        || !flag.is_sensitive()
-        || !flag
-            .ancestor(gtk::ListBox::static_type())
-            .is_some_and(|list| list.has_css_class("boxed-list"))
-        || page.flag_row().title() != gettextrs::gettext("Let Myna run in the background")
-        || page.flag_row().subtitle().as_deref()
-            != Some(
-                gettextrs::gettext("Dictation needs it. You may be asked for your password.")
-                    .as_str(),
-            )
+    let button = page.install_button();
+    if page.install_label() != gettextrs::gettext("Install all components")
+        || !button.is_sensitive()
+        || !standard_button(&button, true)
+        || status_note(&page) != Some(expected_size(&assess(Machine::default())))
+        || installed_shown(&window)
+        || find_descendant(page.upcast_ref(), &|widget| {
+            widget.is_mapped() && (widget.is::<gtk::Switch>() || widget.is::<gtk::ListBox>())
+        })
+        .is_some()
     {
-        eprintln!("the component step offers no boxed switch for the flag");
-        return glib::ExitCode::FAILURE;
-    }
-    println!("onboarding-flag: a switch, off");
-    let list = page.component_list();
-    let titles: Vec<String> = [
-        crate::onboarding::ComponentId::Myna,
-        crate::onboarding::ComponentId::Model,
-        crate::onboarding::ComponentId::ShellExtension,
-    ]
-    .into_iter()
-    .filter_map(|id| page.row(id))
-    .filter(|row| row.row.parent().as_ref() == Some(list.upcast_ref()))
-    .map(|row| row.row.title().to_string())
-    .collect();
-    if titles != ["Dictation app", "Speech-to-text model", "Shell extension"]
-        || !list.has_css_class("boxed-list")
-    {
-        eprintln!("the component step lists {titles:?}");
-        return glib::ExitCode::FAILURE;
-    }
-    // The initial assessment found no extension: nothing to press there.
-    if list.is_sensitive() || rows_offer(&page) != ["Install", "Install", "-"] {
         eprintln!(
-            "without the flag the list is not locked on two Install buttons: {:?}",
-            rows_offer(&page)
+            "a bare machine's step offers {:?}, its status {:?}",
+            page.install_label(),
+            status_note(&page)
         );
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-rows: locked until the flag");
+    println!("onboarding-button: one Install all, sized");
 
     // Installing happens in another window; coming back re-reads the machine.
     let elsewhere = gtk::Window::new();
@@ -561,10 +526,8 @@ fn onboarding_probe() -> glib::ExitCode {
     println!("onboarding-refresh: re-read on focus");
     // Every read fails on this machine, so the step says why rather than
     // only that both components are missing.
-    let unreadable = || {
-        let status = window.setup_status();
-        status.is_mapped() && status.label().starts_with("Setup status unavailable.")
-    };
+    let unreadable =
+        || status_note(&page).is_some_and(|note| note.starts_with("Setup status unavailable."));
     for _ in 0..100 {
         if unreadable() {
             break;
@@ -574,7 +537,7 @@ fn onboarding_probe() -> glib::ExitCode {
     if !unreadable() {
         eprintln!(
             "the component step hid that it cannot read the machine: {:?}",
-            window.setup_status().label()
+            page.status_label().label()
         );
         return glib::ExitCode::FAILURE;
     }
@@ -582,72 +545,15 @@ fn onboarding_probe() -> glib::ExitCode {
     window.close();
     settle_gtk();
 
-    if let Err(failure) = probe_flag_switch(&application) {
+    if let Err(failure) = probe_install_all(&application) {
         eprintln!("{failure}");
         return glib::ExitCode::FAILURE;
     }
 
-    if let Err(failure) = probe_installs(&application) {
+    if let Err(failure) = probe_partial(&application) {
         eprintln!("{failure}");
         return glib::ExitCode::FAILURE;
     }
-
-    if let Err(failure) = probe_extension_enable(&application) {
-        eprintln!("{failure}");
-        return glib::ExitCode::FAILURE;
-    }
-
-    // With the flag on, the list takes input: each snap offers Install, and
-    // a disabled extension Enable.
-    let machine = ProbeMachine::flagged();
-    let window = {
-        let ui = OnboardingUi::present_with_ports(
-            &application,
-            assess(Machine {
-                user_daemons: true,
-                extension: crate::onboarding::ExtensionState::Disabled,
-                ..Machine::default()
-            }),
-            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-                std::sync::Arc::new(machine.clone()),
-            )),
-            Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Disabled),
-            crate::onboarding_ui::Opener::FirstRun,
-        );
-        ui.window()
-    };
-    settle_gtk();
-    window.forward_button().emit_clicked();
-    settle_gtk();
-    let Some(page) = components_page(&window) else {
-        eprintln!("the component step shows no component page");
-        return glib::ExitCode::FAILURE;
-    };
-    let buttons: Vec<bool> = [
-        crate::onboarding::ComponentId::Myna,
-        crate::onboarding::ComponentId::Model,
-        crate::onboarding::ComponentId::ShellExtension,
-    ]
-    .into_iter()
-    .filter_map(|id| page.row(id))
-    .map(|row| row.button.is_sensitive() && row.row.is_sensitive())
-    .collect();
-    if !page.flag_switch().state()
-        || !page.component_list().is_sensitive()
-        || rows_offer(&page) != ["Install", "Install", "Enable"]
-        || buttons != [true, true, true]
-        || window.forward_button().is_sensitive()
-    {
-        eprintln!(
-            "with the flag on the rows offer {:?}, sensitive {buttons:?}",
-            rows_offer(&page)
-        );
-        return glib::ExitCode::FAILURE;
-    }
-    println!("onboarding-rows: unlocked by the flag");
-    window.close();
-    settle_gtk();
 
     // Components installed while the step shows are found without the
     // window ever losing focus. Finding the last one sets dictation up once,
@@ -701,17 +607,13 @@ fn onboarding_probe() -> glib::ExitCode {
         eprintln!("setup restarted Myna while snapd was still installing the model");
         return glib::ExitCode::FAILURE;
     }
-    let status = window.setup_status();
-    if !status.is_mapped()
-        || !status.label().starts_with("Downloading myna-parakeet: ")
-        || !status
-            .label()
-            .ends_with(glib::format_size(734_003_200).as_str())
+    let status = components_page(&window)
+        .and_then(|page| status_busy(&page))
+        .unwrap_or_default();
+    if !status.starts_with("Downloading myna-parakeet: ")
+        || !status.ends_with(glib::format_size(734_003_200).as_str())
     {
-        eprintln!(
-            "the footer did not say what setup waits on: {:?}",
-            status.label()
-        );
+        eprintln!("the step did not say what setup waits on: {status:?}");
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-status: the download shown");
@@ -720,7 +622,7 @@ fn onboarding_probe() -> glib::ExitCode {
     // Next is the manual path; it must not start a second setup.
     window.forward_button().emit_clicked();
     machine.hold_restart(false);
-    let shown = || installed_status(&window) == Some(true) && !setup_spinner(&window);
+    let shown = || installed_shown(&window) && !setup_spinner(&window);
     for _ in 0..100 {
         if shown() || step(&window) != "components" {
             break;
@@ -824,7 +726,7 @@ fn onboarding_probe() -> glib::ExitCode {
     settle_gtk();
     machine.install();
     for _ in 0..100 {
-        if installed_status(&window) == Some(true) {
+        if installed_shown(&window) {
             break;
         }
         settle_gtk();
@@ -843,8 +745,8 @@ fn onboarding_probe() -> glib::ExitCode {
     window.close();
     settle_gtk();
 
-    // Without the extension the required components alone never move on by
-    // themselves: Next does.
+    // An extension out of reach is skipped silently: the required
+    // components found elsewhere move on by themselves.
     let machine = ProbeMachine::bare();
     let window = {
         let ui = OnboardingUi::present_with_ports(
@@ -865,39 +767,14 @@ fn onboarding_probe() -> glib::ExitCode {
     window.forward_button().emit_clicked();
     settle_gtk();
     machine.install();
-    for _ in 0..100 {
-        if installed_status(&window) == Some(true) {
-            break;
-        }
-        settle_gtk();
-    }
-    for _ in 0..20 {
-        settle_gtk();
-    }
-    if installed_status(&window) != Some(true)
-        || step(&window) != "components"
-        || !window.forward_button().is_sensitive()
-        || machine.restarts_attempted() != 0
-    {
+    if !reached(&window, "shortcut") || machine.applied() != [vec!["restart-myna".to_owned()]] {
         eprintln!(
-            "the required components alone reached {} having restarted {} times",
+            "the required components alone reached {} having applied {:?}",
             step(&window),
-            machine.restarts_attempted()
+            machine.applied()
         );
         return glib::ExitCode::FAILURE;
     }
-    window.forward_button().emit_clicked();
-    for _ in 0..100 {
-        if step(&window) == "shortcut" {
-            break;
-        }
-        settle_gtk();
-    }
-    if step(&window) != "shortcut" {
-        eprintln!("Next without the extension stayed on {}", step(&window));
-        return glib::ExitCode::FAILURE;
-    }
-    println!("onboarding-optional: the extension waits for Next");
     if !window.navigation().visible_page().is_some_and(|page| {
         page.can_pop() && WidgetExt::activate_action(&page, "navigation.pop", None).is_ok()
     }) {
@@ -905,109 +782,15 @@ fn onboarding_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     settle_gtk();
-    let Some(page) = components_page(&window) else {
-        eprintln!("going back did not show the component page");
-        return glib::ExitCode::FAILURE;
-    };
-    let extension = page
-        .row(crate::onboarding::ComponentId::ShellExtension)
-        .map(|row| row.row);
-    let fallback = gettextrs::gettext(
-        "Not available on this system. Dictation still works and shows its status in notifications.",
-    );
-    if rows_offer(&page) != ["Installed", "Installed", "-"]
-        || !page.component_list().is_sensitive()
-        // Insensitive would dim the explanation past reading.
-        || extension.as_ref().is_none_or(|row| {
-            !row.is_sensitive() || row.subtitle().as_deref() != Some(fallback.as_str())
-        })
+    if !installed_shown(&window)
+        || components_page(&window)
+            .and_then(|page| status_note(&page))
+            .is_some()
     {
-        eprintln!(
-            "an unavailable extension shows {:?}, subtitled {:?}",
-            rows_offer(&page),
-            extension.and_then(|row| row.subtitle())
-        );
+        eprintln!("without the extension the step does not read installed");
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-rows: an unavailable extension says it falls back");
-    window.close();
-    settle_gtk();
-
-    // Each reason the extension cannot run tells the user what to do.
-    let machine = ProbeMachine::bare();
-    let extensions = ProbeExtensions::new(crate::onboarding::ExtensionState::NeedsRelogin);
-    let window = {
-        let ui = OnboardingUi::present_with_ports(
-            &application,
-            assess(Machine::default()),
-            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-                std::sync::Arc::new(machine.clone()),
-            )),
-            Rc::new(machine.clone()),
-            extensions.clone(),
-            crate::onboarding_ui::Opener::FirstRun,
-        );
-        ui.set_poll_interval(Duration::from_millis(50));
-        ui.window()
-    };
-    settle_gtk();
-    window.forward_button().emit_clicked();
-    for (state, expected) in [
-        (
-            crate::onboarding::ExtensionState::NeedsRelogin,
-            gettextrs::gettext(
-                "Log out and back in to use it. Until then, Dictation shows its status in notifications.",
-            ),
-        ),
-        (
-            crate::onboarding::ExtensionState::ShadowedByUserCopy,
-            gettextrs::gettext(
-                "Hidden by a copy in your home folder. Remove it, then log out and back in.",
-            ),
-        ),
-        (
-            crate::onboarding::ExtensionState::TurnedOff,
-            gettextrs::gettext(
-                "Extensions are turned off. Turn them on in the Extensions app to use it. Until then, Dictation shows its status in notifications.",
-            ),
-        ),
-        (
-            crate::onboarding::ExtensionState::Failed,
-            gettextrs::gettext(
-                "Failed to start. Dictation still works and shows its status in notifications.",
-            ),
-        ),
-        (
-            crate::onboarding::ExtensionState::OutOfDate,
-            gettextrs::gettext(
-                "Does not work with this version of GNOME. Dictation still works and shows its status in notifications.",
-            ),
-        ),
-        (
-            crate::onboarding::ExtensionState::Locked,
-            gettextrs::gettext(
-                "Turned off by your administrator. Dictation still works and shows its status in notifications.",
-            ),
-        ),
-    ] {
-        extensions.state.set(state);
-        let subtitle = || {
-            components_page(&window)
-                .and_then(|page| page.row(crate::onboarding::ComponentId::ShellExtension))
-                .and_then(|row| row.row.subtitle())
-        };
-        for _ in 0..100 {
-            if subtitle().as_deref() == Some(expected.as_str()) {
-                break;
-            }
-            settle_gtk();
-        }
-        if subtitle().as_deref() != Some(expected.as_str()) {
-            eprintln!("an extension {state:?} is subtitled {:?}", subtitle());
-            return glib::ExitCode::FAILURE;
-        }
-    }
-    println!("onboarding-rows: an extension that cannot run says why");
+    println!("onboarding-optional: found elsewhere, an unavailable extension holds nothing");
     window.close();
     settle_gtk();
 
@@ -1055,15 +838,15 @@ fn onboarding_probe() -> glib::ExitCode {
     }
     println!("onboarding-auto-failure: reported");
     // The toast times out; the footer keeps saying dictation is not set up.
-    if !setup_failed_shown(&window) || installed_status(&window).is_some() {
+    if !setup_failed_shown(&window) || !installed_shown(&window) {
         eprintln!(
-            "after a failed setup the footer read installed {:?}, not set up {}",
-            installed_status(&window),
+            "after a failed setup the step read installed {}, not set up {}",
+            installed_shown(&window),
             setup_failed_shown(&window)
         );
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-auto-failure: the footer says so");
+    println!("onboarding-auto-failure: the step says so");
     match setup_failure_report(&window) {
         // The report names the command, as the Settings window's do.
         Some(report) if report.contains(PROBE_RESTART_FAILURE) && report.contains("systemctl") => {}
@@ -1241,34 +1024,25 @@ fn onboarding_probe() -> glib::ExitCode {
     };
     settle_gtk();
     let forward = window.forward_button();
-    if installed_status(&window).is_some() {
-        eprintln!("the footer status shows outside the component step");
-        return glib::ExitCode::FAILURE;
-    }
     forward.emit_clicked();
     settle_gtk();
     if !forward.is_sensitive() || !standard_button(&forward, true) {
         eprintln!("the component step refused to advance with everything installed");
         return glib::ExitCode::FAILURE;
     }
-    if installed_status(&window) != Some(true) {
-        eprintln!("the footer does not say every component is installed, left of Next");
+    if !installed_shown(&window)
+        || components_page(&window)
+            .and_then(|page| status_note(&page))
+            .is_some()
+    {
+        eprintln!("the step's button does not say every component is installed");
         return glib::ExitCode::FAILURE;
     }
-    if !components_headed(&window, true) {
-        eprintln!("the component step still asks for components once everything is installed");
+    if !components_headed(&window) {
+        eprintln!("the component step is not headed as the design once installed");
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-installed: shown in the footer");
-    let Some(page) = components_page(&window) else {
-        eprintln!("the component step shows no component page");
-        return glib::ExitCode::FAILURE;
-    };
-    if rows_offer(&page) != ["Installed", "Installed", "Enabled"] || !page.flag_switch().state() {
-        eprintln!("an installed machine's rows show {:?}", rows_offer(&page));
-        return glib::ExitCode::FAILURE;
-    }
-    println!("onboarding-rows: each installed");
+    println!("onboarding-installed: the button says so");
     let reaches = |name: &str| {
         for _ in 0..100 {
             if step(&window) == name {
@@ -1295,11 +1069,11 @@ fn onboarding_probe() -> glib::ExitCode {
     settle_gtk();
     // A spinner that flashes for a quick setup reads as a glitch: for a
     // moment the footer keeps saying everything is installed.
-    if setup_spinner(&window) || installed_status(&window) != Some(true) || forward.is_sensitive() {
+    if setup_spinner(&window) || !installed_shown(&window) || forward.is_sensitive() {
         eprintln!(
-            "a moment into setting up the footer showed a spinner: {}, the status: {:?}",
+            "a moment into setting up the step showed a spinner: {}, installed: {}",
             setup_spinner(&window),
-            installed_status(&window)
+            installed_shown(&window)
         );
         return glib::ExitCode::FAILURE;
     }
@@ -1310,8 +1084,8 @@ fn onboarding_probe() -> glib::ExitCode {
         }
         settle_gtk();
     }
-    if !setup_spinner(&window) || installed_status(&window).is_some() {
-        eprintln!("setting up showed no spinner in the footer's status");
+    if !setup_spinner(&window) || !installed_shown(&window) {
+        eprintln!("setting up showed no spinner under the installed button");
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-setup: spinner while setting up");
@@ -1391,8 +1165,8 @@ fn onboarding_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-wrap: shortcut title on one line");
-    if installed_status(&window).is_some() || setup_spinner(&window) {
-        eprintln!("the footer status stayed on the last step");
+    if setup_spinner(&window) {
+        eprintln!("the setup status stayed on the last step");
         return glib::ExitCode::FAILURE;
     }
 
@@ -1579,10 +1353,9 @@ fn template_probe() -> glib::ExitCode {
     println!("OnboardingWelcome");
     let components = ui::OnboardingComponents::new();
     let _ = (
-        components.flag_row(),
-        components.flag_switch(),
-        components.component_list(),
-        components.row(crate::onboarding::ComponentId::ShellExtension),
+        components.install_button(),
+        components.status(),
+        components.status_label(),
     );
     println!("OnboardingComponents");
     let shortcut = ui::OnboardingShortcut::new();
@@ -1601,7 +1374,6 @@ fn template_probe() -> glib::ExitCode {
     let _ = (
         onboarding.overlay(),
         onboarding.navigation(),
-        onboarding.installed_status(),
         onboarding.forward_button(),
     );
     println!("OnboardingWindow");
@@ -2668,9 +2440,6 @@ struct ProbeMachine {
     /// A flag write waits while this is set, as while polkit's prompt is open.
     holding_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     flag_writes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    /// A flag read answers what it read only once this is cleared.
-    holding_reads: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    flag_reads: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// Myna is installed and no backend yet.
     myna_only: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The snaps asked for, in order.
@@ -2716,8 +2485,6 @@ impl ProbeMachine {
             flag_answers: std::sync::Arc::default(),
             holding_flag: std::sync::Arc::default(),
             flag_writes: std::sync::Arc::default(),
-            holding_reads: std::sync::Arc::default(),
-            flag_reads: std::sync::Arc::default(),
             myna_only: std::sync::Arc::default(),
             installs: std::sync::Arc::default(),
             install_answers: std::sync::Arc::default(),
@@ -2783,15 +2550,6 @@ impl ProbeMachine {
     fn hold_flag(&self, holding: bool) {
         self.holding_flag
             .store(holding, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn hold_reads(&self, holding: bool) {
-        self.holding_reads
-            .store(holding, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn flag_reads(&self) -> usize {
-        self.flag_reads.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     fn flag_writes(&self) -> usize {
@@ -2864,6 +2622,15 @@ impl ProbeMachine {
         let machine = Self::bare();
         machine
             .flagged
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        machine
+    }
+
+    /// The flag on and Myna installed, no backend yet.
+    fn myna_only() -> Self {
+        let machine = Self::new();
+        machine
+            .myna_only
             .store(true, std::sync::atomic::Ordering::SeqCst);
         machine
     }
@@ -3026,14 +2793,8 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
         &self,
         _cancellation: crate::command::CancellationToken,
     ) -> Result<bool, String> {
-        self.flag_reads
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let enabled = !self.bare.load(std::sync::atomic::Ordering::SeqCst)
-            || self.flagged.load(std::sync::atomic::Ordering::SeqCst);
-        while self.holding_reads.load(std::sync::atomic::Ordering::SeqCst) {
-            glib::timeout_future(Duration::from_millis(10)).await;
-        }
-        Ok(enabled)
+        Ok(!self.bare.load(std::sync::atomic::Ordering::SeqCst)
+            || self.flagged.load(std::sync::atomic::Ordering::SeqCst))
     }
 
     async fn enable_user_daemons(
@@ -4052,9 +3813,7 @@ fn menu_actions(menu: &gio::MenuModel) -> Vec<String> {
 
 /// Whether the component step heads itself as the design: a regular 24 px
 /// title over the one paragraph, whatever is installed.
-/// The component step's title, and the line under it saying whether anything
-/// is still to install.
-fn components_headed(window: &ui::OnboardingWindow, installed: bool) -> bool {
+fn components_headed(window: &ui::OnboardingWindow) -> bool {
     let shown = |text: String, class: Option<&str>| {
         find_descendant(window.upcast_ref(), &|widget| {
             widget.downcast_ref::<gtk::Label>().is_some_and(|label| {
@@ -4069,207 +3828,98 @@ fn components_headed(window: &ui::OnboardingWindow, installed: bool) -> bool {
         gettextrs::gettext("Install components"),
         Some("onboarding-title"),
     ) && shown(
-        if installed {
-            gettextrs::gettext("Everything Dictation needs is installed.")
-        } else {
-            gettextrs::gettext("You need to install some components for Dictation to work.")
-        },
+        gettextrs::gettext(
+            "Dictation requires some additional components, including the optimal speech-to-text model for your computer. Installation might take a few minutes.",
+        ),
         None,
     )
 }
 
-/// The extension row's Enable against a scripted gnome-shell: a failure
-/// reverts with a toast whose report names the D-Bus call, the row shows
-/// the enable under way, and enabling the last missing piece moves on.
-fn probe_extension_enable(application: &adw::Application) -> Result<(), String> {
-    use crate::onboarding::{assess, ComponentId, ExtensionState, Machine};
-
-    let machine = ProbeMachine::new();
-    let extensions = ProbeExtensions::new(ExtensionState::Disabled);
-    let window = {
-        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
-            application,
-            assess(Machine {
-                user_daemons: true,
-                myna_installed: true,
-                backend_discovered: true,
-                extension: ExtensionState::Disabled,
-                ..Machine::default()
-            }),
-            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-                std::sync::Arc::new(machine.clone()),
-            )),
-            Rc::new(machine.clone()),
-            extensions.clone(),
-            crate::onboarding_ui::Opener::FirstRun,
-        );
-        ui.set_poll_interval(Duration::from_millis(50));
-        ui.set_beat(Duration::from_millis(50));
-        ui.window()
-    };
-    settle_gtk();
-    window.forward_button().emit_clicked();
-    settle_gtk();
-    let page = components_page(&window).ok_or("the component step shows no component page")?;
-    let until = |done: &dyn Fn() -> bool| {
-        for _ in 0..200 {
-            if done() {
-                break;
-            }
-            settle_gtk();
-        }
-        done()
-    };
-    let toast_texts = || {
-        descendants(window.upcast_ref(), &|widget| {
-            widget.type_().name() == "AdwToastWidget"
-        })
-        .iter()
-        .flat_map(|toast| {
-            descendants(toast, &|widget| widget.is::<gtk::Label>())
-                .into_iter()
-                .filter_map(|label| label.downcast::<gtk::Label>().ok())
-                .map(|label| label.label().to_string())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-    };
-    let step = || {
-        window
-            .navigation()
-            .visible_page()
-            .and_then(|page| page.tag())
-            .map(|tag| tag.to_string())
-            .unwrap_or_default()
-    };
-    let enable = gettextrs::gettext("Enable");
-    let offers = |expected: &[&str]| rows_offer(&page) == expected;
-    if !until(&|| offers(&["Installed", "Installed", &enable])) {
-        return Err(format!(
-            "a disabled extension offers {:?}",
-            rows_offer(&page)
-        ));
-    }
-    let button = page
-        .row(ComponentId::ShellExtension)
-        .expect("the extension row")
-        .button;
-
-    let reason = "gnome-shell could not run myna-shell@canonical.com: TypeError: boom";
-    extensions.failing.replace(Some(reason.to_owned()));
-    button.emit_clicked();
-    let heading = gettextrs::gettext("Enabling the shell extension failed");
-    if !until(&|| {
-        toast_texts() == [heading.clone(), gettextrs::gettext("Details")]
-            && offers(&["Installed", "Installed", &enable])
-    }) || extensions.enables.get() != 1
-    {
-        return Err(format!(
-            "a failed enable left {:?} with toasts {:?} after {} calls",
-            rows_offer(&page),
-            toast_texts(),
-            extensions.enables.get()
-        ));
-    }
-    let details = gettextrs::gettext("Details");
-    descendants(window.upcast_ref(), &|widget| {
-        widget
-            .downcast_ref::<gtk::Button>()
-            .is_some_and(|button| button.label().as_deref() == Some(details.as_str()))
-    })
-    .into_iter()
-    .next()
-    .and_then(|button| button.downcast::<gtk::Button>().ok())
-    .ok_or("the failure toast has no Details button")?
-    .emit_clicked();
-    for _ in 0..8 {
-        settle_gtk();
-    }
-    let dialog = window
-        .visible_dialog()
-        .and_then(|dialog| dialog.downcast::<ui::OperationErrorDialog>().ok())
-        .ok_or("Details opened no failure report")?;
-    let expected = format!(
-        "{} org.gnome.Shell.Extensions.EnableExtension(\"myna-shell@canonical.com\")\n{} {reason}",
-        gettextrs::gettext("D-Bus call:"),
-        gettextrs::gettext("Message:"),
-    );
-    if dialog.details_text() != expected {
-        return Err(format!(
-            "the failed enable's report reads {:?}",
-            dialog.details_text()
-        ));
-    }
-    dialog.force_close();
-    if !until(&|| window.visible_dialog().is_none()) {
-        return Err("the failure report did not close".to_owned());
-    }
-    println!("onboarding-extension: a failure reverts with a toast and its report");
-
-    extensions.failing.replace(None);
-    extensions.holding.set(true);
-    button.emit_clicked();
-    let enabling = gettextrs::gettext("Enabling…");
-    if !until(&|| offers(&["Installed", "Installed", &enabling])) {
-        return Err(format!("an enable under way shows {:?}", rows_offer(&page)));
-    }
-    button.emit_clicked();
-    settle_gtk();
-    if extensions.enables.get() != 2 {
-        return Err(format!(
-            "a second enable started beside the first: {} calls",
-            extensions.enables.get()
-        ));
-    }
-    println!("onboarding-extension: enabling shown in the row");
-
-    extensions.holding.set(false);
-    let enabled = gettextrs::gettext("Enabled");
-    if !until(&|| offers(&["Installed", "Installed", &enabled])) {
-        return Err(format!(
-            "an enabled extension shows {:?}",
-            rows_offer(&page)
-        ));
-    }
-    // An instant click is not a download to wait out: the row confirms it,
-    // and moving on is Next's.
-    for _ in 0..8 {
-        settle_gtk();
-    }
-    if step() != "components" {
-        return Err(format!("enabling the extension moved on to {}", step()));
-    }
-    window.forward_button().emit_clicked();
-    if !until(&|| step() == "shortcut") {
-        return Err(format!(
-            "Next after enabling stayed on {} showing {:?}",
-            step(),
-            rows_offer(&page)
-        ));
-    }
-    println!("onboarding-extension: enabled in the row, and Next moved on");
-    window.close();
-    settle_gtk();
-    Ok(())
+/// What the line under the button says as a dimmed note, such as the
+/// download size.
+fn status_note(page: &ui::OnboardingComponents) -> Option<String> {
+    let label = page.status_label();
+    (label.is_mapped()
+        && !label.label().is_empty()
+        && label.has_css_class("dim-label")
+        && !page.status_spinner().is_visible()
+        && !page.status_warning().is_visible())
+    .then(|| label.label().to_string())
 }
 
-/// The Install buttons against a scripted snapd: the row follows the change,
-/// one install runs at a time, a dismissed prompt reverts silently, a failed
-/// change with a toast whose report names the request, and an install
-/// started elsewhere is followed rather than offered again.
-fn probe_installs(application: &adw::Application) -> Result<(), String> {
-    use crate::onboarding::{assess, ComponentId, ExtensionState, Machine};
+/// What the line under the button says beside its spinner.
+fn status_busy(page: &ui::OnboardingComponents) -> Option<String> {
+    let spinner = page.status_spinner();
+    (spinner.is_mapped() && spinner.is_spinning()).then(|| page.status_label().label().to_string())
+}
 
-    let machine = ProbeMachine::flagged();
+/// The size the button's note gives for `components`, for this machine's
+/// GPU.
+fn expected_size(components: &[crate::onboarding::Component]) -> String {
+    use crate::onboarding::{model_offer, remaining_download, DownloadSize, Machine};
+    let offer = model_offer(&Machine {
+        nvidia_gpu: crate::machine::has_nvidia_gpu(),
+        ..Machine::default()
+    });
+    match remaining_download(components, &offer) {
+        DownloadSize::Exact(bytes) => crate::onboarding_ui::download_size(bytes),
+        DownloadSize::UpTo(bytes) => gettextrs::gettext("Up to {size}")
+            .replace("{size}", &crate::onboarding_ui::download_size(bytes)),
+    }
+}
+
+/// Whether the component step's button says everything is installed: its
+/// label, insensitive, no longer suggested.
+fn installed_shown(window: &ui::OnboardingWindow) -> bool {
+    components_page(window).is_some_and(|page| {
+        let button = page.install_button();
+        page.install_label() == gettextrs::gettext("Installed")
+            && !button.is_sensitive()
+            && !button.has_css_class("suggested-action")
+    })
+}
+
+/// The component step's install button reads `label`, insensitive and
+/// plain, with `busy` beside its spinner.
+fn installing_shown(window: &ui::OnboardingWindow, busy: &str) -> bool {
+    components_page(window).is_some_and(|page| {
+        let button = page.install_button();
+        page.install_label() == gettextrs::gettext("Installing…")
+            && !button.is_sensitive()
+            && !button.has_css_class("suggested-action")
+            && status_busy(&page).as_deref() == Some(busy)
+    })
+}
+
+/// The button offers to install what is missing, sized as `size`.
+fn offered(window: &ui::OnboardingWindow, size: &str) -> bool {
+    components_page(window).is_some_and(|page| {
+        let button = page.install_button();
+        page.install_label() == gettextrs::gettext("Install all components")
+            && button.is_sensitive()
+            && button.has_css_class("suggested-action")
+            && status_note(&page).unwrap_or_default() == size
+    })
+}
+
+/// The one button against a scripted snapd and gnome-shell: a run installs
+/// what is missing in order, naming each step under the button; a dismissed
+/// prompt stops it silently, a failure with a toast whose report names the
+/// request, and the button then offers what is still missing. Once nothing
+/// is left the wizard sets dictation up and moves on.
+fn probe_install_all(application: &adw::Application) -> Result<(), String> {
+    use crate::onboarding::{assess, ExtensionState, Machine};
+
+    let machine = ProbeMachine::bare();
     let extensions = ProbeExtensions::new(ExtensionState::Disabled);
+    let initial = assess(Machine {
+        extension: ExtensionState::Disabled,
+        ..Machine::default()
+    });
     let window = {
         let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
             application,
-            assess(Machine {
-                user_daemons: true,
-                extension: ExtensionState::Disabled,
-                ..Machine::default()
-            }),
+            initial.clone(),
             Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
                 std::sync::Arc::new(machine.clone()),
             )),
@@ -4285,6 +3935,7 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
     window.forward_button().emit_clicked();
     settle_gtk();
     let page = components_page(&window).ok_or("the component step shows no component page")?;
+    let button = page.install_button();
     let until = |done: &dyn Fn() -> bool| {
         for _ in 0..200 {
             if done() {
@@ -4294,114 +3945,59 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
         }
         done()
     };
-    let toast_texts = || {
-        descendants(window.upcast_ref(), &|widget| {
-            widget.type_().name() == "AdwToastWidget"
-        })
-        .iter()
-        .flat_map(|toast| {
-            descendants(toast, &|widget| widget.is::<gtk::Label>())
-                .into_iter()
-                .filter_map(|label| label.downcast::<gtk::Label>().ok())
-                .map(|label| label.label().to_string())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
+    let step = || {
+        window
+            .navigation()
+            .visible_page()
+            .and_then(|page| page.tag())
+            .map(|tag| tag.to_string())
+            .unwrap_or_default()
     };
-    let row = |id| page.row(id).expect("an installable row");
-    let offers = |expected: &[&str]| rows_offer(&page) == expected;
-    let enable = gettextrs::gettext("Enable");
-    if !until(&|| offers(&["Install", "Install", &enable])) {
-        return Err(format!("a flagged machine offers {:?}", rows_offer(&page)));
-    }
+    let button_top = || {
+        button
+            .compute_point(&page, &gtk::graphene::Point::zero())
+            .map_or(-1.0, |point| point.y())
+    };
+    let resting = button_top();
+    let offers_again = || {
+        page.install_label() == gettextrs::gettext("Install all components")
+            && button.is_sensitive()
+            && button.has_css_class("suggested-action")
+            && status_busy(&page).is_none()
+    };
 
-    machine.answer_install(Err(crate::ports::SystemConfiguratorError::Cancelled));
-    row(ComponentId::Myna).button.emit_clicked();
-    if !until(&|| machine.installs().len() == 1 && offers(&["Install", "Install", &enable]))
-        || !toast_texts().is_empty()
+    machine.answer_flag(Err(crate::ports::SystemConfiguratorError::Cancelled));
+    button.emit_clicked();
+    if !until(&|| machine.flag_writes() == 1 && offers_again())
+        || !toast_texts(&window).is_empty()
+        || !machine.installs().is_empty()
     {
         return Err(format!(
-            "a dismissed install prompt left {:?}, toasts {:?}",
-            rows_offer(&page),
-            toast_texts()
-        ));
-    }
-    println!("onboarding-install: a dismissed prompt reverts silently");
-
-    machine.hold_install(true);
-    row(ComponentId::Myna).button.emit_clicked();
-    let asking = || {
-        offers(&[&gettextrs::gettext("Installing…"), "Install", &enable])
-            && !row(ComponentId::Model).button.is_sensitive()
-            && row(ComponentId::ShellExtension).button.is_sensitive()
-            && row(ComponentId::Myna).row.is_sensitive()
-            && !window.forward_button().is_sensitive()
-    };
-    if !until(&asking) {
-        return Err(format!(
-            "while snapd asks, the rows offer {:?}, the model's Install sensitive {}",
-            rows_offer(&page),
-            row(ComponentId::Model).button.is_sensitive()
-        ));
-    }
-    row(ComponentId::Model).button.emit_clicked();
-    settle_gtk();
-    if machine.installs() != ["myna", "myna"] {
-        return Err(format!(
-            "a second install started beside the first: {:?}",
+            "a dismissed prompt left {:?} after {} writes, toasts {:?}, installs {:?}",
+            page.install_label(),
+            machine.flag_writes(),
+            toast_texts(&window),
             machine.installs()
         ));
     }
-    println!("onboarding-install: one install at a time");
+    println!("onboarding-install: a dismissed prompt stops silently");
 
-    row(ComponentId::ShellExtension).button.emit_clicked();
-    if !until(&|| {
-        extensions.enables.get() == 1
-            && offers(&[&gettextrs::gettext("Installing…"), "Install", "Enabled"])
-    }) {
-        return Err(format!(
-            "enabling beside an install left {:?} after {} calls",
-            rows_offer(&page),
-            extensions.enables.get()
-        ));
-    }
-    println!("onboarding-install: the extension enables beside an install");
-
-    machine.download(Some(42));
-    machine.hold_install(false);
-    let percent = gettextrs::gettext("Installing {percent}%").replace("{percent}", "42");
-    if !until(&|| offers(&[&percent, "Install", "Enabled"])) {
-        return Err(format!(
-            "a download under way shows {:?}",
-            rows_offer(&page)
-        ));
-    }
-    println!("onboarding-install: the download's percentage shown");
-
-    machine.download(None);
-    if !until(&|| offers(&["Installed", "Install", "Enabled"]))
-        || !row(ComponentId::Model).button.is_sensitive()
-    {
-        return Err(format!(
-            "a finished install left the rows {:?}",
-            rows_offer(&page)
-        ));
-    }
-    println!("onboarding-install: installed once snapd is done");
-
-    machine.fail_installs(Some(
-        "cannot perform the following tasks:\n- Run install hook",
+    machine.answer_flag(Err(
+        crate::ports::SystemConfiguratorError::snapd_authorization_denied(
+            "PUT /v2/snaps/system/conf (experimental.user-daemons=true)",
+            401,
+            "access denied",
+        ),
     ));
-    row(ComponentId::Model).button.emit_clicked();
-    let heading = gettextrs::gettext("Installing the speech-to-text model failed");
-    if !until(&|| {
-        toast_texts() == [heading.clone(), gettextrs::gettext("Details")]
-            && offers(&["Installed", "Install", "Enabled"])
-    }) {
+    button.emit_clicked();
+    let announced =
+        |heading: &str| toast_texts(&window) == [heading.to_owned(), gettextrs::gettext("Details")];
+    let flag_heading = gettextrs::gettext("Could not let Myna run in the background");
+    if !until(&|| announced(&flag_heading) && offers_again()) || machine.flag_writes() != 2 {
         return Err(format!(
-            "a failed install left {:?} with toasts {:?}",
-            rows_offer(&page),
-            toast_texts()
+            "a refused prompt left {:?} with toasts {:?}",
+            page.install_label(),
+            toast_texts(&window)
         ));
     }
     let details = gettextrs::gettext("Details");
@@ -4413,8 +4009,9 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
     .into_iter()
     .next()
     .and_then(|button| button.downcast::<gtk::Button>().ok())
-    .ok_or("the failure toast has no Details button")?
+    .ok_or("the refusal toast has no Details button")?
     .emit_clicked();
+    // libadwaita 1.5 ignores a close that lands during the open animation.
     for _ in 0..8 {
         settle_gtk();
     }
@@ -4422,213 +4019,6 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
         .visible_dialog()
         .and_then(|dialog| dialog.downcast::<ui::OperationErrorDialog>().ok())
         .ok_or("Details opened no failure report")?;
-    let expected = format!(
-        "{} POST /v2/snaps/myna-parakeet (install, latest/edge)\n{} 202\n{}\ncannot perform the following tasks:\n- Run install hook",
-        gettextrs::gettext("Request:"),
-        gettextrs::gettext("HTTP status:"),
-        gettextrs::gettext("Message:"),
-    );
-    if dialog.details_text() != expected {
-        return Err(format!(
-            "the failed install's report reads {:?}",
-            dialog.details_text()
-        ));
-    }
-    dialog.force_close();
-    if !until(&|| window.visible_dialog().is_none()) {
-        return Err("the failure report did not close".to_owned());
-    }
-    println!("onboarding-install: a failed change reverts with a toast and its report");
-
-    // Discovery finds the backend's slot before its install has fetched the
-    // model: the row, and Next, wait for the change.
-    machine.fail_installs(None);
-    machine.download(Some(10));
-    row(ComponentId::Model).button.emit_clicked();
-    let downloading = gettextrs::gettext("Installing {percent}%").replace("{percent}", "10");
-    if !until(&|| offers(&["Installed", &downloading, "Enabled"])) {
-        return Err(format!("the model install shows {:?}", rows_offer(&page)));
-    }
-    machine.installed(crate::onboarding::RECOMMENDED_BACKEND_SNAP);
-    let reads = machine.reads();
-    if !until(&|| machine.reads() > reads + 4)
-        || !offers(&["Installed", &downloading, "Enabled"])
-        || window.forward_button().is_sensitive()
-    {
-        return Err(format!(
-            "a backend found mid-install shows {:?}, Next sensitive {}",
-            rows_offer(&page),
-            window.forward_button().is_sensitive()
-        ));
-    }
-    println!("onboarding-install: the model waits for its change");
-    machine.download(None);
-    if !until(&|| offers(&["Installed", "Installed", "Enabled"])) {
-        return Err(format!(
-            "the model install ended as {:?}",
-            rows_offer(&page)
-        ));
-    }
-    println!("onboarding-install: the model installed");
-    window.close();
-    settle_gtk();
-
-    // A change snapd runs for a missing row, started in a terminal or by a
-    // wizard since closed, is followed and not started again.
-    let machine = ProbeMachine::flagged();
-    machine.installing_elsewhere(crate::onboarding::MYNA_SNAP);
-    machine.download(Some(7));
-    let window = {
-        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
-            application,
-            assess(Machine {
-                user_daemons: true,
-                ..Machine::default()
-            }),
-            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-                std::sync::Arc::new(machine.clone()),
-            )),
-            Rc::new(machine.clone()),
-            ProbeExtensions::new(ExtensionState::Unavailable),
-            crate::onboarding_ui::Opener::FirstRun,
-        );
-        ui.set_poll_interval(Duration::from_millis(50));
-        ui.window()
-    };
-    settle_gtk();
-    window.forward_button().emit_clicked();
-    settle_gtk();
-    let page = components_page(&window).ok_or("the component step shows no component page")?;
-    let elsewhere = gettextrs::gettext("Installing {percent}%").replace("{percent}", "7");
-    let followed = || rows_offer(&page) == [elsewhere.as_str(), "Install", "-"];
-    if !until(&followed) || !machine.installs().is_empty() {
-        return Err(format!(
-            "an install started elsewhere shows {:?}, installs {:?}",
-            rows_offer(&page),
-            machine.installs()
-        ));
-    }
-    machine.download(None);
-    if !until(&|| rows_offer(&page) == ["Installed", "Install", "-"]) {
-        return Err(format!(
-            "an install followed to its end shows {:?}",
-            rows_offer(&page)
-        ));
-    }
-    println!("onboarding-install: an install started elsewhere is followed");
-    window.close();
-    settle_gtk();
-    Ok(())
-}
-
-/// The flag's switch asks snapd, whose polkit prompt is the only question:
-/// dismissing it reverts silently, a refusal with a toast, and success
-/// unlocks the list. It never turns the flag off.
-fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
-    use crate::onboarding::{assess, Machine};
-
-    let machine = ProbeMachine::bare();
-    let window = crate::onboarding_ui::OnboardingUi::present_with_ports(
-        application,
-        assess(Machine::default()),
-        Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-            std::sync::Arc::new(machine.clone()),
-        )),
-        Rc::new(machine.clone()),
-        ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-        crate::onboarding_ui::Opener::FirstRun,
-    )
-    .window();
-    settle_gtk();
-    window.forward_button().emit_clicked();
-    settle_gtk();
-    let page = components_page(&window).ok_or("the component step shows no component page")?;
-    let flag = page.flag_switch();
-    let list = page.component_list();
-    let toast_texts = || {
-        descendants(window.upcast_ref(), &|widget| {
-            widget.type_().name() == "AdwToastWidget"
-        })
-        .iter()
-        .flat_map(|toast| {
-            descendants(toast, &|widget| widget.is::<gtk::Label>())
-                .into_iter()
-                .filter_map(|label| label.downcast::<gtk::Label>().ok())
-                .map(|label| label.label().to_string())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-    };
-    let until = |done: &dyn Fn() -> bool| {
-        for _ in 0..100 {
-            if done() {
-                break;
-            }
-            settle_gtk();
-        }
-        done()
-    };
-    let off = || !flag.is_active() && !flag.state() && !list.is_sensitive();
-
-    machine.answer_flag(Err(crate::ports::SystemConfiguratorError::Cancelled));
-    flag.activate();
-    if !until(&|| machine.flag_writes() == 1 && off()) || !toast_texts().is_empty() {
-        return Err(format!(
-            "a dismissed prompt left the switch active {} state {} after {} writes, toasts {:?}",
-            flag.is_active(),
-            flag.state(),
-            machine.flag_writes(),
-            toast_texts()
-        ));
-    }
-    println!("onboarding-flag: a dismissed prompt reverts silently");
-
-    machine.answer_flag(Err(
-        crate::ports::SystemConfiguratorError::snapd_authorization_denied(
-            "PUT /v2/snaps/system/conf (experimental.user-daemons=true)",
-            401,
-            "access denied",
-        ),
-    ));
-    flag.activate();
-    let announced = || {
-        toast_texts()
-            == [
-                gettextrs::gettext("Could not let Myna run in the background"),
-                gettextrs::gettext("Details"),
-            ]
-    };
-    if !until(&|| announced() && off()) || machine.flag_writes() != 2 {
-        return Err(format!(
-            "a refused prompt left the switch active {} state {} with toasts {:?}",
-            flag.is_active(),
-            flag.state(),
-            toast_texts()
-        ));
-    }
-    println!("onboarding-flag: a refused prompt reverts with a toast");
-
-    let details = gettextrs::gettext("Details");
-    let details_button = descendants(window.upcast_ref(), &|widget| {
-        widget
-            .downcast_ref::<gtk::Button>()
-            .is_some_and(|button| button.label().as_deref() == Some(details.as_str()))
-    })
-    .into_iter()
-    .next()
-    .and_then(|button| button.downcast::<gtk::Button>().ok())
-    .ok_or("the refusal toast has no Details button")?;
-    details_button.emit_clicked();
-    let report = || {
-        window
-            .visible_dialog()
-            .and_then(|dialog| dialog.downcast::<ui::OperationErrorDialog>().ok())
-    };
-    // libadwaita 1.5 ignores a close that lands during the open animation.
-    for _ in 0..8 {
-        settle_gtk();
-    }
-    let dialog = report().ok_or("Details opened no failure report")?;
     let text = dialog.details_text();
     let expected = format!(
         "{} PUT /v2/snaps/system/conf (experimental.user-daemons=true)\n{} 401\n{} access denied",
@@ -4647,7 +4037,7 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
                 .is_some_and(|label| label.label().replace('\u{2060}', "") == text)
         })
     };
-    let (Some(details), Some(copy)) = (label(&text), label(&gettextrs::gettext("Copy Details")))
+    let (Some(shown), Some(copy)) = (label(&text), label(&gettextrs::gettext("Copy Details")))
     else {
         return Err("the failure report lacks its text or Copy Details".to_owned());
     };
@@ -4656,7 +4046,7 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
             .compute_point(&dialog, &gtk::graphene::Point::zero())
             .map_or(0.0, |point| point.y())
     };
-    let gap = top(&copy) - top(&details) - details.height() as f32;
+    let gap = top(&copy) - top(&shown) - shown.height() as f32;
     if gap > 24.0 {
         return Err(format!(
             "the report leaves {gap} px between its text and Copy Details"
@@ -4666,7 +4056,7 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
     if !until(&|| window.visible_dialog().is_none()) {
         return Err("the failure report did not close".to_owned());
     }
-    println!("onboarding-flag: a refusal's report names the snapd request");
+    println!("onboarding-install: a refusal reverts with a toast and its report");
 
     let long = ui::OperationErrorDialog::new("heading", "summary", &"line\n".repeat(200));
     long.present(Some(&window));
@@ -4691,119 +4081,407 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
     if !until(&|| window.visible_dialog().is_none()) {
         return Err("the long report did not close".to_owned());
     }
-    println!("onboarding-flag: a long report scrolls inside the window");
+    println!("onboarding-install: a long report scrolls inside the window");
 
+    // Each step is named under the button while it runs, the button and
+    // Next held.
     machine.hold_flag(true);
-    flag.activate();
-    let row = page.flag_row();
-    let spinner = page.flag_spinner();
-    let pending = || {
-        flag.is_active()
-            && !flag.state()
-            && spinner.is_mapped()
-            && spinner.is_spinning()
-            && row.is_sensitive()
-            && !row.can_target()
-            && !flag.can_target()
-            && row.subtitle().as_deref() == Some(gettextrs::gettext("Enabling…").as_str())
-            && !list.is_sensitive()
-    };
-    if !until(&pending) || machine.flag_writes() != 3 {
+    button.emit_clicked();
+    let flag_step = gettextrs::gettext("Enabling user daemons support");
+    if !until(&|| installing_shown(&window, &flag_step))
+        || window.forward_button().is_sensitive()
+        || machine.flag_writes() != 3
+    {
         return Err(format!(
-            "while snapd asks, the switch is active {} state {}, spinner {}, subtitle {:?}",
-            flag.is_active(),
-            flag.state(),
-            spinner.is_mapped(),
-            row.subtitle()
+            "while snapd asks for the flag the step shows {:?}, {:?}",
+            page.install_label(),
+            status_busy(&page)
         ));
     }
-    // Activating the row again asks nothing more.
-    adw::prelude::ActionRowExt::activate(&row);
+    button.emit_clicked();
     settle_gtk();
-    if !pending() || machine.flag_writes() != 3 {
-        return Err("activating the pending row asked snapd again".to_owned());
+    if machine.flag_writes() != 3 {
+        return Err("activating the running button asked snapd again".to_owned());
     }
-    println!("onboarding-flag: pending while snapd asks");
-
+    machine.hold_install(true);
     machine.hold_flag(false);
-    let on = || {
-        flag.is_active()
-            && flag.state()
-            && !spinner.is_visible()
-            && row.can_target()
-            && list.is_sensitive()
-            && row.subtitle().as_deref()
-                == Some(
-                    gettextrs::gettext("Dictation needs it. You may be asked for your password.")
-                        .as_str(),
-                )
-    };
-    if !until(&on) || rows_offer(&page) != ["Install", "Install", "Enabled"] {
+    let app_step = gettextrs::gettext("Installing Dictation app");
+    if !until(&|| installing_shown(&window, &app_step)) || machine.installs() != ["myna"] {
         return Err(format!(
-            "turning the flag on left the switch state {}, the list sensitive {}, rows {:?}",
-            flag.state(),
-            list.is_sensitive(),
-            rows_offer(&page)
+            "after the flag the step shows {:?}, installs {:?}",
+            status_busy(&page),
+            machine.installs()
         ));
     }
-    println!("onboarding-flag: on, the list unlocked");
-
-    flag.activate();
-    settle_gtk();
-    settle_gtk();
-    if !on() || machine.flag_writes() != 3 {
-        return Err("the switch turned the flag off".to_owned());
+    println!("onboarding-install: each step named while it runs");
+    machine.download(Some(42));
+    machine.hold_install(false);
+    let percent = gettextrs::gettext("{step} ({percent}%)")
+        .replace("{step}", &app_step)
+        .replace("{percent}", "42");
+    if !until(&|| installing_shown(&window, &percent)) {
+        return Err(format!(
+            "a download under way shows {:?}",
+            status_busy(&page)
+        ));
     }
-    println!("onboarding-flag: stays on");
+    println!("onboarding-install: the download's percentage shown");
+
+    // The app installs, then the model's install fails.
+    machine.hold_install(true);
+    machine.download(None);
+    let model_step = gettextrs::gettext("Installing speech-to-text model");
+    if !until(&|| installing_shown(&window, &model_step))
+        || machine.installs() != ["myna", "myna-parakeet"]
+    {
+        return Err(format!(
+            "after the app the step shows {:?}, installs {:?}",
+            status_busy(&page),
+            machine.installs()
+        ));
+    }
+    machine.fail_installs(Some(
+        "cannot perform the following tasks:\n- Run install hook",
+    ));
+    machine.hold_install(false);
+    let model_heading = gettextrs::gettext("Installing the speech-to-text model failed");
+    let myna_installed = assess(Machine {
+        user_daemons: true,
+        myna_installed: true,
+        extension: ExtensionState::Disabled,
+        ..Machine::default()
+    });
+    if !until(&|| announced(&model_heading) && offered(&window, &expected_size(&myna_installed)))
+        || extensions.enables.get() != 0
+    {
+        return Err(format!(
+            "a failed model install left {:?}, {:?}, toasts {:?}",
+            page.install_label(),
+            status_note(&page),
+            toast_texts(&window)
+        ));
+    }
+    let report = setup_failure_report(&window).unwrap_or_default();
+    let expected = format!(
+        "{} POST /v2/snaps/myna-parakeet (install, latest/edge)\n{} 202\n{}\ncannot perform the following tasks:\n- Run install hook",
+        gettextrs::gettext("Request:"),
+        gettextrs::gettext("HTTP status:"),
+        gettextrs::gettext("Message:"),
+    );
+    if report != expected {
+        return Err(format!("the failed install's report reads {report:?}"));
+    }
+    println!("onboarding-install: a failed step reverts with a toast and its report");
+    println!("onboarding-install: the size covers only what is missing");
+
+    machine.fail_installs(None);
+    machine.download(Some(10));
+    button.emit_clicked();
+    let downloading = gettextrs::gettext("{step} ({percent}%)")
+        .replace("{step}", &model_step)
+        .replace("{percent}", "10");
+    if !until(&|| installing_shown(&window, &downloading))
+        || machine.flag_writes() != 3
+        || machine.installs() != ["myna", "myna-parakeet", "myna-parakeet"]
+    {
+        return Err(format!(
+            "the second run shows {:?} after {} flag writes, installs {:?}",
+            status_busy(&page),
+            machine.flag_writes(),
+            machine.installs()
+        ));
+    }
+    extensions.holding.set(true);
+    machine.download(None);
+    let extension_step = gettextrs::gettext("Enabling shell extension");
+    if !until(&|| installing_shown(&window, &extension_step))
+        || extensions.enables.get() != 1
+        || window.forward_button().is_sensitive()
+    {
+        return Err(format!(
+            "after the model the step shows {:?}, {} enables, Next sensitive {}",
+            status_busy(&page),
+            extensions.enables.get(),
+            window.forward_button().is_sensitive()
+        ));
+    }
+    println!("onboarding-install: the extension is enabled last");
+    extensions.holding.set(false);
+    if !until(&|| installed_shown(&window) && machine.applied().len() == 1)
+        || step() != "components"
+        || status_note(&page).is_some()
+        || button_top() != resting
+    {
+        return Err(format!(
+            "a finished run shows {:?} on {}, applied {:?}",
+            page.install_label(),
+            step(),
+            machine.applied()
+        ));
+    }
+    println!("onboarding-install: installed, then set up");
+    println!("onboarding-install: the button keeps its place");
+    window.forward_button().emit_clicked();
+    if !until(&|| step() == "shortcut") || machine.applied() != [vec!["restart-myna".to_owned()]] {
+        return Err(format!(
+            "Next after the run reached {} having applied {:?}",
+            step(),
+            machine.applied()
+        ));
+    }
+    println!("onboarding-install: Next skips the pause");
     window.close();
     settle_gtk();
 
-    // A read that began before the flag was turned on answers after it.
-    let machine = ProbeMachine::bare();
-    let window = crate::onboarding_ui::OnboardingUi::present_with_ports(
-        application,
-        assess(Machine::default()),
-        Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
-            std::sync::Arc::new(machine.clone()),
-        )),
-        Rc::new(machine.clone()),
-        ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-        crate::onboarding_ui::Opener::FirstRun,
-    )
-    .window();
+    // A change snapd runs for a missing component, started in a terminal or
+    // by a wizard since closed, is followed and not started again; what it
+    // installs counts as missing until snapd is done.
+    let machine = ProbeMachine::flagged();
+    machine.installing_elsewhere(crate::onboarding::MYNA_SNAP);
+    machine.download(Some(7));
+    let window = {
+        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
+            application,
+            assess(Machine {
+                user_daemons: true,
+                ..Machine::default()
+            }),
+            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+                std::sync::Arc::new(machine.clone()),
+            )),
+            Rc::new(machine.clone()),
+            ProbeExtensions::new(ExtensionState::Unavailable),
+            crate::onboarding_ui::Opener::FirstRun,
+        );
+        ui.set_poll_interval(Duration::from_millis(50));
+        ui.window()
+    };
     settle_gtk();
     window.forward_button().emit_clicked();
     settle_gtk();
+    let elsewhere = gettextrs::gettext("{step} ({percent}%)")
+        .replace("{step}", &app_step)
+        .replace("{percent}", "7");
+    if !until(&|| installing_shown(&window, &elsewhere)) || !machine.installs().is_empty() {
+        return Err(format!(
+            "an install started elsewhere shows {:?}, installs {:?}",
+            components_page(&window).and_then(|page| status_busy(&page)),
+            machine.installs()
+        ));
+    }
+    println!("onboarding-install: an install started elsewhere is followed");
+    machine.installed(crate::onboarding::MYNA_SNAP);
+    let reads = machine.reads();
+    if !until(&|| machine.reads() > reads + 4)
+        || !installing_shown(&window, &elsewhere)
+        || window.forward_button().is_sensitive()
+    {
+        return Err("an app found mid-install did not wait for its change".to_owned());
+    }
+    println!("onboarding-install: a component waits for its change");
+    machine.download(None);
+    let model_left = assess(Machine {
+        user_daemons: true,
+        myna_installed: true,
+        ..Machine::default()
+    });
+    if !until(&|| offered(&window, &expected_size(&model_left))) || !machine.installs().is_empty() {
+        return Err(format!(
+            "an install followed to its end shows {:?}",
+            components_page(&window).map(|page| page.install_label())
+        ));
+    }
+    println!("onboarding-install: followed to its end, the model left");
+    window.close();
+    settle_gtk();
+    Ok(())
+}
+
+/// A machine with the app and no model installs the model alone, sized for
+/// it; an extension out of reach is skipped silently and holds nothing.
+fn probe_partial(application: &adw::Application) -> Result<(), String> {
+    use crate::onboarding::{assess, ExtensionState, Machine};
+
+    // Only a disabled extension left: Next leads, the button turns it on,
+    // and a refusal names gnome-shell's call.
+    let machine = ProbeMachine::new();
+    let extensions = ProbeExtensions::new(ExtensionState::Disabled);
+    let window = {
+        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
+            application,
+            assess(Machine {
+                user_daemons: true,
+                myna_installed: true,
+                backend_discovered: true,
+                extension: ExtensionState::Disabled,
+                ..Machine::default()
+            }),
+            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+                std::sync::Arc::new(machine.clone()),
+            )),
+            Rc::new(machine.clone()),
+            extensions.clone(),
+            crate::onboarding_ui::Opener::FirstRun,
+        );
+        ui.set_beat(Duration::from_millis(50));
+        ui.window()
+    };
+    settle_gtk();
+    window.forward_button().emit_clicked();
+    settle_gtk();
+    let until = |done: &dyn Fn() -> bool| {
+        for _ in 0..200 {
+            if done() {
+                break;
+            }
+            settle_gtk();
+        }
+        done()
+    };
     let page = components_page(&window).ok_or("the component step shows no component page")?;
-    let flag = page.flag_switch();
-    machine.hold_reads(true);
-    let elsewhere = gtk::Window::new();
-    elsewhere.present();
+    let button = page.install_button();
+    let plain_offer = || {
+        page.install_label() == gettextrs::gettext("Install all components")
+            && button.is_sensitive()
+            && standard_button(&button, false)
+            && status_note(&page).is_none()
+            && status_busy(&page).is_none()
+    };
+    let forward = window.forward_button();
+    if !plain_offer() || !forward.is_sensitive() || !standard_button(&forward, true) {
+        return Err(format!(
+            "with only the extension left the step offers {:?} (classes {:?}), Next sensitive {}",
+            page.install_label(),
+            button.css_classes(),
+            forward.is_sensitive()
+        ));
+    }
+    let reason = "gnome-shell could not run myna-shell@canonical.com: TypeError: boom";
+    extensions.failing.replace(Some(reason.to_owned()));
+    button.emit_clicked();
+    let heading = gettextrs::gettext("Enabling the shell extension failed");
+    if !until(&|| {
+        toast_texts(&window) == [heading.clone(), gettextrs::gettext("Details")] && plain_offer()
+    }) || extensions.enables.get() != 1
+    {
+        return Err(format!(
+            "a failed enable left {:?} with toasts {:?}",
+            page.install_label(),
+            toast_texts(&window)
+        ));
+    }
+    let expected = format!(
+        "{} org.gnome.Shell.Extensions.EnableExtension(\"myna-shell@canonical.com\")\n{} {reason}",
+        gettextrs::gettext("D-Bus call:"),
+        gettextrs::gettext("Message:"),
+    );
+    let report = setup_failure_report(&window).unwrap_or_default();
+    if report != expected {
+        return Err(format!("the failed enable's report reads {report:?}"));
+    }
+    println!("onboarding-extension: only it left, Next leads and a failure is reported");
+    extensions.failing.replace(None);
+    button.emit_clicked();
+    let step = || {
+        window
+            .navigation()
+            .visible_page()
+            .and_then(|page| page.tag())
+            .map(|tag| tag.to_string())
+            .unwrap_or_default()
+    };
+    if !until(&|| step() == "shortcut") || extensions.enables.get() != 2 {
+        return Err(format!(
+            "enabling the extension alone reached {} after {} enables",
+            step(),
+            extensions.enables.get()
+        ));
+    }
+    println!("onboarding-extension: enabled by the button, then moved on");
+    window.close();
     settle_gtk();
-    elsewhere.close();
-    window.present();
-    if !until(&|| machine.flag_reads() == 1) {
-        return Err("regaining focus did not read the flag".to_owned());
-    }
-    flag.activate();
-    if !until(&|| machine.flag_writes() == 1) {
-        return Err("the switch did not ask snapd".to_owned());
-    }
+
+    let machine = ProbeMachine::myna_only();
+    let extensions = ProbeExtensions::new(ExtensionState::Unavailable);
+    let initial = assess(Machine {
+        user_daemons: true,
+        myna_installed: true,
+        ..Machine::default()
+    });
+    let window = {
+        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
+            application,
+            initial.clone(),
+            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+                std::sync::Arc::new(machine.clone()),
+            )),
+            Rc::new(machine.clone()),
+            extensions.clone(),
+            crate::onboarding_ui::Opener::FirstRun,
+        );
+        ui.set_beat(Duration::from_millis(50));
+        ui.window()
+    };
     settle_gtk();
-    machine.hold_reads(false);
-    for _ in 0..40 {
-        if !flag.is_active() {
-            return Err("a read from before the flag turned the switch back off".to_owned());
+    window.forward_button().emit_clicked();
+    settle_gtk();
+    let until = |done: &dyn Fn() -> bool| {
+        for _ in 0..200 {
+            if done() {
+                break;
+            }
+            settle_gtk();
         }
-        if flag.state() {
-            break;
-        }
-        settle_gtk();
+        done()
+    };
+    let step = || {
+        window
+            .navigation()
+            .visible_page()
+            .and_then(|page| page.tag())
+            .map(|tag| tag.to_string())
+            .unwrap_or_default()
+    };
+    if !until(&|| offered(&window, &expected_size(&initial))) {
+        return Err(format!(
+            "a machine missing only the model offers {:?}",
+            components_page(&window).and_then(|page| status_note(&page))
+        ));
     }
-    if !flag.state() || !page.component_list().is_sensitive() {
-        return Err("the read after the flag did not turn the switch on".to_owned());
+    println!("onboarding-partial: sized for the model alone");
+    let button = components_page(&window)
+        .ok_or("the component step shows no component page")?
+        .install_button();
+    machine.answer_install(Err(crate::ports::SystemConfiguratorError::Cancelled));
+    button.emit_clicked();
+    if !until(&|| machine.installs().len() == 1 && offered(&window, &expected_size(&initial)))
+        || !toast_texts(&window).is_empty()
+    {
+        return Err(format!(
+            "a dismissed install prompt left installs {:?}, toasts {:?}",
+            machine.installs(),
+            toast_texts(&window)
+        ));
     }
-    println!("onboarding-flag: a stale read does not undo it");
+    println!("onboarding-partial: a dismissed install prompt stops silently");
+    button.emit_clicked();
+    if !until(&|| step() == "shortcut")
+        || machine.installs() != ["myna-parakeet", "myna-parakeet"]
+        || machine.flag_writes() != 0
+        || extensions.enables.get() != 0
+        || machine.applied() != [vec!["restart-myna".to_owned()]]
+    {
+        return Err(format!(
+            "installing the model alone reached {}: installs {:?}, {} flag writes, {} enables, applied {:?}",
+            step(),
+            machine.installs(),
+            machine.flag_writes(),
+            extensions.enables.get(),
+            machine.applied()
+        ));
+    }
+    println!("onboarding-partial: only the model installed, then moved on");
+    println!("onboarding-optional: an unavailable extension holds nothing");
     window.close();
     settle_gtk();
     Ok(())
@@ -4814,47 +4492,6 @@ fn components_page(window: &ui::OnboardingWindow) -> Option<ui::OnboardingCompon
         widget.is_mapped() && widget.is::<ui::OnboardingComponents>()
     })
     .and_then(|widget| widget.downcast().ok())
-}
-
-/// What each installable row shows at its end, in order: its button's label,
-/// "Installed" for the check, or "-" for nothing.
-fn rows_offer(page: &ui::OnboardingComponents) -> Vec<String> {
-    use crate::onboarding::ComponentId;
-    [
-        ComponentId::Myna,
-        ComponentId::Model,
-        ComponentId::ShellExtension,
-    ]
-    .into_iter()
-    .filter_map(|id| page.row(id))
-    .map(|row| {
-        let installed = row.installed.is_mapped()
-            && find_descendant(row.installed.upcast_ref(), &|widget| {
-                widget.has_css_class("success")
-                    && widget.downcast_ref::<gtk::Image>().is_some_and(|image| {
-                        image.icon_name().as_deref() == Some("object-select-symbolic")
-                    })
-            })
-            .is_some();
-        let installing = Some(&row.installing)
-            .filter(|progress| progress.container.is_mapped() && progress.spinner.is_spinning());
-        let done = || {
-            find_descendant(row.installed.upcast_ref(), &|widget| {
-                widget.is::<gtk::Label>()
-            })
-            .and_then(|label| label.downcast::<gtk::Label>().ok())
-            .map(|label| label.label().to_string())
-            .unwrap_or_default()
-        };
-        match (row.button.is_mapped(), installed, installing) {
-            (false, false, Some(progress)) => progress.label.label().to_string(),
-            (true, false, None) => row.button.label().unwrap_or_default().to_string(),
-            (false, true, None) => done(),
-            (false, false, None) => "-".to_owned(),
-            _ => "both".to_owned(),
-        }
-    })
-    .collect()
 }
 
 /// Whether `label`, or the balanced label holding it, has `class`.
@@ -4979,20 +4616,9 @@ fn keycaps_dimmed(root: &gtk::Widget) -> bool {
     true
 }
 
-/// Whether the onboarding footer says everything is installed: a success
-/// checkmark and the label, left of the forward button. `None` when it is not
-/// shown at all.
-/// Whether the footer spins while dictation is being set up.
+/// Whether the component step spins while dictation is being set up.
 fn setup_spinner(window: &ui::OnboardingWindow) -> bool {
-    let Some(footer) = window.forward_button().parent() else {
-        return false;
-    };
-    find_descendant(&footer, &|widget| {
-        widget
-            .downcast_ref::<gtk::Spinner>()
-            .is_some_and(|spinner| spinner.is_mapped() && spinner.is_spinning())
-    })
-    .is_some()
+    components_page(window).is_some_and(|page| status_busy(&page).is_some())
 }
 
 /// A stock libadwaita button at its natural size: `suggested-action` when it
@@ -5059,45 +4685,14 @@ fn setup_failure_report(window: &ui::OnboardingWindow) -> Option<String> {
     Some(report.to_string())
 }
 
-/// The footer says a setup left dictation not set up, with a warning icon.
+/// The step says a setup left dictation not set up, with a warning icon.
 fn setup_failed_shown(window: &ui::OnboardingWindow) -> bool {
-    let status = window.setup_failed_status();
-    status.is_mapped()
-        && find_descendant(status.upcast_ref(), &|widget| {
-            widget.downcast_ref::<gtk::Label>().is_some_and(|label| {
-                label.label()
-                    == gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
-                        .as_str()
-            })
-        })
-        .is_some()
-        && find_descendant(status.upcast_ref(), &|widget| {
-            widget.has_css_class("warning")
-        })
-        .is_some()
-}
-
-fn installed_status(window: &ui::OnboardingWindow) -> Option<bool> {
-    let label = find_descendant(window.upcast_ref(), &|widget| {
-        widget.downcast_ref::<gtk::Label>().is_some_and(|label| {
-            label.is_mapped()
-                && label.label() == gettextrs::gettext("All required components installed").as_str()
-        })
-    })?;
-    let check = label.parent().and_then(|status| {
-        find_descendant(&status, &|widget| {
-            widget.is_mapped()
-                && widget.has_css_class("success")
-                && widget.downcast_ref::<gtk::Image>().is_some_and(|image| {
-                    image.icon_name().as_deref() == Some("object-select-symbolic")
-                })
-        })
-    });
-    let forward = window.forward_button();
-    let left_of_forward = label
-        .compute_bounds(&forward)
-        .is_some_and(|bounds| bounds.x() + bounds.width() <= 0.0);
-    Some(check.is_some() && left_of_forward)
+    components_page(window).is_some_and(|page| {
+        page.status_warning().is_mapped()
+            && page.status_label().label()
+                == gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
+                    .as_str()
+    })
 }
 
 fn find_descendant(

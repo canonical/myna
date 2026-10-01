@@ -21,8 +21,6 @@ mod imp {
         pub progress: gtk::TemplateChild<gtk::Label>,
         #[template_child]
         pub installed: gtk::TemplateChild<gtk::Box>,
-        #[template_child]
-        pub done: gtk::TemplateChild<gtk::Label>,
     }
 
     #[glib::object_subclass]
@@ -48,7 +46,7 @@ mod imp {
 glib::wrapper! {
     /// A row's install suffix, alike wherever Myna Settings installs: an
     /// Install button, then a spinner with how far snapd has come, then an
-    /// "Installed" (or "Enabled") check.
+    /// "Installed" check.
     pub struct InstallControl(ObjectSubclass<imp::InstallControl>)
         @extends gtk::Widget, gtk::Box,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
@@ -95,33 +93,13 @@ impl InstallControl {
         button.update_property(&[gtk::accessible::Property::Label(accessible)]);
     }
 
-    /// The spinner with `text` beside it.
-    pub fn show_busy(&self, text: &str) {
-        self.show(None, Some(text), false);
-    }
-
     /// The spinner with snapd's download `percent`, while one is known.
     pub fn show_installing(&self, percent: Option<u8>) {
-        self.show_busy(&installing_text(percent));
+        self.show(None, Some(&installing_text(percent)), false);
     }
 
     pub fn show_installed(&self) {
-        self.show_done(&gettextrs::gettext("Installed"));
-    }
-
-    /// The check, worded for something that was there and is now on.
-    pub fn show_enabled(&self) {
-        self.show_done(&gettextrs::gettext("Enabled"));
-    }
-
-    fn show_done(&self, text: &str) {
-        self.imp().done.set_label(text);
         self.show(None, None, true);
-    }
-
-    /// Nothing at all: the row's subtitle says why.
-    pub fn show_nothing(&self) {
-        self.show(None, None, false);
     }
 
     fn show(&self, button: Option<&str>, busy: Option<&str>, installed: bool) {
@@ -136,8 +114,6 @@ impl InstallControl {
             imp.progress.set_label(text);
         }
         imp.installed.set_visible(installed);
-        // Showing nothing, it holds no room from the row's subtitle.
-        self.set_visible(button.is_some() || busy.is_some() || installed);
     }
 }
 

@@ -3,8 +3,8 @@
 
 use myna_config::diagnostics::InstalledSnap;
 use myna_config::onboarding::{
-    assess, can_advance, completes, needs_onboarding, row_action, ComponentId, ExtensionState,
-    Machine, RowAction, Step, MYNA_SNAP,
+    assess, can_advance, completes, install_plan, needs_onboarding, ComponentId, ExtensionState,
+    Machine, Step, MYNA_SNAP,
 };
 
 fn snap(name: &str) -> InstalledSnap {
@@ -32,17 +32,16 @@ fn a_ready_machine_never_opens_the_wizard() {
     assert!(!needs_onboarding(&assess(machine)));
 }
 
-/// The wizard installs from its rows; nothing is left for a terminal.
+/// The wizard's one button installs every missing snap; nothing is left for
+/// a terminal.
 #[test]
-fn every_missing_snap_has_an_install_button() {
-    for component in assess(Machine {
+fn every_missing_snap_is_installed_by_the_button() {
+    let plan = install_plan(&assess(Machine {
         user_daemons: true,
         ..Machine::default()
-    }) {
-        if matches!(component.id, ComponentId::Myna | ComponentId::Model) {
-            assert_eq!(row_action(&component), RowAction::Install);
-        }
-    }
+    }));
+    assert!(plan.contains(&ComponentId::Myna));
+    assert!(plan.contains(&ComponentId::Model));
 }
 
 /// The flag, both snaps, and the extension, in the order the step lists
@@ -65,8 +64,8 @@ fn the_wizard_assesses_the_flag_both_snaps_and_the_extension() {
 }
 
 /// Dictation works without the extension, falling back to notifications, so
-/// a machine without it neither opens the wizard nor holds Next; only
-/// installing it with a missing snap moves the step on by itself.
+/// a machine without it neither opens the wizard nor holds Next, and one
+/// out of reach does not hold the step's move on either.
 #[test]
 fn the_extension_is_optional_but_completes_the_step() {
     let ready = |extension| {
@@ -79,7 +78,7 @@ fn the_extension_is_optional_but_completes_the_step() {
     let without = ready(ExtensionState::Unavailable);
     assert!(!needs_onboarding(&without));
     assert!(can_advance(Step::Components, &without));
-    assert!(!completes(&assess(Machine::default()), &without));
+    assert!(completes(&assess(Machine::default()), &without));
     assert!(completes(
         &assess(Machine::default()),
         &ready(ExtensionState::Enabled)

@@ -45,11 +45,6 @@ button.outlined:active {
   font-weight: normal;
 }
 
-/* An installed check dims with its locked list, as its label does. */
-.onboarding-components image.success:disabled {
-  opacity: 0.5;
-}
-
 /* The Recommended pill on a model row: an accent outline, as the design. */
 .recommended-pill {
   background-color: alpha(@accent_bg_color, 0.1);

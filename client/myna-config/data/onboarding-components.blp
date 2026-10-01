@@ -24,67 +24,74 @@ template $OnboardingComponents: Adw.Bin {
         }
 
         $BalancedLabel description {
-          label: _("You need to install some components for Dictation to work.");
+          label: _("Dictation requires some additional components, including the optimal speech-to-text model for your computer. Installation might take a few minutes.");
           margin-bottom: 32;
         }
 
-        Gtk.ListBox {
-          selection-mode: none;
-          margin-bottom: 16;
+        // One width for every label, so the button does not jump between
+        // its states.
+        Gtk.Button install_button {
+          halign: center;
 
-          styles [
-            "boxed-list",
-          ]
+          child: Gtk.Stack install_labels {
+            hhomogeneous: true;
+            vhomogeneous: true;
 
-          Adw.ActionRow flag_row {
-            title: _("Let Myna run in the background");
-            subtitle: _("Dictation needs it. You may be asked for your password.");
-            activatable-widget: flag_switch;
+            Gtk.StackPage {
+              name: "offer";
 
-            [suffix]
-            Gtk.Spinner flag_spinner {
-              visible: false;
-              valign: center;
-
-              accessibility {
-                label: _("Letting Myna run in the background");
-              }
+              child: Gtk.Label {
+                label: _("Install all components");
+              };
             }
 
-            [suffix]
-            Gtk.Switch flag_switch {
-              valign: center;
+            Gtk.StackPage {
+              name: "installing";
+
+              child: Gtk.Label {
+                label: _("Installing…");
+              };
             }
-          }
+
+            Gtk.StackPage {
+              name: "installed";
+
+              child: Gtk.Label {
+                label: _("Installed");
+              };
+            }
+          };
         }
 
-        Gtk.ListBox component_list {
-          selection-mode: none;
+        // The download size, what is installing, or how setting up goes.
+        Gtk.Box status {
+          halign: center;
+          spacing: 8;
+          margin-top: 12;
 
-          styles [
-            "boxed-list",
-            "onboarding-components",
-          ]
-
-          Adw.ActionRow myna_row {
-            title: _("Dictation app");
-
-            [suffix]
-            $InstallControl myna_control {}
+          Gtk.Spinner status_spinner {
+            visible: false;
           }
 
-          Adw.ActionRow model_row {
-            title: _("Speech-to-text model");
+          Gtk.Image status_warning {
+            icon-name: "dialog-warning-symbolic";
+            visible: false;
 
-            [suffix]
-            $InstallControl model_control {}
+            styles [
+              "warning",
+            ]
           }
 
-          Adw.ActionRow extension_row {
-            title: _("Shell extension");
+          // Tabular digits, so the centred row does not shift the spinner
+          // at every percent.
+          Gtk.Label status_label {
+            wrap: true;
+            natural-wrap-mode: word;
+            justify: center;
 
-            [suffix]
-            $InstallControl extension_control {}
+            styles [
+              "numeric",
+            ]
           }
         }
       };

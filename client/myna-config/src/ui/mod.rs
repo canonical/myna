@@ -25,7 +25,7 @@ pub use install_control::{installing_text, InstallControl, RowProgress};
 pub use install_models_dialog::InstallModelsDialog;
 pub use main_window::MainWindow;
 pub use myna_page::MynaPage;
-pub use onboarding_components::OnboardingComponents;
+pub use onboarding_components::{ComponentsStatus, OnboardingComponents};
 pub use onboarding_shortcut::OnboardingShortcut;
 pub use onboarding_welcome::OnboardingWelcome;
 pub use onboarding_window::OnboardingWindow;

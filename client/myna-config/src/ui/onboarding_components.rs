@@ -1,10 +1,9 @@
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use glib::subclass::types::ObjectSubclassIsExt;
 use gtk::{glib, CompositeTemplate};
 use gtk4 as gtk;
 use libadwaita as adw;
-
-use crate::onboarding::ComponentId;
 
 mod imp {
     use super::*;
@@ -15,25 +14,17 @@ mod imp {
         #[template_child]
         pub description: gtk::TemplateChild<crate::ui::BalancedLabel>,
         #[template_child]
-        pub flag_row: gtk::TemplateChild<adw::ActionRow>,
+        pub install_button: gtk::TemplateChild<gtk::Button>,
         #[template_child]
-        pub flag_spinner: gtk::TemplateChild<gtk::Spinner>,
+        pub install_labels: gtk::TemplateChild<gtk::Stack>,
         #[template_child]
-        pub flag_switch: gtk::TemplateChild<gtk::Switch>,
+        pub status: gtk::TemplateChild<gtk::Box>,
         #[template_child]
-        pub component_list: gtk::TemplateChild<gtk::ListBox>,
+        pub status_spinner: gtk::TemplateChild<gtk::Spinner>,
         #[template_child]
-        pub myna_row: gtk::TemplateChild<adw::ActionRow>,
+        pub status_warning: gtk::TemplateChild<gtk::Image>,
         #[template_child]
-        pub myna_control: gtk::TemplateChild<crate::ui::InstallControl>,
-        #[template_child]
-        pub model_row: gtk::TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub model_control: gtk::TemplateChild<crate::ui::InstallControl>,
-        #[template_child]
-        pub extension_row: gtk::TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub extension_control: gtk::TemplateChild<crate::ui::InstallControl>,
+        pub status_label: gtk::TemplateChild<gtk::Label>,
     }
 
     #[glib::object_subclass]
@@ -44,7 +35,6 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             <crate::ui::BalancedLabel as glib::prelude::StaticTypeExt>::ensure_type();
-            <crate::ui::InstallControl as glib::prelude::StaticTypeExt>::ensure_type();
             klass.bind_template();
         }
 
@@ -64,16 +54,14 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-/// One installable component's row and its install control.
-#[derive(Clone)]
-pub struct ComponentRow {
-    pub row: adw::ActionRow,
-    pub control: crate::ui::InstallControl,
-    pub button: gtk::Button,
-    pub installed: gtk::Box,
-    /// What replaces the button while snapd installs it, or gnome-shell
-    /// enables the extension.
-    pub installing: crate::ui::RowProgress,
+/// What the line under the button shows.
+pub enum ComponentsStatus<'a> {
+    Hidden,
+    /// Dimmed text, such as the download size.
+    Note(&'a str),
+    /// A spinner beside what is under way.
+    Busy(&'a str),
+    Warning(&'a str),
 }
 
 impl OnboardingComponents {
@@ -87,39 +75,70 @@ impl OnboardingComponents {
         self.imp().description.text_label()
     }
 
-    pub fn flag_row(&self) -> adw::ActionRow {
-        self.imp().flag_row.get()
+    pub fn install_button(&self) -> gtk::Button {
+        self.imp().install_button.get()
     }
 
-    pub fn flag_spinner(&self) -> gtk::Spinner {
-        self.imp().flag_spinner.get()
+    /// The button's label as shown: its child is a stack of every label, so
+    /// it keeps one width.
+    pub fn install_label(&self) -> String {
+        self.imp()
+            .install_labels
+            .visible_child()
+            .and_then(|child| child.downcast::<gtk::Label>().ok())
+            .map(|label| label.label().to_string())
+            .unwrap_or_default()
     }
 
-    pub fn flag_switch(&self) -> gtk::Switch {
-        self.imp().flag_switch.get()
-    }
-
-    pub fn component_list(&self) -> gtk::ListBox {
-        self.imp().component_list.get()
-    }
-
-    /// The row of `id`; the flag has a switch row of its own instead.
-    pub fn row(&self, id: ComponentId) -> Option<ComponentRow> {
+    /// Show the button's `offer`, `installing` or `installed` label.
+    pub fn show_install_label(&self, name: &str) {
         let imp = self.imp();
-        let (row, control) = match id {
-            ComponentId::UserDaemons => return None,
-            ComponentId::Myna => (&imp.myna_row, &imp.myna_control),
-            ComponentId::Model => (&imp.model_row, &imp.model_control),
-            ComponentId::ShellExtension => (&imp.extension_row, &imp.extension_control),
+        imp.install_labels.set_visible_child_name(name);
+        let label = self.install_label();
+        imp.install_button
+            .update_property(&[gtk::accessible::Property::Label(&label)]);
+    }
+
+    pub fn status(&self) -> gtk::Box {
+        self.imp().status.get()
+    }
+
+    pub fn status_spinner(&self) -> gtk::Spinner {
+        self.imp().status_spinner.get()
+    }
+
+    pub fn status_warning(&self) -> gtk::Image {
+        self.imp().status_warning.get()
+    }
+
+    pub fn status_label(&self) -> gtk::Label {
+        self.imp().status_label.get()
+    }
+
+    pub fn show_status(&self, status: ComponentsStatus) {
+        let imp = self.imp();
+        let (text, busy, warning) = match status {
+            ComponentsStatus::Hidden => ("", false, false),
+            ComponentsStatus::Note(text) => (text, false, false),
+            ComponentsStatus::Busy(text) => (text, true, false),
+            ComponentsStatus::Warning(text) => (text, false, true),
         };
-        let control = control.get();
-        Some(ComponentRow {
-            row: row.get(),
-            button: control.button(),
-            installed: control.installed(),
-            installing: control.progress(),
-            control,
-        })
+        // The line keeps its room when empty, so the centred column does not
+        // jump as it comes and goes.
+        imp.status_spinner.set_visible(busy);
+        imp.status_spinner.set_spinning(busy);
+        imp.status_warning.set_visible(warning);
+        imp.status_label.set_label(text);
+        let note = !busy && !warning;
+        if note != imp.status_label.has_css_class("dim-label") {
+            if note {
+                imp.status_label.add_css_class("dim-label");
+            } else {
+                imp.status_label.remove_css_class("dim-label");
+            }
+        }
+        imp.status
+            .update_state(&[gtk::accessible::State::Busy(busy)]);
     }
 }
 

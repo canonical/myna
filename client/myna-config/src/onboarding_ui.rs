@@ -23,10 +23,10 @@ use crate::adapters::system_configurator::PkexecSystemConfigurator;
 use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
-    assess, can_advance, completes, flag_enabled, forward_leads, installs, model_offer,
-    needs_onboarding, polls, row_action, unlocked, while_installing, Component, ComponentId,
-    ComponentState, Machine, ModelOffer, ModelSize, RowAction, Step, Unavailable,
-    MYNA_DOWNLOAD_BYTES, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    assess, can_advance, completes, flag_enabled, forward_leads, install_view, installs,
+    model_offer, needs_onboarding, next_install, polls, remaining_download, settled,
+    while_installing, Component, ComponentId, ComponentState, DownloadSize, InstallView, Machine,
+    ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
 };
 use crate::ports::{
     BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
@@ -65,16 +65,6 @@ enum Install {
     Confirming,
 }
 
-/// Where turning snapd's flag on stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FlagWrite {
-    Idle,
-    /// snapd has not answered: polkit's prompt may be open.
-    Asking,
-    /// snapd turned it on; the switch waits for a read that shows it.
-    Confirming,
-}
-
 /// Where the wizard was opened from, which decides what Done closes.
 #[derive(Clone, Copy)]
 pub enum Opener<'a> {
@@ -102,10 +92,13 @@ pub struct OnboardingUi {
     /// Why the last assessment could not read the machine.
     problem: RefCell<Option<String>>,
     busy: Cell<bool>,
-    flag_write: Cell<FlagWrite>,
+    /// The button's run is installing what is missing, one step at a time.
+    running: Cell<bool>,
+    /// The run's current step.
+    run_step: Cell<Option<ComponentId>>,
     flag_cancellation: RefCell<Option<CancellationToken>>,
-    /// Bumped by every flag write, so a read that started before one is not
-    /// taken for the machine after it.
+    /// Bumped by every install step, so a read that started before one is
+    /// not taken for the machine after it.
     epoch: Cell<u64>,
     installs: RefCell<BTreeMap<ComponentId, Install>>,
     /// Stop following installs when the wizard closes; snapd carries on.
@@ -206,7 +199,8 @@ impl OnboardingUi {
             })),
             problem: RefCell::default(),
             busy: Cell::new(false),
-            flag_write: Cell::new(FlagWrite::Idle),
+            running: Cell::new(false),
+            run_step: Cell::new(None),
             flag_cancellation: RefCell::default(),
             epoch: Cell::new(0),
             installs: RefCell::default(),
@@ -235,47 +229,14 @@ impl OnboardingUi {
                 }
             }
         }));
-        // The switch turns the flag on and never off: snapd refuses Myna's
-        // refreshes without it. Its state is only ever what snapd reports.
-        components_page.flag_switch().connect_state_set({
+        components_page.install_button().connect_clicked({
             let ui = Rc::downgrade(&ui);
-            move |switch, requested| {
-                let Some(ui) = ui.upgrade() else {
-                    return glib::Propagation::Stop;
-                };
-                let flag = flag_enabled(&ui.components.borrow());
-                // A pending write shows the switch on until snapd answers.
-                let shown = flag || ui.flag_write.get() != FlagWrite::Idle;
-                if requested && !shown {
-                    ui.enable_flag();
-                } else if requested != shown {
-                    let switch = switch.clone();
-                    glib::idle_add_local_once(move || switch.set_active(shown));
+            move |_| {
+                if let Some(ui) = ui.upgrade() {
+                    ui.install_all();
                 }
-                glib::Propagation::Stop
             }
         });
-
-        for id in [
-            ComponentId::Myna,
-            ComponentId::Model,
-            ComponentId::ShellExtension,
-        ] {
-            let Some(row) = components_page.row(id) else {
-                continue;
-            };
-            row.button.connect_clicked({
-                let ui = Rc::downgrade(&ui);
-                move |_| {
-                    if let Some(ui) = ui.upgrade() {
-                        match id {
-                            ComponentId::ShellExtension => ui.enable_extension(),
-                            _ => ui.install(id),
-                        }
-                    }
-                }
-            });
-        }
 
         window.forward_button().connect_clicked({
             let ui = Rc::downgrade(&ui);
@@ -306,7 +267,11 @@ impl OnboardingUi {
             let ui = Rc::downgrade(&ui);
             move |window| {
                 if let Some(ui) = ui.upgrade() {
-                    if window.is_active() && ui.step.get() == Step::Components && !ui.busy.get() {
+                    if window.is_active()
+                        && ui.step.get() == Step::Components
+                        && !ui.busy.get()
+                        && !ui.running.get()
+                    {
                         ui.refresh_assessment();
                     }
                 }
@@ -354,7 +319,7 @@ impl OnboardingUi {
         let configurator = self.configurator.clone();
         let extensions = self.extensions.clone();
         glib::spawn_future_local(async move {
-            let (components, offer, problem) = read_machine(
+            let reading = read_machine(
                 repository.as_ref(),
                 configurator.as_ref(),
                 extensions.as_ref(),
@@ -368,25 +333,16 @@ impl OnboardingUi {
                 ui.refresh_assessment();
                 return;
             }
-            if ui.flag_write.get() == FlagWrite::Confirming {
-                ui.flag_write.set(FlagWrite::Idle);
-            }
             let before = ui.shown();
-            ui.installs
-                .borrow_mut()
-                .retain(|_, install| *install != Install::Confirming);
-            ui.offer.set(offer);
-            match &problem {
-                Some(problem) => ui.log(&format!("assessment: {problem}")),
-                None => ui.log(&format!("assessment: {}", describe(&components))),
+            ui.take_reading(reading);
+            if !ui.running.get() {
+                ui.follow_installs_elsewhere().await;
             }
-            ui.problem.replace(problem);
-            ui.components.replace(components);
-            ui.follow_installs_elsewhere().await;
             // The user installed the last piece while watching: finish for
             // them, as Next would.
             let finish = ui.step.get() == Step::Components
                 && !ui.busy.get()
+                && !ui.running.get()
                 && completes(&before, &ui.shown());
             if finish {
                 ui.finish_setup(Step::Shortcut, true);
@@ -396,43 +352,19 @@ impl OnboardingUi {
         });
     }
 
-    /// Ask snapd to turn the flag on. Its polkit prompt is the only
-    /// question; dismissing it puts the switch back silently, a refusal or
-    /// failure with a toast whose Details open the report.
-    fn enable_flag(self: &Rc<Self>) {
-        let cancellation = CancellationToken::new();
-        self.flag_cancellation.replace(Some(cancellation.clone()));
-        self.flag_write.set(FlagWrite::Asking);
-        self.epoch.set(self.epoch.get() + 1);
-        self.log("flag: enabling user daemons");
-        self.render();
-        let ui = Rc::downgrade(self);
-        let configurator = self.configurator.clone();
-        glib::spawn_future_local(async move {
-            let outcome = configurator.enable_user_daemons(cancellation).await;
-            let Some(ui) = ui.upgrade() else {
-                return;
-            };
-            ui.flag_cancellation.take();
-            ui.epoch.set(ui.epoch.get() + 1);
-            match outcome {
-                Ok(()) => {
-                    ui.log("flag: enabled");
-                    ui.flag_write.set(FlagWrite::Confirming);
-                    ui.refresh_assessment();
-                }
-                Err(SystemConfiguratorError::Cancelled) => {
-                    ui.log("flag: the prompt was dismissed");
-                    ui.flag_write.set(FlagWrite::Idle);
-                }
-                Err(error) => {
-                    ui.log(&format!("flag: failed: {error}"));
-                    ui.flag_write.set(FlagWrite::Idle);
-                    ui.announce_flag_failure(&error);
-                }
-            }
-            ui.render();
-        });
+    /// Take what a read found as the machine, settling the installs it
+    /// confirms.
+    fn take_reading(&self, (components, offer, problem): Reading) {
+        self.installs
+            .borrow_mut()
+            .retain(|_, install| *install != Install::Confirming);
+        self.offer.set(offer);
+        match &problem {
+            Some(problem) => self.log(&format!("assessment: {problem}")),
+            None => self.log(&format!("assessment: {}", describe(&components))),
+        }
+        self.problem.replace(problem);
+        self.components.replace(components);
     }
 
     /// The components as the step shows them: one snapd is still
@@ -442,109 +374,73 @@ impl OnboardingUi {
         while_installing(&self.components.borrow(), &installing)
     }
 
-    /// Install the snap behind `id` through snapd as the user, one row at a
-    /// time. Its polkit prompt is the only question: dismissing it puts the
-    /// button back silently, a refusal or a failed change with a toast
-    /// whose Details open the report.
-    fn install(self: &Rc<Self>, id: ComponentId) {
-        let Some((snap, expected)) = installs(id, &self.offer.get()) else {
-            return;
+    /// What is installing, the button's run or a change started elsewhere,
+    /// with its download's percentage once known.
+    fn in_progress(&self) -> Option<(ComponentId, Option<u8>)> {
+        let installs = self.installs.borrow();
+        let id = self
+            .run_step
+            .get()
+            .or_else(|| installs.keys().next().copied())?;
+        let percent = match installs.get(&id) {
+            Some(Install::Running(percent)) => *percent,
+            _ => None,
         };
-        if self.snap_installing() || row_action_of(&self.shown(), id) != Some(RowAction::Install) {
-            return;
-        }
-        self.installs
-            .borrow_mut()
-            .insert(id, Install::Running(None));
-        self.epoch.set(self.epoch.get() + 1);
-        self.log(&format!("install: installing {snap}"));
-        self.render();
-        let ui = Rc::downgrade(self);
-        let configurator = self.configurator.clone();
-        let cancellation = self.install_cancellation.clone();
-        let interval = self.follow_interval.get();
-        glib::spawn_future_local(async move {
-            let sleep = |interval| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
-                Box::pin(glib::timeout_future(interval))
-            };
-            let follow = Follow {
-                interval,
-                sleep: &sleep,
-                cancellation,
-            };
-            let report = progress_reporter(ui.clone(), id);
-            let outcome = install(configurator.as_ref(), snap, expected, &follow, &report).await;
-            let Some(ui) = ui.upgrade() else {
-                return;
-            };
-            ui.epoch.set(ui.epoch.get() + 1);
-            match outcome {
-                Ok(()) => {
-                    ui.log(&format!("install: {snap} installed"));
-                    ui.installs.borrow_mut().insert(id, Install::Confirming);
-                    ui.refresh_assessment();
-                }
-                Err(SystemConfiguratorError::Cancelled) => {
-                    ui.log(&format!("install: {snap}: the prompt was dismissed"));
-                    ui.installs.borrow_mut().remove(&id);
-                }
-                Err(error) => {
-                    ui.log(&format!("install: {snap} failed: {error}"));
-                    ui.installs.borrow_mut().remove(&id);
-                    ui.announce_failure(install_failed(id), &error);
-                }
-            }
-            ui.render();
-        });
+        Some((id, percent))
     }
 
-    /// Whether snapd is installing a row's snap. Enabling the extension
-    /// asks gnome-shell, not snapd, so it does not count.
-    fn snap_installing(&self) -> bool {
-        self.installs
-            .borrow()
-            .keys()
-            .any(|id| *id != ComponentId::ShellExtension)
-    }
-
-    /// Have gnome-shell enable the packaged extension, beside any snapd
-    /// install: it asks no prompt. It runs at once, so no re-login is asked
-    /// for; a failure reverts with a toast whose Details name the call.
-    fn enable_extension(self: &Rc<Self>) {
-        let id = ComponentId::ShellExtension;
-        if self.installs.borrow().contains_key(&id)
-            || row_action_of(&self.shown(), id) != Some(RowAction::Enable)
+    /// Install every missing component the wizard can, in order: the flag,
+    /// the app, the model and the extension. snapd's polkit prompts are the
+    /// only questions, and its `auth_admin_keep` lets the model's install
+    /// follow the app's unasked. A dismissed prompt stops the run silently, a
+    /// failure with a toast whose Details open the report; either way the
+    /// button offers again what is still missing. Once nothing is left it
+    /// sets dictation up and moves on, as Next would.
+    fn install_all(self: &Rc<Self>) {
+        if self.running.get()
+            || self.busy.get()
+            || !self.installs.borrow().is_empty()
+            || next_install(&self.shown(), &[]).is_none()
         {
             return;
         }
-        self.installs
-            .borrow_mut()
-            .insert(id, Install::Running(None));
-        self.epoch.set(self.epoch.get() + 1);
-        self.log("extension: enabling");
+        self.running.set(true);
+        self.log("install: installing every missing component");
         self.render();
         let ui = Rc::downgrade(self);
-        let extensions = self.extensions.clone();
         glib::spawn_future_local(async move {
-            let outcome = extensions.enable_extension(SHELL_EXTENSION_UUID).await;
+            let mut done = Vec::new();
+            let failure = loop {
+                let Some(id) = ui.upgrade().and_then(|ui| next_install(&ui.shown(), &done)) else {
+                    break None;
+                };
+                if let Some(ui) = ui.upgrade() {
+                    ui.run_step.set(Some(id));
+                    ui.render();
+                }
+                match install_step(&ui, id).await {
+                    Ok(()) => {
+                        done.push(id);
+                        reread(&ui).await;
+                    }
+                    Err(error) => break Some((id, error)),
+                }
+            };
             let Some(ui) = ui.upgrade() else {
                 return;
             };
-            ui.epoch.set(ui.epoch.get() + 1);
-            match outcome {
-                Ok(()) => {
-                    ui.log("extension: enabled");
-                    ui.installs.borrow_mut().insert(id, Install::Confirming);
-                    ui.refresh_assessment();
+            ui.running.set(false);
+            ui.run_step.set(None);
+            match failure {
+                None => {
+                    ui.log("install: done");
+                    if ui.step.get() == Step::Components && !ui.busy.get() && settled(&ui.shown()) {
+                        ui.finish_setup(Step::Shortcut, true);
+                        return;
+                    }
                 }
-                Err(error) => {
-                    ui.log(&format!("extension: enabling failed: {error}"));
-                    ui.installs.borrow_mut().remove(&id);
-                    ui.announce_failure(
-                        gettextrs::gettext("Enabling the shell extension failed"),
-                        &error,
-                    );
-                }
+                Some((_, SystemConfiguratorError::Cancelled)) => {}
+                Some((id, error)) => ui.announce_failure(install_failed(id), &error),
             }
             ui.render();
         });
@@ -641,13 +537,6 @@ impl OnboardingUi {
         });
     }
 
-    fn announce_flag_failure(&self, error: &SystemConfiguratorError) {
-        self.announce_failure(
-            gettextrs::gettext("Could not let Myna run in the background"),
-            error,
-        );
-    }
-
     fn announce_failure(&self, heading: String, error: &SystemConfiguratorError) {
         self.toast_report(
             heading,
@@ -676,7 +565,8 @@ impl OnboardingUi {
         // by activating the button from the keyboard or a screen reader, and
         // an insensitive widget still emits `clicked` when told to.
         let step = self.step.get();
-        if (step == Step::Components && self.busy.get()) || !can_advance(step, &self.shown()) {
+        let held = self.busy.get() || self.running.get();
+        if (step == Step::Components && held) || !can_advance(step, &self.shown()) {
             return;
         }
         // Set up already; only the pause before moving on is left.
@@ -866,7 +756,7 @@ impl OnboardingUi {
             page.set_can_pop(!setting_up);
         }
 
-        self.render_components(&components);
+        self.render_components(&components, setting_up);
         let forward = self.window.forward_button();
         if step.next().is_some() {
             forward.set_label(&gettextrs::gettext("Next"));
@@ -879,36 +769,14 @@ impl OnboardingUi {
                 &gettextrs::gettext("Close Myna Settings."),
             )]);
         }
+        let held = step == Step::Components && (self.busy.get() || self.running.get());
         set_class(
             &forward,
             "suggested-action",
-            forward_leads(step, &components, self.shortcut.needs_key()),
+            !held && forward_leads(step, &components, self.shortcut.needs_key()),
         );
-        forward.set_sensitive(
-            !(step == Step::Components && self.busy.get()) && can_advance(step, &components),
-        );
-        let spinner = self.window.setup_spinner();
-        spinner.set_visible(setting_up);
-        spinner.set_spinning(setting_up);
-        let status = match &*self.stage.borrow() {
-            Some(stage) if setting_up => Some(stage_text(stage)),
-            _ if step == Step::Components && needs_onboarding(&components) => {
-                self.problem.borrow().as_ref().map(|_| {
-                    gettextrs::gettext("Setup status unavailable. The log has the details.")
-                })
-            }
-            _ => None,
-        };
-        let label = self.window.setup_status();
-        label.set_visible(status.is_some());
-        label.set_label(status.as_deref().unwrap_or_default());
-        let ready = step == Step::Components && !setting_up && !needs_onboarding(&components);
-        let failed = self.setup_failed.get() && !self.busy.get();
-        self.window.installed_status().set_visible(ready && !failed);
-        self.window
-            .setup_failed_status()
-            .set_visible(ready && failed);
-        self.watch(!self.busy.get() && polls(step, &components));
+        forward.set_sensitive(!held && can_advance(step, &components));
+        self.watch(!self.busy.get() && !self.running.get() && polls(step, &components));
         // Going back during the pause stays back.
         if step != Step::Components {
             if let Some(beat) = self.beat.take() {
@@ -917,128 +785,58 @@ impl OnboardingUi {
         }
     }
 
-    /// The flag's switch and one row per component, each with its button or
-    /// its check, as the last assessment found them.
-    fn render_components(&self, components: &[Component]) {
+    /// The one button, as the last assessment and what is installing make
+    /// it, and the line under it: what installing downloads, what is under
+    /// way, or how setting up went.
+    fn render_components(&self, components: &[Component], setting_up: bool) {
         let page = &self.components_page;
-        page.description()
-            .set_label(&if needs_onboarding(components) {
-                gettextrs::gettext("You need to install some components for Dictation to work.")
-            } else {
-                gettextrs::gettext("Everything Dictation needs is installed.")
-            });
-        let flag = flag_enabled(components);
-        let pending = self.flag_write.get() != FlagWrite::Idle;
-        let switch = page.flag_switch();
-        switch.set_active(flag || pending);
-        switch.set_state(flag);
-        let flag_row = page.flag_row();
-        // Busy, not insensitive: an insensitive row dims its subtitle.
-        for widget in [flag_row.upcast_ref::<gtk::Widget>(), switch.upcast_ref()] {
-            widget.set_can_target(!pending);
-            widget.set_can_focus(!pending);
-        }
-        let spinner = page.flag_spinner();
-        spinner.set_visible(pending);
-        spinner.set_spinning(pending);
-        let flag_subtitle = if pending {
-            gettextrs::gettext("Enabling…")
-        } else {
-            gettextrs::gettext("Dictation needs it. You may be asked for your password.")
+        let progress = self.in_progress();
+        let view = install_view(components, progress.map(|(id, _)| id));
+        let offer = view == InstallView::Offer;
+        page.show_install_label(match view {
+            InstallView::Offer => "offer",
+            InstallView::Installing(_) => "installing",
+            InstallView::Installed => "installed",
+        });
+        let button = page.install_button();
+        button.set_sensitive(offer && !self.busy.get());
+        // Next leads once nothing required is missing; insensitive, the
+        // accent would only read as a faded call to act.
+        set_class(
+            &button,
+            "suggested-action",
+            offer && needs_onboarding(components),
+        );
+        let stage = self.stage.borrow();
+        let failed = self.setup_failed.get() && !self.busy.get() && !needs_onboarding(components);
+        let text = match (&*stage, progress) {
+            (Some(stage), _) if setting_up => Some(stage_text(stage)),
+            (_, Some((id, percent))) => Some(step_text(id, percent)),
+            _ => None,
         };
-        flag_row.set_subtitle(&flag_subtitle);
-        flag_row.update_property(&[gtk::accessible::Property::Description(&flag_subtitle)]);
-        flag_row.update_state(&[gtk::accessible::State::Busy(pending)]);
-        page.component_list()
-            .set_sensitive(unlocked(ComponentId::Myna, components));
-        let snap_installing = self.snap_installing();
-        let installs = self.installs.borrow();
-        for component in components {
-            let Some(row) = page.row(component.id) else {
-                continue;
-            };
-            let action = row_action(component);
-            let subtitle = self.subtitle(component.id, action);
-            row.row.set_subtitle(&subtitle);
-            // GTK 4.14's AT-SPI reads the subtitle relation as empty.
-            row.row
-                .update_property(&[gtk::accessible::Property::Description(&subtitle)]);
-            let install = installs.get(&component.id).copied();
-            row.row
-                .update_state(&[gtk::accessible::State::Busy(install.is_some())]);
-            if let Some(install) = install {
-                row.control.show_busy(&install_text(component.id, install));
-                continue;
-            }
-            // One snapd install at a time: its prompt covers one request.
-            row.button
-                .set_sensitive(component.id == ComponentId::ShellExtension || !snap_installing);
-            match action {
-                RowAction::Install => row
-                    .control
-                    .show_offer(&gettextrs::gettext("Install"), &install_label(component.id)),
-                RowAction::Enable => row.control.show_offer(
-                    &gettextrs::gettext("Enable"),
-                    &gettextrs::gettext("Enable the shell extension"),
-                ),
-                RowAction::Installed if component.id == ComponentId::ShellExtension => {
-                    row.control.show_enabled()
+        let note = if failed {
+            gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
+        } else if needs_onboarding(components) && self.problem.borrow().is_some() {
+            gettextrs::gettext("Setup status unavailable. The log has the details.")
+        } else if offer {
+            match remaining_download(components, &self.offer.get()) {
+                DownloadSize::Exact(0) => String::new(),
+                DownloadSize::Exact(bytes) => download_size(bytes),
+                DownloadSize::UpTo(bytes) => {
+                    // TRANSLATORS: {size} is a download size, such as "4.2 GB".
+                    let frame = gettextrs::gettext("Up to {size}");
+                    frame.replace("{size}", &download_size(bytes))
                 }
-                RowAction::Installed => row.control.show_installed(),
-                RowAction::Unavailable(_) => row.control.show_nothing(),
             }
-        }
-    }
-
-    fn subtitle(&self, id: ComponentId, action: RowAction) -> String {
-        match (id, action) {
-            (ComponentId::Myna, _) => download_size(MYNA_DOWNLOAD_BYTES),
-            (ComponentId::Model, _) => {
-                let offer = self.offer.get();
-                let name = crate::model_family::model_family(offer.snap()).name;
-                let (frame, bytes) = match offer.size(action == RowAction::Installed) {
-                    ModelSize::Exact(bytes) => (
-                        // TRANSLATORS: {model} is a model family, such as "Parakeet", and {size} a download size such as "776 MB".
-                        gettextrs::gettext("{model} · {size}"),
-                        bytes,
-                    ),
-                    ModelSize::UpTo(bytes) => (
-                        // TRANSLATORS: {model} is a model family, such as "Parakeet", and {size} a download size such as "4.2 GB".
-                        gettextrs::gettext("{model} · up to {size}"),
-                        bytes,
-                    ),
-                    ModelSize::Unknown => return name.to_string(),
-                };
-                frame
-                    .replace("{model}", &name)
-                    .replace("{size}", &download_size(bytes))
-            }
-            (_, RowAction::Unavailable(Unavailable::NeedsRelogin)) => gettextrs::gettext(
-                "Log out and back in to use it. Until then, Dictation shows its status in notifications.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::ShadowedByUserCopy)) => gettextrs::gettext(
-                "Hidden by a copy in your home folder. Remove it, then log out and back in.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::ExtensionsOff)) => gettextrs::gettext(
-                "Extensions are turned off. Turn them on in the Extensions app to use it. Until then, Dictation shows its status in notifications.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::ExtensionFailed)) => gettextrs::gettext(
-                "Failed to start. Dictation still works and shows its status in notifications.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::ExtensionOutOfDate)) => gettextrs::gettext(
-                "Does not work with this version of GNOME. Dictation still works and shows its status in notifications.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::ExtensionLocked)) => gettextrs::gettext(
-                "Turned off by your administrator. Dictation still works and shows its status in notifications.",
-            ),
-            (_, RowAction::Unavailable(Unavailable::NotInstalled)) => gettextrs::gettext(
-                "Not available on this system. Dictation still works and shows its status in notifications.",
-            ),
-            (_, RowAction::Installed) => {
-                gettextrs::gettext("Shows Dictation's status while you dictate.")
-            }
-            _ => gettextrs::gettext("Recommended. Shows Dictation's status while you dictate."),
-        }
+        } else {
+            String::new()
+        };
+        page.show_status(match &text {
+            Some(text) => ui::ComponentsStatus::Busy(text),
+            None if failed => ui::ComponentsStatus::Warning(&note),
+            None if note.is_empty() => ui::ComponentsStatus::Hidden,
+            None => ui::ComponentsStatus::Note(&note),
+        });
     }
 
     /// Start or stop the component step's poll.
@@ -1125,14 +923,6 @@ async fn wait_for_daemon(ui: &std::rc::Weak<OnboardingUi>, previous: Option<Stri
     }
 }
 
-/// What a row offers, by id.
-fn row_action_of(components: &[Component], id: ComponentId) -> Option<RowAction> {
-    components
-        .iter()
-        .find(|component| component.id == id)
-        .map(row_action)
-}
-
 /// What a row's install reports hands to the row.
 fn progress_reporter(ui: std::rc::Weak<OnboardingUi>, id: ComponentId) -> impl Fn(Option<u8>) {
     move |percent| {
@@ -1145,29 +935,134 @@ fn progress_reporter(ui: std::rc::Weak<OnboardingUi>, id: ComponentId) -> impl F
     }
 }
 
-/// An install as its row says it, beside the spinner.
-fn install_text(id: ComponentId, install: Install) -> String {
-    match install {
-        _ if id == ComponentId::ShellExtension => gettextrs::gettext("Enabling…"),
-        Install::Running(percent) => ui::installing_text(percent),
-        Install::Confirming => ui::installing_text(None),
+/// A step of the button's run as the line under it says it, beside the
+/// spinner.
+fn step_text(id: ComponentId, percent: Option<u8>) -> String {
+    let step = match id {
+        ComponentId::UserDaemons => gettextrs::gettext("Enabling user daemons support"),
+        ComponentId::Myna => gettextrs::gettext("Installing Dictation app"),
+        ComponentId::Model => gettextrs::gettext("Installing speech-to-text model"),
+        ComponentId::ShellExtension => gettextrs::gettext("Enabling shell extension"),
+    };
+    match percent {
+        Some(percent) => {
+            // TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
+            let frame = gettextrs::gettext("{step} ({percent}%)");
+            frame
+                .replace("{step}", &step)
+                .replace("{percent}", &percent.to_string())
+        }
+        None => step,
     }
 }
 
-/// The toast's heading when installing `id` fails.
+/// The toast's heading when a step of the run fails.
 fn install_failed(id: ComponentId) -> String {
     match id {
+        ComponentId::UserDaemons => gettextrs::gettext("Could not let Myna run in the background"),
+        ComponentId::Myna => gettextrs::gettext("Installing the Dictation app failed"),
         ComponentId::Model => gettextrs::gettext("Installing the speech-to-text model failed"),
-        _ => gettextrs::gettext("Installing the Dictation app failed"),
+        ComponentId::ShellExtension => gettextrs::gettext("Enabling the shell extension failed"),
     }
 }
 
-/// The Install button's name to assistive technology: three rows read
-/// "Install" alike. Only the snaps' rows offer Install.
-fn install_label(id: ComponentId) -> String {
-    match id {
-        ComponentId::Model => gettextrs::gettext("Install the speech-to-text model"),
-        _ => gettextrs::gettext("Install the Dictation app"),
+/// One step of the button's run. The flag and the snaps go through snapd as
+/// the user, which raises polkit's prompt itself; the extension asks the
+/// user's own gnome-shell.
+async fn install_step(
+    ui: &std::rc::Weak<OnboardingUi>,
+    id: ComponentId,
+) -> Result<(), SystemConfiguratorError> {
+    let Some(strong) = ui.upgrade() else {
+        return Err(SystemConfiguratorError::Cancelled);
+    };
+    strong.epoch.set(strong.epoch.get() + 1);
+    let configurator = strong.configurator.clone();
+    let outcome = match id {
+        ComponentId::UserDaemons => {
+            let cancellation = CancellationToken::new();
+            strong.flag_cancellation.replace(Some(cancellation.clone()));
+            strong.log("flag: enabling user daemons");
+            drop(strong);
+            let outcome = configurator.enable_user_daemons(cancellation).await;
+            if let Some(ui) = ui.upgrade() {
+                ui.flag_cancellation.take();
+            }
+            outcome
+        }
+        ComponentId::Myna | ComponentId::Model => {
+            let Some((snap, expected)) = installs(id, &strong.offer.get()) else {
+                return Ok(());
+            };
+            strong
+                .installs
+                .borrow_mut()
+                .insert(id, Install::Running(None));
+            strong.log(&format!("install: installing {snap}"));
+            strong.render();
+            let cancellation = strong.install_cancellation.clone();
+            let interval = strong.follow_interval.get();
+            drop(strong);
+            let sleep = |interval| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
+                Box::pin(glib::timeout_future(interval))
+            };
+            let follow = Follow {
+                interval,
+                sleep: &sleep,
+                cancellation,
+            };
+            let report = progress_reporter(ui.clone(), id);
+            install(configurator.as_ref(), snap, expected, &follow, &report).await
+        }
+        ComponentId::ShellExtension => {
+            strong.log("extension: enabling");
+            let extensions = strong.extensions.clone();
+            drop(strong);
+            extensions.enable_extension(SHELL_EXTENSION_UUID).await
+        }
+    };
+    let Some(ui) = ui.upgrade() else {
+        return outcome;
+    };
+    ui.epoch.set(ui.epoch.get() + 1);
+    match &outcome {
+        Ok(()) => {
+            ui.log(&format!("install: {id:?} done"));
+            if ui.installs.borrow().contains_key(&id) {
+                ui.installs.borrow_mut().insert(id, Install::Confirming);
+            }
+        }
+        Err(SystemConfiguratorError::Cancelled) => {
+            ui.log(&format!("install: {id:?}: the prompt was dismissed"));
+            ui.installs.borrow_mut().remove(&id);
+        }
+        Err(error) => {
+            ui.log(&format!("install: {id:?} failed: {error}"));
+            ui.installs.borrow_mut().remove(&id);
+        }
+    }
+    outcome
+}
+
+/// Re-read the machine between the run's steps.
+async fn reread(ui: &std::rc::Weak<OnboardingUi>) {
+    let Some(strong) = ui.upgrade() else {
+        return;
+    };
+    let (repository, configurator, extensions) = (
+        strong.repository.clone(),
+        strong.configurator.clone(),
+        strong.extensions.clone(),
+    );
+    drop(strong);
+    let reading = read_machine(
+        repository.as_ref(),
+        configurator.as_ref(),
+        extensions.as_ref(),
+    )
+    .await;
+    if let Some(ui) = ui.upgrade() {
+        ui.take_reading(reading);
     }
 }
 
@@ -1187,13 +1082,17 @@ pub async fn assess_machine(
     components
 }
 
+/// What one read finds: the components, the model the wizard would install,
+/// and what it could not read.
+type Reading = (Vec<Component>, ModelOffer, Option<String>);
+
 /// [`assess_machine`], the model it would install, and what it could not
 /// read.
 async fn read_machine(
     repository: &dyn BackendRepository,
     configurator: &dyn SystemConfigurator,
     extensions: &dyn ShellExtensions,
-) -> (Vec<Component>, ModelOffer, Option<String>) {
+) -> Reading {
     let cancellation = CancellationToken::new();
     let mut problems = Vec::new();
     let user_daemons = configurator
@@ -1264,22 +1163,19 @@ pub(crate) fn download_size(bytes: u64) -> String {
         .replace("{megabytes}", &((bytes + 500_000) / 1_000_000).to_string())
 }
 
-/// A stage as the footer says it, beside the spinner.
+/// A stage as the line under the button says it, beside the spinner, in the
+/// install steps' words and, like them, without an ellipsis.
 fn stage_text(stage: &SetupStage) -> String {
     match stage {
-        SetupStage::Checking => gettextrs::gettext("Checking the installation…"),
+        SetupStage::Checking => gettextrs::gettext("Checking the installation"),
         SetupStage::Waiting(progress @ ApplyProgress::Download { .. }) => {
             crate::backend_ui::apply_progress_text(progress)
         }
         SetupStage::Waiting(ApplyProgress::Change { .. }) => {
-            gettextrs::gettext("Waiting for other software changes to finish…")
+            gettextrs::gettext("Waiting for other software changes to finish")
         }
-        SetupStage::Connecting(snap) => {
-            // TRANSLATORS: {model} is a model family, such as "Parakeet".
-            let frame = gettextrs::gettext("Setting up {model}…");
-            frame.replace("{model}", &crate::model_family::model_family(snap).name)
-        }
-        SetupStage::Restarting => gettextrs::gettext("Starting dictation…"),
+        SetupStage::Connecting(_) => gettextrs::gettext("Setting up speech-to-text model"),
+        SetupStage::Restarting => gettextrs::gettext("Starting dictation"),
     }
 }
 
@@ -1335,11 +1231,22 @@ mod tests {
 
         assert_eq!(
             stage_text(&stage),
-            "Waiting for other software changes to finish…"
+            "Waiting for other software changes to finish"
         );
         assert_eq!(
             stage_log(&stage),
             "waiting for snapd: Auto-refresh snap \"myna\""
+        );
+    }
+
+    #[test]
+    fn a_connect_names_the_model_not_its_engine() {
+        let stage = SetupStage::Connecting("myna-parakeet".to_owned());
+
+        assert_eq!(stage_text(&stage), "Setting up speech-to-text model");
+        assert_eq!(
+            stage_log(&stage),
+            "connecting myna:backend to myna-parakeet"
         );
     }
 

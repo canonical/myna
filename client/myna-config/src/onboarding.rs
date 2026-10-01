@@ -256,23 +256,13 @@ impl ModelOffer {
     pub fn snap(&self) -> &'static str {
         self.family.snap_name()
     }
-
-    /// The size the model row shows, before or after installing.
-    pub fn size(&self, installed: bool) -> ModelSize {
-        match (self.upper_bound, installed) {
-            (false, _) => ModelSize::Exact(self.download_bytes),
-            (true, false) => ModelSize::UpTo(self.download_bytes),
-            // The engine the hook picked is not known, so no figure.
-            (true, true) => ModelSize::Unknown,
-        }
-    }
 }
 
+/// A download's size, or the most it may be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ModelSize {
+pub enum DownloadSize {
     Exact(u64),
     UpTo(u64),
-    Unknown,
 }
 
 /// What installing Myna downloads.
@@ -429,15 +419,64 @@ pub fn needs_onboarding(components: &[Component]) -> bool {
         .any(|component| component.id.required() && !component.satisfied())
 }
 
-/// Whether every component, the optional ones too, is in place.
-pub fn fully_installed(components: &[Component]) -> bool {
-    components.iter().all(Component::satisfied)
+/// What the component step's one button installs, in order: each missing
+/// component the wizard can install or turn on. The flag leads, since snapd
+/// refuses Myna without it; an extension out of the wizard's reach is not
+/// in it, and holds nothing.
+pub fn install_plan(components: &[Component]) -> Vec<ComponentId> {
+    components
+        .iter()
+        .filter(|component| component.state == ComponentState::Missing)
+        .map(|component| component.id)
+        .collect()
 }
 
-/// Whether a component's row takes input. snapd refuses Myna without the
-/// flag, so the whole list waits for it.
-pub fn unlocked(id: ComponentId, components: &[Component]) -> bool {
-    id == ComponentId::UserDaemons || flag_enabled(components)
+/// The next step of a run that has taken `done`: a step that succeeded is
+/// not retried when a read does not show it yet.
+pub fn next_install(components: &[Component], done: &[ComponentId]) -> Option<ComponentId> {
+    install_plan(components)
+        .into_iter()
+        .find(|id| !done.contains(id))
+}
+
+/// What the button's run downloads: the snaps still missing. With the model
+/// among them on an NVIDIA machine it is the most it may fetch.
+pub fn remaining_download(components: &[Component], offer: &ModelOffer) -> DownloadSize {
+    let plan = install_plan(components);
+    let bytes = plan
+        .iter()
+        .filter_map(|id| installs(*id, offer))
+        .map(|(_, bytes)| bytes)
+        .sum();
+    if offer.upper_bound && plan.contains(&ComponentId::Model) {
+        DownloadSize::UpTo(bytes)
+    } else {
+        DownloadSize::Exact(bytes)
+    }
+}
+
+/// What the component step's button shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallView {
+    /// Install what is missing.
+    Offer,
+    /// Installing or turning on this component.
+    Installing(ComponentId),
+    /// Nothing left that the wizard can install.
+    Installed,
+}
+
+pub fn install_view(components: &[Component], installing: Option<ComponentId>) -> InstallView {
+    match installing {
+        Some(id) => InstallView::Installing(id),
+        None if settled(components) => InstallView::Installed,
+        None => InstallView::Offer,
+    }
+}
+
+/// Whether nothing the wizard can install is missing.
+pub fn settled(components: &[Component]) -> bool {
+    !needs_onboarding(components) && install_plan(components).is_empty()
 }
 
 /// Whether snapd's `experimental.user-daemons` flag is on.
@@ -445,27 +484,6 @@ pub fn flag_enabled(components: &[Component]) -> bool {
     components
         .iter()
         .any(|component| component.id == ComponentId::UserDaemons && component.satisfied())
-}
-
-/// What a component's row offers in place of a button, or the button.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RowAction {
-    Install,
-    /// The extension's system copy is there but not running.
-    Enable,
-    Installed,
-    Unavailable(Unavailable),
-}
-
-/// What the row of a snap or the extension offers; the flag's row is a
-/// switch instead.
-pub fn row_action(component: &Component) -> RowAction {
-    match component.state {
-        ComponentState::Satisfied => RowAction::Installed,
-        ComponentState::Missing if component.id == ComponentId::ShellExtension => RowAction::Enable,
-        ComponentState::Missing => RowAction::Install,
-        ComponentState::Unavailable(why) => RowAction::Unavailable(why),
-    }
 }
 
 /// The wizard's steps, in order.
@@ -517,18 +535,19 @@ pub fn polls(step: Step, components: &[Component]) -> bool {
     step == Step::Components && needs_onboarding(components)
 }
 
-/// Whether a re-assessment found the last missing component, optional ones
-/// included, the moment the component step moves on by itself. Arriving
-/// with everything installed is not one, so a re-run of the wizard does not
-/// rush past it, and an extension the wizard cannot install leaves the move
-/// to Next. Nor is enabling the extension when only it was missing: that is
-/// a click with an instant answer, which the row confirms and Next follows,
-/// not a download the user may have looked away from.
+/// Whether a re-assessment found the last missing component the moment the
+/// component step moves on by itself. Arriving with everything installed is
+/// not one, so a re-run of the wizard does not rush past it. Nor is enabling
+/// the extension when only it was missing: an instant answer, not a download
+/// the user may have looked away from. An extension out of reach is skipped
+/// silently, so it holds nothing. This judges re-assessments only: the
+/// button's own run moves on whenever it ends with nothing left, an enabled
+/// extension included, since the user asked for that run.
 pub fn completes(before: &[Component], after: &[Component]) -> bool {
     let other_missing = before
         .iter()
         .any(|component| component.id != ComponentId::ShellExtension && !component.satisfied());
-    other_missing && fully_installed(after)
+    other_missing && settled(after)
 }
 
 #[cfg(test)]
@@ -769,37 +788,132 @@ mod tests {
     }
 
     #[test]
-    fn a_row_offers_what_the_wizard_can_do_about_it() {
-        let bare = assess(Machine::default());
-        assert_eq!(row_action(&bare[1]), RowAction::Install);
-        assert_eq!(row_action(&bare[2]), RowAction::Install);
-        let installed = with_extension(ExtensionState::Enabled);
-        for component in &installed[1..] {
-            assert_eq!(row_action(component), RowAction::Installed, "{component:?}");
-        }
-        // The extension ships in a deb: a disabled system copy is enabled,
-        // never installed.
+    fn the_button_installs_what_is_missing_flag_first() {
+        let bare = assess(Machine {
+            extension: ExtensionState::Disabled,
+            ..Machine::default()
+        });
         assert_eq!(
-            row_action(&with_extension(ExtensionState::Disabled)[3]),
-            RowAction::Enable
+            install_plan(&bare),
+            [
+                ComponentId::UserDaemons,
+                ComponentId::Myna,
+                ComponentId::Model,
+                ComponentId::ShellExtension
+            ]
         );
-        for (extension, why) in [
-            (ExtensionState::Unavailable, Unavailable::NotInstalled),
-            (ExtensionState::NeedsRelogin, Unavailable::NeedsRelogin),
-            (
-                ExtensionState::ShadowedByUserCopy,
-                Unavailable::ShadowedByUserCopy,
-            ),
-            (ExtensionState::TurnedOff, Unavailable::ExtensionsOff),
-            (ExtensionState::Failed, Unavailable::ExtensionFailed),
-            (ExtensionState::OutOfDate, Unavailable::ExtensionOutOfDate),
-            (ExtensionState::Locked, Unavailable::ExtensionLocked),
+        let myna_only = assess(Machine {
+            user_daemons: true,
+            extension: ExtensionState::Enabled,
+            ..Machine::new(&[snap("myna")], 0)
+        });
+        assert_eq!(install_plan(&myna_only), [ComponentId::Model]);
+        assert!(install_plan(&with_extension(ExtensionState::Enabled)).is_empty());
+    }
+
+    #[test]
+    fn an_extension_out_of_reach_is_skipped_silently() {
+        for extension in [
+            ExtensionState::Unavailable,
+            ExtensionState::NeedsRelogin,
+            ExtensionState::ShadowedByUserCopy,
+            ExtensionState::TurnedOff,
+            ExtensionState::Failed,
+            ExtensionState::OutOfDate,
+            ExtensionState::Locked,
         ] {
-            assert_eq!(
-                row_action(&with_extension(extension)[3]),
-                RowAction::Unavailable(why)
-            );
+            let components = with_extension(extension);
+            assert!(install_plan(&components).is_empty(), "{extension:?}");
+            assert_eq!(install_view(&components, None), InstallView::Installed);
         }
+        assert_eq!(
+            install_plan(&with_extension(ExtensionState::Disabled)),
+            [ComponentId::ShellExtension]
+        );
+    }
+
+    #[test]
+    fn the_size_covers_only_the_snaps_still_missing() {
+        let cpu = model_offer(&Machine::default());
+        let bare = assess(Machine::default());
+        assert_eq!(
+            remaining_download(&bare, &cpu),
+            DownloadSize::Exact(MYNA_DOWNLOAD_BYTES + cpu.download_bytes)
+        );
+        let myna_only = assess(Machine {
+            user_daemons: true,
+            ..Machine::new(&[snap("myna")], 0)
+        });
+        assert_eq!(
+            remaining_download(&myna_only, &cpu),
+            DownloadSize::Exact(cpu.download_bytes)
+        );
+        let model_only = assess(Machine::new(&[], 1));
+        assert_eq!(
+            remaining_download(&model_only, &cpu),
+            DownloadSize::Exact(MYNA_DOWNLOAD_BYTES)
+        );
+        // The flag and the extension download nothing.
+        assert_eq!(
+            remaining_download(&with_extension(ExtensionState::Disabled), &cpu),
+            DownloadSize::Exact(0)
+        );
+        let gpu = model_offer(&Machine {
+            nvidia_gpu: true,
+            ..Machine::default()
+        });
+        assert_eq!(
+            remaining_download(&bare, &gpu),
+            DownloadSize::UpTo(MYNA_DOWNLOAD_BYTES + gpu.download_bytes)
+        );
+        // Only a missing model makes it an upper bound.
+        assert_eq!(
+            remaining_download(&model_only, &gpu),
+            DownloadSize::Exact(MYNA_DOWNLOAD_BYTES)
+        );
+    }
+
+    #[test]
+    fn the_button_offers_installs_or_says_installed() {
+        let bare = assess(Machine::default());
+        assert_eq!(install_view(&bare, None), InstallView::Offer);
+        assert_eq!(
+            install_view(&bare, Some(ComponentId::Myna)),
+            InstallView::Installing(ComponentId::Myna)
+        );
+        let complete = with_extension(ExtensionState::Enabled);
+        assert_eq!(install_view(&complete, None), InstallView::Installed);
+        // A disabled extension is still something the button turns on.
+        assert_eq!(
+            install_view(&with_extension(ExtensionState::Disabled), None),
+            InstallView::Offer
+        );
+    }
+
+    #[test]
+    fn a_run_takes_each_missing_component_once() {
+        let bare = assess(Machine::default());
+        assert_eq!(next_install(&bare, &[]), Some(ComponentId::UserDaemons));
+        // A step that succeeded but a read does not show yet is not retried.
+        assert_eq!(
+            next_install(&bare, &[ComponentId::UserDaemons]),
+            Some(ComponentId::Myna)
+        );
+        assert_eq!(
+            next_install(
+                &bare,
+                &[
+                    ComponentId::UserDaemons,
+                    ComponentId::Myna,
+                    ComponentId::Model
+                ]
+            ),
+            None
+        );
+        assert_eq!(
+            next_install(&with_extension(ExtensionState::Enabled), &[]),
+            None
+        );
     }
 
     #[test]
@@ -814,37 +928,6 @@ mod tests {
             })
             .upper_bound
         );
-    }
-
-    #[test]
-    fn an_installed_model_does_not_claim_the_most_it_could_have_downloaded() {
-        let cpu = model_offer(&Machine::default());
-        let gpu = model_offer(&Machine {
-            nvidia_gpu: true,
-            ..Machine::default()
-        });
-        assert_eq!(cpu.size(false), ModelSize::Exact(cpu.download_bytes));
-        assert_eq!(cpu.size(true), ModelSize::Exact(cpu.download_bytes));
-        assert_eq!(gpu.size(false), ModelSize::UpTo(gpu.download_bytes));
-        assert_eq!(gpu.size(true), ModelSize::Unknown);
-    }
-
-    #[test]
-    fn the_list_waits_for_the_flag() {
-        let bare = assess(Machine::default());
-        assert!(unlocked(ComponentId::UserDaemons, &bare));
-        for id in [
-            ComponentId::Myna,
-            ComponentId::Model,
-            ComponentId::ShellExtension,
-        ] {
-            assert!(!unlocked(id, &bare), "{id:?}");
-        }
-        let flagged = assess(Machine {
-            user_daemons: true,
-            ..Machine::default()
-        });
-        assert!(ComponentId::ALL.iter().all(|id| unlocked(*id, &flagged)));
     }
 
     #[test]
@@ -866,10 +949,12 @@ mod tests {
         let required_only = with_extension(ExtensionState::Unavailable);
         let disabled = with_extension(ExtensionState::Disabled);
         assert!(completes(&bare, &complete));
-        // Enabling the extension is a click the row confirms, not a wait.
+        // An extension out of reach is skipped silently: it holds nothing.
+        assert!(completes(&bare, &required_only));
+        // Only the extension missing is not a wait the user looked away from.
         assert!(!completes(&disabled, &complete));
-        assert!(!completes(&bare, &required_only));
         assert!(!completes(&disabled, &required_only));
+        assert!(!completes(&bare, &disabled));
         assert!(!completes(&complete, &complete));
         assert!(!completes(&complete, &bare));
     }
@@ -920,7 +1005,7 @@ mod tests {
         let shown = while_installing(&found, &[ComponentId::Model]);
         assert_eq!(shown[2].state, ComponentState::Missing);
         assert!(!can_advance(Step::Components, &shown));
-        assert!(!fully_installed(&shown));
+        assert!(!settled(&shown));
         assert_eq!(while_installing(&found, &[]), found);
         for index in [0, 1, 3] {
             assert_eq!(shown[index], found[index]);

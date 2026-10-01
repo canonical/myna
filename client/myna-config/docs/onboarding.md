@@ -36,8 +36,8 @@ The wizard opens when a required component is missing. The flag stays
 required once Myna is installed: an installed Myna keeps running with the
 flag unset, but snapd refuses its refreshes. "Model" is satisfied by
 discovery rather than by a snap name: which snaps are backends is a property
-of the socket interface they publish, not of their name. Every other row
-waits for the flag, since snapd refuses Myna without it.
+of the socket interface they publish, not of their name. Installing turns
+the flag on first, since snapd refuses Myna without it.
 
 The extension is optional because dictation works without it: the daemon
 falls back to desktop notifications. The myna-config deb, which this
@@ -45,7 +45,9 @@ application ships in, installs it to `/usr/share/gnome/gnome-shell/extensions`,
 where it shadows Ubuntu's packaged copy on Stonking, so the wizard never
 installs it and unavailable means a copy gnome-shell cannot run, not a
 missing one. Only a system copy counts, not a development copy in `~/.local`.
-Its state is one of:
+Only a disabled copy is the wizard's to fix; every other state below is out
+of its reach, and the component step skips the extension silently, since
+dictation still shows its status in notifications. Its state is one of:
 
 - enabled: satisfied;
 - disabled: gnome-shell lists the system copy but does not run it, and one
@@ -60,7 +62,7 @@ Its state is one of:
 - turned off: the user switched all extensions off in the Extensions app
   (gnome-shell's `UserExtensionsEnabled` false, `disable-user-extensions`
   true), which holds the system copy off and makes its `canChange` false. The
-  row says so; the wizard does not flip that switch, which would turn every
+  wizard does not flip that switch, which would turn every
   one of the user's extensions back on. On the Ubuntu session this does not
   arise where the session mode (`/usr/share/gnome-shell/modes/ubuntu.json`)
   lists myna-shell, as Stonking's does: a mode extension runs and stays
@@ -68,11 +70,11 @@ Its state is one of:
   mode does not list it (measured on Noble's gnome-shell 46 with a system
   copy: `state` 6, `canChange` false, `UserExtensionsEnabled` false);
 - failed: gnome-shell ran the system copy and it errored (`state` 3), or
-  reports a state this code does not know. The row says it failed to start;
+  reports a state this code does not know;
 - out of date: its `shell-version` lacks the running gnome-shell (`state` 4).
-  The row says it does not work with this version of GNOME;
+  It does not work with this version of GNOME;
 - locked: the administrator locked it (`canChange` false with extensions on:
-  `enabled-extensions` is not writable). The row says so;
+  `enabled-extensions` is not writable);
 - unavailable: no system copy, or no gnome-shell answering on the session
   bus within 2 s. A shell that does not report `UserExtensionsEnabled` is
   taken as having extensions on.
@@ -80,7 +82,7 @@ Its state is one of:
 gnome-shell sends `type` and `state` as doubles; `type` 1 is a system copy,
 `state` 1 enabled, 2 and 6 disabled and never enabled. The transient 8
 (activating) and 7 (deactivating) read as the state they are heading for, so
-a re-read right after `EnableExtension` does not flash the row unavailable.
+a re-read right after `EnableExtension` does not read it as out of reach.
 Enabling itself waits past 8 for 1, since an activating extension may still
 error.
 
@@ -91,116 +93,100 @@ not cover it. Closing the wizard rediscovers, since it may have changed both.
 
 ## Installing
 
-The component step titles itself "Install components" and lists every
-component in its own row; nothing is left for a terminal. The flag gets a boxed
-row of its own with a switch, "Let Myna run in the background" (its subtitle
-names the snapd flag, `experimental.user-daemons`),
-because it is a system setting rather than something to install. The other
-three share one boxed list below it: Dictation app, Speech-to-text model and
-Shell extension. The whole list is insensitive until the flag is on, since
-snapd refuses Myna without it.
+The component step titles itself "Install components" over one paragraph,
+the mock's ("Dictation requires some additional components, including the
+optimal speech-to-text model for your computer. Installation might take a
+few minutes."), and offers one button, "Install all components"; nothing is
+left for a terminal. It is the step's suggested action while something
+required is missing; with only the extension left it is plain and Next
+leads. The components are not
+listed one by one. Below the button a dimmed line sizes what installing
+downloads (`onboarding::remaining_download`): the snaps still missing, in
+whole megabytes from 100 MB to 1 GB, where a decimal is noise. The app's
+share is the store's size of the `myna` snap; the model's is the snap and
+the int8 model, or, with an NVIDIA GPU, the CUDA runtime and the fp32
+model, said as "Up to" because the install hook falls back to the CPU engine
+when the GPU has no driver. The flag and the extension download nothing, so
+a machine missing only those shows no size. The sizes are fixed per store
+revision in `onboarding.rs`, not read from the store.
 
-Each row ends in what the wizard can do about it (`onboarding::row_action`):
+The button runs every step the machine still needs, in order
+(`onboarding::install_plan`): turning on snapd's flag, which snapd needs
+before it installs Myna, then the app, the model and the extension. A step
+already done is skipped, so a partly installed machine installs only what
+is missing, and a machine with nothing left shows the button insensitive and
+labelled "Installed". While the run goes the button is insensitive and reads
+"Installing…", and a spinner below it names the step: "Enabling user daemons
+support", "Installing Dictation app", "Installing speech-to-text model" or
+"Enabling shell extension", with the download's percentage once one
+announces its size. The button keeps one width through its three labels.
+Next is insensitive meanwhile. After each step a fresh read of the machine
+picks the next one; a step that succeeded is not retried when that read does
+not show it yet (`onboarding::next_install`).
 
-- Install, for a missing snap;
-- Enable, for a system copy of the extension gnome-shell is not running;
-- a check and "Installed" once it is in place;
-- nothing, for an extension out of the wizard's reach. The row stays
-  sensitive, since an insensitive row dims its subtitle past reading, and the
-  subtitle says why: not on this system (dictation still works and
-  shows its status in notifications), installed after login (log out and back
-  in), or hidden by a copy in `~/.local/share/gnome-shell/extensions`.
+The steps cost as few polkit prompts as snapd allows. The flag goes through
+snapd's REST API as the user (`PUT /v2/snaps/system/conf`), and snapd raises
+polkit's prompt for `io.snapcraft.snapd.manage-configuration` itself: no
+root code of ours. The prompt therefore shows snapd's wording ("access or
+modify snap configuration"), not a Myna one. snapd answers only once the
+prompt is, 40 s for one left open on Noble, so the write waits up to 10 min
+for that answer (`SnapdTimeouts::authorization`) before following the
+change; interface connects wait the same way. The flag is never turned off,
+since snapd refuses Myna's refreshes without it.
 
-The switch turns the flag on through snapd's REST API as the user
-(`PUT /v2/snaps/system/conf`), and snapd raises polkit's prompt for
-`io.snapcraft.snapd.manage-configuration` itself: no root code of ours, one
-prompt. The prompt therefore shows snapd's wording ("access or modify snap
-configuration"), not a Myna one. While snapd has not answered, the switch
-shows on but not yet active, a spinner sits beside it and the subtitle reads
-"Enabling…"; the row stops taking input but stays sensitive, as the settings
-window's busy rows do. snapd answers only once the prompt is, 40 s for one
-left open on Noble, so the write waits up to 10 min for that answer
-(`SnapdTimeouts::authorization`) before following the change; interface
-connects wait the same way. Dismissing the prompt puts the switch back
-silently; a refusal or a failed change puts it back with a toast whose
-Details open the report, which names the snapd request and its HTTP
-status rather than a command. Success keeps the switch pending until a fresh read
-shows the flag, then unlocks the list. A read that started before the write
-is discarded rather than taken for the machine after it. The switch never
-turns the flag off: activating it again springs back, since snapd refuses
-Myna's refreshes without the flag.
+The snaps are asked of snapd as the user (`POST /v2/snaps/<name>`,
+`{"action":"install","channel":"latest/edge"}`), the same install `snap
+install --edge` makes, and snapd raises polkit's prompt for
+`io.snapcraft.snapd.manage` itself. That action is `auth_admin_keep` per
+process, so the model installing right after the app asks nothing more: a
+bare machine asks twice, once for the flag and once for the snaps. snapd
+answers once the prompt is answered; the step then follows the change `GET
+/v2/changes/<id>` once a second (`snap_install.rs`); ten failed reads in a
+row end it, so snapd restarting mid-install is no failure. The percentage
+is the bytes of every download task in the change over what they announce or
+what the step expected to fetch, whichever is more, never going down. It
+shows only while a download runs: mounting, hooks and services take 15 s or
+more after the app's download, and 100% there read as stuck (seen on
+Noble). The model's component download runs inside the backend's own
+install change, fetched by its install hook's engine choice, so the model's
+step follows it to the end, the percentage resuming where the snap's own
+download left it. A download served from snapd's cache reports no bytes, so
+a cached install shows no percentage.
 
-Install asks snapd for the snap as the user
-(`POST /v2/snaps/<name>`, `{"action":"install","channel":"latest/edge"}`),
-the same install `snap install --edge` makes, and snapd raises polkit's prompt
-for `io.snapcraft.snapd.manage` itself. That action is `auth_admin_keep` per
-process, so installing the model within five minutes of the app asks nothing
-more. snapd answers once the prompt is answered; the row then follows the
-change `GET /v2/changes/<id>` once a second (`snap_install.rs`); ten failed
-reads in a row end it, so snapd restarting mid-install is no failure. The button
-gives way to a spinner and "Installing…", then "Installing 42%" once a
-download announces its size: the bytes of every download task in the change
-over what they announce or what the row expected to fetch, whichever is
-more, never going down. The percentage shows only while a download runs:
-mounting, hooks and services take 15 s or more after the app's download,
-and "Installing 100%" there read as stuck (seen on Noble). The model's
-component download runs inside the backend's own install change, fetched by
-its install hook's engine choice, so the model row follows it to the end,
-the percentage resuming where the snap's own download left it. A download
-served from snapd's cache reports no bytes, so a cached install shows no
-percentage.
-
-Enable asks the user's own gnome-shell over the session bus
+The extension's step asks the user's own gnome-shell over the session bus
 (`org.gnome.Shell.Extensions.EnableExtension`): no polkit, no prompt. The
 call only adds the uuid to `enabled-extensions`; gnome-shell starts the
-extension once that setting changes, so the row shows a spinner and
-"Enabling…" until `GetExtensionInfo` reports it running, for up to 5 s.
-A system copy gnome-shell already lists runs at once on X11 and Wayland
-alike, so no re-login is asked for; the only re-login cases are the copy
-installed after login and the shadowed one above, which offer no button.
-gnome-shell refusing (`false`, an unknown uuid), the extension erroring
-(gnome-shell's own `error` text) or not starting in time puts Enable back
-with a toast whose Details name the D-Bus call. An extension with
-`canChange` false is not offered: it is turned off or unavailable, as
-above. Enabling it is the last missing piece on a machine with the rest
-installed, so it moves the step on like an install. Enable runs beside a
-snapd install, since it asks no prompt; only the snap rows wait for one
-another.
+extension once that setting changes, so the step waits until
+`GetExtensionInfo` reports it running, for up to 5 s. A system copy
+gnome-shell already lists runs at once on X11 and Wayland alike, so no
+re-login is asked for. An extension out of the wizard's reach (above) is not
+a step and is never mentioned: it holds neither Next nor the move on.
 
-A row snapd is still installing counts as missing (`onboarding::while_installing`)
-whatever a read finds half-way: the backend's slot is published, and
-discovery finds it, minutes before its model has arrived. Next and the
-automatic move on therefore wait for the change. Once it is done the row
-waits for a fresh read, which shows Installed. One install runs at a time,
-since one request raises one prompt; the other Install buttons are
-insensitive meanwhile. Dismissing the prompt puts the button back silently;
-a refusal, a request snapd rejects (Myna without the flag: "feature flag
-validation failed") or a change that fails puts it back with a toast whose
-Details name the request, snapd's HTTP status (202 for a change that failed
-after snapd accepted it) and snapd's error. Closing the wizard stops
-following; snapd's change carries on.
+A component snapd is still installing counts as missing
+(`onboarding::while_installing`) whatever a read finds half-way: the
+backend's slot is published, and discovery finds it, minutes before its
+model has arrived. Next and the automatic move on therefore wait for the
+change. Dismissing a prompt stops the run silently, the button offering
+again what is still missing. A refusal, a request snapd rejects (Myna
+without the flag: "feature flag validation failed"), a change that fails or
+gnome-shell refusing the extension stops it with a toast whose Details open
+the report, which names the failed step as what it was: snapd's request,
+its HTTP status (202 for a change that failed after snapd accepted it) and
+snapd's error, or the D-Bus call. The button then offers again, sized for
+what is still missing. Closing the wizard stops following; snapd's change
+carries on.
 
-A change snapd is already running to install a missing row's snap, started
-in a terminal or by a wizard since closed, is followed the same way instead
-of offering Install again. It is found in `/v2/changes?select=in-progress` as
-an unfinished `install-snap` change whose summary names the snap. Such a change failing only puts Install back, since it
-was not this window's action.
-
-The subtitles size the download, in whole megabytes from 100 MB to 1 GB,
-where a decimal is noise. The app's is the store's size of the `myna`
-snap. The model's names the family and the size of what its install fetches:
-the snap and the int8 model, or, with an NVIDIA GPU, the CUDA runtime and the
-fp32 model, said as "up to" because the install hook falls back to the CPU
-engine when the GPU has no driver. Once installed, that model's row names
-only the family: which engine the hook picked is not known, and "up to"
-reads wrong after the fact. The sizes are fixed per store revision in
-`onboarding.rs`, not read from the store.
+A change snapd is already running to install a missing snap, started in a
+terminal or by a wizard since closed, is followed the same way instead of
+offering the button: it reads "Installing…" over that step. It is found in
+`/v2/changes?select=in-progress` as an unfinished `install-snap` change
+whose summary names the snap. Such a change failing only puts the button
+back, since it was not this window's action.
 
 Installing may still happen elsewhere, so the component step re-assesses the
 machine whenever the wizard regains focus, and every 2 s while something
-required is missing. Next stays insensitive until the required components are
-found; then the footer shows a success checkmark and "All required components
-installed" left of it.
+required is missing and no run is going. Next stays insensitive until the
+required components are found.
 
 Both installs ask for `edge`, the only channel both snaps are published to,
 and wait for the flag: snapd refuses to install a snap declaring a user
@@ -221,13 +207,14 @@ on; the copied report states the missing component without a command.
 ## Finishing setup
 
 Leaving the component step makes a backend active and restarts the daemon, so
-the shortcut step finds dictation running. When a re-assessment finds the last
-missing component, the optional extension included, while the step shows,
-the step does this by itself, then "All required components installed" shows
-for a second and the wizard moves on. Only that transition counts: opening the
+the shortcut step finds dictation running. When the button's run ends with
+nothing left to install, or a re-assessment finds the last missing component
+while the step shows, the step does this by itself, then the button's
+"Installed" shows for a second and the wizard moves on. An extension out of
+reach does not hold that move. Only those transitions count: opening the
 step with everything already installed waits for Next, so a re-run of the
-wizard does not rush past it, and a machine whose extension the wizard
-cannot install leaves the move to Next. Next during the pause moves on at once without
+wizard does not rush past it, and so does a disabled extension found elsewhere
+to be the last piece. Next during the pause moves on at once without
 setting up again. Both snaps share a publisher, so
 snapd's base declaration auto-connects `myna:backend` to the new backend's
 slot and the step only restarts.
@@ -240,9 +227,9 @@ running yet" on arrival until the daemon was up. A daemon that has not
 claimed it after 10 s is left for the shortcut step to report.
 
 Setting up usually takes a fraction of a second (a restart), so for its
-first second the footer keeps "All required components installed" and only
-Next goes insensitive; a spinner that flashed past read as a glitch. Past
-that second a spinner and the stage below take the status's place, and the
+first second only Next goes insensitive; a spinner that flashed past read as
+a glitch. Past that second a spinner and the stage below show under the
+button, and the
 header's back arrow goes until setting up ends: leaving then would strand a
 connect or a restart in flight. The arrow stays through that first second,
 since hiding it flashed it the same way; Back then lets the setup finish
@@ -255,10 +242,10 @@ only wants to go back or close. The report names the failed step (the
 `systemctl --user` restart, or snapd's connect request and its HTTP status).
 Dismissing the connect's polkit prompt is the user's answer, not a
 failure: the step stays silently and Next asks again. Either way, until a
-setup succeeds, a warning in the footer takes the check's place, "Dictation
-is not set up yet. Select Next to try again.", since the toast times out and
-the step would otherwise read as ready. The wizard's toasts rise above the
-footer, never over its status or Next.
+setup succeeds, a warning under the button says "Dictation is not set up
+yet. Select Next to try again.", since the toast times out and the step
+would otherwise read as ready. The wizard's toasts rise above the footer,
+never over Next.
 
 snapd shows that connection while the install change is still fetching the
 model, and mounts the backend into Myna's namespace only as the change's
@@ -282,11 +269,13 @@ install downloads the GPU components rather than the int8 model.
 
 A spinner alone read as a hang, so beside it a line says what setup is
 doing as it starts doing it (`active_backend::SetupStage`): checking, the
-download in bytes or "Waiting for other software changes to finish…"
+download in bytes or "Waiting for other software changes to finish"
 (snapd's summary of the change goes to the log only: it is English and
-names snapd's internals), connecting
-the model, with a reminder to authorize it since polkit's dialog can open
-behind the wizard, and starting dictation. Closing the wizard stops a setup
+names snapd's internals), "Setting up speech-to-text model" while it
+connects the backend, and "Starting dictation". These use the install
+steps' words, never the engine's name, which a first-run user has not been
+told, and like the install steps they carry no ellipsis; only the button's
+"Installing…" has one, as in the mock. Closing the wizard stops a setup
 still waiting on snapd, so nothing is connected or restarted behind it.
 While the step polls, the same line shows snap's own error when it cannot
 read the machine, rather than only reporting a component missing that it
@@ -366,7 +355,7 @@ and so does each poll while a component is missing: a `snap list`, a
 discovery, one read of snapd's socket for the flag, one `GetExtensionInfo`
 call to gnome-shell (at most 2 s when it does not answer), a stat of each
 extension directory and a scan of `/sys/bus/pci/devices` for an NVIDIA GPU.
-While a snap row is missing and the flag is on, each re-assessment also
+While a snap is missing and the flag is on, each re-assessment also
 reads snapd's in-progress changes once, to follow an install started
 elsewhere. An install reads its change once a second until snapd is done.
 Setting up reads snapd's changes over its socket once, and again every 2 s

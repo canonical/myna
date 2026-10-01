@@ -7,7 +7,7 @@ template $OnboardingWindow: Adw.ApplicationWindow {
   title: _("Dictation");
 
   content: Adw.ToolbarView {
-    // Toasts rise above the footer rather than over its status and Next.
+    // Toasts rise above the footer rather than over Next.
     content: Adw.ToastOverlay overlay {
       child: Adw.NavigationView navigation {};
     };
@@ -15,75 +15,10 @@ template $OnboardingWindow: Adw.ApplicationWindow {
     [bottom]
     Gtk.Box actions {
       halign: end;
-      spacing: 24;
       margin-start: 24;
       margin-end: 24;
       margin-top: 12;
       margin-bottom: 24;
-
-      Gtk.Box {
-        spacing: 12;
-
-        Gtk.Spinner setup_spinner {
-          visible: false;
-
-          accessibility {
-            label: _("Setting up Dictation");
-          }
-        }
-
-        // What setting up is doing, or why the step cannot read the
-        // machine.
-        Gtk.Label setup_status {
-          visible: false;
-          wrap: true;
-          natural-wrap-mode: word;
-          justify: right;
-          xalign: 1;
-
-          styles [
-            "dim-label",
-          ]
-        }
-      }
-
-      Gtk.Box installed_status {
-        visible: false;
-        spacing: 6;
-
-        Gtk.Image {
-          icon-name: "object-select-symbolic";
-
-          styles [
-            "success",
-          ]
-        }
-
-        Gtk.Label {
-          label: _("All required components installed");
-        }
-      }
-
-      // In the installed status's place after a setup that did not finish.
-      Gtk.Box setup_failed_status {
-        visible: false;
-        spacing: 6;
-
-        Gtk.Image {
-          icon-name: "dialog-warning-symbolic";
-
-          styles [
-            "warning",
-          ]
-        }
-
-        Gtk.Label {
-          label: _("Dictation is not set up yet. Select Next to try again.");
-          wrap: true;
-          natural-wrap-mode: word;
-          xalign: 1;
-        }
-      }
 
       Gtk.Button forward_button {
         label: _("Next");
