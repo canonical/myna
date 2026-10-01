@@ -23,6 +23,16 @@ streaming="$(modelctl get streaming 2>/dev/null || true)"
 stream_args=()
 [ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
 
+# Per-model batch decode policy (models/*/model.yaml MODEL_BATCH_*). The
+# large weights loop when each batch window is conditioned on the previous
+# one; the small models measured better keeping it. Unset takes the server
+# defaults, which are the small-model policy.
+batch_policy=()
+[ "${MODEL_BATCH_CONDITION_ON_PREVIOUS_TEXT:-true}" = "false" ] &&
+    batch_policy+=(--no-batch-condition-on-previous-text)
+[ "${MODEL_BATCH_VAD_FILTER:-false}" = "true" ] &&
+    batch_policy+=(--batch-vad-filter)
+
 exec "$SNAP/bin/myna-server" \
     --socket "$socket_path" \
     --share-provider \
@@ -32,4 +42,5 @@ exec "$SNAP/bin/myna-server" \
     --sleep-idle-seconds "${idle:-0}" \
     --idle-action unload \
     "${stream_args[@]}" \
+    "${batch_policy[@]}" \
     "$@"

@@ -126,10 +126,14 @@ parts:
       craftctl default
       site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
       # faster-whisper declares onnxruntime (and so protobuf/flatbuffers) only
-      # to run the bundled Silero VAD, lazily from vad.py. The adapter passes
-      # vad_filter=False streaming and takes this default when batching.
+      # to run the bundled Silero VAD, lazily from vad.py. The cpu engine's
+      # models (tiny/base/small) all ship the default batch policy, which
+      # keeps vad_filter off; the large models that turn it on are GPU-only
+      # and find onnxruntime in the gpu-nvidia component instead. The gate
+      # pins the default policy: if it ever flipped, this pruned venv would
+      # crash on the first batch decode.
       export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
-      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      export PRUNE_GATE="from myna.testbed.whisper import batch_decode_options as b; assert b('en', None)['vad_filter'] is False, 'cpu engine prunes onnxruntime; a vad-by-default batch policy needs it'"
       "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
       rm -f "$CRAFT_PART_INSTALL"/bin/onnxruntime_test "$CRAFT_PART_INSTALL"/bin/pip*
 
@@ -205,8 +209,13 @@ parts:
         ./myna-0.0.0-py3-none-any.whl[whisper] \
         ctranslate2 \
         nvidia-cublas-cu12
-      export PRUNE_DROP="onnxruntime google protobuf flatbuffers"
-      export PRUNE_GATE="import faster_whisper, inspect; d = inspect.signature(faster_whisper.WhisperModel.transcribe).parameters['vad_filter'].default; assert d is False, f'vad_filter now defaults to {d!r}'"
+      # onnxruntime stays: the large models' batch policy sets vad_filter
+      # (models/*/model.yaml MODEL_BATCH_VAD_FILTER) and faster-whisper runs
+      # its bundled Silero VAD on onnxruntime, lazily from vad.py. The gate
+      # loads that model - the exact lazy path a vad batch decode hits on
+      # first use - so a pruned-too-far build fails here, not on dictation.
+      export PRUNE_DROP=""
+      export PRUNE_GATE="from faster_whisper.vad import get_vad_model; get_vad_model()"
       "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$target" python3
       nvidia="$target/nvidia"
       # The .alt NVRTC is a second codegen build nothing here dlopens - the

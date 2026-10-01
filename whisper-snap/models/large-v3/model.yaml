@@ -13,8 +13,14 @@ environment:
   # Runtime compute policy; the packaged artifact above remains float16.
   # Measured 2026-10-01 on corpus/english/manifest-balanced.json (RTX 4080
   # Laptop, nvidia-gpu engine): streaming fp16 2.57% WER @ 5.8x, 5.3G VRAM;
-  # int8_float16 2.46% @ 6.5x, 3.6G VRAM. Batch mode degrades on the ~5min
-  # long-form clip (repetition loops, worst under int8_float16: 35.9% vs
-  # 5.6% fp16) - an upstream no-VAD pathology, not a precision choice.
-  # float16 stays the default while batch is a shipped mode.
+  # int8_float16 2.46% @ 6.5x, 3.6G VRAM - a small but consistent int8 edge
+  # on every axis; fp16 keeps the default pending a repeated run with
+  # confidence intervals.
   - MODEL_COMPUTE_TYPE=float16
+  # Batch decode policy (the streaming path is unaffected). With the default
+  # conditioning this model enters repetition loops in batch mode - 571.8%
+  # WER on one 15s clip, measured 2026-10-01; the fix below restored 2.65%
+  # pooled WER. Rationale lives in batch_decode_options
+  # (server/src/myna/testbed/whisper.py).
+  - MODEL_BATCH_CONDITION_ON_PREVIOUS_TEXT=false
+  - MODEL_BATCH_VAD_FILTER=true
