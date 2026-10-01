@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-27 14:29+0100\n"
-"PO-Revision-Date: 2026-10-01 12:57+0000\n"
+"PO-Revision-Date: 2026-10-01 22:31+0000\n"
 "Last-Translator: Prasanta-Hembram <Prasantahembram720@gmail.com>\n"
 "Language-Team: Santali <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/sat/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n == 2 ? 1 : 2;\n"
-"X-Generator: Weblate 2026.10.dev0\n"
+"X-Generator: Weblate 2026.10\n"
 
 #: src/indicator/mod.rs:84
 msgid "Loading model…"
@@ -29,88 +29,88 @@ msgstr "ᱟᱧᱡᱚᱢᱚᱜ ᱠᱟᱱᱟ"
 
 #: src/indicator/mod.rs:86
 msgid "Transcribing"
-msgstr ""
+msgstr "ᱴᱨᱟᱱᱥᱠᱨᱟᱭᱤᱵᱷᱤᱝ"
 
 #: src/indicator/mod.rs:87
 msgid "Finishing"
-msgstr ""
+msgstr "ᱪᱟᱵᱟᱜ ᱠᱟᱱᱟ"
 
 #: src/indicator/mod.rs:91
 #, c-format
 msgid "Error: %s"
-msgstr ""
+msgstr "ᱦᱩᱰᱟᱹᱜ: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr ""
+msgstr "🎤 ᱰᱤᱠᱴᱮᱥᱚᱱ: ᱟᱸᱡᱚᱢ ᱮᱫᱟᱹᱧ"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
-msgstr ""
+msgstr "ᱱᱤᱛᱚᱜ ᱨᱚᱲ ᱢᱮ — ᱛᱷᱤᱨ ᱞᱟᱹᱜᱤᱫ ᱟᱢᱟᱜ ᱠᱷᱟᱴᱚᱢᱟᱪᱟ ᱫᱚᱦᱲᱟ ᱞᱤᱱ ᱢᱮ ᱾"
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr ""
+msgstr "💬  ᱰᱤᱠᱴᱮᱥᱚᱱ: ᱴᱨᱟᱱᱥᱠᱨᱟᱭᱵᱤᱝ"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr ""
+msgstr "ᱟᱲᱟᱝ ᱚᱞ ᱨᱮ ᱵᱚᱫᱚᱞ…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr ""
+msgstr "⏳ ᱰᱤᱠᱴᱮᱥᱚᱱ: ᱪᱟᱵᱟ"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr ""
+msgstr "ᱢᱩᱪᱟᱹᱫ ᱚᱞ ᱵᱚᱞᱚᱱ…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
-msgstr ""
+msgstr "⚠️ᱰᱤᱠᱴᱮᱥᱚᱱ ᱦᱩᱰᱟᱹᱜ"
 
 #: src/controller.rs:215 src/controller.rs:824 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr ""
+msgstr "ᱫᱷᱭᱟᱱ ᱟᱫ ᱮᱱᱟ"
 
 #: src/controller.rs:217
 msgid "No speech detected"
-msgstr ""
+msgstr "ᱪᱮᱫ ᱟᱲᱟᱝ ᱵᱟᱝ ᱵᱟᱰᱟᱭ ᱧᱟᱢ ᱟᱠᱟᱱᱟ"
 
 #: src/controller.rs:219
 msgid "Background noise is high"
-msgstr ""
+msgstr "ᱯᱟᱹᱪᱷᱞᱟᱹ ᱨᱮᱭᱟᱜ ᱠᱟᱞᱠᱟᱞᱟᱣ ᱵᱟᱹᱲᱛᱤ ᱢᱮᱱᱟᱜᱼᱟ"
 
 #: src/controller.rs:755
 msgid "Dictation target closed"
-msgstr ""
+msgstr "ᱰᱤᱠᱴᱮᱥᱚᱱ ᱴᱟᱨᱜᱮᱴ ᱵᱚᱱᱫᱚ ᱮᱱᱟ"
 
 #: src/controller.rs:820
 msgid "Refusing to type into a password field"
-msgstr ""
+msgstr "ᱫᱟᱱᱟᱝ ᱥᱟᱵᱟᱫᱽ ᱯᱟᱦᱴᱟ ᱨᱮ ᱚᱞ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱭ ᱢᱟᱱᱟᱣᱟ"
 
 #: src/controller.rs:821
 msgid "No text field is focused"
-msgstr ""
+msgstr "ᱚᱠᱟ ᱚᱞ ᱯᱟᱦᱴᱟ ᱦᱚᱸ ᱵᱟᱝ ᱯᱷᱚᱠᱟᱥ ᱟᱠᱟᱱᱟ"
 
 #: src/shortcut/retry.rs:282
 #, c-format
 msgid "dictation hotkey unavailable: %s"
-msgstr ""
+msgstr "ᱰᱤᱠᱴᱮᱥᱚᱱ ᱦᱚᱴᱠᱤ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ: %s"
 
 #: src/inject/mod.rs:55
 msgid "focused field is secure (password); refusing to inject"
-msgstr ""
+msgstr "ᱯᱷᱚᱠᱟᱥᱰ ᱯᱷᱤᱞᱰ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱜᱮᱭᱟ (ᱯᱟᱥᱣᱟᱨᱰ); ᱤᱱᱡᱮᱠᱥᱚᱱ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱭ ᱢᱟᱱᱟᱣᱟ"
 
 #: src/inject/mod.rs:59
 msgid "no editable target is focused"
-msgstr ""
+msgstr "ᱪᱮᱫ ᱥᱟᱥᱟᱯᱲᱟᱣ ᱞᱮᱠᱟᱱ ᱡᱚᱥ ᱦᱚᱸ ᱵᱟᱝ ᱯᱷᱚᱠᱟᱥ ᱟᱠᱟᱱᱟ"
 
 #: src/inject/mod.rs:65
 #, c-format
 msgid "injection backend unavailable: %s"
-msgstr ""
+msgstr "ᱤᱧᱡᱮᱠᱥᱚᱱ ᱵᱮᱠᱮᱱᱰ ᱵᱟᱝ ᱧᱟᱢᱚᱜ ᱠᱟᱱᱟ: %s"
 
 #: src/inject/mod.rs:70
 #, c-format
 msgid "injection backend error: %s"
-msgstr ""
+msgstr "ᱤᱱᱡᱮᱠᱥᱚᱱ ᱵᱮᱠᱮᱱᱰ ᱦᱩᱰᱟᱹᱜ: %s"
