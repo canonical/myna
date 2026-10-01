@@ -1389,7 +1389,7 @@ impl BackendUi {
                 repository,
                 configurator,
                 extensions,
-                Some(window.upcast_ref()),
+                crate::onboarding_ui::Opener::Settings(window.upcast_ref()),
             );
             wizard.window().connect_close_request(move |_| {
                 action.set_enabled(true);

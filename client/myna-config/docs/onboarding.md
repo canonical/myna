@@ -10,10 +10,10 @@ on is the step's main action (`onboarding::forward_leads`) and plain
 otherwise. The Figma mock draws Yaru.dart's green and outlined buttons; stock
 Adwaita was chosen over them. The window opens at the
 design's 800x600, and every step's header is flat and untitled; each step after
-the first carries a back arrow to the step before it. Done closes Myna
-Settings, as the design says: the wizard and, when it was opened from the menu,
-the settings window under it. It closes each window rather than quitting, so
-their close handlers still stop what they run.
+the first carries a back arrow to the step before it. On first run Done
+closes Myna Settings; opened from the settings window's menu, it closes only
+the wizard, and the settings window stays and rediscovers. It closes each
+window rather than quitting, so their close handlers still stop what they run.
 The welcome step loads the application icon straight from the application's
 own resources, not by name through the icon theme: a stale icon cache that
 still lists a deleted hicolor copy made the theme fail without falling back.

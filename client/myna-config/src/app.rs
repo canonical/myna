@@ -361,7 +361,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(ProbeMachine::new()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
     };
@@ -613,7 +613,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Disabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
     };
@@ -662,7 +662,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.set_beat(Duration::from_millis(300));
@@ -774,7 +774,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.window()
@@ -813,7 +813,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.set_beat(Duration::from_secs(60));
@@ -855,7 +855,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Unavailable),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.set_beat(Duration::from_millis(50));
@@ -945,7 +945,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             extensions.clone(),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.window()
@@ -1024,7 +1024,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.window()
@@ -1100,7 +1100,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(ProbeMachine::new()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
     };
@@ -1146,7 +1146,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
     };
@@ -1235,7 +1235,7 @@ fn onboarding_probe() -> glib::ExitCode {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         (ui.window(), ui.shortcut_button())
     };
@@ -1419,9 +1419,48 @@ fn onboarding_probe() -> glib::ExitCode {
     }
     println!("onboarding-chrome: shortcut untitled, back");
 
-    // Done closes Myna Settings, whatever else it had open.
+    // Opened from the settings window, Done closes only the wizard.
     let settings = gtk::ApplicationWindow::new(&application);
     settings.present();
+    let over_settings = OnboardingUi::present_with_ports(
+        &application,
+        assess(Machine {
+            user_daemons: true,
+            extension: crate::onboarding::ExtensionState::Enabled,
+            ..Machine::new(&installed, 1)
+        }),
+        Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+            std::sync::Arc::new(machine.clone()),
+        )),
+        Rc::new(machine.clone()),
+        ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+        crate::onboarding_ui::Opener::Settings(settings.upcast_ref()),
+    )
+    .window();
+    settle_gtk();
+    over_settings.navigation().push_by_tag("shortcut");
+    settle_gtk();
+    over_settings.forward_button().emit_clicked();
+    settle_gtk();
+    let open = application.windows();
+    if open
+        .iter()
+        .any(|open| open == over_settings.upcast_ref::<gtk::Window>())
+        || !open
+            .iter()
+            .any(|open| open == settings.upcast_ref::<gtk::Window>())
+        || window.application().is_none()
+    {
+        eprintln!(
+            "Done over the settings window left {} windows open",
+            open.len()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-finish: Done over Settings keeps Settings");
+
+    // First run, with no settings window behind it, Done closes Myna
+    // Settings, whatever else it had open.
     forward.emit_clicked();
     settle_gtk();
     let open = application.windows();
@@ -1997,7 +2036,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
                 )),
                 Rc::new(machine),
                 ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-                None,
+                crate::onboarding_ui::Opener::FirstRun,
             );
             (ui.window(), ui.shortcut_button())
         };
@@ -2236,7 +2275,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
         )),
         Rc::new(ProbeMachine::new()),
         ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-        None,
+        crate::onboarding_ui::Opener::FirstRun,
     )
     .window();
     settle_gtk();
@@ -4062,7 +4101,7 @@ fn probe_extension_enable(application: &adw::Application) -> Result<(), String> 
             )),
             Rc::new(machine.clone()),
             extensions.clone(),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.set_beat(Duration::from_millis(50));
@@ -4236,7 +4275,7 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
             )),
             Rc::new(machine.clone()),
             extensions.clone(),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.set_beat(Duration::from_secs(60));
@@ -4451,7 +4490,7 @@ fn probe_installs(application: &adw::Application) -> Result<(), String> {
             )),
             Rc::new(machine.clone()),
             ProbeExtensions::new(ExtensionState::Unavailable),
-            None,
+            crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
         ui.window()
@@ -4497,7 +4536,7 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
         )),
         Rc::new(machine.clone()),
         ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-        None,
+        crate::onboarding_ui::Opener::FirstRun,
     )
     .window();
     settle_gtk();
@@ -4729,7 +4768,7 @@ fn probe_flag_switch(application: &adw::Application) -> Result<(), String> {
         )),
         Rc::new(machine.clone()),
         ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
-        None,
+        crate::onboarding_ui::Opener::FirstRun,
     )
     .window();
     settle_gtk();

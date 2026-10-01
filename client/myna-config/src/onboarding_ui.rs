@@ -3,7 +3,7 @@
 //! Thin, like [`crate::backend_ui`]: [`crate::onboarding`] decides what is
 //! missing, how to install it, and when the flow may advance; this module
 //! renders that, connects and restarts what the user installed, and closes
-//! Myna Settings when the user is done.
+//! when the user is done.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -75,8 +75,21 @@ enum FlagWrite {
     Confirming,
 }
 
+/// Where the wizard was opened from, which decides what Done closes.
+#[derive(Clone, Copy)]
+pub enum Opener<'a> {
+    /// First run: Done closes Myna Settings.
+    FirstRun,
+    /// The settings window's menu: modal over it, and Done closes only the
+    /// wizard.
+    Settings(&'a gtk::Window),
+}
+
 pub struct OnboardingUi {
     window: ui::OnboardingWindow,
+    /// Done closes only the wizard, leaving the settings window it opened
+    /// from.
+    keeps_settings: bool,
     components_page: ui::OnboardingComponents,
     shortcut_page: ui::OnboardingShortcut,
     shortcut: Rc<crate::shortcut_ui::ShortcutControl>,
@@ -124,22 +137,22 @@ impl OnboardingUi {
             Rc::new(SnapBackendRepository::new(runner.clone())),
             Rc::new(PkexecSystemConfigurator::new(runner)),
             Rc::new(GnomeShellExtensions::new()),
-            None,
+            Opener::FirstRun,
         )
     }
 
-    /// With a `parent`, the wizard is modal over it: the parent's own
-    /// operations cannot start while the wizard sets a backend up.
+    /// Opened from the settings window, the wizard is modal over it: its
+    /// own operations cannot start while the wizard sets a backend up.
     pub fn present_with_ports(
         application: &adw::Application,
         initial: Vec<Component>,
         repository: Rc<dyn BackendRepository>,
         configurator: Rc<dyn SystemConfigurator>,
         extensions: Rc<dyn ShellExtensions>,
-        parent: Option<&gtk::Window>,
+        opener: Opener,
     ) -> Rc<Self> {
         let window = ui::OnboardingWindow::new(application);
-        if let Some(parent) = parent {
+        if let Opener::Settings(parent) = opener {
             window.set_transient_for(Some(parent));
             window.set_modal(true);
         }
@@ -178,6 +191,7 @@ impl OnboardingUi {
         );
         let ui = Rc::new(Self {
             window: window.clone(),
+            keeps_settings: matches!(opener, Opener::Settings(_)),
             components_page: components_page.clone(),
             shortcut_page: shortcut_page.clone(),
             shortcut,
@@ -674,7 +688,7 @@ impl OnboardingUi {
         match self.step.get().next() {
             Some(step) if self.step.get() == Step::Components => self.finish_setup(step, false),
             Some(step) => self.window.navigation().push_by_tag(step_name(step)),
-            None => self.close_application(),
+            None => self.finish(),
         }
     }
 
@@ -819,10 +833,15 @@ impl OnboardingUi {
         self.shortcut_page.shortcut_button()
     }
 
-    /// Done closes Myna Settings, the settings window the wizard may have
-    /// been opened from included. Closing, not quitting, so each window's
-    /// close handler still stops what it runs.
-    fn close_application(&self) {
+    /// Done closes only the wizard when it was opened from the settings
+    /// window, which stays and re-reads the machine; on first run it closes
+    /// Myna Settings. Closing, not quitting, so each window's close handler
+    /// still stops what it runs.
+    fn finish(&self) {
+        if self.keeps_settings {
+            self.window.close();
+            return;
+        }
         let windows = self
             .window
             .application()
