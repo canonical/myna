@@ -13,14 +13,15 @@ environment:
   # Runtime compute policy; the packaged artifact above remains float16.
   # Measured 2026-10-01 on corpus/english/manifest-balanced.json (RTX 4080
   # Laptop, nvidia-gpu engine): streaming fp16 2.57% WER @ 5.8x, 5.3G VRAM;
-  # int8_float16 2.46% @ 6.5x, 3.6G VRAM - a small but consistent int8 edge
-  # on every axis; fp16 keeps the default pending a repeated run with
-  # confidence intervals.
+  # int8_float16 2.46% @ 6.5x, 3.6G VRAM - a small int8 edge in streaming.
+  # In batch mode int8 costs this model accuracy on long audio even after
+  # the batch decode policy fix (6.5% vs 2.0% on the long-form clip, 37
+  # mid-transcript inserted words), so float16 keeps the default.
   - MODEL_COMPUTE_TYPE=float16
   # Batch decode policy (the streaming path is unaffected). With the default
   # conditioning this model enters repetition loops in batch mode - 571.8%
-  # WER on one 15s clip, measured 2026-10-01; the fix below restored 2.65%
-  # pooled WER. Rationale lives in batch_decode_options
-  # (server/src/myna/testbed/whisper.py).
+  # WER on one 15s clip. Bench-verified 2026-10-01 through the packaged snap:
+  # batch fp16 2.57% pooled and 2.0% long-form (was 6.65% and 5.6%).
+  # Rationale lives in batch_decode_options (server/src/myna/testbed/whisper.py).
   - MODEL_BATCH_CONDITION_ON_PREVIOUS_TEXT=false
   - MODEL_BATCH_VAD_FILTER=true

@@ -176,6 +176,9 @@ def batch_decode_options(
     accelerant, not a fix: stripping the silence lengthens the conditioning
     chain and the long-form loop got worse (121.8% turbo, 38.2% large-v3).
     The streaming path never produced a loop and keeps its own options.
+    Bench-verified through the packaged snap the same day: turbo batch
+    23.4% -> 2.2% pooled and 80.6% -> 1.9% long-form, large-v3 batch
+    6.7% -> 2.6% and 5.6% -> 2.0%, small rows unchanged.
     """
     options: dict[str, object] = {
         "language": _iso639_1(language),
