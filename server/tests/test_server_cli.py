@@ -108,11 +108,13 @@ def test_whisper_decode_options_are_the_measured_ones():
     to four decimals; small 3.41% -> 3.38%) and cuts p95 decode latency 26% on
     tiny, 10% on base, and 25% on small.
 
-    beam_size and condition_on_previous_text are asserted *absent* on the
-    batch path: both were measured and both lose (beam 1 costs 0.50 pp for
-    ~15%, the same trade T70 rejected for base int8; dropping the conditioning
-    costs 0.20 pp for nothing). Pinned so a future edit has to bring a
-    measurement, in either direction.
+    beam_size is asserted *absent* on the batch path: measured, and it loses
+    (beam 1 costs 0.50 pp for ~15%, the same trade T70 rejected for base
+    int8). condition_on_previous_text and vad_filter are explicit: True/False
+    is the small-model policy (dropping the conditioning costs 0.20 pp there
+    for nothing), and the large models ship False/True from their model.yaml -
+    measured 2026-10-01, see batch_decode_options. Pinned so a future edit
+    has to bring a measurement, in either direction.
     """
     from myna.testbed.whisper import batch_decode_options, stream_decode_options
 
@@ -121,7 +123,12 @@ def test_whisper_decode_options_are_the_measured_ones():
     assert batch["log_prob_threshold"] == -0.5
     assert batch["language"] == "en"  # region subtag dropped for faster-whisper
     assert "beam_size" not in batch
-    assert "condition_on_previous_text" not in batch
+    assert batch["condition_on_previous_text"] is True
+    assert batch["vad_filter"] is False
+
+    relaxed = batch_decode_options("en", None, condition_on_previous_text=False, vad_filter=True)
+    assert relaxed["condition_on_previous_text"] is False
+    assert relaxed["vad_filter"] is True
 
     # Same ladder on the streaming path. That one is a consistency and
     # robustness choice rather than a measured win: capping it moved the
@@ -131,6 +138,49 @@ def test_whisper_decode_options_are_the_measured_ones():
     assert stream["beam_size"] == 1
     assert stream["word_timestamps"] is True
     assert stream["vad_filter"] is False  # T71: costs accuracy on base
+
+
+def test_whisper_batch_decode_policy_flags():
+    """The per-model batch decode policy arrives as flags; the engine scripts
+    map the active model.yaml's MODEL_BATCH_* environment onto them, so the
+    defaults must be the small-model policy and the overrides must reach the
+    adapter untouched."""
+    import argparse
+
+    from myna.testbed.whisper import FasterWhisperAdapter
+
+    args = parse()
+    assert args.batch_condition_on_previous_text is True
+    assert args.batch_vad_filter is False
+
+    args = parse("--no-batch-condition-on-previous-text", "--batch-vad-filter")
+    assert args.batch_condition_on_previous_text is False
+    assert args.batch_vad_filter is True
+
+    adapter = build_adapter(
+        argparse.Namespace(
+            adapter="whisper",
+            model="tiny",
+            device="cpu",
+            compute_type=None,
+            streaming=False,
+            batch_condition_on_previous_text=False,
+            batch_vad_filter=True,
+        )
+    )
+    assert isinstance(adapter, FasterWhisperAdapter)
+    assert adapter._batch_condition_on_previous_text is False
+    assert adapter._batch_vad_filter is True
+
+    # No policy flags on the namespace: the CLI must fall through to the
+    # adapter's defaults, as with the streaming constants above.
+    default_adapter = build_adapter(
+        argparse.Namespace(
+            adapter="whisper", model="tiny", device="cpu", compute_type=None, streaming=False
+        )
+    )
+    assert default_adapter._batch_condition_on_previous_text is True
+    assert default_adapter._batch_vad_filter is False
 
 
 SNAP_ENV = {"SNAP_NAME": "myna-whisper", "SNAP_INSTANCE_NAME": "myna-whisper_dev"}

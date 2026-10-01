@@ -91,6 +91,22 @@ def build_parser() -> argparse.ArgumentParser:
         "5 matches batch decode quality at ~5x tick cost)",
     )
     parser.add_argument(
+        "--batch-condition-on-previous-text",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="chain each batch window's text into the next window's prompt "
+        "(whisper; default on - the small models measured better with it, the "
+        "large ones loop on it and their model.yaml turns it off)",
+    )
+    parser.add_argument(
+        "--batch-vad-filter",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="strip silence with the bundled Silero VAD before each batch decode "
+        "(whisper; default off - costs accuracy on small models, needed by the "
+        "large ones alongside --no-batch-condition-on-previous-text)",
+    )
+    parser.add_argument(
         "--stream-arm-s",
         type=float,
         default=None,
@@ -185,6 +201,10 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
             stream_cadence_s=getattr(args, "stream_cadence_s", None) or STREAM_CADENCE_S,
             stream_window_cap_s=getattr(args, "stream_window_cap_s", None) or STREAM_WINDOW_CAP_S,
             stream_beam_size=getattr(args, "stream_beam_size", None) or STREAM_BEAM_SIZE,
+            batch_condition_on_previous_text=getattr(
+                args, "batch_condition_on_previous_text", True
+            ),
+            batch_vad_filter=getattr(args, "batch_vad_filter", False),
         )
 
     if args.adapter == "parakeet":

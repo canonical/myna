@@ -128,15 +128,21 @@ STREAM_BEAM_SIZE = 1  # greedy re-decode ticks
 # silence probe is near-silence, so "never helped" is a statement about what
 # can be tested, not about what a user will record.
 #
-# Deliberately not changed with the temperature ladder:
-# beam_size stays 5 - dropping it to 1 costs 0.50 pp of WER for ~15%, the same
-# trade shape as base int8, which was rejected in T70 - and
-# condition_on_previous_text stays True, which costs 0.20 pp for nothing.
+# Deliberately not changed with the temperature ladder: beam_size stays 5 -
+# dropping it to 1 costs 0.50 pp of WER for ~15%, the same trade shape as
+# base int8, which was rejected in T70. condition_on_previous_text is no
+# longer one value: it is the per-model batch policy now (see
+# batch_decode_options).
 _TEMPERATURE_LADDER = (0.0, 0.2)
 
 
 def batch_decode_options(
-    language: str | None, prompt: str | list[int] | None, *, word_timestamps: bool = False
+    language: str | None,
+    prompt: str | list[int] | None,
+    *,
+    word_timestamps: bool = False,
+    condition_on_previous_text: bool = True,
+    vad_filter: bool = False,
 ) -> dict[str, object]:
     """Decode parameters for the batch path, in one place.
 
@@ -149,12 +155,35 @@ def batch_decode_options(
     never asks the time, and on whenever the session requests timestamps,
     because whisper's unaligned segment boundaries are quantised to whole
     seconds.
+
+    ``condition_on_previous_text`` and ``vad_filter`` are the per-model batch
+    decode policy: the inference snaps ship it as MODEL_BATCH_* environment
+    in each models/*/model.yaml, and the engine scripts map it to the server
+    flags. The defaults are the small-model measured choice - dropping the
+    conditioning cost 0.20 pp WER on small for nothing, and VAD cost
+    accuracy on base (T71).
+
+    The large weights flip both. Measured 2026-10-01 (RTX 4080 Laptop, the
+    balanced corpus plus its 5 min long-form clip, batch mode, fp16): with
+    conditioning kept, a silence-born repeated phrase is chained into the
+    next window's prompt and the decode loops - large-v3-turbo reached
+    80.6% WER on the long-form clip (551 inserted words, "One or two of the
+    musicians from the hall." x30) and large-v3 571.8% on a single 15 s
+    clip. condition_on_previous_text=False removes the fuel (long-form
+    1.9%); vad_filter=True removes the trigger and the boilerplate tail the
+    bare fix leaves behind ("Thank you."), for pooled 2.26%/2.65% WER
+    (turbo/large-v3) against 2.38%/2.99% without it. vad_filter alone is an
+    accelerant, not a fix: stripping the silence lengthens the conditioning
+    chain and the long-form loop got worse (121.8% turbo, 38.2% large-v3).
+    The streaming path never produced a loop and keeps its own options.
     """
     options: dict[str, object] = {
         "language": _iso639_1(language),
         "initial_prompt": prompt,
         "log_prob_threshold": _LOG_PROB_THRESHOLD,
         "temperature": list(_TEMPERATURE_LADDER),
+        "condition_on_previous_text": condition_on_previous_text,
+        "vad_filter": vad_filter,
     }
     if word_timestamps:
         options["word_timestamps"] = True
@@ -236,6 +265,10 @@ class FasterWhisperAdapter:
         stream_cadence_s: float = STREAM_CADENCE_S,
         stream_window_cap_s: float = STREAM_WINDOW_CAP_S,
         stream_beam_size: int = STREAM_BEAM_SIZE,  # 5 ≈ batch quality, 1 ≈ 5× cheaper
+        # Per-model batch decode policy - see batch_decode_options for why
+        # the large weights want False/True here and the small ones True/False.
+        batch_condition_on_previous_text: bool = True,
+        batch_vad_filter: bool = False,
     ) -> None:
         self._model_size = model_size
         self._device = device
@@ -245,6 +278,8 @@ class FasterWhisperAdapter:
         self._stream_cadence_s = stream_cadence_s
         self._stream_window_cap_s = stream_window_cap_s
         self._stream_beam_size = stream_beam_size
+        self._batch_condition_on_previous_text = batch_condition_on_previous_text
+        self._batch_vad_filter = batch_vad_filter
         self._model: Any | None = None
         self._model_lock = asyncio.Lock()
 
@@ -491,6 +526,8 @@ class FasterWhisperAdapter:
                 language,
                 list(context) if decoded else config.prompt,
                 word_timestamps=word_timestamps,
+                condition_on_previous_text=self._batch_condition_on_previous_text,
+                vad_filter=self._batch_vad_filter,
             )
             segments, info = model.transcribe(samples, **options)
             region.clear()

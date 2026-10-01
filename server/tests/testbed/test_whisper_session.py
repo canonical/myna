@@ -242,6 +242,31 @@ async def test_region_subtags_are_dropped_for_the_decoder():
     assert adapter._model.calls[0]["language"] == "en"
 
 
+async def test_batch_decode_policy_defaults_reach_the_decoder():
+    """condition_on_previous_text/vad_filter are explicit in the batch decode:
+    the small-model policy (conditioning kept, no VAD) is the default."""
+    adapter = adapter_with(_Segment(" hi"))
+
+    await run_session(adapter)
+
+    assert adapter._model.calls[0]["condition_on_previous_text"] is True
+    assert adapter._model.calls[0]["vad_filter"] is False
+
+
+async def test_batch_decode_policy_override_reaches_the_decoder():
+    """The large models' model.yaml policy (no conditioning, VAD on - they
+    loop otherwise) must reach faster-whisper unaltered."""
+    adapter = FasterWhisperAdapter(
+        "tiny", batch_condition_on_previous_text=False, batch_vad_filter=True
+    )
+    adapter._model = _FakeWhisperModel(_Segment(" hi"))
+
+    await run_session(adapter)
+
+    assert adapter._model.calls[0]["condition_on_previous_text"] is False
+    assert adapter._model.calls[0]["vad_filter"] is True
+
+
 async def test_a_failed_decode_is_reported_as_an_error_not_a_crash():
     class _Boom:
         def transcribe(self, samples, **kwargs):
