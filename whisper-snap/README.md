@@ -77,7 +77,7 @@ T17. Unconfined clients keep using the socket path directly.
 ## Model selection
 
 ```shell
-myna-whisper.whisper list-models               # tiny / base / small
+myna-whisper.whisper list-models               # tiny / base / small (+ large-v3, large-v3-turbo on the nvidia-gpu engine)
 sudo myna-whisper.whisper use-model base       # installs the model component, restarts server
 myna-whisper.whisper show-engine               # active engine + model options
 ```
@@ -88,7 +88,7 @@ snap revision); nothing is fetched from the network at runtime.
 ## Compute precision
 
 `show-model` reports the precision of the packaged CTranslate2 weights. All
-three model components currently contain FP16 weights. Runtime precision is a
+five model components currently contain FP16 weights. Runtime precision is a
 separate engine setting:
 
 ```shell

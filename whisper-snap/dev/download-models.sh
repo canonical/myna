@@ -3,10 +3,11 @@
 # ship them as snap model components (see snapcraft.yaml `model-components`
 # part and components/).
 #
-# Weights are Systran/faster-whisper-* (MIT) — redistributable as components.
-# Output dirs are gitignored; run this before packing.
+# Weights are CTranslate2 conversions of OpenAI Whisper (MIT),
+# redistributable as components. Output dirs are gitignored; run this before
+# packing.
 #
-#   ./dev/download-models.sh                          # tiny base small
+#   ./dev/download-models.sh                          # all five models
 #   ./dev/download-models.sh small                    # just one
 #   MYNA_MODEL_SRC=~/path/to/models ./dev/download-models.sh small  # reuse a
 #       # local copy (hardlinked in, no download) if it has model-<size>-ct2/
@@ -19,11 +20,22 @@ dest="$snap_dir/components"
 . "$repo_root/dev/model-pin.sh"
 
 # Upstream revisions, pinned per size — see dev/model-pin.sh for why, and for
-# what the UPSTREAM_REVISION stamp in each staged directory is doing.
+# what the UPSTREAM_REVISION stamp in each staged directory is doing. Repos
+# are named explicitly because they are not all Systran: the large-v3-turbo
+# CT2 conversion Systran never published comes from dropbox-dash.
+declare -A REPOS=(
+    [tiny]=Systran/faster-whisper-tiny
+    [base]=Systran/faster-whisper-base
+    [small]=Systran/faster-whisper-small
+    [large-v3]=Systran/faster-whisper-large-v3
+    [large-v3-turbo]=dropbox-dash/faster-whisper-large-v3-turbo
+)
 declare -A REVISIONS=(
     [tiny]=d90ca5fe260221311c53c58e660288d3deb8d356
     [base]=ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66
     [small]=536b0662742c02347bc0e980a01041f333bce120
+    [large-v3]=edaa852ec7e145841d8ffdb056a99866b5f0a478
+    [large-v3-turbo]=0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf
 )
 
 # Reuse an already-downloaded model tree if MYNA_MODEL_SRC points at one
@@ -33,13 +45,17 @@ declare -A REVISIONS=(
 # MYNA_MODEL_SRC is the only thing that saves the bytes across checkouts.
 src_root="${MYNA_MODEL_SRC:-}"
 
-models=("${@:-tiny base small}")
+models=("${@:-tiny base small large-v3 large-v3-turbo}")
 # shellcheck disable=SC2128  # intentional word-split of the default set
 read -r -a models <<<"${models[*]}"
 
 for name in "${models[@]}"; do
     rev="${REVISIONS[$name]:-}"
-    [ -n "$rev" ] || { echo "error: no pinned revision for model-${name}" >&2; exit 1; }
+    repo="${REPOS[$name]:-}"
+    if [ -z "$rev" ] || [ -z "$repo" ]; then
+        echo "error: no pinned revision for model-${name}" >&2
+        exit 1
+    fi
 
     out="$dest/model-${name}-ct2"
     if [ -f "$out/model.bin" ]; then
@@ -68,8 +84,8 @@ for name in "${models[@]}"; do
         echo "       (or set MYNA_MODEL_SRC to a directory holding model-${name}-ct2/)" >&2
         exit 1
     fi
-    echo "model-${name}: downloading Systran/faster-whisper-${name}@${rev:0:12} -> $out"
-    hf download "Systran/faster-whisper-${name}" --revision "$rev" --local-dir "$out"
+    echo "model-${name}: downloading ${repo}@${rev:0:12} -> $out"
+    hf download "$repo" --revision "$rev" --local-dir "$out"
     pin_stamp "$out" "$rev"
 done
 

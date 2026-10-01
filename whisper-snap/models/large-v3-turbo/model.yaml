@@ -1,0 +1,20 @@
+name: large-v3-turbo
+description: Whisper large-v3-turbo (809M params) - near-large accuracy at ~4x the speed, GPU-tier weights
+model-card-url: https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo
+format: CTranslate2
+quantization: float16
+capabilities:
+  - realtime-transcription
+disk-size: 1.7G
+components:
+  - model-large-v3-turbo
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-large-v3-turbo
+  # Runtime compute policy; the packaged artifact above remains float16.
+  # Measured 2026-10-01 on corpus/english/manifest-balanced.json (RTX 4080
+  # Laptop, nvidia-gpu engine): streaming fp16 2.61% WER @ 12x, 2.4G VRAM;
+  # int8_float16 2.54% @ 14x, 1.4G VRAM. Batch mode hallucinates hard on
+  # the ~5min long-form clip (repetition loops: 80.6% WER fp16, 62.7%
+  # int8_float16) - turbo's 4 decoder layers loop without VAD. Streaming
+  # is unaffected; float16 stays the default while batch is shipped.
+  - MODEL_COMPUTE_TYPE=float16

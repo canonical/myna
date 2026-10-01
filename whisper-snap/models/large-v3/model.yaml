@@ -1,0 +1,20 @@
+name: large-v3
+description: Whisper large-v3 (1550M params) - highest accuracy, GPU-tier weights
+model-card-url: https://huggingface.co/Systran/faster-whisper-large-v3
+format: CTranslate2
+quantization: float16
+capabilities:
+  - realtime-transcription
+disk-size: 3.1G
+components:
+  - model-large-v3
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-large-v3
+  # Runtime compute policy; the packaged artifact above remains float16.
+  # Measured 2026-10-01 on corpus/english/manifest-balanced.json (RTX 4080
+  # Laptop, nvidia-gpu engine): streaming fp16 2.57% WER @ 5.8x, 5.3G VRAM;
+  # int8_float16 2.46% @ 6.5x, 3.6G VRAM. Batch mode degrades on the ~5min
+  # long-form clip (repetition loops, worst under int8_float16: 35.9% vs
+  # 5.6% fp16) - an upstream no-VAD pathology, not a precision choice.
+  # float16 stays the default while batch is a shipped mode.
+  - MODEL_COMPUTE_TYPE=float16

@@ -4,11 +4,17 @@ Third-party notices for the myna-whisper snap
 Model components
 ----------------
 
-model-tiny, model-base, model-small: CTranslate2 conversions of OpenAI's
-Whisper tiny, base and small, published as Systran/faster-whisper-tiny,
-Systran/faster-whisper-base and Systran/faster-whisper-small on Hugging Face
-(https://huggingface.co/Systran) under the MIT License. The original Whisper
-weights are Copyright (c) 2022 OpenAI, MIT License
+model-tiny, model-base, model-small, model-large-v3: CTranslate2 conversions
+of OpenAI's Whisper tiny, base, small and large-v3, published as
+Systran/faster-whisper-tiny, Systran/faster-whisper-base,
+Systran/faster-whisper-small and Systran/faster-whisper-large-v3 on Hugging
+Face (https://huggingface.co/Systran) under the MIT License.
+
+model-large-v3-turbo: CTranslate2 conversion of OpenAI's Whisper
+large-v3-turbo, published as dropbox-dash/faster-whisper-large-v3-turbo on
+Hugging Face (https://huggingface.co/dropbox-dash) under the MIT License.
+
+The original Whisper weights are Copyright (c) 2022 OpenAI, MIT License
 (https://github.com/openai/whisper). No model was retrained; the conversion
 changes the storage format only.
 

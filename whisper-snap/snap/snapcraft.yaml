@@ -170,6 +170,8 @@ parts:
       "model-tiny-ct2/*": (component/model-tiny)/
       "model-base-ct2/*": (component/model-base)/
       "model-small-ct2/*": (component/model-small)/
+      "model-large-v3-ct2/*": (component/model-large-v3)/
+      "model-large-v3-turbo-ct2/*": (component/model-large-v3-turbo)/
     prime:
       - -*
 
@@ -235,6 +237,14 @@ components:
     type: standard
     summary: Whisper small CTranslate2 weights
     description: faster-whisper (CTranslate2) conversion of Whisper small (MIT).
+  model-large-v3:
+    type: standard
+    summary: Whisper large-v3 CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper large-v3 (MIT).
+  model-large-v3-turbo:
+    type: standard
+    summary: Whisper large-v3-turbo CTranslate2 weights
+    description: faster-whisper (CTranslate2) conversion of Whisper large-v3-turbo (MIT).
   gpu-nvidia:
     type: standard
     summary: NVIDIA GPU runtime (faster-whisper on CUDA CTranslate2 + cuBLAS)

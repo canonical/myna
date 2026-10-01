@@ -22,9 +22,11 @@ model:
     - tiny
     - base
     - small
-    # Larger weights are GPU-tier candidates (T12 will size them); add the
-    # components + model.yaml entries once measured: medium, large-v3,
-    # distil-large-v3.
+    - large-v3
+    - large-v3-turbo
+    # The large weights are GPU-tier only: they are not offered on the cpu
+    # engine. medium and distil-large-v3 remain candidates pending
+    # measurement (T12).
 
 configurations:
   # CTranslate2 compute type on GPU. float16 is the usual default; int8_float16
