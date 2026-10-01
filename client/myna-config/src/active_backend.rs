@@ -304,18 +304,30 @@ impl From<String> for SetupError {
     }
 }
 
+/// How setting up left the daemon.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Settled {
+    /// Restarted, so the caller waits for it to come back.
+    Restarted,
+    /// Left running as it was.
+    LeftRunning,
+}
+
 /// Leave dictation running on a backend. With none connected, switch to
 /// `preferred`, or the first discovered backend without it; the switch
 /// restarts Myna. With one connected, only restart, because the daemon may
-/// have started before the backend was installed. `report` hears each stage
-/// as it starts; a wait cancelled before it ends changes nothing.
+/// have started before the backend was installed, unless `keep_running`:
+/// the daemon has a shortcut dialog up, and a restart would leave that
+/// dialog on screen with nobody waiting for its answer. `report` hears each
+/// stage as it starts; a wait cancelled before it ends changes nothing.
 pub async fn ensure_backend_active(
     repository: &dyn BackendRepository,
     configurator: &dyn SystemConfigurator,
     preferred: &str,
+    keep_running: bool,
     wait: &SnapdWait<'_>,
     report: &dyn Fn(SetupStage),
-) -> Result<(), SetupError> {
+) -> Result<Settled, SetupError> {
     report(SetupStage::Checking);
     let mut snapshot = repository
         .refresh(CancellationToken::new())
@@ -337,10 +349,14 @@ pub async fn ensure_backend_active(
             .map_err(|error| error.message().to_owned())?;
     }
     if let ActiveBackendState::Connected(_) = snapshot.active_state() {
+        if keep_running {
+            return Ok(Settled::LeftRunning);
+        }
         report(SetupStage::Restarting);
         return configurator
             .restart_myna(CancellationToken::new())
             .await
+            .map(|()| Settled::Restarted)
             .map_err(|error| match error {
                 SystemConfiguratorError::Cancelled => SetupError::Cancelled,
                 error => SetupError::Step(error),
@@ -364,7 +380,8 @@ pub async fn ensure_backend_active(
     })?;
     report(SetupStage::Connecting(selected.snap_name().to_owned()));
     match execute_switch(&plan, configurator, repository, CancellationToken::new()).await {
-        SwitchOutcome::Applied { .. } | SwitchOutcome::Noop { .. } => Ok(()),
+        SwitchOutcome::Applied { .. } => Ok(Settled::Restarted),
+        SwitchOutcome::Noop { .. } => Ok(Settled::LeftRunning),
         SwitchOutcome::Failed { error, .. } => Err(SetupError::Step(error)),
         SwitchOutcome::FinalDiscoveryFailed { error, .. } => {
             Err(SetupError::Failed(error.message().to_owned()))

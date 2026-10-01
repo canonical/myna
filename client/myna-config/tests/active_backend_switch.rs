@@ -8,7 +8,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use myna_config::active_backend::{
     ensure_backend_active, execute_switch, myna_restart_request, ActiveBackendController,
-    PrepareSwitchError, SetupError, SetupStage, SnapdWait, SwitchNotice, SwitchOutcome, SwitchPlan,
+    PrepareSwitchError, Settled, SetupError, SetupStage, SnapdWait, SwitchNotice, SwitchOutcome,
+    SwitchPlan,
 };
 use myna_config::backend_apply::ApplyPreview;
 use myna_config::command::{CancellationToken, CommandRequest};
@@ -808,17 +809,41 @@ fn an_auto_connected_backend_is_only_restarted() {
     let repository = FakeRepository::new([Ok(connections(&["myna-parakeet"], &["myna-parakeet"]))]);
     let configurator = FakeConfigurator::returning(Ok(vec![]));
 
-    block_on(ensure_backend_active(
+    let settled = block_on(ensure_backend_active(
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
     .unwrap();
 
+    assert_eq!(settled, Settled::Restarted);
     assert!(configurator.calls().is_empty());
     assert_eq!(*configurator.restarts.borrow(), 1);
+}
+
+/// The daemon is holding a shortcut dialog up: a restart would orphan that
+/// dialog and fail the bind waiting on it, so setting up leaves it running.
+#[test]
+fn a_daemon_with_a_shortcut_dialog_up_is_left_running() {
+    let repository = FakeRepository::new([Ok(connections(&["myna-parakeet"], &["myna-parakeet"]))]);
+    let configurator = FakeConfigurator::returning(Ok(vec![]));
+
+    let settled = block_on(ensure_backend_active(
+        &repository,
+        &configurator,
+        "myna-parakeet",
+        true,
+        &no_wait(),
+        &unheard,
+    ))
+    .unwrap();
+
+    assert_eq!(settled, Settled::LeftRunning);
+    assert!(configurator.calls().is_empty());
+    assert_eq!(*configurator.restarts.borrow(), 0);
 }
 
 #[test]
@@ -833,6 +858,7 @@ fn a_failed_restart_is_reported() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -855,6 +881,7 @@ fn an_unconnected_machine_switches_to_the_preferred_backend() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -876,6 +903,7 @@ fn without_the_preferred_backend_the_first_discovered_one_is_used() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -894,6 +922,7 @@ fn no_backend_and_failed_discovery_are_errors_without_privilege() {
             &repository,
             &configurator,
             "myna-parakeet",
+            false,
             &no_wait(),
             &unheard,
         ))
@@ -928,6 +957,7 @@ fn a_failed_or_contradicted_switch_is_reported() {
             &repository,
             &denied,
             "myna-parakeet",
+            false,
             &no_wait(),
             &unheard,
         )),
@@ -941,6 +971,7 @@ fn a_failed_or_contradicted_switch_is_reported() {
         &repository,
         &contradicted,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -962,6 +993,7 @@ fn a_switch_lost_to_discovery_or_cancellation_is_reported() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -978,6 +1010,7 @@ fn a_switch_lost_to_discovery_or_cancellation_is_reported() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -1025,6 +1058,7 @@ fn an_auto_connection_is_restarted_only_once_its_change_is_done() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &wait,
         &unheard,
     ))
@@ -1061,6 +1095,7 @@ fn every_stage_is_reported_as_it_starts() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &|stage| stages.borrow_mut().push(stage),
     ))
@@ -1094,6 +1129,7 @@ fn a_connected_backend_is_reported_as_restarting() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &|stage| stages.borrow_mut().push(stage),
     ))
@@ -1127,6 +1163,7 @@ fn a_cancelled_wait_changes_nothing() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &wait,
         &unheard,
     ))
@@ -1152,6 +1189,7 @@ fn a_connection_its_change_makes_meanwhile_is_not_made_again() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -1178,6 +1216,7 @@ fn changes_to_other_snaps_are_not_waited_for() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &wait,
         &unheard,
     ))
@@ -1196,6 +1235,7 @@ fn a_change_that_outlasts_the_wait_is_reported_without_a_restart() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))
@@ -1218,6 +1258,7 @@ fn unreadable_changes_are_reported_without_a_restart() {
         &repository,
         &configurator,
         "myna-parakeet",
+        false,
         &no_wait(),
         &unheard,
     ))

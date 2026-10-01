@@ -16,7 +16,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::active_backend::{ensure_backend_active, SetupError, SetupStage, SnapdWait};
+use crate::active_backend::{ensure_backend_active, Settled, SetupError, SetupStage, SnapdWait};
 use crate::adapters::shell_extensions::GnomeShellExtensions;
 use crate::adapters::snap_backend::SnapBackendRepository;
 use crate::adapters::system_configurator::PkexecSystemConfigurator;
@@ -177,8 +177,10 @@ impl OnboardingUi {
             crate::shortcut_ui::Surface::Onboarding,
             Box::new({
                 let description = shortcut_page.description();
-                move |state, path| {
-                    description.set_label(&crate::shortcut_ui::onboarding_description(state, path))
+                move |state, path, hint| {
+                    description.set_label(&crate::shortcut_ui::onboarding_description(
+                        state, path, hint,
+                    ))
                 }
             }),
         );
@@ -611,6 +613,7 @@ impl OnboardingUi {
         let configurator = self.configurator.clone();
         let interval = self.poll_interval.get();
         let previous_owner = self.shortcut.owner().flatten();
+        let keep_running = self.shortcut.binding();
         glib::spawn_future_local(async move {
             let sleep = |interval| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
                 Box::pin(glib::timeout_future(interval))
@@ -635,18 +638,22 @@ impl OnboardingUi {
                 repository.as_ref(),
                 configurator.as_ref(),
                 RECOMMENDED_BACKEND_SNAP,
+                keep_running,
                 &wait,
                 &report,
             )
             .await;
-            if outcome.is_ok() {
+            if outcome == Ok(Settled::Restarted) {
                 wait_for_daemon(&ui, previous_owner).await;
             }
             let Some(ui) = ui.upgrade() else {
                 return;
             };
             match &outcome {
-                Ok(()) => ui.log("setup: done"),
+                Ok(Settled::LeftRunning) if keep_running => {
+                    ui.log("setup: done; the daemon keeps running under its shortcut dialog")
+                }
+                Ok(_) => ui.log("setup: done"),
                 Err(SetupError::Cancelled) => ui.log("setup: cancelled"),
                 Err(error) => ui.log(&format!("setup: failed: {error}")),
             }
@@ -662,9 +669,9 @@ impl OnboardingUi {
             // Back during the first second leaves the setup to finish there.
             let here = ui.step.get() == Step::Components;
             match outcome {
-                Ok(()) if !here => {}
-                Ok(()) if pause => ui.pause_before(next),
-                Ok(()) => ui.move_on(next),
+                Ok(_) if !here => {}
+                Ok(_) if pause => ui.pause_before(next),
+                Ok(_) => ui.move_on(next),
                 // Dismissing the prompt was the user's answer; Next asks again.
                 Err(SetupError::Cancelled) => {}
                 Err(SetupError::Failed(message)) => ui.announce_setup_failure(message),
@@ -769,7 +776,12 @@ impl OnboardingUi {
                 &gettextrs::gettext("Close Myna Settings."),
             )]);
         }
-        let held = step == Step::Components && (self.busy.get() || self.running.get());
+        let held = match step {
+            Step::Components => self.busy.get() || self.running.get(),
+            // Done under the portal's open dialog would leave it orphaned.
+            Step::Shortcut => self.shortcut.binding(),
+            Step::Welcome => false,
+        };
         set_class(
             &forward,
             "suggested-action",

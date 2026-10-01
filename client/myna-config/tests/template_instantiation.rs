@@ -273,7 +273,7 @@ fn the_shortcut_row_binds_through_the_daemon_and_shows_the_key() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in [
         "shortcut-unbound: offered set-up",
-        "shortcut-refused: error dialog",
+        "shortcut-refused: toast, report behind Details",
         "shortcut-bound: Super+J",
     ] {
         assert!(stdout.contains(line), "shortcut probe missing: {line}");
@@ -366,6 +366,12 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-default: left a key in use",
         "onboarding-default: portal dialog raised on arrival",
         "onboarding-keys: set up leads while no key is bound",
+        "onboarding-modal: one parented dialog holds set up and Done",
+        "onboarding-modal: another window's dialog holds the step without an error",
+        "onboarding-modal: a dialog left open lets set up try again",
+        "onboarding-modal: a cancelled dialog is no error",
+        "onboarding-modal: a failed bind toasts with Details",
+        "onboarding-modal: closing under the dialog releases it",
         "onboarding-keys: Super+J under the portal",
         "onboarding-keys: Done leads once a key is bound",
         "onboarding-keys: follows a portal rebind",

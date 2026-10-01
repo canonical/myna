@@ -26,6 +26,8 @@ gio.workspace = true
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 libc = "0.2"
 gtk4 = { version = "0.10", features = ["v4_14"] }
+gdk4-wayland = { version = "0.10", features = ["v4_12"] }
+gdk4-x11 = "0.10"
 libadwaita = { version = "0.8", features = ["v1_5"] }
 myna-core = { path = "../myna-core" }
 serde = { workspace = true, features = ["derive"] }

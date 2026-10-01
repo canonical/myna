@@ -219,6 +219,14 @@ setting up again. Both snaps share a publisher, so
 snapd's base declaration auto-connects `myna:backend` to the new backend's
 slot and the step only restarts.
 
+That restart is skipped while a shortcut dialog is up (the daemon's
+`ShortcutDialog`, or a bind of this process still waiting): a
+reopened wizard moving past the step while the Myna page row's dialog was up
+killed the daemon under it, so the row's bind failed with D-Bus `NoReply` and
+the dialog stayed on screen with nobody waiting for it (resolute, 2026-10-01).
+A daemon with a dialog up is already running, and the wizard moves on without
+waiting for a new owner. A switch that connects a backend still restarts.
+
 Setting up ends once the restarted daemon has claimed
 `com.canonical.Myna.Dictation` again, a new owner of the name (0.4 s after
 `systemctl --user restart` returns on Noble), watched on the shortcut step's
@@ -296,24 +304,68 @@ as bound. A bound key reads "You can trigger Dictation anytime by using the
 keyboard shortcut:" over its key caps on the last step; the other states say
 what is missing instead.
 
-**Portal.** Set up shortcut calls `BindShortcut("")`: the daemon offers `LOGO+j`
-(Super+J) to the portal's dialog, because the portal files a binding under the
-caller's app id and grants one only through that dialog. The description
-(`Press <Super>j`) becomes key caps. Change shortcut opens
+**Portal.** Set up shortcut asks the daemon to bind with no preferred key: it
+offers `LOGO+j` (Super+J) to the portal's dialog, because the portal files a
+binding under the caller's app id and grants one only through that dialog. The
+description (`Press <Super>j`) becomes key caps. Change shortcut opens
 `gnome-control-center applications myna_myna`: GlobalShortcuts 1 has no
-`ConfigureShortcuts` and no unbind. A refused bind shows the error dialog.
+`ConfigureShortcuts` and no unbind. A bind the user asked for that fails
+shows a "Could not set up the shortcut" toast whose Details open the daemon's
+own words under a plain summary, as the other failure toasts do. Cancelling the
+dialog is not a failure and shows nothing: GNOME answers Cancel with the
+portal's "other" response, which ashpd words "Portal request didn't succeed
+with no information", so that reply (and a "cancelled" one) reads as declined;
+a backend that answers "other" for a real fault is silent too, and the daemon's
+log keeps its words.
 The portal lists the binding under the name the daemon gives it,
 "Dictation (tap to start or stop)" (translated in `myna-desktop`). The portal
 files the grant by the shortcut id `dictate` and keeps the name it was granted
 with, so renaming it neither drops nor re-asks an existing grant (checked on
 resolute, both ways between the old and new name).
 
-The dialog belongs to the daemon, which owns the portal session, and is raised
-with no parent window: the wizard is another process with no handle to lend
-it. GNOME still centres it over the focused wizard and gives it focus
-(resolute, 2026-09-30). Until a key lands the step holds no room for key caps,
-so the sentence leads straight to Set up shortcut; the centred column grows by
-one row of caps when a key lands, mostly while the portal's dialog covers it.
+The dialog belongs to the daemon, which owns the portal session, so the wizard
+lends it its window: it exports its toplevel (an xdg-foreign handle on Wayland,
+the XID on X11) and calls `BindShortcutWithParent`, which makes the dialog
+modal to the wizard instead of a window that gets lost behind it. A daemon
+without that method answers `UnknownMethod` and the wizard falls back to
+`BindShortcut`, as before. An export the compositor never answers falls back
+to no parent after 2 s.
+
+GNOME's dialog only ever closes on the user's answer, so the daemon raises one
+at a time and publishes `ShortcutDialog` while it is up. Every surface follows
+that property: Set up shortcut (or Change) and Done are insensitive while it is
+true, whichever window raised the dialog. A step that did not raise it says
+why ("The desktop's dialog to confirm a keyboard shortcut is already open.
+Answer it to continue."); the Myna page row reads "Waiting for the desktop's
+shortcut dialog" whichever surface raised it, since an insensitive Set up
+beside "Not set up" reads as broken. Arriving on the step under such a dialog raises
+nothing, and a bind that loses the race to it is refused by the daemon and
+reads as the same wait, not an error. Before this, waiting it out or reopening
+the wizard stacked a second and third dialog (resolute, 2026-10-01).
+Closing the wizard under its own dialog takes the dialog down with it, since a
+parented dialog does not outlive its parent, and the bind ends as dismissed;
+an unparented one (an older daemon's) stays up.
+
+The surfaces of one Myna Settings process (the wizard and the Myna page row)
+also share their own binds in flight, so either holds while the other's
+dialog is up even when the daemon publishes nothing. A surface closed while its
+bind waits still releases that hold when the bind ends.
+
+**A dialog left open.** A daemon without `ShortcutDialog` gives up on its
+dialog after 120 s and answers "shortcut bind unanswered", and a daemon that
+exits under its dialog never answers (`NoReply`); GNOME keeps the dialog up
+either way, and nothing says when it is answered. No error shows: every
+surface goes back to Set up, sensitive, the step saying "If the desktop's
+dialog to confirm a keyboard shortcut is no longer open, set up the shortcut
+again." and arriving on it raising nothing by itself. A key landing or a new
+bind clears that. Holding the button instead left a user who cancelled the
+dialog at a dead end until they went Back. A closed and reopened Myna
+Settings can still stack dialogs against an older daemon: only the daemon
+sees both processes.
+
+Until a key lands the step holds no room for key caps, so the sentence leads
+straight to Set up shortcut; the centred column grows by one row of caps when a
+key lands, mostly while the portal's dialog covers it.
 
 **Control (Noble).** The key is a GNOME custom shortcut to
 `/snap/bin/myna.toggle`, the entry `myna.install-shortcut` writes; this
@@ -323,8 +375,9 @@ Myna's entry already has a key or another shortcut holds Super+J: a key the
 user chose is never replaced silently. Under the portal only the portal's own
 dialog grants a key, so arriving on the shortcut step with none bound raises
 it, offering Super+J, over the step it concerns; the brief's "set the default
-shortcut" cannot be silent there. A dialog dismissed there is the user's
-answer and is not reported, unlike one raised by the step's button. While
+shortcut" cannot be silent there. Dismissing that dialog is the user's
+answer and is not reported, nor is a failure of that bind, unlike one the
+step's button raised. While
 no key is bound, Set up shortcut is the step's suggested action and Done is
 plain, so finishing with nothing to trigger dictation is not the obvious
 path. The key caps follow the key live on either path: the daemon's

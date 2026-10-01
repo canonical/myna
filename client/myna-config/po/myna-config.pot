@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-01 14:55+0100\n"
+"POT-Creation-Date: 2026-10-01 18:23+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1476
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1479
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -26,7 +26,7 @@ msgstr ""
 msgid "Set up Dictation"
 msgstr ""
 
-#: data/diagnostics-page.blp:20 data/myna-page.blp:26 src/shortcut_ui.rs:229
+#: data/diagnostics-page.blp:20 data/myna-page.blp:26 src/shortcut_ui.rs:291
 msgid "Set up"
 msgstr ""
 
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:3876
+#: src/app.rs:4225
 msgid "Installed"
 msgstr ""
 
@@ -103,8 +103,8 @@ msgstr ""
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:39 data/myna-page.blp:38 src/app.rs:1471
-#: src/app.rs:3161 src/app.rs:3525 src/backend_apply.rs:415
+#: data/main-window.blp:39 data/myna-page.blp:38 src/app.rs:1474
+#: src/app.rs:3510 src/app.rs:3874 src/backend_apply.rs:415
 #: src/diagnostics.rs:542 src/presentation.rs:169
 msgid "Model"
 msgstr ""
@@ -129,36 +129,36 @@ msgstr ""
 msgid "Press to start and stop"
 msgstr ""
 
-#: data/myna-page.blp:34 data/onboarding-window.blp:7 src/app.rs:1830
-#: src/onboarding_ui.rs:1216 src/shortcut_ui.rs:354
+#: data/myna-page.blp:34 data/onboarding-window.blp:7 src/app.rs:1908
+#: src/onboarding_ui.rs:1228 src/shortcut_ui.rs:414
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:3828 src/onboarding_ui.rs:1217
+#: data/onboarding-components.blp:18 src/app.rs:4177 src/onboarding_ui.rs:1229
 msgid "Install components"
 msgstr ""
 
-#: data/onboarding-components.blp:27 src/app.rs:3832
+#: data/onboarding-components.blp:27 src/app.rs:4181
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
 
-#: data/onboarding-components.blp:44 src/app.rs:490 src/app.rs:3898
-#: src/app.rs:3963 src/app.rs:4344
+#: data/onboarding-components.blp:44 src/app.rs:490 src/app.rs:4247
+#: src/app.rs:4312 src/app.rs:4693
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:3887
+#: data/onboarding-components.blp:52 src/app.rs:4236
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:4561 src/onboarding_ui.rs:1218
+#: data/onboarding-shortcut.blp:18 src/app.rs:4910 src/onboarding_ui.rs:1230
 msgid "How to dictate"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:38 src/shortcut_ui.rs:227
+#: data/onboarding-shortcut.blp:38 src/shortcut_ui.rs:289
 msgid "Set up shortcut"
 msgstr ""
 
@@ -166,7 +166,7 @@ msgstr ""
 msgid "Dictation runs locally, with no data leaving your computer."
 msgstr ""
 
-#: data/onboarding-window.blp:24 src/app.rs:413 src/onboarding_ui.rs:762
+#: data/onboarding-window.blp:24 src/app.rs:413 src/onboarding_ui.rs:769
 msgid "Next"
 msgstr ""
 
@@ -182,7 +182,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: data/operation-error-dialog.blp:34 src/app.rs:4040
+#: data/operation-error-dialog.blp:34 src/app.rs:4389
 msgid "Copy Details"
 msgstr ""
 
@@ -202,11 +202,11 @@ msgstr ""
 msgid "Press Escape to cancel."
 msgstr ""
 
-#: data/status-page.blp:8 src/app.rs:1466 src/app.rs:4754
+#: data/status-page.blp:8 src/app.rs:1469 src/app.rs:5103
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1467 src/app.rs:4755
+#: data/status-page.blp:9 src/app.rs:1470 src/app.rs:5104
 msgid "Reading the installed settings schema…"
 msgstr ""
 
@@ -214,137 +214,159 @@ msgstr ""
 msgid "translator-credits"
 msgstr ""
 
-#: src/app.rs:1184 src/onboarding_ui.rs:767
+#: src/app.rs:1184 src/onboarding_ui.rs:774
 msgid "Done"
 msgstr ""
 
-#: src/app.rs:1472
+#: src/app.rs:1475
 msgid "Model details appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1477
+#: src/app.rs:1480
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:3199 src/backend_ui.rs:3617 src/model_family.rs:27
-msgid "Fastest and most accurate in its 25 languages"
+#: src/app.rs:2034 src/shortcut_ui.rs:694
+msgid ""
+"The desktop's dialog to confirm a keyboard shortcut is already open. Answer "
+"it to continue."
 msgstr ""
 
-#: src/app.rs:3203 src/backend_ui.rs:4143 src/model_family.rs:31
-msgid "Most languages, with uneven accuracy"
+#: src/app.rs:2095 src/shortcut_ui.rs:697
+msgid ""
+"If the desktop's dialog to confirm a keyboard shortcut is no longer open, "
+"set up the shortcut again."
 msgstr ""
 
-#: src/app.rs:3338 src/myna_settings.rs:104
-msgid "As you speak"
+#: src/app.rs:2178 src/app.rs:2562 src/shortcut_ui.rs:401
+#: src/shortcut_ui.rs:422 src/shortcut_ui.rs:475
+msgid "Could not set up the shortcut"
 msgstr ""
 
-#: src/app.rs:3339 src/myna_settings.rs:105
-msgid "When you stop"
-msgstr ""
-
-#: src/app.rs:3467 src/backend_ui.rs:702
-msgid "Changing to {model} failed"
-msgstr ""
-
-#: src/app.rs:3468 src/app.rs:3994 src/app.rs:4003 src/app.rs:4364
-#: src/app.rs:4656 src/app.rs:4662 src/backend_ui.rs:1272
-#: src/onboarding_ui.rs:552 src/ui/status_page.rs:70
+#: src/app.rs:2179 src/app.rs:2563 src/app.rs:3817 src/app.rs:4343
+#: src/app.rs:4352 src/app.rs:4713 src/app.rs:5005 src/app.rs:5011
+#: src/backend_ui.rs:1272 src/onboarding_ui.rs:554 src/shortcut_ui.rs:480
+#: src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
 
+#: src/app.rs:2589 src/shortcut_ui.rs:477
+msgid "The desktop did not set up a keyboard shortcut for Dictation."
+msgstr ""
+
+#: src/app.rs:3548 src/backend_ui.rs:3617 src/model_family.rs:27
+msgid "Fastest and most accurate in its 25 languages"
+msgstr ""
+
+#: src/app.rs:3552 src/backend_ui.rs:4143 src/model_family.rs:31
+msgid "Most languages, with uneven accuracy"
+msgstr ""
+
+#: src/app.rs:3687 src/myna_settings.rs:104
+msgid "As you speak"
+msgstr ""
+
+#: src/app.rs:3688 src/myna_settings.rs:105
+msgid "When you stop"
+msgstr ""
+
+#: src/app.rs:3816 src/backend_ui.rs:702
+msgid "Changing to {model} failed"
+msgstr ""
+
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle".
-#: src/app.rs:3574 src/backend_ui.rs:1656
+#: src/app.rs:3923 src/backend_ui.rs:1656
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:3575 src/presentation.rs:190
+#: src/app.rs:3924 src/presentation.rs:190
 msgid "Unload when idle"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
-#: src/app.rs:3866 src/onboarding_ui.rs:827
+#: src/app.rs:4215 src/onboarding_ui.rs:839
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:3995 src/onboarding_ui.rs:962
+#: src/app.rs:4344 src/onboarding_ui.rs:974
 msgid "Could not let Myna run in the background"
 msgstr ""
 
-#: src/app.rs:4025 src/app.rs:4167 src/backend_ui.rs:2351
+#: src/app.rs:4374 src/app.rs:4516 src/backend_ui.rs:2351
 msgid "Request:"
 msgstr ""
 
-#: src/app.rs:4026 src/app.rs:4168 src/backend_ui.rs:2357
+#: src/app.rs:4375 src/app.rs:4517 src/backend_ui.rs:2357
 msgid "HTTP status:"
 msgstr ""
 
-#: src/app.rs:4027 src/app.rs:4169 src/app.rs:4376 src/backend_ui.rs:2372
+#: src/app.rs:4376 src/app.rs:4518 src/app.rs:4725 src/backend_ui.rs:2372
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4090 src/onboarding_ui.rs:942
+#: src/app.rs:4439 src/onboarding_ui.rs:954
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4108 src/onboarding_ui.rs:943
+#: src/app.rs:4457 src/onboarding_ui.rs:955
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4119 src/app.rs:4180 src/app.rs:4262 src/onboarding_ui.rs:950
+#: src/app.rs:4468 src/app.rs:4529 src/app.rs:4611 src/onboarding_ui.rs:962
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4133 src/onboarding_ui.rs:944
+#: src/app.rs:4482 src/onboarding_ui.rs:956
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4147 src/onboarding_ui.rs:964
+#: src/app.rs:4496 src/onboarding_ui.rs:976
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4196 src/onboarding_ui.rs:945
+#: src/app.rs:4545 src/onboarding_ui.rs:957
 msgid "Enabling shell extension"
 msgstr ""
 
-#: src/app.rs:4362 src/onboarding_ui.rs:965
+#: src/app.rs:4711 src/onboarding_ui.rs:977
 msgid "Enabling the shell extension failed"
 msgstr ""
 
-#: src/app.rs:4375 src/backend_ui.rs:2364
+#: src/app.rs:4724 src/backend_ui.rs:2364
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:4576 src/shortcut_ui.rs:444
+#: src/app.rs:4925 src/shortcut_ui.rs:703
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:4655 src/onboarding_ui.rs:672 src/onboarding_ui.rs:679
-#: src/onboarding_ui.rs:877
+#: src/app.rs:5004 src/onboarding_ui.rs:679 src/onboarding_ui.rs:686
+#: src/onboarding_ui.rs:889
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:4693 src/onboarding_ui.rs:818
+#: src/app.rs:5042 src/onboarding_ui.rs:830
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:4759
+#: src/app.rs:5108
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:4760
+#: src/app.rs:5109
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:4780
+#: src/app.rs:5129
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:4781
+#: src/app.rs:5130
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:5200
+#: src/app.rs:5554
 msgid "Could not save the setting"
 msgstr ""
 
@@ -352,15 +374,15 @@ msgstr ""
 msgid "The change was cancelled."
 msgstr ""
 
-#: src/active_backend.rs:357
+#: src/active_backend.rs:373
 msgid "No model is connected."
 msgstr ""
 
-#: src/active_backend.rs:362
+#: src/active_backend.rs:378
 msgid "The model is not available to switch to."
 msgstr ""
 
-#: src/active_backend.rs:375
+#: src/active_backend.rs:392
 msgid "The model changed while it was being switched on. Try again."
 msgstr ""
 
@@ -840,131 +862,131 @@ msgctxt "service state"
 msgid "unknown"
 msgstr ""
 
-#: src/onboarding_ui.rs:674
+#: src/onboarding_ui.rs:681
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
 
-#: src/onboarding_ui.rs:764
+#: src/onboarding_ui.rs:771
 msgid "Continue to the next onboarding step."
 msgstr ""
 
-#: src/onboarding_ui.rs:769
+#: src/onboarding_ui.rs:776
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:820
+#: src/onboarding_ui.rs:832
 msgid "Setup status unavailable. The log has the details."
 msgstr ""
 
-#: src/onboarding_ui.rs:963
+#: src/onboarding_ui.rs:975
 msgid "Installing the Dictation app failed"
 msgstr ""
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
-#: src/onboarding_ui.rs:1162
+#: src/onboarding_ui.rs:1174
 msgid "{megabytes} MB"
 msgstr ""
 
-#: src/onboarding_ui.rs:1170
+#: src/onboarding_ui.rs:1182
 msgid "Checking the installation"
 msgstr ""
 
-#: src/onboarding_ui.rs:1175
+#: src/onboarding_ui.rs:1187
 msgid "Waiting for other software changes to finish"
 msgstr ""
 
-#: src/onboarding_ui.rs:1177
+#: src/onboarding_ui.rs:1189
 msgid "Setting up speech-to-text model"
 msgstr ""
 
-#: src/onboarding_ui.rs:1178
+#: src/onboarding_ui.rs:1190
 msgid "Starting dictation"
 msgstr ""
 
-#: src/shortcut_ui.rs:226
+#: src/shortcut_ui.rs:288
 msgid "Change shortcut"
 msgstr ""
 
-#: src/shortcut_ui.rs:228
+#: src/shortcut_ui.rs:290
 msgid "Change"
 msgstr ""
 
-#: src/shortcut_ui.rs:233
+#: src/shortcut_ui.rs:295
 msgid "Press a different keyboard shortcut for dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:236
+#: src/shortcut_ui.rs:298
 msgid "Add a keyboard shortcut for dictation to the desktop."
 msgstr ""
 
-#: src/shortcut_ui.rs:239
+#: src/shortcut_ui.rs:301
 msgid ""
 "Open Myna in the desktop's Apps settings, where the dictation shortcut is "
 "changed."
 msgstr ""
 
-#: src/shortcut_ui.rs:242
+#: src/shortcut_ui.rs:304
 msgid "Open the desktop's dialog to confirm a keyboard shortcut for dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:293
+#: src/shortcut_ui.rs:355
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
 msgstr ""
 
-#: src/shortcut_ui.rs:315
+#: src/shortcut_ui.rs:377
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
 
-#: src/shortcut_ui.rs:320
+#: src/shortcut_ui.rs:382
 msgid "Replace Shortcut?"
 msgstr ""
 
-#: src/shortcut_ui.rs:321
+#: src/shortcut_ui.rs:383
 msgid "Cancel"
 msgstr ""
 
-#: src/shortcut_ui.rs:322
+#: src/shortcut_ui.rs:384
 msgid "Replace"
 msgstr ""
 
-#: src/shortcut_ui.rs:341 src/shortcut_ui.rs:362 src/shortcut_ui.rs:407
-msgid "Could not set up the shortcut"
-msgstr ""
-
-#: src/shortcut_ui.rs:423
+#: src/shortcut_ui.rs:529
 msgid "Could not open the desktop settings"
 msgstr ""
 
-#: src/shortcut_ui.rs:441
+#: src/shortcut_ui.rs:700
 msgid "Set up a keyboard shortcut to trigger Dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:447
+#: src/shortcut_ui.rs:706
 msgid ""
 "Set up a keyboard shortcut to trigger Dictation. You will be asked to "
 "confirm it."
 msgstr ""
 
-#: src/shortcut_ui.rs:450
+#: src/shortcut_ui.rs:709
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
 
-#: src/shortcut_ui.rs:453
+#: src/shortcut_ui.rs:712
 msgid ""
 "Dictation is triggered by the keyboard shortcut you chose the first time "
 "Myna asked for one. It is listed under Myna in the desktop's Apps settings."
 msgstr ""
 
-#: src/shortcut_ui.rs:462
+#: src/shortcut_ui.rs:721
+msgid "Waiting for the desktop's shortcut dialog"
+msgstr ""
+
+#: src/shortcut_ui.rs:724
 msgid "Not set up"
 msgstr ""
 
-#: src/shortcut_ui.rs:463
+#: src/shortcut_ui.rs:725
 msgid "Myna is not running"
 msgstr ""
 
-#: src/shortcut_ui.rs:465
+#: src/shortcut_ui.rs:727
 msgid "Listed under Myna in the desktop's Apps settings"
 msgstr ""
 

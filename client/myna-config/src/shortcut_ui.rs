@@ -17,16 +17,58 @@ use libadwaita::prelude::*;
 use crate::adapters::desktop_shortcut::DesktopShortcut;
 use crate::onboarding::MYNA_SNAP;
 use crate::shortcut::{
-    accelerators, default_key, DefaultKey, ShortcutPath, ShortcutState, DEFAULT_ACCELERATOR,
+    accelerators, bind_end, default_key, BindEnd, BindReply, DefaultKey, DialogHint, ShortcutPath,
+    ShortcutState, DEFAULT_ACCELERATOR,
 };
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
 const DICTATION_PATH: &str = "/com/canonical/Myna/Dictation";
-/// The daemon waits up to 120 s for the portal's dialog; the call outlives it.
-const BIND_TIMEOUT_MS: i32 = 150_000;
+/// The daemon waits for the portal's dialog as long as it stays up.
+const BIND_TIMEOUT_MS: i32 = i32::MAX;
+const EXPORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Sets a surface's own text for a state.
-type Describe = Box<dyn Fn(&ShortcutState, ShortcutPath)>;
+/// Sets a surface's own text for a state and what it says about a portal
+/// dialog.
+type Describe = Box<dyn Fn(&ShortcutState, ShortcutPath, DialogHint)>;
+
+/// What every surface in this process knows about its own binds: the daemon
+/// publishes only its dialog, and an older daemon publishes nothing, so the
+/// Myna page row and the wizard learn of each other's dialogs here.
+#[derive(Default)]
+struct Local {
+    in_flight: Cell<usize>,
+    /// A dialog one of them raised may be on screen with nobody waiting.
+    left_open: Cell<bool>,
+    controls: RefCell<Vec<std::rc::Weak<ShortcutControl>>>,
+}
+
+thread_local! {
+    static LOCAL: Local = Local::default();
+}
+
+fn local_in_flight() -> bool {
+    LOCAL.with(|local| local.in_flight.get() > 0)
+}
+
+fn local_left_open() -> bool {
+    LOCAL.with(|local| local.left_open.get())
+}
+
+/// Apply `change` and redraw every live surface.
+fn update_local(change: impl FnOnce(&Local)) {
+    let controls = LOCAL.with(|local| {
+        change(local);
+        let mut controls = local.controls.borrow_mut();
+        controls.retain(|control| control.strong_count() > 0);
+        controls
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .collect::<Vec<_>>()
+    });
+    for control in controls {
+        control.render();
+    }
+}
 
 /// How a surface draws the key and words its button.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -39,14 +81,17 @@ pub enum Surface {
 
 pub struct ShortcutControl {
     keys: gtk::Box,
-    button: gtk::Button,
-    overlay: adw::ToastOverlay,
+    /// Weak: the button's handler owns the control, and the overlay holds
+    /// the button, so strong references would keep a closed window alive.
+    button: glib::WeakRef<gtk::Button>,
+    overlay: glib::WeakRef<adw::ToastOverlay>,
     surface: Surface,
     describe: Describe,
     proxy: RefCell<Option<gio::DBusProxy>>,
     desktop: Option<DesktopShortcut>,
     path: Cell<ShortcutPath>,
     state: RefCell<ShortcutState>,
+    /// This surface's bind is waiting on its dialog.
     busy: Cell<bool>,
     default_pending: Cell<bool>,
     /// The control itself, for the bind a refresh starts.
@@ -67,8 +112,8 @@ impl ShortcutControl {
     ) -> Rc<Self> {
         let control = Rc::new_cyclic(|me| Self {
             keys,
-            button: button.clone(),
-            overlay,
+            button: button.downgrade(),
+            overlay: overlay.downgrade(),
             surface,
             describe,
             proxy: RefCell::new(None),
@@ -80,6 +125,7 @@ impl ShortcutControl {
             me: me.clone(),
             changed: RefCell::default(),
         });
+        LOCAL.with(|local| local.controls.borrow_mut().push(Rc::downgrade(&control)));
         control.render();
         if let Some(desktop) = &control.desktop {
             let weak = Rc::downgrade(&control);
@@ -180,6 +226,9 @@ impl ShortcutControl {
                     .as_deref(),
             ),
         };
+        if matches!(state, ShortcutState::Bound(_)) && local_left_open() {
+            LOCAL.with(|local| local.left_open.set(false));
+        }
         self.path.set(path);
         self.state.replace(state.clone());
         self.render();
@@ -196,6 +245,10 @@ impl ShortcutControl {
                 }
                 DefaultKey::Bind => {
                     self.default_pending.set(false);
+                    // Arriving raises no dialog beside one that may be up.
+                    if self.binding() || local_left_open() {
+                        return;
+                    }
                     if let Some(control) = self.me.upgrade() {
                         control.bind(false);
                     }
@@ -208,7 +261,16 @@ impl ShortcutControl {
     fn render(&self) {
         let state = self.state.borrow().clone();
         let path = self.path.get();
-        (self.describe)(&state, path);
+        let hint = if self.busy.get() {
+            DialogHint::Own
+        } else if self.dialog_open() || local_in_flight() {
+            DialogHint::OpenElsewhere
+        } else if local_left_open() {
+            DialogHint::MaybeLeftOpen
+        } else {
+            DialogHint::None
+        };
+        (self.describe)(&state, path, hint);
 
         while let Some(child) = self.keys.first_child() {
             self.keys.remove(&child);
@@ -242,16 +304,16 @@ impl ShortcutControl {
                 "Open the desktop's dialog to confirm a keyboard shortcut for dictation.",
             ),
         };
-        self.button.set_label(&label);
-        self.button
-            .update_property(&[gtk::accessible::Property::Description(&help)]);
-        self.button
-            .set_sensitive(!self.busy.get() && state != ShortcutState::NotRunning);
-        // Onboarding cannot finish usefully without a key, so setting one up
-        // is the step's main action until there is one.
-        if self.surface == Surface::Onboarding {
-            let main = state == ShortcutState::Unbound;
-            set_class(&self.button, "suggested-action", main);
+        if let Some(button) = self.button.upgrade() {
+            button.set_label(&label);
+            button.update_property(&[gtk::accessible::Property::Description(&help)]);
+            button.set_sensitive(!self.binding() && state != ShortcutState::NotRunning);
+            // Onboarding cannot finish usefully without a key, so setting one
+            // up is the step's main action until there is one.
+            if self.surface == Surface::Onboarding {
+                let main = state == ShortcutState::Unbound;
+                set_class(&button, "suggested-action", main);
+            }
         }
         if let Some(changed) = &*self.changed.borrow() {
             changed();
@@ -283,7 +345,7 @@ impl ShortcutControl {
             control.claim(accelerator);
             None
         });
-        dialog.present(self.overlay.root().as_ref());
+        dialog.present(self.root().as_ref());
     }
 
     /// Why `accelerator` cannot be taken, when the desktop reserves it.
@@ -308,7 +370,7 @@ impl ShortcutControl {
             return;
         };
         if let Some(reason) = self.reserved(accelerator) {
-            self.overlay.add_toast(adw::Toast::new(&reason));
+            self.toast(adw::Toast::new(&reason));
             return;
         }
         let body = gettextrs::gettext(
@@ -335,14 +397,12 @@ impl ShortcutControl {
             if released {
                 control.install(&accelerator);
             } else {
-                control
-                    .overlay
-                    .add_toast(adw::Toast::new(&gettextrs::gettext(
-                        "Could not set up the shortcut",
-                    )));
+                control.toast(adw::Toast::new(&gettextrs::gettext(
+                    "Could not set up the shortcut",
+                )));
             }
         });
-        alert.present(self.overlay.root().as_ref());
+        alert.present(self.root().as_ref());
     }
 
     /// Bind `accelerator` to the snap's toggle app, which pokes the daemon's
@@ -358,7 +418,7 @@ impl ShortcutControl {
                 .is_ok()
         });
         if !installed {
-            self.overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+            self.toast(adw::Toast::new(&gettextrs::gettext(
                 "Could not set up the shortcut",
             )));
         }
@@ -373,43 +433,89 @@ impl ShortcutControl {
         let Some(proxy) = self.proxy.borrow().clone() else {
             return;
         };
-        if self.busy.replace(true) {
+        if self.binding() {
             return;
         }
-        self.render();
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            // Empty asks the daemon for its default trigger.
-            let reply = proxy
-                .call_future(
-                    "BindShortcut",
-                    Some(&("",).to_variant()),
-                    gio::DBusCallFlags::NONE,
-                    BIND_TIMEOUT_MS,
-                )
-                .await;
-            let Some(control) = weak.upgrade() else {
-                return;
-            };
-            control.busy.set(false);
-            let failure = match reply {
-                Ok(reply) => match reply.get::<(bool, String)>() {
-                    Some((true, _)) => None,
-                    Some((false, message)) => Some(message),
-                    None => Some(format!("unexpected reply {reply}")),
-                },
-                Err(error) => Some(error.message().to_owned()),
-            };
-            if let (Some(detail), false) = (&failure, asked) {
-                glib::g_message!(crate::LOG_DOMAIN, "shortcut: setup's bind: {detail}");
-            }
-            if let Some(detail) = failure.filter(|_| asked) {
-                let heading = gettextrs::gettext("Could not set up the shortcut");
-                crate::ui::OperationErrorDialog::new(&heading, &heading, &detail)
-                    .present(control.overlay.root().as_ref());
-            }
-            control.refresh();
+        self.busy.set(true);
+        // Asking again is the user's answer to a dialog that may be left.
+        update_local(|local| {
+            local.in_flight.set(local.in_flight.get() + 1);
+            local.left_open.set(false);
         });
+        let weak = Rc::downgrade(self);
+        let window = self
+            .root()
+            .and_then(|root| root.downcast::<gtk::Window>().ok());
+        export_parent(window.as_ref(), move |parent| {
+            glib::spawn_future_local(async move {
+                let (reply, legacy) = bind_call(&proxy, parent.id()).await;
+                drop(parent);
+                // A surface closed under its dialog still releases its hold.
+                let control = weak.upgrade();
+                if let Some(control) = &control {
+                    control.busy.set(false);
+                }
+                let end = settle_bind(reply, legacy);
+                if let Some(control) = control {
+                    control.bound(end, asked);
+                }
+            });
+        });
+    }
+
+    fn bound(&self, end: BindEnd, asked: bool) {
+        if let (BindEnd::Failed(detail), true) = (end, asked) {
+            self.report_failure(detail);
+        }
+        self.refresh();
+    }
+
+    /// A toast whose Details open the daemon's own words.
+    fn report_failure(&self, detail: String) {
+        let heading = gettextrs::gettext("Could not set up the shortcut");
+        let summary =
+            gettextrs::gettext("The desktop did not set up a keyboard shortcut for Dictation.");
+        let toast = adw::Toast::builder()
+            .title(crate::markup::escape_markup(&heading))
+            .button_label(gettextrs::gettext("Details"))
+            .build();
+        toast.connect_button_clicked({
+            let overlay = self.overlay.clone();
+            move |_| {
+                if let Some(overlay) = overlay.upgrade() {
+                    crate::ui::OperationErrorDialog::new(&heading, &summary, &detail)
+                        .present(Some(overlay.upcast_ref::<gtk::Widget>()));
+                }
+            }
+        });
+        self.toast(toast);
+    }
+
+    fn toast(&self, toast: adw::Toast) {
+        if let Some(overlay) = self.overlay.upgrade() {
+            overlay.add_toast(toast);
+        }
+    }
+
+    fn root(&self) -> Option<gtk::Root> {
+        self.overlay.upgrade().and_then(|overlay| overlay.root())
+    }
+
+    /// A portal dialog is up, from this process or the daemon's: the
+    /// control waits for its answer.
+    pub fn binding(&self) -> bool {
+        self.busy.get() || local_in_flight() || self.dialog_open()
+    }
+
+    /// The daemon's `ShortcutDialog`: a bind's dialog is up, from any client.
+    fn dialog_open(&self) -> bool {
+        self.proxy
+            .borrow()
+            .as_ref()
+            .filter(|proxy| proxy.name_owner().is_some())
+            .and_then(|proxy| proxy.cached_property("ShortcutDialog"))
+            .and_then(|value| value.get::<bool>())
+            .unwrap_or(false)
     }
 
     /// GNOME rebinds portal shortcuts on the app's page under Apps.
@@ -419,9 +525,152 @@ impl ShortcutControl {
             gio::AppInfo::create_from_commandline(&command, None, gio::AppInfoCreateFlags::NONE)
                 .and_then(|app| app.launch(&[], gio::AppLaunchContext::NONE));
         if launched.is_err() {
-            self.overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+            self.toast(adw::Toast::new(&gettextrs::gettext(
                 "Could not open the desktop settings",
             )));
+        }
+    }
+}
+
+/// Judge a finished bind and release this process's hold on the dialog.
+fn settle_bind(reply: Result<glib::Variant, glib::Error>, legacy: bool) -> BindEnd {
+    let reply = match reply {
+        Ok(reply) => match reply.get::<(bool, String)>() {
+            Some((ok, message)) => BindReply::Answered { ok, message },
+            None => BindReply::Failed(format!("unexpected reply {reply}")),
+        },
+        Err(error) if error.matches(gio::DBusError::NoReply) => BindReply::DaemonGone,
+        Err(error) => BindReply::Failed(error.message().to_owned()),
+    };
+    if !matches!(reply, BindReply::Answered { ok: true, .. }) {
+        glib::g_message!(crate::LOG_DOMAIN, "shortcut: bind: {reply:?}");
+    }
+    let end = bind_end(reply, legacy);
+    update_local(|local| {
+        local.in_flight.set(local.in_flight.get().saturating_sub(1));
+        if end == BindEnd::LeftOpen {
+            local.left_open.set(true);
+        }
+    });
+    end
+}
+
+/// `BindShortcutWithParent`, or `BindShortcut` on a daemon that predates it,
+/// with whether the older call was made.
+async fn bind_call(
+    proxy: &gio::DBusProxy,
+    parent: &str,
+) -> (Result<glib::Variant, glib::Error>, bool) {
+    // Empty asks the daemon for its default trigger.
+    let reply = proxy
+        .call_future(
+            "BindShortcutWithParent",
+            Some(&("", parent).to_variant()),
+            gio::DBusCallFlags::NONE,
+            BIND_TIMEOUT_MS,
+        )
+        .await;
+    match reply {
+        Err(error) if error.matches(gio::DBusError::UnknownMethod) => {
+            let reply = proxy
+                .call_future(
+                    "BindShortcut",
+                    Some(&("",).to_variant()),
+                    gio::DBusCallFlags::NONE,
+                    BIND_TIMEOUT_MS,
+                )
+                .await;
+            (reply, true)
+        }
+        reply => (reply, false),
+    }
+}
+
+/// `window` as a portal parent-window identifier, handed to `then`. On
+/// Wayland the xdg-foreign handle stays exported until the [`Parent`] drops;
+/// with no window, or none the portal could find, the id is empty.
+fn export_parent(window: Option<&gtk::Window>, then: impl FnOnce(Parent) + 'static) {
+    let surface = window.and_then(|window| window.surface());
+    if let Some(toplevel) = surface
+        .as_ref()
+        .and_then(|surface| surface.downcast_ref::<gdk4_wayland::WaylandToplevel>())
+    {
+        let then = Rc::new(RefCell::new(Some(then)));
+        let requested = toplevel.export_handle({
+            let then = then.clone();
+            move |toplevel, handle| {
+                let Some(then) = then.take() else {
+                    if let Ok(handle) = handle {
+                        toplevel.drop_exported_handle(handle);
+                    }
+                    return;
+                };
+                then(match handle {
+                    Ok(handle) => Parent {
+                        id: format!("wayland:{handle}"),
+                        exported: Some((toplevel.clone(), handle.to_owned())),
+                    },
+                    Err(error) => {
+                        glib::g_message!(crate::LOG_DOMAIN, "shortcut: no parent: {error}");
+                        Parent::none()
+                    }
+                });
+            }
+        });
+        if !requested {
+            if let Some(then) = then.take() {
+                then(Parent::none());
+            }
+            return;
+        }
+        // A compositor that never answers must not hold the button forever.
+        glib::timeout_add_local_once(EXPORT_TIMEOUT, move || {
+            if let Some(then) = then.take() {
+                glib::g_message!(crate::LOG_DOMAIN, "shortcut: no parent: export timed out");
+                then(Parent::none());
+            }
+        });
+        return;
+    }
+    if let Some(surface) = surface
+        .as_ref()
+        .and_then(|surface| surface.downcast_ref::<gdk4_x11::X11Surface>())
+    {
+        then(Parent {
+            id: format!("x11:{:x}", surface.xid()),
+            exported: None,
+        });
+        return;
+    }
+    then(Parent::none());
+}
+
+/// A portal parent-window identifier, unexported on drop.
+struct Parent {
+    id: String,
+    exported: Option<(gdk4_wayland::WaylandToplevel, String)>,
+}
+
+impl Parent {
+    fn none() -> Self {
+        Self {
+            id: String::new(),
+            exported: None,
+        }
+    }
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl Drop for Parent {
+    fn drop(&mut self) {
+        // A destroyed surface took its exports with it.
+        if let Some((toplevel, handle)) = self.exported.take() {
+            if !toplevel.is_destroyed() {
+                toplevel.drop_exported_handle(&handle);
+            }
         }
     }
 }
@@ -435,8 +684,18 @@ pub(crate) fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
 }
 
 /// The onboarding step's sentence for `state`.
-pub fn onboarding_description(state: &ShortcutState, path: ShortcutPath) -> String {
+pub fn onboarding_description(
+    state: &ShortcutState,
+    path: ShortcutPath,
+    hint: DialogHint,
+) -> String {
     match state {
+        ShortcutState::Unbound if hint == DialogHint::OpenElsewhere => gettextrs::gettext(
+            "The desktop's dialog to confirm a keyboard shortcut is already open. Answer it to continue.",
+        ),
+        ShortcutState::Unbound if hint == DialogHint::MaybeLeftOpen => gettextrs::gettext(
+            "If the desktop's dialog to confirm a keyboard shortcut is no longer open, set up the shortcut again.",
+        ),
         ShortcutState::Unbound if path == ShortcutPath::Control => {
             gettextrs::gettext("Set up a keyboard shortcut to trigger Dictation.")
         }
@@ -456,8 +715,11 @@ pub fn onboarding_description(state: &ShortcutState, path: ShortcutPath) -> Stri
 }
 
 /// The Myna page row's subtitle for `state`; the keys speak for a bound one.
-pub fn row_subtitle(state: &ShortcutState) -> String {
+pub fn row_subtitle(state: &ShortcutState, hint: DialogHint) -> String {
     match state {
+        ShortcutState::Unbound if matches!(hint, DialogHint::Own | DialogHint::OpenElsewhere) => {
+            gettextrs::gettext("Waiting for the desktop's shortcut dialog")
+        }
         ShortcutState::Bound(_) => String::new(),
         ShortcutState::Unbound => gettextrs::gettext("Not set up"),
         ShortcutState::NotRunning => gettextrs::gettext("Myna is not running"),
@@ -516,4 +778,22 @@ fn key_caps(accelerator: &str) -> Option<Vec<String>> {
         .collect();
     caps.push(key_label.to_string());
     Some(caps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_row_waits_on_its_own_dialog_as_on_any_other() {
+        let waiting = row_subtitle(&ShortcutState::Unbound, DialogHint::OpenElsewhere);
+        assert_eq!(
+            row_subtitle(&ShortcutState::Unbound, DialogHint::Own),
+            waiting
+        );
+        assert_ne!(
+            row_subtitle(&ShortcutState::Unbound, DialogHint::None),
+            waiting
+        );
+    }
 }

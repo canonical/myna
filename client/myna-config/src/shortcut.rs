@@ -88,6 +88,78 @@ pub fn default_key(activation: Option<&str>, state: &ShortcutState, available: b
     }
 }
 
+/// What a surface says about a portal dialog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DialogHint {
+    None,
+    /// The surface's own dialog is up.
+    Own,
+    /// A dialog is up, the daemon's or another surface's: wait for it.
+    OpenElsewhere,
+    /// A dialog may still be on screen with nobody waiting for its answer:
+    /// an older daemon gave up on it, or the daemon exited under it.
+    MaybeLeftOpen,
+}
+
+/// How the daemon answered a bind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BindReply {
+    Answered {
+        ok: bool,
+        message: String,
+    },
+    /// The daemon left the bus before replying: restarted, or crashed.
+    DaemonGone,
+    Failed(String),
+}
+
+/// What the surface makes of a [`BindReply`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BindEnd {
+    /// Bound, or answered in the dialog: the daemon's state says which.
+    Done,
+    /// Another bind's dialog was already up: the same wait, not an error.
+    Waiting,
+    /// The dialog may outlive the bind; see [`DialogHint::MaybeLeftOpen`].
+    LeftOpen,
+    /// Answered in the dialog without a key: GNOME's Cancel arrives as the
+    /// portal's "other" response, so it cannot be told from a backend that
+    /// gave up.
+    Declined,
+    Failed(String),
+}
+
+/// The daemon's refusal while another bind's dialog is up.
+const DIALOG_ALREADY_OPEN: &str = "a shortcut dialog is already open";
+/// An older daemon's reply after it stopped waiting on its dialog (120 s).
+const BIND_UNANSWERED: &str = "shortcut bind unanswered";
+/// ashpd's words for the portal's "cancelled" and "other" responses.
+const BIND_DECLINED: [&str; 2] = [
+    "shortcut bind rejected: Portal request was cancelled",
+    "shortcut bind rejected: Portal request didn't succeed with no information",
+];
+
+/// Judge a bind's reply; `legacy` is a daemon that predates
+/// `BindShortcutWithParent`, the only kind that gives up on its dialog.
+pub fn bind_end(reply: BindReply, legacy: bool) -> BindEnd {
+    match reply {
+        BindReply::Answered { ok: true, .. } => BindEnd::Done,
+        BindReply::Answered { message, .. } if message.starts_with(DIALOG_ALREADY_OPEN) => {
+            BindEnd::Waiting
+        }
+        BindReply::Answered { message, .. } if legacy && message.starts_with(BIND_UNANSWERED) => {
+            BindEnd::LeftOpen
+        }
+        BindReply::Answered { message, .. } if BIND_DECLINED.contains(&message.as_str()) => {
+            BindEnd::Declined
+        }
+        BindReply::Answered { message, .. } | BindReply::Failed(message) => {
+            BindEnd::Failed(message)
+        }
+        BindReply::DaemonGone => BindEnd::LeftOpen,
+    }
+}
+
 /// The GTK accelerators inside a portal trigger description.
 ///
 /// GNOME's portal wraps the accelerator in a translated sentence
@@ -148,4 +220,62 @@ fn chord(accelerator: &str) -> Option<(Vec<&'static str>, String)> {
     modifiers.sort_unstable();
     modifiers.dedup();
     Some((modifiers, rest.to_ascii_lowercase()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn answered(ok: bool, message: &str) -> BindReply {
+        BindReply::Answered {
+            ok,
+            message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_bind_refused_under_another_dialog_waits() {
+        let reply = answered(false, "a shortcut dialog is already open");
+        assert_eq!(bind_end(reply.clone(), false), BindEnd::Waiting);
+        assert_eq!(bind_end(reply, true), BindEnd::Waiting);
+    }
+
+    #[test]
+    fn an_older_daemon_giving_up_leaves_its_dialog_open() {
+        let reply = answered(false, "shortcut bind unanswered: no answer within 120s");
+        assert_eq!(bind_end(reply.clone(), true), BindEnd::LeftOpen);
+        // A current daemon never gives up, so from it this is a failure.
+        assert!(matches!(bind_end(reply, false), BindEnd::Failed(_)));
+    }
+
+    #[test]
+    fn a_daemon_that_left_mid_bind_leaves_its_dialog_open() {
+        assert_eq!(bind_end(BindReply::DaemonGone, false), BindEnd::LeftOpen);
+        assert_eq!(bind_end(BindReply::DaemonGone, true), BindEnd::LeftOpen);
+    }
+
+    #[test]
+    fn a_rejected_bind_is_a_failure_with_its_detail() {
+        let detail = "shortcut bind rejected: Portal request didn't succeed";
+        assert_eq!(
+            bind_end(answered(false, detail), false),
+            BindEnd::Failed(detail.to_owned())
+        );
+        assert_eq!(
+            bind_end(BindReply::Failed("no daemon".to_owned()), true),
+            BindEnd::Failed("no daemon".to_owned())
+        );
+        assert_eq!(bind_end(answered(true, "bound"), false), BindEnd::Done);
+    }
+
+    #[test]
+    fn a_dialog_answered_without_a_key_is_declined_not_failed() {
+        for message in [
+            "shortcut bind rejected: Portal request didn't succeed with no information",
+            "shortcut bind rejected: Portal request was cancelled",
+        ] {
+            assert_eq!(bind_end(answered(false, message), false), BindEnd::Declined);
+            assert_eq!(bind_end(answered(false, message), true), BindEnd::Declined);
+        }
+    }
 }

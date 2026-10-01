@@ -1267,8 +1267,11 @@ fn shortcut_page_closes_up(page: &ui::OnboardingShortcut) -> Result<(), String> 
     };
     // One sentence for both, so only the caps differ.
     let bound = ShortcutState::Bound("<Super>j".to_owned());
-    page.description()
-        .set_label(&onboarding_description(&bound, ShortcutPath::Portal));
+    page.description().set_label(&onboarding_description(
+        &bound,
+        ShortcutPath::Portal,
+        crate::shortcut::DialogHint::None,
+    ));
     let bound = height(&bound);
     let caps = keys.measure(gtk::Orientation::Vertical, -1).1;
     let unbound = height(&ShortcutState::Unbound);
@@ -1706,8 +1709,15 @@ const PROBE_DICTATION_XML: &str = "<node>\
       <arg name='ok' type='b' direction='out'/>\
       <arg name='message' type='s' direction='out'/>\
     </method>\
+    <method name='BindShortcutWithParent'>\
+      <arg name='preferred' type='s' direction='in'/>\
+      <arg name='parent_window' type='s' direction='in'/>\
+      <arg name='ok' type='b' direction='out'/>\
+      <arg name='message' type='s' direction='out'/>\
+    </method>\
     <property name='Shortcut' type='s' access='read'/>\
     <property name='Activation' type='s' access='read'/>\
+    <property name='ShortcutDialog' type='b' access='read'/>\
   </interface>\
 </node>";
 
@@ -1742,20 +1752,88 @@ fn onboarding_control_probe() -> glib::ExitCode {
     let activation = Rc::new(RefCell::new(String::new()));
     let shortcut = Rc::new(RefCell::new(String::new()));
     let binds = Rc::new(Cell::new(0));
+    // Which method each bind called and the parent window it named.
+    let calls = Rc::new(RefCell::new(Vec::<(String, String)>::new()));
+    // A daemon that predates BindShortcutWithParent.
+    let legacy = Rc::new(Cell::new(true));
+    // Leave the bind unanswered, as the portal's open dialog does.
+    let hold = Rc::new(Cell::new(false));
+    let held = Rc::new(RefCell::new(None::<gio::DBusMethodInvocation>));
+    // The daemon's ShortcutDialog: some client's dialog is up.
+    let dialog = Rc::new(Cell::new(false));
+    // Answer the next bind with this refusal instead.
+    let refusal = Rc::new(RefCell::new(None::<String>));
+    // Answer the next bind with this D-Bus error instead.
+    let error_reply = Rc::new(RefCell::new(None::<String>));
+    let announce = {
+        let connection = connection.clone();
+        move |name: &str, value: glib::Variant| {
+            let changed = std::collections::HashMap::from([(name.to_owned(), value)]);
+            let _ = connection.emit_signal(
+                None,
+                "/com/canonical/Myna/Dictation",
+                "org.freedesktop.DBus.Properties",
+                "PropertiesChanged",
+                Some(
+                    &(
+                        "com.canonical.Myna.Dictation",
+                        changed,
+                        Vec::<String>::new(),
+                    )
+                        .to_variant(),
+                ),
+            );
+        }
+    };
     let registered = connection
         .register_object("/com/canonical/Myna/Dictation", &interface)
         .method_call({
             let binds = binds.clone();
-            move |_, _, _, _, _, _, invocation| {
+            let calls = calls.clone();
+            let legacy = legacy.clone();
+            let hold = hold.clone();
+            let held = held.clone();
+            let dialog = dialog.clone();
+            let refusal = refusal.clone();
+            let error_reply = error_reply.clone();
+            let announce = announce.clone();
+            move |_, _, _, _, method, parameters, invocation| {
+                if legacy.get() && method == "BindShortcutWithParent" {
+                    invocation.return_dbus_error(
+                        "org.freedesktop.DBus.Error.UnknownMethod",
+                        "the probe's daemon predates it",
+                    );
+                    return;
+                }
                 binds.set(binds.get() + 1);
-                invocation.return_value(Some(&(false, "the probe binds nothing").to_variant()));
+                let parent = parameters
+                    .get::<(String, String)>()
+                    .map(|(_, parent)| parent)
+                    .unwrap_or_default();
+                calls.borrow_mut().push((method.to_owned(), parent));
+                if let Some(name) = error_reply.take() {
+                    invocation.return_dbus_error(&name, "the probe's daemon left without replying");
+                } else if let Some(message) = refusal.take() {
+                    if message.contains("already open") {
+                        // Another client's dialog came up first.
+                        dialog.set(true);
+                        announce("ShortcutDialog", true.to_variant());
+                    }
+                    invocation.return_value(Some(&(false, message).to_variant()));
+                } else if hold.get() {
+                    held.replace(Some(invocation));
+                } else {
+                    invocation.return_value(Some(&(false, "the probe binds nothing").to_variant()));
+                }
             }
         })
         .property({
             let activation = activation.clone();
             let shortcut = shortcut.clone();
+            let dialog = dialog.clone();
             move |_, _, _, _, property| match property {
                 "Activation" => activation.borrow().to_variant(),
+                "ShortcutDialog" => dialog.get().to_variant(),
                 _ => shortcut.borrow().to_variant(),
             }
         })
@@ -1887,6 +1965,10 @@ fn onboarding_control_probe() -> glib::ExitCode {
         );
         return glib::ExitCode::FAILURE;
     }
+    if calls.borrow().as_slice() != [("BindShortcut".to_owned(), String::new())] {
+        eprintln!("against an older daemon setup called {:?}", calls.borrow());
+        return glib::ExitCode::FAILURE;
+    }
     println!("onboarding-default: portal dialog raised on arrival");
     let forward = window.forward_button();
     if !standard_button(&button, true)
@@ -1901,13 +1983,239 @@ fn onboarding_control_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-keys: set up leads while no key is bound");
+
+    // A current daemon parents the dialog on the wizard, and while the
+    // dialog is up neither its button nor Done can be pressed.
+    legacy.set(false);
+    hold.set(true);
+    button.emit_clicked();
+    for _ in 0..20 {
+        if held.borrow().is_some() {
+            break;
+        }
+        settle_gtk();
+    }
+    let parented = calls.borrow().last().is_some_and(|(method, parent)| {
+        method == "BindShortcutWithParent" && parent.starts_with("x11:")
+    });
+    if !parented || button.is_sensitive() || forward.is_sensitive() {
+        eprintln!(
+            "with the dialog up: calls {:?}, set up sensitive {}, Done sensitive {}",
+            calls.borrow(),
+            button.is_sensitive(),
+            forward.is_sensitive()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    button.emit_clicked();
+    settle_gtk();
+    if binds.get() != 2 {
+        eprintln!("a click under the open dialog bound again");
+        return glib::ExitCode::FAILURE;
+    }
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(&(true, "bound").to_variant()));
+    }
+    hold.set(false);
+    for _ in 0..20 {
+        if forward.is_sensitive() {
+            break;
+        }
+        settle_gtk();
+    }
+    if !forward.is_sensitive() || !button.is_sensitive() {
+        eprintln!("the dialog's answer left Done or set up insensitive");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: one parented dialog holds set up and Done");
+
+    // A dialog another window raised holds the step too, and says why.
+    let waiting = gettextrs::gettext(
+        "The desktop's dialog to confirm a keyboard shortcut is already open. Answer it to continue.",
+    );
+    let says = |text: &str| {
+        find_descendant(window.upcast_ref(), &|widget| {
+            widget
+                .downcast_ref::<gtk::Label>()
+                .is_some_and(|label| label.is_mapped() && label.label() == text)
+        })
+        .is_some()
+    };
+    let settles = |done: &dyn Fn() -> bool| {
+        for _ in 0..20 {
+            if done() {
+                return true;
+            }
+            settle_gtk();
+        }
+        done()
+    };
+    dialog.set(true);
+    announce("ShortcutDialog", true.to_variant());
+    if !settles(&|| !button.is_sensitive()) || forward.is_sensitive() || !says(&waiting) {
+        eprintln!(
+            "another window's dialog: set up sensitive {}, Done sensitive {}, hint {}",
+            button.is_sensitive(),
+            forward.is_sensitive(),
+            says(&waiting)
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    dialog.set(false);
+    announce("ShortcutDialog", false.to_variant());
+    if !settles(&|| button.is_sensitive()) || !forward.is_sensitive() || says(&waiting) {
+        eprintln!("the other dialog's answer left the step held");
+        return glib::ExitCode::FAILURE;
+    }
+    // A bind that loses the race to another window's dialog is refused;
+    // that is the same wait, not an error.
+    refusal.replace(Some("a shortcut dialog is already open".to_owned()));
+    button.emit_clicked();
+    settles(&|| refusal.borrow().is_none());
+    settle_gtk();
+    if window.visible_dialog().is_some() || button.is_sensitive() || !says(&waiting) {
+        eprintln!(
+            "a refused bind: error dialog {}, set up sensitive {}, hint {}",
+            window.visible_dialog().is_some(),
+            button.is_sensitive(),
+            says(&waiting)
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    dialog.set(false);
+    announce("ShortcutDialog", false.to_variant());
+    settles(&|| button.is_sensitive());
+    println!("onboarding-modal: another window's dialog holds the step without an error");
+
+    // An older daemon gives up on its dialog after 120 s, which GNOME keeps
+    // up, and a daemon restarted under its dialog never answers. Either may
+    // leave the dialog on screen, so the step says so and lets the user try
+    // again, without an error.
+    let left_open = gettextrs::gettext(
+        "If the desktop's dialog to confirm a keyboard shortcut is no longer open, set up the shortcut again.",
+    );
+    let left_open_reads = |what: &str| {
+        let ok = window.visible_dialog().is_none()
+            && toast_texts(&window).is_empty()
+            && button.is_sensitive()
+            && forward.is_sensitive()
+            && says(&left_open);
+        if !ok {
+            eprintln!(
+                "{what}: error dialog {}, toasts {:?}, set up sensitive {}, Done sensitive {}, \
+                 hint {}",
+                window.visible_dialog().is_some(),
+                toast_texts(&window),
+                button.is_sensitive(),
+                forward.is_sensitive(),
+                says(&left_open)
+            );
+        }
+        ok
+    };
+    legacy.set(true);
+    refusal.replace(Some(
+        "shortcut bind unanswered: no answer within 120s".to_owned(),
+    ));
+    button.emit_clicked();
+    settles(&|| refusal.borrow().is_none());
+    settle_gtk();
+    if !left_open_reads("an older daemon's abandoned dialog") {
+        return glib::ExitCode::FAILURE;
+    }
+    shortcut.replace("Press <Super>j".to_owned());
+    announce("Shortcut", shortcut.borrow().to_variant());
+    if !settles(&|| !says(&left_open) && button.is_sensitive()) {
+        eprintln!("a key landing kept the left-open hint");
+        return glib::ExitCode::FAILURE;
+    }
+    shortcut.replace(String::new());
+    announce("Shortcut", shortcut.borrow().to_variant());
+    settles(&|| standard_button(&button, true));
+    legacy.set(false);
+    error_reply.replace(Some("org.freedesktop.DBus.Error.NoReply".to_owned()));
+    button.emit_clicked();
+    settles(&|| error_reply.borrow().is_none());
+    settle_gtk();
+    if !left_open_reads("a daemon gone under its dialog") {
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: a dialog left open lets set up try again");
+
+    // GNOME answers Cancel with the portal's "other" response: the user's
+    // own choice, so no error.
+    refusal.replace(Some(
+        "shortcut bind rejected: Portal request didn't succeed with no information".to_owned(),
+    ));
+    button.emit_clicked();
+    settles(&|| refusal.borrow().is_none());
+    settle_gtk();
+    if !toast_texts(&window).is_empty()
+        || window.visible_dialog().is_some()
+        || !button.is_sensitive()
+        || says(&left_open)
+    {
+        eprintln!(
+            "a cancelled dialog: toasts {:?}, dialog {}, set up sensitive {}",
+            toast_texts(&window),
+            window.visible_dialog().is_some(),
+            button.is_sensitive()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: a cancelled dialog is no error");
+
+    // A bind that fails says so in a toast; the daemon's words wait behind
+    // Details.
+    refusal.replace(Some(
+        "shortcut bind rejected: Portal request didn't succeed".to_owned(),
+    ));
+    button.emit_clicked();
+    settles(&|| refusal.borrow().is_none());
+    settle_gtk();
+    let toasted = toast_texts(&window)
+        == [
+            gettextrs::gettext("Could not set up the shortcut"),
+            gettextrs::gettext("Details"),
+        ];
+    if !toasted || window.visible_dialog().is_some() || says(&left_open) {
+        eprintln!(
+            "a failed bind: toasts {:?}, dialog {}, left-open hint {}",
+            toast_texts(&window),
+            window.visible_dialog().is_some(),
+            says(&left_open)
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: a failed bind toasts with Details");
+    // Closing the wizard under its dialog must not hold every later surface.
+    hold.set(true);
+    button.emit_clicked();
+    settles(&|| held.borrow().is_some());
     window.close();
+    drop((window, button, forward));
+    for _ in 0..5 {
+        settle_gtk();
+    }
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(&(true, "bound").to_variant()));
+    }
+    hold.set(false);
+    for _ in 0..5 {
+        settle_gtk();
+    }
+    calls.borrow_mut().clear();
     binds.set(0);
 
     // A key the portal granted before reads as the design, as Super+J.
     shortcut.replace("Press <Super>j".to_owned());
     let (window, button) = walk("portal");
     shortcut.replace(String::new());
+    if !button.is_sensitive() {
+        eprintln!("a wizard closed under its dialog left the next one held");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: closing under the dialog releases it");
     if !shortcut_shown(&window) {
         eprintln!(
             "the portal's Super+J did not show as the design: caps {:?}",
@@ -2250,14 +2558,54 @@ fn shortcut_probe(control: bool) -> glib::ExitCode {
 
     if !control {
         button.emit_clicked();
-        if !settles(&|| window.visible_dialog().is_some()) {
-            eprintln!("a refused bind showed no error dialog");
+        let heading = gettextrs::gettext("Could not set up the shortcut");
+        let details = gettextrs::gettext("Details");
+        let toasted = || {
+            let texts = descendants(window.upcast_ref(), &|widget| {
+                widget.type_().name() == "AdwToastWidget"
+            })
+            .iter()
+            .flat_map(|toast| descendants(toast, &|widget| widget.is::<gtk::Label>()))
+            .filter_map(|label| label.downcast::<gtk::Label>().ok())
+            .map(|label| label.label().to_string())
+            .collect::<Vec<_>>();
+            texts == [heading.clone(), details.clone()]
+        };
+        if !settles(&toasted) || window.visible_dialog().is_some() {
+            eprintln!("a refused bind showed no toast, or an alert straight away");
             return glib::ExitCode::FAILURE;
         }
+        let details_button = find_descendant(window.upcast_ref(), &|widget| {
+            widget
+                .downcast_ref::<gtk::Button>()
+                .is_some_and(|button| button.label().as_deref() == Some(details.as_str()))
+        })
+        .and_then(|widget| widget.downcast::<gtk::Button>().ok());
+        if let Some(details_button) = details_button {
+            details_button.emit_clicked();
+        }
+        let summary =
+            gettextrs::gettext("The desktop did not set up a keyboard shortcut for Dictation.");
+        let report = settles(&|| window.visible_dialog().is_some())
+            .then(|| window.visible_dialog())
+            .flatten()
+            .and_then(|dialog| dialog.downcast::<adw::AlertDialog>().ok());
+        let reads = report
+            .as_ref()
+            .is_some_and(|alert| alert.heading().as_deref() == Some(heading.as_str()))
+            && report.as_ref().is_some_and(|alert| alert.body() == summary);
         if let Some(dialog) = window.visible_dialog() {
             dialog.force_close();
         }
-        println!("shortcut-refused: error dialog");
+        if !reads {
+            eprintln!(
+                "the refused bind's Details read {:?} / {:?}",
+                report.as_ref().and_then(|alert| alert.heading()),
+                report.as_ref().map(|alert| alert.body())
+            );
+            return glib::ExitCode::FAILURE;
+        }
+        println!("shortcut-refused: toast, report behind Details");
     }
 
     button.emit_clicked();
@@ -4929,8 +5277,13 @@ fn ready_page(
         overlay.clone(),
         crate::shortcut_ui::Surface::Row,
         Box::new({
-            let row = page.shortcut_row();
-            move |state, _| row.set_subtitle(&crate::shortcut_ui::row_subtitle(state))
+            // The row holds the button, which owns the control.
+            let row = page.shortcut_row().downgrade();
+            move |state, _, hint| {
+                if let Some(row) = row.upgrade() {
+                    row.set_subtitle(&crate::shortcut_ui::row_subtitle(state, hint));
+                }
+            }
         }),
     );
     let dictation = page.settings_group();
