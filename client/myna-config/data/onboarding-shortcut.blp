@@ -27,17 +27,92 @@ template $OnboardingShortcut: Adw.Bin {
           margin-bottom: 32;
         }
 
-        Gtk.Box shortcut_box {
-          halign: center;
-          spacing: 8;
-          margin-bottom: 24;
-          visible: false;
-        }
+        // One height for the key and its capture, so the page does not
+        // re-centre when one replaces the other.
+        Gtk.Stack shortcut_stack {
+          vhomogeneous: true;
+          hhomogeneous: false;
 
-        Gtk.Button shortcut_button {
-          label: _("Set up shortcut");
-          halign: center;
-          sensitive: false;
+          Gtk.StackPage {
+            name: "idle";
+
+            child: Gtk.Box {
+              orientation: vertical;
+              valign: start;
+
+              Gtk.Box shortcut_box {
+                halign: center;
+                spacing: 8;
+                margin-bottom: 24;
+                visible: false;
+              }
+
+              Gtk.Button shortcut_button {
+                label: _("Set up shortcut");
+                halign: center;
+                sensitive: false;
+              }
+            };
+          }
+
+          Gtk.StackPage {
+            name: "capture";
+
+            child: Gtk.Box {
+              orientation: vertical;
+              valign: start;
+              spacing: 8;
+
+              Gtk.Label capture_field {
+                label: _("Press the new shortcut…");
+                halign: center;
+
+                styles [
+                  "shortcut-capture",
+                ]
+              }
+
+              // The keys it takes, or why it refused one, in one height so
+              // a refusal moves nothing. Keep the hint first.
+              Gtk.Stack capture_room {
+                vhomogeneous: true;
+
+                Gtk.Label {
+                  label: _("Use Ctrl, Alt or Super with another key, or a function key. Press Escape to cancel.");
+                  wrap: true;
+                  justify: center;
+                  max-width-chars: 50;
+                  valign: start;
+
+                  styles [
+                    "dim-label",
+                  ]
+                }
+
+                Gtk.Label capture_refusal {
+                  wrap: true;
+                  justify: center;
+                  max-width-chars: 50;
+                  valign: start;
+
+                  styles [
+                    "error",
+                  ]
+                }
+
+                // Never shown: two lines of room even where the hint fits
+                // one, as before any refusal has text.
+                Gtk.Label {
+                  label: "\n";
+                }
+              }
+
+              Gtk.Button capture_cancel {
+                label: _("Cancel");
+                halign: center;
+              }
+            };
+          }
         }
       };
     };

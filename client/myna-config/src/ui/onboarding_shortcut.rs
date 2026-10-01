@@ -16,6 +16,16 @@ mod imp {
         pub shortcut_box: gtk::TemplateChild<gtk::Box>,
         #[template_child]
         pub shortcut_button: gtk::TemplateChild<gtk::Button>,
+        #[template_child]
+        pub shortcut_stack: gtk::TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub capture_field: gtk::TemplateChild<gtk::Label>,
+        #[template_child]
+        pub capture_room: gtk::TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub capture_refusal: gtk::TemplateChild<gtk::Label>,
+        #[template_child]
+        pub capture_cancel: gtk::TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -61,6 +71,17 @@ impl OnboardingShortcut {
 
     pub fn shortcut_button(&self) -> gtk::Button {
         self.imp().shortcut_button.get()
+    }
+
+    pub fn in_place(&self) -> crate::shortcut_ui::InPlace {
+        let imp = self.imp();
+        crate::shortcut_ui::InPlace {
+            stack: imp.shortcut_stack.get(),
+            field: imp.capture_field.get(),
+            room: imp.capture_room.get(),
+            refusal: imp.capture_refusal.get(),
+            cancel: imp.capture_cancel.get(),
+        }
     }
 }
 

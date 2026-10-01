@@ -101,6 +101,43 @@ pub enum DialogHint {
     MaybeLeftOpen,
 }
 
+/// What a surface's shortcut button does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ButtonAction {
+    Nothing,
+    /// Install [`DEFAULT_ACCELERATOR`] as the desktop shortcut.
+    ClaimDefault,
+    /// Capture a new desktop shortcut in place.
+    Capture,
+    /// Stop a capture in place, keeping the key there was.
+    CancelCapture,
+    /// Capture a new desktop shortcut in a dialog.
+    CaptureDialog,
+    /// Ask the daemon to raise the portal's dialog.
+    Bind,
+    /// Open Myna under the desktop's Apps settings.
+    OpenSettings,
+}
+
+/// Decide [`ButtonAction`]. `inline` is a surface with room to capture in
+/// place; `capturing` is one doing so now.
+pub fn button_action(
+    path: ShortcutPath,
+    state: &ShortcutState,
+    inline: bool,
+    capturing: bool,
+) -> ButtonAction {
+    match (path, state) {
+        _ if capturing => ButtonAction::CancelCapture,
+        (_, ShortcutState::NotRunning) => ButtonAction::Nothing,
+        (ShortcutPath::Control, _) if inline => ButtonAction::Capture,
+        (ShortcutPath::Control, ShortcutState::Unbound) => ButtonAction::ClaimDefault,
+        (ShortcutPath::Control, _) => ButtonAction::CaptureDialog,
+        (ShortcutPath::Portal, ShortcutState::Unbound) => ButtonAction::Bind,
+        (ShortcutPath::Portal, _) => ButtonAction::OpenSettings,
+    }
+}
+
 /// How the daemon answered a bind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindReply {
@@ -230,6 +267,48 @@ mod tests {
         BindReply::Answered {
             ok,
             message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_step_captures_in_place_where_the_row_opens_a_dialog() {
+        use ShortcutPath::{Control, Portal};
+        let bound = ShortcutState::Bound("<Super>j".to_owned());
+        let unbound = ShortcutState::Unbound;
+        assert_eq!(
+            button_action(Control, &unbound, true, false),
+            ButtonAction::Capture
+        );
+        assert_eq!(
+            button_action(Control, &bound, true, false),
+            ButtonAction::Capture
+        );
+        assert_eq!(
+            button_action(Control, &bound, true, true),
+            ButtonAction::CancelCapture
+        );
+        assert_eq!(
+            button_action(Control, &unbound, false, false),
+            ButtonAction::ClaimDefault
+        );
+        assert_eq!(
+            button_action(Control, &bound, false, false),
+            ButtonAction::CaptureDialog
+        );
+        // The portal grants keys only in its own dialog, wherever asked.
+        for inline in [true, false] {
+            assert_eq!(
+                button_action(Portal, &unbound, inline, false),
+                ButtonAction::Bind
+            );
+            assert_eq!(
+                button_action(Portal, &bound, inline, false),
+                ButtonAction::OpenSettings
+            );
+            assert_eq!(
+                button_action(Control, &ShortcutState::NotRunning, inline, false),
+                ButtonAction::Nothing
+            );
         }
     }
 

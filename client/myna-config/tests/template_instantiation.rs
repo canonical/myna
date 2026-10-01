@@ -378,6 +378,13 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-default: Super+J without a click",
         "onboarding-keys: Super+J under control",
         "onboarding-keys: follows a desktop rebind",
+        "onboarding-capture: Change waits in place, Done held",
+        "onboarding-capture: Escape keeps the key",
+        "onboarding-capture: reserved key refused in place",
+        "onboarding-capture: new key taken",
+        "onboarding-capture: a chosen key survives Back and Next",
+        "onboarding-capture: swap asked, declining keeps waiting",
+        "onboarding-capture: Set up captures F8 as a cap, leaving ends it",
         "onboarding-restart: waits for the daemon's name",
     ] {
         assert!(

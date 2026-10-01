@@ -175,6 +175,7 @@ impl OnboardingUi {
             shortcut_page.shortcut_button(),
             window.overlay(),
             crate::shortcut_ui::Surface::Onboarding,
+            Some(shortcut_page.in_place()),
             Box::new({
                 let description = shortcut_page.description();
                 move |state, path, hint| {
@@ -730,6 +731,10 @@ impl OnboardingUi {
         self.shortcut_page.shortcut_button()
     }
 
+    pub fn shortcut(&self) -> Rc<crate::shortcut_ui::ShortcutControl> {
+        self.shortcut.clone()
+    }
+
     /// Done closes only the wizard when it was opened from the settings
     /// window, which stays and re-reads the machine; on first run it closes
     /// Myna Settings. Closing, not quitting, so each window's close handler
@@ -778,8 +783,9 @@ impl OnboardingUi {
         }
         let held = match step {
             Step::Components => self.busy.get() || self.running.get(),
-            // Done under the portal's open dialog would leave it orphaned.
-            Step::Shortcut => self.shortcut.binding(),
+            // Done under the portal's open dialog would leave it orphaned,
+            // and under a capture in place it would drop the key half chosen.
+            Step::Shortcut => self.shortcut.held(),
             Step::Welcome => false,
         };
         set_class(

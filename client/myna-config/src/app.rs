@@ -1247,15 +1247,17 @@ fn onboarding_probe() -> glib::ExitCode {
 }
 
 /// With no key the caps leave no room behind: the sentence leads straight to
-/// the button, and the column grows by exactly the caps once a key lands.
+/// the button, which drops by exactly the caps once a key lands. The column
+/// itself keeps one height, so the page does not re-centre.
 fn shortcut_page_closes_up(page: &ui::OnboardingShortcut) -> Result<(), String> {
     use crate::shortcut::{ShortcutPath, ShortcutState};
     use crate::shortcut_ui::{fill_keys, onboarding_description, Surface};
     let keys = page.shortcut_box();
+    let idle = keys.parent().ok_or("the key caps sit in nothing")?;
     let column = std::iter::successors(Some(keys.clone().upcast::<gtk::Widget>()), |w| w.parent())
         .find(|w| w.parent().is_some_and(|p| p.is::<adw::Clamp>()))
         .ok_or("the key caps sit in no clamped column")?;
-    let height = |state: &ShortcutState| {
+    let heights = |state: &ShortcutState| {
         while let Some(child) = keys.first_child() {
             keys.remove(&child);
         }
@@ -1263,7 +1265,10 @@ fn shortcut_page_closes_up(page: &ui::OnboardingShortcut) -> Result<(), String> 
             fill_keys(&keys, trigger, Surface::Onboarding);
         }
         keys.set_visible(matches!(state, ShortcutState::Bound(_)));
-        column.measure(gtk::Orientation::Vertical, 540).1
+        (
+            idle.measure(gtk::Orientation::Vertical, 540).1,
+            column.measure(gtk::Orientation::Vertical, 540).1,
+        )
     };
     // One sentence for both, so only the caps differ.
     let bound = ShortcutState::Bound("<Super>j".to_owned());
@@ -1272,13 +1277,19 @@ fn shortcut_page_closes_up(page: &ui::OnboardingShortcut) -> Result<(), String> 
         ShortcutPath::Portal,
         crate::shortcut::DialogHint::None,
     ));
-    let bound = height(&bound);
+    let (bound, bound_column) = heights(&bound);
     let caps = keys.measure(gtk::Orientation::Vertical, -1).1;
-    let unbound = height(&ShortcutState::Unbound);
+    let (unbound, unbound_column) = heights(&ShortcutState::Unbound);
     if bound - unbound < caps {
         return Err(format!(
-            "the shortcut step's column is {unbound} px high unbound and {bound} px bound, \
+            "the key and button are {unbound} px high unbound and {bound} px bound, \
              with {caps} px of key caps"
+        ));
+    }
+    if bound_column != unbound_column {
+        return Err(format!(
+            "the shortcut step's column is {unbound_column} px high unbound and \
+             {bound_column} px bound, so the page re-centres"
         ));
     }
     Ok(())
@@ -1874,7 +1885,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     let walk = |mode: &str| {
         activation.replace(mode.to_owned());
         let machine = ProbeMachine::new();
-        let (window, button) = {
+        let (window, button, control) = {
             let ui = OnboardingUi::present_with_ports(
                 &application,
                 assess(Machine {
@@ -1888,7 +1899,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
                 ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
                 crate::onboarding_ui::Opener::FirstRun,
             );
-            (ui.window(), ui.shortcut_button())
+            (ui.window(), ui.shortcut_button(), ui.shortcut())
         };
         settle_gtk();
         window.forward_button().emit_clicked();
@@ -1903,13 +1914,13 @@ fn onboarding_control_probe() -> glib::ExitCode {
         for _ in 0..5 {
             settle_gtk();
         }
-        (window, button)
+        (window, button, control)
     };
     let dictation = gettextrs::gettext("Dictation");
     let toggle = format!("/snap/bin/{}.toggle", crate::onboarding::MYNA_SNAP);
 
     let _ = desktop.install(&dictation, &toggle, "<Control><Alt>d");
-    let (window, _) = walk("control");
+    let (window, _, _) = walk("control");
     if desktop.binding().as_deref() != Some("<Control><Alt>d") {
         eprintln!("setup replaced the user's key with {:?}", desktop.binding());
         return glib::ExitCode::FAILURE;
@@ -1932,7 +1943,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     paths.push(theirs.to_owned());
     let _ = list.set_strv("custom-keybindings", paths);
     let _ = other.set_string("binding", "<Super>j");
-    let (window, _) = walk("control");
+    let (window, _, _) = walk("control");
     if desktop.binding().is_some() || other.string("binding") != "<Super>j" {
         eprintln!(
             "setup took a key another shortcut holds: {:?}",
@@ -1948,7 +1959,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     // it once. The stand-in answers as a dismissed dialog: that was the
     // user's answer, so nothing reports it, and setting a key up becomes the
     // step's main action over Done.
-    let (window, button) = walk("portal");
+    let (window, button, _) = walk("portal");
     for _ in 0..20 {
         if binds.get() > 0 {
             break;
@@ -2209,7 +2220,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
 
     // A key the portal granted before reads as the design, as Super+J.
     shortcut.replace("Press <Super>j".to_owned());
-    let (window, button) = walk("portal");
+    let (window, button, _) = walk("portal");
     shortcut.replace(String::new());
     if !button.is_sensitive() {
         eprintln!("a wizard closed under its dialog left the next one held");
@@ -2271,7 +2282,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     println!("onboarding-keys: follows a portal rebind");
     window.close();
 
-    let (window, button) = walk("control");
+    let (window, button, control) = walk("control");
     for _ in 0..40 {
         if desktop.binding().is_some() {
             break;
@@ -2316,6 +2327,10 @@ fn onboarding_control_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-keys: follows a desktop rebind");
+    if let Err(problem) = probe_capture_in_place(&window, &button, &control) {
+        eprintln!("{problem}");
+        return glib::ExitCode::FAILURE;
+    }
     window.close();
     let _ = desktop.install(&dictation, &toggle, "");
     settle_gtk();
@@ -4930,6 +4945,318 @@ fn shortcut_shown(window: &ui::OnboardingWindow) -> bool {
     described.is_some() && keycaps(window.upcast_ref()) == ["Super", "J"]
 }
 
+/// The step's own key capture under control activation, from Super+K bound:
+/// it waits in place without moving the page, refuses inline, asks before a
+/// swap, keeps a chosen key across Back and Next, and ends on Escape, a key
+/// taken, or leaving the page.
+fn probe_capture_in_place(
+    window: &ui::OnboardingWindow,
+    button: &gtk::Button,
+    control: &Rc<crate::shortcut_ui::ShortcutControl>,
+) -> Result<(), String> {
+    use gtk::gdk::{Key, ModifierType};
+    let desktop = crate::adapters::desktop_shortcut::DesktopShortcut::open()
+        .ok_or("no desktop shortcut settings")?;
+    let forward = window.forward_button();
+    let mapped = |matches: &dyn Fn(&gtk::Widget) -> bool| {
+        descendants(window.upcast_ref(), &|widget| {
+            widget.is_mapped() && matches(widget)
+        })
+    };
+    let shown = |text: &str| {
+        !mapped(&|widget| {
+            widget
+                .downcast_ref::<gtk::Label>()
+                .is_some_and(|label| label.label().contains(text))
+        })
+        .is_empty()
+    };
+    let cancel = || {
+        mapped(&|widget| {
+            widget
+                .downcast_ref::<gtk::Button>()
+                .is_some_and(|button| button.label().as_deref() == Some("Cancel"))
+        })
+        .into_iter()
+        .next()
+        .and_then(|widget| widget.downcast::<gtk::Button>().ok())
+    };
+    let field = || {
+        mapped(&|widget| widget.has_css_class("shortcut-capture"))
+            .into_iter()
+            .next()
+    };
+    let caps = || keycaps(window.upcast_ref());
+    let y_of = |widget: &gtk::Widget| {
+        widget
+            .compute_point(window, &gtk::graphene::Point::zero())
+            .map(|point| point.y())
+    };
+    // The key and its capture share one stack: the page re-centring would
+    // move it.
+    let stack = button
+        .ancestor(gtk::Stack::static_type())
+        .ok_or("the step's button is in no stack")?;
+    let middle_at = || y_of(&stack);
+    let focused = |widget: &gtk::Button| {
+        gtk::prelude::RootExt::focus(window).as_ref() == Some(widget.upcast_ref())
+    };
+    let step = || {
+        window
+            .navigation()
+            .visible_page()
+            .and_then(|page| page.tag())
+            .map(|tag| tag.to_string())
+            .unwrap_or_default()
+    };
+    let prompt = "Press the new shortcut";
+
+    let idle_at = middle_at();
+    button.emit_clicked();
+    settle_gtk();
+    if !control.capturing()
+        || window.visible_dialog().is_some()
+        || button.is_mapped()
+        || cancel().is_none()
+        || !shown(prompt)
+        || !shown("Press Escape to cancel")
+        || !caps().is_empty()
+        || forward.is_sensitive()
+    {
+        return Err(format!(
+            "Change did not capture in place: capturing {}, dialog {}, Cancel {}, \
+             caps {:?}, Done sensitive {}",
+            control.capturing(),
+            window.visible_dialog().is_some(),
+            cancel().is_some(),
+            caps(),
+            forward.is_sensitive()
+        ));
+    }
+    if middle_at() != idle_at {
+        return Err(format!(
+            "capturing moved the page from {idle_at:?} to {:?}",
+            middle_at()
+        ));
+    }
+    if !cancel().is_some_and(|cancel| focused(&cancel)) {
+        return Err("the capture's Cancel did not take focus".to_owned());
+    }
+    println!("onboarding-capture: Change waits in place, Done held");
+
+    control.press(Key::Escape, ModifierType::empty());
+    settle_gtk();
+    if control.capturing()
+        || caps() != ["Super", "K"]
+        || button.label().as_deref() != Some("Change shortcut")
+        || !forward.is_sensitive()
+        || middle_at() != idle_at
+        || !focused(button)
+    {
+        return Err(format!(
+            "Escape left capturing {}, caps {:?}, button {:?}, page at {:?}, focused {}",
+            control.capturing(),
+            caps(),
+            button.label(),
+            middle_at(),
+            focused(button)
+        ));
+    }
+    println!("onboarding-capture: Escape keeps the key");
+
+    button.emit_clicked();
+    settle_gtk();
+    control.press(Key::a, ModifierType::empty());
+    if !control.capturing() {
+        return Err("a bare letter ended the capture".to_owned());
+    }
+    let cancel_at = || cancel().and_then(|cancel| y_of(cancel.upcast_ref()));
+    let before = cancel_at();
+    // Super+O is rotation lock's -static key, which cannot be taken.
+    control.press(Key::o, ModifierType::SUPER_MASK);
+    settle_gtk();
+    if !control.capturing()
+        || !shown("Super + O is reserved for")
+        || !shown("Toggle automatic screen orientation")
+        || !shown(prompt)
+    {
+        return Err("a reserved key was not refused in place, named as the row names keys".into());
+    }
+    // Only the outline turns red: a red prompt reads as the error itself.
+    if !field().is_some_and(|field| field.has_css_class("refused") && !field.has_css_class("error"))
+    {
+        return Err("the refused prompt is not outlined, or is coloured as an error".to_owned());
+    }
+    if cancel_at() != before {
+        return Err(format!(
+            "the refusal moved Cancel from {before:?} to {:?}",
+            cancel_at()
+        ));
+    }
+    println!("onboarding-capture: reserved key refused in place");
+    control.press(Key::d, ModifierType::CONTROL_MASK | ModifierType::ALT_MASK);
+    settle_gtk();
+    if control.capturing()
+        || desktop.binding().as_deref() != Some("<Control><Alt>d")
+        || caps() != ["Ctrl", "Alt", "D"]
+        || shown("Toggle automatic screen orientation")
+    {
+        return Err(format!(
+            "the captured key left capturing {}, binding {:?}, caps {:?}",
+            control.capturing(),
+            desktop.binding(),
+            caps()
+        ));
+    }
+    println!("onboarding-capture: new key taken");
+
+    // Moving on again re-runs setup, which sets a key only where none is.
+    window.navigation().pop();
+    for _ in 0..40 {
+        if step() == "components" && !control.capturing() {
+            break;
+        }
+        settle_gtk();
+    }
+    forward.emit_clicked();
+    for _ in 0..100 {
+        if step() == "shortcut" {
+            break;
+        }
+        settle_gtk();
+    }
+    for _ in 0..10 {
+        settle_gtk();
+    }
+    if step() != "shortcut"
+        || desktop.binding().as_deref() != Some("<Control><Alt>d")
+        || caps() != ["Ctrl", "Alt", "D"]
+    {
+        return Err(format!(
+            "Back then Next left step {:?}, binding {:?}, caps {:?}",
+            step(),
+            desktop.binding(),
+            caps()
+        ));
+    }
+    println!("onboarding-capture: a chosen key survives Back and Next");
+
+    // Super+L locks the screen: declining the swap keeps waiting.
+    // Pressed as a click would, so the alert's own order of response and
+    // close is the one under test.
+    let alert = |response: &str| -> Result<(), String> {
+        control.press(Key::l, ModifierType::SUPER_MASK);
+        settle_gtk();
+        let alert = window
+            .visible_dialog()
+            .and_then(|dialog| dialog.downcast::<adw::AlertDialog>().ok())
+            .ok_or("taking Lock screen's key asked nothing")?;
+        let label = alert.response_label(response);
+        descendants(alert.upcast_ref(), &|widget| {
+            widget
+                .downcast_ref::<gtk::Button>()
+                .is_some_and(|button| button.label() == Some(label.clone()))
+        })
+        .into_iter()
+        .next()
+        .and_then(|widget| widget.downcast::<gtk::Button>().ok())
+        .ok_or_else(|| format!("the alert has no {response} button"))?
+        .emit_clicked();
+        for _ in 0..10 {
+            settle_gtk();
+        }
+        Ok(())
+    };
+    button.emit_clicked();
+    settle_gtk();
+    control.press(Key::o, ModifierType::SUPER_MASK);
+    settle_gtk();
+    alert("cancel")?;
+    if !control.capturing() || desktop.binding().as_deref() != Some("<Control><Alt>d") {
+        return Err(format!(
+            "declining the swap left capturing {}, binding {:?}",
+            control.capturing(),
+            desktop.binding()
+        ));
+    }
+    if shown("Toggle automatic screen orientation") {
+        return Err("a declined swap left the earlier refusal on screen".to_owned());
+    }
+    if !cancel().is_some_and(|cancel| focused(&cancel)) {
+        return Err("declining the swap did not hand focus back to Cancel".to_owned());
+    }
+    alert("replace")?;
+    if control.capturing()
+        || desktop.binding().as_deref() != Some("<Super>l")
+        || desktop.conflict("<Super>l").is_some()
+    {
+        return Err(format!(
+            "replacing left capturing {}, binding {:?}",
+            control.capturing(),
+            desktop.binding()
+        ));
+    }
+    if !focused(button) {
+        return Err("after Replace the focus did not return to Change shortcut".to_owned());
+    }
+    println!("onboarding-capture: swap asked, declining keeps waiting");
+
+    // With no key, Set up captures too rather than claiming the default.
+    let _ = desktop.install(
+        &gettextrs::gettext("Dictation"),
+        "/snap/bin/myna.toggle",
+        "",
+    );
+    for _ in 0..20 {
+        if button.label().as_deref() == Some("Set up shortcut") {
+            break;
+        }
+        settle_gtk();
+    }
+    let unbound_at = middle_at();
+    button.emit_clicked();
+    settle_gtk();
+    if !control.capturing() || desktop.binding().is_some() || !shown("Press a shortcut") {
+        return Err(format!(
+            "Set up left capturing {}, binding {:?}",
+            control.capturing(),
+            desktop.binding()
+        ));
+    }
+    if middle_at() != unbound_at {
+        return Err(format!(
+            "capturing with no key moved the page from {unbound_at:?} to {:?}",
+            middle_at()
+        ));
+    }
+    // A lone function key is a key cap like any other.
+    control.press(Key::F8, ModifierType::empty());
+    settle_gtk();
+    if control.capturing() || desktop.binding().as_deref() != Some("F8") || caps() != ["F8"] {
+        return Err(format!(
+            "F8 left capturing {}, binding {:?}, caps {:?}",
+            control.capturing(),
+            desktop.binding(),
+            caps()
+        ));
+    }
+    button.emit_clicked();
+    settle_gtk();
+    window.navigation().pop();
+    // The page unmaps once the slide back is over.
+    for _ in 0..40 {
+        if !control.capturing() {
+            break;
+        }
+        settle_gtk();
+    }
+    if control.capturing() {
+        return Err("leaving the step kept capturing".to_owned());
+    }
+    println!("onboarding-capture: Set up captures F8 as a cap, leaving ends it");
+    Ok(())
+}
+
 /// The labels of the mapped key caps under `root`, in order.
 fn keycaps(root: &gtk::Widget) -> Vec<String> {
     let mut caps = Vec::new();
@@ -5276,6 +5603,7 @@ fn ready_page(
         page.shortcut_button(),
         overlay.clone(),
         crate::shortcut_ui::Surface::Row,
+        None,
         Box::new({
             // The row holds the button, which owns the control.
             let row = page.shortcut_row().downgrade();

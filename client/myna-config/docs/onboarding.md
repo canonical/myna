@@ -382,15 +382,26 @@ no key is bound, Set up shortcut is the step's suggested action and Done is
 plain, so finishing with nothing to trigger dictation is not the obvious
 path. The key caps follow the key live on either path: the daemon's
 `Shortcut` property under the portal, the custom shortcut's GSettings under
-control, so a change in the settings window or in GNOME Settings shows at once. Set Up installs Super+J;
-Change captures a key in a dialog that shows the default key as key caps for
-its example and:
+control, so a change in the settings window or in GNOME Settings shows at once.
+
+On the step, Set up shortcut and Change shortcut capture the key in place: the
+key caps become a "Press the new shortcut…" box ("Press a shortcut…" when
+there is none), the button becomes Cancel, and Done is insensitive until the
+capture ends. Escape, Cancel or leaving the step keeps the key there was; a
+refused key turns the box's outline red and is explained under it, in room kept for two
+lines so the page does not move, and the capture goes on. Declining a swap
+clears that explanation and keeps waiting. A key chosen here survives Back then Next:
+the setup that runs on moving on installs Super+J only where no key is set. The settings window's row keeps
+a dialog: a row has no room for the prompt and the refusal, and GNOME
+Settings captures its own shortcuts in a dialog too. There Set Up installs
+Super+J and Change opens the dialog, which shows the default key as key caps
+for its example. Either way the capture:
 
 - takes a chord with Ctrl, Alt or Super, or a lone function or media key, so
   typing is never hijacked; media keys are stored as `XF86<Name>`, the only
   spelling the desktop resolves;
-- inhibits the desktop's shortcuts while open, as GNOME Settings does, so keys
-  GNOME uses reach it (GNOME asks once to allow this);
+- inhibits the desktop's shortcuts while it waits, as GNOME Settings does, so
+  keys GNOME uses reach it (GNOME asks once to allow this);
 - asks before taking a key from a desktop action or another custom shortcut,
   and removes it there;
 - refuses keys gsd-media-keys binds as `-static` (Super+O for rotation lock):
