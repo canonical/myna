@@ -499,6 +499,17 @@ pub fn can_advance(step: Step, components: &[Component]) -> bool {
     }
 }
 
+/// Whether the footer's Next or Done is the step's main action, styled as
+/// suggested: always on the welcome, once nothing required is missing on the
+/// component step, and on the last step once a key is bound, since setting
+/// one up leads until then.
+pub fn forward_leads(step: Step, components: &[Component], needs_key: bool) -> bool {
+    match step {
+        Step::Shortcut => !needs_key,
+        _ => can_advance(step, components),
+    }
+}
+
 /// Whether the step re-reads the machine on its own. The component step does
 /// while something required is missing: the user installs in another window,
 /// which the wizard may never lose focus to.
@@ -630,6 +641,16 @@ mod tests {
             Step::Components,
             &with_extension(ExtensionState::Disabled)
         ));
+    }
+
+    #[test]
+    fn the_forward_button_leads_only_when_moving_on_is_the_step_s_main_action() {
+        let bare = assess(Machine::default());
+        assert!(forward_leads(Step::Welcome, &bare, true));
+        assert!(!forward_leads(Step::Components, &bare, false));
+        assert!(forward_leads(Step::Components, &assess(ready()), true));
+        assert!(forward_leads(Step::Shortcut, &bare, false));
+        assert!(!forward_leads(Step::Shortcut, &assess(ready()), true));
     }
 
     #[test]

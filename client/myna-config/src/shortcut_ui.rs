@@ -252,7 +252,6 @@ impl ShortcutControl {
         if self.surface == Surface::Onboarding {
             let main = state == ShortcutState::Unbound;
             set_class(&self.button, "suggested-action", main);
-            set_class(&self.button, "outlined", !main);
         }
         if let Some(changed) = &*self.changed.borrow() {
             changed();

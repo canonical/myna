@@ -4,12 +4,11 @@ The settings application ships separately from the `myna` snap, so it can be
 opened on a machine where dictation is not installed at all. When that is the
 case it opens a three-step wizard instead of the settings window.
 
-Every step leaves through one footer button: an outlined Next, and a green
-suggested Done on the last step (`success-action`, libadwaita's success colour:
-the design sets finishing apart from the accent). Upstream libadwaita's light
-success green is too pale for white text (2.3:1), so from GTK 4.16 its oklab
-lightness is capped at 0.54 (about 4.5:1); Yaru's greens are darker and pass
-unchanged, and Noble's GTK 4.14 keeps the theme's colour. The window opens at the
+Every step leaves through one footer button, Next and on the last step Done:
+a stock libadwaita button at its natural size, `suggested-action` while moving
+on is the step's main action (`onboarding::forward_leads`) and plain
+otherwise. The Figma mock draws Yaru.dart's green and outlined buttons; stock
+Adwaita was chosen over them. The window opens at the
 design's 800x600, and every step's header is flat and untitled; each step after
 the first carries a back arrow to the step before it. Done closes Myna
 Settings, as the design says: the wizard and, when it was opened from the menu,
@@ -338,7 +337,7 @@ it, offering Super+J, over the step it concerns; the brief's "set the default
 shortcut" cannot be silent there. A dialog dismissed there is the user's
 answer and is not reported, unlike one raised by the step's button. While
 no key is bound, Set up shortcut is the step's suggested action and Done is
-outlined, so finishing with nothing to trigger dictation is not the obvious
+plain, so finishing with nothing to trigger dictation is not the obvious
 path. The key caps follow the key live on either path: the daemon's
 `Shortcut` property under the portal, the custom shortcut's GSettings under
 control, so a change in the settings window or in GNOME Settings shows at once. Set Up installs Super+J;

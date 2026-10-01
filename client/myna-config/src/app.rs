@@ -411,10 +411,9 @@ fn onboarding_probe() -> glib::ExitCode {
     if !forward.is_mapped()
         || !forward.is_sensitive()
         || forward.label().as_deref() != Some(gettextrs::gettext("Next").as_str())
-        || forward.has_css_class("suggested-action")
-        || !forward.has_css_class("outlined")
+        || !standard_button(&forward, true)
     {
-        eprintln!("the welcome step offers no outlined Next in the footer");
+        eprintln!("the welcome step offers no suggested Next in the footer");
         return glib::ExitCode::FAILURE;
     }
     if window.default_width() != 800 || window.default_height() != 600 {
@@ -438,7 +437,6 @@ fn onboarding_probe() -> glib::ExitCode {
     let in_view = forward.compute_bounds(&window).is_some_and(|bounds| {
         bounds.y() >= 0.0
             && bounds.y() + bounds.height() <= window.height() as f32
-            && bounds.width() >= 136.0
             && bounds.x() + bounds.width() == window.width() as f32 - 24.0
     });
     if !in_view {
@@ -446,7 +444,7 @@ fn onboarding_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-layout: forward in view");
-    if header(&window) != Some(true) || !forward.has_css_class("outlined") {
+    if header(&window) != Some(true) || !standard_button(&forward, false) {
         eprintln!("the component step's header is not an untitled bar with a back arrow");
         return glib::ExitCode::FAILURE;
     }
@@ -1249,7 +1247,7 @@ fn onboarding_probe() -> glib::ExitCode {
     }
     forward.emit_clicked();
     settle_gtk();
-    if !forward.is_sensitive() {
+    if !forward.is_sensitive() || !standard_button(&forward, true) {
         eprintln!("the component step refused to advance with everything installed");
         return glib::ExitCode::FAILURE;
     }
@@ -1404,17 +1402,15 @@ fn onboarding_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-shortcut: waits for the daemon");
-    if !shortcut_button.has_css_class("outlined") {
-        eprintln!("the shortcut step's button is not outlined as the design");
+    if !standard_button(&shortcut_button, false) {
+        eprintln!("the shortcut step's button is not a plain Adwaita button");
         return glib::ExitCode::FAILURE;
     }
-    println!("onboarding-shortcut: button outlined");
+    println!("onboarding-shortcut: button plain");
     if forward.label().as_deref() != Some(gettextrs::gettext("Done").as_str())
-        || !forward.has_css_class("suggested-action")
-        || !forward.has_css_class("success-action")
-        || forward.has_css_class("outlined")
+        || !standard_button(&forward, true)
     {
-        eprintln!("the last step does not finish with a green suggested Done");
+        eprintln!("the last step does not finish with a suggested Done");
         return glib::ExitCode::FAILURE;
     }
     if header(&window) != Some(true) {
@@ -2082,10 +2078,8 @@ fn onboarding_control_probe() -> glib::ExitCode {
     }
     println!("onboarding-default: portal dialog raised on arrival");
     let forward = window.forward_button();
-    if !button.has_css_class("suggested-action")
-        || button.has_css_class("outlined")
-        || forward.has_css_class("suggested-action")
-        || !forward.has_css_class("outlined")
+    if !standard_button(&button, true)
+        || !standard_button(&forward, false)
         || !forward.is_sensitive()
     {
         eprintln!(
@@ -2112,11 +2106,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     }
     println!("onboarding-keys: Super+J under the portal");
     let forward = window.forward_button();
-    if binds.get() != 0
-        || !forward.has_css_class("suggested-action")
-        || !button.has_css_class("outlined")
-        || button.has_css_class("suggested-action")
-    {
+    if binds.get() != 0 || !standard_button(&forward, true) || !standard_button(&button, false) {
         eprintln!(
             "with a key bound setup asked {} binds and suggested {:?} over {:?}",
             binds.get(),
@@ -4964,6 +4954,16 @@ fn setup_spinner(window: &ui::OnboardingWindow) -> bool {
             .is_some_and(|spinner| spinner.is_mapped() && spinner.is_spinning())
     })
     .is_some()
+}
+
+/// A stock libadwaita button at its natural size: `suggested-action` when it
+/// is the step's main action, no styling otherwise.
+fn standard_button(button: &gtk::Button, main: bool) -> bool {
+    let styled = button
+        .css_classes()
+        .iter()
+        .any(|class| !matches!(class.as_str(), "suggested-action" | "text-button"));
+    button.has_css_class("suggested-action") == main && !styled && button.width_request() == -1
 }
 
 /// What the fixture's refused restart says, for its report.

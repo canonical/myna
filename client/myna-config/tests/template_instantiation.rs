@@ -241,7 +241,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-shortcut: headed as the design",
         "onboarding-wrap: shortcut title on one line",
         "onboarding-shortcut: waits for the daemon",
-        "onboarding-shortcut: button outlined",
+        "onboarding-shortcut: button plain",
         "onboarding-chrome: shortcut untitled, back",
         "onboarding-finish: Done closes Myna Settings",
     ] {

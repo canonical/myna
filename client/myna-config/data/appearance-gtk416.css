@@ -1,7 +1,1 @@
 /* Rules GTK 4.14 cannot parse, loaded only from GTK 4.16 on. */
-
-/* Libadwaita's light success green is too pale for white text: cap its
-   lightness for about 4.5:1. Yaru's greens are darker and pass unchanged. */
-button.suggested-action.success-action {
-  background-color: oklab(from @success_bg_color min(l, 0.54) a b);
-}

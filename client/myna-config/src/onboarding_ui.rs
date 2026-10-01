@@ -23,10 +23,10 @@ use crate::adapters::system_configurator::PkexecSystemConfigurator;
 use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
-    assess, can_advance, completes, flag_enabled, installs, model_offer, needs_onboarding, polls,
-    row_action, unlocked, while_installing, Component, ComponentId, ComponentState, Machine,
-    ModelOffer, ModelSize, RowAction, Step, Unavailable, MYNA_DOWNLOAD_BYTES,
-    RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    assess, can_advance, completes, flag_enabled, forward_leads, installs, model_offer,
+    needs_onboarding, polls, row_action, unlocked, while_installing, Component, ComponentId,
+    ComponentState, Machine, ModelOffer, ModelSize, RowAction, Step, Unavailable,
+    MYNA_DOWNLOAD_BYTES, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
 };
 use crate::ports::{
     BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
@@ -854,20 +854,17 @@ impl OnboardingUi {
             forward.update_property(&[gtk::accessible::Property::Description(
                 &gettextrs::gettext("Continue to the next onboarding step."),
             )]);
-            forward.remove_css_class("suggested-action");
-            forward.remove_css_class("success-action");
-            forward.add_css_class("outlined");
         } else {
             forward.set_label(&gettextrs::gettext("Done"));
             forward.update_property(&[gtk::accessible::Property::Description(
                 &gettextrs::gettext("Close Myna Settings."),
             )]);
-            // Done gives way to setting up the key while there is none.
-            let main = !self.shortcut.needs_key();
-            set_class(&forward, "suggested-action", main);
-            set_class(&forward, "success-action", main);
-            set_class(&forward, "outlined", !main);
         }
+        set_class(
+            &forward,
+            "suggested-action",
+            forward_leads(step, &components, self.shortcut.needs_key()),
+        );
         forward.set_sensitive(
             !(step == Step::Components && self.busy.get()) && can_advance(step, &components),
         );

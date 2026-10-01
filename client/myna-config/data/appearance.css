@@ -39,13 +39,6 @@ button.outlined:active {
   background-color: alpha(currentColor, 0.16);
 }
 
-/* Onboarding's Done, green as the design: finishing, not the accent.
-   appearance-gtk416.css darkens a pale green where GTK can. */
-button.suggested-action.success-action {
-  background-color: @success_bg_color;
-  color: @success_fg_color;
-}
-
 /* Onboarding step titles: larger than body text, but regular weight. */
 .onboarding-title {
   font-size: 24px;
