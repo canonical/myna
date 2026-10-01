@@ -61,6 +61,7 @@ use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
+use myna_desktop::shortcut::dialog::DialogSlot;
 use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
@@ -670,6 +671,15 @@ fn no_backend(e: ResolveError) -> Session {
     (run, StopHandle::default()).into()
 }
 
+/// What the served `BindShortcut` shares with the retry loop.
+#[derive(Default)]
+struct PortalBinds {
+    /// Notified after every successful bind.
+    bound: Arc<tokio::sync::Notify>,
+    /// The one dialog either may have up.
+    dialog: DialogSlot,
+}
+
 /// Binds the portal shortcut, re-binding whenever the portal goes away.
 struct PortalRebind {
     mode: ActivationMode,
@@ -687,6 +697,8 @@ struct PortalRebind {
     /// and notifies `bound`, so that wait ends the moment it succeeds.
     awaiting_binding: bool,
     bound: Arc<tokio::sync::Notify>,
+    /// Shared with `BindShortcut`, so the re-bind raises no sheet beside one.
+    dialog: DialogSlot,
     /// Where `Shortcut` and `Activation` are published.
     shortcut: Option<SharedBus>,
 }
@@ -743,7 +755,7 @@ impl Rebind for PortalRebind {
         self.awaiting_portal = false;
         self.awaiting_new_backend = false;
         self.awaiting_binding = false;
-        let attached = GlobalShortcutTrigger::attach("dictate", self.mode).await;
+        let attached = GlobalShortcutTrigger::attach("dictate", self.mode, &self.dialog).await;
         if let Some(activation) = activation_after(&attached) {
             publish(self.shortcut.as_ref(), "Activation", activation).await;
         }
@@ -879,7 +891,7 @@ async fn run_controller(
     readiness: Readiness,
     pump_bus: Option<SharedBus>,
     bus_lost: Option<BoxFuture<'static, ()>>,
-    bound: Arc<tokio::sync::Notify>,
+    binds: PortalBinds,
 ) -> ExitCode {
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
@@ -912,7 +924,8 @@ async fn run_controller(
                 awaiting_portal: false,
                 awaiting_new_backend: false,
                 awaiting_binding: false,
-                bound,
+                bound: binds.bound,
+                dialog: binds.dialog,
                 shortcut: pump_bus.clone(),
             });
             builder.trigger(with_status(trigger, pump_bus)).build()
@@ -1101,7 +1114,7 @@ fn bind_shortcut(args: &Args) -> ExitCode {
 async fn bind_here(preferred: Option<&str>, mode: ActivationMode) -> (bool, String) {
     use myna_desktop::shortcut::portal::{bind_report, configure};
 
-    bind_report(&configure("dictate", preferred, mode).await)
+    bind_report(&configure("dictate", preferred, None, mode).await)
 }
 
 /// Why `--install-shortcut` must not run, where that is the case.
@@ -1533,7 +1546,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             Readiness::new(),
             None,
             None,
-            Arc::default(),
+            PortalBinds::default(),
         ))
     } else {
         rt.block_on(run_headless_dbus(args, resolved))
@@ -1549,8 +1562,9 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
     let bind_mode = (resolved.activation == Activation::Portal).then(|| activation_mode(&args));
-    let bound = Arc::new(tokio::sync::Notify::new());
-    match ZbusBus::serve_for_portal(bind_mode, Arc::clone(&bound)).await {
+    let binds = PortalBinds::default();
+    match ZbusBus::serve_for_portal(bind_mode, Arc::clone(&binds.bound), binds.dialog.clone()).await
+    {
         Ok(bus) => {
             let clients = bus.client_registry();
             let bus_lost = bus.lost().boxed();
@@ -1568,7 +1582,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 readiness,
                 Some(pump_bus),
                 Some(bus_lost),
-                bound,
+                binds,
             )
             .await
         }
@@ -1588,7 +1602,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
-                bound,
+                binds,
             )
             .await
         }
@@ -1605,7 +1619,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
-                bound,
+                binds,
             )
             .await
         }
@@ -2366,6 +2380,7 @@ mod tests {
             awaiting_new_backend: false,
             awaiting_binding: true,
             bound,
+            dialog: DialogSlot::default(),
             shortcut: None,
         }
     }

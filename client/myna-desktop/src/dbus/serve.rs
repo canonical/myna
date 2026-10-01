@@ -161,6 +161,48 @@ struct DictationObject {
     /// instead of at its next unbound recheck.
     #[cfg_attr(test, allow(dead_code))]
     bound: Arc<tokio::sync::Notify>,
+    /// Held while a bind's dialog is up, here or in the retry loop.
+    dialog: crate::shortcut::dialog::DialogSlot,
+}
+
+impl DictationObject {
+    /// One dialog at a time: GNOME's sheet stays up until the user answers
+    /// it, whatever happens to the request, the session or this process, so
+    /// a second bind would stack a second sheet. The wait has no deadline
+    /// for the same reason.
+    #[cfg(not(test))]
+    async fn bind(
+        &self,
+        preferred: &str,
+        parent_window: &str,
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+    ) -> (bool, String) {
+        use crate::shortcut::portal::{bind_report, configure};
+
+        let Some(mode) = self.bind_mode else {
+            return (
+                false,
+                "activation is not Portal; this daemon takes no portal shortcut".into(),
+            );
+        };
+        let Some(open) = self.dialog.claim() else {
+            return (false, "a shortcut dialog is already open".into());
+        };
+        let preferred = (!preferred.is_empty()).then_some(preferred);
+        let parent_window = (!parent_window.is_empty()).then_some(parent_window);
+        let outcome = configure("dictate", preferred, parent_window, mode).await;
+        drop(open);
+        if let Ok(configured) = &outcome {
+            if let Some(shortcut) = configured.shortcut() {
+                self.served.lock().expect("served state poisoned").shortcut = shortcut.into();
+                if let Err(e) = self.shortcut_changed(emitter).await {
+                    myna_core::dbg_log!("dbus", "Shortcut change not emitted: {e}");
+                }
+            }
+            self.bound.notify_one();
+        }
+        bind_report(&outcome)
+    }
 }
 
 #[zbus::interface(name = "com.canonical.Myna.Dictation")]
@@ -199,26 +241,20 @@ impl DictationObject {
         preferred: &str,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
     ) -> (bool, String) {
-        use crate::shortcut::portal::{bind_report, configure};
+        self.bind(preferred, "", &emitter).await
+    }
 
-        let Some(mode) = self.bind_mode else {
-            return (
-                false,
-                "activation is not Portal; this daemon takes no portal shortcut".into(),
-            );
-        };
-        let preferred = (!preferred.is_empty()).then_some(preferred);
-        let outcome = configure("dictate", preferred, mode).await;
-        if let Ok(configured) = &outcome {
-            if let Some(shortcut) = configured.shortcut() {
-                self.served.lock().expect("served state poisoned").shortcut = shortcut.into();
-                if let Err(e) = self.shortcut_changed(&emitter).await {
-                    myna_core::dbg_log!("dbus", "Shortcut change not emitted: {e}");
-                }
-            }
-            self.bound.notify_one();
-        }
-        bind_report(&outcome)
+    /// `BindShortcutWithParent`: [`Self::bind_shortcut`] with the dialog
+    /// modal to `parent_window`, a portal window identifier
+    /// (`wayland:<handle>`, `x11:<xid>`) or empty for none.
+    #[cfg(not(test))]
+    async fn bind_shortcut_with_parent(
+        &self,
+        preferred: &str,
+        parent_window: &str,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+    ) -> (bool, String) {
+        self.bind(preferred, parent_window, &emitter).await
     }
 
     /// `RegisterClient`: a HUD client announces itself. The sender's unique
@@ -286,10 +322,6 @@ impl DictationObject {
             .clone()
     }
 
-    /// `HudStyle`: which audio-level presentation the HUD should draw, as the
-    /// `hud-style` settings nick. The renderer reads no settings of its own —
-    /// see `dbus::hud_style` for why that reader was removed rather than
-    /// repaired.
     /// `Shortcut`: the portal's own description of the dictation shortcut, as
     /// it would render it; empty while nothing is bound.
     #[zbus(property)]
@@ -344,6 +376,17 @@ impl DictationObject {
             .last_error_time
     }
 
+    /// `ShortcutDialog`: a bind's portal dialog is up and the daemon refuses
+    /// another until the user answers it.
+    #[zbus(property)]
+    async fn shortcut_dialog(&self) -> bool {
+        self.dialog.is_open()
+    }
+
+    /// `HudStyle`: which audio-level presentation the HUD should draw, as the
+    /// `hud-style` settings nick. The renderer reads no settings of its own -
+    /// see `dbus::hud_style` for why that reader was removed rather than
+    /// repaired.
     #[zbus(property)]
     async fn hud_style(&self) -> String {
         self.served
@@ -376,12 +419,14 @@ impl ZbusBus {
     /// [`serve`](Self::serve) plus the activation mode `BindShortcut` binds
     /// with. `None` leaves the method refusing, which is right for every
     /// activation that owns no portal shortcut. `bound` is notified after
-    /// every successful bind.
+    /// every successful bind; `dialog` is the slot every bind claims and
+    /// `ShortcutDialog` publishes.
     pub async fn serve_for_portal(
         mode: Option<crate::shortcut::portal::ActivationMode>,
         bound: Arc<tokio::sync::Notify>,
+        dialog: crate::shortcut::dialog::DialogSlot,
     ) -> Result<Self, ServeError> {
-        Self::serve_inner(None, mode, bound).await
+        Self::serve_inner(None, mode, bound, dialog).await
     }
 
     /// Like [`serve`](Self::serve), but attaches a [`DbusTriggerSource`] so
@@ -390,7 +435,7 @@ impl ZbusBus {
     pub async fn serve_with_trigger(
         trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
     ) -> Result<Self, ServeError> {
-        Self::serve_inner(trigger, None, Arc::default()).await
+        Self::serve_inner(trigger, None, Arc::default(), Default::default()).await
     }
 
     async fn serve_inner(
@@ -401,6 +446,7 @@ impl ZbusBus {
             crate::shortcut::portal::ActivationMode,
         >,
         bound: Arc<tokio::sync::Notify>,
+        dialog: crate::shortcut::dialog::DialogSlot,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
@@ -414,9 +460,11 @@ impl ZbusBus {
                     clients: Arc::clone(&clients),
                     bind_mode,
                     bound,
+                    dialog: dialog.clone(),
                 },
             )
             .await?;
+        spawn_dialog_announcer(&conn, &dialog);
         // `DoNotQueue` alone. zbus's default is all three flags, which makes
         // the name last-writer-wins in both directions: without
         // `AllowReplacement` a later daemon cannot take the indicator from
@@ -509,6 +557,32 @@ impl ZbusBus {
     pub fn client_registry(&self) -> Arc<ClientRegistry> {
         Arc::clone(&self.clients)
     }
+}
+
+/// Emit `ShortcutDialog` changes, whoever claims the slot.
+fn spawn_dialog_announcer(conn: &Connection, dialog: &crate::shortcut::dialog::DialogSlot) {
+    let conn = conn.clone();
+    let mut changes = dialog.subscribe();
+    // Lives as long as the connection, like the prune task.
+    tokio::spawn(async move {
+        while changes.changed().await.is_ok() {
+            let Ok(iface) = conn
+                .object_server()
+                .interface::<_, DictationObject>(OBJECT_PATH)
+                .await
+            else {
+                return;
+            };
+            let emitted = iface
+                .get()
+                .await
+                .shortcut_dialog_changed(iface.signal_emitter())
+                .await;
+            if let Err(e) = emitted {
+                myna_core::dbg_log!("dbus", "ShortcutDialog change not emitted: {e}");
+            }
+        }
+    });
 }
 
 /// PID of whoever currently owns [`BUS_NAME`], for the "already running"

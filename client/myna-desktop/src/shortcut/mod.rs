@@ -8,6 +8,7 @@
 
 pub mod control;
 pub mod dbus;
+pub mod dialog;
 pub mod portal;
 pub mod retry;
 

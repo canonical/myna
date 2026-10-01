@@ -68,3 +68,24 @@ pub async fn bind_shortcut(preferred: Option<&str>) -> Result<(bool, String), zb
         .body()
         .deserialize()
 }
+
+/// As [`bind_shortcut`], making the portal's dialog modal to `parent_window`,
+/// a portal window identifier (`wayland:<handle>`, `x11:<xid>`, or empty).
+/// A daemon that predates this method answers `UnknownMethod`.
+pub async fn bind_shortcut_with_parent(
+    preferred: Option<&str>,
+    parent_window: &str,
+) -> Result<(bool, String), zbus::Error> {
+    let connection = Connection::session().await?;
+    connection
+        .call_method(
+            Some(BUS_NAME),
+            OBJECT_PATH,
+            Some(BUS_NAME),
+            "BindShortcutWithParent",
+            &(preferred.unwrap_or_default(), parent_window),
+        )
+        .await?
+        .body()
+        .deserialize()
+}

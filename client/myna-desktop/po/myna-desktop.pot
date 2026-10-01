@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-01 02:09+0100\n"
+"POT-Creation-Date: 2026-10-01 18:23+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,23 +17,23 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/indicator/mod.rs:79
+#: src/indicator/mod.rs:80
 msgid "Loading model…"
 msgstr ""
 
-#: src/indicator/mod.rs:80
+#: src/indicator/mod.rs:81
 msgid "Listening"
 msgstr ""
 
-#: src/indicator/mod.rs:81
+#: src/indicator/mod.rs:82
 msgid "Transcribing"
 msgstr ""
 
-#: src/indicator/mod.rs:82
+#: src/indicator/mod.rs:83
 msgid "Finishing"
 msgstr ""
 
-#: src/indicator/mod.rs:86
+#: src/indicator/mod.rs:87
 #, c-format
 msgid "Error: %s"
 msgstr ""
@@ -83,12 +83,12 @@ msgid "Text field closed"
 msgstr ""
 
 #. TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
-#: src/shortcut/portal.rs:99
+#: src/shortcut/portal.rs:101
 msgid "Dictation (tap to start or stop)"
 msgstr ""
 
 #. TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
-#: src/shortcut/portal.rs:101
+#: src/shortcut/portal.rs:103
 msgid "Dictation (hold to talk)"
 msgstr ""
 

@@ -33,6 +33,7 @@ use zbus::{interface, Connection};
 
 use myna_desktop::dbus::serve::ZbusBus;
 use myna_desktop::dbus::{FakeBus, PropertyValue, BUS_NAME, OBJECT_PATH};
+use myna_desktop::shortcut::dialog::DialogSlot;
 use myna_desktop::shortcut::portal::{
     ActivationMode, GlobalShortcutTrigger, TriggerError, DEFAULT_TRIGGER,
 };
@@ -98,6 +99,8 @@ struct Ledger {
     lists: usize,
     /// Every `preferred_trigger` a `BindShortcuts` offered.
     preferred: Vec<String>,
+    /// Every `parent_window` a `BindShortcuts` named.
+    parents: Vec<String>,
     /// Request paths handed out and not yet `Close`d.
     live_requests: HashSet<String>,
     /// Session paths handed out and not yet `Close`d.
@@ -254,7 +257,7 @@ impl GlobalShortcutsFake {
         &self,
         _session_handle: OwnedObjectPath,
         shortcuts: Vec<(String, HashMap<String, OwnedValue>)>,
-        _parent_window: String,
+        parent_window: String,
         options: HashMap<String, OwnedValue>,
         #[zbus(header)] hdr: Header<'_>,
         #[zbus(object_server)] server: &ObjectServer,
@@ -277,6 +280,7 @@ impl GlobalShortcutsFake {
         {
             let mut ledger = self.ledger.lock().unwrap();
             ledger.binds += 1;
+            ledger.parents.push(parent_window);
             ledger
                 .preferred
                 .extend(shortcuts.iter().filter_map(|(_, options)| {
@@ -342,8 +346,10 @@ struct SessionFake {
 impl SessionFake {
     /// Closing the session is what tears down the backend's shortcut
     /// interaction for it, so it retires the session's pending request too -
-    /// this is the behaviour `xdg-desktop-portal` implements, and the only
-    /// lever a client has when `ashpd` keeps the request handle to itself.
+    /// the behaviour the portal spec describes, and the only lever a client
+    /// has when `ashpd` keeps the request handle to itself. GNOME's provider
+    /// on 26.04 does not honour it: its sheet stays up until answered, which
+    /// is why a user-initiated bind waits for that answer instead.
     async fn close(&self) {
         let mut ledger = self.ledger.lock().unwrap();
         ledger.live_sessions.remove(&self.path);
@@ -625,6 +631,7 @@ async fn a_dismissed_sheet_is_not_raised_again_next_login() {
         "dictate",
         ActivationMode::Toggle,
         Duration::from_secs(2),
+        &DialogSlot::default(),
     )
     .await;
     assert!(first.is_err(), "an unanswered sheet is not a binding");
@@ -798,9 +805,13 @@ async fn binding_through_the_daemon_offers_the_default_and_publishes_the_grant()
     let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
     let consent = Consent::none();
     let bound = Arc::new(tokio::sync::Notify::new());
-    let _daemon = ZbusBus::serve_for_portal(Some(ActivationMode::Toggle), Arc::clone(&bound))
-        .await
-        .expect("serve the daemon object");
+    let _daemon = ZbusBus::serve_for_portal(
+        Some(ActivationMode::Toggle),
+        Arc::clone(&bound),
+        DialogSlot::default(),
+    )
+    .await
+    .expect("serve the daemon object");
 
     let (ok, message) = myna_desktop::dbus::status::bind_shortcut(None)
         .await
@@ -809,6 +820,7 @@ async fn binding_through_the_daemon_offers_the_default_and_publishes_the_grant()
     assert!(ok, "{message}");
     assert_eq!(message, "bound to Super+T");
     assert_eq!(ledger.lock().unwrap().preferred, vec![DEFAULT_TRIGGER]);
+    assert_eq!(ledger.lock().unwrap().parents, vec![String::new()]);
     assert!(consent.is_given(), "a granted bind is consent to re-bind");
     tokio::time::timeout(Duration::from_secs(1), bound.notified())
         .await
@@ -833,4 +845,219 @@ async fn binding_through_the_daemon_offers_the_default_and_publishes_the_grant()
         .expect("a string");
     portal.shutdown().await;
     assert_eq!(published, "Super+T");
+}
+
+/// Myna Settings names its window, so the portal's sheet is modal to it
+/// instead of a separate window that gets lost behind it.
+#[tokio::test(flavor = "multi_thread")]
+async fn binding_through_the_daemon_parents_the_sheet_on_the_callers_window() {
+    skip_unless_dbus!();
+    let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
+    let _consent = Consent::none();
+    let _daemon = ZbusBus::serve_for_portal(
+        Some(ActivationMode::Toggle),
+        Arc::default(),
+        DialogSlot::default(),
+    )
+    .await
+    .expect("serve the daemon object");
+
+    let (ok, message) =
+        myna_desktop::dbus::status::bind_shortcut_with_parent(None, "wayland:handle-1")
+            .await
+            .expect("BindShortcutWithParent answers");
+    portal.shutdown().await;
+
+    assert!(ok, "{message}");
+    assert_eq!(ledger.lock().unwrap().parents, vec!["wayland:handle-1"]);
+}
+
+/// GNOME's sheet stays up until the user answers it: closing the request or
+/// the session does not take it down, and neither does the caller exiting
+/// (measured on 26.04). So while one is up the daemon raises no other, and
+/// it waits for that answer however long it takes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bind_while_the_sheet_is_up_raises_no_second_sheet() {
+    skip_unless_dbus!();
+    let (portal, ledger) = fake_portal_with(&[], Answer::Never).await;
+    let _consent = Consent::none();
+    let _daemon = ZbusBus::serve_for_portal(
+        Some(ActivationMode::Toggle),
+        Arc::default(),
+        DialogSlot::default(),
+    )
+    .await
+    .expect("serve the daemon object");
+
+    let first = tokio::spawn(myna_desktop::dbus::status::bind_shortcut_with_parent(
+        None, "",
+    ));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while ledger.lock().unwrap().binds == 0 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the first bind never raised a sheet"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    assert!(
+        shortcut_dialog().await,
+        "ShortcutDialog is false under the open sheet"
+    );
+    let (ok, message) = tokio::time::timeout(
+        Duration::from_secs(5),
+        myna_desktop::dbus::status::bind_shortcut(None),
+    )
+    .await
+    .expect("the second bind is waiting on a second sheet")
+    .expect("BindShortcut answers");
+    assert!(!ok, "a second bind succeeded: {message}");
+    assert!(message.contains("already open"), "{message}");
+    assert!(
+        shortcut_dialog().await,
+        "the refused bind cleared ShortcutDialog under the open sheet"
+    );
+    let (ok, _) = myna_desktop::dbus::status::bind_shortcut(None)
+        .await
+        .expect("BindShortcut answers");
+    assert!(!ok, "a third bind went through under the open sheet");
+    assert!(!first.is_finished(), "the first bind gave up on its sheet");
+    first.abort();
+    portal.shutdown().await;
+    assert_eq!(ledger.lock().unwrap().binds, 1);
+}
+
+/// Each bind gives the dialog back however it ends, so a dismissed sheet
+/// does not lock every later bind out until the daemon restarts.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dismissed_sheet_lets_the_next_bind_through() {
+    skip_unless_dbus!();
+    let (portal, ledger) = fake_portal_with(&[], Answer::Dismiss).await;
+    let _consent = Consent::none();
+    let _daemon = ZbusBus::serve_for_portal(
+        Some(ActivationMode::Toggle),
+        Arc::default(),
+        DialogSlot::default(),
+    )
+    .await
+    .expect("serve the daemon object");
+
+    for attempt in 1..=2 {
+        let (ok, message) = myna_desktop::dbus::status::bind_shortcut_with_parent(None, "")
+            .await
+            .expect("BindShortcutWithParent answers");
+        assert!(!ok, "a dismissed sheet bound: {message}");
+        assert!(
+            !message.contains("already open"),
+            "bind {attempt}: {message}"
+        );
+    }
+    let open = shortcut_dialog().await;
+    portal.shutdown().await;
+    assert_eq!(ledger.lock().unwrap().binds, 2);
+    assert!(!open, "ShortcutDialog stayed true with no sheet up");
+}
+
+/// The consented re-bind raises the sheet when the stored binding is gone,
+/// so it waits its turn behind a sheet a client's bind already has up, and
+/// keeps the consent it did not spend.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_re_bind_raises_no_sheet_beside_an_open_one() {
+    skip_unless_dbus!();
+    let (portal, ledger) = fake_portal_with(&[], Answer::Grant).await;
+    let consent = Consent::given();
+    let client = zbus::Connection::session().await.expect("client bus");
+    let dialog = DialogSlot::default();
+    let _open = dialog.claim().expect("a free slot");
+
+    let outcome = GlobalShortcutTrigger::attach_with_connection_timeout(
+        client,
+        "dictate",
+        ActivationMode::Toggle,
+        Duration::from_secs(2),
+        &dialog,
+    )
+    .await;
+    portal.shutdown().await;
+
+    assert!(
+        matches!(outcome, Err(TriggerError::NoShortcutBound(_))),
+        "got {:?}",
+        outcome.err()
+    );
+    assert_eq!(ledger.lock().unwrap().binds, 0, "a second sheet went up");
+    assert!(consent.is_given(), "a re-bind that never ran spent consent");
+}
+
+/// And while the re-bind's own sheet is up, the daemon says so and refuses a
+/// client's bind instead of stacking a second sheet on it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_re_bind_sheet_holds_the_daemons_dialog() {
+    skip_unless_dbus!();
+    let (portal, ledger) = fake_portal_with(&[], Answer::Never).await;
+    let _consent = Consent::given();
+    let dialog = DialogSlot::default();
+    let _daemon =
+        ZbusBus::serve_for_portal(Some(ActivationMode::Toggle), Arc::default(), dialog.clone())
+            .await
+            .expect("serve the daemon object");
+    let client = zbus::Connection::session().await.expect("client bus");
+
+    let attach = tokio::spawn({
+        let dialog = dialog.clone();
+        async move {
+            GlobalShortcutTrigger::attach_with_connection_timeout(
+                client,
+                "dictate",
+                ActivationMode::Toggle,
+                Duration::from_secs(30),
+                &dialog,
+            )
+            .await
+            .map(|_| ())
+        }
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while ledger.lock().unwrap().binds == 0 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the re-bind never raised a sheet"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    assert!(
+        shortcut_dialog().await,
+        "ShortcutDialog is false under the re-bind's sheet"
+    );
+    let (ok, message) = myna_desktop::dbus::status::bind_shortcut(None)
+        .await
+        .expect("BindShortcut answers");
+    attach.abort();
+    portal.shutdown().await;
+    assert!(!ok, "a client bind went through: {message}");
+    assert!(message.contains("already open"), "{message}");
+    assert_eq!(ledger.lock().unwrap().binds, 1);
+}
+
+/// The daemon's `ShortcutDialog` property.
+async fn shortcut_dialog() -> bool {
+    let client = zbus::Connection::session().await.expect("client bus");
+    zbus::fdo::PropertiesProxy::builder(&client)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
+        .await
+        .expect("properties proxy")
+        .get(
+            zbus::names::InterfaceName::try_from(BUS_NAME).unwrap(),
+            "ShortcutDialog",
+        )
+        .await
+        .expect("ShortcutDialog")
+        .try_into()
+        .expect("a boolean")
 }

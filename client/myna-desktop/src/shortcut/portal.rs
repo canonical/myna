@@ -23,6 +23,8 @@
 use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};
 
+#[cfg(not(test))]
+use super::dialog::DialogSlot;
 use super::{Trigger, TriggerEdge};
 use crate::dbus::{PropertyValue, SharedBus};
 
@@ -243,32 +245,50 @@ impl GlobalShortcutTrigger {
     /// refuse and say which command to run. That is the reported bug: a fresh
     /// install raised the sheet at every login, and dismissing it stored
     /// nothing, so the next login raised it again.
+    ///
+    /// The re-bind claims `dialog` first, since it raises the sheet when the
+    /// stored binding is gone; while a client's bind holds it, nothing is
+    /// re-bound and the attach reads as unbound.
     #[cfg(not(test))]
-    pub async fn attach(shortcut_id: &str, mode: ActivationMode) -> Result<Self, TriggerError> {
+    pub async fn attach(
+        shortcut_id: &str,
+        mode: ActivationMode,
+        dialog: &DialogSlot,
+    ) -> Result<Self, TriggerError> {
         let conn = crate::dbus::serve::connect_session()
             .await
             .map_err(|e| TriggerError::PortalUnavailable(e.to_string()))?;
-        Self::attach_with_connection(conn, shortcut_id, mode).await
+        Self::attach_with_connection_timeout(conn, shortcut_id, mode, BIND_TIMEOUT, dialog).await
     }
 
-    /// As [`Self::attach`] but on a caller-provided session-bus connection.
+    /// As [`Self::attach`] but on a caller-provided session-bus connection,
+    /// with a dialog slot of its own.
     #[cfg(not(test))]
     pub async fn attach_with_connection(
         conn: zbus::Connection,
         shortcut_id: &str,
         mode: ActivationMode,
     ) -> Result<Self, TriggerError> {
-        Self::attach_with_connection_timeout(conn, shortcut_id, mode, BIND_TIMEOUT).await
+        Self::attach_with_connection_timeout(
+            conn,
+            shortcut_id,
+            mode,
+            BIND_TIMEOUT,
+            &DialogSlot::default(),
+        )
+        .await
     }
 
-    /// As [`Self::attach_with_connection`] but with an explicit deadline on the
-    /// re-bind, so `tests/portal_leak.rs` need not spend [`BIND_TIMEOUT`].
+    /// As [`Self::attach`] on a caller-provided connection and with an
+    /// explicit deadline on the re-bind, so `tests/portal_leak.rs` need not
+    /// spend [`BIND_TIMEOUT`].
     #[cfg(not(test))]
     pub async fn attach_with_connection_timeout(
         conn: zbus::Connection,
         shortcut_id: &str,
         mode: ActivationMode,
         answer_within: std::time::Duration,
+        dialog: &DialogSlot,
     ) -> Result<Self, TriggerError> {
         let (shortcuts, session) = open_session(&conn).await?;
         match Self::attach_on_session(
@@ -278,6 +298,7 @@ impl GlobalShortcutTrigger {
             shortcut_id,
             mode,
             answer_within,
+            dialog,
         )
         .await
         {
@@ -302,6 +323,7 @@ impl GlobalShortcutTrigger {
         shortcut_id: &str,
         mode: ActivationMode,
         answer_within: std::time::Duration,
+        dialog: &DialogSlot,
     ) -> Result<(BoxStream<'static, PortalSignal>, String), TriggerError> {
         let bound = list_shortcuts(shortcuts, session).await?;
         if let Some(shortcut) = bound.iter().find(|s| s.id() == shortcut_id) {
@@ -320,11 +342,18 @@ impl GlobalShortcutTrigger {
             )));
         }
 
+        let Some(_open) = dialog.claim() else {
+            return Err(TriggerError::NoShortcutBound(
+                "a shortcut dialog is already open".into(),
+            ));
+        };
         // Consent on record, so the portal has a binding to answer from and
         // this is silent. If it is not - the user removed the shortcut in
         // Settings and is now looking at a sheet - that consent is spent, and
         // withdrawing it here is what stops the daemon asking again at every
-        // login for the rest of the install's life.
+        // login for the rest of the install's life. That sheet is the one the
+        // daemon still abandons: past `answer_within` it gives up and frees
+        // the slot while GNOME keeps the sheet up.
         let result = Self::bind_on_session(
             conn,
             shortcuts,
@@ -427,8 +456,9 @@ impl GlobalShortcutTrigger {
         // `BindShortcuts` resolves on a `Response` *signal*, not on the method
         // reply, so no D-Bus call timeout applies and a backend that raises a
         // sheet nobody answers never returns. The bound wait is what makes
-        // that recoverable; closing the session on the way out is what stops
-        // the abandoned sheet from staying on the screen.
+        // that recoverable for the retry loop. The caller closes the session
+        // on the way out, which the portal spec says retires the sheet;
+        // GNOME's stays up regardless (26.04).
         let bound = tokio::time::timeout(
             answer_within,
             shortcuts.bind_shortcuts(session, &[shortcut], None, Default::default()),
@@ -448,7 +478,7 @@ impl GlobalShortcutTrigger {
             Ok(Err(e)) => return Err(TriggerError::BindRejected(e.to_string())),
             Err(_) => {
                 return Err(TriggerError::BindUnanswered(format!(
-                    "no answer within {}s; closing the session so the sheet does not linger",
+                    "no answer within {}s; closing the session",
                     answer_within.as_secs()
                 )));
             }
@@ -521,15 +551,23 @@ impl GlobalShortcutTrigger {
 }
 
 /// Raise the portal's own shortcut UI: bind `shortcut_id` if it is unbound,
-/// otherwise ask the portal to show its rebind dialog for it.
+/// otherwise ask the portal to show its rebind dialog for it. The dialog is
+/// modal to `parent_window`, a portal window identifier, when one is given
+/// and parses.
 ///
 /// The whole of `--bind-shortcut`. The binding outlives this process - the
 /// portal keys it by app id, not by session - which is what lets the daemon
 /// pick it up with [`GlobalShortcutTrigger::attach`].
+///
+/// No deadline: GNOME's dialog stays up until the user answers it, through
+/// `Request.Close`, `Session.Close` and this process exiting (measured on
+/// 26.04), so giving up early only leaves it behind for the next bind to
+/// stack another on.
 #[cfg(not(test))]
 pub async fn configure(
     shortcut_id: &str,
     preferred_trigger: Option<&str>,
+    parent_window: Option<&str>,
     mode: ActivationMode,
 ) -> Result<Configured, TriggerError> {
     let conn = crate::dbus::serve::connect_session()
@@ -541,10 +579,11 @@ pub async fn configure(
         .iter()
         .any(|s| s.id() == shortcut_id);
 
+    let parent = parent_window.and_then(window_identifier);
     let preferred_trigger = preferred_trigger.or(Some(DEFAULT_TRIGGER));
     let outcome = if already {
         shortcuts
-            .configure_shortcuts(&session, None, Default::default())
+            .configure_shortcuts(&session, parent.as_ref(), Default::default())
             .await
             .map(|()| Configured::DialogOpened)
             .map_err(|e| TriggerError::BindRejected(e.to_string()))
@@ -552,30 +591,20 @@ pub async fn configure(
         use ashpd::desktop::global_shortcuts::NewShortcut;
         let shortcut =
             NewShortcut::new(shortcut_id, mode.describe()).preferred_trigger(preferred_trigger);
-        match tokio::time::timeout(
-            BIND_TIMEOUT,
-            shortcuts.bind_shortcuts(&session, &[shortcut], None, Default::default()),
-        )
-        .await
-        {
-            Ok(Ok(req)) => req
-                .response()
-                .map(|r| {
-                    Configured::Bound(
-                        r.shortcuts()
-                            .iter()
-                            .filter(|s| s.id() == shortcut_id)
-                            .map(|s| s.trigger_description().to_string())
-                            .collect(),
-                    )
-                })
-                .map_err(|e| TriggerError::BindRejected(e.to_string())),
-            Ok(Err(e)) => Err(TriggerError::BindRejected(e.to_string())),
-            Err(_) => Err(TriggerError::BindUnanswered(format!(
-                "no answer within {}s",
-                BIND_TIMEOUT.as_secs()
-            ))),
-        }
+        shortcuts
+            .bind_shortcuts(&session, &[shortcut], parent.as_ref(), Default::default())
+            .await
+            .and_then(|request| request.response())
+            .map(|r| {
+                Configured::Bound(
+                    r.shortcuts()
+                        .iter()
+                        .filter(|s| s.id() == shortcut_id)
+                        .map(|s| s.trigger_description().to_string())
+                        .collect(),
+                )
+            })
+            .map_err(|e| TriggerError::BindRejected(e.to_string()))
     };
 
     if outcome.is_ok() {
@@ -583,6 +612,22 @@ pub async fn configure(
     }
     close_session(&session).await;
     outcome
+}
+
+/// `parent_window` as ashpd takes it, or `None` (logged) when it is not a
+/// portal window identifier: a dialog with no parent beats no dialog.
+#[cfg(not(test))]
+fn window_identifier(parent_window: &str) -> Option<ashpd::WindowIdentifier> {
+    match parent_window.parse::<ashpd::WindowIdentifierType>() {
+        Ok(parent) => {
+            myna_core::info_log!("portal", "shortcut dialog parented on {parent_window}");
+            Some(parent.into())
+        }
+        Err(e) => {
+            myna_core::info_log!("portal", "ignoring parent window {parent_window:?}: {e}");
+            None
+        }
+    }
 }
 
 /// Whether the user has been through the portal's bind dialog for this app.
@@ -752,9 +797,11 @@ const PORTAL_BUS_NAME: &str = "org.freedesktop.portal.Desktop";
 /// confirm sheet and gets no answer leaves the call pending for as long as the
 /// daemon runs. Generous rather than tight, because the wait is legitimately a
 /// human one - portal v1 has no persist token, so backends older than
-/// xdg-desktop-portal-gnome 51 raise that sheet once per bind. What matters is
-/// that it is finite, and that expiring it closes the session (see
-/// [`close_session`]) instead of walking away from it.
+/// xdg-desktop-portal-gnome 51 raise that sheet once per bind. It bounds the
+/// retry loop's consented re-bind only: expiring it closes the session (see
+/// [`close_session`]), but GNOME's sheet stays up until answered (26.04), so
+/// a sheet a person must answer is never put behind it - [`configure`] waits
+/// with no deadline.
 #[cfg(not(test))]
 pub const BIND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -767,12 +814,15 @@ const LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 ///
 /// `ashpd` only surfaces the `Request` object once the response arrives, so a
 /// client that gives up waiting has no handle on the pending request and
-/// cannot `Close` it directly. The session is the lever it does have: closing
-/// it ends the backend's interaction for that session, which is what takes an
-/// unanswered "Add Keyboard Shortcuts" sheet off the screen. Without this each
-/// abandoned attempt left its sheet up and the next attempt raised another -
-/// six of them stacked on an unattended machine in 47 minutes (reported
-/// 2026-09-01).
+/// cannot `Close` it directly. The session is the lever it does have: the
+/// portal spec has closing it end the backend's interaction for that session,
+/// which frees the portal's side of it. GNOME's "Add Keyboard Shortcuts"
+/// sheet does not follow (measured on 26.04: it stays up through
+/// `Request.Close`, `Session.Close` and the caller exiting), so this frees
+/// the session, not the screen. Before it each abandoned attempt also leaked
+/// its session, with six sheets stacked on an unattended machine in 47
+/// minutes (reported 2026-09-01); the retry loop's one-sheet-per-backend
+/// cadence is what stops the stacking.
 ///
 /// Best-effort by construction: this runs on the failure path, and a portal
 /// that just failed to answer a bind may equally fail to answer this. A
