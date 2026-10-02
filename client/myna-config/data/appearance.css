@@ -24,6 +24,18 @@
   font-size: 20px;
 }
 
+/* The settings row's keys, at the row's text size. */
+.keycap.compact {
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: inherit;
+}
+
+.keycap.compact + label {
+  font-size: inherit;
+}
+
 /* A secondary button drawn as an outline on the window, as the design;
    libadwaita 1.5 has no such class. */
 button.outlined {

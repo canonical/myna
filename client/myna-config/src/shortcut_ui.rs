@@ -645,18 +645,15 @@ pub(crate) fn fill_keys(keys: &gtk::Box, accelerator: &str, surface: Surface) {
         keys.append(&label);
         return;
     };
-    if surface == Surface::Row {
-        let label = gtk::Label::new(Some(&caps.join(" + ")));
-        label.add_css_class("dim-label");
-        keys.append(&label);
-        return;
-    }
     for (index, cap) in caps.iter().enumerate() {
         if index > 0 {
             keys.append(&gtk::Label::new(Some("+")));
         }
         let label = gtk::Label::new(Some(cap));
         label.add_css_class("keycap");
+        if surface == Surface::Row {
+            label.add_css_class("compact");
+        }
         keys.append(&label);
     }
 }

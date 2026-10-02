@@ -2126,15 +2126,16 @@ fn shortcut_probe() -> glib::ExitCode {
     };
     let button = myna.shortcut_button();
     let keys = myna.shortcut_keys();
-    // The row shows the key as one line of dim text, not key caps.
+    // The row shows the key as compact key caps joined by "+".
     let shown = || {
         let mut text = Vec::new();
         let mut child = keys.first_child();
         while let Some(widget) = child {
             match widget.clone().downcast::<gtk::Label>() {
-                Ok(label) if label.has_css_class("dim-label") && !label.has_css_class("keycap") => {
+                Ok(label) if label.has_css_class("keycap") && label.has_css_class("compact") => {
                     text.push(label.label().to_string());
                 }
+                Ok(label) if label.label() == "+" => text.push(" + ".to_owned()),
                 _ => text.push(format!("<{}>", widget.type_().name())),
             }
             child = widget.next_sibling();
