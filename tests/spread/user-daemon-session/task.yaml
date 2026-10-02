@@ -62,7 +62,7 @@ execute: |
     # a different reason than the ones after it, and a *changed* reason is
     # meant to be reported.
     journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
-        | grep -c "cannot bind activation" > lines.out || true
+        | grep -c "cannot bind control socket" > lines.out || true
     cat lines.out
     test "$(cat lines.out)" -le 2
 

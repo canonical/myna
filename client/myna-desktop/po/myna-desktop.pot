@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 18:03+0100\n"
+"POT-Creation-Date: 2026-10-02 18:07+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -80,10 +80,6 @@ msgstr ""
 
 #: src/controller.rs:760
 msgid "Text field closed"
-msgstr ""
-
-#: src/shortcut/retry.rs:291
-msgid "Shortcut unavailable"
 msgstr ""
 
 #: src/inject/mod.rs:51

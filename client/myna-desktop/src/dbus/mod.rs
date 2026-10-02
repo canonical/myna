@@ -84,8 +84,7 @@ pub trait Bus: Send {
 pub type SharedBus = Arc<tokio::sync::Mutex<dyn Bus>>;
 
 /// The served `com.canonical.Myna.Dictation` object: owns the [`Bus`] handle the
-/// `DbusIndicator` (state), the level pump (levels), and the `DbusTrigger`
-/// (methods) all publish through, plus the bus-name lifecycle (request on
+/// `DbusIndicator` (state) and the level pump (levels) publish through, plus the bus-name lifecycle (request on
 /// start, release on shutdown — C1/C9). The zbus serve lands with the gated
 /// round-trip suite (P13–P15).
 pub struct DictationService {

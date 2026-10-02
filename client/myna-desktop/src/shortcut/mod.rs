@@ -4,7 +4,5 @@
 //! is the hermetic fixture.
 
 pub mod control;
-pub mod dbus;
-pub mod retry;
 
 pub use myna_orchestrator::{Trigger, TriggerEdge};

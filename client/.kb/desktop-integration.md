@@ -8,7 +8,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 `myna-desktop` composes three replaceable boundaries around the orchestrator:
 
-- `Trigger` produces activation edges: a GNOME custom shortcut pokes the daemon's control socket, and every poke toggles. Stdin is debug-only.
+- `Trigger` produces activation edges: every poke toggles. A GNOME custom shortcut calls `com.canonical.Myna.Dictation.Toggle`; `myna.toggle` connects to the control socket instead, for shortcuts older Myna Settings wrote, and both feed one channel with one parity. Stdin is debug-only.
 - `Injector` hands out one `Target` per utterance, the sole owner of the right to write into the focused application. The production implementation is an IBus engine; tests use a mock.
 - `Indicator` publishes dictation state. Notifications are the fallback, while the GNOME extension hosts the standalone `myna-hud` renderer.
 

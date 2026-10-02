@@ -50,9 +50,7 @@ use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
-use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
-use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
-use myna_desktop::shortcut::Trigger;
+use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{player::Player, Chiming};
 use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
 use myna_orchestrator::backend::share::{BackendSocket, ResolveError};
@@ -586,32 +584,6 @@ fn no_backend(e: ResolveError) -> Session {
     (run, StopHandle::default()).into()
 }
 
-/// Binds the control socket. Retried too: `$XDG_RUNTIME_DIR` is created by
-/// pam_systemd, so a daemon that starts early can find it not there yet.
-struct ControlRebind {
-    path: PathBuf,
-}
-
-#[async_trait::async_trait]
-impl Rebind for ControlRebind {
-    async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
-        bind_control(&self.path)
-    }
-}
-
-/// Always `Unavailable` on failure: a socket bind has no user-facing step to
-/// refuse, so every failure is "not there yet" and worth retrying fast.
-fn bind_control(path: &std::path::Path) -> Result<Box<dyn Trigger>, BindFailure> {
-    ControlTrigger::bind(path)
-        .map(|t| Box::new(t) as Box<dyn Trigger>)
-        .map_err(|e| {
-            BindFailure::Unavailable(format!(
-                "cannot bind control socket {}: {e}",
-                path.display()
-            ))
-        })
-}
-
 /// The indicator, heard as well as seen while the `sounds` setting is on. A
 /// daemon that cannot start the player thread dictates silently.
 fn with_sounds(
@@ -645,7 +617,7 @@ fn with_sounds(
 /// the *normal* boot for a user daemon, not a corner case.
 ///
 /// So: connect the injector lazily ([`LazyInjector`], at the Press that needs
-/// it), retry activation forever ([`RetryingTrigger`]), resolve the backend
+/// it), retry the control socket forever ([`listen`]), resolve the backend
 /// per Press ([`no_backend`]) - and let each of them report itself on the
 /// indicator instead.
 async fn run_controller(
@@ -655,6 +627,7 @@ async fn run_controller(
     readiness: Readiness,
     pump_bus: Option<SharedBus>,
     bus_lost: Option<BoxFuture<'static, ()>>,
+    trigger: ControlTrigger,
 ) -> ExitCode {
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
@@ -687,10 +660,8 @@ async fn run_controller(
                     .set_property("Activation", PropertyValue::Str("control".into()))
                     .await;
             }
-            let trigger = RetryingTrigger::new(ControlRebind {
-                path: control_path(&args),
-            });
-            builder.trigger(with_status(trigger, pump_bus)).build()
+            tokio::spawn(listen(control_path(&args), trigger.poke()));
+            builder.trigger(trigger).build()
         }
     };
 
@@ -726,15 +697,6 @@ async fn run_controller(
 
 /// How long the notice of a press that needs a restart shows before it.
 const RESTART_GRACE: Duration = Duration::from_secs(3);
-
-/// Publish the "hotkey not bound yet" reason on `com.canonical.Myna.Dictation` where
-/// there is a bus to publish it on.
-fn with_status(trigger: RetryingTrigger, bus: Option<SharedBus>) -> RetryingTrigger {
-    match bus {
-        Some(bus) => trigger.status_on(bus),
-        None => trigger,
-    }
-}
 
 fn banner(args: &Args, resolved: &Resolved) {
     let sock = args
@@ -1125,6 +1087,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let trigger = ControlTrigger::new();
     if args.no_dbus {
         rt.block_on(run_controller(
             args,
@@ -1133,9 +1096,10 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             Readiness::new(),
             None,
             None,
+            trigger,
         ))
     } else {
-        rt.block_on(run_headless_dbus(args, resolved))
+        rt.block_on(run_headless_dbus(args, resolved, trigger))
     }
 }
 
@@ -1146,8 +1110,8 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// client is registered via `RegisterClient` (the `myna-hud`
 /// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
 /// path.
-async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
-    match ZbusBus::serve().await {
+async fn run_headless_dbus(args: Args, resolved: Resolved, trigger: ControlTrigger) -> ExitCode {
+    match ZbusBus::serve_with_trigger(Some(trigger.poke())).await {
         Ok(bus) => {
             let clients = bus.client_registry();
             let bus_lost = bus.lost().boxed();
@@ -1165,6 +1129,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 readiness,
                 Some(pump_bus),
                 Some(bus_lost),
+                trigger,
             )
             .await
         }
@@ -1184,6 +1149,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
+                trigger,
             )
             .await
         }
@@ -1200,6 +1166,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
+                trigger,
             )
             .await
         }
@@ -1858,31 +1825,6 @@ mod tests {
              returns, before the controller's next set_state(Recording) \
              call — not lazily inside the unpolled session future"
         );
-    }
-
-    // The control trigger binds exactly what `--toggle` pokes, and a bind that
-    // seccomp refuses stays retryable with the reason the journal shows.
-    #[tokio::test]
-    async fn the_control_fallback_binds_the_socket_toggle_reaches() {
-        let path = std::env::temp_dir().join(format!("myna-fallback-{}.sock", std::process::id()));
-        let mut trigger = match bind_control(&path) {
-            Ok(trigger) => trigger,
-            Err(failure) => panic!("bind failed: {failure:?}"),
-        };
-        send_toggle(&path).await.unwrap();
-        assert_eq!(
-            trigger.next_edge().await,
-            Some(myna_desktop::shortcut::TriggerEdge::Press)
-        );
-
-        let unbindable = std::path::Path::new("/nonexistent-myna-dir/myna-desktop.sock");
-        match bind_control(unbindable) {
-            Err(BindFailure::Unavailable(reason)) => {
-                assert!(reason.contains("cannot bind control socket"), "{reason}");
-            }
-            Err(other) => panic!("expected Unavailable, got {other:?}"),
-            Ok(_) => panic!("bound under a directory that does not exist"),
-        }
     }
 
     #[test]

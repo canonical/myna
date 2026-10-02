@@ -6,8 +6,10 @@
 //!
 //! Name lifecycle: requested at [`ZbusBus::serve`], released when the
 //! connection drops at shutdown (P13/P14; the gated round-trip suite proves
-//! it). Method handling (`Start`/`Stop`/`Toggle`) lands with `DbusTrigger`
-//! (US4).
+//! it). `Toggle` pokes the daemon's [`ControlTrigger`], which is what the
+//! desktop custom shortcut calls.
+//!
+//! [`ControlTrigger`]: crate::shortcut::control::ControlTrigger
 //!
 //! The name doubles as the daemon's **singleton lock**: exactly one
 //! `myna-desktop` may own it, and failing to get it is fatal rather than a
@@ -135,37 +137,20 @@ impl ClientRegistry {
 }
 
 /// The `com.canonical.Myna.Dictation` object. Properties read the shared [`ServedState`]
-/// (updated by the publisher through the [`Bus`] seam); the `Start`/`Stop`/
-/// `Toggle` methods feed a [`DbusTriggerSource`] when one is attached (the
-/// panel-button activation path, P9–P12/C6), and are otherwise no-ops.
+/// (updated by the publisher through the [`Bus`] seam); `Toggle` pokes the
+/// trigger when one is attached, and is otherwise a no-op.
 struct DictationObject {
     served: Arc<Mutex<ServedState>>,
-    trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
+    trigger: Option<crate::shortcut::control::Poke>,
     clients: Arc<ClientRegistry>,
 }
 
 #[zbus::interface(name = "com.canonical.Myna.Dictation")]
 impl DictationObject {
-    /// `Start`: begin a session (a Press edge for the trigger — C6).
-    async fn start(&self) -> (bool, String) {
-        if let Some(trigger) = &self.trigger {
-            trigger.start();
-        }
-        // No startability gate exists (C7/P11 unimplemented): always succeeds.
-        (true, String::new())
-    }
-
-    /// `Stop`: end the session (a Release edge — C6).
-    async fn stop(&self) {
-        if let Some(trigger) = &self.trigger {
-            trigger.stop();
-        }
-    }
-
-    /// `Toggle`: Start if idle, else Stop (the panel-button action, C6).
+    /// `Toggle`: start dictation if idle, else stop it.
     async fn toggle(&self) {
         if let Some(trigger) = &self.trigger {
-            trigger.toggle();
+            trigger.poke();
         }
     }
 
@@ -309,11 +294,9 @@ impl ZbusBus {
         Self::serve_with_trigger(None).await
     }
 
-    /// Like [`serve`](Self::serve), but attaches a [`DbusTriggerSource`] so
-    /// the served `Start`/`Stop`/`Toggle` methods feed the panel-button
-    /// trigger (T140/T141).
+    /// Like [`serve`](Self::serve), with `Toggle` poking `trigger`.
     pub async fn serve_with_trigger(
-        trigger: Option<crate::shortcut::dbus::DbusTriggerSource>,
+        trigger: Option<crate::shortcut::control::Poke>,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));

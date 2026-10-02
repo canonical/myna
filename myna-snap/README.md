@@ -141,9 +141,11 @@ for the socket to exist (`sudo snap start myna-whisper.server`).
 ## Activation
 
 Everything is **press-to-toggle**: tap the key to start, tap again to stop.
-`myna` listens on a control socket and `myna.toggle` pokes it. The key is a
-GNOME custom shortcut to `/snap/bin/myna.toggle`, which Myna Settings writes
-(`myna.install-shortcut '<Super>t'` does it without Myna Settings).
+The key is a GNOME custom shortcut, which Myna Settings writes, calling the
+daemon's `com.canonical.Myna.Dictation.Toggle` over D-Bus. `myna` also listens
+on a control socket that `myna.toggle` pokes, slower by `snap run`'s
+startup; `myna.install-shortcut '<Super>t'` binds that without Myna
+Settings.
 
 The GlobalShortcuts portal was the packaged default until 2026-10 and is gone:
 stacked and duplicate consent dialogs, consent and retry races, an app id that
@@ -231,11 +233,12 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   (step 2) and make sure the backend daemon has run (`snap logs
   myna-whisper.server`). The daemon does not need restarting afterwards: the
   socket is re-resolved at every press.
-- **The hotkey does nothing right after login** - read `StatusMessage` (below),
-  or `journalctl --user -u snap.myna.myna`. "Shortcut unavailable" means
-  activation is not bound; it clears itself once it is. The cause is in
-  Myna Settings > Diagnostics ("Last error") and in the journal. The bind is
-  retried at 1s doubling to 30s.
+- **The hotkey does nothing** - check the daemon answers the call the
+  shortcut makes: `gdbus call --session --dest com.canonical.Myna.Dictation
+  --object-path /com/canonical/Myna/Dictation --method
+  com.canonical.Myna.Dictation.Toggle`. A `myna.toggle` shortcut needs the
+  control socket, whose bind is retried at 1s doubling to 30s
+  (`journalctl --user -u snap.myna.myna`).
 - **`myna.toggle` can't reach the daemon** — `myna` isn't running.
 - **Nothing is injected, state shows `error`** — read the status:
   `gdbus call --session --dest com.canonical.Myna.Dictation \

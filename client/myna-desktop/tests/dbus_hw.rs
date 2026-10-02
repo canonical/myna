@@ -147,66 +147,34 @@ async fn the_name_is_a_singleton_lock() {
     default_path = "/com/canonical/Myna/Dictation"
 )]
 trait DictationMethods {
-    fn start(&self) -> zbus::Result<(bool, String)>;
-    fn stop(&self) -> zbus::Result<()>;
     fn toggle(&self) -> zbus::Result<()>;
 }
 
-/// C6 on the wire: the served `Toggle` method feeds a `DbusTrigger` — a
-/// `Toggle` while idle yields a `Press` edge, another `Toggle` while active
-/// yields a `Release` (P9), and duplicate `Start`s do not start two sessions
-/// (P10).
+/// The custom shortcut's call: each `Toggle` on the wire is one poke of the
+/// control trigger, so idle -> `Press`, active -> `Release`.
 #[tokio::test]
 async fn served_toggle_method_feeds_the_trigger() {
+    use myna_orchestrator::{Trigger, TriggerEdge};
+
     skip_unless_dbus!();
     let _serial = exclusive().await;
 
-    let (mut trigger, source) = myna_desktop::shortcut::dbus::DbusTrigger::new();
+    let mut trigger = myna_desktop::shortcut::control::ControlTrigger::new();
     name_is_free().await;
-    let _owner = ZbusBus::serve_with_trigger(Some(source))
+    let _owner = ZbusBus::serve_with_trigger(Some(trigger.poke()))
         .await
         .expect("serve_with_trigger owns the name");
 
     let conn = zbus::Connection::session().await.expect("session bus");
     let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");
+    let wait = std::time::Duration::from_millis(500);
 
-    // Toggle while idle -> Press.
     proxy.toggle().await.expect("Toggle on");
-    let edge = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        myna_orchestrator::Trigger::next_edge(&mut trigger),
-    )
-    .await
-    .expect("Press edge arrives");
-    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Press));
-
-    // Toggle while active -> Release.
+    let edge = tokio::time::timeout(wait, trigger.next_edge()).await;
+    assert_eq!(edge.expect("edge"), Some(TriggerEdge::Press));
     proxy.toggle().await.expect("Toggle off");
-    let edge = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        myna_orchestrator::Trigger::next_edge(&mut trigger),
-    )
-    .await
-    .expect("Release edge arrives");
-    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Release));
-
-    // Duplicate Start while active -> no second Press (P10).
-    let (ok, reason) = proxy.start().await.expect("Start");
-    assert!(ok && reason.is_empty(), "Start reports success (C7 shape)");
-    let edge = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        myna_orchestrator::Trigger::next_edge(&mut trigger),
-    )
-    .await
-    .expect("Start -> Press");
-    assert_eq!(edge, Some(myna_orchestrator::TriggerEdge::Press));
-    proxy.start().await.expect("Start again");
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(300),
-        myna_orchestrator::Trigger::next_edge(&mut trigger),
-    )
-    .await
-    .expect_err("a duplicate Start must NOT start a second session");
+    let edge = tokio::time::timeout(wait, trigger.next_edge()).await;
+    assert_eq!(edge.expect("edge"), Some(TriggerEdge::Release));
 }
 
 /// `Activation` is still read by Myna Settings releases that knew the portal.
