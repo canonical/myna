@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use myna_core::language::ModelFamily;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -240,6 +241,10 @@ impl ConnectionSnapshot {
 /// Content id of the slots Myna's `backend` plug can connect to.
 pub const PROVIDER_CONTENT_ID: &str = "inference-provider";
 
+/// The `task` slot attribute of a provider that transcribes speech. Other
+/// inference snaps, LLMs such as gemma4, share [`PROVIDER_CONTENT_ID`].
+pub const SPEECH_TO_TEXT_TASK: &str = "speech-to-text";
+
 /// Builds the snapshot from `snap connections --all` and
 /// `snap interface content --attrs`.
 ///
@@ -299,9 +304,11 @@ pub fn parse_connections(
     })
 }
 
-/// Slots whose own `content` attribute is [`PROVIDER_CONTENT_ID`]. Only the
-/// item lines of the `slots:` section and their direct attributes (six-space
-/// indent) are read; nested attribute maps and lists are skipped.
+/// Slots whose own `content` attribute is [`PROVIDER_CONTENT_ID`] and whose
+/// `task` is [`SPEECH_TO_TEXT_TASK`], or that belong to a known Myna family,
+/// whose published revisions predate the attribute. Only the item lines of
+/// the `slots:` section and their direct attributes (six-space indent) are
+/// read; nested attribute maps and lists are skipped.
 fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseError> {
     let mut lines = input.lines();
     let header = lines.next().unwrap_or_default();
@@ -315,13 +322,11 @@ fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseE
         ));
     }
 
-    let mut providers = BTreeSet::new();
+    let mut slots: Vec<(BackendIdentity, SlotAttributes)> = Vec::new();
     let mut in_slots = false;
-    let mut current: Option<BackendIdentity> = None;
     for line in lines {
         if !line.starts_with(' ') {
             in_slots = line == "slots:";
-            current = None;
             continue;
         }
         if !in_slots {
@@ -333,7 +338,10 @@ fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseE
             // snapd prints a slot named after the interface as the bare snap.
             let (snap_name, slot_name) =
                 reference.split_once(':').unwrap_or((reference, "content"));
-            current = Some(BackendIdentity::new(snap_name, slot_name));
+            slots.push((
+                BackendIdentity::new(snap_name, slot_name),
+                SlotAttributes::default(),
+            ));
             continue;
         }
         let Some(attribute) = line.strip_prefix("      ") else {
@@ -342,13 +350,30 @@ fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseE
         if attribute.starts_with(' ') {
             continue;
         }
-        if let (Some(slot), Some((key, value))) = (&current, attribute.split_once(':')) {
-            if key == "content" && value.trim() == PROVIDER_CONTENT_ID {
-                providers.insert(slot.clone());
+        if let (Some((_, attributes)), Some((key, value))) =
+            (slots.last_mut(), attribute.split_once(':'))
+        {
+            match key {
+                "content" => attributes.provider = value.trim() == PROVIDER_CONTENT_ID,
+                "task" => attributes.speech = value.trim() == SPEECH_TO_TEXT_TASK,
+                _ => {}
             }
         }
     }
-    Ok(providers)
+    Ok(slots
+        .into_iter()
+        .filter(|(slot, attributes)| {
+            attributes.provider
+                && (attributes.speech || ModelFamily::from_snap_name(slot.snap_name()).is_some())
+        })
+        .map(|(slot, _)| slot)
+        .collect())
+}
+
+#[derive(Default)]
+struct SlotAttributes {
+    provider: bool,
+    speech: bool,
 }
 
 pub fn parse_modelctl_config(input: &str) -> Result<BackendConfiguration, ParseError> {

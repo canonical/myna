@@ -3879,7 +3879,7 @@ mod tests {
     const THREE_MODEL_SLOTS: &str = "name: content\nslots:\n  \
          - myna-parakeet:provider:\n      content: inference-provider\n  \
          - myna-whisper:provider:\n      content: inference-provider\n  \
-         - myna-fake-backend:provider:\n      content: inference-provider\n";
+         - myna-fake-backend:provider:\n      content: inference-provider\n      task: speech-to-text\n";
     const PARAKEET_CONNECTED_TWO_MORE_INSTALLED: &str = "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend myna-parakeet:provider manual\n\
          content - myna-whisper:provider -\n\

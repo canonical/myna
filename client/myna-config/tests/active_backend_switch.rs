@@ -35,7 +35,7 @@ fn connections(snaps: &[&str], connected: &[&str]) -> ConnectionSnapshot {
             rows.push_str(&format!("content - {snap}:provider -\n"));
         }
         slots.push_str(&format!(
-            "  - {snap}:provider:\n      content: inference-provider\n"
+            "  - {snap}:provider:\n      content: inference-provider\n      task: speech-to-text\n"
         ));
     }
     parse_connections(&rows, &slots).unwrap()

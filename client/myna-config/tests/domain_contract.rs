@@ -99,9 +99,11 @@ fn connections_discover_a_provider_whose_slot_is_not_named_provider() {
         "name: content\n\
          slots:\n  \
          - community-asr:speech:\n      \
-         content: inference-provider\n  \
+         content: inference-provider\n      \
+         task: speech-to-text\n  \
          - smollm2:llm (label: with colons):\n      \
-         content: inference-provider\n",
+         content: inference-provider\n      \
+         task: speech-to-text\n",
     )
     .unwrap();
     assert_eq!(
@@ -114,6 +116,55 @@ fn connections_discover_a_provider_whose_slot_is_not_named_provider() {
     assert_eq!(
         snapshot.active_state(),
         ActiveBackendState::Connected(BackendIdentity::new("community-asr", "speech"))
+    );
+}
+
+#[test]
+fn connections_count_only_providers_that_transcribe_speech() {
+    // gemma4, an LLM inference snap, shares the same content id with no task;
+    // a connection to it is no model at all.
+    let snapshot = parse_connections(
+        "Interface Plug Slot Notes\n\
+         content[inference-provider] myna:backend gemma4:provider manual\n\
+         content - community-asr:provider -\n\
+         content - other-llm:provider -\n",
+        "name: content\n\
+         slots:\n  \
+         - community-asr:provider:\n      \
+         content: inference-provider\n      \
+         task: speech-to-text\n  \
+         - gemma4:provider:\n      \
+         content: inference-provider\n      \
+         source:\n        \
+         read:\n          \
+         - $SNAP_COMMON/share/provider\n  \
+         - other-llm:provider:\n      \
+         content: inference-provider\n      \
+         task: text-generation\n",
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot.backends(),
+        &[BackendIdentity::new("community-asr", "provider")]
+    );
+    assert_eq!(snapshot.active_state(), ActiveBackendState::Disconnected);
+}
+
+#[test]
+fn connections_count_a_published_myna_model_without_a_task() {
+    // Myna's backends published before the `task` attribute lack it.
+    let snapshot = parse_connections(
+        "Interface Plug Slot Notes\n\
+         content[inference-provider] myna:backend myna-funasr:provider manual\n",
+        "name: content\n\
+         slots:\n  \
+         - myna-funasr:provider:\n      \
+         content: inference-provider\n",
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot.active_state(),
+        ActiveBackendState::Connected(BackendIdentity::new("myna-funasr", "provider"))
     );
 }
 
@@ -197,7 +248,7 @@ fn content_interface_listing_must_name_the_content_interface() {
 fn connections_resolve_a_slot_named_like_the_interface() {
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\ncontent - odd:content -\n",
-        "name: content\nslots:\n  - odd:\n      content: inference-provider\n",
+        "name: content\nslots:\n  - odd:\n      content: inference-provider\n      task: speech-to-text\n",
     )
     .unwrap();
     assert_eq!(

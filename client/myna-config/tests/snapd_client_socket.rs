@@ -659,7 +659,7 @@ fn backend_switch_requests_disconnect_connect_then_restarts_the_user_service() {
         "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend old:provider manual\n\
          content - new:provider -\n",
-        "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n  - new:provider:\n      content: inference-provider\n",
+        "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n      task: speech-to-text\n  - new:provider:\n      content: inference-provider\n      task: speech-to-text\n",
     )
     .unwrap();
     let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();
@@ -692,7 +692,7 @@ fn noop_backend_switch_makes_no_snapd_requests() {
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend new:provider manual\n",
-        "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n",
+        "name: content\nslots:\n  - new:provider:\n      content: inference-provider\n      task: speech-to-text\n",
     )
     .unwrap();
     let plan = SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap();

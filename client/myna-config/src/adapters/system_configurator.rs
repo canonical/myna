@@ -1103,7 +1103,7 @@ mod tests {
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend old:provider manual\n\
              content - new:provider -\n",
-            "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n  - new:provider:\n      content: inference-provider\n",
+            "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n      task: speech-to-text\n  - new:provider:\n      content: inference-provider\n      task: speech-to-text\n",
         )
         .unwrap();
         SwitchPlan::new(&snapshot, BackendIdentity::new("new", "provider")).unwrap()
@@ -1114,7 +1114,7 @@ mod tests {
             "Interface Plug Slot Notes\n\
              content[inference-provider] myna:backend old:provider manual\n\
              content - new:provider -\n",
-            "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n  - new:provider:\n      content: inference-provider\n",
+            "name: content\nslots:\n  - old:provider:\n      content: inference-provider\n      task: speech-to-text\n  - new:provider:\n      content: inference-provider\n      task: speech-to-text\n",
         )
         .unwrap();
         SwitchPlan::with_operations_for_test(
