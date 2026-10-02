@@ -21,6 +21,12 @@ mod imp {
         #[template_child]
         pub shortcut_button: gtk::TemplateChild<gtk::Button>,
         #[template_child]
+        pub shortcut_stack: gtk::TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub capture_field: gtk::TemplateChild<gtk::Label>,
+        #[template_child]
+        pub capture_cancel: gtk::TemplateChild<gtk::Button>,
+        #[template_child]
         pub settings_group: gtk::TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub model_group: gtk::TemplateChild<adw::PreferencesGroup>,
@@ -96,6 +102,22 @@ impl MynaPage {
 
     pub fn shortcut_button(&self) -> gtk::Button {
         self.imp().shortcut_button.get()
+    }
+
+    pub fn capture_cancel(&self) -> gtk::Button {
+        self.imp().capture_cancel.get()
+    }
+
+    /// A refused key is the row's subtitle, so the capture needs no room
+    /// for it.
+    pub fn in_place(&self) -> crate::shortcut_ui::InPlace {
+        let imp = self.imp();
+        crate::shortcut_ui::InPlace {
+            stack: imp.shortcut_stack.get(),
+            field: imp.capture_field.get(),
+            refusal: None,
+            cancel: imp.capture_cancel.get(),
+        }
     }
 }
 impl Default for MynaPage {

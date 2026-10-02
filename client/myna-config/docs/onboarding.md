@@ -318,18 +318,17 @@ key lands the step holds no room for key caps, so the sentence leads straight
 to Set up shortcut; the centred column grows by one row of caps when a key
 lands.
 
-On the step, Set up shortcut and Change shortcut capture the key in place: the
+On the step and in the settings window's row alike, Set up and Change capture
+the key in place. On the step the
 key caps become a "Press the new shortcut…" box ("Press a shortcut…" when
 there is none), the button becomes Cancel, and Done is insensitive until the
 capture ends. Escape, Cancel or leaving the step keeps the key there was; a
 refused key turns the box's outline red and is explained under it, in room kept for two
 lines so the page does not move, and the capture goes on. Declining a swap
 clears that explanation and keeps waiting. A key chosen here survives Back then Next:
-the setup that runs on moving on installs Super+J only where no key is set. The settings window's row keeps
-a dialog: a row has no room for the prompt and the refusal, and GNOME
-Settings captures its own shortcuts in a dialog too. There Set Up installs
-Super+J and Change opens the dialog, which shows the default key as key caps
-for its example. Either way the capture:
+the setup that runs on moving on installs Super+J only where no key is set. In
+the row the keys and button become the prompt and Cancel, and a refused key is
+the row's subtitle, since a row has no room under the prompt. The capture:
 
 - takes a chord with Ctrl, Alt or Super, or a lone function or media key, so
   typing is never hijacked; media keys are stored as `XF86<Name>`, the only

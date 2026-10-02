@@ -70,25 +70,18 @@ pub fn default_key(state: &ShortcutState, available: bool) -> DefaultKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonAction {
     Nothing,
-    /// Install [`DEFAULT_ACCELERATOR`].
-    ClaimDefault,
     /// Capture a new key in place.
     Capture,
     /// Stop a capture in place, keeping the key there was.
     CancelCapture,
-    /// Capture a new key in a dialog.
-    CaptureDialog,
 }
 
-/// Decide [`ButtonAction`]. `inline` is a surface with room to capture in
-/// place; `capturing` is one doing so now.
-pub fn button_action(state: &ShortcutState, inline: bool, capturing: bool) -> ButtonAction {
+/// Decide [`ButtonAction`]; `capturing` is a surface doing so now.
+pub fn button_action(state: &ShortcutState, capturing: bool) -> ButtonAction {
     match state {
         _ if capturing => ButtonAction::CancelCapture,
         ShortcutState::NotRunning => ButtonAction::Nothing,
-        _ if inline => ButtonAction::Capture,
-        ShortcutState::Unbound => ButtonAction::ClaimDefault,
-        ShortcutState::Bound(_) => ButtonAction::CaptureDialog,
+        _ => ButtonAction::Capture,
     }
 }
 
@@ -131,29 +124,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_step_captures_in_place_where_the_row_opens_a_dialog() {
+    fn every_surface_captures_in_place() {
         let bound = ShortcutState::Bound("<Super>j".to_owned());
-        let unbound = ShortcutState::Unbound;
-        assert_eq!(button_action(&unbound, true, false), ButtonAction::Capture);
-        assert_eq!(button_action(&bound, true, false), ButtonAction::Capture);
         assert_eq!(
-            button_action(&bound, true, true),
-            ButtonAction::CancelCapture
+            button_action(&ShortcutState::Unbound, false),
+            ButtonAction::Capture
         );
+        assert_eq!(button_action(&bound, false), ButtonAction::Capture);
+        assert_eq!(button_action(&bound, true), ButtonAction::CancelCapture);
         assert_eq!(
-            button_action(&unbound, false, false),
-            ButtonAction::ClaimDefault
+            button_action(&ShortcutState::NotRunning, false),
+            ButtonAction::Nothing
         );
-        assert_eq!(
-            button_action(&bound, false, false),
-            ButtonAction::CaptureDialog
-        );
-        for inline in [true, false] {
-            assert_eq!(
-                button_action(&ShortcutState::NotRunning, inline, false),
-                ButtonAction::Nothing
-            );
-        }
     }
 
     #[test]

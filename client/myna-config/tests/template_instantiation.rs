@@ -26,7 +26,6 @@ fn every_top_level_template_instantiates_headlessly_when_enabled() {
         "BackendPage",
         "DiagnosticsPage",
         "StatusPage",
-        "ShortcutDialog",
         "InstallModelsDialog",
         "OperationErrorDialog",
         "OnboardingWelcome",
@@ -268,8 +267,8 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
     }
 }
 
-/// Against a running daemon the Myna page's set-up installs the desktop
-/// shortcut, and renders it.
+/// Against a running daemon the Myna page's row captures a key in place,
+/// installs it as the desktop shortcut, and renders it.
 #[test]
 fn the_shortcut_row_installs_a_desktop_shortcut() {
     if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
@@ -300,10 +299,8 @@ fn the_shortcut_row_installs_a_desktop_shortcut() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in [
         "shortcut-unbound: offered set-up",
-        "shortcut-bound: Super+J",
-        "shortcut-dialog: example is the default key",
-        "shortcut-dialog: example dimmed",
-        "shortcut-changed: Ctrl+Alt+D",
+        "shortcut-capture: set-up waits in place, Escape keeps none",
+        "shortcut-bound: Ctrl+Alt+D",
         "shortcut-special-key: Calculator",
         "shortcut-reserved: Super+O refused",
         "shortcut-replaced: Super+L",

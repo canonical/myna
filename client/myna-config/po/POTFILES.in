@@ -10,7 +10,6 @@ data/onboarding-shortcut.blp
 data/onboarding-welcome.blp
 data/onboarding-window.blp
 data/operation-error-dialog.blp
-data/shortcut-dialog.blp
 data/status-page.blp
 src/app.rs
 src/active_backend.rs

@@ -15,17 +15,49 @@ template $MynaPage: Adw.NavigationPage {
         title: _("Press to start and stop");
 
         [suffix]
-        Gtk.Box shortcut_keys {
-          spacing: 4;
-          margin-end: 6;
+        Gtk.Stack shortcut_stack {
+          hhomogeneous: false;
           valign: center;
-        }
 
-        [suffix]
-        Gtk.Button shortcut_button {
-          label: _("Set up");
-          sensitive: false;
-          valign: center;
+          Gtk.StackPage {
+            name: "idle";
+
+            child: Gtk.Box {
+              Gtk.Box shortcut_keys {
+                spacing: 4;
+                margin-end: 6;
+                valign: center;
+              }
+
+              Gtk.Button shortcut_button {
+                label: _("Set up");
+                sensitive: false;
+                valign: center;
+              }
+            };
+          }
+
+          Gtk.StackPage {
+            name: "capture";
+
+            child: Gtk.Box {
+              spacing: 12;
+
+              Gtk.Label capture_field {
+                label: _("Press a shortcut…");
+                valign: center;
+
+                styles [
+                  "shortcut-capture",
+                ]
+              }
+
+              Gtk.Button capture_cancel {
+                label: _("Cancel");
+                valign: center;
+              }
+            };
+          }
         }
       }
     }

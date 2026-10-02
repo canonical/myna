@@ -175,10 +175,10 @@ impl OnboardingUi {
             shortcut_page.shortcut_button(),
             window.overlay(),
             crate::shortcut_ui::Surface::Onboarding,
-            Some(shortcut_page.in_place()),
+            shortcut_page.in_place(),
             Box::new({
                 let description = shortcut_page.description();
-                move |state| {
+                move |state, _| {
                     description.set_label(&crate::shortcut_ui::onboarding_description(state))
                 }
             }),

@@ -1307,7 +1307,6 @@ fn template_probe() -> glib::ExitCode {
         "onboarding-welcome.ui",
         "onboarding-window.ui",
         "operation-error-dialog.ui",
-        "shortcut-dialog.ui",
         "status-page.ui",
     ] {
         let path = format!("/com/canonical/Myna/Config/ui/{resource}");
@@ -1386,8 +1385,6 @@ fn template_probe() -> glib::ExitCode {
     let status = ui::StatusPage::new();
     let _ = status.status();
     println!("StatusPage");
-    let _ = ui::ShortcutDialog::new();
-    println!("ShortcutDialog");
     let _ = ui::InstallModelsDialog::new().families();
     println!("InstallModelsDialog");
     let error_dialog = ui::OperationErrorDialog::new(
@@ -2069,6 +2066,8 @@ fn onboarding_control_probe() -> glib::ExitCode {
 /// Drive the Myna page's shortcut row against a stand-in daemon on the session
 /// bus, which the caller makes private.
 fn shortcut_probe() -> glib::ExitCode {
+    use gtk::glib::translate::IntoGlib;
+
     ui::register_resources();
     if let Err(error) = gtk::init() {
         eprintln!("myna-config shortcut probe could not initialize GTK: {error}");
@@ -2167,109 +2166,99 @@ fn shortcut_probe() -> glib::ExitCode {
     }
     println!("shortcut-unbound: offered set-up");
 
+    // Keys reach a capture through the window's capture-phase controller,
+    // as a real key press does.
+    let press = |key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType| {
+        let controllers = window.observe_controllers();
+        let capture = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index))
+            .filter_map(|item| item.downcast::<gtk::EventControllerKey>().ok())
+            .find(|keys| keys.propagation_phase() == gtk::PropagationPhase::Capture);
+        if let Some(keys) = capture {
+            keys.emit_by_name::<bool>("key-pressed", &[&key.into_glib(), &0u32, &modifiers]);
+        }
+        settle_gtk();
+    };
+    let capturing = || !button.is_mapped() && myna.capture_cancel().is_mapped();
+    let subtitle = || {
+        myna.shortcut_row()
+            .subtitle()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let desktop = crate::adapters::desktop_shortcut::DesktopShortcut::open();
+    let binding = || desktop.as_ref().and_then(|desktop| desktop.binding());
+
     button.emit_clicked();
-    if !settles(&|| !shown().is_empty()) {
-        eprintln!("the granted shortcut never rendered");
+    settle_gtk();
+    if !capturing() || window.visible_dialog().is_some() || binding().is_some() {
+        eprintln!(
+            "Set up did not capture in place: capturing {}, dialog {}, bound {:?}",
+            capturing(),
+            window.visible_dialog().is_some(),
+            binding()
+        );
         return glib::ExitCode::FAILURE;
     }
-    if shown() != "Super + J" {
-        eprintln!("expected Super + J as dim text, got {:?}", shown());
+    press(gtk::gdk::Key::Escape, gtk::gdk::ModifierType::empty());
+    if capturing() || binding().is_some() {
+        eprintln!(
+            "Escape left capturing {}, bound {:?}",
+            capturing(),
+            binding()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("shortcut-capture: set-up waits in place, Escape keeps none");
+
+    button.emit_clicked();
+    settle_gtk();
+    press(
+        gtk::gdk::Key::d,
+        gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::ALT_MASK,
+    );
+    if !settles(&|| shown() == "Ctrl + Alt + D") || capturing() {
+        eprintln!("the captured shortcut rendered as {:?}", shown());
         return glib::ExitCode::FAILURE;
     }
     if button.label().as_deref() != Some("Change") {
         eprintln!("a bound shortcut offered {:?}", button.label());
         return glib::ExitCode::FAILURE;
     }
-    println!("shortcut-bound: Super+J");
-
-    button.emit_clicked();
-    settles(&|| window.visible_dialog().is_some());
-    let Some(dialog) = window
-        .visible_dialog()
-        .and_then(|dialog| dialog.downcast::<ui::ShortcutDialog>().ok())
-    else {
-        eprintln!("Change opened no capture dialog");
-        return glib::ExitCode::FAILURE;
-    };
-    // Key events travel only to the focused widget and its ancestors.
-    if !settles(&|| {
-        gtk::prelude::GtkWindowExt::focus(&window).is_some_and(|focus| focus.is_ancestor(&dialog))
-    }) {
-        eprintln!("the capture dialog does not hold keyboard focus");
-        return glib::ExitCode::FAILURE;
-    }
-    // The example is the default key, drawn as the onboarding step draws it.
-    if keycaps(dialog.upcast_ref()) != ["Super", "J"] {
-        eprintln!(
-            "the capture dialog's example reads {:?}",
-            keycaps(dialog.upcast_ref())
-        );
-        return glib::ExitCode::FAILURE;
-    }
-    println!("shortcut-dialog: example is the default key");
-    if !keycaps_dimmed(dialog.upcast_ref()) {
-        eprintln!("the capture dialog's example caps read as a captured key");
-        return glib::ExitCode::FAILURE;
-    }
-    println!("shortcut-dialog: example dimmed");
-    dialog.press(
-        gtk::gdk::Key::d,
-        gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::ALT_MASK,
-    );
-    if !settles(&|| shown() == "Ctrl + Alt + D") {
-        eprintln!("the captured shortcut rendered as {:?}", shown());
-        return glib::ExitCode::FAILURE;
-    }
-    println!("shortcut-changed: Ctrl+Alt+D");
+    println!("shortcut-bound: Ctrl+Alt+D");
 
     // A bare letter would take over typing; a key with no text, such as
     // the Calculator key, cannot.
     button.emit_clicked();
-    settles(&|| window.visible_dialog().is_some());
-    let Some(dialog) = window
-        .visible_dialog()
-        .and_then(|dialog| dialog.downcast::<ui::ShortcutDialog>().ok())
-    else {
-        eprintln!("Change opened no capture dialog the second time");
-        return glib::ExitCode::FAILURE;
-    };
-    dialog.press(gtk::gdk::Key::a, gtk::gdk::ModifierType::empty());
-    if window.visible_dialog().is_none() {
+    settle_gtk();
+    press(gtk::gdk::Key::a, gtk::gdk::ModifierType::empty());
+    if !capturing() {
         eprintln!("a bare letter was captured as the shortcut");
         return glib::ExitCode::FAILURE;
     }
-    dialog.press(gtk::gdk::Key::Calculator, gtk::gdk::ModifierType::empty());
-    let binding = crate::adapters::desktop_shortcut::DesktopShortcut::open()
-        .and_then(|desktop| desktop.binding());
-    if binding.as_deref() != Some("XF86Calculator") {
-        eprintln!("the Calculator key was stored as {binding:?}");
+    press(gtk::gdk::Key::Calculator, gtk::gdk::ModifierType::empty());
+    if binding().as_deref() != Some("XF86Calculator") {
+        eprintln!("the Calculator key was stored as {:?}", binding());
         return glib::ExitCode::FAILURE;
     }
     println!("shortcut-special-key: Calculator");
 
-    // Super+L locks the screen: taking it asks first, then moves it.
+    // Super+O is rotation lock's -static key, which cannot be taken: the
+    // row says so in its subtitle and keeps waiting.
     button.emit_clicked();
-    settles(&|| window.visible_dialog().is_some());
-    let Some(dialog) = window
-        .visible_dialog()
-        .and_then(|dialog| dialog.downcast::<ui::ShortcutDialog>().ok())
-    else {
-        eprintln!("Change opened no capture dialog the third time");
-        return glib::ExitCode::FAILURE;
-    };
-    // Super+O is rotation lock's -static key, which cannot be taken.
-    dialog.press(gtk::gdk::Key::o, gtk::gdk::ModifierType::SUPER_MASK);
-    let refusal = dialog.refusal();
-    if window.visible_dialog().as_ref() != Some(dialog.upcast_ref())
-        || !refusal
-            .as_deref()
-            .is_some_and(|text| text.contains("Toggle automatic screen orientation"))
-    {
-        eprintln!("a reserved key was not refused in the dialog: {refusal:?}");
+    settle_gtk();
+    press(gtk::gdk::Key::o, gtk::gdk::ModifierType::SUPER_MASK);
+    if !capturing() || !subtitle().contains("Toggle automatic screen orientation") {
+        eprintln!(
+            "a reserved key: capturing {}, subtitle {:?}",
+            capturing(),
+            subtitle()
+        );
         return glib::ExitCode::FAILURE;
     }
     println!("shortcut-reserved: Super+O refused");
-    dialog.press(gtk::gdk::Key::l, gtk::gdk::ModifierType::SUPER_MASK);
+    // Super+L locks the screen: taking it asks first, then moves it.
+    press(gtk::gdk::Key::l, gtk::gdk::ModifierType::SUPER_MASK);
     settles(&|| {
         window
             .visible_dialog()
@@ -2283,13 +2272,21 @@ fn shortcut_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     };
     alert.emit_by_name::<()>("response", &[&"replace"]);
-    let desktop = crate::adapters::desktop_shortcut::DesktopShortcut::open();
-    let binding = desktop.as_ref().and_then(|desktop| desktop.binding());
+    alert.force_close();
+    settle_gtk();
     let still_held = desktop
         .as_ref()
         .and_then(|desktop| desktop.conflict("<Super>l"));
-    if binding.as_deref() != Some("<Super>l") || still_held.is_some() {
-        eprintln!("replacing left binding {binding:?}, conflict {still_held:?}");
+    if binding().as_deref() != Some("<Super>l") || still_held.is_some() || capturing() {
+        eprintln!(
+            "replacing left binding {:?}, conflict {still_held:?}, capturing {}",
+            binding(),
+            capturing()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    if !subtitle().is_empty() {
+        eprintln!("a bound key kept the subtitle {:?}", subtitle());
         return glib::ExitCode::FAILURE;
     }
     println!("shortcut-replaced: Super+L");
@@ -4806,24 +4803,6 @@ fn keycaps(root: &gtk::Widget) -> Vec<String> {
     caps
 }
 
-/// Whether every mapped key cap under `root` sits in a dimmed container.
-fn keycaps_dimmed(root: &gtk::Widget) -> bool {
-    if root.is_mapped() && root.has_css_class("keycap") {
-        return false;
-    }
-    if root.has_css_class("dim-label") {
-        return true;
-    }
-    let mut child = root.first_child();
-    while let Some(widget) = child {
-        if !keycaps_dimmed(&widget) {
-            return false;
-        }
-        child = widget.next_sibling();
-    }
-    true
-}
-
 /// Whether the component step spins while dictation is being set up.
 fn setup_spinner(window: &ui::OnboardingWindow) -> bool {
     components_page(window).is_some_and(|page| status_busy(&page).is_some())
@@ -5136,13 +5115,15 @@ fn ready_page(
         page.shortcut_button(),
         overlay.clone(),
         crate::shortcut_ui::Surface::Row,
-        None,
+        page.in_place(),
         Box::new({
             // The row holds the button, which owns the control.
             let row = page.shortcut_row().downgrade();
-            move |state| {
+            move |state, refusal| {
                 if let Some(row) = row.upgrade() {
-                    row.set_subtitle(&crate::shortcut_ui::row_subtitle(state));
+                    let subtitle = refusal
+                        .map_or_else(|| crate::shortcut_ui::row_subtitle(state), str::to_owned);
+                    row.set_subtitle(&crate::markup::escape_markup(&subtitle));
                 }
             }
         }),

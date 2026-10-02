@@ -22,27 +22,28 @@ use crate::shortcut::{
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
 const DICTATION_PATH: &str = "/com/canonical/Myna/Dictation";
-/// Sets a surface's own text for a state.
-type Describe = Box<dyn Fn(&ShortcutState)>;
+/// Sets a surface's own text for a state and the refusal of the key last
+/// pressed in a capture.
+type Describe = Box<dyn Fn(&ShortcutState, Option<&str>)>;
 
 /// How a surface draws the key and words its button.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
-    /// Onboarding's step: large key caps, a button that names the shortcut,
-    /// and room to capture a new key in place.
+    /// Onboarding's step: large key caps and a button that names the
+    /// shortcut.
     Onboarding,
     /// A settings row: the key as dim text, a one-word button.
     Row,
 }
 
 /// A surface's widgets for capturing a key in place of its key caps. `stack`
-/// shows "idle" (the caps and the button) or "capture"; `room` shows a
-/// two-line placeholder or `refusal`.
+/// shows "idle" (the caps and the button) or "capture". `refusal` is a room
+/// showing a placeholder or its label; without one the surface's `describe`
+/// shows the refusal.
 pub struct InPlace {
     pub stack: gtk::Stack,
     pub field: gtk::Label,
-    pub room: gtk::Stack,
-    pub refusal: gtk::Label,
+    pub refusal: Option<(gtk::Stack, gtk::Label)>,
     pub cancel: gtk::Button,
 }
 
@@ -51,8 +52,7 @@ pub struct InPlace {
 struct InPlaceRefs {
     stack: glib::WeakRef<gtk::Stack>,
     field: glib::WeakRef<gtk::Label>,
-    room: glib::WeakRef<gtk::Stack>,
-    refusal: glib::WeakRef<gtk::Label>,
+    refusal: Option<(glib::WeakRef<gtk::Stack>, glib::WeakRef<gtk::Label>)>,
     cancel: glib::WeakRef<gtk::Button>,
 }
 
@@ -62,7 +62,7 @@ pub struct ShortcutControl {
     /// the button, so strong references would keep a closed window alive.
     button: glib::WeakRef<gtk::Button>,
     overlay: glib::WeakRef<adw::ToastOverlay>,
-    in_place: Option<InPlaceRefs>,
+    in_place: InPlaceRefs,
     surface: Surface,
     describe: Describe,
     proxy: RefCell<Option<gio::DBusProxy>>,
@@ -81,30 +81,30 @@ pub struct ShortcutControl {
 }
 
 impl ShortcutControl {
-    /// Drive `keys` and `button` from the desktop shortcut. `describe` sets
-    /// the surface's own text for each state; with `in_place` a key is
-    /// captured there rather than in a dialog. The button's
-    /// handler owns the control, so it lives as long as the button.
+    /// Drive `keys` and `button` from the desktop shortcut, capturing a new
+    /// key in `in_place`. `describe` sets the surface's own text. The
+    /// button's handler owns the control, so it lives as long as the button.
     pub fn attach(
         keys: gtk::Box,
         button: gtk::Button,
         overlay: adw::ToastOverlay,
         surface: Surface,
-        in_place: Option<InPlace>,
+        in_place: InPlace,
         describe: Describe,
     ) -> Rc<Self> {
-        let cancel = in_place.as_ref().map(|in_place| in_place.cancel.clone());
+        let cancel = in_place.cancel.clone();
         let control = Rc::new(Self {
             keys,
             button: button.downgrade(),
             overlay: overlay.downgrade(),
-            in_place: in_place.map(|in_place| InPlaceRefs {
+            in_place: InPlaceRefs {
                 stack: in_place.stack.downgrade(),
                 field: in_place.field.downgrade(),
-                room: in_place.room.downgrade(),
-                refusal: in_place.refusal.downgrade(),
+                refusal: in_place
+                    .refusal
+                    .map(|(room, label)| (room.downgrade(), label.downgrade())),
                 cancel: in_place.cancel.downgrade(),
-            }),
+            },
             surface,
             describe,
             proxy: RefCell::new(None),
@@ -119,22 +119,20 @@ impl ShortcutControl {
         });
         control.render();
         // Leaving the page, or closing its window, ends a capture.
-        if let Some(cancel) = cancel {
-            cancel.connect_unmap({
-                let weak = Rc::downgrade(&control);
-                move |_| {
-                    if let Some(control) = weak.upgrade() {
-                        control.end_capture(false);
-                    }
-                }
-            });
+        cancel.connect_unmap({
             let weak = Rc::downgrade(&control);
-            cancel.connect_clicked(move |_| {
+            move |_| {
                 if let Some(control) = weak.upgrade() {
-                    control.end_capture(true);
+                    control.end_capture(false);
                 }
-            });
-        }
+            }
+        });
+        let weak = Rc::downgrade(&control);
+        cancel.connect_clicked(move |_| {
+            if let Some(control) = weak.upgrade() {
+                control.end_capture(true);
+            }
+        });
         if let Some(desktop) = &control.desktop {
             let weak = Rc::downgrade(&control);
             desktop.connect_changed(move || {
@@ -253,19 +251,12 @@ impl ShortcutControl {
 
     fn render(&self) {
         let state = self.state.borrow().clone();
-        let capturing = self.capturing();
-        (self.describe)(&state);
+        (self.describe)(&state, self.refusal.borrow().as_deref());
 
         while let Some(child) = self.keys.first_child() {
             self.keys.remove(&child);
         }
-        if let Some(in_place) = &self.in_place {
-            self.render_capture(
-                in_place,
-                capturing,
-                matches!(state, ShortcutState::Bound(_)),
-            );
-        }
+        self.render_capture(matches!(state, ShortcutState::Bound(_)));
         match &state {
             ShortcutState::Bound(accelerator) => {
                 self.keys.set_visible(true);
@@ -281,20 +272,13 @@ impl ShortcutControl {
             (Surface::Row, true) => gettextrs::gettext("Change"),
             (Surface::Row, false) => gettextrs::gettext("Set up"),
         };
-        let help = match &state {
-            _ if self.in_place.is_some() => {
-                gettextrs::gettext("Press a keyboard shortcut for dictation.")
-            }
-            ShortcutState::Bound(_) => {
-                gettextrs::gettext("Press a different keyboard shortcut for dictation.")
-            }
-            ShortcutState::Unbound | ShortcutState::NotRunning => {
-                gettextrs::gettext("Add a keyboard shortcut for dictation to the desktop.")
-            }
-        };
         if let Some(button) = self.button.upgrade() {
             button.set_label(&label);
-            button.update_property(&[gtk::accessible::Property::Description(&help)]);
+            button.update_property(
+                &[gtk::accessible::Property::Description(&gettextrs::gettext(
+                    "Press a keyboard shortcut for dictation.",
+                ))],
+            );
             button.set_sensitive(state != ShortcutState::NotRunning);
             // Onboarding cannot finish usefully without a key, so setting one
             // up is the step's main action until there is one.
@@ -309,10 +293,11 @@ impl ShortcutControl {
     }
 
     /// Show the capture or the idle key and button, and the field's words.
-    fn render_capture(&self, in_place: &InPlaceRefs, capturing: bool, changing: bool) {
+    fn render_capture(&self, changing: bool) {
+        let in_place = &self.in_place;
         let refusal = self.refusal.borrow();
         if let Some(stack) = in_place.stack.upgrade() {
-            stack.set_visible_child_name(if capturing { "capture" } else { "idle" });
+            stack.set_visible_child_name(if self.capturing() { "capture" } else { "idle" });
         }
         if let Some(field) = in_place.field.upgrade() {
             field.set_label(&if changing {
@@ -322,7 +307,10 @@ impl ShortcutControl {
             });
             set_class(&field, "refused", refusal.is_some());
         }
-        if let (Some(room), Some(label)) = (in_place.room.upgrade(), in_place.refusal.upgrade()) {
+        let room = in_place.refusal.as_ref();
+        if let Some((room, label)) =
+            room.and_then(|(room, label)| room.upgrade().zip(label.upgrade()))
+        {
             match refusal.as_deref() {
                 Some(reason) => {
                     label.set_label(reason);
@@ -345,17 +333,10 @@ impl ShortcutControl {
     }
 
     fn activate(self: &Rc<Self>) {
-        let action = button_action(
-            &self.state.borrow(),
-            self.in_place.is_some(),
-            self.capturing(),
-        );
-        match action {
+        match button_action(&self.state.borrow(), self.capturing()) {
             ButtonAction::Nothing => {}
-            ButtonAction::ClaimDefault => self.claim(DEFAULT_ACCELERATOR, None),
             ButtonAction::Capture => self.start_capture(),
             ButtonAction::CancelCapture => self.end_capture(true),
-            ButtonAction::CaptureDialog => self.change(),
         }
     }
 
@@ -378,7 +359,8 @@ impl ShortcutControl {
         });
         window.add_controller(keys.clone());
         // The desktop grabs the keys it uses (Super+L, the Calculator key)
-        // before any window sees them, as in the dialog.
+        // before any window sees them, so it pauses those while capturing,
+        // as GNOME Settings does.
         if let Some(toplevel) = toplevel(&window) {
             toplevel.inhibit_system_shortcuts(None::<&gdk::Event>);
         }
@@ -392,11 +374,7 @@ impl ShortcutControl {
     /// Key events reach the window only from inside it, and Cancel is what
     /// Enter or Space should press.
     fn focus_cancel(&self) {
-        if let Some(cancel) = self
-            .in_place
-            .as_ref()
-            .and_then(|refs| refs.cancel.upgrade())
-        {
+        if let Some(cancel) = self.in_place.cancel.upgrade() {
             cancel.grab_focus();
         }
     }
@@ -443,37 +421,19 @@ impl ShortcutControl {
         }
         let weak = Rc::downgrade(self);
         self.asking.set(true);
-        self.claim(
-            &accelerator,
-            Some(Box::new(move |taken| {
-                let Some(control) = weak.upgrade() else {
-                    return;
-                };
-                control.asking.set(false);
-                if taken {
-                    control.end_capture(true);
-                } else {
-                    // Declining the swap keeps waiting for a different key.
-                    control.focus_cancel();
-                }
-            })),
-        );
-        glib::Propagation::Stop
-    }
-
-    /// Capture a new key in a dialog.
-    fn change(self: &Rc<Self>) {
-        let dialog = crate::ui::ShortcutDialog::new();
-        let control = Rc::downgrade(self);
-        dialog.connect_captured(move |accelerator| {
-            let control = control.upgrade()?;
-            if let Some(reason) = control.reserved(accelerator) {
-                return Some(reason);
+        self.claim(&accelerator, move |taken| {
+            let Some(control) = weak.upgrade() else {
+                return;
+            };
+            control.asking.set(false);
+            if taken {
+                control.end_capture(true);
+            } else {
+                // Declining the swap keeps waiting for a different key.
+                control.focus_cancel();
             }
-            control.claim(accelerator, None);
-            None
         });
-        dialog.present(self.root().as_ref());
+        glib::Propagation::Stop
     }
 
     /// Why `accelerator` cannot be taken, when the desktop reserves it.
@@ -488,12 +448,7 @@ impl ShortcutControl {
 
     /// Install `accelerator`, first asking to take it from whatever desktop
     /// shortcut holds it. `then` learns whether it was installed.
-    fn claim(self: &Rc<Self>, accelerator: &str, then: Option<Box<dyn Fn(bool)>>) {
-        let then = move |taken| {
-            if let Some(then) = &then {
-                then(taken);
-            }
-        };
+    fn claim(self: &Rc<Self>, accelerator: &str, then: impl Fn(bool) + 'static) {
         let Some(conflict) = self
             .desktop
             .as_ref()
@@ -502,11 +457,6 @@ impl ShortcutControl {
             then(self.install(accelerator));
             return;
         };
-        if let Some(reason) = self.reserved(accelerator) {
-            self.toast(adw::Toast::new(&reason));
-            then(false);
-            return;
-        }
         let body = gettextrs::gettext(
             "{keys} is already used for “{action}”. Replacing it removes it from there.",
         )

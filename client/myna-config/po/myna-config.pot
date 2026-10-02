@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 18:14+0100\n"
+"POT-Creation-Date: 2026-10-02 18:33+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1481
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1479
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -26,7 +26,7 @@ msgstr ""
 msgid "Set up Dictation"
 msgstr ""
 
-#: data/diagnostics-page.blp:20 data/myna-page.blp:26 src/shortcut_ui.rs:282
+#: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:273
 msgid "Set up"
 msgstr ""
 
@@ -85,7 +85,7 @@ msgstr ""
 msgid "Installed"
 msgstr ""
 
-#: data/install-models-dialog.blp:5 data/myna-page.blp:46 data/myna-page.blp:61
+#: data/install-models-dialog.blp:5 data/myna-page.blp:78 data/myna-page.blp:93
 msgid "Install more models"
 msgstr ""
 
@@ -103,7 +103,7 @@ msgstr ""
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:39 data/myna-page.blp:38 src/app.rs:1476
+#: data/main-window.blp:39 data/myna-page.blp:70 src/app.rs:1474
 #: src/app.rs:3054 src/app.rs:3418 src/backend_apply.rs:415
 #: src/diagnostics.rs:542 src/presentation.rs:169
 msgid "Model"
@@ -129,9 +129,18 @@ msgstr ""
 msgid "Press to start and stop"
 msgstr ""
 
-#: data/myna-page.blp:34 data/onboarding-window.blp:7 src/app.rs:1833
-#: src/app.rs:4736 src/onboarding_ui.rs:1224 src/shortcut_ui.rs:235
-#: src/shortcut_ui.rs:574
+#: data/myna-page.blp:47 src/shortcut_ui.rs:306
+msgid "Press a shortcut…"
+msgstr ""
+
+#: data/myna-page.blp:56 data/onboarding-shortcut.blp:111
+#: src/shortcut_ui.rs:467
+msgid "Cancel"
+msgstr ""
+
+#: data/myna-page.blp:66 data/onboarding-window.blp:7 src/app.rs:1831
+#: src/app.rs:4736 src/onboarding_ui.rs:1224 src/shortcut_ui.rs:233
+#: src/shortcut_ui.rs:524
 msgid "Dictation"
 msgstr ""
 
@@ -159,22 +168,18 @@ msgstr ""
 msgid "How to dictate"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:280
+#: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:271
 msgid "Set up shortcut"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:67 src/shortcut_ui.rs:319
+#: data/onboarding-shortcut.blp:67 src/shortcut_ui.rs:304
 msgid "Press the new shortcut…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:81 data/shortcut-dialog.blp:55
+#: data/onboarding-shortcut.blp:81
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
-msgstr ""
-
-#: data/onboarding-shortcut.blp:111 src/shortcut_ui.rs:517
-msgid "Cancel"
 msgstr ""
 
 #: data/onboarding-welcome.blp:33
@@ -205,19 +210,11 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/shortcut-dialog.blp:5
-msgid "Set Shortcut"
-msgstr ""
-
-#: data/shortcut-dialog.blp:27
-msgid "Press the keys for dictation, for example:"
-msgstr ""
-
-#: data/status-page.blp:8 src/app.rs:1471 src/app.rs:4959
+#: data/status-page.blp:8 src/app.rs:1469 src/app.rs:4941
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1472 src/app.rs:4960
+#: data/status-page.blp:9 src/app.rs:1470 src/app.rs:4942
 msgid "Reading the installed settings schema…"
 msgstr ""
 
@@ -229,11 +226,11 @@ msgstr ""
 msgid "Done"
 msgstr ""
 
-#: src/app.rs:1477
+#: src/app.rs:1475
 msgid "Model details appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1482
+#: src/app.rs:1480
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
@@ -258,7 +255,7 @@ msgid "Changing to {model} failed"
 msgstr ""
 
 #: src/app.rs:3361 src/app.rs:3887 src/app.rs:3896 src/app.rs:4257
-#: src/app.rs:4861 src/app.rs:4867 src/backend_ui.rs:1272
+#: src/app.rs:4843 src/app.rs:4849 src/backend_ui.rs:1272
 #: src/onboarding_ui.rs:553 src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
@@ -326,36 +323,36 @@ msgstr ""
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:4469 src/shortcut_ui.rs:671
+#: src/app.rs:4469 src/shortcut_ui.rs:621
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:4860 src/onboarding_ui.rs:673 src/onboarding_ui.rs:680
+#: src/app.rs:4842 src/onboarding_ui.rs:673 src/onboarding_ui.rs:680
 #: src/onboarding_ui.rs:885
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:4898 src/onboarding_ui.rs:826
+#: src/app.rs:4880 src/onboarding_ui.rs:826
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:4964
+#: src/app.rs:4946
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:4965
+#: src/app.rs:4947
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:4985
+#: src/app.rs:4967
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:4986
+#: src/app.rs:4968
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:5411
+#: src/app.rs:5395
 msgid "Could not save the setting"
 msgstr ""
 
@@ -892,68 +889,56 @@ msgstr ""
 msgid "Starting dictation"
 msgstr ""
 
-#: src/shortcut_ui.rs:279
+#: src/shortcut_ui.rs:270
 msgid "Change shortcut"
 msgstr ""
 
-#: src/shortcut_ui.rs:281
+#: src/shortcut_ui.rs:272
 msgid "Change"
 msgstr ""
 
-#: src/shortcut_ui.rs:286
+#: src/shortcut_ui.rs:279
 msgid "Press a keyboard shortcut for dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:289
-msgid "Press a different keyboard shortcut for dictation."
-msgstr ""
-
-#: src/shortcut_ui.rs:292
-msgid "Add a keyboard shortcut for dictation to the desktop."
-msgstr ""
-
-#: src/shortcut_ui.rs:321
-msgid "Press a shortcut…"
-msgstr ""
-
-#: src/shortcut_ui.rs:341
+#: src/shortcut_ui.rs:329
 msgid "Keep the shortcut as it was."
 msgstr ""
 
-#: src/shortcut_ui.rs:483
+#: src/shortcut_ui.rs:443
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
 msgstr ""
 
-#: src/shortcut_ui.rs:511
+#: src/shortcut_ui.rs:461
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
 
-#: src/shortcut_ui.rs:516
+#: src/shortcut_ui.rs:466
 msgid "Replace Shortcut?"
 msgstr ""
 
-#: src/shortcut_ui.rs:518
+#: src/shortcut_ui.rs:468
 msgid "Replace"
 msgstr ""
 
-#: src/shortcut_ui.rs:562 src/shortcut_ui.rs:582
+#: src/shortcut_ui.rs:512 src/shortcut_ui.rs:532
 msgid "Could not set up the shortcut"
 msgstr ""
 
-#: src/shortcut_ui.rs:668
+#: src/shortcut_ui.rs:618
 msgid "Set up a keyboard shortcut to trigger Dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:674
+#: src/shortcut_ui.rs:624
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
 
-#: src/shortcut_ui.rs:683
+#: src/shortcut_ui.rs:633
 msgid "Not set up"
 msgstr ""
 
-#: src/shortcut_ui.rs:684
+#: src/shortcut_ui.rs:634
 msgid "Myna is not running"
 msgstr ""
 

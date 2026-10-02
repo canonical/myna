@@ -78,8 +78,7 @@ impl OnboardingShortcut {
         crate::shortcut_ui::InPlace {
             stack: imp.shortcut_stack.get(),
             field: imp.capture_field.get(),
-            room: imp.capture_room.get(),
-            refusal: imp.capture_refusal.get(),
+            refusal: Some((imp.capture_room.get(), imp.capture_refusal.get())),
             cancel: imp.capture_cancel.get(),
         }
     }
