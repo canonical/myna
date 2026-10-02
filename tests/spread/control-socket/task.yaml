@@ -9,31 +9,22 @@
 # `owner /run/user/[0-9]*/snap.myna/** mrwklix` and logs no denial, which is
 # exactly what made this hard to read from the journal.
 #
-# That made the *documented fallback* unusable in a packaged install. Control
-# mode exists for desktops with no GlobalShortcuts backend, and Ubuntu 24.04 is
-# one: xdg-desktop-portal-gnome 46 ships no
-# `org.freedesktop.impl.portal.GlobalShortcuts`, so the portal frontend never
-# exports the interface and portal activation cannot bind either. A user on
-# this release had both paths dead at once, which is how it was found. Nothing
-# caught it before because control mode had only ever been exercised
-# unpackaged, where there is no seccomp filter at all.
+# The control socket is the only activation path (the GlobalShortcuts portal
+# was dropped in dce9c2ff), so without it a packaged install has no hotkey at
+# all. When this was found it was the fallback for desktops whose portal has
+# no GlobalShortcuts, Ubuntu 24.04 among them; nothing caught it because
+# control mode had only ever been exercised unpackaged, where there is no
+# seccomp filter at all.
 #
 # Both directions. The positive half asserts a *presence* (the socket exists,
 # the toggle reaches it), so it cannot pass vacuously; the negative half is
 # what pins the cause to the interface rather than to something incidental
 # about the VM.
 #
-# The packaged daemon reaches control mode on its own: a running portal that
-# exports no GlobalShortcuts is what Noble looks like, and the daemon falls
-# back to the control socket there. So the test starts exactly that portal - the
-# frontend with no backend implementing GlobalShortcuts - rather than
-# selecting the mode by hand. The `activation` settings key that used to
-# select it is gone.
-#
 # No desktop is needed and none is installed: control mode asks nothing else
 # of the session, so a lingering headless user is a faithful host (same setup
 # as user-daemon-session).
-summary: A portal without GlobalShortcuts falls back to the control socket, which binds once network-bind is connected
+summary: The control socket binds once network-bind is connected, and not before
 
 environment:
     # Deliberately not user-daemon-session's `mynaspread`: spread runs every
@@ -49,10 +40,6 @@ prepare: |
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     # `snap run` refuses to start for an account whose home is outside /home.
     useradd --create-home --shell /bin/bash "$USER_NAME"
-    # The frontend alone: without xdg-desktop-portal-gnome nothing implements
-    # GlobalShortcuts, so the portal does not export it - Noble's situation.
-    apt-get update
-    apt-get install -y --no-install-recommends xdg-desktop-portal
 
 execute: |
     set -x
@@ -73,10 +60,6 @@ execute: |
         systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service && break
         sleep 1
     done
-
-    # The daemon never starts a portal (user-daemon-session), so this does.
-    systemctl --user -M "$USER_NAME@" start xdg-desktop-portal.service
-    systemctl --user -M "$USER_NAME@" is-active xdg-desktop-portal.service
 
     # Seccomp filters are installed at exec, so a running daemon keeps the
     # profile it started with: connect/disconnect *then* restart.
@@ -133,8 +116,6 @@ execute: |
         exit 1
     fi
 
-    # The socket came from the fallback, for the reason this test sets up.
-    daemon_log "$before" | grep -q "does not export org.freedesktop.portal.GlobalShortcuts; activation falls back to the control socket"
     denials=$(daemon_log "$before" | grep -c "cannot bind control socket" || true)
     test "$denials" -eq 0
 
