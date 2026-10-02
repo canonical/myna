@@ -148,6 +148,10 @@ fn connections_count_only_providers_that_transcribe_speech() {
         &[BackendIdentity::new("community-asr", "provider")]
     );
     assert_eq!(snapshot.active_state(), ActiveBackendState::Disconnected);
+    assert_eq!(
+        snapshot.strays(),
+        &[BackendIdentity::new("gemma4", "provider")]
+    );
 }
 
 #[test]

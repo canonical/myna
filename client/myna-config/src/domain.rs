@@ -219,6 +219,7 @@ pub enum ActiveBackendState {
 pub struct ConnectionSnapshot {
     backends: Vec<BackendIdentity>,
     active_state: ActiveBackendState,
+    strays: Vec<BackendIdentity>,
 }
 
 impl ConnectionSnapshot {
@@ -226,7 +227,14 @@ impl ConnectionSnapshot {
         Self {
             backends,
             active_state,
+            strays: Vec::new(),
         }
+    }
+
+    /// Slots `myna:backend` is connected to that are no model: an LLM's
+    /// provider, or a slot whose content id changed under the connection.
+    pub fn strays(&self) -> &[BackendIdentity] {
+        &self.strays
     }
 
     pub fn backends(&self) -> &[BackendIdentity] {
@@ -271,6 +279,7 @@ pub fn parse_connections(
 
     let mut discovered = BTreeSet::new();
     let mut connected = BTreeSet::new();
+    let mut strays = BTreeSet::new();
     for line in lines {
         let columns: Vec<_> = line.split_whitespace().collect();
         if columns.len() < 3 {
@@ -284,6 +293,9 @@ pub fn parse_connections(
         }
         let backend = BackendIdentity::new(snap_name, slot_name);
         if !providers.contains(&backend) {
+            if columns[1] == "myna:backend" {
+                strays.insert(backend);
+            }
             continue;
         }
         discovered.insert(backend.clone());
@@ -301,6 +313,7 @@ pub fn parse_connections(
     Ok(ConnectionSnapshot {
         backends: discovered.into_iter().collect(),
         active_state,
+        strays: strays.into_iter().collect(),
     })
 }
 

@@ -76,6 +76,41 @@ fn plan_connects_from_zero_connections() {
 }
 
 #[test]
+fn plan_disconnects_a_provider_that_is_no_model() {
+    // A machine onboarded before only speech-to-text counted had myna:backend
+    // connected to gemma4, an LLM; the switch to a real model drops it.
+    let snapshot = parse_connections(
+        "Interface Plug Slot Notes\n\
+         content[inference-provider] myna:backend gemma4:provider manual\n\
+         content - myna-parakeet:provider -\n",
+        "name: content\nslots:\n  \
+         - gemma4:provider:\n      content: inference-provider\n  \
+         - myna-parakeet:provider:\n      content: inference-provider\n",
+    )
+    .unwrap();
+    assert_eq!(snapshot.active_state(), ActiveBackendState::Disconnected);
+    let plan =
+        SwitchPlan::new(&snapshot, BackendIdentity::new("myna-parakeet", "provider")).unwrap();
+    assert_eq!(
+        argv(&plan),
+        [
+            (
+                "snap",
+                vec!["disconnect", "myna:backend", "gemma4:provider"]
+            ),
+            (
+                "snap",
+                vec!["connect", "myna:backend", "myna-parakeet:provider"]
+            ),
+            (
+                "systemctl",
+                vec!["--user", "restart", "snap.myna.myna.service"]
+            )
+        ]
+    );
+}
+
+#[test]
 fn plan_switches_one_connection_disconnect_first() {
     let plan = SwitchPlan::new(
         &connections(&["myna-parakeet", "myna-whisper"], &["myna-parakeet"]),

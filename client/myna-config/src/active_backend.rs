@@ -45,6 +45,7 @@ impl SwitchPlan {
         } else {
             let mut operations = connected
                 .iter()
+                .chain(snapshot.strays())
                 .map(|backend| privileged_snap_request("disconnect", backend.slot()))
                 .collect::<Vec<_>>();
             operations.push(privileged_snap_request("connect", selected.slot()));
