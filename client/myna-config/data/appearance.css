@@ -54,11 +54,6 @@ button.outlined:active {
   font-size: smaller;
 }
 
-/* A model row's language summary: secondary to the name, as a subtitle. */
-menubutton.languages-button > button {
-  font-weight: normal;
-}
-
 /* One line height for every script in the language list, so fallback fonts
    with tall metrics (Arabic, Myanmar) do not stretch its even rows. */
 .language-columns label {

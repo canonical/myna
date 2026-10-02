@@ -140,21 +140,38 @@ fn set_named(label: &gtk::Label, named: &Named) {
     label.set_attributes(Some(&attributes));
 }
 
-/// A flat, dimmed button summarising `family`'s languages that opens the
-/// full list, built afresh each time for the language `user_language` then
-/// returns. Its own label child keeps GTK from drawing a dropdown arrow.
+/// `named` as Pango markup, each language name tagged with its language.
+fn named_markup(named: &Named) -> String {
+    let escape = |text: &str| glib::markup_escape_text(text).to_string();
+    let mut markup = String::new();
+    let mut at = 0;
+    for (range, endonym) in &named.names {
+        markup.push_str(&escape(&named.text[at..range.start]));
+        let name = escape(&named.text[range.clone()]);
+        match endonym.pango_language() {
+            Some(code) => markup.push_str(&format!("<span lang=\"{code}\">{name}</span>")),
+            None => markup.push_str(&name),
+        }
+        at = range.end;
+    }
+    markup.push_str(&escape(&named.text[at..]));
+    markup
+}
+
+/// A flat info button that opens `family`'s full language list, built
+/// afresh each time for the language `user_language` then returns. Its
+/// summary is the tooltip and accessible name. Its own image child keeps
+/// GTK from drawing a dropdown arrow.
 fn languages_button(
     family: myna_core::language::ModelFamily,
     user_language: impl Fn() -> Option<String> + 'static,
 ) -> gtk::MenuButton {
+    let icon =
+        gio::ThemedIcon::from_names(&["info-outline-symbolic", "dialog-information-symbolic"]);
     let button = gtk::MenuButton::builder()
         .valign(gtk::Align::Center)
-        .css_classes(["flat", "languages-button"])
-        .child(
-            &gtk::Label::builder()
-                .css_classes(["dim-label", "caption"])
-                .build(),
-        )
+        .css_classes(["flat", "circular"])
+        .child(&gtk::Image::from_gicon(&icon))
         .build();
     button.set_create_popup_func(move |button| {
         let coverage = coverage(family, user_language().as_deref());
@@ -175,9 +192,7 @@ fn show_languages(
     user_language: Option<&str>,
 ) {
     let summary = coverage_summary(&coverage(family, user_language));
-    if let Some(label) = button.child().and_downcast::<gtk::Label>() {
-        set_named(&label, &summary);
-    }
+    button.set_tooltip_markup(Some(&named_markup(&summary)));
     // Otherwise the name takes in the open popover's text too.
     button.update_property(&[gtk::accessible::Property::Label(&summary.text)]);
 }
@@ -3756,13 +3771,16 @@ mod tests {
             .collect()
     }
 
-    /// What `button` shows, which must be a label so no arrow is drawn.
+    /// The languages `button` summarises in its tooltip. Its child must be
+    /// an image so no arrow is drawn.
     fn summary_of(button: &gtk::MenuButton) -> String {
+        assert!(
+            button.child().and_downcast::<gtk::Image>().is_some(),
+            "an image child, not the arrowed default"
+        );
         button
-            .child()
-            .and_downcast::<gtk::Label>()
-            .expect("a label child, not the arrowed default")
-            .label()
+            .tooltip_text()
+            .expect("a summary tooltip")
             .to_string()
     }
 
