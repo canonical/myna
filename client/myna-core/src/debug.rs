@@ -57,7 +57,7 @@ pub fn log(stage: &str, msg: impl AsRef<str>) {
 #[macro_export]
 macro_rules! info_log {
     ($stage:expr, $($arg:tt)*) => {
-        $crate::debug::info($stage, format!($($arg)*));
+        $crate::debug::info($stage, format!($($arg)*))
     };
 }
 
