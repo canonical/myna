@@ -6,7 +6,8 @@
 #   - every installed myna* snap, with --purge (data, snapshots, components)
 #   - the `experimental.user-daemons` snapd flag onboarding asks the user to set
 #   - the GNOME custom keybinding myna-config installs where there is no
-#     GlobalShortcuts portal, and the portal's stored grant for myna_myna
+#     GlobalShortcuts portal, and the portal's stored grants under every app
+#     id Myna has had (myna_myna, and "." from a portal that lost the id)
 #   - Myna Settings' dconf keys and notification entry
 #   - hand-installed desktop files, icons and a ~/.local shell extension copy
 #   - pre-rename leftovers: /org/myna/ in dconf, ~/.config/myna, and an
@@ -74,27 +75,62 @@ packaged_extension() {
     return 1
 }
 
-# Print a GVariant string array without one element, or nothing when the
-# element is absent.
+# Print a GVariant string array without the given elements, or nothing when
+# none of them is there.
 without() {
     python3 -c '
 import ast, sys
-text, drop = sys.argv[1], sys.argv[2]
+text, drop = sys.argv[1], set(sys.argv[2:])
 items = ast.literal_eval(text.removeprefix("@as ").strip())
-if drop in items:
-    kept = [item for item in items if item != drop]
+if drop & set(items):
+    kept = [item for item in items if item not in drop]
     print(repr(kept) if kept else "@as []")
-' "$1" "$2"
+' "$@"
 }
 
-# Drop `value` from the string-array dconf key `key`, if it is there.
+# Drop the given values from the string-array dconf key `key`, if there.
 dconf_drop() {
-    local key=$1 value=$2 current next
+    local key=$1 current next
+    shift
     current=$(dconf read "$key")
     [ -n "$current" ] || return 0
-    next=$(without "$current" "$value")
+    next=$(without "$current" "$@")
     [ -n "$next" ] || return 0
     run dconf write "$key" "$next"
+}
+
+# Print the app ids holding Myna's GlobalShortcuts grants: myna_myna, and any
+# other id whose every shortcut is the daemon's `dictate` with a description
+# Myna has ever registered. A portal that could not resolve the snap stored
+# Myna's grant under ".". Ids only in the applications list count too.
+myna_shortcut_apps() {
+    dconf dump "$GLOBAL_SHORTCUTS" | python3 -c '
+import sys
+from gi.repository import GLib
+DESCRIPTIONS = {
+    "myna dictation (hold to talk)",
+    "myna dictation (tap to start/stop)",
+    "Dictation (hold to talk)",
+    "Dictation (tap to start or stop)",
+    "Dictation (press to start and stop)",
+}
+dump = GLib.KeyFile()
+text = sys.stdin.read()
+dump.load_from_data(text, len(text.encode()), GLib.KeyFileFlags.NONE)
+def value(group, key, kind):
+    if not dump.has_group(group) or key not in dump.get_keys(group)[0]:
+        return None
+    return GLib.Variant.parse(GLib.VariantType(kind), dump.get_value(group, key)).unpack()
+apps = set(value("/", "applications", "as") or [])
+apps |= {group for group in dump.get_groups()[0] if group != "/"}
+for app in sorted(apps):
+    shortcuts = value(app, "shortcuts", "a(sa{sv})")
+    if app == sys.argv[1] or shortcuts and all(
+        sid == "dictate" and props.get("description") in DESCRIPTIONS
+        for sid, props in shortcuts
+    ):
+        print(app)
+' "$PORTAL_APP"
 }
 
 dconf_reset_dir() {
@@ -136,8 +172,13 @@ done
 echo "shortcuts:"
 dconf_drop "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings" "$KEYBINDING"
 dconf_reset_dir "$KEYBINDING"
-dconf_drop "${GLOBAL_SHORTCUTS}applications" "$PORTAL_APP"
-dconf_reset_dir "$GLOBAL_SHORTCUTS$PORTAL_APP/"
+mapfile -t portal_apps < <(myna_shortcut_apps)
+if [ "${#portal_apps[@]}" -gt 0 ]; then
+    dconf_drop "${GLOBAL_SHORTCUTS}applications" "${portal_apps[@]}"
+    for app in "${portal_apps[@]}"; do
+        dconf_reset_dir "$GLOBAL_SHORTCUTS$app/"
+    done
+fi
 
 echo "settings:"
 dconf_reset_dir /com/canonical/myna/
