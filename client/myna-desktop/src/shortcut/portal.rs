@@ -98,7 +98,7 @@ impl ActivationMode {
     pub fn describe(self) -> String {
         match self {
             // TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
-            Self::Toggle => gettextrs::gettext("Dictation (tap to start or stop)"),
+            Self::Toggle => gettextrs::gettext("Dictation (press to start and stop)"),
             // TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
             Self::Hold => gettextrs::gettext("Dictation (hold to talk)"),
         }
@@ -1308,7 +1308,7 @@ mod tests {
     // "hold to talk" told every Toggle user (the default) the wrong thing.
     #[test]
     fn description_matches_the_gesture_the_mode_implements() {
-        assert!(ActivationMode::Toggle.describe().contains("tap"));
+        assert!(ActivationMode::Toggle.describe().contains("press"));
         assert!(ActivationMode::Hold.describe().contains("hold"));
         assert!(!ActivationMode::Toggle.describe().contains("hold"));
     }
@@ -1319,7 +1319,7 @@ mod tests {
     fn description_names_the_feature_as_the_desktop_does() {
         assert_eq!(
             ActivationMode::Toggle.describe(),
-            "Dictation (tap to start or stop)"
+            "Dictation (press to start and stop)"
         );
         assert_eq!(ActivationMode::Hold.describe(), "Dictation (hold to talk)");
     }
