@@ -297,9 +297,10 @@ fn discover_address_in(env: &dyn Fn(&str) -> Option<String>) -> Result<String, I
         }
     }
     if files.is_empty() {
+        let searched: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
         return Err(InjectError::Unavailable(format!(
-            "no IBus socket dir {} (is an IBus daemon running? try `ibus restart`)",
-            first.display()
+            "no IBus address file in {} (is an IBus daemon running? try `ibus restart`)",
+            searched.join(", ")
         )));
     }
 
@@ -1766,6 +1767,29 @@ mod tests {
         let want = std::fs::read_to_string(&file).unwrap();
         assert!(want.contains(&addr), "{addr} not from {}", file.display());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Naming only the first dir pointed at the snap-private one, which never
+    /// holds the file, and hid that the real home was not searched at all.
+    #[test]
+    fn missing_address_names_every_dir_searched() {
+        let vars: HashMap<&str, String> = HashMap::from([
+            ("XDG_CONFIG_HOME", "/nonexistent/common/.config".to_owned()),
+            ("HOME", "/nonexistent/x1".to_owned()),
+            ("SNAP_REAL_HOME", "/nonexistent/real".to_owned()),
+        ]);
+
+        let err = discover_address_in(&|k| vars.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+
+        for dir in [
+            "/nonexistent/common/.config/ibus/bus",
+            "/nonexistent/x1/.config/ibus/bus",
+            "/nonexistent/real/.config/ibus/bus",
+        ] {
+            assert!(err.contains(dir), "{dir} missing from: {err}");
+        }
     }
 
     /// A dead daemon PID is reported as such, naming the file and the PID -

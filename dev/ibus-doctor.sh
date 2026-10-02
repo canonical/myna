@@ -81,7 +81,7 @@ for d in "${DIRS[@]}"; do
     FILES+=("$f")
   done
 done
-[ ${#FILES[@]} -eq 0 ] && { bad "no address files at all: myna reports \"no IBus socket dir\", not this error"; exit 0; }
+[ ${#FILES[@]} -eq 0 ] && { bad "no address files at all: myna reports \"no IBus address file in ...\", not this error"; exit 0; }
 
 # want: the file-name suffix for this session's display.
 WANT=""
