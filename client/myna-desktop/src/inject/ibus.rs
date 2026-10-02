@@ -240,51 +240,30 @@ fn ibus_component() -> Value<'static> {
 
 // ── IBus address discovery ──────────────────────────────────────────────────
 
-/// The invoking user's real home, read from `/etc/passwd` (world-readable,
-/// including under snap confinement). Needed because snapd redirects `$HOME`
-/// (and the gnome runtime redirects `XDG_CONFIG_HOME`) into `~/snap/<name>/…`,
-/// while the IBus daemon writes its address file under the *real* home.
-fn real_home_from_passwd(user: &str, passwd: &str) -> Option<PathBuf> {
-    passwd.lines().find_map(|line| {
-        let mut fields = line.split(':');
-        if fields.next()? == user {
-            // name:passwd:uid:gid:gecos:**home**:shell
-            fields.nth(4).filter(|h| !h.is_empty()).map(PathBuf::from)
-        } else {
-            None
-        }
-    })
-}
-
 /// Candidate `ibus/bus` directories, best first. Ordinarily this is just
 /// `$XDG_CONFIG_HOME/ibus/bus` / `~/.config/ibus/bus`; under snap confinement
-/// (`$SNAP` set) the real user's config dir is appended, since the snap-private
-/// `$HOME` never contains the daemon's address file.
-fn candidate_dirs() -> Vec<PathBuf> {
+/// the real home's (`$SNAP_REAL_HOME`) config dir is appended, since the
+/// snap-private `$HOME` never contains the daemon's address file.
+fn candidate_dirs(env: &dyn Fn(&str) -> Option<String>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut push_unique = |d: PathBuf| {
         if !dirs.contains(&d) {
             dirs.push(d);
         }
     };
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+    if let Some(xdg) = env("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
             push_unique(PathBuf::from(xdg).join("ibus/bus"));
         }
     }
-    if let Ok(home) = std::env::var("HOME") {
+    if let Some(home) = env("HOME") {
         if !home.is_empty() {
             push_unique(PathBuf::from(home).join(".config/ibus/bus"));
         }
     }
-    if std::env::var_os("SNAP").is_some() {
-        if let Some(real) = std::env::var("USER").ok().and_then(|u| {
-            real_home_from_passwd(
-                &u,
-                &std::fs::read_to_string("/etc/passwd").unwrap_or_default(),
-            )
-        }) {
-            push_unique(real.join(".config/ibus/bus"));
+    if let Some(real) = env("SNAP_REAL_HOME") {
+        if !real.is_empty() {
+            push_unique(PathBuf::from(real).join(".config/ibus/bus"));
         }
     }
     dirs
@@ -297,12 +276,16 @@ fn candidate_dirs() -> Vec<PathBuf> {
 /// (e.g. left by a crashed/replaced daemon) yields an actionable error rather
 /// than a bare "connection refused".
 fn discover_address() -> Result<Address, InjectError> {
-    if let Ok(addr) = std::env::var("IBUS_ADDRESS") {
+    to_zbus_address(&discover_address_in(&|k| std::env::var(k).ok())?)
+}
+
+fn discover_address_in(env: &dyn Fn(&str) -> Option<String>) -> Result<String, InjectError> {
+    if let Some(addr) = env("IBUS_ADDRESS") {
         if !addr.is_empty() {
-            return to_zbus_address(&addr);
+            return Ok(addr);
         }
     }
-    let dirs = candidate_dirs();
+    let dirs = candidate_dirs(env);
     let first = dirs
         .first()
         .cloned()
@@ -321,12 +304,11 @@ fn discover_address() -> Result<Address, InjectError> {
     }
 
     // Prefer a file whose name ends with the current Wayland/X display.
-    let want = std::env::var("WAYLAND_DISPLAY")
+    let want = env("WAYLAND_DISPLAY")
         .map(|w| format!("unix-{w}"))
-        .or_else(|_| std::env::var("DISPLAY").map(|d| format!("unix{}", d.replace(':', "-"))))
-        .ok();
+        .or_else(|| env("DISPLAY").map(|d| format!("unix{}", d.replace(':', "-"))));
 
-    to_zbus_address(&pick_address(files, want.as_deref(), &first)?)
+    pick_address(files, want.as_deref(), &first)
 }
 
 /// Decode a D-Bus address value into a filesystem path.
@@ -1700,25 +1682,6 @@ mod tests {
         assert_eq!(state.content_type(), ContentType::default());
     }
 
-    /// Snap confinement (feature 005): the real home is recovered from
-    /// /etc/passwd, since snapd redirects $HOME into ~/snap/<name>/.
-    #[test]
-    fn real_home_parsed_from_passwd() {
-        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
-                      charles:x:1000:1000:Charles,,,:/home/charles:/bin/bash\n";
-        assert_eq!(
-            real_home_from_passwd("charles", passwd),
-            Some(PathBuf::from("/home/charles"))
-        );
-        assert_eq!(
-            real_home_from_passwd("root", passwd),
-            Some(PathBuf::from("/root"))
-        );
-        assert_eq!(real_home_from_passwd("nobody-here", passwd), None);
-        // Tolerates blank/garbage lines.
-        assert_eq!(real_home_from_passwd("charles", "\ngarbage\n"), None);
-    }
-
     /// Write a fake IBus address file (+ its socket path, so liveness passes)
     /// into `dir`; returns the file path. Uses *this* test process's PID so
     /// the daemon-alive check holds.
@@ -1770,6 +1733,39 @@ mod tests {
         let addr = pick_address(files, Some("unix-wayland-0"), &snap_private).unwrap();
         assert!(addr.starts_with("unix:path="), "{addr}");
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// Under confinement the real home comes from snapd, not the user
+    /// database: an SSSD/AD account has no /etc/passwd line, and NSS does not
+    /// resolve it inside the snap either.
+    #[test]
+    fn snap_finds_address_under_real_home_of_nss_only_user() {
+        let root = temp_dir("nss-only");
+        let real_home = root.join("first.last@example.com");
+        let snap_home = real_home.join("snap/myna/x1");
+        let file = fake_address_file(
+            &real_home.join(".config/ibus/bus"),
+            "abc-unix-wayland-0",
+            "real",
+        );
+        let vars: HashMap<&str, String> = HashMap::from([
+            ("HOME", snap_home.display().to_string()),
+            (
+                "XDG_CONFIG_HOME",
+                real_home
+                    .join("snap/myna/common/.config")
+                    .display()
+                    .to_string(),
+            ),
+            ("SNAP_REAL_HOME", real_home.display().to_string()),
+            ("WAYLAND_DISPLAY", "wayland-0".to_owned()),
+        ]);
+
+        let addr = discover_address_in(&|k| vars.get(k).cloned()).unwrap();
+
+        let want = std::fs::read_to_string(&file).unwrap();
+        assert!(want.contains(&addr), "{addr} not from {}", file.display());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A dead daemon PID is reported as such, naming the file and the PID -
