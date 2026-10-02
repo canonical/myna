@@ -1,0 +1,92 @@
+# An account that exists only through NSS: SSSD/LDAP/AD logins, and every
+# Ubuntu Core user (extrausers). It has no line in /etc/passwd, and inside the
+# snap NSS does not resolve it either. The daemon used to recover the real
+# home - where ibus-daemon writes its address file - by parsing /etc/passwd,
+# so for these accounts every press failed with "Typing unavailable (... no
+# IBus socket dir ...)" while IBus was running fine (reported 2026-10-01 on an
+# AD login).
+#
+# libnss-extrausers gives the same shape as SSSD without a directory server.
+# The home carries an `@` like an AD one, which is also what percent-encodes
+# the IBus socket path.
+#
+# No desktop: a headless ibus-daemon still writes the address file and serves
+# the engine calls `acquire` makes, and acquire is where this failed.
+summary: Dictation reaches IBus for an account that is not in /etc/passwd
+
+environment:
+    USER_NAME: mynanss
+    USER_HOME: /home/mynanss@example.com
+
+prepare: |
+    snap set system experimental.user-daemons=true
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
+    apt-get update
+    apt-get install -y --no-install-recommends libnss-extrausers ibus
+    cp /etc/nsswitch.conf nsswitch.conf.orig
+    sed -i -E 's/^(passwd|group|shadow):(.*)$/\1:\2 extrausers/' /etc/nsswitch.conf
+    useradd --extrausers --create-home --home-dir "$USER_HOME" --shell /bin/bash "$USER_NAME"
+    # The premise, or the test proves nothing: resolvable, yet absent from the file.
+    getent passwd "$USER_NAME" | grep -q ":$USER_HOME:"
+    ! grep -q "^$USER_NAME:" /etc/passwd
+
+execute: |
+    set -x
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
+    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    install_snap "$MYNA_SNAP"
+
+    USER_UID=$(id -u "$USER_NAME")
+    as_user() {
+        sudo -u "$USER_NAME" env "XDG_RUNTIME_DIR=/run/user/$USER_UID" \
+            "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_UID/bus" "$@"
+    }
+
+    loginctl enable-linger "$USER_NAME"
+    for i in $(seq 1 30); do
+        systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service && break
+        sleep 1
+    done
+    systemctl --user -M "$USER_NAME@" is-active snap.myna.myna.service
+
+    systemctl --user -M "$USER_NAME@" start dbus.socket
+    systemd-run --user -M "$USER_NAME@" --unit=ibus-spread ibus-daemon --panel=disable
+    for i in $(seq 1 30); do
+        ls "$USER_HOME"/.config/ibus/bus/* >/dev/null 2>&1 && break
+        sleep 1
+    done
+    ls -l "$USER_HOME"/.config/ibus/bus/
+
+    daemon_log() {
+        journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --since "$before" --no-pager
+    }
+    before=$(date '+%Y-%m-%d %H:%M:%S')
+    sleep 1
+    as_user gdbus call --session --dest com.canonical.Myna.Dictation \
+        --object-path /com/canonical/Myna/Dictation \
+        --method com.canonical.Myna.Dictation.Toggle
+
+    # The press must land, or "no acquire failure" below is vacuous. Past
+    # acquire there is no microphone and no backend, so the utterance then ends
+    # on whichever of those it meets first; any such ending means it got past
+    # IBus.
+    outcome='acquire failed|utterance (completed|aborted|FAILED|needs a restart|backend ERROR)|capture lost'
+    for i in $(seq 1 30); do
+        daemon_log | grep -qE "$outcome" && break
+        sleep 1
+    done
+    daemon_log | tee press.log
+    grep -q "press: starting utterance" press.log
+    if grep -q "acquire failed" press.log; then
+        echo "FAIL: the press never reached IBus for an NSS-only account"
+        exit 1
+    fi
+    grep -qE "$outcome" press.log
+
+restore: |
+    loginctl disable-linger "$USER_NAME" || true
+    snap remove --purge myna || true
+    userdel --extrausers --remove "$USER_NAME" || true
+    [ -f nsswitch.conf.orig ] && cp nsswitch.conf.orig /etc/nsswitch.conf
+    rm -f nsswitch.conf.orig press.log

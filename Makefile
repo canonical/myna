@@ -445,7 +445,8 @@ spread-build: spread-image ## Build spread at the pinned commit (input to every 
 # One suite by its directory name under tests/spread/: adapter-smoke (real
 # whisper snap, batch + streaming), confined-e2e (fake backend), thread-pinning
 # (real funasr snap, ORT affinity under confinement), control-socket (client
-# snap, network-bind seccomp bind(2)).
+# snap, network-bind seccomp bind(2)), nss-only-user (client snap, IBus for an
+# account outside /etc/passwd).
 spread-%: spread-build ## Run one suite: spread-<dir under tests/spread>, e.g. spread-confined-e2e
 	.cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/$*
 

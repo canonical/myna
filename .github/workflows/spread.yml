@@ -4,9 +4,9 @@
 # Nightly + on changes to the snap/packaging seams. Builds the client snap
 # and the fake-backend test snap, builds spread from a pinned upstream
 # commit (supply-chain choice recorded in the decision record), and runs the
-# confined-e2e and control-socket tasks on a clean qemu ubuntu-24.04-64 VM
-# (hosted-runner KVM). The other two tasks stay local-only: they need the
-# funasr snap and its model component.
+# confined-e2e, control-socket and nss-only-user tasks on a clean qemu
+# ubuntu-24.04-64 VM (hosted-runner KVM). The other two tasks stay
+# local-only: they need the funasr snap and its model component.
 #
 # Supersession plan: once this is green for two weeks, the bespoke smoke job
 # in snap.yml shrinks to build-only and its smoke assertions live here.
@@ -128,3 +128,9 @@ jobs:
       # nothing unpackaged can notice, since there is no seccomp filter there.
       - name: Run control-socket
         run: make spread-control-socket
+
+      # Same marginal cost: client snap only. Guards IBus discovery for
+      # accounts outside /etc/passwd (SSSD/AD, Ubuntu Core extrausers), which
+      # no developer machine with a local account can notice.
+      - name: Run nss-only-user
+        run: make spread-nss-only-user
