@@ -2816,6 +2816,8 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
         while self.held.load(std::sync::atomic::Ordering::SeqCst) {
             glib::timeout_future(Duration::from_millis(10)).await;
         }
+        // `try_update` from Rust 1.99; the noble deb builds with rustc 1.91.
+        #[allow(deprecated)]
         let refused = self.refusals.fetch_update(
             std::sync::atomic::Ordering::SeqCst,
             std::sync::atomic::Ordering::SeqCst,
