@@ -177,7 +177,7 @@ impl DictationObject {
         parent_window: &str,
         emitter: &zbus::object_server::SignalEmitter<'_>,
     ) -> (bool, String) {
-        use crate::shortcut::portal::{bind_report, configure};
+        use crate::shortcut::portal::{bind_report, configure, consent, spends_consent};
 
         let Some(mode) = self.bind_mode else {
             return (
@@ -191,6 +191,15 @@ impl DictationObject {
         let preferred = (!preferred.is_empty()).then_some(preferred);
         let parent_window = (!parent_window.is_empty()).then_some(parent_window);
         let outcome = configure("dictate", preferred, parent_window, mode).await;
+        let holds_binding = !self
+            .served
+            .lock()
+            .expect("served state poisoned")
+            .shortcut
+            .is_empty();
+        if spends_consent(&outcome, holds_binding) {
+            consent::withdraw();
+        }
         drop(open);
         if let Ok(configured) = &outcome {
             if let Some(shortcut) = configured.shortcut() {

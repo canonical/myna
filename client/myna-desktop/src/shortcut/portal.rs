@@ -713,6 +713,14 @@ pub fn bind_report(outcome: &Result<Configured, TriggerError>) -> (bool, String)
     }
 }
 
+/// Whether a client's bind that ended in `outcome` spends the [`consent`] on
+/// record. A sheet declined while this daemon holds no binding was the
+/// question the retry loop's re-bind would put again, so it must not. One
+/// declined while a key is live was a Change, and the stored grant stays.
+pub fn spends_consent(outcome: &Result<Configured, TriggerError>, holds_binding: bool) -> bool {
+    !holds_binding && matches!(outcome, Err(TriggerError::BindRejected(_)))
+}
+
 /// Open a GlobalShortcuts session, refusing to start a portal to do it.
 #[cfg(not(test))]
 async fn open_session(
@@ -1040,6 +1048,22 @@ impl Trigger for GlobalShortcutTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sheet_declined_with_nothing_bound_spends_consent() {
+        let declined = Err(TriggerError::BindRejected("cancelled".into()));
+        assert!(spends_consent(&declined, false));
+        assert!(
+            !spends_consent(&declined, true),
+            "a declined Change spent it"
+        );
+        let bound = Ok(Configured::Bound(vec!["Press <Super>j".into()]));
+        assert!(!spends_consent(&bound, false));
+        let refused = Err(TriggerError::NoShortcutBound(
+            "a shortcut dialog is already open".into(),
+        ));
+        assert!(!spends_consent(&refused, false), "no sheet was shown");
+    }
 
     #[test]
     fn a_portal_without_the_interface_is_not_a_retryable_failure() {
