@@ -24,13 +24,14 @@ environment:
     MODEL: tiny
 
 prepare: |
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     # `myna` declares a user daemon, and snapd rejects the *install* of one
     # unless this is set or the snap-id is allowlisted upstream - a sideload
     # has no snap-id at all
     snap set system experimental.user-daemons=true
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
-    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    ADAPTER_SNAP=$(newest_build "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(newest_build "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     test -f "$ADAPTER_SNAP" || { echo "adapter snap missing: build ${SNAP_DIR} first"; exit 1; }
     test -f "$COMPONENT" || { echo "model component missing: ./dev/download-models.sh"; exit 1; }
@@ -38,9 +39,9 @@ prepare: |
 execute: |
     set -x
     . "$SPREAD_PATH/tests/spread/lib/install.sh"
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    ADAPTER_SNAP=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
-    COMPONENT=$(echo "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    ADAPTER_SNAP=$(newest_build "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}_*_amd64.snap)
+    COMPONENT=$(newest_build "$SPREAD_PATH"/${SNAP_DIR}/${SNAP_UNDER_TEST}+model-${MODEL}.comp)
 
     # Sideloading carries no snap declaration, so hardware-observe stays
     # unconnected and the install hook skips `use-engine --auto`, leaving no

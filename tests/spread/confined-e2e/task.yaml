@@ -5,20 +5,21 @@
 summary: Install myna + fake backend snaps, connect, dictate a WAV clip
 
 prepare: |
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     # `myna` declares a user daemon, and snapd rejects the *install* of one
     # unless this is set or the snap-id is allowlisted upstream - a sideload
     # has no snap-id at all
     snap set system experimental.user-daemons=true
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(newest_build "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     test -f "$FAKE_SNAP" || { echo "fake-backend snap missing: build fake-snap first"; exit 1; }
 
 execute: |
     set -x
     . "$SPREAD_PATH/tests/spread/lib/install.sh"
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
-    FAKE_SNAP=$(echo "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    FAKE_SNAP=$(newest_build "$SPREAD_PATH"/fake-snap/myna-fake-backend_*_amd64.snap)
     install_snap "$FAKE_SNAP"
     install_snap "$MYNA_SNAP"
     snap connect myna:backend myna-fake-backend:provider

@@ -29,6 +29,18 @@
 # `snap connect` / start services without hitting "install-snap change in
 # progress".
 
+# newest_build <glob-expanded paths...> - the most recently built of them. A
+# local checkout keeps every snap it ever packed, so a bare glob expands to
+# several and the task installs none; CI packs exactly one.
+newest_build() {
+    local f newest=""
+    for f in "$@"; do
+        [ -e "$f" ] || continue
+        if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
+    done
+    echo "$newest"
+}
+
 # True while snapd has a change queued or running (a self-refresh, an install,
 # an auto-refresh) or cannot be reached. `snap changes` has no machine format;
 # Status is its second column.

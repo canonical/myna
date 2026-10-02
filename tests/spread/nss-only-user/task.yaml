@@ -19,8 +19,9 @@ environment:
     USER_HOME: /home/mynanss@example.com
 
 prepare: |
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     snap set system experimental.user-daemons=true
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     apt-get update
     apt-get install -y --no-install-recommends libnss-extrausers ibus
@@ -34,7 +35,7 @@ prepare: |
 execute: |
     set -x
     . "$SPREAD_PATH/tests/spread/lib/install.sh"
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     install_snap "$MYNA_SNAP"
 
     USER_UID=$(id -u "$USER_NAME")

@@ -33,10 +33,11 @@ environment:
     USER_NAME: mynactl
 
 prepare: |
+    . "$SPREAD_PATH/tests/spread/lib/install.sh"
     # A sideloaded snap has no snap-id, and snapd rejects the install of any
     # user daemon that is neither allowlisted nor covered by this.
     snap set system experimental.user-daemons=true
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     test -f "$MYNA_SNAP" || { echo "client snap missing: build myna-snap first"; exit 1; }
     # `snap run` refuses to start for an account whose home is outside /home.
     useradd --create-home --shell /bin/bash "$USER_NAME"
@@ -44,7 +45,7 @@ prepare: |
 execute: |
     set -x
     . "$SPREAD_PATH/tests/spread/lib/install.sh"
-    MYNA_SNAP=$(echo "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
+    MYNA_SNAP=$(newest_build "$SPREAD_PATH"/myna-snap/myna_*_amd64.snap)
     install_snap "$MYNA_SNAP"
 
     # The plug must exist to be connectable at all - the failure mode this
