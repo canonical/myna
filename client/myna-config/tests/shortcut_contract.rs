@@ -1,4 +1,6 @@
-use myna_config::shortcut::{accelerators, default_key, DefaultKey, ShortcutPath, ShortcutState};
+use myna_config::shortcut::{
+    accelerators, default_key, trigger_key, DefaultKey, ShortcutPath, ShortcutState,
+};
 
 #[test]
 fn setup_sets_the_default_key_only_when_none_is_bound() {
@@ -99,6 +101,69 @@ fn descriptions_without_an_accelerator_yield_none() {
     assert!(accelerators("a <b> c").is_empty());
     assert!(accelerators("Press <>j").is_empty());
     assert!(accelerators("Press <Su-per>j").is_empty());
+}
+
+/// Stands in for GTK's keyval table: the keys with no printable character.
+fn named(token: &str) -> bool {
+    ["F2", "F12", "Print", "XF86AudioPlay"].contains(&token)
+}
+
+#[test]
+fn a_lone_named_key_is_the_trigger() {
+    assert_eq!(trigger_key("Press F2", None, named), Some("F2"));
+    assert_eq!(trigger_key("Appuyez sur F2.", None, named), Some("F2"));
+    assert_eq!(
+        trigger_key("Press XF86AudioPlay", None, named),
+        Some("XF86AudioPlay")
+    );
+}
+
+#[test]
+fn a_modified_accelerator_wins_over_a_lone_key() {
+    assert_eq!(trigger_key("Press <Super>j", None, named), Some("<Super>j"));
+    assert_eq!(
+        trigger_key("Print <Super>F2", None, named),
+        Some("<Super>F2")
+    );
+}
+
+#[test]
+fn words_that_name_no_key_are_never_the_trigger() {
+    assert_eq!(trigger_key("Press j", None, named), None);
+    assert_eq!(trigger_key("Meta+J", None, named), None);
+    assert_eq!(trigger_key("", None, named), None);
+    // Two candidates: which one is the key is a guess, so neither is.
+    assert_eq!(trigger_key("Print F2", None, named), None);
+}
+
+#[test]
+fn the_stored_key_wins_where_the_description_names_it() {
+    assert_eq!(
+        trigger_key("「F2」を押します", Some("F2"), named),
+        Some("F2")
+    );
+    assert_eq!(trigger_key("Press j", Some("j"), named), Some("j"));
+    assert_eq!(
+        trigger_key("<Super>j", Some("<Super>j"), named),
+        Some("<Super>j")
+    );
+}
+
+#[test]
+fn a_stored_key_the_description_does_not_name_is_stale() {
+    assert_eq!(
+        trigger_key("Press <Control><Alt>k", Some("<Super>n"), named),
+        Some("<Control><Alt>k")
+    );
+    assert_eq!(trigger_key("Press F12", Some("F1"), named), Some("F12"));
+    assert_eq!(
+        trigger_key("Press <Super>j", Some("j"), named),
+        Some("<Super>j")
+    );
+    assert_eq!(
+        trigger_key("Press <Super>j", Some(""), named),
+        Some("<Super>j")
+    );
 }
 
 #[test]

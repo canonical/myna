@@ -255,6 +255,48 @@ pub fn accelerators(description: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The accelerator to draw for a binding described as `description`.
+///
+/// `stored` is the accelerator the desktop keeps for it, trusted only where
+/// the description names it, since a store the portal no longer reads goes
+/// stale. Without it the description's first `<Mod>key` wins, else its one
+/// lone token that `names_key` (GTK's keyval table) takes for a key, so a
+/// translated word never becomes a key.
+pub fn trigger_key<'a>(
+    description: &'a str,
+    stored: Option<&'a str>,
+    names_key: impl Fn(&str) -> bool,
+) -> Option<&'a str> {
+    if let Some(stored) = stored.filter(|stored| names(description, stored)) {
+        return Some(stored);
+    }
+    if let Some(accelerator) = accelerators(description).first() {
+        return Some(accelerator);
+    }
+    let mut lone = description
+        .split_whitespace()
+        .map(|token| token.trim_matches(|c: char| !(c.is_alphanumeric() || c == '_')))
+        .filter(|token| !token.is_empty() && names_key(token));
+    match (lone.next(), lone.next()) {
+        (Some(key), None) => Some(key),
+        _ => None,
+    }
+}
+
+/// Whether `accelerator` appears in `description` as a whole, not inside
+/// a longer key name (`F1` in `F12`) or after a modifier (`j` in `<Super>j`).
+fn names(description: &str, accelerator: &str) -> bool {
+    let joins = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '>';
+    !accelerator.is_empty()
+        && description.match_indices(accelerator).any(|(at, _)| {
+            !description[..at].chars().next_back().is_some_and(joins)
+                && !description[at + accelerator.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(joins)
+        })
+}
+
 fn is_accelerator(token: &str) -> bool {
     let mut rest = token;
     let mut modifiers = 0;

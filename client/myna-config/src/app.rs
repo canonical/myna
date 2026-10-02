@@ -1262,7 +1262,7 @@ fn shortcut_page_closes_up(page: &ui::OnboardingShortcut) -> Result<(), String> 
             keys.remove(&child);
         }
         if let ShortcutState::Bound(trigger) = state {
-            fill_keys(&keys, trigger, Surface::Onboarding);
+            fill_keys(&keys, trigger, None, Surface::Onboarding);
         }
         keys.set_visible(matches!(state, ShortcutState::Bound(_)));
         (
@@ -2612,6 +2612,31 @@ fn onboarding_control_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-keys: follows a portal rebind");
+    // A lone key reads as a key too, from the sentence or, in a script the
+    // sentence cannot be split in, from GNOME's store.
+    let caps_become = |description: &str, caps: &[&str]| {
+        shortcut.replace(description.to_owned());
+        announce("Shortcut", description.to_variant());
+        waits(&|| keycaps(window.upcast_ref()) == caps)
+    };
+    if !caps_become("Press F2", &["F2"]) {
+        eprintln!(
+            "a lone F2 under the portal left the caps {:?}",
+            keycaps(window.upcast_ref())
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    put(&gnome("F3"));
+    if !caps_become("「F3」を押します", &["F3"]) {
+        eprintln!(
+            "a stored F3 under the portal left the caps {:?}",
+            keycaps(window.upcast_ref())
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    put("@a(sa{sv}) []");
+    shortcut.replace(String::new());
+    println!("onboarding-keys: a lone key reads as a key");
     window.close();
 
     let (window, button, control) = walk("control");

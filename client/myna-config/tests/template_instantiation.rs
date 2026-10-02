@@ -416,6 +416,7 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-change: a key under an empty app id is offered and kept",
         "onboarding-change: no provider falls back to GNOME Settings",
         "onboarding-keys: follows a portal rebind",
+        "onboarding-keys: a lone key reads as a key",
         "onboarding-default: Super+J without a click",
         "onboarding-keys: Super+J under control",
         "onboarding-keys: follows a desktop rebind",

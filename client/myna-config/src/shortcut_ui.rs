@@ -19,7 +19,7 @@ use crate::adapters::desktop_shortcut::DesktopShortcut;
 use crate::adapters::portal_shortcuts::{self, PortalShortcuts, Store, Taken, SHORTCUT_ID};
 use crate::onboarding::MYNA_SNAP;
 use crate::shortcut::{
-    accelerators, bind_end, button_action, default_key, portal_trigger, BindEnd, BindReply,
+    bind_end, button_action, default_key, portal_trigger, trigger_key, BindEnd, BindReply,
     ButtonAction, DefaultKey, DialogHint, ShortcutPath, ShortcutState, DEFAULT_ACCELERATOR,
 };
 
@@ -393,7 +393,11 @@ impl ShortcutControl {
         match &state {
             ShortcutState::Bound(description) => {
                 self.keys.set_visible(true);
-                fill_keys(&self.keys, description, self.surface);
+                let stored = match path {
+                    ShortcutPath::Control => Some(description.clone()),
+                    ShortcutPath::Portal => stored_key(),
+                };
+                fill_keys(&self.keys, description, stored.as_deref(), self.surface);
             }
             _ => self.keys.set_visible(false),
         }
@@ -1253,15 +1257,32 @@ fn bind_failure_words(changing: bool) -> (String, String) {
     }
 }
 
-/// The first accelerator in `description` drawn for `surface`, or the
-/// description itself when it names none GTK can parse.
-pub(crate) fn fill_keys(keys: &gtk::Box, description: &str, surface: Surface) {
-    // A desktop shortcut is the accelerator itself, which may be a lone
-    // key such as F8; a portal wraps its accelerator in a sentence.
-    let caps = accelerators(description)
-        .first()
-        .and_then(|accelerator| key_caps(accelerator))
-        .or_else(|| key_caps(description.trim()));
+/// The key GNOME stores for the portal's binding, under whichever app id
+/// holds one. `None` off GNOME, or while a change has taken it out.
+fn stored_key() -> Option<String> {
+    let store = Store::open()?;
+    store
+        .myna_apps()
+        .iter()
+        .find_map(|app_id| store.app(app_id).accelerator(SHORTCUT_ID))
+}
+
+/// Whether GTK knows `token` as a key that types no character, such as F2,
+/// Print or XF86AudioPlay.
+fn names_key(token: &str) -> bool {
+    gtk::gdk::Key::from_name(token).is_some_and(|key| key.to_unicode().is_none_or(char::is_control))
+}
+
+/// The key of a binding described as `description` drawn for `surface`, or
+/// the description itself when it names none. `stored` is the accelerator
+/// the desktop keeps for it, as [`trigger_key`] weighs it.
+pub(crate) fn fill_keys(
+    keys: &gtk::Box,
+    description: &str,
+    stored: Option<&str>,
+    surface: Surface,
+) {
+    let caps = trigger_key(description, stored, names_key).and_then(key_caps);
     let Some(caps) = caps else {
         let label = gtk::Label::new(Some(description));
         if surface == Surface::Row {
@@ -1310,6 +1331,16 @@ fn key_caps(accelerator: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_keys_that_type_nothing_are_named() {
+        for key in ["F2", "F35", "Print", "Pause", "XF86AudioPlay", "Return"] {
+            assert!(names_key(key), "{key}");
+        }
+        for word in ["Press", "j", "J", "space", "Appuyez", "sur", ""] {
+            assert!(!names_key(word), "{word}");
+        }
+    }
 
     #[test]
     fn a_failed_change_says_change() {
