@@ -173,6 +173,12 @@ pub fn portal_trigger(accelerator: &str) -> Option<String> {
 /// How the daemon answered a bind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindReply {
+    /// `BindShortcutWithOutcome`: `reason` names how the bind ended.
+    Reasoned {
+        reason: String,
+        message: String,
+    },
+    /// The older calls, from a daemon that predates the reason.
     Answered {
         ok: bool,
         message: String,
@@ -191,9 +197,7 @@ pub enum BindEnd {
     Waiting,
     /// The dialog may outlive the bind; see [`DialogHint::MaybeLeftOpen`].
     LeftOpen,
-    /// Answered in the dialog without a key: GNOME's Cancel arrives as the
-    /// portal's "other" response, so it cannot be told from a backend that
-    /// gave up.
+    /// Answered in the dialog without a key: Cancel.
     Declined,
     Failed(String),
 }
@@ -202,7 +206,11 @@ pub enum BindEnd {
 const DIALOG_ALREADY_OPEN: &str = "a shortcut dialog is already open";
 /// An older daemon's reply after it stopped waiting on its dialog (120 s).
 const BIND_UNANSWERED: &str = "shortcut bind unanswered";
-/// ashpd's words for the portal's "cancelled" and "other" responses.
+/// A daemon older than `BindShortcutWithOutcome` says a dialog was answered
+/// without a key only in ashpd's words for the portal's "cancelled" and
+/// "other" responses (GNOME's Cancel is "other"). Matched for those daemons
+/// alone: a rewording turns their cancels into error toasts, and a backend
+/// fault reported as "other" stays silent.
 const BIND_DECLINED: [&str; 2] = [
     "shortcut bind rejected: Portal request was cancelled",
     "shortcut bind rejected: Portal request didn't succeed with no information",
@@ -212,6 +220,12 @@ const BIND_DECLINED: [&str; 2] = [
 /// `BindShortcutWithParent`, the only kind that gives up on its dialog.
 pub fn bind_end(reply: BindReply, legacy: bool) -> BindEnd {
     match reply {
+        BindReply::Reasoned { reason, message } => match reason.as_str() {
+            "bound" | "opened" => BindEnd::Done,
+            "declined" => BindEnd::Declined,
+            "busy" => BindEnd::Waiting,
+            _ => BindEnd::Failed(message),
+        },
         BindReply::Answered { ok: true, .. } => BindEnd::Done,
         BindReply::Answered { message, .. } if message.starts_with(DIALOG_ALREADY_OPEN) => {
             BindEnd::Waiting
@@ -402,6 +416,38 @@ mod tests {
             BindEnd::Failed("no daemon".to_owned())
         );
         assert_eq!(bind_end(answered(true, "bound"), false), BindEnd::Done);
+    }
+
+    fn reasoned(reason: &str, message: &str) -> BindReply {
+        BindReply::Reasoned {
+            reason: reason.to_owned(),
+            message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_daemon_that_names_the_outcome_is_taken_at_its_word() {
+        let cancel_words =
+            "shortcut bind rejected: Portal request didn't succeed with no information";
+        assert_eq!(
+            bind_end(reasoned("bound", "bound to x"), false),
+            BindEnd::Done
+        );
+        assert_eq!(bind_end(reasoned("opened", ""), false), BindEnd::Done);
+        assert_eq!(
+            bind_end(reasoned("declined", "whatever"), false),
+            BindEnd::Declined
+        );
+        assert_eq!(bind_end(reasoned("busy", ""), false), BindEnd::Waiting);
+        // A real failure surfaces even in the words a cancel used to have.
+        assert_eq!(
+            bind_end(reasoned("failed", cancel_words), false),
+            BindEnd::Failed(cancel_words.to_owned())
+        );
+        assert_eq!(
+            bind_end(reasoned("newer", "a reason this client predates"), false),
+            BindEnd::Failed("a reason this client predates".to_owned())
+        );
     }
 
     #[test]

@@ -831,14 +831,21 @@ impl ShortcutControl {
 /// Judge a finished bind and release this process's hold on the dialog.
 fn settle_bind(reply: Result<glib::Variant, glib::Error>, legacy: bool) -> BindEnd {
     let reply = match reply {
-        Ok(reply) => match reply.get::<(bool, String)>() {
-            Some((ok, message)) => BindReply::Answered { ok, message },
-            None => BindReply::Failed(format!("unexpected reply {reply}")),
-        },
+        Ok(reply) => {
+            if let Some((reason, message)) = reply.get::<(String, String)>() {
+                BindReply::Reasoned { reason, message }
+            } else if let Some((ok, message)) = reply.get::<(bool, String)>() {
+                BindReply::Answered { ok, message }
+            } else {
+                BindReply::Failed(format!("unexpected reply {reply}"))
+            }
+        }
         Err(error) if error.matches(gio::DBusError::NoReply) => BindReply::DaemonGone,
         Err(error) => BindReply::Failed(error.message().to_owned()),
     };
-    if !matches!(reply, BindReply::Answered { ok: true, .. }) {
+    if !matches!(reply, BindReply::Answered { ok: true, .. })
+        && !matches!(&reply, BindReply::Reasoned { reason, .. } if reason == "bound")
+    {
         glib::g_message!(crate::LOG_DOMAIN, "shortcut: bind: {reply:?}");
     }
     let end = bind_end(reply, legacy);
@@ -948,14 +955,27 @@ impl Drop for Change {
     }
 }
 
-/// `BindShortcutWithParent`, or `BindShortcut` on a daemon that predates it,
-/// with whether the older call was made. An empty `preferred` asks the
-/// daemon for its default trigger.
+/// `BindShortcutWithOutcome`, else on a daemon that predates it
+/// `BindShortcutWithParent`, else `BindShortcut`, with whether that oldest
+/// call was made. An empty `preferred` asks the daemon for its default
+/// trigger.
 async fn bind_call(
     proxy: &gio::DBusProxy,
     preferred: &str,
     parent: &str,
 ) -> (Result<glib::Variant, glib::Error>, bool) {
+    let reply = proxy
+        .call_future(
+            "BindShortcutWithOutcome",
+            Some(&(preferred, parent).to_variant()),
+            gio::DBusCallFlags::NONE,
+            BIND_TIMEOUT_MS,
+        )
+        .await;
+    match reply {
+        Err(error) if error.matches(gio::DBusError::UnknownMethod) => {}
+        reply => return (reply, false),
+    }
     let reply = proxy
         .call_future(
             "BindShortcutWithParent",

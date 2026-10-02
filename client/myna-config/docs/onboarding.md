@@ -344,11 +344,15 @@ until the next login. A bind the user asked for that fails
 shows a "Could not set up the shortcut" toast ("Could not change the
 shortcut" for Change) whose Details open the daemon's
 own words under a plain summary, as the other failure toasts do. Cancelling the
-dialog is not a failure and shows nothing: GNOME answers Cancel with the
-portal's "other" response, which ashpd words "Portal request didn't succeed
-with no information", so that reply (and a "cancelled" one) reads as declined;
-a backend that answers "other" for a real fault is silent too, and the daemon's
-log keeps its words.
+dialog is not a failure and shows nothing. The daemon names how a bind ended
+(`BindShortcutWithOutcome`'s reason, classified from the portal's response
+code, where GNOME's Cancel is "other"), and Myna Settings acts on the reason
+alone: `declined` shows nothing, `failed` toasts whatever the message says.
+Only against a daemon older than that call does it fall back to the words:
+ashpd's "Portal request didn't succeed with no information" (and "Portal
+request was cancelled") read as declined there, so a rewording would toast on
+Cancel and a fault reported as "other" stays silent, with the daemon's log
+keeping its words.
 The portal lists the binding under the name the daemon gives it,
 "Dictation (press to start and stop)" (translated in `myna-desktop`), the
 same words as the Myna page's "Press to start and stop". The portal
@@ -358,10 +362,10 @@ resolute, both ways between the old and new name).
 
 The dialog belongs to the daemon, which owns the portal session, so the wizard
 lends it its window: it exports its toplevel (an xdg-foreign handle on Wayland,
-the XID on X11) and calls `BindShortcutWithParent`, which makes the dialog
+the XID on X11) and calls `BindShortcutWithOutcome`, which makes the dialog
 modal to the wizard instead of a window that gets lost behind it. A daemon
 without that method answers `UnknownMethod` and the wizard falls back to
-`BindShortcut`, as before. An export the compositor never answers falls back
+`BindShortcutWithParent`, then to `BindShortcut`, as before. An export the compositor never answers falls back
 to no parent after 2 s.
 
 GNOME's dialog only ever closes on the user's answer, so the daemon raises one

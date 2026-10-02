@@ -1726,6 +1726,12 @@ const PROBE_DICTATION_XML: &str = "<node>\
       <arg name='ok' type='b' direction='out'/>\
       <arg name='message' type='s' direction='out'/>\
     </method>\
+    <method name='BindShortcutWithOutcome'>\
+      <arg name='preferred' type='s' direction='in'/>\
+      <arg name='parent_window' type='s' direction='in'/>\
+      <arg name='reason' type='s' direction='out'/>\
+      <arg name='message' type='s' direction='out'/>\
+    </method>\
     <property name='Shortcut' type='s' access='read'/>\
     <property name='Activation' type='s' access='read'/>\
     <property name='ShortcutDialog' type='b' access='read'/>\
@@ -1778,6 +1784,9 @@ fn onboarding_control_probe() -> glib::ExitCode {
     let refusal = Rc::new(RefCell::new(None::<String>));
     // Answer the next bind with this D-Bus error instead.
     let error_reply = Rc::new(RefCell::new(None::<String>));
+    // Answer the next bind as a daemon that names the outcome, with this
+    // reason and message; without it the probe predates that call.
+    let reasoned = Rc::new(RefCell::new(None::<(String, String)>));
     let announce = {
         let connection = connection.clone();
         move |name: &str, value: glib::Variant| {
@@ -1810,8 +1819,22 @@ fn onboarding_control_probe() -> glib::ExitCode {
             let dialog = dialog.clone();
             let refusal = refusal.clone();
             let error_reply = error_reply.clone();
+            let reasoned = reasoned.clone();
             let announce = announce.clone();
             move |_, _, _, _, method, parameters, invocation| {
+                if method == "BindShortcutWithOutcome" {
+                    let Some(reply) = reasoned.take() else {
+                        invocation.return_dbus_error(
+                            "org.freedesktop.DBus.Error.UnknownMethod",
+                            "the probe's daemon predates it",
+                        );
+                        return;
+                    };
+                    binds.set(binds.get() + 1);
+                    calls.borrow_mut().push((method.to_owned(), String::new()));
+                    invocation.return_value(Some(&reply.to_variant()));
+                    return;
+                }
                 if legacy.get() && method == "BindShortcutWithParent" {
                     invocation.return_dbus_error(
                         "org.freedesktop.DBus.Error.UnknownMethod",
@@ -2204,13 +2227,29 @@ fn onboarding_control_probe() -> glib::ExitCode {
     }
     println!("onboarding-modal: a cancelled dialog is no error");
 
+    // A daemon that names the outcome is taken at its word, never its
+    // message: declined is no error, and a failure surfaces even in the
+    // words an older daemon's Cancel had.
+    let cancel_words = "shortcut bind rejected: Portal request didn't succeed with no information";
+    reasoned.replace(Some(("declined".to_owned(), "Cancelled".to_owned())));
+    button.emit_clicked();
+    settles(&|| reasoned.borrow().is_none());
+    settle_gtk();
+    if !toast_texts(&window).is_empty() || window.visible_dialog().is_some() {
+        eprintln!(
+            "a declined bind: toasts {:?}, dialog {}",
+            toast_texts(&window),
+            window.visible_dialog().is_some()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: a declined outcome is no error");
+
     // A bind that fails says so in a toast; the daemon's words wait behind
     // Details.
-    refusal.replace(Some(
-        "shortcut bind rejected: Portal request didn't succeed".to_owned(),
-    ));
+    reasoned.replace(Some(("failed".to_owned(), cancel_words.to_owned())));
     button.emit_clicked();
-    settles(&|| refusal.borrow().is_none());
+    settles(&|| reasoned.borrow().is_none());
     settle_gtk();
     let toasted = toast_texts(&window)
         == [
@@ -2715,7 +2754,14 @@ fn shortcut_probe(control: bool) -> glib::ExitCode {
             let shortcut = shortcut.clone();
             let asked = asked.clone();
             let refused = refused.clone();
-            move |connection, _, path, interface, _, parameters, invocation| {
+            move |connection, _, path, interface, method, parameters, invocation| {
+                if method == "BindShortcutWithOutcome" {
+                    invocation.return_dbus_error(
+                        "org.freedesktop.DBus.Error.UnknownMethod",
+                        "the probe's daemon predates it",
+                    );
+                    return;
+                }
                 if !refused.replace(true) {
                     invocation.return_value(Some(
                         &(false, "the portal offers no GlobalShortcuts").to_variant(),
