@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 00:37+0100\n"
+"POT-Creation-Date: 2026-10-02 18:03+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -80,16 +80,6 @@ msgstr ""
 
 #: src/controller.rs:760
 msgid "Text field closed"
-msgstr ""
-
-#. TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
-#: src/shortcut/portal.rs:101
-msgid "Dictation (press to start and stop)"
-msgstr ""
-
-#. TRANSLATORS: the keyboard shortcut's name in the desktop's dialog and settings.
-#: src/shortcut/portal.rs:103
-msgid "Dictation (hold to talk)"
 msgstr ""
 
 #: src/shortcut/retry.rs:291

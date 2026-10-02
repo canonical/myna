@@ -46,10 +46,6 @@ deny = [
 # names the *older* copy; cargo-deny reports an unmatched skip once upstream
 # catches up, so stale entries here surface themselves.
 skip = [
-  # rand 0.9 (tungstenite 0.29) vs getrandom 0.4 (ashpd / tempfile / uuid).
-  # Unifies at tungstenite 0.30, which raises the MSRV to 1.85 - above the
-  # workspace's declared rust-version = 1.75. Revisit if that MSRV moves.
-  { crate = "getrandom@0.3", reason = "rand 0.9 via tungstenite; unifies only at tungstenite 0.30 (MSRV 1.85)" },
   # bindgen (build-dep of pipewire-sys) still parses with nom 7 and shells out
   # with shlex 1; pipewire/libspa and cc are already on the newer majors.
   { crate = "nom@7", reason = "bindgen 0.72 (pipewire-sys build-dep); libspa is on nom 8" },

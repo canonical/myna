@@ -10,7 +10,7 @@
 //! (FR-004).
 //!
 //! Everything here is hermetic: the boundaries are trait objects, so tests
-//! drive the whole lifecycle with mocks (no D-Bus / IBus / portal / display).
+//! drive the whole lifecycle with mocks (no D-Bus / IBus / display).
 
 use std::time::Duration;
 
@@ -461,7 +461,7 @@ pub struct AudioDrops {
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
-/// factory (mocks in tests, real portal/IBus/GTK in the binary).
+/// factory (mocks in tests, real control socket/IBus in the binary).
 #[derive(Default)]
 pub struct DesktopControllerBuilder {
     trigger: Option<Box<dyn Trigger>>,
@@ -833,7 +833,7 @@ impl DesktopController {
         // the trigger paused): otherwise the outer `run()` loop would deliver
         // them one-by-one on next_edge(), each flipping the toggle and driving
         // a ghost Recording→Finalizing cycle per spam poke. No-op for
-        // hold-to-talk triggers (portal / stdin) where every edge is real.
+        // the stdin trigger, where every edge is real.
         self.trigger.discard_pending().await;
     }
 

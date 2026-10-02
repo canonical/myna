@@ -86,7 +86,7 @@ actions:
     cd /project/client
     /project/dev/gated-tests.sh cargo test --workspace --test pipewire_hw
     /project/dev/gated-tests.sh cargo test --workspace \
-      --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+      --test ibus_hw --test dbus_hw -- --test-threads=1
 
   # Rust lints as errors.
   lint: |
@@ -159,7 +159,7 @@ actions:
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
       --workspace --test pipewire_hw
     /project/dev/gated-tests.sh cargo llvm-cov --no-report \
-      --workspace --test ibus_hw --test dbus_hw --test portal_leak -- --test-threads=1
+      --workspace --test ibus_hw --test dbus_hw -- --test-threads=1
     # Myna Settings' GTK probes spawn the instrumented binary, so the UI they
     # drive is measured; `ui-check` runs the same suite uninstrumented, and
     # explains the private bus.

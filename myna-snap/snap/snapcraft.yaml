@@ -50,7 +50,7 @@ apps:
   myna:
     environment:
       # &settings-env, reused by every app that reads the settings store
-      # (toggle, bind-shortcut, status, testbed): glib's keyfile backend,
+      # (toggle, status, testbed): glib's keyfile backend,
       # which puts the store at
       # $SNAP_USER_COMMON/.config/glib-2.0/settings/keyfile - plaintext,
       # editable, captured by `snap save`, removed with the snap. COMMON, not
@@ -81,17 +81,17 @@ apps:
     #
     # NOT `activates-on: [dictation]`: that omits the [Install] section
     # entirely (wrappers/internal/service_unit_gen.go:214), making the unit
-    # on-demand only. Nothing would hold the global hotkey until something
+    # on-demand only. Nothing would listen for the hotkey until something
     # addressed com.canonical.Myna.Dictation, and the only natural poker is the
     # myna-shell extension, which is optional: the myna-config deb ships it,
     # but not every desktop runs GNOME Shell. The hotkey IS the entry point, so
     # it has to be held from login.
     #
     # Starting against `default.target` means PAM login - before the
-    # compositor, PipeWire, IBus and the portal (the `graphical-session.target`
+    # compositor, PipeWire and IBus (the `graphical-session.target`
     # ordering for desktop-plugging user daemons was added in snapd 2.74 and
     # reverted in 2.74.1, LP #2141607). That is safe because myna-desktop
-    # treats all four as things that come and go: it binds activation with
+    # treats all three as things that come and go: it binds activation with
     # backoff, connects IBus at the first press and reconnects when a held
     # connection turns out dead, and resolves the backend socket per press.
     #
@@ -116,28 +116,20 @@ apps:
     refresh-mode: restart
     plugs:
       - pipewire # mic capture and the session cues - snapd gates it: `snap connect myna:pipewire`
-      - desktop # portals (GlobalShortcuts hotkey) + desktop notifications
+      - desktop # desktop notifications
       - desktop-legacy # the IBus daemon's private socket (text injection)
       - network-bind # seccomp bind(2) for the control socket - no other interface grants it
       - backend # content share → the backend snap's session socket
     slots:
       - dictation # com.canonical.Myna.Dictation for the GNOME Shell indicator
 
-  # Poke the running daemon. Only meaningful under control-socket activation,
-  # which a packaged build falls back to when the portal offers no
-  # GlobalShortcuts (Noble): bind `/snap/bin/myna.toggle` to a shortcut, or run
-  # `myna.install-shortcut`.
+  # Poke the running daemon over its control socket: bind
+  # `/snap/bin/myna.toggle` to a shortcut, or run `myna.install-shortcut`.
   toggle:
     command: bin/myna-desktop --toggle
-    # Reads the settings store to work out which activation is in force, and
-    # so what to say when the poke does not land. The store is this snap's
-    # private keyfile, so reading it needs no interface.
     environment: *settings-env
 
-  # Bind <accel> → `myna.toggle` via dconf. Only needed under control-socket
-  # activation, which is where Noble and Jammy users land: the GlobalShortcuts
-  # portal backend first ships in xdg-desktop-portal-gnome 48.rc (Noble has
-  # 46.2, Jammy 42.1). Uses dconf because the GNOME schemas are not visible
+  # Bind <accel> → `myna.toggle` via dconf. Uses dconf because the GNOME schemas are not visible
   # inside the snap's core24 /usr — dconf writes need no schema. The ONE app
   # with the `gsettings` plug: it is the only host-dconf writer left.
   #
@@ -152,23 +144,6 @@ apps:
       XDG_CONFIG_HOME: $SNAP_REAL_HOME/.config
     plugs:
       - gsettings
-
-  # Bind (or rebind) the portal shortcut - the packaged default. The one thing
-  # that raises the desktop's "Add Keyboard Shortcuts" dialog: the daemon
-  # itself only ever attaches to a binding that already exists, so a session
-  # start never asks for a key.
-  #
-  # This is a *client*. The bind is performed by the daemon over
-  # com.canonical.Myna.Dictation, because the portal keys a binding by the
-  # caller's app id and this app's is `myna_bind-shortcut`, not the daemon's
-  # `myna_myna` - binding here would file it where nothing looks for it.
-  # `desktop` is for the session bus (and for an unpackaged fallback that
-  # cannot apply here); same-snap D-Bus comes from the base template.
-  bind-shortcut:
-    command: bin/myna-desktop --bind-shortcut
-    environment: *settings-env
-    plugs:
-      - desktop
 
   # One screen of "what is dictation doing, and why": the persisted settings,
   # what they resolved to and which plane won, whether the backend socket is

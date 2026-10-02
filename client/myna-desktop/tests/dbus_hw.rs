@@ -101,9 +101,9 @@ async fn the_bus_the_gate_promises_answers() {
 ///
 /// The regression that motivated it: zbus's *default* request flags are
 /// `AllowReplacement | ReplaceExisting | DoNotQueue`, so a later daemon
-/// silently stole the indicator from a running one while the GlobalShortcuts
-/// portal kept the hotkey with the first. Key in one process, UI in another,
-/// and every press looking to the user like nothing happened.
+/// silently stole the indicator from a running one while the first kept the
+/// hotkey. Key in one process, UI in another, and every press looking to the
+/// user like nothing happened.
 ///
 /// One test, not two: both halves need to be the sole owner of the name on the
 /// session bus, and `cargo test` runs test fns concurrently in one process.
@@ -209,45 +209,7 @@ async fn served_toggle_method_feeds_the_trigger() {
     .expect_err("a duplicate Start must NOT start a second session");
 }
 
-/// `Shortcut` is what Myna Settings renders: a publish reaches a reader.
-#[tokio::test]
-async fn the_published_shortcut_is_readable_on_the_bus() {
-    use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
-
-    skip_unless_dbus!();
-    let _serial = exclusive().await;
-    name_is_free().await;
-    let mut owner = ZbusBus::serve().await.expect("serve owns the name");
-    let conn = zbus::Connection::session().await.expect("session bus");
-    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
-        .destination(BUS_NAME)
-        .unwrap()
-        .path(OBJECT_PATH)
-        .unwrap()
-        .build()
-        .await
-        .expect("properties proxy");
-    let interface = zbus::names::InterfaceName::try_from(BUS_NAME).unwrap();
-    let read = |value: zbus::zvariant::OwnedValue| String::try_from(value).unwrap();
-
-    let initial = properties
-        .get(interface.clone(), "Shortcut")
-        .await
-        .expect("Shortcut is served");
-    assert_eq!(read(initial), "");
-
-    owner
-        .set_property("Shortcut", PropertyValue::Str("Press <Super>j".into()))
-        .await;
-    let published = properties
-        .get(interface, "Shortcut")
-        .await
-        .expect("Shortcut after publish");
-    assert_eq!(read(published), "Press <Super>j");
-}
-
-/// `Activation` tells Myna Settings which way the dictation key reaches the
-/// daemon: the portal's binding, or a desktop shortcut to the control socket.
+/// `Activation` is still read by Myna Settings releases that knew the portal.
 #[tokio::test]
 async fn the_published_activation_is_readable_on_the_bus() {
     use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};

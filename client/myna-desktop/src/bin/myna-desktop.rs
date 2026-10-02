@@ -7,36 +7,26 @@
 //! ## Activation
 //!
 //! Dictation must inject into *another* app, so activation must not depend on
-//! terminal focus. Two transports, and **the daemon picks between them itself**
-//! ([`Activation::resolve`]) — which one is correct is a property of how the
-//! binary was packaged, not a preference a user can hold:
+//! terminal focus. `myna-desktop` listens on a control socket and a GNOME
+//! custom shortcut bound to `myna-desktop --toggle` pokes it. Run
+//! `myna-desktop --install-shortcut '<Super>t'` once to bind it.
 //!
-//! - **GlobalShortcuts portal** — the sandboxed-native trigger, and the default
-//!   whenever `$SNAP` is set. GNOME only grants a portal app identity to a
-//!   packaged app, so this is available exactly when packaged.
-//! - **Control socket** — the default unpackaged. `myna-desktop` listens on a
-//!   control socket and a GNOME custom shortcut bound to `myna-desktop --toggle`
-//!   pokes it. Run `myna-desktop --install-shortcut '<Super>t'` once to bind it.
-//!   Under portal activation the equivalent is `myna-desktop --bind-shortcut`.
-//!
-//! Both are press-to-toggle: tap to start, tap again to stop. `--portal` /
-//! `--control` force one; `--hold` switches the portal to hold-to-talk;
-//! `--stdin` is terminal debug (injects back into the terminal). The indicator
-//! is either the myna-shell overlay (feature 004) or headless notifications.
+//! It is press-to-toggle: tap to start, tap again to stop. `--stdin` is
+//! terminal debug (injects back into the terminal). The indicator is either
+//! the myna-shell overlay (feature 004) or headless notifications.
 //!
 //! ```text
 //!   myna-server --adapter whisper --socket /tmp/myna.sock &
-//!   myna-desktop --bind-shortcut                    # once: pick a key in the portal dialog
+//!   myna-desktop --install-shortcut '<Super>t'           # once
 //!   myna-desktop --socket /tmp/myna.sock --language en   # the daemon
 //!   # focus a text field, tap the shortcut, speak, tap again → text is injected
 //! ```
 //!
 //! ## Things that are resolved, not asked
 //!
-//! Three switches used to be the user's problem and are now the daemon's:
+//! Two switches used to be the user's problem and are now the daemon's:
 //! the indicator bus (`com.canonical.Myna.Dictation` is always served, falling back to
-//! notifications by itself), the activation transport (above), and streaming
-//! preedit ([`resolve_preedit`]). Each still has an explicit override for
+//! notifications by itself) and streaming preedit ([`resolve_preedit`]). Each still has an explicit override for
 //! debugging, but a correct setup requires none of them.
 //!
 //! What *is* configurable is resolved in one place, [`Resolved`], with one
@@ -61,8 +51,6 @@ use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::shortcut::control::{default_socket_path, send_toggle, ControlTrigger};
-use myna_desktop::shortcut::dialog::DialogSlot;
-use myna_desktop::shortcut::portal::{ActivationMode, GlobalShortcutTrigger, TriggerError};
 use myna_desktop::shortcut::retry::{BindFailure, Rebind, RetryingTrigger};
 use myna_desktop::shortcut::Trigger;
 use myna_desktop::sound::{player::Player, Chiming};
@@ -79,16 +67,14 @@ myna-desktop — push-to-talk dictation (T21/T22)
 USAGE:
     myna-desktop --socket <path> [options]      # run the dictation daemon
     myna-desktop --toggle                       # start/stop the running daemon
-    myna-desktop --bind-shortcut               # portal mode: pick a key in the desktop's dialog
-    myna-desktop --install-shortcut <accel>     # control mode: bind a GNOME shortcut
+    myna-desktop --install-shortcut <accel>     # bind a GNOME shortcut to --toggle
 
 Focus a text field, tap the shortcut to start, speak, tap again to stop. The
 committed transcript is injected via IBus into that field.
 
 The daemon always serves com.canonical.Myna.Dictation for the GNOME Shell extension,
-picks its activation transport from how it was packaged, and decides streaming
-preedit from your mode preference, else from whether the backend streams. A
-correct setup needs none of the overrides below.
+and decides streaming preedit from your mode preference, else from whether the
+backend streams. A correct setup needs none of the overrides below.
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server
@@ -101,26 +87,12 @@ OPTIONS:
                        control-socket path (default: $XDG_RUNTIME_DIR/myna-desktop.sock)
     --status           print what this daemon has resolved, what the running one
                        is doing, and whether the backend is reachable, then exit
-    --toggle           poke the running daemon over the control socket. Control
-                       activation, or a portal daemon whose portal offers no
-                       GlobalShortcuts; otherwise the portal shortcut drives it.
-    --bind-shortcut    bind (or rebind) the dictation shortcut through the
-                       desktop's own GlobalShortcuts dialog, offering Super+J
-                       unless --shortcut names another. Portal activation
-                       only, and the one thing that raises that dialog: the
-                       daemon never asks for a key by itself.
+    --toggle           poke the running daemon over the control socket
     --install-shortcut bind a GNOME custom keybinding to --toggle (e.g.
-                       '<Super>t'), then exit. Control activation only: on a
-                       portal daemon it would shadow the portal's own binding,
-                       so it refuses. Rebind there in Settings → Apps.
-    --shortcut <trigger>
-                       trigger --bind-shortcut offers, in shortcuts-spec syntax
-                       (default LOGO+j; the dialog may still pick another key)
-    --hold             portal activation: hold-to-talk instead (hold = record)
+                       '<Super>t'), then exit
 
-ACTIVATION (default: portal when packaged — $SNAP set — else control socket):
-    --portal           force the GlobalShortcuts portal (packaged builds only)
-    --control          force the control socket (poke it with --toggle)
+ACTIVATION (default: the control socket):
+    --control          the control socket (poke it with --toggle)
     --stdin            DEBUG: drive from the terminal (injects into the terminal)
 
 OVERRIDES (for debugging; the daemon resolves all three by itself):
@@ -133,44 +105,26 @@ OVERRIDES (for debugging; the daemon resolves all three by itself):
     -h, --help         show this help
 ";
 
-/// How a press reaches the daemon. Which one is correct follows from how the
-/// binary was packaged, so [`Args::activation`] holds `None` ("resolve it")
-/// unless the user forced one.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// How a press reaches the daemon.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Activation {
-    /// GlobalShortcuts portal — needs the app identity only a packaged build has.
-    Portal,
     /// Control socket + a desktop custom shortcut bound to `--toggle`.
+    #[default]
     Control,
     /// DEBUG: Enter on stdin; injects back into the launching terminal.
     Stdin,
 }
 
-impl Activation {
-    /// The portal only serves apps the compositor can identify, which on GNOME
-    /// means a packaged one — so `$SNAP` *is* the availability test, not a
-    /// heuristic. Unpackaged builds get the control socket, which needs no app
-    /// identity.
-    fn from_packaging() -> Activation {
-        if std::env::var_os("SNAP").is_some() {
-            Activation::Portal
-        } else {
-            Activation::Control
-        }
-    }
-}
-
 /// Everything the daemon works out for itself, resolved once at startup.
 ///
 /// A command-line flag wins, then the user's settings value, then the
-/// built-in - packaging for activation, the backend's own mode for preedit.
-/// Activation and the preferred shortcut are argv-only debugging overrides:
-/// they were settings keys once, and neither was worth a user-facing knob.
+/// built-in - the backend's own mode for preedit. Activation is an argv-only
+/// debugging override: it was a settings key once, and not worth a
+/// user-facing knob.
 #[derive(Debug, PartialEq)]
 struct Resolved {
     activation: Activation,
     language: Option<String>,
-    hotkey: Option<String>,
     preedit: bool,
     mode: ModeInputs,
     auto_stop: AutoStop,
@@ -181,7 +135,7 @@ impl Resolved {
     /// `backend_streams` is the backend's `Capabilities.streaming`, `None`
     /// until a press has asked it.
     fn new(args: &Args, settings: &myna_core::Settings, backend_streams: Option<bool>) -> Self {
-        let activation = args.activation.unwrap_or_else(Activation::from_packaging);
+        let activation = args.activation.unwrap_or_default();
         let mode = ModeInputs {
             choice: settings.streaming_mode,
             backend_streams,
@@ -189,10 +143,9 @@ impl Resolved {
         Self {
             activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
-            hotkey: args.shortcut.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
-            auto_stop: resolve_auto_stop(activation, args.hold, settings.silence_timeout),
+            auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
         }
     }
@@ -214,19 +167,12 @@ impl ModeInputs {
 }
 
 /// The session-ending policy for this activation. Only a toggle has no
-/// release edge to end on: the portal without `--hold`, and the control
-/// socket, whose every poke flips. Hold-to-talk and the debug stdin trigger
-/// keep the key as the whole authority.
-fn resolve_auto_stop(activation: Activation, hold: bool, silence_secs: u32) -> AutoStop {
-    let toggle = match activation {
-        Activation::Portal => !hold,
-        Activation::Control => true,
-        Activation::Stdin => false,
-    };
-    if toggle {
-        AutoStop::toggle(Duration::from_secs(u64::from(silence_secs)))
-    } else {
-        AutoStop::off()
+/// release edge to end on: the control socket, whose every poke flips. The
+/// debug stdin trigger keeps the key as the whole authority.
+fn resolve_auto_stop(activation: Activation, silence_secs: u32) -> AutoStop {
+    match activation {
+        Activation::Control => AutoStop::toggle(Duration::from_secs(u64::from(silence_secs))),
+        Activation::Stdin => AutoStop::off(),
     }
 }
 
@@ -408,14 +354,11 @@ struct Args {
     language: Option<String>,
     target: Option<String>,
     control: Option<PathBuf>,
-    shortcut: Option<String>,
     toggle: bool,
     status: bool,
     install_shortcut: Option<String>,
-    bind_shortcut: bool,
-    /// `None` = resolve from packaging; `Some` = the user forced one.
+    /// `None` = the default; `Some` = the user forced one.
     activation: Option<Activation>,
-    hold: bool,
     /// `None` = resolve from the persisted streaming mode; `Some` = forced.
     preedit: Option<bool>,
     no_dbus: bool,
@@ -443,17 +386,13 @@ fn parse_args_from(
             "--control-socket" => {
                 a.control = Some(PathBuf::from(next(&mut it, "--control-socket")?))
             }
-            "--shortcut" => a.shortcut = Some(next(&mut it, "--shortcut")?),
             "--toggle" => a.toggle = true,
             "--status" => a.status = true,
-            "--bind-shortcut" => a.bind_shortcut = true,
             "--install-shortcut" => {
                 a.install_shortcut = Some(next(&mut it, "--install-shortcut")?);
             }
-            "--portal" => set_activation(&mut a, Activation::Portal)?,
             "--control" => set_activation(&mut a, Activation::Control)?,
             "--stdin" => set_activation(&mut a, Activation::Stdin)?,
-            "--hold" => a.hold = true,
             "--preedit" => a.preedit = Some(true),
             "--no-preedit" => a.preedit = Some(false),
             "--no-dbus" => a.no_dbus = true,
@@ -465,7 +404,7 @@ fn parse_args_from(
 }
 
 /// The activation flags are mutually exclusive: silently letting the last one
-/// win would make `--portal --stdin` look like it worked.
+/// win would make `--control --stdin` look like it worked.
 fn set_activation(a: &mut Args, mode: Activation) -> Result<(), String> {
     match a.activation {
         Some(existing) if existing != mode => Err(format!(
@@ -528,38 +467,14 @@ fn control_path(args: &Args) -> PathBuf {
 
 /// What to say when `--toggle` cannot reach the daemon.
 ///
-/// "is `myna-desktop --socket <path>` running?" is only true advice under
-/// control activation. A portal daemon takes its trigger from the portal and
-/// never opens a control socket, so a *perfectly healthy* packaged daemon
-/// fails `--toggle` every single time - and the old hint sent people hunting
-/// for a dead process instead of pointing at their keyboard.
-///
-/// Resolved locally, like `--status`: this process is not the daemon, so under
-/// an unpackaged `--toggle` against a packaged daemon the two can disagree.
-/// That is the same caveat `--status` already carries, and the answer is still
-/// better than a fixed string that is wrong for the shipped default.
+/// Resolved locally, like `--status`: this process is not the daemon, so the
+/// two can disagree.
 fn toggle_failure_hint(args: &Args) -> Vec<String> {
-    let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, None);
-    toggle_hint_for(resolved.activation, resolved.hotkey.as_deref())
+    toggle_hint_for(args.activation.unwrap_or_default())
 }
 
-fn toggle_hint_for(activation: Activation, hotkey: Option<&str>) -> Vec<String> {
+fn toggle_hint_for(activation: Activation) -> Vec<String> {
     match activation {
-        Activation::Portal => vec![
-            "activation is Portal: the daemon takes its trigger from the GlobalShortcuts \
-             portal and opens a control socket only where the portal offers no \
-             GlobalShortcuts, so --toggle cannot reach it here."
-                .into(),
-            match hotkey {
-                Some(key) => format!("press {key} instead."),
-                None => "press your dictation shortcut instead (Settings → Apps → myna \
-                         lists it)."
-                    .into(),
-            },
-            "to poke the daemon from a script or a custom keybinding, run it with --control."
-                .into(),
-        ],
         Activation::Stdin => vec![
             "activation is Stdin (debug): the daemon reads Enter from its own terminal and \
              opens no control socket."
@@ -671,158 +586,6 @@ fn no_backend(e: ResolveError) -> Session {
     (run, StopHandle::default()).into()
 }
 
-/// What the served `BindShortcut` shares with the retry loop.
-#[derive(Default)]
-struct PortalBinds {
-    /// Notified after every successful bind.
-    bound: Arc<tokio::sync::Notify>,
-    /// The one dialog either may have up.
-    dialog: DialogSlot,
-}
-
-/// Binds the portal shortcut, re-binding whenever the portal goes away.
-struct PortalRebind {
-    mode: ActivationMode,
-    /// Where the control socket goes when the portal has no GlobalShortcuts.
-    control: PathBuf,
-    /// The last attempt failed because there was no portal to talk to, so the
-    /// next wait can be spent asleep on the bus telling us one arrived.
-    awaiting_portal: bool,
-    /// The last attempt put a confirm sheet in front of someone and did not
-    /// get a binding out of it. The portal is up, so there is nothing to wait
-    /// *for* except a different one: re-asking the same backend is just the
-    /// same dialog again.
-    awaiting_new_backend: bool,
-    /// The portal holds no binding yet. `BindShortcut` runs in this daemon
-    /// and notifies `bound`, so that wait ends the moment it succeeds.
-    awaiting_binding: bool,
-    bound: Arc<tokio::sync::Notify>,
-    /// Shared with `BindShortcut`, so the re-bind raises no sheet beside one.
-    dialog: DialogSlot,
-    /// Where `Shortcut` and `Activation` are published.
-    shortcut: Option<SharedBus>,
-}
-
-impl PortalRebind {
-    async fn clear_shortcut(&self) {
-        publish(self.shortcut.as_ref(), "Shortcut", "").await;
-    }
-}
-
-async fn publish(bus: Option<&SharedBus>, name: &str, value: &str) {
-    if let Some(bus) = bus {
-        bus.lock()
-            .await
-            .set_property(name, PropertyValue::Str(value.to_owned()))
-            .await;
-    }
-}
-
-/// The `Activation` an attach settles: `portal` once a portal with
-/// GlobalShortcuts answered, `control` when it has none, else undecided.
-fn activation_after<T>(attached: &Result<T, TriggerError>) -> Option<&'static str> {
-    match attached {
-        Ok(_)
-        | Err(TriggerError::NoShortcutBound(_))
-        | Err(TriggerError::BindRejected(_))
-        | Err(TriggerError::BindDeclined(_))
-        | Err(TriggerError::BindUnanswered(_)) => Some("portal"),
-        Err(TriggerError::NoGlobalShortcuts(_)) => Some("control"),
-        Err(TriggerError::PortalNotRunning(_)) | Err(TriggerError::PortalUnavailable(_)) => None,
-    }
-}
-
-#[async_trait::async_trait]
-impl Rebind for PortalRebind {
-    /// Nothing to poll for: park until a portal appears, with `delay` as the
-    /// net. On a machine whose desktop never comes this is where the daemon
-    /// spends its life, and it costs a signal match on a connection it already
-    /// holds - measurably nothing.
-    async fn wait_before_retry(&mut self, delay: std::time::Duration) {
-        if self.awaiting_portal {
-            myna_desktop::shortcut::portal::await_portal(delay).await;
-        } else if self.awaiting_new_backend {
-            myna_desktop::shortcut::portal::await_portal_change(delay).await;
-        } else if self.awaiting_binding {
-            // The net covers a key bound some other way, such as an unpackaged
-            // `--bind-shortcut` that bound in its own process.
-            let _ = tokio::time::timeout(delay, self.bound.notified()).await;
-        } else {
-            tokio::time::sleep(delay).await;
-        }
-    }
-
-    async fn bind(&mut self) -> Result<Box<dyn Trigger>, BindFailure> {
-        self.awaiting_portal = false;
-        self.awaiting_new_backend = false;
-        self.awaiting_binding = false;
-        let attached = GlobalShortcutTrigger::attach("dictate", self.mode, &self.dialog).await;
-        if let Some(activation) = activation_after(&attached) {
-            publish(self.shortcut.as_ref(), "Activation", activation).await;
-        }
-        match attached {
-            Ok(trigger) => Ok(match self.shortcut.clone() {
-                Some(bus) => Box::new(trigger.publish_shortcut_on(bus).await),
-                None => Box::new(trigger),
-            }),
-            // Noble's portal: no backend implements GlobalShortcuts, and no
-            // retry will add one. The control socket is the activation that
-            // still works, driven by a custom keybinding to `myna.toggle`.
-            Err(TriggerError::NoGlobalShortcuts(reason)) => {
-                self.clear_shortcut().await;
-                let trigger = bind_control(&self.control)?;
-                myna_core::info_log!(
-                    "trigger",
-                    "{reason}; activation falls back to the control socket {}",
-                    self.control.display()
-                );
-                Ok(trigger)
-            }
-            Err(e) => Err(match e {
-                // No portal to reach, and we decline to conjure one. Nothing
-                // was asked of anyone, so check again in a second: the answer
-                // flips when the desktop comes up and the hotkey should be
-                // live then, not half a minute later.
-                TriggerError::PortalNotRunning(_) => {
-                    self.awaiting_portal = true;
-                    BindFailure::NotYet(e.to_string())
-                }
-                // The request reached a portal and it could not serve us -
-                // retry quickly at first, then back away.
-                TriggerError::PortalUnavailable(_) => BindFailure::Unavailable(e.to_string()),
-                // BindShortcuts came back without a grant, which on GNOME
-                // means the user dismissed the confirm sheet. They have
-                // answered; put the question to a fresh backend, not to them
-                // again.
-                TriggerError::BindRejected(_) | TriggerError::BindDeclined(_) => {
-                    self.awaiting_new_backend = true;
-                    BindFailure::Refused(e.to_string())
-                }
-                // The sheet went up and nothing came back - a locked screen,
-                // or a session nobody is looking at. Same disposition, and
-                // the session behind it has already been closed so the sheet
-                // is not still sitting there.
-                TriggerError::BindUnanswered(_) => {
-                    self.awaiting_new_backend = true;
-                    BindFailure::Unanswered(e.to_string())
-                }
-                // Nothing bound and no consent to ask: wait for the user to
-                // bind one, and stop naming a key the portal no longer holds.
-                TriggerError::NoShortcutBound(_) => {
-                    self.awaiting_binding = true;
-                    self.clear_shortcut().await;
-                    BindFailure::Unbound(format!(
-                        "{e}; run `{}` to bind one",
-                        bind_shortcut_command()
-                    ))
-                }
-                // Handled above, before this mapping.
-                TriggerError::NoGlobalShortcuts(_) => BindFailure::Unavailable(e.to_string()),
-            }),
-        }
-    }
-}
-
 /// Binds the control socket. Retried too: `$XDG_RUNTIME_DIR` is created by
 /// pam_systemd, so a daemon that starts early can find it not there yet.
 struct ControlRebind {
@@ -873,9 +636,9 @@ fn with_sounds(
 /// Build and run the controller with the given indicator (tokio side).
 ///
 /// Nothing here is allowed to end the process. Every boundary this composes -
-/// IBus, the portal, the control socket, the backend - is a thing that comes
-/// and goes independently of the daemon: IBus restarts on an input-source
-/// change, `xdg-desktop-portal` restarts, the backend socket is re-created by
+/// IBus, the control socket, the backend - is a thing that comes and goes
+/// independently of the daemon: IBus restarts on an input-source change, the
+/// backend socket is re-created by
 /// `snap refresh`, and at PAM login none of them exist yet. Treating any of
 /// them as a startup precondition turned "start before the compositor" into
 /// five restarts in five seconds and then a permanently failed unit, which is
@@ -892,7 +655,6 @@ async fn run_controller(
     readiness: Readiness,
     pump_bus: Option<SharedBus>,
     bus_lost: Option<BoxFuture<'static, ()>>,
-    binds: PortalBinds,
 ) -> ExitCode {
     let live = LiveSettings::new(&resolved);
     // Held for the controller's whole life, and no longer: the subscription
@@ -917,22 +679,14 @@ async fn run_controller(
         // Debug only, and the one trigger whose end is a real user intent:
         // Ctrl-D means "stop", so it is not retried.
         Activation::Stdin => builder.trigger(StdinTrigger::new()).build(),
-        Activation::Portal => {
-            let mode = activation_mode(&args);
-            let trigger = RetryingTrigger::new(PortalRebind {
-                mode,
-                control: control_path(&args),
-                awaiting_portal: false,
-                awaiting_new_backend: false,
-                awaiting_binding: false,
-                bound: binds.bound,
-                dialog: binds.dialog,
-                shortcut: pump_bus.clone(),
-            });
-            builder.trigger(with_status(trigger, pump_bus)).build()
-        }
         Activation::Control => {
-            publish(pump_bus.as_ref(), "Activation", "control").await;
+            // Read by Myna Settings releases that also knew the portal.
+            if let Some(bus) = &pump_bus {
+                bus.lock()
+                    .await
+                    .set_property("Activation", PropertyValue::Str("control".into()))
+                    .await;
+            }
             let trigger = RetryingTrigger::new(ControlRebind {
                 path: control_path(&args),
             });
@@ -992,18 +746,6 @@ fn banner(args: &Args, resolved: &Resolved) {
         Activation::Stdin => println!(
             "myna-desktop → {sock} — DEBUG stdin: Enter to start/stop (injects into THIS terminal)"
         ),
-        Activation::Portal => {
-            let verb = if args.hold { "hold" } else { "tap" };
-            match resolved.hotkey.as_deref() {
-                Some(key) => println!("myna-desktop → {sock} — {verb} {key} to talk (portal)"),
-                None => {
-                    println!(
-                        "myna-desktop → {sock} — {verb} your dictation shortcut to talk (portal)"
-                    );
-                    println!("  no shortcut yet? `{}`", bind_shortcut_command());
-                }
-            }
-        }
         Activation::Control => {
             println!(
                 "myna-desktop → {sock} — daemon ready; tap your dictation shortcut to start/stop."
@@ -1038,124 +780,10 @@ fn toggle_command() -> String {
     format!("{} --toggle", exe_path())
 }
 
-fn activation_mode(args: &Args) -> ActivationMode {
-    if args.hold {
-        ActivationMode::Hold
-    } else {
-        ActivationMode::Toggle
-    }
-}
-
-/// The command that binds the portal shortcut. Packaged, that is the snap app;
-/// unpackaged, this binary.
-fn bind_shortcut_command() -> String {
-    match std::env::var("SNAP_INSTANCE_NAME") {
-        Ok(instance) if !instance.is_empty() => format!("/snap/bin/{instance}.bind-shortcut"),
-        _ => format!("{} --bind-shortcut", exe_path()),
-    }
-}
-
-/// `--bind-shortcut`: hand the portal's own dialog the job of binding (or
-/// rebinding) the dictation shortcut.
-///
-/// Delegated to the running daemon rather than done here. A portal binding is
-/// keyed by app id, and under confinement the app id is the *caller's*: doing
-/// it in this process would file the binding under this command's identity and
-/// leave the daemon exactly as unbound as before. With no daemon to ask there
-/// is nothing to get wrong, so an unpackaged run falls back to binding here.
-fn bind_shortcut(args: &Args) -> ExitCode {
-    let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, None);
-    if resolved.activation != Activation::Portal {
-        eprintln!(
-            "activation is {:?}, which takes no portal shortcut.\n  \
-             Bind a desktop shortcut to `{}` instead - see --install-shortcut.",
-            resolved.activation,
-            toggle_command()
-        );
-        return ExitCode::FAILURE;
-    }
-
-    let preferred = resolved.hotkey.clone();
-    let rt = match cli_runtime() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("cannot start async runtime: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let outcome = rt.block_on(async {
-        match myna_desktop::dbus::status::bind_shortcut(preferred.as_deref()).await {
-            Ok(reported) => reported,
-            // Packaged, "no daemon" is the whole answer: binding here would
-            // file it under this command's confinement (`snap.myna.bind-shortcut`)
-            // and the daemon, which is `snap.myna.myna`, would never see it.
-            Err(e) if std::env::var_os("SNAP").is_some() => (
-                false,
-                format!("the myna daemon is not reachable ({e}); start it and try again"),
-            ),
-            Err(e) => {
-                myna_core::dbg_log!("bind", "no daemon to ask ({e}); binding here");
-                bind_here(preferred.as_deref(), activation_mode(args)).await
-            }
-        }
-    });
-    match outcome {
-        (true, message) => {
-            println!("{message}");
-            ExitCode::SUCCESS
-        }
-        (false, message) => {
-            eprintln!("could not bind the dictation shortcut: {message}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-async fn bind_here(preferred: Option<&str>, mode: ActivationMode) -> (bool, String) {
-    use myna_desktop::shortcut::portal::{bind_report, configure};
-
-    bind_report(&configure("dictate", preferred, None, mode).await)
-}
-
-/// Why `--install-shortcut` must not run, where that is the case.
-///
-/// A custom keybinding to `--toggle` is the *control*-activation setup. Run it
-/// against a portal daemon and it does two bad things at once: the binding is
-/// inert (a portal daemon opens no control socket), and `gsd-media-keys`
-/// serves both custom keybindings and the portal's global shortcuts, so a
-/// custom binding on the same accel **shadows the portal's own** - i.e. it
-/// breaks the hotkey that was working. Since portal is the packaged default,
-/// following the README's `myna.install-shortcut '<Super>t'` on a snap install
-/// was a reliable way to disable your own dictation key, with no feedback
-/// beyond a control-socket error naming a socket that was never going to exist.
-fn shortcut_install_refusal(activation: Activation, accel: &str) -> Option<String> {
-    (activation == Activation::Portal).then(|| {
-        let bind = bind_shortcut_command();
-        format!(
-            "refusing to bind {accel}: activation is Portal.\n  \
-             A portal daemon takes its key from the GlobalShortcuts portal and opens no \
-             control socket, so this binding would do nothing.\n  \
-             Worse, GNOME serves both from gsd-media-keys, so it would shadow the portal's \
-             own binding and stop the key that already works.\n  \
-             Run `{bind}` to bind or rebind it (Settings → Apps → myna lists it too)."
-        )
-    })
-}
-
 /// `--install-shortcut <accel>`: bind a GNOME custom keybinding to
 /// `myna-desktop --toggle`, appending to any existing custom keybindings
 /// (never clobbering).
-///
-/// Refuses under portal activation - see [`shortcut_install_refusal`].
-fn install_shortcut(args: &Args, accel: &str) -> ExitCode {
-    let settings = myna_core::Settings::load();
-    let resolved = Resolved::new(args, &settings, None);
-    if let Some(refusal) = shortcut_install_refusal(resolved.activation, accel) {
-        eprintln!("{refusal}");
-        return ExitCode::FAILURE;
-    }
-
+fn install_shortcut(accel: &str) -> ExitCode {
     const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
     const PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/";
     let kb_schema = format!("{SCHEMA}.custom-keybinding:{PATH}");
@@ -1264,30 +892,9 @@ fn print_status(args: &Args) -> ExitCode {
     row(
         "activation",
         "(flag only)".into(),
-        // Packaging is the built-in, and it is the one value that can differ
-        // between this invocation and the daemon it is reporting on - an
-        // unpackaged `--status` against a running snap resolves Control while
-        // the daemon holds Portal. Naming the reason makes that legible
-        // instead of looking like a contradiction.
-        match (resolved.activation, args.activation) {
-            (activation, None) if std::env::var_os("SNAP").is_some() => {
-                format!("{activation:?} (packaged)")
-            }
-            (activation, None) => format!("{activation:?} (unpackaged)"),
-            (activation, Some(_)) => format!("{activation:?}"),
-        },
+        format!("{:?}", resolved.activation),
         source(args.activation.is_some(), false),
     );
-    // The shipped default makes `myna.toggle` inert, and nothing used to say
-    // so - the only feedback was a control-socket error naming a socket the
-    // daemon was never going to open. Say it where someone debugging looks.
-    if resolved.activation == Activation::Portal {
-        println!(
-            "  {:<15} no control socket unless the portal lacks GlobalShortcuts - otherwise `--toggle` does nothing; press {}",
-            "",
-            resolved.hotkey.as_deref().unwrap_or("your shortcut")
-        );
-    }
     row(
         "language",
         settings
@@ -1299,15 +906,6 @@ fn print_status(args: &Args) -> ExitCode {
             .clone()
             .unwrap_or_else(|| "(backend default)".into()),
         source(args.language.is_some(), settings.language.is_some()),
-    );
-    row(
-        "hotkey",
-        "(flag only)".into(),
-        resolved
-            .hotkey
-            .clone()
-            .unwrap_or_else(|| "(portal default)".into()),
-        source(args.shortcut.is_some(), false),
     );
     let mode = resolved.mode.effective();
     row(
@@ -1451,10 +1049,7 @@ fn main() -> ExitCode {
 
     // Non-daemon subcommands first (no IBus / server needed).
     if let Some(accel) = &args.install_shortcut {
-        return install_shortcut(&args, accel);
-    }
-    if args.bind_shortcut {
-        return bind_shortcut(&args);
+        return install_shortcut(accel);
     }
     if args.status {
         return print_status(&args);
@@ -1486,20 +1081,11 @@ fn main() -> ExitCode {
     // then the built-in.
     let settings = myna_core::Settings::load();
     let resolved = Resolved::new(&args, &settings, None);
-    // `--hold` is a portal concept (the portal reports press and release; the
-    // control socket only ever delivers a single poke). Rejected against the
-    // *resolved* transport rather than ignored, so "hold-to-talk silently does
-    // nothing" is not a mode a user can end up in.
-    if args.hold && resolved.activation != Activation::Portal {
-        eprintln!("--hold only applies to portal activation (add --portal)");
-        return ExitCode::FAILURE;
-    }
     myna_core::info_log!(
         "settings",
-        "activation {:?}, language {}, hotkey {}, preedit {} ({})",
+        "activation {:?}, language {}, preedit {} ({})",
         resolved.activation,
         resolved.language.as_deref().unwrap_or("(backend default)"),
-        resolved.hotkey.as_deref().unwrap_or("(portal default)"),
         resolved.preedit,
         preedit_reason(args.preedit, resolved.mode.effective())
     );
@@ -1521,7 +1107,7 @@ fn cli_runtime() -> std::io::Result<tokio::runtime::Runtime> {
 /// base template only covers cgroup v1, so confined that is four AppArmor
 /// denials per process before falling back to the affinity mask it wanted
 /// anyway. Naming the number removes the probe, and two is the right number on
-/// its own terms: everything here waits on something else (the portal, the
+/// its own terms: everything here waits on something else (the
 /// backend socket, IBus, PipeWire), and blocking work has its own pool.
 fn daemon_runtime() -> std::io::Result<tokio::runtime::Runtime> {
     tokio::runtime::Builder::new_multi_thread()
@@ -1547,7 +1133,6 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             Readiness::new(),
             None,
             None,
-            PortalBinds::default(),
         ))
     } else {
         rt.block_on(run_headless_dbus(args, resolved))
@@ -1562,10 +1147,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
 /// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
-    let bind_mode = (resolved.activation == Activation::Portal).then(|| activation_mode(&args));
-    let binds = PortalBinds::default();
-    match ZbusBus::serve_for_portal(bind_mode, Arc::clone(&binds.bound), binds.dialog.clone()).await
-    {
+    match ZbusBus::serve().await {
         Ok(bus) => {
             let clients = bus.client_registry();
             let bus_lost = bus.lost().boxed();
@@ -1583,7 +1165,6 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 readiness,
                 Some(pump_bus),
                 Some(bus_lost),
-                binds,
             )
             .await
         }
@@ -1603,7 +1184,6 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
-                binds,
             )
             .await
         }
@@ -1620,7 +1200,6 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
                 Readiness::new(),
                 None,
                 None,
-                binds,
             )
             .await
         }
@@ -1630,35 +1209,6 @@ async fn run_headless_dbus(args: Args, resolved: Resolved) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn an_attach_that_reached_global_shortcuts_is_portal_activation() {
-        assert_eq!(activation_after::<()>(&Ok(())), Some("portal"));
-        for e in [
-            TriggerError::NoShortcutBound(String::new()),
-            TriggerError::BindRejected(String::new()),
-            TriggerError::BindDeclined(String::new()),
-            TriggerError::BindUnanswered(String::new()),
-        ] {
-            assert_eq!(activation_after::<()>(&Err(e)), Some("portal"));
-        }
-    }
-
-    #[test]
-    fn a_portal_without_global_shortcuts_is_control_activation() {
-        let e = TriggerError::NoGlobalShortcuts(String::new());
-        assert_eq!(activation_after::<()>(&Err(e)), Some("control"));
-    }
-
-    #[test]
-    fn an_absent_or_failing_portal_decides_nothing() {
-        for e in [
-            TriggerError::PortalNotRunning(String::new()),
-            TriggerError::PortalUnavailable(String::new()),
-        ] {
-            assert_eq!(activation_after::<()>(&Err(e)), None);
-        }
-    }
 
     fn tmpdir(tag: &str) -> PathBuf {
         let base = std::env::temp_dir().join(format!(
@@ -1822,16 +1372,6 @@ mod tests {
     }
 
     #[test]
-    fn bind_shortcut_is_a_valueless_subcommand() {
-        assert!(
-            parse_args_from(args(&["--bind-shortcut"]))
-                .unwrap()
-                .bind_shortcut
-        );
-        assert!(!parse_args_from(args(&[])).unwrap().bind_shortcut);
-    }
-
-    #[test]
     fn install_shortcut_requires_accel() {
         // Missing accel must fail — no default.
         let result = parse_args_from(args(&["--install-shortcut"]));
@@ -1869,14 +1409,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn portal_shortcut_defaults_to_none() {
-        // Without --shortcut, portal mode lets the portal dialog pick the key.
-        let result = parse_args_from(args(&["--portal", "--socket", "/tmp/x.sock"]));
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().shortcut, None);
-    }
-
     // ── resolved-not-asked switches ─────────────────────────────────────────
 
     #[test]
@@ -1905,18 +1437,10 @@ mod tests {
     }
 
     #[test]
-    fn activation_resolves_from_packaging() {
-        // $SNAP is the portal's availability test: GNOME grants a portal app
-        // identity only to a packaged app.
+    fn activation_defaults_to_the_control_socket() {
         let a = Args::default();
-        assert_eq!(resolved(&a, &unset()).activation, {
-            if std::env::var_os("SNAP").is_some() {
-                Activation::Portal
-            } else {
-                Activation::Control
-            }
-        });
-        // An explicit flag always wins over the packaging default.
+        assert_eq!(resolved(&a, &unset()).activation, Activation::Control);
+        // An explicit flag always wins over the default.
         let forced = Args {
             activation: Some(Activation::Stdin),
             ..Default::default()
@@ -1928,7 +1452,6 @@ mod tests {
     fn a_flag_beats_the_setting() {
         let a = Args {
             language: Some("de".into()),
-            shortcut: Some("<Super>x".into()),
             activation: Some(Activation::Stdin),
             ..Default::default()
         };
@@ -1938,7 +1461,6 @@ mod tests {
         };
         let r = resolved(&a, &settings);
         assert_eq!(r.language.as_deref(), Some("de"));
-        assert_eq!(r.hotkey.as_deref(), Some("<Super>x"));
         assert_eq!(r.activation, Activation::Stdin);
         assert_eq!(
             resolved(&Args::default(), &settings).language.as_deref(),
@@ -1946,26 +1468,19 @@ mod tests {
         );
     }
 
-    /// Only a toggle activation gets the policy: a hold has a release edge,
-    /// and the debug stdin trigger is a hold in disguise.
+    /// Only a toggle activation gets the policy: the debug stdin trigger is
+    /// a hold in disguise.
     #[test]
     fn auto_stop_follows_the_activation_shape() {
         assert_eq!(
-            resolve_auto_stop(Activation::Portal, false, 30),
+            resolve_auto_stop(Activation::Control, 30),
             AutoStop::toggle(Duration::from_secs(30))
         );
         assert_eq!(
-            resolve_auto_stop(Activation::Control, false, 0),
+            resolve_auto_stop(Activation::Control, 0),
             AutoStop::toggle(Duration::ZERO)
         );
-        assert_eq!(
-            resolve_auto_stop(Activation::Portal, true, 30),
-            AutoStop::off()
-        );
-        assert_eq!(
-            resolve_auto_stop(Activation::Stdin, false, 30),
-            AutoStop::off()
-        );
+        assert_eq!(resolve_auto_stop(Activation::Stdin, 30), AutoStop::off());
         let a = Args {
             activation: Some(Activation::Control),
             ..Default::default()
@@ -2026,30 +1541,14 @@ mod tests {
 
     #[test]
     fn conflicting_activation_flags_are_rejected() {
-        // Last-one-wins would make `--portal --stdin` look like it worked.
-        let err =
-            parse_args_from(args(&["--portal", "--stdin", "--socket", "/tmp/x.sock"])).unwrap_err();
+        // Last-one-wins would make `--control --stdin` look like it worked.
+        let err = parse_args_from(args(&["--control", "--stdin", "--socket", "/tmp/x.sock"]))
+            .unwrap_err();
         assert!(err.contains("conflicting activation flags"), "{err}");
         // Repeating the same flag is harmless, not a conflict.
         assert!(
-            parse_args_from(args(&["--portal", "--portal", "--socket", "/tmp/x.sock"])).is_ok()
+            parse_args_from(args(&["--control", "--control", "--socket", "/tmp/x.sock"])).is_ok()
         );
-    }
-
-    #[test]
-    fn hold_requires_portal_activation() {
-        // hold-to-talk needs press *and* release; the control socket only ever
-        // delivers a single poke. The check moved out of the parser when
-        // settings gained an activation key - it is the *resolved* transport
-        // that decides, and the parser cannot see settings.
-        let control = parse_args_from(args(&["--control", "--hold", "--socket", "/tmp/x.sock"]))
-            .expect("parsing no longer rejects this");
-        let r = resolved(&control, &unset());
-        assert!(control.hold && r.activation != Activation::Portal);
-        let portal = parse_args_from(args(&["--portal", "--hold", "--socket", "/tmp/x.sock"]))
-            .expect("portal + hold parses");
-        let r = resolved(&portal, &unset());
-        assert!(portal.hold && r.activation == Activation::Portal);
     }
 
     #[test]
@@ -2300,19 +1799,6 @@ mod tests {
         assert_eq!(backend_streams(&dir.0.join("absent.sock")).await, None);
     }
 
-    #[test]
-    fn portal_shortcut_explicit() {
-        let result = parse_args_from(args(&[
-            "--portal",
-            "--shortcut",
-            "<Super>t",
-            "--socket",
-            "/tmp/x.sock",
-        ]));
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().shortcut, Some("<Super>t".to_string()));
-    }
-
     // Regression (manual test report, 2026-07-31): the HUD pill visibly
     // "blinked" on (re)start — recording→loading→recording published in
     // quick succession because `readiness.reset()` used to run lazily inside
@@ -2374,69 +1860,7 @@ mod tests {
         );
     }
 
-    fn unbound_rebind(bound: Arc<tokio::sync::Notify>) -> PortalRebind {
-        PortalRebind {
-            mode: ActivationMode::Toggle,
-            control: PathBuf::new(),
-            awaiting_portal: false,
-            awaiting_new_backend: false,
-            awaiting_binding: true,
-            bound,
-            dialog: DialogSlot::default(),
-            shortcut: None,
-        }
-    }
-
-    // A key bound through `BindShortcut` has to work when the user presses it,
-    // not after the next unbound recheck.
-    #[tokio::test(start_paused = true)]
-    async fn a_binding_made_through_the_daemon_ends_the_unbound_wait() {
-        let bound = Arc::new(tokio::sync::Notify::new());
-        let mut rebind = unbound_rebind(Arc::clone(&bound));
-        bound.notify_one();
-
-        let started = tokio::time::Instant::now();
-        rebind.wait_before_retry(Duration::from_secs(15)).await;
-        assert!(started.elapsed() < Duration::from_secs(15));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn with_nothing_bound_the_unbound_wait_runs_its_course() {
-        let mut rebind = unbound_rebind(Arc::new(tokio::sync::Notify::new()));
-
-        let started = tokio::time::Instant::now();
-        rebind.wait_before_retry(Duration::from_secs(15)).await;
-        assert!(started.elapsed() >= Duration::from_secs(15));
-    }
-
-    // A portal daemon never opens a control socket, so `--toggle` failing is
-    // its *healthy* behaviour. The hint has to say that instead of blaming a
-    // missing process, and it has to name the key that does work.
-    #[test]
-    fn portal_toggle_hint_points_at_the_hotkey_not_a_missing_daemon() {
-        let hint = toggle_hint_for(Activation::Portal, Some("<Super>t")).join(" ");
-        assert!(
-            hint.contains("<Super>t"),
-            "should name the bound key: {hint}"
-        );
-        assert!(
-            !hint.contains("--socket"),
-            "must not send the user looking for a dead daemon: {hint}"
-        );
-    }
-
-    // Unbound is the state until the user confirms a key in the portal's
-    // dialog, so the no-hotkey branch still has to give somewhere to look.
-    #[test]
-    fn portal_toggle_hint_without_a_hotkey_says_where_to_find_one() {
-        let hint = toggle_hint_for(Activation::Portal, None).join(" ");
-        // Not "Keyboard": portal shortcuts are not custom keybindings and do
-        // not appear in that panel, which is where this used to send people.
-        assert!(hint.contains("Apps"), "should point at Settings: {hint}");
-        assert!(!hint.contains("Keyboard"), "{hint}");
-    }
-
-    // The Noble fallback binds exactly what `--toggle` pokes, and a bind that
+    // The control trigger binds exactly what `--toggle` pokes, and a bind that
     // seccomp refuses stays retryable with the reason the journal shows.
     #[tokio::test]
     async fn the_control_fallback_binds_the_socket_toggle_reaches() {
@@ -2461,30 +1885,9 @@ mod tests {
         }
     }
 
-    // Control activation is the one case the old advice was right for.
     #[test]
-    fn control_toggle_hint_still_asks_whether_the_daemon_is_running() {
-        let hint = toggle_hint_for(Activation::Control, None).join(" ");
+    fn control_toggle_hint_asks_whether_the_daemon_is_running() {
+        let hint = toggle_hint_for(Activation::Control).join(" ");
         assert!(hint.contains("--socket"), "{hint}");
-    }
-
-    // The regression that started this: `myna.install-shortcut '<Super>t'` on a
-    // snap (portal by default) installed an inert custom keybinding that
-    // *shadowed* the portal's working one, silently killing dictation.
-    #[test]
-    fn install_shortcut_refuses_under_portal_activation() {
-        let refusal = shortcut_install_refusal(Activation::Portal, "<Super>t")
-            .expect("portal activation must refuse");
-        assert!(refusal.contains("<Super>t"), "{refusal}");
-        assert!(
-            refusal.contains("shadow"),
-            "must say why it is destructive, not just that it is useless: {refusal}"
-        );
-    }
-
-    // Control activation is what the flag is *for*; it must stay usable.
-    #[test]
-    fn install_shortcut_allowed_under_control_activation() {
-        assert!(shortcut_install_refusal(Activation::Control, "<Super>t").is_none());
     }
 }

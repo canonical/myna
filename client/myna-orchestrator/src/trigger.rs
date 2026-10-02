@@ -1,7 +1,7 @@
 //! The hotkey boundary (plan T41, stands in for T21) — a [`Trigger`] yields
-//! press/release edges that bound a push-to-talk utterance. The real
-//! `org.freedesktop.portal.GlobalShortcuts` hotkey (T21) implements the same
-//! trait; the demo mock reads lines from stdin.
+//! press/release edges that bound a push-to-talk utterance. The desktop's
+//! control socket implements the same trait; the demo mock reads lines from
+//! stdin.
 
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, BufReader, Stdin};
@@ -33,7 +33,7 @@ pub trait Trigger: Send {
     /// when an utterance ends for a reason other than reading a matching
     /// edge off this trigger (e.g. focus-loss ends the session via
     /// `stop.stop()`, never touching the trigger). Toggle-style triggers
-    /// (`ControlTrigger`, `GlobalShortcutTrigger` in `Toggle` mode) track
+    /// (`ControlTrigger`) track
     /// "pressed" as *session-active*, decoupled from any physical key state;
     /// left unsynced, the next real user poke flips that bit the "wrong" way
     /// and delivers a `Release` (silently swallowed while idle) instead of a

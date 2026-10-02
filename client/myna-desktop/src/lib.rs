@@ -10,19 +10,19 @@
 //! transcribing / finalizing / error.
 //!
 //! Three boundary seams, each with a mock so the controller is fully
-//! hermetic-testable (no D-Bus / IBus / portal / display):
+//! hermetic-testable (no D-Bus / IBus / display):
 //! - [`inject::Injector`] — text injection ([`inject::ibus::IbusInjector`] /
 //!   [`inject::mock::MockInjector`]);
 //! - `shortcut` — activation, reusing `myna_orchestrator::Trigger`
-//!   ([`shortcut::portal::GlobalShortcutTrigger`]);
+//!   ([`shortcut::control::ControlTrigger`]);
 //! - [`indicator::Indicator`] — the activity surface
 //!   ([`indicator::notify::NotifyIndicator`] for headless, and the
 //!   myna-shell overlay for GNOME; [`indicator::mock::MockIndicator`] for
 //!   tests).
 //!
 //! Real IBus/GTK behavior lives behind env-gated integration suites
-//! (`MYNA_IBUS_TESTS` / `MYNA_DBUS_TESTS`, the latter also covering the portal
-//! against a fake); the hermetic suite drives the controller through the mocks.
+//! (`MYNA_IBUS_TESTS` / `MYNA_DBUS_TESTS`); the hermetic suite drives the
+//! controller through the mocks.
 
 pub mod controller;
 pub mod dbus;

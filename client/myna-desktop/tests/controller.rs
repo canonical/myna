@@ -1,4 +1,4 @@
-//! Hermetic controller tests (no D-Bus / IBus / portal / display).
+//! Hermetic controller tests (no D-Bus / IBus / display).
 //!
 //! US1 (T011–T016) + T011a: the [`DesktopController`] drives committed
 //! transcripts into the injector (commit-only, in order, each once), shows the
@@ -1047,8 +1047,8 @@ async fn a_refused_flush_that_carried_text_does_not_report_success() {
 /// A toggle-tracking mock trigger mirroring the *real* `ControlTrigger`'s
 /// press/release parity — unlike [`ScriptedTrigger`], which just replays a
 /// fixed list of edges with no internal state, this tracks a `pressed` bit
-/// that flips on every poke, exactly like the production control-socket /
-/// portal-toggle triggers. This is the seam needed to observe the "next poke
+/// that flips on every poke, exactly like the production control-socket
+/// trigger. This is the seam needed to observe the "next poke
 /// delivers a swallowed Release instead of Press" desync bug: `ScriptedTrigger`
 /// has no parity to desync, so it can never catch this regression.
 struct ToggleMockTrigger {

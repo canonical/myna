@@ -17,8 +17,8 @@
 //! - [`audio::AudioSource`] — capture (T41), mocked by [`audio::WavFileSource`];
 //!   the real PipeWire adapter implements the `myna-core` capture contract.
 //! - [`trigger::Trigger`] / [`sink::TextSink`] — hotkey and injector (T41),
-//!   mocked by [`trigger::StdinTrigger`] / [`sink::StdoutSink`]; the real
-//!   GlobalShortcuts hotkey (T21) and IBus injector (T22) implement the traits.
+//!   mocked by [`trigger::StdinTrigger`] / [`sink::StdoutSink`]; the desktop's
+//!   control socket and IBus injector (T22) implement the traits.
 //!
 //! Status: `myna-core` (wire contract, T38), the backend seam (T39), the
 //! two-region FSM + async driver (T40, [`fsm`] / [`driver`]), and the boundary

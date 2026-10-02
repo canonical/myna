@@ -13,7 +13,7 @@ current client knowledge index.
 | `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
 | `myna-cli` (`myna-testbed`) | testbed binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
-| `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: GlobalShortcuts hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
+| `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: custom-shortcut hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
 | `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app — level bar or segmented meter, pill chrome, motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
 
 ## Design commitments
@@ -27,7 +27,7 @@ current client knowledge index.
 - **Every boundary is a trait with a mock.** The Python `myna-server` stands in
   for the inference snap; `myna-audio` is the capture adapter (mock:
   `ScriptedBackend`); the hotkey is `Trigger` (`StdinTrigger` /
-  `GlobalShortcutTrigger`); the injector/indicator are `Injector` / `Indicator`
+  `ControlTrigger`); the injector/indicator are `Injector` / `Indicator`
   (`MockInjector` / `IbusInjector`, `MockIndicator` / `NotifyIndicator`). Real
   implementations drop in behind the same traits.
 - **Invariants** (from `../CLAUDE.md`): never persist audio, bounded in-memory
@@ -46,14 +46,13 @@ the structure matches — both ends parse JSON.
 ```sh
 cd client
 cargo test --workspace                              # everything
-cargo test -p myna-desktop --no-default-features    # desktop, hermetic (no GTK/DBus/portal/display)
+cargo test -p myna-desktop --no-default-features    # desktop, hermetic (no GTK/DBus/display)
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 Env-gated integration suites run identically on the desktop VM and on hardware,
 and skip cleanly otherwise: `MYNA_PIPEWIRE_TESTS=1` (capture), `MYNA_IBUS_TESTS=1`
-(injection), `MYNA_DBUS_TESTS=1` (the published state, and the hotkey against a
-fake portal), display-present (GTK indicator). `dev/gated-tests.sh` stands the
+(injection), `MYNA_DBUS_TESTS=1` (the published state), display-present (GTK indicator). `dev/gated-tests.sh` stands the
 services up and sets the gates; `make test-client-gated` is that script.
 
 ## Run
@@ -81,7 +80,7 @@ daemon. Activation must not depend on terminal focus (dictation injects into
 *another* app), so the default is **toggle-to-talk via a GNOME custom keyboard
 shortcut**: the app runs as a daemon on a control socket, and a GNOME shortcut
 bound to `myna-desktop --toggle` pokes it (tap = start, tap = stop). This works
-for a plain unsandboxed binary — no terminal focus, no portal, no app id.
+for a plain unsandboxed binary and confined alike — no terminal focus, no app id.
 
 ```sh
 (cd ../server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
@@ -91,12 +90,7 @@ myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running
 # focus a text field, tap your shortcut, speak, tap → transcript injected there
 ```
 
-Other activation modes: `--portal` (GlobalShortcuts — only works when packaged
-as a snap/flatpak, which GNOME grants an app identity; bind the key once with
-`--bind-shortcut`, which offers Super+J and is the only thing that raises the
-portal's dialog);
-`--stdin`
-(terminal debug — injects back into the terminal). Feedback defaults to
+The other activation mode is `--stdin` (terminal debug — injects back into the terminal). Feedback defaults to
 desktop notifications; on GNOME the myna-shell extension hosts the richer
 overlay HUD (feature 004). The former GTK `--overlay` was removed in T150.
 

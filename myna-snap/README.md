@@ -39,12 +39,12 @@ sudo snap connect myna:backend myna-whisper:provider         # the backend sessi
 
 The daemon is already running: installing enabled and started it, and it comes
 back at every login. Nothing to launch - `snap services myna` should read
-`enabled / active`. The very first start raises the portal's shortcut sheet
-once; accept it and pick a key. If step 4 misbehaves, jump to
+`enabled / active`. Myna Settings sets up the key; without it, run
+`myna.install-shortcut '<Super>j'`. If step 4 misbehaves, jump to
 **Troubleshooting**.
 
-No activation, indicator or preedit flags: packaged, `myna` uses the
-GlobalShortcuts portal, always serves `com.canonical.Myna.Dictation`, and turns
+No activation, indicator or preedit flags: `myna` listens on its control
+socket, always serves `com.canonical.Myna.Dictation`, and turns
 streaming preedit on whenever the transcription mode in force is `streaming`:
 your `streaming-mode` if you set one, else the backend's own mode. See
 **Activation** for forcing any of them.
@@ -71,12 +71,13 @@ above); the store path is a snapd PR adding this snap's id, which needs the
 name registered and uploaded first.
 
 **It starts before the desktop does.** `default.target` is PAM login: no
-compositor, no PipeWire, no IBus, no portal. (`graphical-session.target`
+compositor, no PipeWire, no IBus. (`graphical-session.target`
 ordering for `desktop`-plugging user daemons was added in snapd 2.74 and
 reverted in 2.74.1, LP #2141607 - there is no knob for it.) So the daemon
-treats all four as things that come and go rather than as preconditions:
+treats all three as things that come and go rather than as preconditions:
 
-- activation is bound with backoff and **re-bound** if the portal restarts;
+- the control socket is bound with backoff, since `$XDG_RUNTIME_DIR` may not
+  exist yet;
 - IBus is connected at the first press that needs it, and reconnected after an
   `ibus restart`;
 - the backend socket is re-resolved at every press, so `snap connect` and
@@ -99,7 +100,7 @@ argued:
   limit and stops - ten journal lines per greeter start, and no daemon.
 - **a headless account runs it healthily**: `active`, `NRestarts=0`, 4.6 MB
   cgroup memory and 188 ms of CPU over its first half-minute, all of that
-  startup. What it does not have is a portal, so it re-checks for one forever.
+  startup.
 
 So there is no guard, because there is nothing worth guarding against and
 nothing sound to guard *with*: at PAM login "no compositor yet" and "no
@@ -108,67 +109,10 @@ compositor ever" are the same observation, which is exactly why snapd's own
 reverted in 2.74.1 (LP #2141607). A daemon that guessed would be dead in the
 normal case it guessed wrong about.
 
-**Starting early is allowed; *waking* the desktop's services is not (decided
-2026-08-26).** Ordering was the wrong lever, but starting first still has a
-cost, and it has to be paid inside the daemon: every D-Bus call is
-auto-starting. Binding activation before the compositor had exported
-`XDG_CURRENT_DESKTOP` launched `xdg-desktop-portal` *itself*, and a portal
-started in that window resolves its backends against an empty desktop -
-`gtk.portal` as a last-resort fallback for every interface, never
-`gnome.portal`, which is the only implementation of GlobalShortcuts. That map
-is cached for the life of the session, so the hotkey stays dead until
-`systemctl --user restart xdg-desktop-portal`, and so does every *other* app's
-file chooser. Observed on a GNOME 49 Wayland login: the daemon started at
-45.55 s, activated the portal at 45.83 s, and gnome-session only began at
-45.89 s.
-
-So the bind first asks whether anything already owns
-`org.freedesktop.portal.Desktop` and reports the ordinary unavailable failure
-if not (`shortcut/portal.rs::portal_is_up`), letting the existing backoff wait
-for a portal rather than conjuring one. Whoever starts it in a real session
-does so with the right environment. The rule generalises: a daemon that runs
-before the desktop may *join* the desktop's services and must never summon
-them.
-
-**A missing desktop is waited on, never polled for.** "No portal yet" is the
-one bind failure with its own disposition (`BindFailure::NotYet`), because it
-is the only one that is not a failure at all - nothing was asked of anyone, and
-the answer flips exactly once, when the desktop arrives. The daemon subscribes
-to `NameOwnerChanged` for the portal's name and parks
-(`portal::await_portal`), so it is asleep between login and the compositor, and
-asleep forever on a machine where the compositor is never coming. The 30 s
-`ABSENT_RECHECK` is a safety net for a missed notification, not the mechanism.
-
-The alternative was polling, and it was measured before being rejected: at one
-`NameHasOwner` a second it cost **73 ms of CPU per minute** with the portal
-masked so nothing could start it, which is ~105 s of CPU a day in a lingering
-headless account, forever, for a daemon with nothing to bind to. Waiting on the
-event costs a signal match on a connection the daemon already holds:
-**2 ms of CPU per minute** in the same conditions, which is the
-`ABSENT_RECHECK` net firing twice and little else, and it binds *faster*: 55 ms
-from the portal taking its bus name to `activation bound`, against 0.64 s when
-polling.
-
-Note what this is *not*: it is not detecting whether a desktop exists. That
-cannot be done soundly, which is why there is no guard - and the portal bug
-above is the proof rather than the theory. At 45.83 s into a real GNOME login,
-in a session that was working perfectly well, `XDG_CURRENT_DESKTOP` was not yet
-in the user manager's environment. Any check for "is there a desktop here"
-would have answered no, on a laptop that was two seconds from a full GNOME
-session. Waiting costs nothing and needs no such answer, so there is nothing
-left to detect.
-
-One consequence worth stating: waiting proves nothing about how the backend
-behaves, so it does not spend the backoff. A daemon that waited out a long
-login still meets the portal's first real failure at the bottom of the
-1/2/4...30 s ladder rather than at its ceiling.
-
-The one real cost was the retry log - ~2,900 identical lines a day on a machine
-with no compositor. A bind failure is now reported once at the operational
-tier, again only when the reason changes, and the repeats go to `MYNA_DEBUG`;
-the current reason is continuously readable on
-`com.canonical.Myna.Dictation.StatusMessage`, which is the surface for the
-current publisher-owned user-facing status.
+A daemon that runs before the desktop may *join* the desktop's services and
+must never summon them: every D-Bus call is auto-starting, and a portal started
+before the compositor exports `XDG_CURRENT_DESKTOP` resolves its backends
+against an empty desktop for the whole session.
 
 **What `snap refresh myna` does.** It stops and restarts the unit in every user
 manager, on the new revision (`refresh-mode: restart`, stated explicitly in
@@ -197,36 +141,18 @@ for the socket to exist (`sudo snap start myna-whisper.server`).
 ## Activation
 
 Everything is **press-to-toggle**: tap the key to start, tap again to stop.
-Two trigger transports, and the daemon picks between them itself - the
-portal only serves apps the compositor can identify, so `$SNAP` being set
-*is* the availability test:
+`myna` listens on a control socket and `myna.toggle` pokes it. The key is a
+GNOME custom shortcut to `/snap/bin/myna.toggle`, which Myna Settings writes
+(`myna.install-shortcut '<Super>t'` does it without Myna Settings).
 
-- **GlobalShortcuts portal (default here, because this is a snap)** — the
-  sandboxed-native trigger. The **first** bind raises the desktop's shortcut
-  sheet offering Super+J; confirm it or pick another key. Myna Settings' Set Up
-  Shortcut and `myna.bind-shortcut` raise it; the daemon never does on its own.
-  It is remembered
-  after that - later daemon starts and portal restarts re-bind silently in
-  ~50ms (measured 2026-08-25, correcting an earlier "auto-accepted, no sheet"
-  note from 2026-08-18). An unanswered sheet leaves the bind pending
-  *indefinitely*: the portal resolves it on a `Response` signal, so no D-Bus
-  call timeout applies. The daemon bounds that at 120s and retries.
-  `myna --hold` switches it to hold-to-talk.
-
-  To change the key afterwards: **Settings → Apps → myna** (Myna Settings'
-  Change Shortcut opens it). Do *not* bind a GNOME custom shortcut to `myna.toggle` for this -
-  `gsd-media-keys` serves custom keybindings and portal global shortcuts alike,
-  so a custom binding on the same accel shadows the portal's own and the key
-  stops working. `myna.install-shortcut` refuses under portal activation for
-  exactly this reason.
-- **Control socket** (`myna --control`) — for a desktop with no working
-  GlobalShortcuts backend. `myna` listens for pokes; `myna.toggle` sends
-  one. Bind a custom shortcut to `/snap/bin/myna.toggle`
-  (`myna.install-shortcut '<Super>t'` does it for GNOME). Both commands are
-  control-activation only; under the default they are inert and say so.
+The GlobalShortcuts portal was the packaged default until 2026-10 and is gone:
+stacked and duplicate consent dialogs, consent and retry races, an app id that
+drifted between `myna_myna` and `.`, grants that survived `snap remove
+--purge`, grabs that needed a re-login, and no GlobalShortcuts at all on
+Noble. Hold-to-talk, the one thing only the portal offered, is not planned.
 
 `myna --stdin` drives from the terminal (debug; injects back into the
-terminal). The three activation flags are mutually exclusive.
+terminal). `--control` and `--stdin` are mutually exclusive.
 
 **Indicator**: `com.canonical.Myna.Dictation` is always served for the myna-shell
 GNOME extension, falling back to desktop notifications by itself when the
@@ -240,7 +166,7 @@ is `streaming` - your `streaming-mode` if set, else whether the backend streams
 region. `myna --preedit` / `myna --no-preedit` force it either way.
 
 **Env knobs**: `MYNA_BACKEND_SOCKET`, `MYNA_LANGUAGE`.
-(`MYNA_ACTIVATION` is gone - use `--portal` / `--control` / `--stdin`.)
+(`MYNA_ACTIVATION` is gone - use `--control` / `--stdin`.)
 
 ## Apps
 
@@ -249,8 +175,8 @@ region. `myna --preedit` / `myna --no-preedit` force it either way.
 | `myna` | the dictation daemon - a user service, so no `/snap/bin` entry |
 | `myna.status` | what state dictation is in, and why - start here |
 | `myna.config` | query/change the persisted settings: glib's gsettings over the snap's keyfile store. Bare, it lists every key; `set`/`get`/`reset` take bare values (`myna.config set language fr`) |
-| `myna.toggle` | poke the daemon's control socket (start/stop). **Control activation only** - the default (portal) daemon has no control socket |
-| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf). **Control activation only** - refuses under portal, where it would shadow the portal's own binding. Needed on Noble/Jammy (no GlobalShortcuts backend there); the one app with the `gsettings` plug |
+| `myna.toggle` | poke the daemon's control socket (start/stop) |
+| `myna.install-shortcut` | bind a GNOME custom shortcut → `myna.toggle` (dconf); the one app with the `gsettings` plug |
 | `myna.testbed` | the `myna-testbed` CLI (`--list-devices`, `--clip`, `--dialect`, …) |
 
 ### `myna.status`
@@ -264,9 +190,8 @@ is the question being asked.
 
 ```
 settings   com.canonical.Myna.Dictation (schema installed)
-  activation      (unset)      -> Portal (packaged)        [built-in]
+  activation      (flag only)  -> Control                  [built-in]
   language        (unset)      -> (backend default)        [built-in]
-  hotkey          (unset)      -> (portal default)         [built-in]
   streaming-mode  (unset)      -> batch, preedit false     [backend]
 
 backend
@@ -281,8 +206,7 @@ daemon     com.canonical.Myna.Dictation
   error           (none)
 ```
 
-Run it confined (`myna.status`, not a local build): `$SNAP` decides activation,
-and the backend share is a bind mount that exists only inside the snap, so an
+Run it confined (`myna.status`, not a local build): the backend share is a bind mount that exists only inside the snap, so an
 unpackaged `--status` reports a healthy packaged daemon's backend as
 unreachable. It says so when it notices.
 
@@ -310,14 +234,9 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
 - **The hotkey does nothing right after login** - read `StatusMessage` (below),
   or `journalctl --user -u snap.myna.myna`. "Shortcut unavailable" means
   activation is not bound; it clears itself once it is. The cause is in
-  Myna Settings > Diagnostics ("Last error") and in the journal. Two retry
-  speeds, by cause: the portal not being up yet is retried at 1s doubling to
-  30s, while a refused or unanswered shortcut sheet waits 5 minutes - retrying
-  that one fast would just re-raise the dialog. Dismissed the sheet by
-  accident? `sudo snap restart myna` brings it straight back.
-- **`myna.toggle` can't reach the daemon** — `myna` isn't running, or it's
-  running in the default portal activation; `myna.toggle` needs
-  `myna --control`.
+  Myna Settings > Diagnostics ("Last error") and in the journal. The bind is
+  retried at 1s doubling to 30s.
+- **`myna.toggle` can't reach the daemon** — `myna` isn't running.
 - **Nothing is injected, state shows `error`** — read the status:
   `gdbus call --session --dest com.canonical.Myna.Dictation \
     --object-path /com/canonical/Myna/Dictation \
@@ -359,7 +278,7 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
 | plug | why |
 |---|---|
 | `pipewire` | native PipeWire capture (`/run/user/*/pipewire-0`) |
-| `desktop` | GlobalShortcuts portal + desktop notifications |
+| `desktop` | desktop notifications |
 | `desktop-legacy` | the IBus daemon's private socket (text injection) |
 | `gsettings` | the dconf write for `myna.install-shortcut` - the only app with it |
 | `network-bind` | seccomp `bind(2)` for the control socket - no outbound reach, and no other interface grants it |
@@ -398,9 +317,8 @@ settings. `snap remove` snapshots it into the automatic snapshot;
 Read and write it with `myna.config` - glib's own gsettings over that store,
 with the schema id filled in. Bare, it lists every key; `set`/`get`/`reset`
 take bare values. Changes reach the running daemon with no restart (the
-backend's file monitor); `streaming-mode` and `language` apply live,
-`activation` and `hotkey` are bound at startup and the journal says
-`restart to apply`. "Is this key set?" is `cat` of the file - an absent
+backend's file monitor); `streaming-mode` and `language` apply live.
+"Is this key set?" is `cat` of the file - an absent
 key reads the schema default, so the file only ever holds what was set.
 
 ```shell
@@ -415,14 +333,12 @@ myna.config reset streaming-mode
 |---|---|---|
 | `streaming-mode` | `streaming` \| `batch` | emission mode, and with it in-field partials; unset follows the backend |
 | `language` | any short code | session language hint |
-| `activation` | `auto` \| `portal` \| `control` | how a press reaches the daemon |
-| `hotkey` | `'<Super>d'` | the accelerator offered to the portal |
 
 The daemon logs what it resolved at every start:
 
 ```shell
 journalctl --user -u snap.myna.myna | grep settings:
-#  settings: activation Portal, language (backend default), hotkey (portal default), preedit true (from streaming-mode Streaming, the schema default while the backend's is unknown)
+#  settings: activation Control, language (backend default), preedit true (from streaming-mode Streaming, the schema default while the backend's is unknown)
 #  settings: backend streams -> false
 #  settings: preedit -> false (from streaming-mode Batch, the backend's default)
 ```
@@ -448,10 +364,3 @@ Notes:
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
   store upload.
-- **Portal hotkey:** if a bound key doesn't grab, diagnose with:
-  ```shell
-  gdbus monitor --session --dest org.freedesktop.portal.Desktop &
-  myna --portal                 # then press your key
-  # org.freedesktop.portal.GlobalShortcuts Activated should appear on press;
-  # nothing = the grab never registered (portal side)
-  ```

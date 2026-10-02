@@ -31,7 +31,7 @@ flowchart TB
     pipewire["PipeWire"] -.->|"capture and device discovery"| audio
     backend["Inference backend<br/>Unix socket"] <-.->|"session events and PCM"| orchestrator
     gsettings[("GSettings")] -.->|"preferences"| core
-    portal["GlobalShortcuts portal<br/>or control socket"] -.->|"activation"| desktop
+    shortcut["Custom shortcut<br/>control socket"] -.->|"activation"| desktop
     ibus["IBus"] <-.->|"focus and committed text"| desktop
     desktop -.->|"D-Bus status"| hud
     shell["GNOME Shell extension"] -.->|"hosts and positions"| hud

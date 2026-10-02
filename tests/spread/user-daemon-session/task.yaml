@@ -2,7 +2,7 @@
 # `systemd --user` instance with no graphical session at all - no compositor,
 # no portal, no IBus, no backend, no session-bus desktop services. That is a
 # real deployment (a lingering headless account, an SSH login, a machine
-# sitting at the greeter), and it is where "resilient to all four boundaries"
+# sitting at the greeter), and it is where "resilient to every boundary"
 # stops being a claim about mocks (T71b/T71c, decision recorded in
 # myna-snap/README.md 2026-08-26).
 #
@@ -56,30 +56,22 @@ execute: |
     grep -qx "ActiveState=active" state.out
     grep -qx "NRestarts=0" state.out
 
-    # 2. Quiet. With no portal the bind never succeeds, so the retry runs
-    # forever; the operational tier states that once and the repeats drop to
-    # MYNA_DEBUG. The daemon is parked on `NameOwnerChanged` rather than
-    # polling, so in this window there is one attempt and one line, not one of
-    # each per retry tick. The bound is 2
-    # rather than 1 because a first attempt made before the session bus is up
-    # can fail with a different reason than the ones after it, and a *changed*
-    # reason is meant to be reported.
+    # 2. Quiet. A bind that keeps failing is stated once at the operational
+    # tier and the repeats drop to MYNA_DEBUG. The bound is 2 rather than 1
+    # because a first attempt made before the session bus is up can fail with
+    # a different reason than the ones after it, and a *changed* reason is
+    # meant to be reported.
     journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
         | grep -c "cannot bind activation" > lines.out || true
     cat lines.out
     test "$(cat lines.out)" -le 2
 
-    # 3. It waits for a portal instead of launching one. Every D-Bus call is
-    # auto-starting, so the daemon used to bring `xdg-desktop-portal` up itself
-    # - and a portal started before the compositor exports
-    # `XDG_CURRENT_DESKTOP` picks `gtk.portal` for every interface and never
-    # `gnome.portal`, killing GlobalShortcuts for the whole session (found
-    # 2026-08-26 on a real login). The reason string is asserted too: an
-    # unowned name is the gate's own answer, not the bus's failure to activate.
+    # 3. It never launches a portal. Every D-Bus call is auto-starting, and a
+    # portal started before the compositor exports `XDG_CURRENT_DESKTOP`
+    # picks `gtk.portal` for every interface for the whole session (found
+    # 2026-08-26 on a real login).
     systemctl --user -M "$USER_NAME@" show-environment > env.out
     ! grep -q "^XDG_CURRENT_DESKTOP=" env.out
-    journalctl _SYSTEMD_USER_UNIT=snap.myna.myna.service --no-pager \
-        | grep -q "nothing owns org.freedesktop.portal.Desktop"
     systemctl --user -M "$USER_NAME@" is-active xdg-desktop-portal.service > portal.out || true
     cat portal.out
     grep -qx "inactive" portal.out
