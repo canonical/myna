@@ -176,17 +176,22 @@ impl DictationObject {
         preferred: &str,
         parent_window: &str,
         emitter: &zbus::object_server::SignalEmitter<'_>,
-    ) -> (bool, String) {
-        use crate::shortcut::portal::{bind_report, configure, consent, spends_consent};
+    ) -> (crate::shortcut::portal::BindOutcome, String) {
+        use crate::shortcut::portal::{
+            bind_outcome, bind_report, configure, consent, spends_consent, BindOutcome,
+        };
 
         let Some(mode) = self.bind_mode else {
             return (
-                false,
+                BindOutcome::Failed,
                 "activation is not Portal; this daemon takes no portal shortcut".into(),
             );
         };
         let Some(open) = self.dialog.claim() else {
-            return (false, "a shortcut dialog is already open".into());
+            return (
+                BindOutcome::Busy,
+                "a shortcut dialog is already open".into(),
+            );
         };
         let preferred = (!preferred.is_empty()).then_some(preferred);
         let parent_window = (!parent_window.is_empty()).then_some(parent_window);
@@ -210,7 +215,7 @@ impl DictationObject {
             }
             self.bound.notify_one();
         }
-        bind_report(&outcome)
+        (bind_outcome(&outcome), bind_report(&outcome).1)
     }
 }
 
@@ -250,7 +255,8 @@ impl DictationObject {
         preferred: &str,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
     ) -> (bool, String) {
-        self.bind(preferred, "", &emitter).await
+        let (outcome, message) = self.bind(preferred, "", &emitter).await;
+        (outcome.ok(), message)
     }
 
     /// `BindShortcutWithParent`: [`Self::bind_shortcut`] with the dialog
@@ -263,7 +269,24 @@ impl DictationObject {
         parent_window: &str,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
     ) -> (bool, String) {
-        self.bind(preferred, parent_window, &emitter).await
+        let (outcome, message) = self.bind(preferred, parent_window, &emitter).await;
+        (outcome.ok(), message)
+    }
+
+    /// `BindShortcutWithOutcome`: [`Self::bind_shortcut_with_parent`] that
+    /// names how the bind ended, so a client need not read the message:
+    /// `bound`, `opened` (the rebind dialog), `declined` (the dialog answered
+    /// without a key: Cancel), `busy` (another bind's dialog is up) or
+    /// `failed`. Clients treat an unknown reason as `failed`.
+    #[cfg(not(test))]
+    async fn bind_shortcut_with_outcome(
+        &self,
+        preferred: &str,
+        parent_window: &str,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+    ) -> (String, String) {
+        let (outcome, message) = self.bind(preferred, parent_window, &emitter).await;
+        (outcome.reason().to_owned(), message)
     }
 
     /// `RegisterClient`: a HUD client announces itself. The sender's unique

@@ -39,9 +39,15 @@ pub enum TriggerError {
     /// No portal / no GlobalShortcuts backend available (clear failure — T5).
     #[error("global-shortcuts portal unavailable: {0}")]
     PortalUnavailable(String),
-    /// The portal rejected the bind request.
+    /// The bind request failed: the call itself, not the user's answer.
     #[error("shortcut bind rejected: {0}")]
     BindRejected(String),
+    /// The sheet was answered without a key: the portal's "cancelled" (1) or
+    /// "other" (2) response. GNOME answers its own Cancel with "other", so
+    /// the two cannot be told apart. Worded as [`Self::BindRejected`]: clients
+    /// older than `BindShortcutWithOutcome` recognise a cancel by these words.
+    #[error("shortcut bind rejected: {0}")]
+    BindDeclined(String),
     /// Nothing owns the portal's bus name, and this daemon will not be the one
     /// to start it (see [`portal_is_up`]). Distinct from
     /// [`Self::PortalUnavailable`] because nobody was asked for anything: it
@@ -366,7 +372,9 @@ impl GlobalShortcutTrigger {
         .await;
         if matches!(
             result,
-            Err(TriggerError::BindRejected(_)) | Err(TriggerError::BindUnanswered(_))
+            Err(TriggerError::BindRejected(_))
+                | Err(TriggerError::BindDeclined(_))
+                | Err(TriggerError::BindUnanswered(_))
         ) {
             consent::withdraw();
         }
@@ -469,13 +477,13 @@ impl GlobalShortcutTrigger {
         let trigger = match bound {
             Ok(Ok(request)) => request
                 .response()
-                .map_err(|e| TriggerError::BindRejected(e.to_string()))?
+                .map_err(bind_error)?
                 .shortcuts()
                 .iter()
                 .find(|s| s.id() == shortcut_id)
                 .map(|s| s.trigger_description().to_string())
                 .unwrap_or_default(),
-            Ok(Err(e)) => return Err(TriggerError::BindRejected(e.to_string())),
+            Ok(Err(e)) => return Err(bind_error(e)),
             Err(_) => {
                 return Err(TriggerError::BindUnanswered(format!(
                     "no answer within {}s; closing the session",
@@ -586,7 +594,7 @@ pub async fn configure(
             .configure_shortcuts(&session, parent.as_ref(), Default::default())
             .await
             .map(|()| Configured::DialogOpened)
-            .map_err(|e| TriggerError::BindRejected(e.to_string()))
+            .map_err(bind_error)
     } else {
         use ashpd::desktop::global_shortcuts::NewShortcut;
         let shortcut =
@@ -604,7 +612,7 @@ pub async fn configure(
                         .collect(),
                 )
             })
-            .map_err(|e| TriggerError::BindRejected(e.to_string()))
+            .map_err(bind_error)
     };
 
     if outcome.is_ok() {
@@ -718,7 +726,60 @@ pub fn bind_report(outcome: &Result<Configured, TriggerError>) -> (bool, String)
 /// question the retry loop's re-bind would put again, so it must not. One
 /// declined while a key is live was a Change, and the stored grant stays.
 pub fn spends_consent(outcome: &Result<Configured, TriggerError>, holds_binding: bool) -> bool {
-    !holds_binding && matches!(outcome, Err(TriggerError::BindRejected(_)))
+    !holds_binding
+        && matches!(
+            outcome,
+            Err(TriggerError::BindRejected(_)) | Err(TriggerError::BindDeclined(_))
+        )
+}
+
+/// How a client's bind ended, as `BindShortcutWithOutcome` names it: a reason
+/// a client can act on without reading the message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindOutcome {
+    Bound,
+    /// Already bound; the portal's rebind dialog was raised.
+    Opened,
+    /// The user answered the sheet without a key.
+    Declined,
+    /// Another bind's sheet is up.
+    Busy,
+    Failed,
+}
+
+impl BindOutcome {
+    /// The wire word. Stable: clients match it.
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Bound => "bound",
+            Self::Opened => "opened",
+            Self::Declined => "declined",
+            Self::Busy => "busy",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn ok(self) -> bool {
+        matches!(self, Self::Bound | Self::Opened)
+    }
+}
+
+pub fn bind_outcome(outcome: &Result<Configured, TriggerError>) -> BindOutcome {
+    match outcome {
+        Ok(Configured::Bound(_)) => BindOutcome::Bound,
+        Ok(Configured::DialogOpened) => BindOutcome::Opened,
+        Err(TriggerError::BindDeclined(_)) => BindOutcome::Declined,
+        Err(_) => BindOutcome::Failed,
+    }
+}
+
+/// A bind's error, by ashpd's type rather than its words: a portal response
+/// is the user's answer, anything else a failure.
+fn bind_error(e: ashpd::Error) -> TriggerError {
+    match e {
+        ashpd::Error::Response(_) => TriggerError::BindDeclined(e.to_string()),
+        e => TriggerError::BindRejected(e.to_string()),
+    }
 }
 
 /// Open a GlobalShortcuts session, refusing to start a portal to do it.
@@ -1084,6 +1145,60 @@ mod tests {
             proxy_error(ashpd::Error::RequiresVersion(2, 1)),
             TriggerError::PortalUnavailable(_)
         ));
+    }
+
+    #[test]
+    fn a_sheet_answered_without_a_key_is_declined_whatever_the_response() {
+        use ashpd::desktop::ResponseError;
+        // GNOME answers its own Cancel with "other" (2), not "cancelled" (1).
+        for response in [ResponseError::Cancelled, ResponseError::Other] {
+            let e = bind_error(ashpd::Error::Response(response));
+            assert!(matches!(e, TriggerError::BindDeclined(_)), "{e:?}");
+            let outcome = Err(e);
+            assert_eq!(bind_outcome(&outcome), BindOutcome::Declined);
+            // Older clients match these words; they must not change.
+            assert!(
+                bind_report(&outcome)
+                    .1
+                    .starts_with("shortcut bind rejected: Portal request "),
+                "{}",
+                bind_report(&outcome).1
+            );
+        }
+        let failed = bind_error(ashpd::Error::RequiresVersion(2, 1));
+        assert!(
+            matches!(failed, TriggerError::BindRejected(_)),
+            "{failed:?}"
+        );
+        assert_eq!(bind_outcome(&Err(failed)), BindOutcome::Failed);
+    }
+
+    #[test]
+    fn every_bind_outcome_names_a_stable_reason() {
+        let cases = [
+            (
+                Ok(Configured::Bound(vec!["Press <Super>j".into()])),
+                "bound",
+            ),
+            (Ok(Configured::DialogOpened), "opened"),
+            (Err(TriggerError::BindDeclined("Other".into())), "declined"),
+            (Err(TriggerError::BindRejected("D-Bus".into())), "failed"),
+            (
+                Err(TriggerError::NoGlobalShortcuts(String::new())),
+                "failed",
+            ),
+            (
+                Err(TriggerError::PortalUnavailable(String::new())),
+                "failed",
+            ),
+        ];
+        for (outcome, reason) in cases {
+            let judged = bind_outcome(&outcome);
+            assert_eq!(judged.reason(), reason, "{outcome:?}");
+            assert_eq!(judged.ok(), bind_report(&outcome).0, "{outcome:?}");
+        }
+        assert_eq!(BindOutcome::Busy.reason(), "busy");
+        assert!(!BindOutcome::Busy.ok());
     }
 
     fn trigger(signals: Vec<PortalSignal>) -> GlobalShortcutTrigger {

@@ -123,7 +123,7 @@ struct GlobalShortcutsFake {
 }
 
 /// What the fake does with a `BindShortcuts`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Answer {
     /// Sit on it: the sheet nobody is in front of.
     Never,
@@ -131,6 +131,8 @@ enum Answer {
     Grant,
     /// Answer with response 1: the user dismissed the sheet.
     Dismiss,
+    /// Answer with response 2, "other": what GNOME sends for its Cancel.
+    Other,
 }
 
 /// The client picks its own handle tokens and computes the object path it will
@@ -297,6 +299,7 @@ impl GlobalShortcutsFake {
             Answer::Never => None,
             Answer::Grant => Some(0u32),
             Answer::Dismiss => Some(1u32),
+            Answer::Other => Some(2u32),
         };
         if let Some(response) = response {
             let mut meta: HashMap<&str, Value> = HashMap::new();
@@ -671,8 +674,8 @@ async fn a_dismissed_re_bind_is_a_refusal_not_a_binding() {
     portal.shutdown().await;
 
     assert!(
-        matches!(outcome, Err(TriggerError::BindRejected(_))),
-        "a dismissed sheet was taken as a binding: {:?}",
+        matches!(outcome, Err(TriggerError::BindDeclined(_))),
+        "a dismissed sheet was not taken as declined: {:?}",
         outcome.err()
     );
     assert!(
@@ -957,6 +960,49 @@ async fn a_dismissed_sheet_lets_the_next_bind_through() {
     portal.shutdown().await;
     assert_eq!(ledger.lock().unwrap().binds, 2);
     assert!(!open, "ShortcutDialog stayed true with no sheet up");
+}
+
+/// A sheet answered without a key reads as declined whichever response the
+/// portal picks, in the older calls' words too, so neither kind of client
+/// takes a Cancel for a failure.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_sheet_is_declined_not_failed() {
+    skip_unless_dbus!();
+    let _consent = Consent::none();
+    let _daemon = ZbusBus::serve_for_portal(
+        Some(ActivationMode::Toggle),
+        Arc::default(),
+        DialogSlot::default(),
+    )
+    .await
+    .expect("serve the daemon object");
+    for answer in [Answer::Dismiss, Answer::Other] {
+        let (portal, _ledger) = fake_portal_with(&[], answer).await;
+        let connection = zbus::Connection::session().await.expect("client bus");
+        let (reason, message): (String, String) = connection
+            .call_method(
+                Some("com.canonical.Myna.Dictation"),
+                "/com/canonical/Myna/Dictation",
+                Some("com.canonical.Myna.Dictation"),
+                "BindShortcutWithOutcome",
+                &("", ""),
+            )
+            .await
+            .expect("BindShortcutWithOutcome answers")
+            .body()
+            .deserialize()
+            .expect("an (ss) reply");
+        let (ok, legacy) = myna_desktop::dbus::status::bind_shortcut_with_parent(None, "")
+            .await
+            .expect("BindShortcutWithParent answers");
+        portal.shutdown().await;
+        assert_eq!(reason, "declined", "{answer:?}: {message}");
+        assert!(!ok, "{answer:?} bound");
+        assert!(
+            legacy.starts_with("shortcut bind rejected: Portal request "),
+            "{answer:?}: {legacy}"
+        );
+    }
 }
 
 /// The consented re-bind raises the sheet when the stored binding is gone,

@@ -725,6 +725,7 @@ fn activation_after<T>(attached: &Result<T, TriggerError>) -> Option<&'static st
         Ok(_)
         | Err(TriggerError::NoShortcutBound(_))
         | Err(TriggerError::BindRejected(_))
+        | Err(TriggerError::BindDeclined(_))
         | Err(TriggerError::BindUnanswered(_)) => Some("portal"),
         Err(TriggerError::NoGlobalShortcuts(_)) => Some("control"),
         Err(TriggerError::PortalNotRunning(_)) | Err(TriggerError::PortalUnavailable(_)) => None,
@@ -793,7 +794,7 @@ impl Rebind for PortalRebind {
                 // means the user dismissed the confirm sheet. They have
                 // answered; put the question to a fresh backend, not to them
                 // again.
-                TriggerError::BindRejected(_) => {
+                TriggerError::BindRejected(_) | TriggerError::BindDeclined(_) => {
                     self.awaiting_new_backend = true;
                     BindFailure::Refused(e.to_string())
                 }
@@ -1636,6 +1637,7 @@ mod tests {
         for e in [
             TriggerError::NoShortcutBound(String::new()),
             TriggerError::BindRejected(String::new()),
+            TriggerError::BindDeclined(String::new()),
             TriggerError::BindUnanswered(String::new()),
         ] {
             assert_eq!(activation_after::<()>(&Err(e)), Some("portal"));
