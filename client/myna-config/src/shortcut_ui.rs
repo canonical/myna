@@ -16,10 +16,11 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::adapters::desktop_shortcut::DesktopShortcut;
+use crate::adapters::portal_shortcuts::{self, PortalShortcuts, Store, Taken, SHORTCUT_ID};
 use crate::onboarding::MYNA_SNAP;
 use crate::shortcut::{
-    accelerators, bind_end, button_action, default_key, BindEnd, BindReply, ButtonAction,
-    DefaultKey, DialogHint, ShortcutPath, ShortcutState, DEFAULT_ACCELERATOR,
+    accelerators, bind_end, button_action, default_key, portal_trigger, BindEnd, BindReply,
+    ButtonAction, DefaultKey, DialogHint, ShortcutPath, ShortcutState, DEFAULT_ACCELERATOR,
 };
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
@@ -27,6 +28,8 @@ const DICTATION_PATH: &str = "/com/canonical/Myna/Dictation";
 /// The daemon waits for the portal's dialog as long as it stays up.
 const BIND_TIMEOUT_MS: i32 = i32::MAX;
 const EXPORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long the dialog's new key may take to reach this process from dconf.
+const STORED_KEY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Sets a surface's own text for a state and what it says about a portal
 /// dialog.
@@ -320,7 +323,7 @@ impl ShortcutControl {
                         return;
                     }
                     if let Some(control) = self.me.upgrade() {
-                        control.bind(false);
+                        control.bind(false, false);
                     }
                 }
                 DefaultKey::Leave => self.default_pending.set(false),
@@ -379,7 +382,7 @@ impl ShortcutControl {
                 gettextrs::gettext("Add a keyboard shortcut for dictation to the desktop.")
             }
             (_, ShortcutState::Bound(_) | ShortcutState::Unpublished) => gettextrs::gettext(
-                "Open Myna in the desktop's Apps settings, where the dictation shortcut is changed.",
+                "Open the desktop's dialog to change the keyboard shortcut for dictation.",
             ),
             (_, ShortcutState::Unbound | ShortcutState::NotRunning) => gettextrs::gettext(
                 "Open the desktop's dialog to confirm a keyboard shortcut for dictation.",
@@ -450,10 +453,8 @@ impl ShortcutControl {
             ButtonAction::Capture => self.start_capture(),
             ButtonAction::CancelCapture => self.end_capture(true),
             ButtonAction::CaptureDialog => self.change(),
-            ButtonAction::Bind => self.bind(true),
-            ButtonAction::OpenSettings => {
-                self.open_settings(&format!("applications {MYNA_SNAP}_{MYNA_SNAP}"))
-            }
+            ButtonAction::Bind => self.bind(true, false),
+            ButtonAction::Rebind => self.bind(true, true),
         }
     }
 
@@ -689,13 +690,49 @@ impl ShortcutControl {
     /// id, so only the daemon can make one it will see. Only a bind the user
     /// asked for reports a failure: one setup raised was answered in the
     /// portal's dialog, and the step's button stays to try again.
-    fn bind(self: &Rc<Self>, asked: bool) {
+    ///
+    /// `change` raises the dialog for a bound key: GNOME offers one only for
+    /// a shortcut it stores no key for, so the stored entry is taken out
+    /// while the dialog is up and put back unless the dialog stored a new
+    /// one. Where GNOME keeps no such store, or nothing serves it, GNOME
+    /// Settings changes it.
+    fn bind(self: &Rc<Self>, asked: bool, change: bool) {
+        if self.proxy.borrow().is_none() || self.binding() {
+            return;
+        }
+        if !change {
+            self.ask_bind(asked, None);
+            return;
+        }
+        // Held while the store is checked.
+        self.busy.set(true);
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let change = Change::begin().await;
+            let Some(control) = weak.upgrade() else {
+                return;
+            };
+            control.busy.set(false);
+            match change {
+                Some(change) => control.ask_bind(asked, Some(change)),
+                None => {
+                    control.open_settings(&format!("applications {MYNA_SNAP}_{MYNA_SNAP}"));
+                    control.refresh();
+                }
+            }
+        });
+    }
+
+    fn ask_bind(self: &Rc<Self>, asked: bool, change: Option<Change>) {
         let Some(proxy) = self.proxy.borrow().clone() else {
             return;
         };
-        if self.binding() {
-            return;
-        }
+        let changing = change.is_some();
+        let preferred = change
+            .as_ref()
+            .and_then(Change::current)
+            .and_then(portal_trigger)
+            .unwrap_or_default();
         self.busy.set(true);
         // Asking again is the user's answer to a dialog that may be left.
         update_local(|local| {
@@ -708,7 +745,7 @@ impl ShortcutControl {
             .and_then(|root| root.downcast::<gtk::Window>().ok());
         export_parent(window.as_ref(), move |parent| {
             glib::spawn_future_local(async move {
-                let (reply, legacy) = bind_call(&proxy, parent.id()).await;
+                let (reply, legacy) = bind_call(&proxy, &preferred, parent.id()).await;
                 drop(parent);
                 // A surface closed under its dialog still releases its hold.
                 let control = weak.upgrade();
@@ -716,25 +753,27 @@ impl ShortcutControl {
                     control.busy.set(false);
                 }
                 let end = settle_bind(reply, legacy);
+                let done = end == BindEnd::Done;
                 if let Some(control) = control {
-                    control.bound(end, asked);
+                    control.bound(end, asked, changing);
+                }
+                if let Some(change) = change {
+                    change.finish(done).await;
                 }
             });
         });
     }
 
-    fn bound(&self, end: BindEnd, asked: bool) {
+    fn bound(&self, end: BindEnd, asked: bool, changing: bool) {
         if let (BindEnd::Failed(detail), true) = (end, asked) {
-            self.report_failure(detail);
+            self.report_failure(detail, changing);
         }
         self.refresh();
     }
 
     /// A toast whose Details open the daemon's own words.
-    fn report_failure(&self, detail: String) {
-        let heading = gettextrs::gettext("Could not set up the shortcut");
-        let summary =
-            gettextrs::gettext("The desktop did not set up a keyboard shortcut for Dictation.");
+    fn report_failure(&self, detail: String, changing: bool) {
+        let (heading, summary) = bind_failure_words(changing);
         let toast = adw::Toast::builder()
             .title(crate::markup::escape_markup(&heading))
             .button_label(gettextrs::gettext("Details"))
@@ -778,7 +817,7 @@ impl ShortcutControl {
             .unwrap_or(false)
     }
 
-    /// GNOME rebinds portal shortcuts on the app's page under Apps.
+    /// GNOME Settings changes portal shortcuts on the app's page under Apps.
     fn open_settings(&self, panel: &str) {
         let command = format!("gnome-control-center {panel}");
         let launched =
@@ -815,17 +854,115 @@ fn settle_bind(reply: Result<glib::Variant, glib::Error>, legacy: bool) -> BindE
     end
 }
 
+/// Myna's keys taken out of GNOME's store while its dialog is up. The app
+/// stays alive until they are settled, so closing the window under the
+/// dialog still puts them back.
+struct Change {
+    store: Store,
+    taken: Vec<(PortalShortcuts, Taken)>,
+    _hold: Option<gio::ApplicationHoldGuard>,
+}
+
+impl Change {
+    /// Take Myna's key out under every app id it may be filed under, so
+    /// GNOME raises its dialog whichever one the daemon's session has. With
+    /// nothing stored GNOME raises it anyway. `None` where GNOME keeps no
+    /// store, or nothing serves it.
+    async fn begin() -> Option<Self> {
+        let store = Store::open()?;
+        let bus = gio::bus_get_future(gio::BusType::Session).await.ok()?;
+        if !portal_shortcuts::provider_present(&bus).await {
+            return None;
+        }
+        let taken = store
+            .myna_apps()
+            .iter()
+            .map(|app_id| store.app(app_id))
+            .filter_map(|app| app.take(SHORTCUT_ID).map(|taken| (app, taken)))
+            .collect();
+        Some(Self {
+            store,
+            taken,
+            _hold: gio::Application::default().map(|app| app.hold()),
+        })
+    }
+
+    fn put_back(&mut self) {
+        for (app, taken) in self.taken.drain(..) {
+            app.put_back(taken);
+        }
+    }
+
+    /// The key to offer: the one taken under `myna_myna`, else any.
+    fn current(&self) -> Option<&str> {
+        self.taken
+            .first()
+            .map(|(_, taken)| taken.accelerator.as_str())
+    }
+
+    /// The app ids holding a key now, which only the dialog can have stored.
+    fn stored(&self) -> Vec<String> {
+        self.store
+            .myna_apps()
+            .into_iter()
+            .filter(|app_id| self.store.app(app_id).accelerator(SHORTCUT_ID).is_some())
+            .collect()
+    }
+
+    /// After a bind: move the daemon's live grab to the key the dialog
+    /// stored, and put back every key it did not replace.
+    async fn finish(mut self, done: bool) {
+        let mut stored = Vec::new();
+        if done {
+            let deadline = std::time::Instant::now() + STORED_KEY_TIMEOUT;
+            loop {
+                stored = self.stored();
+                if !stored.is_empty() || std::time::Instant::now() >= deadline {
+                    break;
+                }
+                glib::timeout_future(std::time::Duration::from_millis(100)).await;
+            }
+        }
+        self.put_back();
+        if stored.is_empty() {
+            return;
+        }
+        // The dialog's session bound the key and closed; the session the
+        // daemon listens on still holds the old one.
+        let bus = match gio::bus_get_future(gio::BusType::Session).await {
+            Ok(bus) => bus,
+            Err(error) => {
+                glib::g_message!(crate::LOG_DOMAIN, "shortcut: rebind: {error}");
+                return;
+            }
+        };
+        for app_id in stored {
+            let shortcuts = self.store.app(&app_id).shortcuts();
+            if let Err(error) = portal_shortcuts::rebind(&bus, &app_id, shortcuts).await {
+                glib::g_message!(crate::LOG_DOMAIN, "shortcut: rebind {app_id}: {error}");
+            }
+        }
+    }
+}
+
+impl Drop for Change {
+    fn drop(&mut self) {
+        self.put_back();
+    }
+}
+
 /// `BindShortcutWithParent`, or `BindShortcut` on a daemon that predates it,
-/// with whether the older call was made.
+/// with whether the older call was made. An empty `preferred` asks the
+/// daemon for its default trigger.
 async fn bind_call(
     proxy: &gio::DBusProxy,
+    preferred: &str,
     parent: &str,
 ) -> (Result<glib::Variant, glib::Error>, bool) {
-    // Empty asks the daemon for its default trigger.
     let reply = proxy
         .call_future(
             "BindShortcutWithParent",
-            Some(&("", parent).to_variant()),
+            Some(&(preferred, parent).to_variant()),
             gio::DBusCallFlags::NONE,
             BIND_TIMEOUT_MS,
         )
@@ -835,7 +972,7 @@ async fn bind_call(
             let reply = proxy
                 .call_future(
                     "BindShortcut",
-                    Some(&("",).to_variant()),
+                    Some(&(preferred,).to_variant()),
                     gio::DBusCallFlags::NONE,
                     BIND_TIMEOUT_MS,
                 )
@@ -1045,6 +1182,22 @@ pub fn row_subtitle(state: &ShortcutState, hint: DialogHint) -> String {
     }
 }
 
+/// The failure toast's heading and its Details' summary, for a bind that
+/// set up a key or `changing` one.
+fn bind_failure_words(changing: bool) -> (String, String) {
+    if changing {
+        (
+            gettextrs::gettext("Could not change the shortcut"),
+            gettextrs::gettext("The desktop did not change the keyboard shortcut for Dictation."),
+        )
+    } else {
+        (
+            gettextrs::gettext("Could not set up the shortcut"),
+            gettextrs::gettext("The desktop did not set up a keyboard shortcut for Dictation."),
+        )
+    }
+}
+
 /// The first accelerator in `description` drawn for `surface`, or the
 /// description itself when it names none GTK can parse.
 pub(crate) fn fill_keys(keys: &gtk::Box, description: &str, surface: Surface) {
@@ -1102,6 +1255,14 @@ fn key_caps(accelerator: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_change_says_change() {
+        let (heading, summary) = bind_failure_words(true);
+        assert_eq!(heading, "Could not change the shortcut");
+        assert!(summary.contains("change"), "{summary}");
+        assert_ne!(bind_failure_words(false), (heading, summary));
+    }
 
     #[test]
     fn a_row_waits_on_its_own_dialog_as_on_any_other() {

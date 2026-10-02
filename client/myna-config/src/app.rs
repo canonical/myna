@@ -1765,6 +1765,8 @@ fn onboarding_control_probe() -> glib::ExitCode {
     let binds = Rc::new(Cell::new(0));
     // Which method each bind called and the parent window it named.
     let calls = Rc::new(RefCell::new(Vec::<(String, String)>::new()));
+    // The trigger each bind offered the portal's dialog.
+    let offered = Rc::new(RefCell::new(Vec::<String>::new()));
     // A daemon that predates BindShortcutWithParent.
     let legacy = Rc::new(Cell::new(true));
     // Leave the bind unanswered, as the portal's open dialog does.
@@ -1801,6 +1803,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
         .method_call({
             let binds = binds.clone();
             let calls = calls.clone();
+            let offered = offered.clone();
             let legacy = legacy.clone();
             let hold = hold.clone();
             let held = held.clone();
@@ -1822,6 +1825,12 @@ fn onboarding_control_probe() -> glib::ExitCode {
                     .map(|(_, parent)| parent)
                     .unwrap_or_default();
                 calls.borrow_mut().push((method.to_owned(), parent));
+                offered.borrow_mut().push(
+                    parameters
+                        .child_value(0)
+                        .get::<String>()
+                        .unwrap_or_default(),
+                );
                 if let Some(name) = error_reply.take() {
                     invocation.return_dbus_error(&name, "the probe's daemon left without replying");
                 } else if let Some(message) = refusal.take() {
@@ -2246,6 +2255,251 @@ fn onboarding_control_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("onboarding-keys: Done leads once a key is bound");
+    // GNOME raises its dialog only for a shortcut it stores no key for, so
+    // Change shortcut takes Myna's key out of the store for the dialog's
+    // lifetime, offering it as the dialog's default. A new key moves the
+    // daemon's live grab through the portal backend; a cancel puts the old
+    // key back.
+    let rebinds = match probe_portal_backend(&connection) {
+        Ok(rebinds) => rebinds,
+        Err(problem) => {
+            eprintln!("{problem}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let Some(gnome_store) = crate::adapters::portal_shortcuts::Store::open() else {
+        eprintln!("the probe finds no global-shortcuts schema");
+        return glib::ExitCode::FAILURE;
+    };
+    let store = gnome_store.app(crate::adapters::portal_shortcuts::APP_ID);
+    let gnome = |key: &str| {
+        format!(
+            "[('dictate', {{'shortcuts': <['{key}']>, 'description': <'Dictation (press to start and stop)'>}})]"
+        )
+    };
+    let put_under = |app_id: &str, text: &str| {
+        let settings = gio::Settings::with_path(
+            "org.gnome.settings-daemon.global-shortcuts.application",
+            &format!("/org/gnome/settings-daemon/global-shortcuts/{app_id}/"),
+        );
+        let _ = settings.set_value("shortcuts", &glib::Variant::parse(None, text).unwrap());
+    };
+    let put = |text: &str| put_under("myna_myna", text);
+    let dictate = || store.accelerator(crate::adapters::portal_shortcuts::SHORTCUT_ID);
+    let waits = |done: &dyn Fn() -> bool| {
+        for _ in 0..80 {
+            if done() {
+                return true;
+            }
+            settle_gtk();
+        }
+        done()
+    };
+    put(&gnome("<Super>j"));
+    shortcut.replace("Press <Super>j".to_owned());
+    announce("Shortcut", shortcut.borrow().to_variant());
+    legacy.set(false);
+    hold.set(true);
+    offered.borrow_mut().clear();
+    button.emit_clicked();
+    if !waits(&|| held.borrow().is_some()) || dictate().is_some() {
+        eprintln!(
+            "Change shortcut: bind held {}, key still stored {:?}",
+            held.borrow().is_some(),
+            dictate()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    if offered.borrow().last().map(String::as_str) != Some("LOGO+j") || button.is_sensitive() {
+        eprintln!(
+            "Change shortcut offered {:?}, button sensitive {}",
+            offered.borrow(),
+            button.is_sensitive()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    // The dialog stores the user's new key, then the daemon answers.
+    put(&gnome("<Super>k"));
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(&(true, "bound to Press <Super>k").to_variant()));
+    }
+    let moved = || {
+        rebinds.borrow().last().is_some_and(|call| {
+            call.child_value(0).get::<String>().as_deref() == Some("myna_myna")
+                && call.child_value(1).to_string().contains("<Super>k")
+        })
+    };
+    if !waits(&moved) || rebinds.borrow().len() != 1 {
+        eprintln!(
+            "a new key from the dialog moved the grab with {:?}",
+            rebinds.borrow()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-change: the portal's dialog changes the key");
+    shortcut.replace("Press <Super>k".to_owned());
+    announce("Shortcut", shortcut.borrow().to_variant());
+    waits(&|| button.is_sensitive());
+    button.emit_clicked();
+    if !waits(&|| held.borrow().is_some())
+        || offered.borrow().last().map(String::as_str) != Some("LOGO+k")
+    {
+        eprintln!("the second change offered {:?}", offered.borrow());
+        return glib::ExitCode::FAILURE;
+    }
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(
+            &(
+                false,
+                "shortcut bind rejected: Portal request didn't succeed with no information",
+            )
+                .to_variant(),
+        ));
+    }
+    hold.set(false);
+    if !waits(&|| dictate().as_deref() == Some("<Super>k"))
+        || rebinds.borrow().len() != 1
+        || !toast_texts(&window).is_empty()
+    {
+        eprintln!(
+            "a cancelled change: stored {:?}, rebinds {}, toasts {:?}",
+            dictate(),
+            rebinds.borrow().len(),
+            toast_texts(&window)
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-change: a cancel keeps the old key");
+    hold.set(true);
+    waits(&|| button.is_sensitive());
+    button.emit_clicked();
+    if !waits(&|| held.borrow().is_some()) {
+        eprintln!("a third change raised no dialog");
+        return glib::ExitCode::FAILURE;
+    }
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(
+            &(false, "shortcut bind rejected: the portal went away").to_variant(),
+        ));
+    }
+    hold.set(false);
+    let failed = [
+        gettextrs::gettext("Could not change the shortcut"),
+        gettextrs::gettext("Details"),
+    ];
+    if !waits(&|| toast_texts(&window) == failed)
+        || dictate().as_deref() != Some("<Super>k")
+        || rebinds.borrow().len() != 1
+    {
+        eprintln!(
+            "a failed change: toasts {:?}, stored {:?}, rebinds {}",
+            toast_texts(&window),
+            dictate(),
+            rebinds.borrow().len()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-change: a failed change says so");
+    // With no key stored GNOME raises its dialog for a plain bind, and the
+    // key it stores still has to reach the daemon's session.
+    put("@a(sa{sv}) []");
+    hold.set(true);
+    waits(&|| button.is_sensitive());
+    button.emit_clicked();
+    if !waits(&|| held.borrow().is_some())
+        || offered.borrow().last().map(String::as_str) != Some("")
+    {
+        eprintln!(
+            "with nothing stored Change shortcut offered {:?}",
+            offered.borrow()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    put(&gnome("<Super>m"));
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(&(true, "bound to Press <Super>m").to_variant()));
+    }
+    let moved_to = |app_id: &'static str, key: &'static str| {
+        let rebinds = rebinds.clone();
+        move || {
+            rebinds.borrow().last().is_some_and(|call| {
+                call.child_value(0).get::<String>().as_deref() == Some(app_id)
+                    && call.child_value(1).to_string().contains(key)
+            })
+        }
+    };
+    if !waits(&moved_to("myna_myna", "<Super>m")) || rebinds.borrow().len() != 2 {
+        eprintln!(
+            "a key stored with nothing taken moved the grab with {:?}",
+            rebinds.borrow()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-change: with nothing stored the dialog still changes the key");
+    // The portal has filed the snap under an empty app id too: a key there
+    // is taken out and offered, and put back if the dialog stored elsewhere.
+    put("@a(sa{sv}) []");
+    put_under(".", &gnome("<Super>t"));
+    let applications = gio::Settings::new("org.gnome.settings-daemon.global-shortcuts");
+    let _ = applications.set_strv("applications", [".", "myna_myna"]);
+    waits(&|| button.is_sensitive());
+    button.emit_clicked();
+    let empty_app = gnome_store.app(".");
+    if !waits(&|| held.borrow().is_some())
+        || offered.borrow().last().map(String::as_str) != Some("LOGO+t")
+        || empty_app.accelerator("dictate").is_some()
+    {
+        eprintln!(
+            "a key under '.' offered {:?}, still stored {:?}",
+            offered.borrow(),
+            empty_app.accelerator("dictate")
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    put(&gnome("<Super>n"));
+    if let Some(invocation) = held.take() {
+        invocation.return_value(Some(&(true, "bound to Press <Super>n").to_variant()));
+    }
+    hold.set(false);
+    if !waits(&moved_to("myna_myna", "<Super>n"))
+        || rebinds.borrow().len() != 3
+        || empty_app.accelerator("dictate").as_deref() != Some("<Super>t")
+    {
+        eprintln!(
+            "a key under '.': rebinds {:?}, '.' holds {:?}",
+            rebinds.borrow(),
+            empty_app.accelerator("dictate")
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    put_under(".", "@a(sa{sv}) []");
+    let _ = applications.set_strv("applications", ["myna_myna"]);
+    println!("onboarding-change: a key under an empty app id is offered and kept");
+    // Without GNOME Settings' provider the portal answers binds itself and
+    // the store means nothing: GNOME Settings changes it, no dialog asked.
+    if let Err(problem) = release_name(&connection, crate::adapters::portal_shortcuts::PROVIDER) {
+        eprintln!("{problem}");
+        return glib::ExitCode::FAILURE;
+    }
+    let asked = binds.get();
+    waits(&|| button.is_sensitive());
+    button.emit_clicked();
+    for _ in 0..5 {
+        settle_gtk();
+    }
+    if binds.get() != asked || store.accelerator("dictate").as_deref() != Some("<Super>n") {
+        eprintln!(
+            "with no provider Change shortcut asked the daemon {} times, stored {:?}",
+            binds.get() - asked,
+            store.accelerator("dictate")
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-change: no provider falls back to GNOME Settings");
+    shortcut.replace("Press <Super>j".to_owned());
+    announce("Shortcut", shortcut.borrow().to_variant());
+    binds.set(0);
+    calls.borrow_mut().clear();
     // A rebind in the desktop's settings reaches the page as the daemon's
     // property changing.
     shortcut.replace("Press <Control><Alt>k".to_owned());
@@ -5404,6 +5658,80 @@ fn descendants(widget: &gtk::Widget, matches: &dyn Fn(&gtk::Widget) -> bool) -> 
 fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
     find_descendant(widget, &|widget| widget.is::<adw::EntryRow>())
         .and_then(|widget| widget.downcast().ok())
+}
+
+/// A stand-in for the portal backend's `RebindShortcuts`, on the probe's
+/// private bus, recording each call, with GNOME Settings' provider's name
+/// owned beside it.
+fn probe_portal_backend(
+    connection: &gio::DBusConnection,
+) -> Result<Rc<RefCell<Vec<glib::Variant>>>, String> {
+    let interface = gio::DBusNodeInfo::for_xml(
+        "<node><interface name='org.gnome.GlobalShortcutsRebind'>\
+           <method name='RebindShortcuts'>\
+             <arg type='s' name='app_id' direction='in'/>\
+             <arg type='a(sa{sv})' name='shortcuts' direction='in'/>\
+           </method></interface></node>",
+    )
+    .ok()
+    .and_then(|node| node.lookup_interface("org.gnome.GlobalShortcutsRebind"))
+    .ok_or("the probe's portal backend interface did not parse")?;
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    connection
+        .register_object("/org/gnome/globalshortcuts", &interface)
+        .method_call({
+            let calls = calls.clone();
+            move |_, _, _, _, _, parameters, invocation| {
+                calls.borrow_mut().push(parameters);
+                invocation.return_value(None);
+            }
+        })
+        .build()
+        .map_err(|error| format!("the probe could not serve its portal backend: {error}"))?;
+    connection
+        .call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "RequestName",
+            Some(&("org.freedesktop.impl.portal.desktop.gnome", 4u32).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            1_000,
+            gio::Cancellable::NONE,
+        )
+        .map_err(|error| format!("the probe could not own the portal backend's name: {error}"))?;
+    connection
+        .call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "RequestName",
+            Some(&(crate::adapters::portal_shortcuts::PROVIDER, 4u32).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            1_000,
+            gio::Cancellable::NONE,
+        )
+        .map_err(|error| format!("the probe could not own the provider's name: {error}"))?;
+    Ok(calls)
+}
+
+fn release_name(connection: &gio::DBusConnection, name: &str) -> Result<(), String> {
+    connection
+        .call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "ReleaseName",
+            Some(&(name,).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            1_000,
+            gio::Cancellable::NONE,
+        )
+        .map(drop)
+        .map_err(|error| format!("the probe could not release {name}: {error}"))
 }
 
 fn settle_gtk() {

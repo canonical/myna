@@ -307,10 +307,42 @@ what is missing instead.
 **Portal.** Set up shortcut asks the daemon to bind with no preferred key: it
 offers `LOGO+j` (Super+J) to the portal's dialog, because the portal files a
 binding under the caller's app id and grants one only through that dialog. The
-description (`Press <Super>j`) becomes key caps. Change shortcut opens
-`gnome-control-center applications myna_myna`: GlobalShortcuts 1 has no
-`ConfigureShortcuts` and no unbind. A bind the user asked for that fails
-shows a "Could not set up the shortcut" toast whose Details open the daemon's
+description (`Press <Super>j`) becomes key caps. Change shortcut (Change on
+the Myna page row) raises the same dialog, modal to its window, offering the
+current key: GlobalShortcuts 1 has no `ConfigureShortcuts`, and from GNOME 48
+the portal hands binds to GNOME Settings, which raises its dialog only for a
+shortcut id it stores no key for (`cc_global_shortcut_dialog_present`). So
+Myna Settings takes Myna's `dictate` entry out of that store
+(`/org/gnome/settings-daemon/global-shortcuts/<app id>/shortcuts`,
+`adapters/portal_shortcuts.rs`) and flushes it before asking the daemon to
+bind. The portal has filed the snap's daemon under `myna_myna` and under `.`
+(an empty app id, GNOME 49), so the entry is taken out under both, and under
+any listed app id naming Myna, whichever the daemon's session has; the dialog
+offers the key stored under `myna_myna` first. With no entry stored at all
+GNOME raises the dialog anyway, so Change is the same plain bind. The
+dialog's session binds the new key and closes, while the daemon listens on
+its own long-lived session, so on success Myna Settings calls the portal
+backend's `org.gnome.GlobalShortcutsRebind.RebindShortcuts` for each app id
+the dialog stored a key under, as GNOME Settings does after an edit: the
+daemon gets `ShortcutsChanged` and the new key works at once, the old one no
+longer. Every entry the dialog did not replace is put back, and on any other
+answer (cancel, a refusal, a failure, a closed window) all of them are; the
+app holds itself open until then. The dialog is GNOME Settings' own, titled
+"Add Keyboard Shortcuts" with an Add button even when a key is being
+changed; Myna cannot word it. It lives here, not in the daemon, because the
+confined daemon can write neither gnome-settings-daemon's dconf nor the
+portal backend's interface, and because it then works with an older snap
+daemon too. Only where gnome-settings-daemon's schemas are missing, or GNOME
+Settings' `org.gnome.Settings.GlobalShortcutsProvider` neither runs nor can
+be started (the portal then answers binds itself, so the store means
+nothing), does Change open `gnome-control-center applications myna_myna`.
+Measured on 26.04 (GNOME 50, store and tree daemons alike, 2026-10-01). Two edges remain: Myna Settings
+killed under the dialog leaves the entry out until the user answers it, and an
+older daemon that gives up after 120 s gets the entry put back with the sheet
+still up, so an Add there stores the new key without moving the live grab
+until the next login. A bind the user asked for that fails
+shows a "Could not set up the shortcut" toast ("Could not change the
+shortcut" for Change) whose Details open the daemon's
 own words under a plain summary, as the other failure toasts do. Cancelling the
 dialog is not a failure and shows nothing: GNOME answers Cancel with the
 portal's "other" response, which ashpd words "Portal request didn't succeed
@@ -318,7 +350,8 @@ with no information", so that reply (and a "cancelled" one) reads as declined;
 a backend that answers "other" for a real fault is silent too, and the daemon's
 log keeps its words.
 The portal lists the binding under the name the daemon gives it,
-"Dictation (tap to start or stop)" (translated in `myna-desktop`). The portal
+"Dictation (press to start and stop)" (translated in `myna-desktop`), the
+same words as the Myna page's "Press to start and stop". The portal
 files the grant by the shortcut id `dictate` and keeps the name it was granted
 with, so renaming it neither drops nor re-asks an existing grant (checked on
 resolute, both ways between the old and new name).

@@ -114,6 +114,11 @@ fn scratch_store(tag: &str) -> (PathBuf, PathBuf) {
         schemas.join("media-keys.gschema.xml"),
     )
     .expect("stage media-keys schema");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/global-shortcuts.gschema.xml"),
+        schemas.join("global-shortcuts.gschema.xml"),
+    )
+    .expect("stage global-shortcuts schema");
     assert!(Command::new("glib-compile-schemas")
         .arg(&schemas)
         .status()
@@ -150,6 +155,29 @@ fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
         !stderr.contains("did not receive a focus-out event"),
         "typing probe emitted the GtkText focus-out warning: {stderr}"
     );
+}
+
+/// A session bus config that activates nothing, so a probe sees only the
+/// names it owns, not the services installed on the machine.
+fn bare_session_bus(dir: &Path) -> PathBuf {
+    let services = dir.join("dbus-services");
+    std::fs::create_dir_all(&services).expect("create the empty service dir");
+    let config = dir.join("session.conf");
+    std::fs::write(
+        &config,
+        format!(
+            "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\" \
+             \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\
+             <busconfig><type>session</type><keep_umask/>\
+             <listen>unix:tmpdir=/tmp</listen>\
+             <servicedir>{}</servicedir>\
+             <policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>\
+             <allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>",
+            services.display()
+        ),
+    )
+    .expect("write the session bus config");
+    config
 }
 
 /// The wizard's buttons must actually drive it: the regression was a presented
@@ -344,6 +372,10 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
 
     let (store, schemas) = scratch_store("onboarding-control");
     let output = Command::new("dbus-run-session")
+        .arg(format!(
+            "--config-file={}",
+            bare_session_bus(&store).display()
+        ))
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
@@ -374,6 +406,12 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-modal: closing under the dialog releases it",
         "onboarding-keys: Super+J under the portal",
         "onboarding-keys: Done leads once a key is bound",
+        "onboarding-change: the portal's dialog changes the key",
+        "onboarding-change: a cancel keeps the old key",
+        "onboarding-change: a failed change says so",
+        "onboarding-change: with nothing stored the dialog still changes the key",
+        "onboarding-change: a key under an empty app id is offered and kept",
+        "onboarding-change: no provider falls back to GNOME Settings",
         "onboarding-keys: follows a portal rebind",
         "onboarding-default: Super+J without a click",
         "onboarding-keys: Super+J under control",

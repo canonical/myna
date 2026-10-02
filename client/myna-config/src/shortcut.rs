@@ -115,8 +115,8 @@ pub enum ButtonAction {
     CaptureDialog,
     /// Ask the daemon to raise the portal's dialog.
     Bind,
-    /// Open Myna under the desktop's Apps settings.
-    OpenSettings,
+    /// Raise the portal's dialog again for a bound key.
+    Rebind,
 }
 
 /// Decide [`ButtonAction`]. `inline` is a surface with room to capture in
@@ -134,8 +134,32 @@ pub fn button_action(
         (ShortcutPath::Control, ShortcutState::Unbound) => ButtonAction::ClaimDefault,
         (ShortcutPath::Control, _) => ButtonAction::CaptureDialog,
         (ShortcutPath::Portal, ShortcutState::Unbound) => ButtonAction::Bind,
-        (ShortcutPath::Portal, _) => ButtonAction::OpenSettings,
+        (ShortcutPath::Portal, _) => ButtonAction::Rebind,
     }
+}
+
+/// A GTK accelerator (`<Super>k`) as a shortcuts-spec trigger (`LOGO+k`),
+/// which the portal takes as a preferred trigger. `None` for a modifier the
+/// spec cannot name.
+pub fn portal_trigger(accelerator: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    let mut rest = accelerator.trim();
+    while let Some(tail) = rest.strip_prefix('<') {
+        let (name, after) = tail.split_once('>')?;
+        parts.push(match name.to_ascii_lowercase().as_str() {
+            "primary" | "control" | "ctrl" | "ctl" => "CTRL",
+            "alt" | "mod1" => "ALT",
+            "super" | "mod4" => "LOGO",
+            "shift" => "SHIFT",
+            _ => return None,
+        });
+        rest = after;
+    }
+    if rest.is_empty() || rest.contains(['<', '>', '+']) {
+        return None;
+    }
+    parts.push(rest);
+    Some(parts.join("+"))
 }
 
 /// How the daemon answered a bind.
@@ -303,13 +327,38 @@ mod tests {
             );
             assert_eq!(
                 button_action(Portal, &bound, inline, false),
-                ButtonAction::OpenSettings
+                ButtonAction::Rebind
+            );
+            assert_eq!(
+                button_action(Portal, &ShortcutState::Unpublished, inline, false),
+                ButtonAction::Rebind
             );
             assert_eq!(
                 button_action(Control, &ShortcutState::NotRunning, inline, false),
                 ButtonAction::Nothing
             );
         }
+    }
+
+    #[test]
+    fn an_accelerator_becomes_the_portal_trigger_it_names() {
+        assert_eq!(portal_trigger("<Super>k").as_deref(), Some("LOGO+k"));
+        assert_eq!(
+            portal_trigger("<Control><Alt>d").as_deref(),
+            Some("CTRL+ALT+d")
+        );
+        assert_eq!(
+            portal_trigger("<Primary><Shift>Return").as_deref(),
+            Some("CTRL+SHIFT+Return")
+        );
+        assert_eq!(
+            portal_trigger("<Mod4><Mod1>space").as_deref(),
+            Some("LOGO+ALT+space")
+        );
+        assert_eq!(portal_trigger("F8").as_deref(), Some("F8"));
+        assert_eq!(portal_trigger("<Hyper>k"), None);
+        assert_eq!(portal_trigger("<Super>"), None);
+        assert_eq!(portal_trigger(""), None);
     }
 
     #[test]
