@@ -2112,8 +2112,23 @@ fn onboarding_control_probe() -> glib::ExitCode {
         }
         done()
     };
+    // Entries outside a surface, such as the settings window's Set Up
+    // Dictation, follow the same dialog.
+    let watched = Rc::new(Cell::new(None::<bool>));
+    crate::shortcut_ui::watch_dialog({
+        let watched = watched.clone();
+        move |up| watched.set(Some(up))
+    });
+    if watched.get() != Some(false) {
+        eprintln!("with no dialog up the watch read {:?}", watched.get());
+        return glib::ExitCode::FAILURE;
+    }
     dialog.set(true);
     announce("ShortcutDialog", true.to_variant());
+    if !settles(&|| watched.get() == Some(true)) {
+        eprintln!("the daemon's dialog never reached the watch");
+        return glib::ExitCode::FAILURE;
+    }
     if !settles(&|| !button.is_sensitive()) || forward.is_sensitive() || !says(&waiting) {
         eprintln!(
             "another window's dialog: set up sensitive {}, Done sensitive {}, hint {}",
@@ -2129,6 +2144,11 @@ fn onboarding_control_probe() -> glib::ExitCode {
         eprintln!("the other dialog's answer left the step held");
         return glib::ExitCode::FAILURE;
     }
+    if watched.get() != Some(false) {
+        eprintln!("the dialog's answer left the watch at {:?}", watched.get());
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-modal: entries outside a surface follow the dialog");
     // A bind that loses the race to another window's dialog is refused;
     // that is the same wait, not an error.
     refusal.replace(Some("a shortcut dialog is already open".to_owned()));

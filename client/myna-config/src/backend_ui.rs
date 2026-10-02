@@ -1325,16 +1325,26 @@ impl BackendUi {
         window.add_action(&refresh);
 
         let setup = gio::SimpleAction::new("setup", None);
+        let gate = Rc::new(SetupGate::new(setup.clone()));
         setup.connect_activate({
             let ui = Rc::downgrade(self);
             let window = window.downgrade();
-            move |action, _| {
+            let gate = gate.clone();
+            move |_, _| {
                 if let (Some(ui), Some(window)) = (ui.upgrade(), window.upgrade()) {
-                    ui.open_setup(action, &window);
+                    ui.open_setup(&gate, &window);
                 }
             }
         });
         window.add_action(&setup);
+        crate::shortcut_ui::watch_dialog({
+            let gate = Rc::downgrade(&gate);
+            move |up| {
+                if let Some(gate) = gate.upgrade() {
+                    gate.set_dialog_up(up);
+                }
+            }
+        });
 
         window.connect_is_active_notify({
             let ui = Rc::downgrade(self);
@@ -1349,7 +1359,7 @@ impl BackendUi {
     /// Assess the machine and open the wizard on it. Closing the wizard
     /// rediscovers, since it may have connected a backend or restarted the
     /// daemon.
-    fn open_setup(self: &Rc<Self>, action: &gio::SimpleAction, window: &ui::MainWindow) {
+    fn open_setup(self: &Rc<Self>, gate: &Rc<SetupGate>, window: &ui::MainWindow) {
         if self.operation_coordinator.active().is_some() {
             self.overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
                 "Wait for the current change to finish.",
@@ -1365,10 +1375,10 @@ impl BackendUi {
         else {
             return;
         };
-        action.set_enabled(false);
+        gate.set_wizard_open(true);
         let configurator = self.configurator.clone();
         let ui = Rc::downgrade(self);
-        let action = action.clone();
+        let gate = gate.clone();
         let window = window.clone();
         glib::spawn_future_local(async move {
             let extensions: Rc<dyn crate::ports::ShellExtensions> =
@@ -1380,7 +1390,7 @@ impl BackendUi {
             )
             .await;
             if ui.upgrade().is_none() {
-                action.set_enabled(true);
+                gate.set_wizard_open(false);
                 return;
             }
             let wizard = crate::onboarding_ui::OnboardingUi::present_with_ports(
@@ -1392,7 +1402,7 @@ impl BackendUi {
                 crate::onboarding_ui::Opener::Settings(window.upcast_ref()),
             );
             wizard.window().connect_close_request(move |_| {
-                action.set_enabled(true);
+                gate.set_wizard_open(false);
                 if let Some(ui) = ui.upgrade() {
                     ui.rediscover();
                 }
@@ -3218,10 +3228,57 @@ fn trigger_manual_refresh(controller: &Rc<BackendController>, snap_name: &str) {
     });
 }
 
+/// `win.setup` is off while its wizard is open, and while a shortcut dialog
+/// is up: the wizard would raise a second one, or restart the daemon under
+/// it.
+struct SetupGate {
+    action: gio::SimpleAction,
+    wizard_open: std::cell::Cell<bool>,
+    dialog_up: std::cell::Cell<bool>,
+}
+
+impl SetupGate {
+    fn new(action: gio::SimpleAction) -> Self {
+        Self {
+            action,
+            wizard_open: std::cell::Cell::new(false),
+            dialog_up: std::cell::Cell::new(false),
+        }
+    }
+
+    fn set_wizard_open(&self, open: bool) {
+        self.wizard_open.set(open);
+        self.sync();
+    }
+
+    fn set_dialog_up(&self, up: bool) {
+        self.dialog_up.set(up);
+        self.sync();
+    }
+
+    fn sync(&self) {
+        self.action
+            .set_enabled(!self.wizard_open.get() && !self.dialog_up.get());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn setup_is_off_while_its_wizard_or_a_shortcut_dialog_is_up() {
+        let action = gio::SimpleAction::new("setup", None);
+        let gate = SetupGate::new(action.clone());
+        gate.set_dialog_up(true);
+        assert!(!action.is_enabled(), "a dialog is up");
+        gate.set_wizard_open(true);
+        gate.set_dialog_up(false);
+        assert!(!action.is_enabled(), "the wizard is open");
+        gate.set_wizard_open(false);
+        assert!(action.is_enabled());
+    }
 
     #[test]
     fn parse_editable_value_prefers_integer_then_number_then_text() {

@@ -401,6 +401,7 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-keys: set up leads while no key is bound",
         "onboarding-modal: one parented dialog holds set up and Done",
         "onboarding-modal: another window's dialog holds the step without an error",
+        "onboarding-modal: entries outside a surface follow the dialog",
         "onboarding-modal: a dialog left open lets set up try again",
         "onboarding-modal: a cancelled dialog is no error",
         "onboarding-modal: a declined outcome is no error",

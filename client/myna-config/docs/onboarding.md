@@ -89,7 +89,11 @@ error.
 The settings window's main menu reopens the wizard (Set Up Dictation), modal
 over the window. It refuses while a backend operation is in flight: the wizard
 connects a backend and restarts the daemon, and the window's operation gate does
-not cover it. Closing the wizard rediscovers, since it may have changed both.
+not cover it. The menu entry (`win.setup`, also behind Diagnostics' "Set up")
+is insensitive while the wizard is open and while a shortcut dialog is up, the
+daemon's `ShortcutDialog` or a bind of this process, like every Set up and
+Change shortcut button. Closing the wizard rediscovers, since it may have
+changed both.
 
 ## Installing
 

@@ -34,6 +34,8 @@ const STORED_KEY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3
 /// Sets a surface's own text for a state and what it says about a portal
 /// dialog.
 type Describe = Box<dyn Fn(&ShortcutState, ShortcutPath, DialogHint)>;
+/// Told whether a shortcut dialog is up.
+type DialogWatch = Box<dyn Fn(bool)>;
 
 /// What every surface in this process knows about its own binds: the daemon
 /// publishes only its dialog, and an older daemon publishes nothing, so the
@@ -44,6 +46,9 @@ struct Local {
     /// A dialog one of them raised may be on screen with nobody waiting.
     left_open: Cell<bool>,
     controls: RefCell<Vec<std::rc::Weak<ShortcutControl>>>,
+    /// Told whether a shortcut dialog is up whenever that changes.
+    dialog_watchers: RefCell<Vec<DialogWatch>>,
+    dialog_told: Cell<Option<bool>>,
 }
 
 thread_local! {
@@ -56,6 +61,38 @@ fn local_in_flight() -> bool {
 
 fn local_left_open() -> bool {
     LOCAL.with(|local| local.left_open.get())
+}
+
+/// A portal dialog is up, as any live surface sees it: one of this
+/// process's binds, or the daemon's `ShortcutDialog`.
+pub fn dialog_up() -> bool {
+    let controls = LOCAL.with(|local| {
+        local
+            .controls
+            .borrow()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .collect::<Vec<_>>()
+    });
+    local_in_flight() || controls.iter().any(|control| control.binding())
+}
+
+/// Run `watch` with [`dialog_up`] now and whenever it changes, for entries
+/// outside a surface that open a shortcut dialog too, such as `win.setup`.
+pub fn watch_dialog(watch: impl Fn(bool) + 'static) {
+    watch(dialog_up());
+    LOCAL.with(|local| local.dialog_watchers.borrow_mut().push(Box::new(watch)));
+}
+
+fn tell_dialog_watchers() {
+    let up = dialog_up();
+    LOCAL.with(|local| {
+        if local.dialog_told.replace(Some(up)) != Some(up) {
+            for watch in local.dialog_watchers.borrow().iter() {
+                watch(up);
+            }
+        }
+    });
 }
 
 /// Apply `change` and redraw every live surface.
@@ -399,6 +436,7 @@ impl ShortcutControl {
         if let Some(changed) = &*self.changed.borrow() {
             changed();
         }
+        tell_dialog_watchers();
     }
 
     /// Show the capture or the idle key and button, and the field's words.
