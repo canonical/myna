@@ -4,36 +4,38 @@ use myna_config::shortcut::{accelerators, default_key, DefaultKey, ShortcutPath,
 fn setup_sets_the_default_key_only_when_none_is_bound() {
     let unbound = ShortcutState::Unbound;
     assert_eq!(
-        default_key(Some("control"), &unbound, true),
+        default_key(Some("control"), &unbound, true, false),
         DefaultKey::Install
     );
     assert_eq!(
-        default_key(Some("control"), &unbound, false),
+        default_key(Some("control"), &unbound, false, false),
         DefaultKey::Leave
     );
     assert_eq!(
         default_key(
             Some("control"),
             &ShortcutState::Bound("<Control><Alt>d".to_owned()),
-            true
+            true,
+            false
         ),
         DefaultKey::Leave
     );
     // Only the portal's own dialog grants a key, so setup raises it.
     assert_eq!(
-        default_key(Some("portal"), &unbound, true),
+        default_key(Some("portal"), &unbound, true, false),
         DefaultKey::Bind
     );
     assert_eq!(
         default_key(
             Some("portal"),
             &ShortcutState::Bound("Press <Super>j".to_owned()),
-            true
+            true,
+            false
         ),
         DefaultKey::Leave
     );
     assert_eq!(
-        default_key(Some("portal"), &ShortcutState::Unpublished, true),
+        default_key(Some("portal"), &ShortcutState::Unpublished, true, false),
         DefaultKey::Leave
     );
 }
@@ -41,16 +43,37 @@ fn setup_sets_the_default_key_only_when_none_is_bound() {
 #[test]
 fn setup_waits_for_the_daemon_to_say_how_it_is_activated() {
     assert_eq!(
-        default_key(Some("control"), &ShortcutState::NotRunning, true),
+        default_key(Some("control"), &ShortcutState::NotRunning, true, false),
         DefaultKey::Wait
     );
     assert_eq!(
-        default_key(Some(""), &ShortcutState::Unbound, true),
+        default_key(Some(""), &ShortcutState::Unbound, true, false),
         DefaultKey::Wait
     );
     assert_eq!(
-        default_key(None, &ShortcutState::Unbound, true),
+        default_key(None, &ShortcutState::Unbound, true, false),
         DefaultKey::Wait
+    );
+}
+
+#[test]
+fn a_dialog_up_answers_the_default_key_bind() {
+    // Whoever raised it, the user's answer there is the step's answer, so
+    // finishing setup asks nothing more, decided or not.
+    for activation in [None, Some(""), Some("portal")] {
+        assert_eq!(
+            default_key(activation, &ShortcutState::Unbound, true, true),
+            DefaultKey::Leave
+        );
+    }
+    assert_eq!(
+        default_key(Some("portal"), &ShortcutState::NotRunning, true, true),
+        DefaultKey::Leave
+    );
+    // Under control there is no portal dialog to answer for it.
+    assert_eq!(
+        default_key(Some("control"), &ShortcutState::Unbound, true, true),
+        DefaultKey::Install
     );
 }
 

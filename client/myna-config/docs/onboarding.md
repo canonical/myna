@@ -368,12 +368,17 @@ GNOME's dialog only ever closes on the user's answer, so the daemon raises one
 at a time and publishes `ShortcutDialog` while it is up. Every surface follows
 that property: Set up shortcut (or Change) and Done are insensitive while it is
 true, whichever window raised the dialog. A step that did not raise it says
-why ("The desktop's dialog to confirm a keyboard shortcut is already open.
-Answer it to continue."); the Myna page row reads "Waiting for the desktop's
+why ("A shortcut dialog is already open. Answer it to continue."); the Myna page row reads "Waiting for the desktop's
 shortcut dialog" whichever surface raised it, since an insensitive Set up
 beside "Not set up" reads as broken. Arriving on the step under such a dialog raises
-nothing, and a bind that loses the race to it is refused by the daemon and
-reads as the same wait, not an error. Before this, waiting it out or reopening
+nothing, then or after: the user's answer there is the step's, so a Cancel is
+not followed by the step's own dialog. That holds while the daemon has not yet
+said how it is activated, which is the case while its retry loop's re-bind
+has its dialog up (its `Activation` settles only once that dialog is
+answered); the step used to wait for `Activation` and then raise a second,
+identical dialog the moment the first was cancelled (resolute, 2026-10-02). A
+bind that loses the race to such a dialog is refused by the daemon and reads
+as the same wait, not an error. Before this, waiting it out or reopening
 the wizard stacked a second and third dialog (resolute, 2026-10-01).
 Closing the wizard under its own dialog takes the dialog down with it, since a
 parented dialog does not outlive its parent, and the bind ends as dismissed;

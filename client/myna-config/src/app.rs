@@ -1964,6 +1964,27 @@ fn onboarding_control_probe() -> glib::ExitCode {
     window.close();
     let _ = other.set_string("binding", "");
 
+    // The daemon's own re-bind can have its dialog up when the step arrives,
+    // before the daemon says how it is activated. That dialog's answer is
+    // the step's: a Cancel there raises no second dialog.
+    dialog.set(true);
+    let (window, _, _) = walk("");
+    // In the daemon's order: the slot frees, then the attach settles.
+    dialog.set(false);
+    announce("ShortcutDialog", false.to_variant());
+    settle_gtk();
+    activation.replace("portal".to_owned());
+    announce("Activation", "portal".to_variant());
+    for _ in 0..20 {
+        settle_gtk();
+    }
+    if binds.get() != 0 {
+        eprintln!("a dialog answered elsewhere was followed by the step's own");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("onboarding-default: a dialog up on arrival answers the step");
+    window.close();
+
     // Under the portal only its own dialog grants a key, so arriving raises
     // it once. The stand-in answers as a dismissed dialog: that was the
     // user's answer, so nothing reports it, and setting a key up becomes the
@@ -2050,9 +2071,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     println!("onboarding-modal: one parented dialog holds set up and Done");
 
     // A dialog another window raised holds the step too, and says why.
-    let waiting = gettextrs::gettext(
-        "The desktop's dialog to confirm a keyboard shortcut is already open. Answer it to continue.",
-    );
+    let waiting = gettextrs::gettext("A shortcut dialog is already open. Answer it to continue.");
     let says = |text: &str| {
         find_descendant(window.upcast_ref(), &|widget| {
             widget

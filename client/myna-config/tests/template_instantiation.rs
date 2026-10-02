@@ -396,6 +396,7 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
     for line in [
         "onboarding-default: kept the user's key",
         "onboarding-default: left a key in use",
+        "onboarding-default: a dialog up on arrival answers the step",
         "onboarding-default: portal dialog raised on arrival",
         "onboarding-keys: set up leads while no key is bound",
         "onboarding-modal: one parented dialog holds set up and Done",

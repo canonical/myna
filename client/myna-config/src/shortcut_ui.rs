@@ -310,7 +310,8 @@ impl ShortcutControl {
                 .desktop
                 .as_ref()
                 .is_some_and(|desktop| desktop.conflict(DEFAULT_ACCELERATOR).is_none());
-            match default_key(activation.as_deref(), &state, available) {
+            let dialog_up = self.binding() || local_left_open();
+            match default_key(activation.as_deref(), &state, available, dialog_up) {
                 DefaultKey::Wait => {}
                 DefaultKey::Install => {
                     self.default_pending.set(false);
@@ -318,10 +319,6 @@ impl ShortcutControl {
                 }
                 DefaultKey::Bind => {
                     self.default_pending.set(false);
-                    // Arriving raises no dialog beside one that may be up.
-                    if self.binding() || local_left_open() {
-                        return;
-                    }
                     if let Some(control) = self.me.upgrade() {
                         control.bind(false, false);
                     }
@@ -1144,7 +1141,7 @@ pub fn onboarding_description(
 ) -> String {
     match state {
         ShortcutState::Unbound if hint == DialogHint::OpenElsewhere => gettextrs::gettext(
-            "The desktop's dialog to confirm a keyboard shortcut is already open. Answer it to continue.",
+            "A shortcut dialog is already open. Answer it to continue.",
         ),
         ShortcutState::Unbound if hint == DialogHint::MaybeLeftOpen => gettextrs::gettext(
             "If the desktop's dialog to confirm a keyboard shortcut is no longer open, set up the shortcut again.",

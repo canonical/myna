@@ -78,9 +78,17 @@ pub enum DefaultKey {
 }
 
 /// Decide [`DefaultKey`] from the daemon's `Activation`, the observed state,
-/// and whether the desktop can take the default key without a conflict.
-pub fn default_key(activation: Option<&str>, state: &ShortcutState, available: bool) -> DefaultKey {
+/// whether the desktop can take the default key without a conflict, and
+/// whether a portal dialog is up, whoever raised it: the user's answer there
+/// answers setup too, so setup never raises a second one after it.
+pub fn default_key(
+    activation: Option<&str>,
+    state: &ShortcutState,
+    available: bool,
+    dialog_up: bool,
+) -> DefaultKey {
     match (activation, state) {
+        _ if dialog_up && activation != Some("control") => DefaultKey::Leave,
         (_, ShortcutState::NotRunning) | (None | Some(""), _) => DefaultKey::Wait,
         (Some("control"), ShortcutState::Unbound) if available => DefaultKey::Install,
         (Some("portal"), ShortcutState::Unbound) => DefaultKey::Bind,
