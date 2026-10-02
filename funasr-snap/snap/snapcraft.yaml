@@ -71,6 +71,7 @@ slots:
   provider:
     interface: content
     content: inference-provider
+    task: speech-to-text
     source:
       write: [$SNAP_COMMON/share/provider]
 

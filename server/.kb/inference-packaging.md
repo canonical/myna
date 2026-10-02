@@ -6,7 +6,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 # Architecture
 
-Each model family ships as a separate strictly confined snap. It packages `myna-server`, exposes a WebSocket service on a Unix socket through the `provider` content slot (content id `inference-provider`), and carries model weights and optional runtimes as snap components. The server has no microphone access.
+Each model family ships as a separate strictly confined snap. It packages `myna-server`, exposes a WebSocket service on a Unix socket through the `provider` content slot (content id `inference-provider`, attribute `task: speech-to-text`), and carries model weights and optional runtimes as snap components. The server has no microphone access. Canonical's other inference snaps, LLMs such as gemma4, share that content id, so Myna Settings counts a provider as a model only by its `task` attribute or, for revisions published before it, by a known family's snap name (`myna_core::language::ModelFamily`).
 
 All inference snaps share the `modelctl` control vocabulary and engine/runtime/model manifest structure. Differences are allowed when required by a runtime or model, but common mechanics must remain consistent.
 
