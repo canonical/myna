@@ -1,0 +1,8 @@
+# The one Rust toolchain for the workshops, CI and the client snap, so a new
+# stable release cannot break main without a commit. Bump deliberately and fix
+# what `make check` then reports. The myna-config deb is the exception: it
+# builds with each series' distro rustc (myna-config-deb/build-source.sh).
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

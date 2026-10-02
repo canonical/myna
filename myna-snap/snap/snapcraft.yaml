@@ -223,27 +223,15 @@ parts:
     organize:
       "*": usr/share/doc/myna/
 
-  # Rust toolchain via the rustup snap. The `rust` plugin is unusable here:
-  # its prologue env validation runs before any part builds, and with rustup
-  # 1.29 both its checks (`rustup dump-testament` with no default toolchain;
-  # `cargo --version` in the bare instance) fail before the toolchain it
-  # would install exists. A nil part + explicit toolchain is deterministic.
-  rust-deps:
-    plugin: nil
-    build-packages:
-      - rustup
-    override-pull: |
-      rustup default stable
-
   # The Rust workspace (client/), staged into this project by dev/prepare.sh
   # (craft-parts local sources must live inside the project dir), with the
   # snap version it resolved from git. Builds the shipped app + the testbed CLI,
   # which report that version too (client/build-support/version.rs).
   client:
     plugin: nil
-    after: [rust-deps]
     source: client
     build-packages:
+      - rustup
       - curl
       - gcc
       - git
@@ -254,8 +242,15 @@ parts:
       - libadwaita-1-dev
       - gettext # xgettext for myna-hud po template (build-time only)
     override-build: |
-      toolchain="$HOME/.rustup/toolchains/stable-$(uname -m)-unknown-linux-gnu"
-      export PATH="$toolchain/bin:$PATH"
+      # client/rust-toolchain.toml's pin, installed explicitly and put first
+      # on PATH: the `rust` plugin's prologue checks fail before any toolchain
+      # exists, so this part stays nil.
+      channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+      # `default`, not `toolchain install`: Ubuntu's rustup fails the latter
+      # after installing, looking for a self-managed one in ~/.cargo.
+      rustup set profile minimal
+      rustup default "$channel"
+      export PATH="$HOME/.rustup/toolchains/$channel-$(uname -m)-unknown-linux-gnu/bin:$PATH"
       cargo install -f --locked --path myna-desktop --root "$CRAFT_PART_INSTALL"
       cargo install -f --locked --path myna-cli --root "$CRAFT_PART_INSTALL"
       cargo install -f --locked --path myna-hud --root "$CRAFT_PART_INSTALL"

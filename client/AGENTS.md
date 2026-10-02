@@ -10,6 +10,7 @@ The client is a Rust workspace that turns activation events into bounded microph
 
 # Important
 
+- The toolchain is pinned in `rust-toolchain.toml` for the workshops, CI and the client snap; bump it in its own commit and fix what `make check` reports. The myna-config deb builds with each series' distro rustc instead (1.91 on noble), so code must not need anything newer.
 - Verify with `make lint-client test-client` (add `make mutate-client MUTATE='-p <crate> -f <file>'` for a suite whose strength is in doubt); the repository-wide rules are in the root `.kb/verification.md`.
 
 # Directory
