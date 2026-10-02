@@ -225,7 +225,11 @@ reopened wizard moving past the step while the Myna page row's dialog was up
 killed the daemon under it, so the row's bind failed with D-Bus `NoReply` and
 the dialog stayed on screen with nobody waiting for it (resolute, 2026-10-01).
 A daemon with a dialog up is already running, and the wizard moves on without
-waiting for a new owner. A switch that connects a backend still restarts.
+waiting for a new owner. A switch that connects a backend (no backend set up
+yet, here or on the Model tab) still restarts, but every restart of Myna's
+service waits first for `ShortcutDialog` to go false
+(`adapters/daemon_dialog.rs`): the setup stays on its connecting stage until
+the dialog is answered, and a cancelled switch stops waiting without restarting.
 
 Setting up ends once the restarted daemon has claimed
 `com.canonical.Myna.Dictation` again, a new owner of the name (0.4 s after
