@@ -1,4 +1,5 @@
 use adw::subclass::prelude::*;
+use glib::prelude::*;
 use glib::subclass::types::ObjectSubclassIsExt;
 use gtk::{glib, CompositeTemplate};
 use gtk4 as gtk;
@@ -20,6 +21,8 @@ mod imp {
         pub shortcut_stack: gtk::TemplateChild<gtk::Stack>,
         #[template_child]
         pub capture_field: gtk::TemplateChild<gtk::Label>,
+        #[template_child]
+        pub capture_illustration: gtk::TemplateChild<gtk::Picture>,
         #[template_child]
         pub capture_room: gtk::TemplateChild<gtk::Stack>,
         #[template_child]
@@ -44,9 +47,31 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for OnboardingShortcut {}
+    impl ObjectImpl for OnboardingShortcut {
+        fn constructed(&self) {
+            self.parent_constructed();
+            let style = adw::StyleManager::default();
+            let picture = self.capture_illustration.get().downgrade();
+            let follow = move |style: &adw::StyleManager| {
+                if let Some(picture) = picture.upgrade() {
+                    picture.set_resource(Some(illustration(style.is_dark())));
+                }
+            };
+            follow(&style);
+            style.connect_dark_notify(follow);
+        }
+    }
     impl WidgetImpl for OnboardingShortcut {}
     impl BinImpl for OnboardingShortcut {}
+}
+
+/// GNOME Settings' keyboard, drawn in the foreground on the window colour.
+fn illustration(dark: bool) -> &'static str {
+    if dark {
+        "/com/canonical/Myna/Config/ui/enter-shortcut-dark.svg"
+    } else {
+        "/com/canonical/Myna/Config/ui/enter-shortcut.svg"
+    }
 }
 
 glib::wrapper! {

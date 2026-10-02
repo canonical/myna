@@ -17,6 +17,14 @@ Files: myna-config/data/com.canonical.Myna.Config.metainfo.xml
 Copyright: 2025-2026 Canonical Ltd.
 License: CC0-1.0
 
+Files: myna-config/data/enter-shortcut.svg
+ myna-config/data/enter-shortcut-dark.svg
+Copyright: 2016 Georges Basile Stavracas Neto
+ 2023 kramo
+Comment: From gnome-control-center's panels/keyboard/enter-keyboard-shortcut.svg,
+ recoloured.
+License: GPL-2.0+
+
 License: AGPL-3.0+
  This program is free software: you can redistribute it and/or modify it
  under the terms of the GNU Affero General Public License as published by
@@ -38,3 +46,17 @@ License: CC0-1.0
  .
  On Debian systems the full text of the CC0 1.0 Universal license is in
  /usr/share/common-licenses/CC0-1.0.
+
+License: GPL-2.0+
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the Free
+ Software Foundation; either version 2 of the License, or (at your option)
+ any later version.
+ .
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ more details.
+ .
+ On Debian systems the full text of the GNU General Public License version 2
+ is in /usr/share/common-licenses/GPL-2.

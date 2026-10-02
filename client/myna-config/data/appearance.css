@@ -65,17 +65,8 @@ menubutton.languages-button > button {
   line-height: 1.4em;
 }
 
-/* Where a key captured in place will show: as tall as the key caps, and
-   outlined in the accent colour while it listens. */
-.shortcut-capture {
-  border: 2px dashed @accent_color;
-  border-radius: 6px;
-  padding: 7px 16px 10px;
-  font-size: 20px;
-  color: alpha(currentColor, 0.7);
-}
-
-/* A refused key: the outline turns to the error colour, the prompt stays. */
+/* A refused key turns the capture prompt to the error colour. */
 .shortcut-capture.refused {
-  border-color: @error_color;
+  color: @error_color;
+  opacity: 1;
 }

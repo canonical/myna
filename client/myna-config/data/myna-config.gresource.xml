@@ -5,6 +5,8 @@
     <file>appearance-gtk416.css</file>
     <file>backend-page.ui</file>
     <file>diagnostics-page.ui</file>
+    <file preprocess="xml-stripblanks">enter-shortcut.svg</file>
+    <file preprocess="xml-stripblanks">enter-shortcut-dark.svg</file>
     <file>install-control.ui</file>
     <file>install-models-dialog.ui</file>
     <file>main-window.ui</file>

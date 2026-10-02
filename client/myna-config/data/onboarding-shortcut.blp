@@ -72,6 +72,18 @@ template $OnboardingShortcut: Adw.Bin {
                 ]
               }
 
+              // GTK sizes an SVG past its 256 px canvas; the clamp keeps it
+              // there.
+              Adw.Clamp {
+                maximum-size: 256;
+                margin-top: 16;
+                margin-bottom: 16;
+
+                child: Gtk.Picture capture_illustration {
+                  accessible-role: presentation;
+                };
+              }
+
               // The keys it takes, or why it refused one, in one height so
               // a refusal moves nothing. Keep the hint first.
               Gtk.Stack capture_room {
