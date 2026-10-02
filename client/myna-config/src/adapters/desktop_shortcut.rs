@@ -1,6 +1,5 @@
-//! The GNOME custom shortcut that pokes the daemon's control socket: the
-//! dictation key where the portal has no GlobalShortcuts. The same entry the
-//! snap's `myna.install-shortcut` writes.
+//! The GNOME custom shortcut that toggles dictation. The same entry the snap's
+//! `myna.install-shortcut` writes.
 
 use gio::glib;
 use gio::prelude::*;
@@ -65,6 +64,11 @@ impl DesktopShortcut {
     pub fn binding(&self) -> Option<String> {
         let binding = self.entry.string("binding");
         (self.listed() && !binding.is_empty()).then(|| binding.to_string())
+    }
+
+    /// What the shortcut runs.
+    pub fn command(&self) -> String {
+        self.entry.string("command").to_string()
     }
 
     /// Bind `binding` to `command`, keeping every other custom shortcut.

@@ -82,6 +82,7 @@ fn install_binds_the_toggle_and_keeps_other_shortcuts() {
         Some(OURS),
     );
     assert_eq!(entry.string("command"), "/snap/bin/myna.toggle");
+    assert_eq!(shortcut.command(), "/snap/bin/myna.toggle");
     assert_eq!(entry.string("name"), "Dictation");
 }
 

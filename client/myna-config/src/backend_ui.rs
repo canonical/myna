@@ -1337,14 +1337,6 @@ impl BackendUi {
             }
         });
         window.add_action(&setup);
-        crate::shortcut_ui::watch_dialog({
-            let gate = Rc::downgrade(&gate);
-            move |up| {
-                if let Some(gate) = gate.upgrade() {
-                    gate.set_dialog_up(up);
-                }
-            }
-        });
 
         window.connect_is_active_notify({
             let ui = Rc::downgrade(self);
@@ -3228,37 +3220,18 @@ fn trigger_manual_refresh(controller: &Rc<BackendController>, snap_name: &str) {
     });
 }
 
-/// `win.setup` is off while its wizard is open, and while a shortcut dialog
-/// is up: the wizard would raise a second one, or restart the daemon under
-/// it.
+/// `win.setup` is off while its wizard is open.
 struct SetupGate {
     action: gio::SimpleAction,
-    wizard_open: std::cell::Cell<bool>,
-    dialog_up: std::cell::Cell<bool>,
 }
 
 impl SetupGate {
     fn new(action: gio::SimpleAction) -> Self {
-        Self {
-            action,
-            wizard_open: std::cell::Cell::new(false),
-            dialog_up: std::cell::Cell::new(false),
-        }
+        Self { action }
     }
 
     fn set_wizard_open(&self, open: bool) {
-        self.wizard_open.set(open);
-        self.sync();
-    }
-
-    fn set_dialog_up(&self, up: bool) {
-        self.dialog_up.set(up);
-        self.sync();
-    }
-
-    fn sync(&self) {
-        self.action
-            .set_enabled(!self.wizard_open.get() && !self.dialog_up.get());
+        self.action.set_enabled(!open);
     }
 }
 
@@ -3268,13 +3241,10 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn setup_is_off_while_its_wizard_or_a_shortcut_dialog_is_up() {
+    fn setup_is_off_while_its_wizard_is_open() {
         let action = gio::SimpleAction::new("setup", None);
         let gate = SetupGate::new(action.clone());
-        gate.set_dialog_up(true);
-        assert!(!action.is_enabled(), "a dialog is up");
         gate.set_wizard_open(true);
-        gate.set_dialog_up(false);
         assert!(!action.is_enabled(), "the wizard is open");
         gate.set_wizard_open(false);
         assert!(action.is_enabled());

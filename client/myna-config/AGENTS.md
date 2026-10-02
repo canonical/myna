@@ -22,8 +22,7 @@ Myna Settings is a host application, not a snap. It talks to snapd on the user's
 - Strict confinement was measured and rejected (`docs/confinement.md`). Do not reopen it without new evidence.
 - The GSettings schema this application writes is owned by `client/data/` and shared with the daemon.
 - The deb builds against each series' own GTK and libadwaita. Noble's 4.14 and 1.5 are the floor, and the main workshop's newer toolkit hides their bugs: an unscrolled page of wrapping labels overflows the window, a dialog with no focusable child never receives keys, a fixed-size dialog warns when its content grows, and removing the focused row focuses the next focusable one and scrolls to it, which is why a Model tab rebuild clears the focus first and restores it with the viewport's scroll-to-focus off. `make test-noble` runs this crate's suites there, and the startup and shortcut tests fail on any toolkit warning. CSS that GTK 4.14 cannot parse (colour functions such as `oklab(from ...)`, `color-mix()`, `@media`) goes in `data/appearance-gtk416.css`, which loads only from GTK 4.16; in `appearance.css` it is a parser warning on Noble.
-- On Noble the dictation key is a GNOME custom shortcut this application writes (`adapters/desktop_shortcut.rs`), because that portal has no GlobalShortcuts; `docs/onboarding.md` records how GNOME treats it.
-- Under the portal, changing a bound key takes Myna's entry out of GNOME Settings' dconf store for the dialog's lifetime and moves the daemon's live grab with the portal backend's `RebindShortcuts` (`adapters/portal_shortcuts.rs`); every answer but a new key must put the entry back, or the next login re-raises the dialog. `docs/onboarding.md` has the measurements.
+- The dictation key is a GNOME custom shortcut this application writes (`adapters/desktop_shortcut.rs`), calling the daemon's `Toggle` over D-Bus; `docs/onboarding.md` records how GNOME treats it and how a key follows an older daemon.
 
 # Architecture
 
@@ -32,7 +31,7 @@ Hexagonal. `ports.rs` declares the traits the application depends on (backend re
 # Directory
 
 - `build/` - Build logic outside cargo: the minimum `blueprint-compiler` version that `tests/` pulls in with `include!`, and the translation install the deb build runs.
-- `src/adapters/` - snapd REST client, `snap` CLI repository, pkexec configurator, Gio settings, GNOME custom shortcut, GNOME's portal shortcut store, gnome-shell extension state.
+- `src/adapters/` - snapd REST client, `snap` CLI repository, pkexec configurator, Gio settings, GNOME custom shortcut, gnome-shell extension state.
 - `src/ui/` - One module per Blueprint template in `data/`.
 - `src/bin/` - Test fixture that stands in for a real command runner.
 - `data/` - Blueprint templates, CSS, desktop entry, polkit action, man page, gresource manifest.

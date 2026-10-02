@@ -178,10 +178,8 @@ impl OnboardingUi {
             Some(shortcut_page.in_place()),
             Box::new({
                 let description = shortcut_page.description();
-                move |state, path, hint| {
-                    description.set_label(&crate::shortcut_ui::onboarding_description(
-                        state, path, hint,
-                    ))
+                move |state| {
+                    description.set_label(&crate::shortcut_ui::onboarding_description(state))
                 }
             }),
         );
@@ -614,7 +612,6 @@ impl OnboardingUi {
         let configurator = self.configurator.clone();
         let interval = self.poll_interval.get();
         let previous_owner = self.shortcut.owner().flatten();
-        let keep_running = self.shortcut.binding();
         glib::spawn_future_local(async move {
             let sleep = |interval| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
                 Box::pin(glib::timeout_future(interval))
@@ -639,7 +636,6 @@ impl OnboardingUi {
                 repository.as_ref(),
                 configurator.as_ref(),
                 RECOMMENDED_BACKEND_SNAP,
-                keep_running,
                 &wait,
                 &report,
             )
@@ -651,9 +647,6 @@ impl OnboardingUi {
                 return;
             };
             match &outcome {
-                Ok(Settled::LeftRunning) if keep_running => {
-                    ui.log("setup: done; the daemon keeps running under its shortcut dialog")
-                }
                 Ok(_) => ui.log("setup: done"),
                 Err(SetupError::Cancelled) => ui.log("setup: cancelled"),
                 Err(error) => ui.log(&format!("setup: failed: {error}")),
@@ -703,9 +696,7 @@ impl OnboardingUi {
         self.beat.replace(Some(beat));
     }
 
-    /// Show the shortcut step, setting the default key as it arrives: the
-    /// portal's dialog, when that is how, then shows over the step it
-    /// concerns.
+    /// Show the shortcut step, setting the default key as it arrives.
     fn move_on(&self, next: Step) {
         self.window.navigation().push_by_tag(step_name(next));
         self.shortcut.install_default();
@@ -783,9 +774,8 @@ impl OnboardingUi {
         }
         let held = match step {
             Step::Components => self.busy.get() || self.running.get(),
-            // Done under the portal's open dialog would leave it orphaned,
-            // and under a capture in place it would drop the key half chosen.
-            Step::Shortcut => self.shortcut.held(),
+            // Done under a capture in place would drop the key half chosen.
+            Step::Shortcut => self.shortcut.capturing(),
             Step::Welcome => false,
         };
         set_class(

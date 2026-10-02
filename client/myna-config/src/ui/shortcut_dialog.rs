@@ -44,7 +44,6 @@ mod imp {
             crate::shortcut_ui::fill_keys(
                 &self.example,
                 crate::shortcut::DEFAULT_ACCELERATOR,
-                Some(crate::shortcut::DEFAULT_ACCELERATOR),
                 crate::shortcut_ui::Surface::Onboarding,
             );
             let keys = gtk::EventControllerKey::new();

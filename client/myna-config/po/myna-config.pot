@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 09:41+0100\n"
+"POT-Creation-Date: 2026-10-02 18:14+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1490
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1481
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -26,7 +26,7 @@ msgstr ""
 msgid "Set up Dictation"
 msgstr ""
 
-#: data/diagnostics-page.blp:20 data/myna-page.blp:26 src/shortcut_ui.rs:369
+#: data/diagnostics-page.blp:20 data/myna-page.blp:26 src/shortcut_ui.rs:282
 msgid "Set up"
 msgstr ""
 
@@ -46,11 +46,11 @@ msgstr ""
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:49 src/backend_ui.rs:3009 src/backend_ui.rs:3250
+#: data/diagnostics-page.blp:49 src/backend_ui.rs:3011 src/backend_ui.rs:3277
 msgid "Refresh"
 msgstr ""
 
-#: data/diagnostics-page.blp:53 src/backend_ui.rs:1981 src/backend_ui.rs:1983
+#: data/diagnostics-page.blp:53 src/backend_ui.rs:1983 src/backend_ui.rs:1985
 msgid "Refresh diagnostics"
 msgstr ""
 
@@ -62,7 +62,7 @@ msgstr ""
 msgid "Copy"
 msgstr ""
 
-#: data/diagnostics-page.blp:64 src/backend_ui.rs:1996
+#: data/diagnostics-page.blp:64 src/backend_ui.rs:1998
 msgid "Copy diagnostics"
 msgstr ""
 
@@ -72,7 +72,7 @@ msgid ""
 "audio, transcripts, or filesystem paths."
 msgstr ""
 
-#: data/diagnostics-page.blp:94 src/backend_ui.rs:2029
+#: data/diagnostics-page.blp:94 src/backend_ui.rs:2031
 msgid "Diagnostic report"
 msgstr ""
 
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:4512
+#: src/app.rs:3769
 msgid "Installed"
 msgstr ""
 
@@ -89,7 +89,7 @@ msgstr ""
 msgid "Install more models"
 msgstr ""
 
-#: data/main-window.blp:9 src/app.rs:121 src/diagnostics.rs:384
+#: data/main-window.blp:9 src/app.rs:116 src/diagnostics.rs:384
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
@@ -99,12 +99,12 @@ msgstr ""
 msgid "Main Menu"
 msgstr ""
 
-#: data/main-window.blp:32 src/backend_ui.rs:2710
+#: data/main-window.blp:32 src/backend_ui.rs:2712
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:39 data/myna-page.blp:38 src/app.rs:1485
-#: src/app.rs:3797 src/app.rs:4161 src/backend_apply.rs:415
+#: data/main-window.blp:39 data/myna-page.blp:38 src/app.rs:1476
+#: src/app.rs:3054 src/app.rs:3418 src/backend_apply.rs:415
 #: src/diagnostics.rs:542 src/presentation.rs:169
 msgid "Model"
 msgstr ""
@@ -129,40 +129,41 @@ msgstr ""
 msgid "Press to start and stop"
 msgstr ""
 
-#: data/myna-page.blp:34 data/onboarding-window.blp:7 src/app.rs:1928
-#: src/app.rs:5479 src/onboarding_ui.rs:1234 src/shortcut_ui.rs:671
+#: data/myna-page.blp:34 data/onboarding-window.blp:7 src/app.rs:1833
+#: src/app.rs:4736 src/onboarding_ui.rs:1224 src/shortcut_ui.rs:235
+#: src/shortcut_ui.rs:574
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:4464 src/onboarding_ui.rs:1235
+#: data/onboarding-components.blp:18 src/app.rs:3721 src/onboarding_ui.rs:1225
 msgid "Install components"
 msgstr ""
 
-#: data/onboarding-components.blp:27 src/app.rs:4468
+#: data/onboarding-components.blp:27 src/app.rs:3725
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
 
-#: data/onboarding-components.blp:44 src/app.rs:490 src/app.rs:4534
-#: src/app.rs:4599 src/app.rs:4980
+#: data/onboarding-components.blp:44 src/app.rs:485 src/app.rs:3791
+#: src/app.rs:3856 src/app.rs:4237
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:4523
+#: data/onboarding-components.blp:52 src/app.rs:3780
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:5197 src/onboarding_ui.rs:1236
+#: data/onboarding-shortcut.blp:18 src/app.rs:4454 src/onboarding_ui.rs:1226
 msgid "How to dictate"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:367
+#: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:280
 msgid "Set up shortcut"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:67 src/shortcut_ui.rs:412
+#: data/onboarding-shortcut.blp:67 src/shortcut_ui.rs:319
 msgid "Press the new shortcut…"
 msgstr ""
 
@@ -172,7 +173,7 @@ msgid ""
 "cancel."
 msgstr ""
 
-#: data/onboarding-shortcut.blp:111 src/shortcut_ui.rs:613
+#: data/onboarding-shortcut.blp:111 src/shortcut_ui.rs:517
 msgid "Cancel"
 msgstr ""
 
@@ -180,7 +181,7 @@ msgstr ""
 msgid "Dictation runs locally, with no data leaving your computer."
 msgstr ""
 
-#: data/onboarding-window.blp:24 src/app.rs:413 src/onboarding_ui.rs:774
+#: data/onboarding-window.blp:24 src/app.rs:408 src/onboarding_ui.rs:765
 msgid "Next"
 msgstr ""
 
@@ -196,7 +197,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: data/operation-error-dialog.blp:34 src/app.rs:4676
+#: data/operation-error-dialog.blp:34 src/app.rs:3933
 msgid "Copy Details"
 msgstr ""
 
@@ -212,189 +213,165 @@ msgstr ""
 msgid "Press the keys for dictation, for example:"
 msgstr ""
 
-#: data/status-page.blp:8 src/app.rs:1480 src/app.rs:5776
+#: data/status-page.blp:8 src/app.rs:1471 src/app.rs:4959
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1481 src/app.rs:5777
+#: data/status-page.blp:9 src/app.rs:1472 src/app.rs:4960
 msgid "Reading the installed settings schema…"
 msgstr ""
 
-#: src/app.rs:129
+#: src/app.rs:124
 msgid "translator-credits"
 msgstr ""
 
-#: src/app.rs:1184 src/onboarding_ui.rs:779
+#: src/app.rs:1179 src/onboarding_ui.rs:770
 msgid "Done"
 msgstr ""
 
-#: src/app.rs:1486
+#: src/app.rs:1477
 msgid "Model details appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1491
+#: src/app.rs:1482
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:2074 src/shortcut_ui.rs:1144
-msgid "A shortcut dialog is already open. Answer it to continue."
-msgstr ""
-
-#: src/app.rs:2134 src/shortcut_ui.rs:1147
-msgid ""
-"If the desktop's dialog to confirm a keyboard shortcut is no longer open, "
-"set up the shortcut again."
-msgstr ""
-
-#: src/app.rs:2217 src/app.rs:2849 src/shortcut_ui.rs:658
-#: src/shortcut_ui.rs:679 src/shortcut_ui.rs:1192
-msgid "Could not set up the shortcut"
-msgstr ""
-
-#: src/app.rs:2218 src/app.rs:2407 src/app.rs:2850 src/app.rs:4104
-#: src/app.rs:4630 src/app.rs:4639 src/app.rs:5000 src/app.rs:5604
-#: src/app.rs:5610 src/backend_ui.rs:1272 src/onboarding_ui.rs:555
-#: src/shortcut_ui.rs:776 src/ui/status_page.rs:70
-msgid "Details"
-msgstr ""
-
-#: src/app.rs:2406 src/shortcut_ui.rs:1187
-msgid "Could not change the shortcut"
-msgstr ""
-
-#: src/app.rs:2876 src/shortcut_ui.rs:1193
-msgid "The desktop did not set up a keyboard shortcut for Dictation."
-msgstr ""
-
-#: src/app.rs:3835 src/backend_ui.rs:3617 src/model_family.rs:27
+#: src/app.rs:3092 src/backend_ui.rs:3644 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3839 src/backend_ui.rs:4143 src/model_family.rs:31
+#: src/app.rs:3096 src/backend_ui.rs:4170 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3974 src/myna_settings.rs:104
+#: src/app.rs:3231 src/myna_settings.rs:104
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3975 src/myna_settings.rs:105
+#: src/app.rs:3232 src/myna_settings.rs:105
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:4103 src/backend_ui.rs:702
+#: src/app.rs:3360 src/backend_ui.rs:702
 msgid "Changing to {model} failed"
 msgstr ""
 
+#: src/app.rs:3361 src/app.rs:3887 src/app.rs:3896 src/app.rs:4257
+#: src/app.rs:4861 src/app.rs:4867 src/backend_ui.rs:1272
+#: src/onboarding_ui.rs:553 src/ui/status_page.rs:70
+msgid "Details"
+msgstr ""
+
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle".
-#: src/app.rs:4210 src/backend_ui.rs:1656
+#: src/app.rs:3467 src/backend_ui.rs:1658
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:4211 src/presentation.rs:190
+#: src/app.rs:3468 src/presentation.rs:190
 msgid "Unload when idle"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
-#: src/app.rs:4502 src/onboarding_ui.rs:845
+#: src/app.rs:3759 src/onboarding_ui.rs:835
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:4631 src/onboarding_ui.rs:980
+#: src/app.rs:3888 src/onboarding_ui.rs:970
 msgid "Could not let Myna run in the background"
 msgstr ""
 
-#: src/app.rs:4661 src/app.rs:4803 src/backend_ui.rs:2351
+#: src/app.rs:3918 src/app.rs:4060 src/backend_ui.rs:2353
 msgid "Request:"
 msgstr ""
 
-#: src/app.rs:4662 src/app.rs:4804 src/backend_ui.rs:2357
+#: src/app.rs:3919 src/app.rs:4061 src/backend_ui.rs:2359
 msgid "HTTP status:"
 msgstr ""
 
-#: src/app.rs:4663 src/app.rs:4805 src/app.rs:5012 src/backend_ui.rs:2372
+#: src/app.rs:3920 src/app.rs:4062 src/app.rs:4269 src/backend_ui.rs:2374
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4726 src/onboarding_ui.rs:960
+#: src/app.rs:3983 src/onboarding_ui.rs:950
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4744 src/onboarding_ui.rs:961
+#: src/app.rs:4001 src/onboarding_ui.rs:951
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4755 src/app.rs:4816 src/app.rs:4898 src/onboarding_ui.rs:968
+#: src/app.rs:4012 src/app.rs:4073 src/app.rs:4155 src/onboarding_ui.rs:958
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4769 src/onboarding_ui.rs:962
+#: src/app.rs:4026 src/onboarding_ui.rs:952
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4783 src/onboarding_ui.rs:982
+#: src/app.rs:4040 src/onboarding_ui.rs:972
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4832 src/onboarding_ui.rs:963
+#: src/app.rs:4089 src/onboarding_ui.rs:953
 msgid "Enabling shell extension"
 msgstr ""
 
-#: src/app.rs:4998 src/onboarding_ui.rs:983
+#: src/app.rs:4255 src/onboarding_ui.rs:973
 msgid "Enabling the shell extension failed"
 msgstr ""
 
-#: src/app.rs:5011 src/backend_ui.rs:2364
+#: src/app.rs:4268 src/backend_ui.rs:2366
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:5212 src/shortcut_ui.rs:1153
+#: src/app.rs:4469 src/shortcut_ui.rs:671
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:5603 src/onboarding_ui.rs:680 src/onboarding_ui.rs:687
-#: src/onboarding_ui.rs:895
+#: src/app.rs:4860 src/onboarding_ui.rs:673 src/onboarding_ui.rs:680
+#: src/onboarding_ui.rs:885
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:5641 src/onboarding_ui.rs:836
+#: src/app.rs:4898 src/onboarding_ui.rs:826
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:5781
+#: src/app.rs:4964
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:5782
+#: src/app.rs:4965
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:5802
+#: src/app.rs:4985
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:5803
+#: src/app.rs:4986
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6228
+#: src/app.rs:5411
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/active_backend.rs:292
+#: src/active_backend.rs:293
 msgid "The change was cancelled."
 msgstr ""
 
-#: src/active_backend.rs:373
+#: src/active_backend.rs:368
 msgid "No model is connected."
 msgstr ""
 
-#: src/active_backend.rs:378
+#: src/active_backend.rs:373
 msgid "The model is not available to switch to."
 msgstr ""
 
-#: src/active_backend.rs:392
+#: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
 msgstr ""
 
@@ -459,374 +436,374 @@ msgstr ""
 msgid "Installing {model} failed"
 msgstr ""
 
-#: src/backend_ui.rs:1355 src/backend_ui.rs:1495
+#: src/backend_ui.rs:1357 src/backend_ui.rs:1497
 msgid "Wait for the current change to finish."
 msgstr ""
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle".
-#: src/backend_ui.rs:1659
+#: src/backend_ui.rs:1661
 msgid "Changing “{setting}” could not be confirmed"
 msgstr ""
 
-#: src/backend_ui.rs:1695
+#: src/backend_ui.rs:1697
 msgid "Could not read the installed models."
 msgstr ""
 
-#: src/backend_ui.rs:1750
+#: src/backend_ui.rs:1752
 msgid "No active model"
 msgstr ""
 
-#: src/backend_ui.rs:1751
+#: src/backend_ui.rs:1753
 msgid "Choose a model on the General tab."
 msgstr ""
 
-#: src/backend_ui.rs:1754
+#: src/backend_ui.rs:1756
 msgid "Several models are connected"
 msgstr ""
 
-#: src/backend_ui.rs:1755
+#: src/backend_ui.rs:1757
 msgid "Choose one model on the General tab."
 msgstr ""
 
-#: src/backend_ui.rs:1994
+#: src/backend_ui.rs:1996
 msgid "Copy privacy-safe diagnostics"
 msgstr ""
 
-#: src/backend_ui.rs:2005
+#: src/backend_ui.rs:2007
 msgid "Diagnostics copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:2034 src/diagnostics.rs:361
+#: src/backend_ui.rs:2036 src/diagnostics.rs:361
 msgid "Dictation is not installed"
 msgstr ""
 
-#: src/backend_ui.rs:2035 src/diagnostics.rs:362
+#: src/backend_ui.rs:2037 src/diagnostics.rs:362
 msgid "No model installed"
 msgstr ""
 
-#: src/backend_ui.rs:2215
+#: src/backend_ui.rs:2217
 msgid "The model kept a different value than the one you chose."
 msgstr ""
 
-#: src/backend_ui.rs:2222
+#: src/backend_ui.rs:2224
 msgid "The setting was saved, but the model did not start again."
 msgstr ""
 
-#: src/backend_ui.rs:2229
+#: src/backend_ui.rs:2231
 msgid "The setting was changed, but it could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:2236
+#: src/backend_ui.rs:2238
 msgid "The setting was changed, but reading it back was interrupted."
 msgstr ""
 
-#: src/backend_ui.rs:2254 src/backend_ui.rs:2281
+#: src/backend_ui.rs:2256 src/backend_ui.rs:2283
 msgid "The system did not allow the change."
 msgstr ""
 
-#: src/backend_ui.rs:2261 src/backend_ui.rs:2284
+#: src/backend_ui.rs:2263 src/backend_ui.rs:2286
 msgid "The model rejected the value."
 msgstr ""
 
-#: src/backend_ui.rs:2268 src/backend_ui.rs:2287 src/backend_ui.rs:3068
+#: src/backend_ui.rs:2270 src/backend_ui.rs:2289 src/backend_ui.rs:3070
 msgid "The change could not be made."
 msgstr ""
 
-#: src/backend_ui.rs:2278
+#: src/backend_ui.rs:2280
 msgid "The change was interrupted after it started."
 msgstr ""
 
-#: src/backend_ui.rs:2320
+#: src/backend_ui.rs:2322
 msgid "Executable:"
 msgstr ""
 
-#: src/backend_ui.rs:2324
+#: src/backend_ui.rs:2326
 msgid "Arguments:"
 msgstr ""
 
-#: src/backend_ui.rs:2333 src/backend_ui.rs:2405 src/backend_ui.rs:3134
+#: src/backend_ui.rs:2335 src/backend_ui.rs:2407 src/backend_ui.rs:3136
 msgid "Exit status:"
 msgstr ""
 
-#: src/backend_ui.rs:2341 src/backend_ui.rs:2414 src/backend_ui.rs:3143
+#: src/backend_ui.rs:2343 src/backend_ui.rs:2416 src/backend_ui.rs:3145
 msgid "Standard error:"
 msgstr ""
 
-#: src/backend_ui.rs:2389
+#: src/backend_ui.rs:2391
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2393
+#: src/backend_ui.rs:2395
 msgid "No privileged operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2395
+#: src/backend_ui.rs:2397
 msgid "Completed operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2421
+#: src/backend_ui.rs:2423
 msgid "Failure:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2425
+#: src/backend_ui.rs:2427
 msgid "Reconciliation read-back:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2437
+#: src/backend_ui.rs:2439
 msgid "Model:"
 msgstr ""
 
-#: src/backend_ui.rs:2443
+#: src/backend_ui.rs:2445
 msgid "Services: none"
 msgstr ""
 
-#: src/backend_ui.rs:2445
+#: src/backend_ui.rs:2447
 msgid "Services:"
 msgstr ""
 
-#: src/backend_ui.rs:2457
+#: src/backend_ui.rs:2459
 msgid "Status: unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2464
+#: src/backend_ui.rs:2466
 msgid "Post-failure surface errors:"
 msgstr ""
 
-#: src/backend_ui.rs:2495
+#: src/backend_ui.rs:2497
 msgid "Language"
 msgstr ""
 
-#: src/backend_ui.rs:2497
+#: src/backend_ui.rs:2499
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
 msgstr ""
 
-#: src/backend_ui.rs:2550
+#: src/backend_ui.rs:2552
 msgid "Overview"
 msgstr ""
 
-#: src/backend_ui.rs:2560
+#: src/backend_ui.rs:2562
 msgid "Connection"
 msgstr ""
 
-#: src/backend_ui.rs:2563
+#: src/backend_ui.rs:2565
 msgid "Active. Myna uses this model for dictation."
 msgstr ""
 
-#: src/backend_ui.rs:2566
+#: src/backend_ui.rs:2568
 msgid "Several models are connected. Only one should be active."
 msgstr ""
 
-#: src/backend_ui.rs:2568
+#: src/backend_ui.rs:2570
 msgid "Not connected to Myna."
 msgstr ""
 
-#: src/backend_ui.rs:2574
+#: src/backend_ui.rs:2576
 msgid "Active model"
 msgstr ""
 
-#: src/backend_ui.rs:2580
+#: src/backend_ui.rs:2582
 msgid "Active engine"
 msgstr ""
 
-#: src/backend_ui.rs:2583
+#: src/backend_ui.rs:2585
 msgid "None selected. Choose one below."
 msgstr ""
 
-#: src/backend_ui.rs:2600 src/diagnostics.rs:547
+#: src/backend_ui.rs:2602 src/diagnostics.rs:547
 msgid "Services"
 msgstr ""
 
-#: src/backend_ui.rs:2602
+#: src/backend_ui.rs:2604
 msgid "No service health reported"
 msgstr ""
 
-#: src/backend_ui.rs:2616
+#: src/backend_ui.rs:2618
 msgid "Loading"
 msgstr ""
 
-#: src/backend_ui.rs:2617
+#: src/backend_ui.rs:2619
 msgid "Reading this model's settings…"
 msgstr ""
 
-#: src/backend_ui.rs:2626
+#: src/backend_ui.rs:2628
 msgid "No configuration reported"
 msgstr ""
 
-#: src/backend_ui.rs:2628
+#: src/backend_ui.rs:2630
 msgid "The model answered but reported no settings to change."
 msgstr ""
 
-#: src/backend_ui.rs:2638
+#: src/backend_ui.rs:2640
 msgid "Some data is unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2640
+#: src/backend_ui.rs:2642
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:2683 src/backend_ui.rs:3007 src/backend_ui.rs:3246
+#: src/backend_ui.rs:2685 src/backend_ui.rs:3009 src/backend_ui.rs:3273
 msgid "Refreshing…"
 msgstr ""
 
-#: src/backend_ui.rs:2711
+#: src/backend_ui.rs:2713
 msgid "Runtime"
 msgstr ""
 
-#: src/backend_ui.rs:2712
+#: src/backend_ui.rs:2714
 msgid "Advanced"
 msgstr ""
 
-#: src/backend_ui.rs:2713
+#: src/backend_ui.rs:2715
 msgid "Sensitive"
 msgstr ""
 
-#: src/backend_ui.rs:2720
+#: src/backend_ui.rs:2722
 msgid "Common settings for this model."
 msgstr ""
 
-#: src/backend_ui.rs:2723
+#: src/backend_ui.rs:2725
 msgid "Runtime and performance related settings."
 msgstr ""
 
-#: src/backend_ui.rs:2726
+#: src/backend_ui.rs:2728
 msgid "Advanced settings."
 msgstr ""
 
-#: src/backend_ui.rs:2729
+#: src/backend_ui.rs:2731
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
 
-#: src/backend_ui.rs:2753
+#: src/backend_ui.rs:2755
 msgid "Sensitive value (redacted)"
 msgstr ""
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
-#: src/backend_ui.rs:2901
+#: src/backend_ui.rs:2903
 msgid "Downloading {name}: {done} of {total}"
 msgstr ""
 
-#: src/backend_ui.rs:2913
+#: src/backend_ui.rs:2915
 msgid "Active"
 msgstr ""
 
-#: src/backend_ui.rs:2914
+#: src/backend_ui.rs:2916
 msgid "Inactive"
 msgstr ""
 
-#: src/backend_ui.rs:2915
+#: src/backend_ui.rs:2917
 msgid "Failed"
 msgstr ""
 
-#: src/backend_ui.rs:2917
+#: src/backend_ui.rs:2919
 msgid "Unknown"
 msgstr ""
 
-#: src/backend_ui.rs:2982
+#: src/backend_ui.rs:2984
 msgid "Installed snaps"
 msgstr ""
 
-#: src/backend_ui.rs:2983
+#: src/backend_ui.rs:2985
 msgid "Model connections"
 msgstr ""
 
-#: src/backend_ui.rs:2984
+#: src/backend_ui.rs:2986
 msgid "Model control command"
 msgstr ""
 
-#: src/backend_ui.rs:2985
+#: src/backend_ui.rs:2987
 msgid "Model settings"
 msgstr ""
 
-#: src/backend_ui.rs:2986
+#: src/backend_ui.rs:2988
 msgid "Model status"
 msgstr ""
 
-#: src/backend_ui.rs:2987
+#: src/backend_ui.rs:2989
 msgid "Available models"
 msgstr ""
 
-#: src/backend_ui.rs:2988
+#: src/backend_ui.rs:2990
 msgid "Available engines"
 msgstr ""
 
-#: src/backend_ui.rs:2994
+#: src/backend_ui.rs:2996
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:3005 src/backend_ui.rs:3254
+#: src/backend_ui.rs:3007 src/backend_ui.rs:3281
 msgid "Applying changes…"
 msgstr ""
 
-#: src/backend_ui.rs:3015
+#: src/backend_ui.rs:3017
 msgid "Applying and restarting the model…"
 msgstr ""
 
-#: src/backend_ui.rs:3017
+#: src/backend_ui.rs:3019
 msgid "Applying…"
 msgstr ""
 
-#: src/backend_ui.rs:3036
+#: src/backend_ui.rs:3038
 msgid "missing"
 msgstr ""
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
-#: src/backend_ui.rs:3038
+#: src/backend_ui.rs:3040
 msgid "{key}: asked for {requested}, read back {actual}"
 msgstr ""
 
-#: src/backend_ui.rs:3066
+#: src/backend_ui.rs:3068
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3076
+#: src/backend_ui.rs:3078
 msgid "The change ran, but the connections do not match it."
 msgstr ""
 
-#: src/backend_ui.rs:3080
+#: src/backend_ui.rs:3082
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
 
-#: src/backend_ui.rs:3084
+#: src/backend_ui.rs:3086
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3086
+#: src/backend_ui.rs:3088
 msgid "The change ran, but the connections could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:3103
+#: src/backend_ui.rs:3105
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:3108
+#: src/backend_ui.rs:3110
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:3112
+#: src/backend_ui.rs:3114
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3120
+#: src/backend_ui.rs:3122
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3124
+#: src/backend_ui.rs:3126
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3153
+#: src/backend_ui.rs:3155
 msgid "no model connected"
 msgstr ""
 
-#: src/backend_ui.rs:3157
+#: src/backend_ui.rs:3159
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:3167
+#: src/backend_ui.rs:3169
 msgid "several models"
 msgstr ""
 
-#: src/backend_ui.rs:4147 src/model_family.rs:35
+#: src/backend_ui.rs:4174 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
 msgstr ""
 
@@ -874,143 +851,110 @@ msgctxt "service state"
 msgid "unknown"
 msgstr ""
 
-#: src/onboarding_ui.rs:682
+#: src/onboarding_ui.rs:675
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
 
-#: src/onboarding_ui.rs:776
+#: src/onboarding_ui.rs:767
 msgid "Continue to the next onboarding step."
 msgstr ""
 
-#: src/onboarding_ui.rs:781
+#: src/onboarding_ui.rs:772
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:838
+#: src/onboarding_ui.rs:828
 msgid "Setup status unavailable. The log has the details."
 msgstr ""
 
-#: src/onboarding_ui.rs:981
+#: src/onboarding_ui.rs:971
 msgid "Installing the Dictation app failed"
 msgstr ""
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
-#: src/onboarding_ui.rs:1180
+#: src/onboarding_ui.rs:1170
 msgid "{megabytes} MB"
 msgstr ""
 
-#: src/onboarding_ui.rs:1188
+#: src/onboarding_ui.rs:1178
 msgid "Checking the installation"
 msgstr ""
 
-#: src/onboarding_ui.rs:1193
+#: src/onboarding_ui.rs:1183
 msgid "Waiting for other software changes to finish"
 msgstr ""
 
-#: src/onboarding_ui.rs:1195
+#: src/onboarding_ui.rs:1185
 msgid "Setting up speech-to-text model"
 msgstr ""
 
-#: src/onboarding_ui.rs:1196
+#: src/onboarding_ui.rs:1186
 msgid "Starting dictation"
 msgstr ""
 
-#: src/shortcut_ui.rs:366
+#: src/shortcut_ui.rs:279
 msgid "Change shortcut"
 msgstr ""
 
-#: src/shortcut_ui.rs:368
+#: src/shortcut_ui.rs:281
 msgid "Change"
 msgstr ""
 
-#: src/shortcut_ui.rs:373
+#: src/shortcut_ui.rs:286
 msgid "Press a keyboard shortcut for dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:376
+#: src/shortcut_ui.rs:289
 msgid "Press a different keyboard shortcut for dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:379
+#: src/shortcut_ui.rs:292
 msgid "Add a keyboard shortcut for dictation to the desktop."
 msgstr ""
 
-#: src/shortcut_ui.rs:382
-msgid ""
-"Open the desktop's dialog to change the keyboard shortcut for dictation."
-msgstr ""
-
-#: src/shortcut_ui.rs:385
-msgid "Open the desktop's dialog to confirm a keyboard shortcut for dictation."
-msgstr ""
-
-#: src/shortcut_ui.rs:414
+#: src/shortcut_ui.rs:321
 msgid "Press a shortcut…"
 msgstr ""
 
-#: src/shortcut_ui.rs:434
+#: src/shortcut_ui.rs:341
 msgid "Keep the shortcut as it was."
 msgstr ""
 
-#: src/shortcut_ui.rs:579
+#: src/shortcut_ui.rs:483
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
 msgstr ""
 
-#: src/shortcut_ui.rs:607
+#: src/shortcut_ui.rs:511
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
 
-#: src/shortcut_ui.rs:612
+#: src/shortcut_ui.rs:516
 msgid "Replace Shortcut?"
 msgstr ""
 
-#: src/shortcut_ui.rs:614
+#: src/shortcut_ui.rs:518
 msgid "Replace"
 msgstr ""
 
-#: src/shortcut_ui.rs:825
-msgid "Could not open the desktop settings"
+#: src/shortcut_ui.rs:562 src/shortcut_ui.rs:582
+msgid "Could not set up the shortcut"
 msgstr ""
 
-#: src/shortcut_ui.rs:1150
+#: src/shortcut_ui.rs:668
 msgid "Set up a keyboard shortcut to trigger Dictation."
 msgstr ""
 
-#: src/shortcut_ui.rs:1156
-msgid ""
-"Set up a keyboard shortcut to trigger Dictation. You will be asked to "
-"confirm it."
-msgstr ""
-
-#: src/shortcut_ui.rs:1159
+#: src/shortcut_ui.rs:674
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
 
-#: src/shortcut_ui.rs:1162
-msgid ""
-"Dictation is triggered by the keyboard shortcut you chose the first time "
-"Myna asked for one. It is listed under Myna in the desktop's Apps settings."
-msgstr ""
-
-#: src/shortcut_ui.rs:1171
-msgid "Waiting for the desktop's shortcut dialog"
-msgstr ""
-
-#: src/shortcut_ui.rs:1174
+#: src/shortcut_ui.rs:683
 msgid "Not set up"
 msgstr ""
 
-#: src/shortcut_ui.rs:1175
+#: src/shortcut_ui.rs:684
 msgid "Myna is not running"
-msgstr ""
-
-#: src/shortcut_ui.rs:1177
-msgid "Listed under Myna in the desktop's Apps settings"
-msgstr ""
-
-#: src/shortcut_ui.rs:1188
-msgid "The desktop did not change the keyboard shortcut for Dictation."
 msgstr ""
 
 #: src/diagnostics.rs:232

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,53 +48,20 @@ pub struct PkexecSystemConfigurator {
     runner: Arc<dyn CommandRunner>,
     snapd: Arc<dyn SnapdClient>,
     executor: PathBuf,
-    restart_gate: Rc<dyn RestartGate>,
-}
-
-/// What a restart of Myna's service waits on first.
-#[async_trait(?Send)]
-pub trait RestartGate {
-    /// Return once a restart orphans nothing, or `Cancelled` when
-    /// `cancellation` fires first.
-    async fn until_clear(
-        &self,
-        cancellation: CancellationToken,
-    ) -> Result<(), SystemConfiguratorError>;
-}
-
-struct NoGate;
-
-#[async_trait(?Send)]
-impl RestartGate for NoGate {
-    async fn until_clear(
-        &self,
-        _cancellation: CancellationToken,
-    ) -> Result<(), SystemConfiguratorError> {
-        Ok(())
-    }
 }
 
 impl PkexecSystemConfigurator {
-    /// Restarts wait for the daemon's shortcut dialog to be answered.
     pub fn new(runner: Arc<dyn CommandRunner>) -> Self {
         Self::with_snapd_client(runner, Arc::new(UnixSocketSnapdClient::new()))
-            .with_restart_gate(Rc::new(crate::adapters::daemon_dialog::DaemonDialogGate))
     }
 
-    /// Construct with a custom snapd client and no restart gate. Used by
-    /// tests to point the adapter at a fake Unix socket server.
+    /// Construct with a custom snapd client. Used by tests to point the adapter at a fake Unix socket server.
     pub fn with_snapd_client(runner: Arc<dyn CommandRunner>, snapd: Arc<dyn SnapdClient>) -> Self {
         Self {
             runner,
             snapd,
             executor: default_executor(),
-            restart_gate: Rc::new(NoGate),
         }
-    }
-
-    pub fn with_restart_gate(mut self, gate: Rc<dyn RestartGate>) -> Self {
-        self.restart_gate = gate;
-        self
     }
 
     /// Override the binary `pkexec` runs in executor mode.
@@ -165,7 +131,6 @@ impl SystemConfigurator for PkexecSystemConfigurator {
         &self,
         cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
-        self.restart_gate.until_clear(cancellation.clone()).await?;
         let request = myna_restart_request();
         self.runner
             .run(request.clone(), cancellation)
@@ -1223,77 +1188,6 @@ mod tests {
             block_on(adapter.execute_backend_switch(&switch_plan(), cancellation)).unwrap_err();
         assert_eq!(failure.error(), &SystemConfiguratorError::Cancelled);
         assert!(snapd.calls.lock().unwrap().is_empty());
-    }
-
-    /// Notes what the runner had run when the restart asked it, then answers.
-    struct RecordingGate {
-        runner: Arc<FakeCommandRunner>,
-        seen: std::cell::RefCell<Option<usize>>,
-        answer: Result<(), SystemConfiguratorError>,
-    }
-
-    #[async_trait(?Send)]
-    impl RestartGate for RecordingGate {
-        async fn until_clear(
-            &self,
-            _cancellation: CancellationToken,
-        ) -> Result<(), SystemConfiguratorError> {
-            self.seen.replace(Some(self.runner.calls().len()));
-            self.answer.clone()
-        }
-    }
-
-    fn gated(
-        answer: Result<(), SystemConfiguratorError>,
-    ) -> (
-        PkexecSystemConfigurator,
-        Arc<FakeCommandRunner>,
-        Rc<RecordingGate>,
-    ) {
-        use crate::adapters::snapd_client::SnapdOutcome;
-        let snapd = Arc::new(ScriptedSnapd {
-            interface_outcomes: Mutex::new(vec![Ok(SnapdOutcome::Sync), Ok(SnapdOutcome::Sync)]),
-            calls: Mutex::new(Vec::new()),
-        });
-        let runner = Arc::new(FakeCommandRunner::scripted([Ok(CommandOutput::new(
-            Some(0),
-            "",
-            "",
-        ))]));
-        let gate = Rc::new(RecordingGate {
-            runner: runner.clone(),
-            seen: Default::default(),
-            answer,
-        });
-        let adapter = PkexecSystemConfigurator::with_snapd_client(runner.clone(), snapd)
-            .with_restart_gate(gate.clone());
-        (adapter, runner, gate)
-    }
-
-    /// A restart under the daemon's open shortcut dialog would leave the
-    /// dialog with nobody waiting for its answer, so it waits for the gate.
-    #[test]
-    fn a_switch_restarts_myna_only_once_the_gate_clears() {
-        let (adapter, runner, gate) = gated(Ok(()));
-        block_on(adapter.execute_backend_switch(&switch_plan(), CancellationToken::new())).unwrap();
-        assert_eq!(*gate.seen.borrow(), Some(0), "restarted before the gate");
-        assert_eq!(runner.calls(), [myna_restart_request()]);
-
-        let (adapter, runner, gate) = gated(Ok(()));
-        block_on(adapter.restart_myna(CancellationToken::new())).unwrap();
-        assert_eq!(*gate.seen.borrow(), Some(0), "restarted before the gate");
-        assert_eq!(runner.calls(), [myna_restart_request()]);
-    }
-
-    #[test]
-    fn a_wait_for_the_gate_cancelled_restarts_nothing() {
-        let (adapter, runner, _gate) = gated(Err(SystemConfiguratorError::Cancelled));
-        let failure =
-            block_on(adapter.execute_backend_switch(&switch_plan(), CancellationToken::new()))
-                .unwrap_err();
-        assert_eq!(failure.error(), &SystemConfiguratorError::Cancelled);
-        assert_eq!(failure.completed().len(), 2);
-        assert!(runner.calls().is_empty());
     }
 
     #[test]

@@ -1,40 +1,41 @@
 //! The dictation shortcut as Myna Settings sees it, without GTK.
 //!
-//! The portal owns the key, and the daemon republishes the portal's own
-//! description of it as `Shortcut` on `com.canonical.Myna.Dictation`. Where the
-//! portal has no GlobalShortcuts the daemon says `Activation` is `control`, and
-//! the key is a desktop custom shortcut instead.
+//! The key is a GNOME custom shortcut that calls the daemon's `Toggle` over
+//! D-Bus.
 
-/// The key a desktop shortcut is installed with, the daemon's portal default.
+/// The key setup installs.
 pub const DEFAULT_ACCELERATOR: &str = "<Super>j";
+
+/// What the shortcut runs: the daemon's `Toggle`, with no `snap run` startup
+/// in the way.
+pub const TOGGLE_COMMAND: &str = "gdbus call --session --dest com.canonical.Myna.Dictation \
+     --object-path /com/canonical/Myna/Dictation --method com.canonical.Myna.Dictation.Toggle";
+
+/// The command for a daemon that publishes `Shortcut`, which only daemons
+/// whose `Toggle` does nothing do: the snap's app that pokes the control
+/// socket.
+pub fn command(legacy: bool) -> String {
+    if legacy {
+        format!("/snap/bin/{}.toggle", crate::onboarding::MYNA_SNAP)
+    } else {
+        TOGGLE_COMMAND.to_owned()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShortcutState {
     /// Nothing owns the daemon's bus name.
     NotRunning,
-    /// A daemon that predates the `Shortcut` property.
-    Unpublished,
-    /// The daemon holds no binding.
+    /// No desktop shortcut is installed.
     Unbound,
-    /// The portal's description of the binding, such as `Press <Super>j`.
+    /// The desktop shortcut's accelerator, such as `<Super>j`.
     Bound(String),
 }
 
 impl ShortcutState {
-    /// `owned` is whether the bus name has an owner; `shortcut` is the
-    /// property's value when the daemon publishes one.
-    pub fn observe(owned: bool, shortcut: Option<&str>) -> Self {
-        match (owned, shortcut) {
-            (false, _) => Self::NotRunning,
-            (true, None) => Self::Unpublished,
-            (true, Some(shortcut)) if shortcut.trim().is_empty() => Self::Unbound,
-            (true, Some(shortcut)) => Self::Bound(shortcut.to_owned()),
-        }
-    }
-
-    /// The control path's state: `binding` is the desktop shortcut's
-    /// accelerator, when one is installed.
-    pub fn observe_control(owned: bool, binding: Option<&str>) -> Self {
+    /// `owned` is whether the bus name has an owner; `binding` is the desktop
+    /// shortcut's accelerator, when one is installed.
+    pub fn observe(owned: bool, binding: Option<&str>) -> Self {
         match (owned, binding) {
             (false, _) => Self::NotRunning,
             (true, Some(binding)) if !binding.trim().is_empty() => Self::Bound(binding.to_owned()),
@@ -43,274 +44,52 @@ impl ShortcutState {
     }
 }
 
-/// How the key reaches the daemon, from its `Activation` property.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ShortcutPath {
-    /// The portal's binding. Also a daemon that has not decided yet.
-    Portal,
-    /// A desktop custom shortcut that pokes the control socket, where the
-    /// portal has no GlobalShortcuts.
-    Control,
-}
-
-impl ShortcutPath {
-    pub fn from_activation(activation: Option<&str>) -> Self {
-        match activation {
-            Some("control") => Self::Control,
-            _ => Self::Portal,
-        }
-    }
-}
-
 /// What finishing setup does about the key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DefaultKey {
-    /// The daemon has not said yet how it is activated.
+    /// The daemon is not running yet.
     Wait,
-    /// Install [`DEFAULT_ACCELERATOR`] as the desktop shortcut.
+    /// Install [`DEFAULT_ACCELERATOR`].
     Install,
-    /// Ask the daemon to raise the portal's dialog, the only way to grant a
-    /// portal key.
-    Bind,
     /// Leave the key alone: a key the user already has, or one another
     /// shortcut holds, is theirs.
     Leave,
 }
 
-/// Decide [`DefaultKey`] from the daemon's `Activation`, the observed state,
-/// whether the desktop can take the default key without a conflict, and
-/// whether a portal dialog is up, whoever raised it: the user's answer there
-/// answers setup too, so setup never raises a second one after it.
-pub fn default_key(
-    activation: Option<&str>,
-    state: &ShortcutState,
-    available: bool,
-    dialog_up: bool,
-) -> DefaultKey {
-    match (activation, state) {
-        _ if dialog_up && activation != Some("control") => DefaultKey::Leave,
-        (_, ShortcutState::NotRunning) | (None | Some(""), _) => DefaultKey::Wait,
-        (Some("control"), ShortcutState::Unbound) if available => DefaultKey::Install,
-        (Some("portal"), ShortcutState::Unbound) => DefaultKey::Bind,
+/// Decide [`DefaultKey`] from the observed state and whether the desktop can
+/// take the default key without a conflict.
+pub fn default_key(state: &ShortcutState, available: bool) -> DefaultKey {
+    match state {
+        ShortcutState::NotRunning => DefaultKey::Wait,
+        ShortcutState::Unbound if available => DefaultKey::Install,
         _ => DefaultKey::Leave,
     }
-}
-
-/// What a surface says about a portal dialog.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DialogHint {
-    None,
-    /// The surface's own dialog is up.
-    Own,
-    /// A dialog is up, the daemon's or another surface's: wait for it.
-    OpenElsewhere,
-    /// A dialog may still be on screen with nobody waiting for its answer:
-    /// an older daemon gave up on it, or the daemon exited under it.
-    MaybeLeftOpen,
 }
 
 /// What a surface's shortcut button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonAction {
     Nothing,
-    /// Install [`DEFAULT_ACCELERATOR`] as the desktop shortcut.
+    /// Install [`DEFAULT_ACCELERATOR`].
     ClaimDefault,
-    /// Capture a new desktop shortcut in place.
+    /// Capture a new key in place.
     Capture,
     /// Stop a capture in place, keeping the key there was.
     CancelCapture,
-    /// Capture a new desktop shortcut in a dialog.
+    /// Capture a new key in a dialog.
     CaptureDialog,
-    /// Ask the daemon to raise the portal's dialog.
-    Bind,
-    /// Raise the portal's dialog again for a bound key.
-    Rebind,
 }
 
 /// Decide [`ButtonAction`]. `inline` is a surface with room to capture in
 /// place; `capturing` is one doing so now.
-pub fn button_action(
-    path: ShortcutPath,
-    state: &ShortcutState,
-    inline: bool,
-    capturing: bool,
-) -> ButtonAction {
-    match (path, state) {
+pub fn button_action(state: &ShortcutState, inline: bool, capturing: bool) -> ButtonAction {
+    match state {
         _ if capturing => ButtonAction::CancelCapture,
-        (_, ShortcutState::NotRunning) => ButtonAction::Nothing,
-        (ShortcutPath::Control, _) if inline => ButtonAction::Capture,
-        (ShortcutPath::Control, ShortcutState::Unbound) => ButtonAction::ClaimDefault,
-        (ShortcutPath::Control, _) => ButtonAction::CaptureDialog,
-        (ShortcutPath::Portal, ShortcutState::Unbound) => ButtonAction::Bind,
-        (ShortcutPath::Portal, _) => ButtonAction::Rebind,
+        ShortcutState::NotRunning => ButtonAction::Nothing,
+        _ if inline => ButtonAction::Capture,
+        ShortcutState::Unbound => ButtonAction::ClaimDefault,
+        ShortcutState::Bound(_) => ButtonAction::CaptureDialog,
     }
-}
-
-/// A GTK accelerator (`<Super>k`) as a shortcuts-spec trigger (`LOGO+k`),
-/// which the portal takes as a preferred trigger. `None` for a modifier the
-/// spec cannot name.
-pub fn portal_trigger(accelerator: &str) -> Option<String> {
-    let mut parts = Vec::new();
-    let mut rest = accelerator.trim();
-    while let Some(tail) = rest.strip_prefix('<') {
-        let (name, after) = tail.split_once('>')?;
-        parts.push(match name.to_ascii_lowercase().as_str() {
-            "primary" | "control" | "ctrl" | "ctl" => "CTRL",
-            "alt" | "mod1" => "ALT",
-            "super" | "mod4" => "LOGO",
-            "shift" => "SHIFT",
-            _ => return None,
-        });
-        rest = after;
-    }
-    if rest.is_empty() || rest.contains(['<', '>', '+']) {
-        return None;
-    }
-    parts.push(rest);
-    Some(parts.join("+"))
-}
-
-/// How the daemon answered a bind.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BindReply {
-    /// `BindShortcutWithOutcome`: `reason` names how the bind ended.
-    Reasoned {
-        reason: String,
-        message: String,
-    },
-    /// The older calls, from a daemon that predates the reason.
-    Answered {
-        ok: bool,
-        message: String,
-    },
-    /// The daemon left the bus before replying: restarted, or crashed.
-    DaemonGone,
-    Failed(String),
-}
-
-/// What the surface makes of a [`BindReply`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BindEnd {
-    /// Bound, or answered in the dialog: the daemon's state says which.
-    Done,
-    /// Another bind's dialog was already up: the same wait, not an error.
-    Waiting,
-    /// The dialog may outlive the bind; see [`DialogHint::MaybeLeftOpen`].
-    LeftOpen,
-    /// Answered in the dialog without a key: Cancel.
-    Declined,
-    Failed(String),
-}
-
-/// The daemon's refusal while another bind's dialog is up.
-const DIALOG_ALREADY_OPEN: &str = "a shortcut dialog is already open";
-/// An older daemon's reply after it stopped waiting on its dialog (120 s).
-const BIND_UNANSWERED: &str = "shortcut bind unanswered";
-/// A daemon older than `BindShortcutWithOutcome` says a dialog was answered
-/// without a key only in ashpd's words for the portal's "cancelled" and
-/// "other" responses (GNOME's Cancel is "other"). Matched for those daemons
-/// alone: a rewording turns their cancels into error toasts, and a backend
-/// fault reported as "other" stays silent.
-const BIND_DECLINED: [&str; 2] = [
-    "shortcut bind rejected: Portal request was cancelled",
-    "shortcut bind rejected: Portal request didn't succeed with no information",
-];
-
-/// Judge a bind's reply; `legacy` is a daemon that predates
-/// `BindShortcutWithParent`, the only kind that gives up on its dialog.
-pub fn bind_end(reply: BindReply, legacy: bool) -> BindEnd {
-    match reply {
-        BindReply::Reasoned { reason, message } => match reason.as_str() {
-            "bound" | "opened" => BindEnd::Done,
-            "declined" => BindEnd::Declined,
-            "busy" => BindEnd::Waiting,
-            _ => BindEnd::Failed(message),
-        },
-        BindReply::Answered { ok: true, .. } => BindEnd::Done,
-        BindReply::Answered { message, .. } if message.starts_with(DIALOG_ALREADY_OPEN) => {
-            BindEnd::Waiting
-        }
-        BindReply::Answered { message, .. } if legacy && message.starts_with(BIND_UNANSWERED) => {
-            BindEnd::LeftOpen
-        }
-        BindReply::Answered { message, .. } if BIND_DECLINED.contains(&message.as_str()) => {
-            BindEnd::Declined
-        }
-        BindReply::Answered { message, .. } | BindReply::Failed(message) => {
-            BindEnd::Failed(message)
-        }
-        BindReply::DaemonGone => BindEnd::LeftOpen,
-    }
-}
-
-/// The GTK accelerators inside a portal trigger description.
-///
-/// GNOME's portal wraps the accelerator in a translated sentence
-/// (`Press <Super>j`), so the accelerator is the part to render as keys. Other
-/// portals describe a binding however they like and yield none.
-pub fn accelerators(description: &str) -> Vec<&str> {
-    description
-        .split_whitespace()
-        .filter(|token| is_accelerator(token))
-        .collect()
-}
-
-/// The accelerator to draw for a binding described as `description`.
-///
-/// `stored` is the accelerator the desktop keeps for it, trusted only where
-/// the description names it, since a store the portal no longer reads goes
-/// stale. Without it the description's first `<Mod>key` wins, else its one
-/// lone token that `names_key` (GTK's keyval table) takes for a key, so a
-/// translated word never becomes a key.
-pub fn trigger_key<'a>(
-    description: &'a str,
-    stored: Option<&'a str>,
-    names_key: impl Fn(&str) -> bool,
-) -> Option<&'a str> {
-    if let Some(stored) = stored.filter(|stored| names(description, stored)) {
-        return Some(stored);
-    }
-    if let Some(accelerator) = accelerators(description).first() {
-        return Some(accelerator);
-    }
-    let mut lone = description
-        .split_whitespace()
-        .map(|token| token.trim_matches(|c: char| !(c.is_alphanumeric() || c == '_')))
-        .filter(|token| !token.is_empty() && names_key(token));
-    match (lone.next(), lone.next()) {
-        (Some(key), None) => Some(key),
-        _ => None,
-    }
-}
-
-/// Whether `accelerator` appears in `description` as a whole, not inside
-/// a longer key name (`F1` in `F12`) or after a modifier (`j` in `<Super>j`).
-fn names(description: &str, accelerator: &str) -> bool {
-    let joins = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '>';
-    !accelerator.is_empty()
-        && description.match_indices(accelerator).any(|(at, _)| {
-            !description[..at].chars().next_back().is_some_and(joins)
-                && !description[at + accelerator.len()..]
-                    .chars()
-                    .next()
-                    .is_some_and(joins)
-        })
-}
-
-fn is_accelerator(token: &str) -> bool {
-    let mut rest = token;
-    let mut modifiers = 0;
-    while let Some(tail) = rest.strip_prefix('<') {
-        let Some((name, after)) = tail.split_once('>') else {
-            return false;
-        };
-        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
-        modifiers += 1;
-        rest = after;
-    }
-    modifiers > 0 && !rest.is_empty() && !rest.contains(['<', '>'])
 }
 
 /// Whether two GSettings accelerators name the same keys. GNOME spells one
@@ -351,155 +130,35 @@ fn chord(accelerator: &str) -> Option<(Vec<&'static str>, String)> {
 mod tests {
     use super::*;
 
-    fn answered(ok: bool, message: &str) -> BindReply {
-        BindReply::Answered {
-            ok,
-            message: message.to_owned(),
-        }
-    }
-
     #[test]
     fn the_step_captures_in_place_where_the_row_opens_a_dialog() {
-        use ShortcutPath::{Control, Portal};
         let bound = ShortcutState::Bound("<Super>j".to_owned());
         let unbound = ShortcutState::Unbound;
+        assert_eq!(button_action(&unbound, true, false), ButtonAction::Capture);
+        assert_eq!(button_action(&bound, true, false), ButtonAction::Capture);
         assert_eq!(
-            button_action(Control, &unbound, true, false),
-            ButtonAction::Capture
-        );
-        assert_eq!(
-            button_action(Control, &bound, true, false),
-            ButtonAction::Capture
-        );
-        assert_eq!(
-            button_action(Control, &bound, true, true),
+            button_action(&bound, true, true),
             ButtonAction::CancelCapture
         );
         assert_eq!(
-            button_action(Control, &unbound, false, false),
+            button_action(&unbound, false, false),
             ButtonAction::ClaimDefault
         );
         assert_eq!(
-            button_action(Control, &bound, false, false),
+            button_action(&bound, false, false),
             ButtonAction::CaptureDialog
         );
-        // The portal grants keys only in its own dialog, wherever asked.
         for inline in [true, false] {
             assert_eq!(
-                button_action(Portal, &unbound, inline, false),
-                ButtonAction::Bind
-            );
-            assert_eq!(
-                button_action(Portal, &bound, inline, false),
-                ButtonAction::Rebind
-            );
-            assert_eq!(
-                button_action(Portal, &ShortcutState::Unpublished, inline, false),
-                ButtonAction::Rebind
-            );
-            assert_eq!(
-                button_action(Control, &ShortcutState::NotRunning, inline, false),
+                button_action(&ShortcutState::NotRunning, inline, false),
                 ButtonAction::Nothing
             );
         }
     }
 
     #[test]
-    fn an_accelerator_becomes_the_portal_trigger_it_names() {
-        assert_eq!(portal_trigger("<Super>k").as_deref(), Some("LOGO+k"));
-        assert_eq!(
-            portal_trigger("<Control><Alt>d").as_deref(),
-            Some("CTRL+ALT+d")
-        );
-        assert_eq!(
-            portal_trigger("<Primary><Shift>Return").as_deref(),
-            Some("CTRL+SHIFT+Return")
-        );
-        assert_eq!(
-            portal_trigger("<Mod4><Mod1>space").as_deref(),
-            Some("LOGO+ALT+space")
-        );
-        assert_eq!(portal_trigger("F8").as_deref(), Some("F8"));
-        assert_eq!(portal_trigger("<Hyper>k"), None);
-        assert_eq!(portal_trigger("<Super>"), None);
-        assert_eq!(portal_trigger(""), None);
-    }
-
-    #[test]
-    fn a_bind_refused_under_another_dialog_waits() {
-        let reply = answered(false, "a shortcut dialog is already open");
-        assert_eq!(bind_end(reply.clone(), false), BindEnd::Waiting);
-        assert_eq!(bind_end(reply, true), BindEnd::Waiting);
-    }
-
-    #[test]
-    fn an_older_daemon_giving_up_leaves_its_dialog_open() {
-        let reply = answered(false, "shortcut bind unanswered: no answer within 120s");
-        assert_eq!(bind_end(reply.clone(), true), BindEnd::LeftOpen);
-        // A current daemon never gives up, so from it this is a failure.
-        assert!(matches!(bind_end(reply, false), BindEnd::Failed(_)));
-    }
-
-    #[test]
-    fn a_daemon_that_left_mid_bind_leaves_its_dialog_open() {
-        assert_eq!(bind_end(BindReply::DaemonGone, false), BindEnd::LeftOpen);
-        assert_eq!(bind_end(BindReply::DaemonGone, true), BindEnd::LeftOpen);
-    }
-
-    #[test]
-    fn a_rejected_bind_is_a_failure_with_its_detail() {
-        let detail = "shortcut bind rejected: Portal request didn't succeed";
-        assert_eq!(
-            bind_end(answered(false, detail), false),
-            BindEnd::Failed(detail.to_owned())
-        );
-        assert_eq!(
-            bind_end(BindReply::Failed("no daemon".to_owned()), true),
-            BindEnd::Failed("no daemon".to_owned())
-        );
-        assert_eq!(bind_end(answered(true, "bound"), false), BindEnd::Done);
-    }
-
-    fn reasoned(reason: &str, message: &str) -> BindReply {
-        BindReply::Reasoned {
-            reason: reason.to_owned(),
-            message: message.to_owned(),
-        }
-    }
-
-    #[test]
-    fn a_daemon_that_names_the_outcome_is_taken_at_its_word() {
-        let cancel_words =
-            "shortcut bind rejected: Portal request didn't succeed with no information";
-        assert_eq!(
-            bind_end(reasoned("bound", "bound to x"), false),
-            BindEnd::Done
-        );
-        assert_eq!(bind_end(reasoned("opened", ""), false), BindEnd::Done);
-        assert_eq!(
-            bind_end(reasoned("declined", "whatever"), false),
-            BindEnd::Declined
-        );
-        assert_eq!(bind_end(reasoned("busy", ""), false), BindEnd::Waiting);
-        // A real failure surfaces even in the words a cancel used to have.
-        assert_eq!(
-            bind_end(reasoned("failed", cancel_words), false),
-            BindEnd::Failed(cancel_words.to_owned())
-        );
-        assert_eq!(
-            bind_end(reasoned("newer", "a reason this client predates"), false),
-            BindEnd::Failed("a reason this client predates".to_owned())
-        );
-    }
-
-    #[test]
-    fn a_dialog_answered_without_a_key_is_declined_not_failed() {
-        for message in [
-            "shortcut bind rejected: Portal request didn't succeed with no information",
-            "shortcut bind rejected: Portal request was cancelled",
-        ] {
-            assert_eq!(bind_end(answered(false, message), false), BindEnd::Declined);
-            assert_eq!(bind_end(answered(false, message), true), BindEnd::Declined);
-        }
+    fn a_daemon_that_predates_toggle_gets_the_control_socket() {
+        assert_eq!(command(false), TOGGLE_COMMAND);
+        assert_eq!(command(true), "/snap/bin/myna.toggle");
     }
 }

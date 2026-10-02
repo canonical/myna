@@ -22,6 +22,7 @@ Package: myna-config
 Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends},
+         libglib2.0-bin,
          pkexec,
          snapd,
 Description: settings and onboarding for Myna dictation

@@ -114,11 +114,6 @@ fn scratch_store(tag: &str) -> (PathBuf, PathBuf) {
         schemas.join("media-keys.gschema.xml"),
     )
     .expect("stage media-keys schema");
-    std::fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/global-shortcuts.gschema.xml"),
-        schemas.join("global-shortcuts.gschema.xml"),
-    )
-    .expect("stage global-shortcuts schema");
     assert!(Command::new("glib-compile-schemas")
         .arg(&schemas)
         .status()
@@ -273,10 +268,10 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
     }
 }
 
-/// Against a running daemon the Myna page offers set-up for an unbound
-/// shortcut, asks the daemon for its default, and renders the granted key.
+/// Against a running daemon the Myna page's set-up installs the desktop
+/// shortcut, and renders it.
 #[test]
-fn the_shortcut_row_binds_through_the_daemon_and_shows_the_key() {
+fn the_shortcut_row_installs_a_desktop_shortcut() {
     if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
         eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
         return;
@@ -293,39 +288,6 @@ fn the_shortcut_row_binds_through_the_daemon_and_shows_the_key() {
         .env("XDG_CONFIG_HOME", &store)
         .env("GDK_DEBUG", "no-portals")
         .env("MYNA_CONFIG_SHORTCUT_TEST", "1")
-        .output()
-        .expect("run the shortcut probe under dbus-run-session");
-    std::fs::remove_dir_all(&store).ok();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "shortcut probe failed: {stderr}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in [
-        "shortcut-unbound: offered set-up",
-        "shortcut-refused: toast, report behind Details",
-        "shortcut-bound: Super+J",
-    ] {
-        assert!(stdout.contains(line), "shortcut probe missing: {line}");
-    }
-}
-
-/// Where the portal has no GlobalShortcuts, set-up installs the desktop shortcut
-/// itself rather than asking the daemon, and renders it.
-#[test]
-fn the_shortcut_row_installs_a_desktop_shortcut_under_control_activation() {
-    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
-        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
-        return;
-    }
-
-    let (store, schemas) = scratch_store("shortcut-control");
-    let output = Command::new("dbus-run-session")
-        .arg("--")
-        .arg(env!("CARGO_BIN_EXE_myna-config"))
-        .env("GSETTINGS_BACKEND", "memory")
-        .env("GSETTINGS_SCHEMA_DIR", &schemas)
-        .env("XDG_CONFIG_HOME", &store)
-        .env("GDK_DEBUG", "no-portals")
-        .env("MYNA_CONFIG_SHORTCUT_CONTROL_TEST", "1")
         .env("GTK_A11Y", "none")
         .output()
         .expect("run the control shortcut probe under dbus-run-session");
@@ -360,11 +322,10 @@ fn the_shortcut_row_installs_a_desktop_shortcut_under_control_activation() {
     assert!(warnings.is_empty(), "toolkit warnings: {warnings:#?}");
 }
 
-/// Setup installs the default key itself under control activation, but never
-/// over a key the user has or another shortcut holds; under the portal it
-/// raises the portal's own dialog, and a dismissal is not reported.
+/// Setup installs the default key itself, but never over a key the user has
+/// or another shortcut holds.
 #[test]
-fn onboarding_installs_the_default_key_only_under_control_activation() {
+fn onboarding_installs_the_default_key_only_where_none_is_set() {
     if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
         eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
         return;
@@ -396,29 +357,9 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
     for line in [
         "onboarding-default: kept the user's key",
         "onboarding-default: left a key in use",
-        "onboarding-default: a dialog up on arrival answers the step",
-        "onboarding-default: portal dialog raised on arrival",
         "onboarding-keys: set up leads while no key is bound",
-        "onboarding-modal: one parented dialog holds set up and Done",
-        "onboarding-modal: another window's dialog holds the step without an error",
-        "onboarding-modal: entries outside a surface follow the dialog",
-        "onboarding-modal: a dialog left open lets set up try again",
-        "onboarding-modal: a cancelled dialog is no error",
-        "onboarding-modal: a declined outcome is no error",
-        "onboarding-modal: a failed bind toasts with Details",
-        "onboarding-modal: closing under the dialog releases it",
-        "onboarding-keys: Super+J under the portal",
-        "onboarding-keys: Done leads once a key is bound",
-        "onboarding-change: the portal's dialog changes the key",
-        "onboarding-change: a cancel keeps the old key",
-        "onboarding-change: a failed change says so",
-        "onboarding-change: with nothing stored the dialog still changes the key",
-        "onboarding-change: a key under an empty app id is offered and kept",
-        "onboarding-change: no provider falls back to GNOME Settings",
-        "onboarding-keys: follows a portal rebind",
-        "onboarding-keys: a lone key reads as a key",
         "onboarding-default: Super+J without a click",
-        "onboarding-keys: Super+J under control",
+        "onboarding-keys: Super+J bound",
         "onboarding-keys: follows a desktop rebind",
         "onboarding-capture: Change waits in place, Done held",
         "onboarding-capture: Escape keeps the key",
@@ -427,6 +368,7 @@ fn onboarding_installs_the_default_key_only_under_control_activation() {
         "onboarding-capture: a chosen key survives Back and Next",
         "onboarding-capture: swap asked, declining keeps waiting",
         "onboarding-capture: Set up captures F8 as a cap, leaving ends it",
+        "onboarding-legacy: an older daemon's key follows the daemon",
         "onboarding-restart: waits for the daemon's name",
     ] {
         assert!(
