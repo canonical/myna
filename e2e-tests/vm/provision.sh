@@ -36,7 +36,9 @@ VM=$(vm_name "$RELEASE")
 
 if ! lxc info "$VM" >/dev/null 2>&1; then
     echo "== $VM: first boot installs the desktop (cloud-init)"
-    lxc init "$(image "$RELEASE")" "$VM" --vm \
+    # E2E_POOL: a copy-on-write pool (zfs, btrfs) when the default is `dir`,
+    # where every per-suite copy is a full copy of the disk.
+    lxc init "$(image "$RELEASE")" "$VM" --vm ${E2E_POOL:+-s "$E2E_POOL"} \
         -c limits.cpu=4 -c limits.memory=6GiB -d root,size=20GiB \
         -c cloud-init.user-data="$(cat "$HERE/user-data")"
     lxc start "$VM"
