@@ -1,24 +1,40 @@
-# Myna
+<h1>
+  <img src="client/data/icons/hicolor/scalable/apps/com.canonical.Myna.Config.svg" width="70" align="absmiddle" alt="Myna Logo">
+  Myna 
+</h1>
+
+> [!WARNING]
+> Myna and several of its features are in heavy development. We are actively
+> refining our core concepts, protocols, and specifications, and will likely
+> introduce major breaking changes prior to a stable release. Early testing
+> and feedback is highly appreciated!
 
 Offline speech-to-text for Ubuntu Desktop. Press a key, speak, and the
 transcript is injected into the focused application. Nothing leaves the
-machine: inference runs in strictly confined snaps that receive audio over a
-Unix socket, and no audio is ever persisted.
+machine: inference runs in strictly confined local models deployed as snaps.
 
-The project is named for the [myna](https://en.wikipedia.org/wiki/Myna), a
+The project is named for the [Myna](https://en.wikipedia.org/wiki/Myna), a
 bird that listens to and reproduces human speech with striking clarity.
 
 ## Install
 
-Myna is a client snap plus one inference snap per model family. Myna
-Settings, the configuration app, ships as a deb
-([`myna-config-deb/README.md`](myna-config-deb/README.md)); on a machine
-without Myna it opens a setup wizard that turns on snapd's user daemons
-support, installs the client and a model from the store, and enables the
-Shell extension the deb installs, asking for authorization rather than
-for commands in a terminal. [`myna-snap/README.md`](myna-snap/README.md) is
-the manual path for a snap built from the tree; pick a backend from the
-`*-snap/` directories, with whisper as the reference.
+There's a GUI installer intended for end-users. It's available in a PPA,
+
+```
+# TODO: publish to the Ubuntu archive when stable, or a Canonical namespace at least!
+sudo add-apt-repository ppa:charles05/myna-config
+sudo apt install myna-config
+```
+
+To build the latest **package** locally, run `make build-deb` followed by `sudo apt install ./target/deb/myna-config_*.deb`.
+
+To build the latest **binary** locally,
+
+```
+# edit ...
+workshop exec myna -- bash -lc 'cd /project/client && cargo build --release --locked'
+./client/target/release/myna-config
+```
 
 ## Develop
 
@@ -27,17 +43,19 @@ the tree and ask. [`AGENTS.md`](AGENTS.md) is the entry point: it lays out the
 architecture and indexes the `.kb/` knowledge documents, and every subsystem
 carries its own `AGENTS.md`.
 
-- The toolchain is a [Canonical Workshop](https://ubuntu.com/workshop/docs)
-  definition in `.workshop/`. Run `workshop launch myna` once; every gate then
-  runs inside it.
-- `make help` lists the gates, suites, coverage, snap and benchmark targets.
-  `make preflight` is the merge bar, and [`.kb/verification.md`](.kb/verification.md)
-  defines done.
-- [`client/README.md`](client/README.md) runs the dictation client from source
-  against a `myna-server` started from `server/`.
-- Features are designed under `specs/` before implementation, governed by the
-  [constitution](.specify/memory/constitution.md). Merged specs are historical
-  snapshots, not live documentation.
+The manual development loop is,
+
+```
+# make changes ...
+# start a backend
+(cd server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
+# start a client
+cd client && cargo run --bin myna-testbed -- --socket /tmp/myna.sock --mic
+# repeat ...
+```
+
+For text injected into the focused app, run the `myna-desktop` daemon instead; see [`client/README.md`](client/README.md).
+
 
 ## Acknowledgements
 
