@@ -1,0 +1,30 @@
+# Nightly adapter smoke on a lab machine (tests/testflinger/): the store's
+# latest/edge snaps on real hardware, where engine auto-selection meets a
+# real CPU or GPU. Needs repository secrets TESTFLINGER_CLIENT_ID and
+# TESTFLINGER_SECRET_KEY and the variable TESTFLINGER_QUEUE; without them the
+# job is skipped.
+name: Testflinger
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    if: vars.TESTFLINGER_QUEUE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TESTFLINGER_CLIENT_ID: ${{ secrets.TESTFLINGER_CLIENT_ID }}
+      TESTFLINGER_SECRET_KEY: ${{ secrets.TESTFLINGER_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - run: sudo snap install testflinger-cli
+      - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflinger
+          retention-days: 14
+          path: tests/testflinger/out/

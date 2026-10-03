@@ -35,7 +35,8 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `dev/` - Development, packaging, benchmark, and quality-gate scripts.
 - `docs/` - Human-run system test plans and multilingual test passages.
 - `specs/` - Frozen feature-design artifacts retained for historical context.
-- `tests/` - Confined end-to-end tests.
+- `e2e-tests/` - Myna Settings driven through AT-SPI on fresh GNOME desktop LXD VMs.
+- `tests/` - Confined end-to-end tests (spread) and the Testflinger lab-hardware smoke.
 
 # Documents
 
@@ -47,5 +48,6 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
 - `client/AGENTS.md` - Rust client architecture and local knowledge.
 - `server/AGENTS.md` - Python server, inference, packaging, and benchmark knowledge.
+- `e2e-tests/AGENTS.md` - How the desktop end-to-end suites run and the rules for writing them.
 - `docs/AGENTS.md` - Scope and maintenance rules for human test documentation.
 - `myna-config-deb/AGENTS.md` - Deb packaging, version scheme, and sbuild constraints for Myna Settings.

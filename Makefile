@@ -426,6 +426,23 @@ bench-long-%: build-bench ## Run the long-form clip against an already-running <
 		--manifest corpus/english/manifest-long.json \
 		--out results/bench.jsonl --label $(SNAPNAME_$*)/long-form
 
+##@ Desktop e2e and lab hardware (CI `e2e` and `testflinger` workflows)
+
+# Myna Settings driven through AT-SPI on a fresh GNOME desktop LXD VM. The
+# first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
+# later runs restore a snapshot per suite. See e2e-tests/AGENTS.md.
+E2E_RELEASE ?= noble
+SUITES ?=
+
+.PHONY: e2e
+e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, SUITES=all)
+	e2e-tests/vm/provision.sh --release $(E2E_RELEASE)
+	e2e-tests/run-suite.sh --release $(E2E_RELEASE) $(SUITES)
+
+.PHONY: testflinger
+testflinger: ## Adapter smoke on a lab machine with store edge snaps (TESTFLINGER_QUEUE=<queue>)
+	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE)
+
 ##@ Spread (local, confined e2e; needs /dev/kvm)
 
 # Prebuilt snaps must exist first: `make snap-myna snap-fake snap-whisper`.
@@ -456,7 +473,7 @@ spread-%: spread-build ## Run one suite: spread-<dir under tests/spread>, e.g. s
 ci: ## Trigger the CI workflow on GitHub for the current branch
 	gh workflow run ci.yml --ref $(BRANCH)
 
-ci-%: ## Trigger another workflow: ci-snap, ci-spread, ci-audit (.github/workflows/<name>.yml)
+ci-%: ## Trigger another workflow: ci-spread, ci-e2e, ci-audit (.github/workflows/<name>.yml)
 	gh workflow run $*.yml --ref $(BRANCH)
 
 .PHONY: ci-watch
