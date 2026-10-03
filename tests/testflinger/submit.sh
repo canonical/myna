@@ -1,6 +1,7 @@
 #!/bin/bash
-# Submit the hardware smoke to Testflinger, wait for it, fetch its
-# artifacts into tests/testflinger/out and exit with its test status.
+# Submit the lab run at HEAD to Testflinger, wait for it, fetch its
+# artifacts into tests/testflinger/out and exit with its test status. The
+# machine clones HEAD, so it must be pushed.
 # Locally after `testflinger-cli login`; in CI with TESTFLINGER_CLIENT_ID and
 # TESTFLINGER_SECRET_KEY set. A failed or interrupted run cancels the job so
 # it does not hold the machine.
@@ -13,9 +14,9 @@ QUEUE=${1:?usage: submit.sh QUEUE}
 WORK=$(mktemp -d -p "$HERE")
 trap 'rm -rf "$WORK"' EXIT
 
-tar -czf "$WORK/smoke.tgz" -C "$HERE" dut.sh -C ../spread/adapter-smoke smoke.sh fixture.wav
-sed "s/__QUEUE__/$QUEUE/" "$HERE/job.yaml" > "$WORK/job.yaml"
-JOB=$(testflinger-cli submit --quiet --attachments-relative-to "$WORK" "$WORK/job.yaml")
+COMMIT=$(git -C "$HERE" rev-parse HEAD)
+sed -e "s/__QUEUE__/$QUEUE/" -e "s/__COMMIT__/$COMMIT/" "$HERE/job.yaml" > "$WORK/job.yaml"
+JOB=$(testflinger-cli submit --quiet "$WORK/job.yaml")
 echo "job $JOB on $QUEUE"
 trap 'testflinger-cli cancel "$JOB" || true; rm -rf "$WORK"' EXIT
 

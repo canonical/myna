@@ -1,0 +1,24 @@
+# The nightly accuracy gate: the FLEURS smoke tier through each backend as
+# latest/edge ships it, scored only on the languages the backend claims.
+# Gated by ceilings.yaml; run by dut.sh.
+manifest: out/fleurs-smoke/manifest.json
+out: out/fleurs.jsonl
+sweep_budget_seconds: 3600
+repeats: 1
+warmup_clips: 0
+pace: [max]
+targets:
+  - snap: myna-parakeet
+    channel: latest/edge
+    components: [model-parakeet-int8]
+    models: [parakeet-tdt-0.6b-v3]
+    languages: [en, de, fr, es, it, ru]
+  - snap: myna-whisper
+    channel: latest/edge
+    components: [model-small]
+    models: [small]
+    languages: [en, de, fr, es, it, ru, zh, ja, ko]
+  - snap: myna-funasr
+    channel: latest/edge
+    components: [model-sensevoice]
+    languages: [en, zh, ja, ko]

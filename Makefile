@@ -440,7 +440,7 @@ e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, SUI
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) $(SUITES)
 
 .PHONY: testflinger
-testflinger: ## Adapter smoke on a lab machine with store edge snaps (TESTFLINGER_QUEUE=<queue>)
+testflinger: ## Edge snaps on a lab machine: adapter smoke + FLEURS gate, at pushed HEAD (TESTFLINGER_QUEUE=<queue>)
 	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE)
 
 ##@ Spread (local, confined e2e; needs /dev/kvm)

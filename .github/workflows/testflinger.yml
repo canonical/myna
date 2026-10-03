@@ -1,6 +1,6 @@
-# Nightly adapter smoke on a lab machine (tests/testflinger/): the store's
-# latest/edge snaps on real hardware, where engine auto-selection meets a
-# real CPU or GPU. Needs repository secrets TESTFLINGER_CLIENT_ID and
+# Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
+# hardware, through the adapter smoke and a per-language FLEURS accuracy
+# gate. Needs repository secrets TESTFLINGER_CLIENT_ID and
 # TESTFLINGER_SECRET_KEY and the variable TESTFLINGER_QUEUE; without them the
 # job is skipped.
 name: Testflinger

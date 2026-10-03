@@ -36,7 +36,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `docs/` - Human-run system test plans and multilingual test passages.
 - `specs/` - Frozen feature-design artifacts retained for historical context.
 - `e2e-tests/` - Myna Settings driven through AT-SPI on fresh GNOME desktop LXD VMs.
-- `tests/` - Confined end-to-end tests (spread) and the Testflinger lab-hardware smoke.
+- `tests/` - Confined end-to-end tests (spread) and the Testflinger lab-hardware run.
 
 # Documents
 

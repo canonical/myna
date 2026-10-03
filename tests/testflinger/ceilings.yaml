@@ -1,0 +1,7 @@
+# Error-rate ceilings in percent for `myna-bench summarize --gate`: CER for
+# zh, ja and ko, WER for the rest. Ten clips a language puts several points
+# of noise on each cell, so these catch a broken language, not a small
+# regression; tighten them from real nightly numbers.
+myna-parakeet: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25}
+myna-whisper: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25, zh: 20, ja: 20, ko: 20}
+myna-funasr: {en: 25, zh: 20, ja: 20, ko: 20}

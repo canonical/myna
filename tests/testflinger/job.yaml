@@ -1,24 +1,24 @@
-# Myna's nightly hardware smoke: the store's latest/edge snaps on one lab
-# machine, through the adapter smoke the spread task runs on sideloads.
-# submit.sh fills __QUEUE__ and attaches smoke.tgz (dut.sh, smoke.sh, the clip).
+# Myna's nightly lab run: the store's latest/edge snaps on one lab machine,
+# through tests/testflinger/dut.sh at the submitting commit. submit.sh fills
+# __QUEUE__ and __COMMIT__; the machine fetches everything else itself.
 job_queue: __QUEUE__
-global_timeout: 3600
+global_timeout: 10800
 output_timeout: 1200
 provision_data:
   distro: noble
 test_data:
-  attachments:
-    - local: smoke.tgz
   test_cmds: |
     #!/bin/bash
     set -u
     D=ubuntu@$DEVICE_IP
     for _ in $(seq 60); do ssh -n -o ConnectTimeout=10 $D true && break; sleep 10; done
     mkdir -p artifacts
-    scp attachments/test/smoke.tgz "$D:"
-    ssh -n $D 'mkdir -p smoke && tar -xzf smoke.tgz -C smoke'
-    rc=0
-    ssh -n $D 'cd smoke && sudo ./dut.sh' > artifacts/smoke.log 2>&1 || rc=$?
-    cat artifacts/smoke.log
-    scp "$D:smoke/*.out" "$D:smoke/*.json" artifacts/ || true
+    ssh -n $D 'git clone -q https://github.com/canonical/myna && git -C myna checkout -q __COMMIT__'
+    # The sweep can be quiet for longer than output_timeout.
+    (while sleep 300; do echo "heartbeat $(date -Is)"; done) &
+    HB=$!
+    ssh -n $D 'sudo myna/tests/testflinger/dut.sh' 2>&1 | tee artifacts/dut.log
+    rc=${PIPESTATUS[0]}
+    kill $HB
+    scp "$D:myna/tests/testflinger/out/*.jsonl" "$D:myna/tests/testflinger/out/*.out" artifacts/ || true
     exit $rc
