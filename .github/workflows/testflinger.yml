@@ -22,9 +22,12 @@ jobs:
       - uses: actions/checkout@v6
       - run: sudo snap install testflinger-cli
       - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }}
+      - name: Gate verdict
+        if: always()
+        run: sed -n '/^gate /,$p' tests/testflinger/out/artifacts/dut.log >> "$GITHUB_STEP_SUMMARY" || true
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: testflinger
           retention-days: 14
-          path: tests/testflinger/out/
+          path: tests/testflinger/out/artifacts/
