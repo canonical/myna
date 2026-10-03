@@ -44,6 +44,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/repository-layout.md` - Repository boundaries and placement rules.
 - `.kb/session-contract.md` - Durable cross-language session and streaming semantics.
 - `.kb/system-architecture.md` - High-level runtime components and trust boundaries.
+- `.kb/build-inputs.md` - How every workshop input is pinned, and the weekly apt snapshot bump.
 - `.kb/versioning.md` - The single version source, how each artifact receives it, and why the manifests say `0.0.0`.
 - `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
 - `client/AGENTS.md` - Rust client architecture and local knowledge.
