@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        release: [noble, resolute, stonking]
+        release: ${{ fromJSON(github.event_name == 'pull_request' && '["noble"]' || '["noble", "resolute", "stonking"]') }}
     name: e2e (${{ matrix.release }})
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.release == 'stonking' }}
