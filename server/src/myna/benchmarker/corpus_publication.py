@@ -3,6 +3,11 @@
     myna-bench download-corpus --preset librispeech-test-clean
     myna-bench download-corpus --preset librispeech-test-other
     myna-bench download-corpus --preset fleurs-test:fr_fr
+    myna-bench download-corpus --preset fleurs-smoke
+
+``fleurs-smoke`` is the exception, and no publication number: a few clips of
+each language Myna's backends claim, in one manifest, for a nightly accuracy
+gate that has to fail on a broken language rather than measure one.
 
 The other corpus tiers are subsets picked for a quick, representative sweep.
 A number meant for a paper or the Open ASR Leaderboard is quoted on a whole
@@ -41,7 +46,7 @@ from myna.benchmarker._audio import RATE, write_wav
 from myna.benchmarker.corpus_chinese import _clean_reference
 from myna.testbed.corpus import sha256_file, stamp_corpus, verify_corpus
 
-PRESETS = ("librispeech-test-clean", "librispeech-test-other", "fleurs-test:<lang>")
+PRESETS = ("librispeech-test-clean", "librispeech-test-other", "fleurs-test:<lang>", "fleurs-smoke")
 
 LICENSE = "CC-BY-4.0"
 LIBRISPEECH_SPLITS = ("test-clean", "test-other")
@@ -53,6 +58,19 @@ _FLEURS_LOCALE = re.compile(r"[a-z]{2,3}(?:_[a-z0-9]+)+")
 # sent. Only that: a backend's own code for a language (Whisper's "jw" for
 # "jv") is its adapter's business.
 _LANGUAGE = {"cmn": "zh"}
+# The smoke tier: the first clips, by filename, of each locale.
+SMOKE_LOCALES = (
+    "en_us",
+    "de_de",
+    "fr_fr",
+    "es_419",
+    "it_it",
+    "ru_ru",
+    "cmn_hans_cn",
+    "ja_jp",
+    "ko_kr",
+)
+SMOKE_CLIPS = 10
 # A whole split decodes for a minute or more; say so now and then.
 PROGRESS_EVERY = 250
 
@@ -73,6 +91,8 @@ def parse_preset(name: str) -> Preset:
     for split in LIBRISPEECH_SPLITS:
         if name == f"librispeech-{split}":
             return Preset(name, "librispeech", split, None)
+    if name == "fleurs-smoke":
+        return Preset(name, "fleurs-smoke", "test", None)
     prefix, _, locale = name.partition(":")
     if prefix == "fleurs-test" and _FLEURS_LOCALE.fullmatch(locale):
         return Preset(name, "fleurs", "test", locale)
@@ -214,18 +234,20 @@ def build_librispeech(
     return _write(out, manifest_name, header, entries, corpus_english.notice_for(split))
 
 
-def build_fleurs(
-    out: Path, tsv_path: Path, tar_path: Path, locale: str, *, manifest_name: str = "manifest.json"
-) -> Path:
-    """Every clip of one FLEURS locale's test split, scored against its raw
-    transcription (normalising is the scorer's job, and both normalisers do it).
-
-    FLEURS reads each sentence with several speakers, so a sentence id repeats
-    across rows; the audio filename is what is unique.
-    """
+def _fleurs_entries(
+    out: Path,
+    tsv_path: Path,
+    tar_path: Path,
+    locale: str,
+    *,
+    limit: int | None = None,
+    category: str | None = None,
+) -> list[dict[str, object]]:
+    """The listed clips of one FLEURS locale's archive, decoded into ``out``:
+    every one, or the first ``limit`` by filename."""
     subtag = locale.split("_", 1)[0]
     language = _LANGUAGE.get(subtag, subtag)
-    category = "quiet" if language == "en" else "non-english"
+    category = category or ("quiet" if language == "en" else "non-english")
 
     # id, filename, raw_transcription, transcription, chars, num_samples, gender.
     # Split on tabs, not with csv: the raw text carries literal quote marks.
@@ -234,6 +256,8 @@ def build_fleurs(
         fields = line.split("\t")
         if len(fields) >= 3 and fields[2].strip():
             reference[fields[1]] = _clean_reference(fields[2])
+    if limit is not None:
+        reference = {name: reference[name] for name in sorted(reference)[:limit]}
 
     audio_dir = out / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -264,7 +288,41 @@ def build_fleurs(
         raise SystemExit(f"no clips in {tar_path} are listed in {tsv_path}")
     if missing := len(reference) - len(entries):
         print(f"{missing} listed clip(s) had no audio in the archive")
+    return entries
 
+
+_FLEURS_CITATION = (
+    'A. Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal '
+    'Representations of Speech", IEEE SLT 2022'
+)
+
+
+def _fleurs_notice(title: str, preset: str) -> str:
+    return (
+        f"{title}\n"
+        "\n"
+        "Derived from Google FLEURS, redistributed under its original licence.\n"
+        f"Regenerate with: myna-bench download-corpus --preset {preset}\n"
+        "\n"
+        f"  Source:  https://huggingface.co/datasets/{FLEURS_REPO} (revision {FLEURS_REVISION})\n"
+        f"  Licence: {LICENSE}  (https://creativecommons.org/licenses/by/4.0/)\n"
+        '  Cite:    A. Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal\n'
+        '           Representations of Speech", IEEE SLT 2022.\n'
+        "\n"
+        "Audio is decoded to 16 kHz mono S16LE WAV; references are the raw transcriptions.\n"
+    )
+
+
+def build_fleurs(
+    out: Path, tsv_path: Path, tar_path: Path, locale: str, *, manifest_name: str = "manifest.json"
+) -> Path:
+    """Every clip of one FLEURS locale's test split, scored against its raw
+    transcription (normalising is the scorer's job, and both normalisers do it).
+
+    FLEURS reads each sentence with several speakers, so a sentence id repeats
+    across rows; the audio filename is what is unique.
+    """
+    entries = _fleurs_entries(out, tsv_path, tar_path, locale)
     header = {
         "preset": f"fleurs-test:{locale}",
         "dataset": "fleurs",
@@ -277,25 +335,40 @@ def build_fleurs(
             "audio/test.tar.gz": sha256_file(tar_path),
         },
         "reference": "raw_transcription",
-        "citation": (
-            'A. Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal '
-            'Representations of Speech", IEEE SLT 2022'
-        ),
+        "citation": _FLEURS_CITATION,
     }
-    notice = (
-        f"Publication corpus: FLEURS {locale} test split, every clip\n"
-        "\n"
-        "Derived from Google FLEURS, redistributed under its original licence.\n"
-        f"Regenerate with: myna-bench download-corpus --preset fleurs-test:{locale}\n"
-        "\n"
-        f"  Source:  https://huggingface.co/datasets/{FLEURS_REPO} (revision {FLEURS_REVISION})\n"
-        f"  Licence: {LICENSE}  (https://creativecommons.org/licenses/by/4.0/)\n"
-        '  Cite:    A. Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal\n'
-        '           Representations of Speech", IEEE SLT 2022.\n'
-        "\n"
-        "Audio is decoded to 16 kHz mono S16LE WAV; references are the raw transcriptions.\n"
+    title = f"Publication corpus: FLEURS {locale} test split, every clip"
+    return _write(
+        out, manifest_name, header, entries, _fleurs_notice(title, f"fleurs-test:{locale}")
     )
-    return _write(out, manifest_name, header, entries, notice)
+
+
+def build_fleurs_smoke(
+    out: Path, sources: dict[str, tuple[Path, Path]], *, manifest_name: str = "manifest.json"
+) -> Path:
+    """The first ``SMOKE_CLIPS`` clips of each locale in ``sources``
+    ({locale: (test.tsv, test.tar.gz)}), filed under their locale."""
+    entries: list[dict[str, object]] = []
+    digests: dict[str, str] = {}
+    for locale, (tsv_path, tar_path) in sources.items():
+        entries += _fleurs_entries(
+            out, tsv_path, tar_path, locale, limit=SMOKE_CLIPS, category=locale
+        )
+        digests[f"{locale}/test.tsv"] = sha256_file(tsv_path)
+        digests[f"{locale}/audio/test.tar.gz"] = sha256_file(tar_path)
+    header = {
+        "preset": "fleurs-smoke",
+        "dataset": "fleurs",
+        "split": "test",
+        "language": "multilingual",
+        "license": LICENSE,
+        "source": f"https://huggingface.co/datasets/{FLEURS_REPO}",
+        "source_sha256": digests,
+        "reference": "raw_transcription",
+        "citation": _FLEURS_CITATION,
+    }
+    title = f"Smoke corpus: the first {SMOKE_CLIPS} FLEURS test clips of {', '.join(sources)}"
+    return _write(out, manifest_name, header, entries, _fleurs_notice(title, "fleurs-smoke"))
 
 
 _SUBSET_FLAGS = (
@@ -334,6 +407,16 @@ def _built(manifest_path: Path, preset: Preset) -> bool:
     return True
 
 
+def _fetch_fleurs(cache: Path, locale: str) -> tuple[Path, Path]:
+    """One locale's test.tsv and audio archive, downloaded once into ``cache``."""
+    where = cache / "fleurs" / locale
+    tsv_path = corpus_english.download(fleurs_url(locale, "test.tsv"), where / "test.tsv")
+    tar_path = corpus_english.download(
+        fleurs_url(locale, "audio/test.tar.gz"), where / "test.tar.gz"
+    )
+    return tsv_path, tar_path
+
+
 def cmd_preset(args: argparse.Namespace) -> None:
     """``download-corpus --preset``: fetch (or reuse) a whole split, write its manifest."""
     preset = parse_preset(args.preset)
@@ -359,15 +442,11 @@ def cmd_preset(args: argparse.Namespace) -> None:
             librispeech_url(preset.split), cache / "librispeech" / f"{preset.split}.tar.gz"
         )
         manifest = build_librispeech(out, tar_path, preset.split, manifest_name=args.manifest_name)
+    elif preset.locale is None:
+        sources = {locale: _fetch_fleurs(cache, locale) for locale in SMOKE_LOCALES}
+        manifest = build_fleurs_smoke(out, sources, manifest_name=args.manifest_name)
     else:
-        assert preset.locale is not None
-        where = cache / "fleurs" / preset.locale
-        tsv_path = corpus_english.download(
-            fleurs_url(preset.locale, "test.tsv"), where / "test.tsv"
-        )
-        tar_path = corpus_english.download(
-            fleurs_url(preset.locale, "audio/test.tar.gz"), where / "test.tar.gz"
-        )
+        tsv_path, tar_path = _fetch_fleurs(cache, preset.locale)
         manifest = build_fleurs(
             out, tsv_path, tar_path, preset.locale, manifest_name=args.manifest_name
         )

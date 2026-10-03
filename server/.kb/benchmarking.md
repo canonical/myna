@@ -102,6 +102,8 @@ python3 myna-bench.pyz summarize --in results.jsonl --by-category
 
 A number meant for a paper or a leaderboard comparison comes from a whole published test split, never a subset tier. `download-corpus --preset` builds one (`librispeech-test-clean`, `librispeech-test-other`, `fleurs-test:<locale>`; `corpus_publication`): every utterance, no noise or long-form variants, subset flags refused. Archives cache under the shared `~/.cache/myna/corpus-src`; the manifest names preset, dataset, split, licence, source URL and each archive's sha256. FLEURS is fetched at a pinned revision and scored against `raw_transcription`. A preset over a corpus that still verifies is a no-op; over a different corpus, refused. Sweep with `dev/bench-publication.yaml`, once per corpus with `--manifest` and its own `--out`: a results file is scored against one corpus id, and rows from different ids never compare. Sizes and costs are in that file's header. AMI, Earnings-22 and VoxPopuli wait on a licence decision; TED-LIUM 3 is CC-BY-NC-ND and excluded.
 
+`--preset fleurs-smoke` is the one non-publication preset: the first 10 test clips by filename of each of en, de, fr, es, it, ru, zh, ja and ko in one manifest, category = locale. It feeds the nightly lab gate (`tests/testflinger/`), which downloads it as the `fleurs-smoke-v1` release asset pinned by sha256, and `summarize --gate <yaml>` fails that run on a per-snap, per-language ceiling (CER for zh/ja/ko/yue, WER otherwise), on a listed language nothing scored, or on a row that did not finish. A target may install from the store (`channel:` and `components:`, snap-downloaded and acked, so signed, not `--dangerous`) and restrict itself to `languages:`.
+
 Merge returned submissions with:
 
 ```shell

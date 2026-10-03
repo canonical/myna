@@ -23,6 +23,7 @@ from myna.benchmarker.corpus_publication import (
     FLEURS_REVISION,
     Preset,
     build_fleurs,
+    build_fleurs_smoke,
     build_librispeech,
     cmd_preset,
     default_cache,
@@ -473,4 +474,38 @@ def test_the_module_names_every_preset_it_accepts():
         "librispeech-test-clean",
         "librispeech-test-other",
         "fleurs-test:<lang>",
+        "fleurs-smoke",
     )
+
+
+# ─── FLEURS smoke: a few clips of each language, one manifest ───────────────
+
+
+def test_the_smoke_preset_is_parsed():
+    assert parse_preset("fleurs-smoke").dataset == "fleurs-smoke"
+
+
+def test_the_smoke_tier_takes_the_first_listed_clips_of_each_locale(tmp_path, monkeypatch):
+    monkeypatch.setattr(corpus_publication, "SMOKE_CLIPS", 2)
+    sources = {}
+    for locale in ("fr_fr", "cmn_hans_cn"):
+        (tmp_path / locale).mkdir()
+        sources[locale] = fleurs_files(tmp_path / locale)
+    clips = load_manifest(build_fleurs_smoke(tmp_path / "out", sources))
+    assert [(c.id, c.language, c.category) for c in clips] == [
+        ("fleurs-cmn_hans_cn-111", "zh", "cmn_hans_cn"),
+        ("fleurs-cmn_hans_cn-222", "zh", "cmn_hans_cn"),
+        ("fleurs-fr_fr-111", "fr", "fr_fr"),
+        ("fleurs-fr_fr-222", "fr", "fr_fr"),
+    ]
+
+
+def test_the_smoke_tier_records_every_source_archive(tmp_path):
+    (tmp_path / "fr_fr").mkdir()
+    tsv, tar = fleurs_files(tmp_path / "fr_fr")
+    manifest = json.loads(build_fleurs_smoke(tmp_path / "out", {"fr_fr": (tsv, tar)}).read_text())
+    assert manifest["preset"] == "fleurs-smoke"
+    assert manifest["source_sha256"] == {
+        "fr_fr/test.tsv": sha256_file(tsv),
+        "fr_fr/audio/test.tar.gz": sha256_file(tar),
+    }
