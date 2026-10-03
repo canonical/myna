@@ -1,0 +1,54 @@
+# Advances the apt snapshot every workshop builds from (APT_SNAPSHOT in
+# .workshop/pins/hooks/setup-base), so the archive only ever moves in a commit
+# CI has passed. Green: main fast-forwards to the bump. Red: this run fails
+# and the bump-pins branch stays behind for a human to look at.
+#
+# The commit goes through the contents API, which GitHub signs, because main
+# takes signed commits only. CI is dispatched rather than triggered by it:
+# GITHUB_TOKEN writes start no workflows, dispatches do.
+name: Bump pins
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Commit the bump to bump-pins
+        id: bump
+        run: |
+          f=.workshop/pins/hooks/setup-base
+          snapshot=$(date -u +%Y%m%dT000000Z)
+          sed -i "s/^APT_SNAPSHOT=.*/APT_SNAPSHOT=$snapshot/" "$f"
+          git diff --quiet && exit 0
+          refs=repos/${{ github.repository }}/git/refs
+          gh api "$refs" -f ref=refs/heads/bump-pins -f sha="$GITHUB_SHA" >/dev/null ||
+            gh api -X PATCH "$refs/heads/bump-pins" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          sha=$(gh api -X PUT "repos/${{ github.repository }}/contents/$f" -f branch=bump-pins \
+            -f message="build(workshop): apt snapshot $snapshot" \
+            -f content="$(base64 -w0 "$f")" -f sha="$(git rev-parse "HEAD:$f")" -q .commit.sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Run CI on it, then fast-forward main
+        if: steps.bump.outputs.sha
+        run: |
+          gh workflow run ci.yml --ref bump-pins
+          until id=$(gh run list -w ci.yml -c "${{ steps.bump.outputs.sha }}" \
+              -e workflow_dispatch --json databaseId -q '.[0].databaseId') && [ -n "$id" ]; do
+            sleep 10
+          done
+          gh run watch "$id" --exit-status
+          gh api -X PATCH "repos/${{ github.repository }}/git/refs/heads/main" \
+            -f sha="${{ steps.bump.outputs.sha }}" >/dev/null
