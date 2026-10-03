@@ -22,6 +22,8 @@ import json
 from pathlib import Path
 from typing import Any, TypedDict
 
+import yaml
+
 from myna.benchmarker._pace import REALTIME
 from myna.benchmarker._schedule import COLD, MEASURED, WARMUP
 from myna.benchmarker._stats import (
@@ -578,6 +580,50 @@ def _print_by_category(
         print(f"{name:{lw}} " + " ".join(cells) + marker)
 
 
+# Languages written without spaces between words: a "word" is a sentence,
+# so they are scored, and gated, by characters.
+CHARACTER_SCORED = frozenset({"zh", "ja", "ko", "yue"})
+
+
+def gate(
+    records: list[Record],
+    statuses: dict[RowKey, tuple[str, str]],
+    ceilings: dict[str, dict[str, float]],
+) -> list[str]:
+    """Every breach of ``ceilings`` ({snap: {language: percent}}); [] passes.
+
+    Each row of a listed snap must score every language listed for it: a
+    backend that errors on every clip of a language leaves no rows, and that
+    is a failure, never a vacuous pass. So is a row the runner did not finish.
+    """
+    failures = [
+        f"{label}: {status} ({reason})"
+        for (_, label), (status, reason) in sorted(statuses.items())
+        if status != "ok"
+    ]
+    warm = [r for r in records if not r.get("cold", False)]
+    for snap, limits in ceilings.items():
+        keys = sorted(
+            {row_key(r) for r in warm if r["label"].split("/")[0].partition("+")[0] == snap}
+        )
+        if not keys:
+            failures.append(f"{snap}: no scored clips")
+        for key in keys:
+            for language, ceiling in limits.items():
+                by_char = language in CHARACTER_SCORED
+                edits, total = ("cer_edits", "ref_chars") if by_char else ("wer_edits", "ref_words")
+                rows = [r for r in warm if row_key(r) == key and r["language"] == language]
+                length = sum(r[total] for r in rows)
+                if not length:
+                    failures.append(f"{key[1]} {language}: no scored clips")
+                    continue
+                rate = sum(r[edits] for r in rows) / length * 100
+                if rate > ceiling:
+                    metric = "CER" if by_char else "WER"
+                    failures.append(f"{key[1]} {language}: {metric} {rate:.1f}% > {ceiling:g}%")
+    return failures
+
+
 def _bootstrap() -> Any:
     """The interval module, or a way forward where numpy is missing."""
     try:
@@ -675,6 +721,14 @@ def cmd_summarize(args: argparse.Namespace) -> None:
         print_intervals(summary, records, order)
     if getattr(args, "by_category", False):
         _print_by_category(records, order, statuses)
+    if getattr(args, "gate", None):
+        ceilings = yaml.safe_load(Path(args.gate).read_text(encoding="utf-8"))
+        failures = gate(records, statuses, ceilings)
+        print(f"\ngate {args.gate}: {'FAIL' if failures else 'PASS'}")
+        for failure in failures:
+            print(f"  {failure}")
+        if failures:
+            raise SystemExit(1)
 
 
 def _resolve(name: str, keys: set[RowKey]) -> RowKey:

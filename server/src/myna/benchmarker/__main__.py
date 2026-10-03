@@ -303,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--corpus", help="corpus id to report on; required when the file holds more than one"
     )
     p_sum.add_argument(
+        "--gate",
+        metavar="FILE",
+        help="YAML {snap: {language: ceiling %%}}: exit 1 on a breach, a language "
+        "nothing scored, or a row that did not finish (zh/ja/ko by CER, others by WER)",
+    )
+    p_sum.add_argument(
         "--ci",
         action=argparse.BooleanOptionalAction,
         default=True,

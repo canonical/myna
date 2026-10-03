@@ -29,6 +29,7 @@ from myna.benchmarker._summarize import (
     clip_samples,
     cmd_compare,
     cmd_summarize,
+    gate,
     one_corpus,
     one_normalizer_version,
     print_intervals,
@@ -1126,3 +1127,74 @@ def test_compare_refuses_two_corpora(tmp_path):
     write_jsonl(path, [record(label="a", corpus_id="v1:x"), record(label="b", corpus_id="v1:y")])
     with pytest.raises(SystemExit, match="compares nothing"):
         cmd_compare(CompareArgs(path, "a", "b"))
+
+
+# ─── gate ────────────────────────────────────────────────────────────────────
+
+PARAKEET = "myna-parakeet/cpu/int8/batch"
+
+
+def test_gate_passes_rows_under_their_ceilings():
+    records = [record(label=PARAKEET, language="de", wer_edits=1, ref_words=10)]
+    assert gate(records, {}, {"myna-parakeet": {"de": 25}}) == []
+
+
+def test_gate_fails_a_language_over_its_word_ceiling():
+    records = [record(label=PARAKEET, language="de", wer_edits=3, ref_words=10)]
+    assert gate(records, {}, {"myna-parakeet": {"de": 25}}) == [f"{PARAKEET} de: WER 30.0% > 25%"]
+
+
+def test_gate_scores_chinese_by_characters():
+    """Chinese has no word boundaries: its WER counts whole sentences."""
+    records = [
+        record(
+            label="myna-funasr/cpu/sensevoice/batch",
+            language="zh",
+            wer_edits=1,
+            ref_words=1,
+            cer_edits=1,
+            ref_chars=20,
+        )
+    ]
+    assert gate(records, {}, {"myna-funasr": {"zh": 20}}) == []
+
+
+def test_gate_fails_a_declared_language_nothing_scored():
+    """A backend erroring on every clip leaves no rows, not a 0% pass."""
+    records = [record(label=PARAKEET, language="de")]
+    assert gate(records, {}, {"myna-parakeet": {"de": 25, "ru": 25}}) == [
+        f"{PARAKEET} ru: no scored clips"
+    ]
+
+
+def test_gate_fails_a_backend_with_no_rows_at_all():
+    assert gate([], {}, {"myna-whisper": {"en": 25}}) == ["myna-whisper: no scored clips"]
+
+
+def test_gate_fails_a_row_that_did_not_finish():
+    records = [record(label=PARAKEET, language="de")]
+    statuses = {("box", PARAKEET): ("broken", "daemon died")}
+    assert gate(records, statuses, {"myna-parakeet": {"de": 25}}) == [
+        f"{PARAKEET}: broken (daemon died)"
+    ]
+
+
+def test_gate_ignores_cold_samples():
+    records = [
+        record(label=PARAKEET, language="de", wer_edits=0, ref_words=10),
+        record(label=PARAKEET, language="de", clip="c2", cold=True, wer_edits=10, ref_words=10),
+    ]
+    assert gate(records, {}, {"myna-parakeet": {"de": 25}}) == []
+
+
+def test_cmd_summarize_exits_1_on_a_gate_breach(tmp_path, capsys):
+    path = tmp_path / "results.jsonl"
+    write_jsonl(path, [record(label=PARAKEET, language="de", wer_edits=3, ref_words=10)])
+    ceilings = tmp_path / "gate.yaml"
+    ceilings.write_text("myna-parakeet: {de: 25}\n")
+    args = Args(path, ci=False)
+    args.gate = str(ceilings)
+    with pytest.raises(SystemExit) as exc:
+        cmd_summarize(args)
+    assert exc.value.code == 1
+    assert "WER 30.0% > 25%" in capsys.readouterr().out
