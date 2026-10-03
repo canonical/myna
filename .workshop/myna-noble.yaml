@@ -6,7 +6,9 @@
 name: myna-noble
 base: ubuntu@24.04
 sdks:
-  - name: rust
+  # Pinned apt snapshot and Rust toolchain, as in myna.yaml.
+  - name: project-pins
+  - name: project-rust
 
   # GTK4/libadwaita headers, blueprint-compiler, xvfb and D-Bus. See
   # .workshop/desktop/sdk.yaml.

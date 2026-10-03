@@ -23,11 +23,13 @@
 # side keeps its own venv at the same in-tree path. Nothing else changes: `uv
 # sync`, the actions, dev/exercise.sh, and the orchestrator e2e tests all keep
 # using server/.venv and are simply served different bytes. Nothing is lost by
-# not sharing - a venv is ~120 MB of hardlinks into the uv cache (which the uv
-# SDK already mounts separately per workshop), and re-materialising one from a
-# warm cache takes under a second.
+# not sharing - a venv is ~120 MB of copies out of the uv cache, and
+# re-materialising one from a warm cache takes under a second.
+#
+# It also installs uv itself, pinned in hooks/setup-base. This replaces the
+# store `uv` SDK, whose revision cannot be pinned.
 name: venv
-summary: Per-workshop server/.venv, shadowing the host's (a venv's paths cannot be shared).
+summary: Pinned uv, and a per-workshop server/.venv shadowing the host's.
 
 plugs:
   # Workshop-managed storage, mounted over the bind-mounted path. Empty on
@@ -35,3 +37,8 @@ plugs:
   venv:
     interface: mount
     workshop-target: /project/server/.venv
+
+  # Kept on the host across refreshes; CI caches it as venv:uv-cache.
+  uv-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/uv

@@ -33,7 +33,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { workshop: myna, gate: check, cache: "rust:cargo-registry\nuv:cache" }
+          - { workshop: myna, gate: check, cache: "rust:cargo-registry\nvenv:uv-cache" }
           - { workshop: myna-noble, gate: test-noble }
           - { workshop: myna-shell, gate: test-extension }
     name: ${{ matrix.gate }}
@@ -112,7 +112,7 @@ jobs:
           workshop: myna
           cache: |
             rust:cargo-registry
-            uv:cache
+            venv:uv-cache
 
       # The `myna` workshop's half of `make test` runs here instrumented:
       # corpus, cov-client, cov-server, cov-extension, exercise, deadcode,

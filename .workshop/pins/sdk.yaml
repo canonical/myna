@@ -1,0 +1,6 @@
+# In-project SDK: the Ubuntu archive every workshop installs from, frozen at
+# one snapshot.ubuntu.com timestamp (hooks/setup-base). First in every
+# workshop, so bumping it rebuilds every layer above it and nothing else can
+# move the apt set. .github/workflows/bump-pins.yml advances it weekly.
+name: pins
+summary: Freezes apt at a snapshot.ubuntu.com timestamp.

@@ -97,6 +97,8 @@ fmt-server: ## Format the Python tree in place (ruff format: server + dev/)
 
 .PHONY: lint-client
 lint-client: ## Rust format check + clippy with warnings as errors
+	@grep -qx 'RUST=$(shell sed -n 's/^channel = "\(.*\)"/\1/p' client/rust-toolchain.toml)' .workshop/rust/hooks/setup-base \
+		|| { echo "client/rust-toolchain.toml and .workshop/rust/hooks/setup-base pin different toolchains" >&2; exit 1; }
 	$(WS) fmt-check
 	$(WS) lint
 
