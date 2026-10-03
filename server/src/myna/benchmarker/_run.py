@@ -88,6 +88,9 @@ Config format::
     pace: [max]                   # add realtime for live streaming latency
 
     targets:
+      - snap: myna-parakeet
+        channel: latest/edge        # instead of files: install from the store
+        components: [model-parakeet-int8]
       - snap: myna-whisper
         files:                      # paths or globs; exactly one .snap
           - ./snaps/myna-whisper_*.snap
@@ -96,6 +99,7 @@ Config format::
         service: myna-whisper.server
         socket: /var/snap/myna-whisper/common/share/provider/myna.sock
         models: [tiny, base]        # optional allowlist
+        languages: [en, de]         # optional; score only these clip languages
         repeats: 3                  # optional; overrides the global schedule keys
         pace: [max, realtime]       # optional; overrides the global pace
         engines: [cpu, nvidia-gpu]  # optional; omitted = one auto-selected pass
@@ -115,6 +119,7 @@ import hashlib
 import json
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -219,6 +224,22 @@ def _resolve_user_home() -> None:
 # ---------------------------------------------------------------------------
 # Source-tree targets
 # ---------------------------------------------------------------------------
+
+
+def _download(snap: str, channel: str, components: list[str], into: Path) -> list[str]:
+    """The snap and ``components`` as ``channel`` serves them, with assertions."""
+    shutil.rmtree(into, ignore_errors=True)
+    into.mkdir(parents=True)
+    _run(
+        [
+            "snap",
+            "download",
+            f"--channel={channel}",
+            f"--target-directory={into}",
+            "+".join([snap, *components]),
+        ]
+    )
+    return sorted(str(p) for p in into.iterdir() if p.suffix in (".snap", ".comp"))
 
 
 def _resolve_files(patterns: list[str], root: Path, snap: str) -> list[str]:
@@ -575,12 +596,22 @@ class SnapTarget:
         self.schedule: Schedule = parse_schedule(spec, schedule or Schedule(), self.snap)
         self.paces: tuple[str, ...] = parse_paces(spec, paces, self.snap)
         self.label_suffix = label_suffix
-        if not spec.get("files"):
+        self.channel: str | None = spec.get("channel")
+        if self.channel and spec.get("files"):
+            raise SystemExit(f"{self.snap}: target takes files: or channel:, not both")
+        if self.channel:
+            self.store_dir: Path = root / "store" / self.snap
+            self.files: list[str] = _download(
+                self.snap, self.channel, list(spec.get("components") or []), self.store_dir
+            )
+        elif spec.get("files"):
+            self.files = _resolve_files(list(spec["files"]), root, self.snap)
+        else:
             raise SystemExit(
                 f"{self.snap}: target needs files: - paths or globs naming the packed "
-                "snap and the components to install with it"
+                "snap and the components to install with it - or channel: to install "
+                "from the store"
             )
-        self.files: list[str] = _resolve_files(list(spec["files"]), root, self.snap)
         self.snap_file: Path = next(Path(f) for f in self.files if f.endswith(".snap"))
         # The snap name is the command only when an app shares it, which is true
         # for none of these snaps, so it is read out of the artefact's
@@ -593,6 +624,8 @@ class SnapTarget:
         # Optional allowlist: which model variants to sweep. Omitted = every
         # option the active engine declares.
         self.only_models: list[str] = list(spec.get("models") or [])
+        # Optional: the clip languages this target is scored on. Omitted = all.
+        self.languages: set[str] = set(spec.get("languages") or [])
         # Optional engine axis: which engines to measure, each in turn. Omitted
         # = one pass on whatever hardware detection picks (see engines_to_sweep).
         self.only_engines: list[str] = list(spec.get("engines") or [])
@@ -612,6 +645,10 @@ class SnapTarget:
         self.applied: dict[str, str] = {}
         # Engines this machine cannot run, filled in by check_machine.
         self.blocked: dict[str, str] = {}
+
+    def own(self, clips: list[Clip]) -> list[Clip]:
+        """The clips in this target's ``languages``, or all of them."""
+        return [c for c in clips if not self.languages or c.language in self.languages]
 
     def check_machine(self, machine: Machine) -> None:
         """Rule out engines this machine cannot run, before anything installs.
@@ -701,7 +738,14 @@ class SnapTarget:
             f"[{self.snap}] installing {len(self.files)} file(s): "
             f"{[Path(f).name for f in self.files]}"
         )
-        _run(["snap", "install", "--dangerous", *self.files])
+        if self.channel:
+            # Acked assertions make it the store's snap: its snap-id,
+            # declaration and auto-connections, exactly what a user gets.
+            for assertion in sorted(self.store_dir.glob("*.assert")):
+                _run(["snap", "ack", str(assertion)])
+            _run(["snap", "install", *self.files])
+        else:
+            _run(["snap", "install", "--dangerous", *self.files])
         self._connect_plugs()
 
     def hash_files(self) -> list[ArtifactFile]:
@@ -1726,8 +1770,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                                 variant=variant,
                                 pace=pace,
                                 togglable=togglable,
-                                clips_cold=clips_cold,
-                                clips_warm=clips_warm,
+                                clips_cold=target.own(clips_cold),
+                                clips_warm=target.own(clips_warm),
                                 budget=cfg.budget,
                                 out=out,
                                 provenance=provenance,

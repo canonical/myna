@@ -279,6 +279,58 @@ def test_a_target_with_no_source_at_all_is_rejected():
         SnapTarget({"snap": "myna-whisper"}, ROOT)
 
 
+def test_a_target_with_files_and_a_channel_is_rejected():
+    with pytest.raises(SystemExit, match="files: or channel:, not both"):
+        SnapTarget({"snap": "myna-whisper", "files": [WHISPER_SNAP], "channel": "edge"}, ROOT)
+
+
+def _store_download(fake_run, into: Path):
+    """`snap download` leaves the snap, its components and their assertions."""
+
+    def download(cmd, **kwargs):
+        if cmd[:2] == ["snap", "download"]:
+            into.mkdir(parents=True, exist_ok=True)
+            for name in ("myna-whisper_9.snap", "myna-whisper+model-tiny_9.comp"):
+                (into / name).write_bytes(b"")
+            for name in ("myna-whisper_9.assert", "myna-whisper+model-tiny_9.assert"):
+                (into / name).write_text("")
+        return fake_run(cmd, **kwargs)
+
+    return download
+
+
+def test_a_channel_target_downloads_what_a_user_installs(tmp_path, fake_run, monkeypatch):
+    into = tmp_path / "store" / "myna-whisper"
+    monkeypatch.setattr(_run.subprocess, "run", _store_download(fake_run, into))
+    target = SnapTarget(
+        {"snap": "myna-whisper", "channel": "latest/edge", "components": ["model-tiny"]}, tmp_path
+    )
+    assert fake_run.ran(
+        "snap",
+        "download",
+        "--channel=latest/edge",
+        f"--target-directory={into}",
+        "myna-whisper+model-tiny",
+    )
+    assert target.files == [
+        str(into / "myna-whisper+model-tiny_9.comp"),
+        str(into / "myna-whisper_9.snap"),
+    ]
+
+
+def test_a_channel_target_installs_signed_not_dangerous(tmp_path, fake_run, monkeypatch):
+    """The assertions make it the store's snap: snap-id, declaration, auto-connections."""
+    into = tmp_path / "store" / "myna-whisper"
+    monkeypatch.setattr(_run.subprocess, "run", _store_download(fake_run, into))
+    target = SnapTarget({"snap": "myna-whisper", "channel": "latest/edge"}, tmp_path)
+    monkeypatch.setattr(_run, "_run", fake_run)
+    target.start()
+    assert fake_run.ran("snap", "ack", str(into / "myna-whisper_9.assert"))
+    assert fake_run.ran("snap", "ack", str(into / "myna-whisper+model-tiny_9.assert"))
+    assert fake_run.ran("snap", "install", str(into / "myna-whisper_9.snap"))
+    assert not fake_run.ran("snap", "install", "--dangerous")
+
+
 def test_files_entries_are_globs_so_a_version_bump_needs_no_config_edit(tmp_path):
     (tmp_path / "myna-whisper_0.2.0_amd64.snap").write_bytes(b"")
     (tmp_path / "myna-whisper+model-tiny.comp").write_bytes(b"")
@@ -804,9 +856,26 @@ def test_writer_appends_to_an_existing_file(tmp_path):
 class FakeClip:
     """Just enough Clip for the sweep's progress printing and pacing budget."""
 
-    def __init__(self, clip_id="clip-a", duration_seconds=1.0):
+    def __init__(self, clip_id="clip-a", duration_seconds=1.0, language="en"):
         self.id = clip_id
         self.duration_seconds = duration_seconds
+        self.language = language
+
+
+def test_a_target_runs_only_the_languages_it_names():
+    """FunASR has no European languages: scoring it on them is noise."""
+    target = target_for(languages=["zh", "ja"])
+    clips = [
+        FakeClip("a", language="zh"),
+        FakeClip("b", language="de"),
+        FakeClip("c", language="ja"),
+    ]
+    assert [c.id for c in target.own(clips)] == ["a", "c"]
+
+
+def test_a_target_without_languages_runs_every_clip():
+    clips = [FakeClip("a", language="zh"), FakeClip("b", language="de")]
+    assert target_for().own(clips) == clips
 
 
 class FakeTarget:
