@@ -7,9 +7,7 @@
 # confined-e2e, control-socket and nss-only-user tasks on a clean qemu
 # ubuntu-24.04-64 VM (hosted-runner KVM). The other two tasks stay
 # local-only: they need the funasr snap and its model component.
-#
-# Supersession plan: once this is green for two weeks, the bespoke smoke job
-# in snap.yml shrinks to build-only and its smoke assertions live here.
+# The built client snap is uploaded for sideloading.
 name: Spread
 
 concurrency:
@@ -95,6 +93,11 @@ jobs:
         id: client
         with:
           path: myna-snap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myna-snap
+          path: ${{ steps.client.outputs.snap }}
+          retention-days: 14
 
       - name: Stage + build fake-backend snap
         run: fake-snap/dev/prepare.sh

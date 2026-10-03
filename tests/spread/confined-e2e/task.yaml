@@ -24,6 +24,11 @@ execute: |
     install_snap "$MYNA_SNAP"
     snap connect myna:backend myna-fake-backend:provider
 
+    # Offline invariant: no network plug. Whole-line match, because
+    # `network-bind` (bind(2) for the control socket, no AppArmor network
+    # rule) is allowed and a prefix match cannot tell the two apart.
+    ! grep -qE '^[[:space:]]*(- network|network:|interface: network)$' /snap/myna/current/meta/snap.yaml
+
     # The fake backend daemon serves the scripted transcript once the socket
     # directory exists on both sides of the share.
     for i in $(seq 1 60); do
