@@ -19,7 +19,7 @@ jobs:
           workshop: myna
           cache: |
             rust:cargo-registry
-            uv:cache
+            venv:uv-cache
 
       - name: Advisory audits (cargo audit + pip-audit)
         run: make audit

@@ -1,0 +1,10 @@
+# In-project SDK: rustup and the toolchain, both pinned in hooks/setup-base.
+# Replaces the store `rust` SDK, whose revision cannot be pinned.
+name: rust
+summary: Pinned rustup and Rust toolchain.
+
+plugs:
+  # Kept on the host across refreshes; CI caches it as rust:cargo-registry.
+  cargo-registry:
+    interface: mount
+    workshop-target: /home/workshop/.cargo/registry

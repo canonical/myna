@@ -1,0 +1,20 @@
+#!/bin/bash
+# setup-base - runs as root at SDK install. Replaces the image's archive
+# sources with one snapshot, and pins it above the installed versions so a
+# base image newer than the snapshot is brought back to it.
+set -euo pipefail
+APT_SNAPSHOT=20261001T000000Z
+
+. /etc/os-release
+cat > /etc/apt/sources.list.d/ubuntu.sources <<SOURCES
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/$APT_SNAPSHOT
+Suites: $VERSION_CODENAME $VERSION_CODENAME-updates $VERSION_CODENAME-security
+Components: main universe restricted multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+SOURCES
+printf 'Package: *\nPin: origin snapshot.ubuntu.com\nPin-Priority: 1001\n' > /etc/apt/preferences.d/pins
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get full-upgrade --yes --allow-downgrades

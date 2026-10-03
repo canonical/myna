@@ -18,6 +18,8 @@
 name: myna-shell
 base: ubuntu@26.04
 sdks:
+  # Pinned apt snapshot, as in myna.yaml.
+  - name: project-pins
   # In-project SDK: GJS + GNOME Shell. See .workshop/shell/sdk.yaml.
   - name: project-shell
 
