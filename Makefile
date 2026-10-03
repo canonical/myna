@@ -60,10 +60,10 @@ help: ## List targets, grouped as in this file
 preflight: check test coverage ## Everything CI blocks a merge on: check + test + coverage
 
 .PHONY: check
-check: lint-client lint-server lint-snaps lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `static` job)
+check: lint-client lint-server lint-snaps lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `check` job)
 
 .PHONY: test
-test: test-client test-server test-extension test-noble ## Every blocking suite (CI `workshop`, `extension` and `noble` jobs)
+test: test-client test-server test-extension test-noble ## Every blocking suite (CI runs test-client/test-server instrumented, in `coverage`)
 
 # The measured suites are `test` under instrumentation, plus the use-case
 # exercise and the reports built on the merged exports. The patch gate at the
@@ -156,13 +156,13 @@ test-client-ui: ## HUD indicators paint under xvfb (workshop: ui-check)
 test-server: ## Python offline suite, scoped by TEST (workshop: py-test)
 	$(WS) py-test $(TEST)
 
-# Its own workshop, not `myna`: the Shell version a test can reach comes from
-# the workshop's base, and the extension targets a newer one than the core24
-# snap does. See .workshop/myna-shell.yaml.
 .PHONY: test-noble
 test-noble: ## Myna Settings suites on Noble's GTK and libadwaita (workshop myna-noble: config-check)
 	$(WS_NOBLE) config-check
 
+# Its own workshop, not `myna`: the Shell version a test can reach comes from
+# the workshop's base, and the extension targets a newer one than the core24
+# snap does. See .workshop/myna-shell.yaml.
 .PHONY: test-extension
 test-extension: ## GNOME Shell extension GJS contract suites (workshop myna-shell: gjs-test)
 	$(WS_SHELL) gjs-test
@@ -443,10 +443,10 @@ spread-build: spread-image ## Build spread at the pinned commit (input to every 
 	./dev/spread-build.sh
 
 # One suite by its directory name under tests/spread/: adapter-smoke (real
-# whisper snap, batch + streaming), confined-e2e (fake backend), thread-pinning
-# (real funasr snap, ORT affinity under confinement), control-socket (client
-# snap, network-bind seccomp bind(2)), nss-only-user (client snap, IBus for an
-# account outside /etc/passwd).
+# whisper snap, batch + streaming), confined-e2e (fake backend), control-socket
+# (client snap, network-bind seccomp bind(2)), nss-only-user (client snap, IBus
+# for an account outside /etc/passwd), user-daemon-session (real snaps, the
+# user daemon's session).
 spread-%: spread-build ## Run one suite: spread-<dir under tests/spread>, e.g. spread-confined-e2e
 	.cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/$*
 

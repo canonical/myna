@@ -23,64 +23,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  workshop:
+  # One Makefile gate per workshop. The `myna` workshop's suites run under
+  # instrumentation in `coverage` below, so they are not run bare here.
+  # myna-noble is Myna Settings on Noble's GTK 4.14 and libadwaita 1.5, the
+  # oldest it ships against; myna-shell is the GNOME Shell extension on a base
+  # new enough to run the Shell it targets.
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { workshop: myna, gate: check, cache: "rust:cargo-registry\nuv:cache" }
+          - { workshop: myna-noble, gate: test-noble }
+          - { workshop: myna-shell, gate: test-extension }
+    name: ${{ matrix.gate }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      # TODO(security): pin to a commit SHA before relying on this in anger —
-      # @v1 tracks the latest v1.* and can move under us.
+      # TODO(security): pin to a commit SHA - @v1 tracks the latest v1.*.
       - uses: canonical/launch-workshop@v1
         with:
-          workshop: myna
-          # Persist the crate registry and uv cache across runs.
-          cache: |
-            rust:cargo-registry
-            uv:cache
-
-      # The myna-workshop half of `make test`: every Rust suite (hermetic,
-      # the env-gated hardware suites with private services stood up, and the
-      # renderer smoke check under xvfb that catches a compiled-and-passed
-      # but visually broken overlay, see be8d380 / 2e45c68) plus the offline
-      # Python suite. `test-extension` is the job below, in its own workshop.
-      # Clippy is a static gate: `make check`, the `static` job.
-      - name: Client + server suites
-        run: make test-client test-server
-
-
-  # Myna Settings on Noble's GTK and libadwaita, the oldest it ships against.
-  # See .workshop/myna-noble.yaml.
-  noble:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      # TODO(security): pin to a commit SHA before relying on this in anger -
-      # @v1 tracks the latest v1.* and can move under us.
-      - uses: canonical/launch-workshop@v1
-        with:
-          workshop: myna-noble
-
-      - name: Myna Settings suites on Noble
-        run: make test-noble
-
-  # The GNOME Shell extension, in its own workshop and so its own job: the
-  # Shell version a test can reach comes from the workshop's base, and the
-  # extension targets a newer one than the core24 snap does. See
-  # .workshop/myna-shell.yaml.
-  extension:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      # TODO(security): pin to a commit SHA before relying on this in anger -
-      # @v1 tracks the latest v1.* and can move under us.
-      - uses: canonical/launch-workshop@v1
-        with:
-          workshop: myna-shell
-
-      - name: Extension tests (gjs)
-        run: make test-extension
+          workshop: ${{ matrix.workshop }}
+          cache: ${{ matrix.cache }}
+      - run: make ${{ matrix.gate }}
 
   # Static GNOME extension review with shexli. This deliberately does not use
   # the Shell workshop: shexli reviews the bundle layout and JavaScript
@@ -117,29 +82,6 @@ jobs:
       - name: Extension tests on the next Shell (LXD)
         run: make test-extension-next
 
-  # Static-check battery (feature 006, FR-010/FR-011). Each gate names its
-  # violations. The battery is defined once, by `check` in the Makefile, and
-  # invoked here - listing the gates again in this file is what let the snap
-  # manifest lint exist in CI but not in `make check`.
-  static:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: canonical/launch-workshop@v1
-        with:
-          workshop: myna
-          cache: |
-            rust:cargo-registry
-            uv:cache
-
-      # Format checks, clippy, ruff + mypy, cargo machete/deny, snap manifest
-      # lint, shellcheck, actionlint, translation-template freshness - see the
-      # `check` target for the authoritative list. Snap manifest lint runs
-      # modelctl itself (pinned release; the script fetches the CLI tarball,
-      # no Workshop toolchain).
-      - name: Static gates
-        run: make check
-
   # Coverage (feature 006, FR-007): both languages measured in the Workshop
   # environment, reports published as artifacts, and the self-hosted patch
   # gate (FR-008) enforced on the PR's changed lines. Project-level coverage
@@ -172,6 +114,7 @@ jobs:
             rust:cargo-registry
             uv:cache
 
+      # The `myna` workshop's half of `make test` runs here instrumented:
       # corpus, cov-client, cov-server, cov-extension, exercise, deadcode,
       # then the blocking patch gate (FR-008: 80% of changed coverable lines,
       # 5-line floor, deletion-only and excluded paths cannot false-fail; exit
