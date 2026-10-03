@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """A polkit authentication agent for one process that dismisses every prompt.
 
-Usage: cancel-agent.py PID [DELAY_SECONDS]
+Usage: cancel-agent.py PID
 
 Answers BeginAuthentication with org.freedesktop.PolicyKit1.Error.Cancelled,
 which polkitd records as the user dismissing the dialog; snapd then fails the
@@ -13,7 +13,6 @@ import sys
 from gi.repository import Gio, GLib
 
 PID = int(sys.argv[1])
-DELAY = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
 PATH = "/com/canonical/Myna/ShotCancelAgent"
 
 XML = """
@@ -38,14 +37,7 @@ def start_time(pid):
 def on_call(conn, sender, path, iface, method, params, invocation):
     if method == "BeginAuthentication":
         print(f"cancel-agent: dismissing {params[0]}", flush=True)
-
-        def dismiss():
-            invocation.return_dbus_error(
-                "org.freedesktop.PolicyKit1.Error.Cancelled", "dismissed by noble-shot"
-            )
-            return False
-
-        GLib.timeout_add(int(DELAY * 1000), dismiss)
+        invocation.return_dbus_error("org.freedesktop.PolicyKit1.Error.Cancelled", "dismissed by e2e")
     else:
         invocation.return_value(None)
 

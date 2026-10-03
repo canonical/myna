@@ -1,2 +1,0 @@
-instance-id: myna-e2e-${HOSTNAME}
-local-hostname: ${HOSTNAME}

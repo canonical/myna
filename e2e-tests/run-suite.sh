@@ -1,53 +1,79 @@
 #!/usr/bin/env bash
-# Run one e2e suite against a provisioned VM: revert it to the snapshot the
-# suite declares (a `# snapshot: NAME` header), boot, run the suite, collect
-# artifacts. The same entry point runs in CI.
+# Run e2e suites against a provisioned VM: per suite, boot a throwaway copy
+# of the snapshot it declares (a `# snapshot: NAME` header), push the binary
+# and tools, run it, pull artifacts. Local runs and CI share this entry point.
 #
-# Usage: run-suite.sh --release noble|resolute|stonking --suite NAME [--no-build] [--keep-running]
-# Suites live in suites/ (e.g. --suite onboarding-full).
+# Usage: run-suite.sh --release noble|resolute|stonking [--binary PATH] [SUITE ...]
+#   --binary PATH  test this myna-config instead of building one in the
+#                  myna-noble workshop
+# Suites live in suites/; none given runs them all.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=vm/lib.sh
+# shellcheck source=e2e-tests/vm/lib.sh
 source "$HERE/vm/lib.sh"
 
-REL= SUITE= BUILD=1 KEEP=
+REL='' BINARY='' SUITES=()
 while [ $# -gt 0 ]; do
     case $1 in
         --release) REL=$2; shift 2 ;;
-        --suite) SUITE=$2; shift 2 ;;
-        --no-build) BUILD=0; shift ;;
-        --keep-running) KEEP=1; shift ;;
+        --binary) BINARY=$2; shift 2 ;;
         -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        *) echo "unknown option $1" >&2; exit 2 ;;
+        *) SUITES+=("$1"); shift ;;
     esac
 done
-case $REL in noble|resolute|stonking) ;; *) echo "--release noble|resolute|stonking" >&2; exit 2 ;; esac
-SUITE_FILE=$HERE/suites/$SUITE.sh
-[ -f "$SUITE_FILE" ] || { echo "no suite $SUITE ($SUITE_FILE)" >&2; exit 2; }
-
+check_release "$REL"
 VM=$(vm_name "$REL")
-SNAP=$(sed -n 's/^# snapshot: //p' "$SUITE_FILE" | head -1)
-SNAP=${SNAP:-bare}
-SNAPS=$(virsh snapshot-list "$VM" --name 2>/dev/null)
-grep -qx "$SNAP" <<< "$SNAPS" \
-    || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL" >&2; exit 1; }
+if [ ${#SUITES[@]} = 0 ]; then
+    for f in "$HERE"/suites/*.sh; do
+        [ "${f##*/}" = lib.sh ] || SUITES+=("$(basename "$f" .sh)")
+    done
+fi
+REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 
-ARTIFACTS=$RUN_DIR/artifacts/$REL-$SUITE-$(date +%Y%m%d-%H%M%S)
-mkdir -p "$ARTIFACTS"
-echo "== reverting $VM to $SNAP"
-[ "$(virsh domstate "$VM")" = "shut off" ] || shutdown_vm "$VM"
-virsh snapshot-revert "$VM" "$SNAP"
-IP=$(start_vm "$VM")
-wait_ready "$IP"
-echo "== $VM at $IP, running $SUITE (artifacts: $ARTIFACTS)"
+if [ -z "$BINARY" ]; then
+    # The binary is built once on the GTK 4.14/adw 1.5 floor and runs on every
+    # series. A worktree's .git does not resolve inside the workshop, so the
+    # version is staged the way snap packaging does it.
+    echo "== building myna-config in myna-noble"
+    "$REPO/dev/version.sh" > "$REPO/client/.version"
+    trap 'rm -f "$REPO/client/.version"' EXIT
+    # shellcheck disable=SC2016 # expands in the workshop
+    (cd "$REPO" && workshop exec myna-noble -- bash -c \
+        'export CARGO_TARGET_DIR=$HOME/target; cd /project/client && cargo build --release -q -p myna-config --bin myna-config')
+    BINARY=$RUN_DIR/myna-config
+    mkdir -p "$RUN_DIR"
+    (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/myna-config) > "$BINARY"
+fi
 
-export REL IP T=$HERE/tools ARTIFACTS SUITE_LIB=$HERE/suites/lib.sh
-BUILD_FLAG=(); [ $BUILD = 0 ] && BUILD_FLAG=(--no-build)
 rc=0
-MYNA_SHOT_BUILD_FLAGS="${BUILD_FLAG[*]}" bash "$SUITE_FILE" || rc=$?
+for SUITE in "${SUITES[@]}"; do
+    FILE=$HERE/suites/$SUITE.sh
+    SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
+    snapshots "$VM" | grep -qx "$SNAP" \
+        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL" >&2; exit 1; }
+    ARTIFACTS=$RUN_DIR/artifacts/$REL-$SUITE
+    rm -rf "$ARTIFACTS"; mkdir -p "$ARTIFACTS"
 
-vm_ssh "$IP" 'sudo journalctl -b --no-pager -o short-precise' > "$ARTIFACTS/journal.log" 2>/dev/null || true
-[ -z "$KEEP" ] && shutdown_vm "$VM" || true
-echo "== $SUITE rc=$rc; artifacts in $ARTIFACTS"
+    echo "== $SUITE: from $VM/$SNAP"
+    RUN=$VM-run
+    lxc delete --force "$RUN" 2>/dev/null || true
+    lxc copy "$VM/$SNAP" "$RUN"
+    lxc start "$RUN"
+    wait_ready "$RUN"
+
+    on_vm "$RUN" 'mkdir -p myna-shot/schemas'
+    lxc file push --uid 1000 --gid 1000 --mode 0755 "$BINARY" "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
+    lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
+
+    src=0
+    VM=$RUN REL=$REL bash "$FILE" || src=$?
+    echo "== $SUITE rc=$src"
+    [ $src = 0 ] || rc=1
+
+    lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
+    lxc exec "$RUN" -- journalctl -b --no-pager -o short-precise > "$ARTIFACTS/journal.log" || true
+    lxc delete --force "$RUN"
+done
+echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc

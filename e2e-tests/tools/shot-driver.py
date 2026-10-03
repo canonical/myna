@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Drive a running myna-config under Xvfb through AT-SPI, take screenshots.
 
-Runs on the Noble box inside xvfb-run (DISPLAY set). Steps are argv words:
+Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
 
   tab:<label>          click the view-switcher tab with that label
   click:<name>         real X click on the first showing widget with that
@@ -12,9 +12,9 @@ Runs on the Noble box inside xvfb-run (DISPLAY set). Steps are argv words:
   gone:<name>          wait (<=60 s) until no showing widget has that name
   wait:<seconds>       sleep
   key:<keysym>         xdotool key (e.g. Escape, ctrl+w)
+  type:<text>          xdotool type
+  scrollat:<x>,<y>[#n] wheel n clicks (default 10, negative = up) at root x,y
   shot:<file.png>      screenshot the screen (= the window) to OUT_DIR
-  shotwin:<file.png>   screenshot only the newest app window (use with a leading
-                       "natural" step, which keeps its default size)
   burst:<prefix>:<interval>:<max_s>[:<name>]
                        screenshot <prefix>-NNN.png every <interval> s, for at
                        most <max_s> s or until a widget named <name> shows
@@ -22,8 +22,6 @@ Runs on the Noble box inside xvfb-run (DISPLAY set). Steps are argv words:
   blur                 open a stand-in window (xmessage) and give it focus
   refocus              give the app's window focus again, close the stand-in
   sh:<command>         run a shell command on the box (e.g. sudo snap ...)
-  front[:W,H]          move the app's newest window (a modal wizard) to 0,0
-                       and raise it, optionally resizing it
 
 Names match exactly first, then as a case-insensitive substring. Any name
 may carry a role filter, "name@role" (e.g. "Backend@combo box"); `dump`
@@ -76,19 +74,6 @@ def walk(node, depth=0):
         child = node.get_child_at_index(i)
         if child is not None and showing(child):
             yield from walk(child, depth + 1)
-
-
-def walk_all(node):
-    # Another toolkit's tree can hide SHOWING on a container of showing widgets.
-    yield node
-    try:
-        count = node.get_child_count()
-    except Exception:
-        return
-    for i in range(count):
-        child = node.get_child_at_index(i)
-        if child is not None:
-            yield from walk_all(child)
 
 
 def name_of(node):
@@ -259,19 +244,6 @@ def main(steps):
             path = os.path.join(OUT_DIR, arg)
             subprocess.run(["import", "-window", "root", path], check=True)
             print(f"shot-driver: wrote {path}", flush=True)
-        elif verb == "shotwin":
-            # shotwin:NAME: the app's newest window only, cropped from the root.
-            time.sleep(0.4)
-            wid = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(PID)],
-                                 capture_output=True, text=True).stdout.split()[-1]
-            geo = dict(line.split("=", 1) for line in subprocess.run(
-                ["xdotool", "getwindowgeometry", "--shell", wid],
-                capture_output=True, text=True, check=True).stdout.split())
-            path = os.path.join(OUT_DIR, arg)
-            subprocess.run(["import", "-window", "root", "-crop",
-                            f"{geo['WIDTH']}x{geo['HEIGHT']}+{geo['X']}+{geo['Y']}", "+repage", path],
-                           check=True)
-            print(f"shot-driver: wrote {path} ({geo['WIDTH']}x{geo['HEIGHT']})", flush=True)
         elif verb == "burst":
             prefix, interval, limit, *stop = arg.split(":", 3)
             start = time.monotonic()
@@ -289,70 +261,6 @@ def main(steps):
                 if time.monotonic() - start > float(limit):
                     break
                 time.sleep(float(interval))
-        elif verb == "front":
-            # front[:W,H]: move the newest visible window of the app (the
-            # wizard opened modal from the menu) to 0,0, optionally resize it.
-            wids = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(PID)],
-                                  capture_output=True, text=True).stdout.split()
-            if not wids:
-                sys.exit("shot-driver: no visible window to bring to the front")
-            command = ["xdotool", "windowmove", wids[-1], "0", "0"]
-            if arg:
-                command += ["windowsize", wids[-1], *arg.split(",")]
-            subprocess.run(command + ["windowactivate", wids[-1]], check=False)
-        elif verb == "realshot":
-            # realshot:FILE: the host's real session through the Screenshot
-            # portal (resolute, noble); never on stonking, Charles's desktop.
-            if os.environ.get("SHOT_HOST") == "stonking":
-                sys.exit("shot-driver: realshot refused on stonking")
-            env = {k: v for k, v in os.environ.items() if k != "DISPLAY"}
-            subprocess.run(["python3", "realshot.py", os.path.join(OUT_DIR, arg)], env=env, check=True)
-        elif verb == "other":
-            # other:[APP/]NAME[@role]: AT-SPI action on a widget of another app
-            # (whose a11y name contains APP) on
-            # the real session (the portal's dialog); never on stonking.
-            if os.environ.get("SHOT_HOST") == "stonking":
-                sys.exit("shot-driver: other refused on stonking")
-            owner, _, arg = arg.rpartition("/")
-            name, _, role = arg.rpartition("@") if "@" in arg else (arg, "", "")
-            deadline = time.monotonic() + 30
-            hit = None
-            while hit is None and time.monotonic() < deadline:
-                desktop = Atspi.get_desktop(0)
-                for i in range(desktop.get_child_count()):
-                    child = desktop.get_child_at_index(i)
-                    try:
-                        if child is None or child.get_process_id() == PID:
-                            continue
-                        if owner and owner not in name_of(child):
-                            continue
-                    except Exception:
-                        continue
-                    for n in walk_all(child):
-                        try:
-                            if showing(n) and name_of(n) == name and (not role or n.get_role_name() == role):
-                                hit = n
-                                break
-                        except Exception:
-                            continue
-                    if hit:
-                        break
-                if hit is None:
-                    time.sleep(0.5)
-            if hit is None:
-                sys.exit(f"shot-driver: no other app shows {arg!r}")
-            do_action(hit)
-        elif verb == "otherdump":
-            desktop = Atspi.get_desktop(0)
-            for i in range(desktop.get_child_count()):
-                child = desktop.get_child_at_index(i)
-                if child is None:
-                    continue
-                print(f"app {name_of(child)!r} pid {child.get_process_id()}")
-                if arg not in name_of(child):
-                    continue
-                for n, depth in walk(child):
-                    print("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}")
         elif verb == "dump":
             dump()
         elif verb == "blur":

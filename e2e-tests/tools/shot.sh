@@ -1,124 +1,94 @@
 #!/bin/bash
-# Drive the working tree's Myna Settings in a provisioned e2e VM and take
-# screenshots. Builds myna-config once in the myna-noble workshop (GTK
-# 4.14/adw 1.5 floor; the binary runs on every series), ships it to the VM,
-# runs it under its own Xvfb (x11, 1100x800) on the VM user's real session
-# bus, drives it through AT-SPI (shot-driver.py) and copies the PNGs back.
+# Run Myna Settings inside an e2e VM under its own Xvfb (x11, 1100x800) on
+# the autologin user's real session bus, drive it through AT-SPI
+# (shot-driver.py) and leave screenshots and logs in ./out. run-suite.sh
+# pushes this directory and the binary to ~/myna-shot and runs it as the
+# user (suites/lib.sh `shot`).
 #
-# Ported from ~/myna-onboarding-stable/tools/shot.sh: hosts are libvirt VMs
-# provisioned by vm/provision.sh instead of physical machines, so the
-# live-desktop guards (stonking proxy, --real refusals) are gone: every VM
-# is disposable.
-#
-# Usage: shot.sh --release noble|resolute|stonking [options] [step ...]
-#   --no-build           reuse the last built binary (.run/build/myna-config)
-#   --polkit MODE        none (default) | allow | deny | cancel, each also as
-#                        slow-<mode> (answer held 6 s), long-cancel (a cancel
-#                        held 45 s, past a 30 s read): a temporary polkit rule
-#                        for snapd's actions (see --polkit-actions); cancel
-#                        answers through cancel-agent.py, like pressing Cancel
-#   --polkit-actions L   comma list of snapd action suffixes the rule covers
-#                        (default manage,manage-configuration,manage-interfaces)
-#   --apply-polkit MODE  none | allow | deny | cancel | slow-allow | slow-deny:
-#                        a rule for the pkexec --apply-plan prompt
-#   --monitor NAME       log processes, snapd changes and the journal to
-#                        the artifacts dir as NAME-{monitor,journal}.log
-#   --keyfile FILE       seed the dictation settings keyfile (no restore)
-#   --language LIST      run the app with LANGUAGE=LIST
-#   --out DIR            local output dir (default .run/shots)
-#   --real               run on the VM's real Wayland session instead of Xvfb.
-#                        No xdotool there: drive with activate:, shoot with
-#                        realshot:, reach other apps' dialogs with other:
-#   --fake-daemon        run the app and the driver on a private session bus
-#                        where fake-daemon.py stands in for the dictation daemon
-# Steps: see shot-driver.py. "{rel}" in a step becomes the release name.
-#
-# State is the suite's business: run-suite.sh reverts a snapshot first.
-set -euo pipefail
-
-HERE=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=../vm/lib.sh
-source "$HERE/../vm/lib.sh"
-REPO=${MYNA_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)}
-CACHE=$E2E_ROOT/.run/build
-OUT=$E2E_ROOT/.run/shots
-HOST=
-BUILD=1
-POLKIT=none
-POLKIT_ACTIONS=manage,manage-configuration,manage-interfaces
-APPLY_POLKIT=none
-MONITOR=
-KEYFILE=
-LANGUAGE_LIST=
-REAL=0
-FAKE=0
-STEPS=()
-
+# Usage: shot.sh [--polkit allow|deny|cancel] [--monitor NAME] [step ...]
+#   --polkit MODE   answer snapd's and the pkexec --apply-plan prompts with a
+#                   temporary rule; cancel answers through cancel-agent.py,
+#                   like pressing Cancel
+#   --monitor NAME  log processes, snapd changes and the journal to
+#                   out/NAME-{monitor,journal}.log
+# Steps: see shot-driver.py.
+set -uo pipefail
+cd "$(dirname "$0")" || exit 2
+mode=none monitor=
 while [ $# -gt 0 ]; do
     case $1 in
-        --release) HOST=$2; shift ;;
-        --no-build) BUILD=0 ;;
-        --polkit) POLKIT=$2; shift ;;
-        --polkit-actions) POLKIT_ACTIONS=$2; shift ;;
-        --apply-polkit) APPLY_POLKIT=$2; shift ;;
-        --monitor) MONITOR=$2; shift ;;
-        --keyfile) KEYFILE=$2; shift ;;
-        --out) OUT=$2; shift ;;
-        --language) LANGUAGE_LIST=$2; shift ;;
-        --real) REAL=1 ;;
-        --fake-daemon) FAKE=1 ;;
-        -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        *) STEPS+=("$1") ;;
+        --polkit) mode=$2; shift 2 ;;
+        --monitor) monitor=$2; shift 2 ;;
+        *) break ;;
     esac
-    shift
 done
-case $HOST in noble|resolute|stonking) ;; *) echo "shot.sh: --release noble|resolute|stonking" >&2; exit 2 ;; esac
-VM=$(vm_name "$HOST")
-[ ${#STEPS[@]} -gt 0 ] || STEPS=(wait:3 "shot:{rel}.png")
-STEPS=("${STEPS[@]//\{rel\}/$HOST}")
-case $POLKIT in none|allow|deny|cancel|slow-allow|slow-deny|slow-cancel|long-cancel) ;; *) echo "bad --polkit $POLKIT" >&2; exit 2 ;; esac
-case $APPLY_POLKIT in none|allow|deny|cancel|slow-allow|slow-deny) ;; *) echo "bad --apply-polkit $APPLY_POLKIT" >&2; exit 2 ;; esac
-mkdir -p "$CACHE" "$OUT" "$E2E_ROOT/.run/logs"
+case $mode in none|allow|deny|cancel) ;; *) echo "shot.sh: bad --polkit $mode" >&2; exit 2 ;; esac
+rule=/etc/polkit-1/rules.d/49-myna-shot.rules
+monitor_pids=()
+mkdir -p out
+glib-compile-schemas schemas/
 
-if [ $BUILD = 1 ]; then
-    echo "shot.sh: building myna-config in myna-noble" >&2
-    # A worktree's .git file points at a host path that does not resolve
-    # inside the workshop container, so the build cannot run dev/version.sh
-    # there. Stage client/.version (what snap packaging does) for the
-    # duration of the build.
-    (cd "$REPO" && ./dev/version.sh > client/.version)
-    trap 'rm -f "$REPO/client/.version"' EXIT
-    (cd "$REPO" && systemd-run --user --scope -q -p MemoryHigh=infinity \
-        workshop exec myna-noble -- bash -c \
-        'export CARGO_TARGET_DIR=$HOME/target; cd /project/client && cargo build --release -q -p myna-config --bin myna-config' >&2)
-    rm -f "$REPO/client/.version"; trap - EXIT
-    (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/myna-config) > "$CACHE/myna-config.new"
-    mv "$CACHE/myna-config.new" "$CACHE/myna-config"
-    chmod +x "$CACHE/myna-config"
+cleanup() {
+    sudo rm -f "$rule"
+    if [ ${#monitor_pids[@]} -gt 0 ]; then
+        # A root executor outlives the app: keep logging until it is gone.
+        for _ in $(seq 450); do pgrep -u root -x myna-config >/dev/null || break; sleep 2; done
+        sleep 4
+        sudo kill "${monitor_pids[@]}" 2>/dev/null
+    fi
+}
+trap cleanup EXIT
+
+if [ "$mode" != none ]; then
+    case $mode in allow) result=YES ;; deny) result=NO ;; cancel) result=AUTH_ADMIN ;; esac
+    # A binary outside /usr/bin carries no Myna action, so pkexec asks for
+    # org.freedesktop.policykit.exec: answered for this binary only.
+    sudo tee "$rule" >/dev/null <<RULES
+polkit.addRule(function(action, subject) {
+    if (subject.user != "$USER") return polkit.Result.NOT_HANDLED;
+    if (action.id.indexOf("io.snapcraft.snapd.") == 0 ||
+        action.id == "com.canonical.Myna.Config.apply-plan" ||
+        (action.id == "org.freedesktop.policykit.exec" &&
+         action.lookup("program") == "$PWD/myna-config"))
+        return polkit.Result.$result;
+    return polkit.Result.NOT_HANDLED;
+});
+RULES
+    sleep 1  # polkitd reloads rules on inotify
 fi
-[ -x "$CACHE/myna-config" ] || { echo "no binary; drop --no-build" >&2; exit 2; }
 
-IP=$(start_vm "$VM" >/dev/null; vm_ip "$VM")
-ADDR_SSH=(vm_ssh "$IP")
-DIR=/home/ubuntu/myna-shot
-vm_ssh "$IP" "mkdir -p $DIR/schemas $DIR/out && rm -f $DIR/out/*.png $DIR/out/*.log $DIR/seed-keyfile"
-FILES=("$CACHE/myna-config" "$HERE/shot-driver.py" "$HERE/cancel-agent.py" "$HERE/snapd-rest.py" "$HERE/realshot.py" "$HERE/rdkeys.py" "$HERE/fake-daemon.py")
-SCHEMAS=("$REPO"/client/data/glib-2.0/schemas/*.gschema.xml)
-scp -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile="$RUN_DIR/known_hosts" -q \
-    "${FILES[@]}" "ubuntu@$IP:$DIR/"
-scp -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile="$RUN_DIR/known_hosts" -q \
-    "${SCHEMAS[@]}" "ubuntu@$IP:$DIR/schemas/"
-[ -z "$KEYFILE" ] || scp -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile="$RUN_DIR/known_hosts" -q "$KEYFILE" "ubuntu@$IP:$DIR/seed-keyfile"
+if [ -n "$monitor" ]; then
+    ( while :; do
+        echo "=== $(date +%T)"
+        pgrep -af "pkexec|myna-config --apply|snap (run|install|remove)" | cut -c1-200
+        snap changes 2>&1 | tail -3
+        sleep 2
+      done > out/"$monitor"-monitor.log 2>&1 ) &
+    monitor_pids=($!)
+    # shellcheck disable=SC2024 # the log belongs to the user
+    sudo journalctl -f -n 0 -o short-precise > out/"$monitor"-journal.log 2>&1 &
+    monitor_pids+=($!)
+fi
 
-ARGS=$(printf '%q ' "$HOST" "$DIR" "$POLKIT" "$POLKIT_ACTIONS" "$APPLY_POLKIT" "$MONITOR" "$LANGUAGE_LIST" "$REAL" "$FAKE" "${STEPS[@]}")
-rc=0
-ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile="$RUN_DIR/known_hosts" \
-    "ubuntu@$IP" "bash -s -- $ARGS" < "$HERE/shot-remote.sh" || rc=$?
-
-scp -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile="$RUN_DIR/known_hosts" -q \
-    "ubuntu@$IP:$DIR/out/*.log" "$E2E_ROOT/.run/logs/" 2>/dev/null || :
-scp -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile="$RUN_DIR/known_hosts" -q \
-    "ubuntu@$IP:$DIR/out/*.png" "$OUT/" 2>/dev/null || :
-ls -1t "$OUT"/*.png 2>/dev/null | head -n 10 >&2 || :
+export MODE=$mode
+xvfb-run -a -s "-screen 0 1100x800x24" bash -s -- "$@" <<'INNER'
+export GDK_BACKEND=x11 GSETTINGS_SCHEMA_DIR=$PWD/schemas
+# Under x11 GTK loads libim-ibus, which on newer GTK + ibus (no IBus
+# reachable from Xvfb) recurses until the stack overflows as soon as a
+# window with a text widget maps. Users on Wayland never load it.
+export GTK_IM_MODULE=gtk-im-context-simple
+unset WAYLAND_DISPLAY
+# Without a compositor GTK paints popover and dialog shadows opaque black.
+xcompmgr -n 2>/dev/null & comp=$!
+./myna-config >> out/app.log 2>&1 &
+pid=$!
+[ "$MODE" = cancel ] && { python3 cancel-agent.py $pid >> out/agent.log 2>&1 & agent=$!; }
+wid=$(timeout 30 xdotool search --sync --onlyvisible --pid $pid | head -1)
+[ -n "$wid" ] || { echo "shot.sh: no window" >&2; cat out/app.log >&2; kill $pid; exit 4; }
+xdotool windowmove "$wid" 0 0 windowsize "$wid" 1100 800
+sleep 1
+OUT_DIR=$PWD/out APP_PID=$pid python3 shot-driver.py "$@"
+rc=$?
+kill $pid $comp ${agent:-} 2>/dev/null; wait $pid 2>/dev/null
 exit $rc
+INNER

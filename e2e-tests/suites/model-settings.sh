@@ -4,7 +4,8 @@
 # prompt (pkexec 126) reverts the row silently and writes nothing; an
 # allowed one lands in snapd's config for the connected backend.
 set -uo pipefail
-source "$SUITE_LIB"
+# shellcheck source=e2e-tests/suites/lib.sh
+source "$(dirname "$0")/lib.sh"
 
 P=model-settings-$REL
 # The connected backend's snap name (myna-whisper, myna-parakeet, ...).
@@ -20,20 +21,20 @@ NEW=450
 ROW="Unload when idle"
 
 # Cancel: the row reverts silently, snapd keeps the old value.
-shot --apply-polkit cancel \
+shot --polkit cancel \
     wait:4 tab:Model wait:2 \
     "scrollat:550,700#8" wait:1 \
     "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return wait:4 shot:"$P"-01-cancelled.png \
     || { echo "cancel run failed" >&2; exit 1; }
-assert_ssh "cancel wrote nothing" \
+assert_on "cancel wrote nothing" \
     "sudo snap get -d $BACKEND | jq -e '[.. .\"sleep-idle-seconds\"? // empty] | index($NEW) == null' >/dev/null"
 
 # Allow: the value lands in snapd.
-shot --no-build --apply-polkit allow --monitor "$P" \
+shot --polkit allow --monitor "$P" \
     wait:4 tab:Model wait:2 \
     "scrollat:550,700#8" wait:1 \
     "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return wait:5 shot:"$P"-02-applied.png \
     || { echo "allow run failed" >&2; exit 1; }
-assert_ssh "new value landed in snapd" \
+assert_on "new value landed in snapd" \
     "sudo snap get -d $BACKEND | jq -e '[.. .\"sleep-idle-seconds\"? // empty] | index($NEW) != null' >/dev/null"
 suite_status

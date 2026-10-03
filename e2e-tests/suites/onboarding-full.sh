@@ -6,7 +6,8 @@
 # what onboarding promises: flag on, snaps installed, backend connected,
 # daemon active, shortcut set.
 set -uo pipefail
-source "$SUITE_LIB"
+# shellcheck source=e2e-tests/suites/lib.sh
+source "$(dirname "$0")/lib.sh"
 
 P=onboarding-$REL
 
@@ -20,19 +21,16 @@ shot --polkit allow --monitor "$P" \
     "sh:! pgrep -x myna-config" \
     || { echo "onboarding run failed" >&2; exit 1; }
 
-assert_ssh "user-daemons flag on" \
+assert_on "user-daemons flag on" \
     'sudo snap get system experimental.user-daemons | grep -q true'
-assert_ssh "myna snap installed" \
+assert_on "myna snap installed" \
     'snap list myna >/dev/null'
-assert_ssh "myna-parakeet installed" \
+assert_on "myna-parakeet installed" \
     'snap list myna-parakeet >/dev/null'
-assert_ssh "myna:backend connected to a provider" \
+assert_on "myna:backend connected to a provider" \
     'snap connections myna | grep -E "myna:backend[[:space:]]+myna-[a-z]+:provider" | grep -q .'
-assert_ssh "dictation daemon active" \
+assert_on "dictation daemon active" \
     'systemctl --user is-active -q snap.myna.myna.service'
-if [ "$REL" = noble ]; then
-    # Control activation: onboarding writes a GNOME custom shortcut.
-    assert_ssh "Super+J custom shortcut written" \
-        'dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/binding | grep -q Super'
-fi
+assert_on "Super+J custom shortcut written" \
+    'dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/binding | grep -q Super'
 suite_status

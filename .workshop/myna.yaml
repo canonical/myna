@@ -275,11 +275,12 @@ actions:
     shellcheck -x dev/*.sh \
       myna-snap/dev/*.sh \
       extensions/myna-shell/test/*.sh \
-      tests/spread/lib/*.sh \
+      tests/spread/*/*.sh \
       .workshop/*/hooks/* \
       *-snap/scripts/* *-snap/dev/*.sh \
       *-snap/snap/hooks/* \
-      client/myna-config/build/*.sh
+      client/myna-config/build/*.sh \
+      e2e-tests/*.sh e2e-tests/*/*.sh
   workflow-lint: |
     export PATH=/usr/local/cargo-bin:$PATH
     cd /project && actionlint .github/workflows/*.yml
