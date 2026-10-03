@@ -45,7 +45,7 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
     # A suite's copy is a new instance to cloud-init, which would run the
     # whole user-data again.
     lxc exec "$VM" -- touch /etc/cloud/cloud-init.disabled
-    lxc stop "$VM"
+    stop_vm "$VM"
 fi
 
 # A failed earlier run may have left it up.
@@ -61,7 +61,7 @@ stage() {
     wait_snapd_idle "$VM"
     on_vm "$VM" "set -e; $script"
     wait_snapd_idle "$VM"
-    lxc stop "$VM"
+    stop_vm "$VM"
     lxc snapshot "$VM" "$name"
 }
 

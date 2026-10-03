@@ -76,4 +76,8 @@ done
 echo "snapd still busy" >&2; exit 1'
 }
 
+# Shut down cleanly before a snapshot; a devel-series guest can outlast
+# LXD's default timeout, and then power-off is the lesser harm.
+stop_vm() { lxc stop --timeout 180 "$1" || lxc stop --force "$1"; }
+
 snapshots() { lxc query "/1.0/instances/$1/snapshots?recursion=1" | jq -r '.[].name'; }
