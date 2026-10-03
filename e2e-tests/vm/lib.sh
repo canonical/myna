@@ -32,13 +32,22 @@ on_vm() {
         -- bash -c "$*"
 }
 
-# Wait for the agent, then for cloud-init.
+# Wait for cloud-init to finish. Short polls, not one `status --wait`: the
+# agent restarts while cloud-init upgrades packages and takes a long exec
+# down with it. A copy has cloud-init disabled.
 wait_booted() {
-    for _ in $(seq 120); do
-        lxc exec "$1" -- true 2>/dev/null && break
+    local status
+    for _ in $(seq 600); do
+        # Exit 2 is "done" with recoverable errors: keep the output.
+        status=$(lxc exec "$1" -- cloud-init status 2>/dev/null || true)
+        case $status in
+            *done*|*disabled*) return 0 ;;
+            *error*) lxc exec "$1" -- cloud-init status --long >&2; return 1 ;;
+        esac
         sleep 2
     done
-    lxc exec "$1" -- cloud-init status --wait >/dev/null || true
+    echo "$1: cloud-init not done after 20 min" >&2
+    return 1
 }
 
 # Boot, then wait for gnome-shell on the autologin session's bus. The bus
