@@ -1,0 +1,79 @@
+# The myna-config deb, built with sbuild in a clean chroot for every series
+# the PPA carries, so a series that fails to build shows here rather than on
+# Launchpad after an upload. The .debs are kept as artifacts for testers.
+#
+# Runs on a push to any branch, main and PR branches alike, that changes what
+# the deb packs: the paths below are myna-config-deb/build-source.sh's inputs
+# and must be kept in step with it.
+name: Deb
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "myna-config-deb/**"
+      - "client/myna-config/**"
+      - "client/myna-core/**"
+      - "client/data/**"
+      - "client/build-support/**"
+      - "client/Cargo.toml"
+      - "client/Cargo.lock"
+      - "extensions/myna-shell/**"
+      - "dev/version.sh"
+      - "dev/stage-extension.sh"
+      - "dev/check-shell-version.sh"
+      - ".github/workflows/deb.yml"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        series: [noble, resolute, stonking]
+    name: build (${{ matrix.series }})
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: dev/version.sh counts commits since the last tag.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # devscripts is rmadison, for dev/check-shell-version.sh. Ubuntu
+      # restricts unprivileged user namespaces, which unshare mode needs.
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sbuild mmdebstrap uidmap distro-info devscripts dpkg-dev
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          cargo install --locked cargo-vendor-filterer@0.5.18
+
+      # The runner's sbuild predates creating its own unshare chroot. -updates
+      # carries noble's versioned Rust toolchain.
+      - name: Chroot
+        run: |
+          series=${{ matrix.series }}
+          mirror=http://archive.ubuntu.com/ubuntu
+          mkdir -p ~/.cache/sbuild
+          mmdebstrap --variant=buildd --mode=unshare \
+            "$series" ~/.cache/sbuild/"$series"-amd64.tar \
+            "deb $mirror $series main universe" \
+            "deb $mirror $series-updates main universe" \
+            "deb $mirror $series-security main universe"
+
+      # --no-clean-source: the host lacks noble's build-deps, which a clean
+      # on the host would demand.
+      - name: Build
+        run: |
+          SERIES=${{ matrix.series }} make build-deb \
+            SBUILD_ARGS="--chroot-mode=unshare --no-clean-source"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: myna-config-${{ matrix.series }}
+          retention-days: 14
+          path: target/deb/*.deb
+          if-no-files-found: error
