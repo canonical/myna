@@ -102,7 +102,7 @@ jobs:
       # LibriSpeech download; the tier itself is a couple of MB, and the source
       # tarball is deliberately not cached.
       - name: Cache english-speech corpus
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: corpus/english
           key: corpus-english-${{ hashFiles('server/src/myna/benchmarker/corpus_english.py', 'server/src/myna/benchmarker/_audio.py', 'dev/generate_fixtures.py') }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-reports
           retention-days: 14
