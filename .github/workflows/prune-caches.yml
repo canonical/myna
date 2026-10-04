@@ -1,0 +1,20 @@
+# Daily: drop Actions caches a newer copy of the same cache supersedes, so the
+# 10 GB quota never evicts the ones in use (dev/prune-caches.sh).
+name: Prune caches
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: dev/prune-caches.sh "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
