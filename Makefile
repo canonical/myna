@@ -53,6 +53,7 @@ help: ## List targets, grouped as in this file
 		$(MAKEFILE_LIST)
 	@echo
 	@for s in $(SNAPS); do printf "  \033[36m%-24s\033[0m %s\n" "snap-$$s" "Build the $$s snap (fetch models, stage, snapcraft pack)"; done
+	@for s in $(PUBLISHED); do printf "  \033[36m%-24s\033[0m %s\n" "publish-$$s" "Build the $$s snap, upload it with its components and release to CHANNEL"; done
 
 ##@ Gates (one per CI job; `preflight` is all of them)
 
@@ -328,6 +329,11 @@ run-config: ## Launch Myna Settings (myna-config) from the workspace
 
 ##@ Snaps
 
+# What the store carries, and where publish-<snap> releases a fresh build and
+# its components.
+PUBLISHED := $(filter-out fake,$(SNAPS))
+CHANNEL ?= latest/edge
+
 define snap_rule
 .PHONY: snap-$(1)
 snap-$(1):
@@ -335,6 +341,13 @@ snap-$(1):
 	cd $(1)-snap && ./dev/prepare.sh && snapcraft pack
 endef
 $(foreach s,$(SNAPS),$(eval $(call snap_rule,$(s))))
+
+define publish_rule
+.PHONY: publish-$(1)
+publish-$(1): snap-$(1)
+	dev/publish-snap.sh $(1)-snap $(CHANNEL)
+endef
+$(foreach s,$(PUBLISHED),$(eval $(call publish_rule,$(s))))
 
 ##@ Benchmark
 
