@@ -3,7 +3,7 @@
 # sources with one snapshot, and pins it above the installed versions so a
 # base image newer than the snapshot is brought back to it.
 set -euo pipefail
-APT_SNAPSHOT=20261001T000000Z
+APT_SNAPSHOT=20261005T000000Z
 
 . /etc/os-release
 cat > /etc/apt/sources.list.d/ubuntu.sources <<SOURCES
