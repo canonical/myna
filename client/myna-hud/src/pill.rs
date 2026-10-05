@@ -397,7 +397,7 @@ impl Pill {
 
     fn connect_preferences(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
-        let watch = platform::watch_preferences(move || {
+        let watch = platform::watch_preferences(move |_| {
             let Some(this) = this.upgrade() else { return };
             // Motion comes straight from its own sources, so it is always
             // read now — unless the lab has pinned it.

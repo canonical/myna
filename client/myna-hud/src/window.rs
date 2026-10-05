@@ -71,7 +71,7 @@ impl HudWindow {
         // leave ~130 px of dead transparent surface below a 66 px pill —
         // surface that still counts as the overlay's extent for the host's
         // placement (R21) and its input region (R22). libadwaita is still
-        // used for its stylesheet and style manager; nothing here needs an
+        // used for the style manager's accent (R26); nothing here needs an
         // adw window.
         let window = gtk::ApplicationWindow::builder()
             .application(app)

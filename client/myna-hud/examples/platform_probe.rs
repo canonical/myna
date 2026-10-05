@@ -42,6 +42,32 @@ fn main() {
             "resolved             : {}",
             platform::probe_reduced_motion()
         );
+        println!("--- accent (R18/R26) ---");
+        println!(
+            "adw resolved rgba    : {:?}   (None = libadwaita < 1.7)",
+            platform::probe_platform_accent()
+        );
+        // A widget styled the way `style.css` styles the ribbon, so the
+        // CSS path is exercised exactly as production does it.
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(".myna-accent-probe { color: @accent_bg_color; }");
+        gtk::style_context_add_provider_for_display(
+            &gtk::gdk::Display::default().unwrap(),
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+        let probe = gtk::Label::new(None);
+        probe.add_css_class("myna-accent-probe");
+        let window = gtk::ApplicationWindow::builder().application(app).build();
+        window.set_child(Some(&probe));
+        window.present();
+        println!(
+            "theme @accent_bg_color: {:?}   (the primary source)",
+            platform::probe_css_accent(&probe)
+        );
+        let palette = platform::probe_accent_palette(Some(&probe));
+        println!("ribbon palette       : {palette:?}");
+
         app.quit();
     });
 
