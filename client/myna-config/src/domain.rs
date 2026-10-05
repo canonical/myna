@@ -318,8 +318,9 @@ pub fn parse_connections(
 }
 
 /// Slots whose own `content` attribute is [`PROVIDER_CONTENT_ID`] and whose
-/// `task` is [`SPEECH_TO_TEXT_TASK`], or that belong to a known Myna family,
-/// whose published revisions predate the attribute. Only the item lines of
+/// snap belongs to a known Myna family or whose `task` is
+/// [`SPEECH_TO_TEXT_TASK`]. The store rejects the attribute, so only the
+/// unpublished fake backend carries it. Only the item lines of
 /// the `slots:` section and their direct attributes (six-space indent) are
 /// read; nested attribute maps and lists are skipped.
 fn parse_provider_slots(input: &str) -> Result<BTreeSet<BackendIdentity>, ParseError> {

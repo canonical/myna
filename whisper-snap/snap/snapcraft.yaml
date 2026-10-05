@@ -71,13 +71,10 @@ hooks:
 # connect() through the bind mount needs (interfaces/builtin/content.go). Both
 # files appear once the server daemon has run. Identity-based access control
 # beyond "an admin connected the plug" remains T17.
-# `task` tells Myna Settings this provider transcribes speech: other
-# inference snaps (LLMs such as gemma4) share the same content id.
 slots:
   provider:
     interface: content
     content: inference-provider
-    task: speech-to-text
     source:
       write: [$SNAP_COMMON/share/provider]
 

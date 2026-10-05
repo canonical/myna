@@ -156,7 +156,7 @@ fn connections_count_only_providers_that_transcribe_speech() {
 
 #[test]
 fn connections_count_a_published_myna_model_without_a_task() {
-    // Myna's backends published before the `task` attribute lack it.
+    // The store rejects the `task` attribute, so published backends lack it.
     let snapshot = parse_connections(
         "Interface Plug Slot Notes\n\
          content[inference-provider] myna:backend myna-funasr:provider manual\n",
