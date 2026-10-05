@@ -14,7 +14,7 @@ current client knowledge index.
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
 | `myna-cli` (`myna-testbed`) | testbed binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
 | `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: custom-shortcut hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
-| `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app — level bar or segmented meter, pill chrome, motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
+| `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app — level bar, segmented meter or GPU wave ribbon, pill chrome, motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
 
 ## Design commitments
 

@@ -21,7 +21,7 @@ HUD or consume `com.canonical.Myna.Dictation` itself — the standalone
   fallback suppression now uses `com.canonical.Myna.Dictation` `RegisterClient`
   client set.
 
-The HUD pill itself, its level indicator, reduced-motion and contrast
+The HUD pill itself, its level indicators, reduced-motion and contrast
 handling, lab and simulator modes all live in `client/myna-hud`. Contract
 and design history: `specs/004-gnome-shell-indicator/`.
 
@@ -77,7 +77,9 @@ Driven entirely by `com.canonical.Myna.Dictation` (served by `myna-desktop`):
   the desktop's accent colour (the default) or, with the `hud-style` setting
   at `vumeter`, a segmented green/yellow/red meter. While the model loads or
   the session finishes, a block travels back and forth instead, more slowly
-  under reduced motion.
+  under reduced motion. At `ribbon` it is an accent-coloured GPU wave that
+  unfolds on session start, flows with the voice and morphs into travelling
+  dots on stop; a flat line under reduced motion.
 
 ## Layout
 
