@@ -35,7 +35,7 @@ fn every_shipped_backend_key_has_explicit_typed_metadata() {
             ControlType::Number,
             Validation::NonNegativeInteger,
             PresentationGroup::Runtime,
-            RestartBehavior::NotRequired,
+            RestartBehavior::Required,
         ),
         (
             "verbose",

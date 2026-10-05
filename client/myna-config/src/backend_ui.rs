@@ -5578,14 +5578,17 @@ mod tests {
 
             assert_eq!(
                 machine.plans(),
-                [argv(&[&[
-                    "run",
-                    "myna-parakeet.modelctl",
-                    "set",
-                    "sleep-idle-seconds=60",
-                    "--assume-yes",
-                    "--no-restart",
-                ]])]
+                [argv(&[
+                    &[
+                        "run",
+                        "myna-parakeet.modelctl",
+                        "set",
+                        "sleep-idle-seconds=60",
+                        "--assume-yes",
+                        "--no-restart",
+                    ],
+                    &["restart", "myna-parakeet"],
+                ])]
             );
             let entry = setting::<adw::EntryRow>(&ui, "sleep-idle-seconds").expect("idle row");
             assert_eq!(entry.text().as_str(), "60");
@@ -5706,7 +5709,10 @@ mod tests {
                     .and_downcast::<gtk::Label>()
                     .map(|label| label.label().to_string())
             };
-            assert_eq!(progress().as_deref(), Some("Applying…"));
+            assert_eq!(
+                progress().as_deref(),
+                Some("Applying and restarting the model…")
+            );
             assert!(
                 !descendants(row.upcast_ref())
                     .iter()

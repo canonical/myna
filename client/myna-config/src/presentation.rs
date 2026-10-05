@@ -186,13 +186,12 @@ pub fn metadata_for(key: &str, value: &ConfigValue) -> PresentationMetadata {
             Validation::Boolean,
             (PresentationGroup::General, Sensitivity::UserFacing, 10),
         ),
-        "sleep-idle-seconds" => known_with_restart(
+        "sleep-idle-seconds" => known(
             &gettext("Unload when idle (seconds)"),
             &gettext("Unload the inference service after this many idle seconds; zero disables the delay."),
             ControlType::Number,
             Validation::NonNegativeInteger,
             (PresentationGroup::Runtime, Sensitivity::UserFacing, 20),
-            RestartBehavior::NotRequired,
         ),
         "verbose" => known(
             &gettext("Verbose logging"),
@@ -263,24 +262,6 @@ fn known(
     validation: Validation,
     placement: (PresentationGroup, Sensitivity, u16),
 ) -> PresentationMetadata {
-    known_with_restart(
-        title,
-        explanation,
-        control,
-        validation,
-        placement,
-        RestartBehavior::Required,
-    )
-}
-
-fn known_with_restart(
-    title: &str,
-    explanation: &str,
-    control: ControlType,
-    validation: Validation,
-    placement: (PresentationGroup, Sensitivity, u16),
-    restart_behavior: RestartBehavior,
-) -> PresentationMetadata {
     let (group, sensitivity, order) = placement;
     PresentationMetadata {
         title: title.to_owned(),
@@ -289,7 +270,7 @@ fn known_with_restart(
         validation,
         group,
         sensitivity,
-        restart_behavior,
+        restart_behavior: RestartBehavior::Required,
         order,
     }
 }

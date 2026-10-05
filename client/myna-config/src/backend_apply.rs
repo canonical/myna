@@ -855,21 +855,25 @@ mod tests {
     }
 
     #[test]
-    fn a_setting_that_needs_no_restart_plans_one_set() {
+    fn changing_the_idle_timeout_restarts_the_backend() {
         let page = page_with_snapshot(snapshot_with_configuration("sleep-idle-seconds: 30\n"));
 
         let preview =
             prepare_change(&page, "sleep-idle-seconds", ConfigValue::Integer(60)).unwrap();
 
-        assert_eq!(preview.restart_impact(), RestartImpact::None);
-        assert_eq!(preview.changes().len(), 1);
-        let argv: Vec<&str> = preview.operations()[0]
-            .arguments()
+        assert_eq!(preview.restart_impact(), RestartImpact::Required);
+        let operations: Vec<Vec<&str>> = preview
+            .operations()
             .iter()
-            .map(String::as_str)
+            .map(|operation| operation.arguments().iter().map(String::as_str).collect())
             .collect();
-        assert_eq!(preview.operations().len(), 1);
-        assert_eq!(argv, modelctl_set(&["sleep-idle-seconds=60"]));
+        assert_eq!(
+            operations,
+            [
+                modelctl_set(&["sleep-idle-seconds=60"]),
+                vec!["restart", "myna-parakeet"],
+            ]
+        );
     }
 
     #[test]
