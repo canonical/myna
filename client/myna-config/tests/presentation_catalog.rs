@@ -2,8 +2,7 @@ use myna_config::domain::{
     parse_engine_options, parse_model_options, parse_modelctl_config, ConfigValue,
 };
 use myna_config::presentation::{
-    metadata_for, present_configuration, ControlType, PresentationGroup, RestartBehavior,
-    Sensitivity, Validation,
+    metadata_for, present_configuration, ControlType, PresentationGroup, Sensitivity, Validation,
 };
 
 #[test]
@@ -14,95 +13,82 @@ fn every_shipped_backend_key_has_explicit_typed_metadata() {
             ControlType::Choice,
             Validation::Any,
             PresentationGroup::General,
-            RestartBehavior::Required,
         ),
         (
             "engine",
             ControlType::Choice,
             Validation::Any,
             PresentationGroup::General,
-            RestartBehavior::Required,
         ),
         (
             "streaming",
             ControlType::Toggle,
             Validation::Boolean,
             PresentationGroup::General,
-            RestartBehavior::Required,
         ),
         (
             "sleep-idle-seconds",
             ControlType::Number,
             Validation::NonNegativeInteger,
             PresentationGroup::Runtime,
-            RestartBehavior::Required,
         ),
         (
             "verbose",
             ControlType::Toggle,
             Validation::Boolean,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "ws.unix-socket",
             ControlType::Text,
             Validation::Text,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "stream-arm-seconds",
             ControlType::Number,
             Validation::PositiveNumber,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "stream-silence-cut-seconds",
             ControlType::Number,
             Validation::PositiveNumber,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "stream-force-cut-seconds",
             ControlType::Number,
             Validation::PositiveNumber,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "stream-partial-cadence-seconds",
             ControlType::Number,
             Validation::NonNegativeNumber,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "stream-partial-tail-seconds",
             ControlType::Number,
             Validation::NonNegativeNumber,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "compute-type",
             ControlType::Text,
             Validation::Text,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
         (
             "att-context-size",
             ControlType::Text,
             Validation::Text,
             PresentationGroup::Advanced,
-            RestartBehavior::Required,
         ),
     ];
 
-    for (key, control, validation, group, restart_behavior) in cases {
+    for (key, control, validation, group) in cases {
         let value = match control {
             ControlType::Toggle => ConfigValue::Boolean(false),
             ControlType::Number => ConfigValue::Integer(0),
@@ -114,7 +100,6 @@ fn every_shipped_backend_key_has_explicit_typed_metadata() {
         assert_eq!(metadata.control(), control, "{key}");
         assert_eq!(metadata.validation(), &validation, "{key}");
         assert_eq!(metadata.group(), group, "{key}");
-        assert_eq!(metadata.restart_behavior(), restart_behavior, "{key}");
     }
 }
 

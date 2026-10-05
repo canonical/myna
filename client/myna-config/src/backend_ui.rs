@@ -1524,7 +1524,7 @@ impl BackendUi {
                 value,
                 operation_token: operation.token(),
                 cancellation: operation.cancellation(),
-                progress_message: apply_progress_message(preview.restart_impact()),
+                progress_message: gettextrs::gettext("Applying and restarting the model…"),
                 progress_detail: None,
                 focus,
             },
@@ -3024,14 +3024,6 @@ fn refresh_control_state(loading: bool, applying: bool) -> (bool, String) {
         (false, gettextrs::gettext("Refreshing…"))
     } else {
         (true, gettextrs::gettext("Refresh"))
-    }
-}
-
-fn apply_progress_message(restart_impact: crate::backend_apply::RestartImpact) -> String {
-    if restart_impact.requires_readiness() {
-        gettextrs::gettext("Applying and restarting the model…")
-    } else {
-        gettextrs::gettext("Applying…")
     }
 }
 

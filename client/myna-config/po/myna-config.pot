@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-05 20:32+0100\n"
+"POT-Creation-Date: 2026-10-05 21:17+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -46,7 +46,7 @@ msgstr ""
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:49 src/backend_ui.rs:3026 src/backend_ui.rs:3292
+#: data/diagnostics-page.blp:49 src/backend_ui.rs:3026 src/backend_ui.rs:3284
 msgid "Refresh"
 msgstr ""
 
@@ -104,8 +104,8 @@ msgid "General"
 msgstr ""
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1474
-#: src/app.rs:3057 src/app.rs:3421 src/backend_apply.rs:415
-#: src/diagnostics.rs:542 src/presentation.rs:169
+#: src/app.rs:3057 src/app.rs:3421 src/backend_apply.rs:379
+#: src/diagnostics.rs:542 src/presentation.rs:157
 msgid "Model"
 msgstr ""
 
@@ -234,11 +234,11 @@ msgstr ""
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:3095 src/backend_ui.rs:3659 src/model_family.rs:27
+#: src/app.rs:3095 src/backend_ui.rs:3651 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3099 src/backend_ui.rs:4188 src/model_family.rs:31
+#: src/app.rs:3099 src/backend_ui.rs:4180 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
@@ -265,7 +265,7 @@ msgstr ""
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:3472 src/presentation.rs:190
+#: src/app.rs:3472 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
 msgstr ""
 
@@ -437,6 +437,10 @@ msgstr ""
 msgid "Wait for the current change to finish."
 msgstr ""
 
+#: src/backend_ui.rs:1527
+msgid "Applying and restarting the model…"
+msgstr ""
+
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1676
 msgid "Changing “{setting}” could not be confirmed"
@@ -502,7 +506,7 @@ msgstr ""
 msgid "The model rejected the value."
 msgstr ""
 
-#: src/backend_ui.rs:2285 src/backend_ui.rs:2304 src/backend_ui.rs:3085
+#: src/backend_ui.rs:2285 src/backend_ui.rs:2304 src/backend_ui.rs:3077
 msgid "The change could not be made."
 msgstr ""
 
@@ -518,11 +522,11 @@ msgstr ""
 msgid "Arguments:"
 msgstr ""
 
-#: src/backend_ui.rs:2350 src/backend_ui.rs:2422 src/backend_ui.rs:3151
+#: src/backend_ui.rs:2350 src/backend_ui.rs:2422 src/backend_ui.rs:3143
 msgid "Exit status:"
 msgstr ""
 
-#: src/backend_ui.rs:2358 src/backend_ui.rs:2431 src/backend_ui.rs:3160
+#: src/backend_ui.rs:2358 src/backend_ui.rs:2431 src/backend_ui.rs:3152
 msgid "Standard error:"
 msgstr ""
 
@@ -638,7 +642,7 @@ msgstr ""
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:2700 src/backend_ui.rs:3024 src/backend_ui.rs:3288
+#: src/backend_ui.rs:2700 src/backend_ui.rs:3024 src/backend_ui.rs:3280
 msgid "Refreshing…"
 msgstr ""
 
@@ -727,123 +731,115 @@ msgstr ""
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:3022 src/backend_ui.rs:3296
+#: src/backend_ui.rs:3022 src/backend_ui.rs:3288
 msgid "Applying changes…"
 msgstr ""
 
-#: src/backend_ui.rs:3032
-msgid "Applying and restarting the model…"
-msgstr ""
-
-#: src/backend_ui.rs:3034
-msgid "Applying…"
-msgstr ""
-
-#: src/backend_ui.rs:3053
+#: src/backend_ui.rs:3045
 msgid "missing"
 msgstr ""
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
-#: src/backend_ui.rs:3055
+#: src/backend_ui.rs:3047
 msgid "{key}: asked for {requested}, read back {actual}"
 msgstr ""
 
-#: src/backend_ui.rs:3083
+#: src/backend_ui.rs:3075
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3093
+#: src/backend_ui.rs:3085
 msgid "The change ran, but the connections do not match it."
 msgstr ""
 
-#: src/backend_ui.rs:3097
+#: src/backend_ui.rs:3089
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
 
-#: src/backend_ui.rs:3101
+#: src/backend_ui.rs:3093
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3103
+#: src/backend_ui.rs:3095
 msgid "The change ran, but the connections could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:3120
+#: src/backend_ui.rs:3112
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:3125
+#: src/backend_ui.rs:3117
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:3129
+#: src/backend_ui.rs:3121
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3137
+#: src/backend_ui.rs:3129
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3141
+#: src/backend_ui.rs:3133
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3170
+#: src/backend_ui.rs:3162
 msgid "no model connected"
 msgstr ""
 
-#: src/backend_ui.rs:3174
+#: src/backend_ui.rs:3166
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:3184
+#: src/backend_ui.rs:3176
 msgid "several models"
 msgstr ""
 
-#: src/backend_ui.rs:4192 src/model_family.rs:35
+#: src/backend_ui.rs:4184 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
 msgstr ""
 
-#: src/backend_apply.rs:95
+#: src/backend_apply.rs:81
 msgid "selector value must be text"
 msgstr ""
 
-#: src/backend_apply.rs:109
+#: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
 msgstr ""
 
-#: src/backend_apply.rs:416
+#: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
 msgstr ""
 
-#: src/backend_apply.rs:515
+#: src/backend_apply.rs:479
 msgid "value must be a finite number"
 msgstr ""
 
-#: src/backend_apply.rs:559
+#: src/backend_apply.rs:504
 msgid "The model's restart could not be confirmed."
 msgstr ""
 
-#: src/backend_apply.rs:584
+#: src/backend_apply.rs:529
 msgid "The model did not restart."
 msgstr ""
 
-#: src/backend_apply.rs:606
+#: src/backend_apply.rs:551
 msgctxt "service state"
 msgid "active"
 msgstr ""
 
-#: src/backend_apply.rs:607
+#: src/backend_apply.rs:552
 msgctxt "service state"
 msgid "inactive"
 msgstr ""
 
-#: src/backend_apply.rs:608
+#: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
 msgstr ""
 
-#: src/backend_apply.rs:609
+#: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
 msgstr ""
@@ -1136,7 +1132,7 @@ msgstr ""
 msgid "(none discovered)"
 msgstr ""
 
-#: src/diagnostics.rs:535 src/presentation.rs:176
+#: src/diagnostics.rs:535 src/presentation.rs:164
 msgid "Engine"
 msgstr ""
 
@@ -1290,108 +1286,108 @@ msgstr ""
 msgid "this value cannot be edited"
 msgstr ""
 
-#: src/presentation.rs:170
+#: src/presentation.rs:158
 msgid "Which version of this model to run."
 msgstr ""
 
-#: src/presentation.rs:177
+#: src/presentation.rs:165
 msgid "The inference engine this model runs on."
 msgstr ""
 
-#: src/presentation.rs:183
+#: src/presentation.rs:171
 msgid "Streaming output"
 msgstr ""
 
-#: src/presentation.rs:184
+#: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
 msgstr ""
 
-#: src/presentation.rs:191
+#: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
 
-#: src/presentation.rs:198
+#: src/presentation.rs:185
 msgid "Verbose logging"
 msgstr ""
 
-#: src/presentation.rs:199
+#: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
 msgstr ""
 
-#: src/presentation.rs:205
+#: src/presentation.rs:192
 msgid "Socket path"
 msgstr ""
 
-#: src/presentation.rs:206
+#: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
 msgstr ""
 
-#: src/presentation.rs:212
+#: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
 msgstr ""
 
-#: src/presentation.rs:213
+#: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
 
-#: src/presentation.rs:218
+#: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
 msgstr ""
 
-#: src/presentation.rs:219
+#: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
 msgstr ""
 
-#: src/presentation.rs:224
+#: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
 msgstr ""
 
-#: src/presentation.rs:225
+#: src/presentation.rs:212
 msgid ""
 "Maximum speech window retained before a transcript chunk is forced to commit."
 msgstr ""
 
-#: src/presentation.rs:230
+#: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
 msgstr ""
 
-#: src/presentation.rs:231
+#: src/presentation.rs:218
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
 msgstr ""
 
-#: src/presentation.rs:236
+#: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
 msgstr ""
 
-#: src/presentation.rs:237
+#: src/presentation.rs:224
 msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
 
-#: src/presentation.rs:242
+#: src/presentation.rs:229
 msgid "Compute type"
 msgstr ""
 
-#: src/presentation.rs:243
+#: src/presentation.rs:230
 msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
 
-#: src/presentation.rs:249
+#: src/presentation.rs:236
 msgid "Attention context size"
 msgstr ""
 
-#: src/presentation.rs:250
+#: src/presentation.rs:237
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
 
-#: src/presentation.rs:328
+#: src/presentation.rs:296
 msgid "This model provides no description for this setting."
 msgstr ""
 

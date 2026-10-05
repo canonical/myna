@@ -7,10 +7,12 @@ use crate::domain::{
     StagedChange,
 };
 use crate::ports::{BackendRepository, FailedStep, SystemConfigurator, SystemConfiguratorError};
-use crate::presentation::RestartBehavior;
 
 const READINESS_ATTEMPTS: usize = 30;
+#[cfg(not(test))]
 const READINESS_RETRY_DELAY: Duration = Duration::from_secs(1);
+#[cfg(test)]
+const READINESS_RETRY_DELAY: Duration = Duration::ZERO;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidationIssue {
@@ -41,33 +43,17 @@ pub enum PrepareApplyError {
     Invalid(Vec<ValidationIssue>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RestartImpact {
-    None,
-    Required,
-    Mixed,
-    Unknown,
-}
-
-impl RestartImpact {
-    pub fn requires_readiness(self) -> bool {
-        matches!(self, Self::Required | Self::Mixed | Self::Unknown)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApplyPreview {
     backend: BackendIdentity,
     changes: Vec<StagedChange>,
     operations: Vec<CommandRequest>,
-    restart_impact: RestartImpact,
 }
 
 impl ApplyPreview {
     pub fn new(
         backend: BackendIdentity,
         changes: Vec<StagedChange>,
-        restart_impact: RestartImpact,
     ) -> Result<Self, PrepareApplyError> {
         if changes.is_empty() {
             return Err(PrepareApplyError::NoChanges);
@@ -76,7 +62,7 @@ impl ApplyPreview {
         let mut changes = changes;
         changes.sort_by(|left, right| left.key().cmp(right.key()));
 
-        let mut issues = validate_backend_identity(&backend, restart_impact);
+        let mut issues = validate_backend_identity(&backend);
         let mut assignments = Vec::new();
         let mut model = None;
         let mut engine = None;
@@ -130,17 +116,14 @@ impl ApplyPreview {
                 });
             }
         }
-        if restart_impact.requires_readiness() {
-            operations.push(CommandRequest::new(
-                "snap".to_owned(),
-                vec!["restart".to_owned(), backend.snap_name().to_owned()],
-            ));
-        }
+        operations.push(CommandRequest::new(
+            "snap".to_owned(),
+            vec!["restart".to_owned(), backend.snap_name().to_owned()],
+        ));
         Ok(Self {
             backend,
             changes,
             operations,
-            restart_impact,
         })
     }
 
@@ -154,10 +137,6 @@ impl ApplyPreview {
 
     pub fn operations(&self) -> &[CommandRequest] {
         &self.operations
-    }
-
-    pub fn restart_impact(&self) -> RestartImpact {
-        self.restart_impact
     }
 }
 
@@ -268,11 +247,7 @@ pub fn prepare_change(
         .snapshot()
         .map(|snapshot| snapshot.identity().clone())
         .unwrap_or_else(|| page.identity().clone());
-    ApplyPreview::new(
-        identity,
-        vec![change],
-        restart_impact_from_behaviors(&[metadata.restart_behavior()]),
-    )
+    ApplyPreview::new(identity, vec![change])
 }
 
 pub async fn execute_backend_apply(
@@ -363,7 +338,7 @@ pub async fn execute_backend_apply(
             });
         }
 
-        if let Some(message) = readiness_failure(&snapshot, preview.restart_impact()) {
+        if let Some(message) = readiness_failure(&snapshot) {
             attempt += 1;
             if attempt >= READINESS_ATTEMPTS || readiness_failure_is_terminal(&snapshot) {
                 return Err(ApplyFailure::RestartReadiness {
@@ -373,7 +348,7 @@ pub async fn execute_backend_apply(
             }
         } else {
             let read_errors = read_back_errors(preview, &snapshot);
-            if read_errors.is_empty() || !preview.restart_impact().requires_readiness() {
+            if read_errors.is_empty() {
                 break snapshot;
             }
             attempt += 1;
@@ -387,14 +362,6 @@ pub async fn execute_backend_apply(
         gio::glib::timeout_future(READINESS_RETRY_DELAY).await;
     };
 
-    let read_errors = read_back_errors(preview, &snapshot);
-    if !read_errors.is_empty() {
-        return Err(ApplyFailure::ReadBackUnavailable {
-            snapshot: Box::new(snapshot),
-            errors: read_errors,
-        });
-    }
-
     let mismatches = read_back_mismatches(preview, &snapshot);
     if !mismatches.is_empty() {
         return Err(ApplyFailure::ReadBackMismatch {
@@ -406,11 +373,8 @@ pub async fn execute_backend_apply(
     Ok(ApplySuccess { snapshot })
 }
 
-fn validate_backend_identity(
-    backend: &BackendIdentity,
-    restart_impact: RestartImpact,
-) -> Vec<ValidationIssue> {
-    if restart_impact.requires_readiness() && backend.snap_name().trim().is_empty() {
+fn validate_backend_identity(backend: &BackendIdentity) -> Vec<ValidationIssue> {
+    if backend.snap_name().trim().is_empty() {
         vec![ValidationIssue::new(
             gettextrs::gettext("Model"),
             gettextrs::gettext("the model's restart command could not be built"),
@@ -517,22 +481,6 @@ fn serialize_value(value: &ConfigValue) -> Result<String, String> {
     }
 }
 
-fn restart_impact_from_behaviors(behaviors: &[RestartBehavior]) -> RestartImpact {
-    let required = behaviors.contains(&RestartBehavior::Required);
-    let not_required = behaviors.contains(&RestartBehavior::NotRequired);
-    let unknown = behaviors.contains(&RestartBehavior::Unknown);
-    if unknown {
-        RestartImpact::Unknown
-    } else {
-        match (required, not_required) {
-            (false, true) => RestartImpact::None,
-            (true, false) => RestartImpact::Required,
-            (true, true) => RestartImpact::Mixed,
-            (false, false) => RestartImpact::Unknown,
-        }
-    }
-}
-
 fn map_system_error(error: SystemConfiguratorError) -> ApplyFailure {
     match error {
         SystemConfiguratorError::Cancelled => ApplyFailure::CancelledExecution,
@@ -552,10 +500,7 @@ fn map_system_error(error: SystemConfiguratorError) -> ApplyFailure {
 
 /// Why the restart is not confirmed, for the report's details: a sentence,
 /// then the raw reason on the next line when there is one.
-fn readiness_failure(snapshot: &BackendSnapshot, restart_impact: RestartImpact) -> Option<String> {
-    if !restart_impact.requires_readiness() {
-        return None;
-    }
+fn readiness_failure(snapshot: &BackendSnapshot) -> Option<String> {
     let unconfirmed = || gettextrs::gettext("The model's restart could not be confirmed.");
 
     if let Some(error) = snapshot.error(BackendSurface::Status) {
@@ -861,7 +806,6 @@ mod tests {
         let preview =
             prepare_change(&page, "sleep-idle-seconds", ConfigValue::Integer(60)).unwrap();
 
-        assert_eq!(preview.restart_impact(), RestartImpact::Required);
         let operations: Vec<Vec<&str>> = preview
             .operations()
             .iter()
@@ -897,7 +841,6 @@ mod tests {
                 StagedChange::new("ratio", ConfigValue::Number(0.25), ConfigValue::Number(0.5))
                     .unwrap(),
             ],
-            RestartImpact::Mixed,
         )
         .unwrap();
 
@@ -945,7 +888,6 @@ mod tests {
                 )
                 .unwrap(),
             ],
-            RestartImpact::Mixed,
         )
         .unwrap();
 
@@ -989,7 +931,6 @@ mod tests {
                 ConfigValue::Text("new".into()),
             )
             .unwrap()],
-            RestartImpact::None,
         )
         .unwrap_err();
 
@@ -1006,7 +947,6 @@ mod tests {
                 ConfigValue::Text("tensorrt".into()),
             )
             .unwrap()],
-            RestartImpact::None,
         )
         .unwrap();
 
@@ -1041,7 +981,6 @@ mod tests {
                 )
                 .unwrap(),
             ],
-            RestartImpact::None,
         )
         .unwrap();
         let snapshot = snapshot_with_configuration("");
@@ -1059,7 +998,6 @@ mod tests {
                 ConfigValue::Text("auto".into()),
             )
             .unwrap()],
-            RestartImpact::None,
         )
         .unwrap();
         let snapshot = snapshot_with_configuration("");
@@ -1110,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn required_restart_is_an_explicit_final_operation() {
+    fn every_change_ends_in_an_explicit_restart() {
         let preview = ApplyPreview::new(
             backend(),
             vec![StagedChange::new(
@@ -1119,7 +1057,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
 
@@ -1167,34 +1104,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_restart_metadata_requires_readiness_confirmation() {
-        let controller = BackendController::detached();
-        let request = controller.begin_discovery();
-        controller.complete_discovery(
-            request,
-            Ok(parse_connections(
-                "Interface Plug Slot Notes\ncontent[inference-provider] myna:backend myna-parakeet:provider manual\n",
-                "name: content\nslots:\n  - myna-parakeet:provider:\n      content: inference-provider\n",
-            )
-            .unwrap()),
-        );
-        let request = controller.begin_snapshot("myna-parakeet").unwrap();
-        controller.complete_snapshot(
-            request,
-            snapshot_with_configuration("future-setting: old\n"),
-        );
-        let preview = prepare_change(
-            &controller.page("myna-parakeet").unwrap(),
-            "future-setting",
-            ConfigValue::Text("new".into()),
-        )
-        .unwrap();
-
-        assert_eq!(preview.restart_impact(), RestartImpact::Unknown);
-        assert!(preview.restart_impact().requires_readiness());
-    }
-
-    #[test]
     fn authorization_denial_is_distinct() {
         let preview = ApplyPreview::new(
             backend(),
@@ -1204,7 +1113,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator =
@@ -1247,7 +1155,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator =
@@ -1287,7 +1194,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Err(SystemConfiguratorError::Cancelled)]);
@@ -1316,7 +1222,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1348,7 +1253,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1388,7 +1292,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1419,7 +1322,7 @@ mod tests {
         let mut snapshot = snapshot_with_configuration("verbose: true\n");
         snapshot.set_status(crate::domain::parse_status(r#"{"engine":"cpu"}"#).unwrap());
 
-        let failure = readiness_failure(&snapshot, RestartImpact::Required);
+        let failure = readiness_failure(&snapshot);
 
         assert!(failure
             .as_deref()
@@ -1436,7 +1339,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1472,7 +1374,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1500,43 +1401,6 @@ mod tests {
     }
 
     #[test]
-    fn no_restart_apply_skips_readiness_but_still_checks_readback() {
-        let preview = ApplyPreview::new(
-            backend(),
-            vec![
-                StagedChange::new("ratio", ConfigValue::Number(0.25), ConfigValue::Number(0.5))
-                    .unwrap(),
-            ],
-            RestartImpact::None,
-        )
-        .unwrap();
-        let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
-        let mut readback = snapshot_with_configuration("ratio: 0.25\nverbose: false\n");
-        readback.add_error(crate::domain::BackendSurfaceError::new(
-            BackendSurface::Status,
-            "status unavailable",
-            "",
-        ));
-        let repository = FakeRepository {
-            snapshots: Rc::new(RefCell::new(VecDeque::from([readback]))),
-        };
-
-        let result = block_on(execute_backend_apply(
-            &preview,
-            &configurator,
-            &repository,
-            CancellationToken::new(),
-        ));
-
-        let ApplyFailure::ReadBackMismatch { mismatches, .. } = result.unwrap_err() else {
-            panic!("expected readback mismatch");
-        };
-        assert_eq!(mismatches.len(), 1);
-        assert_eq!(mismatches[0].key(), "ratio");
-        assert_eq!(configurator.call_count(), 1);
-    }
-
-    #[test]
     fn snap_config_read_failure_is_not_reported_as_a_value_mismatch() {
         let preview = ApplyPreview::new(
             backend(),
@@ -1544,7 +1408,6 @@ mod tests {
                 StagedChange::new("ratio", ConfigValue::Number(0.25), ConfigValue::Number(0.5))
                     .unwrap(),
             ],
-            RestartImpact::None,
         )
         .unwrap();
         let configurator = FakeConfigurator::scripted([Ok(successful_results(&preview))]);
@@ -1555,7 +1418,10 @@ mod tests {
             "read denied",
         ));
         let repository = FakeRepository {
-            snapshots: Rc::new(RefCell::new(VecDeque::from([readback]))),
+            snapshots: Rc::new(RefCell::new(VecDeque::from(vec![
+                readback;
+                READINESS_ATTEMPTS
+            ]))),
         };
 
         let result = block_on(execute_backend_apply(
@@ -1636,7 +1502,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let runner = FakeCommandRunner::scripted([ok(&plan_output(preview.operations(), None))]);
@@ -1719,7 +1584,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let runner = FakeCommandRunner::scripted([Err(CommandError::Cancelled)]);
@@ -1751,7 +1615,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let runner = FakeCommandRunner::scripted([Err(CommandError::NonZero {
@@ -1790,7 +1653,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap();
         let incomplete = vec![successful_results(&preview)[0].clone()];

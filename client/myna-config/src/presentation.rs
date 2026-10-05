@@ -84,13 +84,6 @@ pub enum Sensitivity {
     Sensitive,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RestartBehavior {
-    NotRequired,
-    Required,
-    Unknown,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PresentationMetadata {
     title: String,
@@ -99,7 +92,6 @@ pub struct PresentationMetadata {
     validation: Validation,
     group: PresentationGroup,
     sensitivity: Sensitivity,
-    restart_behavior: RestartBehavior,
     order: u16,
 }
 
@@ -126,10 +118,6 @@ impl PresentationMetadata {
 
     pub fn sensitivity(&self) -> Sensitivity {
         self.sensitivity
-    }
-
-    pub fn restart_behavior(&self) -> RestartBehavior {
-        self.restart_behavior
     }
 
     pub fn diagnostics_only(&self) -> bool {
@@ -270,7 +258,6 @@ fn known(
         validation,
         group,
         sensitivity,
-        restart_behavior: RestartBehavior::Required,
         order,
     }
 }
@@ -319,7 +306,6 @@ fn fallback(key: &str, value: &ConfigValue) -> PresentationMetadata {
         } else {
             Sensitivity::UserFacing
         },
-        restart_behavior: RestartBehavior::Unknown,
         order: u16::MAX,
     }
 }

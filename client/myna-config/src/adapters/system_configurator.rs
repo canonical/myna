@@ -665,7 +665,6 @@ mod tests {
 
     use super::*;
     use crate::apply_plan::plan_output;
-    use crate::backend_apply::RestartImpact;
     use crate::command::{CommandOutput, FakeCommandRunner};
     use crate::domain::{parse_connections, BackendIdentity, ConfigValue, StagedChange};
 
@@ -683,7 +682,6 @@ mod tests {
                 ConfigValue::Boolean(true),
             )
             .unwrap()],
-            RestartImpact::Required,
         )
         .unwrap()
     }
