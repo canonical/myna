@@ -36,11 +36,6 @@ environment:
 apps:
   hud:
     command: bin/myna-hud
-    # myna-shell keeps the HUD up all session, so as a counted app it would
-    # hold back every refresh. Nothing is lost by ignoring it: the refresh
-    # stops the daemon, myna-shell kills the HUD with it and spawns the new
-    # revision's once the daemon is back.
-    refresh-mode: ignore-running
     extensions: [gnome]
     environment:
       NO_AT_BRIDGE: "1"
