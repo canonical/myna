@@ -166,7 +166,8 @@ mod tests {
     const CUES: [Cue; 3] = [Cue::Start, Cue::Stop, Cue::Error];
 
     /// Every cue of every set decodes, is short, and starts and ends in near
-    /// silence: a clip that begins or stops above zero clicks.
+    /// silence: a clip that begins or stops above zero clicks. How loud it is
+    /// is the next test's.
     #[test]
     fn each_cue_is_a_short_clip_that_fades_in_and_out() {
         for set in SoundSet::ALL {
@@ -185,7 +186,67 @@ mod tests {
                     loudest(&samples[samples.len() - edge..]) < 0.001,
                     "{set:?} {cue:?} ends loud"
                 );
-                assert!(loudest(samples) > 0.3, "{set:?} {cue:?} is too quiet");
+            }
+        }
+    }
+
+    /// BS.1770 K-weighted loudness of a 48 kHz mono clip, gated as
+    /// `dev/synth_cues.py` measures it: 50 ms blocks overlapping by half and a
+    /// -20 dB relative gate, since a cue is shorter than the standard's 400 ms
+    /// block.
+    fn loudness(samples: &[f32]) -> f64 {
+        let biquad = |x: &[f64], b: [f64; 3], a: [f64; 2]| {
+            let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+            x.iter()
+                .map(|&x0| {
+                    let y0 = b[0] * x0 + b[1] * x1 + b[2] * x2 - a[0] * y1 - a[1] * y2;
+                    (x2, x1, y2, y1) = (x1, x0, y1, y0);
+                    y0
+                })
+                .collect::<Vec<_>>()
+        };
+        let x: Vec<f64> = samples.iter().map(|&s| f64::from(s)).collect();
+        let shelf = biquad(
+            &x,
+            [1.53512485958697, -2.69169618940638, 1.19839281085285],
+            [-1.69065929318241, 0.73248077421585],
+        );
+        let y = biquad(
+            &shelf,
+            [1.0, -2.0, 1.0],
+            [-1.99004745483398, 0.99007225036621],
+        );
+        let block = 2400;
+        let power: Vec<f64> = (0..y.len() - block)
+            .step_by(block / 2)
+            .map(|i| y[i..i + block].iter().map(|v| v * v).sum::<f64>() / block as f64)
+            .collect();
+        let gate = power.iter().cloned().fold(0.0, f64::max) * 0.01;
+        let kept: Vec<f64> = power.into_iter().filter(|&p| p > gate).collect();
+        -0.691 + 10.0 * (kept.iter().sum::<f64>() / kept.len() as f64).log10()
+    }
+
+    /// Every set is equally loud as heard, not by peak: a band-limited set
+    /// peaks lower than a struck one at the same loudness. Start at -16 LUFS,
+    /// stop 2 LU quieter, error 1 LU louder, as `dev/synth_cues.py` renders
+    /// them, and no cue clips.
+    #[test]
+    fn each_cue_is_loudness_matched_and_never_clips() {
+        for set in SoundSet::ALL {
+            for (cue, target) in [(Cue::Start, -16.0), (Cue::Stop, -18.0), (Cue::Error, -15.0)] {
+                let clip = decode(set, cue).unwrap();
+                assert_eq!(
+                    (clip.rate(), clip.channels()),
+                    (48_000, 1),
+                    "{set:?} {cue:?}"
+                );
+                let lufs = loudness(clip.samples());
+                assert!(
+                    (lufs - target).abs() < 0.5,
+                    "{set:?} {cue:?} is {lufs:.1} LUFS, not {target}"
+                );
+                let peak = clip.samples().iter().fold(0f32, |m, s| m.max(s.abs()));
+                assert!(peak < 0.95, "{set:?} {cue:?} peaks at {peak}");
             }
         }
     }
