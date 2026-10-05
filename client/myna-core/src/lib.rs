@@ -42,4 +42,4 @@ pub use events::{
 pub use mode::{effective_mode, streams_by_default, EffectiveMode, ModeSource};
 pub use protocol::PROTOCOL_VERSION;
 pub use session::SessionConfig;
-pub use settings::{Settings, SettingsWatch};
+pub use settings::{Settings, SettingsWatch, SoundSet};

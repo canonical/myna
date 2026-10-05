@@ -17,6 +17,7 @@ src/backend_ui.rs
 src/backend_apply.rs
 src/onboarding_ui.rs
 src/shortcut_ui.rs
+src/sound_preview.rs
 src/diagnostics.rs
 src/myna_settings.rs
 src/model_family.rs

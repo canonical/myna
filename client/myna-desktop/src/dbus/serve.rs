@@ -7,9 +7,12 @@
 //! Name lifecycle: requested at [`ZbusBus::serve`], released when the
 //! connection drops at shutdown (P13/P14; the gated round-trip suite proves
 //! it). `Toggle` pokes the daemon's [`ControlTrigger`], which is what the
-//! desktop custom shortcut calls.
+//! desktop custom shortcut calls. `PreviewSounds` plays a sound set through the
+//! daemon's own [`Previewer`], for Myna Settings' Preview button: the cues are
+//! compiled into the daemon, so the daemon is the one that can play them.
 //!
 //! [`ControlTrigger`]: crate::shortcut::control::ControlTrigger
+//! [`Previewer`]: crate::sound::player::Previewer
 //!
 //! The name doubles as the daemon's **singleton lock**: exactly one
 //! `myna-desktop` may own it, and failing to get it is fatal rather than a
@@ -26,6 +29,8 @@ use zbus::names::BusName;
 use zbus::Connection;
 
 use crate::dbus::{Bus, PropertyValue, BUS_NAME, OBJECT_PATH};
+use crate::indicator::dbus::wire_state;
+use crate::sound::player::Previewer;
 
 /// Why [`ZbusBus::serve`] failed. The two arms have opposite dispositions:
 /// [`Self::Bus`] degrades to notifications, [`Self::AlreadyRunning`] must not.
@@ -142,7 +147,46 @@ impl ClientRegistry {
 struct DictationObject {
     served: Arc<Mutex<ServedState>>,
     trigger: Option<crate::shortcut::control::Poke>,
+    preview: Option<Previewer>,
     clients: Arc<ClientRegistry>,
+}
+
+/// Why `PreviewSounds` played nothing, as
+/// `com.canonical.Myna.Dictation.Error.<variant>` on the wire so Myna Settings
+/// can tell the user which.
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "com.canonical.Myna.Dictation.Error")]
+pub enum PreviewError {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    /// A session is under way: the microphone would record the preview.
+    Busy(String),
+    /// A preview is already playing; a second would replay over its end.
+    AlreadyPlaying(String),
+    /// Not a `sound-set` nick this daemon knows.
+    UnknownSoundSet(String),
+    /// This daemon runs without a sound player.
+    NoPlayer(String),
+}
+
+/// `PreviewSounds`, off the bus. Only between sessions: from the press until
+/// the session is over the microphone may be open, and a preview played then
+/// would be dictated.
+fn preview_sounds(
+    state: &str,
+    nick: &str,
+    preview: Option<&Previewer>,
+) -> Result<(), PreviewError> {
+    let set = myna_core::SoundSet::from_nick(nick)
+        .ok_or_else(|| PreviewError::UnknownSoundSet(format!("no sound set {nick:?}")))?;
+    if ![wire_state::IDLE, wire_state::NOTICE, wire_state::ERROR].contains(&state) {
+        return Err(PreviewError::Busy(format!("dictation is {state}")));
+    }
+    let preview =
+        preview.ok_or_else(|| PreviewError::NoPlayer("no sound player is running".into()))?;
+    preview
+        .preview(set)
+        .map_err(|_| PreviewError::AlreadyPlaying("a preview is already playing".into()))
 }
 
 #[zbus::interface(name = "com.canonical.Myna.Dictation")]
@@ -152,6 +196,21 @@ impl DictationObject {
         if let Some(trigger) = &self.trigger {
             trigger.poke();
         }
+    }
+
+    /// `PreviewSounds`: play the start, stop and error cues of the set named
+    /// by its `sound-set` nick, whatever the setting holds. Returns once the
+    /// preview is queued, not when it has played.
+    async fn preview_sounds(&self, set: &str) -> Result<(), PreviewError> {
+        let state = self
+            .served
+            .lock()
+            .expect("served state poisoned")
+            .state
+            .clone();
+        let result = preview_sounds(&state, set, self.preview.as_ref());
+        myna_core::info_log!("dbus", "PreviewSounds {set} -> {result:?}");
+        result
     }
 
     /// `RegisterClient`: a HUD client announces itself. The sender's unique
@@ -291,12 +350,14 @@ impl ZbusBus {
     /// and the caller falls back to `NotifyIndicator` (P15);
     /// [`ServeError::AlreadyRunning`] means a second daemon and is fatal.
     pub async fn serve() -> Result<Self, ServeError> {
-        Self::serve_with_trigger(None).await
+        Self::serve_with(None, None).await
     }
 
-    /// Like [`serve`](Self::serve), with `Toggle` poking `trigger`.
-    pub async fn serve_with_trigger(
+    /// Like [`serve`](Self::serve), with `Toggle` poking `trigger` and
+    /// `PreviewSounds` playing through `preview`.
+    pub async fn serve_with(
         trigger: Option<crate::shortcut::control::Poke>,
+        preview: Option<Previewer>,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
@@ -307,6 +368,7 @@ impl ZbusBus {
                 DictationObject {
                     served: Arc::clone(&served),
                     trigger,
+                    preview,
                     clients: Arc::clone(&clients),
                 },
             )
@@ -532,7 +594,98 @@ impl Bus for ZbusBus {
 
 #[cfg(test)]
 mod tests {
-    use super::{strip_guid, ClientRegistry};
+    use super::{preview_sounds, strip_guid, wire_state, ClientRegistry, PreviewError};
+    use crate::live::Live;
+    use crate::sound::player::Player;
+
+    fn player() -> Player {
+        Player::spawn_with_output(Live::new(myna_core::SoundSet::Myna), |_| Ok(()))
+            .expect("player thread")
+    }
+
+    /// Between sessions every set previews, whatever is showing.
+    #[test]
+    fn a_preview_plays_between_sessions() {
+        for state in [wire_state::IDLE, wire_state::NOTICE, wire_state::ERROR] {
+            for set in myna_core::SoundSet::ALL {
+                let player = player();
+                let result = preview_sounds(state, set.nick(), Some(&player.previewer()));
+                assert!(result.is_ok(), "{state} {set:?}: {result:?}");
+            }
+        }
+    }
+
+    /// From the press to the end of the session the microphone may be open,
+    /// so nothing plays, the player not even asked.
+    #[test]
+    fn a_preview_during_a_session_is_refused() {
+        let player = player();
+        for state in [
+            wire_state::LOADING,
+            wire_state::RECORDING,
+            wire_state::TRANSCRIBING,
+            wire_state::FINALIZING,
+        ] {
+            let result = preview_sounds(state, "myna", Some(&player.previewer()));
+            assert!(matches!(result, Err(PreviewError::Busy(_))), "{state}");
+        }
+        assert!(preview_sounds(wire_state::IDLE, "myna", Some(&player.previewer())).is_ok());
+    }
+
+    #[test]
+    fn a_preview_of_an_unknown_set_is_refused() {
+        let player = player();
+        let result = preview_sounds(wire_state::IDLE, "kazoo", Some(&player.previewer()));
+        assert!(matches!(result, Err(PreviewError::UnknownSoundSet(_))));
+        assert!(preview_sounds(wire_state::IDLE, "myna", Some(&player.previewer())).is_ok());
+    }
+
+    #[test]
+    fn without_a_player_a_preview_says_so() {
+        let result = preview_sounds(wire_state::IDLE, "myna", None);
+        assert!(matches!(result, Err(PreviewError::NoPlayer(_))));
+    }
+
+    #[test]
+    fn a_preview_during_a_preview_is_refused() {
+        let player = player();
+        let previewer = player.previewer();
+        // The output never returns, so the first preview holds the player.
+        let (_hold, held) = std::sync::mpsc::channel::<()>();
+        let held = std::sync::Mutex::new(held);
+        let busy = Player::spawn_with_output(Live::new(myna_core::SoundSet::Myna), move |_| {
+            let _ = held.lock().unwrap().recv();
+            Ok(())
+        })
+        .expect("player thread");
+        assert!(preview_sounds(wire_state::IDLE, "hum", Some(&busy.previewer())).is_ok());
+        let again = preview_sounds(wire_state::IDLE, "tine", Some(&busy.previewer()));
+        assert!(matches!(again, Err(PreviewError::AlreadyPlaying(_))));
+        assert!(preview_sounds(wire_state::IDLE, "tine", Some(&previewer)).is_ok());
+    }
+
+    /// The error names are the contract Myna Settings matches on.
+    #[test]
+    fn preview_errors_carry_their_names_on_the_wire() {
+        use zbus::DBusError;
+        for (error, name) in [
+            (PreviewError::Busy(String::new()), "Busy"),
+            (
+                PreviewError::AlreadyPlaying(String::new()),
+                "AlreadyPlaying",
+            ),
+            (
+                PreviewError::UnknownSoundSet(String::new()),
+                "UnknownSoundSet",
+            ),
+            (PreviewError::NoPlayer(String::new()), "NoPlayer"),
+        ] {
+            assert_eq!(
+                error.name().as_str(),
+                format!("com.canonical.Myna.Dictation.Error.{name}")
+            );
+        }
+    }
 
     #[test]
     fn client_registry_tracks_sender_and_prunes() {

@@ -3036,9 +3036,10 @@ fn backends_probe() -> glib::ExitCode {
     .collect();
     if dictation_rows
         != [
-            "Sounds on start, stop and error",
             "When to transcribe",
             "Indicator style",
+            "Sounds on start, stop and error",
+            "Sound style",
             "Stop after silence (seconds)",
         ]
     {
@@ -3342,6 +3343,63 @@ fn backends_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("sounds: the switch writes the setting");
+
+    // Sound style leads with Myna's own bird, and its Preview follows the
+    // Sounds switch: nothing to preview while a session would be silent.
+    let style_row = descendants(general.upcast_ref(), &|widget| widget.is::<adw::ComboRow>())
+        .into_iter()
+        .filter_map(|row| row.downcast::<adw::ComboRow>().ok())
+        .find(|row| row.title() == "Sound style")
+        .expect("a Sound style row on General");
+    let styles: Vec<_> = style_row
+        .model()
+        .and_downcast::<gtk::StringList>()
+        .map(|list| {
+            (0..list.n_items())
+                .filter_map(|i| list.string(i))
+                .map(|label| label.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    if styles != ["Bird", "Chime", "Voice"] || style_row.selected() != 0 {
+        eprintln!(
+            "Sound style offers {styles:?} with {} selected",
+            style_row.selected()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    let preview = find_descendant(style_row.upcast_ref(), &|widget| {
+        widget.is::<gtk::Button>()
+            && widget.tooltip_text().as_deref() == Some(gettextrs::gettext("Preview").as_str())
+    })
+    .expect("a Preview button on the Sound style row");
+    if preview.is_sensitive() {
+        eprintln!("Preview stays sensitive with Sounds off");
+        return glib::ExitCode::FAILURE;
+    }
+    sounds_row.set_active(true);
+    if !settles(&|| preview.is_sensitive()) {
+        eprintln!("Preview stays insensitive with Sounds back on");
+        return glib::ExitCode::FAILURE;
+    }
+    // The probe's session bus does not exist, so the click reaches the
+    // D-Bus call and its refusal comes back as a toast.
+    let unreachable = gettextrs::gettext("Could not preview sounds");
+    let toasted = || {
+        descendants(overlay.upcast_ref(), &|widget| widget.is::<gtk::Label>())
+            .into_iter()
+            .filter_map(|label| label.downcast::<gtk::Label>().ok())
+            .any(|label| label.label() == unreachable.as_str())
+    };
+    preview
+        .downcast_ref::<gtk::Button>()
+        .expect("Preview is a button")
+        .emit_clicked();
+    if !settles(&toasted) {
+        eprintln!("a Preview the daemon cannot hear raised no toast");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("sounds: Sound style offers the three sets and previews while on");
 
     // A refused switch puts the radio back and says so in a toast whose
     // Details button opens the full report.
@@ -5368,6 +5426,7 @@ fn ready_page(
             }
         }
     }
+    attach_sound_preview(&bindings.borrow(), overlay);
     page.connect_map({
         let bindings = bindings.clone();
         move |_| {
@@ -5416,6 +5475,60 @@ fn ready_page(
     });
 
     page.upcast()
+}
+
+/// The Sound style row's Preview button: the daemon plays the selected set,
+/// start, stop and error. Insensitive while the Sounds switch is off, as a
+/// session would be silent too.
+fn attach_sound_preview(bindings: &BTreeMap<String, RowBinding>, overlay: &adw::ToastOverlay) {
+    let Some(RowBinding::Choice { row, choices, .. }) =
+        bindings.get(myna_core::settings::KEY_SOUND_SET)
+    else {
+        return;
+    };
+    let button = gtk::Button::builder()
+        .icon_name("media-playback-start-symbolic")
+        .tooltip_text(gettextrs::gettext("Preview"))
+        .valign(gtk::Align::Center)
+        .css_classes(["flat"])
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
+        "Preview sound style",
+    ))]);
+    if let Some(RowBinding::Switch { row: sounds, .. }) =
+        bindings.get(myna_core::settings::KEY_SOUNDS)
+    {
+        sounds
+            .bind_property("active", &button, "sensitive")
+            .sync_create()
+            .build();
+    }
+    button.connect_clicked({
+        let row = row.downgrade();
+        let choices = choices.clone();
+        let overlay = overlay.downgrade();
+        move |_| {
+            let Some(set) = row
+                .upgrade()
+                .and_then(|row| choices.get(row.selected() as usize).cloned())
+            else {
+                return;
+            };
+            let overlay = overlay.clone();
+            crate::sound_preview::request(&set, move |refusal| {
+                let Some(refusal) = refusal else {
+                    return;
+                };
+                if let crate::sound_preview::PreviewRefusal::Failed(detail) = &refusal {
+                    glib::g_warning!(crate::LOG_DOMAIN, "sound preview failed: {detail}");
+                }
+                if let Some(overlay) = overlay.upgrade() {
+                    overlay.add_toast(adw::Toast::new(&refusal.message()));
+                }
+            });
+        }
+    });
+    row.add_suffix(&button);
 }
 
 fn cancel_source(source: &RefCell<Option<glib::SourceId>>) {

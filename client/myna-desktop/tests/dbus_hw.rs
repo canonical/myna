@@ -148,6 +148,33 @@ async fn the_name_is_a_singleton_lock() {
 )]
 trait DictationMethods {
     fn toggle(&self) -> zbus::Result<()>;
+    fn preview_sounds(&self, set: &str) -> zbus::Result<()>;
+}
+
+/// Myna Settings tells its refusals apart by the error name: a daemon with no
+/// player says so on the wire, and an unknown set is refused before that.
+#[tokio::test]
+async fn preview_sounds_refuses_by_name_on_the_bus() {
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+
+    name_is_free().await;
+    let _owner = ZbusBus::serve().await.expect("serve owns the name");
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");
+
+    for (set, name) in [
+        ("myna", "com.canonical.Myna.Dictation.Error.NoPlayer"),
+        (
+            "kazoo",
+            "com.canonical.Myna.Dictation.Error.UnknownSoundSet",
+        ),
+    ] {
+        match proxy.preview_sounds(set).await {
+            Err(zbus::Error::MethodError(got, _, _)) => assert_eq!(got.as_str(), name, "{set}"),
+            other => panic!("{set}: expected {name}, got {other:?}"),
+        }
+    }
 }
 
 /// The custom shortcut's call: each `Toggle` on the wire is one poke of the
@@ -161,9 +188,9 @@ async fn served_toggle_method_feeds_the_trigger() {
 
     let mut trigger = myna_desktop::shortcut::control::ControlTrigger::new();
     name_is_free().await;
-    let _owner = ZbusBus::serve_with_trigger(Some(trigger.poke()))
+    let _owner = ZbusBus::serve_with(Some(trigger.poke()), None)
         .await
-        .expect("serve_with_trigger owns the name");
+        .expect("serve_with owns the name");
 
     let conn = zbus::Connection::session().await.expect("session bus");
     let proxy = DictationMethodsProxy::new(&conn).await.expect("proxy");

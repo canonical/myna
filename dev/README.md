@@ -30,7 +30,7 @@ Only the two configs stayed here:
 | Script | What it does |
 | --- | --- |
 | `generate_fixtures.py` | Synthetic espeak fixture tier for the offline test suite. Not a WER corpus — the synthetic voice is out of distribution and scores misleadingly across architectures. |
-| `synth_cues.py` | Synthesizes the daemon's start, stop and error cues into `client/myna-desktop/sounds/`. Rerun after changing a cue; commit the `.oga` files. |
+| `synth_cues.py` | Synthesizes the daemon's three sound sets (start, stop and error each) into `client/myna-desktop/sounds/<set>/`; `uv run dev/synth_cues.py`. Seeded and bit-exact, so a rerun reproduces the committed `.oga` files. |
 | `fetch_funasr_model.py`, `parakeet/fetch_parakeet_onnx.py` | Fetch and stage model weights into a snap directory. Driven by the `snap-*` make targets. |
 | `parakeet/collapse_probe.py` | Sliding-window encoder collapse probe: the methodology behind the collapse figures in `myna.testbed.parakeet`. |
 | `model-pin.sh`, `lint-packages.sh`, `version.sh`, `stage-version.sh`, `publish-snap.sh` | Snap staging, packaging checks, the git-derived version every build carries, and store upload (`make publish-<snap>`). |

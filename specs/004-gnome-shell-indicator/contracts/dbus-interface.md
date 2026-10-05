@@ -72,6 +72,7 @@ change already reads the consistent label.
 | `Toggle` | `() → ()` | Start if idle, else Stop (the panel-button action, R8) |
 | `RegisterClient` | `() → (u count)` | register the caller's unique bus name (`:1.xxx`) as a HUD client; idempotent, returns current client count. The server monitors `NameOwnerChanged` for the sender so a crashed client is pruned without an explicit `UnregisterClient` |
 | `UnregisterClient` | `() → (u count)` | unregister the caller; idempotent, returns current client count |
+| `PreviewSounds` | `(s set) → ()` | **(2026-10-05)** play the start, stop and error cues of the `sound-set` nick `set`, for Myna Settings' Preview button; returns once queued. Refuses with `com.canonical.Myna.Dictation.Error.Busy` while a session is under way (`State` other than `idle`, `notice`, `error`), `.AlreadyPlaying` while a preview plays, `.UnknownSoundSet` for an unknown nick, `.NoPlayer` when the daemon has no sound player |
 
 ## Guarantees (each a test row)
 
@@ -91,6 +92,7 @@ change already reads the consistent label.
 | C14 | **(2026-08-28)** A `RegisterClient` call adds the sender's unique name to the client set (idempotent) and `UnregisterClient` removes it; the server also prunes vanished names via `NameOwnerChanged`. Return value is the current client count. | hermetic `serve.rs` client registry + gated round-trip |
 | C15 | **(2026-08-28)** While at least one client is registered, the notification fallback is suppressed and the D-Bus HUD is the indicator; when the last client leaves (explicit `UnregisterClient` or vanished), the fallback is restored. The D-Bus `State` publishing is unaffected. | hermetic `dynamic.rs` + gated |
 | C16 | **(2026-10-01)** Every failure report sets `LastError`/`LastErrorDetail`/`LastErrorTime`, including one whose headline repeats the previous one; the auto-hide back to `idle` and later sessions leave them untouched. | hermetic `indicator/dbus.rs` + gated `dbus_hw.rs` round-trip |
+| C17 | **(2026-10-05)** `PreviewSounds` plays only between sessions and never stacks previews; each refusal carries its own error name. Additive: a client calling an older publisher gets `UnknownMethod`. | hermetic `serve.rs` + `sound/player.rs`, gated `dbus_hw.rs` round-trip |
 
 ## HUD identity: `com.canonical.Myna.Hud` (2026-08-28)
 

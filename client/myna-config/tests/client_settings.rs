@@ -392,8 +392,15 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 5);
+    assert_eq!(plans.len(), 6);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
+    let sound_set = plans
+        .iter()
+        .find(|plan| plan.key == "sound-set")
+        .expect("sound-set is listed");
+    assert_eq!(sound_set.kind, WidgetKind::Choice);
+    assert_eq!(sound_set.title, "Sound style");
+    assert_eq!(sound_set.choices, ["myna", "tine", "hum"]);
     let switch = plans
         .iter()
         .find(|plan| plan.kind == WidgetKind::Switch)

@@ -57,6 +57,41 @@ pub const KEY_SOUNDS: &str = "sounds";
 /// installed gets.
 pub const DEFAULT_SOUNDS: bool = true;
 
+/// Which set of cues the daemon plays.
+pub const KEY_SOUND_SET: &str = "sound-set";
+
+/// A set of start, stop and error cues (`sound-set`). The default is the
+/// schema's, and what a machine with no schema installed gets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SoundSet {
+    /// Whistled chirps, after the bird.
+    #[default]
+    Myna,
+    /// A struck bar.
+    Tine,
+    /// The pitch contours of spoken backchannels.
+    Hum,
+}
+
+impl SoundSet {
+    /// Every set, in schema order.
+    pub const ALL: [Self; 3] = [Self::Myna, Self::Tine, Self::Hum];
+
+    /// The schema enum nick.
+    pub fn nick(self) -> &'static str {
+        match self {
+            Self::Myna => "myna",
+            Self::Tine => "tine",
+            Self::Hum => "hum",
+        }
+    }
+
+    /// The set a nick names; `None` for one this build does not know.
+    pub fn from_nick(nick: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|set| set.nick() == nick)
+    }
+}
+
 /// The schema default for [`KEY_SILENCE_TIMEOUT`], also what a machine with
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
@@ -79,6 +114,8 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
+    /// Which cues are heard.
+    pub sound_set: SoundSet,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -90,6 +127,7 @@ impl Default for Settings {
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
+            sound_set: SoundSet::default(),
         }
     }
 }
@@ -114,6 +152,11 @@ impl Settings {
             hud_style: store.text(KEY_HUD_STYLE),
             silence_timeout: store.seconds(KEY_SILENCE_TIMEOUT),
             sounds: store.flag(KEY_SOUNDS),
+            sound_set: store
+                .text(KEY_SOUND_SET)
+                .as_deref()
+                .and_then(SoundSet::from_nick)
+                .unwrap_or_default(),
         }
     }
 }
@@ -470,6 +513,56 @@ mod tests {
         assert!(!Settings::from_store(&store).sounds);
         assert!(store.settings.set_boolean(KEY_SOUNDS, true).is_ok());
         assert!(Settings::from_store(&store).sounds);
+    }
+
+    /// Myna's own bird is heard out of the box, with or without a schema, and
+    /// a set picked in Settings reaches the value the daemon reads.
+    #[test]
+    fn sound_set_reads_the_schema_default_and_round_trips() {
+        let store = test_store();
+        assert_eq!(Settings::from_store(&store).sound_set, SoundSet::Myna);
+        assert_eq!(Settings::default().sound_set, SoundSet::Myna);
+        let default = store
+            .settings
+            .default_value(KEY_SOUND_SET)
+            .expect("the key has a default");
+        assert_eq!(default.str(), Some(SoundSet::default().nick()));
+        for set in [SoundSet::Tine, SoundSet::Hum, SoundSet::Myna] {
+            assert!(store.settings.set_string(KEY_SOUND_SET, set.nick()).is_ok());
+            assert_eq!(Settings::from_store(&store).sound_set, set);
+        }
+    }
+
+    /// The schema enum and [`SoundSet`] name the same sets: every nick this
+    /// module produces is one the schema accepts, and the other way round.
+    #[test]
+    fn every_sound_set_nick_round_trips_through_the_schema() {
+        let key = test_schema().key(KEY_SOUND_SET);
+        let range = key.range();
+        let (kind, nicks) = range.get::<(String, glib::Variant)>().unwrap();
+        assert_eq!(kind, "enum");
+        let nicks: Vec<String> = nicks.get().unwrap();
+        assert_eq!(
+            nicks,
+            SoundSet::ALL.map(|set| set.nick().to_owned()).to_vec()
+        );
+        for set in SoundSet::ALL {
+            assert_eq!(SoundSet::from_nick(set.nick()), Some(set));
+        }
+        assert_eq!(SoundSet::from_nick("kazoo"), None);
+    }
+
+    /// A hand edit can put anything in the keyfile; it reads as the default
+    /// set, never as no sound.
+    #[test]
+    fn a_sound_set_outside_the_schema_reads_the_default() {
+        let path = std::env::temp_dir().join(format!("myna-sound-set-{}.ini", std::process::id()));
+        std::fs::write(&path, "[dictation]\nsound-set='kazoo'\n").unwrap();
+        assert_eq!(
+            Settings::from_store(&store_on(&path)).sound_set,
+            SoundSet::default()
+        );
+        std::fs::remove_file(&path).ok();
     }
 
     /// The schema's nicks and this module's parser are one contract; a value

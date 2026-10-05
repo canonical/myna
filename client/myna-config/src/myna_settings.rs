@@ -78,10 +78,11 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 4] = [
-    myna_core::settings::KEY_SOUNDS,
+const DICTATION_ORDER: [&str; 5] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
+    myna_core::settings::KEY_SOUNDS,
+    myna_core::settings::KEY_SOUND_SET,
     myna_core::settings::KEY_SILENCE_TIMEOUT,
 ];
 
@@ -106,6 +107,9 @@ pub fn choice_display_label(choice: &str) -> String {
         "ribbon" => gettextrs::gettext("Ribbon"),
         "vumeter" => gettextrs::gettext("VU meter"),
         "bar" => gettextrs::gettext("Default"),
+        "myna" => gettextrs::gettext("Bird"),
+        "tine" => gettextrs::gettext("Chime"),
+        "hum" => gettextrs::gettext("Voice"),
         unknown => unknown.to_owned(),
     }
 }

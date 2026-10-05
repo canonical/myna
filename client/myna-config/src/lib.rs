@@ -27,6 +27,7 @@ pub mod shortcut;
 pub mod shortcut_ui;
 pub mod snap_changes;
 pub mod snap_install;
+pub mod sound_preview;
 pub mod ui;
 
 pub const APP_ID: &str = "com.canonical.Myna.Config";

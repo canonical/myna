@@ -25,6 +25,12 @@
     <value nick="bar" value="2"/>
   </enum>
 
+  <enum id="com.canonical.Myna.Dictation.SoundSet">
+    <value nick="myna" value="1"/>
+    <value nick="tine" value="2"/>
+    <value nick="hum" value="3"/>
+  </enum>
+
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
     <key name="sounds" type="b">
       <default>true</default>
@@ -32,6 +38,15 @@
       <description>
         Play a short sound when dictation starts listening, when it stops,
         and when it fails.
+      </description>
+    </key>
+
+    <key name="sound-set" enum="com.canonical.Myna.Dictation.SoundSet">
+      <default>'myna'</default>
+      <summary>Sound style</summary>
+      <description>
+        Which sounds play: Bird is whistled chirps, Chime a struck bar, Voice
+        the hums people make while listening.
       </description>
     </key>
 

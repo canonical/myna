@@ -41,6 +41,7 @@ use std::time::Duration;
 use futures_util::future::{BoxFuture, FutureExt};
 
 use myna_audio::{CaptureSource, PipeWireBackend};
+use myna_core::SoundSet;
 use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
@@ -51,7 +52,10 @@ use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
-use myna_desktop::sound::{player::Player, Chiming};
+use myna_desktop::sound::{
+    player::{Player, Previewer},
+    Chiming,
+};
 use myna_desktop::{AutoStop, DesktopController, Indicator, Live, Session};
 use myna_orchestrator::backend::share::{BackendSocket, ResolveError};
 use myna_orchestrator::{
@@ -127,6 +131,7 @@ struct Resolved {
     mode: ModeInputs,
     auto_stop: AutoStop,
     sounds: bool,
+    sound_set: SoundSet,
 }
 
 impl Resolved {
@@ -145,6 +150,7 @@ impl Resolved {
             mode,
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
+            sound_set: settings.sound_set,
         }
     }
 }
@@ -200,17 +206,20 @@ struct LiveSettings {
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
     sounds: Live<bool>,
+    /// Shared with the [`Player`], which reads it at every cue.
+    sound_set: Live<SoundSet>,
     hud_style: Arc<tokio::sync::watch::Sender<String>>,
 }
 
 impl LiveSettings {
-    fn new(resolved: &Resolved) -> Self {
+    fn new(resolved: &Resolved, sound_set: Live<SoundSet>) -> Self {
         Self {
             preedit: Live::new(resolved.preedit),
             mode: Arc::new(std::sync::Mutex::new(resolved.mode)),
             language: Live::new(resolved.language.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             sounds: Live::new(resolved.sounds),
+            sound_set,
             // The schema default until the first read in `follow`; a machine
             // with no schema installed keeps it, which is the same answer
             // `Settings::load` gives there.
@@ -329,6 +338,14 @@ impl LiveSettings {
         if self.sounds.get() != resolved.sounds {
             myna_core::info_log!("settings", "sounds -> {} (live)", resolved.sounds);
             self.sounds.set(resolved.sounds);
+        }
+        if self.sound_set.get() != resolved.sound_set {
+            myna_core::info_log!(
+                "settings",
+                "sound set -> {} (live)",
+                resolved.sound_set.nick()
+            );
+            self.sound_set.set(resolved.sound_set);
         }
     }
 
@@ -584,15 +601,55 @@ fn no_backend(e: ResolveError) -> Session {
     (run, StopHandle::default()).into()
 }
 
-/// The indicator, heard as well as seen while the `sounds` setting is on. A
-/// daemon that cannot start the player thread dictates silently.
-fn with_sounds(indicator: impl Indicator + 'static, live: &LiveSettings) -> Box<dyn Indicator> {
-    match Player::spawn() {
-        Ok(chime) => Box::new(Chiming::new(indicator, chime, live.sounds.clone())),
-        Err(e) => {
-            eprintln!("myna-desktop: no sound player ({e}); cues are off");
-            Box::new(indicator)
+/// The daemon's sound player and the set it plays from. Made before the bus
+/// is served, because `PreviewSounds` plays through the same player.
+struct Sounds {
+    /// `None` when the player thread could not start: dictation goes on
+    /// silently.
+    player: Option<Player>,
+    set: Live<SoundSet>,
+}
+
+impl Sounds {
+    fn spawn(resolved: &Resolved) -> Self {
+        let set = Live::new(resolved.sound_set);
+        let player = Player::spawn(set.clone())
+            .inspect_err(|e| eprintln!("myna-desktop: no sound player ({e}); cues are off"))
+            .ok();
+        Self { player, set }
+    }
+
+    fn previewer(&self) -> Option<Previewer> {
+        self.player.as_ref().map(Player::previewer)
+    }
+}
+
+/// What the daemon makes before it serves the bus, because the bus's methods
+/// act through it: `Toggle` pokes the trigger and `PreviewSounds` plays on the
+/// player.
+struct Handles {
+    trigger: ControlTrigger,
+    sounds: Sounds,
+}
+
+impl Handles {
+    fn new(resolved: &Resolved) -> Self {
+        Self {
+            trigger: ControlTrigger::new(),
+            sounds: Sounds::spawn(resolved),
         }
+    }
+}
+
+/// The indicator, heard as well as seen while the `sounds` setting is on.
+fn with_sounds(
+    indicator: impl Indicator + 'static,
+    player: Option<Player>,
+    live: &LiveSettings,
+) -> Box<dyn Indicator> {
+    match player {
+        Some(chime) => Box::new(Chiming::new(indicator, chime, live.sounds.clone())),
+        None => Box::new(indicator),
     }
 }
 
@@ -618,9 +675,10 @@ async fn run_controller(
     readiness: Readiness,
     pump_bus: Option<SharedBus>,
     bus_lost: Option<BoxFuture<'static, ()>>,
-    trigger: ControlTrigger,
+    handles: Handles,
 ) -> ExitCode {
-    let live = LiveSettings::new(&resolved);
+    let Handles { trigger, sounds } = handles;
+    let live = LiveSettings::new(&resolved, sounds.set);
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
@@ -628,7 +686,7 @@ async fn run_controller(
 
     let builder = DesktopController::builder()
         .injector(LazyInjector::new(IbusConnect))
-        .indicator(with_sounds(indicator, &live))
+        .indicator(with_sounds(indicator, sounds.player, &live))
         .session(make_session(
             &args,
             &live,
@@ -1078,7 +1136,7 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let trigger = ControlTrigger::new();
+    let handles = Handles::new(&resolved);
     if args.no_dbus {
         rt.block_on(run_controller(
             args,
@@ -1087,10 +1145,10 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
             Readiness::new(),
             None,
             None,
-            trigger,
+            handles,
         ))
     } else {
-        rt.block_on(run_headless_dbus(args, resolved, trigger))
+        rt.block_on(run_headless_dbus(args, resolved, handles))
     }
 }
 
@@ -1101,8 +1159,9 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// client is registered via `RegisterClient` (the `myna-hud`
 /// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
 /// path.
-async fn run_headless_dbus(args: Args, resolved: Resolved, trigger: ControlTrigger) -> ExitCode {
-    match ZbusBus::serve_with_trigger(Some(trigger.poke())).await {
+async fn run_headless_dbus(args: Args, resolved: Resolved, handles: Handles) -> ExitCode {
+    let served = ZbusBus::serve_with(Some(handles.trigger.poke()), handles.sounds.previewer());
+    match served.await {
         Ok(bus) => {
             let clients = bus.client_registry();
             let bus_lost = bus.lost().boxed();
@@ -1120,7 +1179,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved, trigger: ControlTrigg
                 readiness,
                 Some(pump_bus),
                 Some(bus_lost),
-                trigger,
+                handles,
             )
             .await
         }
@@ -1140,7 +1199,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved, trigger: ControlTrigg
                 Readiness::new(),
                 None,
                 None,
-                trigger,
+                handles,
             )
             .await
         }
@@ -1157,7 +1216,7 @@ async fn run_headless_dbus(args: Args, resolved: Resolved, trigger: ControlTrigg
                 Readiness::new(),
                 None,
                 None,
-                trigger,
+                handles,
             )
             .await
         }
@@ -1456,7 +1515,7 @@ mod tests {
     /// Turning sounds off in Settings silences the next cue, no restart.
     #[test]
     fn a_sounds_change_reaches_the_live_cell() {
-        let live = LiveSettings::new(&resolved(&Args::default(), &unset()));
+        let live = LiveSettings::new(&resolved(&Args::default(), &unset()), Live::default());
         assert!(live.sounds.get(), "sounds are on out of the box");
         let off = myna_core::Settings {
             sounds: false,
@@ -1464,6 +1523,20 @@ mod tests {
         };
         live.settings_changed(&Args::default(), &off);
         assert!(!live.sounds.get());
+    }
+
+    /// A set picked in Settings reaches the cell the player reads at each
+    /// cue: the one the daemon handed it, not a copy.
+    #[test]
+    fn a_sound_set_change_reaches_the_players_cell() {
+        let player_reads = Live::new(SoundSet::Myna);
+        let live = LiveSettings::new(&resolved(&Args::default(), &unset()), player_reads.clone());
+        let hum = myna_core::Settings {
+            sound_set: SoundSet::Hum,
+            ..Default::default()
+        };
+        live.settings_changed(&Args::default(), &hum);
+        assert_eq!(player_reads.get(), SoundSet::Hum);
     }
 
     /// A settings change lands in the live cell the controller reads, and an
@@ -1474,7 +1547,7 @@ mod tests {
             activation: Some(Activation::Control),
             ..Default::default()
         };
-        let live = LiveSettings::new(&resolved(&a, &unset()));
+        let live = LiveSettings::new(&resolved(&a, &unset()), Live::default());
         assert_eq!(
             live.auto_stop.get(),
             AutoStop::toggle(Duration::from_secs(
@@ -1629,7 +1702,7 @@ mod tests {
     #[test]
     fn the_backend_answer_and_the_choice_resolve_together() {
         let a = Args::default();
-        let live = LiveSettings::new(&resolved(&a, &unset()));
+        let live = LiveSettings::new(&resolved(&a, &unset()), Live::default());
         assert!(live.preedit.get(), "unknown backend: the schema default");
 
         live.backend_learned(a.preedit, Some(false));
@@ -1658,7 +1731,7 @@ mod tests {
             preedit: Some(false),
             ..Default::default()
         };
-        let live = LiveSettings::new(&resolved(&a, &unset()));
+        let live = LiveSettings::new(&resolved(&a, &unset()), Live::default());
         live.backend_learned(a.preedit, Some(true));
         assert!(!live.preedit.get());
     }
@@ -1737,7 +1810,7 @@ mod tests {
             backend: Some(BackendSocket::Fixed(path)),
             ..Default::default()
         };
-        let live = LiveSettings::new(&resolved(&args, &unset()));
+        let live = LiveSettings::new(&resolved(&args, &unset()), Live::default());
         assert!(live.preedit.get());
         let mut factory = make_session(&args, &live, Readiness::new(), None, Arc::default());
         let (events_tx, _events_rx) = mpsc::channel(16);
@@ -1800,7 +1873,7 @@ mod tests {
         let resolved = Resolved::new(&args, &myna_core::Settings::default(), None);
         let mut factory = make_session(
             &args,
-            &LiveSettings::new(&resolved),
+            &LiveSettings::new(&resolved, Live::default()),
             readiness.clone(),
             None,
             Arc::default(),

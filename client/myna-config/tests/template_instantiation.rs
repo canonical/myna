@@ -459,6 +459,7 @@ fn backend_pages_discover_and_apply_against_a_fixture_machine() {
         "mode: shows the active backend's default",
         "mode: a choice is stored as the user's",
         "sounds: the switch writes the setting",
+        "sounds: Sound style offers the three sets and previews while on",
         "backend-snapshot: read",
         "backend-apply: read back",
         "backend-apply: a refused change reverts with a toast",
