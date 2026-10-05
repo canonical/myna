@@ -41,6 +41,10 @@ fn sound(set: SoundSet, cue: Cue) -> &'static [u8] {
         SoundSet::Myna => set!("myna"),
         SoundSet::Tine => set!("tine"),
         SoundSet::Hum => set!("hum"),
+        SoundSet::Marimba => set!("marimba"),
+        SoundSet::Drop => set!("drop"),
+        SoundSet::Radio => set!("radio"),
+        SoundSet::Koto => set!("koto"),
     }
 }
 

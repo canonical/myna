@@ -400,7 +400,10 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("sound-set is listed");
     assert_eq!(sound_set.kind, WidgetKind::Choice);
     assert_eq!(sound_set.title, "Sound style");
-    assert_eq!(sound_set.choices, ["tine", "myna", "hum"]);
+    assert_eq!(
+        sound_set.choices,
+        ["tine", "myna", "hum", "marimba", "drop", "radio", "koto"]
+    );
     let switch = plans
         .iter()
         .find(|plan| plan.kind == WidgetKind::Switch)

@@ -29,6 +29,10 @@
     <value nick="myna" value="1"/>
     <value nick="tine" value="2"/>
     <value nick="hum" value="3"/>
+    <value nick="marimba" value="4"/>
+    <value nick="drop" value="5"/>
+    <value nick="radio" value="6"/>
+    <value nick="koto" value="7"/>
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
@@ -45,8 +49,9 @@
       <default>'tine'</default>
       <summary>Sound style</summary>
       <description>
-        Which sounds play: Bird is whistled chirps, Chime a struck bar, Voice
-        the hums people make while listening.
+        Which sounds play: Chime is a struck bar, Bird whistled chirps, Voice
+        the hums people make while listening, Marimba a rising fifth, Water
+        falling drops, Radio a walkie-talkie and Strings a plucked koto.
       </description>
     </key>
 

@@ -71,11 +71,27 @@ pub enum SoundSet {
     Tine,
     /// The pitch contours of spoken backchannels.
     Hum,
+    /// A marimba's rising fifth: Myna's first cues.
+    Marimba,
+    /// Water drops.
+    Drop,
+    /// A walkie-talkie.
+    Radio,
+    /// A plucked koto.
+    Koto,
 }
 
 impl SoundSet {
     /// Every set, in schema order.
-    pub const ALL: [Self; 3] = [Self::Myna, Self::Tine, Self::Hum];
+    pub const ALL: [Self; 7] = [
+        Self::Myna,
+        Self::Tine,
+        Self::Hum,
+        Self::Marimba,
+        Self::Drop,
+        Self::Radio,
+        Self::Koto,
+    ];
 
     /// The schema enum nick.
     pub fn nick(self) -> &'static str {
@@ -83,6 +99,10 @@ impl SoundSet {
             Self::Myna => "myna",
             Self::Tine => "tine",
             Self::Hum => "hum",
+            Self::Marimba => "marimba",
+            Self::Drop => "drop",
+            Self::Radio => "radio",
+            Self::Koto => "koto",
         }
     }
 
@@ -527,7 +547,7 @@ mod tests {
             .default_value(KEY_SOUND_SET)
             .expect("the key has a default");
         assert_eq!(default.str(), Some(SoundSet::default().nick()));
-        for set in [SoundSet::Myna, SoundSet::Hum, SoundSet::Tine] {
+        for set in [SoundSet::Myna, SoundSet::Koto, SoundSet::Tine] {
             assert!(store.settings.set_string(KEY_SOUND_SET, set.nick()).is_ok());
             assert_eq!(Settings::from_store(&store).sound_set, set);
         }

@@ -569,6 +569,10 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
         "myna",
         "tine",
         "hum",
+        "marimba",
+        "drop",
+        "radio",
+        "koto",
         "future-mode",
     ];
     let labels: Vec<_> = raw
@@ -587,6 +591,10 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
             "Bird",
             "Chime",
             "Voice",
+            "Marimba",
+            "Water",
+            "Radio",
+            "Strings",
             "future-mode",
         ]
     );
@@ -606,6 +614,10 @@ fn enum_display_labels_are_extracted_into_the_gettext_template() {
         "Bird",
         "Chime",
         "Voice",
+        "Marimba",
+        "Water",
+        "Radio",
+        "Strings",
     ] {
         assert!(pot.contains(&format!("msgid \"{label}\"")), "{label}");
     }

@@ -3361,7 +3361,10 @@ fn backends_probe() -> glib::ExitCode {
                 .collect()
         })
         .unwrap_or_default();
-    if styles != ["Chime", "Bird", "Voice"] || style_row.selected() != 0 {
+    let offered = [
+        "Chime", "Bird", "Voice", "Marimba", "Water", "Radio", "Strings",
+    ];
+    if styles != offered || style_row.selected() != 0 {
         eprintln!(
             "Sound style offers {styles:?} with {} selected",
             style_row.selected()

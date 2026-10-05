@@ -110,6 +110,10 @@ pub fn choice_display_label(choice: &str) -> String {
         "myna" => gettextrs::gettext("Bird"),
         "tine" => gettextrs::gettext("Chime"),
         "hum" => gettextrs::gettext("Voice"),
+        "marimba" => gettextrs::gettext("Marimba"),
+        "drop" => gettextrs::gettext("Water"),
+        "radio" => gettextrs::gettext("Radio"),
+        "koto" => gettextrs::gettext("Strings"),
         unknown => unknown.to_owned(),
     }
 }
