@@ -119,7 +119,10 @@ manager, on the new revision (`refresh-mode: restart`, stated explicitly in
 `snapcraft.yaml`). A refresh landing mid-utterance costs that utterance;
 activation rebinds by itself. Snapd's refresh-app-awareness does not apply -
 it holds back refreshes for running *apps*, and a daemon is never one, so
-there is nothing to opt into.
+there is nothing to opt into. The HUD is an app that myna-shell keeps running
+all session, so it opts out with `refresh-mode: ignore-running`; myna-shell
+stops it when the daemon goes down and starts the new revision's when the
+daemon returns.
 
 There is no `/snap/bin/myna` - snapd skips wrappers for service apps
 (`wrappers/binaries.go:218`). To drive it by hand:
