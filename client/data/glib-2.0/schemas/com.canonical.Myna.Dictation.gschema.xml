@@ -42,7 +42,7 @@
     </key>
 
     <key name="sound-set" enum="com.canonical.Myna.Dictation.SoundSet">
-      <default>'myna'</default>
+      <default>'tine'</default>
       <summary>Sound style</summary>
       <description>
         Which sounds play: Bird is whistled chirps, Chime a struck bar, Voice

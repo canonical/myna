@@ -29,7 +29,7 @@ The mode is a client presentation preference, not wire negotiation. A streaming 
 
 `sounds` (boolean, schema default true) turns the session cues on and off (`.kb/desktop-integration.md`). The daemon reads it live, at the next cue. Myna Settings renders any boolean key as a switch row.
 
-`sound-set` (enum `myna` | `tine` | `hum`, schema default `myna`) picks which cues play; `myna_core::SoundSet` mirrors the enum, and a value outside it reads as the default, never as silence. The daemon reads it live, at the next cue. Myna Settings shows it as "Sound style" (Bird, Chime, Voice) with a Preview button that asks the daemon to play the selected set over D-Bus and is insensitive while `sounds` is off.
+`sound-set` (enum `myna` | `tine` | `hum`, schema default `tine`) picks which cues play; `myna_core::SoundSet` mirrors the enum, and a value outside it reads as the default, never as silence. The daemon reads it live, at the next cue. Myna Settings shows it as "Sound style" (Chime, Bird, Voice) with a Preview button that asks the daemon to play the selected set over D-Bus and is insensitive while `sounds` is off.
 
 # Important
 

@@ -65,9 +65,9 @@ pub const KEY_SOUND_SET: &str = "sound-set";
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SoundSet {
     /// Whistled chirps, after the bird.
-    #[default]
     Myna,
     /// A struck bar.
+    #[default]
     Tine,
     /// The pitch contours of spoken backchannels.
     Hum,
@@ -515,19 +515,19 @@ mod tests {
         assert!(Settings::from_store(&store).sounds);
     }
 
-    /// Myna's own bird is heard out of the box, with or without a schema, and
-    /// a set picked in Settings reaches the value the daemon reads.
+    /// The chime is heard out of the box, with or without a schema, and a set
+    /// picked in Settings reaches the value the daemon reads.
     #[test]
     fn sound_set_reads_the_schema_default_and_round_trips() {
         let store = test_store();
-        assert_eq!(Settings::from_store(&store).sound_set, SoundSet::Myna);
-        assert_eq!(Settings::default().sound_set, SoundSet::Myna);
+        assert_eq!(Settings::from_store(&store).sound_set, SoundSet::Tine);
+        assert_eq!(Settings::default().sound_set, SoundSet::Tine);
         let default = store
             .settings
             .default_value(KEY_SOUND_SET)
             .expect("the key has a default");
         assert_eq!(default.str(), Some(SoundSet::default().nick()));
-        for set in [SoundSet::Tine, SoundSet::Hum, SoundSet::Myna] {
+        for set in [SoundSet::Myna, SoundSet::Hum, SoundSet::Tine] {
             assert!(store.settings.set_string(KEY_SOUND_SET, set.nick()).is_ok());
             assert_eq!(Settings::from_store(&store).sound_set, set);
         }

@@ -3344,8 +3344,8 @@ fn backends_probe() -> glib::ExitCode {
     }
     println!("sounds: the switch writes the setting");
 
-    // Sound style leads with Myna's own bird, and its Preview follows the
-    // Sounds switch: nothing to preview while a session would be silent.
+    // Sound style leads with its default, the chime, and its Preview follows
+    // the Sounds switch: nothing to preview while a session would be silent.
     let style_row = descendants(general.upcast_ref(), &|widget| widget.is::<adw::ComboRow>())
         .into_iter()
         .filter_map(|row| row.downcast::<adw::ComboRow>().ok())
@@ -3361,7 +3361,7 @@ fn backends_probe() -> glib::ExitCode {
                 .collect()
         })
         .unwrap_or_default();
-    if styles != ["Bird", "Chime", "Voice"] || style_row.selected() != 0 {
+    if styles != ["Chime", "Bird", "Voice"] || style_row.selected() != 0 {
         eprintln!(
             "Sound style offers {styles:?} with {} selected",
             style_row.selected()
