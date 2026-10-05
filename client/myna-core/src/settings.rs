@@ -36,8 +36,8 @@ pub const KEY_STREAMING_MODE: &str = "streaming-mode";
 /// The spoken language passed to the backend; empty means "backend decides".
 pub const KEY_LANGUAGE: &str = "language";
 
-/// The HUD indicator style: `bar` (accent level bar) or `vumeter` (segmented
-/// bar).
+/// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave) or
+/// `vumeter` (segmented bar).
 pub const KEY_HUD_STYLE: &str = "hud-style";
 
 /// The `hud-style` the schema defaults to. Duplicated from the schema so the
@@ -72,7 +72,7 @@ pub struct Settings {
     /// `None` where the key is empty - "unset" and "" are the same intent, and
     /// GSettings has no null.
     pub language: Option<String>,
-    /// The HUD indicator style nick (`bar` | `vumeter`), or `None` when
+    /// The HUD indicator style nick (`bar` | `ribbon` | `vumeter`), or `None` when
     /// unset (the schema default applies).
     pub hud_style: Option<String>,
     /// Seconds of silence after which a toggle session ends itself; `0` = never.
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn a_hud_style_outside_the_schema_reads_the_default() {
         let path = std::env::temp_dir().join(format!("myna-hud-style-{}.ini", std::process::id()));
-        for retired in ["ribbon", "progress", "hologram"] {
+        for retired in ["progress", "hologram"] {
             std::fs::write(&path, format!("[dictation]\nhud-style='{retired}'\n")).unwrap();
             assert_eq!(
                 Settings::from_store(&store_on(&path)).hud_style.as_deref(),

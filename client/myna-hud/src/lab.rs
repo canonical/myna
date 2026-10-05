@@ -85,6 +85,13 @@ impl Target {
         }
     }
 
+    fn resync_accent(&self) {
+        match self {
+            Target::Window(w) => w.resync_accent(),
+            Target::Embedded(p) => p.resync_accent(),
+        }
+    }
+
     fn set_accent_override(&self, hex: Option<String>) {
         match self {
             Target::Window(w) => w.set_accent_override(hex),
@@ -264,7 +271,7 @@ fn build_lab(app: &adw::Application, publishing: bool) {
     color_scheme_row.set_selected(0);
 
     // Accent override: libadwaita has no public runtime accent setter (it is
-    // a desktop preference), so the lab forces the bar's colour directly. The
+    // a desktop preference), so the lab forces the palette directly. The
     // options are derived from libadwaita's OWN enum + theme rather than
     // hardcoded: the names come from the AdwAccentColor GType enum nicks,
     // and each value is resolved at runtime from the theme's CSS
@@ -281,14 +288,14 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         .build();
     accent_row.set_selected(0);
 
-    // Indicator style: what the publisher sends on `HudStyle` (bar /
+    // Indicator style: what the publisher sends on `HudStyle` (bar / ribbon /
     // vumeter), overridable here for previewing each. `default`
     // releases the override and also makes the served publisher advertise the
     // schema default, so `--serve-dbus` drives a real HUD down the real path.
-    let hud_style_model = gtk::StringList::new(&["default", "bar", "vumeter"]);
+    let hud_style_model = gtk::StringList::new(&["default", "bar", "ribbon", "vumeter"]);
     let hud_style_row = adw::ComboRow::builder()
         .title("Indicator style")
-        .subtitle("bar (accent level) or vumeter (segmented meter)")
+        .subtitle("bar (accent level), ribbon (GPU wave) or vumeter (segmented meter)")
         .model(&hud_style_model)
         .build();
     hud_style_row.set_selected(0);
@@ -317,7 +324,8 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         move |row| {
             let style = match row.selected() {
                 1 => Some(crate::hud_logic::HudStyle::Bar),
-                2 => Some(crate::hud_logic::HudStyle::Vumeter),
+                2 => Some(crate::hud_logic::HudStyle::Ribbon),
+                3 => Some(crate::hud_logic::HudStyle::Vumeter),
                 _ => None,
             };
             controls.borrow_mut().hud_style = style;
@@ -459,14 +467,15 @@ fn build_lab(app: &adw::Application, publishing: bool) {
             } else {
                 stop_publish(&shared, &publisher);
             }
-            // Re-sync reduced-motion, high-contrast and indicator style onto
-            // the new target.
+            // Re-sync reduced-motion, high-contrast, indicator style and
+            // accent onto the new target.
             let rm = controls.borrow().reduced_motion;
             target.borrow().set_reduced_motion_override(rm);
             let hc = controls.borrow().high_contrast;
             target.borrow().set_high_contrast_override(hc);
             let style = controls.borrow().hud_style;
             target.borrow().set_hud_style_override(style);
+            target.borrow().resync_accent();
             apply();
         });
     }

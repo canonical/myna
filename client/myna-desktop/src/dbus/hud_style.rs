@@ -91,13 +91,13 @@ mod tests {
         let handle = tokio::spawn(run(service.bus(), rx));
         tokio::task::yield_now().await;
 
-        tx.send_replace("vumeter".to_string());
+        tx.send_replace("ribbon".to_string());
         tokio::task::yield_now().await;
         tokio::task::yield_now().await;
 
         assert_eq!(
             fake.property(PROPERTY),
-            Some(PropertyValue::Str("vumeter".into()))
+            Some(PropertyValue::Str("ribbon".into()))
         );
         drop(tx);
         handle.await.unwrap();

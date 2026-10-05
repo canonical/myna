@@ -1,8 +1,9 @@
 //! motion — PURE reduced-motion resolution rules (contract RC26;
 //! research R26, data-model E2b, FR-022a).
 //!
-//! The user's system-wide reduced-motion preference slows the indicators'
-//! activity pulse. The resolution order (the application layer probes and fills
+//! The user's system-wide reduced-motion preference selects between the
+//! flowing wave ribbon and its static/minimal-motion alternative. The
+//! resolution order (the application layer probes and fills
 //! [`MotionReadings`]):
 //!
 //! 1. **Primary**: `GtkSettings:gtk-interface-reduced-motion` (GTK ≥ 4.22;

@@ -6,8 +6,9 @@
 
 use myna_hud::hud_logic::{
     icon_for_severity, indicator_state, indicator_visible_for_severity, pill_color_class,
-    pulse_position, smooth_level, HudStyle, PILL_COLOR_CLASSES,
+    pulse_position, ribbon_phase_for_state_key, smooth_level, HudStyle, PILL_COLOR_CLASSES,
 };
+use myna_hud::ribbon::RibbonPhase;
 use myna_hud::states::{DictationState, Severity};
 
 // --- hud-style: the published nick picks the indicator ---------------------
@@ -22,9 +23,9 @@ fn every_style_nick_round_trips() {
 
 #[test]
 fn a_retired_or_unknown_nick_draws_the_default_bar() {
-    // `ribbon` and `progress` were styles once, so a stored or published
-    // value may still carry them; an older publisher sends "".
-    for nick in ["ribbon", "progress", "hologram", ""] {
+    // `progress` was a style once, so a stored or published value may
+    // still carry it; an older publisher sends "".
+    for nick in ["progress", "hologram", ""] {
         assert_eq!(HudStyle::from_nick(nick), HudStyle::Bar, "{nick:?}");
     }
 }
@@ -88,7 +89,48 @@ fn color_classes() {
     );
 }
 
-// --- R17a: indicator visibility by severity (only a live session) -------
+// --- R17 / 2026-08-21 fix: which state keys force a phase ------------------
+
+#[test]
+fn phase_for_state_key() {
+    assert_eq!(
+        ribbon_phase_for_state_key(DictationState::Transcribing),
+        Some(RibbonPhase::Morph),
+        "transcribing forces the ribbon into morph"
+    );
+    assert_eq!(
+        ribbon_phase_for_state_key(DictationState::Finalizing),
+        Some(RibbonPhase::Complete),
+        "finalizing forces the ribbon into complete (FR-010d)"
+    );
+    // Live states pin the ribbon to flow — this is what recovers it after a
+    // morph/complete, which was previously stuck until idle/a new session.
+    for key in [
+        DictationState::Loading,
+        DictationState::Recording,
+        DictationState::Active,
+    ] {
+        assert_eq!(
+            ribbon_phase_for_state_key(key),
+            Some(RibbonPhase::Flow),
+            "{key:?} forces the ribbon into flow"
+        );
+    }
+    // idle never shows; notice/error are carried by tint/visibility, not phase.
+    for key in [
+        DictationState::Idle,
+        DictationState::Notice,
+        DictationState::Error,
+    ] {
+        assert_eq!(
+            ribbon_phase_for_state_key(key),
+            None,
+            "{key:?} does not force a phase"
+        );
+    }
+}
+
+// --- R17a: ribbon visibility by severity (only critical hides) -------------
 
 #[test]
 fn indicator_visibility_by_severity() {

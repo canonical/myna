@@ -5,12 +5,13 @@
 //! establish between the *stable* pure layer and the *experimental*
 //! toolkit-dependent window ([`crate::window"], harness-tier — see plan.md
 //! Constitution Check). The window owns all pixels; this module only decides
-//! icon choice, colour class, indicator animation, and auto-dismiss behavior.
+//! icon choice, colour class, ribbon phase, and auto-dismiss behavior.
 //!
 //! The pill's positioning is not logic anymore: on GNOME the extension host
 //! positions the window (R21); elsewhere the window centers itself — no
 //! hand-computed `computePosition` exists.
 
+use crate::ribbon::RibbonPhase;
 use crate::states::{DictationState, Severity};
 
 /// The HUD's audio-level presentation. Chosen by the `hud-style` setting, but
@@ -22,7 +23,9 @@ pub enum HudStyle {
     /// A simple level bar in the accent colour (the default; `vumeter.png`).
     #[default]
     Bar,
-    /// The classic segmented bar meter (the GJS `BarMeterActor`).
+    /// The flowing GPU wave ribbon (the 2026-07-30 redesign).
+    Ribbon,
+    /// The classic segmented bar meter (the pre-ribbon `BarMeterActor`).
     Vumeter,
 }
 
@@ -32,6 +35,7 @@ impl HudStyle {
     /// *older* publisher's empty `HudStyle` resolves to (contract C8).
     pub fn from_nick(nick: &str) -> Self {
         match nick {
+            "ribbon" => HudStyle::Ribbon,
             "vumeter" => HudStyle::Vumeter,
             _ => HudStyle::Bar,
         }
@@ -42,6 +46,7 @@ impl HudStyle {
     pub fn nick(self) -> &'static str {
         match self {
             HudStyle::Bar => "bar",
+            HudStyle::Ribbon => "ribbon",
             HudStyle::Vumeter => "vumeter",
         }
     }
@@ -86,6 +91,36 @@ pub const PILL_COLOR_CLASSES: [&str; 3] = [
     "myna-hud-phase-loading",
 ];
 
+/// Which wave-ribbon lifecycle phase ([`crate::ribbon`]) a state transition
+/// forces, or `None` when the ribbon manages its own phase internally
+/// (2026-07-30 wave-ribbon redesign, R17; 2026-08-21 fix). The live states
+/// pin the ribbon to the phase their motion belongs in, so a transition *out
+/// of* a terminal phase visibly recovers instead of leaving the ribbon stuck
+/// in it:
+///   - `transcribing` → `morph` (FR-010a: session ended, simplified
+///     processing motion).
+///   - `finalizing` → `complete` (FR-010d: the brief quiet-success
+///     indication before the pill clears).
+///   - `loading`/`recording`/`active` → `flow` (the live flowing wave — also
+///     what returns the ribbon to motion after a `morph`/`complete`, which
+///     was previously unreachable without an idle/new session in between).
+///
+/// `flow` requested during the fresh-session `unfold` reveal is a no-op in
+/// the renderer, so the reveal is never cut short.
+/// `idle`/`notice`/`error` return `None`: idle never shows, and notice/error
+/// are carried by the severity tint/visibility, not a phase.
+///
+pub fn ribbon_phase_for_state_key(key: DictationState) -> Option<RibbonPhase> {
+    match key {
+        DictationState::Transcribing => Some(RibbonPhase::Morph),
+        DictationState::Finalizing => Some(RibbonPhase::Complete),
+        DictationState::Loading | DictationState::Recording | DictationState::Active => {
+            Some(RibbonPhase::Flow)
+        }
+        DictationState::Idle | DictationState::Notice | DictationState::Error => None,
+    }
+}
+
 /// Whether the level indicator is shown for this severity: only outside a
 /// notice or error. Both are shown with nothing recording, and an empty
 /// meter next to them reads as "recording, but no sound".
@@ -93,7 +128,7 @@ pub fn indicator_visible_for_severity(severity: Option<Severity>) -> bool {
     severity.is_none()
 }
 
-// ── Indicator animation (bar / vumeter) ─────────────────────────────────────
+// ── Non-ribbon indicator animation (bar / vumeter) ──────────────────────────
 
 /// The indeterminate "activity" pulse shown by the simple indicators while the
 /// session is working: a little block that travels back and forth (à la pong).
@@ -108,7 +143,9 @@ pub struct Pulse {
     pub alpha: f64,
 }
 
-/// How the indicators (bar / vumeter) render the current state:
+/// How the simple indicators (bar / vumeter) render the current
+/// state, mirroring the ribbon's phase-driven motion with their own
+/// primitives:
 ///
 /// - `loading` → an activity [`Pulse`] at a slow pace, semi-transparent
 ///   accent (the "warming up" look).
@@ -141,7 +178,7 @@ pub fn indicator_state(
 ) -> IndicatorState {
     let level = intensity.clamp(0.0, 1.0);
     // Reduced motion slows the travel: callers multiply the "normal" period
-    // by this.
+    // by this. The Ribbon's reduce-animation keeps a gentle, slow wave too.
     let speed = if reduced_motion { 3.5 } else { 1.0 };
     match (key, severity) {
         (_, Some(_)) => IndicatorState::default(),
@@ -198,8 +235,8 @@ pub fn pulse_position(state_ms: f64, period_ms: f64) -> f64 {
 pub fn smooth_level(previous: f64, target: f64, dt_ms: f64, reduced_motion: bool) -> f64 {
     let clamped_target = target.clamp(0.0, 1.0);
     let speed = if reduced_motion { 0.25 } else { 1.0 };
-    // Attack (rising) is snappier than release (falling); both are scaled
-    // down under reduced motion.
+    // Attack (rising) is snappier than release (falling), like the ribbon's
+    // ballistics; both are scaled down under reduced motion.
     let tau_ms = if clamped_target > previous {
         (ENVELOPE_ATTACK_MS / speed).max(1.0)
     } else {

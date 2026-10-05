@@ -197,14 +197,14 @@ fn snap_config_writes_through_to_the_snap_private_keyfile() {
     // Bare, unquoted, for a string-typed key: the wrapper leans on gsettings
     // falling back to string parsing when GVariant parsing fails.
     assert!(snap.run(&["set", "language", "en"]).status.success());
-    assert!(snap.run(&["set", "hud-style", "vumeter"]).status.success());
+    assert!(snap.run(&["set", "hud-style", "ribbon"]).status.success());
     assert!(snap.run(&["set", "silence-timeout", "45"]).status.success());
 
     assert_eq!(
         snap.store(),
         [
             "[com/canonical/myna/dictation]",
-            "hud-style='vumeter'",
+            "hud-style='ribbon'",
             "language='en'",
             "silence-timeout=45",
         ]
@@ -228,7 +228,7 @@ fn snap_config_refuses_what_the_shipped_schema_refuses() {
 
     for arguments in [
         &["set", "hud-style", "vumetre"][..], // outside the enum
-        &["set", "hud-styl", "vumeter"][..],  // no such key
+        &["set", "hud-styl", "ribbon"][..],   // no such key
     ] {
         let output = snap.run(arguments);
         assert!(!output.status.success(), "{arguments:?} should fail");

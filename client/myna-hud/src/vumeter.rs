@@ -1,7 +1,7 @@
 //! vumeter — PURE envelope logic (feature 004; contract RC5;
 //! research R5/R16/R16a/R17). RMS/peak → a headset-calibrated dBFS intensity
-//! with stale-decay. This is the shared envelope math [`crate::bar`] and
-//! [`crate::segmented_meter`] delegate to unchanged — plus
+//! with stale-decay. This is the shared envelope math [`crate::ribbon`],
+//! [`crate::bar`] and [`crate::segmented_meter`] delegate to unchanged — plus
 //! the segmented bar-meter helpers (`intensity_to_active_segments` /
 //! `segment_color`) that drive the classic `vumeter` HUD style's view.
 //!

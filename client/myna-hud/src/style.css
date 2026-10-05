@@ -71,9 +71,21 @@ window.myna-hud-window {
     color: #ffffff;
 }
 
+/* The ribbon's floor. Its actual width comes from hexpand, so it reaches the
+ * pill's right edge instead of stopping at a fixed width; the floor only
+ * guards against the box squeezing the GLArea to near-zero, which is what
+ * once made the meter read as permanently flat regardless of the real audio
+ * level (R16a/R17). */
+.myna-hud-ribbon {
+    color: var(--accent-bg-color);
+
+    min-height: 32px;
+    min-width: 160px;
+}
+
 /* The classic segmented VU meter (the `hud-style: vumeter` alternative to
- * the bar). Its width comes from hexpand; the floor only guards against the
- * box squeezing it to near-zero. The gauge's zone colours are the conventional
+ * the ribbon). Same footprint so the pill keeps one stable size whichever
+ * indicator is selected. The gauge's zone colours are the conventional
  * VU green/yellow/red, defined here (the exact values the old hardcoded
  * RGB carried) so the widget resolves them via lookup_color rather than
  * hardcoding them in Rust. */

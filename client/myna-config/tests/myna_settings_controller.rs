@@ -545,17 +545,27 @@ fn a_choice_row_lists_the_schema_default_first_then_schema_order() {
         Some("Indicator style".into()),
         None,
         ClientSettingValue::Choice("bar".into()),
-        SettingRange::Choices(vec!["vumeter".into(), "bar".into()]),
-        ClientSettingValue::Choice("vumeter".into()),
+        SettingRange::Choices(vec!["ribbon".into(), "vumeter".into(), "bar".into()]),
+        ClientSettingValue::Choice("ribbon".into()),
         true,
     );
 
-    assert_eq!(widget_plan(&hud_style).choices, ["bar", "vumeter"]);
+    assert_eq!(
+        widget_plan(&hud_style).choices,
+        ["bar", "ribbon", "vumeter"]
+    );
 }
 
 #[test]
 fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
-    let raw = ["streaming", "batch", "vumeter", "bar", "future-mode"];
+    let raw = [
+        "streaming",
+        "batch",
+        "ribbon",
+        "vumeter",
+        "bar",
+        "future-mode",
+    ];
     let labels: Vec<_> = raw
         .iter()
         .map(|choice| choice_display_label(choice))
@@ -566,19 +576,26 @@ fn schema_choices_have_translated_labels_but_keep_raw_index_mapping() {
         [
             "As you speak",
             "When you stop",
+            "Ribbon",
             "VU meter",
             "Default",
             "future-mode",
         ]
     );
     assert_ne!(labels[0], raw[0]);
-    assert_eq!(raw[3], "bar");
+    assert_eq!(raw[4], "bar");
 }
 
 #[test]
 fn enum_display_labels_are_extracted_into_the_gettext_template() {
     let pot = include_str!("../po/myna-config.pot");
-    for label in ["As you speak", "When you stop", "VU meter", "Default"] {
+    for label in [
+        "As you speak",
+        "When you stop",
+        "Ribbon",
+        "VU meter",
+        "Default",
+    ] {
         assert!(pot.contains(&format!("msgid \"{label}\"")), "{label}");
     }
 }

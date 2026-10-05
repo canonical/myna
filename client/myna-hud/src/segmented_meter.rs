@@ -1,10 +1,11 @@
 //! segmented_meter — the classic segmented bar meter HUD view (feature 004).
 //!
-//! This is the `vumeter` alternative to the accent bar
-//! ([`crate::bar::BarView`]), selectable through the `hud-style` GSettings
-//! key. It is a direct port of the GJS `BarMeterActor`: fixed-height
-//! segments illuminate left-to-right as the calibrated level rises, with
-//! conventional green → yellow → red zones and a slight per-segment taper.
+//! This is the `vumeter` alternative to the GPU wave ribbon
+//! ([`crate::ribbon`]) and the accent bar ([`crate::bar::BarView`]),
+//! selectable through the `hud-style` GSettings key. It is a direct port of
+//! the pre-ribbon GJS `BarMeterActor`: fixed-height segments illuminate
+//! left-to-right as the calibrated level rises, with conventional
+//! green → yellow → red zones and a slight per-segment taper.
 //!
 //! The pure envelope math it drives lives in [`crate::vumeter`]
 //! (the dBFS calibration + `levels_to_intensity` + the segment helpers) and
@@ -29,7 +30,8 @@ use gtk4 as gtk;
 use crate::indicator::Indicator;
 use crate::vumeter::{intensity_to_active_segments, segment_color, SegmentColor};
 
-/// The meter's height.
+/// The meter's height, matching the ribbon's (`crate::pill::RIBBON_HEIGHT`)
+/// and the bar's, so the `hud-style` options occupy the same footprint.
 pub const METER_HEIGHT: i32 = 32;
 
 /// The number of segments in the classic meter (the GJS `BAR_COUNT`).

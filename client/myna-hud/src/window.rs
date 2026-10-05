@@ -196,6 +196,11 @@ impl HudWindow {
         self.pill.push_level(rms, peak);
     }
 
+    /// Force a theme accent re-read (a host may know styling changed).
+    pub fn resync_accent(&self) {
+        self.pill.resync_accent();
+    }
+
     /// Override reduced-motion for lab testing; `None` returns to the desktop.
     #[cfg(dev_lab)]
     pub fn set_reduced_motion_override(&self, value: Option<bool>) {
@@ -252,8 +257,8 @@ impl HudWindow {
 
     /// Re-apply the (empty) input region whenever the indicator maps, since
     /// the toolkit can reset the surface's input region across a map. Hooked
-    /// on both indicators (segmented meter + accent bar) so the correct
-    /// one's map is observed whichever `hud-style` is active.
+    /// on all available indicators (ribbon + segmented meter + accent bar) so
+    /// the correct one's map is observed whichever `hud-style` is active.
     fn reapply_input_region_on_map(self: &Rc<Self>) {
         let on_map = {
             let this = Rc::downgrade(self);
@@ -263,8 +268,10 @@ impl HudWindow {
                 }
             }
         };
+        let ribbon: &gtk::Widget = self.pill.ribbon().upcast_ref();
         let meter: &gtk::Widget = self.pill.meter().upcast_ref();
         let bar: &gtk::Widget = self.pill.bar().upcast_ref();
+        ribbon.connect_map(on_map.clone());
         meter.connect_map(on_map.clone());
         bar.connect_map(on_map);
     }

@@ -174,20 +174,48 @@ fn check_meter(frame: &Frame, problems: &mut Vec<String>) {
     }
 }
 
+/// The ribbon: a chromatic band that covers part of the canvas and varies
+/// along x, not a blank or uniform GL frame.
+fn check_ribbon(frame: &Frame, problems: &mut Vec<String>) {
+    let column = |x: usize| {
+        (0..frame.height)
+            .filter(|&y| frame.rgba(x, y).3 > 40)
+            .count()
+    };
+    let columns: Vec<usize> = (0..frame.width).map(column).collect();
+    let covered: usize = columns.iter().sum();
+    let coverage = covered as f64 / (frame.width * frame.height) as f64;
+    let varies = columns.iter().min() != columns.iter().max();
+    println!(
+        "render-check: ribbon {}x{} coverage {:.0}%",
+        frame.width,
+        frame.height,
+        coverage * 100.0
+    );
+    if coverage < 0.05 || !varies {
+        problems.push(format!(
+            "ribbon: coverage {coverage:.2}, varies along x {varies}"
+        ));
+    }
+}
+
 /// Render the style's own indicator and check it, and require the other one
 /// to paint nothing.
 fn check(pill: &Pill, style: HudStyle, problems: &mut Vec<String>) {
+    let ribbon = pill.ribbon().upcast_ref::<gtk::Widget>();
     let (shown, hidden) = match style {
-        HudStyle::Bar => (pill.bar(), pill.meter()),
-        HudStyle::Vumeter => (pill.meter(), pill.bar()),
+        HudStyle::Bar => (pill.bar(), [pill.meter(), ribbon]),
+        HudStyle::Vumeter => (pill.meter(), [pill.bar(), ribbon]),
+        HudStyle::Ribbon => (ribbon, [pill.bar(), pill.meter()]),
     };
-    if render(hidden).is_some() {
-        problems.push(format!("{style:?}: the other indicator still paints"));
+    if hidden.iter().any(|w| render(w).is_some()) {
+        problems.push(format!("{style:?}: another indicator still paints"));
     }
     match (render(shown), style) {
         (None, _) => problems.push(format!("{style:?}: nothing was drawn")),
         (Some(frame), HudStyle::Bar) => check_bar(&frame, problems),
         (Some(frame), HudStyle::Vumeter) => check_meter(&frame, problems),
+        (Some(frame), HudStyle::Ribbon) => check_ribbon(&frame, problems),
     }
 }
 
@@ -418,20 +446,30 @@ fn main() {
                         .push("Vumeter: never reached the screen".into());
                 }
                 check(&pill, HudStyle::Vumeter, &mut problems.borrow_mut());
-                let app = app.clone();
-                check_problem_states(pill.clone(), move |states| {
-                    problems.borrow_mut().extend(states);
-                    check_fit(&app.clone(), move |fit| {
-                        let mut problems = problems.borrow_mut();
-                        problems.extend(fit);
-                        for p in problems.iter() {
-                            eprintln!("render-check: FAIL — {p}");
-                        }
-                        if problems.is_empty() {
-                            println!("render-check: OK — every style rendered");
-                        }
-                        app.quit();
-                        std::process::exit(i32::from(!problems.is_empty()));
+                pill.set_hud_style(HudStyle::Ribbon);
+                let ribbon = pill.ribbon().clone().upcast::<gtk::Widget>();
+                when_on_screen(ribbon, move |ready| {
+                    if !ready {
+                        problems
+                            .borrow_mut()
+                            .push("Ribbon: never reached the screen".into());
+                    }
+                    check(&pill, HudStyle::Ribbon, &mut problems.borrow_mut());
+                    let app = app.clone();
+                    check_problem_states(pill.clone(), move |states| {
+                        problems.borrow_mut().extend(states);
+                        check_fit(&app.clone(), move |fit| {
+                            let mut problems = problems.borrow_mut();
+                            problems.extend(fit);
+                            for p in problems.iter() {
+                                eprintln!("render-check: FAIL — {p}");
+                            }
+                            if problems.is_empty() {
+                                println!("render-check: OK — every style rendered");
+                            }
+                            app.quit();
+                            std::process::exit(i32::from(!problems.is_empty()));
+                        });
                     });
                 });
             });
