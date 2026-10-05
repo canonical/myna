@@ -1,7 +1,7 @@
 //! `myna-hud` — the dictation indicator renderer application (feature 004,
 //! 2026-08-26 architecture revision; research R21–R27).
 //!
-//! The HUD pill and its level indicator are drawn by this standalone GTK4 +
+//! The HUD pill and its GPU wave ribbon are drawn by this standalone GTK4 +
 //! libadwaita application. On GNOME the `myna-shell` extension hosts its
 //! window as a focus-safe overlay (dock-typed, window-list-hidden,
 //! click-through — it launches and positions us; we never position or
@@ -14,11 +14,14 @@
 //!   `client/myna-hud/tests/`):
 //!   [`states`] (wire state → descriptor),
 //!   [`vumeter`] (calibrated envelope),
-//!   [`hud_logic`] (icon/color/indicator/notice rules),
+//!   [`ribbon`] (strand model + phase machine),
+//!   [`shader`] (GLSL generator + uniform packing — GPU-only per R23,
+//!   the Cairo painter is deliberately not ported),
+//!   [`hud_logic`] (icon/phase/color/notice rules),
 //!   [`motion`] (reduced-motion resolution, absent-safe, R26/E2b),
-//!   [`simulator`] (lab-controls → wire-property mapping).
-//! - **Application half** (Phase C): the window/pill UI, the bar and meter
-//!   views, D-Bus consumer, lab and simulator modes.
+//!   [`simulator`] (lab-controls ↔ wire-state mapping).
+//! - **Application half** (Phase C): the window/pill UI, GLArea renderer,
+//!   D-Bus consumer, lab and simulator modes.
 //!
 //! Privacy invariant (constitution V): state + level only — nothing here
 //! ever sees, renders, logs, or persists transcript content; no network.
@@ -26,6 +29,7 @@
 pub mod bar;
 pub mod bus;
 pub mod dbus_consumer;
+pub mod gl;
 pub mod hud_logic;
 pub mod indicator;
 #[cfg(dev_lab)]
@@ -34,11 +38,13 @@ pub mod motion;
 pub mod notice_slot;
 pub mod pill;
 pub mod platform;
+pub mod ribbon;
 pub mod segmented_meter;
 #[cfg(dev_lab)]
 pub mod serve;
 #[cfg(dev_lab)]
 pub mod session_control;
+pub mod shader;
 pub mod signals;
 pub mod simulator;
 pub mod states;

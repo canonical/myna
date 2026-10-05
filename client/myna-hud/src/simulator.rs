@@ -7,18 +7,33 @@
 //! driven by the lab's controls instead of by speech — no microphone, no
 //! model, no backend.
 //!
-//! Nothing here decides how the HUD *looks*: this module maps the lab's
+//! Nothing here decides how the ribbon *looks*: this module maps the lab's
 //! controls onto the four wire properties of
 //! `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`, and that
 //! mapping is the whole content of this file.
 
-use crate::states::wire;
+use crate::states::{wire, Severity};
 use crate::vumeter::{DB_CEILING, DB_FLOOR};
 
 /// The publish cadence: ~15-20 Hz per the contract's C4, not the lab's
 /// render-loop rate, so the consumer sees the update rate it was tuned
 /// against.
 pub const PUBLISH_HZ: f64 = 20.0;
+
+/// Which wire `State` each ribbon phase belongs to — the inverse of
+/// [`crate::hud_logic::ribbon_phase_for_state_key`]. That mapping is
+/// many-to-one (loading, recording and active all request `flow`), so the
+/// inverse has to pick one; `recording` is chosen because it is the state a
+/// person watching the ribbon flow is actually in. `unfold` is the reveal a
+/// fresh session plays, so it sits inside a recording session too.
+fn phase_state(phase: &str) -> Option<&'static str> {
+    match phase {
+        "unfold" | "flow" => Some(wire::RECORDING),
+        "morph" => Some(wire::TRANSCRIBING),
+        "complete" => Some(wire::FINALIZING),
+        _ => None,
+    }
+}
 
 /// Content-free default labels for the simulator publisher. These match
 /// `myna-desktop`'s `StatusMessage` defaults; the lab may override them live
@@ -36,6 +51,35 @@ pub fn default_status_message(state: &str) -> &'static str {
     }
 }
 
+/// The lab's look as a `(State, StatusMessage)` pair.
+///
+/// * `session_active == false` (Stop/Toggle ended the session — the daemon
+///   is still running, it is simply not dictating) → `idle`, the case that
+///   clears the pill entirely.
+/// * Severity outranks the phase: the pill drives notice/error from the
+///   state itself, so a tinted ribbon has to publish the matching state.
+/// * Unknown phases degrade to `active`, the same additive tolerance the
+///   contract asks of clients (C8).
+pub fn wire_state(
+    phase: &str,
+    severity_tint: Option<Severity>,
+    session_active: bool,
+) -> (&'static str, &'static str) {
+    if !session_active {
+        return (wire::IDLE, default_status_message(wire::IDLE));
+    }
+    if let Some(severity) = severity_tint {
+        return match severity {
+            Severity::Recoverable => (wire::NOTICE, default_status_message(wire::NOTICE)),
+            Severity::Critical => (wire::ERROR, default_status_message(wire::ERROR)),
+        };
+    }
+    match phase_state(phase) {
+        Some(state) => (state, default_status_message(state)),
+        None => ("active", default_status_message("active")),
+    }
+}
+
 /// The vumeter takes `max(rms, peak * 0.55)`, so any peak below
 /// `rms / 0.55` leaves RMS in charge. 1.8 keeps a plausible ~5 dB crest
 /// above RMS while staying under that limit, so the slider still maps
@@ -45,11 +89,11 @@ const PEAK_OVER_RMS: f64 = 1.8;
 
 /// Invert the vumeter's `boost_level` so the slider drives the HUD 1:1.
 ///
-/// The lab's slider is the *intensity* the indicators draw, but the wire
-/// carries raw RMS and peak, which the consumer pushes back through
-/// [`crate::vumeter::levels_to_intensity`]. Publishing the slider value
-/// directly would put the lab's preview and the hosted HUD at visibly
-/// different levels for the same setting; inverting the
+/// The lab's slider is the *smoothed envelope* — what the ribbon consumes —
+/// but the wire carries raw RMS and peak, which the consumer pushes back
+/// through [`crate::vumeter::levels_to_intensity`]. Publishing the slider
+/// value directly would put the lab's ribbon and the hosted ribbon at
+/// visibly different amplitudes for the same setting; inverting the
 /// calibration here is what makes the two agree (and what catches drift if
 /// the vumeter constants ever change without the simulator following).
 ///

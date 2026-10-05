@@ -24,6 +24,9 @@ apt-get install --yes --no-install-recommends \
   libglib2.0-dev \
   libglib2.0-dev-bin \
   blueprint-compiler \
+  libepoxy-dev \
+  libegl-dev \
+  libgl1-mesa-dev \
   pkg-config \
   ibus \
   xdg-desktop-portal \

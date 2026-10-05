@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "GTK4 renderer application for the myna dictation indicator — the HUD pill and its level indicators (feature 004, 2026-08-26 architecture revision)."
+description = "GTK4 renderer application for the myna dictation indicator — the HUD pill and GPU wave ribbon (feature 004, 2026-08-26 architecture revision)."
 
 [lib]
 name = "myna_hud"
@@ -21,8 +21,8 @@ name = "myna-hud"
 path = "src/main.rs"
 
 [dependencies]
-# The pure logic modules (states/vumeter/hud_logic) are std-only; the
-# application half links the toolkit stack.
+# The pure logic modules (states/vumeter/ribbon/shader/hud_logic) are
+# std-only; the application half links the toolkit stack.
 #
 # Version strategy (R26; runtime matrix per the snap's SDK — the packaged
 # binary builds and runs against ubuntu/gnome-sdk's gnome-46-2404 stack,
@@ -58,6 +58,9 @@ zbus = "5"
 async-channel = "2"
 # SIGINT/SIGTERM numbers for glib's unix signal watch, and nothing else.
 libc = "0.2"
+# Raw GL for the GLArea shader wrapper (dual-profile gl120/es300 compile,
+# uniform upload) — loaded via GDK's get_proc_address (R23).
+gl = "0.14"
 gdk4-x11 = "0.10"
 async-io = "2"
 

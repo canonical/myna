@@ -85,6 +85,29 @@ fn repeated_toggles_never_stack_sessions() {
     assert!(session.is_active());
 }
 
+// --- The served snapshot the wire methods report -----------------------
+// The lab drives the visual state from the same session flag the methods
+// set, so a `Stop` clears the pill to idle (dbus_headless.py) via wire_state.
+
+#[test]
+fn an_inactive_session_publishes_idle() {
+    use myna_hud::simulator::wire_state;
+    use myna_hud::states::wire;
+
+    let mut session = Session::default();
+    session.start();
+    let (state, _) = wire_state("flow", None, session.is_active());
+    assert_eq!(
+        state,
+        wire::RECORDING,
+        "an active session shows the live state"
+    );
+
+    session.stop();
+    let (state, _) = wire_state("flow", None, session.is_active());
+    assert_eq!(state, wire::IDLE, "Stop clears the pill to idle");
+}
+
 // --- The lab's chosen state implies the session (set_active) ------------
 // The lab has no separate "start a session" control — its state dropdown is
 // its whole intent. So a non-idle selection must mean a live session, or

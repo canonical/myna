@@ -4,13 +4,14 @@
 // These pin the DESIGN-CONTRACT constants that the plan's performance goals
 // name, so a tuning regression (a slowed cadence, a duration drifting out
 // of its declared band) fails loudly here rather than showing up as "the
-// meter feels laggy" on hardware later. They are watermarks, not unit
+// ribbon feels laggy" on hardware later. They are watermarks, not unit
 // tests of correctness: they assert the constants live in their DECLARED
 // ranges.
 //
 // Publisher watermarks are unchanged (T046 carried): this file covers only
 // the renderer's own declared numbers.
 
+use myna_hud::ribbon::{COMPLETE_MS, MORPH_MS, UNFOLD_MS};
 use myna_hud::simulator::PUBLISH_HZ;
 use myna_hud::states::{state_to_descriptor, wire};
 use myna_hud::vumeter::{levels_to_intensity, STALE_MS};
@@ -43,6 +44,24 @@ fn level_publish_cadence_is_15_to_20_hz() {
     assert!(
         (15.0..=20.0).contains(&PUBLISH_HZ),
         "publish cadence within the declared 15-20Hz band: {PUBLISH_HZ}"
+    );
+}
+
+// --- Lifecycle phase durations stay in their declared bands --------------
+
+#[test]
+fn lifecycle_durations_stay_in_band() {
+    assert!(
+        (150.0..=200.0).contains(&UNFOLD_MS),
+        "unfold reveal within the 150-200ms band: {UNFOLD_MS}"
+    );
+    assert!(
+        (200.0..=250.0).contains(&MORPH_MS),
+        "morph within the 200-250ms band: {MORPH_MS}"
+    );
+    assert!(
+        (300.0..=500.0).contains(&COMPLETE_MS),
+        "complete within the 300-500ms band: {COMPLETE_MS}"
     );
 }
 

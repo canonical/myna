@@ -1,6 +1,6 @@
 // tests/vumeter.rs — hermetic contract test for the pure envelope logic
-// (feature 004, contract extension.md RC5, SC-004), shared by the bar and
-// the segmented meter. No Shell, no D-Bus.
+// (feature 004, contract extension.md RC5, SC-004), reused unchanged by
+// ribbon.rs (2026-07-30 wave-ribbon redesign). No Shell, no D-Bus.
 
 use myna_hud::vumeter::{
     intensity_to_active_segments, levels_to_intensity, segment_color, SegmentColor, STALE_MS,
@@ -71,7 +71,8 @@ fn x5_decays_across_the_stale_window() {
     );
 }
 
-// Conventional loudness zones of the underlying envelope.
+// Conventional loudness zones (still true of the underlying envelope, even
+// though the wave ribbon no longer renders discrete colour zones).
 #[test]
 fn quiet_input_stays_near_the_floor() {
     assert!(levels_to_intensity(0.00003, 0.0001, 0.0) < 0.12);
