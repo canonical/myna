@@ -1669,10 +1669,10 @@ impl BackendUi {
 
     fn present_apply_notice(&self, setting: &str, notice: ApplyNotice) {
         let frame = if notice.failed {
-            // TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle".
+            // TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
             gettextrs::gettext("Changing “{setting}” failed")
         } else {
-            // TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle".
+            // TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
             gettextrs::gettext("Changing “{setting}” could not be confirmed")
         };
         let heading = frame.replace("{setting}", setting);
@@ -5605,7 +5605,7 @@ mod tests {
             assert!(machine.plans().is_empty());
             assert_eq!(
                 toasts(&ui),
-                ["Unload when idle: value must be a non-negative whole number"]
+                ["Unload when idle (seconds): value must be a non-negative whole number"]
             );
             let entry = setting::<adw::EntryRow>(&ui, "sleep-idle-seconds").expect("idle row");
             assert_eq!(entry.text().as_str(), "300", "the row is put back");

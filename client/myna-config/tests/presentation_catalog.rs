@@ -119,6 +119,21 @@ fn every_shipped_backend_key_has_explicit_typed_metadata() {
 }
 
 #[test]
+fn duration_titles_name_their_unit() {
+    for key in [
+        "sleep-idle-seconds",
+        "stream-arm-seconds",
+        "stream-silence-cut-seconds",
+        "stream-force-cut-seconds",
+        "stream-partial-cadence-seconds",
+        "stream-partial-tail-seconds",
+    ] {
+        let metadata = metadata_for(key, &ConfigValue::Integer(0));
+        assert!(metadata.title().ends_with(" (seconds)"), "{key}");
+    }
+}
+
+#[test]
 fn validation_exactly_matches_current_configure_hooks() {
     let cases = [
         ("streaming", ConfigValue::Boolean(true), true),

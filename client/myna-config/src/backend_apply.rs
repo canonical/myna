@@ -1152,7 +1152,7 @@ mod tests {
         match error {
             PrepareApplyError::Invalid(issues) => {
                 assert_eq!(issues.len(), 1);
-                assert_eq!(issues[0].title(), "Unload when idle");
+                assert_eq!(issues[0].title(), "Unload when idle (seconds)");
                 assert_eq!(
                     issues[0].message(),
                     "value must be a non-negative whole number"

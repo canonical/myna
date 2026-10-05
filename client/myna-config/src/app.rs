@@ -3467,8 +3467,10 @@ fn backends_probe() -> glib::ExitCode {
     }
     println!("backend-apply: read back");
 
-    let refused_title = gettextrs::gettext("Changing “{setting}” failed")
-        .replace("{setting}", &gettextrs::gettext("Unload when idle"));
+    let refused_title = gettextrs::gettext("Changing “{setting}” failed").replace(
+        "{setting}",
+        &gettextrs::gettext("Unload when idle (seconds)"),
+    );
     machine.refuse_applies(true);
     apply_idle("900");
     if !settles(&|| {

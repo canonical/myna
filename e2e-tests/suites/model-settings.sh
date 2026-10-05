@@ -17,8 +17,8 @@ echo "old sleep-idle-seconds = $OLD"
 NEW=450
 [ "$OLD" = 450 ] && NEW=425
 
-# "Unload when idle" is the Runtime entry row for package.sleep-idle-seconds.
-ROW="Unload when idle"
+# "Unload when idle (seconds)" is the Runtime entry row for package.sleep-idle-seconds.
+ROW="Unload when idle (seconds)"
 
 # Cancel: the row reverts silently, snapd keeps the old value.
 shot --polkit cancel \
