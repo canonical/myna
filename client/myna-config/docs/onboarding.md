@@ -127,46 +127,42 @@ picks the next one; a step that succeeded is not retried when that read does
 not show it yet (`onboarding::next_install`).
 
 The run costs one polkit prompt. Asked of snapd as the user, the flag
-(`PUT /v2/snaps/system/conf`) and the installs (`POST /v2/snaps/<name>`)
-are two polkit actions, `io.snapcraft.snapd.manage-configuration` and
-`io.snapcraft.snapd.manage`, each `auth_admin_keep` on its own: a bare
-machine asked twice, the first time in snapd's wording ("access or modify
-snap configuration"), which says nothing of why. So while the flag is
-missing, the flag and the snaps still missing after it are one set-up
-(`onboarding::set_up_steps`): one `pkexec myna-config --set-up <plan>`,
+(`PUT /v2/snaps/system/conf`), the installs (`POST /v2/snaps/<name>`) and
+the backend connect (`POST /v2/interfaces`) are three polkit actions,
+`io.snapcraft.snapd.manage-configuration`, `io.snapcraft.snapd.manage` and
+`io.snapcraft.snapd.manage-interfaces`, each `auth_admin_keep` on its own:
+a bare machine asked two or three times, the first in snapd's wording
+("access or modify snap configuration"), which says nothing of why. So
+every step but the extension is one set-up (`onboarding::set_up_steps`,
+`onboarding::set_up_plan`): one `pkexec myna-config --set-up <plan>`,
 whose prompt shows Myna's action ("Authentication is required to set up
-Myna", `data/com.canonical.Myna.Config.policy`). The executor is root,
-so snapd asks nothing more; it runs `snap set system
-experimental.user-daemons=true`, then `snap install --edge` of each snap in
-order, each waiting for its change, and accepts no other command or snap
-(`apply_plan.rs`). Meanwhile the step reads `/v2/changes?select=in-progress`
-as the user once a second and names the snap whose install change is
-running, with its download's percentage; until one appears it reads
-"Enabling user daemons support". A failed set-up names the failed command:
-the toast is the install's when `snap install` failed, the flag's otherwise.
-The root executor outlives a closed wizard; closing only stops following.
-The flag is never turned off, since snapd refuses Myna's refreshes without
-it.
+Myna", `data/com.canonical.Myna.Config.policy`). The executor is root, so
+snapd asks nothing more. It runs, in order and each waiting for its
+change: `snap set system experimental.user-daemons=true` when the flag is
+off, `snap install --edge` of each missing snap, and, when it installs the
+model, `snap connect myna:backend <model>:provider`. It accepts no other
+command, snap or slot (`apply_plan.rs`). The connect does not rely on
+snapd's auto-connect: on noble (snapd 2.77.1, 2026-10-06) the model's
+install change evaluated auto-connect and skipped `myna:backend` once,
+for no reason its state recorded, and three cached reruns connected it. A
+`snap connect` of a pair already connected is a no-op that exits 0.
 
-With the flag on, the snaps are asked of snapd as the user (`POST
-/v2/snaps/<name>`, `{"action":"install","channel":"latest/edge"}`), the
-same install `snap install --edge` makes, and snapd raises polkit's prompt
-for `io.snapcraft.snapd.manage` itself, per process `auth_admin_keep`, so
-the model installing right after the app asks nothing more. snapd answers
-only once the prompt is, 40 s for one left open on Noble, so the request
-waits up to 10 min for that answer (`SnapdTimeouts::authorization`); the
-step then follows the change `GET /v2/changes/<id>` once a second
-(`snap_install.rs`); ten failed reads in a row end it, so snapd restarting
-mid-install is no failure. The percentage is the bytes of every download
-task in the change over what they announce or what the step expected to
-fetch, whichever is more, never going down. It shows only while a download
-runs: mounting, hooks and services take 15 s or more after the app's
-download, and 100% there read as stuck (seen on Noble). The model's
-component download runs inside the backend's own install change, fetched by
-its install hook's engine choice, so the model's step follows it to the
-end, the percentage resuming where the snap's own download left it. A
-download served from snapd's cache reports no bytes, so a cached install
-shows no percentage.
+Meanwhile the step reads `/v2/changes?select=in-progress` as the user once
+a second and names the snap whose install change is running, with its
+download's percentage; until one appears it reads "Enabling user daemons
+support" (the run's first step, whichever it is). The percentage is the
+bytes of every download task in the change over what they announce or what
+the step expected to fetch, whichever is more, never going down. It shows
+only while a download runs: mounting, hooks and services take 15 s or more
+after the app's download, and 100% there read as stuck (seen on Noble). The
+model's component download runs inside the backend's own install change,
+fetched by its install hook's engine choice, so the percentage resumes
+where the snap's own download left it. A download served from snapd's
+cache reports no bytes, so a cached install shows no percentage. A failed
+set-up names the failed command: the toast is the app's for its install,
+the model's for its install or connect, the flag's otherwise. The root
+executor outlives a closed wizard; closing only stops following. The flag
+is never turned off, since snapd refuses Myna's refreshes without it.
 
 The extension's step asks the user's own gnome-shell over the session bus
 (`org.gnome.Shell.Extensions.EnableExtension`): no polkit, no prompt. The
@@ -231,9 +227,10 @@ reach does not hold that move. Only those transitions count: opening the
 step with everything already installed waits for Next, so a re-run of the
 wizard does not rush past it, and so does a disabled extension found elsewhere
 to be the last piece. Next during the pause moves on at once without
-setting up again. Both snaps share a publisher, so
-snapd's base declaration auto-connects `myna:backend` to the new backend's
-slot and the step only restarts.
+setting up again. A run that installed the model
+connected it, so the step only restarts; otherwise snapd's base
+declaration usually auto-connected it (both snaps share a publisher), and
+the switch below connects it as the user if not.
 
 Setting up ends once the restarted daemon has claimed
 `com.canonical.Myna.Dictation` again, a new owner of the name (0.4 s after

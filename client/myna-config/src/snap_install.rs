@@ -1,4 +1,4 @@
-//! Installing a snap as the onboarding rows do: one request to snapd as the
+//! Installing a snap as Install more models does: one request to snapd as the
 //! user, whose polkit prompt is the only question, then its change followed
 //! to the end. A model's component download runs inside that same change, so
 //! following it covers the model too.

@@ -24,16 +24,16 @@ use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
     assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads, install_view,
-    installs, model_offer, needs_onboarding, next_install, polls, remaining_download, set_up_steps,
-    settled, while_installing, Component, ComponentId, ComponentState, DownloadSize, InstallView,
-    Machine, ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    installs, model_offer, needs_onboarding, next_install, polls, remaining_download, set_up_plan,
+    set_up_steps, settled, while_installing, Component, ComponentId, ComponentState, DownloadSize,
+    InstallView, Machine, ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
 };
 use crate::ports::{
     BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
 };
 use crate::shortcut_ui::set_class;
 use crate::snap_changes::{pending_install, ApplyProgress};
-use crate::snap_install::{follow_change, install, Follow};
+use crate::snap_install::{follow_change, Follow};
 use crate::ui;
 
 /// How often the component step re-reads the machine while something is
@@ -387,9 +387,8 @@ impl OnboardingUi {
 
     /// Install every missing component the wizard can, in order: the flag,
     /// the app, the model and the extension. One polkit prompt is the only
-    /// question: the flag and the snaps after it go through one privileged
-    /// set-up, or, with the flag on, snapd's `auth_admin_keep` lets the
-    /// model's install follow the app's unasked. A dismissed prompt stops the run silently, a
+    /// question: the flag, the snaps and the model's connect go through one
+    /// privileged set-up. A dismissed prompt stops the run silently, a
     /// failure with a toast whose Details open the report; either way the
     /// button offers again what is still missing. Once nothing is left it
     /// sets dictation up and moves on, as Next would.
@@ -420,7 +419,7 @@ impl OnboardingUi {
                     .map(|ui| set_up_steps(&ui.shown(), &done))
                     .unwrap_or_default();
                 let outcome = if set_up.is_empty() {
-                    install_step(&ui, id)
+                    extension_step(&ui)
                         .await
                         .map(|()| vec![id])
                         .map_err(|error| (id, error))
@@ -982,79 +981,32 @@ fn install_failed(id: ComponentId) -> String {
     }
 }
 
-/// One step of the button's run, with the flag on: the snaps go through
-/// snapd as the user, which raises polkit's prompt itself; the extension asks
-/// the user's own gnome-shell.
-async fn install_step(
-    ui: &std::rc::Weak<OnboardingUi>,
-    id: ComponentId,
-) -> Result<(), SystemConfiguratorError> {
+/// The run's last step: the extension, asked of the user's own
+/// gnome-shell, which needs no authorization.
+async fn extension_step(ui: &std::rc::Weak<OnboardingUi>) -> Result<(), SystemConfiguratorError> {
     let Some(strong) = ui.upgrade() else {
         return Err(SystemConfiguratorError::Cancelled);
     };
     strong.epoch.set(strong.epoch.get() + 1);
-    let configurator = strong.configurator.clone();
-    let outcome = match id {
-        // Always part of a set-up.
-        ComponentId::UserDaemons => Ok(()),
-        ComponentId::Myna | ComponentId::Model => {
-            let Some((snap, expected)) = installs(id, &strong.offer.get()) else {
-                return Ok(());
-            };
-            strong
-                .installs
-                .borrow_mut()
-                .insert(id, Install::Running(None));
-            strong.log(&format!("install: installing {snap}"));
-            strong.render();
-            let cancellation = strong.install_cancellation.clone();
-            let interval = strong.follow_interval.get();
-            drop(strong);
-            let sleep = |interval| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
-                Box::pin(glib::timeout_future(interval))
-            };
-            let follow = Follow {
-                interval,
-                sleep: &sleep,
-                cancellation,
-            };
-            let report = progress_reporter(ui.clone(), id);
-            install(configurator.as_ref(), snap, expected, &follow, &report).await
-        }
-        ComponentId::ShellExtension => {
-            strong.log("extension: enabling");
-            let extensions = strong.extensions.clone();
-            drop(strong);
-            extensions.enable_extension(SHELL_EXTENSION_UUID).await
-        }
-    };
-    let Some(ui) = ui.upgrade() else {
-        return outcome;
-    };
-    ui.epoch.set(ui.epoch.get() + 1);
-    match &outcome {
-        Ok(()) => {
-            ui.log(&format!("install: {id:?} done"));
-            if ui.installs.borrow().contains_key(&id) {
-                ui.installs.borrow_mut().insert(id, Install::Confirming);
-            }
-        }
-        Err(SystemConfiguratorError::Cancelled) => {
-            ui.log(&format!("install: {id:?}: the prompt was dismissed"));
-            ui.installs.borrow_mut().remove(&id);
-        }
-        Err(error) => {
-            ui.log(&format!("install: {id:?} failed: {error}"));
-            ui.installs.borrow_mut().remove(&id);
+    strong.log("extension: enabling");
+    let extensions = strong.extensions.clone();
+    drop(strong);
+    let outcome = extensions.enable_extension(SHELL_EXTENSION_UUID).await;
+    if let Some(ui) = ui.upgrade() {
+        ui.epoch.set(ui.epoch.get() + 1);
+        match &outcome {
+            Ok(()) => ui.log("extension: enabled"),
+            Err(error) => ui.log(&format!("extension: failed: {error}")),
         }
     }
     outcome
 }
 
-/// The flag and `steps`' snaps as one privileged set-up, one prompt. snapd's
-/// changes are read meanwhile, so the line under the button names the snap
-/// installing and its download, as for an install asked as the user. The
-/// executor is root and outlives a closed wizard, which only stops following.
+/// `steps` as one privileged set-up, one prompt: the flag, the snaps and the
+/// model's connect (`onboarding::set_up_plan`). snapd's changes are read
+/// meanwhile, so the line under the button names the snap installing and its
+/// download. The executor is root and outlives a closed wizard, which only
+/// stops following.
 async fn set_up_step(
     ui: &std::rc::Weak<OnboardingUi>,
     steps: &[ComponentId],
@@ -1069,8 +1021,8 @@ async fn set_up_step(
         .iter()
         .filter_map(|id| installs(*id, &offer).map(|(snap, bytes)| (*id, snap, bytes)))
         .collect();
-    let names: Vec<&'static str> = snaps.iter().map(|(_, snap, _)| *snap).collect();
-    strong.log(&format!("set-up: the flag and {names:?} under one prompt"));
+    let plan = set_up_plan(steps, &offer);
+    strong.log(&format!("set-up: {plan:?} under one prompt"));
     let configurator = strong.configurator.clone();
     let cancellation = strong.install_cancellation.clone();
     let interval = strong.follow_interval.get();
@@ -1081,7 +1033,7 @@ async fn set_up_step(
         let configurator = configurator.clone();
         let finished = finished.clone();
         async move {
-            let outcome = configurator.set_up(&names, CancellationToken::new()).await;
+            let outcome = configurator.set_up(&plan, CancellationToken::new()).await;
             finished.replace(Some(outcome));
         }
     });

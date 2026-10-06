@@ -88,14 +88,13 @@ pub trait SystemConfigurator {
     /// user.
     async fn user_daemons_enabled(&self, cancellation: CancellationToken) -> Result<bool, String>;
 
-    /// Turn snapd's `experimental.user-daemons` flag on, then install
-    /// `snaps` from edge one after another, as root under one `pkexec`: snapd
-    /// keeps a polkit authorization per action, and the flag and installs are
-    /// two, so asking snapd as the user would prompt twice. Returns once
-    /// every install is done; their changes can be read meanwhile.
+    /// Run `plan` as root under one `pkexec`: snapd keeps a polkit
+    /// authorization per action, and the flag, installs and connect are
+    /// three, so asking snapd as the user could prompt three times. Returns
+    /// once every step is done; the installs' changes can be read meanwhile.
     async fn set_up(
         &self,
-        snaps: &[&str],
+        plan: &SetUpPlan,
         cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError>;
 
@@ -125,6 +124,17 @@ pub trait SystemConfigurator {
         let changes = self.changes_in_progress(cancellation).await.ok()?;
         apply_progress(&changes, backend_snap)
     }
+}
+
+/// What one privileged set-up does, in order: turn snapd's
+/// `experimental.user-daemons` flag on, install each snap from edge, then
+/// connect `myna:backend` to a model snap's slot. The connect does not wait
+/// on snapd's auto-connect, which a bare machine was seen to skip.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SetUpPlan {
+    pub flag: bool,
+    pub installs: Vec<&'static str>,
+    pub connect: Option<&'static str>,
 }
 
 /// GNOME Shell's extensions, as the running shell reports them.

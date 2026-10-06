@@ -217,6 +217,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-install: the download's percentage shown",
         "onboarding-install: a failed step reverts with a toast and its report",
         "onboarding-install: the size covers only what is missing",
+        "onboarding-install: the set-up connects the model it installs",
         "onboarding-install: the extension is enabled last",
         "onboarding-install: installed, then set up",
         "onboarding-install: the button keeps its place",

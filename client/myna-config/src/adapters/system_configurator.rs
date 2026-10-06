@@ -15,7 +15,9 @@ use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRun
 use crate::domain::CommandResult;
 #[cfg(test)]
 use crate::ports::FailedStep;
-use crate::ports::{SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure};
+use crate::ports::{
+    SetUpPlan, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
+};
 use crate::snap_changes::ChangeInProgress;
 use crate::snap_install::install_request;
 
@@ -173,18 +175,13 @@ impl SystemConfigurator for PkexecSystemConfigurator {
 
     async fn set_up(
         &self,
-        snaps: &[&str],
+        plan: &SetUpPlan,
         cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
-        let operations: Vec<CommandRequest> =
-            std::iter::once(["set", "system", "experimental.user-daemons=true"].map(str::to_owned))
-                .chain(
-                    snaps
-                        .iter()
-                        .map(|snap| ["install", "--edge", snap].map(str::to_owned)),
-                )
-                .map(|arguments| CommandRequest::new("snap".to_owned(), arguments.to_vec()))
-                .collect();
+        let operations: Vec<CommandRequest> = set_up_arguments(plan)
+            .into_iter()
+            .map(|arguments| CommandRequest::new("snap".to_owned(), arguments))
+            .collect();
         execute_plan(
             self.runner.as_ref(),
             &self.executor,
@@ -218,6 +215,22 @@ impl SystemConfigurator for PkexecSystemConfigurator {
             .await
             .map_err(|error| error.to_string())
     }
+}
+
+/// The `snap` arguments of each step of `plan`, in order.
+fn set_up_arguments(plan: &SetUpPlan) -> Vec<Vec<String>> {
+    let words = |words: &[&str]| words.iter().map(|word| (*word).to_owned()).collect();
+    let flag = plan
+        .flag
+        .then(|| words(&["set", "system", "experimental.user-daemons=true"]));
+    let installs = plan
+        .installs
+        .iter()
+        .map(|snap| words(&["install", "--edge", snap]));
+    let connect = plan
+        .connect
+        .map(|snap| words(&["connect", "myna:backend", &format!("{snap}:provider")]));
+    flag.into_iter().chain(installs).chain(connect).collect()
 }
 
 /// How a report names a snapd request: method, path and what it asks for.
@@ -779,23 +792,35 @@ mod tests {
         }
     }
 
-    fn set_up_operations(snaps: &[&str]) -> Vec<CommandRequest> {
-        std::iter::once(vec!["set", "system", "experimental.user-daemons=true"])
-            .chain(snaps.iter().map(|snap| vec!["install", "--edge", snap]))
-            .map(|arguments| {
-                CommandRequest::new(
-                    "snap".to_owned(),
-                    arguments.into_iter().map(str::to_owned).collect(),
-                )
-            })
-            .collect()
+    fn snap(arguments: &[&str]) -> CommandRequest {
+        CommandRequest::new(
+            "snap".to_owned(),
+            arguments.iter().map(|word| (*word).to_owned()).collect(),
+        )
     }
 
-    /// The flag and the installs are two snapd actions, two prompts as the
-    /// user; as root through one pkexec they are one.
+    fn bare_machine_plan() -> SetUpPlan {
+        SetUpPlan {
+            flag: true,
+            installs: vec!["myna", "myna-parakeet"],
+            connect: Some("myna-parakeet"),
+        }
+    }
+
+    fn bare_machine_operations() -> Vec<CommandRequest> {
+        vec![
+            snap(&["set", "system", "experimental.user-daemons=true"]),
+            snap(&["install", "--edge", "myna"]),
+            snap(&["install", "--edge", "myna-parakeet"]),
+            snap(&["connect", "myna:backend", "myna-parakeet:provider"]),
+        ]
+    }
+
+    /// The flag, installs and connect are three snapd actions, three
+    /// prompts as the user; as root through one pkexec they are one.
     #[test]
-    fn set_up_turns_the_flag_on_and_installs_through_one_pkexec() {
-        let operations = set_up_operations(&["myna", "myna-parakeet"]);
+    fn set_up_runs_every_step_through_one_pkexec() {
+        let operations = bare_machine_operations();
         let runner = FakeCommandRunner::scripted([Ok(CommandOutput::new(
             Some(0),
             plan_output(&operations, None),
@@ -804,7 +829,7 @@ mod tests {
         let adapter = PkexecSystemConfigurator::new(Arc::new(runner.clone()))
             .with_executor("/usr/bin/myna-config");
 
-        block_on(adapter.set_up(&["myna", "myna-parakeet"], CancellationToken::new())).unwrap();
+        block_on(adapter.set_up(&bare_machine_plan(), CancellationToken::new())).unwrap();
 
         let calls = runner.calls();
         assert_eq!(calls.len(), 1);
@@ -821,8 +846,34 @@ mod tests {
     }
 
     #[test]
+    fn a_set_up_with_the_flag_on_leaves_it_alone() {
+        let operations = vec![
+            snap(&["install", "--edge", "myna-parakeet"]),
+            snap(&["connect", "myna:backend", "myna-parakeet:provider"]),
+        ];
+        let runner = FakeCommandRunner::scripted([Ok(CommandOutput::new(
+            Some(0),
+            plan_output(&operations, None),
+            "",
+        ))]);
+        let adapter = PkexecSystemConfigurator::new(Arc::new(runner.clone()));
+        let plan = SetUpPlan {
+            flag: false,
+            installs: vec!["myna-parakeet"],
+            connect: Some("myna-parakeet"),
+        };
+
+        block_on(adapter.set_up(&plan, CancellationToken::new())).unwrap();
+
+        assert_eq!(
+            runner.calls()[0].arguments()[2],
+            apply_plan::encode_plan(PlanKind::SetUp, &operations).unwrap()
+        );
+    }
+
+    #[test]
     fn a_failed_install_in_the_set_up_is_reported_as_its_command() {
-        let operations = set_up_operations(&["myna", "myna-parakeet"]);
+        let operations = bare_machine_operations();
         let runner = FakeCommandRunner::scripted([Err(CommandError::NonZero {
             exit_status: Some(1),
             stdout: plan_output(&operations, Some((2, "error: cannot install"))),
@@ -830,8 +881,8 @@ mod tests {
         })]);
         let adapter = PkexecSystemConfigurator::new(Arc::new(runner));
 
-        let error = block_on(adapter.set_up(&["myna", "myna-parakeet"], CancellationToken::new()))
-            .unwrap_err();
+        let error =
+            block_on(adapter.set_up(&bare_machine_plan(), CancellationToken::new())).unwrap_err();
 
         assert_eq!(
             error.step(),
@@ -856,7 +907,7 @@ mod tests {
         let adapter = PkexecSystemConfigurator::new(Arc::new(runner));
 
         assert_eq!(
-            block_on(adapter.set_up(&[], CancellationToken::new())),
+            block_on(adapter.set_up(&bare_machine_plan(), CancellationToken::new())),
             Err(SystemConfiguratorError::Cancelled)
         );
     }

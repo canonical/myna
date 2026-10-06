@@ -439,12 +439,16 @@ pub fn next_install(components: &[Component], done: &[ComponentId]) -> Option<Co
         .find(|id| !done.contains(id))
 }
 
-/// The steps of a run that one privileged set-up takes together, from the
-/// flag on: the flag and the snaps still missing. snapd authorizes the flag
-/// and installs as two polkit actions, so asking it as the user would prompt
-/// twice; the set-up asks once. Empty unless the flag is the next step.
+/// The steps of a run that one privileged set-up takes together: the flag
+/// and the snaps still missing. As the user, snapd authorizes the flag, the
+/// installs and the connect after them as three polkit actions, so up to
+/// three prompts; the set-up asks once. Empty once only the extension, which
+/// needs no authorization, is left.
 pub fn set_up_steps(components: &[Component], done: &[ComponentId]) -> Vec<ComponentId> {
-    if next_install(components, done) != Some(ComponentId::UserDaemons) {
+    if matches!(
+        next_install(components, done),
+        None | Some(ComponentId::ShellExtension)
+    ) {
         return Vec::new();
     }
     install_plan(components)
@@ -453,19 +457,31 @@ pub fn set_up_steps(components: &[Component], done: &[ComponentId]) -> Vec<Compo
         .collect()
 }
 
+/// What the set-up of `steps` asks of snapd: the flag when it is missing,
+/// each missing snap, and, with the model among them, Myna's backend plug
+/// connected to it, so dictation never waits on snapd's auto-connect.
+pub fn set_up_plan(steps: &[ComponentId], offer: &ModelOffer) -> crate::ports::SetUpPlan {
+    crate::ports::SetUpPlan {
+        flag: steps.contains(&ComponentId::UserDaemons),
+        installs: steps
+            .iter()
+            .filter_map(|id| installs(*id, offer).map(|(snap, _)| snap))
+            .collect(),
+        connect: steps.contains(&ComponentId::Model).then(|| offer.snap()),
+    }
+}
+
 /// The step a failed set-up's report names: the install whose `snap
-/// install` failed, else the flag.
+/// install` failed, the model for its connect, else the flag.
 pub fn failed_set_up_step(step: Option<&crate::ports::FailedStep>) -> ComponentId {
-    match step {
-        Some(crate::ports::FailedStep::Command { arguments, .. })
-            if arguments.first().map(String::as_str) == Some("install") =>
-        {
-            if arguments.last().map(String::as_str) == Some(MYNA_SNAP) {
-                ComponentId::Myna
-            } else {
-                ComponentId::Model
-            }
+    let Some(crate::ports::FailedStep::Command { arguments, .. }) = step else {
+        return ComponentId::UserDaemons;
+    };
+    match arguments.first().map(String::as_str) {
+        Some("install") if arguments.last().map(String::as_str) == Some(MYNA_SNAP) => {
+            ComponentId::Myna
         }
+        Some("install" | "connect") => ComponentId::Model,
         _ => ComponentId::UserDaemons,
     }
 }
@@ -961,8 +977,20 @@ mod tests {
                 ComponentId::Model
             ]
         );
-        // Only from the flag: once it is done the snaps go through snapd.
-        assert!(set_up_steps(&bare, &[ComponentId::UserDaemons]).is_empty());
+        // The snaps still missing after the flag stay one set-up.
+        assert_eq!(
+            set_up_steps(&bare, &[ComponentId::UserDaemons]),
+            [ComponentId::Myna, ComponentId::Model]
+        );
+        assert!(set_up_steps(
+            &bare,
+            &[
+                ComponentId::UserDaemons,
+                ComponentId::Myna,
+                ComponentId::Model
+            ]
+        )
+        .is_empty());
         // The flag alone, with Myna and a model installed.
         let flag_only = assess(Machine {
             myna_installed: true,
@@ -974,7 +1002,39 @@ mod tests {
             user_daemons: true,
             ..Machine::default()
         });
-        assert!(set_up_steps(&flagged, &[]).is_empty());
+        assert_eq!(
+            set_up_steps(&flagged, &[]),
+            [ComponentId::Myna, ComponentId::Model]
+        );
+    }
+
+    #[test]
+    fn a_set_up_connects_the_model_it_installs() {
+        let offer = model_offer(&Machine::default());
+        assert_eq!(
+            set_up_plan(
+                &[
+                    ComponentId::UserDaemons,
+                    ComponentId::Myna,
+                    ComponentId::Model
+                ],
+                &offer
+            ),
+            crate::ports::SetUpPlan {
+                flag: true,
+                installs: vec![MYNA_SNAP, RECOMMENDED_BACKEND_SNAP],
+                connect: Some(RECOMMENDED_BACKEND_SNAP),
+            }
+        );
+        // A model installed already is left to the setup after the run.
+        assert_eq!(
+            set_up_plan(&[ComponentId::Myna], &offer),
+            crate::ports::SetUpPlan {
+                flag: false,
+                installs: vec![MYNA_SNAP],
+                connect: None,
+            }
+        );
     }
 
     #[test]
@@ -1001,6 +1061,14 @@ mod tests {
                 "experimental.user-daemons=true"
             ]))),
             ComponentId::UserDaemons
+        );
+        assert_eq!(
+            failed_set_up_step(Some(&command(&[
+                "connect",
+                "myna:backend",
+                "myna-parakeet:provider"
+            ]))),
+            ComponentId::Model
         );
         // pkexec refusing the prompt names pkexec, before any step ran.
         assert_eq!(

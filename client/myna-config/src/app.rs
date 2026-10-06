@@ -2325,25 +2325,24 @@ struct ProbeMachine {
     /// polkit refuses every privileged apply.
     refusing_applies: std::sync::Arc<std::sync::atomic::AtomicBool>,
     switches_attempted: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    /// How snapd answers the next writes of the flag; success once empty.
-    flag_answers: std::sync::Arc<
+    /// How the next set-ups' prompts are answered; success once empty.
+    prompt_answers: std::sync::Arc<
         std::sync::Mutex<
             std::collections::VecDeque<Result<(), crate::ports::SystemConfiguratorError>>,
         >,
     >,
-    /// A set-up waits while this is set, as while polkit's prompt is open.
-    holding_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// A set-up waits while this is set, as while its prompt is open.
+    holding_prompt: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Set-ups run, so prompts shown.
-    flag_writes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    set_ups: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// The snaps whose set-up install stays in progress.
     held_set_up: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Every set-up asked for, in order.
+    set_up_plans: std::sync::Arc<std::sync::Mutex<Vec<crate::ports::SetUpPlan>>>,
     /// Myna is installed and no backend yet.
     myna_only: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The snaps asked for, in order.
     installs: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    /// How snapd answers the next install requests; `change-<snap>` once
-    /// empty.
-    install_answers: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<InstallAnswer>>>,
     /// While set, change reads report this percentage of the download
     /// fetched.
     downloading: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
@@ -2377,24 +2376,17 @@ impl ProbeMachine {
             denying: std::sync::Arc::default(),
             refusing_applies: std::sync::Arc::default(),
             switches_attempted: std::sync::Arc::default(),
-            flag_answers: std::sync::Arc::default(),
-            holding_flag: std::sync::Arc::default(),
-            flag_writes: std::sync::Arc::default(),
+            prompt_answers: std::sync::Arc::default(),
+            holding_prompt: std::sync::Arc::default(),
+            set_ups: std::sync::Arc::default(),
             held_set_up: std::sync::Arc::default(),
+            set_up_plans: std::sync::Arc::default(),
             myna_only: std::sync::Arc::default(),
             installs: std::sync::Arc::default(),
-            install_answers: std::sync::Arc::default(),
             downloading: std::sync::Arc::default(),
             install_error: std::sync::Arc::default(),
             pending_installs: std::sync::Arc::default(),
         }
-    }
-
-    fn answer_install(&self, answer: InstallAnswer) {
-        self.install_answers
-            .lock()
-            .expect("probe machine lock")
-            .push_back(answer);
     }
 
     /// Change reads report `done` percent fetched until this is `None`.
@@ -2430,15 +2422,15 @@ impl ProbeMachine {
         }
     }
 
-    fn answer_flag(&self, answer: Result<(), crate::ports::SystemConfiguratorError>) {
-        self.flag_answers
+    fn answer_prompt(&self, answer: Result<(), crate::ports::SystemConfiguratorError>) {
+        self.prompt_answers
             .lock()
             .expect("probe machine lock")
             .push_back(answer);
     }
 
-    fn hold_flag(&self, holding: bool) {
-        self.holding_flag
+    fn hold_prompt(&self, holding: bool) {
+        self.holding_prompt
             .store(holding, std::sync::atomic::Ordering::SeqCst);
     }
 
@@ -2459,8 +2451,15 @@ impl ProbeMachine {
             .any(|held| held == snap)
     }
 
-    fn flag_writes(&self) -> usize {
-        self.flag_writes.load(std::sync::atomic::Ordering::SeqCst)
+    fn set_up_plans(&self) -> Vec<crate::ports::SetUpPlan> {
+        self.set_up_plans
+            .lock()
+            .expect("probe machine lock")
+            .clone()
+    }
+
+    fn set_ups(&self) -> usize {
+        self.set_ups.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     fn dismiss_authorization(&self, dismissing: bool) {
@@ -2642,8 +2641,6 @@ impl crate::command::CommandRunner for ProbeMachine {
     }
 }
 
-type InstallAnswer = Result<Option<String>, crate::ports::SystemConfiguratorError>;
-
 /// One percent of a download bigger than any the wizard expects, so the
 /// row shows the percentage the probe sets.
 const PROBE_PERCENT: u64 = 1 << 32;
@@ -2708,21 +2705,27 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
     /// change listed in progress until it is released and done downloading.
     async fn set_up(
         &self,
-        snaps: &[&str],
+        plan: &crate::ports::SetUpPlan,
         _cancellation: crate::command::CancellationToken,
     ) -> Result<(), crate::ports::SystemConfiguratorError> {
         use std::sync::atomic::Ordering::SeqCst;
-        self.flag_writes.fetch_add(1, SeqCst);
-        while self.holding_flag.load(SeqCst) {
+        self.set_ups.fetch_add(1, SeqCst);
+        self.set_up_plans
+            .lock()
+            .expect("probe machine lock")
+            .push(plan.clone());
+        while self.holding_prompt.load(SeqCst) {
             glib::timeout_future(Duration::from_millis(10)).await;
         }
-        self.flag_answers
+        self.prompt_answers
             .lock()
             .expect("probe machine lock")
             .pop_front()
             .unwrap_or(Ok(()))?;
-        self.flagged.store(true, SeqCst);
-        for snap in snaps {
+        if plan.flag {
+            self.flagged.store(true, SeqCst);
+        }
+        for snap in &plan.installs {
             self.installs
                 .lock()
                 .expect("probe machine lock")
@@ -2757,6 +2760,9 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
             }
             self.installed(snap);
         }
+        if let Some(snap) = plan.connect {
+            *self.connected.lock().expect("probe machine lock") = vec![snap.to_owned()];
+        }
         Ok(())
     }
 
@@ -2769,16 +2775,7 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
             .lock()
             .expect("probe machine lock")
             .push(snap.to_owned());
-        let answer = self
-            .install_answers
-            .lock()
-            .expect("probe machine lock")
-            .pop_front()
-            .unwrap_or_else(|| Ok(Some(format!("change-{snap}"))));
-        if matches!(answer, Ok(None)) {
-            self.installed(snap);
-        }
-        answer
+        Ok(Some(format!("change-{snap}")))
     }
 
     async fn snap_change(
@@ -3975,23 +3972,23 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
             && status_busy(&page).is_none()
     };
 
-    machine.answer_flag(Err(crate::ports::SystemConfiguratorError::Cancelled));
+    machine.answer_prompt(Err(crate::ports::SystemConfiguratorError::Cancelled));
     button.emit_clicked();
-    if !until(&|| machine.flag_writes() == 1 && offers_again())
+    if !until(&|| machine.set_ups() == 1 && offers_again())
         || !toast_texts(&window).is_empty()
         || !machine.installs().is_empty()
     {
         return Err(format!(
             "a dismissed prompt left {:?} after {} writes, toasts {:?}, installs {:?}",
             page.install_label(),
-            machine.flag_writes(),
+            machine.set_ups(),
             toast_texts(&window),
             machine.installs()
         ));
     }
     println!("onboarding-install: a dismissed prompt stops silently");
 
-    machine.answer_flag(Err(
+    machine.answer_prompt(Err(
         crate::ports::SystemConfiguratorError::authorization_denied(
             "pkexec",
             vec!["/usr/bin/myna-config".to_owned(), "--set-up".to_owned()],
@@ -4003,7 +4000,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     let announced =
         |heading: &str| toast_texts(&window) == [heading.to_owned(), gettextrs::gettext("Details")];
     let flag_heading = gettextrs::gettext("Could not let Myna run in the background");
-    if !until(&|| announced(&flag_heading) && offers_again()) || machine.flag_writes() != 2 {
+    if !until(&|| announced(&flag_heading) && offers_again()) || machine.set_ups() != 2 {
         return Err(format!(
             "a refused prompt left {:?} with toasts {:?}",
             page.install_label(),
@@ -4096,12 +4093,12 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
 
     // Each step is named under the button while it runs, the button and
     // Next held. The flag and both snaps are one set-up, one prompt.
-    machine.hold_flag(true);
+    machine.hold_prompt(true);
     button.emit_clicked();
     let flag_step = gettextrs::gettext("Enabling user daemons support");
     if !until(&|| installing_shown(&window, &flag_step))
         || window.forward_button().is_sensitive()
-        || machine.flag_writes() != 3
+        || machine.set_ups() != 3
     {
         return Err(format!(
             "while snapd asks for the flag the step shows {:?}, {:?}",
@@ -4111,12 +4108,12 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     }
     button.emit_clicked();
     settle_gtk();
-    if machine.flag_writes() != 3 {
+    if machine.set_ups() != 3 {
         return Err("activating the running button asked snapd again".to_owned());
     }
     machine.hold_set_up(crate::onboarding::MYNA_SNAP, true);
     machine.hold_set_up(crate::onboarding::RECOMMENDED_BACKEND_SNAP, true);
-    machine.hold_flag(false);
+    machine.hold_prompt(false);
     let app_step = gettextrs::gettext("Installing Dictation app");
     if !until(&|| installing_shown(&window, &app_step)) || machine.installs() != ["myna"] {
         return Err(format!(
@@ -4192,17 +4189,29 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     let downloading = gettextrs::gettext("{step} ({percent}%)")
         .replace("{step}", &model_step)
         .replace("{percent}", "10");
+    let plan = |flag: bool, installs: &[&'static str]| crate::ports::SetUpPlan {
+        flag,
+        installs: installs.to_vec(),
+        connect: Some(crate::onboarding::RECOMMENDED_BACKEND_SNAP),
+    };
     if !until(&|| installing_shown(&window, &downloading))
-        || machine.flag_writes() != 3
+        || machine.set_ups() != 4
         || machine.installs() != ["myna", "myna-parakeet", "myna-parakeet"]
+        || machine.set_up_plans()[2..]
+            != [
+                plan(true, &["myna", "myna-parakeet"]),
+                plan(false, &["myna-parakeet"]),
+            ]
     {
         return Err(format!(
-            "the second run shows {:?} after {} flag writes, installs {:?}",
+            "the second run shows {:?} after {} set-ups {:?}, installs {:?}",
             status_busy(&page),
-            machine.flag_writes(),
+            machine.set_ups(),
+            machine.set_up_plans(),
             machine.installs()
         ));
     }
+    println!("onboarding-install: the set-up connects the model it installs");
     extensions.holding.set(true);
     machine.download(None);
     let extension_step = gettextrs::gettext("Enabling shell extension");
@@ -4464,9 +4473,10 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
     let button = components_page(&window)
         .ok_or("the component step shows no component page")?
         .install_button();
-    machine.answer_install(Err(crate::ports::SystemConfiguratorError::Cancelled));
+    machine.answer_prompt(Err(crate::ports::SystemConfiguratorError::Cancelled));
     button.emit_clicked();
-    if !until(&|| machine.installs().len() == 1 && offered(&window, &expected_size(&initial)))
+    if !until(&|| machine.set_ups() == 1 && offered(&window, &expected_size(&initial)))
+        || !machine.installs().is_empty()
         || !toast_texts(&window).is_empty()
     {
         return Err(format!(
@@ -4478,16 +4488,16 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
     println!("onboarding-partial: a dismissed install prompt stops silently");
     button.emit_clicked();
     if !until(&|| step() == "shortcut")
-        || machine.installs() != ["myna-parakeet", "myna-parakeet"]
-        || machine.flag_writes() != 0
+        || machine.installs() != ["myna-parakeet"]
+        || machine.set_ups() != 2
         || extensions.enables.get() != 0
         || machine.applied() != [vec!["restart-myna".to_owned()]]
     {
         return Err(format!(
-            "installing the model alone reached {}: installs {:?}, {} flag writes, {} enables, applied {:?}",
+            "installing the model alone reached {}: installs {:?}, {} set-ups, {} enables, applied {:?}",
             step(),
             machine.installs(),
-            machine.flag_writes(),
+            machine.set_ups(),
             extensions.enables.get(),
             machine.applied()
         ));

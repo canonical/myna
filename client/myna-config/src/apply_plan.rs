@@ -194,20 +194,24 @@ pub fn validate_plan(kind: PlanKind, plan: &[PlanOperation]) -> Result<(), Strin
     Ok(())
 }
 
-/// The flag, and installs of Myna and the known backends only: the prompt
-/// says it sets Myna up, so it installs nothing else.
+/// The flag, installs of Myna and the known backends, and Myna's backend
+/// plug connected to one of theirs: the prompt says it sets Myna up, so it
+/// touches nothing else.
 fn validate_set_up(args: &[&str]) -> Result<(), String> {
+    let is_mynas = |snap: &str| {
+        snap == crate::onboarding::MYNA_SNAP
+            || myna_core::language::ModelFamily::from_snap_name(snap).is_some()
+    };
     match args {
         ["set", "system", "experimental.user-daemons=true"] => Ok(()),
-        ["install", "--edge", snap] => {
-            if *snap == crate::onboarding::MYNA_SNAP
-                || myna_core::language::ModelFamily::from_snap_name(snap).is_some()
-            {
+        ["install", "--edge", snap] if is_mynas(snap) => Ok(()),
+        ["connect", "myna:backend", slot] => match slot.strip_suffix(":provider") {
+            Some(snap) if myna_core::language::ModelFamily::from_snap_name(snap).is_some() => {
                 Ok(())
-            } else {
-                Err(format!("{snap} is not one of Myna's snaps"))
             }
-        }
+            _ => Err(format!("{slot} is not a model's provider slot")),
+        },
+        ["install", "--edge", snap] => Err(format!("{snap} is not one of Myna's snaps")),
         _ => Err(unexpected(args)),
     }
 }
@@ -432,13 +436,15 @@ mod tests {
     }
 
     #[test]
-    fn set_up_turns_the_flag_on_and_installs_only_mynas_snaps() {
+    fn set_up_touches_only_the_flag_and_mynas_snaps() {
         let plan = vec![
             op(&["set", "system", "experimental.user-daemons=true"]),
             op(&["install", "--edge", "myna"]),
             op(&["install", "--edge", "myna-parakeet"]),
             op(&["install", "--edge", "myna-whisper"]),
             op(&["install", "--edge", "myna-funasr"]),
+            op(&["connect", "myna:backend", "myna-parakeet:provider"]),
+            op(&["connect", "myna:backend", "myna-whisper:provider"]),
         ];
         assert_eq!(validate_plan(PlanKind::SetUp, &plan), Ok(()));
 
@@ -450,6 +456,11 @@ mod tests {
             op(&["set", "system", "experimental.user-daemons=false"]),
             op(&["set", "system", "proxy.http=http://evil"]),
             op(&["restart", "myna-whisper"]),
+            op(&["connect", "myna:backend", "myna:provider"]),
+            op(&["connect", "myna:backend", "gemma4:provider"]),
+            op(&["connect", "myna:backend", "myna-parakeet:other"]),
+            op(&["connect", "myna:pipewire", "myna-parakeet:provider"]),
+            op(&["disconnect", "myna:backend", "myna-parakeet:provider"]),
         ];
         for operation in rejected {
             assert!(

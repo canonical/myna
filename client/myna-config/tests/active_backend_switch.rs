@@ -298,7 +298,7 @@ impl SystemConfigurator for FakeConfigurator {
 
     async fn set_up(
         &self,
-        _snaps: &[&str],
+        _plan: &myna_config::ports::SetUpPlan,
         _cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
         unreachable!("a backend switch never sets up")

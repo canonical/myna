@@ -4655,7 +4655,7 @@ mod tests {
 
         async fn set_up(
             &self,
-            _snaps: &[&str],
+            _plan: &crate::ports::SetUpPlan,
             _cancellation: CancellationToken,
         ) -> Result<(), crate::ports::SystemConfiguratorError> {
             unreachable!("the settings window never sets up")
@@ -5254,7 +5254,7 @@ mod tests {
 
         async fn set_up(
             &self,
-            _snaps: &[&str],
+            _plan: &crate::ports::SetUpPlan,
             _cancellation: CancellationToken,
         ) -> Result<(), crate::ports::SystemConfiguratorError> {
             unreachable!("the settings window never sets up")

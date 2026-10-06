@@ -80,7 +80,7 @@ impl SystemConfigurator for Snapd {
 
     async fn set_up(
         &self,
-        _snaps: &[&str],
+        _plan: &myna_config::ports::SetUpPlan,
         _cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
         unreachable!("an install sets nothing up")
