@@ -2331,9 +2331,12 @@ struct ProbeMachine {
             std::collections::VecDeque<Result<(), crate::ports::SystemConfiguratorError>>,
         >,
     >,
-    /// A flag write waits while this is set, as while polkit's prompt is open.
+    /// A set-up waits while this is set, as while polkit's prompt is open.
     holding_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Set-ups run, so prompts shown.
     flag_writes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// The snaps whose set-up install stays in progress.
+    held_set_up: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     /// Myna is installed and no backend yet.
     myna_only: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The snaps asked for, in order.
@@ -2341,8 +2344,6 @@ struct ProbeMachine {
     /// How snapd answers the next install requests; `change-<snap>` once
     /// empty.
     install_answers: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<InstallAnswer>>>,
-    /// An install request waits while this is set, as while polkit asks.
-    holding_install: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// While set, change reads report this percentage of the download
     /// fetched.
     downloading: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
@@ -2379,10 +2380,10 @@ impl ProbeMachine {
             flag_answers: std::sync::Arc::default(),
             holding_flag: std::sync::Arc::default(),
             flag_writes: std::sync::Arc::default(),
+            held_set_up: std::sync::Arc::default(),
             myna_only: std::sync::Arc::default(),
             installs: std::sync::Arc::default(),
             install_answers: std::sync::Arc::default(),
-            holding_install: std::sync::Arc::default(),
             downloading: std::sync::Arc::default(),
             install_error: std::sync::Arc::default(),
             pending_installs: std::sync::Arc::default(),
@@ -2394,11 +2395,6 @@ impl ProbeMachine {
             .lock()
             .expect("probe machine lock")
             .push_back(answer);
-    }
-
-    fn hold_install(&self, holding: bool) {
-        self.holding_install
-            .store(holding, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Change reads report `done` percent fetched until this is `None`.
@@ -2444,6 +2440,23 @@ impl ProbeMachine {
     fn hold_flag(&self, holding: bool) {
         self.holding_flag
             .store(holding, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A set-up's install of `snap` stays in progress while held.
+    fn hold_set_up(&self, snap: &str, holding: bool) {
+        let mut held = self.held_set_up.lock().expect("probe machine lock");
+        held.retain(|held| held != snap);
+        if holding {
+            held.push(snap.to_owned());
+        }
+    }
+
+    fn set_up_held(&self, snap: &str) -> bool {
+        self.held_set_up
+            .lock()
+            .expect("probe machine lock")
+            .iter()
+            .any(|held| held == snap)
     }
 
     fn flag_writes(&self) -> usize {
@@ -2691,26 +2704,60 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
             || self.flagged.load(std::sync::atomic::Ordering::SeqCst))
     }
 
-    async fn enable_user_daemons(
+    /// The executor's plan as snapd sees it: the flag, then each install's
+    /// change listed in progress until it is released and done downloading.
+    async fn set_up(
         &self,
+        snaps: &[&str],
         _cancellation: crate::command::CancellationToken,
     ) -> Result<(), crate::ports::SystemConfiguratorError> {
-        self.flag_writes
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        while self.holding_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.flag_writes.fetch_add(1, SeqCst);
+        while self.holding_flag.load(SeqCst) {
             glib::timeout_future(Duration::from_millis(10)).await;
         }
-        let answer = self
-            .flag_answers
+        self.flag_answers
             .lock()
             .expect("probe machine lock")
             .pop_front()
-            .unwrap_or(Ok(()));
-        if answer.is_ok() {
-            self.flagged
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            .unwrap_or(Ok(()))?;
+        self.flagged.store(true, SeqCst);
+        for snap in snaps {
+            self.installs
+                .lock()
+                .expect("probe machine lock")
+                .push((*snap).to_owned());
+            self.installing_elsewhere(snap);
+            while self.set_up_held(snap)
+                || self
+                    .downloading
+                    .lock()
+                    .expect("probe machine lock")
+                    .is_some()
+            {
+                glib::timeout_future(Duration::from_millis(10)).await;
+            }
+            self.pending_installs
+                .lock()
+                .expect("probe machine lock")
+                .retain(|pending| pending != snap);
+            if let Some(error) = self
+                .install_error
+                .lock()
+                .expect("probe machine lock")
+                .clone()
+            {
+                return Err(crate::ports::SystemConfiguratorError::execution(
+                    "snap",
+                    ["install", "--edge", snap].map(str::to_owned).to_vec(),
+                    Some(1),
+                    error.clone(),
+                    error,
+                ));
+            }
+            self.installed(snap);
         }
-        answer
+        Ok(())
     }
 
     async fn install_snap(
@@ -2722,12 +2769,6 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
             .lock()
             .expect("probe machine lock")
             .push(snap.to_owned());
-        while self
-            .holding_install
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            glib::timeout_future(Duration::from_millis(10)).await;
-        }
         let answer = self
             .install_answers
             .lock()
@@ -2777,14 +2818,23 @@ impl crate::ports::SystemConfigurator for ProbeMachine {
         &self,
         _cancellation: crate::command::CancellationToken,
     ) -> Result<Vec<crate::snap_changes::ChangeInProgress>, String> {
+        let downloading = *self.downloading.lock().expect("probe machine lock");
         let pending: Vec<serde_json::Value> = self
             .pending_installs
             .lock()
             .expect("probe machine lock")
             .iter()
             .map(|snap| {
+                let tasks: Vec<serde_json::Value> = downloading
+                    .map(|done| {
+                        serde_json::json!({"kind": "download-snap", "status": "Doing",
+                        "progress": {"label": snap, "done": done * PROBE_PERCENT,
+                            "total": 100 * PROBE_PERCENT}})
+                    })
+                    .into_iter()
+                    .collect();
                 serde_json::json!({"id": format!("change-{snap}"), "kind": "install-snap",
-                    "ready": false, "status": "Doing",
+                    "ready": false, "status": "Doing", "tasks": tasks,
                     "summary": format!("Install \"{snap}\" snap from \"latest/edge\" channel")})
             })
             .collect();
@@ -3942,10 +3992,11 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     println!("onboarding-install: a dismissed prompt stops silently");
 
     machine.answer_flag(Err(
-        crate::ports::SystemConfiguratorError::snapd_authorization_denied(
-            "PUT /v2/snaps/system/conf (experimental.user-daemons=true)",
-            401,
-            "access denied",
+        crate::ports::SystemConfiguratorError::authorization_denied(
+            "pkexec",
+            vec!["/usr/bin/myna-config".to_owned(), "--set-up".to_owned()],
+            Some(127),
+            "Not authorized",
         ),
     ));
     button.emit_clicked();
@@ -3980,9 +4031,10 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
         .ok_or("Details opened no failure report")?;
     let text = dialog.details_text();
     let expected = format!(
-        "{} PUT /v2/snaps/system/conf (experimental.user-daemons=true)\n{} 401\n{} access denied",
-        gettextrs::gettext("Request:"),
-        gettextrs::gettext("HTTP status:"),
+        "{} pkexec\n{} /usr/bin/myna-config --set-up\n{} 127\n{} Not authorized",
+        gettextrs::gettext("Executable:"),
+        gettextrs::gettext("Arguments:"),
+        gettextrs::gettext("Exit status:"),
         gettextrs::gettext("Message:"),
     );
     if text != expected {
@@ -4043,7 +4095,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     println!("onboarding-install: a long report scrolls inside the window");
 
     // Each step is named under the button while it runs, the button and
-    // Next held.
+    // Next held. The flag and both snaps are one set-up, one prompt.
     machine.hold_flag(true);
     button.emit_clicked();
     let flag_step = gettextrs::gettext("Enabling user daemons support");
@@ -4062,7 +4114,8 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     if machine.flag_writes() != 3 {
         return Err("activating the running button asked snapd again".to_owned());
     }
-    machine.hold_install(true);
+    machine.hold_set_up(crate::onboarding::MYNA_SNAP, true);
+    machine.hold_set_up(crate::onboarding::RECOMMENDED_BACKEND_SNAP, true);
     machine.hold_flag(false);
     let app_step = gettextrs::gettext("Installing Dictation app");
     if !until(&|| installing_shown(&window, &app_step)) || machine.installs() != ["myna"] {
@@ -4074,7 +4127,6 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     }
     println!("onboarding-install: each step named while it runs");
     machine.download(Some(42));
-    machine.hold_install(false);
     let percent = gettextrs::gettext("{step} ({percent}%)")
         .replace("{step}", &app_step)
         .replace("{percent}", "42");
@@ -4087,8 +4139,8 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     println!("onboarding-install: the download's percentage shown");
 
     // The app installs, then the model's install fails.
-    machine.hold_install(true);
     machine.download(None);
+    machine.hold_set_up(crate::onboarding::MYNA_SNAP, false);
     let model_step = gettextrs::gettext("Installing speech-to-text model");
     if !until(&|| installing_shown(&window, &model_step))
         || machine.installs() != ["myna", "myna-parakeet"]
@@ -4102,7 +4154,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     machine.fail_installs(Some(
         "cannot perform the following tasks:\n- Run install hook",
     ));
-    machine.hold_install(false);
+    machine.hold_set_up(crate::onboarding::RECOMMENDED_BACKEND_SNAP, false);
     let model_heading = gettextrs::gettext("Installing the speech-to-text model failed");
     let myna_installed = assess(Machine {
         user_daemons: true,
@@ -4122,9 +4174,10 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     }
     let report = setup_failure_report(&window).unwrap_or_default();
     let expected = format!(
-        "{} POST /v2/snaps/myna-parakeet (install, latest/edge)\n{} 202\n{}\ncannot perform the following tasks:\n- Run install hook",
-        gettextrs::gettext("Request:"),
-        gettextrs::gettext("HTTP status:"),
+        "{} snap\n{} install --edge myna-parakeet\n{} 1\n{}\ncannot perform the following tasks:\n- Run install hook",
+        gettextrs::gettext("Executable:"),
+        gettextrs::gettext("Arguments:"),
+        gettextrs::gettext("Exit status:"),
         gettextrs::gettext("Message:"),
     );
     if report != expected {

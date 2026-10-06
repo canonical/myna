@@ -672,11 +672,12 @@ mod tests {
             Ok(true)
         }
 
-        async fn enable_user_daemons(
+        async fn set_up(
             &self,
+            _snaps: &[&str],
             _cancellation: CancellationToken,
         ) -> Result<(), SystemConfiguratorError> {
-            unreachable!("the settings window never turns the flag on")
+            unreachable!("the settings window never sets up")
         }
 
         async fn install_snap(
@@ -1518,7 +1519,11 @@ mod tests {
         assert_eq!(calls[0].arguments()[1], "--apply-plan");
         assert_eq!(
             calls[0].arguments()[2],
-            crate::apply_plan::encode_plan(preview.operations()).unwrap()
+            crate::apply_plan::encode_plan(
+                crate::apply_plan::PlanKind::Apply,
+                preview.operations()
+            )
+            .unwrap()
         );
         assert_eq!(results, successful_results(&preview));
     }

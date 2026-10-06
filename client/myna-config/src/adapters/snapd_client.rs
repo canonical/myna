@@ -12,8 +12,6 @@
 //! * `GET  /v2/changes/{id}` to poll async changes to completion.
 //! * `GET  /v2/changes?select=in-progress` to show what an apply waits on.
 //! * `GET  /v2/system-info` to read whether `experimental.user-daemons` is on.
-//! * `PUT  /v2/snaps/system/conf` with exactly
-//!   `{"experimental.user-daemons":true}` to turn it on.
 //! * `POST /v2/snaps/{name}` with exactly
 //!   `{"action":"install","channel":"latest/edge"}`, `{name}` a validated
 //!   snap name, to install it as `snap install --edge` does.
@@ -47,9 +45,7 @@ const CHANGES_IN_PROGRESS: &str = "/v2/changes?select=in-progress";
 /// experimental flags to anyone.
 const SYSTEM_INFO: &str = "/v2/system-info";
 
-pub(crate) const SYSTEM_CONF: &str = "/v2/snaps/system/conf";
 pub(crate) const INTERFACES: &str = "/v2/interfaces";
-const USER_DAEMONS_ON: &str = r#"{"experimental.user-daemons":true}"#;
 
 const INSTALL_ON_EDGE: &str = r#"{"action":"install","channel":"latest/edge"}"#;
 
@@ -382,10 +378,6 @@ pub trait SnapdClient {
         cancellation: CancellationToken,
     ) -> Result<bool, SnapdError>;
 
-    /// Turn `experimental.user-daemons` on; snapd asks polkit for
-    /// `manage-configuration`.
-    async fn enable_user_daemons(&self, cancellation: CancellationToken) -> Result<(), SnapdError>;
-
     /// Start installing `snap` from edge; snapd asks polkit
     /// for `manage`. The change it started, none when the snap is already
     /// installed.
@@ -471,23 +463,6 @@ impl SnapdClient for UnixSocketSnapdClient {
         let timeouts = self.timeouts;
         let handle = gio::spawn_blocking(move || {
             blocking_user_daemons_enabled(&socket_path, timeouts, cancellation)
-        });
-        handle.await.map_err(worker_panicked)?
-    }
-
-    async fn enable_user_daemons(&self, cancellation: CancellationToken) -> Result<(), SnapdError> {
-        let socket_path = self.socket_path.clone();
-        let timeouts = self.timeouts;
-        let handle = gio::spawn_blocking(move || {
-            blocking_write(
-                &socket_path,
-                timeouts,
-                "PUT",
-                SYSTEM_CONF,
-                USER_DAEMONS_ON,
-                cancellation,
-            )
-            .map(|_| ())
         });
         handle.await.map_err(worker_panicked)?
     }

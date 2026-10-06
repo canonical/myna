@@ -1,16 +1,17 @@
-//! The privileged half of a backend apply.
+//! The privileged half of a backend apply and of onboarding's set-up.
 //!
-//! An apply is a short list of `snap` commands that must run as root. Running
+//! Either is a short list of `snap` commands that must run as root. Running
 //! each one through its own `pkexec` costs the user one authorization prompt
 //! per command, because pkexec's polkit action carries no `keep`. Instead the
 //! whole plan is serialized and handed to a single `pkexec myna-config
-//! --apply-plan <json>` invocation; this module is both the encoder the
-//! unprivileged UI uses and the executor that runs under root.
+//! --apply-plan <json>` (or `--set-up <json>`) invocation; this module is
+//! both the encoder the unprivileged UI uses and the executor that runs under
+//! root.
 //!
 //! The executor trusts nothing about its input: a plan is accepted only when
-//! every operation matches one of the exact shapes the UI can produce. The
-//! polkit dialog shows the message of `data/com.canonical.Myna.Config.policy`
-//! rather than the plan's argv.
+//! every operation matches one of the exact shapes the UI can produce for its
+//! kind. The polkit dialog shows the message of the kind's action in
+//! `data/com.canonical.Myna.Config.policy` rather than the plan's argv.
 
 use std::process::{Command, Stdio};
 
@@ -19,8 +20,31 @@ use serde::{Deserialize, Serialize};
 use crate::command::CommandRequest;
 use crate::domain::CommandResult;
 
-/// Command-line flag that switches the binary into plan-executor mode.
+/// Command-line flag that runs a backend apply's plan.
 pub const APPLY_PLAN_FLAG: &str = "--apply-plan";
+
+/// Command-line flag that runs onboarding's set-up plan.
+pub const SET_UP_FLAG: &str = "--set-up";
+
+/// Which privileged plan the executor runs: each has its own polkit action,
+/// so its own prompt message, and its own allowlist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanKind {
+    /// A backend's settings: `modelctl` calls and a restart.
+    Apply,
+    /// snapd's `experimental.user-daemons` flag and installs of Myna's own
+    /// snaps from edge.
+    SetUp,
+}
+
+impl PlanKind {
+    pub const fn flag(self) -> &'static str {
+        match self {
+            Self::Apply => APPLY_PLAN_FLAG,
+            Self::SetUp => SET_UP_FLAG,
+        }
+    }
+}
 
 const ALLOWED_EXECUTABLE: &str = "snap";
 const MODELCTL_TAIL: [&str; 2] = ["--assume-yes", "--no-restart"];
@@ -74,7 +98,7 @@ impl PlanExit {
 }
 
 /// Serialize a validated plan for the executor's argv.
-pub fn encode_plan(operations: &[CommandRequest]) -> Result<String, String> {
+pub fn encode_plan(kind: PlanKind, operations: &[CommandRequest]) -> Result<String, String> {
     let plan: Vec<PlanOperation> = operations
         .iter()
         .map(|request| PlanOperation {
@@ -82,7 +106,7 @@ pub fn encode_plan(operations: &[CommandRequest]) -> Result<String, String> {
             arguments: request.arguments().to_vec(),
         })
         .collect();
-    validate_plan(&plan)?;
+    validate_plan(kind, &plan)?;
     serde_json::to_string(&plan).map_err(|error| error.to_string())
 }
 
@@ -95,7 +119,7 @@ pub fn decode_results(stdout: &str) -> Result<Vec<CommandResult>, String> {
 
 /// Executor entry point: validate, run each operation in order, stop at the
 /// first failure, and print the results as JSON on stdout.
-pub fn run_plan(json: &str) -> PlanExit {
+pub fn run_plan(kind: PlanKind, json: &str) -> PlanExit {
     let plan: Vec<PlanOperation> = match serde_json::from_str(json) {
         Ok(plan) => plan,
         Err(error) => {
@@ -103,7 +127,7 @@ pub fn run_plan(json: &str) -> PlanExit {
             return PlanExit::InvalidPlan;
         }
     };
-    if let Err(message) = validate_plan(&plan) {
+    if let Err(message) = validate_plan(kind, &plan) {
         eprintln!("myna-config: invalid apply plan: {message}");
         return PlanExit::InvalidPlan;
     }
@@ -152,23 +176,44 @@ fn execute(operation: &PlanOperation) -> PlanResult {
     }
 }
 
-/// Accept only the exact command shapes an apply can contain.
-pub fn validate_plan(plan: &[PlanOperation]) -> Result<(), String> {
+/// Accept only the exact command shapes a plan of `kind` can contain.
+pub fn validate_plan(kind: PlanKind, plan: &[PlanOperation]) -> Result<(), String> {
     if plan.is_empty() {
         return Err("plan has no operations".to_owned());
     }
     for operation in plan {
-        validate_operation(operation)?;
+        if operation.executable != ALLOWED_EXECUTABLE {
+            return Err(format!("unexpected executable {}", operation.executable));
+        }
+        let args: Vec<&str> = operation.arguments.iter().map(String::as_str).collect();
+        match kind {
+            PlanKind::Apply => validate_apply(&args),
+            PlanKind::SetUp => validate_set_up(&args),
+        }?;
     }
     Ok(())
 }
 
-fn validate_operation(operation: &PlanOperation) -> Result<(), String> {
-    if operation.executable != ALLOWED_EXECUTABLE {
-        return Err(format!("unexpected executable {}", operation.executable));
+/// The flag, and installs of Myna and the known backends only: the prompt
+/// says it sets Myna up, so it installs nothing else.
+fn validate_set_up(args: &[&str]) -> Result<(), String> {
+    match args {
+        ["set", "system", "experimental.user-daemons=true"] => Ok(()),
+        ["install", "--edge", snap] => {
+            if *snap == crate::onboarding::MYNA_SNAP
+                || myna_core::language::ModelFamily::from_snap_name(snap).is_some()
+            {
+                Ok(())
+            } else {
+                Err(format!("{snap} is not one of Myna's snaps"))
+            }
+        }
+        _ => Err(unexpected(args)),
     }
-    let args: Vec<&str> = operation.arguments.iter().map(String::as_str).collect();
-    match args.as_slice() {
+}
+
+fn validate_apply(args: &[&str]) -> Result<(), String> {
+    match args {
         ["restart", snap] => {
             if !is_snap_name(snap) {
                 return Err(format!("invalid snap name {snap}"));
@@ -219,12 +264,15 @@ fn validate_operation(operation: &PlanOperation) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Err(format!(
-            "unexpected operation: {} {}",
-            operation.executable,
-            operation.arguments.join(" ")
-        )),
+        _ => Err(unexpected(args)),
     }
+}
+
+fn unexpected(args: &[&str]) -> String {
+    format!(
+        "unexpected operation: {ALLOWED_EXECUTABLE} {}",
+        args.join(" ")
+    )
 }
 
 fn is_snap_name(name: &str) -> bool {
@@ -311,7 +359,7 @@ mod tests {
             ]),
             op(&["restart", "myna-whisper"]),
         ];
-        assert_eq!(validate_plan(&plan), Ok(()));
+        assert_eq!(validate_plan(PlanKind::Apply, &plan), Ok(()));
     }
 
     #[test]
@@ -376,11 +424,42 @@ mod tests {
         ];
         for operation in rejected {
             assert!(
-                validate_plan(std::slice::from_ref(&operation)).is_err(),
+                validate_plan(PlanKind::Apply, std::slice::from_ref(&operation)).is_err(),
                 "{operation:?}"
             );
         }
-        assert!(validate_plan(&[]).is_err());
+        assert!(validate_plan(PlanKind::Apply, &[]).is_err());
+    }
+
+    #[test]
+    fn set_up_turns_the_flag_on_and_installs_only_mynas_snaps() {
+        let plan = vec![
+            op(&["set", "system", "experimental.user-daemons=true"]),
+            op(&["install", "--edge", "myna"]),
+            op(&["install", "--edge", "myna-parakeet"]),
+            op(&["install", "--edge", "myna-whisper"]),
+            op(&["install", "--edge", "myna-funasr"]),
+        ];
+        assert_eq!(validate_plan(PlanKind::SetUp, &plan), Ok(()));
+
+        let rejected = [
+            op(&["install", "--edge", "firefox"]),
+            op(&["install", "myna"]),
+            op(&["install", "--edge", "--dangerous", "myna"]),
+            op(&["install", "--edge", "myna", "myna-parakeet"]),
+            op(&["set", "system", "experimental.user-daemons=false"]),
+            op(&["set", "system", "proxy.http=http://evil"]),
+            op(&["restart", "myna-whisper"]),
+        ];
+        for operation in rejected {
+            assert!(
+                validate_plan(PlanKind::SetUp, std::slice::from_ref(&operation)).is_err(),
+                "{operation:?}"
+            );
+        }
+        // Neither kind accepts the other's operations.
+        assert!(validate_plan(PlanKind::Apply, &plan[..1]).is_err());
+        assert!(validate_plan(PlanKind::Apply, &plan[1..2]).is_err());
     }
 
     #[test]
@@ -404,7 +483,7 @@ mod tests {
                 ["restart", "myna-whisper"].map(str::to_owned).to_vec(),
             ),
         ];
-        let json = encode_plan(&operations).unwrap();
+        let json = encode_plan(PlanKind::Apply, &operations).unwrap();
         let decoded: Vec<PlanOperation> = serde_json::from_str(&json).unwrap();
         assert_eq!(
             decoded,
@@ -420,7 +499,11 @@ mod tests {
                 op(&["restart", "myna-whisper"]),
             ]
         );
-        assert!(encode_plan(&[CommandRequest::new("pkexec".to_owned(), vec![])]).is_err());
+        assert!(encode_plan(
+            PlanKind::Apply,
+            &[CommandRequest::new("pkexec".to_owned(), vec![])]
+        )
+        .is_err());
     }
 
     #[test]
@@ -442,23 +525,35 @@ mod tests {
         assert!(decode_results("not json").is_err());
     }
 
-    #[test]
-    fn the_polkit_action_matches_the_executor_invocation() {
+    /// The policy's action for `kind`, from its `<action` to its `</action>`.
+    fn policy_action(kind: PlanKind) -> &'static str {
         let policy = include_str!("../data/com.canonical.Myna.Config.policy");
-        assert!(policy.contains(&format!(
-            r#"<annotate key="org.freedesktop.policykit.exec.argv1">{APPLY_PLAN_FLAG}</annotate>"#
-        )));
+        let argv1 = format!(
+            r#"<annotate key="org.freedesktop.policykit.exec.argv1">{}</annotate>"#,
+            kind.flag()
+        );
+        let end = policy.find(&argv1).expect("an action for the flag");
+        let start = policy[..end].rfind("<action ").expect("its opening");
+        &policy[start..end]
+    }
+
+    #[test]
+    fn each_plan_kind_has_its_own_polkit_action() {
+        assert!(policy_action(PlanKind::Apply).contains("change speech-to-text model settings"));
+        assert!(policy_action(PlanKind::SetUp).contains("set up Myna"));
     }
 
     #[test]
     fn only_the_active_session_keeps_its_authorization() {
-        let policy = include_str!("../data/com.canonical.Myna.Config.policy");
-        for default in [
-            "<allow_any>auth_admin</allow_any>",
-            "<allow_inactive>auth_admin</allow_inactive>",
-            "<allow_active>auth_admin_keep</allow_active>",
-        ] {
-            assert!(policy.contains(default), "{default} missing");
+        for kind in [PlanKind::Apply, PlanKind::SetUp] {
+            let action = policy_action(kind);
+            for default in [
+                "<allow_any>auth_admin</allow_any>",
+                "<allow_inactive>auth_admin</allow_inactive>",
+                "<allow_active>auth_admin_keep</allow_active>",
+            ] {
+                assert!(action.contains(default), "{kind:?}: {default} missing");
+            }
         }
     }
 }

@@ -439,6 +439,37 @@ pub fn next_install(components: &[Component], done: &[ComponentId]) -> Option<Co
         .find(|id| !done.contains(id))
 }
 
+/// The steps of a run that one privileged set-up takes together, from the
+/// flag on: the flag and the snaps still missing. snapd authorizes the flag
+/// and installs as two polkit actions, so asking it as the user would prompt
+/// twice; the set-up asks once. Empty unless the flag is the next step.
+pub fn set_up_steps(components: &[Component], done: &[ComponentId]) -> Vec<ComponentId> {
+    if next_install(components, done) != Some(ComponentId::UserDaemons) {
+        return Vec::new();
+    }
+    install_plan(components)
+        .into_iter()
+        .filter(|id| !done.contains(id) && *id != ComponentId::ShellExtension)
+        .collect()
+}
+
+/// The step a failed set-up's report names: the install whose `snap
+/// install` failed, else the flag.
+pub fn failed_set_up_step(step: Option<&crate::ports::FailedStep>) -> ComponentId {
+    match step {
+        Some(crate::ports::FailedStep::Command { arguments, .. })
+            if arguments.first().map(String::as_str) == Some("install") =>
+        {
+            if arguments.last().map(String::as_str) == Some(MYNA_SNAP) {
+                ComponentId::Myna
+            } else {
+                ComponentId::Model
+            }
+        }
+        _ => ComponentId::UserDaemons,
+    }
+}
+
 /// What the button's run downloads: the snaps still missing. With the model
 /// among them on an NVIDIA machine it is the most it may fetch.
 pub fn remaining_download(components: &[Component], offer: &ModelOffer) -> DownloadSize {
@@ -914,6 +945,74 @@ mod tests {
             next_install(&with_extension(ExtensionState::Enabled), &[]),
             None
         );
+    }
+
+    #[test]
+    fn one_set_up_takes_the_flag_and_the_missing_snaps_together() {
+        let bare = assess(Machine {
+            extension: ExtensionState::Disabled,
+            ..Machine::default()
+        });
+        assert_eq!(
+            set_up_steps(&bare, &[]),
+            [
+                ComponentId::UserDaemons,
+                ComponentId::Myna,
+                ComponentId::Model
+            ]
+        );
+        // Only from the flag: once it is done the snaps go through snapd.
+        assert!(set_up_steps(&bare, &[ComponentId::UserDaemons]).is_empty());
+        // The flag alone, with Myna and a model installed.
+        let flag_only = assess(Machine {
+            myna_installed: true,
+            backend_discovered: true,
+            ..Machine::default()
+        });
+        assert_eq!(set_up_steps(&flag_only, &[]), [ComponentId::UserDaemons]);
+        let flagged = assess(Machine {
+            user_daemons: true,
+            ..Machine::default()
+        });
+        assert!(set_up_steps(&flagged, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_failed_set_up_names_the_step_whose_command_failed() {
+        use crate::ports::FailedStep;
+        let command = |arguments: &[&str]| FailedStep::Command {
+            executable: "snap".to_owned(),
+            arguments: arguments.iter().map(|value| (*value).to_owned()).collect(),
+            exit_status: Some(1),
+            stderr: String::new(),
+        };
+        assert_eq!(
+            failed_set_up_step(Some(&command(&["install", "--edge", "myna"]))),
+            ComponentId::Myna
+        );
+        assert_eq!(
+            failed_set_up_step(Some(&command(&["install", "--edge", "myna-parakeet"]))),
+            ComponentId::Model
+        );
+        assert_eq!(
+            failed_set_up_step(Some(&command(&[
+                "set",
+                "system",
+                "experimental.user-daemons=true"
+            ]))),
+            ComponentId::UserDaemons
+        );
+        // pkexec refusing the prompt names pkexec, before any step ran.
+        assert_eq!(
+            failed_set_up_step(Some(&FailedStep::Command {
+                executable: "pkexec".to_owned(),
+                arguments: Vec::new(),
+                exit_status: Some(127),
+                stderr: String::new(),
+            })),
+            ComponentId::UserDaemons
+        );
+        assert_eq!(failed_set_up_step(None), ComponentId::UserDaemons);
     }
 
     #[test]

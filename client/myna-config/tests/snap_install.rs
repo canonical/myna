@@ -78,11 +78,12 @@ impl SystemConfigurator for Snapd {
         unreachable!("an install reads no flag")
     }
 
-    async fn enable_user_daemons(
+    async fn set_up(
         &self,
+        _snaps: &[&str],
         _cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
-        unreachable!("an install turns no flag on")
+        unreachable!("an install sets nothing up")
     }
 
     async fn install_snap(

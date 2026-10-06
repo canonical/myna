@@ -4653,11 +4653,12 @@ mod tests {
             Ok(true)
         }
 
-        async fn enable_user_daemons(
+        async fn set_up(
             &self,
+            _snaps: &[&str],
             _cancellation: CancellationToken,
         ) -> Result<(), crate::ports::SystemConfiguratorError> {
-            unreachable!("the settings window never turns the flag on")
+            unreachable!("the settings window never sets up")
         }
 
         async fn install_snap(
@@ -5251,11 +5252,12 @@ mod tests {
             Ok(true)
         }
 
-        async fn enable_user_daemons(
+        async fn set_up(
             &self,
+            _snaps: &[&str],
             _cancellation: CancellationToken,
         ) -> Result<(), crate::ports::SystemConfiguratorError> {
-            unreachable!("the settings window never turns the flag on")
+            unreachable!("the settings window never sets up")
         }
 
         async fn install_snap(

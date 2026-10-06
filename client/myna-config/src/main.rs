@@ -1,6 +1,7 @@
 use gtk::glib;
 use gtk4 as gtk;
 
+use myna_config::apply_plan::PlanKind;
 use myna_config::{parse_args, Command, USAGE};
 
 fn main() -> glib::ExitCode {
@@ -20,9 +21,12 @@ fn main() -> glib::ExitCode {
             println!("myna-config {}", env!("MYNA_VERSION"));
             glib::ExitCode::SUCCESS
         }
-        Ok(Command::ApplyPlan(plan)) => {
-            glib::ExitCode::from(myna_config::apply_plan::run_plan(&plan).code() as u8)
-        }
+        Ok(Command::ApplyPlan(plan)) => glib::ExitCode::from(
+            myna_config::apply_plan::run_plan(PlanKind::Apply, &plan).code() as u8,
+        ),
+        Ok(Command::SetUp(plan)) => glib::ExitCode::from(
+            myna_config::apply_plan::run_plan(PlanKind::SetUp, &plan).code() as u8,
+        ),
         Err(message) => {
             eprintln!("{message}");
             glib::ExitCode::FAILURE

@@ -23,10 +23,10 @@ use crate::adapters::system_configurator::PkexecSystemConfigurator;
 use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
-    assess, can_advance, completes, flag_enabled, forward_leads, install_view, installs,
-    model_offer, needs_onboarding, next_install, polls, remaining_download, settled,
-    while_installing, Component, ComponentId, ComponentState, DownloadSize, InstallView, Machine,
-    ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads, install_view,
+    installs, model_offer, needs_onboarding, next_install, polls, remaining_download, set_up_steps,
+    settled, while_installing, Component, ComponentId, ComponentState, DownloadSize, InstallView,
+    Machine, ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
 };
 use crate::ports::{
     BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
@@ -96,7 +96,6 @@ pub struct OnboardingUi {
     running: Cell<bool>,
     /// The run's current step.
     run_step: Cell<Option<ComponentId>>,
-    flag_cancellation: RefCell<Option<CancellationToken>>,
     /// Bumped by every install step, so a read that started before one is
     /// not taken for the machine after it.
     epoch: Cell<u64>,
@@ -202,7 +201,6 @@ impl OnboardingUi {
             busy: Cell::new(false),
             running: Cell::new(false),
             run_step: Cell::new(None),
-            flag_cancellation: RefCell::default(),
             epoch: Cell::new(0),
             installs: RefCell::default(),
             install_cancellation: CancellationToken::new(),
@@ -288,9 +286,6 @@ impl OnboardingUi {
             let held = RefCell::new(Some(ui.clone()));
             move |_| {
                 if let Some(ui) = held.borrow_mut().take() {
-                    if let Some(cancellation) = ui.flag_cancellation.take() {
-                        cancellation.cancel();
-                    }
                     ui.install_cancellation.cancel();
                     if let Some(cancellation) = ui.setup_cancellation.take() {
                         ui.log("setup: cancelled, the wizard closed");
@@ -391,9 +386,10 @@ impl OnboardingUi {
     }
 
     /// Install every missing component the wizard can, in order: the flag,
-    /// the app, the model and the extension. snapd's polkit prompts are the
-    /// only questions, and its `auth_admin_keep` lets the model's install
-    /// follow the app's unasked. A dismissed prompt stops the run silently, a
+    /// the app, the model and the extension. One polkit prompt is the only
+    /// question: the flag and the snaps after it go through one privileged
+    /// set-up, or, with the flag on, snapd's `auth_admin_keep` lets the
+    /// model's install follow the app's unasked. A dismissed prompt stops the run silently, a
     /// failure with a toast whose Details open the report; either way the
     /// button offers again what is still missing. Once nothing is left it
     /// sets dictation up and moves on, as Next would.
@@ -419,12 +415,24 @@ impl OnboardingUi {
                     ui.run_step.set(Some(id));
                     ui.render();
                 }
-                match install_step(&ui, id).await {
-                    Ok(()) => {
-                        done.push(id);
+                let set_up = ui
+                    .upgrade()
+                    .map(|ui| set_up_steps(&ui.shown(), &done))
+                    .unwrap_or_default();
+                let outcome = if set_up.is_empty() {
+                    install_step(&ui, id)
+                        .await
+                        .map(|()| vec![id])
+                        .map_err(|error| (id, error))
+                } else {
+                    set_up_step(&ui, &set_up).await.map(|()| set_up)
+                };
+                match outcome {
+                    Ok(steps) => {
+                        done.extend(steps);
                         reread(&ui).await;
                     }
-                    Err(error) => break Some((id, error)),
+                    Err((id, error)) => break Some((id, error)),
                 }
             };
             let Some(ui) = ui.upgrade() else {
@@ -974,9 +982,9 @@ fn install_failed(id: ComponentId) -> String {
     }
 }
 
-/// One step of the button's run. The flag and the snaps go through snapd as
-/// the user, which raises polkit's prompt itself; the extension asks the
-/// user's own gnome-shell.
+/// One step of the button's run, with the flag on: the snaps go through
+/// snapd as the user, which raises polkit's prompt itself; the extension asks
+/// the user's own gnome-shell.
 async fn install_step(
     ui: &std::rc::Weak<OnboardingUi>,
     id: ComponentId,
@@ -987,17 +995,8 @@ async fn install_step(
     strong.epoch.set(strong.epoch.get() + 1);
     let configurator = strong.configurator.clone();
     let outcome = match id {
-        ComponentId::UserDaemons => {
-            let cancellation = CancellationToken::new();
-            strong.flag_cancellation.replace(Some(cancellation.clone()));
-            strong.log("flag: enabling user daemons");
-            drop(strong);
-            let outcome = configurator.enable_user_daemons(cancellation).await;
-            if let Some(ui) = ui.upgrade() {
-                ui.flag_cancellation.take();
-            }
-            outcome
-        }
+        // Always part of a set-up.
+        ComponentId::UserDaemons => Ok(()),
         ComponentId::Myna | ComponentId::Model => {
             let Some((snap, expected)) = installs(id, &strong.offer.get()) else {
                 return Ok(());
@@ -1050,6 +1049,95 @@ async fn install_step(
         }
     }
     outcome
+}
+
+/// The flag and `steps`' snaps as one privileged set-up, one prompt. snapd's
+/// changes are read meanwhile, so the line under the button names the snap
+/// installing and its download, as for an install asked as the user. The
+/// executor is root and outlives a closed wizard, which only stops following.
+async fn set_up_step(
+    ui: &std::rc::Weak<OnboardingUi>,
+    steps: &[ComponentId],
+) -> Result<(), (ComponentId, SystemConfiguratorError)> {
+    let cancelled = (ComponentId::UserDaemons, SystemConfiguratorError::Cancelled);
+    let Some(strong) = ui.upgrade() else {
+        return Err(cancelled);
+    };
+    strong.epoch.set(strong.epoch.get() + 1);
+    let offer = strong.offer.get();
+    let snaps: Vec<(ComponentId, &'static str, u64)> = steps
+        .iter()
+        .filter_map(|id| installs(*id, &offer).map(|(snap, bytes)| (*id, snap, bytes)))
+        .collect();
+    let names: Vec<&'static str> = snaps.iter().map(|(_, snap, _)| *snap).collect();
+    strong.log(&format!("set-up: the flag and {names:?} under one prompt"));
+    let configurator = strong.configurator.clone();
+    let cancellation = strong.install_cancellation.clone();
+    let interval = strong.follow_interval.get();
+    drop(strong);
+
+    let finished = Rc::new(RefCell::new(None));
+    glib::spawn_future_local({
+        let configurator = configurator.clone();
+        let finished = finished.clone();
+        async move {
+            let outcome = configurator.set_up(&names, CancellationToken::new()).await;
+            finished.replace(Some(outcome));
+        }
+    });
+    let mut highest = BTreeMap::new();
+    let outcome = loop {
+        if let Some(outcome) = finished.take() {
+            break outcome;
+        }
+        if cancellation.is_cancelled() {
+            return Err(cancelled);
+        }
+        if let Ok(changes) = configurator.changes_in_progress(cancellation.clone()).await {
+            let Some(ui) = ui.upgrade() else {
+                return Err(cancelled);
+            };
+            for (id, snap, expected) in &snaps {
+                let Some(change) = pending_install(&changes, snap) else {
+                    continue;
+                };
+                let highest = highest.entry(*id).or_insert(0);
+                let percent = change
+                    .download_percent(*expected)
+                    .map(|percent| percent.max(*highest));
+                *highest = percent.unwrap_or(*highest);
+                ui.run_step.set(Some(*id));
+                ui.installs
+                    .borrow_mut()
+                    .insert(*id, Install::Running(percent));
+                ui.render();
+            }
+        }
+        glib::timeout_future(interval).await;
+    };
+
+    let Some(ui) = ui.upgrade() else {
+        return outcome.map_err(|error| (ComponentId::UserDaemons, error));
+    };
+    ui.epoch.set(ui.epoch.get() + 1);
+    let mut installs = ui.installs.borrow_mut();
+    for (id, _, _) in &snaps {
+        match outcome {
+            Ok(()) => installs.insert(*id, Install::Confirming),
+            Err(_) => installs.remove(id),
+        };
+    }
+    drop(installs);
+    outcome.map_err(|error| {
+        let failed = failed_set_up_step(error.step());
+        match &error {
+            SystemConfiguratorError::Cancelled => ui.log("set-up: the prompt was dismissed"),
+            error => ui.log(&format!("set-up: {failed:?} failed: {error}")),
+        }
+        (failed, error)
+    })?;
+    ui.log("set-up: done");
+    Ok(())
 }
 
 /// Re-read the machine between the run's steps.

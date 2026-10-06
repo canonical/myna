@@ -16,4 +16,16 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/myna-config</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">--apply-plan</annotate>
   </action>
+  <action id="com.canonical.Myna.Config.set-up">
+    <description>Set up Myna</description>
+    <message>Authentication is required to set up Myna</message>
+    <icon_name>com.canonical.Myna.Config</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/myna-config</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">--set-up</annotate>
+  </action>
 </policyconfig>

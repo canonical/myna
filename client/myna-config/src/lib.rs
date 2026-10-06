@@ -48,6 +48,8 @@ pub enum Command {
     /// Run a serialized apply plan as root. Not advertised in `USAGE`: the
     /// UI invokes it through `pkexec` and nothing else should.
     ApplyPlan(String),
+    /// Run onboarding's serialized set-up plan as root, the same way.
+    SetUp(String),
 }
 
 pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
@@ -58,15 +60,16 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, Str
         let next = match argument.as_str() {
             "--help" | "-h" => Command::PrintHelp,
             "--version" => Command::PrintVersion,
-            apply_plan::APPLY_PLAN_FLAG => match args.next() {
-                Some(plan) => Command::ApplyPlan(plan),
-                None => {
-                    return Err(format!(
-                        "myna-config: {} requires a plan argument",
-                        apply_plan::APPLY_PLAN_FLAG
-                    ))
+            flag @ (apply_plan::APPLY_PLAN_FLAG | apply_plan::SET_UP_FLAG) => {
+                let Some(plan) = args.next() else {
+                    return Err(format!("myna-config: {flag} requires a plan argument"));
+                };
+                if flag == apply_plan::SET_UP_FLAG {
+                    Command::SetUp(plan)
+                } else {
+                    Command::ApplyPlan(plan)
                 }
-            },
+            }
             other => return Err(format!("myna-config: unknown option {other}\n\n{USAGE}")),
         };
         if command != Command::Launch {

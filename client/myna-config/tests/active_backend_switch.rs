@@ -296,11 +296,12 @@ impl SystemConfigurator for FakeConfigurator {
         Ok(true)
     }
 
-    async fn enable_user_daemons(
+    async fn set_up(
         &self,
+        _snaps: &[&str],
         _cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
-        unreachable!("a backend switch never turns the flag on")
+        unreachable!("a backend switch never sets up")
     }
 
     async fn install_snap(

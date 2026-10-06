@@ -20,7 +20,7 @@ use myna_config::adapters::snapd_client::{
 use myna_config::adapters::system_configurator::PkexecSystemConfigurator;
 use myna_config::command::{CancellationToken, CommandOutput, FakeCommandRunner};
 use myna_config::domain::{parse_connections, BackendIdentity};
-use myna_config::ports::{FailedStep, SystemConfigurator, SystemConfiguratorError};
+use myna_config::ports::{SystemConfigurator, SystemConfiguratorError};
 use myna_config::snap_changes::{ApplyProgress, ChangeInProgress};
 
 fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
@@ -832,42 +832,6 @@ const CHANGE_9_ACCEPTED: &str = r#"{"type":"async","status-code":202,"change":"9
 const CHANGE_9_DONE: &str =
     r#"{"type":"sync","status-code":200,"result":{"ready":true,"status":"Done"}}"#;
 
-/// snapd asks polkit for `manage-configuration`, and the change is done once
-/// the core snap's configure hook ran.
-#[test]
-fn turning_user_daemons_on_puts_the_flag_and_follows_its_change() {
-    let fake = FakeSnapd::start(vec![
-        step(
-            "PUT /v2/snaps/system/conf ",
-            http_body(202, "Accepted", CHANGE_9_ACCEPTED),
-            None,
-        ),
-        step(
-            "GET /v2/changes/9 ",
-            http_body(
-                200,
-                "OK",
-                r#"{"type":"sync","status-code":200,"result":{"ready":false,"status":"Doing"}}"#,
-            ),
-            None,
-        ),
-        step(
-            "GET /v2/changes/9 ",
-            http_body(200, "OK", CHANGE_9_DONE),
-            None,
-        ),
-    ]);
-
-    let outcome = block_on(fake.client().enable_user_daemons(CancellationToken::new()));
-
-    assert_eq!(outcome, Ok(()));
-    let calls = fake.calls.lock().unwrap().clone();
-    assert_eq!(calls.len(), 3, "{calls:?}");
-    assert!(calls[0].starts_with("PUT /v2/snaps/system/conf HTTP/1.1\r\n"));
-    assert!(calls[0].contains("X-Allow-Interaction: true\r\n"));
-    assert!(calls[0].ends_with("\r\n\r\n{\"experimental.user-daemons\":true}"));
-}
-
 /// snapd answers only once the user has answered polkit, which may take
 /// longer than any read: measured 40 s on Noble for a prompt left open.
 ///
@@ -879,7 +843,7 @@ fn turning_user_daemons_on_puts_the_flag_and_follows_its_change() {
 fn the_authorization_prompt_may_outlast_a_request() {
     let fake = FakeSnapd::start(vec![
         step(
-            "PUT /v2/snaps/system/conf ",
+            "POST /v2/interfaces ",
             http_body(202, "Accepted", CHANGE_9_ACCEPTED),
             Some(Duration::from_millis(600)),
         ),
@@ -897,12 +861,18 @@ fn the_authorization_prompt_may_outlast_a_request() {
             total: Duration::from_millis(400),
         });
 
-    let outcome = block_on(client.enable_user_daemons(CancellationToken::new()));
+    let outcome = block_on(client.apply_interface_action(
+        InterfaceAction::Disconnect {
+            backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
+        },
+        CancellationToken::new(),
+    ));
 
     assert!(
         matches!(
             outcome,
-            Ok(())
+            Ok(SnapdOutcome::Async(_))
                 | Err(SnapdError::Timeout {
                     context: SnapdTimeoutContext::ChangePolling,
                     ..
@@ -944,55 +914,12 @@ fn a_connect_prompt_may_outlast_a_request() {
     assert_eq!(outcome, Ok(SnapdOutcome::Sync));
 }
 
-fn enable_user_daemons_answered(response: String) -> Result<(), SystemConfiguratorError> {
-    let fake = FakeSnapd::start(vec![step("PUT /v2/snaps/system/conf ", response, None)]);
-    let configurator = PkexecSystemConfigurator::with_snapd_client(
-        Arc::new(FakeCommandRunner::default()),
-        Arc::new(fake.client()),
-    );
-    block_on(configurator.enable_user_daemons(CancellationToken::new()))
-}
-
+/// A change snapd accepted and then failed carries snapd's error.
 #[test]
-fn a_dismissed_prompt_cancels_turning_user_daemons_on() {
-    assert_eq!(
-        enable_user_daemons_answered(http_body(
-            403,
-            "Forbidden",
-            r#"{"type":"error","status-code":403,"result":{"message":"cancelled","kind":"auth-cancelled"}}"#,
-        )),
-        Err(SystemConfiguratorError::Cancelled)
-    );
-}
-
-#[test]
-fn a_refused_prompt_denies_turning_user_daemons_on() {
-    let refused = enable_user_daemons_answered(http_body(
-        401,
-        "Unauthorized",
-        r#"{"type":"error","status-code":401,"result":{"message":"access denied","kind":"login-required"}}"#,
-    ));
-    match refused {
-        Err(SystemConfiguratorError::AuthorizationDenied { step, message }) => {
-            assert_eq!(
-                step,
-                FailedStep::Snapd {
-                    request: "PUT /v2/snaps/system/conf (experimental.user-daemons=true)"
-                        .to_owned(),
-                    http_status: Some(401),
-                }
-            );
-            assert_eq!(message, "access denied");
-        }
-        other => panic!("expected an authorization denial, got {other:?}"),
-    }
-}
-
-#[test]
-fn a_failed_configuration_change_is_reported() {
+fn a_failed_change_is_reported() {
     let fake = FakeSnapd::start(vec![
         step(
-            "PUT /v2/snaps/system/conf ",
+            "POST /v2/interfaces ",
             http_body(202, "Accepted", CHANGE_9_ACCEPTED),
             None,
         ),
@@ -1006,15 +933,19 @@ fn a_failed_configuration_change_is_reported() {
             None,
         ),
     ]);
-    let configurator = PkexecSystemConfigurator::with_snapd_client(
-        Arc::new(FakeCommandRunner::default()),
-        Arc::new(fake.client()),
-    );
 
-    let failed = block_on(configurator.enable_user_daemons(CancellationToken::new()));
+    let failed = block_on(fake.client().apply_interface_action(
+        InterfaceAction::Disconnect {
+            backend_snap: "backend".into(),
+            backend_slot: "provider".into(),
+        },
+        CancellationToken::new(),
+    ));
 
     assert!(
-        matches!(&failed, Err(SystemConfiguratorError::Execution { message, .. }) if message == "cannot run hook"),
+        failed
+            .as_ref()
+            .is_err_and(|error| error.to_string().contains("cannot run hook")),
         "{failed:?}"
     );
 }

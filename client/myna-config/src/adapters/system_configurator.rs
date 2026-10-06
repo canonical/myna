@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use crate::active_backend::{myna_restart_request, SwitchPlan};
 use crate::adapters::snapd_client::{
     is_valid_slot_name, is_valid_snap_name, InterfaceAction, SnapdClient, SnapdError,
-    UnixSocketSnapdClient, INTERFACES, SYSTEM_CONF,
+    UnixSocketSnapdClient, INTERFACES,
 };
-use crate::apply_plan::{self, APPLY_PLAN_FLAG};
+use crate::apply_plan::{self, PlanKind};
 use crate::backend_apply::ApplyPreview;
 use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRunner};
 use crate::domain::CommandResult;
@@ -144,9 +144,10 @@ impl SystemConfigurator for PkexecSystemConfigurator {
         preview: &ApplyPreview,
         cancellation: CancellationToken,
     ) -> Result<Vec<CommandResult>, SystemConfiguratorFailure> {
-        execute_apply_plan(
+        execute_plan(
             self.runner.as_ref(),
             &self.executor,
+            PlanKind::Apply,
             preview.operations(),
             cancellation,
         )
@@ -170,14 +171,30 @@ impl SystemConfigurator for PkexecSystemConfigurator {
             .map_err(|error| error.to_string())
     }
 
-    async fn enable_user_daemons(
+    async fn set_up(
         &self,
+        snaps: &[&str],
         cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError> {
-        self.snapd
-            .enable_user_daemons(cancellation)
-            .await
-            .map_err(|error| snapd_error_to_system_error(user_daemons_on_request(), error))
+        let operations: Vec<CommandRequest> =
+            std::iter::once(["set", "system", "experimental.user-daemons=true"].map(str::to_owned))
+                .chain(
+                    snaps
+                        .iter()
+                        .map(|snap| ["install", "--edge", snap].map(str::to_owned)),
+                )
+                .map(|arguments| CommandRequest::new("snap".to_owned(), arguments.to_vec()))
+                .collect();
+        execute_plan(
+            self.runner.as_ref(),
+            &self.executor,
+            PlanKind::SetUp,
+            &operations,
+            cancellation,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|failure| failure.into_parts().1)
     }
 
     async fn install_snap(
@@ -206,10 +223,6 @@ impl SystemConfigurator for PkexecSystemConfigurator {
 /// How a report names a snapd request: method, path and what it asks for.
 fn snapd_request(method: &str, path: &str, what: &str) -> String {
     format!("{method} {path} ({what})")
-}
-
-fn user_daemons_on_request() -> String {
-    snapd_request("PUT", SYSTEM_CONF, "experimental.user-daemons=true")
 }
 
 fn interface_request(request: &CommandRequest) -> String {
@@ -447,13 +460,14 @@ pub(crate) fn snapd_error_to_system_error(
 /// one result per operation it ran, stopping at the first failure, so a
 /// partial apply still reports exactly which commands completed.
 #[allow(clippy::result_large_err)]
-async fn execute_apply_plan(
+async fn execute_plan(
     runner: &dyn CommandRunner,
     executor: &Path,
+    kind: PlanKind,
     operations: &[CommandRequest],
     cancellation: CancellationToken,
 ) -> Result<Vec<CommandResult>, SystemConfiguratorFailure> {
-    let plan = apply_plan::encode_plan(operations).map_err(|message| {
+    let plan = apply_plan::encode_plan(kind, operations).map_err(|message| {
         SystemConfiguratorFailure::new(
             Vec::new(),
             SystemConfiguratorError::execution(
@@ -467,7 +481,7 @@ async fn execute_apply_plan(
     })?;
     let arguments = vec![
         executor.to_string_lossy().into_owned(),
-        APPLY_PLAN_FLAG.to_owned(),
+        kind.flag().to_owned(),
         plan,
     ];
     // No deadline: the prompt waits on the user and a model download on the
@@ -751,11 +765,11 @@ mod tests {
         assert_eq!(calls[0].executable(), "pkexec");
         assert_eq!(
             &calls[0].arguments()[..2],
-            ["/opt/myna/bin/myna-config", APPLY_PLAN_FLAG]
+            ["/opt/myna/bin/myna-config", apply_plan::APPLY_PLAN_FLAG]
         );
         assert_eq!(
             calls[0].arguments()[2],
-            apply_plan::encode_plan(preview.operations()).unwrap()
+            apply_plan::encode_plan(PlanKind::Apply, preview.operations()).unwrap()
         );
         assert_eq!(results.len(), preview.operations().len());
         for (result, operation) in results.iter().zip(preview.operations()) {
@@ -763,6 +777,88 @@ mod tests {
             assert_eq!(result.arguments(), operation.arguments());
             assert_eq!(result.exit_status(), Some(0));
         }
+    }
+
+    fn set_up_operations(snaps: &[&str]) -> Vec<CommandRequest> {
+        std::iter::once(vec!["set", "system", "experimental.user-daemons=true"])
+            .chain(snaps.iter().map(|snap| vec!["install", "--edge", snap]))
+            .map(|arguments| {
+                CommandRequest::new(
+                    "snap".to_owned(),
+                    arguments.into_iter().map(str::to_owned).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// The flag and the installs are two snapd actions, two prompts as the
+    /// user; as root through one pkexec they are one.
+    #[test]
+    fn set_up_turns_the_flag_on_and_installs_through_one_pkexec() {
+        let operations = set_up_operations(&["myna", "myna-parakeet"]);
+        let runner = FakeCommandRunner::scripted([Ok(CommandOutput::new(
+            Some(0),
+            plan_output(&operations, None),
+            "",
+        ))]);
+        let adapter = PkexecSystemConfigurator::new(Arc::new(runner.clone()))
+            .with_executor("/usr/bin/myna-config");
+
+        block_on(adapter.set_up(&["myna", "myna-parakeet"], CancellationToken::new())).unwrap();
+
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].executable(), "pkexec");
+        assert_eq!(
+            calls[0].arguments(),
+            [
+                "/usr/bin/myna-config".to_owned(),
+                apply_plan::SET_UP_FLAG.to_owned(),
+                apply_plan::encode_plan(PlanKind::SetUp, &operations).unwrap(),
+            ]
+        );
+        assert_eq!(calls[0].timeout(), None);
+    }
+
+    #[test]
+    fn a_failed_install_in_the_set_up_is_reported_as_its_command() {
+        let operations = set_up_operations(&["myna", "myna-parakeet"]);
+        let runner = FakeCommandRunner::scripted([Err(CommandError::NonZero {
+            exit_status: Some(1),
+            stdout: plan_output(&operations, Some((2, "error: cannot install"))),
+            stderr: String::new(),
+        })]);
+        let adapter = PkexecSystemConfigurator::new(Arc::new(runner));
+
+        let error = block_on(adapter.set_up(&["myna", "myna-parakeet"], CancellationToken::new()))
+            .unwrap_err();
+
+        assert_eq!(
+            error.step(),
+            Some(&FailedStep::Command {
+                executable: "snap".to_owned(),
+                arguments: ["install", "--edge", "myna-parakeet"]
+                    .map(str::to_owned)
+                    .to_vec(),
+                exit_status: Some(1),
+                stderr: "error: cannot install".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_dismissed_set_up_prompt_is_a_cancellation() {
+        let runner = FakeCommandRunner::scripted([Err(CommandError::NonZero {
+            exit_status: Some(126),
+            stdout: String::new(),
+            stderr: String::new(),
+        })]);
+        let adapter = PkexecSystemConfigurator::new(Arc::new(runner));
+
+        assert_eq!(
+            block_on(adapter.set_up(&[], CancellationToken::new())),
+            Err(SystemConfiguratorError::Cancelled)
+        );
     }
 
     #[test]
@@ -871,7 +967,7 @@ mod tests {
     #[test]
     fn a_refused_snapd_request_is_reported_as_the_request_not_a_command() {
         let error = snapd_error_to_system_error(
-            user_daemons_on_request(),
+            install_request("myna"),
             SnapdError::AuthorizationDenied {
                 status_code: 401,
                 kind: Some("login-required".to_owned()),
@@ -881,7 +977,7 @@ mod tests {
 
         assert_eq!(
             crate::backend_ui::system_error_details(&error),
-            "Request: PUT /v2/snaps/system/conf (experimental.user-daemons=true)\n\
+            "Request: POST /v2/snaps/myna (install, latest/edge)\n\
              HTTP status: 401\n\
              Message: access denied"
         );
@@ -890,7 +986,7 @@ mod tests {
     #[test]
     fn a_message_of_several_lines_starts_on_its_own() {
         let error = snapd_error_to_system_error(
-            user_daemons_on_request(),
+            install_request("myna"),
             SnapdError::Transport {
                 message: "first\nsecond".to_owned(),
             },
@@ -898,7 +994,7 @@ mod tests {
 
         assert_eq!(
             crate::backend_ui::system_error_details(&error),
-            "Request: PUT /v2/snaps/system/conf (experimental.user-daemons=true)\n\
+            "Request: POST /v2/snaps/myna (install, latest/edge)\n\
              Message:\nsnapd transport error: first\nsecond"
         );
     }
@@ -906,7 +1002,7 @@ mod tests {
     #[test]
     fn a_snapd_failure_without_an_answer_has_no_http_status() {
         let error = snapd_error_to_system_error(
-            user_daemons_on_request(),
+            install_request("myna"),
             SnapdError::Transport {
                 message: "connection refused".to_owned(),
             },
@@ -914,7 +1010,7 @@ mod tests {
 
         assert_eq!(
             crate::backend_ui::system_error_details(&error),
-            "Request: PUT /v2/snaps/system/conf (experimental.user-daemons=true)\n\
+            "Request: POST /v2/snaps/myna (install, latest/edge)\n\
              Message: snapd transport error: connection refused"
         );
     }
@@ -1035,13 +1131,6 @@ mod tests {
             _cancellation: CancellationToken,
         ) -> Result<bool, SnapdError> {
             unreachable!("no switch reads the flag")
-        }
-
-        async fn enable_user_daemons(
-            &self,
-            _cancellation: CancellationToken,
-        ) -> Result<(), SnapdError> {
-            unreachable!("no switch turns the flag on")
         }
 
         async fn install_snap(

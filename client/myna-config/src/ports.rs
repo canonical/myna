@@ -88,10 +88,14 @@ pub trait SystemConfigurator {
     /// user.
     async fn user_daemons_enabled(&self, cancellation: CancellationToken) -> Result<bool, String>;
 
-    /// Turn snapd's `experimental.user-daemons` flag on, as the user: snapd
-    /// raises polkit's prompt itself.
-    async fn enable_user_daemons(
+    /// Turn snapd's `experimental.user-daemons` flag on, then install
+    /// `snaps` from edge one after another, as root under one `pkexec`: snapd
+    /// keeps a polkit authorization per action, and the flag and installs are
+    /// two, so asking snapd as the user would prompt twice. Returns once
+    /// every install is done; their changes can be read meanwhile.
+    async fn set_up(
         &self,
+        snaps: &[&str],
         cancellation: CancellationToken,
     ) -> Result<(), SystemConfiguratorError>;
 
@@ -186,7 +190,7 @@ pub enum FailedStep {
         stderr: String,
     },
     /// A request to snapd's REST API made as the user, such as
-    /// `PUT /v2/snaps/system/conf (experimental.user-daemons=true)`; no
+    /// `POST /v2/snaps/myna (install, latest/edge)`; no
     /// status when snapd never answered.
     Snapd {
         request: String,

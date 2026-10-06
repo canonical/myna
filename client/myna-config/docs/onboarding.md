@@ -126,34 +126,47 @@ Next is insensitive meanwhile. After each step a fresh read of the machine
 picks the next one; a step that succeeded is not retried when that read does
 not show it yet (`onboarding::next_install`).
 
-The steps cost as few polkit prompts as snapd allows. The flag goes through
-snapd's REST API as the user (`PUT /v2/snaps/system/conf`), and snapd raises
-polkit's prompt for `io.snapcraft.snapd.manage-configuration` itself: no
-root code of ours. The prompt therefore shows snapd's wording ("access or
-modify snap configuration"), not a Myna one. snapd answers only once the
-prompt is, 40 s for one left open on Noble, so the write waits up to 10 min
-for that answer (`SnapdTimeouts::authorization`) before following the
-change; interface connects wait the same way. The flag is never turned off,
-since snapd refuses Myna's refreshes without it.
+The run costs one polkit prompt. Asked of snapd as the user, the flag
+(`PUT /v2/snaps/system/conf`) and the installs (`POST /v2/snaps/<name>`)
+are two polkit actions, `io.snapcraft.snapd.manage-configuration` and
+`io.snapcraft.snapd.manage`, each `auth_admin_keep` on its own: a bare
+machine asked twice, the first time in snapd's wording ("access or modify
+snap configuration"), which says nothing of why. So while the flag is
+missing, the flag and the snaps still missing after it are one set-up
+(`onboarding::set_up_steps`): one `pkexec myna-config --set-up <plan>`,
+whose prompt shows Myna's action ("Authentication is required to set up
+Myna", `data/com.canonical.Myna.Config.policy`). The executor is root,
+so snapd asks nothing more; it runs `snap set system
+experimental.user-daemons=true`, then `snap install --edge` of each snap in
+order, each waiting for its change, and accepts no other command or snap
+(`apply_plan.rs`). Meanwhile the step reads `/v2/changes?select=in-progress`
+as the user once a second and names the snap whose install change is
+running, with its download's percentage; until one appears it reads
+"Enabling user daemons support". A failed set-up names the failed command:
+the toast is the install's when `snap install` failed, the flag's otherwise.
+The root executor outlives a closed wizard; closing only stops following.
+The flag is never turned off, since snapd refuses Myna's refreshes without
+it.
 
-The snaps are asked of snapd as the user (`POST /v2/snaps/<name>`,
-`{"action":"install","channel":"latest/edge"}`), the same install `snap
-install --edge` makes, and snapd raises polkit's prompt for
-`io.snapcraft.snapd.manage` itself. That action is `auth_admin_keep` per
-process, so the model installing right after the app asks nothing more: a
-bare machine asks twice, once for the flag and once for the snaps. snapd
-answers once the prompt is answered; the step then follows the change `GET
-/v2/changes/<id>` once a second (`snap_install.rs`); ten failed reads in a
-row end it, so snapd restarting mid-install is no failure. The percentage
-is the bytes of every download task in the change over what they announce or
-what the step expected to fetch, whichever is more, never going down. It
-shows only while a download runs: mounting, hooks and services take 15 s or
-more after the app's download, and 100% there read as stuck (seen on
-Noble). The model's component download runs inside the backend's own
-install change, fetched by its install hook's engine choice, so the model's
-step follows it to the end, the percentage resuming where the snap's own
-download left it. A download served from snapd's cache reports no bytes, so
-a cached install shows no percentage.
+With the flag on, the snaps are asked of snapd as the user (`POST
+/v2/snaps/<name>`, `{"action":"install","channel":"latest/edge"}`), the
+same install `snap install --edge` makes, and snapd raises polkit's prompt
+for `io.snapcraft.snapd.manage` itself, per process `auth_admin_keep`, so
+the model installing right after the app asks nothing more. snapd answers
+only once the prompt is, 40 s for one left open on Noble, so the request
+waits up to 10 min for that answer (`SnapdTimeouts::authorization`); the
+step then follows the change `GET /v2/changes/<id>` once a second
+(`snap_install.rs`); ten failed reads in a row end it, so snapd restarting
+mid-install is no failure. The percentage is the bytes of every download
+task in the change over what they announce or what the step expected to
+fetch, whichever is more, never going down. It shows only while a download
+runs: mounting, hooks and services take 15 s or more after the app's
+download, and 100% there read as stuck (seen on Noble). The model's
+component download runs inside the backend's own install change, fetched by
+its install hook's engine choice, so the model's step follows it to the
+end, the percentage resuming where the snap's own download left it. A
+download served from snapd's cache reports no bytes, so a cached install
+shows no percentage.
 
 The extension's step asks the user's own gnome-shell over the session bus
 (`org.gnome.Shell.Extensions.EnableExtension`): no polkit, no prompt. The
@@ -172,8 +185,9 @@ change. Dismissing a prompt stops the run silently, the button offering
 again what is still missing. A refusal, a request snapd rejects (Myna
 without the flag: "feature flag validation failed"), a change that fails or
 gnome-shell refusing the extension stops it with a toast whose Details open
-the report, which names the failed step as what it was: snapd's request,
-its HTTP status (202 for a change that failed after snapd accepted it) and
+the report, which names the failed step as what it was: the set-up's
+failed `snap` command with its exit status and error, snapd's request, its
+HTTP status (202 for a change that failed after snapd accepted it) and
 snapd's error, or the D-Bus call. The button then offers again, sized for
 what is still missing. Closing the wizard stops following; snapd's change
 carries on.
