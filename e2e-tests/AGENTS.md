@@ -17,7 +17,7 @@ the same `make e2e` per series (`.github/workflows/e2e.yml`).
   the flow; a suite that needs a long `wait:` is missing a waitable
   condition.
 - Polkit outcomes come from `shot --polkit allow|deny|cancel` (a temporary
-  rule covering snapd's actions and the apply-plan pkexec, plus
+  rule covering snapd's actions and the apply-plan and set-up pkexec, plus
   `cancel-agent.py` for cancel), never from typing into dialogs. The rule
   file must not survive a run; `shot.sh` removes it on exit.
 - Accessible names are translated strings: a copy change breaks a selector

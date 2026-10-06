@@ -6,9 +6,9 @@
 # user (suites/lib.sh `shot`).
 #
 # Usage: shot.sh [--polkit allow|deny|cancel] [--monitor NAME] [step ...]
-#   --polkit MODE   answer snapd's and the pkexec --apply-plan prompts with a
-#                   temporary rule; cancel answers through cancel-agent.py,
-#                   like pressing Cancel
+#   --polkit MODE   answer snapd's and the pkexec --apply-plan and --set-up
+#                   prompts with a temporary rule; cancel answers through
+#                   cancel-agent.py, like pressing Cancel
 #   --monitor NAME  log processes, snapd changes and the journal to
 #                   out/NAME-{monitor,journal}.log
 # Steps: see shot-driver.py.
@@ -48,6 +48,7 @@ polkit.addRule(function(action, subject) {
     if (subject.user != "$USER") return polkit.Result.NOT_HANDLED;
     if (action.id.indexOf("io.snapcraft.snapd.") == 0 ||
         action.id == "com.canonical.Myna.Config.apply-plan" ||
+        action.id == "com.canonical.Myna.Config.set-up" ||
         (action.id == "org.freedesktop.policykit.exec" &&
          action.lookup("program") == "$PWD/myna-config"))
         return polkit.Result.$result;
@@ -60,7 +61,7 @@ fi
 if [ -n "$monitor" ]; then
     ( while :; do
         echo "=== $(date +%T)"
-        pgrep -af "pkexec|myna-config --apply|snap (run|install|remove)" | cut -c1-200
+        pgrep -af "pkexec|myna-config --(apply|set-up)|snap (run|install|remove|set)" | cut -c1-200
         snap changes 2>&1 | tail -3
         sleep 2
       done > out/"$monitor"-monitor.log 2>&1 ) &
