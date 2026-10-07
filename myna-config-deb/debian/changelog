@@ -1,3 +1,27 @@
+myna-config (0.2.0-0ubuntu1) stonking; urgency=medium
+
+  * Guided first-run setup: Myna Settings installs the Dictation app, a
+    model and the Shell extension itself, under a single authorization
+    prompt.
+  * The Backend tab is now Model: switch models with one click, install
+    more from within Settings with download progress, and get a
+    recommended model for your language.
+  * Settings apply the moment you change them; no confirmation dialogs.
+  * Sound cues on start, stop and error, with a choice of sound sets
+    previewed in Settings (Chime by default).
+  * Whisper large-v3 and large-v3-turbo on NVIDIA GPUs.
+  * A Diagnostics page that explains in plain words what is wrong and
+    what the daemon last reported.
+  * The ribbon HUD style is back; the error pill now meets WCAG AA
+    contrast.
+  * The dictation shortcut is a GNOME custom keybinding, captured inline
+    in Settings. The portal shortcut and hold-to-talk are gone; the
+    shortcut toggles dictation.
+  * A model connected after login is picked up without restarting Myna.
+  * A second dictation is spaced from the text before it.
+
+ -- Charles <charles05@canonical.com>  Wed, 07 Oct 2026 17:22:09 +0100
+
 myna-config (0.1.0-0ubuntu1) stonking; urgency=medium
 
   * Initial packaging.
