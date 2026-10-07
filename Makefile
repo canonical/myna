@@ -349,6 +349,12 @@ publish-$(1): snap-$(1)
 endef
 $(foreach s,$(PUBLISHED),$(eval $(call publish_rule,$(s))))
 
+# The draft notes for the next release, from the commits since the last tag;
+# trim them to the highlights the tag message carries (.kb/releasing.md).
+.PHONY: release-notes
+release-notes: ## Draft release notes from the commits since the last tag
+	dev/release-notes.sh
+
 ##@ Benchmark
 
 .PHONY: build-bench

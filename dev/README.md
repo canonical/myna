@@ -33,7 +33,7 @@ Only the two configs stayed here:
 | `synth_cues.py` | Synthesizes the daemon's sound sets (start, stop and error each) into `client/myna-desktop/sounds/<set>/`; `uv run dev/synth_cues.py`. Seeded and bit-exact, so a rerun reproduces the committed `.oga` files. |
 | `fetch_funasr_model.py`, `parakeet/fetch_parakeet_onnx.py` | Fetch and stage model weights into a snap directory. Driven by the `snap-*` make targets. |
 | `parakeet/collapse_probe.py` | Sliding-window encoder collapse probe: the methodology behind the collapse figures in `myna.testbed.parakeet`. |
-| `model-pin.sh`, `lint-packages.sh`, `version.sh`, `stage-version.sh`, `publish-snap.sh` | Snap staging, packaging checks, the git-derived version every build carries, and store upload (`make publish-<snap>`). |
+| `model-pin.sh`, `lint-packages.sh`, `version.sh`, `stage-version.sh`, `publish-snap.sh`, `release-notes.sh` | Snap staging, packaging checks, the git-derived version every build carries, store upload (`make publish-<snap>`) and the release-notes draft (`make release-notes`). |
 | `spread-build.sh`, `spread-image.sh` | Confined end-to-end (spread) harness. |
 | `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py` | Coverage reports and gates behind `make coverage`. |
 | `exercise.sh`, `gated-tests.sh`, `transcribe.py`, `capabilities.py` | Manual drivers for a running server. |
