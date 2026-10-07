@@ -27,6 +27,10 @@ rule=/etc/polkit-1/rules.d/49-myna-shot.rules
 monitor_pids=()
 mkdir -p out
 glib-compile-schemas schemas/
+# The session's data dirs, as a desktop launch inherits them: the
+# myna-config deb's extension copy is under /usr/share/gnome, which only the
+# GNOME session lists.
+eval "$(systemctl --user show-environment | sed -n 's/^XDG_DATA_DIRS=/export XDG_DATA_DIRS=/p')"
 
 cleanup() {
     sudo rm -f "$rule"
