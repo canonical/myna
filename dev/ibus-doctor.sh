@@ -129,7 +129,7 @@ while IFS= read -r f; do
     if [ -z "$PICKED" ]; then PICKED=$f; ok "myna connects to this one"
     else info "alive, but not reached (an earlier file won)"; fi
   else
-    [ -z "$FIRST_STALE" ] && FIRST_STALE=$f
+    [ -z "$PICKED" ] && [ -z "$FIRST_STALE" ] && FIRST_STALE=$f
     bad "rejected"
   fi
 done <<< "$RANKED"
