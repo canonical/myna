@@ -1,0 +1,22 @@
+# On a pushed vX.Y.Z tag: publish its GitHub Release, with the annotated tag's
+# message as the notes (.kb/releasing.md). Snaps and the PPA are uploaded by
+# hand, as the store and Launchpad credentials stay off CI.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # checkout can leave the tag lightweight; --notes-from-tag needs its message.
+      - run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --title "Myna ${GITHUB_REF_NAME#v}"
+        env:
+          GH_TOKEN: ${{ github.token }}
