@@ -10,6 +10,8 @@
 #     id Myna has had (myna_myna, and "." from a portal that lost the id)
 #   - Myna Settings' dconf keys and notification entry
 #   - hand-installed desktop files, icons and a ~/.local shell extension copy
+#   - the shell extension's entry in enabled-extensions and
+#     disabled-extensions, which outlive the deb in the user's dconf
 #   - pre-rename leftovers: /org/myna/ in dconf, ~/.config/myna, and an
 #     unpackaged org.myna.dictation schema
 # The myna-config deb stays unless --deb: it is what a fresh install starts
@@ -20,7 +22,9 @@
 #   dev/purge.sh --yes --deb # no question; also purge the myna-config deb
 #
 # Log out and back in afterwards: gnome-shell and gsd-media-keys keep the
-# shortcut grabs they already hold until then.
+# shortcut grabs they already hold until then. Install the deb after logging
+# back in, as a user would: installed before, gnome-shell finds the extension
+# at login and onboarding never meets one it has not scanned.
 set -euo pipefail
 
 DRY=0
@@ -50,29 +54,6 @@ LEGACY_SCHEMA=$SCHEMA_DIR/org.myna.dictation.gschema.xml
 run() {
     printf '  %s\n' "$*"
     [ "$DRY" -eq 1 ] || "$@"
-}
-
-# Whether a dpkg-owned copy of the extension stays installed: the myna-config
-# deb's under /usr/share/gnome, or Ubuntu's. It keeps its enablement; a
-# hand-made copy does not. The deb's own copy does not count under --deb.
-# /usr/share/ubuntu and /usr/share/gnome are named because this may run
-# outside a session's environment.
-packaged_extension() {
-    local dir path owner
-    local IFS=:
-    for dir in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share} /usr/share/ubuntu /usr/share/gnome; do
-        # dpkg -S matches paths literally: /usr/share/ in XDG_DATA_DIRS
-        # would make a // it never finds.
-        path=${dir%/}/gnome-shell/extensions/$EXTENSION
-        [ -e "$path" ] || continue
-        owner=$(dpkg -S "$path" 2>/dev/null | cut -d: -f1) || continue
-        [ -n "$owner" ] || continue
-        if [ "$DEB" -eq 1 ] && [ "$owner" = myna-config ]; then
-            continue
-        fi
-        return 0
-    done
-    return 1
 }
 
 # Print a GVariant string array without the given elements, or nothing when
@@ -198,9 +179,8 @@ if [ -f "$ICONS/icon-theme.cache" ]; then
     run gtk-update-icon-cache -f -t -q "$ICONS"
 fi
 remove_path "$HOME/.local/share/gnome-shell/extensions/$EXTENSION"
-if ! packaged_extension; then
-    dconf_drop /org/gnome/shell/enabled-extensions "$EXTENSION"
-fi
+dconf_drop /org/gnome/shell/enabled-extensions "$EXTENSION"
+dconf_drop /org/gnome/shell/disabled-extensions "$EXTENSION"
 if [ -e "$LEGACY_SCHEMA" ] && ! dpkg -S "$LEGACY_SCHEMA" >/dev/null 2>&1; then
     run sudo rm -f "$LEGACY_SCHEMA"
     run sudo glib-compile-schemas "$SCHEMA_DIR"
