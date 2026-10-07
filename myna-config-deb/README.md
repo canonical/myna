@@ -48,5 +48,5 @@ revision `~<release>`. Uploads to a PPA take a `~ppaN` suffix on top, and
     PPA=1 make build-deb-source                   # stonking, ...-0ubuntu1~ppa1
     PPA=1 SERIES=resolute make build-deb-source   # ...-0ubuntu1~26.04~ppa1
 
-One PPA (`ppa:charles05/myna-config`) carries every series; the `~<release>`
-tag keeps an older series' build below a newer one's.
+One PPA (`ppa:canonical-desktop-team/myna`) carries every series; the
+`~<release>` tag keeps an older series' build below a newer one's.

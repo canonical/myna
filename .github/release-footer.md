@@ -4,7 +4,7 @@
 On Ubuntu 24.04 LTS or later, install Myna Settings from the PPA:
 
 ```
-sudo add-apt-repository ppa:charles05/myna-config
+sudo add-apt-repository ppa:canonical-desktop-team/myna
 sudo apt install myna-config
 ```
 

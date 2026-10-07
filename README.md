@@ -21,8 +21,8 @@ bird that listens to and reproduces human speech with striking clarity.
 There's a GUI installer intended for end-users. It's available in a PPA,
 
 ```
-# TODO: publish to the Ubuntu archive when stable, or a Canonical namespace at least!
-sudo add-apt-repository ppa:charles05/myna-config
+# TODO: publish to the Ubuntu archive when stable
+sudo add-apt-repository ppa:canonical-desktop-team/myna
 sudo apt install myna-config
 ```
 
