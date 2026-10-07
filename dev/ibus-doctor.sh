@@ -43,7 +43,9 @@ if [ -n "${MPID:-}" ] && [ "$MPID" != "0" ]; then
   denv() { tr '\0' '\n' < "/proc/$MPID/environ" 2>/dev/null | sed -n "s/^$1=//p"; }
   D_HOME=$(denv HOME); D_XDG=$(denv XDG_CONFIG_HOME)
   D_WL=$(denv WAYLAND_DISPLAY); D_X11=$(denv DISPLAY); D_ADDR=$(denv IBUS_ADDRESS)
+  D_REAL=$(denv SNAP_REAL_HOME)
   info "HOME            ${D_HOME:-<unset>}"
+  info "SNAP_REAL_HOME  ${D_REAL:-<unset>}"
   info "XDG_CONFIG_HOME ${D_XDG:-<unset>}"
   info "WAYLAND_DISPLAY ${D_WL:-<unset>}"
   info "DISPLAY         ${D_X11:-<unset>}"
@@ -55,17 +57,16 @@ if [ -n "${MPID:-}" ] && [ "$MPID" != "0" ]; then
 else
   bad "snap.myna.myna.service is not running (MainPID=${MPID:-none})"
   info "using this shell's environment for the checks below instead"
-  D_HOME=$HOME; D_XDG=${XDG_CONFIG_HOME:-}; D_WL=${WAYLAND_DISPLAY:-}; D_X11=${DISPLAY:-}
+  D_HOME=$HOME; D_REAL=$HOME; D_XDG=${XDG_CONFIG_HOME:-}; D_WL=${WAYLAND_DISPLAY:-}; D_X11=${DISPLAY:-}
 fi
 
 say "4. address files myna would search"
-# candidate_dirs(): $XDG_CONFIG_HOME/ibus/bus, $HOME/.config/ibus/bus, and under
-# $SNAP the passwd home's .config/ibus/bus.
-REAL_HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
+# candidate_dirs(): $XDG_CONFIG_HOME/ibus/bus, $HOME/.config/ibus/bus, and
+# $SNAP_REAL_HOME/.config/ibus/bus.
 DIRS=()
 [ -n "${D_XDG:-}" ] && DIRS+=("$D_XDG/ibus/bus")
 [ -n "${D_HOME:-}" ] && DIRS+=("$D_HOME/.config/ibus/bus")
-DIRS+=("$REAL_HOME/.config/ibus/bus")
+[ -n "${D_REAL:-}" ] && DIRS+=("$D_REAL/.config/ibus/bus")
 FILES=()
 seen=""
 for d in "${DIRS[@]}"; do
