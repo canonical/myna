@@ -45,15 +45,25 @@ application ships in, installs it to `/usr/share/gnome/gnome-shell/extensions`,
 where it shadows Ubuntu's packaged copy on Stonking, so the wizard never
 installs it and unavailable means a copy gnome-shell cannot run, not a
 missing one. Only a system copy counts, not a development copy in `~/.local`.
-Only a disabled copy is the wizard's to fix; every other state below is out
-of its reach, and the component step skips the extension silently, since
-dictation still shows its status in notifications. Its state is one of:
+A disabled copy and one installed since login are the wizard's to fix; every
+other state below is out of its reach, and the component step skips the
+extension silently, since dictation still shows its status in notifications.
+Its state is one of:
 
 - enabled: satisfied;
 - disabled: gnome-shell lists the system copy but does not run it, and one
   `EnableExtension` call fixes it;
 - installed after login: the copy is under a system data directory but
-  gnome-shell, which scans them only at login, does not list it;
+  gnome-shell, which scans them only at login, does not list it, and
+  `EnableExtension` refuses a uuid it has not scanned. The user's
+  `org.gnome.shell` settings decide instead: not yet in
+  `enabled-extensions`, the wizard lists it there (below);
+- starts at the next login: such a copy already in `enabled-extensions`
+  and not in `disabled-extensions`. Nothing is left to do but log out and
+  back in, which the last step says (below). Installing the deb into a
+  running session and finishing the wizard there lands here; before
+  2026-10 the wizard skipped such a copy, and nothing enabled it after the
+  re-login, since the extension never reopens the wizard;
 - shadowed: a system copy is on disk and so is a user copy of the same uuid
   under `~/.local/share/gnome-shell/extensions`. gnome-shell loads the user
   directory first and skips a uuid it already has, so the system copy never
@@ -74,9 +84,11 @@ dictation still shows its status in notifications. Its state is one of:
 - out of date: its `shell-version` lacks the running gnome-shell (`state` 4).
   It does not work with this version of GNOME;
 - locked: the administrator locked it (`canChange` false with extensions on:
-  `enabled-extensions` is not writable);
+  `enabled-extensions` is not writable), also for a copy installed since
+  login;
 - unavailable: no system copy, or no gnome-shell answering on the session
-  bus within 2 s. A shell that does not report `UserExtensionsEnabled` is
+  bus within 2 s, or, for a copy installed since login, no `org.gnome.shell`
+  schema. A shell that does not report `UserExtensionsEnabled` is
   taken as having extensions on.
 
 gnome-shell sends `type` and `state` as doubles; `type` 1 is a system copy,
@@ -170,8 +182,16 @@ call only adds the uuid to `enabled-extensions`; gnome-shell starts the
 extension once that setting changes, so the step waits until
 `GetExtensionInfo` reports it running, for up to 5 s. A system copy
 gnome-shell already lists runs at once on X11 and Wayland alike, so no
-re-login is asked for. An extension out of the wizard's reach (above) is not
-a step and is never mentioned: it holds neither Next nor the move on.
+re-login is asked for. A copy installed since login gets no call, since
+gnome-shell refuses it: the step writes what `EnableExtension` would, the
+uuid added to `enabled-extensions` and taken out of `disabled-extensions`,
+and gnome-shell starts it at the next login. While it waits for that, the
+last step shows a dimmed note under Set up shortcut, "Log out and back in to
+turn on the dictation indicator (GNOME Shell extension).", and Diagnostics
+reports the extension "installed since login, starts at the next one" rather
+than "not installed". A failed write names the setting it wrote in the
+report. An extension out of the wizard's reach (above) is not a step and is
+never mentioned: it holds neither Next nor the move on.
 
 A component snapd is still installing counts as missing
 (`onboarding::while_installing`) whatever a read finds half-way: the

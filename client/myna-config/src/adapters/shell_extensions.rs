@@ -4,6 +4,8 @@
 //! gnome-shell scans the extension directories at login only, so what it
 //! reports is cross-checked against the disk: a system copy it does not list
 //! was installed after login, unless a user copy of the same uuid hides it.
+//! Such a copy is enabled through the user's `org.gnome.shell` settings,
+//! which gnome-shell reads at the next login.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,14 +15,18 @@ use gio::glib::{self, Variant, VariantDict, VariantTy};
 use gio::prelude::*;
 
 use crate::onboarding::{
-    extension_state, ExtensionCopies, ExtensionCopy, ExtensionInfo, ExtensionReport, ExtensionRun,
-    ExtensionState,
+    extension_state, ExtensionCopies, ExtensionCopy, ExtensionInfo, ExtensionListing,
+    ExtensionReport, ExtensionRun, ExtensionState,
 };
 use crate::ports::{ShellExtensions, SystemConfiguratorError};
 
 const SHELL_NAME: &str = "org.gnome.Shell";
 const SHELL_PATH: &str = "/org/gnome/Shell";
 const EXTENSIONS_INTERFACE: &str = "org.gnome.Shell.Extensions";
+const SHELL_SCHEMA: &str = "org.gnome.shell";
+const ENABLED_KEY: &str = "enabled-extensions";
+const DISABLED_KEY: &str = "disabled-extensions";
+const EXTENSIONS_OFF_KEY: &str = "disable-user-extensions";
 /// A shell that does not answer within this is treated as absent.
 const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// gnome-shell starts an extension once its `enabled-extensions` setting
@@ -43,6 +49,8 @@ pub struct GnomeShellExtensions {
     data_dirs: Vec<PathBuf>,
     user_data_dir: PathBuf,
     settle_timeout: Duration,
+    /// `org.gnome.shell`, where gnome-shell is installed.
+    shell_settings: Option<gio::Settings>,
 }
 
 impl GnomeShellExtensions {
@@ -53,7 +61,19 @@ impl GnomeShellExtensions {
             data_dirs: glib::system_data_dirs(),
             user_data_dir: glib::user_data_dir(),
             settle_timeout: SETTLE_TIMEOUT,
+            shell_settings: gio::SettingsSchemaSource::default()
+                .and_then(|source| source.lookup(SHELL_SCHEMA, true))
+                .map(|schema| {
+                    gio::Settings::new_full(&schema, None::<&gio::SettingsBackend>, None)
+                }),
         }
+    }
+
+    /// gnome-shell's `org.gnome.shell` settings, or none for a machine
+    /// without gnome-shell.
+    pub fn with_shell_settings(mut self, settings: Option<gio::Settings>) -> Self {
+        self.shell_settings = settings;
+        self
     }
 
     /// How long enabling waits for gnome-shell to run the extension.
@@ -72,6 +92,7 @@ impl GnomeShellExtensions {
             data_dirs,
             user_data_dir,
             settle_timeout: SETTLE_TIMEOUT,
+            shell_settings: None,
         }
     }
 
@@ -139,6 +160,67 @@ impl GnomeShellExtensions {
         .unwrap_or(true)
     }
 
+    /// What the user's settings say gnome-shell does with `uuid` at login.
+    fn listing(&self, uuid: &str) -> ExtensionListing {
+        let Some(settings) = &self.shell_settings else {
+            return ExtensionListing::Unknown;
+        };
+        if settings.boolean(EXTENSIONS_OFF_KEY) {
+            return ExtensionListing::TurnedOff;
+        }
+        let lists = |key| settings.strv(key).iter().any(|listed| listed == uuid);
+        if lists(ENABLED_KEY) && !lists(DISABLED_KEY) {
+            ExtensionListing::Enabled
+        } else if settings.is_writable(ENABLED_KEY) {
+            ExtensionListing::Unlisted
+        } else {
+            ExtensionListing::Locked
+        }
+    }
+
+    /// List `uuid` for the next login as `EnableExtension` would: into
+    /// `enabled-extensions`, out of `disabled-extensions`.
+    fn list_for_login(
+        &self,
+        settings: &gio::Settings,
+        uuid: &str,
+    ) -> Result<(), SystemConfiguratorError> {
+        let write = |key: &str, edit: &dyn Fn(&mut Vec<String>)| {
+            let mut listed: Vec<String> = settings
+                .strv(key)
+                .iter()
+                .map(|listed| listed.to_string())
+                .collect();
+            let before = listed.clone();
+            edit(&mut listed);
+            if listed == before {
+                return Ok(());
+            }
+            settings.set_strv(key, listed).map_err(|error| {
+                SystemConfiguratorError::setting_execution(
+                    format!("{SHELL_SCHEMA} {key}"),
+                    error.to_string(),
+                )
+            })
+        };
+        if !settings.is_writable(ENABLED_KEY) {
+            return Err(SystemConfiguratorError::setting_execution(
+                format!("{SHELL_SCHEMA} {ENABLED_KEY}"),
+                "the administrator does not let it change",
+            ));
+        }
+        write(ENABLED_KEY, &|listed| {
+            if !listed.iter().any(|listed| listed == uuid) {
+                listed.push(uuid.to_owned());
+            }
+        })?;
+        write(DISABLED_KEY, &|listed| {
+            listed.retain(|listed| listed != uuid)
+        })?;
+        gio::Settings::sync();
+        Ok(())
+    }
+
     fn copies_on_disk(&self, uuid: &str) -> ExtensionCopies {
         let has_copy = |dir: &PathBuf| {
             dir.join("gnome-shell/extensions")
@@ -163,10 +245,22 @@ impl Default for GnomeShellExtensions {
 impl ShellExtensions for GnomeShellExtensions {
     async fn extension_state(&self, uuid: &str) -> ExtensionState {
         let info = self.info(uuid).await;
-        extension_state(info, self.copies_on_disk(uuid))
+        extension_state(info, self.copies_on_disk(uuid), self.listing(uuid))
     }
 
+    /// `EnableExtension` for a copy gnome-shell lists; for a system copy it
+    /// has not scanned, the listing it starts at the next login.
     async fn enable_extension(&self, uuid: &str) -> Result<(), SystemConfiguratorError> {
+        let scanned = matches!(
+            self.info(uuid).await,
+            Some(ExtensionInfo { system: true, .. })
+        );
+        let on_disk = self.copies_on_disk(uuid);
+        if let (false, true, false, Some(settings)) =
+            (scanned, on_disk.system, on_disk.user, &self.shell_settings)
+        {
+            return self.list_for_login(settings, uuid);
+        }
         let failed =
             |message: String| SystemConfiguratorError::dbus_execution(enable_call(uuid), message);
         let reply = self
@@ -272,9 +366,35 @@ pub fn extension_report(uuid: &str) -> ExtensionReport {
                 gio::Cancellable::NONE,
             )
         });
-    match reply {
+    let report = match reply {
         Ok(reply) => parse_report(&reply.child_value(0), &glib::user_data_dir()),
         Err(_) => ExtensionReport::NoShell,
+    };
+    let extensions = GnomeShellExtensions::new();
+    unscanned_report(
+        report,
+        extensions.copies_on_disk(uuid),
+        extensions.listing(uuid),
+    )
+}
+
+/// A system copy gnome-shell does not know, because it has not scanned it
+/// since it was installed, is not "not installed".
+fn unscanned_report(
+    report: ExtensionReport,
+    on_disk: ExtensionCopies,
+    listing: ExtensionListing,
+) -> ExtensionReport {
+    let unscanned = report == ExtensionReport::NotInstalled
+        && on_disk.system
+        && !on_disk.user
+        && listing != ExtensionListing::Unknown;
+    if unscanned {
+        ExtensionReport::SinceLogin {
+            at_next_login: listing == ExtensionListing::Enabled,
+        }
+    } else {
+        report
     }
 }
 
@@ -359,6 +479,42 @@ mod tests {
         assert_eq!(
             parse_info(&running, false).map(|info| info.run),
             Some(ExtensionRun::Enabled)
+        );
+    }
+
+    #[test]
+    fn a_system_copy_the_shell_has_not_scanned_is_reported_as_such() {
+        let copies = |system, user| ExtensionCopies { system, user };
+        let since = |at_next_login| ExtensionReport::SinceLogin { at_next_login };
+        let unscanned =
+            |on_disk, listing| unscanned_report(ExtensionReport::NotInstalled, on_disk, listing);
+        assert_eq!(
+            unscanned(copies(true, false), ExtensionListing::Enabled),
+            since(true)
+        );
+        for listing in [
+            ExtensionListing::Unlisted,
+            ExtensionListing::Locked,
+            ExtensionListing::TurnedOff,
+        ] {
+            assert_eq!(unscanned(copies(true, false), listing), since(false));
+        }
+        // No copy, a shadowing user copy, or no gnome-shell settings: what
+        // gnome-shell said stands.
+        for (on_disk, listing) in [
+            (copies(false, false), ExtensionListing::Enabled),
+            (copies(true, true), ExtensionListing::Enabled),
+            (copies(true, false), ExtensionListing::Unknown),
+        ] {
+            assert_eq!(unscanned(on_disk, listing), ExtensionReport::NotInstalled);
+        }
+        assert_eq!(
+            unscanned_report(
+                ExtensionReport::NoShell,
+                copies(true, false),
+                ExtensionListing::Enabled
+            ),
+            ExtensionReport::NoShell
         );
     }
 

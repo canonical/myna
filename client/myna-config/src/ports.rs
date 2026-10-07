@@ -143,7 +143,8 @@ pub trait ShellExtensions {
     /// Where `uuid` stands. A session with no gnome-shell has none.
     async fn extension_state(&self, uuid: &str) -> ExtensionState;
 
-    /// Have gnome-shell enable `uuid`, and wait until it runs it. Needs no
+    /// Have gnome-shell enable `uuid`, and wait until it runs it; a copy
+    /// installed since login is listed to start at the next one. Needs no
     /// authorization: it is the user's own shell.
     async fn enable_extension(&self, uuid: &str) -> Result<(), SystemConfiguratorError>;
 }
@@ -209,6 +210,9 @@ pub enum FailedStep {
     /// A method call on the session bus, such as
     /// `org.gnome.Shell.Extensions.EnableExtension("myna-shell@canonical.com")`.
     DBus { call: String },
+    /// A write to the user's GSettings, named as schema and key, such as
+    /// `org.gnome.shell enabled-extensions`.
+    Setting { key: String },
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -305,6 +309,13 @@ impl SystemConfiguratorError {
     pub fn dbus_execution(call: impl Into<String>, message: impl Into<String>) -> Self {
         Self::Execution {
             step: FailedStep::DBus { call: call.into() },
+            message: message.into(),
+        }
+    }
+
+    pub fn setting_execution(key: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Execution {
+            step: FailedStep::Setting { key: key.into() },
             message: message.into(),
         }
     }

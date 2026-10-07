@@ -307,9 +307,164 @@ fn a_system_copy_the_shell_cannot_run_says_why() {
     );
 }
 
+/// gnome-shell's settings, compiled from the fixture into a directory of
+/// their own, on a backend that keeps them in memory or, `read_only`, lets
+/// nothing be written.
+struct ShellSettings {
+    _dir: tempdir::Dir,
+    settings: gio::Settings,
+}
+
+fn shell_settings(read_only: bool) -> ShellSettings {
+    let dir = tempdir::Dir::new();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/gnome-shell.gschema.xml"),
+        dir.path().join("gnome-shell.gschema.xml"),
+    )
+    .unwrap();
+    assert!(std::process::Command::new("glib-compile-schemas")
+        .arg(dir.path())
+        .status()
+        .unwrap()
+        .success());
+    let source = gio::SettingsSchemaSource::from_directory(dir.path(), None, false).unwrap();
+    let backend = if read_only {
+        gio::functions::null_settings_backend_new()
+    } else {
+        gio::functions::memory_settings_backend_new()
+    };
+    let settings = gio::Settings::new_full(
+        &source.lookup("org.gnome.shell", false).unwrap(),
+        Some(&backend),
+        None,
+    );
+    ShellSettings {
+        _dir: dir,
+        settings,
+    }
+}
+
+/// The state of a system copy gnome-shell has not scanned, with these
+/// settings, then the outcome of enabling it and the state after. The
+/// stand-in shell refuses `EnableExtension`, as gnome-shell does for a uuid
+/// it has not scanned.
+fn unscanned(
+    settings: Option<&gio::Settings>,
+) -> (
+    ExtensionState,
+    Result<(), SystemConfiguratorError>,
+    ExtensionState,
+) {
+    on_own_context(|| {
+        let dirs = data_dirs(true, false);
+        let (client, _server) = shell_enabling(Rc::default(), OnEnable::Refuse);
+        let extensions = GnomeShellExtensions::with_connection(
+            client,
+            dirs.system_dirs.clone(),
+            dirs.user_dir.clone(),
+        )
+        .with_shell_settings(settings.cloned());
+        let before = block_on(extensions.extension_state(SHELL_EXTENSION_UUID));
+        let outcome = block_on(extensions.enable_extension(SHELL_EXTENSION_UUID));
+        let after = block_on(extensions.extension_state(SHELL_EXTENSION_UUID));
+        (before, outcome, after)
+    })
+}
+
+fn strv(settings: &gio::Settings, key: &str) -> Vec<String> {
+    settings.strv(key).iter().map(|s| s.to_string()).collect()
+}
+
 #[test]
 fn a_system_copy_the_shell_does_not_list_needs_a_relogin() {
-    assert_eq!(state(&[], true), ExtensionState::NeedsRelogin);
+    let shell = shell_settings(false);
+    shell
+        .settings
+        .set_strv("enabled-extensions", ["ubuntu-dock@ubuntu.com"])
+        .unwrap();
+    let (before, outcome, after) = unscanned(Some(&shell.settings));
+    assert_eq!(before, ExtensionState::NeedsRelogin);
+    assert_eq!(outcome, Ok(()));
+    assert_eq!(after, ExtensionState::EnabledAtLogin);
+    assert_eq!(
+        strv(&shell.settings, "enabled-extensions"),
+        ["ubuntu-dock@ubuntu.com", SHELL_EXTENSION_UUID]
+    );
+}
+
+#[test]
+fn enabling_an_unscanned_copy_lifts_a_disable_as_the_shell_would() {
+    let shell = shell_settings(false);
+    shell
+        .settings
+        .set_strv(
+            "disabled-extensions",
+            [SHELL_EXTENSION_UUID, "ding@rastersoft.com"],
+        )
+        .unwrap();
+    shell
+        .settings
+        .set_strv("enabled-extensions", [SHELL_EXTENSION_UUID])
+        .unwrap();
+    // Listed in both: gnome-shell does not start a disabled extension.
+    let (before, outcome, after) = unscanned(Some(&shell.settings));
+    assert_eq!(before, ExtensionState::NeedsRelogin);
+    assert_eq!(outcome, Ok(()));
+    assert_eq!(after, ExtensionState::EnabledAtLogin);
+    assert_eq!(
+        strv(&shell.settings, "enabled-extensions"),
+        [SHELL_EXTENSION_UUID]
+    );
+    assert_eq!(
+        strv(&shell.settings, "disabled-extensions"),
+        ["ding@rastersoft.com"]
+    );
+}
+
+#[test]
+fn an_unscanned_copy_already_listed_waits_for_the_login() {
+    let shell = shell_settings(false);
+    shell
+        .settings
+        .set_strv("enabled-extensions", [SHELL_EXTENSION_UUID])
+        .unwrap();
+    assert_eq!(
+        unscanned(Some(&shell.settings)).0,
+        ExtensionState::EnabledAtLogin
+    );
+}
+
+#[test]
+fn an_unscanned_copy_under_a_lockdown_is_locked() {
+    let shell = shell_settings(true);
+    let (before, outcome, _) = unscanned(Some(&shell.settings));
+    assert_eq!(before, ExtensionState::Locked);
+    match outcome {
+        Err(SystemConfiguratorError::Execution {
+            step: FailedStep::Setting { key },
+            ..
+        }) => assert_eq!(key, "org.gnome.shell enabled-extensions"),
+        other => panic!("expected a failed setting, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_unscanned_copy_with_extensions_off_is_turned_off() {
+    let shell = shell_settings(false);
+    shell
+        .settings
+        .set_boolean("disable-user-extensions", true)
+        .unwrap();
+    assert_eq!(
+        unscanned(Some(&shell.settings)).0,
+        ExtensionState::TurnedOff
+    );
+}
+
+#[test]
+fn an_unscanned_copy_with_no_shell_settings_is_unavailable() {
+    assert_eq!(unscanned(None).0, ExtensionState::Unavailable);
 }
 
 #[test]

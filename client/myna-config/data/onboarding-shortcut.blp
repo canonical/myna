@@ -52,6 +52,17 @@ template $OnboardingShortcut: Adw.Bin {
                 halign: center;
                 sensitive: false;
               }
+
+              // While the extension waits for the next login.
+              $BalancedLabel relogin_note {
+                label: _("Log out and back in to turn on the dictation indicator (GNOME Shell extension).");
+                margin-top: 32;
+                visible: false;
+
+                styles [
+                  "dim-label",
+                ]
+              }
             };
           }
 

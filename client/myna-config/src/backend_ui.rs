@@ -2383,6 +2383,12 @@ fn failure_details(step: Option<&crate::ports::FailedStep>, message: &str) -> St
             out.push_str(call);
             out.push('\n');
         }
+        Some(crate::ports::FailedStep::Setting { key }) => {
+            out.push_str(&gettextrs::gettext("Setting:"));
+            out.push(' ');
+            out.push_str(key);
+            out.push('\n');
+        }
         None => {}
     }
     let message = diagnostics::redact_text(message);

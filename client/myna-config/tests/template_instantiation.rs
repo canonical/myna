@@ -227,6 +227,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-install: followed to its end, the model left",
         "onboarding-extension: only it left, Next leads and a failure is reported",
         "onboarding-extension: enabled by the button, then moved on",
+        "onboarding-extension: listed for the next login, and a re-login asked for",
         "onboarding-partial: sized for the model alone",
         "onboarding-partial: a dismissed install prompt stops silently",
         "onboarding-partial: only the model installed, then moved on",

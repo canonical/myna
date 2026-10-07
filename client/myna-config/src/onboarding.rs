@@ -55,6 +55,8 @@ impl ComponentId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComponentState {
     Satisfied,
+    /// Done as far as the wizard goes, and takes effect at the next login.
+    AfterRelogin,
     /// Missing, and the wizard can install or turn it on.
     Missing,
     /// Missing, and out of the wizard's reach.
@@ -66,8 +68,6 @@ pub enum ComponentState {
 pub enum Unavailable {
     /// Nothing on this system provides it.
     NotInstalled,
-    /// Installed after gnome-shell started, which only rescans at login.
-    NeedsRelogin,
     /// Hidden by a copy in the user's data dir, which gnome-shell loads
     /// first; a re-login does not help, removing that copy does.
     ShadowedByUserCopy,
@@ -90,7 +90,10 @@ pub struct Component {
 
 impl Component {
     pub fn satisfied(&self) -> bool {
-        self.state == ComponentState::Satisfied
+        matches!(
+            self.state,
+            ComponentState::Satisfied | ComponentState::AfterRelogin
+        )
     }
 }
 
@@ -101,8 +104,13 @@ pub enum ExtensionState {
     /// gnome-shell has the system copy and is not running it; enabling it
     /// is one call.
     Disabled,
-    /// A system copy is on disk that gnome-shell has not scanned.
+    /// A system copy is on disk that gnome-shell has not scanned, and the
+    /// user's settings do not list it: listing it starts it at the next
+    /// login.
     NeedsRelogin,
+    /// A system copy gnome-shell has not scanned and will start at the next
+    /// login.
+    EnabledAtLogin,
     /// A system copy is on disk, and a user copy of the same uuid hides it.
     ShadowedByUserCopy,
     /// A system copy gnome-shell will not run while extensions are off.
@@ -143,6 +151,22 @@ pub struct ExtensionInfo {
     pub run: ExtensionRun,
 }
 
+/// What the user's `org.gnome.shell` settings say of the extension: all
+/// there is to go by for a copy gnome-shell has not scanned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtensionListing {
+    /// In `enabled-extensions` and not in `disabled-extensions`.
+    Enabled,
+    /// Not listed, and the user may list it.
+    Unlisted,
+    /// Not listed, and the administrator locked the lists.
+    Locked,
+    /// `disable-user-extensions` holds every extension off.
+    TurnedOff,
+    /// No `org.gnome.shell` schema, so no gnome-shell to run it.
+    Unknown,
+}
+
 /// Which copies of the extension are on disk.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExtensionCopies {
@@ -154,10 +178,12 @@ pub struct ExtensionCopies {
 }
 
 /// Classify the extension. Only a system copy counts: the user copy the
-/// development tree installs is not what ships.
+/// development tree installs is not what ships. `listing` decides only for a
+/// system copy gnome-shell has not scanned.
 pub fn extension_state(
     reported: Option<ExtensionInfo>,
     on_disk: ExtensionCopies,
+    listing: ExtensionListing,
 ) -> ExtensionState {
     match reported {
         Some(ExtensionInfo {
@@ -185,7 +211,13 @@ pub fn extension_state(
             run: ExtensionRun::Locked,
         }) => ExtensionState::Locked,
         _ if on_disk.system && on_disk.user => ExtensionState::ShadowedByUserCopy,
-        _ if on_disk.system => ExtensionState::NeedsRelogin,
+        _ if on_disk.system => match listing {
+            ExtensionListing::Enabled => ExtensionState::EnabledAtLogin,
+            ExtensionListing::Unlisted => ExtensionState::NeedsRelogin,
+            ExtensionListing::Locked => ExtensionState::Locked,
+            ExtensionListing::TurnedOff => ExtensionState::TurnedOff,
+            ExtensionListing::Unknown => ExtensionState::Unavailable,
+        },
         _ => ExtensionState::Unavailable,
     }
 }
@@ -232,6 +264,9 @@ pub enum ExtensionReport {
     NoShell,
     /// gnome-shell knows no extension by this uuid.
     NotInstalled,
+    /// A system copy installed since login, which gnome-shell has not
+    /// scanned; `at_next_login` when the user's settings will start it then.
+    SinceLogin { at_next_login: bool },
     Known {
         /// gnome-shell's own state name, such as `active` or `error`.
         state: String,
@@ -355,10 +390,10 @@ pub fn assess(machine: Machine) -> Vec<Component> {
                 ComponentId::Model => installed(machine.backend_discovered),
                 ComponentId::ShellExtension => match machine.extension {
                     ExtensionState::Enabled => ComponentState::Satisfied,
-                    ExtensionState::Disabled => ComponentState::Missing,
-                    ExtensionState::NeedsRelogin => {
-                        ComponentState::Unavailable(Unavailable::NeedsRelogin)
+                    ExtensionState::Disabled | ExtensionState::NeedsRelogin => {
+                        ComponentState::Missing
                     }
+                    ExtensionState::EnabledAtLogin => ComponentState::AfterRelogin,
                     ExtensionState::ShadowedByUserCopy => {
                         ComponentState::Unavailable(Unavailable::ShadowedByUserCopy)
                     }
@@ -524,6 +559,14 @@ pub fn install_view(components: &[Component], installing: Option<ComponentId>) -
 /// Whether nothing the wizard can install is missing.
 pub fn settled(components: &[Component]) -> bool {
     !needs_onboarding(components) && install_plan(components).is_empty()
+}
+
+/// Whether the extension waits only for the user to log out and back in.
+pub fn relogin_pending(components: &[Component]) -> bool {
+    components.iter().any(|component| {
+        component.id == ComponentId::ShellExtension
+            && component.state == ComponentState::AfterRelogin
+    })
 }
 
 /// Whether snapd's `experimental.user-daemons` flag is on.
@@ -724,9 +767,12 @@ mod tests {
         let state = |extension| with_extension(extension)[3].state;
         assert_eq!(state(ExtensionState::Enabled), ComponentState::Satisfied);
         assert_eq!(state(ExtensionState::Disabled), ComponentState::Missing);
+        // Listing an unscanned copy is the wizard's to do; once listed, only
+        // a re-login is left.
+        assert_eq!(state(ExtensionState::NeedsRelogin), ComponentState::Missing);
         assert_eq!(
-            state(ExtensionState::NeedsRelogin),
-            ComponentState::Unavailable(Unavailable::NeedsRelogin)
+            state(ExtensionState::EnabledAtLogin),
+            ComponentState::AfterRelogin
         );
         assert_eq!(
             state(ExtensionState::ShadowedByUserCopy),
@@ -762,12 +808,13 @@ mod tests {
     fn only_a_system_copy_counts() {
         let info = |system, run| Some(ExtensionInfo { system, run });
         let packaged = copies(true, false);
+        let listed = ExtensionListing::Enabled;
         assert_eq!(
-            extension_state(info(true, ExtensionRun::Enabled), packaged),
+            extension_state(info(true, ExtensionRun::Enabled), packaged, listed),
             ExtensionState::Enabled
         );
         assert_eq!(
-            extension_state(info(true, ExtensionRun::Disabled), packaged),
+            extension_state(info(true, ExtensionRun::Disabled), packaged, listed),
             ExtensionState::Disabled
         );
         for (run, state) in [
@@ -775,19 +822,23 @@ mod tests {
             (ExtensionRun::OutOfDate, ExtensionState::OutOfDate),
             (ExtensionRun::Locked, ExtensionState::Locked),
         ] {
-            assert_eq!(extension_state(info(true, run), packaged), state);
+            assert_eq!(extension_state(info(true, run), packaged, listed), state);
         }
         assert_eq!(
-            extension_state(info(true, ExtensionRun::TurnedOff), packaged),
+            extension_state(info(true, ExtensionRun::TurnedOff), packaged, listed),
             ExtensionState::TurnedOff
         );
         // A development copy in ~/.local, enabled or not, is not what ships.
         assert_eq!(
-            extension_state(info(false, ExtensionRun::Enabled), copies(false, true)),
+            extension_state(
+                info(false, ExtensionRun::Enabled),
+                copies(false, true),
+                listed
+            ),
             ExtensionState::Unavailable
         );
         assert_eq!(
-            extension_state(None, ExtensionCopies::default()),
+            extension_state(None, ExtensionCopies::default(), listed),
             ExtensionState::Unavailable
         );
     }
@@ -795,7 +846,7 @@ mod tests {
     #[test]
     fn a_system_copy_the_shell_has_not_scanned_needs_a_relogin() {
         assert_eq!(
-            extension_state(None, copies(true, false)),
+            extension_state(None, copies(true, false), ExtensionListing::Unlisted),
             ExtensionState::NeedsRelogin
         );
         // gnome-shell still lists a deleted user copy it scanned at login.
@@ -805,10 +856,69 @@ mod tests {
                     system: false,
                     run: ExtensionRun::Disabled
                 }),
-                copies(true, false)
+                copies(true, false),
+                ExtensionListing::Unlisted
             ),
             ExtensionState::NeedsRelogin
         );
+    }
+
+    #[test]
+    fn an_unscanned_copy_follows_the_user_s_extension_settings() {
+        let unscanned = |listing| extension_state(None, copies(true, false), listing);
+        assert_eq!(
+            unscanned(ExtensionListing::Enabled),
+            ExtensionState::EnabledAtLogin
+        );
+        assert_eq!(unscanned(ExtensionListing::Locked), ExtensionState::Locked);
+        assert_eq!(
+            unscanned(ExtensionListing::TurnedOff),
+            ExtensionState::TurnedOff
+        );
+        // No org.gnome.shell schema: no gnome-shell to run it.
+        assert_eq!(
+            unscanned(ExtensionListing::Unknown),
+            ExtensionState::Unavailable
+        );
+        // What gnome-shell reports wins over its settings.
+        assert_eq!(
+            extension_state(
+                Some(ExtensionInfo {
+                    system: true,
+                    run: ExtensionRun::Disabled
+                }),
+                copies(true, false),
+                ExtensionListing::Enabled
+            ),
+            ExtensionState::Disabled
+        );
+    }
+
+    #[test]
+    fn only_an_extension_listed_for_the_next_login_asks_for_a_relogin() {
+        assert!(relogin_pending(&with_extension(
+            ExtensionState::EnabledAtLogin
+        )));
+        for extension in [
+            ExtensionState::Enabled,
+            ExtensionState::Disabled,
+            ExtensionState::NeedsRelogin,
+            ExtensionState::Unavailable,
+        ] {
+            assert!(
+                !relogin_pending(&with_extension(extension)),
+                "{extension:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_extension_listed_for_the_next_login_is_installed() {
+        let components = with_extension(ExtensionState::EnabledAtLogin);
+        assert!(components[3].satisfied());
+        assert!(install_plan(&components).is_empty());
+        assert_eq!(install_view(&components, None), InstallView::Installed);
+        assert!(settled(&components));
     }
 
     #[test]
@@ -827,7 +937,7 @@ mod tests {
             }),
         ] {
             assert_eq!(
-                extension_state(reported, copies(true, true)),
+                extension_state(reported, copies(true, true), ExtensionListing::Enabled),
                 ExtensionState::ShadowedByUserCopy,
                 "{reported:?}"
             );
@@ -862,7 +972,6 @@ mod tests {
     fn an_extension_out_of_reach_is_skipped_silently() {
         for extension in [
             ExtensionState::Unavailable,
-            ExtensionState::NeedsRelogin,
             ExtensionState::ShadowedByUserCopy,
             ExtensionState::TurnedOff,
             ExtensionState::Failed,
@@ -873,10 +982,13 @@ mod tests {
             assert!(install_plan(&components).is_empty(), "{extension:?}");
             assert_eq!(install_view(&components, None), InstallView::Installed);
         }
-        assert_eq!(
-            install_plan(&with_extension(ExtensionState::Disabled)),
-            [ComponentId::ShellExtension]
-        );
+        for extension in [ExtensionState::Disabled, ExtensionState::NeedsRelogin] {
+            assert_eq!(
+                install_plan(&with_extension(extension)),
+                [ComponentId::ShellExtension],
+                "{extension:?}"
+            );
+        }
     }
 
     #[test]

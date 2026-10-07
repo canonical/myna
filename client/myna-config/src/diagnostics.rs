@@ -697,6 +697,12 @@ fn extension_summary(report: &ExtensionReport) -> String {
     match report {
         ExtensionReport::NoShell => gettextrs::gettext("gnome-shell did not answer"),
         ExtensionReport::NotInstalled => gettextrs::gettext("not installed"),
+        ExtensionReport::SinceLogin {
+            at_next_login: true,
+        } => gettextrs::gettext("installed since login, starts at the next one"),
+        ExtensionReport::SinceLogin {
+            at_next_login: false,
+        } => gettextrs::gettext("installed since login, not enabled"),
         ExtensionReport::Known { state, copy, error } => {
             let copy = match copy {
                 ExtensionCopy::MynaConfigPackage => gettextrs::gettext("myna-config package"),
@@ -1129,6 +1135,18 @@ mod tests {
         for (extension, line) in [
             (ExtensionReport::NoShell, "gnome-shell did not answer"),
             (ExtensionReport::NotInstalled, "not installed"),
+            (
+                ExtensionReport::SinceLogin {
+                    at_next_login: true,
+                },
+                "installed since login, starts at the next one",
+            ),
+            (
+                ExtensionReport::SinceLogin {
+                    at_next_login: false,
+                },
+                "installed since login, not enabled",
+            ),
         ] {
             let text = present_diagnostics(DiagnosticInput {
                 extension: Some(extension),

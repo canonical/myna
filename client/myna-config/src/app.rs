@@ -2686,7 +2686,14 @@ impl crate::ports::ShellExtensions for ProbeExtensions {
                 message,
             ));
         }
-        self.state.set(crate::onboarding::ExtensionState::Enabled);
+        // gnome-shell runs a copy it has scanned at once; one installed
+        // since login is only listed for the next.
+        self.state.set(match self.state.get() {
+            crate::onboarding::ExtensionState::NeedsRelogin => {
+                crate::onboarding::ExtensionState::EnabledAtLogin
+            }
+            _ => crate::onboarding::ExtensionState::Enabled,
+        });
         Ok(())
     }
 }
@@ -4418,7 +4425,61 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
             extensions.enables.get()
         ));
     }
+    if relogin_noted(&window) {
+        return Err("an extension running now still asks for a re-login".to_owned());
+    }
     println!("onboarding-extension: enabled by the button, then moved on");
+    window.close();
+    settle_gtk();
+
+    // One installed since login is listed for the next, and the last step
+    // says to log out and back in.
+    let machine = ProbeMachine::new();
+    let extensions = ProbeExtensions::new(ExtensionState::NeedsRelogin);
+    let window = {
+        let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
+            application,
+            assess(Machine {
+                user_daemons: true,
+                myna_installed: true,
+                backend_discovered: true,
+                extension: ExtensionState::NeedsRelogin,
+                ..Machine::default()
+            }),
+            Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+                std::sync::Arc::new(machine.clone()),
+            )),
+            Rc::new(machine.clone()),
+            extensions.clone(),
+            crate::onboarding_ui::Opener::FirstRun,
+        );
+        ui.set_beat(Duration::from_millis(50));
+        ui.window()
+    };
+    settle_gtk();
+    window.forward_button().emit_clicked();
+    settle_gtk();
+    components_page(&window)
+        .ok_or("the component step shows no component page")?
+        .install_button()
+        .emit_clicked();
+    let step = || {
+        window
+            .navigation()
+            .visible_page()
+            .and_then(|page| page.tag())
+            .map(|tag| tag.to_string())
+            .unwrap_or_default()
+    };
+    if !until(&|| step() == "shortcut" && relogin_noted(&window)) || extensions.enables.get() != 1 {
+        return Err(format!(
+            "listing the extension for the next login reached {} after {} enables, note shown {}",
+            step(),
+            extensions.enables.get(),
+            relogin_noted(&window)
+        ));
+    }
+    println!("onboarding-extension: listed for the next login, and a re-login asked for");
     window.close();
     settle_gtk();
 
@@ -4507,6 +4568,15 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
     window.close();
     settle_gtk();
     Ok(())
+}
+
+/// Whether the last step shows its note to log out and back in.
+fn relogin_noted(window: &ui::OnboardingWindow) -> bool {
+    find_descendant(window.upcast_ref(), &|widget| {
+        widget.is_mapped() && widget.is::<ui::OnboardingShortcut>()
+    })
+    .and_then(|widget| widget.downcast::<ui::OnboardingShortcut>().ok())
+    .is_some_and(|page| page.relogin_note().is_mapped())
 }
 
 fn components_page(window: &ui::OnboardingWindow) -> Option<ui::OnboardingComponents> {

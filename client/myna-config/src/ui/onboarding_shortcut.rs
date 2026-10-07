@@ -20,6 +20,8 @@ mod imp {
         #[template_child]
         pub shortcut_stack: gtk::TemplateChild<gtk::Stack>,
         #[template_child]
+        pub relogin_note: gtk::TemplateChild<crate::ui::BalancedLabel>,
+        #[template_child]
         pub capture_field: gtk::TemplateChild<gtk::Label>,
         #[template_child]
         pub capture_illustration: gtk::TemplateChild<gtk::Picture>,
@@ -96,6 +98,11 @@ impl OnboardingShortcut {
 
     pub fn shortcut_button(&self) -> gtk::Button {
         self.imp().shortcut_button.get()
+    }
+
+    /// Says the extension starts at the next login.
+    pub fn relogin_note(&self) -> crate::ui::BalancedLabel {
+        self.imp().relogin_note.get()
     }
 
     pub fn in_place(&self) -> crate::shortcut_ui::InPlace {

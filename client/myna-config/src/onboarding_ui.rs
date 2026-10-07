@@ -24,9 +24,10 @@ use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
     assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads, install_view,
-    installs, model_offer, needs_onboarding, next_install, polls, remaining_download, set_up_plan,
-    set_up_steps, settled, while_installing, Component, ComponentId, ComponentState, DownloadSize,
-    InstallView, Machine, ModelOffer, Step, RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    installs, model_offer, needs_onboarding, next_install, polls, relogin_pending,
+    remaining_download, set_up_plan, set_up_steps, settled, while_installing, Component,
+    ComponentId, ComponentState, DownloadSize, InstallView, Machine, ModelOffer, Step,
+    RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
 };
 use crate::ports::{
     BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
@@ -767,6 +768,9 @@ impl OnboardingUi {
         }
 
         self.render_components(&components, setting_up);
+        self.shortcut_page
+            .relogin_note()
+            .set_visible(relogin_pending(&components));
         let forward = self.window.forward_button();
         if step.next().is_some() {
             forward.set_label(&gettextrs::gettext("Next"));
@@ -1191,6 +1195,7 @@ fn describe(components: &[Component]) -> String {
         .map(|component| {
             let state = match component.state {
                 ComponentState::Satisfied => "found".to_owned(),
+                ComponentState::AfterRelogin => "found, after a re-login".to_owned(),
                 ComponentState::Missing => "missing".to_owned(),
                 ComponentState::Unavailable(why) => format!("unavailable ({why:?})"),
             };
