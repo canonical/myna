@@ -171,20 +171,64 @@ if command -v snap >/dev/null 2>&1 && snap list myna >/dev/null 2>&1; then
     ok "confinement sees exactly what the host sees (${#PROBE[@]} paths)"
   else
     info "a path the host has but the snap cannot see is an AppArmor problem,"
-    info "not a stale daemon: check section 8 and \`snap connections myna\`."
+    info "not a stale daemon: check section 9 and \`snap connections myna\`."
   fi
   printf '%s\n' "$CONF" | grep -v '^[01] ' | sed 's/^/  note  /'
 else
   info "myna is not installed as a snap; skipped"
 fi
 
-say "8. AppArmor denials for myna"
+say "8. connect to the picked address, host vs inside the snap"
+# Sections 5 and 7 only stat the socket, which AppArmor barely mediates; a
+# denied connect(2) passes them and still fails every press with "cannot
+# connect to IBus: I/O error". Do the real connect plus the D-Bus EXTERNAL
+# handshake, the first thing zbus does.
+CONNECT_PY='
+import os, socket, sys
+from urllib.parse import unquote as undbus
+addr = sys.argv[1]
+kv = dict(p.split("=", 1) for p in addr.split(":", 1)[1].split(",") if "=" in p)
+if "path" in kv: target = undbus(kv["path"])
+elif "abstract" in kv: target = "\0" + undbus(kv["abstract"])
+else: print("unsupported address " + addr); sys.exit(1)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(5)
+try: s.connect(target)
+except OSError as e: print("connect failed: %s" % e); sys.exit(1)
+s.sendall(b"\0AUTH EXTERNAL " + str(os.getuid()).encode().hex().encode() + b"\r\n")
+try: reply = s.recv(256).decode(errors="replace").strip()
+except OSError as e: print("handshake failed: %s" % e); sys.exit(1)
+if reply.startswith("OK"): print("ok: " + reply); sys.exit(0)
+print("handshake refused: " + (reply or "<connection closed>")); sys.exit(1)
+'
+if [ -z "$PICKED" ]; then
+  info "no address passed section 5; nothing to connect to"
+else
+  ADDR=$(sed -n 's/^IBUS_ADDRESS=//p' "$PICKED")
+  info "address  $ADDR"
+  if out=$(python3 -c "$CONNECT_PY" "$ADDR" 2>&1); then ok "host  $out"; else bad "host  $out"; fi
+  if command -v snap >/dev/null 2>&1 && snap list myna >/dev/null 2>&1; then
+    # The snap shell reads its commands from stdin, so the program travels
+    # base64-encoded; the $(...) is meant for that shell, not this one.
+    # shellcheck disable=SC2016
+    out=$(printf 'python3 -c "$(echo %s | base64 -d)" %q\n' \
+            "$(printf '%s' "$CONNECT_PY" | base64 -w0)" "$ADDR" | timeout 30 snap run --shell myna.myna 2>&1)
+    case "$out" in
+      ok:*) ok "snap  $out" ;;
+      *)    bad "snap  $out"
+            info "host ok but snap failing is confinement: see section 9 for the denial" ;;
+    esac
+  else
+    info "myna is not installed as a snap; skipped the confined connect"
+  fi
+fi
+
+say "9. AppArmor denials for myna"
 journalctl -k --since "-2 hours" --no-pager 2>/dev/null | grep -iE 'apparmor="DENIED".*profile="snap\\.myna\\.' | tail -20 \
   || info "none in the last 2 hours (or no journal access)"
 snap connections myna 2>/dev/null | grep -E 'desktop-legacy' || info "desktop-legacy connection not found"
 
 if [ $PRUNE = 1 ]; then
-  say "9. prune"
+  say "10. prune"
   DEAD=()
   while IFS= read -r f; do
     [ -n "$f" ] || continue
