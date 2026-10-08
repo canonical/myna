@@ -37,7 +37,7 @@ pub enum Blocker {
     Incompatible,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ComponentStatus {
     Active,
     /// Enabled; it starts at the next login.
@@ -51,7 +51,19 @@ pub enum ComponentStatus {
     /// It ran and failed.
     Failed,
     /// Not installed, or the desktop cannot be asked.
+    #[default]
     Unavailable,
+}
+
+/// What kind of step failed, so a report can name it as what it was.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepKind {
+    /// A call to a desktop service.
+    Call,
+    /// A write to the user's settings.
+    Setting,
+    /// A process run.
+    Command,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -61,9 +73,13 @@ pub enum ComponentError {
     #[error("enabling was cancelled")]
     Cancelled,
     /// `step` names what was attempted, such as a D-Bus call or a settings
-    /// key, for the failure report.
+    /// key, for the failure report; `kind` says which.
     #[error("{step} failed: {message}")]
-    Failed { step: String, message: String },
+    Failed {
+        kind: StepKind,
+        step: String,
+        message: String,
+    },
 }
 
 /// The components one desktop needs.
@@ -86,6 +102,7 @@ mod tests {
     #[test]
     fn a_failure_names_the_step() {
         let error = ComponentError::Failed {
+            kind: StepKind::Call,
             step: "org.gnome.Shell.Extensions.EnableExtension".into(),
             message: "no such extension".into(),
         };
