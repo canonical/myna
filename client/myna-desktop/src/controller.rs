@@ -20,7 +20,7 @@ use myna_audio::AudioStats;
 use tokio::sync::{mpsc, watch};
 
 use crate::indicator::{Indicator, IndicatorState};
-use crate::inject::{FocusEvent, InjectError, Injector, Target};
+use crate::inject::{FocusEvent, Headline, InjectError, Injector, Target};
 use crate::live::Live;
 use async_trait::async_trait;
 use myna_orchestrator::{
@@ -495,7 +495,7 @@ impl DesktopControllerBuilder {
 
     /// Enable streaming preedit (R9): `Unstable` hypotheses are rendered in
     /// the target's preedit region (volatile, replaced per update, cleared by
-    /// the next commit) when the injector `supports_preedit()`. Off by default
+    /// the next commit) when the injector's capabilities include preedit. Off by default
     /// — the commit-only guarantee (FR-012) holds unless explicitly relaxed.
     ///
     /// Takes a plain `bool` where the answer is fixed (every test), or a
@@ -595,7 +595,7 @@ impl DesktopController {
         // Reborrow disjoint fields as locals so the select loop can poll the
         // trigger/focus futures and route to the target/indicator without
         // aliasing `self`.
-        let supports_preedit = self.injector.supports_preedit();
+        let supports_preedit = self.injector.capabilities().preedit;
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
@@ -1010,7 +1010,7 @@ async fn route_event(
         // burst is committed (which clears the old preedit) *before* the new
         // preedit tail is drawn after it. Never committed (FR-012); suppressed
         // with commits after focus-loss (FR-014); skipped unless enabled and
-        // the backend has a real preedit region (`supports_preedit`).
+        // the backend has a real preedit region (`capabilities().preedit`).
         if preedit && ending.writes_allowed() {
             myna_core::dbg_log!("inject", "preedit(len={})", text.len());
             target.set_preedit(text).await;

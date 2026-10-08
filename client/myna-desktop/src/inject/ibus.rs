@@ -39,7 +39,7 @@ use zbus::address::transport::{Transport, Unix, UnixSocket};
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
 use zbus::{Address, Connection};
 
-use super::{FocusEvent, InjectError, Injector, Target};
+use super::{FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities};
 
 const IBUS_SERVICE: &str = "org.freedesktop.IBus";
 const IBUS_PATH: &str = "/org/freedesktop/IBus";
@@ -921,8 +921,19 @@ impl IbusInjector {
     }
 }
 
+/// IBus has a replacement-safe preedit region (R9); whether it is used is the
+/// controller's call. The daemon asks every field for its surrounding text
+/// (`ActiveSurroundingText`) and delivers its content type (`ContentType`).
+pub const CAPABILITIES: TextInputCapabilities = TextInputCapabilities {
+    preedit: true,
+    surrounding_text: true,
+    secure_field_detection: Support::Supported,
+};
+
 #[async_trait]
 impl Injector for IbusInjector {
+    /// Acquiring switches the global engine to ours. The rollback on error
+    /// can only restore an input method the connection was able to read.
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         // Read before the switch; recorded once it has succeeded.
         let displaced = self.global_engine_name().await;
@@ -971,10 +982,8 @@ impl Injector for IbusInjector {
         Ok(target)
     }
 
-    fn supports_preedit(&self) -> bool {
-        // IBus has a replacement-safe preedit region (R9). Whether it is *used*
-        // is the controller's call (opt-in `--preedit`); commit-only otherwise.
-        true
+    fn capabilities(&self) -> TextInputCapabilities {
+        CAPABILITIES
     }
 }
 
@@ -1085,6 +1094,8 @@ impl Target for IbusTarget {
         self.state.loss(self.lease)
     }
 
+    /// Clears the preedit and restores the input method the engine switch
+    /// displaced, unless a newer lease superseded this one.
     async fn release(mut self: Box<Self>) {
         // Retired first: the restore focuses our engine out.
         let retired = self.state.retire(self.lease);

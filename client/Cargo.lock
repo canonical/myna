@@ -1297,6 +1297,7 @@ dependencies = [
  "myna-audio",
  "myna-core",
  "myna-orchestrator",
+ "myna-platform",
  "notify-rust",
  "serde",
  "serde_json",
@@ -1342,6 +1343,8 @@ dependencies = [
 name = "myna-platform"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "futures-util",
  "thiserror",
 ]
 

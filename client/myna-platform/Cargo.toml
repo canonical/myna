@@ -9,4 +9,6 @@ description = "Desktop-neutral contracts between Myna and the desktop it runs on
 # Contracts only: no toolkit, no D-Bus, no desktop service bindings. Each
 # process keeps its backends next to its own composition root.
 [dependencies]
+async-trait.workspace = true
+futures-util.workspace = true
 thiserror.workspace = true

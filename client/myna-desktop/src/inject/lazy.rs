@@ -14,7 +14,7 @@
 
 use async_trait::async_trait;
 
-use super::{InjectError, Injector, Target};
+use super::{InjectError, Injector, Target, TextInputCapabilities};
 
 /// Opens a fresh connection to an injection backend.
 #[async_trait]
@@ -22,11 +22,11 @@ pub trait Connect: Send {
     /// Connect, or explain why not.
     async fn connect(&mut self) -> Result<Box<dyn Injector>, InjectError>;
 
-    /// Whether the backend this factory produces has a replacement-safe
-    /// preedit region. Answered without connecting: the controller reads it
-    /// while building, long before any Press, and it is a property of the
-    /// protocol rather than of a live connection.
-    fn supports_preedit(&self) -> bool;
+    /// What the backend this factory produces can do. Answered without
+    /// connecting: the controller reads it while building, long before any
+    /// Press, and it is a property of the protocol rather than of a live
+    /// connection.
+    fn capabilities(&self) -> TextInputCapabilities;
 }
 
 /// An [`Injector`] that connects on demand through a [`Connect`] factory.
@@ -97,8 +97,8 @@ impl Injector for LazyInjector {
         }
     }
 
-    fn supports_preedit(&self) -> bool {
-        self.connect.supports_preedit()
+    fn capabilities(&self) -> TextInputCapabilities {
+        self.connect.capabilities()
     }
 }
 
@@ -114,9 +114,8 @@ impl Connect for IbusConnect {
             .map(|i| Box::new(i) as Box<dyn Injector>)
     }
 
-    fn supports_preedit(&self) -> bool {
-        // Matches `IbusInjector::supports_preedit` - IBus always has one.
-        true
+    fn capabilities(&self) -> TextInputCapabilities {
+        super::ibus::CAPABILITIES
     }
 }
 
@@ -143,8 +142,8 @@ mod tests {
             Ok(Box::new(MockInjector::new()))
         }
 
-        fn supports_preedit(&self) -> bool {
-            true
+        fn capabilities(&self) -> TextInputCapabilities {
+            MockInjector::new().with_preedit_support().capabilities()
         }
     }
 
@@ -213,8 +212,8 @@ mod tests {
             }
         }
 
-        fn supports_preedit(&self) -> bool {
-            true
+        fn capabilities(&self) -> TextInputCapabilities {
+            MockInjector::new().with_preedit_support().capabilities()
         }
     }
 
@@ -296,12 +295,12 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
-    /// `supports_preedit` is answered by the factory, so the controller can
-    /// read it while building - before anything is connected.
+    /// Capabilities are answered by the factory, so the controller can read
+    /// them while building - before anything is connected.
     #[tokio::test]
-    async fn preedit_support_is_known_before_connecting() {
+    async fn capabilities_are_known_before_connecting() {
         let (injector, _) = flaky(0);
-        assert!(injector.supports_preedit());
+        assert!(injector.capabilities().preedit);
         assert!(!injector.inner.is_some());
     }
 }

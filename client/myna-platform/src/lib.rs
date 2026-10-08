@@ -6,5 +6,6 @@
 //! holds no backend and binds no toolkit or desktop service.
 
 pub mod session;
+pub mod text_input;
 
 pub use session::{Desktop, Profile, Session, SessionEnv, SessionKind, UnknownProfile};

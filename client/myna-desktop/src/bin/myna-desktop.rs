@@ -440,7 +440,7 @@ fn set_activation(a: &mut Args, mode: Activation) -> Result<(), String> {
 ///
 /// The injector still has the final say downstream: the controller renders a
 /// preedit only where the backend has a real preedit region
-/// (`Injector::supports_preedit`).
+/// (`Injector::capabilities`).
 fn resolve_preedit(forced: Option<bool>, mode: myna_core::StreamingMode) -> bool {
     forced.unwrap_or(mode == myna_core::StreamingMode::Streaming)
 }

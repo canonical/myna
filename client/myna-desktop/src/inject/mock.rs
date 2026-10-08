@@ -8,8 +8,8 @@
 //! controller attempt it). A loss scripted with
 //! [`MockInjector::with_focus_event`] is delivered through the target's focus
 //! stream, so a controller that fails to act on the event still holds a live
-//! target and writes into it. `supports_preedit()` is `false` by default
-//! (commit-only); preedit tests opt in via [`MockInjector::with_preedit_support`].
+//! target and writes into it. Its capabilities are commit-only by default;
+//! preedit tests opt in via [`MockInjector::with_preedit_support`].
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};
 use tokio::sync::watch;
 
-use super::{FocusEvent, InjectError, Injector, Target};
+use super::{FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities};
 
 /// A recording of what the controller did to the injector. Shared with the test
 /// via [`MockInjector::log`] so assertions survive the controller owning the
@@ -96,7 +96,7 @@ pub struct MockInjector {
     /// Focus lost while a target's first `commit` is in flight.
     focus_during_commit: Option<FocusEvent>,
     lease: Arc<watch::Sender<Lease>>,
-    /// What `supports_preedit()` reports (false unless opted in).
+    /// Whether `capabilities()` reports preedit (false unless opted in).
     preedit_supported: bool,
     log: Arc<Mutex<InjectorLog>>,
 }
@@ -214,8 +214,12 @@ impl Injector for MockInjector {
         }
     }
 
-    fn supports_preedit(&self) -> bool {
-        self.preedit_supported
+    fn capabilities(&self) -> TextInputCapabilities {
+        TextInputCapabilities {
+            preedit: self.preedit_supported,
+            surrounding_text: false,
+            secure_field_detection: Support::Supported,
+        }
     }
 }
 
