@@ -180,6 +180,10 @@ impl Fixture for Fixtures {
         true
     }
 
+    fn commands(&self) -> [&'static str; 2] {
+        ["toggle-dictation", "other"]
+    }
+
     fn change_outside(&mut self, binding: Option<&Accelerator>) {
         {
             let mut desk = self.desk.borrow_mut();

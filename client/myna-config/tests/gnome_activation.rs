@@ -306,6 +306,10 @@ mod conformance {
             true
         }
 
+        fn commands(&self) -> [&'static str; 2] {
+            ["/snap/bin/myna.toggle", "gdbus call"]
+        }
+
         fn change_outside(&mut self, binding: Option<&Accelerator>) {
             let entry = self.entry(OURS);
             entry

@@ -21,6 +21,10 @@ pub trait Fixture {
     /// settings do, bypassing the backend.
     fn change_outside(&mut self, binding: Option<&Accelerator>);
 
+    /// Two different commands the backend reads back as Myna's own. Xfce
+    /// stores no label, so it finds Myna's binding by what it runs.
+    fn commands(&self) -> [&'static str; 2];
+
     /// Let queued notifications arrive.
     fn settle(&mut self) {}
 }
@@ -29,10 +33,10 @@ fn key(text: &str) -> Accelerator {
     Accelerator::parse(text).expect("a chord")
 }
 
-fn toggle() -> Action {
+fn toggle(fixture: &dyn Fixture) -> Action {
     Action {
         name: "Dictation".into(),
-        command: "toggle-dictation".into(),
+        command: fixture.commands()[0].into(),
     }
 }
 
@@ -105,32 +109,34 @@ fn nothing_is_bound_at_first(fixture: &mut dyn Fixture) {
 fn bind_is_read_back(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
     activation
-        .bind(&key("<Super>j"), &toggle())
+        .bind(&key("<Super>j"), &toggle(fixture))
         .expect("bind_is_read_back");
     let binding = bound(&*activation).expect("bind_is_read_back: bound");
     assert!(binding.same_keys("<Super>j"), "bind_is_read_back");
     assert_eq!(
         activation.command().unwrap().as_deref(),
-        Some("toggle-dictation"),
+        Some(fixture.commands()[0]),
         "bind_is_read_back"
     );
     // Binding again with a new command updates it in place.
     let action = Action {
-        command: "other".into(),
-        ..toggle()
+        command: fixture.commands()[1].into(),
+        ..toggle(fixture)
     };
     activation.bind(&key("<Super>j"), &action).unwrap();
     assert_eq!(
         activation.command().unwrap().as_deref(),
-        Some("other"),
+        Some(fixture.commands()[1]),
         "bind_is_read_back: command follows"
     );
 }
 
 fn rebinding_replaces_the_binding(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
-    activation.bind(&key("<Control><Alt>d"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
+    activation
+        .bind(&key("<Control><Alt>d"), &toggle(fixture))
+        .unwrap();
     let binding = bound(&*activation).expect("rebinding_replaces_the_binding");
     assert!(
         binding.same_keys("<Control><Alt>d"),
@@ -153,7 +159,7 @@ fn rebinding_replaces_the_binding(fixture: &mut dyn Fixture) {
 fn clear_removes_only_myna(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
     assert!(fixture.hold(&key("<Super>t"), false));
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
     activation.clear().expect("clear_removes_only_myna");
     assert_eq!(bound(&*activation), None, "clear_removes_only_myna");
     assert_eq!(
@@ -171,8 +177,8 @@ fn clear_removes_only_myna(fixture: &mut dyn Fixture) {
 fn bind_keeps_other_shortcuts(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
     assert!(fixture.hold(&key("<Super>t"), false));
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
-    activation.bind(&key("<Super>k"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
+    activation.bind(&key("<Super>k"), &toggle(fixture)).unwrap();
     assert_eq!(
         activation.conflicts(&key("<Super>t")).unwrap().len(),
         1,
@@ -198,7 +204,7 @@ fn conflicts_ignore_spelling_and_myna(fixture: &mut dyn Fixture) {
     }
     assert!(activation.conflicts(&key("<Super>x")).unwrap().is_empty());
     // Myna's own key is not a conflict with itself.
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
     assert!(
         activation.conflicts(&key("<Super>j")).unwrap().is_empty(),
         "conflicts_ignore_spelling_and_myna: own key"
@@ -209,7 +215,7 @@ fn release_frees_only_that_key(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
     assert!(fixture.hold(&key("<Super>t"), false));
     assert!(fixture.hold(&key("<Super>y"), false));
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
     let conflict = activation
         .conflicts(&key("<Super>t"))
         .unwrap()
@@ -269,7 +275,7 @@ fn watch_hears_both_sides_until_dropped(fixture: &mut dyn Fixture) {
     fixture.settle();
     let before = heard.get();
 
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
     fixture.settle();
     assert!(
         heard.get() > before,
@@ -291,7 +297,7 @@ fn watch_hears_both_sides_until_dropped(fixture: &mut dyn Fixture) {
     drop(subscription);
     let before = heard.get();
     fixture.change_outside(None);
-    activation.bind(&key("<Super>j"), &toggle()).unwrap();
+    activation.bind(&key("<Super>j"), &toggle(fixture)).unwrap();
     fixture.settle();
     assert_eq!(
         heard.get(),
