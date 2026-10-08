@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Provision a GNOME desktop LXD VM for the Myna Settings e2e suites, from
-# the release's Ubuntu cloud image. Ends with the VM stopped and three
-# snapshots that mirror the states the suites declare:
+# Provision a desktop LXD VM (GNOME, or Xubuntu with --desktop xubuntu) for
+# the Myna Settings e2e suites, from the release's Ubuntu cloud image. Ends
+# with the VM stopped and three snapshots that mirror the states the suites
+# declare:
 #
 #   bare             desktop up, no myna snaps, no user-daemons flag
 #   components-only  flag on, myna + myna-parakeet installed from latest/edge,
@@ -10,10 +11,10 @@
 #                    switch to), myna:backend connected to parakeet and the
 #                    daemon restarted
 #
-# run-suite.sh copies one per suite and leaves the VM itself untouched; reprovision on a new edge revision
-# or a stale image with --force.
+# run-suite.sh copies one per suite and leaves the VM itself untouched;
+# reprovision on a new edge revision or a stale image with --force.
 #
-# Usage: provision.sh --release noble|resolute|stonking [--force]
+# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu] [--force]
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -24,12 +25,14 @@ RELEASE='' FORCE=''
 while [ $# -gt 0 ]; do
     case $1 in
         --release) RELEASE=$2; shift 2 ;;
+        --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --force) FORCE=1; shift ;;
-        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
 check_release "$RELEASE"
+check_desktop
 VM=$(vm_name "$RELEASE")
 
 [ -z "$FORCE" ] || lxc delete --force "$VM" 2>/dev/null || true
@@ -40,9 +43,9 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
     # where every per-suite copy is a full copy of the disk.
     lxc init "$(image "$RELEASE")" "$VM" --vm ${E2E_POOL:+-s "$E2E_POOL"} \
         -c limits.cpu=4 -c limits.memory=6GiB -d root,size=20GiB \
-        -c cloud-init.user-data="$(cat "$HERE/user-data")"
+        -c cloud-init.user-data="$(user_data)"
     lxc start "$VM"
-    # gdm only starts from the next boot, the first stage's.
+    # The display manager only starts from the next boot, the first stage's.
     wait_booted "$VM"
     # A suite's copy is a new instance to cloud-init, which would run the
     # whole user-data again.

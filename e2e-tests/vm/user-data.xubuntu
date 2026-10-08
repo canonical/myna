@@ -1,0 +1,59 @@
+#cloud-config
+# Xubuntu (Xfce on X11) part of the e2e VM's cloud-init user-data, merged
+# after user-data.common by lib.sh.
+#
+# xubuntu-core is the minimal Xubuntu seed (lightdm, xfce4 session, panel,
+# settings daemons) without the application suite. IBus is not part of it, so
+# the input method the dictation daemon injects through is installed here.
+packages:
+  - xubuntu-core
+  - lightdm
+  - fonts-ubuntu
+  - at-spi2-core
+  - ibus
+  - ibus-gtk3
+  - ibus-gtk4
+  - im-config
+  - mousepad
+  - xauth
+
+write_files:
+  # LightDM autologin: every boot lands on ubuntu's Xfce session without
+  # interaction. Myna tests nothing at the greeter.
+  - path: /etc/lightdm/lightdm.conf.d/50-e2e-autologin.conf
+    content: |
+      [Seat:*]
+      autologin-user=ubuntu
+      autologin-user-timeout=0
+      autologin-session=xfce
+
+  # No blanking, no lock, no suspend: a test must never find the session
+  # asleep. System-wide xfconf defaults, read when the user has no value.
+  - path: /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-power-manager" version="1.0">
+        <property name="xfce4-power-manager" type="empty">
+          <property name="dpms-enabled" type="bool" value="false"/>
+          <property name="blank-on-ac" type="int" value="0"/>
+          <property name="dpms-on-ac-sleep" type="uint" value="0"/>
+          <property name="dpms-on-ac-off" type="uint" value="0"/>
+          <property name="inactivity-on-ac" type="uint" value="14"/>
+          <property name="lock-screen-suspend-hibernate" type="bool" value="false"/>
+        </property>
+      </channel>
+
+  - path: /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-screensaver.xml
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-screensaver" version="1.0">
+        <property name="saver" type="empty">
+          <property name="enabled" type="bool" value="false"/>
+          <property name="idle-activation" type="empty">
+            <property name="enabled" type="bool" value="false"/>
+          </property>
+        </property>
+        <property name="lock" type="empty">
+          <property name="enabled" type="bool" value="false"/>
+        </property>
+      </channel>

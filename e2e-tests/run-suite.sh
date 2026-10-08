@@ -3,7 +3,8 @@
 # of the snapshot it declares (a `# snapshot: NAME` header), push the binary
 # and tools, run it, pull artifacts. Local runs and CI share this entry point.
 #
-# Usage: run-suite.sh --release noble|resolute|stonking [--binary PATH] [SUITE ...]
+# Usage: run-suite.sh --release noble|resolute|stonking [--desktop gnome|xubuntu] [--binary PATH] [SUITE ...]
+#   --desktop D    the desktop VM to use (default $E2E_DESKTOP, else gnome)
 #   --binary PATH  test this myna-config instead of building one in the
 #                  myna-noble workshop
 # Suites live in suites/; none given runs them all.
@@ -17,18 +18,22 @@ REL='' BINARY='' SUITES=()
 while [ $# -gt 0 ]; do
     case $1 in
         --release) REL=$2; shift 2 ;;
+        --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --binary) BINARY=$2; shift 2 ;;
-        -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) SUITES+=("$1"); shift ;;
     esac
 done
 check_release "$REL"
+check_desktop
 VM=$(vm_name "$REL")
 if [ ${#SUITES[@]} = 0 ]; then
     for f in "$HERE"/suites/*.sh; do
         [ "${f##*/}" = lib.sh ] || SUITES+=("$(basename "$f" .sh)")
     done
 fi
+# Artifacts of the GNOME runs keep their release-only names.
+TAG=$REL; [ "$E2E_DESKTOP" = gnome ] || TAG=$E2E_DESKTOP-$REL
 REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 
 if [ -z "$BINARY" ]; then
@@ -51,8 +56,8 @@ for SUITE in "${SUITES[@]}"; do
     FILE=$HERE/suites/$SUITE.sh
     SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
     snapshots "$VM" | grep -qx "$SNAP" \
-        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL" >&2; exit 1; }
-    ARTIFACTS=$RUN_DIR/artifacts/$REL-$SUITE
+        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
+    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
     rm -rf "$ARTIFACTS"; mkdir -p "$ARTIFACTS"
 
     echo "== $SUITE: from $VM/$SNAP"
@@ -67,7 +72,7 @@ for SUITE in "${SUITES[@]}"; do
     lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
 
     src=0
-    VM=$RUN REL=$REL bash "$FILE" || src=$?
+    VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
     echo "== $SUITE rc=$src"
     [ $src = 0 ] || rc=1
 

@@ -1,0 +1,39 @@
+#cloud-config
+# Desktop-independent part of the e2e VM's cloud-init user-data. lib.sh
+# merges it with user-data.<desktop> (cloud-init list(append) semantics) into
+# the LXD VM's cloud-init.user-data.
+users:
+  - name: ubuntu
+    sudo: [ 'ALL=(ALL) NOPASSWD:ALL' ]
+    gecos: Ubuntu
+    groups: sudo
+    homedir: /home/ubuntu
+    shell: /bin/bash
+
+package_update: true
+package_upgrade: true
+packages:
+  # Test driver dependencies (shot-driver.py and friends run inside the VM)
+  - python3-gi
+  - gir1.2-atspi-2.0
+  - xvfb
+  - xcompmgr
+  - xdotool
+  - imagemagick
+  - x11-utils
+  - dconf-cli
+  - psmisc
+  - jq
+
+runcmd:
+  # The user manager must run without a login too, so systemctl --user works
+  # from lxc exec and the dictation user daemon survives between suites.
+  - loginctl enable-linger ubuntu
+  # Disable apport
+  - sed -i 's/enabled=1/enabled=0/' /etc/default/apport
+  - systemctl mask --now apport.service
+  # Speed up boot
+  - systemctl mask systemd-networkd-wait-online.service
+  # No APT activity during tests
+  - systemctl mask apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer unattended-upgrades.service
+  - rm -f /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades
