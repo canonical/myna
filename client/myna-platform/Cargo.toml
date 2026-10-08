@@ -1,0 +1,12 @@
+[package]
+name = "myna-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Desktop-neutral contracts between Myna and the desktop it runs on"
+
+# Contracts only: no toolkit, no D-Bus, no desktop service bindings. Each
+# process keeps its backends next to its own composition root.
+[dependencies]
+thiserror.workspace = true
