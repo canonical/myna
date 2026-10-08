@@ -22,6 +22,31 @@ pub fn command(legacy: bool) -> String {
     }
 }
 
+/// Whether `command` is one Myna binds to its key: the daemon's `Toggle`, an
+/// older daemon's `<snap>.toggle` app, or the unpackaged `myna-desktop
+/// --toggle`. A desktop that stores no name for a shortcut is searched by it.
+pub fn is_toggle_command(command: &str) -> bool {
+    let command = command.trim();
+    if command == TOGGLE_COMMAND {
+        return true;
+    }
+    let mut words = command.split_whitespace();
+    let (Some(program), arguments) = (words.next(), words.collect::<Vec<_>>()) else {
+        return false;
+    };
+    let snap_app = arguments.is_empty()
+        && program
+            .strip_prefix("/snap/bin/")
+            .and_then(|app| app.strip_suffix(".toggle"))
+            .is_some_and(|snap| {
+                snap == crate::onboarding::MYNA_SNAP
+                    || snap.starts_with(&format!("{}_", crate::onboarding::MYNA_SNAP))
+            });
+    let unpackaged =
+        program.rsplit('/').next() == Some("myna-desktop") && arguments == ["--toggle"];
+    snap_app || unpackaged
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShortcutState {
     /// Nothing owns the daemon's bus name.
@@ -102,6 +127,30 @@ mod tests {
             button_action(&ShortcutState::NotRunning, false),
             ButtonAction::Nothing
         );
+    }
+
+    #[test]
+    fn only_myna_toggle_commands_are_recognised() {
+        for ours in [
+            TOGGLE_COMMAND,
+            "/snap/bin/myna.toggle",
+            "/snap/bin/myna_dev.toggle",
+            "/usr/bin/myna-desktop --toggle",
+            "myna-desktop --toggle",
+        ] {
+            assert!(is_toggle_command(ours), "{ours}");
+        }
+        for theirs in [
+            "",
+            "xfce4-terminal",
+            "/snap/bin/other.toggle",
+            "/snap/bin/myna-parakeet.toggle",
+            "/snap/bin/myna.toggle --extra",
+            "myna-desktop --status",
+            "gdbus call --session --dest org.example.Toggle",
+        ] {
+            assert!(!is_toggle_command(theirs), "{theirs}");
+        }
     }
 
     #[test]

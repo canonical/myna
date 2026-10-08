@@ -10,6 +10,7 @@ use myna_platform::activation::Activation;
 use myna_platform::{Profile, SessionEnv};
 
 pub mod gnome;
+pub mod xfce;
 
 /// The backends of one desktop, as Settings uses them.
 pub struct Platform {
@@ -23,7 +24,13 @@ impl Platform {
         let activation: Option<Rc<dyn Activation>> = match profile {
             Profile::Gnome => gnome::activation::GnomeActivation::open()
                 .map(|activation| Rc::new(activation) as Rc<dyn Activation>),
-            Profile::Xfce | Profile::Generic => None,
+            Profile::Xfce => xfce::activation::XfconfActivation::open()
+                .map(|activation| Rc::new(activation) as Rc<dyn Activation>)
+                .map_err(|error| {
+                    gio::glib::g_warning!(crate::LOG_DOMAIN, "no Xfce shortcuts: {error}")
+                })
+                .ok(),
+            Profile::Generic => None,
         };
         Self {
             profile,
