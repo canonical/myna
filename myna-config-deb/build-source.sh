@@ -1,7 +1,7 @@
 #!/bin/sh
 # Stage the myna-config Debian source package from the committed tree.
 #
-# The deb builds a two-crate workspace (myna-core, myna-config) cut out of
+# The deb builds a three-crate workspace (myna-core, myna-platform, myna-config) cut out of
 # client/, with its crates.io dependencies vendored into the orig tarball so
 # the build runs offline. Output, under target/deb/ by default:
 #
@@ -58,7 +58,7 @@ stage="$out/myna-config-$upstream"
 
 rm -rf "$out"
 mkdir -p "$stage"
-git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-config \
+git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-platform client/myna-config \
     | tar -x -C "$stage" --strip-components=1
 # The binaries report the version build-support/version.rs finds staged here.
 echo "$upstream" > "$stage/.version"
@@ -74,14 +74,14 @@ git -C "$root" archive HEAD extensions/myna-shell | tar -x -C "$ext_tmp"
 # Tests that read the repository (snapcraft.yaml, docs, dev/) have nothing to read here.
 rm "$stage/myna-config/tests/snap_packaging.rs" "$stage/myna-config/tests/client_version.rs"
 
-members='members = ["myna-core", "myna-config"]'
+members='members = ["myna-core", "myna-platform", "myna-config"]'
 if [ "$(grep -c '^members = ' "$stage/Cargo.toml")" != 1 ]; then
     echo "error: expected exactly one workspace members line in client/Cargo.toml" >&2
     exit 1
 fi
 sed -i "s/^members = .*/$members/" "$stage/Cargo.toml"
 
-# Prunes Cargo.lock to the two members' closure; versions stay as locked.
+# Prunes Cargo.lock to the members' closure; versions stay as locked.
 # Filtered to the Ubuntu build targets: the winapi/windows-sys crates alone
 # are 130 MB unpacked. gettext-sys carries a gettext tarball it builds only
 # without the gettext-system feature, which this workspace always sets.

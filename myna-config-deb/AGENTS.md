@@ -6,7 +6,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 # Overview
 
-This directory turns `client/myna-core` and `client/myna-config` into the `myna-config` source package. The application must run unconfined because it drives snapd and escalates through polkit, which the `myna` snap cannot do, so it is the one piece of Myna shipped as a deb. `README.md` here is the human build recipe; this file carries what an agent must not get wrong.
+This directory turns `client/myna-core`, `client/myna-platform` and `client/myna-config` into the `myna-config` source package. The application must run unconfined because it drives snapd and escalates through polkit, which the `myna` snap cannot do, so it is the one piece of Myna shipped as a deb. `README.md` here is the human build recipe; this file carries what an agent must not get wrong.
 
 # Important
 

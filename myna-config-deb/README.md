@@ -26,8 +26,8 @@ a developer machine: the unshare chroot unpacks under `$TMPDIR` (default
 `--chroot-setup-commands='...'` is where a mirror or apt proxy for the chroot
 goes.
 
-`build-source.sh` reads HEAD, not the working tree. It stages a two-crate
-workspace (`myna-core`, `myna-config`, `client/data`), vendors the crates.io
+`build-source.sh` reads HEAD, not the working tree. It stages a three-crate
+workspace (`myna-core`, `myna-platform`, `myna-config`, `client/data`), vendors the crates.io
 dependencies for the Ubuntu build targets, and writes a reproducible
 `.orig.tar.xz`. `debian/copyright` is generated from the vendored crates by
 `vendor-copyright.py`; `debian/copyright.in` is the hand-written header.
