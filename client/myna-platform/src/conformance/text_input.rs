@@ -13,6 +13,9 @@ use crate::text_input::{FocusEvent, InjectError, Injector, Support, Target};
 const FOCUS_EVENT_LIMIT: Duration = Duration::from_secs(5);
 /// How long a focused target must stay quiet.
 const QUIET: Duration = Duration::from_millis(100);
+/// How often a write is retried while a change to the field reaches the
+/// backend.
+const RETRY: Duration = Duration::from_millis(20);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldKind {
@@ -36,6 +39,10 @@ pub trait Field: Send {
 
     /// Give the field focus again.
     async fn focus(&mut self);
+
+    /// Make the focused field secure under a held target, as a page that
+    /// swaps a text input for a password one.
+    async fn turn_secure(&mut self);
 
     /// What the field shows now; `None` where this fixture cannot see it.
     async fn observe(&mut self) -> Option<FieldView>;
@@ -70,8 +77,13 @@ pub async fn run(fixture: &mut dyn Fixture) -> Report {
     if capabilities.secure_field_detection == Support::Supported {
         let observed = secure_fields_are_refused(fixture).await;
         report.record("secure_fields_are_refused", observed);
+        let observed = a_field_turning_secure_is_refused(fixture).await;
+        report.record("a_field_turning_secure_is_refused", observed);
     } else {
         report.not_applicable.push("secure_fields_are_refused");
+        report
+            .not_applicable
+            .push("a_field_turning_secure_is_refused");
     }
 
     if capabilities.preedit {
@@ -79,12 +91,15 @@ pub async fn run(fixture: &mut dyn Fixture) -> Report {
         report.record("commit_clears_the_preedit", observed);
         let observed = no_preedit_after_focus_loss(fixture).await;
         report.record("no_preedit_after_focus_loss", observed);
+        let observed = release_clears_the_preedit(fixture).await;
+        report.record("release_clears_the_preedit", observed);
         report
             .not_applicable
             .push("preedit_without_support_is_inert");
     } else {
         report.not_applicable.push("commit_clears_the_preedit");
         report.not_applicable.push("no_preedit_after_focus_loss");
+        report.not_applicable.push("release_clears_the_preedit");
         let observed = preedit_without_support_is_inert(fixture).await;
         report.record("preedit_without_support_is_inert", observed);
     }
@@ -234,6 +249,56 @@ async fn secure_fields_are_refused(fixture: &mut dyn Fixture) -> bool {
         );
     }
     view.is_some()
+}
+
+async fn a_field_turning_secure_is_refused(fixture: &mut dyn Fixture) -> bool {
+    const CHECK: &str = "a_field_turning_secure_is_refused";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    field.turn_secure().await;
+    // The desktop may tell the backend after the field changed: probes may
+    // land until it knows, and must stop within the limit.
+    let deadline = tokio::time::Instant::now() + FOCUS_EVENT_LIMIT;
+    loop {
+        match target.commit("probe").await {
+            Err(InjectError::SecureField) => break,
+            Ok(()) if tokio::time::Instant::now() < deadline => tokio::time::sleep(RETRY).await,
+            Ok(()) => panic!("{CHECK}: commits still land {FOCUS_EVENT_LIMIT:?} after it turned"),
+            Err(err) => panic!("{CHECK}: commit gave {err}, not a secure field refusal"),
+        }
+    }
+    target.set_preedit("secret").await;
+    let refused = target.commit("secret").await;
+    assert!(
+        matches!(refused, Err(InjectError::SecureField)),
+        "{CHECK}: commit once refused gave {refused:?}"
+    );
+    let view = field.observe().await;
+    if let Some(view) = &view {
+        assert!(
+            !view.text.contains("secret") && !view.preedit.contains("secret"),
+            "{CHECK}: field shows {view:?}"
+        );
+    }
+    target.release().await;
+    view.is_some()
+}
+
+async fn release_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {
+    const CHECK: &str = "release_clears_the_preedit";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    target.set_preedit("draft").await;
+    let before = field.observe().await;
+    if let Some(view) = &before {
+        assert_eq!(view.preedit, "draft", "{CHECK}: field shows {view:?}");
+    }
+    target.release().await;
+    let after = field.observe().await;
+    if let Some(view) = &after {
+        assert!(view.preedit.is_empty(), "{CHECK}: field shows {view:?}");
+    }
+    after.is_some()
 }
 
 async fn commit_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {

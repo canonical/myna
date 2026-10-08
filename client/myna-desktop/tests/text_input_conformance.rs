@@ -22,6 +22,10 @@ impl Field for SeenField {
     // Every acquire binds the field afresh, as if refocused.
     async fn focus(&mut self) {}
 
+    async fn turn_secure(&mut self) {
+        self.0.set_secure(true);
+    }
+
     async fn observe(&mut self) -> Option<FieldView> {
         Some(FieldView {
             text: self.0.text(),
@@ -43,7 +47,7 @@ impl Fixture for MockFixture {
     }
 }
 
-const COMMON: [&str; 7] = [
+const COMMON: [&str; 8] = [
     "commits_reach_a_plain_field",
     "no_commit_after_focus_loss",
     "late_focus_streams_still_report_the_loss",
@@ -51,6 +55,7 @@ const COMMON: [&str; 7] = [
     "a_newer_target_supersedes_the_older",
     "release_after_focus_loss_then_reacquire",
     "secure_fields_are_refused",
+    "a_field_turning_secure_is_refused",
 ];
 
 #[tokio::test]
@@ -62,7 +67,11 @@ async fn a_commit_only_mock_conforms() {
     assert!(report.unobserved.is_empty(), "{report:?}");
     assert_eq!(
         report.not_applicable,
-        ["commit_clears_the_preedit", "no_preedit_after_focus_loss"]
+        [
+            "commit_clears_the_preedit",
+            "no_preedit_after_focus_loss",
+            "release_clears_the_preedit",
+        ]
     );
 }
 
@@ -70,7 +79,11 @@ async fn a_commit_only_mock_conforms() {
 async fn a_preedit_mock_conforms() {
     let report = run(&mut MockFixture { preedit: true }).await;
     let mut passed = COMMON.to_vec();
-    passed.extend(["commit_clears_the_preedit", "no_preedit_after_focus_loss"]);
+    passed.extend([
+        "commit_clears_the_preedit",
+        "no_preedit_after_focus_loss",
+        "release_clears_the_preedit",
+    ]);
     assert_eq!(report.passed, passed);
     assert!(report.unobserved.is_empty(), "{report:?}");
     assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);

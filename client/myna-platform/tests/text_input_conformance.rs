@@ -29,6 +29,9 @@ enum Flaw {
     BreaksOnRelease,
     LateStreamsMissTheLoss,
     CommitsThePreedit,
+    WritesFieldsTurnedSecure,
+    PreeditInSecureFields,
+    KeepsPreeditOnRelease,
 }
 
 #[derive(Debug, Default)]
@@ -111,6 +114,14 @@ impl Target for RefTarget {
         if !self.may_write() {
             return Err(InjectError::FocusLost);
         }
+        let detects = self.capabilities.secure_field_detection == Support::Supported;
+        let ignores = matches!(
+            self.flaw,
+            Flaw::WritesSecureFields | Flaw::WritesFieldsTurnedSecure
+        );
+        if detects && !ignores && self.desk.borrow().secure {
+            return Err(InjectError::SecureField);
+        }
         let flaw = self.flaw;
         self.desk.send_modify(|desk| {
             if flaw == Flaw::CommitsThePreedit {
@@ -130,7 +141,8 @@ impl Target for RefTarget {
     async fn set_preedit(&mut self, text: &str) {
         let supported = self.capabilities.preedit || self.flaw == Flaw::PreeditWithoutSupport;
         let allowed = self.owned() || self.flaw == Flaw::PreeditAfterLoss;
-        if supported && allowed && !self.desk.borrow().secure {
+        let shown = !self.desk.borrow().secure || self.flaw == Flaw::PreeditInSecureFields;
+        if supported && allowed && shown {
             self.desk.send_modify(|desk| desk.preedit = text.to_owned());
         }
     }
@@ -156,8 +168,10 @@ impl Target for RefTarget {
         let flaw = self.flaw;
         let owned = self.owned();
         self.desk.send_modify(|desk| {
-            if owned {
+            if owned && flaw != Flaw::KeepsPreeditOnRelease {
                 desk.preedit.clear();
+            }
+            if owned {
                 desk.lost = true;
             }
             if flaw == Flaw::BreaksOnRelease {
@@ -180,6 +194,10 @@ impl Field for RefField {
 
     async fn focus(&mut self) {
         self.0.send_modify(|desk| desk.focused = true);
+    }
+
+    async fn turn_secure(&mut self) {
+        self.0.send_modify(|desk| desk.secure = true);
     }
 
     async fn observe(&mut self) -> Option<FieldView> {
@@ -236,8 +254,10 @@ async fn a_backend_with_every_capability_passes_every_check() {
             "a_newer_target_supersedes_the_older",
             "release_after_focus_loss_then_reacquire",
             "secure_fields_are_refused",
+            "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
+            "release_clears_the_preedit",
         ]
     );
     assert!(report.unobserved.is_empty(), "{report:?}");
@@ -253,8 +273,10 @@ async fn a_commit_only_backend_that_cannot_see_secure_fields_skips_those_checks(
         report.not_applicable,
         [
             "secure_fields_are_refused",
+            "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
+            "release_clears_the_preedit",
         ]
     );
 }
@@ -334,6 +356,24 @@ rejects!(
     Flaw::LateStreamsMissTheLoss,
     FULL,
     "late_focus_streams_still_report_the_loss"
+);
+rejects!(
+    a_commit_into_a_field_turned_secure,
+    Flaw::WritesFieldsTurnedSecure,
+    FULL,
+    "a_field_turning_secure_is_refused"
+);
+rejects!(
+    a_preedit_in_a_field_turned_secure,
+    Flaw::PreeditInSecureFields,
+    FULL,
+    "a_field_turning_secure_is_refused"
+);
+rejects!(
+    a_preedit_left_showing_after_release,
+    Flaw::KeepsPreeditOnRelease,
+    FULL,
+    "release_clears_the_preedit"
 );
 rejects!(
     a_preedit_committed_with_the_text,
