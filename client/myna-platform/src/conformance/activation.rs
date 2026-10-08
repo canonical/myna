@@ -182,8 +182,8 @@ fn bind_keeps_other_shortcuts(fixture: &mut dyn Fixture) {
 
 fn conflicts_ignore_spelling_and_myna(fixture: &mut dyn Fixture) {
     let activation = fixture.setup();
-    assert!(fixture.hold(&key("<Control><Alt>w"), false));
-    for spelling in ["<Primary><Alt>w", "<Alt><Ctrl>W", "<Mod1><Control>w"] {
+    assert!(fixture.hold(&key("<Control><Alt>q"), false));
+    for spelling in ["<Primary><Alt>q", "<Alt><Ctrl>Q", "<Mod1><Control>q"] {
         let conflicts = activation.conflicts(&key(spelling)).unwrap();
         assert_eq!(
             conflicts.len(),
