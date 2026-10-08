@@ -12,3 +12,8 @@ description = "Desktop-neutral contracts between Myna and the desktop it runs on
 async-trait.workspace = true
 futures-util.workspace = true
 thiserror.workspace = true
+# The conformance kit bounds every wait it makes on a backend.
+tokio = { workspace = true, optional = true }
+
+[features]
+conformance = ["dep:tokio"]

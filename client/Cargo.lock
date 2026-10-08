@@ -1346,6 +1346,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

@@ -15,3 +15,6 @@ pub mod text_input;
 
 pub use session::{Desktop, Profile, Session, SessionEnv, SessionKind, UnknownProfile};
 pub use subscription::Subscription;
+
+#[cfg(feature = "conformance")]
+pub mod conformance;

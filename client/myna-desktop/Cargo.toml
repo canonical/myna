@@ -41,6 +41,7 @@ gettext-rs = { version = "0.7", features = ["gettext-system"] }
 ignored = ["gettext-rs"]
 
 [dev-dependencies]
+myna-platform = { path = "../myna-platform", features = ["conformance"] }
 # `#[tokio::test(start_paused = true)]`: the retry backoff is measured in tens
 # of seconds, so the tests advance tokio's clock instead of the wall clock.
 tokio = { workspace = true, features = ["test-util"] }
