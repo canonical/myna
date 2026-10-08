@@ -1,8 +1,9 @@
 # Myna Settings end-to-end: the real binary, built on the GTK 4.14 floor in
-# the myna-noble workshop, driven through AT-SPI on fresh GNOME desktop LXD
-# VMs with the store's latest/edge snaps (e2e-tests/). Provisioned from
+# the myna-noble workshop, driven through AT-SPI on fresh GNOME (scheduled
+# runs: also Xubuntu) desktop LXD VMs with the store's latest/edge snaps (e2e-tests/). Provisioned from
 # scratch every run, so a regression in the edge snaps shows here too.
-# The devel series is informational: its archive breaks for reasons not ours.
+# The devel series and the Xubuntu desktop are informational: the former's
+# archive breaks for reasons not ours, the latter is being brought up.
 name: E2E
 
 concurrency:
@@ -27,9 +28,14 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(github.event_name == 'pull_request' && '["noble"]' || '["noble", "resolute", "stonking"]') }}
-    name: e2e (${{ matrix.release }})
+        desktop: ${{ fromJSON(github.event_name == 'pull_request' && '["gnome"]' || '["gnome", "xubuntu"]') }}
+        exclude:
+          - { desktop: xubuntu, release: resolute }
+          - { desktop: xubuntu, release: stonking }
+    # GNOME keeps its release-only names (required checks, artifacts).
+    name: ${{ matrix.desktop == 'gnome' && format('e2e ({0})', matrix.release) || format('e2e ({0}, {1})', matrix.desktop, matrix.release) }}
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.release == 'stonking' }}
+    continue-on-error: ${{ matrix.release == 'stonking' || matrix.desktop == 'xubuntu' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -43,12 +49,12 @@ jobs:
       # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
       # 20 GB disk copy; btrfs makes it copy-on-write.
       - run: lxc storage create e2e btrfs size=60GiB
-      - run: make e2e E2E_RELEASE=${{ matrix.release }}
+      - run: make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }}
         env:
           E2E_POOL: e2e
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-${{ matrix.release }}
+          name: ${{ matrix.desktop == 'gnome' && format('e2e-{0}', matrix.release) || format('e2e-{0}-{1}', matrix.desktop, matrix.release) }}
           retention-days: 14
           path: e2e-tests/.run/artifacts/
