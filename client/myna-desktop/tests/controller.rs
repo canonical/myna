@@ -282,7 +282,7 @@ async fn no_speech_session_commits_nothing() {
     controller.run().await;
 
     assert!(
-        inject_log.lock().unwrap().commits.is_empty(),
+        inject_log.lock().unwrap().attempts() == 0,
         "no speech → no commit"
     );
     // Teardown still released the engine cleanly (one restore).
@@ -328,7 +328,7 @@ async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
         0,
         "no session/capture on an acquire error"
     );
-    assert!(inject_log.lock().unwrap().commits.is_empty());
+    assert!(inject_log.lock().unwrap().attempts() == 0);
     assert!(
         matches!(
             indicate_log.lock().unwrap().last(),
@@ -355,7 +355,8 @@ async fn secure_field_is_refused_before_capture() {
     // Two pokes over a toggle trigger: the second only reaches acquire if the
     // refusal resynced the trigger's parity.
     let probe = Arc::new(Mutex::new(0usize));
-    let injector = MockInjector::new().with_acquires([AcquireOutcome::Secure]);
+    let injector = MockInjector::new();
+    injector.field().set_secure(true);
     let inject_log = injector.log();
     let indicator = MockIndicator::new();
     let indicate_log = indicator.log();
@@ -385,7 +386,7 @@ async fn secure_field_is_refused_before_capture() {
     {
         let log = inject_log.lock().unwrap();
         assert_eq!(log.acquires, 2, "the refusal must resync the trigger");
-        assert!(log.commits.is_empty());
+        assert!(log.attempts() == 0);
         // Each refusal rolled itself back; no target was handed out to release.
         assert_eq!(log.releases, 0);
     }
@@ -687,7 +688,7 @@ async fn focus_out_finalizes_and_makes_no_further_commits() {
     // would land in the *new* surface, so it is discarded — nothing lands after
     // focus loss (SC-007). (With commit-on-finalize the whole burst arrives
     // after finish, so this is the realistic outcome.)
-    assert!(log.commits.is_empty(), "nothing committed after focus-out");
+    assert!(log.attempts() == 0, "nothing committed after focus-out");
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
@@ -715,9 +716,9 @@ async fn focus_out_protection_holds_for_every_utterance() {
     let log = inject_log.lock().unwrap();
     assert_eq!(log.acquires, 2, "both utterances ran");
     assert!(
-        log.commits.is_empty(),
+        log.attempts() == 0,
         "focus-out must suppress commits in EVERY utterance, got {:?}",
-        log.commits
+        log
     );
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -741,10 +742,7 @@ async fn target_gone_cancels_and_makes_no_further_commits() {
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert!(
-        log.commits.is_empty(),
-        "nothing committed after target-gone"
-    );
+    assert!(log.attempts() == 0, "nothing committed after target-gone");
     assert_eq!(
         log.releases, 1,
         "target-gone releases, restoring the engine once"
@@ -797,7 +795,7 @@ async fn focus_out_with_empty_transcript_surfaces_focus_lost_not_no_speech() {
 async fn focus_out_while_draining_a_finished_session_commits_nothing() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
-    let mut focus = Some(injector.focus_sender());
+    let mut focus = Some(injector.field());
     let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
         let focus = focus.take().expect("single-use session");
         let run: SessionRun = Box::pin(async move {
@@ -805,7 +803,7 @@ async fn focus_out_while_draining_a_finished_session_commits_nothing() {
             let _ = tx.send(OrchestratorEvent::Done("tail".into())).await;
             // Within the poll that completes the run, so the controller has
             // already passed its focus branch and sees the queue next.
-            focus.send(myna_desktop::FocusEvent::FocusOut);
+            focus.lose_focus(myna_desktop::FocusEvent::FocusOut);
             Ok(SessionOutcome::Completed {
                 transcript: "tail".into(),
             })
@@ -822,9 +820,9 @@ async fn focus_out_while_draining_a_finished_session_commits_nothing() {
 
     let log = inject_log.lock().unwrap();
     assert!(
-        log.commits.is_empty(),
+        log.attempts() == 0,
         "a FocusOut during the final drain must suppress the tail, got {:?}",
-        log.commits
+        log
     );
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -838,7 +836,7 @@ async fn focus_out_while_draining_a_finished_session_commits_nothing() {
 async fn a_segment_buffered_before_focus_loss_is_never_flushed_after_it() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
-    let mut focus = Some(injector.focus_sender());
+    let mut focus = Some(injector.field());
     let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
         let focus = focus.take().expect("single-use session");
         let run: SessionRun = Box::pin(async move {
@@ -847,7 +845,7 @@ async fn a_segment_buffered_before_focus_loss_is_never_flushed_after_it() {
             let _ = tx.send(OrchestratorEvent::Final("tail".into())).await;
             // Let the controller route (and buffer) the Final before focus goes.
             tokio::time::sleep(Duration::from_millis(50)).await;
-            focus.send(myna_desktop::FocusEvent::FocusOut);
+            focus.lose_focus(myna_desktop::FocusEvent::FocusOut);
             Ok(SessionOutcome::Completed {
                 transcript: "tail".into(),
             })
@@ -864,9 +862,9 @@ async fn a_segment_buffered_before_focus_loss_is_never_flushed_after_it() {
 
     let log = inject_log.lock().unwrap();
     assert!(
-        log.commits.is_empty(),
+        log.attempts() == 0,
         "text buffered before the focus loss must not reach the new surface, got {:?}",
-        log.commits
+        log
     );
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -903,9 +901,9 @@ async fn focus_out_while_acquiring_commits_nothing() {
     {
         let log = inject_log.lock().unwrap();
         assert!(
-            log.commits.is_empty(),
+            log.attempts() == 0,
             "a FocusOut during acquire must suppress every commit, got {:?}",
-            log.commits
+            log
         );
         assert_eq!(
             log.releases, 0,
@@ -951,9 +949,9 @@ async fn a_commit_refused_mid_flight_suppresses_the_preedit_after_it() {
 
     let log = inject_log.lock().unwrap();
     assert_eq!(
-        log.commits,
-        vec!["hello"],
-        "only the write that lost the lease was attempted"
+        (log.commits.as_slice(), log.refused.as_slice()),
+        (&[][..], &["hello".to_string()][..]),
+        "only the write that lost the lease was attempted, and it was refused"
     );
     assert!(
         log.preedits.is_empty(),
@@ -990,11 +988,15 @@ async fn a_refused_final_flush_reports_focus_lost_not_no_speech() {
     );
     controller.run().await;
 
-    assert_eq!(
-        inject_log.lock().unwrap().commits,
-        vec!["tail"],
-        "the safety flush is attempted once"
-    );
+    {
+        let log = inject_log.lock().unwrap();
+        assert_eq!(
+            log.refused,
+            vec!["tail"],
+            "the safety flush is attempted once"
+        );
+        assert!(log.commits.is_empty(), "and lands nowhere");
+    }
     assert_eq!(
         indicate_log.lock().unwrap().last(),
         Some(&IndicatorState::recoverable("Focus lost")),
@@ -1027,11 +1029,15 @@ async fn a_refused_flush_that_carried_text_does_not_report_success() {
     );
     controller.run().await;
 
-    assert_eq!(
-        inject_log.lock().unwrap().commits,
-        vec!["tail"],
-        "the safety flush is attempted once"
-    );
+    {
+        let log = inject_log.lock().unwrap();
+        assert_eq!(
+            log.refused,
+            vec!["tail"],
+            "the safety flush is attempted once"
+        );
+        assert!(log.commits.is_empty(), "and lands nowhere");
+    }
     assert_eq!(
         indicate_log.lock().unwrap().last(),
         Some(&IndicatorState::recoverable("Focus lost")),
@@ -1548,7 +1554,7 @@ async fn preedit_suppressed_with_commits_after_focus_loss() {
     controller.run().await;
 
     let log = inject_log.lock().unwrap();
-    assert!(log.commits.is_empty(), "nothing committed after focus-out");
+    assert!(log.attempts() == 0, "nothing committed after focus-out");
     assert!(log.preedits.is_empty(), "no preedit after focus-out");
     assert_eq!(controller.state(), DictationState::Idle);
 }
@@ -1875,7 +1881,7 @@ async fn a_salvage_that_transcribed_nothing_still_reports_the_device() {
     // "No speech detected" would blame the user for a microphone that died.
     let (inject_log, states, _state) = salvaged_utterance("").await;
 
-    assert!(inject_log.lock().unwrap().commits.is_empty());
+    assert!(inject_log.lock().unwrap().attempts() == 0);
     assert_eq!(
         states.last(),
         Some(&IndicatorState::critical("Some audio lost")),

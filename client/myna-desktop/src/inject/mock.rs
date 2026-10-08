@@ -1,15 +1,17 @@
 //! `MockInjector` — the hermetic text-injection fixture (T007).
 //!
-//! Scripts `acquire` outcomes and focus loss, and records every `commit` /
-//! `set_preedit` / `release` so controller tests can assert commit order/count,
-//! teardown, and the commit-only invariant - with no IBus, D-Bus, or display.
-//! Its targets hold a lease like `IbusInjector`'s: focus loss is retained, and
-//! output after it is refused (but still recorded, so a test sees the
-//! controller attempt it). A loss scripted with
+//! Scripts `acquire` outcomes and focus loss, models the field it writes into
+//! (text, preedit, whether it is secure), and records every `commit` /
+//! `set_preedit` / `release` so controller tests can assert commit order and
+//! count, teardown, and the commit-only invariant - with no IBus, D-Bus, or
+//! display. Its targets hold a lease like `IbusInjector`'s: focus loss is
+//! retained, and output after it is refused (recorded as refused, so a test
+//! sees the controller attempt it). A loss scripted with
 //! [`MockInjector::with_focus_event`] is delivered through the target's focus
 //! stream, so a controller that fails to act on the event still holds a live
-//! target and writes into it. Its capabilities are commit-only by default;
-//! preedit tests opt in via [`MockInjector::with_preedit_support`].
+//! target and writes into it. Its capabilities are commit-only with secure
+//! field detection by default; preedit tests opt in via
+//! [`MockInjector::with_preedit_support`].
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -25,13 +27,14 @@ use super::{FocusEvent, InjectError, Injector, Support, Target, TextInputCapabil
 /// injector.
 #[derive(Debug, Default)]
 pub struct InjectorLog {
-    /// Attempted commits, in order (commit-only invariant), including those
-    /// the lease refused.
+    /// Commits the target accepted, in order: what reached the field.
     pub commits: Vec<String>,
-    /// Preedit texts passed to `set_preedit`, in order (volatile — must never
-    /// also appear in `commits`), including those the lease refused.
+    /// Commits the target refused (lease gone, secure field), in order.
+    pub refused: Vec<String>,
+    /// Every `set_preedit` call, in order, whether or not the field showed it
+    /// (volatile — must never also appear in `commits`).
     pub preedits: Vec<String>,
-    /// Interleaved commit/preedit operation order (`"commit"` / `"preedit"`),
+    /// Interleaved commit/preedit call order (`"commit"` / `"preedit"`),
     /// so tests can assert a pending commit always lands *before* the preedit
     /// tail that follows it.
     pub order: Vec<&'static str>,
@@ -41,13 +44,19 @@ pub struct InjectorLog {
     pub releases: usize,
 }
 
-/// The outcome a scripted `acquire()` yields.
+impl InjectorLog {
+    /// Commits attempted, accepted or refused.
+    pub fn attempts(&self) -> usize {
+        self.commits.len() + self.refused.len()
+    }
+}
+
+/// The outcome a scripted `acquire()` yields. A secure field is the field's
+/// state ([`MockField::set_secure`]), not a scripted outcome.
 #[derive(Debug, Clone)]
 pub enum AcquireOutcome {
-    /// Bind a normal editable target.
+    /// Bind the field.
     Ok,
-    /// A password/secure field — `Err(SecureField)`.
-    Secure,
     /// Nothing editable focused — `Err(NoTarget)`.
     NoTarget,
     /// Backend unreachable — `Err(Unavailable(msg))`.
@@ -72,16 +81,45 @@ impl Lease {
     }
 }
 
-/// Delivers focus loss to the target the mock handed out last, at a moment
-/// the test chooses.
-#[derive(Clone, Debug)]
-pub struct FocusSender(Arc<watch::Sender<Lease>>);
+/// What the field shows and what it is.
+#[derive(Debug, Default)]
+struct Shown {
+    text: String,
+    preedit: String,
+    secure: bool,
+}
 
-impl FocusSender {
-    pub fn send(&self, event: FocusEvent) {
-        self.0.send_modify(|lease| {
+/// The test's hand on the field the mock writes into. Every acquire binds it
+/// afresh, as if the user had refocused it.
+#[derive(Clone, Debug)]
+pub struct MockField {
+    lease: Arc<watch::Sender<Lease>>,
+    shown: Arc<Mutex<Shown>>,
+}
+
+impl MockField {
+    /// Focus leaves the field, ending the lease of the target handed out
+    /// last; the toolkit discards the preedit with it.
+    pub fn lose_focus(&self, event: FocusEvent) {
+        self.lease.send_modify(|lease| {
             lease.lost.get_or_insert(event);
         });
+        self.shown.lock().unwrap().preedit.clear();
+    }
+
+    /// The field's content type turns secure (or ordinary) under the user.
+    pub fn set_secure(&self, secure: bool) {
+        self.shown.lock().unwrap().secure = secure;
+    }
+
+    /// The committed text the field holds.
+    pub fn text(&self) -> String {
+        self.shown.lock().unwrap().text.clone()
+    }
+
+    /// The preedit the field shows.
+    pub fn preedit(&self) -> String {
+        self.shown.lock().unwrap().preedit.clone()
     }
 }
 
@@ -95,9 +133,8 @@ pub struct MockInjector {
     focus_during_acquire: Option<FocusEvent>,
     /// Focus lost while a target's first `commit` is in flight.
     focus_during_commit: Option<FocusEvent>,
-    lease: Arc<watch::Sender<Lease>>,
-    /// Whether `capabilities()` reports preedit (false unless opted in).
-    preedit_supported: bool,
+    field: MockField,
+    capabilities: TextInputCapabilities,
     log: Arc<Mutex<InjectorLog>>,
 }
 
@@ -116,19 +153,33 @@ impl MockInjector {
             focus: None,
             focus_during_acquire: None,
             focus_during_commit: None,
-            lease: Arc::new(watch::Sender::new(Lease {
-                id: 0,
-                lost: Some(FocusEvent::FocusOut),
-            })),
-            preedit_supported: false,
+            field: MockField {
+                lease: Arc::new(watch::Sender::new(Lease {
+                    id: 0,
+                    lost: Some(FocusEvent::FocusOut),
+                })),
+                shown: Arc::default(),
+            },
+            capabilities: TextInputCapabilities {
+                preedit: false,
+                surrounding_text: false,
+                secure_field_detection: Support::Supported,
+            },
             log: Arc::new(Mutex::new(InjectorLog::default())),
         }
     }
 
-    /// Report a replacement-safe preedit region and record `set_preedit` calls
-    /// (the IBus backend's behavior; default is commit-only).
+    /// Report a replacement-safe preedit region and show what `set_preedit`
+    /// draws (the IBus backend's behavior; default is commit-only).
     pub fn with_preedit_support(mut self) -> Self {
-        self.preedit_supported = true;
+        self.capabilities.preedit = true;
+        self
+    }
+
+    /// Whether secure fields are recognised. Where `Unknown`, a secure field
+    /// is written into like any other.
+    pub fn with_secure_field_detection(mut self, detection: Support) -> Self {
+        self.capabilities.secure_field_detection = detection;
         self
     }
 
@@ -149,9 +200,9 @@ impl MockInjector {
         self
     }
 
-    /// A handle that loses focus at a moment the test chooses.
-    pub fn focus_sender(&self) -> FocusSender {
-        FocusSender(self.lease.clone())
+    /// The field this mock writes into.
+    pub fn field(&self) -> MockField {
+        self.field.clone()
     }
 
     /// Lose focus while `acquire` runs, which then fails like `IbusInjector`'s.
@@ -184,42 +235,47 @@ impl MockInjector {
                 .unwrap_or(AcquireOutcome::NoTarget)
         }
     }
+
+    fn detects_secure(&self) -> bool {
+        self.capabilities.secure_field_detection == Support::Supported
+    }
 }
 
 #[async_trait]
 impl Injector for MockInjector {
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         self.log.lock().unwrap().acquires += 1;
-        let id = self.lease.borrow().id + 1;
-        self.lease.send_replace(Lease { id, lost: None });
+        let lease = &self.field.lease;
+        let id = lease.borrow().id + 1;
+        lease.send_replace(Lease { id, lost: None });
         if let Some(event) = self.focus_during_acquire {
-            self.focus_sender().send(event);
+            self.field.lose_focus(event);
         }
         match self.next_acquire() {
-            AcquireOutcome::Ok if self.lease.borrow().loss(id).is_some() => {
+            AcquireOutcome::Ok if self.field.lease.borrow().loss(id).is_some() => {
                 Err(InjectError::FocusLost)
+            }
+            AcquireOutcome::Ok
+                if self.detects_secure() && self.field.shown.lock().unwrap().secure =>
+            {
+                Err(InjectError::SecureField)
             }
             AcquireOutcome::Ok => Ok(Box::new(MockTarget {
                 id,
-                lease: self.lease.subscribe(),
-                lose_on_focus_poll: self.focus.map(|event| (self.focus_sender(), event)),
-                lose_on_commit: self
-                    .focus_during_commit
-                    .map(|event| (self.focus_sender(), event)),
+                lease: self.field.lease.subscribe(),
+                field: self.field.clone(),
+                capabilities: self.capabilities,
+                lose_on_focus_poll: self.focus.map(|event| (self.field(), event)),
+                lose_on_commit: self.focus_during_commit.map(|event| (self.field(), event)),
                 log: self.log.clone(),
             })),
-            AcquireOutcome::Secure => Err(InjectError::SecureField),
             AcquireOutcome::NoTarget => Err(InjectError::NoTarget),
             AcquireOutcome::Unavailable(msg) => Err(InjectError::Unavailable(msg)),
         }
     }
 
     fn capabilities(&self) -> TextInputCapabilities {
-        TextInputCapabilities {
-            preedit: self.preedit_supported,
-            surrounding_text: false,
-            secure_field_detection: Support::Supported,
-        }
+        self.capabilities
     }
 }
 
@@ -228,12 +284,14 @@ impl Injector for MockInjector {
 pub struct MockTarget {
     id: u64,
     lease: watch::Receiver<Lease>,
+    field: MockField,
+    capabilities: TextInputCapabilities,
     /// Focus lost as the controller reads it off this target's focus stream
     /// ([`MockInjector::with_focus_event`]).
-    lose_on_focus_poll: Option<(FocusSender, FocusEvent)>,
+    lose_on_focus_poll: Option<(MockField, FocusEvent)>,
     /// Focus lost during the first `commit`, if the test scripted one
     /// ([`MockInjector::with_focus_event_during_commit`]).
-    lose_on_commit: Option<(FocusSender, FocusEvent)>,
+    lose_on_commit: Option<(MockField, FocusEvent)>,
     log: Arc<Mutex<InjectorLog>>,
 }
 
@@ -241,31 +299,56 @@ impl MockTarget {
     fn owned(&self) -> bool {
         self.lease.borrow().loss(self.id).is_none()
     }
+
+    /// Why a write must not land now, if it must not.
+    fn refusal(&self) -> Option<InjectError> {
+        if !self.owned() {
+            Some(InjectError::FocusLost)
+        } else if self.capabilities.secure_field_detection == Support::Supported
+            && self.field.shown.lock().unwrap().secure
+        {
+            Some(InjectError::SecureField)
+        } else {
+            None
+        }
+    }
 }
 
 #[async_trait]
 impl Target for MockTarget {
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
-        {
-            let mut log = self.log.lock().unwrap();
-            log.commits.push(text.to_string());
-            log.order.push("commit");
+        if self.owned() {
+            self.field.shown.lock().unwrap().preedit.clear();
         }
         // Mid-flight loss: the lease dies with the write already under way.
-        if let Some((focus, event)) = self.lose_on_commit.take() {
-            focus.send(event);
+        if let Some((field, event)) = self.lose_on_commit.take() {
+            field.lose_focus(event);
         }
-        if self.owned() {
-            Ok(())
-        } else {
-            Err(InjectError::FocusLost)
+        let refusal = self.refusal();
+        let mut log = self.log.lock().unwrap();
+        log.order.push("commit");
+        match refusal {
+            Some(err) => {
+                log.refused.push(text.to_string());
+                Err(err)
+            }
+            None => {
+                log.commits.push(text.to_string());
+                self.field.shown.lock().unwrap().text.push_str(text);
+                Ok(())
+            }
         }
     }
 
     async fn set_preedit(&mut self, text: &str) {
-        let mut log = self.log.lock().unwrap();
-        log.preedits.push(text.to_string());
-        log.order.push("preedit");
+        {
+            let mut log = self.log.lock().unwrap();
+            log.preedits.push(text.to_string());
+            log.order.push("preedit");
+        }
+        if self.capabilities.preedit && self.refusal().is_none() {
+            self.field.shown.lock().unwrap().preedit = text.to_string();
+        }
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
@@ -275,8 +358,8 @@ impl Target for MockTarget {
         stream::once(async move {
             // The loss lands as it is read, so a write attempted before the
             // controller read it would still have gone into the field.
-            if let Some((focus, event)) = scripted {
-                focus.send(event);
+            if let Some((field, event)) = scripted {
+                field.lose_focus(event);
                 return event;
             }
             match lease.wait_for(|l| l.loss(id).is_some()).await {
@@ -289,5 +372,11 @@ impl Target for MockTarget {
 
     async fn release(self: Box<Self>) {
         self.log.lock().unwrap().releases += 1;
+        if self.owned() {
+            self.field.shown.lock().unwrap().preedit.clear();
+            self.field.lease.send_modify(|lease| {
+                lease.lost.get_or_insert(FocusEvent::FocusOut);
+            });
+        }
     }
 }
