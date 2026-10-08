@@ -6,6 +6,7 @@
 //! holds no backend and binds no toolkit or desktop service.
 
 pub mod activation;
+pub mod appearance;
 pub mod session;
 pub mod subscription;
 pub mod text_input;
