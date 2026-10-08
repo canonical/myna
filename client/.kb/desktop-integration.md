@@ -9,7 +9,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 `myna-desktop` composes three replaceable boundaries around the orchestrator:
 
 - `Trigger` produces activation edges: every poke toggles. A GNOME custom shortcut calls `com.canonical.Myna.Dictation.Toggle`; `myna.toggle` connects to the control socket instead, for shortcuts older Myna Settings wrote, and both feed one channel with one parity. Stdin is debug-only.
-- `Injector` hands out one `Target` per utterance, the sole owner of the right to write into the focused application. The production implementation is an IBus engine; tests use a mock.
+- `Injector` hands out one `Target` per utterance, the sole owner of the right to write into the focused application. The contract is `myna_platform::text_input` (`.kb/platform-layer.md`); the production implementation is an IBus engine; tests use a mock.
 - `Indicator` publishes dictation state. Notifications are the fallback, while the GNOME extension hosts the standalone `myna-hud` renderer.
 
 The key is a GNOME custom shortcut Myna Settings writes (`myna-config/docs/onboarding.md`). The GlobalShortcuts portal was the packaged activation until 2026-10 and was removed with hold-to-talk: stacked and duplicate consent dialogs, consent and retry races, app id drift (`myna_myna` versus `.`), grants surviving `snap remove --purge`, grabs needing a re-login, and no GlobalShortcuts at all on Noble's portal. `Activation` is still published, always `control`, for Myna Settings releases that read it.
