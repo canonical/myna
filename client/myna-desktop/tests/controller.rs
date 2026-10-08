@@ -1517,6 +1517,34 @@ async fn preedit_is_off_by_default_even_when_supported() {
     assert_eq!(log.commits, vec!["hello"]);
 }
 
+/// Capability honesty, the controller's half: with the opt-in on, a backend
+/// that reports no preedit region is never asked to draw one.
+#[tokio::test]
+async fn a_commit_only_backend_is_never_asked_for_preedit() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build_preedit(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Unstable("hel".into()),
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Done("hello".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert!(log.preedits.is_empty(), "got {:?}", log.preedits);
+    assert_eq!(log.commits, vec!["hello"]);
+}
+
 /// D4: where the backend cannot recognise a secure field, the controller
 /// dictates anyway. A secure field it cannot see gets the text.
 #[tokio::test]
