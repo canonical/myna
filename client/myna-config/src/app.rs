@@ -4205,6 +4205,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
 
     machine.fail_installs(None);
     machine.download(Some(10));
+    button.grab_focus();
     button.emit_clicked();
     let downloading = gettextrs::gettext("{step} ({percent}%)")
         .replace("{step}", &model_step)
@@ -4260,6 +4261,12 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
             machine.applied()
         ));
     }
+    if gtk::prelude::GtkWindowExt::focus(&window).as_ref()
+        != Some(window.forward_button().upcast_ref())
+    {
+        return Err("a finished run left the window's focus off Next".to_owned());
+    }
+    println!("onboarding-install: a finished run hands the focus to Next");
     println!("onboarding-install: installed, then set up");
     println!("onboarding-install: the button keeps its place");
     window.forward_button().emit_clicked();

@@ -142,7 +142,9 @@ one: a button that turned insensitive would drop the window's focus, and a
 screen reader says nothing of an application with none until a key is pressed.
 It also speaks a change to the focused control but not to the label beside it,
 so the step, without its percentage, is the button's accessible description
-while it runs. The percentage would be read at every tick. The button keeps one
+while it runs. The percentage would be read at every tick. A finished run
+turns the button insensitive, which would drop the focus all the same, so it
+moves to Next when the button had it. The button keeps one
 width through its three labels.
 Next is insensitive meanwhile. After each step a fresh read of the machine
 picks the next one; a step that succeeded is not retried when that read does

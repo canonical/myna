@@ -220,6 +220,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-install: the size covers only what is missing",
         "onboarding-install: the set-up connects the model it installs",
         "onboarding-install: the extension is enabled last",
+        "onboarding-install: a finished run hands the focus to Next",
         "onboarding-install: installed, then set up",
         "onboarding-install: the button keeps its place",
         "onboarding-install: Next skips the pause",

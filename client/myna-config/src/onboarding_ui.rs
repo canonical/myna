@@ -767,6 +767,11 @@ impl OnboardingUi {
             page.set_can_pop(!setting_up);
         }
 
+        // An insensitive button drops the window's focus, and a screen reader
+        // then says nothing, so a finished run hands it to Next.
+        let install = self.components_page.install_button();
+        let install_focused =
+            gtk::prelude::GtkWindowExt::focus(&self.window).as_ref() == Some(install.upcast_ref());
         self.render_components(&components, setting_up);
         self.shortcut_page
             .relogin_note()
@@ -795,6 +800,9 @@ impl OnboardingUi {
             !held && forward_leads(step, &components, self.shortcut.needs_key()),
         );
         forward.set_sensitive(!held && can_advance(step, &components));
+        if install_focused && !install.is_sensitive() && forward.is_sensitive() {
+            forward.grab_focus();
+        }
         self.watch(!self.busy.get() && !self.running.get() && polls(step, &components));
         // Going back during the pause stays back.
         if step != Step::Components {
