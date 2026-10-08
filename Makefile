@@ -451,7 +451,8 @@ bench-long-%: build-bench ## Run the long-form clip against an already-running <
 
 # Myna Settings driven through AT-SPI on a fresh GNOME or Xubuntu desktop LXD VM. The
 # first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
-# later runs restore a snapshot per suite. See e2e-tests/AGENTS.md.
+# later runs restore a snapshot per suite. See e2e-tests/AGENTS.md. The
+# dictation suite also needs the fake backend snap: `make snap-fake` first.
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=

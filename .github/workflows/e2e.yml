@@ -20,10 +20,31 @@ on:
       - "client/myna-core/**"
       - "client/data/**"
       - "e2e-tests/**"
+      - "fake-snap/**"
       - ".github/workflows/e2e.yml"
 
 jobs:
+  # The dictation suite's scripted backend (fake-snap/): built once, shared by
+  # every matrix job, which provisions it into the VM's `dictation` stage.
+  fake-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Stage the fake-backend snap
+        run: fake-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: fake-snap
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fake-backend-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 7
+
   e2e:
+    needs: fake-backend
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +60,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: fake-backend-snap
+          path: fake-snap
       # Before the workshop, which runs on the same LXD.
       - uses: canonical/setup-lxd@v1
       # TODO(security): pin to a commit SHA - @v1 tracks the latest v1.*.
