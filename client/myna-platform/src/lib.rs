@@ -5,7 +5,10 @@
 //! rather than assuming them, and decide policy from the answer. This crate
 //! holds no backend and binds no toolkit or desktop service.
 
+pub mod activation;
 pub mod session;
+pub mod subscription;
 pub mod text_input;
 
 pub use session::{Desktop, Profile, Session, SessionEnv, SessionKind, UnknownProfile};
+pub use subscription::Subscription;
