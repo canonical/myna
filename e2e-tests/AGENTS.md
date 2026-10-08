@@ -17,6 +17,14 @@ scripts). Its cloud-init is `vm/user-data.common` merged with
 the X11 environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
 X11 (lightdm autologin).
 
+The `dictation` suite does not use `shot`. It runs `tools/field-app.py` (a
+GTK4 window of plain and password entries that reports itself as JSON) in the
+real session, a speech clip looped on a virtual PipeWire speaker whose
+loopback is the default microphone (`dictation` provisioning stage), and the
+fake backend snap, so the transcript is scripted. It drives the daemon through
+its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; helpers are in
+`tools/dictation-lib.sh`.
+
 # Important
 
 - The GNOME VM keeps the name `myna-e2e-<release>`; other desktops are
@@ -38,6 +46,9 @@ X11 (lightdm autologin).
   noble's GTK 4.14 and `button` later (`$BTN`).
 - The binary is built once in `myna-noble` (the GTK 4.14/adw 1.5 floor) and
   runs on every series, so Noble's bugs cannot hide behind a newer build host.
+- A dictation case ends when the daemon says so (`State`), never after a
+  sleep; the only sleeps are negative checks ("nothing arrived"), which wait
+  out the time text would have taken.
 - Snapshots are taken stopped. A suite that needs a new machine state gets a
   new provisioning stage, not setup in the suite.
 - `tools/` descends from the prototypes in `~/myna-onboarding-stable/tools`;
