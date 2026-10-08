@@ -121,28 +121,28 @@ impl Strut {
 
 /// `monitor` less what any strut reserves on it. A strut is measured from
 /// the screen's edge, so one on another monitor reaches this one only where
-/// their rectangles meet.
+/// their rectangles meet; a zero-thickness strut meets nothing.
 pub fn work_area(monitor: Rect, screen: Size, struts: &[Strut]) -> Rect {
     let (mut left, mut top) = (monitor.x, monitor.y);
     let (mut right, mut bottom) = (monitor.right(), monitor.bottom());
     let span = |start: u32, end: u32| (start as i32, end as i32 - start as i32 + 1);
     for strut in struts {
         let (y, h) = span(strut.left_start_y, strut.left_end_y);
-        if strut.left > 0 && reaches(monitor, 0, y, strut.left as i32, h) {
+        if reaches(monitor, 0, y, strut.left as i32, h) {
             left = left.max(strut.left as i32);
         }
         let (y, h) = span(strut.right_start_y, strut.right_end_y);
         let edge = screen.width - strut.right as i32;
-        if strut.right > 0 && reaches(monitor, edge, y, strut.right as i32, h) {
+        if reaches(monitor, edge, y, strut.right as i32, h) {
             right = right.min(edge);
         }
         let (x, w) = span(strut.top_start_x, strut.top_end_x);
-        if strut.top > 0 && reaches(monitor, x, 0, w, strut.top as i32) {
+        if reaches(monitor, x, 0, w, strut.top as i32) {
             top = top.max(strut.top as i32);
         }
         let (x, w) = span(strut.bottom_start_x, strut.bottom_end_x);
         let edge = screen.height - strut.bottom as i32;
-        if strut.bottom > 0 && reaches(monitor, x, edge, w, strut.bottom as i32) {
+        if reaches(monitor, x, edge, w, strut.bottom as i32) {
             bottom = bottom.min(edge);
         }
     }
@@ -271,6 +271,86 @@ mod tests {
         assert_eq!(
             work_area(right, screen, &[panel]),
             rect(1920, 0, 1920, 1040)
+        );
+    }
+
+    #[test]
+    fn side_and_top_panels_stay_on_their_monitor() {
+        let screen = size(3840, 1080);
+        let left = rect(0, 0, 1920, 1080);
+        let right = rect(1920, 0, 1920, 1080);
+        let struts = [
+            Strut::from_partial([30, 0, 0, 0, 0, 1079, 0, 0, 0, 0, 0, 0]),
+            Strut::from_partial([0, 20, 0, 0, 0, 0, 0, 1079, 0, 0, 0, 0]),
+            Strut::from_partial([0, 0, 28, 0, 0, 0, 0, 0, 1920, 3839, 0, 0]),
+        ];
+        assert_eq!(work_area(left, screen, &struts), rect(30, 0, 1890, 1080));
+        assert_eq!(
+            work_area(right, screen, &struts),
+            rect(1920, 28, 1900, 1052)
+        );
+    }
+
+    #[test]
+    fn a_panel_on_the_middle_monitor_leaves_both_neighbours_alone() {
+        let screen = size(5760, 1080);
+        let monitors = [
+            rect(0, 0, 1920, 1080),
+            rect(1920, 0, 1920, 1080),
+            rect(3840, 0, 1920, 1080),
+        ];
+        let panel = Strut {
+            bottom: 40,
+            bottom_start_x: 1920,
+            bottom_end_x: 3839,
+            ..Strut::default()
+        };
+        let areas = monitors.map(|m| work_area(m, screen, &[panel]));
+        assert_eq!(areas, [monitors[0], rect(1920, 0, 1920, 1040), monitors[2]]);
+    }
+
+    #[test]
+    fn a_span_includes_its_end() {
+        let screen = size(3840, 1080);
+        let left = rect(0, 0, 1920, 1080);
+        let right = rect(1920, 0, 1920, 1080);
+        let just_left = Strut {
+            bottom: 40,
+            bottom_start_x: 0,
+            bottom_end_x: 1919,
+            ..Strut::default()
+        };
+        assert_eq!(work_area(right, screen, &[just_left]), right);
+        assert_eq!(
+            work_area(left, screen, &[just_left]),
+            rect(0, 0, 1920, 1040)
+        );
+        let one_column_over = Strut {
+            bottom_end_x: 1920,
+            ..just_left
+        };
+        assert_eq!(
+            work_area(right, screen, &[one_column_over]),
+            rect(1920, 0, 1920, 1040)
+        );
+    }
+
+    #[test]
+    fn a_side_panel_on_one_stacked_monitor_misses_the_other() {
+        let screen = size(1920, 2160);
+        let upper = rect(0, 0, 1920, 1080);
+        let lower = rect(0, 1080, 1920, 1080);
+        let on_upper = Strut::from_partial([50, 0, 0, 0, 0, 1079, 0, 0, 0, 0, 0, 0]);
+        let on_lower = Strut::from_partial([30, 0, 0, 0, 1080, 2159, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(work_area(lower, screen, &[on_upper]), lower);
+        assert_eq!(work_area(upper, screen, &[on_lower]), upper);
+        assert_eq!(
+            work_area(upper, screen, &[on_upper, on_lower]),
+            rect(50, 0, 1870, 1080)
+        );
+        assert_eq!(
+            work_area(lower, screen, &[on_upper, on_lower]),
+            rect(30, 1080, 1890, 1080)
         );
     }
 

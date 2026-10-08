@@ -161,6 +161,27 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct Silent;
+
+    #[async_trait]
+    impl Target for Silent {
+        async fn commit(&mut self, _text: &str) -> Result<(), InjectError> {
+            Ok(())
+        }
+
+        fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
+            Box::pin(futures_util::stream::pending())
+        }
+
+        async fn release(self: Box<Self>) {}
+    }
+
+    #[test]
+    fn a_field_that_says_nothing_has_no_char_before_the_cursor() {
+        assert_eq!(Silent.char_before_cursor(), None);
+    }
+
     #[test]
     fn a_backend_that_says_nothing_is_commit_only() {
         assert_eq!(
