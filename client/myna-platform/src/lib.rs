@@ -9,6 +9,7 @@ pub mod activation;
 pub mod appearance;
 pub mod components;
 pub mod session;
+pub mod status_surface;
 pub mod subscription;
 pub mod text_input;
 
