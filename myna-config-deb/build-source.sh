@@ -111,7 +111,17 @@ if [ "$series" = noble ]; then
         exit 1
     fi
 fi
-sed -i "1s/($changelog_version) [a-z-]*;/($version) $series;/" "$stage/debian/changelog"
+# A release relabels its own entry for the series and PPA; a snapshot is not
+# that release, so it gets an entry of its own above it.
+case $upstream in
+*+git*)
+    python3 "$here/snapshot-changelog.py" "$root" "$version" "$series" \
+        < "$here/debian/changelog" > "$stage/debian/changelog"
+    ;;
+*)
+    sed -i "1s/($changelog_version) [a-z-]*;/($version) $series;/" "$stage/debian/changelog"
+    ;;
+esac
 python3 "$here/vendor-copyright.py" "$stage/vendor" "$here/debian/copyright.in" > "$stage/debian/copyright"
 rm "$stage/debian/copyright.in"
 
