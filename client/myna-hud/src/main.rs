@@ -4,8 +4,10 @@
 //!
 //! * **hosted** (default) — consume `com.canonical.Myna.Dictation` and render the
 //!   pill. Under GNOME the `myna-shell` extension launches this through a
-//!   `Meta.WaylandClient` and owns the window's placement (R21); elsewhere
-//!   it is an ordinary always-on-top window.
+//!   `Meta.WaylandClient` and owns the window's placement (R21). With
+//!   `--host x11` the HUD hosts itself on an X11 window manager
+//!   ([`myna_hud::host::x11`]); it refuses a Wayland session with
+//!   [`EXIT_WRONG_SESSION`].
 //! * `--lab` — the development lab: manual controls driving the identical
 //!   renderer modules with no backend at all.
 //! * `--serve-dbus` — publish a simulated `com.canonical.Myna.Dictation` so the real
@@ -20,6 +22,7 @@ use libadwaita::prelude::*;
 
 use myna_hud::bus::{self, BusEvent};
 use myna_hud::dbus_consumer::DictationService;
+use myna_hud::host::x11::X11Host;
 use myna_hud::hud_logic::HudStyle;
 use myna_hud::signals::quit_on_signal;
 use myna_hud::states::state_to_descriptor;
@@ -27,9 +30,21 @@ use myna_hud::window::HudWindow;
 
 const APP_ID: &str = "com.canonical.Myna.Hud";
 
+/// `--host x11` outside an X11 session: retrying cannot help (EX_CONFIG).
+const EXIT_WRONG_SESSION: u8 = 78;
+
+/// Who hosts the hosted HUD's window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Host {
+    /// A desktop shell (GNOME's `myna-shell`), or nobody.
+    External,
+    /// The HUD itself, on X11.
+    X11,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
-    Hosted,
+    Hosted(Host),
     #[cfg(dev_lab)]
     Lab,
     #[cfg(dev_lab)]
@@ -45,6 +60,15 @@ fn main() -> glib::ExitCode {
         }
     };
 
+    if mode == Mode::Hosted(Host::X11) {
+        let session = myna_platform::Session::detect(&myna_platform::SessionEnv::from_process());
+        if session.kind != myna_platform::SessionKind::X11 {
+            eprintln!("myna-hud: --host x11 needs an X11 session, this one is {session:?}");
+            return glib::ExitCode::new(EXIT_WRONG_SESSION);
+        }
+        gtk::gdk::set_allowed_backends("x11");
+    }
+
     // Lab / serve-dbus are developer harnesses that you want to run
     // repeatedly (often several at once) without D-Bus single-instance
     // forwarding — e.g. `myna-hud --lab` alongside a hosted instance.
@@ -57,7 +81,7 @@ fn main() -> glib::ExitCode {
         {
             match mode {
                 Mode::Lab | Mode::ServeDbus => gtk::gio::ApplicationFlags::NON_UNIQUE,
-                Mode::Hosted => gtk::gio::ApplicationFlags::empty(),
+                Mode::Hosted(_) => gtk::gio::ApplicationFlags::empty(),
             }
         }
         #[cfg(not(dev_lab))]
@@ -72,8 +96,15 @@ fn main() -> glib::ExitCode {
 
     quit_on_signal();
 
+    let failed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let failed_in_activate = failed.clone();
     app.connect_activate(move |app| match mode {
-        Mode::Hosted => activate_hosted(app),
+        Mode::Hosted(host) => {
+            if !activate_hosted(app, host) {
+                failed_in_activate.set(true);
+                app.quit();
+            }
+        }
         #[cfg(dev_lab)]
         Mode::Lab => activate_lab(app),
         #[cfg(dev_lab)]
@@ -81,17 +112,23 @@ fn main() -> glib::ExitCode {
     });
 
     // Our own argv is already consumed above.
-    app.run_with_args::<&str>(&[])
+    let code = app.run_with_args::<&str>(&[]);
+    if failed.get() {
+        glib::ExitCode::FAILURE
+    } else {
+        code
+    }
 }
 
-// Without `dev_lab` every recognised flag is terminal (`--lab`/`--serve-dbus`
-// become errors), so the loop provably runs at most one iteration.
-#[cfg_attr(not(dev_lab), allow(clippy::never_loop))]
 fn parse_mode() -> Result<Mode, String> {
-    #[allow(unused_mut)]
-    let mut mode = Mode::Hosted;
-    for argument in std::env::args().skip(1) {
+    let mut mode = Mode::Hosted(Host::External);
+    let mut arguments = std::env::args().skip(1);
+    while let Some(argument) = arguments.next() {
         match argument.as_str() {
+            "--host" => mode = Mode::Hosted(parse_host(arguments.next().as_deref())?),
+            other if other.starts_with("--host=") => {
+                mode = Mode::Hosted(parse_host(other.strip_prefix("--host="))?)
+            }
             #[cfg(dev_lab)]
             "--lab" => mode = Mode::Lab,
             #[cfg(not(dev_lab))]
@@ -122,6 +159,14 @@ fn parse_mode() -> Result<Mode, String> {
     Ok(mode)
 }
 
+fn parse_host(value: Option<&str>) -> Result<Host, String> {
+    match value {
+        Some("x11") => Ok(Host::X11),
+        Some(other) => Err(format!("myna-hud: unknown host {other}\n\n{USAGE}")),
+        None => Err(format!("myna-hud: --host needs a value\n\n{USAGE}")),
+    }
+}
+
 #[cfg(dev_lab)]
 const USAGE: &str = "\
 Usage: myna-hud [OPTION]
@@ -129,6 +174,7 @@ Usage: myna-hud [OPTION]
 The myna dictation HUD renderer.
 
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
+  --host x11     as above, placing its own window on an X11 window manager
   --lab          development lab: manual controls, no backend
   --serve-dbus   publish a simulated com.canonical.Myna.Dictation
   --version      print the version and exit
@@ -141,12 +187,20 @@ Usage: myna-hud [OPTION]
 The myna dictation HUD renderer.
 
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
+  --host x11     as above, placing its own window on an X11 window manager
   --version      print the version and exit
   -h, --help     print this help and exit";
 
-/// The shipping path: render whatever the publisher reports.
-fn activate_hosted(app: &adw::Application) {
+/// The shipping path: render whatever the publisher reports. False when
+/// the requested host cannot run.
+fn activate_hosted(app: &adw::Application, host: Host) -> bool {
     let hud = HudWindow::new(app);
+    if host == Host::X11 {
+        if let Err(e) = X11Host::install(&hud) {
+            eprintln!("myna-hud: --host x11: {e}");
+            return false;
+        }
+    }
     // Start idle → the window stays UNMAPPED and shows nothing until the
     // first non-idle state maps it, at which point the host adopts it (the
     // host adopts on map, and re-adopts on every subsequent map across the
@@ -187,6 +241,7 @@ fn activate_hosted(app: &adw::Application) {
             }
         }
     });
+    true
 }
 
 /// The development lab: manual controls, no backend.

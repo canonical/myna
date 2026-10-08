@@ -11,8 +11,10 @@
 //! It never positions, sizes-to-monitor, raises, or types itself. Under
 //! GNOME the `myna-shell` extension launches it through a
 //! `Meta.WaylandClient`, adopts the window, makes it a DOCK, and places it
-//! (R21) — a renderer that also positioned itself would fight its host. In
-//! lab mode there is no host, so it presents as an ordinary window.
+//! (R21) — a renderer that also positioned itself would fight its host.
+//! Where the HUD is its own host (`--host x11`), that host does all of it
+//! through [`HudWindow::set_host`] and the window's signals. In lab mode
+//! there is no host, so it presents as an ordinary window.
 //!
 //! ## Click-through (R22/T114)
 //!
@@ -20,7 +22,7 @@
 //! events always reach whatever is underneath — the HUD is an overlay, not
 //! a target, and carries no interactive control at all.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -31,6 +33,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::host::Host;
 use crate::pill::{Pill, PILL_HEIGHT, PILL_WIDTH};
 use crate::states::Descriptor;
 
@@ -58,6 +61,8 @@ pub struct HudWindow {
     /// mid-flight (a visible descriptor arrives within `FADE_MS`) does not
     /// go on to unmap a now-visible window.
     pending_hidden: Cell<bool>,
+    /// The in-process host, where the HUD hosts itself ([`crate::host`]).
+    host: RefCell<Option<Rc<dyn Host>>>,
 }
 
 impl HudWindow {
@@ -105,6 +110,7 @@ impl HudWindow {
             window,
             pill,
             pending_hidden: Cell::new(false),
+            host: RefCell::new(None),
         });
 
         // Tie our lifetime to the window's: every callback holds a weak
@@ -122,6 +128,11 @@ impl HudWindow {
         hud.connect_x11_hints();
         hud.reapply_input_region_on_map();
         hud
+    }
+
+    /// Hand the window's map cycle to an in-process host.
+    pub fn set_host(&self, host: Rc<dyn Host>) {
+        self.host.replace(Some(host));
     }
 
     /// The underlying window, for the application to present.
@@ -183,6 +194,9 @@ impl HudWindow {
             // Map at opacity 0, then drop the class on the next frame so the
             // transition actually fades it in rather than popping at 1.
             widget.add_css_class(FADE_HIDDEN_CLASS);
+            if let Some(host) = self.host.borrow().as_ref() {
+                host.before_map();
+            }
             self.window.set_visible(true);
             let widget = widget.clone();
             glib::idle_add_local_once(move || {
@@ -239,10 +253,9 @@ impl HudWindow {
     // ── Overlay concerns ────────────────────────────────────────────────
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and
-    /// the pager. Only reached in standalone/lab mode on an X11 session — the
-    /// Wayland shipping path (host-docked overlay) never hits this. There is
-    /// no GDK4 always-on-top equivalent — stacking is the host's job on
-    /// Wayland.
+    /// the pager. Reached on any X11 session: lab mode, and the X11 host,
+    /// which relies on it. There is no GDK4 always-on-top equivalent —
+    /// stacking is the host's job.
     fn connect_x11_hints(self: &Rc<Self>) {
         self.window.connect_realize(|window| {
             let Some(surface) = window.surface() else {
