@@ -99,6 +99,17 @@ impl OnboardingComponents {
             .update_property(&[gtk::accessible::Property::Label(&label)]);
     }
 
+    /// What the install button adds to its name, such as the download size;
+    /// empty for nothing.
+    pub fn describe_install(&self, text: &str) {
+        let button = &self.imp().install_button;
+        if text.is_empty() {
+            button.reset_property(gtk::AccessibleProperty::Description);
+        } else {
+            button.update_property(&[gtk::accessible::Property::Description(text)]);
+        }
+    }
+
     pub fn status(&self) -> gtk::Box {
         self.imp().status.get()
     }

@@ -122,7 +122,9 @@ the int8 model, or, with an NVIDIA GPU, the CUDA runtime and the fp32
 model, said as "Up to" because the install hook falls back to the CPU engine
 when the GPU has no driver. The flag and the extension download nothing, so
 a machine missing only those shows no size. The sizes are fixed per store
-revision in `onboarding.rs`, not read from the store.
+revision in `onboarding.rs`, not read from the store. The button carries the
+same size as its accessible description, so a screen reader speaks it after the
+button's name; the description clears once there is no size to offer.
 
 The button runs every step the machine still needs, in order
 (`onboarding::install_plan`): turning on snapd's flag, which snapd needs

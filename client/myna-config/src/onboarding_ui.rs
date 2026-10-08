@@ -833,11 +833,7 @@ impl OnboardingUi {
             (_, Some((id, percent))) => Some(step_text(id, percent)),
             _ => None,
         };
-        let note = if failed {
-            gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
-        } else if needs_onboarding(components) && self.problem.borrow().is_some() {
-            gettextrs::gettext("Setup status unavailable. The log has the details.")
-        } else if offer {
+        let size = if offer {
             match remaining_download(components, &self.offer.get()) {
                 DownloadSize::Exact(0) => String::new(),
                 DownloadSize::Exact(bytes) => download_size(bytes),
@@ -849,6 +845,15 @@ impl OnboardingUi {
             }
         } else {
             String::new()
+        };
+        // The button carries the size too, so it is spoken with the button.
+        page.describe_install(&size);
+        let note = if failed {
+            gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
+        } else if needs_onboarding(components) && self.problem.borrow().is_some() {
+            gettextrs::gettext("Setup status unavailable. The log has the details.")
+        } else {
+            size
         };
         page.show_status(match &text {
             Some(text) => ui::ComponentsStatus::Busy(text),
