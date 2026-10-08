@@ -269,7 +269,8 @@ fn candidate_dirs(env: &dyn Fn(&str) -> Option<String>) -> Vec<PathBuf> {
     dirs
 }
 
-/// Locate the IBus private-bus address: `$IBUS_ADDRESS`, else the socket file
+/// Locate the IBus private-bus address: `$IBUS_ADDRESS` while its socket
+/// exists, else the socket file
 /// under `~/.config/ibus/bus/` (the file the daemon writes — every candidate
 /// dir from [`candidate_dirs`] is searched). We pick the entry matching the
 /// current display, and **validated** against liveness so a stale address file
@@ -280,11 +281,27 @@ fn discover_address() -> Result<Address, InjectError> {
 }
 
 fn discover_address_in(env: &dyn Fn(&str) -> Option<String>) -> Result<String, InjectError> {
-    if let Some(addr) = env("IBUS_ADDRESS") {
-        if !addr.is_empty() {
-            return Ok(addr);
+    let dead_env = match env("IBUS_ADDRESS").filter(|a| !a.is_empty()) {
+        Some(addr) if gone_socket(&addr).is_none() => return Ok(addr),
+        dead => dead,
+    };
+    discover_address_file(env).map_err(|e| match (dead_env, e) {
+        (Some(addr), InjectError::Unavailable(why)) => {
+            InjectError::Unavailable(format!("IBUS_ADDRESS {addr} has no socket, and {why}"))
         }
-    }
+        (_, e) => e,
+    })
+}
+
+/// The unix socket path of a D-Bus address, when it names one that is missing.
+fn gone_socket(addr: &str) -> Option<&str> {
+    addr.split("path=")
+        .nth(1)
+        .and_then(|s| s.split(',').next())
+        .filter(|sp| !address_path(sp).exists())
+}
+
+fn discover_address_file(env: &dyn Fn(&str) -> Option<String>) -> Result<String, InjectError> {
     let dirs = candidate_dirs(env);
     let first = dirs
         .first()
@@ -420,12 +437,7 @@ fn pick_address(
         // The daemon PID is alive (Linux /proc) and the unix socket path exists?
         // Absent either field, that check has nothing to say and passes.
         let dead_pid = pid.filter(|p| !PathBuf::from(format!("/proc/{p}")).exists());
-        let gone_sock = addr
-            .split("path=")
-            .nth(1)
-            .and_then(|s| s.split(',').next())
-            .filter(|sp| !address_path(sp).exists())
-            .map(str::to_owned);
+        let gone_sock = gone_socket(&addr).map(str::to_owned);
         if dead_pid.is_none() && gone_sock.is_none() {
             return Ok(addr);
         }
@@ -1767,6 +1779,64 @@ mod tests {
         let want = std::fs::read_to_string(&file).unwrap();
         assert!(want.contains(&addr), "{addr} not from {}", file.display());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A service's environment is frozen at its start, so an inherited
+    /// `IBUS_ADDRESS` outlives the daemon it named: every later press got
+    /// "cannot connect to IBus: I/O error" though a live daemon was listed.
+    #[test]
+    fn dead_ibus_address_falls_back_to_address_file() {
+        let home = temp_dir("dead-env");
+        let file = fake_address_file(&home.join(".config/ibus/bus"), "abc-unix-wayland-0", "live");
+        let vars: HashMap<&str, String> = HashMap::from([
+            ("HOME", home.display().to_string()),
+            (
+                "IBUS_ADDRESS",
+                format!("unix:path={}/gone,guid=x", home.display()),
+            ),
+        ]);
+
+        let addr = discover_address_in(&|k| vars.get(k).cloned()).unwrap();
+
+        let want = std::fs::read_to_string(&file).unwrap();
+        assert!(want.contains(&addr), "{addr} not from {}", file.display());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn live_ibus_address_wins_over_address_file() {
+        let home = temp_dir("live-env");
+        fake_address_file(&home.join(".config/ibus/bus"), "abc-unix-wayland-0", "file");
+        let sock = home.join("env-sock");
+        std::fs::write(&sock, []).unwrap();
+        let env_addr = format!("unix:path={}", sock.display());
+        let vars: HashMap<&str, String> = HashMap::from([
+            ("HOME", home.display().to_string()),
+            ("IBUS_ADDRESS", env_addr.clone()),
+        ]);
+
+        assert_eq!(
+            discover_address_in(&|k| vars.get(k).cloned()).unwrap(),
+            env_addr
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// With nothing to fall back to, the error must name the dead override,
+    /// not just "no address file": that is the setting to remove.
+    #[test]
+    fn dead_ibus_address_is_named_when_nothing_else_answers() {
+        let vars: HashMap<&str, String> = HashMap::from([
+            ("HOME", "/nonexistent/home".to_owned()),
+            ("IBUS_ADDRESS", "unix:path=/nonexistent/sock".to_owned()),
+        ]);
+
+        let err = discover_address_in(&|k| vars.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("IBUS_ADDRESS"), "{err}");
+        assert!(err.contains("/nonexistent/sock"), "{err}");
     }
 
     /// Naming only the first dir pointed at the snap-private one, which never
