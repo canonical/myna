@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
-use myna_platform::text_input::{FocusEvent, InjectError, Injector, Target};
+use myna_platform::text_input::{FocusEvent, InjectError, Injector, Support, Target};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictationState {
@@ -568,6 +568,11 @@ impl DesktopController {
         advance(&mut self.state, DictationState::Starting);
         myna_core::info_log!("ctrl", "press: starting utterance");
 
+        let capabilities = self.injector.capabilities();
+        if !dictates_into(capabilities.secure_field_detection) {
+            self.abort_before_capture(InjectError::SecureField).await;
+            return;
+        }
         // Acquire the target focused *now*. Secure/no-target/unavailable →
         // surface an error and abort without ever capturing audio (FR-021/023).
         let mut target = match self.injector.acquire().await {
@@ -598,7 +603,7 @@ impl DesktopController {
         // Reborrow disjoint fields as locals so the select loop can poll the
         // trigger/focus futures and route to the target/indicator without
         // aliasing `self`.
-        let supports_preedit = self.injector.capabilities().preedit;
+        let supports_preedit = capabilities.preedit;
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
@@ -857,6 +862,16 @@ impl DesktopController {
         // swallowed Release and the user needs two toggles to restart.
         self.trigger.resync().await;
         advance(&mut self.state, DictationState::Idle);
+    }
+}
+
+/// D4: whether to dictate where the backend cannot tell a secure field from
+/// any other. Yes, as into an IBus field that sends no content type; refusing
+/// would refuse every field such a backend sees. The one place to change it.
+fn dictates_into(detection: Support) -> bool {
+    match detection {
+        Support::Supported => true,
+        Support::Unknown => true,
     }
 }
 

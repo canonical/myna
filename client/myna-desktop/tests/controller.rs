@@ -17,6 +17,7 @@ use myna_desktop::controller::{AutoStop, ChannelSink, Session, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::indicator::IndicatorState;
 use myna_desktop::inject::mock::{AcquireOutcome, MockInjector};
+use myna_desktop::inject::Support;
 use myna_desktop::{DesktopController, DictationState, Live};
 use myna_orchestrator::{
     run_dictation, Failure, FakeBackend, OrchestratorEvent, ScriptedTrigger, SessionOutcome,
@@ -1514,6 +1515,32 @@ async fn preedit_is_off_by_default_even_when_supported() {
     let log = inject_log.lock().unwrap();
     assert!(log.preedits.is_empty(), "preedit must be opt-in");
     assert_eq!(log.commits, vec!["hello"]);
+}
+
+/// D4: where the backend cannot recognise a secure field, the controller
+/// dictates anyway. A secure field it cannot see gets the text.
+#[tokio::test]
+async fn a_backend_blind_to_secure_fields_is_dictated_into() {
+    let injector = MockInjector::new().with_secure_field_detection(Support::Unknown);
+    let field = injector.field();
+    field.set_secure(true);
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        events_session(
+            vec![
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Done("hello".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello".into(),
+            },
+        ),
+    );
+    controller.run().await;
+
+    assert_eq!(field.text(), "hello");
 }
 
 #[tokio::test]
