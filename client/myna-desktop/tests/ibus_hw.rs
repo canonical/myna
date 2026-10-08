@@ -27,11 +27,14 @@
 //! is a claim that the service is there, and a case that runs against no
 //! daemon asserts nothing while reporting green.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::StreamExt;
+use async_trait::async_trait;
+use futures_util::{FutureExt, StreamExt};
 use myna_desktop::inject::ibus::IbusInjector;
 use myna_desktop::inject::{FocusEvent, InjectError, Injector, Target};
+use myna_platform::conformance::text_input::{self as suite, FieldKind, FieldView};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, MessageStream};
 
@@ -340,6 +343,179 @@ impl Field {
         self.focus_out().await;
         self.ic_call("org.freedesktop.IBus.Service", "Destroy", &())
             .await;
+    }
+}
+
+/// What a field shows, rebuilt from what the daemon delivered to it.
+#[derive(Debug, Default)]
+struct Shown {
+    text: String,
+    preedit: String,
+    preedit_visible: bool,
+}
+
+impl Shown {
+    fn view(&self) -> FieldView {
+        FieldView {
+            text: self.text.clone(),
+            preedit: if self.preedit_visible {
+                self.preedit.clone()
+            } else {
+                String::new()
+            },
+        }
+    }
+}
+
+/// `VoidSymbol` released: a key no engine acts on.
+const VOID_SYMBOL: u32 = 0xff_ffff;
+const RELEASE_MASK: u32 = 1 << 30;
+
+impl Field {
+    /// Apply one message the daemon sent this field to `shown`.
+    fn apply(&self, msg: &zbus::Message, shown: &mut Shown) {
+        let header = msg.header();
+        if header.message_type() != zbus::message::Type::Signal
+            || header.path().map(|p| p.as_str()) != Some(self.ic.as_str())
+        {
+            return;
+        }
+        let body = msg.body();
+        match header.member().map(|m| m.as_str()) {
+            Some("CommitText") => {
+                let text: OwnedValue = body.deserialize().expect("CommitText (v)");
+                shown.text.push_str(&ibus_text(text));
+            }
+            Some("UpdatePreeditText") => {
+                let (text, _cursor, visible): (OwnedValue, u32, bool) =
+                    body.deserialize().expect("UpdatePreeditText (vub)");
+                shown.preedit = ibus_text(text);
+                shown.preedit_visible = visible;
+            }
+            Some("ShowPreeditText") => shown.preedit_visible = true,
+            Some("HidePreeditText") => shown.preedit_visible = false,
+            _ => {}
+        }
+    }
+
+    /// Everything the engine sent before now. A key event travels daemon ->
+    /// engine -> daemon, so its reply reaches the field after anything the
+    /// engine emitted ahead of answering it.
+    async fn settle(&mut self, shown: &mut Shown) {
+        let reply = self
+            .conn
+            .call_method(
+                Some(IBUS_SERVICE),
+                &self.ic,
+                Some(IC_IFACE),
+                "ProcessKeyEvent",
+                &(VOID_SYMBOL, 0u32, RELEASE_MASK),
+            )
+            .await
+            .expect("ProcessKeyEvent");
+        let call = reply.header().reply_serial();
+        let ours = |msg: &zbus::Message| {
+            msg.header().message_type() == zbus::message::Type::MethodReturn
+                && msg.header().reply_serial() == call
+        };
+        loop {
+            let msg = tokio::time::timeout(HANG_GUARD, self.stream.next())
+                .await
+                .expect("the key event's reply within the hang guard")
+                .expect("IBus closed the field's connection")
+                .expect("message from IBus");
+            if ours(&msg) {
+                return;
+            }
+            self.apply(&msg, shown);
+        }
+    }
+
+    /// What has already arrived, for a field without focus: the daemon
+    /// routes nothing to it any more, so there is nothing to wait for.
+    fn drain(&mut self, shown: &mut Shown) {
+        while let Some(Some(msg)) = self.stream.next().now_or_never() {
+            self.apply(&msg.expect("message from IBus"), shown);
+        }
+    }
+}
+
+/// The conformance suite's hand on a [`Field`], shared with the fixture so it
+/// can close the field once the check is over.
+struct SuiteField {
+    field: Arc<tokio::sync::Mutex<Option<Field>>>,
+    focused: bool,
+    shown: Shown,
+}
+
+#[async_trait]
+impl suite::Field for SuiteField {
+    async fn lose_focus(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.focus_out().await;
+        self.focused = false;
+    }
+
+    async fn focus(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+        self.focused = true;
+    }
+
+    async fn turn_secure(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.set_content_type(PURPOSE_PASSWORD, 0).await;
+    }
+
+    async fn observe(&mut self) -> Option<FieldView> {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        if self.focused {
+            field.settle(&mut self.shown).await;
+        } else {
+            field.drain(&mut self.shown);
+        }
+        Some(self.shown.view())
+    }
+}
+
+/// One focused IBus field and a fresh `IbusInjector` per check; the field of
+/// the check before is closed first, so no content type outlives it.
+#[derive(Default)]
+struct IbusFixture {
+    open: Option<Arc<tokio::sync::Mutex<Option<Field>>>>,
+}
+
+impl IbusFixture {
+    async fn close(&mut self) {
+        if let Some(open) = self.open.take() {
+            if let Some(field) = open.lock().await.take() {
+                field.close().await;
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl suite::Fixture for IbusFixture {
+    async fn setup(&mut self, kind: FieldKind) -> (Box<dyn Injector>, Box<dyn suite::Field>) {
+        self.close().await;
+        let purpose = match kind {
+            FieldKind::Plain => 0,
+            FieldKind::Secure => PURPOSE_PASSWORD,
+        };
+        let (field, injector) = session(purpose, 0).await;
+        let field = Arc::new(tokio::sync::Mutex::new(Some(field)));
+        self.open = Some(Arc::clone(&field));
+        let field = SuiteField {
+            field,
+            focused: true,
+            shown: Shown::default(),
+        };
+        (Box::new(injector), Box::new(field))
     }
 }
 
@@ -774,6 +950,35 @@ async fn private_field_is_not_refused() {
 
     target.release().await;
     field.close().await;
+}
+
+/// The suite every text input backend passes, against the real engine and
+/// a real input context: one suite, every backend.
+#[tokio::test]
+async fn the_ibus_backend_conforms() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let mut fixture = IbusFixture::default();
+    let report = suite::run(&mut fixture).await;
+    fixture.close().await;
+    assert_eq!(
+        report.passed,
+        [
+            "commits_reach_a_plain_field",
+            "no_commit_after_focus_loss",
+            "late_focus_streams_still_report_the_loss",
+            "a_focused_target_reports_nothing",
+            "a_newer_target_supersedes_the_older",
+            "release_after_focus_loss_then_reacquire",
+            "secure_fields_are_refused",
+            "a_field_turning_secure_is_refused",
+            "commit_clears_the_preedit",
+            "no_preedit_after_focus_loss",
+            "release_clears_the_preedit",
+        ]
+    );
+    assert!(report.unobserved.is_empty(), "{report:?}");
+    assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);
 }
 
 /// Live **visual** probe for the preedit path (R9): shows an underlined
