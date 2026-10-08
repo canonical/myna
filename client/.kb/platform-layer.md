@@ -26,8 +26,20 @@ The layer is being introduced in steps: the contracts exist and `text_input` is 
 - `activation` - read, bind and clear Myna's toggle accelerator, list the shortcuts holding a key (reserved ones flagged), release a conflict, watch for changes. `Accelerator` is GTK accelerator syntax, which both GSettings media-keys and xfconf `xfce4-keyboard-shortcuts` store, with spelling-insensitive comparison.
 - `appearance` - accent, reduced motion and high contrast as plain readings, watched through a callback that says whether readings are already current. Palette and fallback policy stay in the HUD.
 - `components` - the desktop pieces Myna needs outside its own processes (GNOME's shell extension; Xfce's status surface autostart entry and IBus as the active input method), each with a purpose and a status, and enabling one as far as Myna can without authorization.
-- `status_surface` - pure placement: bottom-centre of the chosen monitor's work area, the monitor chosen by focus then pointer then primary, and the work area an X11 host derives from EWMH struts. It matches the GNOME extension's `place.js`; hosting the window is the backend's.
+- `status_surface` - pure placement: bottom-centre of the chosen monitor's work area, the monitor chosen by focus then pointer then primary, and the work area an X11 host derives from EWMH struts. It matches the GNOME extension's `place.js`; hosting the window is the backend's. Backends: the GNOME extension, and the HUD's own X11 host (below).
 - `Subscription` - what a watch returns; dropping it ends the watch.
+
+## The X11 status surface host
+
+`myna-hud --host x11` (`myna-hud/src/host/x11.rs`) makes the HUD its own host, for Xfce's supervisor to start. It exits 78 without starting GTK when the session is Wayland, and pins GDK to X11 otherwise. GTK4 can neither type nor place a toplevel, so the host works on the XID over an x11rb connection of its own, and the window's map cycle calls it through `HudWindow::set_host`:
+
+- Window type `_NET_WM_WINDOW_TYPE_NOTIFICATION`. In xfwm4 it is not `WINDOW_REGULAR_FOCUSABLE`, so it is never focused on map, and it stacks in the notification layer above panels and fullscreen windows. DOCK, mutter's choice, gets xfwm4's dock shadow drawn around the whole transparent window; UTILITY is focused on map.
+- `_NET_WM_USER_TIME` 0 and no `WM_TAKE_FOCUS`, set once after realize: focus-stealing prevention and focus fallback skip the window too.
+- Before every map the monitor is pinned (focus, pointer, primary), and the window is moved to its target with `PPosition` set, so the window manager maps it in place rather than placing it. GDK writes `WM_NORMAL_HINTS` without a position on layout, so this cannot be done once.
+- After every map: `WM_HINTS` input false and `_NET_WM_STATE_STICKY` by client message. GDK rewrites `WM_HINTS` and `_NET_WM_STATE` on every map, so neither can be set ahead; skip-taskbar/pager are GDK's own hints and click-through is the empty input region.
+- Re-placed on `_NET_WORKAREA` changes, on the window's own resizes and, with the monitor re-chosen, on monitor changes. The work area is the monitor less the `_NET_WM_STRUT_PARTIAL` (or `_NET_WM_STRUT`) of every `_NET_CLIENT_LIST` window, since `_NET_WORKAREA` is one rectangle for all monitors.
+
+`tests/x11_host_e2e.rs` plays the window manager under Xvfb and checks what it sees at map request time. GNOME's hover fade to 20% is not ported.
 
 ## Profile selection
 
