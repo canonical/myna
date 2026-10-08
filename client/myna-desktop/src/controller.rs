@@ -10,7 +10,9 @@
 //! (FR-004).
 //!
 //! Everything here is hermetic: the boundaries are trait objects, so tests
-//! drive the whole lifecycle with mocks (no D-Bus / IBus / display).
+//! drive the whole lifecycle with mocks (no D-Bus / input method / display).
+//! Text input is reached only through `myna_platform::text_input` and the
+//! capabilities a backend reports.
 
 use std::time::Duration;
 
@@ -20,12 +22,12 @@ use myna_audio::AudioStats;
 use tokio::sync::{mpsc, watch};
 
 use crate::indicator::{Indicator, IndicatorState};
-use crate::inject::{FocusEvent, Headline, InjectError, Injector, Target};
 use crate::live::Live;
 use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
+use myna_platform::text_input::{FocusEvent, InjectError, Injector, Target};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictationState {
@@ -461,7 +463,8 @@ pub struct AudioDrops {
 }
 
 /// Builder for [`DesktopController`] — injects the three boundaries + a session
-/// factory (mocks in tests, real control socket/IBus in the binary).
+/// factory (mocks in tests, the control socket and a text input backend in the
+/// binary).
 #[derive(Default)]
 pub struct DesktopControllerBuilder {
     trigger: Option<Box<dyn Trigger>>,
@@ -854,6 +857,24 @@ impl DesktopController {
         // swallowed Release and the user needs two toggles to restart.
         self.trigger.resync().await;
         advance(&mut self.state, DictationState::Idle);
+    }
+}
+
+/// What the user is told about an [`InjectError`]: wording is the caller's,
+/// translated through the desktop gettext domain.
+trait Headline {
+    fn headline(&self) -> String;
+}
+
+impl Headline for InjectError {
+    fn headline(&self) -> String {
+        match self {
+            InjectError::SecureField => gettext("Password field skipped"),
+            InjectError::NoTarget => gettext("No text field focused"),
+            InjectError::FocusLost => gettext("Focus lost"),
+            InjectError::Unavailable(_) => gettext("Typing unavailable"),
+            InjectError::Backend(_) => gettext("Typing failed"),
+        }
     }
 }
 
@@ -1615,6 +1636,21 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn every_inject_error_has_its_headline() {
+        let cases = [
+            (InjectError::SecureField, "Password field skipped"),
+            (InjectError::NoTarget, "No text field focused"),
+            (InjectError::FocusLost, "Focus lost"),
+            (InjectError::Unavailable("x".into()), "Typing unavailable"),
+            (InjectError::Backend("x".into()), "Typing failed"),
+        ];
+        for (error, headline) in cases {
+            assert_eq!(error.headline(), headline);
+            assert_ne!(error.to_string(), headline, "the detail says more");
+        }
     }
 
     // ── Ending: the one reason an utterance stopped writing ───────────────────

@@ -6,4 +6,3 @@
 src/indicator/mod.rs
 src/indicator/notify.rs
 src/controller.rs
-src/inject/mod.rs
