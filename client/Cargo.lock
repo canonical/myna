@@ -1319,6 +1319,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "libc",
+ "myna-platform",
  "tokio",
  "zbus",
 ]

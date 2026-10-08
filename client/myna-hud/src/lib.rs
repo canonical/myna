@@ -32,6 +32,7 @@ pub mod bar;
 pub mod bus;
 pub mod dbus_consumer;
 pub mod gl;
+pub mod host;
 pub mod hud_logic;
 pub mod indicator;
 #[cfg(dev_lab)]
