@@ -15,105 +15,16 @@
 // a green nothing. It skips only where neither `dbus-daemon` nor `Xvfb` is
 // installed.
 
-use std::io::BufRead;
+mod support;
+
 use std::os::unix::process::ExitStatusExt;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Duration;
+
+use support::{Headless, Hud, PrivateBus};
 
 /// The HUD's well-known name, owned once the hosted app is up.
 const HUD_NAME: &str = "com.canonical.Myna.Hud";
-
-/// A session bus that exists only for this test, torn down on drop.
-///
-/// Private because the assertion is about *name ownership*, which is only
-/// meaningful on a bus this test controls - on the developer's own bus a
-/// running HUD already owns the name and the spawned singleton would forward
-/// its activation and exit. Same reasoning as `tests/serve_roundtrip.rs`,
-/// except the address is passed to the child rather than set process-wide.
-struct PrivateBus {
-    daemon: Child,
-    address: String,
-}
-
-impl PrivateBus {
-    /// Spawn one, or `None` where there is no `dbus-daemon` to spawn.
-    fn spawn() -> Option<Self> {
-        let mut daemon = Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--print-address"])
-            .stdout(Stdio::piped())
-            // The bus activates portals for its one client; that chatter is
-            // not this test's diagnostics.
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
-        let mut address = String::new();
-        std::io::BufReader::new(daemon.stdout.take()?)
-            .read_line(&mut address)
-            .ok()?;
-        let address = address.trim().to_string();
-        if address.is_empty() {
-            let _ = daemon.kill();
-            return None;
-        }
-        Some(Self { daemon, address })
-    }
-}
-
-impl Drop for PrivateBus {
-    fn drop(&mut self) {
-        let _ = self.daemon.kill();
-        let _ = self.daemon.wait();
-    }
-}
-
-/// A HUD process, killed on drop so a failed assertion leaves nothing behind.
-struct Hud(Child);
-
-impl Drop for Hud {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// An X server started for this test, torn down on drop.
-struct Headless {
-    server: Child,
-    display: String,
-}
-
-impl Headless {
-    /// Spawn one on a display number of its own choosing (`-displayfd`, the
-    /// same trick as `xvfb-run -a`), or `None` where there is no `Xvfb`.
-    fn spawn() -> Option<Self> {
-        let mut server = Command::new("Xvfb")
-            .args(["-displayfd", "1", "-screen", "0", "800x600x24"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
-        let mut number = String::new();
-        std::io::BufReader::new(server.stdout.take()?)
-            .read_line(&mut number)
-            .ok()?;
-        let number = number.trim();
-        if number.is_empty() {
-            let _ = server.kill();
-            return None;
-        }
-        Some(Self {
-            display: format!(":{number}"),
-            server,
-        })
-    }
-}
-
-impl Drop for Headless {
-    fn drop(&mut self) {
-        let _ = self.server.kill();
-        let _ = self.server.wait();
-    }
-}
 
 /// True when the environment already has a display for GTK to open.
 fn has_display() -> bool {
@@ -131,7 +42,7 @@ async fn sigterm_quits_the_application_instead_of_killing_it() {
     let headless = if has_display() {
         None
     } else {
-        let Some(headless) = Headless::spawn() else {
+        let Some(headless) = Headless::spawn("800x600x24") else {
             eprintln!("skipping sigterm_shutdown_e2e: no display and no Xvfb");
             return;
         };
