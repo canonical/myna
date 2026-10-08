@@ -9,9 +9,22 @@ A suite runs on the host: `run-suite.sh` restores the LXD snapshot it
 declares, pushes the binary and `tools/` into the VM, and the suite calls
 `shot` (the app under Xvfb on the autologin user's session bus, driven by
 `shot-driver.py` steps) and asserts with `assert_on` inside the VM. CI runs
-the same `make e2e` per series (`.github/workflows/e2e.yml`).
+the same `make e2e` per series and desktop (`.github/workflows/e2e.yml`).
+
+The desktop is an axis, `E2E_DESKTOP=gnome|xubuntu` (`--desktop` on the
+scripts). Its cloud-init is `vm/user-data.common` merged with
+`vm/user-data.<desktop>` by `lib.sh`; session readiness (`session_up`) and
+the X11 environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
+X11 (lightdm autologin).
 
 # Important
+
+- The GNOME VM keeps the name `myna-e2e-<release>`; other desktops are
+  `myna-e2e-<desktop>-<release>`, so they coexist. A new desktop adds a
+  `user-data.<desktop>`, a `session_up` arm and, if X11, an `on_vm` arm in
+  `lib.sh`; shared packages go in `user-data.common`.
+- Xubuntu is informational in CI (`continue-on-error`) until its suites
+  pass; scheduled and dispatch runs only, noble only.
 
 - Assert machine state (`assert_on`), never pixels. `waitfor:`/`gone:` gate
   the flow; a suite that needs a long `wait:` is missing a waitable
