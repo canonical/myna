@@ -295,6 +295,15 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
+    /// The factory answers for the injector it connects.
+    #[test]
+    fn the_ibus_factory_reports_ibus_capabilities() {
+        assert_eq!(
+            IbusConnect.capabilities(),
+            crate::inject::ibus::CAPABILITIES
+        );
+    }
+
     /// Capabilities are answered by the factory, so the controller can read
     /// them while building - before anything is connected.
     #[tokio::test]

@@ -437,9 +437,13 @@ async fn commit_until(
 async fn the_daemon_the_gate_promises_is_serving() {
     skip_unless_ibus!();
     let _serial = exclusive().await;
-    IbusInjector::connect().await.unwrap_or_else(|e| {
+    let injector = IbusInjector::connect().await.unwrap_or_else(|e| {
         panic!("MYNA_IBUS_TESTS=1 but IbusInjector cannot connect ({e}). {HOW_TO_RUN}")
     });
+    assert_eq!(
+        injector.capabilities(),
+        myna_desktop::inject::ibus::CAPABILITIES
+    );
 }
 
 #[tokio::test]
