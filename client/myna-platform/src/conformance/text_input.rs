@@ -268,6 +268,14 @@ async fn a_field_turning_secure_is_refused(fixture: &mut dyn Fixture) -> bool {
         }
     }
     target.set_preedit("secret").await;
+    // Before the commit, which may clear a preedit it should never have shown.
+    let drawn = field.observe().await;
+    if let Some(view) = &drawn {
+        assert!(
+            !view.preedit.contains("secret"),
+            "{CHECK}: field shows {view:?}"
+        );
+    }
     let refused = target.commit("secret").await;
     assert!(
         matches!(refused, Err(InjectError::SecureField)),
@@ -276,12 +284,12 @@ async fn a_field_turning_secure_is_refused(fixture: &mut dyn Fixture) -> bool {
     let view = field.observe().await;
     if let Some(view) = &view {
         assert!(
-            !view.text.contains("secret") && !view.preedit.contains("secret"),
+            !view.text.contains("secret"),
             "{CHECK}: field shows {view:?}"
         );
     }
     target.release().await;
-    view.is_some()
+    drawn.is_some() && view.is_some()
 }
 
 async fn release_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {
