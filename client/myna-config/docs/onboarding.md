@@ -369,7 +369,11 @@ capture ends. Escape, Cancel or leaving the step keeps the key there was; a
 refused key turns the box's outline red and is explained under it, in room kept for two
 lines so the page does not move, and the capture goes on. Declining a swap
 clears that explanation and keeps waiting. A key chosen here survives Back then Next:
-the setup that runs on moving on installs Super+J only where no key is set. In
+the setup that runs on moving on installs Super+J only where no key is set. Focus
+lands on Cancel, which says nothing about waiting, so starting a capture announces
+the box's own words ("Press the new shortcut…"), and a refusal is announced too,
+since the red text is not read where focus is. The Change button's accessible
+description names the key bound now. In
 the row the keys and button become the prompt and Cancel, and a refused key is
 the row's subtitle, since a row has no room under the prompt. The capture:
 

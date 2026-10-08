@@ -274,11 +274,14 @@ impl ShortcutControl {
         };
         if let Some(button) = self.button.upgrade() {
             button.set_label(&label);
-            button.update_property(
-                &[gtk::accessible::Property::Description(&gettextrs::gettext(
-                    "Press a keyboard shortcut for dictation.",
-                ))],
-            );
+            let mut description = gettextrs::gettext("Press a keyboard shortcut for dictation.");
+            if let ShortcutState::Bound(accelerator) = &state {
+                // TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
+                let current = gettextrs::gettext("Current shortcut: {shortcut}.")
+                    .replace("{shortcut}", &key_label(accelerator));
+                description = format!("{current} {description}");
+            }
+            button.update_property(&[gtk::accessible::Property::Description(&description)]);
             button.set_sensitive(state != ShortcutState::NotRunning);
             // Onboarding cannot finish usefully without a key, so setting one
             // up is the step's main action until there is one.
@@ -369,6 +372,14 @@ impl ShortcutControl {
         self.asking.set(false);
         self.render();
         self.focus_cancel();
+        // Focus lands on Cancel and nothing there says the app is waiting
+        // for a key, so announce what the capture box shows.
+        if let (Some(cancel), Some(field)) = (
+            self.in_place.cancel.upgrade(),
+            self.in_place.field.upgrade(),
+        ) {
+            cancel.announce(&field.label(), gtk::AccessibleAnnouncementPriority::Medium);
+        }
     }
 
     /// Key events reach the window only from inside it, and Cancel is what
@@ -412,6 +423,10 @@ impl ShortcutControl {
             Capture::Take(accelerator) => accelerator,
         };
         if let Some(reason) = self.reserved(&accelerator) {
+            // The refusal is red text, and focus stays on Cancel, so say it.
+            if let Some(cancel) = self.in_place.cancel.upgrade() {
+                cancel.announce(&reason, gtk::AccessibleAnnouncementPriority::Medium);
+            }
             self.refusal.replace(Some(reason));
             self.render();
             return glib::Propagation::Stop;
