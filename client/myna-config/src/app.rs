@@ -3882,23 +3882,29 @@ fn expected_size(components: &[crate::onboarding::Component]) -> String {
 }
 
 /// Whether the component step's button says everything is installed: its
-/// label, insensitive, no longer suggested.
+/// label, taking no input, no longer suggested.
 fn installed_shown(window: &ui::OnboardingWindow) -> bool {
     components_page(window).is_some_and(|page| {
         let button = page.install_button();
         page.install_label() == gettextrs::gettext("Installed")
-            && !button.is_sensitive()
+            && takes_no_input(&button)
             && !button.has_css_class("suggested-action")
     })
 }
 
-/// The component step's install button reads `label`, insensitive and
+/// A button that does nothing when pressed: insensitive, or held, which
+/// stays sensitive to keep the window's focus but cannot be targeted.
+fn takes_no_input(button: &gtk::Button) -> bool {
+    !button.is_sensitive() || !button.can_target()
+}
+
+/// The component step's install button reads `label`, taking no input and
 /// plain, with `busy` beside its spinner.
 fn installing_shown(window: &ui::OnboardingWindow, busy: &str) -> bool {
     components_page(window).is_some_and(|page| {
         let button = page.install_button();
         page.install_label() == gettextrs::gettext("Installing…")
-            && !button.is_sensitive()
+            && takes_no_input(&button)
             && !button.has_css_class("suggested-action")
             && status_busy(&page).as_deref() == Some(busy)
     })
@@ -4101,6 +4107,9 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     // Each step is named under the button while it runs, the button and
     // Next held. The flag and both snaps are one set-up, one prompt.
     machine.hold_prompt(true);
+    // A user presses the button, so it has the window's focus: it must keep
+    // it while the run goes, or a screen reader says nothing until a key.
+    button.grab_focus();
     button.emit_clicked();
     let flag_step = gettextrs::gettext("Enabling user daemons support");
     if !until(&|| installing_shown(&window, &flag_step))
@@ -4113,6 +4122,10 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
             status_busy(&page)
         ));
     }
+    if gtk::prelude::GtkWindowExt::focus(&window).as_ref() != Some(button.upcast_ref()) {
+        return Err("the install button lost the window's focus while the run went".to_owned());
+    }
+    println!("onboarding-install: the running button keeps the window's focus");
     button.emit_clicked();
     settle_gtk();
     if machine.set_ups() != 3 {

@@ -818,7 +818,13 @@ impl OnboardingUi {
             InstallView::Installed => "installed",
         });
         let button = page.install_button();
-        button.set_sensitive(offer && !self.busy.get());
+        let held = install_button_held(self.running.get(), self.busy.get());
+        // Held, the button stays sensitive so it keeps the window's focus, but
+        // takes no input and is dimmed as an insensitive one is; `install_all`
+        // already refuses a second run.
+        button.set_sensitive((offer && !self.busy.get()) || held);
+        button.set_can_target(!held);
+        set_class(&button, "dim-label", held);
         // Next leads once nothing required is missing; insensitive, the
         // accent would only read as a faded call to act.
         set_class(
@@ -828,9 +834,9 @@ impl OnboardingUi {
         );
         let stage = self.stage.borrow();
         let failed = self.setup_failed.get() && !self.busy.get() && !needs_onboarding(components);
-        let text = match (&*stage, progress) {
-            (Some(stage), _) if setting_up => Some(stage_text(stage)),
-            (_, Some((id, percent))) => Some(step_text(id, percent)),
+        let busy = match (&*stage, progress) {
+            (Some(stage), _) if setting_up => Some((stage_text(stage), stage_text(stage))),
+            (_, Some((id, percent))) => Some((step_text(id, None), step_text(id, percent))),
             _ => None,
         };
         let size = if offer {
@@ -846,8 +852,15 @@ impl OnboardingUi {
         } else {
             String::new()
         };
-        // The button carries the size too, so it is spoken with the button.
-        page.describe_install(&size);
+        // The button has the window's focus while the run goes, and a screen
+        // reader speaks a change to the focused control but not to a label
+        // beside it. So its description is the step, without the percentage,
+        // which would be read at every tick; with nothing running it is the
+        // download size.
+        page.describe_install(install_description(
+            busy.as_ref().map(|(step, _)| step.as_str()),
+            &size,
+        ));
         let note = if failed {
             gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
         } else if needs_onboarding(components) && self.problem.borrow().is_some() {
@@ -855,8 +868,8 @@ impl OnboardingUi {
         } else {
             size
         };
-        page.show_status(match &text {
-            Some(text) => ui::ComponentsStatus::Busy(text),
+        page.show_status(match &busy {
+            Some((_, text)) => ui::ComponentsStatus::Busy(text),
             None if failed => ui::ComponentsStatus::Warning(&note),
             None if note.is_empty() => ui::ComponentsStatus::Hidden,
             None => ui::ComponentsStatus::Note(&note),
@@ -1277,9 +1290,52 @@ fn step_title(step: Step) -> String {
     }
 }
 
+/// Whether the install button stays focusable but takes no input: a run, or
+/// the set-up after it, is going. Insensitive, it would drop the window's
+/// focus, and a screen reader says nothing of an application with none.
+fn install_button_held(running: bool, busy: bool) -> bool {
+    running || busy
+}
+
+/// What the install button adds to its name: the step while one runs, without
+/// its percentage, otherwise the download size.
+fn install_description<'a>(step: Option<&'a str>, size: &'a str) -> &'a str {
+    step.unwrap_or(size)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_install_button_is_held_while_a_run_or_the_set_up_goes() {
+        assert!(install_button_held(true, false));
+        assert!(install_button_held(false, true));
+        assert!(install_button_held(true, true));
+    }
+
+    #[test]
+    fn the_install_button_is_free_when_nothing_runs() {
+        assert!(!install_button_held(false, false));
+    }
+
+    #[test]
+    fn a_running_step_is_the_buttons_description_not_the_size() {
+        assert_eq!(
+            install_description(Some("Installing Dictation app"), "776\u{a0}MB"),
+            "Installing Dictation app"
+        );
+    }
+
+    #[test]
+    fn the_size_is_the_buttons_description_when_nothing_runs() {
+        assert_eq!(install_description(None, "776\u{a0}MB"), "776\u{a0}MB");
+    }
+
+    #[test]
+    fn the_button_has_no_description_when_nothing_runs_and_there_is_no_size() {
+        assert_eq!(install_description(None, ""), "");
+    }
 
     #[test]
     fn a_wait_on_snapd_keeps_its_english_summary_for_the_log() {

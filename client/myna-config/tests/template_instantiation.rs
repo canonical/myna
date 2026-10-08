@@ -213,6 +213,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-install: a dismissed prompt stops silently",
         "onboarding-install: a refusal reverts with a toast and its report",
         "onboarding-install: a long report scrolls inside the window",
+        "onboarding-install: the running button keeps the window's focus",
         "onboarding-install: each step named while it runs",
         "onboarding-install: the download's percentage shown",
         "onboarding-install: a failed step reverts with a toast and its report",

@@ -124,7 +124,8 @@ when the GPU has no driver. The flag and the extension download nothing, so
 a machine missing only those shows no size. The sizes are fixed per store
 revision in `onboarding.rs`, not read from the store. The button carries the
 same size as its accessible description, so a screen reader speaks it after the
-button's name; the description clears once there is no size to offer.
+button's name; while a run goes the description is the step instead, and it
+clears once there is neither.
 
 The button runs every step the machine still needs, in order
 (`onboarding::install_plan`): turning on snapd's flag, which snapd needs
@@ -135,7 +136,14 @@ labelled "Installed". While the run goes the button is insensitive and reads
 "Installing…", and a spinner below it names the step: "Enabling user daemons
 support", "Installing Dictation app", "Installing speech-to-text model" or
 "Enabling shell extension", with the download's percentage once one
-announces its size. The button keeps one width through its three labels.
+announces its size. While a run or the set-up after it goes, the install
+button stays sensitive but takes no input and is dimmed like an insensitive
+one: a button that turned insensitive would drop the window's focus, and a
+screen reader says nothing of an application with none until a key is pressed.
+It also speaks a change to the focused control but not to the label beside it,
+so the step, without its percentage, is the button's accessible description
+while it runs. The percentage would be read at every tick. The button keeps one
+width through its three labels.
 Next is insensitive meanwhile. After each step a fresh read of the machine
 picks the next one; a step that succeeded is not retried when that read does
 not show it yet (`onboarding::next_install`).
