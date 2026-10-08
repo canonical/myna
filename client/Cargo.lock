@@ -1269,6 +1269,7 @@ dependencies = [
  "libadwaita",
  "libc",
  "myna-core",
+ "myna-platform",
  "serde",
  "serde_json",
  "sha2",

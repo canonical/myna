@@ -14,7 +14,10 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::adapters::desktop_shortcut::DesktopShortcut;
+use myna_platform::activation::{Accelerator, Action, Activation, Conflict};
+use myna_platform::Subscription;
+
+use crate::platform::Platform;
 use crate::shortcut::{
     button_action, command, default_key, ButtonAction, DefaultKey, ShortcutState,
     DEFAULT_ACCELERATOR,
@@ -66,7 +69,9 @@ pub struct ShortcutControl {
     surface: Surface,
     describe: Describe,
     proxy: RefCell<Option<gio::DBusProxy>>,
-    desktop: Option<DesktopShortcut>,
+    desktop: Option<Rc<dyn Activation>>,
+    /// Ends the watch on the desktop's shortcut when the control goes.
+    _watch: RefCell<Option<Subscription>>,
     state: RefCell<ShortcutState>,
     /// The daemon's `Toggle` does nothing, so the key pokes the socket.
     legacy: Cell<bool>,
@@ -108,7 +113,8 @@ impl ShortcutControl {
             surface,
             describe,
             proxy: RefCell::new(None),
-            desktop: DesktopShortcut::open(),
+            desktop: Platform::current().activation(),
+            _watch: RefCell::default(),
             state: RefCell::new(ShortcutState::NotRunning),
             legacy: Cell::new(false),
             capture: RefCell::default(),
@@ -135,11 +141,12 @@ impl ShortcutControl {
         });
         if let Some(desktop) = &control.desktop {
             let weak = Rc::downgrade(&control);
-            desktop.connect_changed(move || {
+            let subscription = desktop.watch(Box::new(move || {
                 if let Some(control) = weak.upgrade() {
                     control.refresh();
                 }
-            });
+            }));
+            control._watch.replace(Some(subscription));
         }
         button.connect_clicked({
             let control = control.clone();
@@ -221,7 +228,11 @@ impl ShortcutControl {
                 .as_ref()
                 .is_some_and(|proxy| proxy.cached_property("Shortcut").is_some()),
         );
-        let binding = self.desktop.as_ref().and_then(DesktopShortcut::binding);
+        let binding = self
+            .desktop
+            .as_ref()
+            .and_then(|desktop| desktop.binding().ok().flatten())
+            .map(|binding| binding.to_string());
         let state = ShortcutState::observe(owned, binding.as_deref());
         self.state.replace(state.clone());
         self.render();
@@ -229,15 +240,15 @@ impl ShortcutControl {
         // comes back here as a change.
         if let (ShortcutState::Bound(binding), Some(desktop)) = (&state, &self.desktop) {
             let wanted = command(self.legacy.get());
-            if desktop.command() != wanted {
-                let _ = desktop.install(&gettextrs::gettext("Dictation"), &wanted, binding);
+            if desktop.command().ok().flatten().as_deref() != Some(wanted.as_str()) {
+                let _ = bind(desktop.as_ref(), binding, &wanted);
             }
         }
         if self.default_pending.get() {
             let available = self
                 .desktop
                 .as_ref()
-                .is_some_and(|desktop| desktop.conflict(DEFAULT_ACCELERATOR).is_none());
+                .is_some_and(|desktop| conflicts(desktop.as_ref(), DEFAULT_ACCELERATOR).is_empty());
             match default_key(&state, available) {
                 DefaultKey::Wait => {}
                 DefaultKey::Install => {
@@ -438,7 +449,9 @@ impl ShortcutControl {
 
     /// Why `accelerator` cannot be taken, when the desktop reserves it.
     fn reserved(&self, accelerator: &str) -> Option<String> {
-        let conflict = self.desktop.as_ref()?.conflict(accelerator)?;
+        let conflict = conflicts(self.desktop.as_deref()?, accelerator)
+            .into_iter()
+            .next()?;
         conflict.reserved.then(|| {
             gettextrs::gettext("{keys} is reserved for “{action}”. Press a different shortcut.")
                 .replace("{keys}", &key_label(accelerator))
@@ -451,8 +464,8 @@ impl ShortcutControl {
     fn claim(self: &Rc<Self>, accelerator: &str, then: impl Fn(bool) + 'static) {
         let Some(conflict) = self
             .desktop
-            .as_ref()
-            .and_then(|desktop| desktop.conflict(accelerator))
+            .as_deref()
+            .and_then(|desktop| conflicts(desktop, accelerator).into_iter().next())
         else {
             then(self.install(accelerator));
             return;
@@ -498,11 +511,7 @@ impl ShortcutControl {
     }
 
     /// Take `accelerator` from the shortcut `conflict` names and install it.
-    fn replace(
-        &self,
-        conflict: &crate::adapters::desktop_shortcut::Conflict,
-        accelerator: &str,
-    ) -> bool {
+    fn replace(&self, conflict: &Conflict, accelerator: &str) -> bool {
         let released = self
             .desktop
             .as_ref()
@@ -519,13 +528,7 @@ impl ShortcutControl {
     /// Bind `accelerator` to the daemon's `Toggle`. Whether it was installed.
     fn install(&self, accelerator: &str) -> bool {
         let installed = self.desktop.as_ref().is_some_and(|desktop| {
-            desktop
-                .install(
-                    &gettextrs::gettext("Dictation"),
-                    &command(self.legacy.get()),
-                    accelerator,
-                )
-                .is_ok()
+            bind(desktop.as_ref(), accelerator, &command(self.legacy.get()))
         });
         if !installed {
             self.toast(adw::Toast::new(&gettextrs::gettext(
@@ -553,6 +556,26 @@ pub(crate) fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
     } else {
         widget.remove_css_class(class);
     }
+}
+
+/// Bind `accelerator` to `command` as the dictation shortcut.
+fn bind(desktop: &dyn Activation, accelerator: &str, command: &str) -> bool {
+    let Ok(accelerator) = Accelerator::parse(accelerator) else {
+        return false;
+    };
+    let action = Action {
+        name: gettextrs::gettext("Dictation"),
+        command: command.to_owned(),
+    };
+    desktop.bind(&accelerator, &action).is_ok()
+}
+
+/// What holds `accelerator` besides Myna; nothing when it is no chord.
+fn conflicts(desktop: &dyn Activation, accelerator: &str) -> Vec<Conflict> {
+    Accelerator::parse(accelerator)
+        .ok()
+        .and_then(|accelerator| desktop.conflicts(&accelerator).ok())
+        .unwrap_or_default()
 }
 
 fn toplevel(window: &gtk::Window) -> Option<gdk::Toplevel> {

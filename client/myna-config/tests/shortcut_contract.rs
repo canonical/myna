@@ -38,7 +38,8 @@ fn a_desktop_binding_is_the_shortcut() {
 
 #[test]
 fn accelerators_match_across_gnome_spellings() {
-    use myna_config::shortcut::same_accelerator;
+    use myna_platform::activation::Accelerator;
+    let same_accelerator = |a: &str, b: &str| Accelerator::parse(a).is_ok_and(|a| a.same_keys(b));
     assert!(same_accelerator("<Super>l", "<Super>L"));
     assert!(same_accelerator("<Primary><Alt>t", "<Alt><Control>t"));
     assert!(same_accelerator("<Mod4>o", "<Super>o"));
@@ -51,7 +52,8 @@ fn accelerators_match_across_gnome_spellings() {
 
 #[test]
 fn different_chords_or_keys_do_not_match() {
-    use myna_config::shortcut::same_accelerator;
+    use myna_platform::activation::Accelerator;
+    let same_accelerator = |a: &str, b: &str| Accelerator::parse(a).is_ok_and(|a| a.same_keys(b));
     assert!(!same_accelerator("<Super>l", "<Super><Shift>l"));
     assert!(!same_accelerator("<Super>l", "<Super>k"));
     assert!(!same_accelerator("", "<Super>l"));

@@ -1777,7 +1777,6 @@ fn own_probe_daemon(connection: &gio::DBusConnection) -> Result<(), String> {
 /// or the key is taken. Runs against a stand-in daemon on the session bus,
 /// which the caller makes private.
 fn onboarding_control_probe() -> glib::ExitCode {
-    use crate::adapters::desktop_shortcut::DesktopShortcut;
     use crate::onboarding::{assess, Machine};
     use crate::onboarding_ui::OnboardingUi;
 
@@ -1801,7 +1800,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
             return glib::ExitCode::FAILURE;
         }
     };
-    let Some(desktop) = DesktopShortcut::open() else {
+    let Some(desktop) = ProbeShortcut::open() else {
         eprintln!("the probe finds no media-keys schema");
         return glib::ExitCode::FAILURE;
     };
@@ -2211,7 +2210,7 @@ fn shortcut_probe() -> glib::ExitCode {
             .unwrap_or_default()
             .to_string()
     };
-    let desktop = crate::adapters::desktop_shortcut::DesktopShortcut::open();
+    let desktop = ProbeShortcut::open();
     let binding = || desktop.as_ref().and_then(|desktop| desktop.binding());
 
     button.emit_clicked();
@@ -4708,8 +4707,7 @@ fn probe_capture_in_place(
     control: &Rc<crate::shortcut_ui::ShortcutControl>,
 ) -> Result<(), String> {
     use gtk::gdk::{Key, ModifierType};
-    let desktop = crate::adapters::desktop_shortcut::DesktopShortcut::open()
-        .ok_or("no desktop shortcut settings")?;
+    let desktop = ProbeShortcut::open().ok_or("no desktop shortcut settings")?;
     let forward = window.forward_button();
     let mapped = |matches: &dyn Fn(&gtk::Widget) -> bool| {
         descendants(window.upcast_ref(), &|widget| {
@@ -5139,6 +5137,44 @@ fn descendants(widget: &gtk::Widget, matches: &dyn Fn(&gtk::Widget) -> bool) -> 
 fn first_entry_row(widget: &gtk::Widget) -> Option<adw::EntryRow> {
     find_descendant(widget, &|widget| widget.is::<adw::EntryRow>())
         .and_then(|widget| widget.downcast().ok())
+}
+
+/// The probes' view of the desktop shortcut, in the shapes they compare.
+struct ProbeShortcut(Rc<dyn myna_platform::activation::Activation>);
+
+impl ProbeShortcut {
+    fn open() -> Option<Self> {
+        crate::platform::Platform::current().activation().map(Self)
+    }
+
+    fn binding(&self) -> Option<String> {
+        self.0.binding().ok().flatten().map(|key| key.to_string())
+    }
+
+    fn command(&self) -> String {
+        self.0.command().ok().flatten().unwrap_or_default()
+    }
+
+    /// An empty `binding` removes the shortcut.
+    fn install(&self, name: &str, command: &str, binding: &str) -> Result<(), String> {
+        use myna_platform::activation::{Accelerator, Action};
+        if binding.is_empty() {
+            return self.0.clear().map_err(|error| error.to_string());
+        }
+        let key = Accelerator::parse(binding).map_err(|error| error.to_string())?;
+        let action = Action {
+            name: name.to_owned(),
+            command: command.to_owned(),
+        };
+        self.0
+            .bind(&key, &action)
+            .map_err(|error| error.to_string())
+    }
+
+    fn conflict(&self, binding: &str) -> Option<myna_platform::activation::Conflict> {
+        let key = myna_platform::activation::Accelerator::parse(binding).ok()?;
+        self.0.conflicts(&key).ok()?.into_iter().next()
+    }
 }
 
 fn settle_gtk() {

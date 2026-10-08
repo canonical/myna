@@ -57,6 +57,7 @@ fn application_exposes_accessible_diagnostics_controls_when_enabled() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("MYNA_CONFIG_ACCESSIBILITY_TEST", "1")
         .output()
         .expect("run accessibility probe");
@@ -185,6 +186,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("MYNA_CONFIG_ONBOARDING_TEST", "1")
         // Never the live session's bus, where a real daemon would answer.
         .env(
@@ -285,6 +287,7 @@ fn the_shortcut_row_installs_a_desktop_shortcut() {
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("GSETTINGS_SCHEMA_DIR", &schemas)
         .env("XDG_CONFIG_HOME", &store)
         .env("GDK_DEBUG", "no-portals")
@@ -339,6 +342,7 @@ fn onboarding_installs_the_default_key_only_where_none_is_set() {
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("GSETTINGS_SCHEMA_DIR", &schemas)
         .env("XDG_CONFIG_HOME", &store)
         .env("GDK_DEBUG", "no-portals")
@@ -398,6 +402,7 @@ fn the_application_starts_without_toolkit_warnings() {
         .args(["--", "timeout", "4"])
         .arg(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("GSETTINGS_SCHEMA_DIR", &schemas)
         .env("XDG_CONFIG_HOME", &store)
         .env("GDK_DEBUG", "no-portals")
@@ -434,6 +439,7 @@ fn backend_pages_discover_and_apply_against_a_fixture_machine() {
     let (store, schemas) = scratch_store("backends");
     let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
         .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "gnome")
         .env("GSETTINGS_SCHEMA_DIR", &schemas)
         .env("XDG_CONFIG_HOME", &store)
         // Never the live session's bus, where a real daemon would answer.

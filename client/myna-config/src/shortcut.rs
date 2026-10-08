@@ -85,40 +85,6 @@ pub fn button_action(state: &ShortcutState, capturing: bool) -> ButtonAction {
     }
 }
 
-/// Whether two GSettings accelerators name the same keys. GNOME spells one
-/// chord several ways: `<Primary>` or `<Ctrl>` for `<Control>`, `<Mod1>` for
-/// `<Alt>`, `<Mod4>` for `<Super>`, and a letter in either case.
-pub fn same_accelerator(a: &str, b: &str) -> bool {
-    match (chord(a), chord(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
-}
-
-fn chord(accelerator: &str) -> Option<(Vec<&'static str>, String)> {
-    let mut modifiers = Vec::new();
-    let mut rest = accelerator.trim();
-    while let Some(tail) = rest.strip_prefix('<') {
-        let (name, after) = tail.split_once('>')?;
-        modifiers.push(match name.to_ascii_lowercase().as_str() {
-            "primary" | "control" | "ctrl" | "ctl" => "control",
-            "alt" | "mod1" => "alt",
-            "super" | "mod4" => "super",
-            "shift" => "shift",
-            "meta" => "meta",
-            "hyper" => "hyper",
-            _ => return None,
-        });
-        rest = after;
-    }
-    if rest.is_empty() {
-        return None;
-    }
-    modifiers.sort_unstable();
-    modifiers.dedup();
-    Some((modifiers, rest.to_ascii_lowercase()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

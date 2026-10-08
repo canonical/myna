@@ -21,6 +21,7 @@ pub mod onboarding;
 pub mod onboarding_ui;
 pub mod operation_gate;
 pub mod performance;
+pub mod platform;
 pub mod ports;
 pub mod presentation;
 pub mod shortcut;
