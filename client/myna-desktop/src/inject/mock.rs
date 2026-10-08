@@ -13,7 +13,6 @@
 //! field detection by default; preedit tests opt in via
 //! [`MockInjector::with_preedit_support`].
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -32,7 +31,7 @@ pub struct InjectorLog {
     /// Commits the target refused (lease gone, secure field), in order.
     pub refused: Vec<String>,
     /// Every `set_preedit` call, in order, whether or not the field showed it
-    /// (volatile — must never also appear in `commits`).
+    /// (volatile, never also in `commits`).
     pub preedits: Vec<String>,
     /// Interleaved commit/preedit call order (`"commit"` / `"preedit"`),
     /// so tests can assert a pending commit always lands *before* the preedit
@@ -126,7 +125,7 @@ impl MockField {
 /// A hermetic [`Injector`] driven by a script. Clone the [`InjectorLog`] handle
 /// (`.log()`) *before* moving the mock into the controller to read it afterward.
 pub struct MockInjector {
-    acquires: VecDeque<AcquireOutcome>,
+    acquire: AcquireOutcome,
     /// Focus lost as each target's focus stream is polled.
     focus: Option<FocusEvent>,
     /// Focus lost while `acquire` runs.
@@ -145,11 +144,10 @@ impl Default for MockInjector {
 }
 
 impl MockInjector {
-    /// A mock whose first `acquire` succeeds with a default target and which
-    /// never loses focus.
+    /// A mock whose every `acquire` binds its field, which never loses focus.
     pub fn new() -> Self {
         Self {
-            acquires: VecDeque::from([AcquireOutcome::Ok]),
+            acquire: AcquireOutcome::Ok,
             focus: None,
             focus_during_acquire: None,
             focus_during_commit: None,
@@ -183,10 +181,9 @@ impl MockInjector {
         self
     }
 
-    /// Script the sequence of `acquire` outcomes (one popped per call; the last
-    /// is reused once the queue drains).
-    pub fn with_acquires(mut self, outcomes: impl IntoIterator<Item = AcquireOutcome>) -> Self {
-        self.acquires = outcomes.into_iter().collect();
+    /// Script what every `acquire` yields.
+    pub fn with_acquire(mut self, outcome: AcquireOutcome) -> Self {
+        self.acquire = outcome;
         self
     }
 
@@ -225,17 +222,6 @@ impl MockInjector {
         self.log.clone()
     }
 
-    fn next_acquire(&mut self) -> AcquireOutcome {
-        if self.acquires.len() > 1 {
-            self.acquires.pop_front().unwrap()
-        } else {
-            self.acquires
-                .front()
-                .cloned()
-                .unwrap_or(AcquireOutcome::NoTarget)
-        }
-    }
-
     fn detects_secure(&self) -> bool {
         self.capabilities.secure_field_detection == Support::Supported
     }
@@ -251,7 +237,7 @@ impl Injector for MockInjector {
         if let Some(event) = self.focus_during_acquire {
             self.field.lose_focus(event);
         }
-        match self.next_acquire() {
+        match self.acquire.clone() {
             AcquireOutcome::Ok if self.field.lease.borrow().loss(id).is_some() => {
                 Err(InjectError::FocusLost)
             }

@@ -307,7 +307,7 @@ async fn no_speech_session_commits_nothing() {
 
 async fn assert_acquire_error_aborts_without_capture(outcome: AcquireOutcome) {
     let probe = Arc::new(Mutex::new(0usize));
-    let injector = MockInjector::new().with_acquires([outcome]);
+    let injector = MockInjector::new().with_acquire(outcome);
     let inject_log = injector.log();
     let indicator = MockIndicator::new();
     let indicate_log = indicator.log();
@@ -997,6 +997,7 @@ async fn a_refused_final_flush_reports_focus_lost_not_no_speech() {
             "the safety flush is attempted once"
         );
         assert!(log.commits.is_empty(), "and lands nowhere");
+        assert_eq!(log.attempts(), 1);
     }
     assert_eq!(
         indicate_log.lock().unwrap().last(),
@@ -1269,7 +1270,7 @@ async fn acquire_failure_resyncs_trigger_so_the_very_next_poke_restarts() {
     // A pre-capture acquire failure returns before the select loop, so the
     // second poke is not consumed by the failing utterance — the eager
     // `ToggleMockTrigger` is the faithful model here.
-    let injector = MockInjector::new().with_acquires([AcquireOutcome::NoTarget]);
+    let injector = MockInjector::new().with_acquire(AcquireOutcome::NoTarget);
     let inject_log = injector.log();
     let mut controller = DesktopController::builder()
         .trigger(ToggleMockTrigger::new(2))
