@@ -40,6 +40,9 @@ write_files:
           <property name="dpms-on-ac-off" type="uint" value="0"/>
           <property name="inactivity-on-ac" type="uint" value="14"/>
           <property name="lock-screen-suspend-hibernate" type="bool" value="false"/>
+          <!-- 4 = shut down. The default asks, so LXD's ACPI power-button
+               stop sat on a dialog until it timed out. -->
+          <property name="power-button-action" type="uint" value="4"/>
         </property>
       </channel>
 
