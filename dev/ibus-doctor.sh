@@ -57,7 +57,7 @@ if [ -n "${MPID:-}" ] && [ "$MPID" != "0" ]; then
 else
   bad "snap.myna.myna.service is not running (MainPID=${MPID:-none})"
   info "using this shell's environment for the checks below instead"
-  D_HOME=$HOME; D_REAL=$HOME; D_XDG=${XDG_CONFIG_HOME:-}; D_WL=${WAYLAND_DISPLAY:-}; D_X11=${DISPLAY:-}
+  D_HOME=$HOME; D_REAL=$HOME; D_ADDR=${IBUS_ADDRESS:-}; D_XDG=${XDG_CONFIG_HOME:-}; D_WL=${WAYLAND_DISPLAY:-}; D_X11=${DISPLAY:-}
 fi
 
 say "4. address files myna would search"
@@ -105,8 +105,24 @@ rank() {
 RANKED=$( { rank hit; rank miss; } )
 
 say "5. per-file verdict (myna takes the first that passes both)"
-PICKED=""; FIRST_STALE=""
+PICKED=""; FIRST_STALE=""; ENV_LIVE=0
 PROBE=()   # "<host 1|0>|<path>" for every path re-checked under confinement
+# An IBUS_ADDRESS in the daemon's environment comes first while its socket
+# exists. It is frozen at the daemon's start, so it outlives the IBus it named.
+if [ -n "${D_ADDR:-}" ]; then
+  esock=${D_ADDR#*path=}; esock=${esock%%,*}
+  if [ "$esock" = "$D_ADDR" ]; then
+    ENV_LIVE=1; ok "IBUS_ADDRESS is abstract: myna uses it unchecked and ignores the files"
+  elif [ -e "$(undbus "$esock")" ]; then
+    ENV_LIVE=1; PROBE+=("1|$(undbus "$esock")")
+    ok "IBUS_ADDRESS socket exists: myna uses it and ignores the files"
+  else
+    bad "IBUS_ADDRESS socket $(undbus "$esock") is MISSING"
+    info "older myna builds fail every press with \"cannot connect to IBus:"
+    info "I/O error\"; current ones fall back to the files below. Fix:"
+    info "\`systemctl --user unset-environment IBUS_ADDRESS\`, then restart the daemon."
+  fi
+fi
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   addr=$(sed -n 's/^IBUS_ADDRESS=//p' "$f")
@@ -127,7 +143,9 @@ while IFS= read -r f; do
   info "socket ${sock:-<abstract, unchecked>} $([ -n "$sock" ] && { [ $sock_ok = 1 ] && echo exists || echo MISSING; })"
   [ "$raw_sock" != "$sock" ] && info "       (percent-encoded in the file as $raw_sock)"
   if [ $pid_ok = 1 ] && [ $sock_ok = 1 ]; then
-    if [ -z "$PICKED" ]; then PICKED=$f; ok "myna connects to this one"
+    if [ -z "$PICKED" ]; then PICKED=$f
+      if [ $ENV_LIVE = 1 ]; then info "alive, the fallback should IBUS_ADDRESS die"
+      else ok "myna connects to this one"; fi
     else info "alive, but not reached (an earlier file won)"; fi
   else
     [ -z "$PICKED" ] && [ -z "$FIRST_STALE" ] && FIRST_STALE=$f
@@ -136,7 +154,9 @@ while IFS= read -r f; do
 done <<< "$RANKED"
 
 say "6. what myna reports"
-if [ -n "$PICKED" ]; then
+if [ $ENV_LIVE = 1 ]; then
+  ok "injection should work, via IBUS_ADDRESS"
+elif [ -n "$PICKED" ]; then
   ok "injection should work, via $(basename "$PICKED")"
   if [ -n "$FIRST_STALE" ] && [ "$FIRST_STALE" != "$PICKED" ]; then
     info "it fell through $(basename "$FIRST_STALE") first. If the picked file"
@@ -200,10 +220,12 @@ except OSError as e: print("handshake failed: %s" % e); sys.exit(1)
 if reply.startswith("OK"): print("ok: " + reply); sys.exit(0)
 print("handshake refused: " + (reply or "<connection closed>")); sys.exit(1)
 '
-if [ -z "$PICKED" ]; then
+if [ $ENV_LIVE = 1 ]; then ADDR=$D_ADDR
+elif [ -n "$PICKED" ]; then ADDR=$(sed -n 's/^IBUS_ADDRESS=//p' "$PICKED")
+else ADDR=""; fi
+if [ -z "$ADDR" ]; then
   info "no address passed section 5; nothing to connect to"
 else
-  ADDR=$(sed -n 's/^IBUS_ADDRESS=//p' "$PICKED")
   info "address  $ADDR"
   if out=$(python3 -c "$CONNECT_PY" "$ADDR" 2>&1); then ok "host  $out"; else bad "host  $out"; fi
   if command -v snap >/dev/null 2>&1 && snap list myna >/dev/null 2>&1; then
