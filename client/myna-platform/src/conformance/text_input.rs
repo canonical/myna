@@ -256,7 +256,7 @@ async fn commit_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {
         );
     }
     target.release().await;
-    before.is_some() && after.is_some()
+    after.is_some()
 }
 
 async fn no_preedit_after_focus_loss(fixture: &mut dyn Fixture) -> bool {

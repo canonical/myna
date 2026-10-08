@@ -17,3 +17,8 @@ tokio = { workspace = true, optional = true }
 
 [features]
 conformance = ["dep:tokio"]
+
+[dev-dependencies]
+# The kit's own tests need the feature; a test build of this crate gets it.
+myna-platform = { path = ".", features = ["conformance"] }
+tokio = { workspace = true, features = ["test-util"] }
