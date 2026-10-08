@@ -449,16 +449,17 @@ bench-long-%: build-bench ## Run the long-form clip against an already-running <
 
 ##@ Desktop e2e and lab hardware (CI `e2e` and `testflinger` workflows)
 
-# Myna Settings driven through AT-SPI on a fresh GNOME desktop LXD VM. The
+# Myna Settings driven through AT-SPI on a fresh GNOME or Xubuntu desktop LXD VM. The
 # first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
 # later runs restore a snapshot per suite. See e2e-tests/AGENTS.md.
 E2E_RELEASE ?= noble
+E2E_DESKTOP ?= gnome
 SUITES ?=
 
 .PHONY: e2e
-e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, SUITES=all)
-	e2e-tests/vm/provision.sh --release $(E2E_RELEASE)
-	e2e-tests/run-suite.sh --release $(E2E_RELEASE) $(SUITES)
+e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all)
+	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
+	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 
 .PHONY: testflinger
 testflinger: ## Edge snaps on a lab machine: adapter smoke + FLEURS gate, at pushed HEAD (TESTFLINGER_QUEUE=<queue>)
