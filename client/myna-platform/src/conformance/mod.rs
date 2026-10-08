@@ -4,6 +4,7 @@
 //! the first violation, and returns a [`Report`] naming what it could not
 //! check, so a test asserts the gaps it expects instead of skipping silently.
 
+pub mod activation;
 pub mod text_input;
 
 /// What a suite run established.
