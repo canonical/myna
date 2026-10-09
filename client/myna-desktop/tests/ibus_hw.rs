@@ -751,6 +751,7 @@ async fn a_focus_blip_around_an_activation_is_not_a_loss() {
     field.focus_out().await;
     tokio::time::sleep(EDGE_AFTER).await;
     let held = target.commit("held").await;
+    target.set_preedit("draft").await;
     target.activated();
     let refocus = async {
         tokio::time::sleep(BLIP).await;
@@ -760,6 +761,8 @@ async fn a_focus_blip_around_an_activation_is_not_a_loss() {
     held.expect("a commit before the Toggle is held");
     during.expect("a commit after the Toggle lands once focus is back");
     assert_eq!(field.next().await, Seen::Commit("held".into()));
+    assert_eq!(field.next().await, Seen::Preedit("draft".into(), true));
+    assert_eq!(field.next().await, Seen::HidePreedit);
     assert_eq!(field.next().await, Seen::Commit("during".into()));
     field.expect_only_sentinel(target.as_mut()).await;
     assert!(
@@ -768,6 +771,25 @@ async fn a_focus_blip_around_an_activation_is_not_a_loss() {
     );
 
     target.release().await;
+    field.close().await;
+}
+
+/// Text held through a blip lands at release when nothing is written after.
+#[tokio::test]
+async fn text_held_through_a_blip_lands_at_release() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+
+    field.focus_out().await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    target.commit("held").await.expect("held");
+    target.activated();
+    tokio::time::sleep(BLIP).await;
+    field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    target.release().await;
+    assert_eq!(field.next().await, Seen::Commit("held".into()));
     field.close().await;
 }
 
