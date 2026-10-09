@@ -92,6 +92,9 @@ fn main() -> glib::ExitCode {
             gtk::gio::ApplicationFlags::empty()
         }
     };
+    if gtk::init().is_ok() {
+        myna_hud::appearance::generic::remember_startup_theme();
+    }
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .flags(flags)

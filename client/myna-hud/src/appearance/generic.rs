@@ -47,9 +47,28 @@ fn theme_is_high_contrast() -> bool {
         .is_some_and(|name| is_high_contrast_theme(&name))
 }
 
-fn theme_is_dark() -> bool {
+/// The GTK theme name before libadwaita replaces it with its own as it
+/// starts; after that no change of the desktop's theme is seen either.
+static STARTUP_THEME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+fn current_theme() -> Option<String> {
     gtk::Settings::default()
         .and_then(|settings| settings.gtk_theme_name())
+        .map(|name| name.to_string())
+}
+
+/// Keep the theme GTK starts with. Call after `gtk::init`, before libadwaita
+/// starts.
+pub fn remember_startup_theme() {
+    STARTUP_THEME.get_or_init(current_theme);
+}
+
+fn theme_is_dark() -> bool {
+    STARTUP_THEME
+        .get()
+        .cloned()
+        .flatten()
+        .or_else(current_theme)
         .is_some_and(|name| is_dark_theme(&name))
 }
 
