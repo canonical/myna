@@ -6,7 +6,8 @@ keyboard, so global shortcuts, focus and input methods behave as they do for a
 person at the keys; neither X11 nor Wayland needs a special injector.
 
 Run as root (needs /dev/uinput). Reads one chord per line from a FIFO, e.g.
-`super+j` or `Escape`, and presses and releases it. Prints `ready` once the
+`super+j` or `Escape`, and presses and releases it. `super+j@800` holds the
+chord for 800 ms before releasing it. Prints `ready` once the
 device exists and the compositor has had time to adopt it.
 
 Usage: uinput-keys.py FIFO
@@ -47,11 +48,13 @@ def emit(fd, etype, code, value):
 
 
 def press(fd, chord):
+    chord, _, hold = chord.partition("@")
     codes = [KEYS[k.lower()] for k in chord.split("+")]
     for code in codes:
         emit(fd, EV_KEY, code, 1)
         emit(fd, EV_SYN, 0, 0)
         time.sleep(0.02)
+    time.sleep(int(hold or 0) / 1000)
     for code in reversed(codes):
         emit(fd, EV_KEY, code, 0)
         emit(fd, EV_SYN, 0, 0)

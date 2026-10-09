@@ -2008,6 +2008,26 @@ mod tests {
         assert_eq!(state.before_cursor(lease), Some('a'));
     }
 
+    /// Starting by key: the grab has moved focus to the daemon's fake context
+    /// when the engine is switched, and the field gets it back only when the
+    /// key is released, which may be past `FOCUS_WAIT`.
+    #[tokio::test(start_paused = true)]
+    async fn a_start_key_held_past_the_focus_wait_still_binds_the_field() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let arrived = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.focus_arrived(lease).await }
+        });
+        tokio::time::sleep(FOCUS_WAIT + Duration::from_millis(100)).await;
+        ungrab(&engine).await;
+        assert!(arrived.await.unwrap(), "the field's focus was missed");
+        assert!(state.holds(lease));
+        assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
     /// No timer to end a blip, so none is begun.
     #[test]
     fn without_a_runtime_focus_leaving_is_a_loss_at_once() {

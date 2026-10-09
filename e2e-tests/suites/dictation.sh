@@ -13,6 +13,8 @@
 #      the field that took the focus
 #   4. the bound key (a virtual keyboard, tools/uinput-keys.py, presses it on
 #      the real seat) starts and stops a dictation
+#   5. the key held 450 ms (past the daemon's 400 ms focus wait, short of key
+#      repeat) still starts one: on X11 its grab keeps focus off the field
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -101,6 +103,17 @@ dict 'key super+j'
 assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
 evidence 4
+
+echo "-- 5. the key held past the focus wait starts a dictation"
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused" 'field_focus plain'
+dict 'key super+j@450'
+assert_dict "the held key starts recording" 'wait_until 10 dictation_state_is recording'
+assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+dict 'key super+j'
+assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
+assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
+evidence 5
 
 dict 'mic_stop' >/dev/null 2>&1
 suite_status
