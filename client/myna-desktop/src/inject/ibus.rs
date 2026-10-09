@@ -554,6 +554,9 @@ struct Lease {
     before_cursor: Option<char>,
     /// When the user last used Myna's activation while this lease was held.
     activated_at: Option<tokio::time::Instant>,
+    /// Pending, with the daemon's fake context focused: a key grab holds focus
+    /// off every field until the key is released.
+    on_fake: bool,
 }
 
 /// Where a target stands for its next write.
@@ -588,16 +591,19 @@ impl Lease {
             .activated_at
             .is_some_and(|at| at.elapsed() <= ACTIVATION_WINDOW);
         let next = match (&mut self.binding, change) {
-            (Binding::Pending, FocusChange::Out) => return,
+            (Binding::Pending, FocusChange::Out) => {
+                self.on_fake = false;
+                return;
+            }
+            (Binding::Pending, FocusChange::In(Some(ctx))) if ctx.is_fake() => {
+                self.on_fake = true;
+                return;
+            }
             (Binding::Away { back, .. }, FocusChange::Out) => {
                 *back = false;
                 return;
             }
-            (Binding::Pending | Binding::Away { .. }, FocusChange::In(Some(ctx)))
-                if ctx.is_fake() =>
-            {
-                return
-            }
+            (Binding::Away { .. }, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
             (Binding::Pending, FocusChange::In(None)) => Binding::Unnamed,
             (Binding::Pending | Binding::Unnamed, FocusChange::In(Some(ctx))) if !ctx.is_fake() => {
                 Binding::Context(ctx.path.to_owned())
@@ -699,6 +705,7 @@ impl EngineState {
                 binding: Binding::Lost,
                 before_cursor: None,
                 activated_at: None,
+                on_fake: false,
             }),
             next_lease: AtomicU64::new(1),
             next_blip: AtomicU64::new(1),
@@ -715,6 +722,7 @@ impl EngineState {
             binding: Binding::Pending,
             before_cursor: None,
             activated_at: None,
+            on_fake: false,
         });
         id
     }
@@ -858,11 +866,14 @@ impl EngineState {
     /// `FOCUS_WAIT`. If it did not, the lease becomes `Unfocused`.
     async fn focus_arrived(&self, id: u64) -> bool {
         let mut rx = self.lease.subscribe();
-        let _ = tokio::time::timeout(
-            FOCUS_WAIT,
-            rx.wait_for(|l| l.id != id || l.binding != Binding::Pending),
-        )
-        .await;
+        let arrived = |l: &Lease| l.id != id || l.binding != Binding::Pending;
+        let _ = tokio::time::timeout(FOCUS_WAIT, rx.wait_for(arrived)).await;
+        // A key grab, as starting by key makes on X11, keeps the field's focus
+        // until the key is released.
+        if self.on_fake(id) {
+            let rest = FOCUS_BLIP_GRACE - FOCUS_WAIT;
+            let _ = tokio::time::timeout(rest, rx.wait_for(arrived)).await;
+        }
         !self.lease.send_if_modified(|lease| {
             let pending = lease.id == id && lease.binding == Binding::Pending;
             if pending {
@@ -870,6 +881,14 @@ impl EngineState {
             }
             pending
         })
+    }
+
+    /// Whether lease `id` never got past the daemon's fake context.
+    fn on_fake(&self, id: u64) -> bool {
+        let lease = self.lease.borrow();
+        lease.id == id
+            && matches!(lease.binding, Binding::Pending | Binding::Unfocused)
+            && lease.on_fake
     }
 
     /// Yields `FocusOut` once lease `id` is no longer held.
@@ -1151,6 +1170,11 @@ impl Injector for IbusInjector {
             tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
 
+        if self.state.on_fake(lease) {
+            myna_core::dbg_log!("inject", "acquire refused: no field took focus back");
+            target.release().await;
+            return Err(InjectError::NoTarget);
+        }
         if !self.state.holds(lease) {
             myna_core::dbg_log!("inject", "acquire refused: focus moved while acquiring");
             target.release().await;
@@ -2026,6 +2050,29 @@ mod tests {
         assert!(arrived.await.unwrap(), "the field's focus was missed");
         assert!(state.holds(lease));
         assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
+    /// A key never released, or a desktop with no field focused: the fake
+    /// context keeps focus, which is no field to dictate into.
+    #[tokio::test(start_paused = true)]
+    async fn focus_left_on_the_fake_context_is_no_field() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let started = tokio::time::Instant::now();
+        assert!(!state.focus_arrived(lease).await);
+        assert!(started.elapsed() >= FOCUS_BLIP_GRACE);
+        assert!(state.on_fake(lease));
+
+        // Focus gone from the fake context again: the usual wait.
+        let next = state.mint();
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        engine.focus_out().await;
+        let started = tokio::time::Instant::now();
+        assert!(!state.focus_arrived(next).await);
+        assert!(started.elapsed() < FOCUS_BLIP_GRACE);
+        assert!(!state.on_fake(next));
     }
 
     /// No timer to end a blip, so none is begun.
