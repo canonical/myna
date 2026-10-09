@@ -99,6 +99,8 @@ pub enum OnboardingState {
     /// A model is installed but none is connected to `myna:backend`, so
     /// dictation fails with "Model not connected".
     NoModelConnected,
+    /// Everything is set up but the desktop has no IBus to type through.
+    NoInputMethod,
     /// Nothing to onboard; at least one discovered model is connected.
     Ready,
     /// Installation state could not be determined.
@@ -355,7 +357,17 @@ fn classify_onboarding(input: &DiagnosticInput) -> OnboardingState {
     {
         return OnboardingState::NoModelConnected;
     }
+    if input_method_missing(input) {
+        return OnboardingState::NoInputMethod;
+    }
     OnboardingState::Ready
+}
+
+/// Whether the desktop needs an input method and has none installed.
+fn input_method_missing(input: &DiagnosticInput) -> bool {
+    input.desktop.iter().any(|fact| {
+        fact.purpose == Purpose::TextInput && fact.status == ComponentStatus::Unavailable
+    })
 }
 
 /// Localized, user-facing label for an onboarding state.
@@ -364,6 +376,7 @@ pub fn onboarding_state_label(state: OnboardingState) -> String {
         OnboardingState::NoMyna => gettextrs::gettext("Dictation is not installed"),
         OnboardingState::NoBackend => gettextrs::gettext("No model installed"),
         OnboardingState::NoModelConnected => gettextrs::gettext("No model connected"),
+        OnboardingState::NoInputMethod => gettextrs::gettext("No input method installed"),
         OnboardingState::Ready => gettextrs::gettext("Ready"),
         OnboardingState::Unavailable => gettextrs::gettext("Installation status unavailable"),
     }
@@ -572,10 +585,16 @@ fn render_body(
     out.push_str(":\n");
     let not_connected = (onboarding == OnboardingState::NoModelConnected)
         .then(|| gettextrs::gettext("No model is connected. Choose one to use for dictation."));
+    let no_input_method = input_method_missing(input).then(|| {
+        gettextrs::gettext(
+            "IBus is not installed, so Myna cannot type. Install the “ibus” package, then log out and back in.",
+        )
+    });
     let problems: Vec<&String> = input
         .problems
         .iter()
         .chain(not_connected.as_ref())
+        .chain(no_input_method.as_ref())
         .chain(input.backends.iter().flat_map(|backend| &backend.problems))
         .collect();
     if problems.is_empty() {
@@ -1045,6 +1064,42 @@ mod tests {
         let text = report.copy_text();
         assert!(text.contains("Problems:\n  Installed snaps: permission denied"));
         assert_eq!(report.onboarding(), OnboardingState::Unavailable);
+    }
+
+    #[test]
+    fn a_missing_input_method_is_a_problem_and_not_ready() {
+        use crate::platform::ComponentFact;
+        let input = |status| DiagnosticInput {
+            inventory_complete: true,
+            installed_snaps: vec![InstalledSnap {
+                name: "myna".into(),
+                version: "0.1.0".into(),
+            }],
+            backends: vec![BackendDiagnostic {
+                snap_name: "myna-parakeet".into(),
+                connection: DiagnosticConnection::Connected,
+                ..BackendDiagnostic::default()
+            }],
+            desktop: vec![ComponentFact {
+                purpose: Purpose::TextInput,
+                status,
+            }],
+            ..DiagnosticInput::default()
+        };
+        let report = present_diagnostics(input(ComponentStatus::Unavailable));
+        assert_eq!(report.onboarding(), OnboardingState::NoInputMethod);
+        let text = report.copy_text();
+        assert!(
+            text.contains("Onboarding: No input method installed"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Problems:\n  IBus is not installed"),
+            "{text}"
+        );
+        let report = present_diagnostics(input(ComponentStatus::Active));
+        assert_eq!(report.onboarding(), OnboardingState::Ready);
+        assert!(report.copy_text().contains("Problems:\n  (none)"));
     }
 
     #[test]

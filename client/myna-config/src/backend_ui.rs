@@ -2049,6 +2049,7 @@ impl BackendUi {
         let missing = match report.onboarding() {
             OnboardingState::NoMyna => Some(gettextrs::gettext("Dictation is not installed")),
             OnboardingState::NoBackend => Some(gettextrs::gettext("No model installed")),
+            OnboardingState::NoInputMethod => Some(gettextrs::gettext("No input method installed")),
             OnboardingState::NoModelConnected
             | OnboardingState::Ready
             | OnboardingState::Unavailable => None,
