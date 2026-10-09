@@ -60,3 +60,9 @@ write_files:
           <property name="enabled" type="bool" value="false"/>
         </property>
       </channel>
+
+runcmd:
+  # The package set pulls in zutty, which ties xfce4-terminal at priority 40
+  # and wins, so the panel's terminal had no input method. Xubuntu ships
+  # xfce4-terminal as the terminal.
+  - update-alternatives --set x-terminal-emulator /usr/bin/xfce4-terminal.wrapper
