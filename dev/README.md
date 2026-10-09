@@ -37,5 +37,6 @@ Only the two configs stayed here:
 | `spread-build.sh`, `spread-image.sh` | Confined end-to-end (spread) harness. |
 | `adapter_coverage.py`, `coverage_populations.py`, `coverage_lib.py`, `gjs_coverage.py`, `patch_cov.py` | Coverage reports and gates behind `make coverage`. |
 | `exercise.sh`, `gated-tests.sh`, `transcribe.py`, `capabilities.py` | Manual drivers for a running server. |
+| `try-desktop.sh` | A desktop VM (Xubuntu or GNOME) running HEAD's snap and deb with the host's audio; `make try-desktop`, see e2e-tests/README.md. |
 | `i18n.sh`, `ibus-doctor.sh` | Translation templates, IBus diagnosis. |
 | `purge.sh` | Remove every trace of a Myna install (snaps, snapd flag, shortcuts, dconf, stray files) to test a fresh install; `--deb` also purges myna-config. |

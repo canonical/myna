@@ -31,6 +31,9 @@ bound key through `tools/uinput-keys.py`, a virtual keyboard on the real seat
 Overview, where a new window is not focused). Helpers are in
 `tools/dictation-lib.sh`.
 
+`dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
+manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
+
 # Important
 
 - The GNOME VM keeps the name `myna-e2e-<release>`; other desktops are

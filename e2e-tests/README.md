@@ -25,3 +25,25 @@ and `installed`; every suite then restores the one its `# snapshot:` header
 names. Artifacts (screenshots, app and polkit logs, the journal) land in
 `e2e-tests/.run/artifacts/<release>-<suite>/` (`<desktop>-<release>-<suite>`
 for Xubuntu, whose VM is `myna-e2e-xubuntu-<release>`).
+
+## Trying a branch by hand
+
+`make try-desktop` is for a person, not a suite: a persistent desktop VM
+(`myna-try-<desktop>-<release>`, a copy of the e2e VM's `installed` snapshot,
+so the e2e VMs are never touched) running the myna snap and myna-config deb
+built from `HEAD`, with the host's microphone and speakers.
+
+```sh
+make try-desktop DESKTOP=xubuntu RELEASE=noble            # create (first: snap + deb builds), start
+make try-desktop DESKTOP=xubuntu RELEASE=noble ACTION=console   # open the desktop (remote-viewer)
+make try-desktop ACTION=update      # after committing: rebuild, install, restart daemon and HUD host
+make try-desktop ACTION=reset       # back to the machine `up` left (`fresh`)
+make try-desktop ACTION=down        # stop it (kept); ACTION=delete removes it
+```
+
+`DESKTOP=gnome` and `RELEASE=resolute` work the same. It refuses to start or
+build below 6 GiB of available RAM or 15 GiB free on `/`, and runs with 4 GiB
+(`TRY_MEMORY`). Artifacts are built from the commit, not the working tree.
+Audio goes over pulse TCP on the LXD bridge while a try VM runs
+(`ACTION=audio` re-establishes it); `dev/try-desktop.sh --help` has the
+reasoning and the exposure trade-off.
