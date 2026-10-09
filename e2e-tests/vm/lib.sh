@@ -104,12 +104,13 @@ wait_ready() {
     return 1
 }
 
-# Wait until snapd has seeded and has no change in flight.
+# Wait until snapd has seeded and has no change in flight (a failed change
+# is over, and stays in the list: a retry after a download error must pass).
 wait_snapd_idle() {
     # shellcheck disable=SC2016 # expands in the VM
     lxc exec "$1" -- bash -c 'snap wait system seed.loaded
 for _ in $(seq 300); do
-    [ -z "$(snap changes | awk "NR>1 && \$2 != \"Done\" && \$2 != \"Hold\"")" ] && exit 0
+    [ -z "$(snap changes | awk "NR>1 && \$2 != \"Done\" && \$2 != \"Hold\" && \$2 != \"Error\" && \$2 != \"Undone\"")" ] && exit 0
     sleep 5
 done
 echo "snapd still busy" >&2; exit 1'
