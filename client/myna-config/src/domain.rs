@@ -265,9 +265,11 @@ pub fn parse_connections(
 ) -> Result<ConnectionSnapshot, ParseError> {
     let mut lines = connections.lines();
     let header = lines.next().unwrap_or_default();
-    if !header
-        .split_whitespace()
-        .eq(["Interface", "Plug", "Slot", "Notes"])
+    // No snaps at all: snap prints nothing, which means no connections.
+    if !connections.trim().is_empty()
+        && !header
+            .split_whitespace()
+            .eq(["Interface", "Plug", "Slot", "Notes"])
         && !header.split_whitespace().eq(["Interface", "Plug", "Slot"])
     {
         return Err(ParseError::new(

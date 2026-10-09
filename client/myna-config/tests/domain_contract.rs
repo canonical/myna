@@ -80,6 +80,15 @@ fn connections_accept_partial_rows_and_reject_an_invalid_header() {
 }
 
 #[test]
+fn empty_connections_output_means_no_connections() {
+    for empty in ["", "\n", "  \n"] {
+        let snapshot = parse_connections(empty, "name: content\nsummary: x\n").unwrap();
+        assert!(snapshot.backends().is_empty());
+        assert_eq!(snapshot.active_state(), ActiveBackendState::Disconnected);
+    }
+}
+
+#[test]
 fn connections_record_the_slot_name_of_each_provider() {
     let snapshot = parse_connections(CONNECTIONS, CONTENT_INTERFACE).unwrap();
     let slots: Vec<_> = snapshot
