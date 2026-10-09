@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
 use async_trait::async_trait;
+use libadwaita as adw;
 use myna_platform::activation::Activation;
 use myna_platform::appearance::Appearance;
 use myna_platform::components::{
@@ -98,6 +99,19 @@ impl Platform {
     /// The desktop's reduced-motion and high-contrast preferences.
     pub fn appearance(&self) -> Rc<dyn Appearance> {
         self.appearance.clone()
+    }
+
+    /// The colour scheme libadwaita should take. On GNOME its settings portal
+    /// drives it already; elsewhere nothing does, so the desktop's theme is
+    /// fed in (Xfce's `Greybird-dark` would otherwise stay light).
+    pub fn color_scheme(&self) -> adw::ColorScheme {
+        match self.profile {
+            Profile::Gnome => adw::ColorScheme::Default,
+            Profile::Xfce | Profile::Generic if self.appearance.read().prefers_dark => {
+                adw::ColorScheme::ForceDark
+            }
+            Profile::Xfce | Profile::Generic => adw::ColorScheme::Default,
+        }
     }
 
     /// What this desktop needs outside Myna's own processes.
@@ -267,6 +281,22 @@ mod tests {
         assert!(platform.activation().is_none());
         assert!(platform.components().required().is_empty());
         assert_eq!(platform.diagnostics(), DesktopDiagnostics::default());
+    }
+
+    #[test]
+    fn a_dark_theme_darkens_settings_except_where_gnome_drives_it() {
+        use gtk4 as gtk;
+        crate::ui::on_gtk_thread(|| {
+            gtk::init().expect("display");
+            adw::init().expect("libadwaita");
+            let settings = gtk::Settings::default().expect("display");
+            let scheme = |profile| Platform::for_profile(profile).color_scheme();
+            settings.set_gtk_theme_name(Some("Greybird-dark"));
+            assert_eq!(scheme(Profile::Generic), adw::ColorScheme::ForceDark);
+            assert_eq!(scheme(Profile::Gnome), adw::ColorScheme::Default);
+            settings.set_gtk_theme_name(Some("Greybird"));
+            assert_eq!(scheme(Profile::Generic), adw::ColorScheme::Default);
+        });
     }
 
     #[test]

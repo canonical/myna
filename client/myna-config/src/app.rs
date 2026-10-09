@@ -1549,7 +1549,8 @@ fn current_appearance_policy() -> AppearancePolicy {
 
 fn apply_appearance_policy(window: &gtk::Widget) {
     let policy = current_appearance_policy();
-    adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
+    adw::StyleManager::default()
+        .set_color_scheme(crate::platform::Platform::current().color_scheme());
     if policy.reduced_motion {
         window.add_css_class("reduced-motion");
     } else {
