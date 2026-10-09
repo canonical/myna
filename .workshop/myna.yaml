@@ -121,7 +121,7 @@ actions:
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
       cargo test --workspace --lib --test template_instantiation \
-        --test appearance_conformance --test xfce_appearance -- --test-threads=1
+        --test appearance_conformance --test xfce_appearance --test window_size -- --test-threads=1
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
@@ -155,7 +155,7 @@ actions:
     MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
       cargo llvm-cov --no-report --workspace --lib --test template_instantiation \
-        --test appearance_conformance --test xfce_appearance -- --test-threads=1
+        --test appearance_conformance --test xfce_appearance --test window_size -- --test-threads=1
     # The indicators only paint on a display, which no test has: `ui-check`'s
     # render_check is their test, so measure it here too.
     dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \

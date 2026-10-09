@@ -87,7 +87,7 @@ impl HudWindow {
             .build();
         window.add_css_class("myna-hud-window");
         // The default size keeps the window from remapping at GTK's 200x200
-        // fallback on a return from idle. `fit_width` widens it for a
+        // fallback on a return from idle. `fit_size` widens it for a
         // longer status; this is only the resting floor.
         window.set_default_size(PILL_WIDTH, RESTING_HEIGHT);
         // The HUD must never take focus from the app being dictated into.
@@ -127,6 +127,7 @@ impl HudWindow {
             let _ = window.steal_data::<Rc<HudWindow>>(SELF_KEY);
         });
 
+        hud.fit_size();
         hud.connect_x11_hints();
         hud.reapply_input_region_on_map();
         hud
@@ -147,7 +148,7 @@ impl HudWindow {
     pub fn apply_descriptor(self: &Rc<Self>, descriptor: Descriptor) {
         let hidden = descriptor.hidden;
         self.pill.apply_descriptor(descriptor);
-        self.fit_width();
+        self.fit_size();
         self.set_hidden_faded(hidden);
         self.apply_input_region();
     }
@@ -157,10 +158,17 @@ impl HudWindow {
     /// long as that meets the minimum, so without this a headline that
     /// would fit on one line within [`crate::pill::LABEL_MAX_CHARS`] wraps
     /// at the resting width instead.
-    fn fit_width(&self) {
+    ///
+    /// The height is [`RESTING_HEIGHT`] or the content's minimum at that
+    /// width, whichever is taller: the floor was measured on one font and
+    /// state, and a default under the minimum makes GTK allocate too little
+    /// (Gtk-CRITICAL) where a taller line or an icon-bearing state needs more.
+    fn fit_size(&self) {
         let (_, natural, _, _) = self.pill.widget().measure(gtk::Orientation::Horizontal, -1);
+        let width = natural.max(PILL_WIDTH);
+        let (minimum, ..) = self.window.measure(gtk::Orientation::Vertical, width);
         self.window
-            .set_default_size(natural.max(PILL_WIDTH), RESTING_HEIGHT);
+            .set_default_size(width, RESTING_HEIGHT.max(minimum));
     }
 
     /// Fade the pill to/from `hidden`, mapping or unmapping the surface only
