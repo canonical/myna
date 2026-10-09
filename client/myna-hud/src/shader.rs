@@ -342,6 +342,16 @@ pub struct Rgb {
     pub b: f64,
 }
 
+impl From<myna_platform::appearance::Rgb> for Rgb {
+    fn from(c: myna_platform::appearance::Rgb) -> Self {
+        Self {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+        }
+    }
+}
+
 /// Parse a `#rrggbb` hex string; anything else degrades to white (the GJS
 /// `colorToRgbFloat` string path, kept so a bad palette string can never
 /// panic the renderer).

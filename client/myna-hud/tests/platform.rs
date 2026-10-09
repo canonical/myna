@@ -6,7 +6,7 @@
 use gtk::glib;
 use gtk4 as gtk;
 
-use myna_hud::platform::decode_reduced_motion;
+use myna_hud::appearance::probe::decode_reduced_motion;
 
 // `GtkSettings:gtk-interface-reduced-motion` is a `GtkReducedMotion` ENUM
 // (no_preference = 0, reduce = 1), not the boolean its name suggests.

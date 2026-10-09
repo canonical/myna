@@ -1,7 +1,7 @@
-//! platform — runtime probing for the two desktop preferences the HUD
-//! honours: the **accent colour** (R18/R26) and **reduced motion** (E2b,
-//! FR-022a). The rules live in [`crate::accent`] and [`crate::motion`];
-//! this module only reads the live sources and feeds them.
+//! probe — the live sources behind the HUD's [`Appearance`](myna_platform::appearance::Appearance) backends: the
+//! **accent colour** (R18/R26), **reduced motion** (E2b, FR-022a) and high
+//! contrast. The rules live in [`crate::accent`] and [`crate::motion`]; this
+//! module only reads the sources.
 //!
 //! Only *host* preferences are read here. Myna's own settings are not: the
 //! HUD is told what to draw by the publisher (`HudStyle`), because this
@@ -51,25 +51,23 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use crate::accent::{fallback_palette, resolve_theme_accent_palette, AccentPalette};
-use crate::motion::{reduced_motion, MotionReadings};
-use crate::shader::Rgb;
+use myna_platform::appearance::Rgb;
 
 /// `org.gnome.desktop.interface`, home of both `accent-color` and the
 /// `enable-animations` fallback.
-const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
-const ACCENT_KEY: &str = "accent-color";
+pub(super) const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
+pub(super) const ACCENT_KEY: &str = "accent-color";
 /// Watched because a Yaru accent variant is selected by theme name.
-const GTK_THEME_KEY: &str = "gtk-theme";
-const ANIMATIONS_KEY: &str = "enable-animations";
+pub(super) const GTK_THEME_KEY: &str = "gtk-theme";
+pub(super) const ANIMATIONS_KEY: &str = "enable-animations";
 
 /// `GtkSettings`' reduced-motion property (GTK ≥ 4.22).
-const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
+pub(super) const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
 /// `GtkReducedMotion.no_preference` — the one value meaning "full motion".
 const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
 /// `AdwStyleManager`'s resolved accent — notified after the stylesheet is
 /// updated, so the theme is already current when it fires.
-const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
+pub(super) const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
 
 /// Build a [`gio::Settings`] for `schema` only if the schema **and** `key`
 /// both exist on this system; otherwise `None`.
@@ -129,6 +127,20 @@ pub fn probe_enable_animations() -> Option<bool> {
     Some(settings.boolean(ANIMATIONS_KEY))
 }
 
+/// `GtkSettings:gtk-enable-animations`, which GTK fills from XSETTINGS
+/// (`Net/EnableAnimations`) on X11 and from the desktop's settings elsewhere.
+pub fn probe_gtk_enable_animations() -> Option<bool> {
+    Some(gtk::Settings::default()?.is_gtk_enable_animations())
+}
+
+/// Whether the GTK theme is one of the high-contrast ones, the way Xfce
+/// offers high contrast: by theme name, which xfsettingsd exports as
+/// `Net/ThemeName`.
+pub fn is_high_contrast_theme(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.contains("highcontrast") || name.contains("high-contrast")
+}
+
 /// Whether the desktop requests a higher-contrast UI (FR-022).
 ///
 /// `Adw.StyleManager:high-contrast` — a plain bool libadwaita exposes (and
@@ -150,14 +162,6 @@ pub fn probe_high_contrast() -> bool {
         .unwrap_or(false)
 }
 
-/// The live reduced-motion preference, resolved through both safe sources.
-pub fn probe_reduced_motion() -> bool {
-    reduced_motion(&MotionReadings {
-        gtk_reduced_motion: probe_gtk_reduced_motion(),
-        enable_animations: probe_enable_animations(),
-    })
-}
-
 /// The accent as the **theme** resolves it, read back from `widget`'s
 /// computed CSS `color` (the widget must be styled `color:
 /// @accent_bg_color` — see `style.css`'s `.myna-hud-ribbon`).
@@ -177,11 +181,11 @@ pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
     if color.alpha() <= 0.0 {
         return None;
     }
-    Some(Rgb {
-        r: color.red().clamp(0.0, 1.0) as f64,
-        g: color.green().clamp(0.0, 1.0) as f64,
-        b: color.blue().clamp(0.0, 1.0) as f64,
-    })
+    Some(Rgb::clamped(
+        color.red() as f64,
+        color.green() as f64,
+        color.blue() as f64,
+    ))
 }
 
 /// The desktop's accent as libadwaita resolves it.
@@ -198,175 +202,9 @@ pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
 /// upstream's enumeration, which the Rust enum cannot represent.
 pub fn probe_platform_accent() -> Option<Rgb> {
     let rgba = adw::StyleManager::default().accent_color_rgba();
-    Some(Rgb {
-        r: rgba.red().clamp(0.0, 1.0) as f64,
-        g: rgba.green().clamp(0.0, 1.0) as f64,
-        b: rgba.blue().clamp(0.0, 1.0) as f64,
-    })
-}
-
-/// The ribbon's palette for the current desktop, resolved from the theme
-/// where possible and from the fixed table only as a last resort.
-///
-/// The untouched-default rule (Ubuntu orange) wins over platform resolution
-/// in both paths — that decision lives in [`crate::accent`].
-/// `accent_widget` is the widget carrying `color: @accent_bg_color`; pass
-/// `None` where no styled widget is available yet.
-///
-/// Order: the style manager's accent, then the theme's `@accent_bg_color`,
-/// then Ubuntu orange.
-///
-/// The style manager comes first because it is a plain value read —
-/// `AdwStyleManager:accent-color-rgba`, equivalent to
-/// `adw_style_manager_get_accent_color_rgba()` — with no dependence on a
-/// widget being rooted or on when its style was last recomputed. It is also
-/// complete on Ubuntu: the Yaru patches feed accent *variants* (selected by
-/// theme name) into the same `accent-color` property, so a `Yaru-olive`
-/// desktop reports olive here.
-///
-/// (The typed getter is `Since: 1.6`, and using it would mean enabling
-/// `libadwaita/v1_6` — a compile-time floor the runtime matrix cannot take,
-/// since the 24.04 workshop that builds this workspace has libadwaita 1.5.
-/// Probing the property by name costs nothing and degrades to the CSS path
-/// there instead.)
-///
-/// The theme is the fallback for exactly that case, and for a stylesheet
-/// that defines its own `@accent_bg_color` independently of the accent
-/// preference. Neither path needs to guess whether the user "chose"
-/// anything, which is why the `accent-color` name table is gone.
-pub fn probe_accent_palette(accent_widget: Option<&impl IsA<gtk::Widget>>) -> AccentPalette {
-    if let Some(accent) =
-        probe_platform_accent().or_else(|| accent_widget.and_then(probe_css_accent))
-    {
-        return resolve_theme_accent_palette(accent);
-    }
-    fallback_palette()
-}
-
-/// When a trigger fires, whether the theme's accent can be trusted to be
-/// current *already*.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AccentReadiness {
-    /// The new styling is already installed, so the accent may be read
-    /// straight away.
-    ///
-    /// Emitted for libadwaita's own notification, where the ordering is
-    /// guaranteed by construction: `notify_accent_color_cb()` calls
-    /// `update_stylesheet (self, UPDATE_ACCENT_COLOR)` — which reloads the
-    /// provider holding `@accent_bg_color` — *before* notifying
-    /// `accent-color`/`accent-color-rgba` (libadwaita
-    /// `src/adw-style-manager.c`).
-    Current,
-    /// Something changed, but the styling may not have caught up: against a
-    /// raw GSettings key we have no ordering guarantee versus libadwaita's
-    /// own handler for that same key, and GTK recomputes styles lazily. The
-    /// accent must be re-read at the next frame.
-    NextFrame,
-}
-
-/// Call `on_change` whenever a preference that affects the HUD may have
-/// changed, telling it whether the accent is readable yet.
-///
-/// The returned guard owns the subscriptions; dropping it disconnects
-/// everything, so no callback can outlive the window.
-pub fn watch_preferences<F: Fn(AccentReadiness) + 'static + Clone>(
-    on_change: F,
-) -> PreferenceWatch {
-    let mut settings_handles = Vec::new();
-
-    // Watched as a change TRIGGER only — the value is never read from here
-    // (the theme is the source). Same for the theme name, which is how a
-    // Yaru accent variant changes.
-    for key in [ACCENT_KEY, GTK_THEME_KEY] {
-        if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, key) {
-            let cb = on_change.clone();
-            settings.connect_changed(Some(key), move |_, _| cb(AccentReadiness::NextFrame));
-            settings_handles.push(settings);
-        }
-    }
-    if let Some(settings) = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY) {
-        let cb = on_change.clone();
-        settings.connect_changed(Some(ANIMATIONS_KEY), move |_, _| {
-            cb(AccentReadiness::NextFrame)
-        });
-        settings_handles.push(settings);
-    }
-
-    let manager = adw::StyleManager::default();
-    let adw_handle = {
-        let cb = on_change.clone();
-        // libadwaita reloads the accent provider before emitting this, so
-        // the theme already reports the new colour here.
-        Some(
-            manager.connect_notify_local(Some(ADW_ACCENT_RGBA_PROPERTY), move |_, _| {
-                cb(AccentReadiness::Current)
-            }),
-        )
-    };
-
-    let mut gtk_handles = Vec::new();
-    let gtk_settings = gtk::Settings::default();
-    if let Some(settings) = &gtk_settings {
-        // Reduced motion (GTK ≥ 4.22).
-        if settings
-            .find_property(GTK_REDUCED_MOTION_PROPERTY)
-            .is_some()
-        {
-            let cb = on_change.clone();
-            gtk_handles.push(
-                settings.connect_notify_local(Some(GTK_REDUCED_MOTION_PROPERTY), move |_, _| {
-                    cb(AccentReadiness::NextFrame)
-                }),
-            );
-        }
-    }
-
-    // High contrast — Adw tracks it (and itself follows
-    // GtkSettings:gtk-interface-contrast where it exists).
-    let mut adw_high_contrast_handle = None;
-    if manager.find_property("high-contrast").is_some() {
-        let cb = on_change.clone();
-        adw_high_contrast_handle = Some(
-            manager.connect_notify_local(Some("high-contrast"), move |_, _| {
-                cb(AccentReadiness::NextFrame)
-            }),
-        );
-    }
-
-    PreferenceWatch {
-        _settings: settings_handles,
-        manager,
-        adw_handle,
-        gtk_settings,
-        gtk_handles,
-        adw_high_contrast_handle,
-    }
-}
-
-/// Owns the preference subscriptions; disconnects them on drop.
-pub struct PreferenceWatch {
-    _settings: Vec<gtk::gio::Settings>,
-    manager: adw::StyleManager,
-    adw_handle: Option<glib::SignalHandlerId>,
-    gtk_settings: Option<gtk::Settings>,
-    gtk_handles: Vec<glib::SignalHandlerId>,
-    adw_high_contrast_handle: Option<glib::SignalHandlerId>,
-}
-
-impl Drop for PreferenceWatch {
-    fn drop(&mut self) {
-        if let Some(handle) = self.adw_handle.take() {
-            self.manager.disconnect(handle);
-        }
-        if let Some(handle) = self.adw_high_contrast_handle.take() {
-            self.manager.disconnect(handle);
-        }
-        if let Some(settings) = &self.gtk_settings {
-            for handle in self.gtk_handles.drain(..) {
-                settings.disconnect(handle);
-            }
-        }
-        // The gio::Settings objects drop with their handlers attached; the
-        // objects themselves are owned here and released now.
-    }
+    Some(Rgb::clamped(
+        rgba.red() as f64,
+        rgba.green() as f64,
+        rgba.blue() as f64,
+    ))
 }

@@ -20,7 +20,11 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
+use myna_platform::appearance::{Appearance, Freshness};
+use myna_platform::Subscription;
 
+use crate::accent::palette_for;
+use crate::appearance;
 use crate::bar::BarView;
 use crate::gl::RibbonRenderer;
 use crate::hud_logic::{
@@ -28,7 +32,6 @@ use crate::hud_logic::{
     ribbon_phase_for_state_key, HudStyle, PILL_COLOR_CLASSES,
 };
 use crate::notice_slot::NoticeSlot;
-use crate::platform;
 use crate::ribbon::{compute_ribbon_model, RibbonInput, RibbonPhase};
 use crate::segmented_meter::SegmentedMeterView;
 #[cfg(dev_lab)]
@@ -125,7 +128,8 @@ pub struct Pill {
     renderer: Rc<RefCell<Option<RibbonRenderer>>>,
     /// Owns the accent/reduced-motion subscriptions; dropped with the pill,
     /// so no preference callback can outlive it.
-    preferences: RefCell<Option<platform::PreferenceWatch>>,
+    preferences: RefCell<Option<Subscription>>,
+    appearance: Rc<dyn Appearance>,
     /// The lab accent-override provider: sets the bar accent to the override
     /// hex so that CSS-driven view follows the lab selector too (the ribbon
     /// gets it via the palette). `None` when unset, or cleared.
@@ -185,6 +189,8 @@ impl Pill {
         pill.append(&icon);
         pill.append(&content);
 
+        let appearance = appearance::for_process(&ribbon);
+        let initial = appearance.read();
         let state = Rc::new(RefCell::new(PillState {
             descriptor: crate::states::state_to_descriptor(None, ""),
             notice: NoticeSlot::default(),
@@ -192,13 +198,13 @@ impl Pill {
             phase: RibbonPhase::Unfold,
             phase_since: Instant::now(),
             started: Instant::now(),
-            reduced_motion: platform::probe_reduced_motion(),
+            reduced_motion: initial.reduced_motion,
             #[cfg(dev_lab)]
             reduced_motion_override: None,
             // No styled widget is rooted yet, so this is the fallback
             // palette; sync_palette() re-resolves from the theme once the
             // ribbon is mapped.
-            palette: platform::probe_accent_palette(None::<&gtk::Widget>).as_ribbon_palette(),
+            palette: palette_for(initial.accent).as_ribbon_palette(),
             accent: None,
             // The default until the publisher says otherwise: nothing is
             // drawn before the first bus event anyway, so no wrong meter is
@@ -222,6 +228,7 @@ impl Pill {
             state,
             renderer: Rc::default(),
             preferences: RefCell::new(None),
+            appearance,
             #[cfg(dev_lab)]
             accent_override_css: RefCell::new(None),
         });
@@ -535,7 +542,7 @@ impl Pill {
 
     fn connect_preferences(self: &Rc<Self>) {
         let this = Rc::downgrade(self);
-        let watch = platform::watch_preferences(move |readiness| {
+        let watch = self.appearance.watch(Box::new(move |freshness| {
             let Some(this) = this.upgrade() else { return };
             // Motion comes straight from its own sources, so it is always
             // read now — unless the lab has pinned it.
@@ -543,12 +550,12 @@ impl Pill {
             {
                 let mut state = this.state.borrow_mut();
                 if state.reduced_motion_override.is_none() {
-                    state.reduced_motion = platform::probe_reduced_motion();
+                    state.reduced_motion = this.appearance.read().reduced_motion;
                 }
             }
             #[cfg(not(dev_lab))]
             {
-                this.state.borrow_mut().reduced_motion = platform::probe_reduced_motion();
+                this.state.borrow_mut().reduced_motion = this.appearance.read().reduced_motion;
             }
             // Recompute the non-ribbon views' pulse pace.
             this.push_reduced_motion();
@@ -571,11 +578,11 @@ impl Pill {
             // on libadwaita's own notification (it reloads the accent
             // provider before notifying); anything else waits for the next
             // frame.
-            match readiness {
-                platform::AccentReadiness::Current => this.sync_palette(),
-                platform::AccentReadiness::NextFrame => this.schedule_accent_resync(),
+            match freshness {
+                Freshness::Current => this.sync_palette(),
+                Freshness::NextFrame => this.schedule_accent_resync(),
             }
-        });
+        }));
         *self.preferences.borrow_mut() = Some(watch);
     }
 
@@ -599,12 +606,12 @@ impl Pill {
                 if let Some(v) = state.high_contrast_override {
                     v
                 } else {
-                    platform::probe_high_contrast()
+                    self.appearance.read().high_contrast
                 }
             }
             #[cfg(not(dev_lab))]
             {
-                platform::probe_high_contrast()
+                self.appearance.read().high_contrast
             }
         };
         if high {
@@ -680,7 +687,7 @@ impl Pill {
         if let Some(v) = value {
             state.reduced_motion = v;
         } else {
-            state.reduced_motion = platform::probe_reduced_motion();
+            state.reduced_motion = self.appearance.read().reduced_motion;
         }
         drop(state);
         self.push_reduced_motion();
@@ -759,10 +766,10 @@ impl Pill {
         #[cfg(dev_lab)]
         let palette = match state.accent_override.as_deref() {
             Some(hex) => crate::accent::resolve_theme_accent_palette(hex_to_rgb(hex)),
-            None => platform::probe_accent_palette(Some(&self.ribbon)),
+            None => palette_for(self.appearance.read().accent),
         };
         #[cfg(not(dev_lab))]
-        let palette = platform::probe_accent_palette(Some(&self.ribbon));
+        let palette = palette_for(self.appearance.read().accent);
         let accent = palette.main_rgb();
         if state.accent == Some(accent) {
             return;

@@ -10,7 +10,7 @@
 //! E2b's two-safe-sources design.
 //!
 //! Resolution order (the application layer probes; see
-//! [`crate::platform::probe_accent_palette`]):
+//! [`palette_for`]):
 //!
 //! 1. **The theme** — `@accent_bg_color` read back from a styled widget
 //!    ([`resolve_theme_accent_palette`]). Direct, needs no version probing,
@@ -209,7 +209,7 @@ pub fn is_orange_hex(hex: &str) -> bool {
 
 /// Resolve the palette from the accent **the theme itself reports**
 /// (`@accent_bg_color`, read back through
-/// [`crate::platform::probe_css_accent`]).
+/// [`crate::appearance::probe::probe_css_accent`]).
 ///
 /// This is the primary path, and it needs no notion of "did the user
 /// choose": the theme reports what the desktop is actually using — Ubuntu
@@ -224,4 +224,13 @@ pub fn resolve_theme_accent_palette(accent: Rgb) -> AccentPalette {
     );
     let is_orange = is_orange_hex(&main_hex);
     derive_palette(&main_hex, is_orange)
+}
+
+/// The ribbon's palette for what the desktop reported: the theme's accent
+/// where it named one, Ubuntu orange otherwise.
+pub fn palette_for(accent: Option<myna_platform::appearance::Rgb>) -> AccentPalette {
+    match accent {
+        Some(accent) => resolve_theme_accent_palette(accent.into()),
+        None => fallback_palette(),
+    }
 }

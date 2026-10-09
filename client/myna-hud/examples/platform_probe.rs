@@ -9,7 +9,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use myna_hud::platform;
+use myna_hud::accent::palette_for;
+use myna_hud::appearance::probe as platform;
 
 fn main() {
     let app = adw::Application::builder()
@@ -40,7 +41,9 @@ fn main() {
         );
         println!(
             "resolved             : {}",
-            platform::probe_reduced_motion()
+            myna_hud::appearance::for_process(&gtk::Label::new(None))
+                .read()
+                .reduced_motion
         );
         println!("--- accent (R18/R26) ---");
         println!(
@@ -65,7 +68,7 @@ fn main() {
             "theme @accent_bg_color: {:?}   (the primary source)",
             platform::probe_css_accent(&probe)
         );
-        let palette = platform::probe_accent_palette(Some(&probe));
+        let palette = palette_for(myna_hud::appearance::for_process(&probe).read().accent);
         println!("ribbon palette       : {palette:?}");
 
         app.quit();

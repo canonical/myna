@@ -57,7 +57,7 @@ apps:
       # DATA: DATA is per-revision and `snap revert` would revert settings.
       # Per app rather than top-level because myna.hud reads the host's
       # org.gnome.desktop.interface enable-animations through GSettings
-      # (myna-hud/src/platform.rs) and must keep whatever backend its gnome
+      # (myna-hud/src/appearance/probe.rs) and must keep whatever backend its gnome
       # extension sets up.
       <<: &settings-env
         GSETTINGS_BACKEND: keyfile
