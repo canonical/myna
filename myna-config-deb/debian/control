@@ -25,6 +25,8 @@ Depends: ${misc:Depends},
          libglib2.0-bin,
          pkexec,
          snapd,
+Recommends: ibus,
+            im-config,
 Description: settings and onboarding for Myna dictation
  Myna Settings is the desktop application that sets up and configures Myna,
  the local speech-to-text dictation service shipped as the myna snap. It
