@@ -105,7 +105,6 @@ struct AtMap {
     window: Window,
     position: Point,
     size: Size,
-    normal_hints: Vec<u32>,
     window_type: Vec<u32>,
     protocols: Vec<u32>,
     user_time: Vec<u32>,
@@ -119,6 +118,8 @@ enum Seen {
         kind: u32,
         data: [u32; 5],
     },
+    /// The window's input shape was set, after it was managed.
+    InputShape(Window),
 }
 
 fn cardinals(conn: &RustConnection, window: Window, property: u32) -> Vec<u32> {
@@ -211,14 +212,24 @@ fn window_manager(display: &str, atoms: Atoms) -> Receiver<Seen> {
                         width: geometry.width.into(),
                         height: geometry.height.into(),
                     },
-                    normal_hints: cardinals(&conn, e.window, AtomEnum::WM_NORMAL_HINTS.into()),
                     window_type: cardinals(&conn, e.window, atoms._NET_WM_WINDOW_TYPE),
                     protocols: cardinals(&conn, e.window, atoms.WM_PROTOCOLS),
                     user_time: cardinals(&conn, user_time_window, atoms._NET_WM_USER_TIME),
                 });
+                // As xfwm4 does, place a window that names no position.
+                let hints = cardinals(&conn, e.window, AtomEnum::WM_NORMAL_HINTS.into());
+                if hints.first().is_none_or(|flags| flags & 5 == 0) {
+                    let _ = conn.configure_window(e.window, &ConfigureWindowAux::new().x(0).y(0));
+                }
+                // As xfwm4 does when it frames a client: it copies the input
+                // shape to its frame only on a ShapeNotify.
+                let _ = conn.shape_select_input(e.window, true);
                 let _ = conn.map_window(e.window);
                 let _ = conn.flush();
                 seen
+            }
+            Event::ShapeNotify(e) if e.shape_kind == SK::INPUT => {
+                Seen::InputShape(e.affected_window)
             }
             Event::ClientMessage(e) => Seen::Message {
                 window: e.window,
@@ -426,17 +437,12 @@ fn the_hud_hosts_itself_on_x11() {
         vec![0],
         "a zero user time refuses focus on map"
     );
-    assert_eq!(
-        first.normal_hints[0] & 5,
-        5,
-        "US/PPosition: map where we are"
-    );
     let target = expected(first.size, 49);
     assert_eq!(first.position, target, "mapped away from bottom-centre");
-    assert_eq!(
-        &first.normal_hints[1..3],
-        &[target.x as u32, target.y as u32]
-    );
+    // Wherever the manager put it, it ends up there.
+    wait_until("the mapped HUD is in place", || {
+        root_position(&conn, root, first.window) == target
+    });
 
     // After the map: input refused, sticky asked for, skip hints, no input.
     wait_until("WM_HINTS refuse input", || {
@@ -457,6 +463,18 @@ fn the_hud_hosts_itself_on_x11() {
     }) {
         let left = deadline.saturating_duration_since(Instant::now());
         messages.push(seen.recv_timeout(left).expect("no sticky request"));
+    }
+    // Reshaped once managed, or xfwm4's frame keeps taking the clicks.
+    let deadline = Instant::now() + WAIT;
+    while !messages
+        .iter()
+        .any(|m| matches!(m, Seen::InputShape(window) if *window == first.window))
+    {
+        let left = deadline.saturating_duration_since(Instant::now());
+        messages.push(
+            seen.recv_timeout(left)
+                .expect("no input shape after the map"),
+        );
     }
     let input = conn
         .shape_get_rectangles(first.window, SK::INPUT)
@@ -495,7 +513,6 @@ fn the_hud_hosts_itself_on_x11() {
     let second = next_map(&seen, &mut messages);
     assert_eq!(second.window, first.window);
     assert_eq!(second.position, expected(second.size, 60));
-    assert_eq!(second.normal_hints[0] & 5, 5);
 }
 
 #[test]

@@ -12,11 +12,14 @@
 //! - `_NET_WM_USER_TIME` 0 and no `WM_TAKE_FOCUS`, so focus-stealing
 //!   prevention and focus fallback skip it too.
 //! - Position chosen before every map (`WM_NORMAL_HINTS` `PPosition`), so
-//!   the window manager maps it in place instead of placing it.
+//!   the window manager maps it in place instead of placing it. GDK rewrites
+//!   those hints right after mapping, racing the manager's read, so the
+//!   position is checked again once the window is mapped.
 //! - After every map, input refused in `WM_HINTS` and sticky requested:
 //!   GDK rewrites `WM_HINTS` and `_NET_WM_STATE` each time it maps, so
 //!   neither can be set ahead. Skip-taskbar/pager are GDK's own hints
-//!   ([`crate::window`]), click-through is the window's empty input region.
+//!   ([`crate::window`]), click-through is the window's empty input region,
+//!   set again once the window manager has framed the window.
 //!
 //! Placement is `myna_platform::status_surface`'s: bottom-centre of the work
 //! area, the monitor pinned at map (focus, then pointer, then primary) and
@@ -36,8 +39,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use x11rb::connection::Connection;
+use x11rb::protocol::shape::{ConnectionExt as _, SK, SO};
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
+    AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ClipOrdering, ConfigureWindowAux,
     ConnectionExt as _, EventMask, GetPropertyReply, PropMode, Window,
 };
 use x11rb::protocol::Event;
@@ -169,6 +173,10 @@ impl X11Host {
             self.root,
             &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
         )?;
+        self.conn.change_window_attributes(
+            self.xid,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY),
+        )?;
         self.conn.sync()?;
         Ok(())
     }
@@ -239,8 +247,16 @@ impl X11Host {
         loop {
             let mut moved = false;
             while let Some(event) = self.conn.poll_for_event()? {
-                if let Event::PropertyNotify(e) = event {
-                    moved |= e.window == self.root && e.atom == self.atoms._NET_WORKAREA;
+                match event {
+                    Event::PropertyNotify(e) => {
+                        moved |= e.window == self.root && e.atom == self.atoms._NET_WORKAREA;
+                    }
+                    // Managed now: the manager may have placed it after all.
+                    Event::MapNotify(e) if e.window == self.xid => {
+                        self.refuse_pointer()?;
+                        moved = true;
+                    }
+                    _ => {}
                 }
             }
             if !moved || !self.window.is_mapped() {
@@ -250,8 +266,27 @@ impl X11Host {
         }
     }
 
+    /// Set the empty input region again once the window manager has framed
+    /// the window: xfwm4 copies a client's input shape to its frame only on
+    /// a ShapeNotify, so the frame would otherwise take every click.
+    fn refuse_pointer(&self) -> XResult<()> {
+        self.conn.shape_rectangles(
+            SO::SET,
+            SK::INPUT,
+            ClipOrdering::UNSORTED,
+            self.xid,
+            0,
+            0,
+            &[],
+        )?;
+        self.conn.flush()?;
+        Ok(())
+    }
+
     /// Pin the monitor and put the unmapped window where it will show.
     fn prepare_map(&self) -> XResult<()> {
+        // GDK's own pending hints first, or they land on top of ours.
+        self.display.sync();
         self.monitor.set(None);
         let size = self.expected_size();
         let Some(at) = self.target(size)? else {
