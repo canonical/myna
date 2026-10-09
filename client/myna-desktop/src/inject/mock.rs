@@ -69,6 +69,8 @@ pub enum AcquireOutcome {
 struct Lease {
     id: u64,
     lost: Option<FocusEvent>,
+    /// Its target was told of an activation.
+    activated: bool,
 }
 
 impl Lease {
@@ -109,9 +111,14 @@ impl MockField {
     }
 
     /// Focus leaves the field and comes straight back, as an X11 key grab
-    /// makes it: the toolkit discards the preedit, and the lease rides it out.
+    /// makes it: the toolkit discards the preedit, and the lease rides it out
+    /// only if its target was told of an activation.
     pub fn blip(&self) {
-        self.shown.lock().unwrap().preedit.clear();
+        if self.lease.borrow().activated {
+            self.shown.lock().unwrap().preedit.clear();
+        } else {
+            self.lose_focus(FocusEvent::FocusOut);
+        }
     }
 
     /// The field's content type turns secure (or ordinary) under the user.
@@ -163,6 +170,7 @@ impl MockInjector {
                 lease: Arc::new(watch::Sender::new(Lease {
                     id: 0,
                     lost: Some(FocusEvent::FocusOut),
+                    activated: false,
                 })),
                 shown: Arc::default(),
             },
@@ -241,7 +249,11 @@ impl Injector for MockInjector {
         self.log.lock().unwrap().acquires += 1;
         let lease = &self.field.lease;
         let id = lease.borrow().id + 1;
-        lease.send_replace(Lease { id, lost: None });
+        lease.send_replace(Lease {
+            id,
+            lost: None,
+            activated: false,
+        });
         if let Some(event) = self.focus_during_acquire {
             self.field.lose_focus(event);
         }
@@ -347,6 +359,10 @@ impl Target for MockTarget {
 
     fn activated(&self) {
         self.log.lock().unwrap().activations += 1;
+        let id = self.id;
+        self.field
+            .lease
+            .send_modify(|lease| lease.activated |= lease.id == id);
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {

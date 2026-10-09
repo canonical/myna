@@ -147,17 +147,8 @@ struct Field {
     ic: OwnedObjectPath,
 }
 
-/// A context no application owns, as GNOME Shell's on Wayland.
-const DESKTOP_CLIENT: &str = "myna-ibus-hw";
-/// A GTK4 widget's context, as the IM module names it.
-const GTK_CLIENT: &str = "gtk4-im:myna-ibus-hw";
-
 impl Field {
     async fn open(purpose: u32, hints: u32) -> Self {
-        Self::open_as(DESKTOP_CLIENT, purpose, hints).await
-    }
-
-    async fn open_as(client: &str, purpose: u32, hints: u32) -> Self {
         let address = std::env::var("IBUS_ADDRESS").expect("IBUS_ADDRESS from dev/gated-tests.sh");
         let conn = zbus::conn::Builder::address(address.as_str())
             .expect("parse IBUS_ADDRESS")
@@ -173,7 +164,7 @@ impl Field {
                 IBUS_PATH,
                 Some(IBUS_SERVICE),
                 "CreateInputContext",
-                &(client,),
+                &("myna-ibus-hw",),
             )
             .await
             .expect("CreateInputContext")
@@ -524,8 +515,7 @@ impl suite::Fixture for IbusFixture {
             FieldKind::Plain => 0,
             FieldKind::Secure => PURPOSE_PASSWORD,
         };
-        // A GTK widget's context, which the backend can tell came back.
-        let (field, injector) = session_as(GTK_CLIENT, purpose, 0).await;
+        let (field, injector) = session(purpose, 0).await;
         let field = Arc::new(tokio::sync::Mutex::new(Some(field)));
         self.open = Some(Arc::clone(&field));
         let field = SuiteField {
@@ -578,11 +568,7 @@ async fn global_engine() -> Option<String> {
 /// A focused field of the given content type, the prior engine global, and an
 /// injector that has not acquired yet.
 async fn session(purpose: u32, hints: u32) -> (Field, IbusInjector) {
-    session_as(DESKTOP_CLIENT, purpose, hints).await
-}
-
-async fn session_as(client: &str, purpose: u32, hints: u32) -> (Field, IbusInjector) {
-    let field = Field::open_as(client, purpose, hints).await;
+    let field = Field::open(purpose, hints).await;
     field.use_prior_engine().await;
     let injector = IbusInjector::connect()
         .await
@@ -914,19 +900,24 @@ async fn text_never_follows_focus_into_another_field() {
     let (first, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire the first field");
 
+    let mut events = target.focus_events();
     first.focus_out().await;
     let mut other = Field::open(0, 0).await;
+    // Held, at most, while the daemon's calls are in flight.
     let committed = target.commit("stray").await;
+    let event = tokio::time::timeout(NOTICE, events.next()).await;
+    assert_eq!(event, Ok(Some(FocusEvent::FocusOut)));
+    let refused = target.commit("stray").await;
+    assert!(
+        matches!(refused, Err(InjectError::FocusLost)),
+        "commit after focus left the acquired field must fail: {refused:?}"
+    );
 
     let seen = sentinel_via_fresh_acquire(&mut other, &mut injector, Some(target)).await;
     assert_eq!(
         seen,
         Seen::Commit(SENTINEL.into()),
         "text acquired for the first field reached the other one (commit returned {committed:?})"
-    );
-    assert!(
-        committed.is_err(),
-        "commit after focus left the acquired field must fail: {committed:?}"
     );
 
     other.close().await;

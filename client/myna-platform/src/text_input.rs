@@ -106,7 +106,9 @@ pub trait Injector: Send {
 pub trait Target: Send + fmt::Debug {
     /// Insert stable text, never modified afterwards; clears any preedit.
     /// `Err(FocusLost)` once the right to write is gone; `Err(SecureField)`
-    /// when the field turned out secure only after `acquire`.
+    /// when the field turned out secure only after `acquire`. While focus is
+    /// away and may be coming back ([`Target::activated`]) the text is held:
+    /// it lands once focus is back, or is dropped with the loss.
     async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
 
     /// Show a volatile hypothesis in the field's preedit region, replacing

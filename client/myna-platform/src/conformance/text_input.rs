@@ -258,18 +258,23 @@ async fn a_focus_blip_without_an_activation_is_a_loss(fixture: &mut dyn Fixture)
     const CHECK: &str = "a_focus_blip_without_an_activation_is_a_loss";
     let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
     let mut target = acquire(injector.as_mut(), CHECK).await;
-    let events = target.focus_events();
+    let mut events = target.focus_events();
     field.blip().await;
-    let stray = target.commit("stray").await;
-    let mut events = events;
+    // Held, at most, until the backend knows no activation came with it.
+    let held = target.commit("stray").await;
+    assert!(
+        matches!(held, Ok(()) | Err(InjectError::FocusLost)),
+        "{CHECK}: commit after the blip gave {held:?}"
+    );
     match tokio::time::timeout(FOCUS_EVENT_LIMIT, events.next()).await {
         Ok(Some(_)) => {}
         Ok(None) => panic!("{CHECK}: the focus stream ended without an event"),
         Err(_) => panic!("{CHECK}: no focus event within {FOCUS_EVENT_LIMIT:?}"),
     }
+    let refused = target.commit("stray").await;
     assert!(
-        matches!(stray, Err(InjectError::FocusLost)),
-        "{CHECK}: commit after the blip gave {stray:?}"
+        matches!(refused, Err(InjectError::FocusLost)),
+        "{CHECK}: commit after the loss gave {refused:?}"
     );
     let view = field.observe().await;
     if let Some(view) = &view {
