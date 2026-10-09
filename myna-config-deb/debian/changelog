@@ -1,3 +1,19 @@
+myna-config (0.2.1-0ubuntu1) stonking; urgency=medium
+
+  * Setup speaks to screen readers: the download size, each install step,
+    and focus moving on when it finishes. Thanks to Paul Geoghegan.
+  * Changing the shortcut announces that it is waiting for a key, and why
+    a key was refused.
+  * Report an Issue in the main menu opens a GitHub issue with your
+    diagnostics already filled in.
+  * Diagnostics name the OS, desktop session and languages, and no longer
+    freeze the window while they load.
+  * Dictation recovers when IBus restarts with a new address.
+  * The dictation indicator starts at the next login when Myna is
+    installed mid-session.
+
+ -- Charles <charles05@canonical.com>  Fri, 09 Oct 2026 12:56:17 +0100
+
 myna-config (0.2.0-0ubuntu1) stonking; urgency=medium
 
   * Guided first-run setup: Myna Settings installs the Dictation app, a
