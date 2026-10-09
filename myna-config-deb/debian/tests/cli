@@ -24,3 +24,7 @@ gsettings list-keys com.canonical.Myna.Dictation | grep -qx streaming-mode
 # pkexec shows this action's message instead of the whole plan on its argv.
 grep -qF '<annotate key="org.freedesktop.policykit.exec.path">/usr/bin/myna-config</annotate>' \
     /usr/share/polkit-1/actions/com.canonical.Myna.Config.policy
+# The Xfce HUD host: the supervisor the autostart entry execs, started on Xfce only.
+exe=$(sed -n 's/^Exec=//p' /etc/xdg/autostart/com.canonical.Myna.HudHost.desktop)
+test -x "$exe"
+grep -qxF 'OnlyShowIn=XFCE;' /etc/xdg/autostart/com.canonical.Myna.HudHost.desktop

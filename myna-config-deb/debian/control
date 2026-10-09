@@ -38,4 +38,5 @@ Description: settings and onboarding for Myna dictation
  package.
  .
  It also ships the Myna Dictation Indicator GNOME Shell extension, which
- shows dictation status as a focus-safe overlay.
+ shows dictation status as a focus-safe overlay, and for Xfce a small
+ session service that shows the same indicator while dictation is running.

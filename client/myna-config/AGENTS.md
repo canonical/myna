@@ -33,8 +33,9 @@ Hexagonal. `ports.rs` declares the traits the application depends on (backend re
 - `build/` - Build logic outside cargo: the minimum `blueprint-compiler` version that `tests/` pulls in with `include!`, and the translation install the deb build runs.
 - `src/adapters/` - snapd REST client, `snap` CLI repository, pkexec configurator, Gio settings.
 - `src/platform/` - The composition root and the per-desktop backends: `gnome/` (media-keys shortcut, shell extension) and `xfce/` (xfconf shortcut, IBus and the HUD host's autostart entry).
+- `src/hud_host/` - The `myna-hud-host` binary's supervision policy (`machine.rs`, pure), launch resolution and GLib glue; the Xfce counterpart of the shell extension's supervisor (`client/.kb/platform-layer.md`).
 - `src/ui/` - One module per Blueprint template in `data/`.
-- `src/bin/` - Test fixture that stands in for a real command runner.
+- `src/bin/` - `myna-hud-host` (the deb ships it) and a test fixture that stands in for a real command runner.
 - `data/` - Blueprint templates, CSS, desktop entry, polkit action, man page, gresource manifest.
 - `docs/` - Decision records: confinement gate, onboarding flow, refresh budget, performance warnings.
 - `po/` - gettext template and translator instructions.
