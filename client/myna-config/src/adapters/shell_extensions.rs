@@ -378,6 +378,26 @@ pub fn extension_report(uuid: &str) -> ExtensionReport {
     )
 }
 
+/// gnome-shell's version, for Diagnostics; `None` when it does not answer.
+pub fn shell_version() -> Option<String> {
+    let reply = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
+        .and_then(|connection| {
+            connection.call_sync(
+                Some(SHELL_NAME),
+                SHELL_PATH,
+                "org.freedesktop.DBus.Properties",
+                "Get",
+                Some(&(EXTENSIONS_INTERFACE, "ShellVersion").to_variant()),
+                Some(VariantTy::new("(v)").expect("valid type")),
+                gio::DBusCallFlags::NO_AUTO_START,
+                CALL_TIMEOUT.as_millis() as i32,
+                gio::Cancellable::NONE,
+            )
+        })
+        .ok()?;
+    reply.child_value(0).as_variant()?.get::<String>()
+}
+
 /// A system copy gnome-shell does not know, because it has not scanned it
 /// since it was installed, is not "not installed".
 fn unscanned_report(

@@ -1957,16 +1957,20 @@ impl BackendUi {
         };
     }
 
-    fn build_diagnostics_page(self: &Rc<Self>) -> adw::NavigationPage {
-        let widget = ui::DiagnosticsPage::new();
-
+    /// What Diagnostics reports, from what discovery last found.
+    fn diagnostic_input(&self) -> DiagnosticInput {
         let pages = self.controller.pages();
         let discovery_error = self.controller.last_discovery_error();
-        let discovery_loading = self.controller.discovery_loading();
-
         let snaps = self.installed_snaps.borrow().clone();
-        let input = DiagnosticInput {
+        DiagnosticInput {
             inventory_complete: self.inventory_complete.get(),
+            system: Some(crate::machine::system_facts(
+                crate::adapters::shell_extensions::shell_version(),
+                self.preferred_languages
+                    .borrow()
+                    .clone()
+                    .unwrap_or_default(),
+            )),
             machine: Some(crate::machine::machine_facts()),
             daemon: crate::machine::snap_process("myna"),
             daemon_report: crate::machine::daemon_report(),
@@ -1986,9 +1990,15 @@ impl BackendUi {
                 .chain(discovery_error.as_ref().map(problem_from_surface_error))
                 .collect(),
             installed_snaps: snaps,
-        };
+        }
+    }
 
-        let report = present_diagnostics(input);
+    fn build_diagnostics_page(self: &Rc<Self>) -> adw::NavigationPage {
+        let widget = ui::DiagnosticsPage::new();
+
+        let discovery_loading = self.controller.discovery_loading();
+
+        let report = present_diagnostics(self.diagnostic_input());
 
         // Header buttons: refresh + copy.
         let refresh_button = widget.refresh_button();

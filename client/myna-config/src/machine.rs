@@ -29,6 +29,58 @@ pub fn machine_facts() -> MachineFacts {
     }
 }
 
+/// The desktop the user runs Myna on: what every bug report needs before
+/// anything else, since injection and activation differ per release and
+/// session type.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SystemFacts {
+    pub os: String,
+    pub kernel: String,
+    /// `XDG_CURRENT_DESKTOP` and `XDG_SESSION_TYPE`.
+    pub desktop: String,
+    /// gnome-shell's own version, when it answers.
+    pub shell: Option<String>,
+    /// The user's languages, most preferred first, once read.
+    pub languages: Vec<String>,
+}
+
+/// `shell` and `languages` come from the session bus and the locale reader,
+/// which the caller already has.
+pub fn system_facts(shell: Option<String>, languages: Vec<String>) -> SystemFacts {
+    let os_release = std::fs::read_to_string("/etc/os-release")
+        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+        .unwrap_or_default();
+    let env = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    SystemFacts {
+        os: os_name(&os_release).unwrap_or_else(|| "unknown".into()),
+        kernel: std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .map(|kernel| kernel.trim().to_owned())
+            .unwrap_or_else(|_| "unknown".into()),
+        desktop: desktop_summary(env("XDG_CURRENT_DESKTOP"), env("XDG_SESSION_TYPE")),
+        shell,
+        languages,
+    }
+}
+
+fn os_name(os_release: &str) -> Option<String> {
+    os_release.lines().find_map(|line| {
+        let value = line.strip_prefix("PRETTY_NAME=")?.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(value);
+        (!value.is_empty()).then(|| value.to_owned())
+    })
+}
+
+fn desktop_summary(desktop: Option<String>, session: Option<String>) -> String {
+    format!(
+        "{}, {}",
+        desktop.as_deref().unwrap_or("unknown"),
+        session.as_deref().unwrap_or("unknown session")
+    )
+}
+
 /// Whether an NVIDIA display controller is present, which is what makes an
 /// inference snap's install hook pick its GPU engine.
 pub fn has_nvidia_gpu() -> bool {
@@ -326,5 +378,23 @@ mod tests {
         assert_eq!(last.headline, "Model not running");
         assert_eq!(last.detail, "x is connected");
         assert!(last.at.starts_with("2025-"), "{}", last.at);
+    }
+
+    #[test]
+    fn the_os_is_its_pretty_name() {
+        let release = "NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nID=ubuntu\n";
+        assert_eq!(os_name(release).as_deref(), Some("Ubuntu 24.04.3 LTS"));
+        assert_eq!(os_name("PRETTY_NAME=Debian\n").as_deref(), Some("Debian"));
+        assert_eq!(os_name("PRETTY_NAME=\"\"\n"), None);
+        assert_eq!(os_name(""), None);
+    }
+
+    #[test]
+    fn the_desktop_names_its_session_type() {
+        assert_eq!(
+            desktop_summary(Some("ubuntu:GNOME".into()), Some("wayland".into())),
+            "ubuntu:GNOME, wayland"
+        );
+        assert_eq!(desktop_summary(None, None), "unknown, unknown session");
     }
 }

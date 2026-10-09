@@ -10,7 +10,9 @@
 
 use std::time::Duration;
 
-use crate::machine::{bytes, AudioDrops, DaemonReport, LastError, MachineFacts, ProcessMemory};
+use crate::machine::{
+    bytes, AudioDrops, DaemonReport, LastError, MachineFacts, ProcessMemory, SystemFacts,
+};
 use crate::onboarding::{ExtensionCopy, ExtensionReport};
 use crate::performance::{
     assess_clock, assess_pressure, ClockClass, ClockVerdict, PerformanceFacts, PressureWarning,
@@ -73,6 +75,7 @@ pub enum DiagnosticConnection {
 pub struct DiagnosticInput {
     pub inventory_complete: bool,
     pub installed_snaps: Vec<InstalledSnap>,
+    pub system: Option<SystemFacts>,
     pub machine: Option<MachineFacts>,
     pub daemon: Option<ProcessMemory>,
     /// What the running daemon publishes; `None` when it is not reachable.
@@ -389,6 +392,34 @@ fn render_body(
     out.push_str(": ");
     out.push_str(&onboarding_state_label(onboarding));
     out.push('\n');
+
+    if let Some(system) = &input.system {
+        out.push('\n');
+        out.push_str(&gettextrs::gettext("System"));
+        out.push_str(":\n");
+        field(
+            &mut out,
+            &gettextrs::gettext("OS"),
+            &format!(
+                "{}, {} {}",
+                system.os,
+                gettextrs::gettext("kernel"),
+                system.kernel
+            ),
+        );
+        let desktop = match &system.shell {
+            Some(version) => format!("{}, GNOME Shell {version}", system.desktop),
+            None => system.desktop.clone(),
+        };
+        field(&mut out, &gettextrs::gettext("Desktop"), &desktop);
+        if !system.languages.is_empty() {
+            field(
+                &mut out,
+                &gettextrs::gettext("Languages"),
+                &system.languages.join(", "),
+            );
+        }
+    }
 
     out.push('\n');
     out.push_str(&gettextrs::gettext("Machine"));
@@ -941,6 +972,32 @@ mod tests {
     }
 
     #[test]
+    fn the_system_leads_the_report() {
+        let report = present_diagnostics(DiagnosticInput {
+            inventory_complete: true,
+            system: Some(SystemFacts {
+                os: "Ubuntu 26.04 LTS".into(),
+                kernel: "7.3.0-6-generic".into(),
+                desktop: "ubuntu:GNOME, wayland".into(),
+                shell: Some("49.0".into()),
+                languages: vec!["de_DE".into(), "de".into()],
+            }),
+            ..DiagnosticInput::default()
+        });
+        let text = report.copy_text();
+        assert_eq!(
+            field_value(&text, "OS"),
+            Some("Ubuntu 26.04 LTS, kernel 7.3.0-6-generic")
+        );
+        assert_eq!(
+            field_value(&text, "Desktop"),
+            Some("ubuntu:GNOME, wayland, GNOME Shell 49.0")
+        );
+        assert_eq!(field_value(&text, "Languages"), Some("de_DE, de"));
+        assert!(text.find("System:").unwrap() < text.find("Machine:").unwrap());
+    }
+
+    #[test]
     fn snap_list_parses_and_reports() {
         let snaps = parse_snap_list(
             "Name  Version  Rev  Tracking  Publisher  Notes\n\
@@ -1012,6 +1069,7 @@ mod tests {
     fn the_report_names_the_machine_and_what_each_process_costs() {
         let report = present_diagnostics(DiagnosticInput {
             inventory_complete: true,
+            system: None,
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
