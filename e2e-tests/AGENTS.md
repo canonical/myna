@@ -60,6 +60,13 @@ pill exists; the VM has no deb. CI builds the tree's myna snap and passes it
 as `E2E_MYNA_SNAP`, so the daemon and HUD under test are the tree's, not
 edge's.
 
+The pill case (Xubuntu) waits for the HUD to register with the daemon
+(`hud_registered`) before dictating, since until then the daemon toasts
+instead; it then asserts the pill is a mapped notification-type window that
+takes no input focus, bottom centre in the work area, that the field app stays
+active, that no Myna toast was sent (a `dbus-monitor` watch, with a positive
+control) and that the HUD's log has no GTK critical.
+
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 

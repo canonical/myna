@@ -22,7 +22,9 @@
 #      desktop: listening, finishing, the focus-lost notice, the secure-field
 #      error. The HUD is hosted by myna-hud-host, as the deb's autostart
 #      entry does; GNOME's shell extension is not in the VM, and its Wayland
-#      session cannot be photographed from inside anyway.
+#      session cannot be photographed from inside anyway. The case waits for
+#      the HUD to register, then asserts the pill's window state, that the
+#      field kept focus and that the daemon sent no toast.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
