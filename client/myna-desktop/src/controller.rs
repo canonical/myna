@@ -682,23 +682,29 @@ impl DesktopController {
                 },
                 // A trigger edge: `Release` finalizes (graceful stop); a `None`
                 // means the trigger ended — stop capture and quit after.
-                edge = trigger.next_edge(), if trigger_open && done.is_none() => match edge {
-                    Some(TriggerEdge::Release) => {
-                        myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
-                        stop.stop();
-                        enter_finalizing(state, indicator.as_mut()).await;
-                        // Stop reading the trigger for this utterance: any
-                        // further edges (the next push-to-talk cycle) belong to
-                        // the next session, not this finalizing one.
-                        trigger_open = false;
+                edge = trigger.next_edge(), if trigger_open && done.is_none() => {
+                    if edge.is_some() {
+                        // The key that sent it may have taken focus briefly.
+                        target.activated();
                     }
-                    Some(TriggerEdge::Press) => {} // ignore an extra press while recording
-                    None => {
-                        trigger_open = false;
-                        stop.stop();
-                        enter_finalizing(state, indicator.as_mut()).await;
+                    match edge {
+                        Some(TriggerEdge::Release) => {
+                            myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
+                            stop.stop();
+                            enter_finalizing(state, indicator.as_mut()).await;
+                            // Stop reading the trigger for this utterance: any
+                            // further edges (the next push-to-talk cycle) belong to
+                            // the next session, not this finalizing one.
+                            trigger_open = false;
+                        }
+                        Some(TriggerEdge::Press) => {} // ignore an extra press while recording
+                        None => {
+                            trigger_open = false;
+                            stop.stop();
+                            enter_finalizing(state, indicator.as_mut()).await;
+                        }
                     }
-                },
+                }
                 // A fresh stats snapshot: the policy's chance to end a toggle
                 // session the user walked away from. Ends exactly like a
                 // Release, plus the trigger-parity resync a FocusOut needs,

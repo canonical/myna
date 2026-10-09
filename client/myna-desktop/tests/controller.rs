@@ -116,6 +116,22 @@ async fn commit_drain_commits_each_segment_once_in_order() {
     assert_eq!(controller.state(), DictationState::Idle);
 }
 
+/// The edge that ends an utterance tells the target first: the key that sent
+/// it may have taken focus off the field for as long as it was down.
+#[tokio::test]
+async fn an_edge_during_an_utterance_tells_the_target() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut controller = build(
+        [TriggerEdge::Press, TriggerEdge::Release],
+        injector,
+        MockIndicator::new(),
+        backend_session(FakeBackend::commit_drain),
+    );
+    controller.run().await;
+    assert_eq!(inject_log.lock().unwrap().activations, 1);
+}
+
 // ── T011a: push-to-talk — no capture while Idle; capture only in a session ────
 
 /// Wraps an [`AudioSource`], recording each `capture()` invocation in a shared

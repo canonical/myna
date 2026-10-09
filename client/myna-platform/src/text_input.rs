@@ -3,7 +3,10 @@
 //! An [`Injector`] hands out one [`Target`] per utterance, the sole owner of
 //! the right to write into the field focused when it was acquired. The right
 //! ends when focus leaves that field, when a newer target is acquired, or at
-//! [`Target::release`]; every output operation checks it.
+//! [`Target::release`]; every output operation checks it. Focus that leaves
+//! around an activation and comes straight back to the same field, as an X11
+//! key grab sends it while Myna's shortcut is held, is a blip, not a loss
+//! ([`Target::activated`]).
 
 use std::fmt;
 
@@ -122,6 +125,15 @@ pub trait Target: Send + fmt::Debug {
     /// Yields a [`FocusEvent`] once the right to write is gone, including
     /// when it was lost before this call.
     fn focus_events(&self) -> BoxStream<'static, FocusEvent>;
+
+    /// The user used Myna's activation (its shortcut or toggle) while this
+    /// target is held. Activating may take focus off the field until the key
+    /// is released, as an X11 key grab does. Focus that leaves within a short
+    /// window of an activation and comes back to the same field soon after
+    /// is not a loss: writes in between are held and land once it is back.
+    /// Focus leaving at any other time is a loss, as is focus that does not
+    /// come back. Acquiring counts as an activation.
+    fn activated(&self) {}
 
     /// Give up the field: clear what it shows and hand the desktop back
     /// whatever acquiring took.

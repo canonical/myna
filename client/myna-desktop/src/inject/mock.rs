@@ -41,6 +41,8 @@ pub struct InjectorLog {
     pub acquires: usize,
     /// Number of targets released, each restoring the prior engine once (I11).
     pub releases: usize,
+    /// Number of `activated` calls on held targets.
+    pub activations: usize,
 }
 
 impl InjectorLog {
@@ -335,6 +337,10 @@ impl Target for MockTarget {
         if self.capabilities.preedit && self.refusal().is_none() {
             self.field.shown.lock().unwrap().preedit = text.to_string();
         }
+    }
+
+    fn activated(&self) {
+        self.log.lock().unwrap().activations += 1;
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
