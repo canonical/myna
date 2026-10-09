@@ -1,4 +1,4 @@
-//! window — the HUD pill overlay window (feature 004, T112/T114; R21–R23).
+//! window - the HUD pill overlay window (feature 004, T112/T114; R21–R23).
 //!
 //! A borderless, transparent toplevel wrapping a [`crate::pill::Pill`]. This
 //! module owns only the *overlay* concerns: the surface's click-through
@@ -11,7 +11,7 @@
 //! It never positions, sizes-to-monitor, raises, or types itself. Under
 //! GNOME the `myna-shell` extension launches it through a
 //! `Meta.WaylandClient`, adopts the window, makes it a DOCK, and places it
-//! (R21) — a renderer that also positioned itself would fight its host.
+//! (R21) - a renderer that also positioned itself would fight its host.
 //! Where the HUD is its own host (`--host x11`), that host does all of it
 //! through [`HudWindow::set_host`] and the window's signals. In lab mode
 //! there is no host, so it presents as an ordinary window.
@@ -19,7 +19,7 @@
 //! ## Click-through (R22/T114)
 //!
 //! The surface's input region is empty in **every** state, so pointer
-//! events always reach whatever is underneath — the HUD is an overlay, not
+//! events always reach whatever is underneath - the HUD is an overlay, not
 //! a target, and carries no interactive control at all.
 
 use std::cell::{Cell, RefCell};
@@ -52,7 +52,7 @@ const RESTING_HEIGHT: i32 = PILL_HEIGHT;
 /// pill fades its opacity over this long before the surface unmaps, and
 /// fades back in once mapped.
 pub(crate) const FADE_MS: u64 = 100;
-/// Drives the fade above — `opacity: 0`, transitioned by `style.css`.
+/// Drives the fade above - `opacity: 0`, transitioned by `style.css`.
 pub(crate) const FADE_HIDDEN_CLASS: &str = "myna-hud-fade-hidden";
 
 /// The HUD pill overlay window.
@@ -75,7 +75,7 @@ impl HudWindow {
         // A plain GtkApplicationWindow, deliberately NOT
         // adw::ApplicationWindow: the libadwaita window imposes a 200 px
         // minimum height (it is built for adaptive app windows), which would
-        // leave ~130 px of dead transparent surface below a 66 px pill —
+        // leave ~130 px of dead transparent surface below a 66 px pill -
         // surface that still counts as the overlay's extent for the host's
         // placement (R21) and its input region (R22). libadwaita is still
         // used for the style manager's accent (R26); nothing here needs an
@@ -168,7 +168,7 @@ impl HudWindow {
     ///
     /// The unmap at the end of a fade-out still has to happen for real: a
     /// compositor is free to ignore surface opacity on an already-mapped
-    /// toplevel (mutter does — the window reports opacity 0 but stays fully
+    /// toplevel (mutter does - the window reports opacity 0 but stays fully
     /// shown). `set_visible(false)` unmaps the surface, which the compositor
     /// cannot show. The window stays owned by the same Meta.WaylandClient
     /// across the unmap/remap, and the host re-asserts the overlay on the
@@ -178,7 +178,7 @@ impl HudWindow {
         let widget = self.pill.widget();
         if hidden {
             if !self.window.is_visible() {
-                return; // already unmapped — nothing to fade
+                return; // already unmapped - nothing to fade
             }
             widget.add_css_class(FADE_HIDDEN_CLASS);
             let this = self.clone();
@@ -189,7 +189,7 @@ impl HudWindow {
                 }
             });
         } else if self.window.is_visible() {
-            // Already mapped, or a fade-out reversed mid-flight — let the CSS
+            // Already mapped, or a fade-out reversed mid-flight - let the CSS
             // transition take it back to resting opacity.
             widget.remove_css_class(FADE_HIDDEN_CLASS);
         } else {
@@ -256,7 +256,7 @@ impl HudWindow {
 
     /// Ask an X11 window manager to keep the overlay out of the taskbar and
     /// the pager. Reached on any X11 session: lab mode, and the X11 host,
-    /// which relies on it. There is no GDK4 always-on-top equivalent —
+    /// which relies on it. There is no GDK4 always-on-top equivalent -
     /// stacking is the host's job.
     fn connect_x11_hints(self: &Rc<Self>) {
         self.window.connect_realize(|window| {

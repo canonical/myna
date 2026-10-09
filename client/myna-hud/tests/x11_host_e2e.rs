@@ -1,4 +1,4 @@
-// tests/x11_host_e2e.rs — `myna-hud --host x11` placing and protecting its
+// tests/x11_host_e2e.rs - `myna-hud --host x11` placing and protecting its
 // own window, read back the way a window manager sees it.
 //
 // The real binary runs on an Xvfb of its own against a fake publisher on a

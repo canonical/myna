@@ -1,4 +1,4 @@
-// tests/host_ewmh.rs — the X11 host's property arithmetic.
+// tests/host_ewmh.rs - the X11 host's property arithmetic.
 
 use myna_hud::host::ewmh::{
     centre, clear_of_bottom_docks, monitor_at, position_hints, refuse_input, strut,

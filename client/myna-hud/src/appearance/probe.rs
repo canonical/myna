@@ -1,4 +1,4 @@
-//! probe — the live sources behind the HUD's [`Appearance`](myna_platform::appearance::Appearance) backends: the
+//! probe - the live sources behind the HUD's [`Appearance`](myna_platform::appearance::Appearance) backends: the
 //! **accent colour** (R18/R26), **reduced motion** (E2b, FR-022a) and high
 //! contrast. The rules live in [`crate::accent`] and [`crate::motion`]; this
 //! module only reads the sources.
@@ -23,7 +23,7 @@
 //! The **accent is read from CSS**, not from the settings name: a widget
 //! styled `color: @accent_bg_color` is asked for its computed colour
 //! ([`probe_css_accent`]). That is the direct analogue of the extension's
-//! `-st-accent-color`, and it beats every alternative — the named colour
+//! `-st-accent-color`, and it beats every alternative - the named colour
 //! has existed since libadwaita 1.0, so it needs no version probing at all
 //! and covers the whole runtime matrix; it resolves Ubuntu's Yaru tints
 //! (including `wartybrown`, which upstream has no enum member for)
@@ -41,7 +41,7 @@
 //!
 //! `org.gnome.desktop.a11y.interface reduced-motion` is NEVER read. It is
 //! new in gsettings-desktop-schemas, and constructing a `gio::Settings` for
-//! a missing schema — or reading a missing key — **aborts the process**.
+//! a missing schema - or reading a missing key - **aborts the process**.
 //! Every GSettings access below is guarded through
 //! [`settings_for_schema_key`], which consults the schema source first.
 
@@ -63,9 +63,9 @@ pub(super) const ANIMATIONS_KEY: &str = "enable-animations";
 
 /// `GtkSettings`' reduced-motion property (GTK ≥ 4.22).
 pub(super) const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
-/// `GtkReducedMotion.no_preference` — the one value meaning "full motion".
+/// `GtkReducedMotion.no_preference` - the one value meaning "full motion".
 const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
-/// `AdwStyleManager`'s resolved accent — notified after the stylesheet is
+/// `AdwStyleManager`'s resolved accent - notified after the stylesheet is
 /// updated, so the theme is already current when it fires.
 pub(super) const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
 
@@ -73,7 +73,7 @@ pub(super) const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
 /// both exist on this system; otherwise `None`.
 ///
 /// This is the guard that keeps a missing schema/key from aborting the
-/// process (E2b) — the reason the HUD may never touch a GSettings key
+/// process (E2b) - the reason the HUD may never touch a GSettings key
 /// without asking first.
 pub fn settings_for_schema_key(schema: &str, key: &str) -> Option<gtk::gio::Settings> {
     let source = gtk::gio::SettingsSchemaSource::default()?;
@@ -90,7 +90,7 @@ pub fn settings_for_schema_key(schema: &str, key: &str) -> Option<gtk::gio::Sett
 /// inverted `enable-animations`.
 ///
 /// The property is a **`GtkReducedMotion` enum**, not a boolean
-/// (`no_preference = 0`, `reduce = 1`) — reading it as a `bool` fails and
+/// (`no_preference = 0`, `reduce = 1`) - reading it as a `bool` fails and
 /// looks exactly like "the property is absent", silently forfeiting the
 /// primary source on precisely the systems that have it. It is read through
 /// `g_value_get_enum` rather than a bound Rust enum type both because the
@@ -121,7 +121,7 @@ pub fn decode_reduced_motion(value: &glib::Value) -> Option<bool> {
 }
 
 /// Read `org.gnome.desktop.interface enable-animations` (raw, NOT inverted
-/// — [`crate::motion::reduced_motion`] owns that), schema/key guarded.
+/// - [`crate::motion::reduced_motion`] owns that), schema/key guarded.
 pub fn probe_enable_animations() -> Option<bool> {
     let settings = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY)?;
     Some(settings.boolean(ANIMATIONS_KEY))
@@ -135,7 +135,7 @@ pub fn probe_gtk_enable_animations() -> Option<bool> {
 
 /// Whether the desktop requests a higher-contrast UI (FR-022).
 ///
-/// `Adw.StyleManager:high-contrast` — a plain bool libadwaita exposes (and
+/// `Adw.StyleManager:high-contrast` - a plain bool libadwaita exposes (and
 /// itself derives from `GtkSettings:gtk-interface-contrast` where available,
 /// i.e. `gtk-interface-contrast` is just the GTK plumbing Adw builds on).
 /// Looked up by runtime property name so the same binary works on older
@@ -156,7 +156,7 @@ pub fn probe_high_contrast() -> bool {
 
 /// The accent as the **theme** resolves it, read back from `widget`'s
 /// computed CSS `color` (the widget must be styled `color:
-/// @accent_bg_color` — see `style.css`'s `.myna-hud-ribbon`).
+/// @accent_bg_color` - see `style.css`'s `.myna-hud-ribbon`).
 ///
 /// This is the primary source: no version probing, no name table, and
 /// correct on Yaru by construction. The widget must have a computed style
@@ -183,7 +183,7 @@ pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
 /// The desktop's accent as libadwaita resolves it.
 ///
 /// `adw_style_manager_get_accent_color_rgba()` (libadwaita ≥ 1.6, the
-/// crate's floor) — a plain value read, needing no widget and no notion of
+/// crate's floor) - a plain value read, needing no widget and no notion of
 /// when a style was last recomputed. On Ubuntu it is also complete: the
 /// Yaru patches feed accent *variants*, which are selected by theme name
 /// rather than by the `accent-color` key, into this same property, so a
